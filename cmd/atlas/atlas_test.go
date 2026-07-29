@@ -17,6 +17,7 @@ import (
 
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/internal/testutils"
 	migrationlint "github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -3192,7 +3193,10 @@ CREATE TABLE users (
 
 	err := cmd.Execute()
 	_, statErr := os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
-	_, lockStatErr := os.Stat(filepath.Join(migrationsDir, ".ptah-migrate-diff.lock"))
+	lockInfo, lockStatErr := os.Stat(atlasMigrateDiffLockPath(migrationsDir))
+	releaseLock, lockErr := testutils.AcquireExclusiveFileLock(
+		atlasMigrateDiffLockPath(migrationsDir),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "ALTER TABLE")
@@ -3201,7 +3205,10 @@ CREATE TABLE users (
 	c.Assert(out.String(), qt.Not(qt.Contains), "Created migration file:")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
-	c.Assert(lockStatErr, qt.ErrorIs, os.ErrNotExist)
+	c.Assert(lockStatErr, qt.IsNil)
+	c.Assert(lockInfo.Mode().IsRegular(), qt.IsTrue)
+	c.Assert(lockErr, qt.IsNil)
+	c.Assert(releaseLock(), qt.IsNil)
 }
 
 func TestCompatCommand_MigrateDiffCustomFormatWritesFormattedMigration(t *testing.T) {
@@ -3555,7 +3562,11 @@ func TestCompatCommand_MigrateDiffLockTimeout(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(migrationsDir, ".ptah-migrate-diff.lock"), []byte("held\n"), 0o600), qt.IsNil)
+	releaseLock, err := testutils.AcquireExclusiveFileLock(atlasMigrateDiffLockPath(migrationsDir))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(releaseLock(), qt.IsNil)
+	})
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE locked_diff (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
@@ -3572,7 +3583,7 @@ func TestCompatCommand_MigrateDiffLockTimeout(t *testing.T) {
 		"locked_diff",
 	})
 
-	err := cmd.Execute()
+	err = cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `migration directory lock timeout after 1ms: .*\.ptah-migrate-diff\.lock`)
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
@@ -4602,4 +4613,12 @@ func readAtlasTestFile(c *qt.C, dir, name string) string {
 	data, err := os.ReadFile(filepath.Join(dir, name))
 	c.Assert(err, qt.IsNil)
 	return string(data)
+}
+
+func atlasMigrateDiffLockPath(migrationsDir string) string {
+	cleanDir := filepath.Clean(migrationsDir)
+	return filepath.Join(
+		filepath.Dir(cleanDir),
+		"."+filepath.Base(cleanDir)+".ptah-migrate-diff.lock",
+	)
 }

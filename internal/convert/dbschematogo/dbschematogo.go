@@ -119,23 +119,24 @@ func convertTablesAndFields(
 		// Convert columns to fields
 		for _, dbColumn := range dbTable.Columns {
 			field := goschema.Field{
-				StructName:    structName,
-				FieldName:     generateFieldName(dbColumn.Name),
-				Name:          dbColumn.Name,
-				Type:          goSchemaFieldType(dbColumn),
-				Nullable:      dbColumn.IsNullable == "YES",
-				Primary:       dbColumn.IsPrimaryKey && !compositePKColumns[dbTable.QualifiedName()][dbColumn.Name],
-				AutoInc:       dbColumn.IsAutoIncrement,
-				Unique:        dbColumn.IsUnique,
-				Charset:       dbColumn.Charset,
-				Collate:       dbColumn.Collate,
-				GeneratedKind: dbColumn.GeneratedKind,
+				StructName:         structName,
+				FieldName:          generateFieldName(dbColumn.Name),
+				Name:               dbColumn.Name,
+				Type:               goSchemaFieldType(dbColumn),
+				Nullable:           dbColumn.IsNullable == "YES",
+				Primary:            dbColumn.IsPrimaryKey && !compositePKColumns[dbTable.QualifiedName()][dbColumn.Name],
+				AutoInc:            dbColumn.IsAutoIncrement,
+				Unique:             dbColumn.IsUnique,
+				Charset:            dbColumn.Charset,
+				Collate:            dbColumn.Collate,
+				GeneratedKind:      dbColumn.GeneratedKind,
+				IdentityGeneration: dbColumn.IdentityGeneration,
 			}
 			if dbColumn.GeneratedExpression != nil {
 				field.GeneratedExpression = *dbColumn.GeneratedExpression
 			}
 
-			if dbColumn.ColumnDefault != nil {
+			if dbColumn.ColumnDefault != nil && postgresSerialType(dbColumn) == "" {
 				setFieldDefaultFromDB(&field, *dbColumn.ColumnDefault)
 			}
 
@@ -522,6 +523,9 @@ func firstString(values []string) string {
 }
 
 func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
+	if serialType := postgresSerialType(dbColumn); serialType != "" {
+		return serialType
+	}
 	if strings.EqualFold(dbColumn.DataType, "USER-DEFINED") && dbColumn.UDTName != "" {
 		return dbColumn.UDTName
 	}
@@ -532,6 +536,23 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 		return sizedType
 	}
 	return dbColumn.DataType
+}
+
+func postgresSerialType(dbColumn dbschematypes.DBColumn) string {
+	if !dbColumn.IsAutoIncrement || dbColumn.ColumnDefault == nil ||
+		!strings.Contains(strings.ToLower(*dbColumn.ColumnDefault), "nextval(") {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(dbColumn.DataType)) {
+	case "smallint":
+		return "SMALLSERIAL"
+	case "integer":
+		return "SERIAL"
+	case "bigint":
+		return "BIGSERIAL"
+	default:
+		return ""
+	}
 }
 
 func sizedColumnType(dbColumn dbschematypes.DBColumn) string {

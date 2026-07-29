@@ -126,21 +126,21 @@ func GetAllScenarios() []TestScenario {
 
 		// Migration Generator Validation
 		{
-			Name:             "migration_generator_validation",
-			Description:      "Validate migration generator with forward and rollback migrations",
-			EnhancedTestFunc: testMigrationGeneratorValidation,
+			Name:            "migration_generator_validation",
+			Description:     "Validate migration generator with forward and rollback migrations",
+			cleanupTestFunc: testMigrationGeneratorValidation,
 		},
 		{
-			Name:             "migration_generator_roundtrip_fixtures",
-			Description:      "Validate generated migrations with fixture-driven apply, down-to-zero, and re-apply round trips",
-			EnhancedTestFunc: testMigrationGeneratorRoundTripFixtures,
+			Name:            "migration_generator_roundtrip_fixtures",
+			Description:     "Validate generated migrations with fixture-driven apply, down-to-zero, and re-apply round trips",
+			cleanupTestFunc: testMigrationGeneratorRoundTripFixtures,
 		},
 
 		// Cleanup Support
 		{
 			Name:                 "cleanup_support",
 			Description:          "Test drop and re-run from empty state",
-			TestFunc:             testCleanupSupport,
+			cleanupTestFunc:      testCleanupSupport,
 			ClickHouseCompatible: true,
 			SQLServerCompatible:  true,
 		},

@@ -4957,6 +4957,7 @@ func (dc *DatabaseConnection) Reader() types.SchemaReader
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
+func (dc *DatabaseConnection) WithSession(ctx context.Context, use func(*DatabaseConnection) error) (resultErr error)
 func (dc *DatabaseConnection) Writer() types.SchemaExecutor
 
 ## github.com/stokaro/ptah/dbschema/types
@@ -5474,10 +5475,12 @@ package types // import "github.com/stokaro/ptah/dbschema/types"
 
 type SchemaWriter interface {
     SchemaExecutor
-    // DropAllTables removes all user schema objects. The context governs object
-    // discovery and destructive DDL. Implementations may use a short, bounded
-    // cleanup context after cancellation to restore connection-local settings
-    // before returning.
+    // DropAllTables removes supported user objects from the writer's configured
+    // schema or database. Implementations must refuse cleanup when dependencies
+    // or database-global ownership prevent them from confining the destructive
+    // effect to that scope. The context governs object discovery and DDL.
+    // Implementations may use a short, bounded cleanup context after
+    // cancellation to restore connection-local settings before returning.
     DropAllTables(ctx context.Context) error
     BeginTransaction(ctx context.Context) (SchemaTransaction, error)
     SetDryRun(dryRun bool)
@@ -5795,6 +5798,7 @@ func (c SkippedChange) Comment() string
 
 ## github.com/stokaro/ptah/migration/generator
 
+var ErrMigrationDirectoryChanged = errors.New("migration directory changed after migration planning") ...
 func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error)
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)
@@ -5812,6 +5816,8 @@ type MigrationFilePair struct{ ... }
 type MigrationFiles struct{ ... }
     func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
     func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error)
+type MigrationPlan struct{ ... }
+    func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error)
 type RollbackFromShadowOptions struct{ ... }
 type ShadowMismatch struct{ ... }
 type ShadowVerificationError struct{ ... }
@@ -5981,6 +5987,20 @@ type MigrationFiles struct {
 
 func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error)
+
+### github.com/stokaro/ptah/migration/generator.MigrationPlan
+
+package generator // import "github.com/stokaro/ptah/migration/generator"
+
+type MigrationPlan struct {
+    // Has unexported fields.
+}
+    MigrationPlan is a fully validated migration that has not been written to
+    disk yet. WriteFiles publishes the planned migration once.
+
+func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error)
+func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error)
+func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles, error)
 
 ### github.com/stokaro/ptah/migration/generator.RollbackFromShadowOptions
 
@@ -6571,6 +6591,7 @@ type FSProviderOption func(*FSMigrationProvider)
     func WithMigrationDirFormat(format MigrationDirFormat) FSProviderOption
     func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption
     func WithStatementObserver(observer StatementObserver) FSProviderOption
+    func WithStatementValidator(validator StatementValidator) FSProviderOption
 type MigrateUpOptions struct{ ... }
 type Migration struct{ ... }
     func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration
@@ -6623,6 +6644,7 @@ type StatementInterceptor interface{ ... }
 type StatementObservationError struct{ ... }
 type StatementObserver interface{ ... }
 type StatementObserverFunc func(context.Context, StatementEvent) error
+type StatementValidator interface{ ... }
 
 ### github.com/stokaro/ptah/migration/migrator.AtlasDownNotImplementedError
 
@@ -6806,6 +6828,7 @@ func WithAtlasTemplateData(data any) FSProviderOption
 func WithMigrationDirFormat(format MigrationDirFormat) FSProviderOption
 func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption
 func WithStatementObserver(observer StatementObserver) FSProviderOption
+func WithStatementValidator(validator StatementValidator) FSProviderOption
 
 ### github.com/stokaro/ptah/migration/migrator.MigrateUpOptions
 
@@ -7317,6 +7340,18 @@ type StatementObserverFunc func(context.Context, StatementEvent) error
     StatementObserverFunc adapts a function to StatementObserver.
 
 func (f StatementObserverFunc) ObserveStatement(ctx context.Context, event StatementEvent) error
+
+### github.com/stokaro/ptah/migration/migrator.StatementValidator
+
+package migrator // import "github.com/stokaro/ptah/migration/migrator"
+
+type StatementValidator interface {
+    ValidateStatement(stmt string) error
+}
+    StatementValidator rejects unsafe or unsupported migration statements
+    without taking over their execution. Every statement in a migration file is
+    validated before the first statement runs.
+
 
 ## github.com/stokaro/ptah/migration/planner
 

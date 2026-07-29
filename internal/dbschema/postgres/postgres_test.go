@@ -202,8 +202,8 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 		tableName := fmt.Sprintf("table_%02d", i)
 		tableRows = append(tableRows, []driver.Value{"public", tableName, "BASE TABLE", "", int64(0), false})
 		columnRows = append(columnRows,
-			[]driver.Value{tableName, "id", "integer", "int4", "NO", nil, nil, nil, nil, int64(1), "", "", ""},
-			[]driver.Value{tableName, "name", "character varying", "varchar", "NO", nil, int64(255), nil, nil, int64(2), "", "", ""},
+			[]driver.Value{tableName, "id", "integer", "int4", "NO", nil, nil, nil, nil, int64(1), "", "", "", ""},
+			[]driver.Value{tableName, "name", "character varying", "varchar", "NO", nil, int64(255), nil, nil, int64(2), "", "", "", ""},
 		)
 	}
 
@@ -225,6 +225,7 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 					"generated_kind",
 					"generated_expression",
 					"identity_kind",
+					"owned_sequence_name",
 				},
 				Rows: columnRows,
 			}, nil
@@ -457,48 +458,6 @@ func TestPostgreSQLWriterConcurrentTransactions(t *testing.T) {
 	c.Assert(db.BeginCount(), qt.Equals, goroutines)
 	c.Assert(db.ExecCount(), qt.Equals, goroutines)
 	c.Assert(db.CommitCount()+db.RollbackCount(), qt.Equals, goroutines)
-}
-
-func TestPostgreSQLWriterDropAllTablesCommitsOnSuccess(t *testing.T) {
-	c := qt.New(t)
-	db := dbtest.OpenWithExec(t, postgresDropAllQueryHandler, nil)
-	writer := NewPostgreSQLWriter(db.SQL, "public")
-
-	c.Assert(writer.DropAllTables(t.Context()), qt.IsNil)
-	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.ExecCount(), qt.Equals, 3)
-	c.Assert(db.CommitCount(), qt.Equals, 1)
-	c.Assert(db.RollbackCount(), qt.Equals, 0)
-}
-
-func TestPostgreSQLWriterDropAllTablesRollsBackOnFailure(t *testing.T) {
-	c := qt.New(t)
-	db := dbtest.OpenWithExec(t, postgresDropAllQueryHandler, func(query string, _ []driver.NamedValue) (driver.Result, error) {
-		if strings.Contains(query, "DROP TYPE") {
-			return nil, fmt.Errorf("boom")
-		}
-		return driver.RowsAffected(0), nil
-	})
-	writer := NewPostgreSQLWriter(db.SQL, "public")
-
-	err := writer.DropAllTables(t.Context())
-	c.Assert(err, qt.ErrorMatches, `failed to drop enum status: SQL execution failed: boom\nSQL: DROP TYPE IF EXISTS "status" CASCADE`)
-	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.CommitCount(), qt.Equals, 0)
-	c.Assert(db.RollbackCount(), qt.Equals, 1)
-}
-
-func postgresDropAllQueryHandler(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	switch {
-	case strings.Contains(query, "information_schema.tables"):
-		return dbtest.QueryResult{Columns: []string{"table_name"}, Rows: [][]driver.Value{{"users"}}}, nil
-	case strings.Contains(query, "pg_type"):
-		return dbtest.QueryResult{Columns: []string{"typname"}, Rows: [][]driver.Value{{"status"}}}, nil
-	case strings.Contains(query, "information_schema.sequences"):
-		return dbtest.QueryResult{Columns: []string{"sequence_name"}, Rows: [][]driver.Value{{"users_id_seq"}}}, nil
-	default:
-		return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
-	}
 }
 
 func TestQuoteIdent(t *testing.T) {

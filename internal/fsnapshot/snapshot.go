@@ -108,6 +108,26 @@ func (s Snapshot) Clone() Snapshot {
 	return cloned
 }
 
+// Equal reports whether both snapshots contain exactly the same paths and
+// bytes.
+func (s Snapshot) Equal(other Snapshot) bool {
+	return maps.EqualFunc(s.files, other.files, bytes.Equal)
+}
+
+// WithFiles returns a new immutable snapshot with files added or replaced.
+// Paths and contents are validated and cloned; the receiver is unchanged.
+func (s Snapshot) WithFiles(files map[string][]byte) (Snapshot, error) {
+	combined := make(map[string][]byte, len(s.files)+len(files))
+	maps.Copy(combined, s.files)
+	for name, contents := range files {
+		combined[name] = slices.Clone(contents)
+	}
+	if err := validateFilePaths(combined); err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{files: combined}, nil
+}
+
 func (s Snapshot) matching(include func(name string, entry fs.DirEntry) bool) Snapshot {
 	filtered := Snapshot{files: make(map[string][]byte, len(s.files))}
 	for _, name := range slices.Sorted(maps.Keys(s.files)) {

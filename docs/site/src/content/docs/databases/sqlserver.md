@@ -43,6 +43,8 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
   related catalog views.
 - Transactional migration apply for DDL SQL Server supports in transactions,
   and migration-run serialization through a session application lock.
+- Transactional dev-database cleanup across supported user schemas, with a
+  preflight that rejects replication-enabled databases and replicated tables.
 - One-row upsert rendering to `MERGE` through the Go DML AST (an embedder
   surface, not a CLI command).
 
@@ -108,6 +110,8 @@ rendered SQL always preserves your annotation text verbatim.
 - Index planning preserves key order, direction, and filtered predicates, but
   not included columns.
 - Engine-specific options such as `WITH (ONLINE = ON)` are not planned.
+- Dev-database cleanup rejects database replication, replicated tables, and
+  unsupported database-scoped artifacts before its first DDL statement.
 
 ## Next steps
 

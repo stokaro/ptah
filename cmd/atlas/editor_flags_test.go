@@ -93,8 +93,8 @@ CREATE TABLE users (
 
 	err := cmd.Execute()
 
-	// --edit opens the generated migration in $EDITOR and atlas.sum is
-	// refreshed afterwards, so the edited content still validates.
+	// --edit opens the staged migration in $EDITOR before publication, so
+	// atlas.sum commits the edited content without an inconsistent window.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, "Created migration file:")
 	files, globErr := filepath.Glob(filepath.Join(migrationsDir, "*_add_email.sql"))

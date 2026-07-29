@@ -36,9 +36,11 @@ func TestGetStaticScenarios(t *testing.T) {
 		c.Assert(scenario.Name, qt.Not(qt.Equals), "", qt.Commentf("Static scenario name should not be empty"))
 		c.Assert(scenario.Description, qt.Not(qt.Equals), "", qt.Commentf("Static scenario description should not be empty"))
 
-		// Should have either TestFunc or EnhancedTestFunc
-		hasTestFunc := scenario.TestFunc != nil || scenario.EnhancedTestFunc != nil
-		c.Assert(hasTestFunc, qt.IsTrue, qt.Commentf("Static scenario %s should have a test function", scenario.Name))
+		c.Assert(
+			scenario.IsRunnable(),
+			qt.IsTrue,
+			qt.Commentf("Static scenario %s should have a test function", scenario.Name),
+		)
 	}
 }
 
@@ -74,6 +76,7 @@ func TestConfiguredDatabaseConnectionsIncludesDistributedSQLAndSQLServer(t *test
 
 	t.Setenv("POSTGRES_URL", "postgres://postgres.example/db")
 	t.Setenv("MYSQL_URL", "mysql://mysql.example/db")
+	t.Setenv("MYSQL_CLEANUP_URL", "mysql://root@mysql.example/db")
 	t.Setenv("MARIADB_URL", "mariadb://mariadb.example/db")
 	t.Setenv("CLICKHOUSE_URL", "clickhouse://clickhouse.example/db")
 	t.Setenv("COCKROACHDB_URL", "cockroachdb://cockroach.example/defaultdb")
@@ -82,9 +85,22 @@ func TestConfiguredDatabaseConnectionsIncludesDistributedSQLAndSQLServer(t *test
 
 	connections := configuredDatabaseConnections()
 
-	c.Assert(connections["cockroachdb"], qt.Equals, "cockroachdb://cockroach.example/defaultdb")
-	c.Assert(connections["yugabytedb"], qt.Equals, "yugabytedb://yugabyte.example/yugabyte")
-	c.Assert(connections["sqlserver"], qt.Equals, "sqlserver://sqlserver.example/db")
+	c.Assert(connections["cockroachdb"], qt.Equals, databaseTarget{
+		connectionURL: "cockroachdb://cockroach.example/defaultdb",
+		cleanupURL:    "cockroachdb://cockroach.example/defaultdb",
+	})
+	c.Assert(connections["yugabytedb"], qt.Equals, databaseTarget{
+		connectionURL: "yugabytedb://yugabyte.example/yugabyte",
+		cleanupURL:    "yugabytedb://yugabyte.example/yugabyte",
+	})
+	c.Assert(connections["sqlserver"], qt.Equals, databaseTarget{
+		connectionURL: "sqlserver://sqlserver.example/db",
+		cleanupURL:    "sqlserver://sqlserver.example/db",
+	})
+	c.Assert(connections["mysql"], qt.Equals, databaseTarget{
+		connectionURL: "mysql://mysql.example/db",
+		cleanupURL:    "mysql://root@mysql.example/db",
+	})
 }
 
 func TestRequestedDatabaseConnectionsRejectsMissingRequestedURL(t *testing.T) {
@@ -92,7 +108,12 @@ func TestRequestedDatabaseConnectionsRejectsMissingRequestedURL(t *testing.T) {
 
 	_, err := requestedDatabaseConnections(
 		[]string{"postgres", "mysql"},
-		map[string]string{"postgres": "postgres://postgres.example/db"},
+		map[string]databaseTarget{
+			"postgres": {
+				connectionURL: "postgres://postgres.example/db",
+				cleanupURL:    "postgres://postgres.example/db",
+			},
+		},
 	)
 
 	c.Assert(err, qt.ErrorMatches, `missing database URL for requested database\(s\): mysql`)
@@ -103,16 +124,27 @@ func TestRequestedDatabaseConnectionsKeepsConfiguredURLs(t *testing.T) {
 
 	selected, err := requestedDatabaseConnections(
 		[]string{"postgres", "mysql"},
-		map[string]string{
-			"postgres": "postgres://postgres.example/db",
-			"mysql":    "mysql://mysql.example/db",
+		map[string]databaseTarget{
+			"postgres": {
+				connectionURL: "postgres://postgres.example/db",
+				cleanupURL:    "postgres://postgres.example/db",
+			},
+			"mysql": {
+				connectionURL: "mysql://mysql.example/db",
+				cleanupURL:    "mysql://root@mysql.example/db",
+			},
 		},
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(selected, qt.DeepEquals, map[string]string{
-		"postgres": "postgres://postgres.example/db",
-		"mysql":    "mysql://mysql.example/db",
+	c.Assert(selected, qt.HasLen, 2)
+	c.Assert(selected["postgres"], qt.Equals, databaseTarget{
+		connectionURL: "postgres://postgres.example/db",
+		cleanupURL:    "postgres://postgres.example/db",
+	})
+	c.Assert(selected["mysql"], qt.Equals, databaseTarget{
+		connectionURL: "mysql://mysql.example/db",
+		cleanupURL:    "mysql://root@mysql.example/db",
 	})
 }
 
@@ -121,14 +153,19 @@ func TestRequestedDatabaseConnectionsNormalizesSQLServerAliases(t *testing.T) {
 
 	selected, err := requestedDatabaseConnections(
 		[]string{"mssql"},
-		map[string]string{
-			"sqlserver": "sqlserver://sqlserver.example/db",
+		map[string]databaseTarget{
+			"sqlserver": {
+				connectionURL: "sqlserver://sqlserver.example/db",
+				cleanupURL:    "sqlserver://sqlserver.example/db",
+			},
 		},
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(selected, qt.DeepEquals, map[string]string{
-		"sqlserver": "sqlserver://sqlserver.example/db",
+	c.Assert(selected, qt.HasLen, 1)
+	c.Assert(selected["sqlserver"], qt.Equals, databaseTarget{
+		connectionURL: "sqlserver://sqlserver.example/db",
+		cleanupURL:    "sqlserver://sqlserver.example/db",
 	})
 }
 

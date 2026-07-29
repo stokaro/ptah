@@ -50,9 +50,7 @@ func main() {
 	fmt.Printf("  Migration name: %s\n", migrationName)
 	fmt.Println()
 
-	// Bound the initial database connection so a stuck host fails fast.
-	// The schema-reading work inside GenerateMigration is not yet
-	// context-aware — see its docstring.
+	// Bound database access, planning, lock acquisition, and publication.
 	//
 	// We cancel synchronously rather than via `defer` because the failure
 	// path below uses log.Fatalf, which calls os.Exit and skips deferreds.

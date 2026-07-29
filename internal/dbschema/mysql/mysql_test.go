@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/dbschema/dbtest"
@@ -366,16 +367,17 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 func TestNewMySQLWriter(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		c := qt.New(t)
-		writer := NewMySQLWriter(nil, "test_schema")
+		writer := NewMySQLWriter(nil, "test_schema", platform.MySQL)
 		c.Assert(writer, qt.IsNotNil)
 		c.Assert(writer.schema, qt.Equals, "test_schema")
+		c.Assert(writer.dialect, qt.Equals, platform.MySQL)
 		c.Assert(writer.db, qt.IsNil) // We passed nil for testing
 	})
 }
 
 func TestMySQLWriter_TransactionMethods_NoConnection(t *testing.T) {
 	c := qt.New(t)
-	writer := NewMySQLWriter(nil, "test")
+	writer := NewMySQLWriter(nil, "test", platform.MySQL)
 
 	t.Run("ExecuteSQL with no connection", func(t *testing.T) {
 		err := writer.ExecuteSQL(context.Background(), "SELECT 1")
@@ -403,7 +405,7 @@ func TestMySQLWriter_TransactionMethods_NoConnection(t *testing.T) {
 func TestMySQLWriterConcurrentTransactions(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.OpenWithExec(t, nil, nil)
-	writer := NewMySQLWriter(db.SQL, "test")
+	writer := NewMySQLWriter(db.SQL, "test", platform.MySQL)
 
 	const goroutines = 64
 	var wg sync.WaitGroup
@@ -443,41 +445,9 @@ func TestMySQLWriterConcurrentTransactions(t *testing.T) {
 	c.Assert(db.CommitCount()+db.RollbackCount(), qt.Equals, goroutines)
 }
 
-func TestMySQLWriterDropAllTablesSucceeds(t *testing.T) {
-	c := qt.New(t)
-	db := dbtest.OpenWithExec(t, mysqlDropAllQueryHandler, nil)
-	writer := NewMySQLWriter(db.SQL, "test")
-
-	c.Assert(writer.DropAllTables(t.Context()), qt.IsNil)
-	c.Assert(db.ExecCount(), qt.Equals, 3)
-}
-
-func TestMySQLWriterDropAllTablesReturnsExecutionFailure(t *testing.T) {
-	c := qt.New(t)
-	db := dbtest.OpenWithExec(t, mysqlDropAllQueryHandler, mysqlDropAllExecutionFailureHandler)
-	writer := NewMySQLWriter(db.SQL, "test")
-
-	err := writer.DropAllTables(t.Context())
-	c.Assert(err, qt.ErrorMatches, "failed to drop table users: SQL execution failed: boom\nSQL: DROP TABLE IF EXISTS `users`")
-}
-
-func mysqlDropAllExecutionFailureHandler(query string, _ []driver.NamedValue) (driver.Result, error) {
-	if strings.Contains(query, "DROP TABLE") {
-		return nil, fmt.Errorf("boom")
-	}
-	return driver.RowsAffected(0), nil
-}
-
-func mysqlDropAllQueryHandler(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	if !strings.Contains(query, "information_schema.tables") {
-		return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
-	}
-	return dbtest.QueryResult{Columns: []string{"table_name"}, Rows: [][]driver.Value{{"users"}}}, nil
-}
-
 func TestMySQLWriter_UtilityMethods(t *testing.T) {
 	c := qt.New(t)
-	writer := NewMySQLWriter(nil, "test")
+	writer := NewMySQLWriter(nil, "test", platform.MySQL)
 
 	t.Run("splitSQLStatements", func(t *testing.T) {
 		tests := []struct {
@@ -652,7 +622,7 @@ func TestMySQLWriter_UtilityMethods(t *testing.T) {
 
 func TestMySQLWriter_SchemaWriterInterface(t *testing.T) {
 	c := qt.New(t)
-	writer := NewMySQLWriter(nil, "test")
+	writer := NewMySQLWriter(nil, "test", platform.MySQL)
 	var _ types.SchemaWriter = writer
 	c.Assert(writer, qt.IsNotNil)
 }

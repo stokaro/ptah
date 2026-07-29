@@ -92,6 +92,31 @@ func TestResolve_MigrationDirReplaysOnDevDatabase(t *testing.T) {
 	c.Assert(state.Schema.Tables, qt.HasLen, 1)
 	c.Assert(state.Schema.Tables[0].Name, qt.Equals, "replayed_users")
 	c.Assert(state.DefaultSchema, qt.Equals, "main")
+	assertSQLiteDevEmpty(c, devURL)
+}
+
+func TestResolve_MigrationDirFailureCleansPartialDevDatabase(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "1_create_users.sql"),
+		[]byte(`
+CREATE TABLE users (id INTEGER PRIMARY KEY);
+CREATE VIEW user_ids AS SELECT id FROM users;
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "2_invalid.sql"),
+		[]byte("THIS IS NOT SQL;\n"), 0o600), qt.IsNil)
+	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
+	set := classifySingle(t, "--to", "file://"+dir)
+
+	_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{
+		Dialect: "sqlite",
+		DevURL:  devURL,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `(?s)--to "file://.*": replay migration 2 on dev database: .*`)
+	assertSQLiteDevEmpty(c, devURL)
 }
 
 func TestResolve_MigrationDirRequiresDevURL(t *testing.T) {
@@ -225,4 +250,22 @@ func TestResolve_LocalDirectoryWithoutSumKeepsLegacyError(t *testing.T) {
 	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
 
 	c.Assert(err, qt.ErrorMatches, `schema file is a directory: .*`)
+}
+
+func assertSQLiteDevEmpty(c *qt.C, devURL string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var count int
+	err = conn.QueryRowContext(c.Context(), `
+		SELECT COUNT(*)
+		FROM pragma_table_list
+		WHERE schema = ?
+		  AND type IN ('table', 'view', 'virtual')
+		  AND name NOT LIKE 'sqlite_%'
+		  AND name <> 'schema_migrations'
+	`, "main").Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 0)
 }

@@ -2,8 +2,6 @@ package generator
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -34,42 +32,40 @@ func TestCheckDestructiveAllowed(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-func TestCreateSafetyReportFile(t *testing.T) {
+func TestRenderSafetyReport(t *testing.T) {
 	c := qt.New(t)
 
-	dir := t.TempDir()
-	upFile := filepath.Join(dir, "1234567890_drop_legacy.up.sql")
-	err := os.WriteFile(upFile, []byte("DROP TABLE legacy;\n"), 0o600)
-	c.Assert(err, qt.IsNil)
-
-	reportFile, err := createSafetyReportFile(upFile, "html", []safety.StatementAssessment{
-		{
-			Index:     1,
-			NodeType:  "sql",
-			Subject:   "legacy",
-			Statement: "DROP TABLE legacy;",
-			Severity:  safety.Destructive,
-			Reason:    "DROP TABLE removes the table and all rows",
+	reportFile, content, err := renderSafetyReport(
+		"1234567890_drop_legacy.up.sql",
+		"html",
+		[]safety.StatementAssessment{
+			{
+				Index:     1,
+				NodeType:  "sql",
+				Subject:   "legacy",
+				Statement: "DROP TABLE legacy;",
+				Severity:  safety.Destructive,
+				Reason:    "DROP TABLE removes the table and all rows",
+			},
 		},
-	})
+	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(reportFile, qt.Equals, filepath.Join(dir, "1234567890_drop_legacy.safety.html"))
-
-	content, err := os.ReadFile(reportFile)
-	c.Assert(err, qt.IsNil)
+	c.Assert(reportFile, qt.Equals, "1234567890_drop_legacy.safety.html")
 	c.Assert(string(content), qt.Contains, "Ptah migration safety report")
 	c.Assert(string(content), qt.Contains, "DROP TABLE legacy;")
 	c.Assert(string(content), qt.Contains, "destructive")
 
-	jsonReportFile, err := createSafetyReportFile(upFile, "json", []safety.StatementAssessment{{
-		Index:    1,
-		Severity: safety.Destructive,
-		Reason:   "DROP TABLE removes the table and all rows",
-	}})
+	jsonReportFile, rawJSON, err := renderSafetyReport(
+		"1234567890_drop_legacy.up.sql",
+		"json",
+		[]safety.StatementAssessment{{
+			Index:    1,
+			Severity: safety.Destructive,
+			Reason:   "DROP TABLE removes the table and all rows",
+		}},
+	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(jsonReportFile, qt.Equals, filepath.Join(dir, "1234567890_drop_legacy.safety.json"))
-	rawJSON, err := os.ReadFile(jsonReportFile)
-	c.Assert(err, qt.IsNil)
+	c.Assert(jsonReportFile, qt.Equals, "1234567890_drop_legacy.safety.json")
 	var report safety.Report
 	c.Assert(json.Unmarshal(rawJSON, &report), qt.IsNil)
 	c.Assert(report.Highest, qt.Equals, safety.Destructive)

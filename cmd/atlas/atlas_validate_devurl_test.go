@@ -37,7 +37,7 @@ func TestCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	assertSQLiteTableCount(c, devDBPath, "atlas_validate_dev_url", 1)
+	assertSQLiteTableCount(c, devDBPath, "atlas_validate_dev_url", 0)
 }
 
 func TestNewCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) {
@@ -62,7 +62,7 @@ func TestNewCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	assertSQLiteTableCount(c, devDBPath, "compat_validate_dev_url", 1)
+	assertSQLiteTableCount(c, devDBPath, "compat_validate_dev_url", 0)
 }
 
 func writeAtlasMigration(c *qt.C, dir, name, sql string) {
