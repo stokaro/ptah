@@ -7,10 +7,15 @@
 # This workflow runs that tidy on the bot's PR branch and pushes the sync
 # commit automatically.
 #
-# Token note: pushes made with the default GITHUB_TOKEN do not retrigger CI
-# runs. Configure a fine-grained PAT (Contents: read/write on this repository)
-# as the TESTKIT_SYNC_TOKEN secret so the sync commit re-runs the checks; with
-# the fallback token the sync still lands but the checks need a manual re-run.
+# Token resolution, best first:
+#   1. A GitHub App installation token, minted per run when the
+#      TESTKIT_SYNC_APP_ID repository variable and TESTKIT_SYNC_APP_KEY secret
+#      are configured (app permissions: Contents read/write on this repo).
+#      Pushes made with it retrigger CI.
+#   2. The TESTKIT_SYNC_TOKEN fine-grained PAT secret, if present. Also
+#      retriggers CI.
+#   3. The default GITHUB_TOKEN. The sync still lands, but GitHub suppresses
+#      workflow runs for its pushes, so the checks need a manual re-run.
 #
 # pull_request_target is used because Dependabot-triggered pull_request runs
 # get a read-only GITHUB_TOKEN. The job is restricted to bot-authored branches
@@ -36,11 +41,19 @@ jobs:
        startsWith(github.event.pull_request.head.ref, 'dependabot/'))
     runs-on: ubuntu-latest
     steps:
+      - name: Mint a GitHub App token
+        id: app-token
+        if: vars.TESTKIT_SYNC_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.TESTKIT_SYNC_APP_ID }}
+          private-key: ${{ secrets.TESTKIT_SYNC_APP_KEY }}
+
       - name: Check out the pull request branch
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.TESTKIT_SYNC_TOKEN || github.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.TESTKIT_SYNC_TOKEN || github.token }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
