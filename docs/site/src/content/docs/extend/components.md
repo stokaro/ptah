@@ -414,6 +414,33 @@ and `DataType`. In Atlas compatibility mode, a bare file-header
 findings. Report adapters should omit ignored files while retaining them in the
 captured snapshot.
 
+A host tool can add its own analyzers to the same run without reimplementing
+the dialect-aware scanner. `Options.ExtraRules` appends per-run rules — the
+preferred shape, with no global state — and `lint.Register` installs a rule
+process-wide. Either way, the rule receives statements Ptah has already
+prepared: `Statement.Words` is the comment-free token-word sequence the
+built-in rules scan, and `Statement.Canonical` is the uppercased display
+form. This example is compile-checked in `examples/reusable_components`:
+
+```go
+findings, err = lint.LintFS(fsys, lint.Options{
+	Dialect: "postgres",
+	ExtraRules: []lint.Rule{{
+		Code:     "ORG101",
+		Title:    "TEXT column without explicit limit",
+		Severity: lint.SeverityWarning,
+		CheckStatement: func(stmt *lint.Statement) (bool, string) {
+			return slices.Contains(stmt.Words, "TEXT"), "use VARCHAR(n) so limits stay reviewable"
+		},
+	}},
+})
+```
+
+Custom codes flow through reporting, `--disable`, inline `-- ptah:nolint`
+directives, and `.ptah-lint.yaml` per-rule severity and path excludes
+exactly like built-in codes; the configuration surface is documented in
+[Integrity and safety](../../versioned/integrity-and-safety/).
+
 ### Use capabilities
 
 Use capabilities when syntax depends on a dialect version rather than only a

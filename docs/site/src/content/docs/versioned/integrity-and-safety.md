@@ -128,16 +128,79 @@ Useful controls, all designed for CI:
 - `--fail-on error` (default) fails only on error-severity findings;
   `--fail-on any` fails on warnings too; `--fail-on none` always exits `0`.
 - `--format json`, `--format sarif`, and `--format github-actions` feed code
-  scanners and PR annotations.
+  scanners and PR annotations. The SARIF output is a SARIF 2.1.0 document
+  that GitHub code scanning ingests — [CI](../../testing/ci/) shows the
+  upload step.
 - `--dialect` gates dialect-specific rules; `--dev-url` infers the dialect
   and additionally replays the directory on the dev database.
-- A `.ptah-lint.yaml` in the migration directory pins rule severities and
-  disabled rules; `--disable DS101` (or a family such as `MY`) does it ad
-  hoc.
+- `--disable DS101` (or a family such as `MY`) skips rules ad hoc; a
+  committed `.ptah-lint.yaml` does it persistently and adds per-rule
+  severity and path scoping — see below.
 
 For OCI-distributed directories, `lint --dir oci://...` lints the published
 artifact, and `--attach` stores the canonical report next to it — see
 [OCI registry artifacts](../../operate/oci-registry/).
+
+### Configure rules with `.ptah-lint.yaml`
+
+Commit a `.ptah-lint.yaml` next to the migration files to make lint policy
+part of the reviewed migration directory. Without an explicit `--config`
+path, Ptah loads `<dir>/.ptah-lint.yaml` when present:
+
+```yaml
+dialect: postgres
+disabled-rules:
+  - MF103
+  - MY
+rules:
+  DS103:
+    severity: warning
+  DS102:
+    severity: error
+    exclude:
+      - legacy/**
+```
+
+- `dialect` sets the default lint dialect; `--dialect` overrides it.
+- `disabled-rules` lists rule codes (`DS101`) or family prefixes (`MY`) to
+  skip entirely; entries merge with `--disable` flags.
+- `rules` keys name an exact code or a family prefix; the most specific key
+  wins, so a `DS102` entry beats a `DS` entry.
+- `severity` accepts `warning` or `error` and replaces the rule's default
+  severity on its findings — the level that `--fail-on` and the apply-time
+  destructive gate below evaluate. Any other value fails config parsing
+  (exit `2`).
+- `exclude` lists slash-separated path globs (`**` crosses directory
+  levels) where the rule is skipped, matched against each migration file's
+  path — "DS102 is acceptable under `legacy/`" without disabling the rule
+  everywhere.
+
+Precedence: a rule listed in `disabled-rules` never runs, regardless of its
+`rules` entry; then `exclude` skips the matching files; then `severity`
+relabels the findings that remain. Per-rule entries apply to custom
+analyzer codes the same way as to built-in ones — see
+[Reusable components](../../extend/components/) for registering custom
+rules from Go.
+
+### Suppress a single statement inline
+
+When one reviewed statement is acceptable but the rule should stay active
+everywhere else, put a `ptah:nolint` comment directly above it:
+
+```sql
+-- ptah:nolint DS102
+ALTER TABLE users DROP COLUMN archived_note;
+```
+
+The directive suppresses only the named rules, and only for the next
+statement. List several codes separated by spaces or commas, name a family
+(`DS`), or write a bare `-- ptah:nolint` to silence every rule for that one
+statement. `-- atlas:nolint DS102` is accepted as an alias with the same
+statement-scoped behavior, so a directory shared with Atlas tooling keeps
+one set of directives. Atlas analyzer-name selectors (such as
+`destructive`) and whole-file `atlas:nolint` headers take effect only on
+the Atlas-compatible surface — see
+[Atlas migrate commands](../../atlas/migrate-commands/).
 
 ## The destructive-change gate
 
@@ -156,6 +219,29 @@ error: error running migrations: pending migrations contain destructive statemen
 
 Use `--allow-destructive` only after the plan has been reviewed and the
 rollback path is understood.
+
+The apply-time gate loads the same `.ptah-lint.yaml` as
+`ptah migrations lint` and blocks on error-severity `DS` data-safety
+findings. That makes the escape hatch proportional: a rule downgraded with
+`severity: warning`, listed under `disabled-rules`, or excluded for a path
+stops blocking exactly that reviewed pattern — a widening
+`ALTER COLUMN ... TYPE` under `rules: {DS103: {severity: warning}}` applies
+without `--allow-destructive` — while a `DROP TABLE` in another pending
+file of the same batch still aborts the apply. `--allow-destructive`
+remains the all-or-nothing per-run override rather than the only way past
+a single warning-grade finding.
+
+Know the limits of this gate: the policy file is not tamper-evident.
+`ptah.sum` hashes only the migration `*.sql` files, so
+`ptah migrations validate` and `up --verify-sum` still pass when
+`.ptah-lint.yaml` is added or edited out-of-band, and the apply prints no
+notice when the config suppresses a destructive finding — a one-line
+`disabled-rules: [DS]` dropped next to the migrations at deploy time
+disables this gate silently. Loosening the gate is a visible committed
+change only if your process makes it one: commit `.ptah-lint.yaml`, treat
+any edit to it as an edit to the gate in review, and restrict writes to
+the deployed migration directory, because the integrity file does not
+protect the policy the way it protects the SQL.
 
 `ptah migrations up` captures the migration directory before checksum
 verification, provider registration, and destructive linting. The safety gate
