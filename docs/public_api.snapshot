@@ -5942,6 +5942,12 @@ type GenerateMigrationOptions struct {
     // plan (with a comment in its place), so it never trips the CheckDestructive
     // gate.
     DiffPolicy DiffPolicy
+    // SchemaQualifier, when non-empty, rewrites every object named by the
+    // generated up and down statements to this custom schema qualifier, so the
+    // files can be applied to a schema other than the one they were planned
+    // against. The plan must stay scoped to a single schema, and only dialects
+    // with schema-qualified object names are supported.
+    SchemaQualifier string
 }
     GenerateMigrationOptions contains options for migration generation
 
@@ -7107,6 +7113,7 @@ func (m *Migrator) MigrationProvider() MigrationProvider
 func (m *Migrator) MigrationsTableIdentifier() string
 func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOptions) error
 func (m *Migrator) SetAtlasRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
+func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
 func (m *Migrator) WithDefaultTimeouts(timeouts MigrationTimeouts) *Migrator
 func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator
 func (m *Migrator) WithLogger(l *slog.Logger) *Migrator

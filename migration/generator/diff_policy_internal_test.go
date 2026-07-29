@@ -12,6 +12,7 @@ import (
 
 	"github.com/stokaro/ptah/core/platform/capability"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/safety"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -37,6 +38,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
 		100,
 		"drop_legacy",
 		DiffPolicy{SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropTable}},
+		atlasmigrate.Qualifier{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -82,6 +84,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 		100,
 		"drop_legacy",
 		DiffPolicy{SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropTable}},
+		atlasmigrate.Qualifier{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -130,6 +133,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexKeepsRedefinition(t *testing.T
 		// concurrent_index policy is OFF; only skip: [drop_index] is set, proving
 		// the heuristic alone reaches the buggy path.
 		DiffPolicy{SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropIndex}},
+		atlasmigrate.Qualifier{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -163,6 +167,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexPolicyForcesConcurrent(t *te
 		100,
 		"add_index",
 		DiffPolicy{ConcurrentIndex: true},
+		atlasmigrate.Qualifier{},
 	)
 
 	c.Assert(err, qt.IsNil)

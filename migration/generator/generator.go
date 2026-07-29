@@ -23,6 +23,7 @@ import (
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/deporder"
@@ -82,6 +83,12 @@ type GenerateMigrationOptions struct {
 	// plan (with a comment in its place), so it never trips the CheckDestructive
 	// gate.
 	DiffPolicy DiffPolicy
+	// SchemaQualifier, when non-empty, rewrites every object named by the
+	// generated up and down statements to this custom schema qualifier, so the
+	// files can be applied to a schema other than the one they were planned
+	// against. The plan must stay scoped to a single schema, and only dialects
+	// with schema-qualified object names are supported.
+	SchemaQualifier string
 }
 
 // DiffPolicy is the generator-level view of the project diff policy.
@@ -363,7 +370,16 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	version = nextAvailableMigrationVersion(opts.OutputDir, version, opts.MigrationName)
 	slog.Debug("Generated migration version", "version", version)
 
-	specs, assessments, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, info, version, opts.MigrationName, opts.DiffPolicy)
+	qualifier, err := atlasmigrate.ParseQualifier(opts.SchemaQualifier)
+	if err != nil {
+		return nil, err
+	}
+	qualifier = qualifier.WithErrorLabel("--qualifier")
+	if err := qualifier.ValidateScope(info.Dialect, opts.Schemas); err != nil {
+		return nil, err
+	}
+
+	specs, assessments, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, info, version, opts.MigrationName, opts.DiffPolicy, qualifier)
 	if err != nil {
 		return nil, err
 	}
@@ -437,6 +453,7 @@ func planGeneratedMigrationSpecs(
 	version int64,
 	migrationName string,
 	policy DiffPolicy,
+	qualifier atlasmigrate.Qualifier,
 ) ([]generatedMigrationSpec, []safety.StatementAssessment, error) {
 	// Apply the diff policy once, up front, BEFORE any concurrent-index split.
 	// The split separates an index redefinition's added and removed entries into
@@ -466,6 +483,7 @@ func planGeneratedMigrationSpecs(
 	if !requiresNoTransaction {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
 			Diff:         diff,
+			Qualifier:    qualifier,
 			Generated:    generated,
 			DBSchema:     dbSchema,
 			Dialect:      info.Dialect,
@@ -483,6 +501,7 @@ func planGeneratedMigrationSpecs(
 	if len(nodeGroups.transactional) == 0 {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
 			Diff:                diff,
+			Qualifier:           qualifier,
 			Generated:           generated,
 			DBSchema:            dbSchema,
 			Dialect:             info.Dialect,
@@ -507,6 +526,7 @@ func planGeneratedMigrationSpecs(
 	if diffGroups.transactional.HasChanges() {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
 			Diff:         diffGroups.transactional,
+			Qualifier:    qualifier,
 			Generated:    generated,
 			DBSchema:     dbSchema,
 			Dialect:      info.Dialect,
@@ -526,6 +546,7 @@ func planGeneratedMigrationSpecs(
 	if diffGroups.noTransaction.HasChanges() {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
 			Diff:                diffGroups.noTransaction,
+			Qualifier:           qualifier,
 			Generated:           generated,
 			DBSchema:            dbSchema,
 			Dialect:             info.Dialect,
@@ -574,6 +595,7 @@ type generatedMigrationSpecOptions struct {
 	Name                string
 	ConcurrentIndexRefs []types.IndexRef
 	NoTransaction       bool
+	Qualifier           atlasmigrate.Qualifier
 }
 
 func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
@@ -584,6 +606,9 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, opts.Generated, opts.Dialect, plannerOpts)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating up migration plan: %w", err)
+	}
+	if err := opts.Qualifier.ApplyToPlan(opts.Dialect, opts.Generated, upNodes); err != nil {
+		return generatedMigrationSpec{}, nil, err
 	}
 	assessments, err := safety.AssessRenderedWithCapabilities(upNodes, opts.Dialect, opts.Capabilities)
 	if err != nil {
@@ -605,7 +630,7 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 	// so the down migration reverses only what the up migration actually did: a
 	// skipped destructive change is absent from the diff, so its inverse (e.g. a
 	// CREATE TABLE that would collide with the kept table) is never emitted.
-	downSQL, err := generateDownMigrationSQLWithOptions(opts.Diff, opts.Generated, opts.DBSchema, opts.Dialect, directiveOpts, opts.Capabilities)
+	downSQL, err := generateDownMigrationSQLQualified(opts.Diff, opts.Generated, opts.DBSchema, opts.Dialect, directiveOpts, opts.Qualifier, opts.Capabilities)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
@@ -941,6 +966,18 @@ func generateDownMigrationSQLWithOptions(
 	directiveOpts generatedDirectiveOptions,
 	capsOverride ...capability.Capabilities,
 ) (string, error) {
+	return generateDownMigrationSQLQualified(diff, generated, dbSchema, dialect, directiveOpts, atlasmigrate.Qualifier{}, capsOverride...)
+}
+
+func generateDownMigrationSQLQualified(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dbSchema *dbschematypes.DBSchema,
+	dialect string,
+	directiveOpts generatedDirectiveOptions,
+	qualifier atlasmigrate.Qualifier,
+	capsOverride ...capability.Capabilities,
+) (string, error) {
 	// For down migrations, we need to use the current database schema as the "generated" schema
 	// since we're reverting back to the current state
 	dbAsGoSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
@@ -957,9 +994,9 @@ func generateDownMigrationSQLWithOptions(
 	if len(capsOverride) > 0 {
 		caps = capsOverride[0]
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(reverseDiff, dbAsGoSchema, dialect, caps)
+	statements, err := planDownMigrationStatements(reverseDiff, dbAsGoSchema, dialect, caps, qualifier)
 	if err != nil {
-		return "", fmt.Errorf("error generating down migration SQL: %w", err)
+		return "", err
 	}
 
 	if len(statements) == 0 {
@@ -974,6 +1011,38 @@ func generateDownMigrationSQLWithOptions(
 		time.Now().Format(time.RFC3339))
 
 	return withGeneratedTimeoutDirectivesForOptions(header+strings.Join(statements, ";\n")+";", dialect, directiveOpts), nil
+}
+
+// planDownMigrationStatements renders the reversed diff into ordered down
+// statements. Without a qualifier it is the historical direct-render path;
+// with one, the plan is generated as AST first so the qualifier rewrite runs
+// before rendering, mirroring the up direction.
+func planDownMigrationStatements(
+	reverseDiff *types.SchemaDiff,
+	dbAsGoSchema *goschema.Database,
+	dialect string,
+	caps capability.Capabilities,
+	qualifier atlasmigrate.Qualifier,
+) ([]string, error) {
+	if qualifier.IsZero() {
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(reverseDiff, dbAsGoSchema, dialect, caps)
+		if err != nil {
+			return nil, fmt.Errorf("error generating down migration SQL: %w", err)
+		}
+		return statements, nil
+	}
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, dbAsGoSchema, dialect, planner.Options{Capabilities: caps})
+	if err != nil {
+		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
+	}
+	if err := qualifier.ApplyToPlan(dialect, dbAsGoSchema, nodes); err != nil {
+		return nil, err
+	}
+	output, err := renderer.RenderSQLWithCapabilities(dialect, caps, nodes...)
+	if err != nil {
+		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
+	}
+	return sqlutil.SplitSQLStatements(output), nil
 }
 
 func withGeneratedTimeoutDirectivesForOptions(sql, dialect string, opts generatedDirectiveOptions) string {

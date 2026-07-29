@@ -3,6 +3,7 @@ package atlasschema
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
@@ -28,6 +29,10 @@ type DiffOptions struct {
 	// ProjectEnv expands env:// desired-state references in FromURLs and
 	// ToURLs.
 	ProjectEnv atlassource.ProjectEnv
+	// ConnectTimeout bounds opening database-backed sources (including the
+	// dev database) and reading their initial connection metadata. A zero
+	// value leaves the caller's context deadline unchanged.
+	ConnectTimeout time.Duration
 }
 
 // Diff computes the Atlas schema diff between two desired-state sources.
@@ -59,9 +64,10 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	}
 
 	resolveOpts := atlassource.ResolveOptions{
-		Dialect:     dialect,
-		DialectFlag: dialectFlag,
-		DevURL:      opts.DevURL,
+		Dialect:        dialect,
+		DialectFlag:    dialectFlag,
+		DevURL:         opts.DevURL,
+		ConnectTimeout: opts.ConnectTimeout,
 	}
 	fromState, err := fromSet.Resolve(ctx, resolveOpts)
 	if err != nil {

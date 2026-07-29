@@ -141,6 +141,28 @@ runs an external loader, and repeated sources merge into one composite desired
 schema. See [Composite desired schema](../../schema/composite/) for the merge
 rules.
 
+## Diff two arbitrary schema states
+
+`schema compare` and `schema drift` always pair desired sources with the live
+`--db-url` database. `ptah schema diff` generalizes the pair: each side is a
+schema file (repeatable), a database URL, or an Atlas-format migration
+directory, so CI can answer "do these two schema files differ?" or "does this
+migration directory converge to `schema.hcl`?" without a production database:
+
+```bash
+ptah schema diff \
+  --from old-schema.sql \
+  --to new-schema.sql \
+  --dev-url "sqlite://$PWD/diff-dev.db"
+```
+
+The SQL dialect is pinned by `--dev-url` first, then by `--from`/`--to`
+database URLs; schema files alone still require `--dev-url` (a disposable
+database that is reset destructively). `--format json` emits a stable
+`{"statements": [...]}` document, and `--schemas`, `--include`, and
+`--exclude` scope both sides. Synced states print
+`Schemas are synced, no changes to be made.`
+
 ## Failure modes
 
 - `ptah schema drift` exits `2` (not `1`) when the check itself cannot run —

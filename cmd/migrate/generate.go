@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -10,9 +11,12 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlasurl"
+	"github.com/stokaro/ptah/internal/migrationreplay"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 const (
@@ -27,6 +31,10 @@ const (
 	generateCheckDestructiveFlag = "check-destructive"
 	generateAllowDestructiveFlag = "allow-destructive"
 	generateReportFormatFlag     = "report"
+	generateReplayFlag           = "replay"
+	generateDevURLFlag           = "dev-url"
+	generateDirFormatFlag        = "dir-format"
+	generateQualifierFlag        = "qualifier"
 )
 
 func NewMigrateGenerateCommand() *cobra.Command {
@@ -38,7 +46,14 @@ func NewMigrateGenerateCommand() *cobra.Command {
 When --shadow-db is set, or migrate.generate.shadow_db is configured in ptah.yaml, Ptah verifies
 the generated candidate on the shadow database before writing files:
 it drops all shadow objects, replays existing migrations, applies the candidate, re-introspects the schema,
-and performs an up/down/up round-trip.`,
+and performs an up/down/up round-trip.
+
+With --replay, the current state is derived without any access to the target
+database: the existing migration directory is replayed on the disposable
+--dev-url database (which is reset destructively first), and the next
+migration is generated from the difference between that replayed state and
+the desired schema sources. This lets CI generate the next migration from the
+repository alone.`,
 		RunE: migrateGenerateCommand,
 	}
 
@@ -51,6 +66,10 @@ and performs an up/down/up round-trip.`,
 	flags.String(generateMigrationsDirFlag, "", "Directory containing existing migrations and receiving generated files (required)")
 	flags.String(generateNameFlag, "migration", "Migration name")
 	flags.String(generateShadowDBFlag, "", "Shadow database URL used to verify generated migrations before writing files")
+	flags.Bool(generateReplayFlag, false, "Derive the current state by replaying --migrations-dir on the --dev-url database instead of introspecting --db-url")
+	flags.String(generateDevURLFlag, "", "Disposable dev database URL the migration directory is replayed on with --replay; it is reset destructively")
+	flags.String(generateDirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format used by --replay: auto, ptah, or atlas")
+	flags.String(generateQualifierFlag, "", "Qualify every object in the generated statements with a custom schema qualifier (single-schema plans only)")
 	flags.Bool(generateCheckDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.Bool(generateAllowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
 	flags.String(generateReportFormatFlag, "", `Safety report format next to the migration files: "", html, or json`)
@@ -62,6 +81,27 @@ and performs an up/down/up round-trip.`,
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
+}
+
+// validateGenerateReplayMode rejects the target database URL in --replay mode,
+// so the two current-state sources can never silently mix.
+func validateGenerateReplayMode(cmd *cobra.Command) error {
+	if cmd.Flags().Changed(generateDBURLFlag) {
+		return fmt.Errorf("--%s cannot be combined with --%s: the current state is derived by replaying the migration directory on --%s",
+			generateDBURLFlag, generateReplayFlag, generateDevURLFlag)
+	}
+	return nil
+}
+
+// validateGenerateIntrospectMode rejects replay-only flags outside --replay
+// mode.
+func validateGenerateIntrospectMode(cmd *cobra.Command) error {
+	for _, flag := range []string{generateDevURLFlag, generateDirFormatFlag} {
+		if cmd.Flags().Changed(flag) {
+			return fmt.Errorf("--%s requires --%s", flag, generateReplayFlag)
+		}
+	}
+	return nil
 }
 
 func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
@@ -132,6 +172,22 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	replay, err := cmd.Flags().GetBool(generateReplayFlag)
+	if err != nil {
+		return err
+	}
+	devURL, err := cmd.Flags().GetString(generateDevURLFlag)
+	if err != nil {
+		return err
+	}
+	dirFormatValue, err := cmd.Flags().GetString(generateDirFormatFlag)
+	if err != nil {
+		return err
+	}
+	qualifierValue, err := cmd.Flags().GetString(generateQualifierFlag)
+	if err != nil {
+		return err
+	}
 	schemasValue, err := cmd.Flags().GetString(dbcli.SchemasFlagName)
 	if err != nil {
 		return err
@@ -139,8 +195,27 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	schemasValue = dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, schemasValue, dbcli.JoinSchemas(projectCfg.Schemas))
 	connectTimeoutValue = dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, connectTimeoutValue, projectCfg.Migration.ConnectTimeout)
 
-	if dbURL == "" {
-		return fmt.Errorf("database URL is required")
+	// Early qualifier syntax validation; the generator re-validates the
+	// single-schema scope and dialect support once the dialect is known.
+	if _, err := atlasmigrate.ParseQualifier(qualifierValue); err != nil {
+		return err
+	}
+	targetURL := dbURL
+	if replay {
+		if err := validateGenerateReplayMode(cmd); err != nil {
+			return err
+		}
+		if strings.TrimSpace(devURL) == "" {
+			return fmt.Errorf("--%s is required with --%s", generateDevURLFlag, generateReplayFlag)
+		}
+		targetURL = devURL
+	} else {
+		if err := validateGenerateIntrospectMode(cmd); err != nil {
+			return err
+		}
+		if dbURL == "" {
+			return fmt.Errorf("database URL is required")
+		}
 	}
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
@@ -149,7 +224,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid migrations directory: %w", err)
 	}
-	dialect, err := atlasurl.DialectFromURL(dbURL)
+	dialect, err := atlasurl.DialectFromURL(targetURL)
 	if err != nil {
 		return err
 	}
@@ -171,9 +246,26 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
 	defer cancelConnect()
 
+	var devConn *dbschema.DatabaseConnection
+	if replay {
+		dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+		if err != nil {
+			return err
+		}
+		devConn, err = dbschema.ConnectToDatabase(connectCtx, devURL)
+		if err != nil {
+			return fmt.Errorf("connect to --%s: %w", generateDevURLFlag, err)
+		}
+		defer dbschema.CloseAndWarn(devConn)
+		if err := migrationreplay.ReplayOnConnection(cmd.Context(), devConn, migrationsDir, dirFormat); err != nil {
+			return err
+		}
+	}
+
 	files, err := generator.GenerateMigration(connectCtx, generator.GenerateMigrationOptions{
 		Generated:         generated,
-		DatabaseURL:       dbURL,
+		DatabaseURL:       targetURL,
+		DBConn:            devConn,
 		MigrationName:     name,
 		OutputDir:         migrationsDir,
 		Schemas:           dbcli.ParseSchemas(schemasValue),
@@ -181,6 +273,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		AllowDestructive:  allowDestructive,
 		ReportFormat:      reportFormat,
 		ShadowDatabaseURL: shadowDB,
+		SchemaQualifier:   qualifierValue,
 		DiffPolicy: generator.DiffPolicy{
 			SkipChangeKinds: projectCfg.Diff.SkipChangeKinds(),
 			ConcurrentIndex: projectCfg.Diff.ConcurrentIndexCreate(),
@@ -194,7 +287,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Generated migration files for %s:\n", dbschema.FormatDatabaseURL(dbURL))
+	fmt.Fprintf(out, "Generated migration files for %s:\n", dbschema.FormatDatabaseURL(targetURL))
 	for _, pair := range files.Files {
 		fmt.Fprintf(out, "UP:   %s\n", pair.UpFile)
 		fmt.Fprintf(out, "DOWN: %s\n", pair.DownFile)

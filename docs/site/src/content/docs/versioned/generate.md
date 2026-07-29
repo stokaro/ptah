@@ -170,6 +170,29 @@ Generated migration files for ...
 The shadow database must be an ephemeral database of the same engine as the
 target — never a real environment.
 
+## Generate without the target database (replay)
+
+`--replay` derives the current state without any access to the target
+database: the existing directory is replayed on a disposable `--dev-url`
+database (reset destructively first), and the next migration is generated
+from the difference between that replayed state and the desired sources. CI
+can generate the next migration from the repository alone:
+
+```bash
+ptah migrations generate \
+  --replay \
+  --dev-url "sqlite://replay-dev.db" \
+  --root-dir ./models \
+  --migrations-dir ./migrations \
+  --name add_posts
+```
+
+`--db-url` is rejected in replay mode — the migration directory is the source
+of truth for the current state. `--dir-format` selects the replayed
+directory's layout (`auto`, `ptah`, or `atlas`), and `--qualifier` prefixes
+every object in the generated statements with a custom schema qualifier for
+single-schema plans on dialects with schema-qualified names.
+
 ## Write a migration by hand
 
 Create an empty pair when you want to author the SQL yourself — a data
