@@ -294,7 +294,9 @@ jobs:
         env:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MYSQL_CLEANUP_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          MARIADB_CLEANUP_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"

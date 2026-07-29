@@ -43,6 +43,11 @@ type listOptions struct {
 	showAll     bool
 }
 
+type databaseTarget struct {
+	connectionURL string
+	cleanupURL    string
+}
+
 func newRootCommand() *cobra.Command {
 	opts := rootOptions{}
 	cmd := &cobra.Command{
@@ -147,8 +152,14 @@ func runIntegrationTests(_ *cobra.Command, _ []string, opts *rootOptions) error 
 	if err != nil {
 		return err
 	}
-	for dbName, url := range selectedConnections {
-		runner.AddDatabase(dbName, url)
+	for dbName, target := range selectedConnections {
+		if err := runner.AddDatabaseWithCleanup(
+			dbName,
+			target.connectionURL,
+			target.cleanupURL,
+		); err != nil {
+			return fmt.Errorf("configure %s integration database: %w", dbName, err)
+		}
 		if opts.verbose {
 			fmt.Printf("Added database: %s\n", dbName)
 		}
@@ -244,32 +255,65 @@ func runIntegrationTests(_ *cobra.Command, _ []string, opts *rootOptions) error 
 	return nil
 }
 
-func configuredDatabaseConnections() map[string]string {
-	return map[string]string{
-		"postgres":    os.Getenv("POSTGRES_URL"),
-		"mysql":       os.Getenv("MYSQL_URL"),
-		"mariadb":     os.Getenv("MARIADB_URL"),
-		"clickhouse":  os.Getenv("CLICKHOUSE_URL"),
-		"cockroachdb": os.Getenv("COCKROACHDB_URL"),
-		"yugabytedb":  os.Getenv("YUGABYTEDB_URL"),
-		"sqlserver":   os.Getenv("SQLSERVER_URL"),
+func configuredDatabaseConnections() map[string]databaseTarget {
+	return map[string]databaseTarget{
+		"postgres": databaseTargetFromEnvironment("POSTGRES_URL", "POSTGRES_CLEANUP_URL"),
+		"mysql": databaseTargetFromEnvironment(
+			"MYSQL_URL",
+			"MYSQL_CLEANUP_URL",
+		),
+		"mariadb": databaseTargetFromEnvironment(
+			"MARIADB_URL",
+			"MARIADB_CLEANUP_URL",
+		),
+		"clickhouse": databaseTargetFromEnvironment(
+			"CLICKHOUSE_URL",
+			"CLICKHOUSE_CLEANUP_URL",
+		),
+		"cockroachdb": databaseTargetFromEnvironment(
+			"COCKROACHDB_URL",
+			"COCKROACHDB_CLEANUP_URL",
+		),
+		"yugabytedb": databaseTargetFromEnvironment(
+			"YUGABYTEDB_URL",
+			"YUGABYTEDB_CLEANUP_URL",
+		),
+		"sqlserver": databaseTargetFromEnvironment(
+			"SQLSERVER_URL",
+			"SQLSERVER_CLEANUP_URL",
+		),
 	}
 }
 
-func requestedDatabaseConnections(databases []string, dbConnections map[string]string) (map[string]string, error) {
-	selected := make(map[string]string, len(databases))
+func databaseTargetFromEnvironment(connectionEnv, cleanupEnv string) databaseTarget {
+	connectionURL := os.Getenv(connectionEnv)
+	cleanupURL := os.Getenv(cleanupEnv)
+	if cleanupURL == "" {
+		cleanupURL = connectionURL
+	}
+	return databaseTarget{
+		connectionURL: connectionURL,
+		cleanupURL:    cleanupURL,
+	}
+}
+
+func requestedDatabaseConnections(
+	databases []string,
+	dbConnections map[string]databaseTarget,
+) (map[string]databaseTarget, error) {
+	selected := make(map[string]databaseTarget, len(databases))
 	var missing []string
 	for _, dbName := range databases {
 		canonicalName := platform.NormalizeDialect(dbName)
 		if canonicalName == "" {
 			canonicalName = dbName
 		}
-		url, exists := dbConnections[canonicalName]
-		if !exists || url == "" {
+		target, exists := dbConnections[canonicalName]
+		if !exists || target.connectionURL == "" {
 			missing = append(missing, dbName)
 			continue
 		}
-		selected[canonicalName] = url
+		selected[canonicalName] = target
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing database URL for requested database(s): %s", strings.Join(missing, ", "))

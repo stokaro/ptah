@@ -44,6 +44,24 @@ The integration test suite covers all aspects of the migration system as outline
 - Drop all tables and re-run from empty state on PostgreSQL, MySQL, MariaDB,
   ClickHouse, and opt-in SQL Server
 
+The standalone integration runner reads scenario connections from
+`<DATABASE>_URL`. Set the optional matching `<DATABASE>_CLEANUP_URL` when
+cleanup requires broader privileges. The scenario and cleanup URLs may use
+different credentials, but the runner rejects a cleanup URL that addresses a
+different database.
+
+For MySQL and MariaDB, keep scenario execution restricted while granting the
+cleanup connection the global metadata and destructive privileges listed
+below:
+
+```bash
+MYSQL_URL="$MYSQL_RESTRICTED_URL" \
+MYSQL_CLEANUP_URL="$MYSQL_ADMIN_URL" \
+MARIADB_URL="$MARIADB_RESTRICTED_URL" \
+MARIADB_CLEANUP_URL="$MARIADB_ADMIN_URL" \
+  ./integration-test --databases=mysql,mariadb
+```
+
 The database-realm cleanup tests use dedicated scratch databases and verify
 that replay cleanup removes database-scoped artifacts without crossing into
 another database. Set the matching URL and run the focused package:
