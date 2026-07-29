@@ -1,3 +1,5 @@
+// Package postgres implements schema introspection and DDL execution for
+// PostgreSQL-family databases in the dbschema connection layer.
 package postgres
 
 import (

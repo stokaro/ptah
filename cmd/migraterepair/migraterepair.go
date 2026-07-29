@@ -1,3 +1,5 @@
+// Package migraterepair implements "ptah migrations repair", which fixes dirty
+// or partial migration revision metadata after a failed run.
 package migraterepair
 
 import (

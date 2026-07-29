@@ -1,6 +1,3 @@
-// Package goschematypes defines the core data structures used throughout the Ptah schema migration system.
-// These types represent the intermediate representation of database schema elements parsed from
-// Go struct annotations and used for generating database-specific migration SQL.
 package goschema
 
 import (

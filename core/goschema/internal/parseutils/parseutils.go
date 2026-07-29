@@ -1,3 +1,6 @@
+// Package parseutils implements the low-level annotation text parsing shared by
+// goschema: splitting key="value" comment options into maps and extracting
+// platform-specific override groups.
 package parseutils
 
 import (

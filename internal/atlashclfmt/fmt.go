@@ -1,3 +1,7 @@
+// Package atlashclfmt formats Atlas HCL schema files with canonical hclwrite
+// formatting. It backs the "schema fmt" commands of both the ptah and
+// ptah-compat binaries, in rewrite (FormatPaths) and check-only (CheckPaths)
+// modes.
 package atlashclfmt
 
 import (

@@ -1,3 +1,5 @@
+// Package readdb implements "ptah db read", which introspects a live database
+// and displays its tables, columns, indexes, and constraints.
 package readdb
 
 import (

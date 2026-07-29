@@ -1,3 +1,5 @@
+// Package mysql provides the MySQL SQL renderer: a thin wrapper over the
+// shared mysqllike renderer configured with strict MySQL capabilities.
 package mysql
 
 import (

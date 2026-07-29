@@ -1,3 +1,6 @@
+// Package postgres implements the PostgreSQL SQL renderer, turning Ptah AST
+// nodes into PostgreSQL DDL including enums, sequences, roles, row-level
+// security policies, and check constraints.
 package postgres
 
 import (

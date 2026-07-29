@@ -1,3 +1,5 @@
+// Package mariadb provides the MariaDB SQL renderer: a thin wrapper over the
+// shared mysqllike renderer configured with MariaDB capabilities.
 package mariadb
 
 import (
