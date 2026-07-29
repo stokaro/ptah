@@ -13,6 +13,14 @@ Configuration precedence is:
 | 4 | `ptah.yaml` selected environment |
 | 5 | Built-in defaults |
 
+Project-file merging preserves source presence. For a supported field, an
+explicitly present value replaces the lower-precedence value instead of being
+treated as absent. This includes an empty string, zero, `false`, or an empty
+list when the field accepts that type. Thus `atlas.hcl` wins over `ptah.yaml`,
+while environment variables and explicit CLI flags still win.
+After project sources are merged, each command applies its defaults and normal
+validation to the effective value.
+
 Use `ptah.yaml` for Ptah-owned configuration and the supported `atlas.hcl`
 subset for Atlas-compatible project config. The supported Atlas subset includes
 local `variable` defaults and Atlas-style `--var name=value` overrides,
@@ -76,7 +84,9 @@ lists destructive change kinds (`drop_table`, `drop_column`, `drop_index`,
 `drop_enum`) to omit — a `-- SKIP: ...` comment is written in their place — and
 `diff.concurrent_index: true` requests `CREATE INDEX CONCURRENTLY` for new
 indexes (PostgreSQL, capability-gated). A skipped change is never emitted, so it
-never trips the `--check-destructive` gate.
+never trips the `--check-destructive` gate. A selected environment's
+`diff.skip` replaces the top-level list; an explicit empty list clears all
+inherited skip kinds.
 
 The Atlas-compatible command tree lives in the separate `ptah-compat` binary,
 the drop-in replacement for scripts that expect Atlas-style root commands.

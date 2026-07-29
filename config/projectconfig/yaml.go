@@ -19,8 +19,8 @@ type yamlDocument struct {
 }
 
 type yamlSettings struct {
-	URL            string             `yaml:"url"`
-	Dev            string             `yaml:"dev"`
+	URL            *string            `yaml:"url"`
+	Dev            *string            `yaml:"dev"`
 	Schemas        *[]string          `yaml:"schemas"`
 	Exclude        *[]string          `yaml:"exclude"`
 	Migration      yamlMigration      `yaml:"migration"`
@@ -38,8 +38,8 @@ type yamlSettings struct {
 // are pointers so an explicit empty list is distinguishable from an unset value.
 type yamlExternalSchema struct {
 	Program    *[]string `yaml:"program"`
-	Format     string    `yaml:"format"`
-	WorkingDir string    `yaml:"working_dir"`
+	Format     *string   `yaml:"format"`
+	WorkingDir *string   `yaml:"working_dir"`
 	Env        *[]string `yaml:"env"`
 }
 
@@ -48,31 +48,31 @@ type yamlExternalSchema struct {
 // CREATE INDEX CONCURRENTLY for newly added indexes. concurrent_index is a
 // pointer so an explicit false is distinguishable from an unset value.
 type yamlDiff struct {
-	Skip            []string `yaml:"skip"`
-	ConcurrentIndex *bool    `yaml:"concurrent_index"`
+	Skip            *[]string `yaml:"skip"`
+	ConcurrentIndex *bool     `yaml:"concurrent_index"`
 }
 
 type yamlMigration struct {
-	Dir                  string `yaml:"dir"`
-	Format               string `yaml:"format"`
-	RevisionsSchema      string `yaml:"revisions_schema"`
-	RevisionsTable       string `yaml:"revisions_table"`
-	RevisionFormat       string `yaml:"revision_format"`
-	LockTimeout          string `yaml:"lock_timeout"`
-	StatementTimeout     string `yaml:"statement_timeout"`
-	ConnectTimeout       string `yaml:"connect_timeout"`
-	MigrationLockTimeout string `yaml:"migration_lock_timeout"`
-	ExecOrder            string `yaml:"exec_order"`
-	TxMode               string `yaml:"tx_mode"`
-	PreUpHook            string `yaml:"pre_up_hook"`
-	PreDownHook          string `yaml:"pre_down_hook"`
-	PostgresDumpTo       string `yaml:"pg_dump_to"`
-	MySQLDumpTo          string `yaml:"mysqldump_to"`
-	Webhook              string `yaml:"webhook"`
+	Dir                  *string `yaml:"dir"`
+	Format               *string `yaml:"format"`
+	RevisionsSchema      *string `yaml:"revisions_schema"`
+	RevisionsTable       *string `yaml:"revisions_table"`
+	RevisionFormat       *string `yaml:"revision_format"`
+	LockTimeout          *string `yaml:"lock_timeout"`
+	StatementTimeout     *string `yaml:"statement_timeout"`
+	ConnectTimeout       *string `yaml:"connect_timeout"`
+	MigrationLockTimeout *string `yaml:"migration_lock_timeout"`
+	ExecOrder            *string `yaml:"exec_order"`
+	TxMode               *string `yaml:"tx_mode"`
+	PreUpHook            *string `yaml:"pre_up_hook"`
+	PreDownHook          *string `yaml:"pre_down_hook"`
+	PostgresDumpTo       *string `yaml:"pg_dump_to"`
+	MySQLDumpTo          *string `yaml:"mysqldump_to"`
+	Webhook              *string `yaml:"webhook"`
 }
 
 type yamlLint struct {
-	Dialect       string    `yaml:"dialect"`
+	Dialect       *string   `yaml:"dialect"`
 	DisabledRules *[]string `yaml:"disabled-rules"`
 	Latest        *int      `yaml:"latest"`
 }
@@ -89,7 +89,7 @@ type yamlMigrateConfig struct {
 }
 
 type yamlMigrateGenerateConfig struct {
-	ShadowDatabaseURL string `yaml:"shadow_db"`
+	ShadowDatabaseURL *string `yaml:"shadow_db"`
 }
 
 // LoadPtahFile loads Ptah's project config file. A missing file returns an
@@ -174,60 +174,137 @@ func selectPtahEnv(doc yamlDocument, envName string) (Config, error) {
 }
 
 func (c yamlSettings) projectConfig() (Config, error) {
-	dev := c.Dev
-	if dev == "" {
-		dev = c.Migrate.Generate.ShadowDatabaseURL
+	cfg := Config{}
+	applyYAMLString(c.URL, &cfg.DatabaseURL, fieldDatabaseURL, &cfg.presence)
+	switch {
+	case c.Dev != nil:
+		applyYAMLString(c.Dev, &cfg.DevURL, fieldDevURL, &cfg.presence)
+	case c.Migrate.Generate.ShadowDatabaseURL != nil:
+		applyYAMLString(
+			c.Migrate.Generate.ShadowDatabaseURL,
+			&cfg.DevURL,
+			fieldDevURL,
+			&cfg.presence,
+		)
 	}
-	cfg := Config{
-		DatabaseURL: c.URL,
-		DevURL:      dev,
-		Migration: MigrationConfig{
-			Dir:                  c.Migration.Dir,
-			Format:               c.Migration.Format,
-			RevisionsSchema:      c.Migration.RevisionsSchema,
-			RevisionsTable:       c.Migration.RevisionsTable,
-			RevisionFormat:       c.Migration.RevisionFormat,
-			LockTimeout:          c.Migration.LockTimeout,
-			StatementTimeout:     c.Migration.StatementTimeout,
-			ConnectTimeout:       c.Migration.ConnectTimeout,
-			MigrationLockTimeout: c.Migration.MigrationLockTimeout,
-			ExecOrder:            c.Migration.ExecOrder,
-			TxMode:               c.Migration.TxMode,
-			PreUpHook:            c.Migration.PreUpHook,
-			PreDownHook:          c.Migration.PreDownHook,
-			PostgresDumpTo:       c.Migration.PostgresDumpTo,
-			MySQLDumpTo:          c.Migration.MySQLDumpTo,
-			Webhook:              c.Migration.Webhook,
-		},
-		Lint: LintConfig{
-			Dialect: c.Lint.Dialect,
-			Latest:  c.Lint.Latest,
-		},
-		ExternalSchema: ExternalSchemaConfig{
-			Format:     c.ExternalSchema.Format,
-			WorkingDir: c.ExternalSchema.WorkingDir,
-		},
+	applyYAMLString(c.Migration.Dir, &cfg.Migration.Dir, fieldMigrationDir, &cfg.presence)
+	applyYAMLString(c.Migration.Format, &cfg.Migration.Format, fieldMigrationFormat, &cfg.presence)
+	applyYAMLString(
+		c.Migration.RevisionsSchema,
+		&cfg.Migration.RevisionsSchema,
+		fieldMigrationRevisionsSchema,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.RevisionsTable,
+		&cfg.Migration.RevisionsTable,
+		fieldMigrationRevisionsTable,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.RevisionFormat,
+		&cfg.Migration.RevisionFormat,
+		fieldMigrationRevisionFormat,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.LockTimeout,
+		&cfg.Migration.LockTimeout,
+		fieldMigrationLockTimeout,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.StatementTimeout,
+		&cfg.Migration.StatementTimeout,
+		fieldMigrationStatementTimeout,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.ConnectTimeout,
+		&cfg.Migration.ConnectTimeout,
+		fieldMigrationConnectTimeout,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.MigrationLockTimeout,
+		&cfg.Migration.MigrationLockTimeout,
+		fieldMigrationMigrationLock,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.ExecOrder,
+		&cfg.Migration.ExecOrder,
+		fieldMigrationExecOrder,
+		&cfg.presence,
+	)
+	applyYAMLString(c.Migration.TxMode, &cfg.Migration.TxMode, fieldMigrationTxMode, &cfg.presence)
+	applyYAMLString(
+		c.Migration.PreUpHook,
+		&cfg.Migration.PreUpHook,
+		fieldMigrationPreUpHook,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.PreDownHook,
+		&cfg.Migration.PreDownHook,
+		fieldMigrationPreDownHook,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.PostgresDumpTo,
+		&cfg.Migration.PostgresDumpTo,
+		fieldMigrationPostgresDumpTo,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.MySQLDumpTo,
+		&cfg.Migration.MySQLDumpTo,
+		fieldMigrationMySQLDumpTo,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.Webhook,
+		&cfg.Migration.Webhook,
+		fieldMigrationWebhook,
+		&cfg.presence,
+	)
+	applyYAMLString(c.Lint.Dialect, &cfg.Lint.Dialect, fieldLintDialect, &cfg.presence)
+	if c.Lint.Latest != nil {
+		cfg.Lint.Latest = clonePointer(c.Lint.Latest)
+		cfg.presence.mark(fieldLintLatest)
 	}
+	applyYAMLString(
+		c.ExternalSchema.Format,
+		&cfg.ExternalSchema.Format,
+		fieldExternalSchemaFormat,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.ExternalSchema.WorkingDir,
+		&cfg.ExternalSchema.WorkingDir,
+		fieldExternalSchemaWorkingDir,
+		&cfg.presence,
+	)
 	c.OnlineDDL.applyTo(&cfg)
 	if c.ExternalSchema.Program != nil {
 		cfg.ExternalSchema.Program = slices.Clone(*c.ExternalSchema.Program)
-		cfg.presence.externalSchemaProgram = true
+		cfg.presence.mark(fieldExternalSchemaProgram)
 	}
 	if c.ExternalSchema.Env != nil {
 		cfg.ExternalSchema.Env = slices.Clone(*c.ExternalSchema.Env)
-		cfg.presence.externalSchemaEnv = true
+		cfg.presence.mark(fieldExternalSchemaEnv)
 	}
 	if c.Schemas != nil {
 		cfg.Schemas = slices.Clone(*c.Schemas)
-		cfg.presence.schemas = true
+		cfg.presence.mark(fieldSchemas)
 	}
 	if c.Exclude != nil {
 		cfg.Exclude = slices.Clone(*c.Exclude)
-		cfg.presence.exclude = true
+		cfg.presence.mark(fieldExclude)
 	}
 	if c.Lint.DisabledRules != nil {
 		cfg.Lint.DisabledRules = slices.Clone(*c.Lint.DisabledRules)
-		cfg.presence.lintDisabledRules = true
+		cfg.presence.mark(fieldLintDisabledRules)
 	}
 	diff, err := c.Diff.diffConfig()
 	if err != nil {
@@ -237,22 +314,35 @@ func (c yamlSettings) projectConfig() (Config, error) {
 	return cfg, nil
 }
 
+func applyYAMLString(
+	value *string,
+	destination *string,
+	field configField,
+	presence *configPresence,
+) {
+	if value == nil {
+		return
+	}
+	*destination = *value
+	presence.mark(field)
+}
+
 func (c yamlOnlineDDL) applyTo(cfg *Config) {
 	if c.Tool != nil {
 		cfg.OnlineDDL.Tool = *c.Tool
-		cfg.presence.onlineDDLTool = true
+		cfg.presence.mark(fieldOnlineDDLTool)
 	}
 	if c.ThresholdRows != nil {
 		cfg.OnlineDDL.ThresholdRows = *c.ThresholdRows
-		cfg.presence.onlineDDLThresholdRows = true
+		cfg.presence.mark(fieldOnlineDDLThresholdRows)
 	}
 	if c.Args != nil {
 		cfg.OnlineDDL.Args = slices.Clone(*c.Args)
-		cfg.presence.onlineDDLArgs = true
+		cfg.presence.mark(fieldOnlineDDLArgs)
 	}
 	if c.Fallback != nil {
 		cfg.OnlineDDL.Fallback = *c.Fallback
-		cfg.presence.onlineDDLFallback = true
+		cfg.presence.mark(fieldOnlineDDLFallback)
 	}
 }
 
@@ -260,12 +350,20 @@ func (c yamlOnlineDDL) applyTo(cfg *Config) {
 // skip kinds against the shared diffpolicy vocabulary.
 func (d yamlDiff) diffConfig() (DiffConfig, error) {
 	var cfg DiffConfig
-	for _, raw := range d.Skip {
-		kind, err := diffpolicy.ParseChangeKind(raw)
-		if err != nil {
-			return DiffConfig{}, fmt.Errorf("ptah.yaml diff.skip: %w", err)
+	if d.Skip != nil {
+		cfg.Skip = DiffSkipConfig{
+			DropTable:  ConfigBool{Set: true},
+			DropColumn: ConfigBool{Set: true},
+			DropIndex:  ConfigBool{Set: true},
+			DropEnum:   ConfigBool{Set: true},
 		}
-		setDiffSkipKind(&cfg.Skip, kind)
+		for _, raw := range *d.Skip {
+			kind, err := diffpolicy.ParseChangeKind(raw)
+			if err != nil {
+				return DiffConfig{}, fmt.Errorf("ptah.yaml diff.skip: %w", err)
+			}
+			setDiffSkipKind(&cfg.Skip, kind)
+		}
 	}
 	if d.ConcurrentIndex != nil {
 		cfg.ConcurrentIndex.Create = ConfigBool{Value: *d.ConcurrentIndex, Set: true}

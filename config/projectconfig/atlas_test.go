@@ -1186,6 +1186,8 @@ func TestLoadMergesAtlasOverPtah(t *testing.T) {
 exclude: [tmp_*]
 migration:
   dir: ./ptah-migrations
+  revisions_schema: revisions
+  lock_timeout: 1s
   exec_order: non-linear
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(atlasPath, []byte(`env "local" {
@@ -1193,7 +1195,9 @@ migration:
   src = []
   exclude = []
   migration {
-    dir = "file://atlas-migrations"
+    dir              = "file://atlas-migrations"
+    revisions_schema = ""
+    lock_timeout     = ""
   }
 }
 `), 0o600), qt.IsNil)
@@ -1208,6 +1212,8 @@ migration:
 	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{})
 	c.Assert(cfg.Exclude, qt.DeepEquals, []string{})
 	c.Assert(cfg.Migration.Dir, qt.Equals, "atlas-migrations")
+	c.Assert(cfg.Migration.RevisionsSchema, qt.Equals, "")
+	c.Assert(cfg.Migration.LockTimeout, qt.Equals, "")
 	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "non-linear")
 	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")
 	c.Assert(cfg.Migration.RevisionFormat, qt.Equals, "atlas")

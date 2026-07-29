@@ -267,7 +267,7 @@ func (p atlasParser) parseSchema(block *hclsyntax.Block, cfg *Config) error {
 				return err
 			}
 			cfg.SchemaSources = values
-			cfg.presence.schemaSources = true
+			cfg.presence.mark(fieldSchemaSources)
 		default:
 			return unsupportedAttr(attrName, attr)
 		}
@@ -338,28 +338,28 @@ func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cf
 			return err
 		}
 		cfg.DatabaseURL = value
-		cfg.presence.databaseURL = true
+		cfg.presence.mark(fieldDatabaseURL)
 	case "dev":
 		value, err := p.stringAttr(attrName, attr)
 		if err != nil {
 			return err
 		}
 		cfg.DevURL = value
-		cfg.presence.devURL = true
+		cfg.presence.mark(fieldDevURL)
 	case "src":
 		values, err := p.stringOrStringListAttr(attrName, attr)
 		if err != nil {
 			return err
 		}
 		cfg.SchemaSources = values
-		cfg.presence.schemaSources = true
+		cfg.presence.mark(fieldSchemaSources)
 	case "exclude":
 		values, err := p.stringListAttr(attrName, attr)
 		if err != nil {
 			return err
 		}
 		cfg.Exclude = values
-		cfg.presence.exclude = true
+		cfg.presence.mark(fieldExclude)
 	default:
 		return unsupportedAttr(attrName, attr)
 	}
@@ -374,9 +374,11 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 	if migration.Format == "" {
 		migration.Format = "atlas"
 	}
+	cfg.presence.mark(fieldMigrationFormat)
 	if migration.RevisionFormat == "" {
 		migration.RevisionFormat = "atlas"
 	}
+	cfg.presence.mark(fieldMigrationRevisionFormat)
 
 	for attrName, attr := range block.Body.Attributes {
 		switch attrName {
@@ -386,6 +388,7 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 				return err
 			}
 			migration.Dir = normalizeAtlasMigrationDir(value)
+			cfg.presence.mark(fieldMigrationDir)
 		case "format":
 			value, err := p.scopedEnumOrStringAttr(
 				attrName,
@@ -401,30 +404,35 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 				return err
 			}
 			migration.Format = value
+			cfg.presence.mark(fieldMigrationFormat)
 		case "revisions_schema":
 			value, err := p.stringAttr(attrName, attr)
 			if err != nil {
 				return err
 			}
 			migration.RevisionsSchema = value
+			cfg.presence.mark(fieldMigrationRevisionsSchema)
 		case "lock_timeout":
 			value, err := p.stringAttr(attrName, attr)
 			if err != nil {
 				return err
 			}
 			migration.LockTimeout = value
+			cfg.presence.mark(fieldMigrationLockTimeout)
 		case "exec_order":
 			value, err := p.scopedEnumOrStringAttr(attrName, attr, "LINEAR", "LINEAR_SKIP", "NON_LINEAR")
 			if err != nil {
 				return err
 			}
 			migration.ExecOrder = strings.ReplaceAll(strings.ToLower(value), "_", "-")
+			cfg.presence.mark(fieldMigrationExecOrder)
 		case "tx_mode":
 			value, err := p.stringAttr(attrName, attr)
 			if err != nil {
 				return err
 			}
 			migration.TxMode = value
+			cfg.presence.mark(fieldMigrationTxMode)
 		default:
 			return unsupportedAttr(attrName, attr)
 		}
@@ -456,6 +464,7 @@ func (p atlasParser) parseLintAttr(attrName string, attr *hclsyntax.Attribute, c
 			return err
 		}
 		cfg.Lint.Latest = &value
+		cfg.presence.mark(fieldLintLatest)
 	case "log":
 		// Atlas's lint.log is a Go text/template that renders the migrate lint
 		// output. It shares the format IR with format.migrate.lint, so the CLI
@@ -466,6 +475,7 @@ func (p atlasParser) parseLintAttr(attrName string, attr *hclsyntax.Attribute, c
 			return err
 		}
 		cfg.Format.Migrate.Lint = value
+		cfg.presence.mark(fieldFormatMigrateLint)
 	default:
 		return unsupportedAttr(attrName, attr)
 	}
@@ -579,6 +589,8 @@ func setLintRuleConfig(cfg *Config, code string, config LintRuleConfig) {
 		cfg.Lint.RuleConfigs = map[string]LintRuleConfig{}
 	}
 	cfg.Lint.RuleConfigs[code] = config
+	cfg.presence.mark(fieldLintRuleConfigs)
+	cfg.presence.mark(lintRuleSeverityField(code))
 }
 
 func (p atlasParser) parseLintGit(block *hclsyntax.Block, cfg *Config) error {
@@ -593,12 +605,14 @@ func (p atlasParser) parseLintGit(block *hclsyntax.Block, cfg *Config) error {
 				return err
 			}
 			cfg.Lint.GitBase = value
+			cfg.presence.mark(fieldLintGitBase)
 		case "dir":
 			value, err := p.stringAttr(attrName, attr)
 			if err != nil {
 				return err
 			}
 			cfg.Lint.GitDir = value
+			cfg.presence.mark(fieldLintGitDir)
 		default:
 			return unsupportedAttr(attrName, attr)
 		}
@@ -646,54 +660,47 @@ func (p atlasParser) parseFormat(block *hclsyntax.Block, cfg *Config) error {
 }
 
 func (p atlasParser) parseMigrateFormat(block *hclsyntax.Block, cfg *Config) error {
-	if len(block.Labels) > 0 {
-		return unsupportedBlock(block)
-	}
-	for attrName, attr := range block.Body.Attributes {
-		value, err := p.nonEmptyStringAttr(attrName, attr)
-		if err != nil {
-			return err
-		}
-		switch attrName {
-		case "apply":
-			cfg.Format.Migrate.Apply = value
-		case "diff":
-			cfg.Format.Migrate.Diff = value
-		case "lint":
-			cfg.Format.Migrate.Lint = value
-		case "status":
-			cfg.Format.Migrate.Status = value
-		default:
-			return unsupportedAttr(attrName, attr)
-		}
-	}
-	if len(block.Body.Blocks) > 0 {
-		return unsupportedBlock(block.Body.Blocks[0])
-	}
-	return nil
+	return p.parseFormatAttributes(block, &cfg.presence, map[string]atlasFormatField{
+		"apply":  {destination: &cfg.Format.Migrate.Apply, presence: fieldFormatMigrateApply},
+		"diff":   {destination: &cfg.Format.Migrate.Diff, presence: fieldFormatMigrateDiff},
+		"lint":   {destination: &cfg.Format.Migrate.Lint, presence: fieldFormatMigrateLint},
+		"status": {destination: &cfg.Format.Migrate.Status, presence: fieldFormatMigrateStatus},
+	})
 }
 
 func (p atlasParser) parseSchemaFormat(block *hclsyntax.Block, cfg *Config) error {
+	return p.parseFormatAttributes(block, &cfg.presence, map[string]atlasFormatField{
+		"apply":   {destination: &cfg.Format.Schema.Apply, presence: fieldFormatSchemaApply},
+		"clean":   {destination: &cfg.Format.Schema.Clean, presence: fieldFormatSchemaClean},
+		"diff":    {destination: &cfg.Format.Schema.Diff, presence: fieldFormatSchemaDiff},
+		"inspect": {destination: &cfg.Format.Schema.Inspect, presence: fieldFormatSchemaInspect},
+	})
+}
+
+type atlasFormatField struct {
+	destination *string
+	presence    configField
+}
+
+func (p atlasParser) parseFormatAttributes(
+	block *hclsyntax.Block,
+	presence *configPresence,
+	fields map[string]atlasFormatField,
+) error {
 	if len(block.Labels) > 0 {
 		return unsupportedBlock(block)
 	}
 	for attrName, attr := range block.Body.Attributes {
+		field, ok := fields[attrName]
+		if !ok {
+			return unsupportedAttr(attrName, attr)
+		}
 		value, err := p.nonEmptyStringAttr(attrName, attr)
 		if err != nil {
 			return err
 		}
-		switch attrName {
-		case "apply":
-			cfg.Format.Schema.Apply = value
-		case "clean":
-			cfg.Format.Schema.Clean = value
-		case "diff":
-			cfg.Format.Schema.Diff = value
-		case "inspect":
-			cfg.Format.Schema.Inspect = value
-		default:
-			return unsupportedAttr(attrName, attr)
-		}
+		*field.destination = value
+		presence.mark(field.presence)
 	}
 	if len(block.Body.Blocks) > 0 {
 		return unsupportedBlock(block.Body.Blocks[0])

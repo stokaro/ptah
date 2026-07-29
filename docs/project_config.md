@@ -202,9 +202,8 @@ Skipping `drop_table` also omits the dependent removals (indexes, constraints,
 triggers, RLS policies, table-level grants) that a kept table must retain, so the
 plan stays consistent. Skip is currently honored by the PostgreSQL-family planner.
 
-The list form is additive across environments: a named `env` block can add skip
-kinds to those inherited from the top-level `diff.skip`, but it cannot remove an
-inherited kind. Define skips at the level where they should apply.
+The selected environment's `diff.skip` replaces the top-level list when the
+field is present. An explicit empty list therefore clears inherited skip kinds.
 
 This is finer-grained than the coarse `--check-destructive` / `--allow-destructive`
 gate: `--check-destructive` blocks (or allows) the whole migration when it
@@ -239,6 +238,14 @@ Runtime values resolve in this order:
 3. `atlas.hcl`
 4. `ptah.yaml`
 5. Built-in command defaults
+
+Project-file merging preserves source presence. For a supported field, an
+explicitly present value replaces the lower-precedence value instead of being
+treated as absent. This includes an empty string, zero, `false`, or an empty
+list when the field accepts that type. Thus `atlas.hcl` wins over `ptah.yaml`,
+while environment variables and explicit CLI flags still win.
+After project sources are merged, each command applies its defaults and normal
+validation to the effective value.
 
 `atlas.hcl` is translated into the same project config IR. The `ptah-compat`
 binary's Atlas-compatible `schema ...` and `migrate ...` commands also accept
