@@ -22,7 +22,7 @@ translation rules are on the
 | `ptah atlas migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
 | `ptah atlas migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
 | `ptah atlas migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL: existing clean rows through the target are preserved, missing rows are recorded as manually set, dirty rows retain diagnostics with the combined applied and manually-set type, and rows above the target are removed. |
-| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes Atlas-style migration files (split when concurrent index builds require `-- atlas:txmode none`), and updates `atlas.sum` atomically. |
+| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local files, a live database, a migration directory, or `env://`, writes Atlas-style migration files (split when concurrent index builds require `-- atlas:txmode none`), and updates `atlas.sum` atomically. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
 | `ptah atlas migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a ptah-format cumulative-schema checkpoint pair. |
 | `ptah atlas migrate test [paths]` | Forwards to `ptah migrations test` with Ptah-native YAML test cases. |
@@ -194,17 +194,27 @@ Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
 
 ## Generate a migration with migrate diff
 
-`ptah atlas migrate diff` accepts a local `--dir` migration directory, one or
-more local `--to` schema files, and a directly connectable `--dev-url`. With
-`--env`, Ptah can read `env.schema.src`, `env.dev`, `migration.dir`,
-`format.migrate.diff`, and supported `diff` policy from `atlas.hcl`. Ptah
-drops all tables in the dev database, replays the migration directory into it,
-compares that state to the desired schema files, and writes Atlas-style `.sql`
-migration files plus `atlas.sum` when changes exist. Use a disposable dev
-database. If `atlas.sum` already exists, Ptah validates it before replaying
-migrations and fails on checksum drift instead of silently rehashing edited
-files. `atlas.sum` is updated only after every migration file of the run was
-written; a failed write rolls the whole generation back so no partial files or
+`ptah atlas migrate diff` accepts a local `--dir` migration directory, a
+directly connectable `--dev-url`, and one desired schema source through
+`--to`. The source can be one or more local schema files, one directly
+connectable database URL, one local Atlas migration directory, or one `env://`
+reference into the evaluated `atlas.hcl` environment. With `--env`, Ptah can
+read `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and
+supported `diff` policy from `atlas.hcl`.
+
+Ptah snapshots the desired schema first, drops all tables in the dev database,
+and replays the migration directory into it. It then compares the replayed
+state to the snapshot and writes Atlas-style `.sql` migration files plus
+`atlas.sum` when changes exist. Use a disposable dev database. Ptah only reads
+a database used as `--to`; it never cleans or mutates that database. Ptah
+rejects a desired database that identifies the same host, port, and database
+as `--dev-url`, even when credentials, connection options, scheme aliases, or
+an explicit default port differ.
+
+If `atlas.sum` already exists, Ptah validates it before replaying migrations
+and fails on checksum drift instead of silently rehashing edited files.
+`atlas.sum` is updated only after every migration file of the run was written;
+a failed write rolls the whole generation back so no partial files or
 checksums remain.
 
 ```bash
@@ -220,6 +230,47 @@ Expected output includes:
 Created migration file: .../migrations/20260721120001_add_users.sql
 Updated migration checksum: .../migrations/atlas.sum
 ```
+
+Use a live database as the desired schema:
+
+```bash
+ptah atlas migrate diff mirror_schema \
+  --dir file://migrations \
+  --to "$DESIRED_DATABASE_URL" \
+  --dev-url "$DEV_DATABASE_URL"
+```
+
+Use an evaluated project attribute as the desired schema:
+
+```bash
+ptah atlas migrate diff mirror_schema \
+  --config file://atlas.hcl \
+  --env local \
+  --to env://url
+```
+
+`env://src` and `env://schema.src` resolve the selected environment's schema
+sources. `env://url` and `env://dev` resolve database URLs, while
+`env://migration.dir` resolves the configured migration directory. When
+`--to` is omitted, `migrate diff` resolves the selected environment's
+`schema.src` through the same typed path, including database-valued defaults.
+An `env://` reference must be the only `--to` value. Mixed source kinds,
+multiple database or migration-directory sources, nested `env://` references,
+dialect mismatches, and source/dev aliases fail before Ptah connects to the
+dev database.
+
+Use an Atlas migration directory as the desired state:
+
+```bash
+ptah atlas migrate diff import_history \
+  --dir file://migrations \
+  --to file://desired-migrations \
+  --dev-url "$DEV_DATABASE_URL"
+```
+
+The desired directory is checksummed and replayed to a disconnected snapshot
+before Ptah evaluates the output directory. A source loading failure therefore
+does not create the output migration directory.
 
 Atlas OSS registers `migrate diff --dry-run` as a hidden flag. Ptah accepts the
 same hidden flag and prints the generated SQL instead of writing a migration
@@ -275,19 +326,19 @@ directory that contains qualified migrations requires the qualifier schema to
 exist on the dev database.
 
 `--schema` accepts repeated or comma-separated schema names and narrows the
-replayed dev database state plus local desired schema files before the diff is
-planned. With `diff.concurrent_index.create = true` in the selected `atlas.hcl`
-env, newly added indexes are planned as PostgreSQL `CREATE INDEX CONCURRENTLY`
-statements. Files carrying such statements start with the Atlas
+replayed dev database state plus the resolved desired state before the diff is
+planned. With `diff.concurrent_index.create = true` in the selected
+`atlas.hcl` env, newly added indexes are planned as PostgreSQL
+`CREATE INDEX CONCURRENTLY` statements. Files carrying such statements start
+with the Atlas
 `-- atlas:txmode none` file directive, which both Atlas and Ptah honor by
 executing the file outside a transaction. Because those statements must not
 silently strip transaction safety from ordinary DDL, a mixed plan is split the
 same way Ptah's native generator splits it: a `<name>_transactional` file with
 the transactional statements followed by a `<name>_concurrent_indexes` file
 tagged `-- atlas:txmode none`; mixes that cannot be split automatically (for
-example enum value additions alongside table changes) are refused. Database
-desired-schema URLs, `env://` project attributes, and Docker dev databases
-fail explicitly until their semantics are implemented.
+example enum value additions alongside table changes) are refused. Docker dev
+databases fail explicitly until their provisioning semantics are implemented.
 
 ## Validate integrity
 

@@ -55,6 +55,7 @@ func TestResolve_DatabaseSourceIntrospectsLiveSchema(t *testing.T) {
 	c.Assert(state.DB.Tables[0].Name, qt.Equals, "live_users")
 	c.Assert(state.Schema.Tables, qt.HasLen, 1)
 	c.Assert(state.Schema.Tables[0].Name, qt.Equals, "live_users")
+	c.Assert(state.DefaultSchema, qt.Equals, "main")
 }
 
 func TestResolve_DatabaseSourceDialectMismatchFailsBeforeConnecting(t *testing.T) {
@@ -90,6 +91,7 @@ func TestResolve_MigrationDirReplaysOnDevDatabase(t *testing.T) {
 	c.Assert(state.DB.Tables[0].Name, qt.Equals, "replayed_users")
 	c.Assert(state.Schema.Tables, qt.HasLen, 1)
 	c.Assert(state.Schema.Tables[0].Name, qt.Equals, "replayed_users")
+	c.Assert(state.DefaultSchema, qt.Equals, "main")
 }
 
 func TestResolve_MigrationDirRequiresDevURL(t *testing.T) {

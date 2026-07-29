@@ -41,6 +41,53 @@ func TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E(t *testing.T) {
 	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
 
 	testDBURL := replaceDatabaseName(c, dbURL, testDBName)
+	desiredDBName := testDBName + "_desired"
+	createE2EDatabase(c, ctx, adminDB, desiredDBName)
+	defer dropE2EDatabase(c, context.Background(), adminDB, desiredDBName)
+
+	desiredDBURL := replaceDatabaseName(c, dbURL, desiredDBName)
+	desiredDB, err := sql.Open("pgx", desiredDBURL)
+	c.Assert(err, qt.IsNil)
+	defer desiredDB.Close()
+	_, err = desiredDB.ExecContext(ctx, "CREATE TABLE desired_database_items (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL)")
+	c.Assert(err, qt.IsNil)
+
+	t.Run("env database desired state generates migration without mutating source", func(t *testing.T) {
+		c := qt.New(t)
+		dir := t.TempDir()
+		migrationsDir := filepath.Join(dir, "migrations")
+		c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`variable "desired_url" {}
+
+env "dev" {
+  url = var.desired_url
+  dev = "`+testDBURL+`"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+		output, err := runPtah(ctx, dir, binaryPath,
+			"atlas", "migrate", "diff",
+			"--config", "file://"+filepath.Join(dir, "atlas.hcl"),
+			"--env", "dev",
+			"--var", "desired_url="+desiredDBURL,
+			"--to", "env://url",
+			"--schema", "public",
+			"add_database_items")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
+		migrationSQL := readFirstMatchingFile(c, migrationsDir, "*_add_database_items.sql")
+		c.Assert(migrationSQL, qt.Contains, "CREATE TABLE")
+		c.Assert(migrationSQL, qt.Contains, "desired_database_items")
+		var sourceTableCount int
+		queryErr := desiredDB.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'desired_database_items'").
+			Scan(&sourceTableCount)
+		c.Assert(queryErr, qt.IsNil)
+		c.Assert(sourceTableCount, qt.Equals, 1)
+	})
 
 	t.Run("concurrent index policy splits files and tags txmode none", func(t *testing.T) {
 		c := qt.New(t)
