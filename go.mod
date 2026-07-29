@@ -94,3 +94,5 @@ tool (
 	golang.org/x/exp/cmd/apidiff
 	golang.org/x/vuln/cmd/govulncheck
 )
+
+// testkit-sync smoke test (temporary; PR will be closed)
