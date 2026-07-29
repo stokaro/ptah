@@ -12,7 +12,7 @@ representation:
 | --- | --- | --- |
 | `ptah db read` | SQL `CREATE` statements with a status banner | You want a readable snapshot in the terminal |
 | `ptah introspect` | Annotated Go model files | You want the live schema to become your desired schema |
-| `ptah atlas schema inspect` | HCL, SQL, or JSON without banners | You want machine-readable output for files and scripts |
+| `ptah schema inspect` | HCL, SQL, or JSON without banners | You want machine-readable output for files and scripts |
 
 Prerequisites:
 
@@ -77,11 +77,11 @@ migration, and baselines the revision table.
 
 ## Export machine-readable output
 
-`ptah atlas schema inspect` writes schema output without status banners, so it
-can be redirected straight into files. The default format is Atlas-shaped HCL:
+`ptah schema inspect` writes schema output without status banners, so it can
+be redirected straight into files. The default format is Atlas-shaped HCL:
 
 ```bash
-ptah atlas schema inspect --url "sqlite://$PWD/app.db" > schema.hcl
+ptah schema inspect --db-url "sqlite://$PWD/app.db" > schema.hcl
 ```
 
 `schema.hcl` then contains:
@@ -106,15 +106,32 @@ table "users" {
 }
 ```
 
-`--format sql` and `--format json` select SQL and JSON output, `--schema/-s`
+`--format sql` and `--format json` select SQL and JSON output, `--schemas`
 narrows inspection to selected database schemas, and `--exclude` filters
-resources with Atlas-style glob patterns. The full template surface — custom Go
-templates, Mermaid output, and split-file exports — is documented in
+resources with Atlas-style glob patterns.
+
+The source does not have to be a live database: `--schema-file` inspects a
+local `.hcl`, `.yaml`, `.yml`, or `.sql` schema file, and `--migrations-dir`
+inspects an Atlas-format migration directory. Both require `--dev-url` — a
+disposable database that is reset, has the source materialized on it, and is
+then introspected, so the output is normalized by a real database of the
+target dialect.
+
+With `--out-dir` the inspected schema is exported as files instead of one
+stream — one file per object by default, or grouped with `--split schema` /
+`--split type`:
+
+```bash
+ptah schema inspect --db-url "sqlite://$PWD/app.db" --format sql --out-dir ./schema
+```
+
+The Atlas-compatible spelling, `ptah atlas schema inspect --url ...`, adds
+custom Go templates, Mermaid output, and template-driven split exports; see
 [Atlas schema commands](../../atlas/schema-commands/#inspect-a-schema-source).
 
 ## Failure modes
 
-An unreachable database fails with exit code `2` on both native commands. The
+An unreachable database fails with exit code `2` on every native command. The
 `ptah db read` output ends with a connection checklist and the underlying
 error:
 

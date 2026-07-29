@@ -1,6 +1,6 @@
 ---
 title: Import from another tool
-description: Convert a golang-migrate, Goose, Flyway, or Liquibase migration directory into Ptah's native format.
+description: Convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format.
 ---
 
 Your project already has migration history in another tool, and you want Ptah
@@ -9,8 +9,8 @@ how `ptah migrations import` converts that history, what the converted
 directory looks like, and how to pick up the lifecycle afterward.
 
 Prerequisites: a built `ptah` binary and the source tool's migration
-directory. The example imports a golang-migrate directory; Goose, Flyway, and
-Liquibase work the same way.
+directory. The example imports a golang-migrate directory; Goose, Flyway,
+Liquibase, and dbmate work the same way.
 
 ## Starting state
 
@@ -87,7 +87,8 @@ Review placeholder downs before relying on rollback through those versions.
 ## Supported source tools
 
 The source tool is auto-detected from the directory layout; set `--from` to
-assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`).
+assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`,
+`dbmate`).
 
 | Tool | Notes |
 | --- | --- |
@@ -95,6 +96,7 @@ assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`).
 | Goose | Annotated single files (`-- +goose Up` / `-- +goose Down`). |
 | Flyway | Including dotted versions, undo `U__` scripts, and repeatable `R__` scripts. |
 | Liquibase | Formatted-SQL changelogs (`--changeset` / `--rollback`); XML, YAML, and JSON changelogs are rejected with a message. |
+| dbmate | Annotated single files (`-- migrate:up` / `-- migrate:down`); directive options such as `transaction:false` are dropped from the SQL. |
 
 This is native Ptah-format import, distinct from the Atlas-compatible
 `ptah atlas migrate import`, which writes an Atlas-format directory with

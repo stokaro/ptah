@@ -38,6 +38,8 @@ const (
 	lockTimeoutFlag          = "lock-timeout"
 	statementTimeoutFlag     = "statement-timeout"
 	allowDestructiveFlag     = "allow-destructive"
+	allowDirtyFlag           = "allow-dirty"
+	limitFlag                = "limit"
 	skipChecksFlag           = "skip-checks"
 	preUpHookFlag            = "pre-up-hook"
 	pgDumpToFlag             = "pg-dump-to"
@@ -61,6 +63,8 @@ type options struct {
 	lockTimeout          string
 	statementTimeout     string
 	allowDestructive     bool
+	allowDirty           bool
+	limit                uint64
 	skipChecks           bool
 	preUpHook            string
 	pgDumpTo             string
@@ -137,6 +141,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
 	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow pending migrations that contain destructive statements")
+	flags.BoolVar(&opts.allowDirty, allowDirtyFlag, false, "Recovery escape hatch: run pending migrations even when the revision table records a dirty (partially applied) migration")
+	flags.Uint64Var(&opts.limit, limitFlag, 0, "Apply only the first N pending migrations (0 applies all)")
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false, "Emergency bypass: skip pre-migration +ptah check assertion checks")
 	flags.StringVar(&opts.preUpHook, preUpHookFlag, "", "Shell command to run before applying pending migrations; aborts unless it exits 0")
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")
@@ -410,7 +416,11 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 
 	// Run migrations
 	startedAt := time.Now()
-	err = mig.MigrateUpWithPreflight(context.Background(), preflightHook)
+	err = mig.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{
+		Amount:     opts.limit,
+		AllowDirty: opts.allowDirty,
+		Preflight:  preflightHook,
+	})
 	if err != nil {
 		var checkErr *migrator.CheckFailedError
 		if errors.As(err, &checkErr) {
@@ -435,16 +445,30 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		skip:       opts.skipReport,
 	})
 
+	emitMigrateUpSummary(emit, opts, status, finalStatus)
+	return nil
+}
+
+// emitMigrateUpSummary prints the closing run summary. Dry runs report how
+// many migrations would have been applied, bounded by --limit when set.
+func emitMigrateUpSummary(
+	emit cliobs.Emitter,
+	opts *options,
+	status *migrator.MigrationStatus,
+	finalStatus *migrator.MigrationStatus,
+) {
 	emit.Println()
 	if opts.dryRun {
 		emit.Println("✅ Dry run completed successfully!")
-		emit.Printf("Would have applied %d migrations\n", len(status.PendingMigrations))
-	} else {
-		emit.Println("✅ Migrations completed successfully!")
-		emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
+		wouldApply := uint64(len(status.PendingMigrations))
+		if opts.limit > 0 {
+			wouldApply = min(wouldApply, opts.limit)
+		}
+		emit.Printf("Would have applied %d migrations\n", wouldApply)
+		return
 	}
-
-	return nil
+	emit.Println("✅ Migrations completed successfully!")
+	emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
 }
 
 func verifyMigrationIntegrity(

@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/introspect"
+	"github.com/stokaro/ptah/cmd/license"
 	"github.com/stokaro/ptah/cmd/migrations"
 	"github.com/stokaro/ptah/cmd/oci"
 	"github.com/stokaro/ptah/cmd/schema"
@@ -48,6 +49,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(viz.NewCommand())
 	cmd.AddCommand(atlas.NewAtlasCommand())
 	cmd.AddCommand(version.NewVersionCommand())
+	cmd.AddCommand(license.NewLicenseCommand())
 
 	cmdflags.InstallEnvBinding(envPrefix, cmd)
 

@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/platform/identifier"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -108,6 +109,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t 
 		100,
 		"move_index",
 		DiffPolicy{SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropIndex}},
+		atlasmigrate.Qualifier{},
 	)
 
 	c.Assert(err, qt.IsNil)

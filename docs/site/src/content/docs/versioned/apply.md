@@ -130,6 +130,11 @@ people and pipelines share a directory:
 - **Transaction mode** (`--tx-mode`): `file` (default) wraps each migration
   in its own transaction; `all` runs the whole batch in one; `none` disables
   wrapping for statements that cannot run inside a transaction.
+- **Batch limit** (`--limit`): apply only the first N pending migrations —
+  useful for staged rollouts and verifying one step at a time. `--allow-dirty`
+  is the explicit recovery escape hatch that proceeds past a dirty revision
+  row (for example one left by a crashed migration whose file was later
+  rebased); prefer `ptah migrations repair` for the dirty row itself.
 - **Execution order** (`--exec-order`): `linear` (default) fails when a merge
   landed a pending migration below the current version; `linear-skip` warns
   and leaves it pending; `non-linear` applies it. Status reports such

@@ -173,12 +173,46 @@ error: migration 1 is not dirty; rerun with --force to rewrite it
 `--force` rewrites (or creates) the revision row anyway — a last resort for
 reconciling revision metadata that no longer matches reality.
 
+## Set the revision boundary (set)
+
+`repair` fixes one dirty row and `baseline` only records existing history as
+applied. `ptah migrations set` moves the whole revision boundary to an
+arbitrary version, in both directions, without executing any SQL: every
+migration through `--version` is recorded as applied (dirty rows are marked
+applied, missing rows are inserted), and revision rows above `--version` are
+removed.
+
+```bash
+ptah migrations set \
+  --version 5 \
+  --migrations-dir ./migrations \
+  --db-url "$DATABASE_URL"
+```
+
+Expected output includes:
+
+```text
+Current version is 5 (2 set, 1 removed):
+
+  + 4 (add_orders)
+  + 5 (add_index)
+  - 6 (drop_legacy)
+```
+
+This is a metadata-only operation for databases whose schema was changed
+outside the migration flow. It never runs or reverts migration SQL — the
+database schema itself is untouched. `--revision-format atlas` targets Atlas
+revision bookkeeping (`atlas_schema_revisions`) instead of Ptah's native
+table, and `--dry-run` validates the inputs without changing anything.
+
 ## Atlas-compatible surface
 
 `ptah atlas migrate edit`, `ptah atlas migrate rebase`, and
 `ptah atlas migrate rm` forward to these native commands for drop-in Atlas
-familiarity, with `--dir` mapping to the migrations directory. Squashing
-history is its own verb pair — see [Checkpoints](../checkpoints/).
+familiarity, with `--dir` mapping to the migrations directory. `ptah atlas
+migrate set` is the Atlas spelling of `ptah migrations set` with Atlas
+revision bookkeeping preselected. Squashing history is its own verb pair —
+see [Checkpoints](../checkpoints/).
 
 ## Next steps
 

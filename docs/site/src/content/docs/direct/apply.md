@@ -3,14 +3,13 @@ title: Apply directly
 description: Apply desired-schema changes straight to a database with the Atlas-compatible schema apply, saved plan files, and hybrid patterns.
 ---
 
-Native Ptah has no direct apply verb: the `ptah <verb>` tree deliberately stops
-at inspecting, comparing, drift-checking, and planning, and changes databases
-only through versioned migration files. Direct application ships on the
-Atlas-compatible surface — `ptah atlas schema apply`, in the same binary (the
-`ptah-compat` drop-in exposes it to scripts that expect an Atlas-style
-executable). This page covers that command, the saved plan files that separate
-review from execution, and the hybrid patterns that combine a native drift
-gate with a direct apply.
+Direct application ships natively as `ptah schema apply` and on the
+Atlas-compatible surface as `ptah atlas schema apply` (the `ptah-compat`
+drop-in exposes the latter to scripts that expect an Atlas-style executable).
+Both wrap the same engine: the plan, the approval prompt, the plan files, and
+the fingerprint checks behave identically. This page covers the workflow, the
+saved plan files that separate review from execution, and the hybrid patterns
+that combine a native drift gate with a direct apply.
 
 Prerequisites:
 
@@ -28,6 +27,30 @@ file to review and no revision history to replay. Keep direct applies on
 databases you alone own — for shared and production databases, use
 [versioned migrations](../../versioned/overview/).
 :::
+
+## Native spellings
+
+The native verbs use Ptah's own flag spellings — `--db-url` for the target
+database, and `--root-dir` (Go annotations) or `--schema-file` (HCL, YAML, or
+SQL files; repeatable) for the desired state, matching `schema compare` and
+`migrations generate`:
+
+```bash
+ptah schema apply --db-url "sqlite://$PWD/app.db" --schema-file schema.sql --dry-run
+ptah schema plan  --db-url "sqlite://$PWD/app.db" --schema-file schema.sql --output change.plan.json
+ptah schema apply --db-url "sqlite://$PWD/app.db" --plan change.plan.json
+```
+
+`--to` additionally accepts a database URL whose live schema becomes the
+desired state, or an Atlas-format migration directory replayed on the required
+`--dev-url` dev database. When `--dev-url` is set, the exact ordered plan is
+rehearsed on the dev database before the target is touched, and a failed
+rehearsal refuses the apply. `--lock-timeout` bounds the session advisory
+lock that serializes concurrent applies, `--tx-mode` selects the transaction
+mode, `--edit` opens the planned SQL in `$VISUAL`/`$EDITOR`, and `--schemas`,
+`--include`, and `--exclude` scope both comparison sides. The remaining
+examples on this page use the Atlas-compatible spellings; every step has a
+native equivalent with the flags above.
 
 ## Preview the plan
 

@@ -68,6 +68,9 @@ type PlanFileOptions struct {
 	ToURLs  []string
 	Exclude []string
 	Policy  DiffPolicy
+	// Desired supplies a pre-loaded desired schema model; see
+	// [ApplyOptions.Desired]. When set, ToURLs are ignored.
+	Desired *goschema.Database
 }
 
 // StalePlanError reports that the target database no longer matches the
@@ -108,6 +111,7 @@ func PreparePlanFile(
 		// A saved plan fingerprints local desired-state files; URL sources
 		// stay a `schema plan` follow-up gap.
 		LocalFilesOnly: true,
+		Desired:        opts.Desired,
 	})
 	if err != nil {
 		return PlanFile{}, err

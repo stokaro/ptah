@@ -11,15 +11,24 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-// SetOptions configures an Atlas migrate set operation.
+// SetOptions configures a migrate set operation.
 type SetOptions struct {
 	Dir             string
 	FS              fs.FS
 	AtlasEnv        string
 	RevisionsSchema string
+	// RevisionsTable overrides the revision table name. Empty uses the
+	// revision-format default.
+	RevisionsTable string
+	// DirFormat selects the migration directory layout. Empty keeps the Atlas
+	// layout, preserving the Atlas-compatible caller's behavior.
+	DirFormat migrator.MigrationDirFormat
+	// RevisionFormat selects the revision table layout. Empty keeps the Atlas
+	// layout, preserving the Atlas-compatible caller's behavior.
+	RevisionFormat migrator.RevisionTableFormat
 }
 
-// Set moves Atlas revision metadata to version without executing migration SQL.
+// Set moves revision metadata to version without executing migration SQL.
 func Set(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -32,6 +41,14 @@ func Set(
 	if strings.TrimSpace(opts.Dir) == "" && opts.FS == nil {
 		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("migrate set requires migration directory")
 	}
+	dirFormat := opts.DirFormat
+	if dirFormat == "" {
+		dirFormat = migrator.MigrationDirFormatAtlas
+	}
+	revisionFormat := opts.RevisionFormat
+	if revisionFormat == "" {
+		revisionFormat = migrator.RevisionTableFormatAtlas
+	}
 
 	migrationFS := opts.FS
 	if migrationFS == nil {
@@ -40,16 +57,16 @@ func Set(
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		migrationFS,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
 	)
 	if err != nil {
 		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("error registering migrations: %w", err)
 	}
-	mig = mig.WithMigrationsTable(opts.RevisionsSchema, "").
-		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	mig = mig.WithMigrationsTable(opts.RevisionsSchema, opts.RevisionsTable).
+		WithRevisionTableFormat(revisionFormat)
 
-	result, err := mig.SetAtlasRevision(ctx, version)
+	result, err := mig.SetRevision(ctx, version)
 	if err != nil {
 		return migrator.AtlasRevisionSetResult{}, err
 	}

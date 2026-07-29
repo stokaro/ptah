@@ -260,12 +260,20 @@ func (m *Migrator) getRevisionsForUpdateSQL() string {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.MySQL, platform.MariaDB:
 		return m.getRevisionsSQL() + " FOR UPDATE"
 	case platform.SQLServer:
-		return fmt.Sprintf(
-			`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
+		if m.revisionTableFormat.isAtlas() {
+			return fmt.Sprintf(
+				`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s WITH (UPDLOCK, HOLDLOCK)
 ORDER BY %s`,
+				m.qualifiedMigrationsTable(),
+				m.atlasVersionNumberExpression(),
+			)
+		}
+		return fmt.Sprintf(
+			`SELECT version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
+FROM %s WITH (UPDLOCK, HOLDLOCK)
+ORDER BY version`,
 			m.qualifiedMigrationsTable(),
-			m.atlasVersionNumberExpression(),
 		)
 	default:
 		return m.getRevisionsSQL()
@@ -1056,21 +1064,37 @@ func (m *Migrator) writeAtlasBaselineMigrationRow(
 // migration SQL. Existing clean rows at or below version are preserved, missing
 // rows are recorded as manually set, dirty rows are recorded as applied and
 // manually set while retaining their diagnostics, and rows above version are
-// removed.
+// removed. It requires the Atlas revision table format; [Migrator.SetRevision]
+// is the format-agnostic entry point.
 func (m *Migrator) SetAtlasRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error) {
+	if !m.revisionTableFormat.isAtlas() {
+		return AtlasRevisionSetResult{}, fmt.Errorf("setting an Atlas revision requires Atlas revision table format")
+	}
+	return m.SetRevision(ctx, version)
+}
+
+// SetRevision moves revision history to version without executing migration
+// SQL, in either revision table format. Existing clean rows at or below
+// version are preserved, missing rows are recorded as applied (manually set in
+// the Atlas layout), dirty rows are marked applied, and rows above version are
+// removed.
+func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error) {
+	// The Atlas-format operation keeps its historical name so lock-timeout
+	// diagnostics from the Atlas-compatible surface stay byte-identical.
+	operation := "set revision"
+	if m.revisionTableFormat.isAtlas() {
+		operation = "set Atlas revision"
+	}
 	var result AtlasRevisionSetResult
-	err := m.withMigrationLock(ctx, "set Atlas revision", func(ctx context.Context) error {
+	err := m.withMigrationLock(ctx, operation, func(ctx context.Context) error {
 		var err error
-		result, err = m.setAtlasRevisionLocked(ctx, version)
+		result, err = m.setRevisionLocked(ctx, version)
 		return err
 	})
 	return result, err
 }
 
-func (m *Migrator) setAtlasRevisionLocked(ctx context.Context, version int64) (AtlasRevisionSetResult, error) {
-	if !m.revisionTableFormat.isAtlas() {
-		return AtlasRevisionSetResult{}, fmt.Errorf("setting an Atlas revision requires Atlas revision table format")
-	}
+func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasRevisionSetResult, error) {
 	if version <= 0 {
 		return AtlasRevisionSetResult{}, fmt.Errorf("migration version must be greater than zero")
 	}
@@ -1078,8 +1102,13 @@ func (m *Migrator) setAtlasRevisionLocked(ctx context.Context, version int64) (A
 		return AtlasRevisionSetResult{}, fmt.Errorf("migration with version %q not found", strconv.FormatInt(version, 10))
 	}
 	if m.isClickHouse() {
+		if m.revisionTableFormat.isAtlas() {
+			return AtlasRevisionSetResult{}, fmt.Errorf(
+				"setting an Atlas revision is not supported for ClickHouse because revision history cannot be updated atomically",
+			)
+		}
 		return AtlasRevisionSetResult{}, fmt.Errorf(
-			"setting an Atlas revision is not supported for ClickHouse because revision history cannot be updated atomically",
+			"setting the migration revision is not supported for ClickHouse because revision history cannot be updated atomically",
 		)
 	}
 	if err := m.Initialize(ctx); err != nil {
@@ -1142,7 +1171,11 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 		return AtlasRevisionSetResult{}, err
 	}
 	result := atlasRevisionSetChanges(existing, migrations, version)
-	if err := m.writeAtlasSetRevisionRows(ctx, tx, existing, migrations, version); err != nil {
+	writeRows := m.writePtahSetRevisionRows
+	if m.revisionTableFormat.isAtlas() {
+		writeRows = m.writeAtlasSetRevisionRows
+	}
+	if err := writeRows(ctx, tx, existing, migrations, version); err != nil {
 		_ = tx.Rollback()
 		return AtlasRevisionSetResult{}, err
 	}
@@ -1234,6 +1267,72 @@ func (m *Migrator) writeAtlasSetRevisionRows(
 		}
 	}
 	return nil
+}
+
+// writePtahSetRevisionRows is the ptah-layout counterpart of
+// writeAtlasSetRevisionRows: rows above version are removed, dirty rows at or
+// below version are marked applied, and missing rows are inserted as applied.
+func (m *Migrator) writePtahSetRevisionRows(
+	ctx context.Context,
+	tx *sql.Tx,
+	existing []MigrationRevision,
+	migrations []*Migration,
+	version int64,
+) error {
+	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteRevisionsAboveSQL())
+	if _, err := tx.ExecContext(ctx, deleteSQL, m.revisionVersionArg(version)); err != nil {
+		return fmt.Errorf("failed to remove revisions above %d: %w", version, err)
+	}
+
+	revisionsByVersion := make(map[int64]MigrationRevision, len(existing))
+	for _, revision := range existing {
+		revisionsByVersion[revision.Version] = revision
+	}
+
+	insertSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.beginMigrationSQL())
+	updateSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.setPtahRevisionAppliedSQL())
+	for _, migration := range migrations {
+		revision, exists := revisionsByVersion[migration.Version]
+		if exists && revision.State == migrationStateApplied {
+			continue
+		}
+		if exists {
+			if _, err := tx.ExecContext(
+				ctx,
+				updateSQL,
+				migrationStateApplied,
+				revision.Version,
+			); err != nil {
+				return fmt.Errorf("failed to mark dirty revision %d applied: %w", revision.Version, err)
+			}
+			continue
+		}
+		total := m.migrationStatementCount(migration.UpSQL)
+		if _, err := tx.ExecContext(
+			ctx,
+			insertSQL,
+			migration.Version,
+			migration.Description,
+			time.Now(),
+			migrationStateApplied,
+			total,
+			total,
+			nil,
+			nil,
+			0,
+			migrationRevisionHash(migration),
+		); err != nil {
+			return fmt.Errorf("failed to record manually set revision %d: %w", migration.Version, err)
+		}
+	}
+	return nil
+}
+
+// setPtahRevisionAppliedSQL marks one ptah-layout revision row applied while
+// keeping its recorded error diagnostics, mirroring the Atlas layout's
+// applied|manually-set type update.
+func (m *Migrator) setPtahRevisionAppliedSQL() string {
+	return fmt.Sprintf(`UPDATE %s SET state = ?, applied = total WHERE version = ?`, m.qualifiedMigrationsTable())
 }
 
 // RepairMigration clears dirty migration metadata after an operator has fixed

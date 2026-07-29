@@ -1,8 +1,8 @@
 // Package importer converts a migration directory produced by another
-// versioned-migration tool (golang-migrate, Goose, Flyway, Liquibase) into
-// Ptah's native NNNNNNNNNN_description.up.sql / .down.sql layout, preserving
-// version order and history so a team can adopt Ptah without hand-rewriting its
-// migration files.
+// versioned-migration tool (golang-migrate, Goose, Flyway, Liquibase, dbmate)
+// into Ptah's native NNNNNNNNNN_description.up.sql / .down.sql layout,
+// preserving version order and history so a team can adopt Ptah without
+// hand-rewriting its migration files.
 //
 // The package is a tool-agnostic core (SourceMigration, Parser, and the
 // version-normalization and ordering rules) plus one Parser per source tool.
@@ -47,6 +47,7 @@ func Parsers() []Parser {
 		gooseParser{},
 		flywayParser{},
 		liquibaseParser{},
+		dbmateParser{},
 	}
 }
 

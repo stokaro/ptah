@@ -38,6 +38,11 @@ type ApplyOptions struct {
 	// pre-resolver loading behavior. `schema plan` sets it because a saved
 	// plan fingerprints local desired-state files only.
 	LocalFilesOnly bool
+	// Desired supplies a pre-loaded desired schema model. When set, ToURLs are
+	// not resolved: the native command tree uses it to plan from Go-annotation
+	// roots and native schema files loaded through the shared desired-source
+	// loader. The Atlas-compatible callers never set it.
+	Desired *goschema.Database
 }
 
 type ApplyPlan struct {
@@ -59,6 +64,9 @@ type ApplyRuntimeOptions struct {
 	DryRun  bool
 	// ProjectEnv expands env:// desired-state references in ToURLs.
 	ProjectEnv atlassource.ProjectEnv
+	// Desired supplies a pre-loaded desired schema model; see
+	// [ApplyOptions.Desired].
+	Desired *goschema.Database
 }
 
 // ApplyRuntimePlan is a prepared Atlas schema apply operation for one open
@@ -116,7 +124,7 @@ func computeApplyPlan(
 	if conn == nil {
 		return applyComputation{}, errors.New("schema apply planning requires database connection")
 	}
-	if len(opts.ToURLs) == 0 {
+	if len(opts.ToURLs) == 0 && opts.Desired == nil {
 		return applyComputation{}, errors.New("schema apply planning requires desired schema URLs")
 	}
 
@@ -173,6 +181,9 @@ func loadDesiredApplySchema(
 	conn *dbschema.DatabaseConnection,
 	opts ApplyOptions,
 ) (*goschema.Database, error) {
+	if opts.Desired != nil {
+		return opts.Desired, nil
+	}
 	if opts.LocalFilesOnly {
 		return schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: conn.Info().Dialect})
 	}
@@ -213,6 +224,7 @@ func PrepareApply(
 		Policy:     opts.Policy,
 		DevURL:     opts.DevURL,
 		ProjectEnv: opts.ProjectEnv,
+		Desired:    opts.Desired,
 	})
 	if err != nil {
 		return ApplyRuntimePlan{}, err

@@ -21,6 +21,11 @@ ptah schema render --schema-file schema.hcl --dialect postgres
 configuration in `atlas.hcl` is a different file type; see
 [Atlas project config](../../atlas/project-config/).
 
+`ptah schema fmt [path ...]` rewrites `.hcl` schema files into HashiCorp
+HCL's canonical layout, walking directory arguments recursively and printing
+only the files that changed. `--check` reports non-canonical files without
+rewriting them and exits non-zero, for CI formatting gates.
+
 ## Minimal schema
 
 ```hcl

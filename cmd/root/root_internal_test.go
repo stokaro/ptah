@@ -28,9 +28,11 @@ func TestNewRootCommand_AtlasLookingRootPathsStayRejected(t *testing.T) {
 			want: `unknown command "migrate"`,
 		},
 		{
-			name: "schema inspect",
-			args: []string{"schema", "inspect"},
-			want: `unexpected positional arguments ["inspect"]`,
+			// schema inspect and schema apply became native verbs with #850;
+			// schema clean remains an Atlas-only spelling (native: db drop-all).
+			name: "schema clean",
+			args: []string{"schema", "clean"},
+			want: `unexpected positional arguments ["clean"]`,
 		},
 		{
 			name: "schema viz",
