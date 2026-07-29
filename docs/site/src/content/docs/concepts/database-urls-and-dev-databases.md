@@ -73,6 +73,11 @@ exercise a real server dialect — see
   ClickHouse cleanup owns the selected database. SQL Server cleanup owns all
   supported user schemas in the selected database. SQLite cleanup owns `main`
   on one pinned session.
+- **MySQL-family cleanup needs global catalog visibility.** MySQL cleanup
+  credentials require global `SELECT`, `DROP`, `ALTER`, `ALTER ROUTINE`,
+  `EVENT`, `LOCK TABLES`, and `PROCESS`; MariaDB also requires global
+  `SHOW VIEW`. Ptah checks these privileges before destructive DDL. Use such
+  credentials only for a disposable dev database.
 - **ClickHouse realm cleanup requires 24.11 or newer.** Ptah uses `CHECK GRANT`
   to prove complete catalog visibility before dropping objects. Older servers
   fail before cleanup because role-aware visibility cannot be proven safely.

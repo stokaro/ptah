@@ -139,6 +139,7 @@ func TestMySQLWriter_Integration(t *testing.T) {
 	writer := mysql.NewMySQLWriter(db, "", "mysql")
 
 	t.Run("transaction lifecycle", func(t *testing.T) {
+		c := qt.New(t)
 		// Test successful transaction
 		tx, err := writer.BeginTransaction(t.Context())
 		c.Assert(err, qt.IsNil)
@@ -158,15 +159,27 @@ func TestMySQLWriter_Integration(t *testing.T) {
 	})
 
 	t.Run("DropAllTables", func(t *testing.T) {
+		c := qt.New(t)
+		cleanupDSN := requireReachableTestDSN(
+			t,
+			"MYSQL_CLEANUP_TEST_DSN",
+			"mysql",
+			"MySQL cleanup",
+		)
+		cleanupDB, err := sql.Open("mysql", cleanupDSN)
+		c.Assert(err, qt.IsNil)
+		defer cleanupDB.Close()
+		cleanupWriter := mysql.NewMySQLWriter(cleanupDB, "", "mysql")
+
 		// Create a test table first
-		_, err := db.Exec("CREATE TABLE IF NOT EXISTS temp_test_table (id INT AUTO_INCREMENT PRIMARY KEY)")
+		_, err = cleanupDB.Exec("CREATE TABLE IF NOT EXISTS temp_test_table (id INT AUTO_INCREMENT PRIMARY KEY)")
 		c.Assert(err, qt.IsNil)
 
-		err = writer.DropAllTables(t.Context())
+		err = cleanupWriter.DropAllTables(t.Context())
 		c.Assert(err, qt.IsNil)
 
 		// Verify table was dropped
-		exists := tableExists(db, "temp_test_table", noDryRun)
+		exists := tableExists(cleanupDB, "temp_test_table", noDryRun)
 		c.Assert(exists, qt.IsFalse)
 	})
 }

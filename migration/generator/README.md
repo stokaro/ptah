@@ -90,7 +90,10 @@ never renumbers and publishes a plan derived from stale history.
 It renders every up/down file and requested safety report before publishing
 the artifacts as one batch. A filename collision leaves no partial new files.
 Use `WriteFilesContext` when lock acquisition must honor cancellation or an
-operation deadline.
+operation deadline. Callers can branch on
+`generator.ErrMigrationDirectoryChanged` when another process changed the
+migration history after planning, and on `generator.ErrMigrationPlanInUse`
+when the same plan is already being published.
 
 ### Migration Process
 

@@ -272,12 +272,15 @@ Rich, interactive report with:
 
 ### MySQL
 - Version: 8+
-- Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
+- Required cleanup permissions: global SELECT, DROP, ALTER, ALTER ROUTINE,
+  EVENT, LOCK TABLES, and PROCESS. Use these credentials only for a disposable
+  dev database. Restricted credentials remain suitable for non-cleanup tests.
 - Authentication: default MySQL authentication (`caching_sha2_password` on current MySQL images)
 
 ### MariaDB
 - Version: 10.11+
-- Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
+- Required cleanup permissions: the MySQL cleanup privileges plus global
+  SHOW VIEW. Use these credentials only for a disposable dev database.
 - Compatible with MySQL driver
 
 ### ClickHouse

@@ -85,10 +85,12 @@ callback.
 checks, and optional shadow verification without publishing files. Its
 `MigrationPlan.WriteFiles` method publishes the validated artifacts once. The
 plan records the migration-directory snapshot used during planning and refuses
-publication if that history changed. `WriteFilesContext` additionally lets an
-embedder cancel waiting for the cross-process publication lock.
+publication with `generator.ErrMigrationDirectoryChanged` if that history
+changed. `WriteFilesContext` additionally lets an embedder cancel waiting for
+the cross-process publication lock and rejects concurrent use of one plan with
+`generator.ErrMigrationPlanInUse`.
 `GenerateMigration` remains the convenience composition of planning and
-publication.
+publication and propagates its context through both phases.
 
 Atlas revision metadata is represented explicitly by `AtlasRevisionType` on
 `MigrationRevision`. `SetAtlasRevision` implements Atlas's metadata-only

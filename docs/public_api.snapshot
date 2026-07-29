@@ -5798,6 +5798,7 @@ func (c SkippedChange) Comment() string
 
 ## github.com/stokaro/ptah/migration/generator
 
+var ErrMigrationDirectoryChanged = errors.New("migration directory changed after migration planning") ...
 func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error)
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)

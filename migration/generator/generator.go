@@ -42,6 +42,16 @@ import (
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
+var (
+	// ErrMigrationDirectoryChanged reports that migration artifacts changed
+	// between planning and publication.
+	ErrMigrationDirectoryChanged = errors.New(
+		"migration directory changed after migration planning",
+	)
+	// ErrMigrationPlanInUse reports concurrent publication through one plan.
+	ErrMigrationPlanInUse = errors.New("migration plan is already being written")
+)
+
 // GenerateMigrationOptions contains options for migration generation
 type GenerateMigrationOptions struct {
 	// GoEntitiesDir is the directory to scan for Go entities
@@ -306,17 +316,13 @@ func emptyMigrationSQL(name, generatedAt, direction string) string {
 // GenerateMigration generates both up and down migration files by comparing
 // the desired schema (from Go entities) with the current database state.
 //
-// The context bounds only the initial database connection attempt performed
-// when opts.DBConn is nil (so a stuck host cannot block the call
-// indefinitely). The schema-reading and migration-writing work below does not
-// yet propagate the context; future work may thread it through there too.
-// When opts.DBConn is supplied the context is currently unused.
+// The context bounds connection, planning, lock acquisition, and publication.
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	plan, err := PlanMigration(ctx, opts)
 	if err != nil || plan == nil {
 		return nil, err
 	}
-	return plan.WriteFiles()
+	return plan.WriteFilesContext(ctx)
 }
 
 // PlanMigration performs schema loading, live introspection, diff planning,
@@ -464,7 +470,9 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 	if p == nil {
 		return nil, fmt.Errorf("migration plan is nil")
 	}
-	p.mu.Lock()
+	if !p.mu.TryLock() {
+		return nil, ErrMigrationPlanInUse
+	}
 	defer p.mu.Unlock()
 	if p.written {
 		return nil, fmt.Errorf("migration plan has already been written")
@@ -485,7 +493,7 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 			return fmt.Errorf("capture migration directory before publication: %w", err)
 		}
 		if !p.outputState.equal(currentState) {
-			return fmt.Errorf("migration directory changed after migration planning")
+			return ErrMigrationDirectoryChanged
 		}
 		if err := ctx.Err(); err != nil {
 			return err

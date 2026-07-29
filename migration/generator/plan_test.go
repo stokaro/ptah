@@ -62,11 +62,53 @@ func TestMigrationPlanWriteFiles_RejectsChangedDirectory(t *testing.T) {
 
 	files, err := plan.WriteFiles()
 
-	c.Assert(err, qt.ErrorMatches, `migration directory changed after migration planning`)
+	c.Assert(err, qt.ErrorIs, generator.ErrMigrationDirectoryChanged)
 	c.Assert(files, qt.IsNil)
 	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(matches, qt.DeepEquals, []string{concurrentMigration})
+}
+
+func TestMigrationPlanWriteFilesContext_RejectsConcurrentUse(t *testing.T) {
+	c := qt.New(t)
+	plan, outputDir := newSQLiteMigrationPlan(c)
+	lockHeld := make(chan struct{})
+	releaseLock := make(chan struct{})
+	lockDone := make(chan error, 1)
+	go func() {
+		lockDone <- atlasmigrate.WithMigrationDirectoryLock(
+			t.Context(),
+			outputDir,
+			0,
+			func() error {
+				close(lockHeld)
+				<-releaseLock
+				return nil
+			},
+		)
+	}()
+	<-lockHeld
+
+	type writeResult struct {
+		files *generator.MigrationFiles
+		err   error
+	}
+	writeDone := make(chan writeResult, 1)
+	go func() {
+		files, err := plan.WriteFilesContext(t.Context())
+		writeDone <- writeResult{files: files, err: err}
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	files, err := plan.WriteFilesContext(t.Context())
+
+	c.Assert(err, qt.ErrorIs, generator.ErrMigrationPlanInUse)
+	c.Assert(files, qt.IsNil)
+	close(releaseLock)
+	firstResult := <-writeDone
+	c.Assert(firstResult.err, qt.IsNil)
+	c.Assert(firstResult.files, qt.IsNotNil)
+	c.Assert(<-lockDone, qt.IsNil)
 }
 
 func TestMigrationPlanWriteFilesContext_RejectsCanceledContext(t *testing.T) {

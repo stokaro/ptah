@@ -799,15 +799,17 @@ func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 			consume func(*dbschema.DatabaseConnection) error,
 		) error {
 			cleanupCalls++
-			replayErr := migrationreplay.WithReplayedSnapshotLocked(
+			return migrationreplay.WithReplayedSnapshotLocked(
 				replayCtx,
 				replayConn,
 				snapshot,
 				format,
-				consume,
+				func(conn *dbschema.DatabaseConnection) error {
+					consumeErr := consume(conn)
+					cancel()
+					return errors.Join(consumeErr, replayCtx.Err())
+				},
 			)
-			cancel()
-			return replayErr
 		},
 	})
 

@@ -108,9 +108,10 @@ identifier snapshot; the dialect-only checkpoint helper uses conservative
 offline rules.
 `migration/generator.PlanMigration` returns an unpublished plan bound to the
 migration-directory snapshot used during planning. `MigrationPlan.WriteFiles`
-rejects changed history under the shared cross-process publication lock.
-Embedders that need cancellation while waiting for that lock use
-`WriteFilesContext`.
+rejects changed history with `generator.ErrMigrationDirectoryChanged` under
+the shared cross-process publication lock. Embedders that need cancellation
+while waiting for that lock use `WriteFilesContext`; concurrent use of one plan
+fails with `generator.ErrMigrationPlanInUse`.
 `migration/planner.Planner` exposes only checked planning; malformed references,
 unresolved additions, and target index-namespace conflicts fail before SQL is
 returned.

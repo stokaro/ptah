@@ -52,6 +52,13 @@ SQL:
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 
+Database-realm cleanup requires global `SELECT`, `DROP`, `ALTER`,
+`ALTER ROUTINE`, `EVENT`, `LOCK TABLES`, and `PROCESS`. MariaDB additionally
+requires global `SHOW VIEW`. Ptah verifies this privilege set before destructive
+DDL so it can inspect cross-database dependencies and fails closed when partial
+revokes make that proof incomplete. Grant these privileges only to credentials
+used with a disposable dev database.
+
 For large tables, `ptah migrations up` and `down` can route `ALTER TABLE`
 statements through gh-ost or pt-online-schema-change, either per migration
 with a `-- +ptah online_ddl_tool=ghost` directive or automatically above a

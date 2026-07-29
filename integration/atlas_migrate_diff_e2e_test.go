@@ -115,6 +115,14 @@ SELECT
 `).Scan(&externalObjectCount)
 		c.Assert(err, qt.IsNil)
 		c.Assert(externalObjectCount, qt.Equals, 0)
+		var auditSchemaCount int
+		err = devDB.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM pg_namespace
+WHERE nspname = 'audit'
+`).Scan(&auditSchemaCount)
+		c.Assert(err, qt.IsNil)
+		c.Assert(auditSchemaCount, qt.Equals, 0)
 		migrationSQL := readFirstMatchingFile(
 			c,
 			migrationsDir,
