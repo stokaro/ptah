@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -82,13 +83,43 @@ const databaseRealmTemporaryObjectsQuery = `
 	ORDER BY name
 `
 
+const databaseRealmGlobalPrivilegesQuery = `
+	CHECK GRANT SHOW DATABASES, SHOW TABLES ON *.*
+`
+
+// ClickHouse does not expose dependency metadata for ordinary views. Fail
+// closed when another user database contains an object capable of referencing
+// the cleanup realm, because proving that object independent would require
+// parsing its engine or SELECT sub-language.
+const databaseRealmExternalDependenciesQuery = `
+	SELECT database, name, engine
+	FROM system.tables
+	WHERE database != ?
+	  AND database NOT IN (
+	    'INFORMATION_SCHEMA',
+	    '_temporary_and_external_tables',
+	    'information_schema',
+	    'system'
+	  )
+	  AND engine IN (
+	    'Buffer',
+	    'Dictionary',
+	    'Distributed',
+	    'LiveView',
+	    'MaterializedView',
+	    'Merge',
+	    'View',
+	    'WindowView'
+	  )
+	ORDER BY database, name
+	LIMIT 1
+`
+
 var databaseRealmCleanupEngines = []string{
 	"Atomic",
 	"Lazy",
 	"Memory",
 	"Ordinary",
-	"Replicated",
-	"Shared",
 }
 
 var protectedClickHouseDatabases = []string{
@@ -346,6 +377,15 @@ func (w *Writer) checkDatabaseRealmPrivileges(ctx context.Context) error {
 			quoteIdent(w.schema),
 		)
 	}
+	if err := w.db.QueryRowContext(ctx, databaseRealmGlobalPrivilegesQuery).Scan(&granted); err != nil {
+		return fmt.Errorf("clickhouse: check global catalog visibility: %w", err)
+	}
+	if granted != 1 {
+		return fmt.Errorf(
+			"clickhouse: database-realm cleanup requires SHOW DATABASES and SHOW TABLES on *.* " +
+				"to prove that external dependencies are absent",
+		)
+	}
 	return nil
 }
 
@@ -371,6 +411,9 @@ func (w *Writer) listTemporaryObjects(ctx context.Context) ([]string, error) {
 }
 
 func (w *Writer) listDatabaseRealmObjects(ctx context.Context) ([]databaseRealmObject, error) {
+	if err := w.rejectExternalDatabaseRealmDependencies(ctx); err != nil {
+		return nil, err
+	}
 	rows, err := w.db.QueryContext(ctx, databaseRealmObjectsQuery, w.schema)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: list persistent objects in database %q: %w", w.schema, err)
@@ -408,6 +451,34 @@ func (w *Writer) listDatabaseRealmObjects(ctx context.Context) ([]databaseRealmO
 		)
 	}
 	return objects, nil
+}
+
+func (w *Writer) rejectExternalDatabaseRealmDependencies(ctx context.Context) error {
+	var database string
+	var name string
+	var engine string
+	err := w.db.QueryRowContext(
+		ctx,
+		databaseRealmExternalDependenciesQuery,
+		w.schema,
+	).Scan(&database, &name, &engine)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf(
+			"clickhouse: inspect external dependencies on database %q: %w",
+			w.schema,
+			err,
+		)
+	}
+	return fmt.Errorf(
+		"clickhouse: refusing to clean database %q: external object %s with engine %q "+
+			"may depend on the cleanup realm",
+		w.schema,
+		quoteQualifiedIdent(database, name),
+		engine,
+	)
 }
 
 func classifyDatabaseRealmObject(engine, createSQL string) databaseRealmObjectKind {

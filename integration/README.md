@@ -51,7 +51,7 @@ another database. Set the matching URL and run the focused package:
 ```bash
 PTAH_CLICKHOUSE_REALM_TEST_URL="$CLICKHOUSE_ADMIN_URL" \
   go test -v -count=1 ./internal/dbschema/clickhouse \
-  -run '^TestWriterDropDatabaseRealm_Live$'
+  -run '^TestWriterDropDatabaseRealm_(Live|RejectsExternalDependencyLive)$'
 
 PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL="$CLICKHOUSE_24_10_ADMIN_URL" \
   go test -v -count=1 ./internal/dbschema/clickhouse \
@@ -60,7 +60,7 @@ PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL="$CLICKHOUSE_24_10_ADMIN_URL" \
 MYSQL_ADMIN_TEST_DSN="$MYSQL_ADMIN_DSN" \
 MARIADB_ADMIN_TEST_DSN="$MARIADB_ADMIN_DSN" \
   go test -v -count=1 ./internal/dbschema/mysql -tags=integration \
-  -run '^TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase$'
+  -run '^TestWriterDropDatabaseRealm_Live(RejectsProtectedDatabase|RejectsExternalStoredProgram|RejectsMissingTriggerPrivilege)$'
 
 PTAH_SQLSERVER_REALM_TEST_URL="$SQLSERVER_ADMIN_URL" \
   go test -v -count=1 ./internal/dbschema/mssql \
@@ -77,6 +77,13 @@ Each URL must identify an administrative connection intended for tests. The
 success-path tests create a separate temporary database and drop it during
 cleanup. Protected-name tests connect to the named administrative database
 only to prove cleanup fails before mutation.
+
+ClickHouse cleanup requires global `SHOW DATABASES` and `SHOW TABLES`
+visibility. ClickHouse does not expose dependency metadata for ordinary views,
+so Ptah fails closed when another user database contains a view, materialized
+view, live/window view, dictionary, or `Buffer`, `Distributed`, or `Merge`
+table. Use a dedicated ClickHouse development server without unrelated
+dependency-capable objects.
 
 ## Architecture
 
@@ -273,8 +280,9 @@ Rich, interactive report with:
 ### MySQL
 - Version: 8+
 - Required cleanup permissions: global SELECT, DROP, ALTER, ALTER ROUTINE,
-  EVENT, LOCK TABLES, and PROCESS. Use these credentials only for a disposable
-  dev database. Restricted credentials remain suitable for non-cleanup tests.
+  EVENT, LOCK TABLES, PROCESS, and TRIGGER. MySQL 8.0.20 and newer also
+  requires SHOW_ROUTINE. Use these credentials only for a disposable dev
+  database. Restricted credentials remain suitable for non-cleanup tests.
 - Authentication: default MySQL authentication (`caching_sha2_password` on current MySQL images)
 
 ### MariaDB

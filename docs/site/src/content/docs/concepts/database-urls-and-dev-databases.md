@@ -75,12 +75,30 @@ exercise a real server dialect — see
   on one pinned session.
 - **MySQL-family cleanup needs global catalog visibility.** MySQL cleanup
   credentials require global `SELECT`, `DROP`, `ALTER`, `ALTER ROUTINE`,
-  `EVENT`, `LOCK TABLES`, and `PROCESS`; MariaDB also requires global
-  `SHOW VIEW`. Ptah checks these privileges before destructive DDL. Use such
-  credentials only for a disposable dev database.
+  `EVENT`, `LOCK TABLES`, and `PROCESS`. MySQL also requires global `TRIGGER`
+  and, on MySQL 8.0.20 and newer, `SHOW_ROUTINE`; MariaDB requires global
+  `SHOW VIEW`. Ptah checks these privileges before destructive DDL. It fails
+  closed when another user database contains a routine, event, or trigger
+  because stored-program bodies can reference the cleanup realm without a
+  catalog dependency. Use dedicated server instances and credentials only for
+  disposable dev databases.
 - **ClickHouse realm cleanup requires 24.11 or newer.** Ptah uses `CHECK GRANT`
-  to prove complete catalog visibility before dropping objects. Older servers
-  fail before cleanup because role-aware visibility cannot be proven safely.
+  with global `SHOW DATABASES` and `SHOW TABLES` to prove complete catalog
+  visibility before dropping objects. ClickHouse does not expose ordinary-view
+  dependencies, so Ptah fails closed when another user database contains a
+  view, materialized view, live/window view, dictionary, or `Buffer`,
+  `Distributed`, or `Merge` table. Older servers fail before cleanup because
+  role-aware visibility cannot be proven safely.
+- **PostgreSQL-family cleanup rejects database-scoped artifacts.** PostgreSQL
+  and YugabyteDB reject publications, subscriptions, logical replication
+  slots, event triggers, and non-extension foreign-data wrappers, servers, or
+  user mappings before DDL. PostgreSQL also removes and verifies database large
+  objects transactionally. YugabyteDB does not run that PostgreSQL-specific
+  large-object operation.
+- **SQL Server cleanup rejects replication state.** A replication-enabled
+  database or replicated table fails before DDL, along with other unsupported
+  database-scoped artifacts. Remove replication configuration or use a
+  dedicated disposable database before replay.
 - **Cross-realm operations fail before execution.** Ptah rejects direct
   statements that switch or mutate another database, protected namespace,
   server, cluster, temporary namespace, external file, or attached SQLite

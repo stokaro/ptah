@@ -53,6 +53,104 @@ func TestWriterDropDatabaseRealm_Live(t *testing.T) {
 	c.Assert(objectCount, qt.Equals, uint64(0))
 }
 
+func TestWriterDropDatabaseRealm_RejectsExternalDependencyLive(t *testing.T) {
+	c := qt.New(t)
+	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
+	writer := clickhouse.NewClickHouseWriter(db, database)
+	tests := []struct {
+		name            string
+		engine          string
+		objectName      string
+		createStatement func(string, string, string) string
+	}{
+		{
+			name:       "buffer table",
+			engine:     "Buffer",
+			objectName: "events_buffer",
+			createStatement: func(externalObject, _, targetDatabase string) string {
+				return "CREATE TABLE " + externalObject +
+					" (id UInt64) ENGINE = Buffer('" + targetDatabase +
+					"', 'events', 1, 1, 10, 1, 10, 1, 1000000)"
+			},
+		},
+		{
+			name:       "merge table",
+			engine:     "Merge",
+			objectName: "events_merge",
+			createStatement: func(externalObject, _, targetDatabase string) string {
+				return "CREATE TABLE " + externalObject +
+					" (id UInt64) ENGINE = Merge('" + targetDatabase + "', '^events$')"
+			},
+		},
+		{
+			name:       "view",
+			engine:     "View",
+			objectName: "events_view",
+			createStatement: func(externalObject, targetTable, _ string) string {
+				return "CREATE VIEW " + externalObject + " AS SELECT id FROM " + targetTable
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			externalDatabase := fmt.Sprintf(
+				"ptah_realm_external_%s_%d",
+				test.name,
+				time.Now().UnixNano(),
+			)
+			quotedExternalDatabase := sqlident.Quote(platform.ClickHouse, externalDatabase)
+			_, err := db.ExecContext(t.Context(), "CREATE DATABASE "+quotedExternalDatabase)
+			c.Assert(err, qt.IsNil)
+			table := sqlident.Qualified(platform.ClickHouse, database, "events")
+			c.Cleanup(func() {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				_, cleanupErr := db.ExecContext(
+					cleanupCtx,
+					"DROP DATABASE IF EXISTS "+quotedExternalDatabase+" SYNC",
+				)
+				c.Check(cleanupErr, qt.IsNil)
+				_, cleanupErr = db.ExecContext(
+					cleanupCtx,
+					"DROP TABLE IF EXISTS "+table+" SYNC",
+				)
+				c.Check(cleanupErr, qt.IsNil)
+			})
+
+			externalObject := sqlident.Qualified(
+				platform.ClickHouse,
+				externalDatabase,
+				test.objectName,
+			)
+			_, err = db.ExecContext(
+				t.Context(),
+				"CREATE TABLE "+table+" (id UInt64) ENGINE = MergeTree ORDER BY id",
+			)
+			c.Assert(err, qt.IsNil)
+			_, err = db.ExecContext(
+				t.Context(),
+				test.createStatement(externalObject, table, database),
+			)
+			c.Assert(err, qt.IsNil)
+
+			err = writer.DropDatabaseRealm(t.Context())
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, "external object "+externalObject)
+			c.Assert(err.Error(), qt.Contains, `engine "`+test.engine+`"`)
+			var objectCount uint64
+			err = db.QueryRowContext(
+				t.Context(),
+				"SELECT count() FROM system.tables WHERE database = ? AND is_temporary = 0",
+				database,
+			).Scan(&objectCount)
+			c.Assert(err, qt.IsNil)
+			c.Assert(objectCount, qt.Equals, uint64(1))
+		})
+	}
+}
+
 func TestWriterDropDatabaseRealm_RejectsLegacyServerLive(t *testing.T) {
 	c := qt.New(t)
 	db, database := openLiveClickHouseRealmDatabase(

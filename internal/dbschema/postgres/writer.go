@@ -222,12 +222,14 @@ type postgresCleanupObject struct {
 }
 
 type postgresCleanupCapabilities struct {
-	retryFailedDDL        bool
-	lockManagedRelations  bool
-	inspectPartitionEdges bool
-	preservePublicSchema  bool
-	protectedDatabases    []string
-	systemExtensions      []string
+	retryFailedDDL           bool
+	lockManagedRelations     bool
+	inspectPartitionEdges    bool
+	inspectDatabaseArtifacts bool
+	cleanupLargeObjects      bool
+	preservePublicSchema     bool
+	protectedDatabases       []string
+	systemExtensions         []string
 }
 
 type postgresCleanupScope struct {
@@ -259,18 +261,22 @@ func inspectCleanupCapabilities(
 		strings.Contains(version, "yugabyte"),
 		strings.Contains(version, "-yb-"):
 		return postgresCleanupCapabilities{
-			retryFailedDDL:        true,
-			inspectPartitionEdges: true,
-			protectedDatabases:    protectedYugabyteDatabases,
-			systemExtensions:      []string{"pg_stat_statements", "plpgsql"},
+			retryFailedDDL:           true,
+			inspectPartitionEdges:    true,
+			inspectDatabaseArtifacts: true,
+			protectedDatabases:       protectedYugabyteDatabases,
+			systemExtensions:         []string{"pg_stat_statements", "plpgsql"},
 		}, nil
 	default:
+		isPostgreSQL := strings.Contains(version, "postgresql")
 		return postgresCleanupCapabilities{
-			retryFailedDDL:        true,
-			lockManagedRelations:  strings.Contains(version, "postgresql"),
-			inspectPartitionEdges: true,
-			protectedDatabases:    protectedPostgresDatabases,
-			systemExtensions:      []string{"plpgsql"},
+			retryFailedDDL:           true,
+			lockManagedRelations:     isPostgreSQL,
+			inspectPartitionEdges:    true,
+			inspectDatabaseArtifacts: isPostgreSQL,
+			cleanupLargeObjects:      isPostgreSQL,
+			protectedDatabases:       protectedPostgresDatabases,
+			systemExtensions:         []string{"plpgsql"},
 		}, nil
 	}
 }
@@ -316,6 +322,13 @@ type postgresSchemaMetadata struct {
 	aclIsDefault     bool
 	commentStatement string
 	privileges       []postgresSchemaPrivilege
+}
+
+type postgresDatabaseCleanupPlan struct {
+	capabilities postgresCleanupCapabilities
+	rootMetadata postgresSchemaMetadata
+	schemas      []string
+	objects      []postgresCleanupObject
 }
 
 func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx *sql.Tx) error {
@@ -830,6 +843,143 @@ func rejectProtectedPostgresDatabase(
 	return nil
 }
 
+func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx) error {
+	var kind string
+	var name string
+	err := tx.QueryRowContext(ctx, `
+		WITH database_scoped_artifacts AS (
+			SELECT
+				'publication'::text AS object_kind,
+				publication.pubname AS object_name
+			FROM pg_publication publication
+
+			UNION ALL
+			SELECT
+				'subscription',
+				subscription.subname
+			FROM pg_subscription subscription
+			WHERE subscription.subdbid = (
+				SELECT database.oid
+				FROM pg_database database
+				WHERE database.datname = current_database()
+			)
+
+			UNION ALL
+			SELECT
+				'logical replication slot',
+				slot.slot_name
+			FROM pg_replication_slots slot
+			WHERE slot.slot_type = 'logical'
+			  AND slot.datoid = (
+				SELECT database.oid
+				FROM pg_database database
+				WHERE database.datname = current_database()
+			  )
+
+			UNION ALL
+			SELECT
+				'event trigger',
+				event_trigger.evtname
+			FROM pg_event_trigger event_trigger
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM pg_depend dependency
+				WHERE dependency.classid = 'pg_event_trigger'::regclass
+				  AND dependency.objid = event_trigger.oid
+				  AND dependency.deptype = 'e'
+			)
+
+			UNION ALL
+			SELECT
+				'foreign-data wrapper',
+				wrapper.fdwname
+			FROM pg_foreign_data_wrapper wrapper
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM pg_depend dependency
+				WHERE dependency.classid = 'pg_foreign_data_wrapper'::regclass
+				  AND dependency.objid = wrapper.oid
+				  AND dependency.deptype = 'e'
+			)
+
+			UNION ALL
+			SELECT
+				'foreign server',
+				server.srvname
+			FROM pg_foreign_server server
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM pg_depend dependency
+				WHERE dependency.classid = 'pg_foreign_server'::regclass
+				  AND dependency.objid = server.oid
+				  AND dependency.deptype = 'e'
+			)
+
+			UNION ALL
+			SELECT
+				'user mapping',
+				format(
+					'%s@%s',
+					COALESCE(role.rolname, 'PUBLIC'),
+					server.srvname
+				)
+			FROM pg_user_mapping mapping
+			LEFT JOIN pg_roles role ON role.oid = mapping.umuser
+			JOIN pg_foreign_server server ON server.oid = mapping.umserver
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM pg_depend dependency
+				WHERE dependency.classid = 'pg_user_mapping'::regclass
+				  AND dependency.objid = mapping.oid
+				  AND dependency.deptype = 'e'
+			)
+		)
+		SELECT object_kind, object_name
+		FROM database_scoped_artifacts
+		ORDER BY object_kind, object_name
+		LIMIT 1
+	`).Scan(&kind, &name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to inspect PostgreSQL database-scoped artifacts: %w", err)
+	}
+	return fmt.Errorf(
+		"refusing to clean PostgreSQL database realm with unsupported database-scoped %s %q",
+		kind,
+		name,
+	)
+}
+
+func cleanupPostgresLargeObjects(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `
+		SELECT lo_unlink(oid)
+		FROM pg_largeobject_metadata
+		ORDER BY oid
+	`); err != nil {
+		return fmt.Errorf("failed to remove PostgreSQL large objects: %w", err)
+	}
+	return nil
+}
+
+func verifyPostgresLargeObjects(ctx context.Context, tx *sql.Tx) error {
+	var oid uint32
+	err := tx.QueryRowContext(ctx, `
+		SELECT oid
+		FROM pg_largeobject_metadata
+		ORDER BY oid
+		LIMIT 1
+	`).Scan(&oid)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to verify PostgreSQL large object cleanup: %w", err)
+	}
+	return fmt.Errorf("PostgreSQL database realm cleanup left residual large object %d", oid)
+}
+
 func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr error) {
 	if w.dryRun {
 		return nil
@@ -896,81 +1046,130 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context) (resultErr err
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	committed := false
 	defer func() {
-		if !committed {
-			rollbackErr := sqlTx.Rollback()
-			if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-				resultErr = errors.Join(resultErr, fmt.Errorf("failed to roll back transaction: %w", rollbackErr))
-			}
-		}
+		finishPostgresCleanupTransaction(sqlTx, &resultErr)
 	}()
 
-	capabilities, err := inspectCleanupCapabilities(ctx, sqlTx)
+	plan, err := w.planDatabaseRealmCleanup(ctx, sqlTx)
 	if err != nil {
 		return err
 	}
-	if err := rejectProtectedPostgresDatabase(
-		ctx,
-		sqlTx,
-		capabilities.protectedDatabases,
-	); err != nil {
-		return err
-	}
-	rootMetadata, err := capturePostgresSchemaMetadata(ctx, sqlTx, w.schema)
+	preservedSchemas, err := w.executeDatabaseRealmCleanup(ctx, sqlTx, plan)
 	if err != nil {
 		return err
 	}
-	schemas, err := collectUserSchemas(ctx, sqlTx)
-	if err != nil {
-		return err
-	}
-	objects, err := w.collectAllObjects(
-		ctx,
-		sqlTx,
-		postgresDatabaseCleanupScope(schemas, capabilities.systemExtensions),
-	)
-	if err != nil {
-		return err
-	}
-	if capabilities.lockManagedRelations {
-		if err := w.lockManagedRelations(ctx, sqlTx, objects); err != nil {
-			return err
-		}
-	}
-
-	dropErr := capabilities.dropObjects(ctx, sqlTx, objects)
-	if dropErr != nil {
-		return fmt.Errorf("refusing to clean PostgreSQL database realm: %w", dropErr)
-	}
-
-	preservedSchemas := []string{w.schema}
-	droppableSchemas := schemas
-	if capabilities.preservePublicSchema {
-		preservedSchemas = appendUniqueString(preservedSchemas, "public")
-		droppableSchemas = excludeString(droppableSchemas, "public")
-	}
-	if err := dropPostgresUserSchemas(ctx, sqlTx, droppableSchemas); err != nil {
-		return err
-	}
-	if !capabilities.preservePublicSchema || w.schema != "public" {
-		if err := restorePostgresRootSchema(ctx, sqlTx, w.schema, rootMetadata); err != nil {
-			return err
-		}
-	}
-
-	if err := verifyPostgresDatabaseRealm(
-		ctx,
-		sqlTx,
-		preservedSchemas,
-		capabilities.systemExtensions,
-	); err != nil {
+	if err := verifyCompletedPostgresDatabaseCleanup(ctx, sqlTx, preservedSchemas, plan.capabilities); err != nil {
 		return err
 	}
 	if err := sqlTx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
-	committed = true
+	return nil
+}
+
+func finishPostgresCleanupTransaction(tx *sql.Tx, resultErr *error) {
+	rollbackErr := tx.Rollback()
+	if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+		*resultErr = errors.Join(*resultErr, fmt.Errorf("failed to roll back transaction: %w", rollbackErr))
+	}
+}
+
+func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
+	ctx context.Context,
+	tx *sql.Tx,
+) (postgresDatabaseCleanupPlan, error) {
+	capabilities, err := inspectCleanupCapabilities(ctx, tx)
+	if err != nil {
+		return postgresDatabaseCleanupPlan{}, err
+	}
+	if err := rejectProtectedPostgresDatabase(ctx, tx, capabilities.protectedDatabases); err != nil {
+		return postgresDatabaseCleanupPlan{}, err
+	}
+	if capabilities.inspectDatabaseArtifacts {
+		if err := rejectPostgresDatabaseScopedArtifacts(ctx, tx); err != nil {
+			return postgresDatabaseCleanupPlan{}, err
+		}
+	}
+	rootMetadata, err := capturePostgresSchemaMetadata(ctx, tx, w.schema)
+	if err != nil {
+		return postgresDatabaseCleanupPlan{}, err
+	}
+	schemas, err := collectUserSchemas(ctx, tx)
+	if err != nil {
+		return postgresDatabaseCleanupPlan{}, err
+	}
+	objects, err := w.collectAllObjects(
+		ctx,
+		tx,
+		postgresDatabaseCleanupScope(schemas, capabilities.systemExtensions),
+	)
+	if err != nil {
+		return postgresDatabaseCleanupPlan{}, err
+	}
+	if capabilities.lockManagedRelations {
+		if err := w.lockManagedRelations(ctx, tx, objects); err != nil {
+			return postgresDatabaseCleanupPlan{}, err
+		}
+	}
+	return postgresDatabaseCleanupPlan{
+		capabilities: capabilities,
+		rootMetadata: rootMetadata,
+		schemas:      schemas,
+		objects:      objects,
+	}, nil
+}
+
+func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
+	ctx context.Context,
+	tx *sql.Tx,
+	plan postgresDatabaseCleanupPlan,
+) ([]string, error) {
+	dropErr := plan.capabilities.dropObjects(ctx, tx, plan.objects)
+	if dropErr != nil {
+		return nil, fmt.Errorf("refusing to clean PostgreSQL database realm: %w", dropErr)
+	}
+	if plan.capabilities.cleanupLargeObjects {
+		if err := cleanupPostgresLargeObjects(ctx, tx); err != nil {
+			return nil, err
+		}
+	}
+
+	preservedSchemas := []string{w.schema}
+	droppableSchemas := plan.schemas
+	if plan.capabilities.preservePublicSchema {
+		preservedSchemas = appendUniqueString(preservedSchemas, "public")
+		droppableSchemas = excludeString(droppableSchemas, "public")
+	}
+	if err := dropPostgresUserSchemas(ctx, tx, droppableSchemas); err != nil {
+		return nil, err
+	}
+	if !plan.capabilities.preservePublicSchema || w.schema != "public" {
+		if err := restorePostgresRootSchema(ctx, tx, w.schema, plan.rootMetadata); err != nil {
+			return nil, err
+		}
+	}
+	return preservedSchemas, nil
+}
+
+func verifyCompletedPostgresDatabaseCleanup(
+	ctx context.Context,
+	tx *sql.Tx,
+	preservedSchemas []string,
+	capabilities postgresCleanupCapabilities,
+) error {
+	if err := verifyPostgresDatabaseRealm(
+		ctx,
+		tx,
+		preservedSchemas,
+		capabilities.systemExtensions,
+	); err != nil {
+		return err
+	}
+	if capabilities.cleanupLargeObjects {
+		if err := verifyPostgresLargeObjects(ctx, tx); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

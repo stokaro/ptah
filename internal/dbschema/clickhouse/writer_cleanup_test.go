@@ -37,6 +37,34 @@ const databaseRealmTemporaryObjectsQuery = `
 	ORDER BY name
 `
 
+const databaseRealmGlobalPrivilegesQuery = `
+	CHECK GRANT SHOW DATABASES, SHOW TABLES ON *.*
+`
+
+const databaseRealmExternalDependenciesQuery = `
+	SELECT database, name, engine
+	FROM system.tables
+	WHERE database != ?
+	  AND database NOT IN (
+	    'INFORMATION_SCHEMA',
+	    '_temporary_and_external_tables',
+	    'information_schema',
+	    'system'
+	  )
+	  AND engine IN (
+	    'Buffer',
+	    'Dictionary',
+	    'Distributed',
+	    'LiveView',
+	    'MaterializedView',
+	    'Merge',
+	    'View',
+	    'WindowView'
+	  )
+	ORDER BY database, name
+	LIMIT 1
+`
+
 type sqlMockQuery struct {
 	sql    string
 	args   []driver.NamedValue
@@ -77,6 +105,8 @@ func TestWriterDropDatabaseRealm_DropsPersistentObjectsInDependencyOrder(t *test
 			},
 		},
 		databaseRealmGrantedQuery(privilegesQuery),
+		databaseRealmGlobalGrantedQuery(),
+		databaseRealmNoExternalDependencyQuery(database),
 		sqlMockQuery{
 			sql:    databaseRealmObjectsQuery,
 			args:   queryArgs,
@@ -146,6 +176,8 @@ func TestWriterDropDatabaseRealm_VerifiesPersistentObjectsAreGone(t *testing.T) 
 		databaseRealmPreflightQueries(database, privilegesQuery, "Atomic"),
 		sqlMockQuery{sql: databaseRealmObjectsQuery, args: queryArgs, result: objectRows},
 		databaseRealmGrantedQuery(privilegesQuery),
+		databaseRealmGlobalGrantedQuery(),
+		databaseRealmNoExternalDependencyQuery(database),
 		sqlMockQuery{sql: databaseRealmObjectsQuery, args: queryArgs, result: objectRows},
 	)
 	execs := []sqlMockExec{
@@ -212,7 +244,9 @@ func TestWriterDropDatabaseRealm_MissingPrivilegesFailBeforeCatalogRead(t *testi
 	assertClickHouseSQLMockComplete(c, db, queries, nil)
 }
 
-func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t *testing.T) {
+func TestWriterDropDatabaseRealm_MissingGlobalVisibilityFailsBeforeCatalogRead(
+	t *testing.T,
+) {
 	c := qt.New(t)
 	database := "analytics"
 	privilegesQuery := databaseRealmPrivilegesQuery(database)
@@ -220,11 +254,10 @@ func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t 
 		databaseRealmVersionResult("26.2.0.0"),
 		databaseRealmGrantedQuery(privilegesQuery),
 		{
-			sql:  databaseRealmEngineQuery,
-			args: []driver.NamedValue{{Ordinal: 1, Value: database}},
+			sql: databaseRealmGlobalPrivilegesQuery,
 			result: dbtest.QueryResult{
-				Columns: []string{"engine"},
-				Rows:    [][]driver.Value{{"DataLakeCatalog"}},
+				Columns: []string{"result"},
+				Rows:    [][]driver.Value{{int64(0)}},
 			},
 		},
 	}
@@ -236,9 +269,106 @@ func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t 
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`clickhouse: refusing to clean database "analytics" with unsupported engine "DataLakeCatalog"`,
+		`clickhouse: database-realm cleanup requires SHOW DATABASES and SHOW TABLES on \*\.\* `+
+			`to prove that external dependencies are absent`,
 	)
 	assertClickHouseSQLMockComplete(c, db, queries, nil)
+}
+
+func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t *testing.T) {
+	c := qt.New(t)
+	engines := []string{"DataLakeCatalog", "Replicated", "Shared"}
+
+	for _, engine := range engines {
+		c.Run(engine, func(c *qt.C) {
+			database := "analytics"
+			privilegesQuery := databaseRealmPrivilegesQuery(database)
+			queries := []sqlMockQuery{
+				databaseRealmVersionResult("26.2.0.0"),
+				databaseRealmGrantedQuery(privilegesQuery),
+				databaseRealmGlobalGrantedQuery(),
+				{
+					sql:  databaseRealmEngineQuery,
+					args: []driver.NamedValue{{Ordinal: 1, Value: database}},
+					result: dbtest.QueryResult{
+						Columns: []string{"engine"},
+						Rows:    [][]driver.Value{{engine}},
+					},
+				},
+			}
+			db := openClickHouseSQLMock(t, c, queries, nil)
+			writer := clickhouse.NewClickHouseWriter(db.SQL, database)
+
+			err := writer.DropDatabaseRealm(t.Context())
+
+			c.Assert(
+				err,
+				qt.ErrorMatches,
+				`clickhouse: refusing to clean database "analytics" with unsupported engine "`+
+					engine+`"`,
+			)
+			assertClickHouseSQLMockComplete(c, db, queries, nil)
+		})
+	}
+}
+
+func TestWriterDropDatabaseRealm_ExternalDependencyFailsBeforeMutation(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name       string
+		objectName string
+		engine     string
+	}{
+		{
+			name:       "buffer table",
+			objectName: "events_buffer",
+			engine:     "Buffer",
+		},
+		{
+			name:       "materialized view",
+			objectName: "events_mv",
+			engine:     "MaterializedView",
+		},
+		{
+			name:       "merge table",
+			objectName: "events_merge",
+			engine:     "Merge",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			database := "analytics"
+			privilegesQuery := databaseRealmPrivilegesQuery(database)
+			externalArgs := []driver.NamedValue{
+				{Ordinal: 1, Value: database},
+			}
+			queries := append(
+				databaseRealmTargetPreflightQueries(database, privilegesQuery, "Atomic"),
+				sqlMockQuery{
+					sql:  databaseRealmExternalDependenciesQuery,
+					args: externalArgs,
+					result: dbtest.QueryResult{
+						Columns: []string{"database", "name", "engine"},
+						Rows:    [][]driver.Value{{"reporting", test.objectName, test.engine}},
+					},
+				},
+			)
+			db := openClickHouseSQLMock(t, c, queries, nil)
+			writer := clickhouse.NewClickHouseWriter(db.SQL, database)
+
+			err := writer.DropDatabaseRealm(t.Context())
+
+			c.Assert(
+				err,
+				qt.ErrorMatches,
+				`clickhouse: refusing to clean database "analytics": external object `+
+					"`reporting`.`"+test.objectName+"`"+` with engine "`+test.engine+
+					`" may depend on the cleanup realm`,
+			)
+			assertClickHouseSQLMockComplete(c, db, queries, nil)
+		})
+	}
 }
 
 func TestWriterDropDatabaseRealm_ProtectedDatabasesFailWithoutIO(t *testing.T) {
@@ -270,6 +400,7 @@ func TestWriterDropDatabaseRealm_TemporaryObjectsFailBeforePersistentCatalogRead
 	queries := []sqlMockQuery{
 		databaseRealmVersionResult("26.2.0.0"),
 		databaseRealmGrantedQuery(privilegesQuery),
+		databaseRealmGlobalGrantedQuery(),
 		{
 			sql:  databaseRealmEngineQuery,
 			args: []driver.NamedValue{{Ordinal: 1, Value: database}},
@@ -380,6 +511,8 @@ func TestWriterDropDatabaseRealm_IsIdempotentWhenDatabaseIsEmpty(t *testing.T) {
 		databaseRealmPreflightQueries(database, privilegesQuery, "Atomic"),
 		emptyObjectsQuery,
 		databaseRealmGrantedQuery(privilegesQuery),
+		databaseRealmGlobalGrantedQuery(),
+		databaseRealmNoExternalDependencyQuery(database),
 		emptyObjectsQuery,
 	)
 	queries := append(append([]sqlMockQuery{}, oneRun...), oneRun...)
@@ -465,6 +598,27 @@ func databaseRealmGrantedQuery(privilegesQuery string) sqlMockQuery {
 	}
 }
 
+func databaseRealmGlobalGrantedQuery() sqlMockQuery {
+	return sqlMockQuery{
+		sql: databaseRealmGlobalPrivilegesQuery,
+		result: dbtest.QueryResult{
+			Columns: []string{"result"},
+			Rows:    [][]driver.Value{{int64(1)}},
+		},
+	}
+}
+
+func databaseRealmNoExternalDependencyQuery(database string) sqlMockQuery {
+	args := []driver.NamedValue{
+		{Ordinal: 1, Value: database},
+	}
+	return sqlMockQuery{
+		sql:    databaseRealmExternalDependenciesQuery,
+		args:   args,
+		result: dbtest.QueryResult{Columns: []string{"database", "name", "engine"}},
+	}
+}
+
 func databaseRealmVersionResult(version string) sqlMockQuery {
 	return sqlMockQuery{
 		sql: databaseRealmVersionQuery,
@@ -480,9 +634,21 @@ func databaseRealmPreflightQueries(
 	privilegesQuery string,
 	engine string,
 ) []sqlMockQuery {
+	return append(
+		databaseRealmTargetPreflightQueries(database, privilegesQuery, engine),
+		databaseRealmNoExternalDependencyQuery(database),
+	)
+}
+
+func databaseRealmTargetPreflightQueries(
+	database string,
+	privilegesQuery string,
+	engine string,
+) []sqlMockQuery {
 	return []sqlMockQuery{
 		databaseRealmVersionResult("26.2.0.0"),
 		databaseRealmGrantedQuery(privilegesQuery),
+		databaseRealmGlobalGrantedQuery(),
 		{
 			sql:  databaseRealmEngineQuery,
 			args: []driver.NamedValue{{Ordinal: 1, Value: database}},

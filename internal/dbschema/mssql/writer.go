@@ -982,6 +982,61 @@ const unsupportedRealmArtifactQuery = `
 
 			UNION ALL
 
+			SELECT
+				N'replication-enabled database',
+				d.name,
+				CONCAT(
+					N'is_distributor=', d.is_distributor,
+					N', is_published=', d.is_published,
+					N', is_merge_published=', d.is_merge_published
+				)
+			FROM sys.databases AS d
+			WHERE d.name = DB_NAME()
+			  AND (
+				  d.is_distributor = 1
+				  OR d.is_published = 1
+				  OR d.is_merge_published = 1
+			  )
+
+			UNION ALL
+
+			SELECT
+				CASE
+					WHEN TRY_CONVERT(int, subscription.raw_value) = 1
+						THEN N'subscriber database'
+					ELSE N'unknown database subscription state'
+				END,
+				DB_NAME(),
+				CONCAT(
+					N'IsSubscribed=',
+					COALESCE(TRY_CONVERT(nvarchar(128), subscription.raw_value), N'<unavailable>')
+				)
+			FROM (
+				SELECT DATABASEPROPERTYEX(DB_NAME(), N'IsSubscribed') AS raw_value
+			) AS subscription
+			WHERE COALESCE(TRY_CONVERT(int, subscription.raw_value), -1) <> 0
+
+			UNION ALL
+
+			SELECT
+				N'replicated table',
+				CONCAT(s.name, N'.', t.name),
+				CONCAT(
+					N'is_replicated=', t.is_replicated,
+					N', is_merge_published=', t.is_merge_published,
+					N', is_sync_tran_subscribed=', t.is_sync_tran_subscribed
+				)
+			FROM sys.tables AS t
+			JOIN sys.schemas AS s ON s.schema_id = t.schema_id
+			WHERE t.is_ms_shipped = 0
+			  AND (
+				  t.is_replicated = 1
+				  OR t.is_merge_published = 1
+				  OR t.is_sync_tran_subscribed = 1
+			  )
+
+			UNION ALL
+
 			SELECT N'database principal', p.name, p.type_desc
 			FROM sys.database_principals AS p
 			WHERE p.principal_id > 4

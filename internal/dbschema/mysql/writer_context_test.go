@@ -257,6 +257,52 @@ func TestWriterDropAllTables_RejectsMariaDBCrossDatabaseViews(t *testing.T) {
 	})
 }
 
+func TestWriterDropAllTables_RejectsExternalStoredProgramsBeforeMutation(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name   string
+		schema string
+		object string
+		kind   string
+	}{
+		{name: "function", schema: "reporting", object: "load_events", kind: "FUNCTION"},
+		{name: "procedure", schema: "reporting", object: "refresh_events", kind: "PROCEDURE"},
+		{name: "event", schema: "scheduler", object: "nightly_rollup", kind: "EVENT"},
+		{name: "trigger", schema: "audit", object: "capture_event", kind: "TRIGGER"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			recorder := &mysqlCleanupRecorder{
+				foreignKeyChecks: 1,
+				externalStoredPrograms: [][]driver.Value{{
+					test.schema,
+					test.object,
+					test.kind,
+				}},
+			}
+			db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+			writer := mysql.NewMySQLWriterWithServerVersion(
+				db.SQL,
+				"test",
+				platform.MySQL,
+				"8.0.13",
+			)
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(
+				err,
+				qt.ErrorMatches,
+				`mysql: refusing to clean database "test": external `+
+					strings.ToLower(test.kind)+
+					" `"+test.schema+"`.`"+test.object+"` may reference the cleanup realm",
+			)
+			c.Assert(recorder.statements(), qt.HasLen, 0)
+		})
+	}
+}
+
 func TestWriterDropAllTables_FailsClosedWithoutGlobalMetadataVisibility(t *testing.T) {
 	c := qt.New(t)
 	recorder := &mysqlCleanupRecorder{
@@ -269,10 +315,71 @@ func TestWriterDropAllTables_FailsClosedWithoutGlobalMetadataVisibility(t *testi
 	err := writer.DropAllTables(t.Context())
 
 	c.Assert(err, qt.ErrorMatches,
-		`mysql: refusing to clean database "test": global SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, and PROCESS privileges are required `+
+		`mysql: refusing to clean database "test": global SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, PROCESS, and TRIGGER privileges are required `+
 			`to prove complete metadata visibility and protect destructive DDL`,
 	)
 	c.Assert(recorder.statements(), qt.HasLen, 0)
+}
+
+func TestWriterDropAllTables_RequiresShowRoutineOnModernMySQL(t *testing.T) {
+	c := qt.New(t)
+	recorder := &mysqlCleanupRecorder{
+		foreignKeyChecks:   1,
+		missingShowRoutine: true,
+	}
+	db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+	writer := mysql.NewMySQLWriterWithServerVersion(db.SQL, "test", platform.MySQL, "9.7.1")
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`mysql: refusing to clean database "test": global SELECT, DROP, ALTER, ALTER ROUTINE, `+
+			`EVENT, LOCK TABLES, PROCESS, SHOW_ROUTINE, and TRIGGER privileges are required `+
+			`to prove complete metadata visibility and protect destructive DDL`,
+	)
+	c.Assert(recorder.statements(), qt.HasLen, 0)
+}
+
+func TestWriterDropAllTables_RequiresTriggerVisibilityOnMySQL(t *testing.T) {
+	c := qt.New(t)
+	recorder := &mysqlCleanupRecorder{
+		foreignKeyChecks: 1,
+		missingTrigger:   true,
+	}
+	db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+	writer := mysql.NewMySQLWriterWithServerVersion(db.SQL, "test", platform.MySQL, "8.0.13")
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`mysql: refusing to clean database "test": global SELECT, DROP, ALTER, ALTER ROUTINE, `+
+			`EVENT, LOCK TABLES, PROCESS, and TRIGGER privileges are required `+
+			`to prove complete metadata visibility and protect destructive DDL`,
+	)
+	c.Assert(recorder.statements(), qt.HasLen, 0)
+}
+
+func TestWriterDropAllTables_DoesNotRequireTriggerVisibilityOnMariaDB(t *testing.T) {
+	c := qt.New(t)
+	recorder := &mysqlCleanupRecorder{
+		foreignKeyChecks: 1,
+		missingTrigger:   true,
+	}
+	db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+	writer := mysql.NewMySQLWriterWithServerVersion(
+		db.SQL,
+		"test",
+		platform.MariaDB,
+		"10.11.15-MariaDB",
+	)
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.IsNil)
 }
 
 func TestWriterDropAllTables_FailsClosedForPartialPrivilegeRevokes(t *testing.T) {
@@ -662,8 +769,12 @@ type mysqlCleanupRecorder struct {
 	cancelOnDrop               context.CancelFunc
 	externalForeignKeyQueryErr error
 	viewQueryErr               error
+	storedProgramQueryErr      error
 	missingGlobalPrivileges    bool
+	missingShowRoutine         bool
+	missingTrigger             bool
 	partialPrivilegeRevokes    bool
+	externalStoredPrograms     [][]driver.Value
 	viewDropStarted            chan struct{}
 	viewDropStartedOnce        sync.Once
 	viewDropRelease            chan struct{}
@@ -690,6 +801,8 @@ func (rec *mysqlCleanupRecorder) query(
 		hasLockTables := int64(1)
 		hasProcess := int64(1)
 		hasShowView := int64(1)
+		hasShowRoutine := int64(1)
+		hasTrigger := int64(1)
 		if rec.missingGlobalPrivileges {
 			hasDrop = 0
 			hasAlter = 0
@@ -698,6 +811,14 @@ func (rec *mysqlCleanupRecorder) query(
 			hasLockTables = 0
 			hasProcess = 0
 			hasShowView = 0
+			hasShowRoutine = 0
+			hasTrigger = 0
+		}
+		if rec.missingShowRoutine {
+			hasShowRoutine = 0
+		}
+		if rec.missingTrigger {
+			hasTrigger = 0
 		}
 		return dbtest.QueryResult{
 			Columns: []string{
@@ -709,6 +830,8 @@ func (rec *mysqlCleanupRecorder) query(
 				"has_lock_tables",
 				"has_process",
 				"has_show_view",
+				"has_show_routine",
+				"has_trigger",
 			},
 			Rows: [][]driver.Value{{
 				hasSelect,
@@ -719,6 +842,8 @@ func (rec *mysqlCleanupRecorder) query(
 				hasLockTables,
 				hasProcess,
 				hasShowView,
+				hasShowRoutine,
+				hasTrigger,
 			}},
 		}, nil
 	case strings.Contains(query, "SHOW GRANTS"):
@@ -783,6 +908,14 @@ func (rec *mysqlCleanupRecorder) query(
 		return dbtest.QueryResult{
 			Columns: []string{"count"},
 			Rows:    [][]driver.Value{{int64(count)}},
+		}, nil
+	case strings.Contains(query, "external_stored_programs"):
+		if rec.storedProgramQueryErr != nil {
+			return dbtest.QueryResult{}, rec.storedProgramQueryErr
+		}
+		return dbtest.QueryResult{
+			Columns: []string{"object_schema", "object_name", "object_kind"},
+			Rows:    rec.externalStoredPrograms,
 		}, nil
 	case strings.Contains(query, "cleanup_objects"):
 		rec.mu.Lock()

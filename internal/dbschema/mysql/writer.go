@@ -280,7 +280,13 @@ func (w *Writer) dropAllTablesOnConnection(
 			serverVersion,
 		)
 	}
-	if err := requireGlobalMetadataVisibility(ctx, conn, schema, w.dialect); err != nil {
+	if err := requireGlobalMetadataVisibility(
+		ctx,
+		conn,
+		schema,
+		w.dialect,
+		serverVersion,
+	); err != nil {
 		return err
 	}
 	return withForeignKeyChecksEnabled(ctx, conn, func() error {
@@ -308,6 +314,9 @@ func (w *Writer) dropDatabaseObjects(ctx context.Context, conn *sql.Conn, schema
 	if err := rejectExternalViews(ctx, conn, schema, w.dialect); err != nil {
 		return err
 	}
+	if err := rejectExternalStoredPrograms(ctx, conn, schema); err != nil {
+		return err
+	}
 	if err := w.dropProtectedViews(ctx, conn, schema, groups.views, groups.tables); err != nil {
 		return err
 	}
@@ -315,6 +324,9 @@ func (w *Writer) dropDatabaseObjects(ctx context.Context, conn *sql.Conn, schema
 		return err
 	}
 	if err := w.dropProtectedObjects(ctx, conn, schema, groups.tables); err != nil {
+		return err
+	}
+	if err := rejectExternalStoredPrograms(ctx, conn, schema); err != nil {
 		return err
 	}
 	return dropRemainingCleanupObjects(ctx, conn, schema, groups.remaining)
@@ -467,25 +479,93 @@ func (w *Writer) cleanupServerVersion(ctx context.Context, conn *sql.Conn) (stri
 	return version, nil
 }
 
+type globalMetadataPrivileges struct {
+	selectPrivilege       bool
+	dropPrivilege         bool
+	alterPrivilege        bool
+	alterRoutinePrivilege bool
+	eventPrivilege        bool
+	lockTablesPrivilege   bool
+	processPrivilege      bool
+	showViewPrivilege     bool
+	showRoutinePrivilege  bool
+	triggerPrivilege      bool
+}
+
+type globalMetadataRequirements struct {
+	names       string
+	showView    bool
+	showRoutine bool
+	trigger     bool
+}
+
+func (r globalMetadataRequirements) satisfiedBy(privileges globalMetadataPrivileges) bool {
+	return privileges.selectPrivilege &&
+		privileges.dropPrivilege &&
+		privileges.alterPrivilege &&
+		privileges.alterRoutinePrivilege &&
+		privileges.eventPrivilege &&
+		privileges.lockTablesPrivilege &&
+		privileges.processPrivilege &&
+		(!r.showView || privileges.showViewPrivilege) &&
+		(!r.showRoutine || privileges.showRoutinePrivilege) &&
+		(!r.trigger || privileges.triggerPrivilege)
+}
+
 func requireGlobalMetadataVisibility(
 	ctx context.Context,
 	conn *sql.Conn,
 	schema,
-	dialect string,
+	dialect,
+	serverVersion string,
 ) error {
-	privilegeNames := "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, and PROCESS"
-	if platform.NormalizeDialect(dialect) == platform.MariaDB {
-		privilegeNames = "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, PROCESS, and SHOW VIEW"
+	requirements := metadataVisibilityRequirements(dialect, serverVersion)
+	privileges, err := readGlobalMetadataPrivileges(ctx, conn)
+	if err != nil {
+		return err
 	}
+	if !requirements.satisfiedBy(privileges) {
+		return fmt.Errorf(
+			"mysql: refusing to clean database %q: global %s privileges are required "+
+				"to prove complete metadata visibility and protect destructive DDL",
+			schema,
+			requirements.names,
+		)
+	}
+	return rejectPartialPrivilegeRevokes(ctx, conn, schema)
+}
 
-	var hasSelect bool
-	var hasDrop bool
-	var hasAlter bool
-	var hasAlterRoutine bool
-	var hasEvent bool
-	var hasLockTables bool
-	var hasProcess bool
-	var hasShowView bool
+func metadataVisibilityRequirements(dialect, serverVersion string) globalMetadataRequirements {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MariaDB:
+		return globalMetadataRequirements{
+			names:    "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, PROCESS, and SHOW VIEW",
+			showView: true,
+		}
+	case platform.MySQL:
+		requiresShowRoutine := supportsMySQLShowRoutinePrivilege(serverVersion)
+		if requiresShowRoutine {
+			return globalMetadataRequirements{
+				names:       "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, PROCESS, SHOW_ROUTINE, and TRIGGER",
+				showRoutine: true,
+				trigger:     true,
+			}
+		}
+		return globalMetadataRequirements{
+			names:   "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, PROCESS, and TRIGGER",
+			trigger: true,
+		}
+	}
+	return globalMetadataRequirements{
+		names: "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, and PROCESS",
+	}
+}
+
+func readGlobalMetadataPrivileges(
+	ctx context.Context,
+	conn *sql.Conn,
+) (globalMetadataPrivileges, error) {
+	var privileges globalMetadataPrivileges
 	if err := conn.QueryRowContext(ctx, `
 		SELECT
 			COALESCE(MAX(privilege_type = 'SELECT'), 0),
@@ -495,7 +575,9 @@ func requireGlobalMetadataVisibility(
 			COALESCE(MAX(privilege_type = 'EVENT'), 0),
 			COALESCE(MAX(privilege_type = 'LOCK TABLES'), 0),
 			COALESCE(MAX(privilege_type = 'PROCESS'), 0),
-			COALESCE(MAX(privilege_type = 'SHOW VIEW'), 0)
+			COALESCE(MAX(privilege_type = 'SHOW VIEW'), 0),
+			COALESCE(MAX(privilege_type = 'SHOW_ROUTINE'), 0),
+			COALESCE(MAX(privilege_type = 'TRIGGER'), 0)
 		FROM information_schema.user_privileges
 		WHERE grantee = CONCAT(
 			QUOTE(SUBSTRING_INDEX(CURRENT_USER(), '@', 1)),
@@ -510,39 +592,28 @@ func requireGlobalMetadataVisibility(
 		    'EVENT',
 		    'LOCK TABLES',
 		    'PROCESS',
-		    'SHOW VIEW'
+		    'SHOW VIEW',
+		    'SHOW_ROUTINE',
+		    'TRIGGER'
 		  )
 	`).Scan(
-		&hasSelect,
-		&hasDrop,
-		&hasAlter,
-		&hasAlterRoutine,
-		&hasEvent,
-		&hasLockTables,
-		&hasProcess,
-		&hasShowView,
+		&privileges.selectPrivilege,
+		&privileges.dropPrivilege,
+		&privileges.alterPrivilege,
+		&privileges.alterRoutinePrivilege,
+		&privileges.eventPrivilege,
+		&privileges.lockTablesPrivilege,
+		&privileges.processPrivilege,
+		&privileges.showViewPrivilege,
+		&privileges.showRoutinePrivilege,
+		&privileges.triggerPrivilege,
 	); err != nil {
-		return fmt.Errorf("mysql: prove global metadata visibility: %w", err)
+		return globalMetadataPrivileges{}, fmt.Errorf("mysql: prove global metadata visibility: %w", err)
 	}
-	hasRequiredPrivileges := hasSelect &&
-		hasDrop &&
-		hasAlter &&
-		hasAlterRoutine &&
-		hasEvent &&
-		hasLockTables &&
-		hasProcess
-	if platform.NormalizeDialect(dialect) == platform.MariaDB {
-		hasRequiredPrivileges = hasRequiredPrivileges && hasShowView
-	}
-	if !hasRequiredPrivileges {
-		return fmt.Errorf(
-			"mysql: refusing to clean database %q: global %s privileges are required "+
-				"to prove complete metadata visibility and protect destructive DDL",
-			schema,
-			privilegeNames,
-		)
-	}
+	return privileges, nil
+}
 
+func rejectPartialPrivilegeRevokes(ctx context.Context, conn *sql.Conn, schema string) error {
 	rows, err := conn.QueryContext(ctx, "SHOW GRANTS")
 	if err != nil {
 		return fmt.Errorf("mysql: inspect metadata visibility restrictions: %w", err)
@@ -611,6 +682,9 @@ func (w *Writer) dropProtectedViews(
 		return err
 	}
 	if err := rejectExternalViews(ctx, lockConn, schema, w.dialect); err != nil {
+		return err
+	}
+	if err := rejectExternalStoredPrograms(ctx, lockConn, schema); err != nil {
 		return err
 	}
 
@@ -758,6 +832,9 @@ func (w *Writer) dropProtectedObjects(
 		return err
 	}
 	if err := rejectExternalViews(ctx, conn, schema, w.dialect); err != nil {
+		return err
+	}
+	if err := rejectExternalStoredPrograms(ctx, conn, schema); err != nil {
 		return err
 	}
 
@@ -908,21 +985,86 @@ func externalViewCount(ctx context.Context, conn *sql.Conn, schema, dialect stri
 }
 
 func supportsMySQLViewTableUsage(version string) bool {
+	parts, valid := parseMySQLVersion(version)
+	if !valid {
+		return false
+	}
+	if parts[0] != 8 {
+		return parts[0] > 8
+	}
+	return parts[1] > 0 || parts[2] >= 13
+}
+
+func supportsMySQLShowRoutinePrivilege(version string) bool {
+	parts, valid := parseMySQLVersion(version)
+	if !valid {
+		return false
+	}
+	if parts[0] != 8 {
+		return parts[0] > 8
+	}
+	return parts[1] > 0 || parts[2] >= 20
+}
+
+func parseMySQLVersion(version string) ([3]int, bool) {
 	numericVersion, _, _ := strings.Cut(version, "-")
 	parts := strings.Split(numericVersion, ".")
 	if len(parts) < 3 {
-		return false
+		return [3]int{}, false
 	}
 	major, majorErr := strconv.Atoi(parts[0])
 	minor, minorErr := strconv.Atoi(parts[1])
 	patch, patchErr := strconv.Atoi(parts[2])
 	if majorErr != nil || minorErr != nil || patchErr != nil {
-		return false
+		return [3]int{}, false
 	}
-	if major != 8 {
-		return major > 8
+	return [3]int{major, minor, patch}, true
+}
+
+func rejectExternalStoredPrograms(ctx context.Context, conn *sql.Conn, schema string) error {
+	var externalSchema string
+	var name string
+	var kind string
+	err := conn.QueryRowContext(ctx, `
+		SELECT object_schema, object_name, object_kind
+		FROM (
+			SELECT
+				routine_schema AS object_schema,
+				routine_name AS object_name,
+				routine_type AS object_kind
+			FROM information_schema.routines
+			WHERE routine_schema <> ?
+			  AND routine_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+
+			UNION ALL
+
+			SELECT event_schema, event_name, 'EVENT'
+			FROM information_schema.events
+			WHERE event_schema <> ?
+			  AND event_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+
+			UNION ALL
+
+			SELECT trigger_schema, trigger_name, 'TRIGGER'
+			FROM information_schema.triggers
+			WHERE trigger_schema <> ?
+			  AND trigger_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+		) AS external_stored_programs
+		ORDER BY object_schema, object_kind, object_name
+		LIMIT 1
+	`, schema, schema, schema).Scan(&externalSchema, &name, &kind)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
 	}
-	return minor > 0 || patch >= 13
+	if err != nil {
+		return fmt.Errorf("mysql: inspect external stored programs: %w", err)
+	}
+	return fmt.Errorf(
+		"mysql: refusing to clean database %q: external %s %s may reference the cleanup realm",
+		schema,
+		strings.ToLower(kind),
+		quoteQualifiedIdent(externalSchema, name),
+	)
 }
 
 func mySQLExternalViewCount(ctx context.Context, conn *sql.Conn, schema string) (int, error) {

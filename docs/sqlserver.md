@@ -43,6 +43,9 @@ The current SQL Server implementation covers:
 - Live schema introspection from `sys.tables`, `sys.columns`,
   `sys.foreign_keys`, `sys.indexes`, and related catalog views.
 - Transactional migration apply for DDL supported by SQL Server.
+- Transactional dev-database cleanup across supported user schemas, with a
+  preflight that rejects replication-enabled and subscriber databases,
+  replicated tables, and unsupported database-scoped artifacts.
 
 Enums are represented as `NVARCHAR(255)` plus generated CHECK constraints.
 SQL Server does not have a native enum object equivalent to PostgreSQL
@@ -159,6 +162,9 @@ The SQL Server support is deliberately conservative:
   mutating objects outside the selected schema.
 - SQL Server-specific options such as `WITH (ONLINE = ON)` and
   `NOT FOR REPLICATION` are not planned yet.
+- Database-realm cleanup fails before DDL when replication is configured,
+  subscription state is unavailable or unexpected, a user table is replicated,
+  or another unsupported database-scoped artifact exists.
 
 ## Live Tests
 
@@ -174,6 +180,9 @@ table name, computed columns, CHECK/UNIQUE/FK constraints, and an index, then
 verifies that Ptah can introspect them through the SQL Server reader. The live
 coverage also verifies full database-realm cleanup of cross-schema dependency
 graphs and migration metadata placement through the URL `schema` parameter.
+The cleanup suite executes replication-state catalog checks on a real SQL
+Server and unit coverage verifies fail-closed subscriber and replicated-table
+states.
 Schema-scoped cleanup fails safely when another schema owns a foreign key into
 the selected schema, and computed column
 and default catalog readback are compared as a zero-diff schema. SQL Server

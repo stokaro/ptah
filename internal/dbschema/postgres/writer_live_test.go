@@ -295,6 +295,77 @@ func TestWriterDropDatabaseRealm_LivePostgresCleansToastTable(t *testing.T) {
 	c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "public"), qt.Equals, 1)
 }
 
+func TestWriterDropDatabaseRealm_LivePostgresCleansLargeObjects(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+
+	liveDatabase := newPostgresWriterLiveDatabase(
+		c,
+		ctx,
+		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+	)
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+
+	var oid uint32
+	err := db.QueryRowContext(ctx, "SELECT lo_create(0)").Scan(&oid)
+	c.Assert(err, qt.IsNil)
+	c.Assert(oid, qt.Not(qt.Equals), uint32(0))
+
+	writer := postgres.NewPostgreSQLWriter(db, "public")
+	err = writer.DropDatabaseRealm(ctx)
+
+	c.Assert(err, qt.IsNil)
+	var objectCount int
+	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pg_largeobject_metadata").Scan(&objectCount)
+	c.Assert(err, qt.IsNil)
+	c.Assert(objectCount, qt.Equals, 0)
+}
+
+func TestWriterDropDatabaseRealm_LivePostgresRejectsPublication(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+
+	liveDatabase := newPostgresWriterLiveDatabase(
+		c,
+		ctx,
+		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+	)
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE public.ptah_published_events (id bigint PRIMARY KEY);
+		CREATE PUBLICATION ptah_events_publication
+			FOR TABLE public.ptah_published_events;
+	`)
+	c.Assert(err, qt.IsNil)
+
+	writer := postgres.NewPostgreSQLWriter(db, "public")
+	err = writer.DropDatabaseRealm(ctx)
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`refusing to clean PostgreSQL database realm with unsupported database-scoped `+
+			`publication "ptah_events_publication"`,
+	)
+	c.Assert(
+		postgresWriterLiveObjectCount(c, ctx, db, "public", "ptah_published_events"),
+		qt.Equals,
+		1,
+	)
+	var publicationCount int
+	err = db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM pg_publication WHERE pubname = 'ptah_events_publication'",
+	).Scan(&publicationCount)
+	c.Assert(err, qt.IsNil)
+	c.Assert(publicationCount, qt.Equals, 1)
+}
+
 func TestWriterDropDatabaseRealm_LivePostgresRollsBackOnTemporaryPolicyDependency(
 	t *testing.T,
 ) {

@@ -243,10 +243,10 @@ jobs:
         run: |
           go test -v -count=1 ./internal/dblock -run '^TestAdvisoryLock_PostgresFamilyLive$' -timeout 3m
           go test -v -count=1 ./internal/devlock -run '^TestAcquire_CockroachDBSerializesSameRealmLive$' -timeout 3m
-          go test -v -count=1 ./internal/dbschema/mysql -tags=integration -run '^TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase$' -timeout 3m
-          go test -v -count=1 ./internal/dbschema/clickhouse -run '^TestWriterDropDatabaseRealm_(Live|RejectsLegacyServerLive)$' -timeout 3m
+          go test -v -count=1 ./internal/dbschema/mysql -tags=integration -run '^TestWriterDropDatabaseRealm_Live(RejectsProtectedDatabase|RejectsExternalStoredProgram|RejectsMissingTriggerPrivilege)$' -timeout 3m
+          go test -v -count=1 ./internal/dbschema/clickhouse -run '^TestWriterDropDatabaseRealm_(Live|RejectsExternalDependencyLive|RejectsLegacyServerLive)$' -timeout 3m
           go test -v -count=1 ./internal/dbschema/mssql -run '^TestWriterDropDatabaseRealm_(Live|RejectsDatabaseScopedArtifactLive|RejectsPreservedSchemaPermissionLive)$' -timeout 3m
-          go test -v -count=1 ./internal/dbschema/postgres -tags=integration -run '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|RejectsProtectedDatabase)$' -timeout 5m
+          go test -v -count=1 ./internal/dbschema/postgres -tags=integration -run '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|PostgresCleansLargeObjects|PostgresRejectsPublication|RejectsProtectedDatabase)$' -timeout 5m
           go test -v -count=1 ./internal/migrationreplay -tags=integration -run '^TestWithReplayedSnapshot_(ClickHouse|SQLServer)Live$' -timeout 5m
           go test -v -count=1 ./integration -tags=integration -run '^TestAtlasMigrateDiff(MySQLFamilyDatabaseDesiredState|PostgresFamilyDevCleanup)E2E$' -timeout 12m
 

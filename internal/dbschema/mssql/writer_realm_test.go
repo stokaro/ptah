@@ -540,6 +540,209 @@ func TestWriterDropDatabaseRealm_RejectsUnsupportedDatabaseArtifactBeforeDDL(t *
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
 }
 
+func TestWriterDropDatabaseRealm_RejectsReplicationEnabledDatabaseBeforeDDL(t *testing.T) {
+	c := qt.New(t)
+	sqlMock := newWriterSQLMock(t,
+		[]writerQueryExpectation{
+			queryExpectation(
+				"HAS_PERMS_BY_NAME",
+				nil,
+				realmAccessColumns(),
+				[]driver.Value{"ptah_dev", true, true},
+			),
+			queryExpectation(
+				"FROM sys.triggers AS t",
+				[]any{"dbo"},
+				[]string{"category", "schema", "name", "detail"},
+				[]driver.Value{
+					"replication-enabled database",
+					"",
+					"ptah_dev",
+					"is_distributor=1, is_published=0, is_merge_published=0",
+				},
+			),
+		},
+		nil,
+	)
+	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
+	writer := mssql.NewSQLServerWriter(db.SQL, "dbo")
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`sqlserver: refusing to clean database realm with unsupported database-scoped `+
+			`replication-enabled database \[ptah_dev\] `+
+			`\(is_distributor=1, is_published=0, is_merge_published=0\)`,
+	)
+	c.Assert(db.ExecCount(), qt.Equals, 0)
+	c.Assert(db.CommitCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
+func TestWriterDropDatabaseRealm_RejectsSubscriberDatabaseBeforeDDL(t *testing.T) {
+	c := qt.New(t)
+	sqlMock := newWriterSQLMock(t,
+		[]writerQueryExpectation{
+			queryExpectation(
+				"HAS_PERMS_BY_NAME",
+				nil,
+				realmAccessColumns(),
+				[]driver.Value{"ptah_dev", true, true},
+			),
+			queryExpectation(
+				"DATABASEPROPERTYEX(DB_NAME(), N'IsSubscribed')",
+				[]any{"dbo"},
+				[]string{"category", "schema", "name", "detail"},
+				[]driver.Value{
+					"subscriber database",
+					"",
+					"ptah_dev",
+					"IsSubscribed=1",
+				},
+			),
+		},
+		nil,
+	)
+	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
+	writer := mssql.NewSQLServerWriter(db.SQL, "dbo")
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`sqlserver: refusing to clean database realm with unsupported database-scoped `+
+			`subscriber database \[ptah_dev\] \(IsSubscribed=1\)`,
+	)
+	c.Assert(db.ExecCount(), qt.Equals, 0)
+	c.Assert(db.CommitCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
+func TestWriterDropDatabaseRealm_RejectsUnknownSubscriptionStateBeforeDDL(t *testing.T) {
+	c := qt.New(t)
+	sqlMock := newWriterSQLMock(t,
+		[]writerQueryExpectation{
+			queryExpectation(
+				"HAS_PERMS_BY_NAME",
+				nil,
+				realmAccessColumns(),
+				[]driver.Value{"ptah_dev", true, true},
+			),
+			queryExpectation(
+				"COALESCE(TRY_CONVERT(int, subscription.raw_value), -1) <> 0",
+				[]any{"dbo"},
+				[]string{"category", "schema", "name", "detail"},
+				[]driver.Value{
+					"unknown database subscription state",
+					"",
+					"ptah_dev",
+					"IsSubscribed=<unavailable>",
+				},
+			),
+		},
+		nil,
+	)
+	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
+	writer := mssql.NewSQLServerWriter(db.SQL, "dbo")
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`sqlserver: refusing to clean database realm with unsupported database-scoped `+
+			`unknown database subscription state \[ptah_dev\] `+
+			`\(IsSubscribed=<unavailable>\)`,
+	)
+	c.Assert(db.ExecCount(), qt.Equals, 0)
+	c.Assert(db.CommitCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
+func TestWriterDropDatabaseRealm_RejectsUnexpectedSubscriptionStateBeforeDDL(t *testing.T) {
+	c := qt.New(t)
+	sqlMock := newWriterSQLMock(t,
+		[]writerQueryExpectation{
+			queryExpectation(
+				"HAS_PERMS_BY_NAME",
+				nil,
+				realmAccessColumns(),
+				[]driver.Value{"ptah_dev", true, true},
+			),
+			queryExpectation(
+				"COALESCE(TRY_CONVERT(int, subscription.raw_value), -1) <> 0",
+				[]any{"dbo"},
+				[]string{"category", "schema", "name", "detail"},
+				[]driver.Value{
+					"unknown database subscription state",
+					"",
+					"ptah_dev",
+					"IsSubscribed=2",
+				},
+			),
+		},
+		nil,
+	)
+	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
+	writer := mssql.NewSQLServerWriter(db.SQL, "dbo")
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`sqlserver: refusing to clean database realm with unsupported database-scoped `+
+			`unknown database subscription state \[ptah_dev\] \(IsSubscribed=2\)`,
+	)
+	c.Assert(db.ExecCount(), qt.Equals, 0)
+	c.Assert(db.CommitCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
+func TestWriterDropDatabaseRealm_RejectsReplicatedTableBeforeDDL(t *testing.T) {
+	c := qt.New(t)
+	sqlMock := newWriterSQLMock(t,
+		[]writerQueryExpectation{
+			queryExpectation(
+				"HAS_PERMS_BY_NAME",
+				nil,
+				realmAccessColumns(),
+				[]driver.Value{"ptah_dev", true, true},
+			),
+			queryExpectation(
+				"FROM sys.triggers AS t",
+				[]any{"dbo"},
+				[]string{"category", "schema", "name", "detail"},
+				[]driver.Value{
+					"replicated table",
+					"",
+					"app.orders",
+					"is_replicated=1, is_merge_published=0, is_sync_tran_subscribed=0",
+				},
+			),
+		},
+		nil,
+	)
+	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
+	writer := mssql.NewSQLServerWriter(db.SQL, "dbo")
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`sqlserver: refusing to clean database realm with unsupported database-scoped `+
+			`replicated table \[app\.orders\] `+
+			`\(is_replicated=1, is_merge_published=0, is_sync_tran_subscribed=0\)`,
+	)
+	c.Assert(db.ExecCount(), qt.Equals, 0)
+	c.Assert(db.CommitCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
 func TestWriterDropDatabaseRealm_RejectsPreservedSchemaPermissionBeforeDDL(t *testing.T) {
 	c := qt.New(t)
 	sqlMock := newWriterSQLMock(t,
