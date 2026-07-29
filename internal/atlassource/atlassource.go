@@ -1,9 +1,9 @@
-// Package atlassource classifies and resolves Atlas desired-state source URLs
-// for the Atlas schema commands. One typed resolver keeps `--to` and `--from`
-// handling identical across `schema apply` and `schema diff`: local schema
-// files, migration directories replayed on a dev database, directly
-// connectable database URLs, and env:// references into the evaluated
-// atlas.hcl environment.
+// Package atlassource classifies and resolves Atlas desired-state source URLs.
+// One typed resolver keeps `--to` and `--from` handling identical across
+// `schema apply`, `schema diff`, and `migrate diff`: local schema files,
+// migration directories replayed on a dev database, directly connectable
+// database URLs, and env:// references into the evaluated atlas.hcl
+// environment.
 //
 // Classification and set rules are deterministic and documented:
 //
@@ -181,6 +181,24 @@ func (s Set) EnsureDevDatabase(devURL string) error {
 		return nil
 	}
 	return fmt.Errorf("%s %q is a migration directory; --dev-url is required to replay it on a dev database", s.Flag, s.Sources[0].Raw)
+}
+
+// EnsureDevIsolation rejects a database desired-state source that identifies
+// the same database as devURL. Destructive dev workflows must snapshot the
+// desired state before resetting the dev database, and an aliased source would
+// still destroy the user's desired state after that snapshot.
+func (s Set) EnsureDevIsolation(devURL string) error {
+	if s.Kind != KindDatabase || len(s.Sources) == 0 || strings.TrimSpace(devURL) == "" {
+		return nil
+	}
+	same, err := atlasurl.SameDatabase(s.Sources[0].Raw, devURL)
+	if err != nil {
+		return fmt.Errorf("compare %s database identity with --dev-url: %w", s.Flag, err)
+	}
+	if same {
+		return fmt.Errorf("%s database must differ from --dev-url because the dev database is reset during planning", s.Flag)
+	}
+	return nil
 }
 
 // ImpliedDialect returns the dialect implied by a database-URL set. Local-file

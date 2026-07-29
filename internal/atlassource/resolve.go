@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
@@ -35,6 +36,10 @@ type ResolveOptions struct {
 	// DevURL is the dev database URL used to replay migration-directory
 	// sources.
 	DevURL string
+	// ConnectTimeout bounds opening a database-backed source and reading its
+	// initial connection metadata. A zero value leaves the caller's context
+	// deadline unchanged.
+	ConnectTimeout time.Duration
 }
 
 // State is one resolved desired-state. Resolution closes every connection it
@@ -88,7 +93,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 	if err := s.ensureDialect(opts); err != nil {
 		return State{}, err
 	}
-	conn, err := dbschema.ConnectToDatabase(ctx, s.Sources[0].Raw)
+	conn, err := connectDatabase(ctx, s.Sources[0].Raw, opts.ConnectTimeout)
 	if err != nil {
 		return State{}, fmt.Errorf("connect to %s database: %w", s.Flag, err)
 	}
@@ -136,7 +141,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 		return State{}, err
 	}
 
-	conn, err := dbschema.ConnectToDatabase(ctx, devURL)
+	conn, err := connectDatabase(ctx, devURL, opts.ConnectTimeout)
 	if err != nil {
 		return State{}, fmt.Errorf("connect to --dev-url: %w", err)
 	}
@@ -168,6 +173,19 @@ func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {
 		return nil
 	}
 	return fmt.Errorf("--dev-url dialect %q does not match %s dialect %q", devDialect, opts.DialectFlag, pinned)
+}
+
+func connectDatabase(
+	ctx context.Context,
+	rawURL string,
+	timeout time.Duration,
+) (*dbschema.DatabaseConnection, error) {
+	if timeout <= 0 {
+		return dbschema.ConnectToDatabase(ctx, rawURL)
+	}
+	connectCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return dbschema.ConnectToDatabase(connectCtx, rawURL)
 }
 
 // VerifyMigrationDir mirrors `atlas migrate diff` checksum handling for a
