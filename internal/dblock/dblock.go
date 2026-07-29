@@ -8,6 +8,7 @@ package dblock
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -71,6 +72,18 @@ type Lock struct {
 	release func(context.Context) error
 }
 
+type ambiguousAcquisitionError struct {
+	err error
+}
+
+func (e *ambiguousAcquisitionError) Error() string {
+	return e.err.Error()
+}
+
+func (e *ambiguousAcquisitionError) Unwrap() error {
+	return e.err
+}
+
 // Supported reports whether the lock is backed by a real database lock, as
 // opposed to the no-op lock acquired on dialects without advisory locks.
 func (l *Lock) Supported() bool {
@@ -83,8 +96,13 @@ func (l *Lock) Release(ctx context.Context) error {
 	if l == nil || l.conn == nil {
 		return nil
 	}
-	defer l.conn.Close()
-	return l.release(ctx)
+	conn := l.conn
+	l.conn = nil
+	releaseErr := l.release(ctx)
+	if releaseErr != nil {
+		return errors.Join(releaseErr, discardConnection(conn))
+	}
+	return conn.Close()
 }
 
 // Acquire takes the dialect-specific session advisory lock named name on a
@@ -130,8 +148,7 @@ func Acquire(
 		acquireErr = acquireSQLServerLock(ctx, session, name, timeout)
 	}
 	if acquireErr != nil {
-		_ = session.Close()
-		return nil, acquireErr
+		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}
 	return lock, nil
 }
@@ -165,7 +182,9 @@ func acquirePostgresLock(
 			"SELECT pg_try_advisory_lock($1)",
 			PostgresKey(name),
 		).Scan(&acquired); err != nil {
-			return postgresLockWaitError(ctx, lockCtx, dialect, name, timeout, err)
+			return &ambiguousAcquisitionError{
+				err: postgresLockWaitError(ctx, lockCtx, dialect, name, timeout, err),
+			}
 		}
 		if acquired {
 			return nil
@@ -220,7 +239,7 @@ func acquireMySQLLock(ctx context.Context, conn *sql.Conn, dialect string, name 
 
 	var acquired sql.NullInt64
 	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", name, timeoutSeconds).Scan(&acquired); err != nil {
-		return err
+		return &ambiguousAcquisitionError{err: err}
 	}
 	if !acquired.Valid {
 		return fmt.Errorf("GET_LOCK(%q) returned NULL", name)
@@ -259,7 +278,7 @@ EXEC @result = sys.sp_getapplock
     @LockOwner = 'Session',
     @LockTimeout = @p2;
 SELECT @result;`, name, timeoutMilliseconds).Scan(&result); err != nil {
-		return err
+		return &ambiguousAcquisitionError{err: err}
 	}
 	if result >= 0 {
 		return nil
@@ -307,4 +326,25 @@ func sqlServerLockTimeoutMilliseconds(timeout time.Duration) int {
 		return math.MaxInt32
 	}
 	return int(milliseconds)
+}
+
+func closeAfterFailedAcquisition(conn *sql.Conn, acquireErr error) error {
+	if _, ok := errors.AsType[*ambiguousAcquisitionError](acquireErr); ok {
+		return errors.Join(acquireErr, discardConnection(conn))
+	}
+	return errors.Join(acquireErr, conn.Close())
+}
+
+func discardConnection(conn *sql.Conn) error {
+	discardErr := conn.Raw(func(any) error {
+		return driver.ErrBadConn
+	})
+	if errors.Is(discardErr, driver.ErrBadConn) {
+		discardErr = nil
+	}
+	closeErr := conn.Close()
+	if errors.Is(closeErr, sql.ErrConnDone) {
+		closeErr = nil
+	}
+	return errors.Join(discardErr, closeErr)
 }

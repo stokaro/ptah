@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlassource"
 	"github.com/stokaro/ptah/internal/devclean"
+	"github.com/stokaro/ptah/internal/devlock"
 	"github.com/stokaro/ptah/internal/migrationreplay"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -183,7 +184,20 @@ func withMaterializedDevSchema(
 	devConn *dbschema.DatabaseConnection,
 	desired *goschema.Database,
 	consume func(*dbschema.DatabaseConnection) error,
-) error {
+) (resultErr error) {
+	lock, err := devlock.Acquire(ctx, devConn, 0)
+	if err != nil {
+		return fmt.Errorf("acquire schema inspection dev database lock: %w", err)
+	}
+	defer func() {
+		if releaseErr := lock.Release(); releaseErr != nil {
+			resultErr = errors.Join(
+				resultErr,
+				fmt.Errorf("release schema inspection dev database lock: %w", releaseErr),
+			)
+		}
+	}()
+
 	return devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
 		defer func() {
 			cleanupCtx, cancel := context.WithTimeout(
