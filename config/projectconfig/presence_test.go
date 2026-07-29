@@ -387,3 +387,187 @@ func TestMergeClonesBaseLintLatest(t *testing.T) {
 	c.Assert(merged.Lint.Latest, qt.IsNotNil)
 	c.Assert(*merged.Lint.Latest, qt.Equals, 3)
 }
+
+func TestParseAtlasRejectsConflictingLintSelectors(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := projectconfig.ParseAtlas([]byte(`
+env "ci" {
+  lint {
+    latest = 1
+    git {
+      base = "main"
+    }
+  }
+}
+`), "atlas.hcl", "ci")
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`atlas\.hcl lint\.latest and lint\.git\.base are mutually exclusive at atlas\.hcl:3`,
+	)
+}
+
+func TestParseAtlasEmptyGitBasePreservesLatest(t *testing.T) {
+	c := qt.New(t)
+
+	cfg, err := projectconfig.ParseAtlas([]byte(`
+lint {
+  latest = 2
+}
+env "ci" {
+  lint {
+    git {
+      base = ""
+    }
+  }
+}
+`), "atlas.hcl", "ci")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
+	c.Assert(*cfg.Lint.Latest, qt.Equals, 2)
+	c.Assert(cfg.Lint.GitBase, qt.Equals, "")
+}
+
+func TestMergeUnlabeledAtlasEnvClearsPtahEnvName(t *testing.T) {
+	c := qt.New(t)
+	ptah, err := projectconfig.ParsePtah([]byte(`
+env:
+  prod:
+    url: postgres://prod/db
+`), "ptah.yaml", "")
+	c.Assert(err, qt.IsNil)
+	atlas, err := projectconfig.ParseAtlas([]byte(`
+env {
+  url = "postgres://atlas/db"
+}
+`), "atlas.hcl", "")
+	c.Assert(err, qt.IsNil)
+
+	cfg := projectconfig.Merge(ptah, atlas)
+
+	c.Assert(cfg.EnvName, qt.Equals, "")
+	c.Assert(
+		cfg.StringValue(projectconfig.StringEnvName),
+		qt.DeepEquals,
+		projectconfig.Value[string]{Present: true},
+	)
+}
+
+func TestConfigValuePresenceDistinguishesAbsentAndExplicitZeroValues(t *testing.T) {
+	c := qt.New(t)
+	explicit, err := projectconfig.ParsePtah([]byte(`
+migration:
+  dir: ""
+schemas: []
+lint:
+  latest: 0
+`), "ptah.yaml", "")
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(
+		explicit.StringValue(projectconfig.StringMigrationDir),
+		qt.DeepEquals,
+		projectconfig.Value[string]{Present: true},
+	)
+	c.Assert(
+		explicit.SchemasValue(),
+		qt.DeepEquals,
+		projectconfig.Value[[]string]{Value: []string{}, Present: true},
+	)
+	c.Assert(
+		explicit.LintLatestValue(),
+		qt.DeepEquals,
+		projectconfig.Value[int]{Present: true},
+	)
+	c.Assert(
+		(projectconfig.Config{}).StringValue(projectconfig.StringMigrationDir),
+		qt.DeepEquals,
+		projectconfig.Value[string]{},
+	)
+}
+
+func TestConfigValuePresenceTreatsProgrammaticNonZeroAsPresent(t *testing.T) {
+	c := qt.New(t)
+	cfg := projectconfig.Config{
+		Migration: projectconfig.MigrationConfig{Dir: "migrations"},
+	}
+
+	c.Assert(
+		cfg.StringValue(projectconfig.StringMigrationDir),
+		qt.DeepEquals,
+		projectconfig.Value[string]{Value: "migrations", Present: true},
+	)
+}
+
+func TestConfigStringValueUnknownFieldIsAbsent(t *testing.T) {
+	c := qt.New(t)
+
+	got := (projectconfig.Config{}).StringValue(projectconfig.StringField(255))
+
+	c.Assert(got, qt.DeepEquals, projectconfig.Value[string]{})
+}
+
+func TestMergeClonesEveryCollection(t *testing.T) {
+	c := qt.New(t)
+	base := projectconfig.Config{
+		SchemaSources: []string{"file://base.hcl"},
+		Lint: projectconfig.LintConfig{
+			DisabledRules: []string{"MF103"},
+		},
+		ExternalSchema: projectconfig.ExternalSchemaConfig{
+			Program: []string{"base-loader"},
+		},
+	}
+	override := projectconfig.Config{
+		Schemas: []string{"tenant"},
+		Exclude: []string{"audit"},
+		OnlineDDL: projectconfig.OnlineDDLConfig{
+			Args: []string{"--assume-rbr"},
+		},
+		Lint: projectconfig.LintConfig{
+			RuleConfigs: map[string]projectconfig.LintRuleConfig{
+				"DS": {
+					Severity: "error",
+					Exclude:  []string{"generated/**"},
+				},
+			},
+		},
+		ExternalSchema: projectconfig.ExternalSchemaConfig{
+			Env: []string{"MODE=override"},
+		},
+	}
+
+	merged := projectconfig.Merge(base, override)
+	base.SchemaSources[0] = "file://mutated.hcl"
+	base.Lint.DisabledRules[0] = "DS102"
+	base.ExternalSchema.Program[0] = "mutated-loader"
+	override.Schemas[0] = "mutated"
+	override.Exclude[0] = "mutated"
+	override.OnlineDDL.Args[0] = "--mutated"
+	rule := override.Lint.RuleConfigs["DS"]
+	rule.Severity = "warning"
+	rule.Exclude[0] = "mutated/**"
+	override.Lint.RuleConfigs["DS"] = rule
+	override.ExternalSchema.Env[0] = "MODE=mutated"
+
+	c.Assert(merged.SchemaSources, qt.DeepEquals, []string{"file://base.hcl"})
+	c.Assert(merged.Schemas, qt.DeepEquals, []string{"tenant"})
+	c.Assert(merged.Exclude, qt.DeepEquals, []string{"audit"})
+	c.Assert(merged.OnlineDDL.Args, qt.DeepEquals, []string{"--assume-rbr"})
+	c.Assert(merged.Lint.DisabledRules, qt.DeepEquals, []string{"MF103"})
+	c.Assert(
+		merged.Lint.RuleConfigs,
+		qt.DeepEquals,
+		map[string]projectconfig.LintRuleConfig{
+			"DS": {
+				Severity: "error",
+				Exclude:  []string{"generated/**"},
+			},
+		},
+	)
+	c.Assert(merged.ExternalSchema.Program, qt.DeepEquals, []string{"base-loader"})
+	c.Assert(merged.ExternalSchema.Env, qt.DeepEquals, []string{"MODE=override"})
+}

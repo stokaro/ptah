@@ -70,6 +70,57 @@ type Config struct {
 	presence configPresence
 }
 
+// Value carries a project-config value together with whether a source or
+// programmatic override supplied it. Command defaults must apply only when
+// Present is false.
+type Value[T any] struct {
+	Value   T
+	Present bool
+}
+
+// StringField identifies one string-valued Config field for presence-aware
+// command-default resolution.
+type StringField uint8
+
+// String-valued project-config fields.
+const (
+	StringEnvName StringField = iota
+	StringDatabaseURL
+	StringDevURL
+	StringMigrationDir
+	StringMigrationFormat
+	StringMigrationRevisionsSchema
+	StringMigrationRevisionsTable
+	StringMigrationRevisionFormat
+	StringMigrationLockTimeout
+	StringMigrationStatementTimeout
+	StringMigrationConnectTimeout
+	StringMigrationMigrationLockTimeout
+	StringMigrationExecOrder
+	StringMigrationTxMode
+	StringMigrationPreUpHook
+	StringMigrationPreDownHook
+	StringMigrationPostgresDumpTo
+	StringMigrationMySQLDumpTo
+	StringMigrationWebhook
+	StringOnlineDDLTool
+	StringOnlineDDLFallback
+	StringLintDialect
+	StringLintGitBase
+	StringLintGitDir
+	StringFormatMigrateApply
+	StringFormatMigrateDiff
+	StringFormatMigrateLint
+	StringFormatMigrateStatus
+	StringFormatSchemaApply
+	StringFormatSchemaClean
+	StringFormatSchemaDiff
+	StringFormatSchemaInspect
+	StringExternalSchemaFormat
+	StringExternalSchemaWorkingDir
+	stringFieldCount
+)
+
 type configField string
 
 const (
@@ -163,6 +214,194 @@ func lintRuleSeverityField(code string) configField {
 
 func lintRuleExcludeField(code string) configField {
 	return configField(lintRuleConfigFieldPrefix + code + ".exclude")
+}
+
+type stringFieldDescriptor struct {
+	presence configField
+	value    func(Config) string
+}
+
+var stringFieldDescriptors = [stringFieldCount]stringFieldDescriptor{
+	StringEnvName: {
+		presence: fieldEnvName,
+		value:    func(c Config) string { return c.EnvName },
+	},
+	StringDatabaseURL: {
+		presence: fieldDatabaseURL,
+		value:    func(c Config) string { return c.DatabaseURL },
+	},
+	StringDevURL: {
+		presence: fieldDevURL,
+		value:    func(c Config) string { return c.DevURL },
+	},
+	StringMigrationDir: {
+		presence: fieldMigrationDir,
+		value:    func(c Config) string { return c.Migration.Dir },
+	},
+	StringMigrationFormat: {
+		presence: fieldMigrationFormat,
+		value:    func(c Config) string { return c.Migration.Format },
+	},
+	StringMigrationRevisionsSchema: {
+		presence: fieldMigrationRevisionsSchema,
+		value:    func(c Config) string { return c.Migration.RevisionsSchema },
+	},
+	StringMigrationRevisionsTable: {
+		presence: fieldMigrationRevisionsTable,
+		value:    func(c Config) string { return c.Migration.RevisionsTable },
+	},
+	StringMigrationRevisionFormat: {
+		presence: fieldMigrationRevisionFormat,
+		value:    func(c Config) string { return c.Migration.RevisionFormat },
+	},
+	StringMigrationLockTimeout: {
+		presence: fieldMigrationLockTimeout,
+		value:    func(c Config) string { return c.Migration.LockTimeout },
+	},
+	StringMigrationStatementTimeout: {
+		presence: fieldMigrationStatementTimeout,
+		value:    func(c Config) string { return c.Migration.StatementTimeout },
+	},
+	StringMigrationConnectTimeout: {
+		presence: fieldMigrationConnectTimeout,
+		value:    func(c Config) string { return c.Migration.ConnectTimeout },
+	},
+	StringMigrationMigrationLockTimeout: {
+		presence: fieldMigrationMigrationLock,
+		value:    func(c Config) string { return c.Migration.MigrationLockTimeout },
+	},
+	StringMigrationExecOrder: {
+		presence: fieldMigrationExecOrder,
+		value:    func(c Config) string { return c.Migration.ExecOrder },
+	},
+	StringMigrationTxMode: {
+		presence: fieldMigrationTxMode,
+		value:    func(c Config) string { return c.Migration.TxMode },
+	},
+	StringMigrationPreUpHook: {
+		presence: fieldMigrationPreUpHook,
+		value:    func(c Config) string { return c.Migration.PreUpHook },
+	},
+	StringMigrationPreDownHook: {
+		presence: fieldMigrationPreDownHook,
+		value:    func(c Config) string { return c.Migration.PreDownHook },
+	},
+	StringMigrationPostgresDumpTo: {
+		presence: fieldMigrationPostgresDumpTo,
+		value:    func(c Config) string { return c.Migration.PostgresDumpTo },
+	},
+	StringMigrationMySQLDumpTo: {
+		presence: fieldMigrationMySQLDumpTo,
+		value:    func(c Config) string { return c.Migration.MySQLDumpTo },
+	},
+	StringMigrationWebhook: {
+		presence: fieldMigrationWebhook,
+		value:    func(c Config) string { return c.Migration.Webhook },
+	},
+	StringOnlineDDLTool: {
+		presence: fieldOnlineDDLTool,
+		value:    func(c Config) string { return c.OnlineDDL.Tool },
+	},
+	StringOnlineDDLFallback: {
+		presence: fieldOnlineDDLFallback,
+		value:    func(c Config) string { return c.OnlineDDL.Fallback },
+	},
+	StringLintDialect: {
+		presence: fieldLintDialect,
+		value:    func(c Config) string { return c.Lint.Dialect },
+	},
+	StringLintGitBase: {
+		presence: fieldLintGitBase,
+		value:    func(c Config) string { return c.Lint.GitBase },
+	},
+	StringLintGitDir: {
+		presence: fieldLintGitDir,
+		value:    func(c Config) string { return c.Lint.GitDir },
+	},
+	StringFormatMigrateApply: {
+		presence: fieldFormatMigrateApply,
+		value:    func(c Config) string { return c.Format.Migrate.Apply },
+	},
+	StringFormatMigrateDiff: {
+		presence: fieldFormatMigrateDiff,
+		value:    func(c Config) string { return c.Format.Migrate.Diff },
+	},
+	StringFormatMigrateLint: {
+		presence: fieldFormatMigrateLint,
+		value:    func(c Config) string { return c.Format.Migrate.Lint },
+	},
+	StringFormatMigrateStatus: {
+		presence: fieldFormatMigrateStatus,
+		value:    func(c Config) string { return c.Format.Migrate.Status },
+	},
+	StringFormatSchemaApply: {
+		presence: fieldFormatSchemaApply,
+		value:    func(c Config) string { return c.Format.Schema.Apply },
+	},
+	StringFormatSchemaClean: {
+		presence: fieldFormatSchemaClean,
+		value:    func(c Config) string { return c.Format.Schema.Clean },
+	},
+	StringFormatSchemaDiff: {
+		presence: fieldFormatSchemaDiff,
+		value:    func(c Config) string { return c.Format.Schema.Diff },
+	},
+	StringFormatSchemaInspect: {
+		presence: fieldFormatSchemaInspect,
+		value:    func(c Config) string { return c.Format.Schema.Inspect },
+	},
+	StringExternalSchemaFormat: {
+		presence: fieldExternalSchemaFormat,
+		value:    func(c Config) string { return c.ExternalSchema.Format },
+	},
+	StringExternalSchemaWorkingDir: {
+		presence: fieldExternalSchemaWorkingDir,
+		value:    func(c Config) string { return c.ExternalSchema.WorkingDir },
+	},
+}
+
+// StringValue returns a string-valued field together with its source presence.
+// Non-empty programmatic values count as present even without loader metadata.
+// Unknown fields return an absent value.
+func (c Config) StringValue(field StringField) Value[string] {
+	if field >= stringFieldCount {
+		return Value[string]{}
+	}
+	descriptor := stringFieldDescriptors[field]
+	value := descriptor.value(c)
+	return Value[string]{
+		Value:   value,
+		Present: c.presence.has(descriptor.presence) || value != "",
+	}
+}
+
+// SchemaSourcesValue returns the desired schema sources with presence.
+func (c Config) SchemaSourcesValue() Value[[]string] {
+	return Value[[]string]{
+		Value:   slices.Clone(c.SchemaSources),
+		Present: c.presence.has(fieldSchemaSources) || len(c.SchemaSources) > 0,
+	}
+}
+
+// SchemasValue returns the configured introspection schemas with presence.
+func (c Config) SchemasValue() Value[[]string] {
+	return Value[[]string]{
+		Value:   slices.Clone(c.Schemas),
+		Present: c.presence.has(fieldSchemas) || len(c.Schemas) > 0,
+	}
+}
+
+// LintLatestValue returns lint.latest with presence. A present nil pointer is
+// retained for completeness even though supported loaders materialize an int.
+func (c Config) LintLatestValue() Value[int] {
+	value := 0
+	if c.Lint.Latest != nil {
+		value = *c.Lint.Latest
+	}
+	return Value[int]{
+		Value:   value,
+		Present: c.presence.has(fieldLintLatest) || c.Lint.Latest != nil,
+	}
 }
 
 // OnlineDDLConfig configures automatic online-DDL routing for ALTER TABLE
@@ -763,9 +1002,11 @@ func mergeLint(
 	}
 	if overridePresence.has(fieldLintGitBase) || override.GitBase != "" {
 		result.GitBase = override.GitBase
-		result.Latest = nil
 		resultPresence.mark(fieldLintGitBase)
-		resultPresence.unmark(fieldLintLatest)
+		if override.GitBase != "" {
+			result.Latest = nil
+			resultPresence.unmark(fieldLintLatest)
+		}
 	}
 	result.GitDir = mergeStringValue(
 		result.GitDir,

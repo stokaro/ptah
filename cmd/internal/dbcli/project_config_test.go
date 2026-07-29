@@ -18,7 +18,10 @@ func TestEffectiveStringPrefersExplicitCLIFlag(t *testing.T) {
 	cmd.Flags().String("db-url", "builtin", "")
 	c.Assert(cmd.Flags().Set("db-url", "cli"), qt.IsNil)
 
-	got := dbcli.EffectiveString(cmd, "db-url", "cli", "config")
+	got := dbcli.EffectiveString(cmd, "db-url", "cli", projectconfig.Value[string]{
+		Value:   "config",
+		Present: true,
+	})
 
 	c.Assert(got, qt.Equals, "cli")
 }
@@ -28,9 +31,39 @@ func TestEffectiveStringUsesConfigWhenFlagIsDefault(t *testing.T) {
 	cmd := &cobra.Command{Use: "test"}
 	cmd.Flags().String("migrations-dir", "./migrations", "")
 
-	got := dbcli.EffectiveString(cmd, "migrations-dir", "./migrations", "atlas-migrations")
+	got := dbcli.EffectiveString(cmd, "migrations-dir", "./migrations", projectconfig.Value[string]{
+		Value:   "atlas-migrations",
+		Present: true,
+	})
 
 	c.Assert(got, qt.Equals, "atlas-migrations")
+}
+
+func TestEffectiveStringUsesExplicitEmptyConfigValue(t *testing.T) {
+	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().String("migrations-dir", "./migrations", "")
+
+	got := dbcli.EffectiveString(cmd, "migrations-dir", "./migrations", projectconfig.Value[string]{
+		Present: true,
+	})
+
+	c.Assert(got, qt.Equals, "")
+}
+
+func TestEffectiveStringUsesDefaultWhenConfigValueIsAbsent(t *testing.T) {
+	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().String("migrations-dir", "./migrations", "")
+
+	got := dbcli.EffectiveString(
+		cmd,
+		"migrations-dir",
+		"./migrations",
+		projectconfig.Value[string]{},
+	)
+
+	c.Assert(got, qt.Equals, "./migrations")
 }
 
 func TestLoadProjectConfigReadsAtlasEnvAndPtahFallback(t *testing.T) {

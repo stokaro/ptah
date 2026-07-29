@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
@@ -61,15 +62,43 @@ func runAtlasMigrateStatus(cmd *cobra.Command, opts atlasMigrateStatusOptions) e
 		return cmdutil.Fail(cmd, err)
 	}
 	if loaded {
-		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
-		opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
-		opts.dirFormat = dbcli.EffectiveString(cmd, "dir-format", opts.dirFormat, projectCfg.Migration.Format)
-		opts.atlasEnv = dbcli.EffectiveString(cmd, dbcli.EnvFlagName, opts.atlasEnv, projectCfg.EnvName)
-		opts.revisionsSchema = dbcli.EffectiveString(cmd, "revisions-schema", opts.revisionsSchema, projectCfg.Migration.RevisionsSchema)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Migrate.Status)
-		formatOutput = formatOutput || projectCfg.Format.Migrate.Status != ""
+		opts.url = dbcli.EffectiveString(
+			cmd,
+			"url",
+			opts.url,
+			projectCfg.StringValue(projectconfig.StringDatabaseURL),
+		)
+		opts.dir = dbcli.EffectiveString(
+			cmd,
+			"dir",
+			opts.dir,
+			projectCfg.StringValue(projectconfig.StringMigrationDir),
+		)
+		opts.dirFormat = dbcli.EffectiveString(
+			cmd,
+			"dir-format",
+			opts.dirFormat,
+			projectCfg.StringValue(projectconfig.StringMigrationFormat),
+		)
+		opts.atlasEnv = dbcli.EffectiveString(
+			cmd,
+			dbcli.EnvFlagName,
+			opts.atlasEnv,
+			projectCfg.StringValue(projectconfig.StringEnvName),
+		)
+		opts.revisionsSchema = dbcli.EffectiveString(
+			cmd,
+			"revisions-schema",
+			opts.revisionsSchema,
+			projectCfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
+		)
+		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateStatus)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+		formatOutput = formatOutput || formatValue.Present
 	}
-	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
+	if loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
 		opts.dir, err = atlasProjectConfigLocalDir(cmd, opts.dir)
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))

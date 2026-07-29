@@ -11,6 +11,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/migrate"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -50,14 +51,24 @@ func TestMigrateGenerateProjectConfigPrecedence(t *testing.T) {
 	cfg, err := dbcli.LoadProjectConfig(cmd, "")
 	c.Assert(err, qt.IsNil)
 
-	shadowDB := dbcli.EffectiveString(cmd, "shadow-db", flagShadow, cfg.DevURL)
+	shadowDB := dbcli.EffectiveString(
+		cmd,
+		"shadow-db",
+		flagShadow,
+		cfg.StringValue(projectconfig.StringDevURL),
+	)
 
 	c.Assert(shadowDB, qt.Equals, "postgres://localhost/flag_shadow")
 
 	cmd = migrate.NewMigrateGenerateCommand()
 	cfg, err = dbcli.LoadProjectConfig(cmd, "")
 	c.Assert(err, qt.IsNil)
-	shadowDB = dbcli.EffectiveString(cmd, "shadow-db", "", cfg.DevURL)
+	shadowDB = dbcli.EffectiveString(
+		cmd,
+		"shadow-db",
+		"",
+		cfg.StringValue(projectconfig.StringDevURL),
+	)
 	c.Assert(shadowDB, qt.Equals, "postgres://localhost/atlas_shadow")
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/atlassource"
 )
@@ -60,6 +61,7 @@ contacted.`,
 }
 
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
+	formatConfigured := cmd.Flags().Changed("format")
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasSchemaInspectConfig(cmd) {
 		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
@@ -69,14 +71,29 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	}
 	projectEnv := atlassource.ProjectEnv{}
 	if loaded {
-		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
-		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
+		opts.url = dbcli.EffectiveString(
+			cmd,
+			"url",
+			opts.url,
+			projectCfg.StringValue(projectconfig.StringDatabaseURL),
+		)
+		opts.devURL = dbcli.EffectiveString(
+			cmd,
+			"dev-url",
+			opts.devURL,
+			projectCfg.StringValue(projectconfig.StringDevURL),
+		)
 		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Schema.Inspect)
+		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaInspect)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+		formatConfigured = formatConfigured || formatValue.Present
 		projectEnv, err = atlasSourceProjectEnv(cmd, projectCfg)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	}
+	if formatConfigured && strings.TrimSpace(opts.format) == "" {
+		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
 	}
 	if _, err := atlasschema.NormalizeInspectFormat(opts.format); err != nil {
 		return cmdutil.Fail(cmd, err)

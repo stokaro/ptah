@@ -216,6 +216,7 @@ func (p atlasParser) parseEnv(env atlasEnvBlock) (Config, error) {
 	cfg := Config{
 		EnvName: env.name,
 	}
+	cfg.presence.mark(fieldEnvName)
 
 	for attrName, attr := range env.block.Body.Attributes {
 		if err := p.parseEnvAttr(attrName, attr, &cfg); err != nil {
@@ -453,7 +454,19 @@ func (p atlasParser) parseLint(block *hclsyntax.Block, cfg *Config) error {
 			return err
 		}
 	}
-	return p.parseLintPolicyBlocks(block, cfg)
+	if err := p.parseLintPolicyBlocks(block, cfg); err != nil {
+		return err
+	}
+	if cfg.presence.has(fieldLintLatest) &&
+		cfg.presence.has(fieldLintGitBase) &&
+		cfg.Lint.GitBase != "" {
+		return fmt.Errorf(
+			"atlas.hcl lint.latest and lint.git.base are mutually exclusive at %s:%d",
+			block.TypeRange.Filename,
+			block.TypeRange.Start.Line,
+		)
+	}
+	return nil
 }
 
 func (p atlasParser) parseLintAttr(attrName string, attr *hclsyntax.Attribute, cfg *Config) error {

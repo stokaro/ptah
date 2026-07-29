@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/schemaops"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/migration/safety"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -148,8 +149,18 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
-	dbURL := dbcli.EffectiveString(cmd, "db-url", opts.dbURL, projectCfg.DatabaseURL)
-	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemasRaw, dbcli.JoinSchemas(projectCfg.Schemas))
+	dbURL := dbcli.EffectiveString(
+		cmd,
+		"db-url",
+		opts.dbURL,
+		projectCfg.StringValue(projectconfig.StringDatabaseURL),
+	)
+	schemasValue := dbcli.EffectiveString(
+		cmd,
+		dbcli.SchemasFlagName,
+		opts.schemasRaw,
+		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
+	)
 
 	if dbURL == "" {
 		return writeError(cmd.ErrOrStderr(), opts.format, "database URL is required")

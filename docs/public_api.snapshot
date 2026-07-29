@@ -170,6 +170,9 @@ type OnlineDDLConfig struct{ ... }
 type SchemaConfig struct{ ... }
 type SchemaFormatConfig struct{ ... }
 type SchemaModeConfig struct{ ... }
+type StringField uint8
+    const StringEnvName StringField = iota ...
+type Value[T any] struct{ ... }
 
 ### github.com/stokaro/ptah/config/projectconfig.AtlasLoadOptions
 
@@ -229,6 +232,10 @@ func Merge(base, override Config) Config
 func ParseAtlas(data []byte, filename, envName string) (Config, error)
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
 func ParsePtah(data []byte, filename, envName string) (Config, error)
+func (c Config) LintLatestValue() Value[int]
+func (c Config) SchemaSourcesValue() Value[[]string]
+func (c Config) SchemasValue() Value[[]string]
+func (c Config) StringValue(field StringField) Value[string]
 
 ### github.com/stokaro/ptah/config/projectconfig.ConfigBool
 
@@ -457,6 +464,29 @@ type SchemaModeConfig struct {
     SchemaModeConfig holds Atlas env.schema.mode settings.
 
 func (m SchemaModeConfig) ExcludePatterns() []string
+
+### github.com/stokaro/ptah/config/projectconfig.StringField
+
+package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+
+type StringField uint8
+    StringField identifies one string-valued Config field for presence-aware
+    command-default resolution.
+
+const StringEnvName StringField = iota ...
+
+### github.com/stokaro/ptah/config/projectconfig.Value
+
+package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+
+type Value[T any] struct {
+    Value   T
+    Present bool
+}
+    Value carries a project-config value together with whether a source or
+    programmatic override supplied it. Command defaults must apply only when
+    Present is false.
+
 
 ## github.com/stokaro/ptah/core/ast
 

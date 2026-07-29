@@ -134,6 +134,21 @@ func TestMigrateApplyProjectDirURLFormatOverridesProjectDefault(t *testing.T) {
 	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 }
 
+func TestMigrateApplyProjectDirURLFormatOverridesExplicitEmptyProjectFormat(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	t.Chdir(root)
+	writeAtlasApplyProjectMigration(c, "migrations", "1_create_widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectSum(c, "migrations")
+	dbPath := filepath.Join(root, "apply.db")
+	writeAtlasApplyProjectConfigWithDir(c, dbPath, "file://migrations?format=atlas", "", "LINEAR")
+
+	output, err := executeAtlasProjectCommand("migrate", "apply", "--env", "local")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
+	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+}
+
 func TestMigrateApplyProjectDirURLFormatSelectsGoose(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()

@@ -315,8 +315,10 @@ explicitly present value replaces the lower-precedence value instead of being
 treated as absent. This includes an empty string, zero, `false`, or an empty
 list when the field accepts that type. Thus `atlas.hcl` wins over `ptah.yaml`,
 while `PTAH_*` environment variables and explicit CLI flags still win. After
-project sources are merged, each command applies its defaults and normal
-validation to the effective value.
+project sources are merged, a command applies its built-in default only when a
+field is absent. An explicitly present empty or zero value instead reaches the
+command's normal validation. Fields that do not accept empty values, including
+Atlas format templates, fail during parsing or command validation.
 
 This means a repo can keep an Atlas-shaped migration setup while still letting
 one-off CLI invocations override any value:

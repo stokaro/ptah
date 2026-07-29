@@ -254,31 +254,41 @@ func normalizeOptions(opts Options, projectCfg projectconfig.Config) (Options, e
 }
 
 func (opts Options) effectiveDir(projectCfg projectconfig.Config) string {
-	if !opts.Changed.Dir && projectCfg.Migration.Dir != "" {
-		return projectCfg.Migration.Dir
-	}
-	return opts.Dir
+	return effectiveProjectString(
+		projectconfig.Value[string]{Value: opts.Dir, Present: opts.Changed.Dir},
+		projectCfg.StringValue(projectconfig.StringMigrationDir),
+	)
 }
 
 func (opts Options) effectiveDirFormat(projectCfg projectconfig.Config) string {
-	if !opts.Changed.DirFormat && projectCfg.Migration.Format != "" {
-		return projectCfg.Migration.Format
-	}
-	return opts.DirFormat
+	return effectiveProjectString(
+		projectconfig.Value[string]{Value: opts.DirFormat, Present: opts.Changed.DirFormat},
+		projectCfg.StringValue(projectconfig.StringMigrationFormat),
+	)
 }
 
 func (opts Options) effectiveAtlasEnv(projectCfg projectconfig.Config) string {
-	if !opts.Changed.AtlasEnv && projectCfg.EnvName != "" {
-		return projectCfg.EnvName
-	}
-	return opts.AtlasEnv
+	return effectiveProjectString(
+		projectconfig.Value[string]{Value: opts.AtlasEnv, Present: opts.Changed.AtlasEnv},
+		projectCfg.StringValue(projectconfig.StringEnvName),
+	)
 }
 
 func (opts Options) effectiveDevURL(projectCfg projectconfig.Config) string {
-	if !opts.Changed.DevURL && projectCfg.DevURL != "" {
-		return projectCfg.DevURL
+	return effectiveProjectString(
+		projectconfig.Value[string]{Value: opts.DevURL, Present: opts.Changed.DevURL},
+		projectCfg.StringValue(projectconfig.StringDevURL),
+	)
+}
+
+func effectiveProjectString(
+	optionValue projectconfig.Value[string],
+	configValue projectconfig.Value[string],
+) string {
+	if optionValue.Present || !configValue.Present {
+		return optionValue.Value
 	}
-	return opts.DevURL
+	return configValue.Value
 }
 
 func loadEffectiveConfig(
@@ -400,12 +410,16 @@ func lintVersions(
 	cfg projectconfig.Config,
 	fsys fs.FS,
 ) ([]int64, bool, error) {
-	latest, latestSet := effectiveLatest(opts, cfg)
-	git, err := effectiveGit(opts, cfg)
+	projectSelectors := projectLintSelectorUse{
+		latest: !opts.Changed.GitBase,
+		git:    !opts.Changed.Latest,
+	}
+	latest, latestSet := effectiveLatest(opts, cfg, projectSelectors)
+	git, err := effectiveGit(opts, cfg, projectSelectors)
 	if err != nil {
 		return nil, false, err
 	}
-	if !git.ok && gitDirConfigured(opts, cfg) {
+	if !git.ok && gitDirConfigured(opts, cfg, projectSelectors) {
 		return nil, false, fmt.Errorf("--git-dir requires --git-base")
 	}
 	if latestSet && git.ok {
@@ -433,12 +447,25 @@ func lintVersions(
 	return nil, false, nil
 }
 
-func effectiveLatest(opts Options, cfg projectconfig.Config) (int, bool) {
+type projectLintSelectorUse struct {
+	latest bool
+	git    bool
+}
+
+func effectiveLatest(
+	opts Options,
+	cfg projectconfig.Config,
+	projectSelectors projectLintSelectorUse,
+) (int, bool) {
 	if opts.Changed.Latest {
 		return int(opts.Latest), true
 	}
-	if cfg.Lint.Latest != nil {
-		return *cfg.Lint.Latest, true
+	if !projectSelectors.latest {
+		return 0, false
+	}
+	value := cfg.LintLatestValue()
+	if value.Present {
+		return value.Value, true
 	}
 	return 0, false
 }
@@ -449,14 +476,20 @@ type effectiveGitOptions struct {
 	ok   bool
 }
 
-func effectiveGit(opts Options, cfg projectconfig.Config) (effectiveGitOptions, error) {
+func effectiveGit(
+	opts Options,
+	cfg projectconfig.Config,
+	projectSelectors projectLintSelectorUse,
+) (effectiveGitOptions, error) {
 	gitBase := opts.GitBase
-	if !opts.Changed.GitBase {
-		gitBase = cfg.Lint.GitBase
+	configGitBase := cfg.StringValue(projectconfig.StringLintGitBase)
+	if !opts.Changed.GitBase && projectSelectors.git && configGitBase.Present {
+		gitBase = configGitBase.Value
 	}
 	gitDir := opts.GitDir
-	if !opts.Changed.GitDir && cfg.Lint.GitDir != "" {
-		gitDir = cfg.Lint.GitDir
+	configGitDir := cfg.StringValue(projectconfig.StringLintGitDir)
+	if !opts.Changed.GitDir && projectSelectors.git && configGitDir.Present {
+		gitDir = configGitDir.Value
 	}
 	if strings.TrimSpace(gitBase) == "" {
 		return effectiveGitOptions{dir: gitDir}, nil
@@ -481,8 +514,19 @@ func validateGitBaseRef(ref string) error {
 	return nil
 }
 
-func gitDirConfigured(opts Options, cfg projectconfig.Config) bool {
-	return opts.Changed.GitDir || cfg.Lint.GitDir != ""
+func gitDirConfigured(
+	opts Options,
+	cfg projectconfig.Config,
+	projectSelectors projectLintSelectorUse,
+) bool {
+	if opts.Changed.GitDir {
+		return true
+	}
+	if !projectSelectors.git {
+		return false
+	}
+	configGitDir := cfg.StringValue(projectconfig.StringLintGitDir)
+	return configGitDir.Present && configGitDir.Value != ""
 }
 
 func gitChangedMigrationVersions(

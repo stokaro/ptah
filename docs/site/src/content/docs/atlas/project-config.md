@@ -125,8 +125,10 @@ Project config precedence is explicit CLI flags, environment variables,
 preserves source presence. For a supported field, an explicitly present value
 replaces the lower-precedence value instead of being treated as absent. This
 includes an empty string, zero, `false`, or an empty list when the field accepts
-that type. After project sources are merged, each command applies its defaults
-and normal validation to the effective value.
+that type. After project sources are merged, a command applies its built-in
+default only when a field is absent. An explicitly present empty or zero value
+instead reaches normal validation. Fields that do not accept empty values,
+including Atlas format templates, fail during parsing or command validation.
 
 `env.exclude` and disabled `env.schema.mode` values compose with the
 `schema apply`/`schema diff` positive selection flags in a fixed order:

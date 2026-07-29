@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
@@ -107,15 +108,35 @@ func prepareAtlasMigrateSet(
 		return atlasMigrateSetOptions{}, "", err
 	}
 	if loaded {
-		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
-		opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
-		opts.dirFormat = dbcli.EffectiveString(cmd, "dir-format", opts.dirFormat, projectCfg.Migration.Format)
-		opts.atlasEnv = dbcli.EffectiveString(cmd, dbcli.EnvFlagName, opts.atlasEnv, projectCfg.EnvName)
+		opts.url = dbcli.EffectiveString(
+			cmd,
+			"url",
+			opts.url,
+			projectCfg.StringValue(projectconfig.StringDatabaseURL),
+		)
+		opts.dir = dbcli.EffectiveString(
+			cmd,
+			"dir",
+			opts.dir,
+			projectCfg.StringValue(projectconfig.StringMigrationDir),
+		)
+		opts.dirFormat = dbcli.EffectiveString(
+			cmd,
+			"dir-format",
+			opts.dirFormat,
+			projectCfg.StringValue(projectconfig.StringMigrationFormat),
+		)
+		opts.atlasEnv = dbcli.EffectiveString(
+			cmd,
+			dbcli.EnvFlagName,
+			opts.atlasEnv,
+			projectCfg.StringValue(projectconfig.StringEnvName),
+		)
 		opts.revisionsSchema = dbcli.EffectiveString(
 			cmd,
 			"revisions-schema",
 			opts.revisionsSchema,
-			projectCfg.Migration.RevisionsSchema,
+			projectCfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
 		)
 	}
 	if opts.dir == "" {
@@ -128,7 +149,9 @@ func prepareAtlasMigrateSet(
 	if format != atlasDirFormatDefault {
 		return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir-format: expected atlas")
 	}
-	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
+	if loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
 		opts.dir, err = atlasProjectConfigLocalDir(cmd, opts.dir)
 		if err != nil {
 			return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir: %w", err)

@@ -616,7 +616,10 @@ func atlasMigrateDirFormatFlag(nativeName string) atlasargs.Flag {
 
 func atlasMigrateDirFormatValue(value string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(value))
-	if normalized == "" || normalized == atlasDirFormatDefault {
+	if normalized == "" {
+		return "", fmt.Errorf("migration directory format must not be empty")
+	}
+	if normalized == atlasDirFormatDefault {
 		return atlasDirFormatDefault, nil
 	}
 	if slices.Contains(unsupportedAtlasDirFormats, normalized) {

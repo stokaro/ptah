@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/editor"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
@@ -87,6 +88,7 @@ diff policy values.`,
 }
 
 func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name string) error {
+	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasMigrateDiffConfig(cmd) {
@@ -96,15 +98,29 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		return cmdutil.Fail(cmd, err)
 	}
 	if loaded {
-		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
-		opts.dirURL = dbcli.EffectiveString(cmd, "dir", opts.dirURL, projectCfg.Migration.Dir)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Migrate.Diff)
+		opts.devURL = dbcli.EffectiveString(
+			cmd,
+			"dev-url",
+			opts.devURL,
+			projectCfg.StringValue(projectconfig.StringDevURL),
+		)
+		opts.dirURL = dbcli.EffectiveString(
+			cmd,
+			"dir",
+			opts.dirURL,
+			projectCfg.StringValue(projectconfig.StringMigrationDir),
+		)
+		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateDiff)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+		formatConfigured = formatConfigured || formatValue.Present
 		policy, err = atlasDiffPolicy(projectCfg)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
+	if loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
 		opts.dirURL, err = atlasProjectConfigLocalDir(cmd, opts.dirURL)
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
@@ -127,6 +143,9 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 	qualifier, err := atlasmigrate.ParseQualifier(opts.qualifier)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	if formatConfigured && strings.TrimSpace(opts.format) == "" {
+		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
 	}
 	format := atlasreport.NormalizeMigrateDiffFormat(opts.format)
 	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {

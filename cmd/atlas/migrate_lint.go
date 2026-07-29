@@ -69,16 +69,51 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 	if loaded {
-		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
-		opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
-		opts.dirFormat = dbcli.EffectiveString(cmd, "dir-format", opts.dirFormat, projectCfg.Migration.Format)
-		opts.atlasEnv = dbcli.EffectiveString(cmd, dbcli.EnvFlagName, opts.atlasEnv, projectCfg.EnvName)
-		opts.gitBase = dbcli.EffectiveString(cmd, "git-base", opts.gitBase, projectCfg.Lint.GitBase)
-		opts.gitDir = dbcli.EffectiveString(cmd, "git-dir", opts.gitDir, projectCfg.Lint.GitDir)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Migrate.Lint)
-		formatOutput = formatOutput || projectCfg.Format.Migrate.Lint != ""
+		opts.devURL = dbcli.EffectiveString(
+			cmd,
+			"dev-url",
+			opts.devURL,
+			projectCfg.StringValue(projectconfig.StringDevURL),
+		)
+		opts.dir = dbcli.EffectiveString(
+			cmd,
+			"dir",
+			opts.dir,
+			projectCfg.StringValue(projectconfig.StringMigrationDir),
+		)
+		opts.dirFormat = dbcli.EffectiveString(
+			cmd,
+			"dir-format",
+			opts.dirFormat,
+			projectCfg.StringValue(projectconfig.StringMigrationFormat),
+		)
+		opts.atlasEnv = dbcli.EffectiveString(
+			cmd,
+			dbcli.EnvFlagName,
+			opts.atlasEnv,
+			projectCfg.StringValue(projectconfig.StringEnvName),
+		)
+		if !cmd.Flags().Changed("latest") {
+			opts.gitBase = dbcli.EffectiveString(
+				cmd,
+				"git-base",
+				opts.gitBase,
+				projectCfg.StringValue(projectconfig.StringLintGitBase),
+			)
+			opts.gitDir = dbcli.EffectiveString(
+				cmd,
+				"git-dir",
+				opts.gitDir,
+				projectCfg.StringValue(projectconfig.StringLintGitDir),
+			)
+		}
+		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateLint)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+		formatOutput = formatOutput || formatValue.Present
 	}
-	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
+	if loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
 		opts.dir, err = atlasProjectConfigLocalDir(cmd, opts.dir)
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
@@ -156,7 +191,7 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 			GitDir:    cmd.Flags().Changed("git-dir"),
 			Latest:    cmd.Flags().Changed("latest"),
 		},
-	}, atlasMigrateLintReportConfig(projectCfg))
+	}, projectCfg)
 	if err != nil {
 		if formatOutput {
 			if err := writeAtlasMigrateLintReplayError(cmd, opts, dir, report, integrity, err); err != nil {
@@ -186,11 +221,6 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 		return exitcode.New(1, errors.New(atlasMigrateLintFindingError))
 	}
 	return nil
-}
-
-func atlasMigrateLintReportConfig(projectCfg projectconfig.Config) projectconfig.Config {
-	projectCfg.Migration.Dir = ""
-	return projectCfg
 }
 
 func writeAtlasMigrateLintReplayError(

@@ -270,6 +270,55 @@ func TestRunLint_ProjectConfigLatestRestrictsToLatestMigrationVersions(t *testin
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
 }
 
+func TestRunLint_ExplicitGitBaseSuppressesProjectLatest(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	migrationsDir := filepath.Join(root, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	writeLintTestFile(c, migrationsDir, "1.sql", "CREATE TABLE users (id INT);\n")
+	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(`env "ci" {
+  migration {
+    dir = "file://migrations"
+  }
+  lint {
+    latest = 1
+  }
+}
+`), 0o600), qt.IsNil)
+	t.Chdir(root)
+
+	_, stderr, err := execute("--env", "ci", "--git-base=-unsafe")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, `--git-base "-unsafe" is not a safe Git ref`)
+	c.Assert(stderr, qt.Not(qt.Contains), "--latest and --git-base are mutually exclusive")
+}
+
+func TestRunLint_ExplicitLatestSuppressesProjectGitSelector(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	migrationsDir := filepath.Join(root, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	writeLintTestFile(c, migrationsDir, "1.sql", "CREATE TABLE users (id INT);\n")
+	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(`env "ci" {
+  migration {
+    dir = "file://migrations"
+  }
+  lint {
+    git {
+      base = "-unsafe"
+      dir  = "/not/a/repository"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+	t.Chdir(root)
+
+	_, _, err := execute("--env", "ci", "--latest", "1", "--format", "json", "--fail-on", "none")
+
+	c.Assert(err, qt.IsNil)
+}
+
 func TestRunLint_GitBaseRestrictsToChangedMigrationVersions(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

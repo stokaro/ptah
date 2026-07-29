@@ -60,6 +60,94 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
 }
 
+func TestBuild_ExplicitEmptyProjectDirReachesValidation(t *testing.T) {
+	c := qt.New(t)
+	cfg, err := projectconfig.ParsePtah([]byte(`
+migration:
+  dir: ""
+`), "ptah.yaml", "")
+	c.Assert(err, qt.IsNil)
+
+	_, err = migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Dir:       t.TempDir(),
+		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		Dialect:   "sqlite",
+		FailOn:    migrationlintreport.FailOnNone,
+		Changed:   migrationlintreport.ChangedOptions{Dialect: true},
+	}, cfg)
+
+	c.Assert(err, qt.ErrorMatches, `migrations directory : .*`)
+}
+
+func TestBuild_ExplicitZeroProjectLatestReachesValidation(t *testing.T) {
+	c := qt.New(t)
+	cfg, err := projectconfig.ParsePtah([]byte(`
+lint:
+  latest: 0
+`), "ptah.yaml", "")
+	c.Assert(err, qt.IsNil)
+
+	_, err = migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Dir:       t.TempDir(),
+		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);")}},
+		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		Dialect:   "sqlite",
+		FailOn:    migrationlintreport.FailOnNone,
+		Changed:   migrationlintreport.ChangedOptions{Dialect: true},
+	}, cfg)
+
+	c.Assert(err, qt.ErrorMatches, `--latest must be greater than zero`)
+}
+
+func TestBuild_ExplicitGitBaseSuppressesProjectLatest(t *testing.T) {
+	c := qt.New(t)
+	latest := 1
+	cfg := projectconfig.Config{
+		Lint: projectconfig.LintConfig{Latest: &latest},
+	}
+
+	_, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Dir:       t.TempDir(),
+		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);")}},
+		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		Dialect:   "sqlite",
+		GitBase:   "-unsafe",
+		FailOn:    migrationlintreport.FailOnNone,
+		Changed: migrationlintreport.ChangedOptions{
+			Dialect: true,
+			GitBase: true,
+		},
+	}, cfg)
+
+	c.Assert(err, qt.ErrorMatches, `--git-base "-unsafe" is not a safe Git ref`)
+}
+
+func TestBuild_ExplicitLatestSuppressesProjectGitSelector(t *testing.T) {
+	c := qt.New(t)
+	cfg := projectconfig.Config{
+		Lint: projectconfig.LintConfig{
+			GitBase: "-unsafe",
+			GitDir:  "/not/a/repository",
+		},
+	}
+
+	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Dir:       t.TempDir(),
+		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);")}},
+		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		Dialect:   "sqlite",
+		Latest:    1,
+		FailOn:    migrationlintreport.FailOnNone,
+		Changed: migrationlintreport.ChangedOptions{
+			Dialect: true,
+			Latest:  true,
+		},
+	}, cfg)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Versions, qt.DeepEquals, []int64{1})
+}
+
 func TestBuild_LatestAndAnalysisShareOneSourceSnapshot(t *testing.T) {
 	c := qt.New(t)
 	source := &countingSnapshotSource{

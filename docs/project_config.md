@@ -244,8 +244,10 @@ explicitly present value replaces the lower-precedence value instead of being
 treated as absent. This includes an empty string, zero, `false`, or an empty
 list when the field accepts that type. Thus `atlas.hcl` wins over `ptah.yaml`,
 while environment variables and explicit CLI flags still win.
-After project sources are merged, each command applies its defaults and normal
-validation to the effective value.
+After project sources are merged, a command applies its built-in default only
+when a field is absent. An explicitly present empty or zero value instead
+reaches the command's normal validation. Fields that do not accept empty values
+fail during parsing or command validation.
 
 `atlas.hcl` is translated into the same project config IR. The `ptah-compat`
 binary's Atlas-compatible `schema ...` and `migrate ...` commands also accept
