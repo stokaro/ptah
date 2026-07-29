@@ -17,7 +17,7 @@ func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
 	c := qt.New(t)
 
 	const uri = "file:///workspace/model.go"
-	text := `//migrator:schema:field comment="привет" defaul="x"`
+	text := `//ptah:schema:field comment="привет" defaul="x"`
 	input := framedMessage(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,

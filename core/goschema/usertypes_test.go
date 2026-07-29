@@ -12,7 +12,7 @@ import (
 func TestParseDomainAnnotation(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:domain name="email" schema="app" type="TEXT" not_null="true" check="VALUE ~ '@'" comment="Email"
+//ptah:schema:domain name="email" schema="app" type="TEXT" not_null="true" check="VALUE ~ '@'" comment="Email"
 type EmailDomain struct{}
 `
 	c := qt.New(t)
@@ -30,20 +30,20 @@ type EmailDomain struct{}
 func TestParseDomainAnnotation_MissingTypeRejected(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:domain name="email"
+//ptah:schema:domain name="email"
 type EmailDomain struct{}
 `
 	c := qt.New(t)
 	_, err := goschema.ParseSource("fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
-	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:domain")
+	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:domain")
 }
 
 func TestParseCompositeAnnotation(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)"
+//ptah:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)"
 type AddressType struct{}
 `
 	c := qt.New(t)
@@ -61,7 +61,7 @@ type AddressType struct{}
 func TestParseCompositeAnnotation_ParameterizedTypesWithCommas(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:composite name="money" fields="amount:NUMERIC(10,2),cur:VARCHAR(3)"
+//ptah:schema:composite name="money" fields="amount:NUMERIC(10,2),cur:VARCHAR(3)"
 type MoneyType struct{}
 `
 	c := qt.New(t)
@@ -77,7 +77,7 @@ type MoneyType struct{}
 func TestParseCompositeAnnotation_InvalidFieldsRejected(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:composite name="address" fields="street"
+//ptah:schema:composite name="address" fields="street"
 type AddressType struct{}
 `
 	c := qt.New(t)
@@ -90,7 +90,7 @@ type AddressType struct{}
 func TestParseRangeAnnotation(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
+//ptah:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
 type FloatRange struct{}
 `
 	c := qt.New(t)
@@ -105,12 +105,12 @@ type FloatRange struct{}
 func TestParseRangeAnnotation_MissingSubtypeRejected(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:range name="floatrange"
+//ptah:schema:range name="floatrange"
 type FloatRange struct{}
 `
 	c := qt.New(t)
 	_, err := goschema.ParseSource("fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
-	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:range")
+	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:range")
 }

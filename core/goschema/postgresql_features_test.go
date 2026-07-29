@@ -17,7 +17,7 @@ func TestParseExtensionComment(t *testing.T) {
 	}{
 		{
 			name:    "basic extension",
-			comment: "//migrator:schema:extension name=\"pg_trgm\"",
+			comment: "//ptah:schema:extension name=\"pg_trgm\"",
 			expected: goschema.Extension{
 				Name:        "pg_trgm",
 				IfNotExists: false,
@@ -27,7 +27,7 @@ func TestParseExtensionComment(t *testing.T) {
 		},
 		{
 			name:    "extension with if_not_exists",
-			comment: "//migrator:schema:extension name=\"pg_trgm\" if_not_exists=\"true\"",
+			comment: "//ptah:schema:extension name=\"pg_trgm\" if_not_exists=\"true\"",
 			expected: goschema.Extension{
 				Name:        "pg_trgm",
 				IfNotExists: true,
@@ -37,7 +37,7 @@ func TestParseExtensionComment(t *testing.T) {
 		},
 		{
 			name:    "extension with version",
-			comment: "//migrator:schema:extension name=\"postgis\" version=\"3.0\" if_not_exists=\"true\"",
+			comment: "//ptah:schema:extension name=\"postgis\" version=\"3.0\" if_not_exists=\"true\"",
 			expected: goschema.Extension{
 				Name:        "postgis",
 				IfNotExists: true,
@@ -47,7 +47,7 @@ func TestParseExtensionComment(t *testing.T) {
 		},
 		{
 			name:    "extension with comment",
-			comment: "//migrator:schema:extension name=\"btree_gin\" comment=\"Enable GIN indexes on btree types\"",
+			comment: "//ptah:schema:extension name=\"btree_gin\" comment=\"Enable GIN indexes on btree types\"",
 			expected: goschema.Extension{
 				Name:        "btree_gin",
 				IfNotExists: false,
@@ -89,7 +89,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 	}{
 		{
 			name:    "GIN index",
-			comment: "//migrator:schema:index name=\"idx_tags\" fields=\"tags\" type=\"GIN\"",
+			comment: "//ptah:schema:index name=\"idx_tags\" fields=\"tags\" type=\"GIN\"",
 			expected: goschema.Index{
 				Name:      "idx_tags",
 				Fields:    []string{"tags"},
@@ -101,7 +101,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		},
 		{
 			name:    "partial index",
-			comment: "//migrator:schema:index name=\"idx_active\" fields=\"status\" condition=\"deleted_at IS NULL\"",
+			comment: "//ptah:schema:index name=\"idx_active\" fields=\"status\" condition=\"deleted_at IS NULL\"",
 			expected: goschema.Index{
 				Name:      "idx_active",
 				Fields:    []string{"status"},
@@ -113,7 +113,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		},
 		{
 			name:    "partial index with atlas-style where alias",
-			comment: "//migrator:schema:index name=\"idx_active\" fields=\"status\" where=\"deleted_at IS NULL\"",
+			comment: "//ptah:schema:index name=\"idx_active\" fields=\"status\" where=\"deleted_at IS NULL\"",
 			expected: goschema.Index{
 				Name:      "idx_active",
 				Fields:    []string{"status"},
@@ -125,7 +125,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		},
 		{
 			name:    "trigram index",
-			comment: "//migrator:schema:index name=\"idx_name_trgm\" fields=\"name\" type=\"GIN\" ops=\"gin_trgm_ops\"",
+			comment: "//ptah:schema:index name=\"idx_name_trgm\" fields=\"name\" type=\"GIN\" ops=\"gin_trgm_ops\"",
 			expected: goschema.Index{
 				Name:      "idx_name_trgm",
 				Fields:    []string{"name"},
@@ -137,7 +137,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		},
 		{
 			name:    "cross-table index",
-			comment: "//migrator:schema:index name=\"idx_external\" fields=\"name,status\" table=\"products\"",
+			comment: "//ptah:schema:index name=\"idx_external\" fields=\"name,status\" table=\"products\"",
 			expected: goschema.Index{
 				Name:      "idx_external",
 				Fields:    []string{"name", "status"},
@@ -149,7 +149,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		},
 		{
 			name:    "complex index with all features",
-			comment: "//migrator:schema:index name=\"idx_complex\" fields=\"name,tags\" type=\"GIN\" condition=\"status = 'active'\" table=\"products\"",
+			comment: "//ptah:schema:index name=\"idx_complex\" fields=\"name,tags\" type=\"GIN\" condition=\"status = 'active'\" table=\"products\"",
 			expected: goschema.Index{
 				Name:      "idx_complex",
 				Fields:    []string{"name", "tags"},
@@ -197,7 +197,7 @@ func TestParseGeneratedColumnField(t *testing.T) {
 	}{
 		{
 			name:    "stored generated column",
-			comment: "//migrator:schema:field name=\"full_name\" type=\"TEXT\" generated=\"first_name || ' ' || last_name\" stored=\"true\"",
+			comment: "//ptah:schema:field name=\"full_name\" type=\"TEXT\" generated=\"first_name || ' ' || last_name\" stored=\"true\"",
 			expected: goschema.Field{
 				Name:                "full_name",
 				Type:                "TEXT",
@@ -207,7 +207,7 @@ func TestParseGeneratedColumnField(t *testing.T) {
 		},
 		{
 			name:    "explicit generated kind",
-			comment: "//migrator:schema:field name=\"full_name\" type=\"TEXT\" generated=\"concat(first_name, ' ', last_name)\" generated_kind=\"virtual\"",
+			comment: "//ptah:schema:field name=\"full_name\" type=\"TEXT\" generated=\"concat(first_name, ' ', last_name)\" generated_kind=\"virtual\"",
 			expected: goschema.Field{
 				Name:                "full_name",
 				Type:                "TEXT",
@@ -246,9 +246,9 @@ func TestParseMultipleExtensions(t *testing.T) {
 
 	content := `package test
 
-//migrator:schema:extension name="pg_trgm" if_not_exists="true"
-//migrator:schema:extension name="btree_gin" if_not_exists="true"
-//migrator:schema:extension name="postgis" version="3.0"
+//ptah:schema:extension name="pg_trgm" if_not_exists="true"
+//ptah:schema:extension name="btree_gin" if_not_exists="true"
+//ptah:schema:extension name="postgis" version="3.0"
 type DatabaseExtensions struct{}
 `
 
@@ -276,34 +276,34 @@ func TestParseCompletePostgreSQLSchema(t *testing.T) {
 
 	content := `package test
 
-//migrator:schema:extension name="pg_trgm" if_not_exists="true"
-//migrator:schema:extension name="btree_gin" if_not_exists="true"
+//ptah:schema:extension name="pg_trgm" if_not_exists="true"
+//ptah:schema:extension name="btree_gin" if_not_exists="true"
 type DatabaseExtensions struct{}
 
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 type Product struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="tags" type="JSONB"
+	//ptah:schema:field name="tags" type="JSONB"
 	Tags []string
 
-	//migrator:schema:field name="status" type="VARCHAR(50)"
+	//ptah:schema:field name="status" type="VARCHAR(50)"
 	Status string
 
 	// GIN index for JSONB field
-	//migrator:schema:index name="idx_product_tags" fields="tags" type="GIN"
+	//ptah:schema:index name="idx_product_tags" fields="tags" type="GIN"
 	_ int
 
 	// Partial index with condition
-	//migrator:schema:index name="idx_active_products" fields="status" condition="deleted_at IS NULL"
+	//ptah:schema:index name="idx_active_products" fields="status" condition="deleted_at IS NULL"
 	_ int
 
 	// Trigram similarity index
-	//migrator:schema:index name="idx_product_name_trgm" fields="name" type="GIN" ops="gin_trgm_ops"
+	//ptah:schema:index name="idx_product_name_trgm" fields="name" type="GIN" ops="gin_trgm_ops"
 	_ int
 }
 `

@@ -69,9 +69,9 @@ func TestMigrationsTestCommand_AppliesDesiredSchema(t *testing.T) {
 	testsDir := t.TempDir()
 	content := `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64
 }
 `

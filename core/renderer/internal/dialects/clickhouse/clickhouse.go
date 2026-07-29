@@ -731,7 +731,7 @@ func (r *Renderer) VisitConstraint(*ast.ConstraintNode) error { return nil }
 // type annotation we emit a `minmax` index with GRANULARITY 8192, which is
 // the most generally-useful default. Users wanting `set(N)` /
 // `bloom_filter(p)` / `tokenbf_v1(...)` etc. override via the `type=` and
-// `granularity=` keys on //migrator:schema:index.
+// `granularity=` keys on //ptah:schema:index.
 func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	if node.Table == "" {
 		r.w.WriteLinef("-- CLICKHOUSE: secondary index %q skipped (no target table)", node.Name)

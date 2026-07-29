@@ -291,19 +291,19 @@ type IndexRef struct {
 Ptah uses structured comments to define database schema:
 
 ```go
-//migrator:schema:table name="products" platform.mysql.engine="InnoDB"
+//ptah:schema:table name="products" platform.mysql.engine="InnoDB"
 type Product struct {
-    //migrator:schema:field name="id" type="SERIAL" primary="true"
+    //ptah:schema:field name="id" type="SERIAL" primary="true"
     ID int64
 
-    //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true" unique="true"
+    //ptah:schema:field name="name" type="VARCHAR(255)" not_null="true" unique="true"
     Name string
 
-    //migrator:schema:field name="category_id" type="INTEGER" foreign="categories(id)"
+    //ptah:schema:field name="category_id" type="INTEGER" foreign="categories(id)"
     CategoryID int64
 }
 
-//migrator:schema:index table="products" name="idx_products_name" columns="name" unique="true"
+//ptah:schema:index table="products" name="idx_products_name" columns="name" unique="true"
 ```
 
 ## Integration Points

@@ -11,21 +11,21 @@ import (
 func TestAllowsAttributeValidatesPlatformOverrideShape(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(annotationmeta.AllowsAttribute("migrator:schema:field", "platform.mysql.type"), qt.IsTrue)
-	c.Assert(annotationmeta.AllowsAttribute("migrator:schema:field", "platform.mysql.generated.kind"), qt.IsTrue)
-	c.Assert(annotationmeta.AllowsAttribute("migrator:schema:field", "platform.mysql"), qt.IsFalse)
-	c.Assert(annotationmeta.AllowsAttribute("migrator:schema:field", "platform..type"), qt.IsFalse)
-	c.Assert(annotationmeta.AllowsAttribute("migrator:schema:field", "platform.mysql.type-name"), qt.IsFalse)
-	c.Assert(annotationmeta.AllowsAttribute("migrator:schema:field", "platform.mysql.тип"), qt.IsFalse)
+	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql.type"), qt.IsTrue)
+	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql.generated.kind"), qt.IsTrue)
+	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql"), qt.IsFalse)
+	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform..type"), qt.IsFalse)
+	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql.type-name"), qt.IsFalse)
+	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:field", "platform.mysql.тип"), qt.IsFalse)
 }
 
 func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
 	c := qt.New(t)
 
 	directives := []string{
-		"migrator:schema:field",
-		"migrator:embedded",
-		"migrator:schema:table",
+		"ptah:schema:field",
+		"ptah:embedded",
+		"ptah:schema:table",
 	}
 
 	for _, directive := range directives {
@@ -45,27 +45,27 @@ func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
 	}{
 		{
 			name:      "field nullable",
-			directive: "migrator:schema:field",
+			directive: "ptah:schema:field",
 			attribute: "nullable",
 		},
 		{
 			name:      "field autoincrement",
-			directive: "migrator:schema:field",
+			directive: "ptah:schema:field",
 			attribute: "autoincrement",
 		},
 		{
 			name:      "field index",
-			directive: "migrator:schema:field",
+			directive: "ptah:schema:field",
 			attribute: "index",
 		},
 		{
 			name:      "embedded not null",
-			directive: "migrator:embedded",
+			directive: "ptah:embedded",
 			attribute: "not_null",
 		},
 		{
 			name:      "embedded index",
-			directive: "migrator:embedded",
+			directive: "ptah:embedded",
 			attribute: "index",
 		},
 	}
@@ -81,11 +81,11 @@ func TestAllowsAttribute_RejectsPlatformOverridesWithoutRuntimeSupport(t *testin
 	c := qt.New(t)
 
 	directives := []string{
-		"migrator:schema:index",
-		"migrator:schema:schema",
-		"migrator:schema:view",
-		"migrator:schema:matview",
-		"migrator:schema:trigger",
+		"ptah:schema:index",
+		"ptah:schema:schema",
+		"ptah:schema:view",
+		"ptah:schema:matview",
+		"ptah:schema:trigger",
 	}
 
 	for _, directive := range directives {
@@ -103,7 +103,7 @@ func TestDetachedFileScopesMatchParserSupport(t *testing.T) {
 			if scope != annotationmeta.ScopeFile {
 				continue
 			}
-			c.Assert(directive.Name, qt.Matches, `migrator:schema:rls:(policy|enable)`)
+			c.Assert(directive.Name, qt.Matches, `ptah:schema:rls:(policy|enable)`)
 		}
 	}
 }

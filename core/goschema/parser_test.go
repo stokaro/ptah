@@ -37,7 +37,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 	}{
 		{
 			name:    "Traditional syntax with quotes",
-			comment: `//migrator:schema:field name="id" type="SERIAL" primary="true" not_null="true"`,
+			comment: `//ptah:schema:field name="id" type="SERIAL" primary="true" not_null="true"`,
 			expected: map[string]string{
 				"name":     "id",
 				"type":     "SERIAL",
@@ -47,7 +47,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 		},
 		{
 			name:    "Simplified syntax without quotes",
-			comment: `//migrator:schema:field name="id" type="SERIAL" primary not_null`,
+			comment: `//ptah:schema:field name="id" type="SERIAL" primary not_null`,
 			expected: map[string]string{
 				"name":     "id",
 				"type":     "SERIAL",
@@ -57,7 +57,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 		},
 		{
 			name:    "Mixed syntax",
-			comment: `//migrator:schema:field name="email" type="VARCHAR(255)" unique not_null default="test@example.com"`,
+			comment: `//ptah:schema:field name="email" type="VARCHAR(255)" unique not_null default="test@example.com"`,
 			expected: map[string]string{
 				"name":     "email",
 				"type":     "VARCHAR(255)",
@@ -68,7 +68,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 		},
 		{
 			name:    "Boolean attributes only",
-			comment: `//migrator:schema:field primary unique not_null auto_increment`,
+			comment: `//ptah:schema:field primary unique not_null auto_increment`,
 			expected: map[string]string{
 				"primary":        "true",
 				"unique":         "true",
@@ -78,7 +78,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 		},
 		{
 			name:    "Platform-specific overrides with simplified syntax",
-			comment: `//migrator:schema:field name="data" type="JSONB" not_null platform.mysql.type="JSON" platform.mariadb.type="LONGTEXT"`,
+			comment: `//ptah:schema:field name="data" type="JSONB" not_null platform.mysql.type="JSON" platform.mariadb.type="LONGTEXT"`,
 			expected: map[string]string{
 				"name":                  "data",
 				"type":                  "JSONB",
@@ -89,7 +89,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 		},
 		{
 			name:    "Nullable column omits not null",
-			comment: `//migrator:schema:field name="description" type="TEXT"`,
+			comment: `//ptah:schema:field name="description" type="TEXT"`,
 			expected: map[string]string{
 				"name": "description",
 				"type": "TEXT",
@@ -97,7 +97,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 		},
 		{
 			name:    "Complex check constraint with simplified booleans",
-			comment: `//migrator:schema:field name="price" type="DECIMAL(10,2)" not_null check="price > 0"`,
+			comment: `//ptah:schema:field name="price" type="DECIMAL(10,2)" not_null check="price > 0"`,
 			expected: map[string]string{
 				"name":     "price",
 				"type":     "DECIMAL(10,2)",
@@ -107,7 +107,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 		},
 		{
 			name:    "Embedded field with simplified syntax",
-			comment: `//migrator:embedded mode="inline" prefix="audit_"`,
+			comment: `//ptah:embedded mode="inline" prefix="audit_"`,
 			expected: map[string]string{
 				"mode":   "inline",
 				"prefix": "audit_",
@@ -115,7 +115,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 		},
 		{
 			name:    "Should not treat non-boolean words as booleans",
-			comment: `//migrator:schema:field name="status" type="VARCHAR(50)" default="active"`,
+			comment: `//ptah:schema:field name="status" type="VARCHAR(50)" default="active"`,
 			expected: map[string]string{
 				"name":    "status",
 				"type":    "VARCHAR(50)",
@@ -138,9 +138,9 @@ func TestParseSource_FieldIdentityAttributes(t *testing.T) {
 	db := mustParseSource(c, "schema.go", `
 package test
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="int" identity_generation="BY_DEFAULT" identity_start="10" identity_increment="5" identity_options="START WITH 10 INCREMENT BY 5 CACHE 3"
+	//ptah:schema:field name="id" type="int" identity_generation="BY_DEFAULT" identity_start="10" identity_increment="5" identity_options="START WITH 10 INCREMENT BY 5 CACHE 3"
 	ID int64
 }
 `)
@@ -159,9 +159,9 @@ func TestParseSource_FieldIdentityAttributesRejectInvalidGeneration(t *testing.T
 	_, err := goschema.ParseSource("schema.go", `
 package test
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="int" identity_generation="BY_DEFUALT"
+	//ptah:schema:field name="id" type="int" identity_generation="BY_DEFUALT"
 	ID int64
 }
 `)
@@ -174,9 +174,9 @@ func TestParseSource_FieldIdentityOptionsDefaultGeneration(t *testing.T) {
 	db := mustParseSource(c, "schema.go", `
 package test
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="int" identity_options="MINVALUE 0 START WITH 0"
+	//ptah:schema:field name="id" type="int" identity_options="MINVALUE 0 START WITH 0"
 	ID int64
 }
 `)
@@ -193,16 +193,16 @@ func TestParseSource_RejectsUnknownAttributesOnAllDirectives(t *testing.T) {
 		annotation string
 		field      bool
 	}{
-		{name: "table", annotation: `//migrator:schema:table name="users" bogus="x"`},
-		{name: "embedded", annotation: `//migrator:embedded mode="inline" bogus="x"`, field: true},
-		{name: "constraint", annotation: `//migrator:schema:constraint name="users_check" type="CHECK" bogus="x"`},
-		{name: "extension", annotation: `//migrator:schema:extension name="pg_trgm" bogus="x"`},
-		{name: "function", annotation: `//migrator:schema:function name="f" bogus="x"`},
-		{name: "rls_policy", annotation: `//migrator:schema:rls:policy name="p" table="users" bogus="x"`},
-		{name: "rls_enable", annotation: `//migrator:schema:rls:enable table="users" bogus="x"`},
-		{name: "role", annotation: `//migrator:schema:role name="app" bogus="x"`},
-		{name: "grant", annotation: `//migrator:schema:grant role="app" privilege="SELECT" bogus="x"`},
-		{name: "data", annotation: `//migrator:schema:data table="countries" key="code" file="countries.yaml" bogus="x"`},
+		{name: "table", annotation: `//ptah:schema:table name="users" bogus="x"`},
+		{name: "embedded", annotation: `//ptah:embedded mode="inline" bogus="x"`, field: true},
+		{name: "constraint", annotation: `//ptah:schema:constraint name="users_check" type="CHECK" bogus="x"`},
+		{name: "extension", annotation: `//ptah:schema:extension name="pg_trgm" bogus="x"`},
+		{name: "function", annotation: `//ptah:schema:function name="f" bogus="x"`},
+		{name: "rls_policy", annotation: `//ptah:schema:rls:policy name="p" table="users" bogus="x"`},
+		{name: "rls_enable", annotation: `//ptah:schema:rls:enable table="users" bogus="x"`},
+		{name: "role", annotation: `//ptah:schema:role name="app" bogus="x"`},
+		{name: "grant", annotation: `//ptah:schema:grant role="app" privilege="SELECT" bogus="x"`},
+		{name: "data", annotation: `//ptah:schema:data table="countries" key="code" file="countries.yaml" bogus="x"`},
 	}
 
 	for _, tt := range tests {
@@ -212,7 +212,7 @@ func TestParseSource_RejectsUnknownAttributesOnAllDirectives(t *testing.T) {
 			if tt.field {
 				annotation = ""
 			}
-			fieldAnnotation := `//migrator:schema:field name="id" type="SERIAL" primary="true"`
+			fieldAnnotation := `//ptah:schema:field name="id" type="SERIAL" primary="true"`
 			if tt.field {
 				fieldAnnotation = tt.annotation
 			}
@@ -236,9 +236,9 @@ func TestParseSource_TableCommentLeavesAbsentCSVAttributesEmpty(t *testing.T) {
 	db := mustParseSource(c, "schema.go", `
 package test
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `)
@@ -256,13 +256,13 @@ func TestParseSchemaObjectAnnotations(t *testing.T) {
 	db := mustParseSource(c, "schema_objects.go", `
 package test
 
-//migrator:schema:view name="active_users" body="SELECT id FROM users WHERE deleted_at IS NULL" with_check="true" comment="Active users"
-//migrator:schema:matview name="user_stats" body="SELECT id, COUNT(*) FROM users GROUP BY id"
-//migrator:schema:trigger name="set_updated_at" table="users" timing="before" event="update" body="NEW.updated_at = NOW(); RETURN NEW;"
-//migrator:schema:schema name="auth" comment="Authentication schema"
-//migrator:schema:table name="users"
+//ptah:schema:view name="active_users" body="SELECT id FROM users WHERE deleted_at IS NULL" with_check="true" comment="Active users"
+//ptah:schema:matview name="user_stats" body="SELECT id, COUNT(*) FROM users GROUP BY id"
+//ptah:schema:trigger name="set_updated_at" table="users" timing="before" event="update" body="NEW.updated_at = NOW(); RETURN NEW;"
+//ptah:schema:schema name="auth" comment="Authentication schema"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `)
@@ -295,22 +295,22 @@ func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
 	}{
 		{
 			name:       "unknown view attribute",
-			annotation: `//migrator:schema:view name="active_users" body="SELECT id FROM users" boddy="typo"`,
+			annotation: `//ptah:schema:view name="active_users" body="SELECT id FROM users" boddy="typo"`,
 			want:       "boddy",
 		},
 		{
 			name:       "missing materialized view body",
-			annotation: `//migrator:schema:matview name="user_stats"`,
+			annotation: `//ptah:schema:matview name="user_stats"`,
 			want:       `missing required annotation attribute "body"`,
 		},
 		{
 			name:       "missing trigger table",
-			annotation: `//migrator:schema:trigger name="set_updated_at" timing="before" event="update" body="RETURN NEW;"`,
+			annotation: `//ptah:schema:trigger name="set_updated_at" timing="before" event="update" body="RETURN NEW;"`,
 			want:       `missing required annotation attribute "table"`,
 		},
 		{
 			name:       "missing schema name",
-			annotation: `//migrator:schema:schema comment="missing name"`,
+			annotation: `//ptah:schema:schema comment="missing name"`,
 			want:       `missing required annotation attribute "name"`,
 		},
 	}
@@ -350,37 +350,37 @@ func TestParseKeyValueComment_BooleanPatterns(t *testing.T) {
 	}{
 		{
 			name:     "not_null should be boolean",
-			comment:  `//migrator:schema:field not_null`,
+			comment:  `//ptah:schema:field not_null`,
 			attr:     "not_null",
 			expected: "true",
 		},
 		{
 			name:     "primary should be boolean",
-			comment:  `//migrator:schema:field primary`,
+			comment:  `//ptah:schema:field primary`,
 			attr:     "primary",
 			expected: "true",
 		},
 		{
 			name:     "unique should be boolean",
-			comment:  `//migrator:schema:field unique`,
+			comment:  `//ptah:schema:field unique`,
 			attr:     "unique",
 			expected: "true",
 		},
 		{
 			name:     "auto_increment should be boolean",
-			comment:  `//migrator:schema:field auto_increment`,
+			comment:  `//ptah:schema:field auto_increment`,
 			attr:     "auto_increment",
 			expected: "true",
 		},
 		{
 			name:     "is_ prefix should be boolean",
-			comment:  `//migrator:schema:field is_active`,
+			comment:  `//ptah:schema:field is_active`,
 			attr:     "is_active",
 			expected: "true",
 		},
 		{
 			name:     "has_ prefix should be boolean",
-			comment:  `//migrator:schema:field has_permission`,
+			comment:  `//ptah:schema:field has_permission`,
 			attr:     "has_permission",
 			expected: "true",
 		},
@@ -398,11 +398,11 @@ func TestParseKeyValueComment_IgnoreNonBooleans(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that non-boolean words are not treated as booleans
-	comment := `//migrator:schema:field name="test" type="VARCHAR" migrator schema field table`
+	comment := `//ptah:schema:field name="test" type="VARCHAR" ptah schema field table`
 	result := parseutils.ParseKeyValueComment(comment)
 
 	// These should not be treated as boolean attributes
-	c.Assert(result["migrator"], qt.Equals, "")
+	c.Assert(result["ptah"], qt.Equals, "")
 	c.Assert(result["schema"], qt.Equals, "")
 	c.Assert(result["field"], qt.Equals, "")
 	c.Assert(result["table"], qt.Equals, "")
@@ -416,7 +416,7 @@ func TestParseKeyValueComment_PrecedenceRules(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that explicit key=value takes precedence over standalone boolean
-	comment := `//migrator:schema:field not_null not_null="false"`
+	comment := `//ptah:schema:field not_null not_null="false"`
 	result := parseutils.ParseKeyValueComment(comment)
 
 	// The explicit not_null="false" should take precedence over standalone not_null
@@ -429,18 +429,18 @@ func TestParseFile_EnumHandling(t *testing.T) {
 	// Create a test file with both enum and non-enum fields
 	content := `package entities
 
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 type Product struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="active" type="BOOLEAN" not_null="true" default_expr="true"
+	//ptah:schema:field name="active" type="BOOLEAN" not_null="true" default_expr="true"
 	Active bool
 
-	//migrator:schema:field name="status" type="ENUM" enum="draft,active,discontinued" not_null="true" default="draft"
+	//ptah:schema:field name="status" type="ENUM" enum="draft,active,discontinued" not_null="true" default="draft"
 	Status string
 }
 `
@@ -481,9 +481,9 @@ func TestParseFile_TableSchemaAttribute(t *testing.T) {
 
 	content := `package entities
 
-//migrator:schema:table name="users" schema="auth"
+//ptah:schema:table name="users" schema="auth"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary
+	//ptah:schema:field name="id" type="SERIAL" primary
 	ID int64
 }
 `
@@ -505,27 +505,27 @@ func TestParseFile_TableLevelConstraintsUseSchemaQualifiedTables(t *testing.T) {
 
 	content := `package entities
 
-//migrator:schema:table name="accounts" schema="auth"
+//ptah:schema:table name="accounts" schema="auth"
 type Account struct {
-	//migrator:schema:field name="id" type="SERIAL" primary
+	//ptah:schema:field name="id" type="SERIAL" primary
 	ID int64
 }
 
-//migrator:schema:table name="users" schema="auth"
-//migrator:schema:constraint name="users_status_check" type="CHECK" table="users" check="status <> ''"
-//migrator:schema:constraint name="users_account_fk" type="FOREIGN KEY" table="users" columns="account_id" foreign_table="accounts" foreign_column="id"
-//migrator:schema:rls:enable table="users"
+//ptah:schema:table name="users" schema="auth"
+//ptah:schema:constraint name="users_status_check" type="CHECK" table="users" check="status <> ''"
+//ptah:schema:constraint name="users_account_fk" type="FOREIGN KEY" table="users" columns="account_id" foreign_table="accounts" foreign_column="id"
+//ptah:schema:rls:enable table="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary
+	//ptah:schema:field name="id" type="SERIAL" primary
 	ID int64
-	//migrator:schema:field name="account_id" type="INTEGER"
+	//ptah:schema:field name="account_id" type="INTEGER"
 	AccountID int64
-	//migrator:schema:field name="status" type="TEXT"
-	//migrator:schema:index name="idx_users_status" fields="status" table="users"
+	//ptah:schema:field name="status" type="TEXT"
+	//ptah:schema:index name="idx_users_status" fields="status" table="users"
 	Status string
 }
 
-//migrator:schema:rls:policy name="users_rls" table="auth.users" for="ALL" using="account_id IS NOT NULL"
+//ptah:schema:rls:policy name="users_rls" table="auth.users" for="ALL" using="account_id IS NOT NULL"
 `
 
 	tmpDir := t.TempDir()
@@ -721,7 +721,7 @@ func TestParseFunctionComment(t *testing.T) {
 	}{
 		{
 			name:    "Basic function definition",
-			comment: `//migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"`,
+			comment: `//ptah:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"`,
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "set_tenant_context",
@@ -735,7 +735,7 @@ func TestParseFunctionComment(t *testing.T) {
 		},
 		{
 			name:    "Function with volatility",
-			comment: `//migrator:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;"`,
+			comment: `//ptah:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;"`,
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "get_current_tenant_id",
@@ -748,7 +748,7 @@ func TestParseFunctionComment(t *testing.T) {
 		},
 		{
 			name:    "Function with comment",
-			comment: `//migrator:schema:function name="test_func" returns="INTEGER" language="sql" comment="Test function for unit tests"`,
+			comment: `//ptah:schema:function name="test_func" returns="INTEGER" language="sql" comment="Test function for unit tests"`,
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "test_func",
@@ -761,7 +761,7 @@ func TestParseFunctionComment(t *testing.T) {
 		},
 		{
 			name:    "Empty language defaults to plpgsql",
-			comment: `//migrator:schema:function name="no_lang" returns="VOID" body="BEGIN END;"`,
+			comment: `//ptah:schema:function name="no_lang" returns="VOID" body="BEGIN END;"`,
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "no_lang",
@@ -774,7 +774,7 @@ func TestParseFunctionComment(t *testing.T) {
 		},
 		{
 			name:    "Mixed-case attributes are normalized",
-			comment: `//migrator:schema:function name="mixed_case" returns="VOID" language="PLPGSQL" security="Definer" volatility="Stable" body="BEGIN END;"`,
+			comment: `//ptah:schema:function name="mixed_case" returns="VOID" language="PLPGSQL" security="Definer" volatility="Stable" body="BEGIN END;"`,
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "mixed_case",
@@ -814,7 +814,7 @@ func TestParseRLSPolicyComment(t *testing.T) {
 	}{
 		{
 			name:    "Basic RLS policy",
-			comment: `//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()"`,
+			comment: `//ptah:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()"`,
 			expected: goschema.RLSPolicy{
 				StructName:      "TestStruct",
 				Name:            "user_tenant_isolation",
@@ -826,7 +826,7 @@ func TestParseRLSPolicyComment(t *testing.T) {
 		},
 		{
 			name:    "RLS policy with WITH CHECK",
-			comment: `//migrator:schema:rls:policy name="insert_policy" table="products" for="INSERT" to="app_user" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()"`,
+			comment: `//ptah:schema:rls:policy name="insert_policy" table="products" for="INSERT" to="app_user" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()"`,
 			expected: goschema.RLSPolicy{
 				StructName:          "TestStruct",
 				Name:                "insert_policy",
@@ -839,7 +839,7 @@ func TestParseRLSPolicyComment(t *testing.T) {
 		},
 		{
 			name:    "RLS policy with comment",
-			comment: `//migrator:schema:rls:policy name="select_policy" table="orders" for="SELECT" to="PUBLIC" using="user_id = current_user_id()" comment="Allow users to see only their orders"`,
+			comment: `//ptah:schema:rls:policy name="select_policy" table="orders" for="SELECT" to="PUBLIC" using="user_id = current_user_id()" comment="Allow users to see only their orders"`,
 			expected: goschema.RLSPolicy{
 				StructName:      "TestStruct",
 				Name:            "select_policy",
@@ -881,7 +881,7 @@ func TestParseRLSEnableComment(t *testing.T) {
 	}{
 		{
 			name:    "Basic RLS enable",
-			comment: `//migrator:schema:rls:enable table="users"`,
+			comment: `//ptah:schema:rls:enable table="users"`,
 			expected: goschema.RLSEnabledTable{
 				StructName: "TestStruct",
 				Table:      "users",
@@ -889,7 +889,7 @@ func TestParseRLSEnableComment(t *testing.T) {
 		},
 		{
 			name:    "RLS enable with comment",
-			comment: `//migrator:schema:rls:enable table="products" comment="Enable RLS for multi-tenant isolation"`,
+			comment: `//ptah:schema:rls:enable table="products" comment="Enable RLS for multi-tenant isolation"`,
 			expected: goschema.RLSEnabledTable{
 				StructName: "TestStruct",
 				Table:      "products",
@@ -923,7 +923,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 	}{
 		{
 			name:    "EXCLUDE constraint with all fields",
-			comment: `//migrator:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" using="gist" elements="room_id WITH =, during WITH &&" condition="is_active = true" comment="Prevent overlapping bookings"`,
+			comment: `//ptah:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" using="gist" elements="room_id WITH =, during WITH &&" condition="is_active = true" comment="Prevent overlapping bookings"`,
 			expected: goschema.Constraint{
 				StructName:      "TestStruct",
 				Name:            "no_overlapping_bookings",
@@ -936,7 +936,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		},
 		{
 			name:    "EXCLUDE constraint without WHERE clause",
-			comment: `//migrator:schema:constraint name="unique_locations" type="EXCLUDE" using="gist" elements="location WITH &&"`,
+			comment: `//ptah:schema:constraint name="unique_locations" type="EXCLUDE" using="gist" elements="location WITH &&"`,
 			expected: goschema.Constraint{
 				StructName:      "TestStruct",
 				Name:            "unique_locations",
@@ -947,7 +947,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		},
 		{
 			name:    "CHECK constraint",
-			comment: `//migrator:schema:constraint name="positive_price" type="CHECK" check="price > 0"`,
+			comment: `//ptah:schema:constraint name="positive_price" type="CHECK" check="price > 0"`,
 			expected: goschema.Constraint{
 				StructName:      "TestStruct",
 				Name:            "positive_price",
@@ -957,7 +957,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		},
 		{
 			name:    "UNIQUE constraint with multiple columns",
-			comment: `//migrator:schema:constraint name="unique_user_email" type="UNIQUE" columns="user_id, email" include="updated_at"`,
+			comment: `//ptah:schema:constraint name="unique_user_email" type="UNIQUE" columns="user_id, email" include="updated_at"`,
 			expected: goschema.Constraint{
 				StructName:     "TestStruct",
 				Name:           "unique_user_email",
@@ -968,7 +968,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		},
 		{
 			name:    "FOREIGN KEY constraint",
-			comment: `//migrator:schema:constraint name="fk_user" type="FOREIGN KEY" columns="user_id" foreign_table="users" foreign_column="id" on_delete="CASCADE"`,
+			comment: `//ptah:schema:constraint name="fk_user" type="FOREIGN KEY" columns="user_id" foreign_table="users" foreign_column="id" on_delete="CASCADE"`,
 			expected: goschema.Constraint{
 				StructName:    "TestStruct",
 				Name:          "fk_user",
@@ -981,7 +981,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		},
 		{
 			name:    "composite FOREIGN KEY constraint",
-			comment: `//migrator:schema:constraint name="fk_memberships_accounts" type="FOREIGN KEY" columns="tenant_id, account_id" foreign_table="accounts" foreign_columns="tenant_id,id" on_update="RESTRICT"`,
+			comment: `//ptah:schema:constraint name="fk_memberships_accounts" type="FOREIGN KEY" columns="tenant_id, account_id" foreign_table="accounts" foreign_columns="tenant_id,id" on_update="RESTRICT"`,
 			expected: goschema.Constraint{
 				StructName:     "TestStruct",
 				Name:           "fk_memberships_accounts",
@@ -994,7 +994,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		},
 		{
 			name:    "UNIQUE constraint with NULLS NOT DISTINCT",
-			comment: `//migrator:schema:constraint name="unique_email" type="UNIQUE" columns="email" nulls_distinct="false"`,
+			comment: `//ptah:schema:constraint name="unique_email" type="UNIQUE" columns="email" nulls_distinct="false"`,
 			expected: goschema.Constraint{
 				StructName:    "TestStruct",
 				Name:          "unique_email",
@@ -1037,7 +1037,7 @@ func TestParseSource_ExplicitEnumComment(t *testing.T) {
 
 	source := `package test
 
-//migrator:schema:enum name="status_type" values="active,inactive,pending"
+//ptah:schema:enum name="status_type" values="active,inactive,pending"
 type SchemaObjects struct{}
 `
 	db := mustParseSource(c, "enums.go", source)
@@ -1077,9 +1077,9 @@ func TestParseField_UnknownAttributePanics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			content := `package entities
 
-//migrator:schema:table name="widgets"
+//ptah:schema:table name="widgets"
 type Widget struct {
-	//migrator:schema:field ` + tt.annotation + `
+	//ptah:schema:field ` + tt.annotation + `
 	ID int64
 }
 `
@@ -1103,15 +1103,15 @@ func TestParseField_KnownAttributesDoNotPanic(t *testing.T) {
 
 	content := `package entities
 
-//migrator:schema:table name="widgets"
+//ptah:schema:table name="widgets"
 type Widget struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true" auto_increment="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true" auto_increment="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true" unique="true" default="x" comment="widget name" platform.mysql.type="VARCHAR(191)"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true" unique="true" default="x" comment="widget name" platform.mysql.type="VARCHAR(191)"
 	Name string
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" default_expr="NOW()"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" default_expr="NOW()"
 	CreatedAt string
 }
 `
@@ -1125,7 +1125,7 @@ type Widget struct {
 }
 
 // TestParseField_ForeignKeyActions verifies that on_delete and on_update
-// attributes declared on a //migrator:schema:field annotation are captured on
+// attributes declared on a //ptah:schema:field annotation are captured on
 // the resulting Field (regression test for #117 — these keys were previously
 // whitelisted but silently dropped).
 func TestParseField_ForeignKeyActions(t *testing.T) {
@@ -1133,18 +1133,18 @@ func TestParseField_ForeignKeyActions(t *testing.T) {
 
 	content := `package entities
 
-//migrator:schema:table name="commodities"
+//ptah:schema:table name="commodities"
 type Commodity struct {
-	//migrator:schema:field name="id" type="TEXT" primary="true"
+	//ptah:schema:field name="id" type="TEXT" primary="true"
 	ID string
 }
 
-//migrator:schema:table name="commodity_services"
+//ptah:schema:table name="commodity_services"
 type CommodityService struct {
-	//migrator:schema:field name="id" type="TEXT" primary="true"
+	//ptah:schema:field name="id" type="TEXT" primary="true"
 	ID string
 
-	//migrator:schema:field name="commodity_id" type="TEXT" not_null="true" foreign="commodities(id)" foreign_key_name="fk_cs_commodity" on_delete="CASCADE" on_update="RESTRICT"
+	//ptah:schema:field name="commodity_id" type="TEXT" not_null="true" foreign="commodities(id)" foreign_key_name="fk_cs_commodity" on_delete="CASCADE" on_update="RESTRICT"
 	CommodityID string
 }
 `
@@ -1172,7 +1172,7 @@ type CommodityService struct {
 
 // TestParseDir_EmbeddedRelationFKActions exercises the ParseDir/walker path
 // (which expands embedded fields via the internal processEmbeddedFields), to
-// pin that on_delete / on_update declared on a //migrator:embedded mode="relation"
+// pin that on_delete / on_update declared on a //ptah:embedded mode="relation"
 // annotation reach the planner-visible Field — a third copy of the embedded
 // expansion lives in core/goschema/utils.go and used to drop the actions
 // before the fix for #117 landed.
@@ -1181,18 +1181,18 @@ func TestParseDir_EmbeddedRelationFKActions(t *testing.T) {
 
 	content := `package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:embedded mode="relation" field="author_id" ref="users(id)" on_delete="CASCADE" on_update="RESTRICT"
+	//ptah:embedded mode="relation" field="author_id" ref="users(id)" on_delete="CASCADE" on_update="RESTRICT"
 	Author User
 }
 `
@@ -1228,15 +1228,15 @@ func TestParseField_CheckConstraint(t *testing.T) {
 
 	content := `package entities
 
-//migrator:schema:table name="files"
+//ptah:schema:table name="files"
 type File struct {
-	//migrator:schema:field name="id" type="TEXT" primary="true"
+	//ptah:schema:field name="id" type="TEXT" primary="true"
 	ID string
 
-	//migrator:schema:field name="category" type="TEXT" not_null="true" default="other" check="category IN ('photos','invoices','documents','other')"
+	//ptah:schema:field name="category" type="TEXT" not_null="true" default="other" check="category IN ('photos','invoices','documents','other')"
 	Category string
 
-	//migrator:schema:field name="type" type="TEXT" not_null="true" check="type IN ('image','document','video','audio','archive','other')" check_name="files_type_valid"
+	//ptah:schema:field name="type" type="TEXT" not_null="true" check="type IN ('image','document','video','audio','archive','other')" check_name="files_type_valid"
 	Type string
 }
 `

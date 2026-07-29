@@ -4,19 +4,19 @@ This document describes how to use Ptah's PostgreSQL role and privilege manageme
 
 ## Overview
 
-Ptah supports PostgreSQL role creation and privilege management through the `//migrator:schema:role` and `//migrator:schema:grant` annotations. This allows you to define database roles and the privileges they need alongside your entity definitions, ensuring that access control is managed as part of your schema migrations.
+Ptah supports PostgreSQL role creation and privilege management through the `//ptah:schema:role` and `//ptah:schema:grant` annotations. This allows you to define database roles and the privileges they need alongside your entity definitions, ensuring that access control is managed as part of your schema migrations.
 
 ## Basic Role Definition
 
-Define roles using the `//migrator:schema:role` annotation:
+Define roles using the `//ptah:schema:role` annotation:
 
 ```go
 package entities
 
 // Define basic application roles
-//migrator:schema:role name="app_user" login="true" comment="Application user role"
-//migrator:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
-//migrator:schema:role name="readonly_user" login="true" comment="Read-only user role"
+//ptah:schema:role name="app_user" login="true" comment="Application user role"
+//ptah:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
+//ptah:schema:role name="readonly_user" login="true" comment="Read-only user role"
 type UserRoles struct {
     // This struct serves as a container for role annotations
 }
@@ -43,17 +43,17 @@ The following attributes are supported for PostgreSQL roles:
 
 ## Grant Definition
 
-Define table and schema privileges using the `//migrator:schema:grant` annotation:
+Define table and schema privileges using the `//ptah:schema:grant` annotation:
 
 ```go
 package entities
 
-//migrator:schema:role name="app_reader" inherit="true" comment="Application read-only role"
-//migrator:schema:role name="app_writer" inherit="true" comment="Application write role"
-//migrator:schema:grant role="app_reader" privilege="USAGE" on_schema="public"
-//migrator:schema:grant role="app_writer" privilege="USAGE" on_schema="public"
-//migrator:schema:grant role="app_reader" privilege="SELECT" on_table="users"
-//migrator:schema:grant role="app_writer" privilege="SELECT,INSERT,UPDATE,DELETE" on_table="users"
+//ptah:schema:role name="app_reader" inherit="true" comment="Application read-only role"
+//ptah:schema:role name="app_writer" inherit="true" comment="Application write role"
+//ptah:schema:grant role="app_reader" privilege="USAGE" on_schema="public"
+//ptah:schema:grant role="app_writer" privilege="USAGE" on_schema="public"
+//ptah:schema:grant role="app_reader" privilege="SELECT" on_table="users"
+//ptah:schema:grant role="app_writer" privilege="SELECT,INSERT,UPDATE,DELETE" on_table="users"
 type AccessControl struct{}
 ```
 
@@ -74,10 +74,10 @@ type AccessControl struct{}
 Grant privileges on a standalone sequence (see the [sequences guide](./sequences.md)) with `on_sequence`. The valid sequence privileges are `USAGE`, `SELECT`, and `UPDATE`:
 
 ```go
-//migrator:schema:sequence name="order_number_seq" start="1000"
+//ptah:schema:sequence name="order_number_seq" start="1000"
 type OrderNumberSeq struct{}
 
-//migrator:schema:grant role="app_writer" privilege="USAGE,SELECT" on_sequence="order_number_seq"
+//ptah:schema:grant role="app_writer" privilege="USAGE,SELECT" on_sequence="order_number_seq"
 type AccessControl struct{}
 ```
 
@@ -89,23 +89,23 @@ This renders `GRANT USAGE, SELECT ON SEQUENCE order_number_seq TO app_writer;`.
 
 ```go
 // Service role with database creation privileges
-//migrator:schema:role name="service_user" login="true" createdb="true" comment="Service user for automated processes"
+//ptah:schema:role name="service_user" login="true" createdb="true" comment="Service user for automated processes"
 
 // Backup role with replication privileges
-//migrator:schema:role name="backup_user" login="true" replication="true" comment="Backup user for replication"
+//ptah:schema:role name="backup_user" login="true" replication="true" comment="Backup user for replication"
 
 // API role with restricted inheritance
-//migrator:schema:role name="api_user" login="true" inherit="false" comment="API user with restricted privileges"
+//ptah:schema:role name="api_user" login="true" inherit="false" comment="API user with restricted privileges"
 ```
 
 ### Administrative Roles
 
 ```go
 // Database administrator with full privileges
-//migrator:schema:role name="dba_user" login="true" superuser="true" createdb="true" createrole="true" comment="Database administrator"
+//ptah:schema:role name="dba_user" login="true" superuser="true" createdb="true" createrole="true" comment="Database administrator"
 
 // Schema manager with role creation privileges
-//migrator:schema:role name="schema_manager" login="true" createrole="true" comment="Schema management role"
+//ptah:schema:role name="schema_manager" login="true" createrole="true" comment="Schema management role"
 ```
 
 ## Generated SQL
@@ -162,14 +162,14 @@ Roles can be referenced in Row-Level Security policies:
 
 ```go
 // Define roles first
-//migrator:schema:role name="tenant_user" login="true" comment="Multi-tenant user role"
-//migrator:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
-//migrator:schema:grant role="tenant_user" privilege="USAGE" on_schema="public"
-//migrator:schema:grant role="tenant_user" privilege="SELECT,INSERT,UPDATE,DELETE" on_table="users"
+//ptah:schema:role name="tenant_user" login="true" comment="Multi-tenant user role"
+//ptah:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
+//ptah:schema:grant role="tenant_user" privilege="USAGE" on_schema="public"
+//ptah:schema:grant role="tenant_user" privilege="SELECT,INSERT,UPDATE,DELETE" on_table="users"
 
 // Use roles in RLS policies
-//migrator:schema:rls:policy name="tenant_isolation" table="users" for="ALL" to="tenant_user" using="tenant_id = current_user_tenant_id()" comment="Tenant isolation policy"
-//migrator:schema:rls:policy name="admin_access" table="users" for="ALL" to="admin_user" using="true" comment="Admin full access policy"
+//ptah:schema:rls:policy name="tenant_isolation" table="users" for="ALL" to="tenant_user" using="tenant_id = current_user_tenant_id()" comment="Tenant isolation policy"
+//ptah:schema:rls:policy name="admin_access" table="users" for="ALL" to="admin_user" using="true" comment="Admin full access policy"
 ```
 
 ## Best Practices
@@ -179,9 +179,9 @@ Roles can be referenced in Row-Level Security policies:
 Use descriptive names that clearly indicate the role's purpose:
 
 ```go
-//migrator:schema:role name="app_readonly" login="true" comment="Application read-only access"
-//migrator:schema:role name="app_readwrite" login="true" comment="Application read-write access"
-//migrator:schema:role name="app_admin" login="true" superuser="true" comment="Application administrator"
+//ptah:schema:role name="app_readonly" login="true" comment="Application read-only access"
+//ptah:schema:role name="app_readwrite" login="true" comment="Application read-write access"
+//ptah:schema:role name="app_admin" login="true" superuser="true" comment="Application administrator"
 ```
 
 ### 2. Principle of Least Privilege
@@ -190,11 +190,11 @@ Grant only the minimum privileges required:
 
 ```go
 // Good: Specific privileges for specific purposes
-//migrator:schema:role name="backup_service" login="true" replication="true" comment="Backup service role"
-//migrator:schema:grant role="analytics_reader" privilege="SELECT" on_table="events"
+//ptah:schema:role name="backup_service" login="true" replication="true" comment="Backup service role"
+//ptah:schema:grant role="analytics_reader" privilege="SELECT" on_table="events"
 
 // Avoid: Unnecessary superuser privileges
-//migrator:schema:role name="backup_service" login="true" superuser="true" comment="Backup service role"
+//ptah:schema:role name="backup_service" login="true" superuser="true" comment="Backup service role"
 ```
 
 ### 3. Documentation
@@ -202,8 +202,8 @@ Grant only the minimum privileges required:
 Always include meaningful comments:
 
 ```go
-//migrator:schema:role name="analytics_reader" login="true" comment="Read-only access for analytics and reporting"
-//migrator:schema:role name="etl_processor" login="true" createdb="true" comment="ETL process role with database creation for temporary schemas"
+//ptah:schema:role name="analytics_reader" login="true" comment="Read-only access for analytics and reporting"
+//ptah:schema:role name="etl_processor" login="true" createdb="true" comment="ETL process role with database creation for temporary schemas"
 ```
 
 ### 4. Password Management
@@ -212,7 +212,7 @@ Avoid hardcoding passwords in annotations. Use environment variables or external
 
 ```go
 // Don't include actual passwords in code
-//migrator:schema:role name="app_user" login="true" comment="Application user - password set externally"
+//ptah:schema:role name="app_user" login="true" comment="Application user - password set externally"
 ```
 
 ## Cross-Database Compatibility

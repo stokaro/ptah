@@ -11,22 +11,22 @@ import (
 
 const usersSource = `package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 `
 
 const ordersSource = `package entities
 
-//migrator:schema:table name="orders"
+//ptah:schema:table name="orders"
 type Order struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
-	//migrator:schema:field name="user_id" type="INTEGER" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INTEGER" foreign="users(id)"
 	UserID int64
 }
 `
@@ -163,16 +163,16 @@ func TestMerge_AcceptsFinalizedSchema(t *testing.T) {
 		"users.go": {Data: []byte(`package fixtures
 
 type Timestamps struct {
-	//migrator:schema:field name="created_at" type="TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP"
 	CreatedAt string
 }
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="BIGINT" primary="true"
+	//ptah:schema:field name="id" type="BIGINT" primary="true"
 	ID int64
 
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	Timestamps
 }
 `)},

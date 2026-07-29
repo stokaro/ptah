@@ -181,98 +181,98 @@ func TestGenerateMigration_SQLiteAddColumnRejectsUnsupportedTriggerSyntax(t *tes
 
 const sqliteAddColumnModel = `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:index name="idx_users_email" fields="email"
-	//migrator:schema:trigger name="trg_users_email" table="users" timing="after" event="update" body="BEGIN SELECT NEW.email; END"
+	//ptah:schema:index name="idx_users_email" fields="email"
+	//ptah:schema:trigger name="trg_users_email" table="users" timing="after" event="update" body="BEGIN SELECT NEW.email; END"
 
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="TEXT" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" not_null="true"
 	Email string
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 `
 
 const sqliteStrictAddColumnModel = `package models
 
-//migrator:schema:table name="users" platform.sqlite.strict="true" platform.sqlite.without_rowid="true"
+//ptah:schema:table name="users" platform.sqlite.strict="true" platform.sqlite.without_rowid="true"
 type User struct {
-	//migrator:schema:field name="id" type="TEXT" primary="true"
+	//ptah:schema:field name="id" type="TEXT" primary="true"
 	ID string
 
-	//migrator:schema:field name="email" type="TEXT" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" not_null="true"
 	Email string
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 `
 
 const sqliteAddColumnWithChildModel = `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="TEXT" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" not_null="true"
 	Email string
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64
 }
 `
 
 const sqliteAddColumnWithCascadeChildModel = `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="TEXT" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" not_null="true"
 	Email string
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)" on_delete="CASCADE"
+	//ptah:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)" on_delete="CASCADE"
 	UserID int64
 }
 `
 
 const sqliteAddColumnWithTriggerModel = `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:trigger name="trg_users_email" table="users" timing="after" event="update" body="BEGIN SELECT NEW.email; END"
+	//ptah:schema:trigger name="trg_users_email" table="users" timing="after" event="update" body="BEGIN SELECT NEW.email; END"
 
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="TEXT" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" not_null="true"
 	Email string
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 `

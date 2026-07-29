@@ -40,7 +40,7 @@ Expected output includes:
 Now add a column to the model:
 
 ```go
-//migrator:schema:field name="created_at" type="TIMESTAMP"
+//ptah:schema:field name="created_at" type="TIMESTAMP"
 CreatedAt *string
 ```
 

@@ -1,6 +1,6 @@
 # PostgreSQL Sequences with Ptah
 
-Ptah supports standalone PostgreSQL sequences as a first-class schema object through the `//migrator:schema:sequence` annotation. A standalone sequence is created with `CREATE SEQUENCE`, altered with `ALTER SEQUENCE`, and dropped with `DROP SEQUENCE`, and participates in the full generate / compare / migrate / rollback lifecycle just like tables, views, functions, and roles.
+Ptah supports standalone PostgreSQL sequences as a first-class schema object through the `//ptah:schema:sequence` annotation. A standalone sequence is created with `CREATE SEQUENCE`, altered with `ALTER SEQUENCE`, and dropped with `DROP SEQUENCE`, and participates in the full generate / compare / migrate / rollback lifecycle just like tables, views, functions, and roles.
 
 Standalone sequences are a PostgreSQL feature that Atlas keeps out of its open-source core (it lives only in the proprietary "Pro" build). Ptah provides it as an open (MIT), local, no-account capability — see epic [#654](https://github.com/stokaro/ptah/issues/654).
 
@@ -15,7 +15,7 @@ A *standalone* sequence is one you declare explicitly, typically to share a sing
 ```go
 package models
 
-//migrator:schema:sequence name="order_number_seq" as="bigint" start="1000" increment="1" cache="20"
+//ptah:schema:sequence name="order_number_seq" as="bigint" start="1000" increment="1" cache="20"
 type OrderNumberSeq struct{}
 ```
 
@@ -49,12 +49,12 @@ Only the options you set are emitted. An option left unset relies on the Postgre
 Because a standalone sequence may back a column default, Ptah always creates sequences before the tables that reference them:
 
 ```go
-//migrator:schema:sequence name="order_number_seq" start="1000"
+//ptah:schema:sequence name="order_number_seq" start="1000"
 type OrderNumberSeq struct{}
 
-//migrator:schema:table name="orders"
+//ptah:schema:table name="orders"
 type Order struct {
-	//migrator:schema:field name="id" type="BIGINT" primary="true" default_expr="nextval('order_number_seq')"
+	//ptah:schema:field name="id" type="BIGINT" primary="true" default_expr="nextval('order_number_seq')"
 	ID int64
 }
 ```
@@ -69,10 +69,10 @@ type Order struct {
 
 ## Granting privileges on a sequence
 
-Use `on_sequence` on a `//migrator:schema:grant` annotation. Valid sequence privileges are `USAGE`, `SELECT`, and `UPDATE`:
+Use `on_sequence` on a `//ptah:schema:grant` annotation. Valid sequence privileges are `USAGE`, `SELECT`, and `UPDATE`:
 
 ```go
-//migrator:schema:grant role="app_writer" privilege="USAGE,SELECT" on_sequence="order_number_seq"
+//ptah:schema:grant role="app_writer" privilege="USAGE,SELECT" on_sequence="order_number_seq"
 type AccessControl struct{}
 ```
 

@@ -1,6 +1,6 @@
 // Package migratedata implements `ptah migrations data`, which generates an
 // ordinary migration from the drift between declarative reference/seed data
-// (//migrator:schema:data annotations) and a live database.
+// (//ptah:schema:data annotations) and a live database.
 package migratedata
 
 import (
@@ -53,7 +53,7 @@ func NewMigrateDataCommand() *cobra.Command {
 		Long: `Generate an ordinary migration from the drift between declarative
 reference/seed data and a live database.
 
-The Go sources under --root-dir are scanned for //migrator:schema:data
+The Go sources under --root-dir are scanned for //ptah:schema:data
 annotations. For every declared table its desired rows are loaded from the
 referenced YAML file and diffed against the live rows in --db-url, and the
 combined difference is written as an ordinary migration pair
@@ -81,7 +81,7 @@ writing files.`,
 
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
-	flags.StringVar(&opts.rootDir, rootDirFlag, "", "Directory of Go sources carrying //migrator:schema:data annotations (required)")
+	flags.StringVar(&opts.rootDir, rootDirFlag, "", "Directory of Go sources carrying //ptah:schema:data annotations (required)")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Live database URL to diff the desired data against (required)")
 	flags.StringVar(&opts.migrationsDir, migrationsFlag, "./migrations", "Directory the generated migration pair is written to")
 	flags.StringVar(&opts.version, versionFlag, "", "Migration version; defaults to one above the newest migration")

@@ -85,7 +85,7 @@ func TestMaterializedViewRefreshStrategyGoAnnotationParity(t *testing.T) {
 
 	goDB, err := goschema.ParseSource("user_stats.go", `package models
 
-//migrator:schema:matview name="user_stats" body="SELECT count(*) FROM users" refresh_strategy="concurrently" comment="user stats"
+//ptah:schema:matview name="user_stats" body="SELECT count(*) FROM users" refresh_strategy="concurrently" comment="user stats"
 type UserStatsMatView struct{}
 `)
 	c.Assert(err, qt.IsNil)

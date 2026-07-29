@@ -30,7 +30,7 @@ type Attribute struct {
 	ValueRange Range
 }
 
-// Annotation is a parsed //migrator annotation comment.
+// Annotation is a parsed //ptah annotation comment.
 type Annotation struct {
 	Line           int
 	Directive      string
@@ -65,7 +65,7 @@ func scanLine(lineNo int, line string) (Annotation, bool) {
 	for bodyStart < len(line) && (line[bodyStart] == ' ' || line[bodyStart] == '\t') {
 		bodyStart++
 	}
-	if !strings.HasPrefix(line[bodyStart:], "migrator:") {
+	if !strings.HasPrefix(line[bodyStart:], "ptah:") {
 		return Annotation{}, false
 	}
 

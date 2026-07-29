@@ -4,84 +4,84 @@ package stubs
 
 // VERBOSE SYNTAX
 //
-//migrator:schema:table name="verbose_syntax_users"
+//ptah:schema:table name="verbose_syntax_users"
 type VerboseSyntaxUser struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true" not_null="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true" not_null="true"
 	ID int `db:"id"`
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" unique="true" not_null="true"
-	//migrator:schema:index name="idx_verbose_syntax_users_email" fields="email"
+	//ptah:schema:field name="email" type="VARCHAR(255)" unique="true" not_null="true"
+	//ptah:schema:index name="idx_verbose_syntax_users_email" fields="email"
 	Email string `db:"email"`
 
-	//migrator:schema:field name="is_active" type="BOOLEAN" not_null="true" default_expr="true"
+	//ptah:schema:field name="is_active" type="BOOLEAN" not_null="true" default_expr="true"
 	IsActive bool `db:"is_active"`
 
-	//migrator:schema:field name="description" type="TEXT"
+	//ptah:schema:field name="description" type="TEXT"
 	Description *string `db:"description"`
 }
 
 // SIMPLIFIED SYNTAX (recommended)
 //
-//migrator:schema:table name="new_syntax_users"
+//ptah:schema:table name="new_syntax_users"
 type NewSyntaxUser struct {
-	//migrator:schema:field name="id" type="SERIAL" primary not_null
+	//ptah:schema:field name="id" type="SERIAL" primary not_null
 	ID int `db:"id"`
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" unique not_null
-	//migrator:schema:index name="idx_new_syntax_users_email" fields="email"
+	//ptah:schema:field name="email" type="VARCHAR(255)" unique not_null
+	//ptah:schema:index name="idx_new_syntax_users_email" fields="email"
 	Email string `db:"email"`
 
-	//migrator:schema:field name="is_active" type="BOOLEAN" not_null default_expr="true"
+	//ptah:schema:field name="is_active" type="BOOLEAN" not_null default_expr="true"
 	IsActive bool `db:"is_active"`
 
-	//migrator:schema:field name="description" type="TEXT"
+	//ptah:schema:field name="description" type="TEXT"
 	Description *string `db:"description"`
 }
 
 // MIXED SYNTAX (also supported - you can mix both styles)
 //
-//migrator:schema:table name="mixed_syntax_posts"
+//ptah:schema:table name="mixed_syntax_posts"
 type MixedSyntaxPost struct {
-	//migrator:schema:field name="id" type="SERIAL" primary not_null
+	//ptah:schema:field name="id" type="SERIAL" primary not_null
 	ID int `db:"id"`
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null unique="true"
-	//migrator:schema:index name="idx_mixed_syntax_posts_title" fields="title"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null unique="true"
+	//ptah:schema:index name="idx_mixed_syntax_posts_title" fields="title"
 	Title string `db:"title"`
 
-	//migrator:schema:field name="content" type="TEXT"
+	//ptah:schema:field name="content" type="TEXT"
 	Content *string `db:"content"`
 
-	//migrator:schema:field name="view_count" type="INTEGER" not_null default_expr="0" check="view_count >= 0"
+	//ptah:schema:field name="view_count" type="INTEGER" not_null default_expr="0" check="view_count >= 0"
 	ViewCount int `db:"view_count"`
 
-	//migrator:schema:field name="is_published" type="BOOLEAN" not_null="false" default_expr="false"
+	//ptah:schema:field name="is_published" type="BOOLEAN" not_null="false" default_expr="false"
 	IsPublished bool `db:"is_published"`
 }
 
 // EMBEDDED FIELDS WITH SIMPLIFIED SYNTAX
 //
-//migrator:schema:embed
+//ptah:schema:embed
 type ModernTimestamps struct {
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null default_expr="CURRENT_TIMESTAMP"
 	CreatedAt string `db:"created_at"`
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP"
 	UpdatedAt *string `db:"updated_at"`
 }
 
-//migrator:schema:table name="modern_articles"
+//ptah:schema:table name="modern_articles"
 type ModernArticle struct {
-	//migrator:schema:field name="id" type="SERIAL" primary not_null
+	//ptah:schema:field name="id" type="SERIAL" primary not_null
 	ID int `db:"id"`
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null unique
-	//migrator:schema:index name="idx_modern_articles_title" fields="title"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null unique
+	//ptah:schema:index name="idx_modern_articles_title" fields="title"
 	Title string `db:"title"`
 
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	ModernTimestamps
 
-	//migrator:embedded mode="json" name="metadata" type="JSONB" platform.mysql.type="JSON"
+	//ptah:embedded mode="json" name="metadata" type="JSONB" platform.mysql.type="JSON"
 	Metadata map[string]any `json:"metadata"`
 }

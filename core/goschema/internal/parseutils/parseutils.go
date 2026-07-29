@@ -13,7 +13,7 @@ var keyValuePairRe = regexp.MustCompile(`(\w+(?:\.\w+)*)=("(?:\\.|[^"\\])*"|[^\s
 var boolRe = regexp.MustCompile(`\b(\w+(?:\.\w+)*)\b`)
 
 // directiveTokens is the set of bareword tokens that appear in a
-// `//migrator:schema:<kind>` annotation header. They are never user-supplied
+// `//ptah:schema:<kind>` annotation header. They are never user-supplied
 // boolean attributes, so we never auto-promote them to `kv[token]="true"`.
 var directiveTokens = func() map[string]bool {
 	tokens := annotationmeta.DirectiveTokens()
@@ -46,7 +46,7 @@ func ParseKeyValueComment(comment string) map[string]string {
 
 	// Build the set of barewords to skip for this specific directive line.
 	// All directive tokens are always skipped; "index" is additionally
-	// skipped when this line IS the //migrator:schema:index header, because
+	// skipped when this line IS the //ptah:schema:index header, because
 	// otherwise the directive token itself would be auto-promoted to
 	// kv["index"]="true" and trip the strict-unknown-key validator.
 	skip := directiveTokens
@@ -79,14 +79,14 @@ func isUnknownAttribute(comment, attr string) bool {
 }
 
 // isIndexDirectiveHeader reports whether `comment` is the
-// //migrator:schema:index directive header (as opposed to e.g. a field line
+// //ptah:schema:index directive header (as opposed to e.g. a field line
 // that happens to contain that substring). The check tolerates leading
-// whitespace inside the comment but anchors on the `//migrator:schema:index`
+// whitespace inside the comment but anchors on the `//ptah:schema:index`
 // prefix followed by either end-of-string or a space — so substrings like
-// `//migrator:schema:indexed` (hypothetical) would not match.
+// `//ptah:schema:indexed` (hypothetical) would not match.
 func isIndexDirectiveHeader(comment string) bool {
 	c := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(comment), "//"))
-	const prefix = "migrator:schema:index"
+	const prefix = "ptah:schema:index"
 	if !strings.HasPrefix(c, prefix) {
 		return false
 	}
@@ -95,7 +95,7 @@ func isIndexDirectiveHeader(comment string) bool {
 }
 
 // indexDirectiveSkip is directiveTokens plus the bareword "index" — used
-// when the comment line is a //migrator:schema:index header so the
+// when the comment line is a //ptah:schema:index header so the
 // directive token "index" isn't auto-promoted to kv["index"]="true".
 var indexDirectiveSkip = func() map[string]bool {
 	s := make(map[string]bool, len(directiveTokens)+1)

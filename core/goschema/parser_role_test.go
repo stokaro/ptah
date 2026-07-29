@@ -14,7 +14,7 @@ func TestRoleAnnotationParsing(t *testing.T) {
 		goCode := `
 package test
 
-//migrator:schema:role name="app_user" login="true" comment="Application user role"
+//ptah:schema:role name="app_user" login="true" comment="Application user role"
 type UserRoles struct {
 }
 `
@@ -39,7 +39,7 @@ type UserRoles struct {
 		goCode := `
 package test
 
-//migrator:schema:role name="admin_user" login="true" password="encrypted_password" superuser="true" createdb="true" createrole="true" inherit="false" replication="true" comment="Administrator role"
+//ptah:schema:role name="admin_user" login="true" password="encrypted_password" superuser="true" createdb="true" createrole="true" inherit="false" replication="true" comment="Administrator role"
 type AdminRoles struct {
 }
 `
@@ -64,7 +64,7 @@ type AdminRoles struct {
 		goCode := `
 package test
 
-//migrator:schema:role name="service_user" create_db="true" create_role="true"
+//ptah:schema:role name="service_user" create_db="true" create_role="true"
 type ServiceRoles struct {
 }
 `
@@ -82,9 +82,9 @@ type ServiceRoles struct {
 		goCode := `
 package test
 
-//migrator:schema:role name="app_user" login="true" comment="Application user role"
-//migrator:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
-//migrator:schema:role name="readonly_user" login="true" comment="Read-only user role"
+//ptah:schema:role name="app_user" login="true" comment="Application user role"
+//ptah:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
+//ptah:schema:role name="readonly_user" login="true" comment="Read-only user role"
 type UserRoles struct {
 }
 `
@@ -119,11 +119,11 @@ type UserRoles struct {
 		goCode := `
 package test
 
-//migrator:schema:role name="app_user" login="true"
+//ptah:schema:role name="app_user" login="true"
 type AppRoles struct {
 }
 
-//migrator:schema:role name="admin_user" login="true" superuser="true"
+//ptah:schema:role name="admin_user" login="true" superuser="true"
 type AdminRoles struct {
 }
 `
@@ -145,7 +145,7 @@ type AdminRoles struct {
 		goCode := `
 package test
 
-//migrator:schema:role name="minimal_role"
+//ptah:schema:role name="minimal_role"
 type MinimalRoles struct {
 }
 `
@@ -169,9 +169,9 @@ type MinimalRoles struct {
 		goCode := `
 package test
 
-//migrator:schema:role name="inherit_default"
-//migrator:schema:role name="inherit_explicit_true" inherit="true"
-//migrator:schema:role name="inherit_explicit_false" inherit="false"
+//ptah:schema:role name="inherit_default"
+//ptah:schema:role name="inherit_explicit_true" inherit="true"
+//ptah:schema:role name="inherit_explicit_false" inherit="false"
 type InheritRoles struct {
 }
 `
@@ -196,7 +196,7 @@ func TestGrantAnnotationParsing(t *testing.T) {
 		goCode := `
 package test
 
-//migrator:schema:grant role="app_role" privilege="SELECT,INSERT, UPDATE,DELETE" on_table="users" comment="Application DML"
+//ptah:schema:grant role="app_role" privilege="SELECT,INSERT, UPDATE,DELETE" on_table="users" comment="Application DML"
 type AccessControl struct {
 }
 `
@@ -217,7 +217,7 @@ type AccessControl struct {
 		goCode := `
 package test
 
-//migrator:schema:grant role="app_role" privileges="usage" on_schema="public" with_option="true"
+//ptah:schema:grant role="app_role" privileges="usage" on_schema="public" with_option="true"
 type AccessControl struct {
 }
 `
@@ -237,10 +237,10 @@ type AccessControl struct {
 		goCode := `
 package test
 
-//migrator:schema:table name="app.users"
-//migrator:schema:grant role="app_role" privilege="SELECT" on_table="app.users"
+//ptah:schema:table name="app.users"
+//ptah:schema:grant role="app_role" privilege="SELECT" on_table="app.users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `

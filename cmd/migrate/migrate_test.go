@@ -19,9 +19,9 @@ func TestMigratePlanTextOutputContainsSQLNotASTPointers(t *testing.T) {
 	c.Assert(os.MkdirAll(modelsDir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(modelsDir, "models.go"), []byte(`package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int
 }
 `), 0o600), qt.IsNil)

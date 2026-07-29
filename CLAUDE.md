@@ -131,16 +131,16 @@ The system is organized into several key packages:
 The system reads structured comments from Go structs:
 
 ```go
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 type Product struct {
-    //migrator:schema:field name="id" type="SERIAL" primary="true"
+    //ptah:schema:field name="id" type="SERIAL" primary="true"
     ID int64
     
-    //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+    //ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
     Name string
 }
 
-//migrator:schema:index name="idx_products_name" fields="name"
+//ptah:schema:index name="idx_products_name" fields="name"
 _ int
 ```
 

@@ -2076,7 +2076,7 @@ func (p *Planner) addNamedConstraintsByKind(
 		}
 
 		// Resolve the ADD CONSTRAINT node, in precedence order:
-		//  1. explicit table-level //migrator:schema:constraint
+		//  1. explicit table-level //ptah:schema:constraint
 		//  2. synthesized field-level check= (issue #112 / PR #123)
 		//  3. synthesized field-level foreign= action drift (issue #189)
 		// The two field-level fallbacks exist because the comparator

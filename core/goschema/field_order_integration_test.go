@@ -22,24 +22,24 @@ func TestFieldOrderConsistencyInMigrationGeneration(t *testing.T) {
 	// Create a test Go file with multiple fields in a specific order
 	testContent := `package test
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
 	Email string
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default="CURRENT_TIMESTAMP"
 	UpdatedAt time.Time
 
-	//migrator:schema:field name="status" type="VARCHAR(20)" not_null="true" default="'active'"
+	//ptah:schema:field name="status" type="VARCHAR(20)" not_null="true" default="'active'"
 	Status string
 }`
 
@@ -130,25 +130,25 @@ func TestFieldOrderWithEmbeddedFields(t *testing.T) {
 	testContent := `package test
 
 type BaseEntity struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 }
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	BaseEntity
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null="true"
 	Title string
 
-	//migrator:schema:field name="content" type="TEXT" not_null="true"
+	//ptah:schema:field name="content" type="TEXT" not_null="true"
 	Content string
 
-	//migrator:schema:field name="published" type="BOOLEAN" not_null="true" default="false"
+	//ptah:schema:field name="published" type="BOOLEAN" not_null="true" default="false"
 	Published bool
 }`
 
@@ -220,30 +220,30 @@ func TestFieldOrderWithMultipleTables(t *testing.T) {
 
 	testContent := `package test
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
 	Email string
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 }
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null="true"
 	Title string
 
-	//migrator:schema:field name="content" type="TEXT" not_null="true"
+	//ptah:schema:field name="content" type="TEXT" not_null="true"
 	Content string
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64
 }`
 

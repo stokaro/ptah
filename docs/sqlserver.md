@@ -105,7 +105,7 @@ Declare a SQL Server filtered index with the index annotation's `condition`
 (or `where`) attribute:
 
 ```go
-//migrator:schema:index name="idx_active_users" fields="status" condition="status = 1"
+//ptah:schema:index name="idx_active_users" fields="status" condition="status = 1"
 ```
 
 Ptah renders the predicate verbatim:

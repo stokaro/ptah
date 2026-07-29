@@ -37,7 +37,7 @@ func seedLiveDB(t *testing.T, rows [][2]string) string {
 	return url
 }
 
-// writeRegionsFixture writes the //migrator:schema:data annotation source and
+// writeRegionsFixture writes the //ptah:schema:data annotation source and
 // its YAML rows file into root.
 func writeRegionsFixture(t *testing.T, root, yamlRows string) {
 	t.Helper()
@@ -45,12 +45,12 @@ func writeRegionsFixture(t *testing.T, root, yamlRows string) {
 
 	goSrc := `package fixture
 
-//migrator:schema:data table="regions" key="code" file="regions.yaml"
+//ptah:schema:data table="regions" key="code" file="regions.yaml"
 type Region struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string
 }
 `

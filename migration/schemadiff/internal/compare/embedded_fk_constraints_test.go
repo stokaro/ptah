@@ -13,7 +13,7 @@ import (
 
 // TestConstraints_EmbeddedInlineMixinForeignKey covers issue #197 — a
 // `foreign=` annotation declared on an embedded inline mixin (a base struct
-// that is embedded via //migrator:embedded mode="inline" into several concrete
+// that is embedded via //ptah:embedded mode="inline" into several concrete
 // tables) must synthesize one FK per real embedding table, against the host
 // table name, never against the mixin's Go struct name.
 //

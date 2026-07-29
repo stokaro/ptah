@@ -176,12 +176,12 @@ func writeLiveTestEntity(c *qt.C, dir, table string) {
 	c.Helper()
 	content := fmt.Sprintf(`package models
 
-//migrator:schema:table name=%q
+//ptah:schema:table name=%q
 type Entity struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 `, table)
@@ -192,7 +192,7 @@ func writeLiveTestEnum(c *qt.C, dir string) {
 	c.Helper()
 	content := `package models
 
-//migrator:schema:enum name="status_type" values="draft,published"
+//ptah:schema:enum name="status_type" values="draft,published"
 type Status string
 `
 	c.Assert(os.WriteFile(filepath.Join(dir, "enum.go"), []byte(content), 0o600), qt.IsNil)

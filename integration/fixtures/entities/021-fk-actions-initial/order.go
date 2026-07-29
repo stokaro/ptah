@@ -10,14 +10,14 @@ package entities
 // user_id is deliberately nullable: the changed version sets
 // on_delete="SET NULL", which requires a nullable referencing column.
 
-//migrator:schema:table name="orders"
+//ptah:schema:table name="orders"
 type Order struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" foreign="users(id)" foreign_key_name="fk_orders_user"
+	//ptah:schema:field name="user_id" type="INTEGER" foreign="users(id)" foreign_key_name="fk_orders_user"
 	UserID *int64
 
-	//migrator:schema:field name="note" type="VARCHAR(255)"
+	//ptah:schema:field name="note" type="VARCHAR(255)"
 	Note string
 }

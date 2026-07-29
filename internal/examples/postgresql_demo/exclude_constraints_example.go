@@ -9,81 +9,81 @@ import (
 
 // Example 1: Room booking system with EXCLUDE constraint to prevent overlapping bookings
 //
-//migrator:schema:table name="bookings"
-//migrator:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" table="bookings" using="gist" elements="room_id WITH =, during WITH &&"
+//ptah:schema:table name="bookings"
+//ptah:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" table="bookings" using="gist" elements="room_id WITH =, during WITH &&"
 type Booking struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="room_id" type="INTEGER" not_null="true"
+	//ptah:schema:field name="room_id" type="INTEGER" not_null="true"
 	RoomID int
 
-	//migrator:schema:field name="during" type="TSRANGE" not_null="true"
+	//ptah:schema:field name="during" type="TSRANGE" not_null="true"
 	During string // PostgreSQL range type for time periods
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="NOW()"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="NOW()"
 	CreatedAt string
 }
 
 // Example 2: User session management with conditional EXCLUDE constraint
 //
-//migrator:schema:table name="user_sessions"
-//migrator:schema:constraint name="one_active_session_per_user" type="EXCLUDE" table="user_sessions" using="gist" elements="user_id WITH =" condition="is_active = true"
+//ptah:schema:table name="user_sessions"
+//ptah:schema:constraint name="one_active_session_per_user" type="EXCLUDE" table="user_sessions" using="gist" elements="user_id WITH =" condition="is_active = true"
 type UserSession struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true"
+	//ptah:schema:field name="user_id" type="INTEGER" not_null="true"
 	UserID int
 
-	//migrator:schema:field name="is_active" type="BOOLEAN" not_null="true" default="false"
+	//ptah:schema:field name="is_active" type="BOOLEAN" not_null="true" default="false"
 	IsActive bool
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="NOW()"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="NOW()"
 	CreatedAt string
 }
 
 // Example 3: Spatial data with EXCLUDE constraint to prevent overlapping regions
 //
-//migrator:schema:table name="territories"
-//migrator:schema:constraint name="no_overlapping_territories" type="EXCLUDE" table="territories" using="gist" elements="region WITH &&"
+//ptah:schema:table name="territories"
+//ptah:schema:constraint name="no_overlapping_territories" type="EXCLUDE" table="territories" using="gist" elements="region WITH &&"
 type Territory struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="region" type="GEOMETRY" not_null="true"
+	//ptah:schema:field name="region" type="GEOMETRY" not_null="true"
 	Region string // PostgreSQL geometry type
 
-	//migrator:schema:field name="active" type="BOOLEAN" not_null="true" default="true"
+	//ptah:schema:field name="active" type="BOOLEAN" not_null="true" default="true"
 	Active bool
 }
 
 // Example 4: Multiple constraint types including EXCLUDE
 //
-//migrator:schema:table name="events"
-//migrator:schema:constraint name="no_overlapping_events" type="EXCLUDE" table="events" using="gist" elements="venue_id WITH =, event_time WITH &&" condition="status = 'confirmed'"
-//migrator:schema:constraint name="unique_event_code" type="UNIQUE" table="events" columns="event_code"
-//migrator:schema:constraint name="positive_capacity" type="CHECK" table="events" expression="capacity > 0"
+//ptah:schema:table name="events"
+//ptah:schema:constraint name="no_overlapping_events" type="EXCLUDE" table="events" using="gist" elements="venue_id WITH =, event_time WITH &&" condition="status = 'confirmed'"
+//ptah:schema:constraint name="unique_event_code" type="UNIQUE" table="events" columns="event_code"
+//ptah:schema:constraint name="positive_capacity" type="CHECK" table="events" expression="capacity > 0"
 type Event struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="event_code" type="VARCHAR(50)" not_null="true"
+	//ptah:schema:field name="event_code" type="VARCHAR(50)" not_null="true"
 	EventCode string
 
-	//migrator:schema:field name="venue_id" type="INTEGER" not_null="true"
+	//ptah:schema:field name="venue_id" type="INTEGER" not_null="true"
 	VenueID int
 
-	//migrator:schema:field name="event_time" type="TSRANGE" not_null="true"
+	//ptah:schema:field name="event_time" type="TSRANGE" not_null="true"
 	EventTime string
 
-	//migrator:schema:field name="capacity" type="INTEGER" not_null="true"
+	//ptah:schema:field name="capacity" type="INTEGER" not_null="true"
 	Capacity int
 
-	//migrator:schema:field name="status" type="VARCHAR(20)" not_null="true" default="'pending'"
+	//ptah:schema:field name="status" type="VARCHAR(20)" not_null="true" default="'pending'"
 	Status string
 }
 

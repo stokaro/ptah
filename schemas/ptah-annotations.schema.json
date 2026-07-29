@@ -1,6 +1,6 @@
 {
   "$defs": {
-    "migrator.embedded": {
+    "ptah.embedded": {
       "additionalProperties": false,
       "description": "Controls how an embedded Go field contributes schema objects.",
       "properties": {
@@ -62,7 +62,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:embedded"
+          "const": "ptah:embedded"
         }
       },
       "required": [
@@ -71,7 +71,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.composite": {
+    "ptah.schema.composite": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL composite type.",
       "properties": {
@@ -102,7 +102,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:composite"
+          "const": "ptah:schema:composite"
         }
       },
       "required": [
@@ -111,7 +111,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.constraint": {
+    "ptah.schema.constraint": {
       "additionalProperties": false,
       "description": "Declares a table constraint.",
       "properties": {
@@ -190,7 +190,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:constraint"
+          "const": "ptah:schema:constraint"
         }
       },
       "required": [
@@ -199,7 +199,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.data": {
+    "ptah.schema.data": {
       "additionalProperties": false,
       "description": "Declares external reference/seed row data for a table.",
       "properties": {
@@ -231,7 +231,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:data"
+          "const": "ptah:schema:data"
         }
       },
       "required": [
@@ -240,7 +240,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.domain": {
+    "ptah.schema.domain": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL domain type.",
       "properties": {
@@ -291,7 +291,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:domain"
+          "const": "ptah:schema:domain"
         }
       },
       "required": [
@@ -300,7 +300,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.enum": {
+    "ptah.schema.enum": {
       "additionalProperties": false,
       "description": "Declares a reusable enum type.",
       "properties": {
@@ -323,7 +323,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:enum"
+          "const": "ptah:schema:enum"
         }
       },
       "required": [
@@ -332,7 +332,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.extension": {
+    "ptah.schema.extension": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL extension.",
       "properties": {
@@ -363,7 +363,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:extension"
+          "const": "ptah:schema:extension"
         }
       },
       "required": [
@@ -372,7 +372,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.field": {
+    "ptah.schema.field": {
       "additionalProperties": false,
       "description": "Maps a Go struct field to a database column.",
       "properties": {
@@ -509,7 +509,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:field"
+          "const": "ptah:schema:field"
         }
       },
       "required": [
@@ -518,7 +518,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.function": {
+    "ptah.schema.function": {
       "additionalProperties": false,
       "description": "Declares a database function.",
       "properties": {
@@ -561,7 +561,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:function"
+          "const": "ptah:schema:function"
         }
       },
       "required": [
@@ -570,7 +570,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.grant": {
+    "ptah.schema.grant": {
       "additionalProperties": false,
       "description": "Declares database grants.",
       "properties": {
@@ -627,7 +627,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:grant"
+          "const": "ptah:schema:grant"
         }
       },
       "required": [
@@ -636,7 +636,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.index": {
+    "ptah.schema.index": {
       "additionalProperties": false,
       "description": "Declares an index for a table.",
       "properties": {
@@ -706,7 +706,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:index"
+          "const": "ptah:schema:index"
         }
       },
       "required": [
@@ -715,7 +715,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.matview": {
+    "ptah.schema.matview": {
       "additionalProperties": false,
       "description": "Declares a materialized view.",
       "properties": {
@@ -746,7 +746,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:matview"
+          "const": "ptah:schema:matview"
         }
       },
       "required": [
@@ -755,7 +755,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.range": {
+    "ptah.schema.range": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL range type.",
       "properties": {
@@ -802,7 +802,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:range"
+          "const": "ptah:schema:range"
         }
       },
       "required": [
@@ -811,7 +811,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.rls.enable": {
+    "ptah.schema.rls.enable": {
       "additionalProperties": false,
       "description": "Enables row-level security on a table.",
       "properties": {
@@ -830,7 +830,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:rls:enable"
+          "const": "ptah:schema:rls:enable"
         }
       },
       "required": [
@@ -839,7 +839,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.rls.policy": {
+    "ptah.schema.rls.policy": {
       "additionalProperties": false,
       "description": "Declares a row-level security policy.",
       "properties": {
@@ -878,7 +878,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:rls:policy"
+          "const": "ptah:schema:rls:policy"
         }
       },
       "required": [
@@ -887,7 +887,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.role": {
+    "ptah.schema.role": {
       "additionalProperties": false,
       "description": "Declares a database role.",
       "properties": {
@@ -976,7 +976,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:role"
+          "const": "ptah:schema:role"
         }
       },
       "required": [
@@ -985,7 +985,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.schema": {
+    "ptah.schema.schema": {
       "additionalProperties": false,
       "description": "Declares a database schema or namespace.",
       "properties": {
@@ -1007,7 +1007,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:schema"
+          "const": "ptah:schema:schema"
         }
       },
       "required": [
@@ -1016,7 +1016,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.sequence": {
+    "ptah.schema.sequence": {
       "additionalProperties": false,
       "description": "Declares a standalone PostgreSQL sequence.",
       "properties": {
@@ -1086,7 +1086,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:sequence"
+          "const": "ptah:schema:sequence"
         }
       },
       "required": [
@@ -1095,7 +1095,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.table": {
+    "ptah.schema.table": {
       "additionalProperties": false,
       "description": "Maps a Go struct to a database table.",
       "properties": {
@@ -1140,7 +1140,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:table"
+          "const": "ptah:schema:table"
         }
       },
       "required": [
@@ -1149,7 +1149,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.trigger": {
+    "ptah.schema.trigger": {
       "additionalProperties": false,
       "description": "Declares a database trigger.",
       "properties": {
@@ -1195,7 +1195,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:trigger"
+          "const": "ptah:schema:trigger"
         }
       },
       "required": [
@@ -1204,7 +1204,7 @@
       ],
       "type": "object"
     },
-    "migrator.schema.view": {
+    "ptah.schema.view": {
       "additionalProperties": false,
       "description": "Declares a database view.",
       "properties": {
@@ -1239,7 +1239,7 @@
           "type": "object"
         },
         "directive": {
-          "const": "migrator:schema:view"
+          "const": "ptah:schema:view"
         }
       },
       "required": [
@@ -1249,72 +1249,72 @@
       "type": "object"
     }
   },
-  "$id": "https://stokaro.github.io/ptah/schemas/migrator-annotations.schema.json",
+  "$id": "https://stokaro.github.io/ptah/schemas/ptah-annotations.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Schema for parsed Ptah //migrator Go annotation directives.",
+  "description": "Schema for parsed //ptah Go annotation directives.",
   "oneOf": [
     {
-      "$ref": "#/$defs/migrator.schema.field"
+      "$ref": "#/$defs/ptah.schema.field"
     },
     {
-      "$ref": "#/$defs/migrator.embedded"
+      "$ref": "#/$defs/ptah.embedded"
     },
     {
-      "$ref": "#/$defs/migrator.schema.index"
+      "$ref": "#/$defs/ptah.schema.index"
     },
     {
-      "$ref": "#/$defs/migrator.schema.table"
+      "$ref": "#/$defs/ptah.schema.table"
     },
     {
-      "$ref": "#/$defs/migrator.schema.schema"
+      "$ref": "#/$defs/ptah.schema.schema"
     },
     {
-      "$ref": "#/$defs/migrator.schema.constraint"
+      "$ref": "#/$defs/ptah.schema.constraint"
     },
     {
-      "$ref": "#/$defs/migrator.schema.enum"
+      "$ref": "#/$defs/ptah.schema.enum"
     },
     {
-      "$ref": "#/$defs/migrator.schema.extension"
+      "$ref": "#/$defs/ptah.schema.extension"
     },
     {
-      "$ref": "#/$defs/migrator.schema.function"
+      "$ref": "#/$defs/ptah.schema.function"
     },
     {
-      "$ref": "#/$defs/migrator.schema.sequence"
+      "$ref": "#/$defs/ptah.schema.sequence"
     },
     {
-      "$ref": "#/$defs/migrator.schema.domain"
+      "$ref": "#/$defs/ptah.schema.domain"
     },
     {
-      "$ref": "#/$defs/migrator.schema.composite"
+      "$ref": "#/$defs/ptah.schema.composite"
     },
     {
-      "$ref": "#/$defs/migrator.schema.range"
+      "$ref": "#/$defs/ptah.schema.range"
     },
     {
-      "$ref": "#/$defs/migrator.schema.view"
+      "$ref": "#/$defs/ptah.schema.view"
     },
     {
-      "$ref": "#/$defs/migrator.schema.matview"
+      "$ref": "#/$defs/ptah.schema.matview"
     },
     {
-      "$ref": "#/$defs/migrator.schema.trigger"
+      "$ref": "#/$defs/ptah.schema.trigger"
     },
     {
-      "$ref": "#/$defs/migrator.schema.rls.policy"
+      "$ref": "#/$defs/ptah.schema.rls.policy"
     },
     {
-      "$ref": "#/$defs/migrator.schema.rls.enable"
+      "$ref": "#/$defs/ptah.schema.rls.enable"
     },
     {
-      "$ref": "#/$defs/migrator.schema.role"
+      "$ref": "#/$defs/ptah.schema.role"
     },
     {
-      "$ref": "#/$defs/migrator.schema.grant"
+      "$ref": "#/$defs/ptah.schema.grant"
     },
     {
-      "$ref": "#/$defs/migrator.schema.data"
+      "$ref": "#/$defs/ptah.schema.data"
     }
   ],
   "title": "Ptah Go Annotation Directives"
