@@ -97,7 +97,7 @@ Do not use root-level Atlas spellings such as `ptah migrate apply` or
 `ptah schema inspect`; those paths are intentionally absent from the native
 `ptah` binary.
 
-See [native CLI command tree](docs/native_cli.md) and
+See the [native CLI command reference](docs/site/src/content/docs/reference/native-commands.md) and
 [Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md).
 
 ## Atlas Compatibility Status
@@ -135,10 +135,11 @@ See [License boundary](docs/site/src/content/docs/atlas/license-boundary.md).
 
 ## Existing References
 
-The docs site is the human-facing entrypoint. The existing markdown files remain
-the detailed source references:
+The docs site is the human-facing entrypoint. Repository-level Markdown files
+remain only where they provide contributor or implementation detail beyond the
+site:
 
-- [Native CLI](docs/native_cli.md)
+- [Native CLI command reference](docs/site/src/content/docs/reference/native-commands.md)
 - [OCI registry artifacts](docs/oci_registry.md)
 - [Project configuration](docs/project_config.md)
 - [Atlas project config subset](docs/atlas_project_config.md)

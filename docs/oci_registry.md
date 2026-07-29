@@ -482,7 +482,7 @@ Actions](https://docs.github.com/en/packages/managing-github-packages-using-gith
 
 ## Related Documentation
 
-- [Native CLI command tree](./native_cli.md)
+- [Native CLI command reference](./site/src/content/docs/reference/native-commands.md)
 - [Dialect and cross-cutting capabilities](./capabilities.md)
 - [CLI exit codes](./exit_codes.md)
 - [Issue #664](https://github.com/stokaro/ptah/issues/664)

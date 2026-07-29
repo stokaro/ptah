@@ -35,7 +35,7 @@ func newAtlasSchemaPlanCommand() *cobra.Command {
 Atlas gates schema plan behind the Atlas Pro registry approval flow. Ptah
 implements the open local replacement: the plan is computed from the --from
 target database to the local --to schema files and saved as a fingerprinted
-local plan file (JSON; see the plan-file format in docs/native_cli.md).
+local plan file (JSON, format version 1).
 ` + "`atlas schema apply --plan file://<path>`" + ` executes the saved plan after
 verifying the database still matches the plan's source fingerprint, so a
 reviewed plan is exactly what runs. Pass --save or --output <path> to write

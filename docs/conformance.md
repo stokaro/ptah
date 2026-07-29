@@ -57,7 +57,7 @@ adjacent rules (`PG301` and `MY130` via `DS103`/`MY101`, `PG304` via `PG104`,
 form), and records 2 as waivers (`OW101`/`OW102` ownership policy, which binds
 to Atlas Pro schema-ownership annotations and an account model). The
 code-by-code table lives in
-[Native CLI: Atlas Pro Analyzer Coverage](./native_cli.md#atlas-pro-analyzer-coverage).
+[Atlas Pro analyzer coverage](./site/src/content/docs/atlas/comparison.md#atlas-pro-analyzer-coverage).
 
 ## Upstream Atlas Verbs Beyond the CE Pin
 
