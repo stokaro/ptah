@@ -182,8 +182,9 @@ func newAtlasMigrateCommand() *cobra.Command {
 				// for the ptah marker). Writing an Atlas-format checkpoint file
 				// would therefore produce a migration the engine replays as an
 				// ordinary migration — silently wrong — so any non-ptah value is
-				// a recorded waiver, rejected loudly (see docs/native_cli.md,
-				// "Atlas compatibility waivers"). No default is registered: the
+				// a recorded waiver, rejected loudly (see
+				// docs/site/src/content/docs/reference/atlas-commands.md). No
+				// default is registered: the
 				// directory is read and written with the native ptah default
 				// rather than the atlas default the other migrate verbs use.
 				atlasCheckpointDirFormatFlag(),
@@ -382,7 +383,7 @@ func atlasMigrateDownVerb() atlasVerb {
 			atlasargs.NativeString("to-version", "", "Target version to roll back to", "target"),
 			// --to-tag targets a registry tag, which only exists in the Atlas
 			// Registry — a cloud service Ptah intentionally has no counterpart
-			// for (see docs/native_cli.md, "Atlas compatibility waivers").
+			// for (see docs/site/src/content/docs/reference/atlas-commands.md).
 			atlasargs.UnsupportedStringReason("to-tag", "", "Target migration tag to roll back to",
 				"migration tags exist only in Atlas Registry (Atlas Cloud); use --to-version with a migration version instead"),
 			atlasargs.NativeBool("dry-run", "", "Show rollback plan without applying it", "dry-run"),

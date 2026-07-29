@@ -9,8 +9,8 @@ Start with:
 - [Declarative database testing](testing.md)
 - [Troubleshooting](site/src/content/docs/operate/troubleshooting.md)
 
-The other markdown files in this directory remain detailed source references for
-commands, configuration, dialects, conformance, and design.
+The other Markdown files in this directory remain only where they provide
+contributor or implementation detail beyond the site.
 
 ## Documentation layers
 
@@ -21,17 +21,17 @@ commands, configuration, dialects, conformance, and design.
 | `examples/*` | Runnable local examples and generated artifacts. |
 | `ptah-atlas-conformance` | External Atlas compatibility evidence and gap reports. |
 
-When a task is covered by both the site and a source reference, use the site
-for the workflow and the source reference for exact flags, schema shapes, or
-implementation details.
+When a topic has both a site page and a source reference, use the site for the
+reader workflow and the source reference for implementation detail. Do not keep
+a repository-level copy that merely repeats the site.
 
 ## Maintenance rule
 
-When Ptah behavior changes, update both layers that readers will hit:
+When Ptah behavior changes, update every relevant layer:
 
 - the task page in `docs/site/src/content/docs/`;
-- the exact source reference in `docs/*.md`, `examples/*`, package docs, or
-  conformance reports.
+- any implementation reference in `docs/*.md`, `examples/*`, package docs, or
+  conformance reports that owns additional detail.
 
 Do not update only the nearest README when a command path, flag, config key,
 generated SQL shape, public API, or Atlas parity claim changes.

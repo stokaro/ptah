@@ -206,8 +206,8 @@ list in the same PR.
 | `capabilities.md` (2,544) | contributor | Full capability matrices | `reference/capabilities` | keep (protected) |
 | `sqlite.md` (532) | contributor | SQLite behavior detail | `databases/sqlite` | keep (protected); done: reader essentials absorbed by `databases/sqlite` |
 | `sqlserver.md` (1,269) | contributor | SQL Server behavior detail | `databases/sqlserver` | keep (protected); done: reader essentials absorbed by `databases/sqlserver` |
-| `native_cli.md` (1,267) | contributor | Native command tree walkthrough | `reference/commands` | `reference/native-commands` is complete; retirement candidate for a follow-up PR (near-duplicate; not protected) |
-| `go_annotations_vs_atlas_hcl.md` (727) | evaluator | Source-format comparison | none (gap) | fed `start/choose-a-workflow` and `reference/go-annotations` (both exist now); retirement candidate for a follow-up PR |
+| `native_cli.md` (1,267) | contributor | Native command tree walkthrough | `reference/native-commands`, `atlas/comparison`, and the command workflow pages | done: retired after its command, analyzer, plan, scoping, safety, waiver, and exit-code material gained canonical site homes |
+| `go_annotations_vs_atlas_hcl.md` (727) | evaluator | Source-format comparison and Go-to-HCL export behavior | `schema/go-annotations`, `reference/go-annotations`, and `reference/hcl-schema` | done: retired after the workflow, parity contract, cleanup behavior, and format guidance gained canonical site homes |
 | `migrations-import.md` (720) | contributor | Import converter detail | `workflows/migrations` import section | keep as backing reference for `versioned/import` |
 | `pre-migration-checks.md` (727) | contributor | `-- +ptah check` directive detail | `workflows/migrations` safety section | keep as backing reference for `versioned/integrity-and-safety` |
 | `oci_registry.md` (2,393) | contributor | OCI transport detail | `workflows/oci-registry` | keep as backing reference |
