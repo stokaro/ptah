@@ -1,3 +1,6 @@
+// Package drift implements "ptah schema drift", which checks a live database
+// for drift against the desired schema and signals divergence through its exit
+// code.
 package drift
 
 import (

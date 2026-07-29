@@ -1,3 +1,6 @@
+// Package atlasmigratereport renders Atlas-compatible "migrate apply" report
+// output from Ptah runtime results, resolving the applied migration filesystem
+// and connection details the report templates need.
 package atlasmigratereport
 
 import (

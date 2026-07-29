@@ -1,3 +1,6 @@
+// Package migrateup implements "ptah migrations up", which applies pending
+// migrations to a live database with optional lint checks, apply limits, and
+// online-DDL configuration.
 package migrateup
 
 import (

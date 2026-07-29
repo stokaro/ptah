@@ -106,6 +106,21 @@ golangci-lint run ./...
 
 The fix pass can leave second-pass fallout such as unused imports, removed helper functions, or staticcheck suggestions. Clean those manually before considering the lint run complete.
 
+### Package Documentation
+
+Every Go package must carry a package-level doc comment (`// Package <name>
+...`), either atop a central file of the package or in a dedicated `doc.go`.
+This is CI-enforced through staticcheck's `ST1000` in `.golangci.yml`; a PR
+that introduces a new package must ship the comment in the same PR. The rule
+applies to every module in the repository, including `testkit/`. `main`
+packages describe their binary; test-only packages (`package foo_test`) are
+exempt.
+
+The comment must say in one to three sentences what the package does and where
+it sits in the system, grounded in the package's actual code. Generic filler
+such as "Package x contains x utilities" is not acceptable — the anti-slop
+rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
+
 ## Testing Standards
 
 ### Declarative Tests Only

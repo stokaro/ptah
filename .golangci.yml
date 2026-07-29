@@ -211,14 +211,21 @@ linters:
         # STxxxx checks in https://staticcheck.io/docs/checks/#ST
         - all
         - -QF1008
-        - -ST1000
+        # ST1000 (package comment required) is intentionally enabled: every Go
+        # package must carry a package-level doc comment (see AGENTS.md).
         - -ST1003
         - -ST1005
         - -ST1016
+        # Exported-symbol comment checks stay off (previously suppressed by the
+        # "comments" exclusion preset, which had to go to let ST1000 report).
+        - -ST1020
+        - -ST1021
+        - -ST1022
   exclusions:
     generated: lax
     presets:
-      - comments
+      # The "comments" preset is deliberately absent: it swallows staticcheck
+      # "should have a package comment" findings, which would neuter ST1000.
       - common-false-positives
       - legacy
       - std-error-handling

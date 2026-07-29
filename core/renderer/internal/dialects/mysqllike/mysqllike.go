@@ -1,3 +1,7 @@
+// Package mysqllike implements the shared SQL renderer for the MySQL family of
+// dialects. It is the validity layer of the capability model: planners record
+// intent on AST nodes, and this renderer drops modifiers the concrete target
+// (MySQL or MariaDB) would reject.
 package mysqllike
 
 import (

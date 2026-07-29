@@ -1,3 +1,6 @@
+// Package migratebaseline implements "ptah migrations baseline", which records
+// existing migration files as already applied in the revision table without
+// executing them.
 package migratebaseline
 
 import (

@@ -1,3 +1,5 @@
+// Package dropall implements "ptah db drop-all", the destructive command that
+// drops all tables and enums from the target database.
 package dropall
 
 import (

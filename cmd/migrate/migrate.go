@@ -1,3 +1,7 @@
+// Package migrate implements the "ptah migrations" planning commands: "plan"
+// prints migration SQL from schema differences, "generate" writes timestamped
+// migration files, and "create" scaffolds empty migration files for manual
+// SQL.
 package migrate
 
 import (

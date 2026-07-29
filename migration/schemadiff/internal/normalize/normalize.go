@@ -1,3 +1,6 @@
+// Package normalize canonicalizes type names, default values, and expressions
+// read from live databases so schema comparison is not tripped by cosmetic
+// dialect spellings such as PostgreSQL typecasts.
 package normalize
 
 import (
