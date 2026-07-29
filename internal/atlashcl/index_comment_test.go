@@ -60,12 +60,12 @@ func TestIndexCommentGoAnnotationParity(t *testing.T) {
 
 	goDB, err := goschema.ParseSource("users.go", `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="email" type="TEXT"
+	//ptah:schema:field name="email" type="TEXT"
 	Email string
 
-	//migrator:schema:index name="idx_users_email" fields="email" comment="lookup by email"
+	//ptah:schema:index name="idx_users_email" fields="email" comment="lookup by email"
 	_ int
 }
 `)

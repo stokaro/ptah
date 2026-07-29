@@ -26,42 +26,42 @@ func TestRLSAndFunctionIntegration_EndToEnd(t *testing.T) {
 	// Create a test Go file content with RLS and function annotations
 	testGoContent := `package testpkg
 
-//migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;" comment="Sets the current tenant context for RLS"
-//migrator:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;" comment="Gets the current tenant ID from session"
-//migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant isolation"
-//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
-//migrator:schema:table name="users" comment="User accounts table"
+//ptah:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;" comment="Sets the current tenant context for RLS"
+//ptah:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;" comment="Gets the current tenant ID from session"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for multi-tenant isolation"
+//ptah:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
+//ptah:schema:table name="users" comment="User accounts table"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 
-	//migrator:schema:field name="tenant_id" type="TEXT" not_null="true"
+	//ptah:schema:field name="tenant_id" type="TEXT" not_null="true"
 	TenantID string ` + "`json:\"tenant_id\" db:\"tenant_id\"`" + `
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
 	Email string ` + "`json:\"email\" db:\"email\"`" + `
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string ` + "`json:\"name\" db:\"name\"`" + `
 }
 
-//migrator:schema:rls:enable table="products" comment="Enable RLS for product isolation"
-//migrator:schema:rls:policy name="product_tenant_isolation" table="products" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()" comment="Ensures products are isolated by tenant"
-//migrator:schema:table name="products" comment="Product catalog table"
+//ptah:schema:rls:enable table="products" comment="Enable RLS for product isolation"
+//ptah:schema:rls:policy name="product_tenant_isolation" table="products" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()" comment="Ensures products are isolated by tenant"
+//ptah:schema:table name="products" comment="Product catalog table"
 type Product struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 
-	//migrator:schema:field name="tenant_id" type="TEXT" not_null="true"
+	//ptah:schema:field name="tenant_id" type="TEXT" not_null="true"
 	TenantID string ` + "`json:\"tenant_id\" db:\"tenant_id\"`" + `
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string ` + "`json:\"name\" db:\"name\"`" + `
 
-	//migrator:schema:field name="price" type="DECIMAL(10,2)" not_null="true" check="price > 0"
+	//ptah:schema:field name="price" type="DECIMAL(10,2)" not_null="true" check="price > 0"
 	Price float64 ` + "`json:\"price\" db:\"price\"`" + `
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64 ` + "`json:\"user_id\" db:\"user_id\"`" + `
 }
 `
@@ -171,12 +171,12 @@ func TestRLSAndFunctionIntegration_MySQLSkipsPostgreSQLFeatures(t *testing.T) {
 	// Test that MySQL correctly skips PostgreSQL-specific features
 	testGoContent := `package testpkg
 
-//migrator:schema:function name="test_func" returns="INTEGER" language="sql"
-//migrator:schema:rls:enable table="test_table"
-//migrator:schema:rls:policy name="test_policy" table="test_table" for="ALL" to="app_user" using="user_id = current_user_id()"
-//migrator:schema:table name="test_table"
+//ptah:schema:function name="test_func" returns="INTEGER" language="sql"
+//ptah:schema:rls:enable table="test_table"
+//ptah:schema:rls:policy name="test_policy" table="test_table" for="ALL" to="app_user" using="user_id = current_user_id()"
+//ptah:schema:table name="test_table"
 type TestTable struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }
 `

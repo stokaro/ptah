@@ -121,17 +121,17 @@ func TestLoad_MergesMultipleRoots(t *testing.T) {
 	rootB := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(rootA, "users.go"), []byte(`package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(rootB, "orders.go"), []byte(`package entities
 
-//migrator:schema:table name="orders"
+//ptah:schema:table name="orders"
 type Order struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `), 0o600), qt.IsNil)
@@ -154,9 +154,9 @@ func TestLoad_MergesGoRootAndSchemaFile(t *testing.T) {
 	root := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `), 0o600), qt.IsNil)
@@ -180,9 +180,9 @@ func TestLoad_MergesGoYAMLAndAtlasHCLSources(t *testing.T) {
 	root := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `), 0o600), qt.IsNil)
@@ -301,9 +301,9 @@ func TestLoad_MergesGoRootAndSchemaCommand(t *testing.T) {
 	root := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `), 0o600), qt.IsNil)
@@ -333,9 +333,9 @@ func TestLoad_IdenticalGoAndYAMLSourcesDeduplicate(t *testing.T) {
 	root := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `), 0o600), qt.IsNil)
@@ -364,9 +364,9 @@ func TestLoad_ConflictingGoAndYAMLSourcesFail(t *testing.T) {
 	root := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `), 0o600), qt.IsNil)

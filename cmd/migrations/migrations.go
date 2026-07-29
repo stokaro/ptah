@@ -49,7 +49,7 @@ ptah atlas.`,
 		migratedata.NewMigrateDataCommand(),
 		"Generate a migration from reference/seed data drift",
 		"Generate an ordinary migration from the drift between declarative reference/seed data "+
-			"(//migrator:schema:data) and a live database. It applies no safety/risk gating of its own "+
+			"(//ptah:schema:data) and a live database. It applies no safety/risk gating of its own "+
 			"(a deferred follow-up); review the generated file before applying.",
 	))
 	cmd.AddCommand(migrationCommand(migrationsimport.NewMigrationsImportCommand(), "Import migrations from another tool", "Convert a golang-migrate, Goose, Flyway, or Liquibase migration directory into Ptah's native format."))

@@ -508,12 +508,12 @@ func TestParseFS_UsesTheSameStrictCollisionPolicyAsMerge(t *testing.T) {
 	c := qt.New(t)
 	firstSource := `package fixtures
 
-//migrator:schema:table name="users" comment="Accounts"
+//ptah:schema:table name="users" comment="Accounts"
 type User struct{}
 `
 	secondSource := `package fixtures
 
-//migrator:schema:table name="users" comment="Identities"
+//ptah:schema:table name="users" comment="Identities"
 type Account struct{}
 `
 	fsys := fstest.MapFS{

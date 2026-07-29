@@ -247,16 +247,16 @@ func writeConcurrentIndexEntities(c *qt.C, dir string) string {
 
 	content := `package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 
-	//migrator:schema:field name="email" type="TEXT"
-	//migrator:schema:index name="idx_users_email" fields="email"
+	//ptah:schema:field name="email" type="TEXT"
+	//ptah:schema:index name="idx_users_email" fields="email"
 	Email string
 }
 `
@@ -280,15 +280,15 @@ func writeShadowEntities(c *qt.C, dir string) string {
 
 	content := `package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 
-	//migrator:schema:field name="email" type="TEXT"
+	//ptah:schema:field name="email" type="TEXT"
 	Email string
 }
 `

@@ -35,15 +35,15 @@ tables:
 	goDB, err := goschema.ParseSource("schema.go", `
 package test
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
 	Email string
 
-	//migrator:schema:index name="idx_users_email" fields="email"
+	//ptah:schema:index name="idx_users_email" fields="email"
 	_ int
 }
 `)

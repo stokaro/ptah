@@ -19,7 +19,7 @@ func TestParseSource_FailurePath_RejectsRemovedBarewordAttributes(t *testing.T) 
 			name: "field nullable",
 			source: `package models
 type User struct {
-	//migrator:schema:field name="id" type="BIGINT" nullable
+	//ptah:schema:field name="id" type="BIGINT" nullable
 	ID int64
 }
 `,
@@ -29,7 +29,7 @@ type User struct {
 			name: "field autoincrement",
 			source: `package models
 type User struct {
-	//migrator:schema:field name="id" type="BIGINT" autoincrement
+	//ptah:schema:field name="id" type="BIGINT" autoincrement
 	ID int64
 }
 `,
@@ -39,7 +39,7 @@ type User struct {
 			name: "field index",
 			source: `package models
 type User struct {
-	//migrator:schema:field name="id" type="BIGINT" index
+	//ptah:schema:field name="id" type="BIGINT" index
 	ID int64
 }
 `,
@@ -49,7 +49,7 @@ type User struct {
 			name: "embedded not null",
 			source: `package models
 type User struct {
-	//migrator:embedded mode="json" name="metadata" not_null
+	//ptah:embedded mode="json" name="metadata" not_null
 	Metadata map[string]any
 }
 `,
@@ -59,7 +59,7 @@ type User struct {
 			name: "embedded index",
 			source: `package models
 type User struct {
-	//migrator:embedded mode="relation" field="account_id" ref="accounts(id)" index
+	//ptah:embedded mode="relation" field="account_id" ref="accounts(id)" index
 	Account Account
 }
 type Account struct{}

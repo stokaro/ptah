@@ -61,8 +61,8 @@ import (
 // # Example Usage
 //
 //	// Extensions defined in Go annotations
-//	//migrator:schema:extension name="pg_trgm" if_not_exists="true"
-//	//migrator:schema:extension name="btree_gin" if_not_exists="true"
+//	//ptah:schema:extension name="pg_trgm" if_not_exists="true"
+//	//ptah:schema:extension name="btree_gin" if_not_exists="true"
 //	type DatabaseExtensions struct{}
 //
 //	// Database has pg_trgm installed but not btree_gin

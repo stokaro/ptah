@@ -1,12 +1,12 @@
 ---
 title: Go annotation reference
-description: Every //migrator directive and attribute accepted by Ptah's Go annotation parser.
+description: Every //ptah directive and attribute accepted by Ptah's Go annotation parser.
 ---
 
-This page lists every `//migrator` comment directive and attribute Ptah's Go
+This page lists every `//ptah` comment directive and attribute Ptah's Go
 annotation parser accepts. The same metadata is exported as a JSON Schema
 document by `ptah schema annotations`, and the committed copy lives at
-[`schemas/migrator-annotations.schema.json`](https://github.com/stokaro/ptah/blob/master/schemas/migrator-annotations.schema.json).
+[`schemas/ptah-annotations.schema.json`](https://github.com/stokaro/ptah/blob/master/schemas/ptah-annotations.schema.json).
 For the workflow — modeling, rendering, and generating migrations from
 annotated structs — see [Go annotations](../../schema/go-annotations/).
 
@@ -16,7 +16,7 @@ A directive is a single Go comment line: the directive name followed by
 space-separated `key="value"` attributes.
 
 ```go
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 ```
 
 - Attributes marked "bare form allowed" may be written without a value:
@@ -48,20 +48,20 @@ Each directive attaches to one of three places in Go source:
   a table from another file is silently ignored.
 
 ```go
-//migrator:schema:table name="users"
-//migrator:schema:constraint name="users_email_check" type="CHECK" check="email <> ''"
+//ptah:schema:table name="users"
+//ptah:schema:constraint name="users_email_check" type="CHECK" check="email <> ''"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
 	Email string
 
-	//migrator:schema:index name="idx_users_email" fields="email"
+	//ptah:schema:index name="idx_users_email" fields="email"
 	_ int
 }
 
-//migrator:schema:enum name="user_status" values="active,disabled"
+//ptah:schema:enum name="user_status" values="active,disabled"
 type StatusEnumMarker struct{}
 ```
 
@@ -69,31 +69,31 @@ type StatusEnumMarker struct{}
 
 | Directive | Declares | Placement |
 | --- | --- | --- |
-| [`migrator:schema:table`](#migratorschematable) | A database table | struct |
-| [`migrator:schema:field`](#migratorschemafield) | A table column | field |
-| [`migrator:embedded`](#migratorembedded) | Columns or relations from an embedded Go field | field |
-| [`migrator:schema:index`](#migratorschemaindex) | An index | struct or field |
-| [`migrator:schema:constraint`](#migratorschemaconstraint) | A table constraint | struct or field |
-| [`migrator:schema:enum`](#migratorschemaenum) | A reusable enum type | struct |
-| [`migrator:schema:domain`](#migratorschemadomain) | A PostgreSQL domain type | struct |
-| [`migrator:schema:composite`](#migratorschemacomposite) | A PostgreSQL composite type | struct |
-| [`migrator:schema:range`](#migratorschemarange) | A PostgreSQL range type | struct |
-| [`migrator:schema:schema`](#migratorschemaschema) | A database schema/namespace | struct |
-| [`migrator:schema:extension`](#migratorschemaextension) | A PostgreSQL extension | struct |
-| [`migrator:schema:sequence`](#migratorschemasequence) | A standalone PostgreSQL sequence | struct |
-| [`migrator:schema:function`](#migratorschemafunction) | A database function | struct |
-| [`migrator:schema:trigger`](#migratorschematrigger) | A database trigger | struct |
-| [`migrator:schema:view`](#migratorschemaview) | A database view | struct |
-| [`migrator:schema:matview`](#migratorschemamatview) | A materialized view | struct |
-| [`migrator:schema:role`](#migratorschemarole) | A database role | struct |
-| [`migrator:schema:grant`](#migratorschemagrant) | Database grants | struct |
-| [`migrator:schema:rls:enable`](#migratorschemarlsenable) | Row-level security enablement | file or struct |
-| [`migrator:schema:rls:policy`](#migratorschemarlspolicy) | A row-level security policy | file or struct |
-| [`migrator:schema:data`](#migratorschemadata) | Reference/seed row data for a table | struct |
+| [`ptah:schema:table`](#ptahschematable) | A database table | struct |
+| [`ptah:schema:field`](#ptahschemafield) | A table column | field |
+| [`ptah:embedded`](#ptahembedded) | Columns or relations from an embedded Go field | field |
+| [`ptah:schema:index`](#ptahschemaindex) | An index | struct or field |
+| [`ptah:schema:constraint`](#ptahschemaconstraint) | A table constraint | struct or field |
+| [`ptah:schema:enum`](#ptahschemaenum) | A reusable enum type | struct |
+| [`ptah:schema:domain`](#ptahschemadomain) | A PostgreSQL domain type | struct |
+| [`ptah:schema:composite`](#ptahschemacomposite) | A PostgreSQL composite type | struct |
+| [`ptah:schema:range`](#ptahschemarange) | A PostgreSQL range type | struct |
+| [`ptah:schema:schema`](#ptahschemaschema) | A database schema/namespace | struct |
+| [`ptah:schema:extension`](#ptahschemaextension) | A PostgreSQL extension | struct |
+| [`ptah:schema:sequence`](#ptahschemasequence) | A standalone PostgreSQL sequence | struct |
+| [`ptah:schema:function`](#ptahschemafunction) | A database function | struct |
+| [`ptah:schema:trigger`](#ptahschematrigger) | A database trigger | struct |
+| [`ptah:schema:view`](#ptahschemaview) | A database view | struct |
+| [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
+| [`ptah:schema:role`](#ptahschemarole) | A database role | struct |
+| [`ptah:schema:grant`](#ptahschemagrant) | Database grants | struct |
+| [`ptah:schema:rls:enable`](#ptahschemarlsenable) | Row-level security enablement | file or struct |
+| [`ptah:schema:rls:policy`](#ptahschemarlspolicy) | A row-level security policy | file or struct |
+| [`ptah:schema:data`](#ptahschemadata) | Reference/seed row data for a table | struct |
 
 ## Tables and columns
 
-### `//migrator:schema:table`
+### `//ptah:schema:table`
 
 Maps a Go struct to a database table.
 
@@ -109,7 +109,7 @@ Maps a Go struct to a database table.
 
 Platform overrides: yes.
 
-### `//migrator:schema:field`
+### `//ptah:schema:field`
 
 Maps a Go struct field to a database column.
 
@@ -142,7 +142,7 @@ Maps a Go struct field to a database column.
 
 Platform overrides: yes.
 
-### `//migrator:embedded`
+### `//ptah:embedded`
 
 Controls how an embedded Go field contributes schema objects.
 
@@ -161,7 +161,7 @@ Controls how an embedded Go field contributes schema objects.
 
 Platform overrides: yes.
 
-### `//migrator:schema:index`
+### `//ptah:schema:index`
 
 Declares an index for a table.
 
@@ -180,7 +180,7 @@ Declares an index for a table.
 | `unique` | No | Creates a unique index. `true`/`false`; bare form allowed. |
 | `where` | No | Atlas-style partial index condition alias. |
 
-### `//migrator:schema:constraint`
+### `//ptah:schema:constraint`
 
 Declares a table constraint.
 
@@ -205,7 +205,7 @@ Declares a table constraint.
 
 ## Reusable types
 
-### `//migrator:schema:enum`
+### `//ptah:schema:enum`
 
 Declares a reusable enum type.
 
@@ -214,7 +214,7 @@ Declares a reusable enum type.
 | `name` | Yes | Enum type name. |
 | `values` | Yes | Comma-separated enum values. |
 
-### `//migrator:schema:domain`
+### `//ptah:schema:domain`
 
 Declares a PostgreSQL domain type.
 
@@ -229,7 +229,7 @@ Declares a PostgreSQL domain type.
 | `schema` | No | Target schema/namespace. |
 | `type` | Yes | Underlying base data type. |
 
-### `//migrator:schema:composite`
+### `//ptah:schema:composite`
 
 Declares a PostgreSQL composite type.
 
@@ -240,7 +240,7 @@ Declares a PostgreSQL composite type.
 | `name` | Yes | Composite type name. |
 | `schema` | No | Target schema/namespace. |
 
-### `//migrator:schema:range`
+### `//ptah:schema:range`
 
 Declares a PostgreSQL range type.
 
@@ -257,7 +257,7 @@ Declares a PostgreSQL range type.
 
 ## Database objects
 
-### `//migrator:schema:schema`
+### `//ptah:schema:schema`
 
 Declares a database schema or namespace.
 
@@ -266,7 +266,7 @@ Declares a database schema or namespace.
 | `comment` | No | Schema comment. |
 | `name` | Yes | Schema name. |
 
-### `//migrator:schema:extension`
+### `//ptah:schema:extension`
 
 Declares a PostgreSQL extension.
 
@@ -277,7 +277,7 @@ Declares a PostgreSQL extension.
 | `name` | No | Extension name. |
 | `version` | No | Extension version. |
 
-### `//migrator:schema:sequence`
+### `//ptah:schema:sequence`
 
 Declares a standalone PostgreSQL sequence.
 
@@ -296,7 +296,7 @@ Declares a standalone PostgreSQL sequence.
 | `schema` | No | Target schema/namespace. |
 | `start` | No | START WITH value. |
 
-### `//migrator:schema:function`
+### `//ptah:schema:function`
 
 Declares a database function.
 
@@ -311,7 +311,7 @@ Declares a database function.
 | `security` | No | Security mode, such as DEFINER. |
 | `volatility` | No | Volatility class. |
 
-### `//migrator:schema:trigger`
+### `//ptah:schema:trigger`
 
 Declares a database trigger.
 
@@ -325,7 +325,7 @@ Declares a database trigger.
 | `table` | Yes | Target table. |
 | `timing` | Yes | Trigger timing, such as BEFORE or AFTER. |
 
-### `//migrator:schema:view`
+### `//ptah:schema:view`
 
 Declares a database view.
 
@@ -336,7 +336,7 @@ Declares a database view.
 | `name` | Yes | View name. |
 | `with_check` | No | Controls WITH CHECK OPTION where supported. `true`/`false`. |
 
-### `//migrator:schema:matview`
+### `//ptah:schema:matview`
 
 Declares a materialized view.
 
@@ -349,7 +349,7 @@ Declares a materialized view.
 
 ## Security
 
-### `//migrator:schema:role`
+### `//ptah:schema:role`
 
 Declares a database role.
 
@@ -367,7 +367,7 @@ Declares a database role.
 | `replication` | No | Allows replication. `true`/`false`. |
 | `superuser` | No | Creates the role as SUPERUSER. `true`/`false`. |
 
-### `//migrator:schema:grant`
+### `//ptah:schema:grant`
 
 Declares database grants.
 
@@ -383,7 +383,7 @@ Declares database grants.
 | `role` | No | Target role. |
 | `with_option` | No | Adds WITH GRANT OPTION where supported. `true`/`false`. |
 
-### `//migrator:schema:rls:enable`
+### `//ptah:schema:rls:enable`
 
 Enables row-level security on a table.
 
@@ -392,7 +392,7 @@ Enables row-level security on a table.
 | `comment` | No | RLS enablement comment. |
 | `table` | No | Target table. |
 
-### `//migrator:schema:rls:policy`
+### `//ptah:schema:rls:policy`
 
 Declares a row-level security policy.
 
@@ -408,7 +408,7 @@ Declares a row-level security policy.
 
 ## Reference data
 
-### `//migrator:schema:data`
+### `//ptah:schema:data`
 
 Declares external reference/seed row data for a table.
 
@@ -421,7 +421,7 @@ Declares external reference/seed row data for a table.
 
 ## Editor support
 
-The repository ships `ptah-ls`, a language server for `//migrator` annotations
+The repository ships `ptah-ls`, a language server for `//ptah` annotations
 in Go source. It speaks the Language Server Protocol over stdio and provides
 hover documentation, attribute completion, and diagnostics backed by the same
 directive metadata as this page. Build it from the repository root:

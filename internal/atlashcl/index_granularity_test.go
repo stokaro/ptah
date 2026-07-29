@@ -115,12 +115,12 @@ func TestIndexGranularityGoAnnotationParity(t *testing.T) {
 
 	goDB, err := goschema.ParseSource("events.go", `package models
 
-//migrator:schema:table name="events"
+//ptah:schema:table name="events"
 type Event struct {
-	//migrator:schema:field name="payload" type="String"
+	//ptah:schema:field name="payload" type="String"
 	Payload string
 
-	//migrator:schema:index name="idx_events_payload" fields="payload" type="bloom_filter" granularity="64"
+	//ptah:schema:index name="idx_events_payload" fields="payload" type="bloom_filter" granularity="64"
 	_ int
 }
 `)

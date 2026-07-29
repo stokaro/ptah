@@ -23,7 +23,7 @@ func TestPointerEmbeddedFields_EndToEnd(t *testing.T) {
 
 // BaseID represents a common ID structure that can be embedded in other entities
 type BaseID struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `
@@ -37,34 +37,34 @@ import "time"
 
 // Timestamps represents common timestamp fields that can be embedded in other entities
 type Timestamps struct {
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	UpdatedAt time.Time
 }
 
 // AuditInfo represents audit information that can be embedded with prefix
 type AuditInfo struct {
-	//migrator:schema:field name="by" type="VARCHAR(255)"
+	//ptah:schema:field name="by" type="VARCHAR(255)"
 	By string
 
-	//migrator:schema:field name="reason" type="TEXT"
+	//ptah:schema:field name="reason" type="TEXT"
 	Reason string
 }
 
 // Metadata represents metadata that can be embedded as JSON
 type Metadata struct {
-	//migrator:schema:field name="author" type="VARCHAR(255)"
+	//ptah:schema:field name="author" type="VARCHAR(255)"
 	Author string
 
-	//migrator:schema:field name="source" type="VARCHAR(255)"
+	//ptah:schema:field name="source" type="VARCHAR(255)"
 	Source string
 }
 
 // SkippedInfo represents information that should be skipped in embedding
 type SkippedInfo struct {
-	//migrator:schema:field name="internal_data" type="TEXT"
+	//ptah:schema:field name="internal_data" type="TEXT"
 	InternalData string
 }
 `
@@ -74,15 +74,15 @@ type SkippedInfo struct {
 	// Create user.go
 	userContent := `package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	BaseID
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
 	Email string
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 }
 `
@@ -93,39 +93,39 @@ type User struct {
 	blogPostContent := `package entities
 
 // BlogPost demonstrates all embedding modes using pointer types
-//migrator:schema:table name="blog_posts"
+//ptah:schema:table name="blog_posts"
 type BlogPost struct {
 	// Mode 1: inline with pointer
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	*BaseID
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null="true"
 	Title string
 
-	//migrator:schema:field name="content" type="TEXT" not_null="true"
+	//ptah:schema:field name="content" type="TEXT" not_null="true"
 	Content string
 
 	// Mode 1: inline with pointer
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	*Timestamps
 
 	// Mode 2: inline with prefix and pointer
-	//migrator:embedded mode="inline" prefix="audit_"
+	//ptah:embedded mode="inline" prefix="audit_"
 	*AuditInfo
 
 	// Mode 3: json with pointer
-	//migrator:embedded mode="json" name="meta_data" type="JSONB"
+	//ptah:embedded mode="json" name="meta_data" type="JSONB"
 	*Metadata
 
 	// Mode 4: relation with pointer
-	//migrator:embedded mode="relation" field="author_id" ref="users(id)" on_delete="CASCADE"
+	//ptah:embedded mode="relation" field="author_id" ref="users(id)" on_delete="CASCADE"
 	*User
 
 	// Mode 5: skip with pointer
-	//migrator:embedded mode="skip"
+	//ptah:embedded mode="skip"
 	*SkippedInfo
 
-	//migrator:schema:field name="published" type="BOOLEAN" not_null="true" default="false"
+	//ptah:schema:field name="published" type="BOOLEAN" not_null="true" default="false"
 	Published bool
 }
 `

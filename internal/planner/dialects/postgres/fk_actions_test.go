@@ -13,7 +13,7 @@ import (
 )
 
 // TestPlanner_FieldLevelForeignKeyActions verifies that on_delete / on_update
-// declared on a //migrator:schema:field annotation flow all the way through to
+// declared on a //ptah:schema:field annotation flow all the way through to
 // the emitted ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY statement.
 //
 // Regression test for issue #117. Before the fix, the keys were whitelisted by

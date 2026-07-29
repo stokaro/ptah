@@ -13,36 +13,36 @@ func TestParseSource_EmbeddedPlatformOverridesReachConcreteFields(t *testing.T) 
 	source := `
 package models
 
-//migrator:schema:embed
+//ptah:schema:embed
 type Audit struct {
-	//migrator:schema:field name="created_at" type="TIMESTAMP" platform.mysql.type="DATETIME"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" platform.mysql.type="DATETIME"
 	CreatedAt string
 }
 
-//migrator:schema:embed
+//ptah:schema:embed
 type AuditEnvelope struct {
-	//migrator:embedded mode="inline" prefix="inner_" platform.mysql.type="DATETIME(3)"
+	//ptah:embedded mode="inline" prefix="inner_" platform.mysql.type="DATETIME(3)"
 	Audit
 }
 
-//migrator:schema:table name="accounts"
+//ptah:schema:table name="accounts"
 type Account struct {
-	//migrator:schema:field name="id" type="BIGINT" primary="true"
+	//ptah:schema:field name="id" type="BIGINT" primary="true"
 	ID int64
 }
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:embedded mode="inline" prefix="audit_" platform.mysql.type="DATETIME(6)"
+	//ptah:embedded mode="inline" prefix="audit_" platform.mysql.type="DATETIME(6)"
 	Audit
 
-	//migrator:embedded mode="inline" prefix="outer_" platform.mysql.type="DATETIME(9)"
+	//ptah:embedded mode="inline" prefix="outer_" platform.mysql.type="DATETIME(9)"
 	AuditEnvelope
 
-	//migrator:embedded mode="json" name="metadata" type="JSONB" nullable="true" platform.mysql.type="JSON"
+	//ptah:embedded mode="json" name="metadata" type="JSONB" nullable="true" platform.mysql.type="JSON"
 	Metadata map[string]any
 
-	//migrator:embedded mode="relation" field="manager_id" ref="accounts(id)" platform.mysql.type="BIGINT UNSIGNED"
+	//ptah:embedded mode="relation" field="manager_id" ref="accounts(id)" platform.mysql.type="BIGINT UNSIGNED"
 	Manager Account
 }
 `

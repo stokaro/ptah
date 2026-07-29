@@ -12,7 +12,7 @@ import (
 func TestParseSequenceAnnotation_AllOptions(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:sequence name="order_seq" schema="app" as="BigInt" start="1000" increment="2" minvalue="1" maxvalue="9999" cache="20" cycle="true" owned_by="orders.id" comment="Order numbers"
+//ptah:schema:sequence name="order_seq" schema="app" as="BigInt" start="1000" increment="2" minvalue="1" maxvalue="9999" cache="20" cycle="true" owned_by="orders.id" comment="Order numbers"
 type OrderSeq struct{}
 `
 	c := qt.New(t)
@@ -36,7 +36,7 @@ type OrderSeq struct{}
 func TestParseSequenceAnnotation_MinimalLeavesOptionsUnset(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:sequence name="s"
+//ptah:schema:sequence name="s"
 type S struct{}
 `
 	c := qt.New(t)
@@ -56,20 +56,20 @@ type S struct{}
 func TestParseSequenceAnnotation_MissingNameRejected(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:sequence increment="1"
+//ptah:schema:sequence increment="1"
 type S struct{}
 `
 	c := qt.New(t)
 	_, err := goschema.ParseSource("fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
-	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:sequence")
+	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:sequence")
 }
 
 func TestParseSequenceAnnotation_InvalidIntegerRejected(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:sequence name="s" increment="not-a-number"
+//ptah:schema:sequence name="s" increment="not-a-number"
 type S struct{}
 `
 	c := qt.New(t)
@@ -82,20 +82,20 @@ type S struct{}
 func TestParseSequenceAnnotation_UnknownAttributeRejected(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:sequence name="s" incrementt="1"
+//ptah:schema:sequence name="s" incrementt="1"
 type S struct{}
 `
 	c := qt.New(t)
 	_, err := goschema.ParseSource("fixture.go", src)
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
-	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:sequence")
+	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:sequence")
 }
 
 func TestParseSequenceAnnotation_TypeAliasNormalized(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:sequence name="s" as="int8"
+//ptah:schema:sequence name="s" as="int8"
 type S struct{}
 `
 	c := qt.New(t)
@@ -107,7 +107,7 @@ type S struct{}
 func TestParseSequenceAnnotation_InvalidTypeRejected(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:sequence name="s" as="bigint MAXVALUE 5 CYCLE"
+//ptah:schema:sequence name="s" as="bigint MAXVALUE 5 CYCLE"
 type S struct{}
 `
 	c := qt.New(t)
@@ -121,7 +121,7 @@ type S struct{}
 func TestParseGrantOnSequence(t *testing.T) {
 	const src = `package fixture
 
-//migrator:schema:grant role="app_user" privilege="USAGE,SELECT" on_sequence="order_seq" comment="Sequence usage"
+//ptah:schema:grant role="app_user" privilege="USAGE,SELECT" on_sequence="order_seq" comment="Sequence usage"
 type Access struct{}
 `
 	c := qt.New(t)

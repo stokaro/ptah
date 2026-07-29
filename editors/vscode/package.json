@@ -1,7 +1,7 @@
 {
   "name": "ptah-annotations",
   "displayName": "Ptah Annotations",
-  "description": "Language support for Ptah //migrator Go annotations.",
+  "description": "Language support for //ptah Go annotations.",
   "version": "0.1.0",
   "publisher": "stokaro",
   "license": "MIT",

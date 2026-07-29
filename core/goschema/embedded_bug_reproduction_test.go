@@ -13,61 +13,61 @@ import (
 
 // EntityID represents a common ID structure with primary key
 type EntityID struct {
-	//migrator:schema:field name="id" type="TEXT" primary="true"
+	//ptah:schema:field name="id" type="TEXT" primary="true"
 	ID string `json:"id" db:"id" userinput:"false"`
 }
 
 // TenantAwareEntityID embeds EntityID and adds tenant/user references
 type TenantAwareEntityID struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	EntityID
-	//migrator:schema:field name="tenant_id" type="TEXT" not_null="true" foreign="tenants(id)" foreign_key_name="fk_entity_tenant"
+	//ptah:schema:field name="tenant_id" type="TEXT" not_null="true" foreign="tenants(id)" foreign_key_name="fk_entity_tenant"
 	TenantID string `json:"tenant_id" db:"tenant_id" userinput:"false"`
-	//migrator:schema:field name="user_id" type="TEXT" not_null="true" foreign="users(id)" foreign_key_name="fk_entity_user"
+	//ptah:schema:field name="user_id" type="TEXT" not_null="true" foreign="users(id)" foreign_key_name="fk_entity_user"
 	UserID string `json:"user_id" db:"user_id" userinput:"false"`
 }
 
 // User table that embeds TenantAwareEntityID
 //
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	TenantAwareEntityID
-	//migrator:schema:field name="email" type="TEXT" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" not_null="true"
 	Email string `json:"email" db:"email"`
-	//migrator:schema:field name="password_hash" type="TEXT" not_null="true"
+	//ptah:schema:field name="password_hash" type="TEXT" not_null="true"
 	PasswordHash string `json:"password_hash" db:"password_hash"`
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string `json:"name" db:"name"`
-	//migrator:schema:field name="role" type="TEXT" not_null="true" default="user"
+	//ptah:schema:field name="role" type="TEXT" not_null="true" default="user"
 	Role string `json:"role" db:"role"`
-	//migrator:schema:field name="is_active" type="BOOLEAN" not_null="true" default="true"
+	//ptah:schema:field name="is_active" type="BOOLEAN" not_null="true" default="true"
 	IsActive bool `json:"is_active" db:"is_active"`
-	//migrator:schema:field name="last_login_at" type="TIMESTAMP"
+	//ptah:schema:field name="last_login_at" type="TIMESTAMP"
 	LastLoginAt *string `json:"last_login_at" db:"last_login_at"`
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true"
 	CreatedAt string `json:"created_at" db:"created_at"`
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true"
 	UpdatedAt string `json:"updated_at" db:"updated_at"`
 }
 
 // Tenant table for reference
 //
-//migrator:schema:table name="tenants"
+//ptah:schema:table name="tenants"
 type Tenant struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	EntityID
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string `json:"name" db:"name"`
 }
 
 // Area table that references users
 //
-//migrator:schema:table name="areas"
+//ptah:schema:table name="areas"
 type Area struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	TenantAwareEntityID
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string `json:"name" db:"name"`
 }
 
@@ -313,22 +313,22 @@ func TestNestedEmbeddedFieldsComprehensive(t *testing.T) {
 
 // Test nested embedded fields with prefixes
 type PrefixedEntityID struct {
-	//migrator:schema:field name="id" type="TEXT" primary="true"
+	//ptah:schema:field name="id" type="TEXT" primary="true"
 	ID string `json:"id" db:"id"`
 }
 
 type PrefixedTenantAware struct {
-	//migrator:embedded mode="inline" prefix="entity_"
+	//ptah:embedded mode="inline" prefix="entity_"
 	PrefixedEntityID
-	//migrator:schema:field name="tenant_id" type="TEXT" not_null="true"
+	//ptah:schema:field name="tenant_id" type="TEXT" not_null="true"
 	TenantID string `json:"tenant_id" db:"tenant_id"`
 }
 
-//migrator:schema:table name="prefixed_test"
+//ptah:schema:table name="prefixed_test"
 type PrefixedTest struct {
-	//migrator:embedded mode="inline" prefix="main_"
+	//ptah:embedded mode="inline" prefix="main_"
 	PrefixedTenantAware
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string `json:"name" db:"name"`
 }
 
@@ -394,55 +394,55 @@ func TestGitHubIssue49ExactScenario(t *testing.T) {
 
 // EntityID represents a common ID structure with primary key
 type EntityID struct {
-	//migrator:schema:field name="id" type="TEXT" primary="true"
+	//ptah:schema:field name="id" type="TEXT" primary="true"
 	ID string ` + "`json:\"id\" db:\"id\" userinput:\"false\"`" + `
 }
 
 // TenantAwareEntityID embeds EntityID and adds tenant/user references
 type TenantAwareEntityID struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	EntityID
-	//migrator:schema:field name="tenant_id" type="TEXT" not_null="true" foreign="tenants(id)" foreign_key_name="fk_entity_tenant"
+	//ptah:schema:field name="tenant_id" type="TEXT" not_null="true" foreign="tenants(id)" foreign_key_name="fk_entity_tenant"
 	TenantID string ` + "`json:\"tenant_id\" db:\"tenant_id\" userinput:\"false\"`" + `
-	//migrator:schema:field name="user_id" type="TEXT" not_null="true" foreign="users(id)" foreign_key_name="fk_entity_user"
+	//ptah:schema:field name="user_id" type="TEXT" not_null="true" foreign="users(id)" foreign_key_name="fk_entity_user"
 	UserID string ` + "`json:\"user_id\" db:\"user_id\" userinput:\"false\"`" + `
 }
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	TenantAwareEntityID
-	//migrator:schema:field name="email" type="TEXT" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" not_null="true"
 	Email string ` + "`json:\"email\" db:\"email\"`" + `
-	//migrator:schema:field name="password_hash" type="TEXT" not_null="true"
+	//ptah:schema:field name="password_hash" type="TEXT" not_null="true"
 	PasswordHash string ` + "`json:\"password_hash\" db:\"password_hash\"`" + `
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string ` + "`json:\"name\" db:\"name\"`" + `
-	//migrator:schema:field name="role" type="TEXT" not_null="true" default="user"
+	//ptah:schema:field name="role" type="TEXT" not_null="true" default="user"
 	Role string ` + "`json:\"role\" db:\"role\"`" + `
-	//migrator:schema:field name="is_active" type="BOOLEAN" not_null="true" default="true"
+	//ptah:schema:field name="is_active" type="BOOLEAN" not_null="true" default="true"
 	IsActive bool ` + "`json:\"is_active\" db:\"is_active\"`" + `
-	//migrator:schema:field name="last_login_at" type="TIMESTAMP"
+	//ptah:schema:field name="last_login_at" type="TIMESTAMP"
 	LastLoginAt *string ` + "`json:\"last_login_at\" db:\"last_login_at\"`" + `
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true"
 	CreatedAt string ` + "`json:\"created_at\" db:\"created_at\"`" + `
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true"
 	UpdatedAt string ` + "`json:\"updated_at\" db:\"updated_at\"`" + `
 }
 
-//migrator:schema:table name="tenants"
+//ptah:schema:table name="tenants"
 type Tenant struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	EntityID
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string ` + "`json:\"name\" db:\"name\"`" + `
 }
 
-//migrator:schema:table name="areas"
+//ptah:schema:table name="areas"
 type Area struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	TenantAwareEntityID
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string ` + "`json:\"name\" db:\"name\"`" + `
 }
 `

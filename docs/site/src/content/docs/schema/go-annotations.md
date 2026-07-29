@@ -31,12 +31,12 @@ Create `models/account.go`:
 ```go
 package models
 
-//migrator:schema:table name="accounts"
+//ptah:schema:table name="accounts"
 type Account struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int
 
-	//migrator:schema:field name="email" type="TEXT" unique="true" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" unique="true" not_null="true"
 	Email string
 }
 ```

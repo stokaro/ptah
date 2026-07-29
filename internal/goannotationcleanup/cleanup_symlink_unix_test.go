@@ -18,7 +18,7 @@ func TestCleanDir_FailurePath_RejectsSymlinkedGoSource(t *testing.T) {
 	outside := t.TempDir()
 	target := filepath.Join(outside, "outside.go")
 	link := filepath.Join(root, "model.go")
-	original := "package outside\n\n//migrator:schema:table name=\"outside\"\ntype Outside struct{}\n"
+	original := "package outside\n\n//ptah:schema:table name=\"outside\"\ntype Outside struct{}\n"
 	c.Assert(os.WriteFile(target, []byte(original), 0o600), qt.IsNil)
 	c.Assert(os.Symlink(target, link), qt.IsNil)
 
@@ -42,7 +42,7 @@ func TestPlanSourceAlias_HappyPath_ReportsSymlinkAndHardLinkAliases(t *testing.T
 	source := filepath.Join(root, "model.go")
 	symlinkAlias := filepath.Join(outside, "schema-symlink.hcl")
 	hardLinkAlias := filepath.Join(outside, "schema-hardlink.hcl")
-	original := "package models\n\n//migrator:schema:table name=\"users\"\ntype User struct{}\n"
+	original := "package models\n\n//ptah:schema:table name=\"users\"\ntype User struct{}\n"
 	c.Assert(os.WriteFile(source, []byte(original), 0o600), qt.IsNil)
 	c.Assert(os.Symlink(source, symlinkAlias), qt.IsNil)
 	c.Assert(os.Link(source, hardLinkAlias), qt.IsNil)
@@ -68,8 +68,8 @@ func TestPlanApply_FailurePath_StagingFailureLeavesEverySourceUnchanged(t *testi
 	c.Assert(os.MkdirAll(blockedDir, 0o700), qt.IsNil)
 	firstPath := filepath.Join(firstDir, "model.go")
 	blockedPath := filepath.Join(blockedDir, "model.go")
-	firstData := []byte("package first\n\n//migrator:schema:table name=\"first\"\ntype First struct{}\n")
-	blockedData := []byte("package blocked\n\n//migrator:schema:table name=\"blocked\"\ntype Blocked struct{}\n")
+	firstData := []byte("package first\n\n//ptah:schema:table name=\"first\"\ntype First struct{}\n")
+	blockedData := []byte("package blocked\n\n//ptah:schema:table name=\"blocked\"\ntype Blocked struct{}\n")
 	c.Assert(os.WriteFile(firstPath, firstData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(blockedPath, blockedData, 0o600), qt.IsNil)
 

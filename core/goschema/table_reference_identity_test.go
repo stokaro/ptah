@@ -44,7 +44,7 @@ func TestParseSource_TableDirectivePreservesReferenceIdentity(t *testing.T) {
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
 			source := fmt.Sprintf(
-				"package models\n\n//migrator:schema:table %s\ntype Item struct{}\n",
+				"package models\n\n//ptah:schema:table %s\ntype Item struct{}\n",
 				tt.annotation,
 			)
 

@@ -37,16 +37,16 @@ func TestPostgreSQLUserTypesRoundTripIntegration(t *testing.T) {
 	dir := t.TempDir()
 	model := `package models
 
-//migrator:schema:domain name="email" type="TEXT" check="VALUE ~ '@'"
+//ptah:schema:domain name="email" type="TEXT" check="VALUE ~ '@'"
 type EmailDomain struct{}
 
-//migrator:schema:domain name="pincode" type="VARCHAR(255)" not_null="true"
+//ptah:schema:domain name="pincode" type="VARCHAR(255)" not_null="true"
 type PinDomain struct{}
 
-//migrator:schema:composite name="money_amount" fields="amount:NUMERIC(10,2),cur:VARCHAR(3)"
+//ptah:schema:composite name="money_amount" fields="amount:NUMERIC(10,2),cur:VARCHAR(3)"
 type MoneyType struct{}
 
-//migrator:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
+//ptah:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
 type FloatRange struct{}
 `
 	c.Assert(os.WriteFile(filepath.Join(dir, "model.go"), []byte(model), 0o600), qt.IsNil)

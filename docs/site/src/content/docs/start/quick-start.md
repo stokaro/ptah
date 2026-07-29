@@ -20,7 +20,7 @@ ptah version ...
 
 ## Create a tiny Go model
 
-The `//migrator:schema:*` annotations are your source of truth: they describe the desired schema, and every later step is driven from them.
+The `//ptah:schema:*` annotations are your source of truth: they describe the desired schema, and every later step is driven from them.
 
 ```bash
 rm -rf /tmp/ptah-quickstart
@@ -29,15 +29,15 @@ mkdir -p /tmp/ptah-quickstart/models /tmp/ptah-quickstart/migrations
 cat > /tmp/ptah-quickstart/models/user.go <<'EOF'
 package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true" auto_increment="true" not_null="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true" auto_increment="true" not_null="true"
 	ID int
 
-	//migrator:schema:field name="email" type="TEXT" unique="true" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" unique="true" not_null="true"
 	Email string
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 EOF
@@ -141,12 +141,12 @@ This is the loop Ptah is built for. Change your annotations and generate again: 
 cat > /tmp/ptah-quickstart/models/post.go <<'EOF'
 package models
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true" auto_increment="true" not_null="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true" auto_increment="true" not_null="true"
 	ID int
 
-	//migrator:schema:field name="title" type="TEXT" not_null="true"
+	//ptah:schema:field name="title" type="TEXT" not_null="true"
 	Title string
 }
 EOF

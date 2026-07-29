@@ -16,16 +16,16 @@ an MIT, local, no-account, embeddable capability.
 
 ## Declaring managed data
 
-Attach a `//migrator:schema:data` annotation to a Go entity. It names the target
+Attach a `//ptah:schema:data` annotation to a Go entity. It names the target
 table, the key column(s) that identify a row, and a YAML file holding the desired
 rows:
 
 ```go
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-    //migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+    //ptah:schema:field name="code" type="VARCHAR(2)" primary="true"
     Code string
-    //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+    //ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
     Name string
 }
 ```
@@ -102,7 +102,7 @@ containing quotes, backslashes, or semicolons cannot break out of its literal.
 Managed tables are ordered by the schema's foreign-key dependency graph:
 `INSERT`s run parents-first and `DELETE`s children-first, so a migration
 spanning FK-related reference tables applies (and rolls back) without violating
-a foreign key. A managed table is matched to its `//migrator:schema:table`
+a foreign key. A managed table is matched to its `//ptah:schema:table`
 definition by qualified name, falling back to the bare table name when the
 `schema` attributes are not both set; tables with no matching definition fall
 back to alphabetical order.

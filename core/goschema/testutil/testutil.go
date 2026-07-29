@@ -34,7 +34,7 @@ func BuildGoStructWithTag(packageName, structName, fieldName, fieldType, tag str
 	return `package ` + packageName + `
 
 type ` + structName + ` struct {
-	//migrator:schema:field name="` + fieldName + `" type="` + fieldType + `" primary="true"
+	//ptah:schema:field name="` + fieldName + `" type="` + fieldType + `" primary="true"
 	` + fieldName + ` int64 ` + "`" + tag + "`" + `
 }`
 }
@@ -43,11 +43,11 @@ type ` + structName + ` struct {
 func BuildGoStructWithRLS(packageName, tableName, structName, policyName, rlsFor, rlsTo, rlsUsing, comment string) string {
 	result := `package ` + packageName + `
 
-//migrator:schema:rls:enable table="` + tableName + `" comment="Enable RLS for ` + tableName + `"
-//migrator:schema:rls:policy name="` + policyName + `" table="` + tableName + `" for="` + rlsFor + `" to="` + rlsTo + `" using="` + rlsUsing + `" comment="` + comment + `"
-//migrator:schema:table name="` + tableName + `"
+//ptah:schema:rls:enable table="` + tableName + `" comment="Enable RLS for ` + tableName + `"
+//ptah:schema:rls:policy name="` + policyName + `" table="` + tableName + `" for="` + rlsFor + `" to="` + rlsTo + `" using="` + rlsUsing + `" comment="` + comment + `"
+//ptah:schema:table name="` + tableName + `"
 type ` + structName + ` struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`
 

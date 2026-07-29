@@ -3396,10 +3396,10 @@ type CompositeType struct {
     CompositeType represents a PostgreSQL composite type parsed from Go
     annotations.
 
-    Composite types are defined using //migrator:schema:composite annotations
-    with a comma-separated fields list of "name:type" pairs:
+    Composite types are defined using //ptah:schema:composite annotations with a
+    comma-separated fields list of "name:type" pairs:
 
-        //migrator:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)"
+        //ptah:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)"
         type AddressType struct{}
 
 func (c *CompositeType) Canonicalize()
@@ -3457,14 +3457,14 @@ type Constraint struct {
     at the table level, such as EXCLUDE constraints for preventing overlapping
     data, CHECK constraints for data validation, etc.
 
-    Constraint is created by parsing //migrator:schema:constraint annotations:
+    Constraint is created by parsing //ptah:schema:constraint annotations:
 
         type Booking struct {
-            //migrator:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" using="gist" elements="room_id WITH =, during WITH &&"
+            //ptah:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" using="gist" elements="room_id WITH =, during WITH &&"
             RoomID int64
             During string // TSRANGE type
 
-            //migrator:schema:constraint name="one_active_session_per_user" type="EXCLUDE" using="gist" elements="user_id WITH =" condition="is_active = true"
+            //ptah:schema:constraint name="one_active_session_per_user" type="EXCLUDE" using="gist" elements="user_id WITH =" condition="is_active = true"
             UserID   int64
             IsActive bool
         }
@@ -3557,11 +3557,10 @@ type Domain struct {
 }
     Domain represents a PostgreSQL domain type parsed from Go annotations.
 
-    A domain is a base type constrained with optional NOT NULL, DEFAULT,
-    and CHECK clauses. Domains are defined using //migrator:schema:domain
-    annotations:
+    A domain is a base type constrained with optional NOT NULL, DEFAULT, and
+    CHECK clauses. Domains are defined using //ptah:schema:domain annotations:
 
-        //migrator:schema:domain name="email" type="TEXT" check="VALUE ~ '^[^@]+@[^@]+$'"
+        //ptah:schema:domain name="email" type="TEXT" check="VALUE ~ '^[^@]+@[^@]+$'"
         type EmailDomain struct{}
 
 func (d *Domain) Canonicalize()
@@ -3602,13 +3601,13 @@ type EmbeddedField struct {
 
         type User struct {
             ID int64
-            //migrator:embedded mode="inline"
+            //ptah:embedded mode="inline"
             Timestamps  // Results in: created_at, updated_at columns
 
-            //migrator:embedded mode="json" name="metadata" type="JSONB"
+            //ptah:embedded mode="json" name="metadata" type="JSONB"
             Meta UserMeta  // Results in: metadata JSONB column
 
-            //migrator:embedded mode="relation" field="company_id" ref="companies(id)"
+            //ptah:embedded mode="relation" field="company_id" ref="companies(id)"
             Company Company  // Results in: company_id INTEGER + FK constraint
         }
 
@@ -3639,12 +3638,12 @@ type Enum struct {
     name pattern: "enum_{struct_name}_{field_name}":
 
         type User struct {
-            //migrator:schema:field name="status" type="ENUM" enum="active,inactive,suspended" default="active"
+            //ptah:schema:field name="status" type="ENUM" enum="active,inactive,suspended" default="active"
             Status string  // Creates global enum: "enum_user_status"
         }
 
         type Post struct {
-            //migrator:schema:field name="status" type="ENUM" enum="draft,published,archived" default="draft"
+            //ptah:schema:field name="status" type="ENUM" enum="draft,published,archived" default="draft"
             Status string  // Creates global enum: "enum_post_status"
         }
 
@@ -3680,14 +3679,14 @@ type Extension struct {
     annotations. Extensions enable additional functionality in PostgreSQL
     databases.
 
-    Extension is created by parsing //migrator:schema:extension annotations:
+    Extension is created by parsing //ptah:schema:extension annotations:
 
         // Enable trigram similarity search
-        //migrator:schema:extension name="pg_trgm" if_not_exists="true"
+        //ptah:schema:extension name="pg_trgm" if_not_exists="true"
         type DatabaseExtensions struct{}
 
         // Enable PostGIS for geographic data
-        //migrator:schema:extension name="postgis" version="3.0" if_not_exists="true"
+        //ptah:schema:extension name="postgis" version="3.0" if_not_exists="true"
         type GeoExtensions struct{}
 
 
@@ -3741,29 +3740,29 @@ type Field struct {
     generation, containing all the metadata needed to generate appropriate
     CREATE TABLE column definitions for different database platforms.
 
-    Field is created by parsing //migrator:schema:field annotations from Go
-    struct fields:
+    Field is created by parsing //ptah:schema:field annotations from Go struct
+    fields:
 
         type Product struct {
-            //migrator:schema:field name="id" type="SERIAL" primary="true"
+            //ptah:schema:field name="id" type="SERIAL" primary="true"
             ID int64
 
-            //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true" unique="true"
+            //ptah:schema:field name="name" type="VARCHAR(255)" not_null="true" unique="true"
             Name string
 
-            //migrator:schema:field name="price" type="DECIMAL(10,2)" check="price > 0" default="0.00"
+            //ptah:schema:field name="price" type="DECIMAL(10,2)" check="price > 0" default="0.00"
             Price float64
 
-            //migrator:schema:field name="status" type="ENUM" enum="active,inactive" default="active"
+            //ptah:schema:field name="status" type="ENUM" enum="active,inactive" default="active"
             Status string
 
-            //migrator:schema:field name="category_id" type="INTEGER" foreign="categories(id)"
+            //ptah:schema:field name="category_id" type="INTEGER" foreign="categories(id)"
             CategoryID int64
         }
 
     The Field supports platform-specific overrides through the Overrides field:
 
-        //migrator:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
+        //ptah:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
         ID int64
 
 
@@ -3785,13 +3784,13 @@ type Function struct {
     Function represents a PostgreSQL custom function definition parsed from Go
     struct annotations.
 
-    Functions are defined using //migrator:schema:function annotations and are
+    Functions are defined using //ptah:schema:function annotations and are
     used to create custom PostgreSQL functions that can be referenced by RLS
     policies, triggers, or application code.
 
-    Function is created by parsing //migrator:schema:function annotations:
+    Function is created by parsing //ptah:schema:function annotations:
 
-        //migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"
+        //ptah:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"
         type User struct {
             // ... fields
         }
@@ -3834,14 +3833,14 @@ type Grant struct {
 }
     Grant represents a PostgreSQL privilege grant parsed from Go annotations.
 
-    Grants are defined using //migrator:schema:grant annotations and are used to
+    Grants are defined using //ptah:schema:grant annotations and are used to
     manage access-control privileges for roles that Ptah manages as first-class
     schema objects.
 
     Example:
 
-        //migrator:schema:grant role="app_user" privilege="USAGE" on_schema="public"
-        //migrator:schema:grant role="app_user" privilege="SELECT,INSERT" on_table="users"
+        //ptah:schema:grant role="app_user" privilege="USAGE" on_schema="public"
+        //ptah:schema:grant role="app_user" privilege="SELECT,INSERT" on_table="users"
         type AccessControl struct{}
 
 func (g *Grant) Canonicalize()
@@ -3893,40 +3892,40 @@ type Index struct {
     annotations. Indexes are used to improve query performance and enforce
     uniqueness constraints on one or more columns.
 
-    Index is created by parsing //migrator:schema:index annotations:
+    Index is created by parsing //ptah:schema:index annotations:
 
         type User struct {
-            //migrator:schema:field name="id" type="SERIAL" primary="true"
+            //ptah:schema:field name="id" type="SERIAL" primary="true"
             ID int64
 
-            //migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+            //ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
             Email string
 
-            //migrator:schema:field name="status" type="VARCHAR(50)"
+            //ptah:schema:field name="status" type="VARCHAR(50)"
             Status string
 
             // Single column index
-            //migrator:schema:index name="idx_users_email" fields="email" unique="true"
+            //ptah:schema:index name="idx_users_email" fields="email" unique="true"
             _ int
 
             // Multi-column index
-            //migrator:schema:index name="idx_users_email_status" fields="email,status"
+            //ptah:schema:index name="idx_users_email_status" fields="email,status"
             _ int
 
             // PostgreSQL GIN index for JSONB fields
-            //migrator:schema:index name="idx_users_tags" fields="tags" type="GIN"
+            //ptah:schema:index name="idx_users_tags" fields="tags" type="GIN"
             _ int
 
             // Partial index with WHERE condition
-            //migrator:schema:index name="idx_active_users" fields="status" condition="deleted_at IS NULL"
+            //ptah:schema:index name="idx_active_users" fields="status" condition="deleted_at IS NULL"
             _ int
 
             // Trigram similarity index
-            //migrator:schema:index name="idx_users_name_trgm" fields="name" type="GIN" ops="gin_trgm_ops"
+            //ptah:schema:index name="idx_users_name_trgm" fields="name" type="GIN" ops="gin_trgm_ops"
             _ int
 
             // Cross-table index targeting specific table
-            //migrator:schema:index name="idx_products_name" fields="name" table="products"
+            //ptah:schema:index name="idx_products_name" fields="name" table="products"
             _ int
         }
 
@@ -3940,10 +3939,10 @@ type Index struct {
     Both keys are silently ignored by non-ClickHouse renderers.
 
         type Event struct {
-            //migrator:schema:field name="payload" type="String"
+            //ptah:schema:field name="payload" type="String"
             Payload string
 
-            //migrator:schema:index name="idx_e_payload" fields="payload" type="bloom_filter(0.01)" granularity="64"
+            //ptah:schema:index name="idx_e_payload" fields="payload" type="bloom_filter(0.01)" granularity="64"
             _ int
         }
 
@@ -3978,9 +3977,9 @@ type ManagedData struct {
     // retain a filesystem-relative directory because they have no host root.
     SourceDir string
 }
-    ManagedData declares a set of reference/seed rows that Ptah
-    manages as desired-state data for a target table. It is parsed from
-    //migrator:schema:data annotations.
+    ManagedData declares a set of reference/seed rows that Ptah manages as
+    desired-state data for a target table. It is parsed from //ptah:schema:data
+    annotations.
 
     Unlike other schema objects, the row values are not embedded in the
     Go source: the annotation points to an external YAML row-data file.
@@ -3989,14 +3988,14 @@ type ManagedData struct {
     than in code, so the file reference is the source of truth for the rows
     themselves.
 
-    ManagedData is created by parsing //migrator:schema:data annotations:
+    ManagedData is created by parsing //ptah:schema:data annotations:
 
-        //migrator:schema:data table="countries" key="code" file="countries.yaml"
+        //ptah:schema:data table="countries" key="code" file="countries.yaml"
         type Country struct {
-            //migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+            //ptah:schema:field name="code" type="VARCHAR(2)" primary="true"
             Code string
 
-            //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+            //ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
             Name string
         }
 
@@ -4028,10 +4027,9 @@ type MaterializedView struct {
     MaterializedView represents a database materialized view definition parsed
     from Go annotations.
 
-    MaterializedView is created by parsing //migrator:schema:matview
-    annotations:
+    MaterializedView is created by parsing //ptah:schema:matview annotations:
 
-        //migrator:schema:matview name="user_stats" body="SELECT user_id, COUNT(*) FROM users GROUP BY user_id" refresh_strategy="manual"
+        //ptah:schema:matview name="user_stats" body="SELECT user_id, COUNT(*) FROM users GROUP BY user_id" refresh_strategy="manual"
         type UserStats struct{}
 
 func (v *MaterializedView) Canonicalize()
@@ -4082,12 +4080,11 @@ type RLSEnabledTable struct {
     RLSEnabledTable represents a table that has Row-Level Security enabled.
 
     RLS must be enabled on a table before policies can be applied to it. This is
-    done using //migrator:schema:rls:enable annotations.
+    done using //ptah:schema:rls:enable annotations.
 
-    RLSEnabledTable is created by parsing //migrator:schema:rls:enable
-    annotations:
+    RLSEnabledTable is created by parsing //ptah:schema:rls:enable annotations:
 
-        //migrator:schema:rls:enable table="users"
+        //ptah:schema:rls:enable table="users"
         type User struct {
             // ... fields
         }
@@ -4114,15 +4111,15 @@ type RLSPolicy struct {
     RLSPolicy represents a PostgreSQL Row-Level Security policy definition
     parsed from Go struct annotations.
 
-    RLS policies are defined using //migrator:schema:rls:policy annotations
-    and provide database-level tenant isolation by automatically filtering rows
+    RLS policies are defined using //ptah:schema:rls:policy annotations and
+    provide database-level tenant isolation by automatically filtering rows
     based on specified conditions.
 
-    RLSPolicy is created by parsing //migrator:schema:rls:policy annotations:
+    RLSPolicy is created by parsing //ptah:schema:rls:policy annotations:
 
-        //migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()"
+        //ptah:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()"
         type User struct {
-            //migrator:schema:field name="tenant_id" type="TEXT" not_null="true"
+            //ptah:schema:field name="tenant_id" type="TEXT" not_null="true"
             TenantID string
             // ... other fields
         }
@@ -4163,9 +4160,9 @@ type Range struct {
 }
     Range represents a PostgreSQL range type parsed from Go annotations.
 
-    Range types are defined using //migrator:schema:range annotations:
+    Range types are defined using //ptah:schema:range annotations:
 
-        //migrator:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
+        //ptah:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
         type FloatRange struct{}
 
 func (r *Range) Canonicalize()
@@ -4190,15 +4187,15 @@ type Role struct {
     Role represents a PostgreSQL role definition parsed from Go struct
     annotations.
 
-    Roles are defined using //migrator:schema:role annotations and are used to
+    Roles are defined using //ptah:schema:role annotations and are used to
     create PostgreSQL database roles that can be referenced by RLS policies,
     granted permissions, or used for authentication and authorization.
 
-    Role is created by parsing //migrator:schema:role annotations:
+    Role is created by parsing //ptah:schema:role annotations:
 
-        //migrator:schema:role name="app_user" login="true" password="encrypted_password" comment="Application user role"
-        //migrator:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
-        //migrator:schema:role name="readonly_user" login="true" comment="Read-only user role"
+        //ptah:schema:role name="app_user" login="true" password="encrypted_password" comment="Application user role"
+        //ptah:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
+        //ptah:schema:role name="readonly_user" login="true" comment="Read-only user role"
         type UserRoles struct {
             // Dummy struct to hold role annotations
         }
@@ -4310,9 +4307,9 @@ type Sequence struct {
     columns: those are created and dropped automatically with their owning
     column and are never emitted as standalone objects.
 
-    Sequence is created by parsing //migrator:schema:sequence annotations:
+    Sequence is created by parsing //ptah:schema:sequence annotations:
 
-        //migrator:schema:sequence name="order_number_seq" start="1000" increment="1" cache="20"
+        //ptah:schema:sequence name="order_number_seq" start="1000" increment="1" cache="20"
         type OrderNumberSeq struct{}
 
     Supported attributes mirror the PostgreSQL CREATE SEQUENCE options:
@@ -4363,32 +4360,32 @@ type Table struct {
     annotations. This defines the overall table properties and metadata that
     will be used to generate CREATE TABLE statements.
 
-    Table is created by parsing //migrator:schema:table annotations:
+    Table is created by parsing //ptah:schema:table annotations:
 
-        //migrator:schema:table name="users" comment="User accounts table"
+        //ptah:schema:table name="users" comment="User accounts table"
         type User struct {
-            //migrator:schema:field name="id" type="SERIAL" primary="true"
+            //ptah:schema:field name="id" type="SERIAL" primary="true"
             ID int64
 
-            //migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+            //ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
             Email string
         }
 
     Platform-specific configurations can be specified using overrides:
 
-        //migrator:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product catalog"
+        //ptah:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product catalog"
         type Product struct {
             // ... fields
         }
 
     Composite primary keys can be defined using the primary_key attribute:
 
-        //migrator:schema:table name="user_roles" primary_key="user_id,role_id"
+        //ptah:schema:table name="user_roles" primary_key="user_id,role_id"
         type UserRole struct {
-            //migrator:schema:field name="user_id" type="INTEGER" foreign="users(id)"
+            //ptah:schema:field name="user_id" type="INTEGER" foreign="users(id)"
             UserID int64
 
-            //migrator:schema:field name="role_id" type="INTEGER" foreign="roles(id)"
+            //ptah:schema:field name="role_id" type="INTEGER" foreign="roles(id)"
             RoleID int64
         }
 
@@ -4410,9 +4407,9 @@ type Trigger struct {
 }
     Trigger represents a database trigger definition parsed from Go annotations.
 
-    Trigger is created by parsing //migrator:schema:trigger annotations:
+    Trigger is created by parsing //ptah:schema:trigger annotations:
 
-        //migrator:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" for="ROW" body="NEW.updated_at = NOW(); RETURN NEW;"
+        //ptah:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" for="ROW" body="NEW.updated_at = NOW(); RETURN NEW;"
         type User struct{}
 
 func (t *Trigger) Canonicalize()
@@ -4431,9 +4428,9 @@ type View struct {
 }
     View represents a database view definition parsed from Go annotations.
 
-    View is created by parsing //migrator:schema:view annotations:
+    View is created by parsing //ptah:schema:view annotations:
 
-        //migrator:schema:view name="active_users" body="SELECT * FROM users WHERE deleted_at IS NULL" with_check="false"
+        //ptah:schema:view name="active_users" body="SELECT * FROM users WHERE deleted_at IS NULL" with_check="false"
         type User struct{}
 
 

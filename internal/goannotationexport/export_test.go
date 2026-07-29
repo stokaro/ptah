@@ -57,7 +57,7 @@ func TestExport_HappyPath_TightensPermissionsForRolePasswords(t *testing.T) {
 	output := filepath.Join(root, "schema.hcl")
 	sourceData := []byte(`package models
 
-//migrator:schema:role name="app_user" login="true" password="SCRAM-SHA-256$fixture"
+//ptah:schema:role name="app_user" login="true" password="SCRAM-SHA-256$fixture"
 	type AppRole struct{}
 `)
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
@@ -95,7 +95,7 @@ func TestExport_HappyPath_DiffWritesOutputWithoutChangingSource(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Cleanup, qt.HasLen, 1)
-	c.Assert(result.Cleanup[0].Diff, qt.Contains, "-//migrator:schema:table")
+	c.Assert(result.Cleanup[0].Diff, qt.Contains, "-//ptah:schema:table")
 	sourceData, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sourceData, qt.DeepEquals, original)
@@ -145,7 +145,7 @@ func TestExport_HappyPath_CleanupModesReportTheSamePlan(t *testing.T) {
 	c.Assert(dryRun.Cleanup[0].RemovedLines, qt.Equals, diff.Cleanup[0].RemovedLines)
 	c.Assert(dryRun.Cleanup[0].RemovedLines, qt.Equals, write.Cleanup[0].RemovedLines)
 	c.Assert(dryRun.Cleanup[0].Diff, qt.Equals, "")
-	c.Assert(diff.Cleanup[0].Diff, qt.Contains, "-//migrator:schema:table")
+	c.Assert(diff.Cleanup[0].Diff, qt.Contains, "-//ptah:schema:table")
 	c.Assert(write.Cleanup[0].Diff, qt.Equals, "")
 }
 
@@ -182,10 +182,10 @@ func TestExport_HappyPath_RebasesManagedDataRelativeToHCL(t *testing.T) {
 	source := filepath.Join(sourceDir, "model.go")
 	sourceData := []byte(`package models
 
-//migrator:schema:table name="countries"
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:table name="countries"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 }
 `)
@@ -294,9 +294,9 @@ func TestExport_HappyPath_CleanupPreservesMultiwordSQLType(t *testing.T) {
 	output := filepath.Join(root, "schema.hcl")
 	sourceData := []byte(`package models
 
-//migrator:schema:table name="measurements"
+//ptah:schema:table name="measurements"
 type Measurement struct {
-	//migrator:schema:field name="value" type="DOUBLE PRECISION"
+	//ptah:schema:field name="value" type="DOUBLE PRECISION"
 	Value float64
 }
 `)
@@ -348,10 +348,10 @@ func TestExport_FailurePath_OutputCannotAliasManagedData(t *testing.T) {
 	dataPath := filepath.Join(root, "countries.yaml")
 	sourceData := []byte(`package models
 
-//migrator:schema:table name="countries"
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:table name="countries"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 }
 `)
@@ -398,12 +398,12 @@ func TestExport_FailurePath_RejectsRemovedIndexPlatformOverride(t *testing.T) {
 	output := filepath.Join(root, "schema.hcl")
 	sourceData := []byte(`package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="BIGINT"
+	//ptah:schema:field name="id" type="BIGINT"
 	ID int64
 
-	//migrator:schema:index name="idx_users_id" fields="id" platform.mysql.type="HASH"
+	//ptah:schema:index name="idx_users_id" fields="id" platform.mysql.type="HASH"
 	_ int
 }
 `)
@@ -437,9 +437,9 @@ func writeSimpleModel(c *qt.C, root string) string {
 	path := filepath.Join(root, "model.go")
 	data := []byte(`package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="BIGINT"
+	//ptah:schema:field name="id" type="BIGINT"
 	ID int64
 }
 `)
@@ -451,9 +451,9 @@ func writeCustomModel(c *qt.C, root string) string {
 	path := filepath.Join(root, "model.go")
 	data := []byte(`package models
 
-//migrator:schema:table name="users" custom="WITHOUT OIDS"
+//ptah:schema:table name="users" custom="WITHOUT OIDS"
 type User struct {
-	//migrator:schema:field name="id" type="BIGINT"
+	//ptah:schema:field name="id" type="BIGINT"
 	ID int64
 }
 `)

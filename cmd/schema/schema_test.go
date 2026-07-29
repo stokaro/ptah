@@ -206,7 +206,7 @@ func TestSchemaCommand_RegistersNativePaths(t *testing.T) {
 func TestSchemaAnnotationsCommandWritesJSONSchema(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	outPath := filepath.Join(dir, "migrator-annotations.schema.json")
+	outPath := filepath.Join(dir, "ptah-annotations.schema.json")
 
 	cmd := schema.NewSchemaCommand()
 	var stdout, stderr bytes.Buffer
@@ -224,7 +224,7 @@ func TestSchemaAnnotationsCommandWritesJSONSchema(t *testing.T) {
 	c.Assert(stdout.String(), qt.Contains, "Exported annotation JSON Schema")
 	content, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(content), qt.Contains, `"migrator.schema.field"`)
+	c.Assert(string(content), qt.Contains, `"ptah.schema.field"`)
 	c.Assert(string(content), qt.Not(qt.Contains), `"defaul"`)
 }
 
@@ -266,10 +266,10 @@ func TestSchemaExportCleanupDryRunAndWrite(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout.String(), qt.Contains, "-//migrator:schema:table")
+	c.Assert(stdout.String(), qt.Contains, "-//ptah:schema:table")
 	content, err := os.ReadFile(modelPath)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(content), qt.Contains, "migrator:schema")
+	c.Assert(string(content), qt.Contains, "ptah:schema")
 
 	cmd = schema.NewSchemaCommand()
 	stdout.Reset()
@@ -286,8 +286,8 @@ func TestSchemaExportCleanupDryRunAndWrite(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	content, err = os.ReadFile(modelPath)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(content), qt.Not(qt.Contains), "migrator:schema")
-	c.Assert(string(content), qt.Not(qt.Contains), "migrator:embedded")
+	c.Assert(string(content), qt.Not(qt.Contains), "ptah:schema")
+	c.Assert(string(content), qt.Not(qt.Contains), "ptah:embedded")
 	c.Assert(string(content), qt.Contains, "// User is business documentation.")
 }
 
@@ -298,7 +298,7 @@ func TestSchemaExportCommand_FailurePath_LossyCleanupPreservesSourcesAndOutput(t
 	outPath := filepath.Join(dir, "schema.hcl")
 	modelData := []byte(`package models
 
-//migrator:schema:rls:enable table="users"
+//ptah:schema:rls:enable table="users"
 type SecurityMarker struct{}
 `)
 	outData := []byte("previous schema\n")
@@ -361,20 +361,20 @@ func writeModel(c *qt.C, dir string) string {
 	content := `package models
 
 type Timestamps struct {
-	//migrator:schema:field name="created_at" type="TIMESTAMP" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt string
 }
 
 // User is business documentation.
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	Timestamps
 
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
 	Email string
 }
 `

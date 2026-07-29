@@ -24,7 +24,7 @@ import (
 // constraint twice in the same migration.
 //
 // Precedence: an explicit table-level constraint declared via
-// `//migrator:schema:constraint` that happens to share the synthesized
+// `//ptah:schema:constraint` that happens to share the synthesized
 // name wins — synthesis never clobbers it. See the guard in
 // Constraints() where genConstraints is populated.
 func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database *types.DBSchema) []goschema.Constraint {
@@ -143,7 +143,7 @@ func tablePrimaryKeyConstraintName(table goschema.Table, dbConstraints []types.D
 // exactly and is what keeps added-table generation untouched.
 //
 // Precedence: an explicit table-level constraint declared via
-// `//migrator:schema:constraint` that happens to share the synthesized name
+// `//ptah:schema:constraint` that happens to share the synthesized name
 // wins — synthesis never clobbers it (see the guard in Constraints()).
 func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, database *types.DBSchema) []goschema.Constraint {
 	if generated == nil || database == nil {
@@ -239,7 +239,7 @@ type resolvedField struct {
 //
 // Only fields whose owning struct is a declared table are returned: a
 // `foreign=` annotation on a mixin that is never embedded, or on a struct that
-// is not a //migrator:schema:table, has no concrete table and must not be
+// is not a //ptah:schema:table, has no concrete table and must not be
 // synthesized.
 func resolveTableFields(generated *goschema.Database) []resolvedField {
 	if generated == nil {

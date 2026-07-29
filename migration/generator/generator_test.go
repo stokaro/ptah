@@ -173,16 +173,16 @@ func TestGenerateMigration_ExtensionHandling_WithRealDB(t *testing.T) {
 	// Create schema with extensions
 	schemaContent := `package testschema
 
-//migrator:schema:extension name="pg_trgm" if_not_exists="true" comment="Test trigram extension"
-//migrator:schema:extension name="btree_gin" if_not_exists="true" comment="Test btree_gin extension"
+//ptah:schema:extension name="pg_trgm" if_not_exists="true" comment="Test trigram extension"
+//ptah:schema:extension name="btree_gin" if_not_exists="true" comment="Test btree_gin extension"
 type TestExtensions struct{}
 
-//migrator:schema:table name="test_table_generator"
+//ptah:schema:table name="test_table_generator"
 type TestTable struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)"
+	//ptah:schema:field name="name" type="VARCHAR(255)"
 	Name string
 }
 `
@@ -258,9 +258,9 @@ func TestGenerateMigration_DatabaseConnectionFix(t *testing.T) {
 	// Create minimal schema
 	schemaContent := `package testschema
 
-//migrator:schema:table name="simple_table_test"
+//ptah:schema:table name="simple_table_test"
 type SimpleTable struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `
@@ -315,12 +315,12 @@ func TestGenerateMigration_FilesystemPathResolution(t *testing.T) {
 	// Create minimal schema file in the entities directory
 	schemaContent := `package entities
 
-//migrator:schema:table name="test_table_filesystem"
+//ptah:schema:table name="test_table_filesystem"
 type TestTable struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)"
+	//ptah:schema:field name="name" type="VARCHAR(255)"
 	Name string
 }
 `
@@ -387,9 +387,9 @@ func TestGenerateMigration_FilesystemPathResolution_RelativePath(t *testing.T) {
 	// Create minimal schema file
 	schemaContent := `package entities
 
-//migrator:schema:table name="test_table_relative"
+//ptah:schema:table name="test_table_relative"
 type TestTable struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `

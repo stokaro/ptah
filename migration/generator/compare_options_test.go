@@ -467,16 +467,16 @@ func createSchemaContent(extensions []goschema.Extension) string {
 
 	// Add extension definitions
 	for _, ext := range extensions {
-		content.WriteString("//migrator:schema:extension name=\"")
+		content.WriteString("//ptah:schema:extension name=\"")
 		content.WriteString(ext.Name)
 		content.WriteString("\" if_not_exists=\"true\"\n")
 	}
 
 	// Add a simple table to make the schema valid
 	content.WriteString(`
-//migrator:schema:table name="test_table_compare_options"
+//ptah:schema:table name="test_table_compare_options"
 type TestTable struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `)
@@ -526,9 +526,9 @@ func TestGenerateMigration_CompareOptions_UnhappyPath_EmptyIgnoredList(t *testin
 	// Create minimal schema file
 	schemaContent := `package entities
 
-//migrator:schema:table name="test_table_empty_ignored"
+//ptah:schema:table name="test_table_empty_ignored"
 type TestTable struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `
@@ -573,9 +573,9 @@ func TestGenerateMigration_CompareOptions_UnhappyPath_DuplicateIgnoredExtensions
 	// Create minimal schema file
 	schemaContent := `package entities
 
-//migrator:schema:table name="test_table_duplicate_ignored"
+//ptah:schema:table name="test_table_duplicate_ignored"
 type TestTable struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `

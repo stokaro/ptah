@@ -20,15 +20,15 @@ empty target database:
 ```go
 package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true" auto_increment="true" not_null="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true" auto_increment="true" not_null="true"
 	ID int
 
-	//migrator:schema:field name="email" type="TEXT" unique="true" not_null="true"
+	//ptah:schema:field name="email" type="TEXT" unique="true" not_null="true"
 	Email string
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 ```

@@ -26,7 +26,7 @@ type Attribute struct {
 	AliasFor    string `json:"alias_for,omitempty"`
 }
 
-// Directive describes one //migrator annotation directive.
+// Directive describes one //ptah annotation directive.
 type Directive struct {
 	Name          string      `json:"name"`
 	Description   string      `json:"description"`
@@ -174,8 +174,8 @@ func BooleanAttributes() map[string]bool {
 // auto-promoted to a bare boolean attribute by annotation parsers.
 func DirectiveTokens() map[string]bool {
 	out := map[string]bool{
-		"migrator": true,
-		"schema":   true,
+		"ptah":   true,
+		"schema": true,
 	}
 	for _, directive := range directives {
 		for part := range strings.SplitSeq(directive.Name, ":") {
@@ -237,7 +237,7 @@ const (
 
 var directives = []Directive{
 	{
-		Name:          "migrator:schema:field",
+		Name:          "ptah:schema:field",
 		Description:   "Maps a Go struct field to a database column.",
 		Scopes:        []Scope{ScopeField},
 		AllowPlatform: true,
@@ -269,7 +269,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:          "migrator:embedded",
+		Name:          "ptah:embedded",
 		Description:   "Controls how an embedded Go field contributes schema objects.",
 		Scopes:        []Scope{ScopeField},
 		AllowPlatform: true,
@@ -287,7 +287,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:index",
+		Name:        "ptah:schema:index",
 		Description: "Declares an index for a table.",
 		Scopes:      []Scope{ScopeStruct, ScopeField},
 		Attributes: []Attribute{
@@ -306,7 +306,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:          "migrator:schema:table",
+		Name:          "ptah:schema:table",
 		Description:   "Maps a Go struct to a database table.",
 		Scopes:        []Scope{ScopeStruct},
 		AllowPlatform: true,
@@ -321,7 +321,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:schema",
+		Name:        "ptah:schema:schema",
 		Description: "Declares a database schema or namespace.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -330,7 +330,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:constraint",
+		Name:        "ptah:schema:constraint",
 		Description: "Declares a table constraint.",
 		Scopes:      []Scope{ScopeStruct, ScopeField},
 		Attributes: []Attribute{
@@ -353,7 +353,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:enum",
+		Name:        "ptah:schema:enum",
 		Description: "Declares a reusable enum type.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -362,7 +362,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:extension",
+		Name:        "ptah:schema:extension",
 		Description: "Declares a PostgreSQL extension.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -373,7 +373,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:function",
+		Name:        "ptah:schema:function",
 		Description: "Declares a database function.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -388,7 +388,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:sequence",
+		Name:        "ptah:schema:sequence",
 		Description: "Declares a standalone PostgreSQL sequence.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -407,7 +407,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:domain",
+		Name:        "ptah:schema:domain",
 		Description: "Declares a PostgreSQL domain type.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -422,7 +422,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:composite",
+		Name:        "ptah:schema:composite",
 		Description: "Declares a PostgreSQL composite type.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -433,7 +433,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:range",
+		Name:        "ptah:schema:range",
 		Description: "Declares a PostgreSQL range type.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -448,7 +448,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:view",
+		Name:        "ptah:schema:view",
 		Description: "Declares a database view.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -459,7 +459,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:matview",
+		Name:        "ptah:schema:matview",
 		Description: "Declares a materialized view.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -470,7 +470,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:trigger",
+		Name:        "ptah:schema:trigger",
 		Description: "Declares a database trigger.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -484,7 +484,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:rls:policy",
+		Name:        "ptah:schema:rls:policy",
 		Description: "Declares a row-level security policy.",
 		Scopes:      []Scope{ScopeFile, ScopeStruct},
 		Attributes: []Attribute{
@@ -498,7 +498,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:rls:enable",
+		Name:        "ptah:schema:rls:enable",
 		Description: "Enables row-level security on a table.",
 		Scopes:      []Scope{ScopeFile, ScopeStruct},
 		Attributes: []Attribute{
@@ -507,7 +507,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:role",
+		Name:        "ptah:schema:role",
 		Description: "Declares a database role.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -525,7 +525,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:grant",
+		Name:        "ptah:schema:grant",
 		Description: "Declares database grants.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
@@ -541,7 +541,7 @@ var directives = []Directive{
 		},
 	},
 	{
-		Name:        "migrator:schema:data",
+		Name:        "ptah:schema:data",
 		Description: "Declares external reference/seed row data for a table.",
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{

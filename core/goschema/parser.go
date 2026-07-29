@@ -89,7 +89,7 @@ func (s *schemaParseState) parseFieldComment(
 	}
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:field", location),
+		s.annotationContext(comment, "//ptah:schema:field", location),
 	); err != nil {
 		return err
 	}
@@ -120,11 +120,11 @@ func (s *schemaParseState) parseFieldComment(
 		if kv["identity_generation"] != "" && identityGeneration == "" {
 			return &ptaherr.ParseError{
 				File:      s.filename,
-				Line:      s.annotationContext(comment, "//migrator:schema:field", location).line,
-				Directive: "migrator:schema:field",
+				Line:      s.annotationContext(comment, "//ptah:schema:field", location).line,
+				Directive: "ptah:schema:field",
 				Attribute: "identity_generation",
 				Err:       ptaherr.ErrInvalidAttributeValue,
-				Message:   fmt.Sprintf("invalid identity_generation %q on //migrator:schema:field at %s", kv["identity_generation"], location),
+				Message:   fmt.Sprintf("invalid identity_generation %q on //ptah:schema:field at %s", kv["identity_generation"], location),
 			}
 		}
 		if identityGeneration == "" && hasIdentitySettings(kv) {
@@ -188,7 +188,7 @@ func (s *schemaParseState) parseEmbeddedComment(comment *ast.Comment, field *ast
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:embedded", structName),
+		s.annotationContext(comment, "//ptah:embedded", structName),
 	); err != nil {
 		return err
 	}
@@ -230,7 +230,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:index", structName),
+		s.annotationContext(comment, "//ptah:schema:index", structName),
 	); err != nil {
 		return err
 	}
@@ -260,11 +260,11 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		if err != nil || n < 0 {
 			return &ptaherr.ParseError{
 				File:      s.filename,
-				Line:      s.annotationContext(comment, "//migrator:schema:index", structName).line,
-				Directive: "migrator:schema:index",
+				Line:      s.annotationContext(comment, "//ptah:schema:index", structName).line,
+				Directive: "ptah:schema:index",
 				Attribute: "granularity",
 				Err:       ptaherr.ErrInvalidAttributeValue,
-				Message:   fmt.Sprintf("invalid granularity %q on //migrator:schema:index at %s (must be a non-negative integer)", g, structName),
+				Message:   fmt.Sprintf("invalid granularity %q on //ptah:schema:index at %s (must be a non-negative integer)", g, structName),
 			}
 		}
 		granularity = n
@@ -299,7 +299,7 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:constraint", structName),
+		s.annotationContext(comment, "//ptah:schema:constraint", structName),
 	); err != nil {
 		return err
 	}
@@ -368,7 +368,7 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:extension", kv["name"]),
+		s.annotationContext(comment, "//ptah:schema:extension", kv["name"]),
 	); err != nil {
 		return err
 	}
@@ -386,13 +386,13 @@ func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:schema", kv["name"]),
+		s.annotationContext(comment, "//ptah:schema:schema", kv["name"]),
 	); err != nil {
 		return err
 	}
 	if err := requireAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:schema", kv["name"]),
+		s.annotationContext(comment, "//ptah:schema:schema", kv["name"]),
 	); err != nil {
 		return err
 	}
@@ -408,7 +408,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:table", structName),
+		s.annotationContext(comment, "//ptah:schema:table", structName),
 	); err != nil {
 		return err
 	}
@@ -541,11 +541,11 @@ func (s *schemaParseState) parseStructFieldComment(comment *ast.Comment, target 
 
 func (s *schemaParseState) parseFieldScopedComment(comment *ast.Comment, target schemaCommentTarget) (bool, error) {
 	switch {
-	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:field"):
 		return true, s.parseFieldComment(comment, target.field, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:embedded"):
+	case strings.HasPrefix(comment.Text, "//ptah:embedded"):
 		return true, s.parseEmbeddedComment(comment, target.field, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:index"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:index"):
 		return true, s.parseIndexComment(comment, target.structName)
 	default:
 		return false, nil
@@ -554,9 +554,9 @@ func (s *schemaParseState) parseFieldScopedComment(comment *ast.Comment, target 
 
 func (s *schemaParseState) parseStructScopedComment(comment *ast.Comment, target schemaCommentTarget) (bool, error) {
 	switch {
-	case strings.HasPrefix(comment.Text, "//migrator:schema:table"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:table"):
 		return true, s.parseTableComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:schema"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:schema"):
 		return true, s.parseSchemaComment(comment)
 	default:
 		return false, nil
@@ -565,37 +565,37 @@ func (s *schemaParseState) parseStructScopedComment(comment *ast.Comment, target
 
 func (s *schemaParseState) parseSharedComment(comment *ast.Comment, target schemaCommentTarget) error {
 	switch {
-	case strings.HasPrefix(comment.Text, "//migrator:schema:constraint"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:constraint"):
 		return s.parseConstraintComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:enum"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:enum"):
 		return s.parseEnumComment(comment)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:extension"):
 		return s.parseExtensionComment(comment)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:function"):
 		return s.parseFunctionComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:sequence"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:sequence"):
 		return s.parseSequenceComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:domain"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:domain"):
 		return s.parseDomainComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:composite"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:composite"):
 		return s.parseCompositeComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:range"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:range"):
 		return s.parseRangeComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:view"):
 		return s.parseViewComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:matview"):
 		return s.parseMaterializedViewComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:trigger"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:trigger"):
 		return s.parseTriggerComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:rls:policy"):
 		return s.parseRLSPolicyComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:rls:enable"):
 		return s.parseRLSEnableComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:role"):
 		return s.parseRoleComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:grant"):
 		return s.parseGrantComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:data"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:data"):
 		return s.parseManagedDataComment(comment, target.structName)
 	}
 	return nil
@@ -605,13 +605,13 @@ func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:enum", kv["name"]),
+		s.annotationContext(comment, "//ptah:schema:enum", kv["name"]),
 	); err != nil {
 		return err
 	}
 	if err := requireAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:enum", kv["name"]),
+		s.annotationContext(comment, "//ptah:schema:enum", kv["name"]),
 	); err != nil {
 		return err
 	}
@@ -789,7 +789,7 @@ func (s *schemaParseState) mapTableDirectiveStructNames(structDecls []structDecl
 }
 
 func (s *schemaParseState) mapTableDirectiveStructName(comment *ast.Comment, structName string) {
-	if !strings.HasPrefix(comment.Text, "//migrator:schema:table") {
+	if !strings.HasPrefix(comment.Text, "//ptah:schema:table") {
 		return
 	}
 	kv := parseutils.ParseKeyValueComment(comment.Text)
@@ -858,9 +858,9 @@ func (s *schemaParseState) newRLSCommentSet() rlsCommentSet {
 
 func (s *schemaParseState) parseFileScopedRLSComment(comment *ast.Comment, seen rlsCommentSet) error {
 	switch {
-	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:rls:policy"):
 		return s.parseFileScopedRLSPolicyComment(comment, seen)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
+	case strings.HasPrefix(comment.Text, "//ptah:schema:rls:enable"):
 		return s.parseFileScopedRLSEnableComment(comment, seen)
 	}
 	return nil
@@ -870,7 +870,7 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:rls:policy", kv["table"]),
+		s.annotationContext(comment, "//ptah:schema:rls:policy", kv["table"]),
 	); err != nil {
 		return err
 	}
@@ -906,7 +906,7 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment,
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:rls:enable", kv["table"]),
+		s.annotationContext(comment, "//ptah:schema:rls:enable", kv["table"]),
 	); err != nil {
 		return err
 	}
@@ -936,7 +936,7 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:function", structName),
+		s.annotationContext(comment, "//ptah:schema:function", structName),
 	); err != nil {
 		return err
 	}
@@ -962,7 +962,7 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 
 func (s *schemaParseState) parseSequenceComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//migrator:schema:sequence", kv["name"])
+	ctx := s.annotationContext(comment, "//ptah:schema:sequence", kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
@@ -1037,7 +1037,7 @@ func parseOptionalInt64(value string) (*int64, error) {
 
 func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//migrator:schema:domain", kv["name"])
+	ctx := s.annotationContext(comment, "//ptah:schema:domain", kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
@@ -1063,7 +1063,7 @@ func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName s
 
 func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//migrator:schema:composite", kv["name"])
+	ctx := s.annotationContext(comment, "//ptah:schema:composite", kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
@@ -1146,7 +1146,7 @@ func splitTopLevelCommaList(value string) []string {
 
 func (s *schemaParseState) parseRangeComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//migrator:schema:range", kv["name"])
+	ctx := s.annotationContext(comment, "//ptah:schema:range", kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
@@ -1174,13 +1174,13 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:view", structName),
+		s.annotationContext(comment, "//ptah:schema:view", structName),
 	); err != nil {
 		return err
 	}
 	if err := requireAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:view", structName),
+		s.annotationContext(comment, "//ptah:schema:view", structName),
 	); err != nil {
 		return err
 	}
@@ -1198,13 +1198,13 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:matview", structName),
+		s.annotationContext(comment, "//ptah:schema:matview", structName),
 	); err != nil {
 		return err
 	}
 	if err := requireAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:matview", structName),
+		s.annotationContext(comment, "//ptah:schema:matview", structName),
 	); err != nil {
 		return err
 	}
@@ -1228,13 +1228,13 @@ func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName 
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:trigger", structName),
+		s.annotationContext(comment, "//ptah:schema:trigger", structName),
 	); err != nil {
 		return err
 	}
 	if err := requireAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:trigger", structName),
+		s.annotationContext(comment, "//ptah:schema:trigger", structName),
 	); err != nil {
 		return err
 	}
@@ -1257,7 +1257,7 @@ func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structNam
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:rls:policy", structName),
+		s.annotationContext(comment, "//ptah:schema:rls:policy", structName),
 	); err != nil {
 		return err
 	}
@@ -1278,7 +1278,7 @@ func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structNam
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:rls:enable", structName),
+		s.annotationContext(comment, "//ptah:schema:rls:enable", structName),
 	); err != nil {
 		return err
 	}
@@ -1294,7 +1294,7 @@ func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName str
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:role", structName),
+		s.annotationContext(comment, "//ptah:schema:role", structName),
 	); err != nil {
 		return err
 	}
@@ -1317,7 +1317,7 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
 		kv,
-		s.annotationContext(comment, "//migrator:schema:grant", structName),
+		s.annotationContext(comment, "//ptah:schema:grant", structName),
 	); err != nil {
 		return err
 	}
@@ -1342,7 +1342,7 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 
 func (s *schemaParseState) parseManagedDataComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//migrator:schema:data", kv["table"])
+	ctx := s.annotationContext(comment, "//ptah:schema:data", kv["table"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}

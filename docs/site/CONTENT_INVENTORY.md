@@ -161,7 +161,7 @@ the page the restructuring created.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `reference/go-annotations.md` (2,895) | Go schema author | Which directives and attributes does the annotation parser accept? | reference | `internal/annotationmeta` exported by `ptah schema annotations` (committed copy: `schemas/migrator-annotations.schema.json`); placement, bare-boolean, and unknown-attribute behavior spot-checked against the built binary | `schema/go-annotations` (workflow home), directive fragments in `docs/POSTGRESQL_ROLES.md`, `docs/sequences.md`, `docs/user_defined_types.md` | created (section 9, items 7 and 9, including the `ptah-ls` editor-support section); keep |
+| `reference/go-annotations.md` (2,895) | Go schema author | Which directives and attributes does the annotation parser accept? | reference | `internal/annotationmeta` exported by `ptah schema annotations` (committed copy: `schemas/ptah-annotations.schema.json`); placement, bare-boolean, and unknown-attribute behavior spot-checked against the built binary | `schema/go-annotations` (workflow home), directive fragments in `docs/POSTGRESQL_ROLES.md`, `docs/sequences.md`, `docs/user_defined_types.md` | created (section 9, items 7 and 9, including the `ptah-ls` editor-support section); keep |
 
 ### `Distribute and operate` group (added by the restructuring)
 
@@ -244,7 +244,7 @@ list in the same PR.
 | --- | --- | --- | --- | --- |
 | `examples/migrator/README.md` (340) + `migrations/` fixtures | Go embedder | Embedded-migrator runnable example | `extend/components` "Embed the migrator" | keep; linked from `extend/components` |
 | `examples/viz/README.md` (178) + committed `schema.{mmd,dot,sql,svg}` artifacts | schema author | Visualization runnable example with generated artifacts | `schema/visualize` | keep; the artifact backing for `schema/visualize` |
-| `examples/migrator_parser/` (no README) | contributor | Parser API demo | `internal/parser/README.md` | keep; no reader-facing obligation |
+| `examples/annotation_parser/` (no README) | contributor | Parser API demo | `internal/parser/README.md` | keep; no reader-facing obligation |
 | `examples/extension_ignore/` (no README) | contributor | Extension-ignore demo | `docs/postgresql_extension_ignore.md` | keep; no reader-facing obligation |
 | `examples/reusable_components/` (test only) | contributor | Executable doc-examples for `extend/components` | `extend/components` | keep; keeps site snippets honest |
 
@@ -363,7 +363,7 @@ these are merely misplaced content.
    apply/no-op/protected-environment/`--force --idempotent` flows and outputs
    run against the built binary.
 7. **Go annotation directive reference.** No page on the site (or in
-   `docs/*.md`) enumerates the `//migrator:schema:*` directives; the grammar
+   `docs/*.md`) enumerates the `//ptah:schema:*` directives; the grammar
    lives in `core/goschema` and `internal/annotationmeta`, with fragments in
    `docs/POSTGRESQL_ROLES.md`, `docs/sequences.md`, and
    `docs/user_defined_types.md`. New page: `reference/go-annotations`. Done:
@@ -462,7 +462,7 @@ Concepts
 Reference
   reference/native-commands           reference (split from reference/commands)
   reference/atlas-commands            reference (split from reference/commands)
-  reference/go-annotations            reference (new: //migrator:schema:* directives)
+  reference/go-annotations            reference (new: //ptah:schema:* directives)
   reference/configuration             reference (kept; + precedence)
   reference/yaml-schema               reference (kept)
   reference/hcl-schema                reference (kept)

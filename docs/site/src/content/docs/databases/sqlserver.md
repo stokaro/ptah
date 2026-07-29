@@ -77,7 +77,7 @@ Declare a filtered index with the index annotation's `condition` (or `where`)
 attribute:
 
 ```go
-//migrator:schema:index name="idx_active_users" fields="status" condition="status = 1"
+//ptah:schema:index name="idx_active_users" fields="status" condition="status = 1"
 ```
 
 The predicate renders verbatim as `CREATE INDEX ... WHERE status = 1`. SQL

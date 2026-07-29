@@ -35,15 +35,15 @@ ptah/integration/fixtures/entities/
 
 ### Version 000-initial: Basic Entities
 ```go
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-    //migrator:schema:field name="id" type="SERIAL" primary="true"
+    //ptah:schema:field name="id" type="SERIAL" primary="true"
     ID int64
     
-    //migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+    //ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
     Email string
     
-    //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+    //ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
     Name string
 }
 ```
@@ -53,13 +53,13 @@ type User struct {
 type User struct {
     // ... existing fields ...
     
-    //migrator:schema:field name="age" type="INTEGER"
+    //ptah:schema:field name="age" type="INTEGER"
     Age int
     
-    //migrator:schema:field name="bio" type="TEXT"
+    //ptah:schema:field name="bio" type="TEXT"
     Bio string
     
-    //migrator:schema:field name="active" type="BOOLEAN" not_null="true" default="true"
+    //ptah:schema:field name="active" type="BOOLEAN" not_null="true" default="true"
     Active bool
 }
 ```
@@ -69,7 +69,7 @@ type User struct {
 type User struct {
     // ... existing fields ...
     
-    //migrator:schema:field name="status" type="ENUM" enum="active,inactive,suspended" not_null="true" default="active"
+    //ptah:schema:field name="status" type="ENUM" enum="active,inactive,suspended" not_null="true" default="active"
     Status string
 }
 ```
