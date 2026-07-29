@@ -423,6 +423,49 @@ func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
 	c.Assert(result.Fields[1].DefaultExpr, qt.Equals, "")
 }
 
+func TestConvertDBSchemaToGoSchema_PostgresSequenceSemantics(t *testing.T) {
+	c := qt.New(t)
+	serialDefault := "nextval('items_id_seq'::regclass)"
+	standaloneSequenceDefault := "nextval('shared_ids'::regclass)"
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Name: "items",
+				Columns: []types.DBColumn{
+					{
+						Name:            "id",
+						DataType:        "bigint",
+						ColumnDefault:   &serialDefault,
+						IsAutoIncrement: true,
+					},
+					{
+						Name:          "external_id",
+						DataType:      "bigint",
+						ColumnDefault: &standaloneSequenceDefault,
+					},
+					{
+						Name:               "identity_id",
+						DataType:           "bigint",
+						IdentityGeneration: "ALWAYS",
+					},
+				},
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Fields, qt.HasLen, 3)
+	c.Assert(result.Fields[0].Type, qt.Equals, "BIGSERIAL")
+	c.Assert(result.Fields[0].AutoInc, qt.IsTrue)
+	c.Assert(result.Fields[0].DefaultExpr, qt.Equals, "")
+	c.Assert(result.Fields[1].Type, qt.Equals, "bigint")
+	c.Assert(result.Fields[1].AutoInc, qt.IsFalse)
+	c.Assert(result.Fields[1].DefaultExpr, qt.Equals, standaloneSequenceDefault)
+	c.Assert(result.Fields[2].Type, qt.Equals, "bigint")
+	c.Assert(result.Fields[2].IdentityGeneration, qt.Equals, "ALWAYS")
+}
+
 func TestConvertDBSchemaToGoSchema_CompositeForeignKeyBecomesTableConstraint(t *testing.T) {
 	c := qt.New(t)
 	dbSchema := &types.DBSchema{

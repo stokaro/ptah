@@ -2,6 +2,7 @@ package migrationsnapshot_test
 
 import (
 	"io/fs"
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -34,4 +35,34 @@ func TestCapture_IncludesOnlyMigrationInputs(t *testing.T) {
 	), qt.IsNil)
 	_, err = fs.Stat(snapshot, "README.md")
 	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+}
+
+func TestCaptureStable_RejectsChangingDirectory(t *testing.T) {
+	c := qt.New(t)
+	source := &changingFS{
+		FS: fstest.MapFS{
+			"1.sql": {Data: []byte("SELECT 1;\n")},
+		},
+		first:  []byte("SELECT 1;\n"),
+		second: []byte("SELECT 2;\n"),
+	}
+
+	_, err := migrationsnapshot.CaptureStable(source)
+
+	c.Assert(err, qt.ErrorIs, migrationsnapshot.ErrChangedDuringCapture)
+}
+
+type changingFS struct {
+	fs.FS
+	first  []byte
+	second []byte
+	reads  int
+}
+
+func (f *changingFS) ReadFile(string) ([]byte, error) {
+	f.reads++
+	if f.reads == 1 {
+		return slices.Clone(f.first), nil
+	}
+	return slices.Clone(f.second), nil
 }

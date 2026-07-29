@@ -108,6 +108,12 @@ func (s Snapshot) Clone() Snapshot {
 	return cloned
 }
 
+// Equal reports whether both snapshots contain exactly the same paths and
+// bytes.
+func (s Snapshot) Equal(other Snapshot) bool {
+	return maps.EqualFunc(s.files, other.files, bytes.Equal)
+}
+
 func (s Snapshot) matching(include func(name string, entry fs.DirEntry) bool) Snapshot {
 	filtered := Snapshot{files: make(map[string][]byte, len(s.files))}
 	for _, name := range slices.Sorted(maps.Keys(s.files)) {

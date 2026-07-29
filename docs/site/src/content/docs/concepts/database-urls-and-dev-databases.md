@@ -55,9 +55,25 @@ exercise a real server dialect — see
 
 ## Consequences
 
-- **Disposable means dropped.** Dev and shadow databases are cleaned on every
-  run, and test seed steps bypass the seeder's protected-environment guards.
-  Point these flags at scratch databases only, never at a real environment.
+- **Disposable means Ptah may drop everything it supports.** Dev and shadow
+  database workflows clean user objects, and test seed steps bypass the
+  seeder's protected-environment guards. Point these flags at scratch databases
+  only, never at a real environment.
+- **Cleanup ordering depends on the workflow.** `ptah-compat migrate diff`
+  validates its inputs before cleaning the dev database and cleans again after
+  success or a failure once replay starts. Validation, lint, and shadow
+  workflows reset their disposable database before replay but do not promise
+  that it is empty when the command exits.
+- **Cleanup follows the configured scope.** SQLite cleanup affects the selected
+  attached schema, while MySQL and MariaDB cleanup affects the selected
+  database and refuses to proceed when foreign keys or views from another
+  database reference it. PostgreSQL cleanup refuses to proceed when objects
+  outside the selected schema depend on managed objects. It also refuses a
+  schema-owned PostgreSQL extension: `DROP EXTENSION` is database-scoped and
+  can remove extension members outside the selected schema, so schema cleanup
+  cannot make that operation safe. Use a disposable database, not only a
+  disposable schema, and install required extensions outside the replayed
+  migration history until Ptah has an explicit database-wide cleanup mode.
 - **Match the target engine.** Replay verification proves the SQL executes on
   the engine it ran against, so a dev or shadow database should run the same
   engine (and ideally the same version) as the target.

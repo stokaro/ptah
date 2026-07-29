@@ -331,10 +331,12 @@ type SchemaExecutor interface {
 // SchemaWriter writes schemas to databases.
 type SchemaWriter interface {
 	SchemaExecutor
-	// DropAllTables removes all user schema objects. The context governs object
-	// discovery and destructive DDL. Implementations may use a short, bounded
-	// cleanup context after cancellation to restore connection-local settings
-	// before returning.
+	// DropAllTables removes supported user objects from the writer's configured
+	// schema or database. Database-global objects, such as PostgreSQL
+	// extensions, can widen that effect. The context governs object discovery
+	// and destructive DDL. Implementations may use a short, bounded cleanup
+	// context after cancellation to restore connection-local settings before
+	// returning.
 	DropAllTables(ctx context.Context) error
 	BeginTransaction(ctx context.Context) (SchemaTransaction, error)
 	SetDryRun(dryRun bool)

@@ -279,6 +279,47 @@ func TestDetectPostgresWireDialect(t *testing.T) {
 	}
 }
 
+func TestDetectMySQLWireDialect(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		version  string
+		expected string
+	}{
+		{
+			name:     "mysql server",
+			declared: "mysql",
+			version:  "9.7.0",
+			expected: "mysql",
+		},
+		{
+			name:     "mariadb detected from mysql URL",
+			declared: "mysql",
+			version:  "10.11.15-MariaDB-ubu2204",
+			expected: "mariadb",
+		},
+		{
+			name:     "mariadb replication prefix",
+			declared: "mysql",
+			version:  "5.5.5-10.11.15-MariaDB-ubu2204",
+			expected: "mariadb",
+		},
+		{
+			name:     "explicit mariadb survives generic banner",
+			declared: "mariadb",
+			version:  "MySQL-compatible server",
+			expected: "mariadb",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(detectMySQLWireDialect(tt.declared, tt.version), qt.Equals, tt.expected)
+		})
+	}
+}
+
 func TestDatabaseConnectionInfoClonesCapabilities(t *testing.T) {
 	c := qt.New(t)
 

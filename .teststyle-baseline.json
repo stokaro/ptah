@@ -476,12 +476,6 @@
     },
     {
       "path": "internal/dbschema/postgres/postgres_test.go",
-      "function": "TestPostgreSQLWriterDropAllTablesRollsBackOnFailure",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "internal/dbschema/postgres/postgres_test.go",
       "function": "TestPostgresNullsDistinctFromDefinition",
       "kind": "if",
       "count": 1

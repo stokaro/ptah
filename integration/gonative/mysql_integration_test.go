@@ -136,7 +136,7 @@ func TestMySQLWriter_Integration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 
-	writer := mysql.NewMySQLWriter(db, "")
+	writer := mysql.NewMySQLWriter(db, "", "mysql")
 
 	t.Run("transaction lifecycle", func(t *testing.T) {
 		// Test successful transaction

@@ -57,9 +57,9 @@ func TestWriterDropAllTables_PinsCleanupToOneConnection(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(trace.connectionIDs(), qt.HasLen, 1)
 	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = OFF")
-	c.Assert(trace.statements(), qt.Contains, `DROP TABLE IF EXISTS "children"`)
-	c.Assert(trace.statements(), qt.Contains, `DROP TABLE IF EXISTS "parents"`)
-	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = ON")
+	c.Assert(trace.statements(), qt.Contains, `DROP TABLE IF EXISTS "main"."children"`)
+	c.Assert(trace.statements(), qt.Contains, `DROP TABLE IF EXISTS "main"."parents"`)
+	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = 1")
 }
 
 func TestWriterDropAllTables_RestoresForeignKeysAfterCancellation(t *testing.T) {
@@ -79,7 +79,7 @@ func TestWriterDropAllTables_RestoresForeignKeysAfterCancellation(t *testing.T) 
 
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(trace.connectionIDs(), qt.HasLen, 1)
-	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = ON")
+	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = 1")
 }
 
 func TestWriterDropAllTables_JoinsPrimaryAndRestoreErrors(t *testing.T) {
@@ -99,7 +99,68 @@ func TestWriterDropAllTables_JoinsPrimaryAndRestoreErrors(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, dropErr)
 	c.Assert(err, qt.ErrorIs, restoreErr)
-	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = ON")
+	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = 1")
+}
+
+func TestWriterDropAllTables_RestoresDisabledForeignKeys(t *testing.T) {
+	c := qt.New(t)
+	trace := new(sqliteCleanupTrace)
+	db := openTrackedSQLiteDBWithDSN(t, trace, filepath.Join(t.TempDir(), "cleanup.sqlite"))
+	execSQL(t, db, `CREATE TABLE users (id INTEGER PRIMARY KEY)`)
+	trace.reset()
+
+	writer := sqlite.NewSQLiteWriter(db, "main")
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = 0")
+}
+
+func TestWriterDropAllTables_RestoresAfterDisableFailure(t *testing.T) {
+	c := qt.New(t)
+	trace := new(sqliteCleanupTrace)
+	db := openTrackedSQLiteDB(t, trace)
+	execSQL(t, db, `CREATE TABLE users (id INTEGER PRIMARY KEY)`)
+	trace.reset()
+	disableErr := errors.New("disable outcome unknown")
+	trace.disableErr = disableErr
+
+	writer := sqlite.NewSQLiteWriter(db, "main")
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.ErrorIs, disableErr)
+	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = OFF")
+	c.Assert(trace.statements(), qt.Contains, "PRAGMA foreign_keys = 1")
+}
+
+func TestWriterDropAllTables_CleansOnlyConfiguredAttachedSchema(t *testing.T) {
+	c := qt.New(t)
+	db := openFileSQLiteDB(t)
+	conn, err := db.Conn(t.Context())
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Check(conn.Close(), qt.IsNil)
+	})
+	auxPath := filepath.Join(t.TempDir(), "aux.sqlite")
+	_, err = conn.ExecContext(t.Context(), `ATTACH DATABASE ? AS aux`, auxPath)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE TABLE main.users (id INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE TABLE aux.users (id INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE VIRTUAL TABLE aux.search USING fts5(body)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE TEMP TABLE users (id INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+
+	writer := sqlite.NewSQLiteWriterForConnection(conn, "aux")
+	err = writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, "main", "users"), qt.Equals, 1)
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, "aux", "users"), qt.Equals, 0)
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, "aux", "search"), qt.Equals, 0)
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, "temp", "users"), qt.Equals, 1)
 }
 
 func openFileSQLiteDB(t *testing.T) *sql.DB {
@@ -119,11 +180,16 @@ func openFileSQLiteDB(t *testing.T) *sql.DB {
 func openTrackedSQLiteDB(t *testing.T, trace *sqliteCleanupTrace) *sql.DB {
 	t.Helper()
 
+	return openTrackedSQLiteDBWithDSN(t, trace, filepath.Join(t.TempDir(), "cleanup.sqlite")+"?_pragma=foreign_keys(1)")
+}
+
+func openTrackedSQLiteDBWithDSN(t *testing.T, trace *sqliteCleanupTrace, dsn string) *sql.DB {
+	t.Helper()
+
 	driverName := "ptah_sqlite_cleanup_" + strconv.FormatInt(sqliteCleanupDriverID.Add(1), 10)
 	sql.Register(driverName, &sqliteCleanupDriver{trace: trace})
 
-	path := filepath.Join(t.TempDir(), "cleanup.sqlite")
-	db, err := sql.Open(driverName, path+"?_pragma=foreign_keys(1)")
+	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		t.Fatalf("open tracked sqlite: %v", err)
 	}
@@ -133,6 +199,15 @@ func openTrackedSQLiteDB(t *testing.T, trace *sqliteCleanupTrace) *sql.DB {
 		_ = db.Close()
 	})
 	return db
+}
+
+func sqliteConnSchemaObjectCount(c *qt.C, conn *sql.Conn, schema, name string) int {
+	c.Helper()
+	var count int
+	const query = `SELECT COUNT(*) FROM pragma_table_list WHERE schema = ? AND name = ?`
+	err := conn.QueryRowContext(c.Context(), query, schema, name).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
 }
 
 var sqliteCleanupDriverID atomic.Int64
@@ -147,6 +222,7 @@ type sqliteCleanupTrace struct {
 	nextConnection atomic.Int64
 	events         []sqliteCleanupEvent
 	cancelOnDrop   context.CancelFunc
+	disableErr     error
 	dropErr        error
 	restoreErr     error
 }
@@ -165,17 +241,22 @@ func (tr *sqliteCleanupTrace) executionError(query string) error {
 
 	tr.mu.Lock()
 	cancelOnDrop := tr.cancelOnDrop
+	disableErr := tr.disableErr
 	dropErr := tr.dropErr
 	restoreErr := tr.restoreErr
 	tr.mu.Unlock()
 
 	switch {
+	case statement == "PRAGMA foreign_keys = OFF" && disableErr != nil:
+		return disableErr
 	case strings.HasPrefix(statement, "DROP TABLE") && dropErr != nil:
 		if cancelOnDrop != nil {
 			cancelOnDrop()
 		}
 		return dropErr
-	case statement == "PRAGMA foreign_keys = ON" && restoreErr != nil:
+	case strings.HasPrefix(statement, "PRAGMA foreign_keys = ") &&
+		statement != "PRAGMA foreign_keys = OFF" &&
+		restoreErr != nil:
 		return restoreErr
 	default:
 		return nil

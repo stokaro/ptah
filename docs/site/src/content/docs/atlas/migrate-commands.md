@@ -203,20 +203,31 @@ reference into the evaluated `atlas.hcl` environment. With `--env`, Ptah can
 read `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and
 supported `diff` policy from `atlas.hcl`.
 
-Ptah snapshots the desired schema first, drops all tables in the dev database,
-and replays the migration directory into it. It then compares the replayed
-state to the snapshot and writes Atlas-style `.sql` migration files plus
-`atlas.sum` when changes exist. Use a disposable dev database. Ptah only reads
-a database used as `--to`; it never cleans or mutates that database. Ptah
-rejects a desired database that identifies the same host, port, and database
-as `--dev-url`, even when credentials, connection options, scheme aliases, or
-an explicit default port differ.
+Ptah snapshots the desired schema first, cleans the dev database, and replays
+the migration directory into it. It compares the replayed state to the
+snapshot, cleans the dev database again, and only then writes Atlas-style
+`.sql` migration files plus `atlas.sum` when changes exist. The final cleanup
+also runs after replay, introspection, comparison, or context-cancellation
+failures. Use a disposable dev database. Ptah only reads a database used as
+`--to`; it never cleans or mutates that database. Ptah rejects a desired
+database that identifies the same host, port, and database as `--dev-url`,
+even when credentials, connection options, scheme aliases, or an explicit
+default port differ.
 
 If `atlas.sum` already exists, Ptah validates it before replaying migrations
-and fails on checksum drift instead of silently rehashing edited files.
-`atlas.sum` is updated only after every migration file of the run was written;
-a failed write rolls the whole generation back so no partial files or
-checksums remain.
+and fails on checksum drift instead of silently rehashing edited files. Ptah
+holds the migration-directory lock while it captures and verifies one immutable
+directory snapshot, replays that exact snapshot, and publishes the result.
+Generated migration files are staged before publication, and `atlas.sum` is
+atomically replaced last as the batch commit marker. An OS-backed lock prevents
+cooperating processes from planning against the same directory concurrently
+and is released by the operating system if a process exits unexpectedly.
+`atlas.sum` is updated only after every migration file of the run was written.
+A failed write rolls the generation back immediately. If the process exits
+between publishing the SQL files and publishing `atlas.sum`, the durable
+publication journal remains next to the migration directory; the next lock
+holder compares the checksum commit marker and either finalizes the committed
+batch or removes only the hard-linked files owned by the interrupted batch.
 
 ```bash
 ptah-compat migrate diff add_users \
@@ -269,9 +280,11 @@ ptah-compat migrate diff import_history \
   --dev-url "$DEV_DATABASE_URL"
 ```
 
-The desired directory is checksummed and replayed to a disconnected snapshot
-before Ptah evaluates the output directory. A source loading failure therefore
-does not create the output migration directory.
+The desired directory is checksummed and replayed on the dev database to
+capture a schema snapshot. Ptah cleans the dev database before it evaluates
+the output directory. A source loading failure therefore does not create the
+output migration directory, and a successful source replay does not leave its
+objects behind.
 
 Atlas OSS registers `migrate diff --dry-run` as a hidden flag. Ptah accepts the
 same hidden flag and prints the generated SQL instead of writing a migration

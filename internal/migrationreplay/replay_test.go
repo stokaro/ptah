@@ -120,6 +120,79 @@ func TestReplayProviderFailurePreservesDevDatabase(t *testing.T) {
 	c.Assert(count, qt.Equals, 0)
 }
 
+func TestReplayPreCanceledContextPreservesDevDatabase(t *testing.T) {
+	c := qt.New(t)
+	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
+	conn, err := dbschema.ConnectToDatabase(t.Context(), devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(t.Context(), "CREATE TABLE sentinel (id INTEGER PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err = migrationreplay.ReplaySnapshotOnConnection(
+		ctx,
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql": {
+				Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+			},
+		},
+		migrator.MigrationDirFormatAtlas,
+	)
+
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+	var count int
+	err = conn.QueryRowContext(
+		t.Context(),
+		"SELECT COUNT(*) FROM pragma_table_list WHERE schema = ? AND name = ?",
+		"main",
+		"sentinel",
+	).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 1)
+}
+
+func TestReplayExecutionFailureCleansPartialDevDatabase(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	devDBPath := filepath.Join(t.TempDir(), "dev.db")
+	devURL := "sqlite://" + devDBPath
+
+	err := migrationreplay.Replay(ctx, migrationreplay.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		DevURL:    devURL,
+		FS: fstest.MapFS{
+			"1_create_users.sql": {
+				Data: []byte(`
+CREATE TABLE users (id INTEGER PRIMARY KEY);
+CREATE VIEW user_ids AS SELECT id FROM users;
+`),
+			},
+			"2_invalid.sql": {
+				Data: []byte("THIS IS NOT SQL;\n"),
+			},
+		},
+	})
+	c.Assert(err, qt.ErrorMatches, `(?s)replay migration 2 on dev database: .*`)
+
+	conn, err := dbschema.ConnectToDatabase(ctx, devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var count int
+	err = conn.QueryRowContext(c.Context(), `
+		SELECT COUNT(*)
+		FROM pragma_table_list
+		WHERE schema = ?
+		  AND type IN ('table', 'view', 'virtual')
+		  AND name NOT LIKE 'sqlite_%'
+		  AND name <> 'schema_migrations'
+	`, "main").Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 0)
+}
+
 func assertReplayRunsRows(c *qt.C, dbPath string, want int) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)

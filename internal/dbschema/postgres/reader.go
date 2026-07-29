@@ -303,7 +303,14 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			ordinal_position,
 			COALESCE(a.attgenerated, '') AS generated_kind,
 			COALESCE(CASE WHEN a.attgenerated <> '' THEN pg_get_expr(ad.adbin, ad.adrelid) ELSE '' END, '') AS generated_expression,
-			COALESCE(a.attidentity, '') AS identity_kind
+			COALESCE(a.attidentity, '') AS identity_kind,
+			COALESCE(
+				pg_get_serial_sequence(
+					format('%I.%I', col.table_schema, col.table_name),
+					col.column_name
+				),
+				''
+			) AS owned_sequence_name
 		FROM information_schema.columns col
 		JOIN pg_namespace n ON n.nspname = col.table_schema
 		JOIN pg_class cls ON cls.relname = col.table_name AND cls.relnamespace = n.oid
@@ -327,6 +334,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 		var generatedKind string
 		var generatedExpression string
 		var identityKind string
+		var ownedSequenceName string
 		var tableName string
 		err := rows.Scan(
 			&tableName,
@@ -342,6 +350,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			&generatedKind,
 			&generatedExpression,
 			&identityKind,
+			&ownedSequenceName,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan column: %w", err)
@@ -352,11 +361,10 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 		}
 		col.IdentityGeneration = postgresIdentityGeneration(identityKind)
 
-		// Detect auto increment (SERIAL types)
 		if col.ColumnDefault != nil {
 			defaultVal := *col.ColumnDefault
-			col.IsAutoIncrement = strings.Contains(defaultVal, "nextval(") &&
-				strings.Contains(defaultVal, "_seq")
+			col.IsAutoIncrement = ownedSequenceName != "" &&
+				strings.Contains(strings.ToLower(defaultVal), "nextval(")
 		}
 
 		columnsByTable[tableName] = append(columnsByTable[tableName], col)

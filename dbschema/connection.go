@@ -103,7 +103,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		writer = postgres.NewPostgreSQLWriter(db, info.Schema)
 	case "mysql":
 		reader = mysql.NewMySQLReader(db, info.Schema)
-		writer = mysql.NewMySQLWriter(db, info.Schema)
+		writer = mysql.NewMySQLWriter(db, info.Schema, info.Dialect)
 	case "clickhouse":
 		reader = clickhouse.NewClickHouseReader(db, info.Schema)
 		writer = clickhouse.NewClickHouseWriter(db, info.Schema)
@@ -418,6 +418,8 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 			return info, fmt.Errorf("failed to get MySQL/MariaDB version: %w", err)
 		}
 		info.Version = version
+		info.Dialect = detectMySQLWireDialect(dialect, version)
+		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
 
 		// Get database name from URL path
 		if parsedURL.Path != "" && len(parsedURL.Path) > 1 {
@@ -508,6 +510,13 @@ func detectPostgresWireDialect(declaredDialect, version string) string {
 	default:
 		return platform.NormalizeDialect(declaredDialect)
 	}
+}
+
+func detectMySQLWireDialect(declaredDialect, version string) string {
+	if strings.Contains(strings.ToLower(version), "mariadb") {
+		return platform.MariaDB
+	}
+	return platform.NormalizeDialect(declaredDialect)
 }
 
 // convertMySQLURL converts a MySQL/MariaDB URL from standard format to Go driver format

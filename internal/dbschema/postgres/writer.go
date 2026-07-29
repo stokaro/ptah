@@ -10,15 +10,13 @@ import (
 	"sync"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/sqlident"
 )
 
-// quoteIdent returns a safely-quoted PostgreSQL identifier. Embedded double
-// quotes are doubled per the SQL standard so that values coming from
-// information_schema (or any other untrusted-shaped string) cannot terminate
-// the quoted identifier and inject DDL.
 func quoteIdent(name string) string {
-	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+	return sqlident.Quote(platform.Postgres, name)
 }
 
 // PostgreSQLWriter writes schemas to PostgreSQL databases
@@ -182,84 +180,237 @@ func (w *postgresTransactionWriter) Rollback() error {
 // IsDryRun returns whether dry-run mode is enabled.
 func (w *postgresTransactionWriter) IsDryRun() bool { return w.dryRun }
 
-func (w *PostgreSQLWriter) collectAllObjects(ctx context.Context) (tables []string, enums []string, sequences []string, err error) { //revive:disable-line:function-result-limit // It's acceptable here
-	// Get all tables in the schema
-	tablesQuery := `
-			SELECT table_name
-			FROM information_schema.tables
-			WHERE table_schema = $1 AND table_type = 'BASE TABLE'
-			ORDER BY table_name`
+type postgresCleanupObject struct {
+	Kind      string
+	Name      string
+	Statement string
+}
 
-	rows, err := w.db.QueryContext(ctx, tablesQuery, w.schema)
+func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx *sql.Tx) error {
+	// DROP EXTENSION removes every member regardless of the member's schema.
+	// Refuse it here because a schema-scoped cleanup cannot safely own that
+	// database-wide operation, even when DROP EXTENSION uses RESTRICT.
+	var count int
+	var first string
+	err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*), COALESCE(MIN(e.extname), '')
+		FROM pg_extension e
+		JOIN pg_namespace n ON n.oid = e.extnamespace
+		WHERE n.nspname = $1
+	`, w.schema).Scan(&count, &first)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to query tables: %w", err)
+		return fmt.Errorf("failed to inspect schema-owned extensions: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf(
+			"refusing to clean schema %q: extension %q is owned by it; "+
+				"schema-scoped cleanup cannot prove that every extension member is confined to the schema",
+			w.schema,
+			first,
+		)
+	}
+	return nil
+}
+
+func (w *PostgreSQLWriter) collectAllObjects(
+	ctx context.Context,
+	tx *sql.Tx,
+) ([]postgresCleanupObject, error) {
+	rows, err := tx.QueryContext(ctx, `
+		WITH cleanup_objects AS (
+			SELECT
+				0 AS priority,
+				'constraint'::text AS object_kind,
+				con.conname AS object_name,
+				format(
+					'ALTER TABLE %I.%I DROP CONSTRAINT IF EXISTS %I RESTRICT',
+					n.nspname,
+					c.relname,
+					con.conname
+				) AS drop_statement
+			FROM pg_constraint con
+			JOIN pg_class c ON c.oid = con.conrelid
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = $1
+			  AND con.contype = 'f'
+
+			UNION ALL
+
+			SELECT
+				CASE c.relkind
+					WHEN 'v' THEN 10
+					WHEN 'm' THEN 10
+					WHEN 'S' THEN 30
+					ELSE 20
+				END,
+				CASE c.relkind
+					WHEN 'v' THEN 'view'
+					WHEN 'm' THEN 'materialized view'
+					WHEN 'f' THEN 'foreign table'
+					WHEN 'S' THEN 'sequence'
+					ELSE 'table'
+				END,
+				c.relname,
+				format(
+					CASE c.relkind
+						WHEN 'v' THEN 'DROP VIEW IF EXISTS %I.%I RESTRICT'
+						WHEN 'm' THEN 'DROP MATERIALIZED VIEW IF EXISTS %I.%I RESTRICT'
+						WHEN 'f' THEN 'DROP FOREIGN TABLE IF EXISTS %I.%I RESTRICT'
+						WHEN 'S' THEN 'DROP SEQUENCE IF EXISTS %I.%I RESTRICT'
+						ELSE 'DROP TABLE IF EXISTS %I.%I RESTRICT'
+					END,
+					n.nspname,
+					c.relname
+				)
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = $1
+			  AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+
+			UNION ALL
+
+			SELECT
+				40,
+				CASE p.prokind
+					WHEN 'p' THEN 'procedure'
+					WHEN 'a' THEN 'aggregate'
+					ELSE 'function'
+				END,
+				p.proname,
+				format(
+					'DROP %s IF EXISTS %I.%I(%s) RESTRICT',
+					CASE p.prokind
+						WHEN 'p' THEN 'PROCEDURE'
+						WHEN 'a' THEN 'AGGREGATE'
+						ELSE 'FUNCTION'
+					END,
+					n.nspname,
+					p.proname,
+					pg_get_function_identity_arguments(p.oid)
+				)
+			FROM pg_proc p
+			JOIN pg_namespace n ON n.oid = p.pronamespace
+			WHERE n.nspname = $1
+			  AND p.prokind IN ('f', 'p', 'a', 'w')
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM pg_depend d
+				WHERE d.classid = 'pg_proc'::regclass
+				  AND d.objid = p.oid
+				  AND d.deptype = 'i'
+			  )
+
+			UNION ALL
+
+			SELECT
+				50,
+				'type',
+				t.typname,
+				format('DROP TYPE IF EXISTS %I.%I RESTRICT', n.nspname, t.typname)
+			FROM pg_type t
+			JOIN pg_namespace n ON n.oid = t.typnamespace
+			LEFT JOIN pg_class c ON c.oid = t.typrelid
+			WHERE n.nspname = $1
+				  AND (
+				t.typtype IN ('e', 'd', 'r')
+				OR (t.typtype = 'c' AND c.relkind = 'c')
+			  )
+		)
+		SELECT object_kind, object_name, drop_statement
+		FROM cleanup_objects
+		ORDER BY priority, object_kind, object_name
+	`, w.schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query schema objects: %w", err)
 	}
 	defer rows.Close()
 
+	var objects []postgresCleanupObject
 	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to scan table name: %w", err)
+		var object postgresCleanupObject
+		if err := rows.Scan(&object.Kind, &object.Name, &object.Statement); err != nil {
+			return nil, fmt.Errorf("failed to scan schema object: %w", err)
 		}
-		tables = append(tables, tableName)
+		objects = append(objects, object)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to iterate tables: %w", err)
+		return nil, fmt.Errorf("failed to iterate schema objects: %w", err)
 	}
-
-	// Get all custom types (enums) in the schema
-	enumsQuery := `
-			SELECT typname
-			FROM pg_type t
-			JOIN pg_namespace n ON t.typnamespace = n.oid
-			WHERE n.nspname = $1 AND t.typtype = 'e'
-			ORDER BY typname`
-
-	enumRows, err := w.db.QueryContext(ctx, enumsQuery, w.schema)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to query enums: %w", err)
-	}
-	defer enumRows.Close()
-
-	for enumRows.Next() {
-		var enumName string
-		if err := enumRows.Scan(&enumName); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to scan enum name: %w", err)
-		}
-		enums = append(enums, enumName)
-	}
-	if err := enumRows.Err(); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to iterate enums: %w", err)
-	}
-
-	// Get all sequences in the schema
-	sequencesQuery := `
-			SELECT sequence_name
-			FROM information_schema.sequences
-			WHERE sequence_schema = $1
-			ORDER BY sequence_name`
-
-	seqRows, err := w.db.QueryContext(ctx, sequencesQuery, w.schema)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to query sequences: %w", err)
-	}
-	defer seqRows.Close()
-
-	for seqRows.Next() {
-		var sequenceName string
-		if err := seqRows.Scan(&sequenceName); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to scan sequence name: %w", err)
-		}
-		sequences = append(sequences, sequenceName)
-	}
-	if err := seqRows.Err(); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to iterate sequences: %w", err)
-	}
-
-	return tables, enums, sequences, nil
+	return objects, nil
 }
 
-// DropAllTables drops ALL tables and enums in the database schema (COMPLETE CLEANUP!)
+func tryDropCleanupObject(
+	ctx context.Context,
+	tx *sql.Tx,
+	object postgresCleanupObject,
+) (dropErr error, controlErr error) {
+	const savepoint = "ptah_cleanup_object"
+
+	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
+		return nil, fmt.Errorf("failed to create cleanup savepoint: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, object.Statement); err != nil {
+		dropErr = fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, object.Statement)
+		if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
+			controlErr = fmt.Errorf("failed to roll back cleanup savepoint: %w", rollbackErr)
+		}
+		if _, releaseErr := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+savepoint); releaseErr != nil {
+			controlErr = errors.Join(controlErr, fmt.Errorf("failed to release cleanup savepoint: %w", releaseErr))
+		}
+		return dropErr, controlErr
+	}
+
+	if _, err := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+savepoint); err != nil {
+		return nil, fmt.Errorf("failed to release cleanup savepoint: %w", err)
+	}
+	return nil, nil
+}
+
+func dropCleanupObjects(
+	ctx context.Context,
+	tx *sql.Tx,
+	objects []postgresCleanupObject,
+) error {
+	// RESTRICT remains the final authority for every drop. Savepoints let a
+	// later internal dependent disappear before its dependency is retried,
+	// while an external or unknown dependency eventually stops all progress
+	// and causes the outer transaction to roll back.
+	pending := objects
+	for len(pending) > 0 {
+		remaining := make([]postgresCleanupObject, 0, len(pending))
+		var firstDropErr error
+
+		for _, object := range pending {
+			dropErr, controlErr := tryDropCleanupObject(ctx, tx, object)
+			if controlErr != nil {
+				return fmt.Errorf(
+					"failed to drop %s %s: %w",
+					object.Kind,
+					object.Name,
+					errors.Join(dropErr, controlErr),
+				)
+			}
+			if dropErr != nil {
+				if firstDropErr == nil {
+					firstDropErr = fmt.Errorf("failed to drop %s %s: %w", object.Kind, object.Name, dropErr)
+				}
+				remaining = append(remaining, object)
+			}
+		}
+
+		if len(remaining) == 0 {
+			return nil
+		}
+		if len(remaining) == len(pending) {
+			return firstDropErr
+		}
+		pending = remaining
+	}
+	return nil
+}
+
+// DropAllTables drops all user objects in the configured database schema.
 func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) (resultErr error) {
 	if w.dryRun {
 		return nil
@@ -268,53 +419,33 @@ func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) (resultErr error) 
 		return fmt.Errorf("no database connection")
 	}
 
-	tables, enums, sequences, err := w.collectAllObjects(ctx)
-	if err != nil {
-		return err
-	}
-
-	tx, err := w.BeginTransaction(ctx)
+	sqlTx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	committed := false
 	defer func() {
 		if !committed {
-			rollbackErr := tx.Rollback()
+			rollbackErr := sqlTx.Rollback()
 			if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 				resultErr = errors.Join(resultErr, fmt.Errorf("failed to roll back transaction: %w", rollbackErr))
 			}
 		}
 	}()
 
-	// Drop all tables with CASCADE to handle dependencies. Identifiers cannot
-	// be bound as parameters; quoteIdent doubles any embedded `"` so a hostile
-	// name coming back from information_schema cannot break out of the quoted
-	// identifier.
-	for _, tableName := range tables {
-		dropSQL := "DROP TABLE IF EXISTS " + quoteIdent(tableName) + " CASCADE"
-		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
-			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
-		}
+	if err := w.rejectSchemaScopedExtensions(ctx, sqlTx); err != nil {
+		return err
+	}
+	objects, err := w.collectAllObjects(ctx, sqlTx)
+	if err != nil {
+		return err
 	}
 
-	// Drop all enums
-	for _, enumName := range enums {
-		dropSQL := "DROP TYPE IF EXISTS " + quoteIdent(enumName) + " CASCADE"
-		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
-			return fmt.Errorf("failed to drop enum %s: %w", enumName, err)
-		}
+	if err := dropCleanupObjects(ctx, sqlTx, objects); err != nil {
+		return fmt.Errorf("refusing to clean schema %q: %w", w.schema, err)
 	}
 
-	// Drop all sequences
-	for _, sequenceName := range sequences {
-		dropSQL := "DROP SEQUENCE IF EXISTS " + quoteIdent(sequenceName) + " CASCADE"
-		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
-			return fmt.Errorf("failed to drop sequence %s: %w", sequenceName, err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
+	if err := sqlTx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 	committed = true

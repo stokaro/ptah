@@ -58,6 +58,30 @@ func TestCapture_ClonesExistingSnapshotWithoutReadingSourceAgain(t *testing.T) {
 	c.Assert(secondContents, qt.DeepEquals, firstContents)
 }
 
+func TestSnapshotEqualComparesPathsAndContents(t *testing.T) {
+	c := qt.New(t)
+	left, err := fsnapshot.FromFiles(map[string][]byte{
+		"1.sql": []byte("SELECT 1;\n"),
+	})
+	c.Assert(err, qt.IsNil)
+	equal, err := fsnapshot.FromFiles(map[string][]byte{
+		"1.sql": []byte("SELECT 1;\n"),
+	})
+	c.Assert(err, qt.IsNil)
+	differentContents, err := fsnapshot.FromFiles(map[string][]byte{
+		"1.sql": []byte("SELECT 2;\n"),
+	})
+	c.Assert(err, qt.IsNil)
+	differentPaths, err := fsnapshot.FromFiles(map[string][]byte{
+		"2.sql": []byte("SELECT 1;\n"),
+	})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(left.Equal(equal), qt.IsTrue)
+	c.Assert(left.Equal(differentContents), qt.IsFalse)
+	c.Assert(left.Equal(differentPaths), qt.IsFalse)
+}
+
 func TestFromFiles_ClonesInput(t *testing.T) {
 	c := qt.New(t)
 	files := map[string][]byte{

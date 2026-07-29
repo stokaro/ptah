@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -16,13 +18,18 @@ import (
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/migrationreplay"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-// revisionTableName is the Atlas revision table filtered out of replayed
-// dev-database state, mirroring `atlas migrate diff` behavior.
-const revisionTableName = "atlas_schema_revisions"
+const (
+	// revisionTableName is the Atlas revision table filtered out of replayed
+	// dev-database state, mirroring `atlas migrate diff` behavior.
+	revisionTableName = "atlas_schema_revisions"
+
+	migrationDirCleanupTimeout = 30 * time.Second
+)
 
 // ResolveOptions configures resolution of one classified desired-state set.
 type ResolveOptions struct {
@@ -125,7 +132,7 @@ func (s Set) ensureDialect(opts ResolveOptions) error {
 	return fmt.Errorf("%s database dialect %q does not match %s dialect %q", s.Flag, implied, opts.DialectFlag, pinned)
 }
 
-func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (State, error) {
+func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (state State, resultErr error) {
 	source := s.Sources[0]
 	devURL := strings.TrimSpace(opts.DevURL)
 	if err := s.EnsureDevDatabase(devURL); err != nil {
@@ -137,7 +144,11 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	if err := s.ensureDevDialect(devURL, opts); err != nil {
 		return State{}, err
 	}
-	if err := VerifyMigrationDir(source.Path); err != nil {
+	snapshot, err := migrationsnapshot.CaptureStable(os.DirFS(source.Path))
+	if err != nil {
+		return State{}, fmt.Errorf("capture migration directory: %w", err)
+	}
+	if err := verifyMigrationFS(snapshot); err != nil {
 		return State{}, err
 	}
 
@@ -147,20 +158,46 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	if err := migrationreplay.ReplayOnConnection(ctx, conn, source.Path, migrator.MigrationDirFormatAtlas); err != nil {
+	if err := migrationreplay.ReplaySnapshotOnConnection(
+		ctx,
+		conn,
+		snapshot,
+		migrator.MigrationDirFormatAtlas,
+	); err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, source.Raw, err)
 	}
+	cleanupPending := true
+	defer func() {
+		if cleanupPending {
+			resultErr = errors.Join(resultErr, cleanMigrationDirDevDatabase(ctx, conn))
+		}
+	}()
 	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)
 	if err != nil {
 		return State{}, fmt.Errorf("read dev database schema: %w", err)
 	}
 	schema = WithoutRevisionTable(schema)
-	return State{
+	state = State{
 		Kind:          s.Kind,
 		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
-	}, nil
+	}
+	cleanupErr := cleanMigrationDirDevDatabase(ctx, conn)
+	cleanupPending = false
+	if err := errors.Join(ctx.Err(), cleanupErr); err != nil {
+		return State{}, err
+	}
+	return state, nil
+}
+
+func cleanMigrationDirDevDatabase(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), migrationDirCleanupTimeout)
+	defer cancel()
+	if err := conn.SchemaWriter().DropAllTables(cleanupCtx); err != nil {
+		return fmt.Errorf("clean dev database after resolving migration directory: %w", err)
+	}
+	return nil
 }
 
 func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {
@@ -192,7 +229,11 @@ func connectDatabase(
 // migration directory used as a desired-state or inspection source: a missing
 // atlas.sum is tolerated, an invalid one fails before replay.
 func VerifyMigrationDir(dir string) error {
-	result, err := migratesum.VerifyDirWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	return verifyMigrationFS(os.DirFS(dir))
+}
+
+func verifyMigrationFS(fsys fs.FS) error {
+	result, err := migratesum.VerifyWithFormat(fsys, migrator.MigrationDirFormatAtlas)
 	if errors.Is(err, migratesum.ErrSumFileMissing) {
 		return nil
 	}

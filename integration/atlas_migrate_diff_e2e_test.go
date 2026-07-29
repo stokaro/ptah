@@ -42,6 +42,84 @@ func TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E(t *testing.T) {
 	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
 
 	testDBURL := replaceDatabaseName(c, dbURL, testDBName)
+	devDB, err := sql.Open("pgx", testDBURL)
+	c.Assert(err, qt.IsNil)
+	defer devDB.Close()
+	_, err = devDB.ExecContext(ctx, `
+CREATE VIEW stale_dev_view AS SELECT 1 AS value;
+CREATE MATERIALIZED VIEW stale_dev_materialized_view AS SELECT 1 AS value;
+CREATE FUNCTION stale_dev_function() RETURNS integer LANGUAGE sql AS 'SELECT 1';
+CREATE PROCEDURE stale_dev_procedure() LANGUAGE sql AS 'SELECT 1';
+CREATE AGGREGATE stale_dev_aggregate(integer) (
+	SFUNC = int4pl,
+	STYPE = integer,
+	INITCOND = '0'
+);
+CREATE SEQUENCE stale_dev_sequence;
+CREATE DOMAIN stale_dev_domain AS text;
+CREATE TYPE stale_dev_composite AS (value integer);
+CREATE TYPE z_stale_dev_range AS RANGE (
+	subtype = integer,
+	multirange_type_name = a_stale_dev_multirange
+);
+`)
+	c.Assert(err, qt.IsNil)
+	t.Run("cleanup rejects dependencies owned by another schema", func(t *testing.T) {
+		c := qt.New(t)
+		_, err := devDB.ExecContext(ctx, `
+CREATE TABLE public.stale_dependency_parent (id integer PRIMARY KEY);
+CREATE SCHEMA audit;
+CREATE VIEW audit.external_parent_view AS
+	SELECT id FROM public.stale_dependency_parent;
+CREATE TABLE audit.external_child (
+	id integer PRIMARY KEY,
+	parent_id integer REFERENCES public.stale_dependency_parent(id)
+);
+`)
+		c.Assert(err, qt.IsNil)
+		defer func() {
+			_, cleanupErr := devDB.ExecContext(
+				context.Background(),
+				"DROP SCHEMA IF EXISTS audit CASCADE; DROP TABLE IF EXISTS public.stale_dependency_parent",
+			)
+			c.Check(cleanupErr, qt.IsNil)
+		}()
+		dir := t.TempDir()
+		migrationsDir := filepath.Join(dir, "migrations")
+		schemaPath := filepath.Join(dir, "schema.sql")
+		c.Assert(os.WriteFile(
+			schemaPath,
+			[]byte("CREATE TABLE desired_items (id BIGSERIAL PRIMARY KEY);\n"),
+			0o600,
+		), qt.IsNil)
+
+		output, err := runPtah(ctx, dir, binaryPath,
+			"migrate", "diff",
+			"--to", "file://"+schemaPath,
+			"--dev-url", testDBURL,
+			"--dir", "file://"+migrationsDir,
+			"must_reject_external_dependencies")
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(output, qt.Contains, `refusing to clean schema "public"`)
+		var externalObjectCount int
+		err = devDB.QueryRowContext(ctx, `
+SELECT
+	(SELECT COUNT(*) FROM pg_class c
+	 JOIN pg_namespace n ON n.oid = c.relnamespace
+	 WHERE n.nspname = 'audit'
+	   AND c.relname IN ('external_parent_view', 'external_child')) +
+	(SELECT COUNT(*) FROM pg_class c
+	 JOIN pg_namespace n ON n.oid = c.relnamespace
+	 WHERE n.nspname = 'public'
+	   AND c.relname = 'stale_dependency_parent')
+`).Scan(&externalObjectCount)
+		c.Assert(err, qt.IsNil)
+		c.Assert(externalObjectCount, qt.Equals, 3)
+		entries, err := os.ReadDir(migrationsDir)
+		c.Assert(err, qt.IsNil)
+		c.Assert(entries, qt.HasLen, 0)
+	})
 	desiredDBName := testDBName + "_desired"
 	createE2EDatabase(c, ctx, adminDB, desiredDBName)
 	defer dropE2EDatabase(c, context.Background(), adminDB, desiredDBName)
@@ -50,7 +128,17 @@ func TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E(t *testing.T) {
 	desiredDB, err := sql.Open("pgx", desiredDBURL)
 	c.Assert(err, qt.IsNil)
 	defer desiredDB.Close()
-	_, err = desiredDB.ExecContext(ctx, "CREATE TABLE desired_database_items (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL)")
+	_, err = desiredDB.ExecContext(ctx, `
+CREATE SEQUENCE shared_ids;
+CREATE TABLE desired_database_items (
+	id BIGSERIAL PRIMARY KEY,
+	name TEXT NOT NULL
+);
+CREATE TABLE desired_shared_sequence_items (
+	id BIGINT PRIMARY KEY DEFAULT nextval('shared_ids'),
+	name TEXT NOT NULL
+);
+`)
 	c.Assert(err, qt.IsNil)
 
 	t.Run("env database desired state generates migration without mutating source", func(t *testing.T) {
@@ -82,12 +170,57 @@ env "dev" {
 		migrationSQL := readFirstMatchingFile(c, migrationsDir, "*_add_database_items.sql")
 		c.Assert(migrationSQL, qt.Contains, "CREATE TABLE")
 		c.Assert(migrationSQL, qt.Contains, "desired_database_items")
+		c.Assert(migrationSQL, qt.Contains, "BIGSERIAL")
+		c.Assert(migrationSQL, qt.Contains, "CREATE SEQUENCE")
+		c.Assert(migrationSQL, qt.Contains, "shared_ids")
+		c.Assert(migrationSQL, qt.Contains, "nextval")
 		var sourceTableCount int
 		queryErr := desiredDB.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'desired_database_items'").
 			Scan(&sourceTableCount)
 		c.Assert(queryErr, qt.IsNil)
 		c.Assert(sourceTableCount, qt.Equals, 1)
+		c.Assert(e2eUserTableCount(c, ctx, testDBURL), qt.Equals, 0)
+		c.Assert(e2eStaleObjectCount(c, ctx, testDBURL), qt.Equals, 0)
+
+		applyDBName := testDBName + "_env_apply"
+		createE2EDatabase(c, ctx, adminDB, applyDBName)
+		defer dropE2EDatabase(c, context.Background(), adminDB, applyDBName)
+		applyDBURL := replaceDatabaseName(c, dbURL, applyDBName)
+		output, err = runPtah(ctx, t.TempDir(), binaryPath,
+			"migrate", "apply",
+			"--url", applyDBURL,
+			"--dir", "file://"+migrationsDir)
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
+		c.Assert(e2eTableCount(c, ctx, applyDBURL, "desired_database_items"), qt.Equals, 1)
+		c.Assert(e2eTableCount(c, ctx, applyDBURL, "desired_shared_sequence_items"), qt.Equals, 1)
+
+		applyDB, err := sql.Open("pgx", applyDBURL)
+		c.Assert(err, qt.IsNil)
+		defer applyDB.Close()
+
+		var generatedID int64
+		err = applyDB.QueryRowContext(ctx,
+			"INSERT INTO desired_database_items (name) VALUES ($1) RETURNING id",
+			"generated",
+		).Scan(&generatedID)
+		c.Assert(err, qt.IsNil)
+		c.Assert(generatedID > 0, qt.IsTrue)
+
+		var sharedGeneratedID int64
+		err = applyDB.QueryRowContext(ctx,
+			"INSERT INTO desired_shared_sequence_items (name) VALUES ($1) RETURNING id",
+			"shared",
+		).Scan(&sharedGeneratedID)
+		c.Assert(err, qt.IsNil)
+		c.Assert(sharedGeneratedID > 0, qt.IsTrue)
+
+		var sharedSequenceIsNotSerial bool
+		err = applyDB.QueryRowContext(ctx,
+			"SELECT pg_get_serial_sequence('public.desired_shared_sequence_items', 'id') IS NULL",
+		).Scan(&sharedSequenceIsNotSerial)
+		c.Assert(err, qt.IsNil)
+		c.Assert(sharedSequenceIsNotSerial, qt.IsTrue)
 	})
 
 	t.Run("concurrent index policy splits files and tags txmode none", func(t *testing.T) {
@@ -144,7 +277,18 @@ CREATE INDEX idx_users_email ON users (email);
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
 		c.Assert(output, qt.Contains, "The migration directory is synced with the desired state")
-		c.Assert(e2eIndexIsValid(c, ctx, testDBURL, "idx_users_email"), qt.IsTrue)
+		c.Assert(e2eUserTableCount(c, ctx, testDBURL), qt.Equals, 0)
+
+		applyDBName := testDBName + "_concurrent_apply"
+		createE2EDatabase(c, ctx, adminDB, applyDBName)
+		defer dropE2EDatabase(c, context.Background(), adminDB, applyDBName)
+		applyDBURL := replaceDatabaseName(c, dbURL, applyDBName)
+		output, err = runPtah(ctx, dir, binaryPath,
+			"migrate", "apply",
+			"--url", applyDBURL,
+			"--dir", "file://"+migrationsDir)
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
+		c.Assert(e2eIndexIsValid(c, ctx, applyDBURL, "idx_users_email"), qt.IsTrue)
 	})
 
 	t.Run("qualifier prefixes generated statements and artifacts apply cleanly", func(t *testing.T) {
@@ -202,7 +346,7 @@ CREATE INDEX idx_users_email ON users (email);
 			"--qualifier", "bad.name",
 			"broken")
 
-		c.Assert(err, qt.Not(qt.IsNil))
+		c.Assert(err, qt.IsNotNil)
 		c.Assert(output, qt.Contains, `invalid --qualifier "bad.name"`)
 		entries, readErr := os.ReadDir(migrationsDir)
 		c.Assert(readErr, qt.IsNil)
@@ -210,9 +354,62 @@ CREATE INDEX idx_users_email ON users (email);
 	})
 }
 
-// e2eIndexIsValid reports whether the named index exists, is valid, and is
-// ready on the target database (pg_index.indisvalid/indisready both hold for
-// successfully completed concurrent builds).
+func e2eUserTableCount(c *qt.C, ctx context.Context, dbURL string) int {
+	c.Helper()
+	db, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	var count int
+	err = db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM information_schema.tables
+WHERE table_schema NOT IN ('pg_catalog', 'information_schema')`).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+func e2eTableCount(c *qt.C, ctx context.Context, dbURL, tableName string) int {
+	c.Helper()
+	db, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	var count int
+	err = db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM information_schema.tables
+WHERE table_schema = 'public' AND table_name = $1`, tableName).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+func e2eStaleObjectCount(c *qt.C, ctx context.Context, dbURL string) int {
+	c.Helper()
+	db, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	var count int
+	err = db.QueryRowContext(ctx, `
+SELECT
+	(SELECT COUNT(*) FROM pg_class WHERE relname IN (
+		'stale_dev_view',
+		'stale_dev_materialized_view',
+		'stale_dev_sequence'
+	)) +
+	(SELECT COUNT(*) FROM pg_proc WHERE proname IN (
+		'stale_dev_function',
+		'stale_dev_procedure',
+		'stale_dev_aggregate'
+	)) +
+	(SELECT COUNT(*) FROM pg_type WHERE typname IN (
+		'stale_dev_domain',
+		'stale_dev_composite',
+		'z_stale_dev_range',
+		'a_stale_dev_multirange'
+	))`).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
 func e2eIndexIsValid(c *qt.C, ctx context.Context, dbURL, indexName string) bool {
 	c.Helper()
 	db, err := sql.Open("pgx", dbURL)
