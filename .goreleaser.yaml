@@ -100,30 +100,30 @@ sboms:
   - id: source
     artifacts: source
 
+# cosign v3 writes a single Sigstore bundle per artifact (the v2-era
+# --output-signature/--output-certificate pair is no longer the default
+# contract). Verify with:
+#   cosign verify-blob --bundle <artifact>.sigstore.json <artifact> \
+#     --certificate-identity-regexp 'github.com/stokaro/ptah' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 signs:
   - id: checksums
     cmd: cosign
-    env:
-      - COSIGN_EXPERIMENTAL=1
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.sigstore.json"
     args:
       - sign-blob
       - "--yes"
-      - "--output-certificate=${certificate}"
-      - "--output-signature=${signature}"
+      - "--bundle=${signature}"
       - "${artifact}"
     artifacts: checksum
     output: true
   - id: sboms
     cmd: cosign
-    env:
-      - COSIGN_EXPERIMENTAL=1
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.sigstore.json"
     args:
       - sign-blob
       - "--yes"
-      - "--output-certificate=${certificate}"
-      - "--output-signature=${signature}"
+      - "--bundle=${signature}"
       - "${artifact}"
     artifacts: sbom
     output: true
