@@ -1,0 +1,70 @@
+# Auto-syncs the separate testkit module after bot dependency bumps.
+#
+# Renovate and Dependabot update only the root go.mod/go.sum; testkit/ is a
+# separate Go module (with `replace github.com/stokaro/ptah => ..`), so its
+# go.sum goes stale on every root Go dependency bump and the testkit CI jobs
+# fail with "go: updates to go.mod needed; to update it: go mod tidy".
+# This workflow runs that tidy on the bot's PR branch and pushes the sync
+# commit automatically.
+#
+# Token note: pushes made with the default GITHUB_TOKEN do not retrigger CI
+# runs. Configure a fine-grained PAT (Contents: read/write on this repository)
+# as the TESTKIT_SYNC_TOKEN secret so the sync commit re-runs the checks; with
+# the fallback token the sync still lands but the checks need a manual re-run.
+#
+# pull_request_target is used because Dependabot-triggered pull_request runs
+# get a read-only GITHUB_TOKEN. The job is restricted to bot-authored branches
+# of this repository and only ever runs `go mod tidy` in testkit/.
+name: testkit-sync
+
+on:
+  pull_request_target:
+    paths:
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync testkit go.sum
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.actor == 'renovate[bot]' || github.actor == 'dependabot[bot]' ||
+       startsWith(github.event.pull_request.head.ref, 'renovate/') ||
+       startsWith(github.event.pull_request.head.ref, 'dependabot/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.TESTKIT_SYNC_TOKEN || github.token }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            testkit/go.sum
+
+      - name: Tidy the testkit module
+        working-directory: testkit
+        env:
+          GOWORK: "off"
+          GOFLAGS: "-mod=mod"
+        run: go mod tidy
+
+      - name: Commit and push the sync when needed
+        run: |
+          if git diff --quiet -- testkit/go.mod testkit/go.sum; then
+            echo "testkit module already in sync; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add testkit/go.mod testkit/go.sum
+          git commit -m "Sync testkit module go.sum with the root dependency bump"
+          git push
