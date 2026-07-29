@@ -363,10 +363,10 @@ OCI schema inputs can be combined with other repeatable `--schema-file` and
 | Lint results and migration plans | `migrations lint --attach` and `migrations plan --attach`; list direct descriptor metadata with `ptah oci referrers` |
 | Cloud UI, promotion, policy, and accounts | Not provided; use registry-native controls |
 
-The native workflow does not make `ptah atlas migrate push` or `ptah atlas
-schema push` implemented commands. Those paths remain Atlas community-edition
-boundary stubs, and the Atlas-compatible apply command does not gain native OCI
-transport flags.
+The native workflow does not make the Atlas-compatible `migrate push` or
+`schema push` implemented commands. Those paths remain Atlas community-edition
+boundary stubs in the `ptah-compat` binary, and the Atlas-compatible apply
+command does not gain native OCI transport flags.
 
 ## Publish to GHCR from GitHub Actions
 

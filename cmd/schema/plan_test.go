@@ -105,7 +105,7 @@ func TestSchemaPlanMatchesAtlasSchemaPlan(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
 
-	atlasCmd := atlas.NewAtlasCommand()
+	atlasCmd := atlas.NewCompatCommand("atlas")
 	var atlasOut bytes.Buffer
 	atlasCmd.SetOut(&atlasOut)
 	atlasCmd.SetErr(&atlasOut)

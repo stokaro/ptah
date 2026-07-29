@@ -32,18 +32,18 @@ The migration directory lives in your repository, so every change is code-review
 
 ### Direct schema changes
 
-Native commands cover inspection and comparison: `ptah db read` prints a live schema, `ptah schema compare` shows how it differs from the desired schema, and `ptah schema drift` turns that difference into a check that exits non-zero when the database has diverged. Native Ptah has no direct apply verb; direct application ships on the Atlas-compatible surface as `ptah atlas schema apply`.
+Native commands cover the whole loop: `ptah db read` prints a live schema, `ptah schema compare` shows how it differs from the desired schema, `ptah schema drift` turns that difference into a check that exits non-zero when the database has diverged, and `ptah schema apply` applies the planned change directly.
 
 ```bash
 ptah schema drift --root-dir ./models --db-url "$DATABASE_URL"
 
-ptah atlas schema apply \
-  --url "$DATABASE_URL" \
-  --to file://schema.sql \
+ptah schema apply \
+  --db-url "$DATABASE_URL" \
+  --schema-file schema.sql \
   --dry-run
 ```
 
-With `--dry-run`, `ptah atlas schema apply` prints the planned SQL under a `Planned schema changes:` heading and stops. Without it, the command shows the same plan and asks for approval before executing (`--auto-approve` skips the prompt). To separate review from execution, `ptah atlas schema plan --save` writes a fingerprinted local plan file, and `ptah atlas schema apply --plan file://<path>` runs it only while the database still matches the plan's recorded starting state.
+With `--dry-run`, `ptah schema apply` prints the planned SQL under a `Planned schema changes:` heading and stops. Without it, the command shows the same plan and asks for approval before executing (`--auto-approve` skips the prompt). To separate review from execution, `ptah schema plan` writes a fingerprinted local plan file, and `ptah schema apply --plan <path>` runs it only while the database still matches the plan's recorded starting state.
 
 ## Consequences and tradeoffs
 
@@ -53,11 +53,11 @@ With `--dry-run`, `ptah atlas schema apply` prints the planned SQL under a `Plan
 | What records history | Migration directory, `ptah.sum`, revision table | Nothing; the live database is the only state |
 | How rollback works | `ptah migrations down` replays committed down files | A new diff toward the schema you want back |
 | Where it fits | Shared and production databases, teams, CI gates | Prototypes, local development, single-owner databases |
-| Main commands | `ptah migrations ...` | `ptah schema drift`, `ptah atlas schema apply` |
+| Main commands | `ptah migrations ...` | `ptah schema drift`, `ptah schema apply` |
 
 The versioned workflow costs you a migration directory to maintain and the discipline of hashing and reviewing it. In exchange, changes are auditable, rollback is a committed file rather than an improvisation, and CI can verify integrity with `--verify-sum` before anything touches a database. The direct workflow removes the file overhead and iterates fastest, but the apply-time approval is its only gate, and there is no history to replay or audit.
 
-A common hybrid uses both: iterate with `ptah atlas schema apply` against a disposable local database, then run `ptah migrations generate` against a database at the released state so the reviewed migration file — not the ad-hoc changes — is what reaches shared environments. In either model, `ptah schema drift` works as a pipeline guard that fails when a database no longer matches the desired schema.
+A common hybrid uses both: iterate with `ptah schema apply` against a disposable local database, then run `ptah migrations generate` against a database at the released state so the reviewed migration file — not the ad-hoc changes — is what reaches shared environments. In either model, `ptah schema drift` works as a pipeline guard that fails when a database no longer matches the desired schema.
 
 ## Where each workflow appears
 

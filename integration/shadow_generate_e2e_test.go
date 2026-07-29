@@ -127,6 +127,16 @@ func buildPtah(c *qt.C, ctx context.Context, repoRoot, binaryPath string) {
 	c.Assert(err, qt.IsNil, qt.Commentf("go build output:\n%s", string(output)))
 }
 
+// buildPtahCompat builds the ptah-compat binary, the drop-in Atlas
+// replacement that hosts the Atlas-compatible command tree removed from the
+// main ptah binary in #850.
+func buildPtahCompat(c *qt.C, ctx context.Context, repoRoot, binaryPath string) {
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/ptah-compat")
+	cmd.Dir = repoRoot
+	output, err := cmd.CombinedOutput()
+	c.Assert(err, qt.IsNil, qt.Commentf("go build output:\n%s", string(output)))
+}
+
 func runPtah(ctx context.Context, repoRoot, binaryPath string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, binaryPath, args...)
 	cmd.Dir = repoRoot

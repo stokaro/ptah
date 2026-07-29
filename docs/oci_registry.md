@@ -7,7 +7,7 @@ Atlas account, or Ptah-specific token.
 
 This is a native Ptah workflow. It does not implement the Atlas Cloud API or
 the `atlas://` scheme, and it does not change the Atlas-compatible command
-boundary under `ptah atlas`.
+boundary of the `ptah-compat` binary.
 
 ## Supported Workflows
 
@@ -420,10 +420,10 @@ path as repeatable local `--schema-file` and `--root-dir` inputs.
 | Stored lint results or migration plans | `migrations lint --attach` and `migrations plan --attach`; list direct descriptor metadata with `ptah oci referrers` |
 | Atlas Cloud UI, promotion, policy, and account model | Not provided; use registry-native access control and tooling |
 
-The native OCI commands do not make `ptah atlas migrate push` or `ptah atlas
-schema push` implemented commands. Those paths continue to mirror the Atlas
-community-edition unsupported boundary, and `ptah atlas migrate apply` does not
-gain native OCI transport flags.
+The native OCI commands do not make the Atlas-compatible `migrate push` or
+`schema push` implemented commands. Those paths continue to mirror the Atlas
+community-edition unsupported boundary, and the Atlas-compatible
+`migrate apply` does not gain native OCI transport flags.
 
 ## GitHub Actions And GHCR
 

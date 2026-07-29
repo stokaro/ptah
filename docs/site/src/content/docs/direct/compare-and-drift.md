@@ -131,7 +131,7 @@ Generated 1 migration statements.
 From here the workflows diverge: [Generate migrations](../../versioned/generate/)
 turns this plan into committed migration files, while
 [Apply directly](../apply/) executes an equivalent plan straight against the
-database (`ptah atlas schema apply --dry-run` is its plan-only form).
+database (`ptah schema apply --dry-run` is its plan-only form).
 
 ## Schema sources
 

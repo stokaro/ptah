@@ -28,8 +28,8 @@ func TestAtlasMigrateDiffMySQLFamilyDatabaseDesiredStateE2E(t *testing.T) {
 	defer cancel()
 
 	repoRoot := e2eRepoRoot(t)
-	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c, ctx, repoRoot, binaryPath)
+	binaryPath := filepath.Join(t.TempDir(), "atlas")
+	buildPtahCompat(c, ctx, repoRoot, binaryPath)
 
 	tests := []mySQLMigrateDiffCase{
 		{
@@ -84,7 +84,7 @@ func runMySQLMigrateDiffCase(
 	workDir := c.TempDir()
 	migrationsDir := filepath.Join(workDir, "migrations")
 	output, err := runPtah(ctx, workDir, binaryPath,
-		"atlas", "migrate", "diff",
+		"migrate", "diff",
 		"--to", desiredURL,
 		"--dev-url", devURL,
 		"--dir", "file://"+migrationsDir,
@@ -96,7 +96,7 @@ func runMySQLMigrateDiffCase(
 	c.Assert(migrationSQL, qt.Contains, "desired_database_items")
 
 	output, err = runPtah(ctx, workDir, binaryPath,
-		"atlas", "migrate", "diff",
+		"migrate", "diff",
 		"--to", desiredURL,
 		"--dev-url", devURL,
 		"--dir", "file://"+migrationsDir,

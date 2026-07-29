@@ -45,9 +45,9 @@ Classify the change before editing docs:
   dialect support, or destructive-safety behavior.
 - **Public API behavior**: exported Go packages, extension points, testkit
   behavior, capability APIs, or documented embedding surfaces.
-- **Conformance and Atlas parity**: `ptah atlas <command> ...`, conformance
-  results, known gaps, clean-room/license boundary, or drop-in replacement
-  claims.
+- **Conformance and Atlas parity**: the `ptah-compat` drop-in binary,
+  conformance results, known gaps, clean-room/license boundary, or drop-in
+  replacement claims.
 - **Examples and operational tooling**: runnable examples, CI workflows,
   GitHub Action behavior, integration test docs, database setup, or release
   process.
@@ -150,7 +150,7 @@ new terms:
 Prefer targeted searches, for example:
 
 ```bash
-rg -n "migrate apply|schema inspect|ptah atlas|atlas_schema_revisions" README.md docs examples integration
+rg -n "migrate apply|schema inspect|ptah-compat|atlas_schema_revisions" README.md docs examples integration
 rg -n "MY_FLAG|old-config-key|new-config-key" --glob '*.md'
 rg -n "Exact error text|Exact output label" --glob '*.md' --glob '*.go'
 ```
@@ -185,8 +185,8 @@ Preserve these statements unless current evidence changes:
 
 - Ptah is pre-GA. Do not document legacy aliases or backward-compatibility
   wrappers as supported behavior.
-- Atlas OSS command parity belongs under `ptah atlas <command> ...`; do not
-  document root-level Atlas aliases.
+- Atlas OSS command parity belongs in the separate `ptah-compat` drop-in
+  binary; do not document Atlas aliases inside the native `ptah` binary.
 - Ptah is a clean-room implementation and does not use Atlas source code.
 - Do not claim full Atlas parity or drop-in replacement status unless current
   conformance evidence proves it.

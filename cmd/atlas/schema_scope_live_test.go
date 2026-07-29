@@ -95,7 +95,7 @@ func TestSchemaApplySchemaScopeLivePostgres(t *testing.T) {
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	desired := "CREATE TABLE " + appSchema + ".users (\n  id SERIAL PRIMARY KEY,\n  email VARCHAR(255)\n);\n"
 	c.Assert(os.WriteFile(schemaPath, []byte(desired), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -128,7 +128,7 @@ func TestSchemaApplySchemaScopeCrossSchemaDependencyLivePostgres(t *testing.T) {
 		"CREATE TABLE " + appSchema + ".users (\n  id SERIAL PRIMARY KEY,\n" +
 		"  log_id INTEGER REFERENCES " + auditSchema + ".logs(id)\n);\n"
 	c.Assert(os.WriteFile(schemaPath, []byte(desired), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -156,7 +156,7 @@ func TestSchemaDiffSchemaScopeLivePostgres(t *testing.T) {
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	desired := "CREATE TABLE " + appSchema + ".users (\n  id SERIAL PRIMARY KEY,\n  email VARCHAR(255)\n);\n"
 	c.Assert(os.WriteFile(schemaPath, []byte(desired), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

@@ -14,16 +14,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/migratesum"
 	migrationlint "github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-func TestNewAtlasCommand_OSSCommandPathsResolve(t *testing.T) {
+func TestCompatCommand_OSSCommandPathsResolve(t *testing.T) {
 	paths := [][]string{
 		{"version"},
 		{"license"},
@@ -52,7 +50,7 @@ func TestNewAtlasCommand_OSSCommandPathsResolve(t *testing.T) {
 	for _, path := range paths {
 		t.Run(strings.Join(path, "_"), func(t *testing.T) {
 			c := qt.New(t)
-			cmd := NewAtlasCommand()
+			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -127,9 +125,9 @@ func TestNewCompatCommand_RootHelpShowsAtlasCompatibleTree(t *testing.T) {
 	c.Assert(help, qt.Not(qt.Contains), "ptah-compat atlas")
 }
 
-func TestNewAtlasCommand_VersionPrintsBuildInfo(t *testing.T) {
+func TestCompatCommand_VersionPrintsBuildInfo(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -159,9 +157,9 @@ func TestNewCompatCommand_VersionResolvesAtRoot(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), "not implemented")
 }
 
-func TestNewAtlasCommand_LicensePrintsPtahNotice(t *testing.T) {
+func TestCompatCommand_LicensePrintsPtahNotice(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -191,7 +189,7 @@ func TestNewCompatCommand_LicenseResolvesAtRoot(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), "not implemented")
 }
 
-func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
+func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 	tests := []struct {
 		name      string
 		path      []string
@@ -330,7 +328,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := NewAtlasCommand()
+			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -349,7 +347,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 	}
 }
 
-func TestNewAtlasCommand_RegistersAtlasShorthandFlags(t *testing.T) {
+func TestCompatCommand_RegistersAtlasShorthandFlags(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name      string
@@ -415,7 +413,7 @@ func TestNewAtlasCommand_RegistersAtlasShorthandFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			root := NewAtlasCommand()
+			root := NewCompatCommand("atlas")
 			cmd, _, err := root.Find(tt.path)
 
 			c.Assert(err, qt.IsNil)
@@ -425,7 +423,7 @@ func TestNewAtlasCommand_RegistersAtlasShorthandFlags(t *testing.T) {
 	}
 }
 
-func TestNewAtlasCommand_DoesNotRegisterUnsupportedAtlasShorthandFlags(t *testing.T) {
+func TestCompatCommand_DoesNotRegisterUnsupportedAtlasShorthandFlags(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name string
@@ -451,7 +449,7 @@ func TestNewAtlasCommand_DoesNotRegisterUnsupportedAtlasShorthandFlags(t *testin
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			root := NewAtlasCommand()
+			root := NewCompatCommand("atlas")
 			cmd, _, err := root.Find(tt.path)
 
 			c.Assert(err, qt.IsNil)
@@ -461,9 +459,9 @@ func TestNewAtlasCommand_DoesNotRegisterUnsupportedAtlasShorthandFlags(t *testin
 	}
 }
 
-func TestNewAtlasCommand_SchemaApplyFileShorthandIsHidden(t *testing.T) {
+func TestCompatCommand_SchemaApplyFileShorthandIsHidden(t *testing.T) {
 	c := qt.New(t)
-	root := NewAtlasCommand()
+	root := NewCompatCommand("atlas")
 	cmd, _, err := root.Find([]string{"schema", "apply"})
 
 	c.Assert(err, qt.IsNil)
@@ -471,9 +469,9 @@ func TestNewAtlasCommand_SchemaApplyFileShorthandIsHidden(t *testing.T) {
 	c.Assert(cmd.Flags().Lookup("file").Hidden, qt.IsTrue)
 }
 
-func TestNewAtlasCommand_SchemaApplyFileShorthandConflictsWithTo(t *testing.T) {
+func TestCompatCommand_SchemaApplyFileShorthandConflictsWithTo(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -490,12 +488,12 @@ func TestNewAtlasCommand_SchemaApplyFileShorthandConflictsWithTo(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `if any flags in the group \[file to\] are set none of the others can be; \[file to\] were all set`)
 }
 
-func TestNewAtlasCommand_SchemaApplySchemaShorthandParses(t *testing.T) {
+func TestCompatCommand_SchemaApplySchemaShorthandParses(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -515,14 +513,14 @@ func TestNewAtlasCommand_SchemaApplySchemaShorthandParses(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made.")
 }
 
-func TestNewAtlasCommand_SchemaDiffSchemaShorthandParses(t *testing.T) {
+func TestCompatCommand_SchemaDiffSchemaShorthandParses(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	fromPath := filepath.Join(dir, "from.sql")
 	toPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(fromPath, []byte(""), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(toPath, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -542,9 +540,9 @@ func TestNewAtlasCommand_SchemaDiffSchemaShorthandParses(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "Schemas are synced, no changes to be made.")
 }
 
-func TestNewAtlasCommand_MigrateDownHelpUsesAtlasFlagKinds(t *testing.T) {
+func TestCompatCommand_MigrateDownHelpUsesAtlasFlagKinds(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -559,9 +557,9 @@ func TestNewAtlasCommand_MigrateDownHelpUsesAtlasFlagKinds(t *testing.T) {
 	c.Assert(help, qt.Contains, "--lock-timeout string")
 }
 
-func TestNewAtlasCommand_MigrateLintHelpUsesAtlasFlagKinds(t *testing.T) {
+func TestCompatCommand_MigrateLintHelpUsesAtlasFlagKinds(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -575,7 +573,7 @@ func TestNewAtlasCommand_MigrateLintHelpUsesAtlasFlagKinds(t *testing.T) {
 	c.Assert(help, qt.Not(qt.Contains), "--latest string")
 }
 
-func TestNewAtlasCommand_MigrateMetadataDirFormatDefaultsToAtlas(t *testing.T) {
+func TestCompatCommand_MigrateMetadataDirFormatDefaultsToAtlas(t *testing.T) {
 	tests := []struct {
 		name string
 		path []string
@@ -625,7 +623,7 @@ func TestNewAtlasCommand_MigrateMetadataDirFormatDefaultsToAtlas(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			root := NewAtlasCommand()
+			root := NewCompatCommand("atlas")
 
 			cmd, _, err := root.Find(tt.path)
 
@@ -639,9 +637,9 @@ func TestNewAtlasCommand_MigrateMetadataDirFormatDefaultsToAtlas(t *testing.T) {
 	}
 }
 
-func TestNewAtlasCommand_MigrateApplyDoesNotRegisterDirFormat(t *testing.T) {
+func TestCompatCommand_MigrateApplyDoesNotRegisterDirFormat(t *testing.T) {
 	c := qt.New(t)
-	root := NewAtlasCommand()
+	root := NewCompatCommand("atlas")
 
 	cmd, _, err := root.Find([]string{"migrate", "apply"})
 
@@ -649,7 +647,7 @@ func TestNewAtlasCommand_MigrateApplyDoesNotRegisterDirFormat(t *testing.T) {
 	c.Assert(cmd.Flags().Lookup("dir-format"), qt.IsNil)
 }
 
-func TestNewAtlasCommand_AdvertisesAtlasProjectFlags(t *testing.T) {
+func TestCompatCommand_AdvertisesAtlasProjectFlags(t *testing.T) {
 	tests := []struct {
 		name string
 		path []string
@@ -687,7 +685,7 @@ func TestNewAtlasCommand_AdvertisesAtlasProjectFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := NewAtlasCommand()
+			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -705,9 +703,9 @@ func TestNewAtlasCommand_AdvertisesAtlasProjectFlags(t *testing.T) {
 	}
 }
 
-func TestNewAtlasCommand_ForwardsSupportedCommands(t *testing.T) {
+func TestCompatCommand_ForwardsSupportedCommands(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -718,7 +716,7 @@ func TestNewAtlasCommand_ForwardsSupportedCommands(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "database URL is required")
 }
 
-func TestNewAtlasCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
+func TestCompatCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
@@ -744,7 +742,7 @@ func TestNewAtlasCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := NewAtlasCommand()
+			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -757,7 +755,7 @@ func TestNewAtlasCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 	}
 }
 
-func TestNewAtlasCommand_MigrateCheckpointForwardsToNative(t *testing.T) {
+func TestCompatCommand_MigrateCheckpointForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	writePair := func(name, up, down string) {
@@ -768,7 +766,7 @@ func TestNewAtlasCommand_MigrateCheckpointForwardsToNative(t *testing.T) {
 	writePair("0000000002_email", "ALTER TABLE users ADD COLUMN email TEXT;\n", "ALTER TABLE users DROP COLUMN email;\n")
 	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -789,10 +787,10 @@ func TestNewAtlasCommand_MigrateCheckpointForwardsToNative(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-func TestNewAtlasCommand_MigrateCheckpointRequiresDevURL(t *testing.T) {
+func TestCompatCommand_MigrateCheckpointRequiresDevURL(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -805,7 +803,7 @@ func TestNewAtlasCommand_MigrateCheckpointRequiresDevURL(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "shadow database URL is required")
 }
 
-func TestNewAtlasCommand_AdapterCommandUsesAtlasProjectFlags(t *testing.T) {
+func TestCompatCommand_AdapterCommandUsesAtlasProjectFlags(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -821,7 +819,7 @@ env "local" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -838,7 +836,7 @@ env "local" {
 	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
 }
 
-func TestNewAtlasCommand_AdapterCommandUsesAttachedConfigShorthand(t *testing.T) {
+func TestCompatCommand_AdapterCommandUsesAttachedConfigShorthand(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -854,7 +852,7 @@ env "local" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -871,7 +869,7 @@ env "local" {
 	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
 }
 
-func TestNewAtlasCommand_AdapterCommandUsesParentAtlasProjectFlags(t *testing.T) {
+func TestCompatCommand_AdapterCommandUsesParentAtlasProjectFlags(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -887,7 +885,7 @@ env "local" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -905,7 +903,7 @@ env "local" {
 	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
 }
 
-func TestNewAtlasCommand_AdapterCommandForwardsAtlasProjectConfigToNativeLoader(t *testing.T) {
+func TestCompatCommand_AdapterCommandForwardsAtlasProjectConfigToNativeLoader(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -927,7 +925,7 @@ env "ci" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -955,13 +953,13 @@ env "ci" {
 	c.Assert(report.Files[0].Findings[0].Severity, qt.Equals, migrationlint.SeverityWarning)
 }
 
-func TestNewAtlasCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *testing.T) {
+func TestCompatCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect.db")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -976,13 +974,13 @@ func TestNewAtlasCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *tes
 	c.Assert(out.String(), qt.Not(qt.Contains), "Connected to sqlite database successfully")
 }
 
-func TestNewAtlasCommand_SchemaInspectOutputsHCLFormatAlias(t *testing.T) {
+func TestCompatCommand_SchemaInspectOutputsHCLFormatAlias(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-hcl.db")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1000,13 +998,13 @@ func TestNewAtlasCommand_SchemaInspectOutputsHCLFormatAlias(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), "Reading schema from database")
 }
 
-func TestNewAtlasCommand_SchemaInspectOutputsSQLFormat(t *testing.T) {
+func TestCompatCommand_SchemaInspectOutputsSQLFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-sql.db")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1024,13 +1022,13 @@ func TestNewAtlasCommand_SchemaInspectOutputsSQLFormat(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), `table "users"`)
 }
 
-func TestNewAtlasCommand_SchemaInspectOutputsJSONFormat(t *testing.T) {
+func TestCompatCommand_SchemaInspectOutputsJSONFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-json.db")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1066,13 +1064,13 @@ func TestNewAtlasCommand_SchemaInspectOutputsJSONFormat(t *testing.T) {
 	c.Assert(posts.ForeignKeys[0].References.Columns, qt.DeepEquals, []string{"id"})
 }
 
-func TestNewAtlasCommand_SchemaInspectFormatsCustomTemplate(t *testing.T) {
+func TestCompatCommand_SchemaInspectFormatsCustomTemplate(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-template.db")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1088,9 +1086,9 @@ func TestNewAtlasCommand_SchemaInspectFormatsCustomTemplate(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "1/2/a-b_c/CREATE")
 }
 
-func TestNewAtlasCommand_SchemaInspectRejectsInvalidFormatBeforeConnect(t *testing.T) {
+func TestCompatCommand_SchemaInspectRejectsInvalidFormatBeforeConnect(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1124,13 +1122,13 @@ func TestNewCompatCommand_SchemaInspectUsesAtlasRoot(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, `table "users"`)
 }
 
-func TestNewAtlasCommand_SchemaInspectRejectsUnsupportedFormat(t *testing.T) {
+func TestCompatCommand_SchemaInspectRejectsUnsupportedFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-unsupported-format.db")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1141,14 +1139,14 @@ func TestNewAtlasCommand_SchemaInspectRejectsUnsupportedFormat(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `execute --format template: .*split requires hcl or sql schema output`)
 }
 
-func TestNewAtlasCommand_SchemaInspectWritesSplitSQLFiles(t *testing.T) {
+func TestCompatCommand_SchemaInspectWritesSplitSQLFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-write-sql.db")
 	outDir := filepath.Join(dir, "schema")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1172,14 +1170,14 @@ func TestNewAtlasCommand_SchemaInspectWritesSplitSQLFiles(t *testing.T) {
 	c.Assert(postsSQL, qt.Contains, "REFERENCES")
 }
 
-func TestNewAtlasCommand_SchemaInspectWritesSplitHCLFiles(t *testing.T) {
+func TestCompatCommand_SchemaInspectWritesSplitHCLFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-write-hcl.db")
 	outDir := filepath.Join(dir, "schema-hcl")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1198,13 +1196,13 @@ func TestNewAtlasCommand_SchemaInspectWritesSplitHCLFiles(t *testing.T) {
 	c.Assert(usersHCL, qt.Contains, `column "email"`)
 }
 
-func TestNewAtlasCommand_SchemaInspectAllowsLiteralUnsupportedFormatWords(t *testing.T) {
+func TestCompatCommand_SchemaInspectAllowsLiteralUnsupportedFormatWords(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-literal-format.db")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1220,13 +1218,13 @@ func TestNewAtlasCommand_SchemaInspectAllowsLiteralUnsupportedFormatWords(t *tes
 	c.Assert(out.String(), qt.Equals, "split/write text only")
 }
 
-func TestNewAtlasCommand_SchemaInspectExcludeFiltersResources(t *testing.T) {
+func TestCompatCommand_SchemaInspectExcludeFiltersResources(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-exclude.db")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1240,7 +1238,7 @@ func TestNewAtlasCommand_SchemaInspectExcludeFiltersResources(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), `posts_user_fk`)
 }
 
-func TestNewAtlasCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testing.T) {
+func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -1261,7 +1259,7 @@ func TestNewAtlasCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *tes
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1276,9 +1274,9 @@ func TestNewAtlasCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *tes
 	c.Assert(out.String(), qt.Equals, "{}")
 }
 
-func TestNewAtlasCommand_SchemaInspectRejectsIncludeAsUnknownFlag(t *testing.T) {
+func TestCompatCommand_SchemaInspectRejectsIncludeAsUnknownFlag(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1289,25 +1287,23 @@ func TestNewAtlasCommand_SchemaInspectRejectsIncludeAsUnknownFlag(t *testing.T) 
 	c.Assert(err, qt.ErrorMatches, "unknown flag: --include")
 }
 
-func TestNewAtlasCommand_ForwardsParentedNativeCommand(t *testing.T) {
+func TestCompatCommand_ForwardsParentedNativeCommand(t *testing.T) {
 	c := qt.New(t)
-	root := &cobra.Command{Use: "ptah"}
-	root.AddCommand(migrateup.NewMigrateUpCommand())
-	root.AddCommand(NewAtlasCommand())
+	root := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"atlas", "migrate", "apply"})
+	root.SetArgs([]string{"migrate", "apply"})
 
 	err := root.Execute()
 
 	c.Assert(err, qt.ErrorMatches, "database URL is required")
 }
 
-func TestNewAtlasCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T) {
+func TestCompatCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1327,10 +1323,10 @@ func TestNewAtlasCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.
 	c.Assert(err, qt.IsNil)
 }
 
-func TestNewAtlasCommand_MigrateNewAcceptsExplicitAtlasDirFormat(t *testing.T) {
+func TestCompatCommand_MigrateNewAcceptsExplicitAtlasDirFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1347,11 +1343,11 @@ func TestNewAtlasCommand_MigrateNewAcceptsExplicitAtlasDirFormat(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-func TestNewAtlasCommand_MigrateHashDefaultsToAtlasSum(t *testing.T) {
+func TestCompatCommand_MigrateHashDefaultsToAtlasSum(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1367,13 +1363,13 @@ func TestNewAtlasCommand_MigrateHashDefaultsToAtlasSum(t *testing.T) {
 	c.Assert(os.IsNotExist(err), qt.IsTrue)
 }
 
-func TestNewAtlasCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T) {
+func TestCompatCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "status.db")
 	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
-	apply := NewAtlasCommand()
+	apply := NewCompatCommand("atlas")
 	var applyOut bytes.Buffer
 	apply.SetOut(&applyOut)
 	apply.SetErr(&applyOut)
@@ -1381,7 +1377,7 @@ func TestNewAtlasCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T)
 	err := apply.Execute()
 	c.Assert(err, qt.IsNil)
 
-	status := NewAtlasCommand()
+	status := NewCompatCommand("atlas")
 	var statusOut bytes.Buffer
 	status.SetOut(&statusOut)
 	status.SetErr(&statusOut)
@@ -1393,13 +1389,13 @@ func TestNewAtlasCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T)
 	c.Assert(statusOut.String(), qt.Contains, "Database is up to date")
 }
 
-func TestNewAtlasCommand_MigrateStatusFormatRendersAtlasReport(t *testing.T) {
+func TestCompatCommand_MigrateStatusFormatRendersAtlasReport(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "status-format.db")
 	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1416,13 +1412,13 @@ func TestNewAtlasCommand_MigrateStatusFormatRendersAtlasReport(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "PENDING|No migration applied yet|20260723120000|1|1|20260723120000_init.sql")
 }
 
-func TestNewAtlasCommand_MigrateStatusFormatRendersAppliedRevisionReport(t *testing.T) {
+func TestCompatCommand_MigrateStatusFormatRendersAppliedRevisionReport(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "status-applied-format.db")
 	writeAtlasApplyMigration(c, dir, "20260723120000_create_users.sql", "CREATE TABLE users (id integer primary key)")
 
-	apply := NewAtlasCommand()
+	apply := NewCompatCommand("atlas")
 	var applyOut bytes.Buffer
 	apply.SetOut(&applyOut)
 	apply.SetErr(&applyOut)
@@ -1430,7 +1426,7 @@ func TestNewAtlasCommand_MigrateStatusFormatRendersAppliedRevisionReport(t *test
 	err := apply.Execute()
 	c.Assert(err, qt.IsNil)
 
-	status := NewAtlasCommand()
+	status := NewCompatCommand("atlas")
 	var statusOut bytes.Buffer
 	status.SetOut(&statusOut)
 	status.SetErr(&statusOut)
@@ -1446,7 +1442,7 @@ func TestNewAtlasCommand_MigrateStatusFormatRendersAppliedRevisionReport(t *test
 	c.Assert(statusOut.String(), qt.Equals, "OK|1|20260723120000|create_users|applied|1|1|Ptah")
 }
 
-func TestNewAtlasCommand_MigrateStatusUsesDefaultDirWithoutEnvWhenURLExplicit(t *testing.T) {
+func TestCompatCommand_MigrateStatusUsesDefaultDirWithoutEnvWhenURLExplicit(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -1461,7 +1457,7 @@ env "prod" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1477,7 +1473,7 @@ env "prod" {
 	c.Assert(out.String(), qt.Equals, "PENDING|1")
 }
 
-func TestNewAtlasCommand_MigrateStatusUsesAtlasProjectFormat(t *testing.T) {
+func TestCompatCommand_MigrateStatusUsesAtlasProjectFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -1497,7 +1493,7 @@ func TestNewAtlasCommand_MigrateStatusUsesAtlasProjectFormat(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1512,13 +1508,13 @@ func TestNewAtlasCommand_MigrateStatusUsesAtlasProjectFormat(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "PENDING|1")
 }
 
-func TestNewAtlasCommand_MigrateStatusRejectsInvalidFormatBeforeConnecting(t *testing.T) {
+func TestCompatCommand_MigrateStatusRejectsInvalidFormatBeforeConnecting(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "status-invalid-format.db")
 	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1536,12 +1532,12 @@ func TestNewAtlasCommand_MigrateStatusRejectsInvalidFormatBeforeConnecting(t *te
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
-func TestNewAtlasCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
+func TestCompatCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1558,7 +1554,7 @@ func TestNewAtlasCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql|CREATE")
 }
 
-func TestNewAtlasCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
+func TestCompatCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -1576,7 +1572,7 @@ func TestNewAtlasCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1591,7 +1587,7 @@ func TestNewAtlasCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql")
 }
 
-func TestNewAtlasCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(t *testing.T) {
+func TestCompatCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -1612,7 +1608,7 @@ func TestNewAtlasCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(
 `), 0o600), qt.IsNil)
 	t.Chdir(otherDir)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1629,13 +1625,13 @@ func TestNewAtlasCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(
 	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql")
 }
 
-func TestNewAtlasCommand_MigrateLintFormatRendersReplayFailure(t *testing.T) {
+func TestCompatCommand_MigrateLintFormatRendersReplayFailure(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "lint-replay-failure.db")
 	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key); SELECT * FROM missing_table;")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1653,14 +1649,14 @@ func TestNewAtlasCommand_MigrateLintFormatRendersReplayFailure(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "2|Failed loading changes on dev database|error validating migration SQL on dev database:")
 }
 
-func TestNewAtlasCommand_MigrateLintFormatReportsInvalidAtlasSum(t *testing.T) {
+func TestCompatCommand_MigrateLintFormatReportsInvalidAtlasSum(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "lint-invalid-sum.db")
 	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"), []byte("stale\n"), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1680,13 +1676,13 @@ func TestNewAtlasCommand_MigrateLintFormatReportsInvalidAtlasSum(t *testing.T) {
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
-func TestNewAtlasCommand_MigrateLintRejectsInvalidFormatBeforeReplay(t *testing.T) {
+func TestCompatCommand_MigrateLintRejectsInvalidFormatBeforeReplay(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "lint-invalid-format.db")
 	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1705,9 +1701,9 @@ func TestNewAtlasCommand_MigrateLintRejectsInvalidFormatBeforeReplay(t *testing.
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
-func TestNewAtlasCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
+func TestCompatCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1724,14 +1720,14 @@ func TestNewAtlasCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), "unknown flag")
 }
 
-func TestNewAtlasCommand_MigrateSetMapsPositionalRevision(t *testing.T) {
+func TestCompatCommand_MigrateSetMapsPositionalRevision(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "set-positional.db")
 	writeAtlasApplyMigration(c, migrationsDir, "1_set_positional.sql", "CREATE TABLE set_positional_users (id INTEGER PRIMARY KEY);")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1748,9 +1744,9 @@ func TestNewAtlasCommand_MigrateSetMapsPositionalRevision(t *testing.T) {
 	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
-func TestNewAtlasCommand_MigrateSetHelpShowsAtlasVersionArgument(t *testing.T) {
+func TestCompatCommand_MigrateSetHelpShowsAtlasVersionArgument(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1762,11 +1758,11 @@ func TestNewAtlasCommand_MigrateSetHelpShowsAtlasVersionArgument(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "atlas migrate set [flags] [version]")
 }
 
-func TestNewAtlasCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
+func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 	c := qt.New(t)
 
 	c.Run("missing version", func(c *qt.C) {
-		cmd := NewAtlasCommand()
+		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -1782,7 +1778,7 @@ func TestNewAtlasCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 	})
 
 	c.Run("multiple versions", func(c *qt.C) {
-		cmd := NewAtlasCommand()
+		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -1798,7 +1794,7 @@ func TestNewAtlasCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 	})
 
 	c.Run("native version flag", func(c *qt.C) {
-		cmd := NewAtlasCommand()
+		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -1810,7 +1806,7 @@ func TestNewAtlasCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 	})
 }
 
-func TestNewAtlasCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testing.T) {
+func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
@@ -1856,7 +1852,7 @@ func TestNewAtlasCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *test
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := NewAtlasCommand()
+			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -1869,9 +1865,9 @@ func TestNewAtlasCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *test
 	}
 }
 
-func TestNewAtlasCommand_MigrateApplyRejectsDirFormatFlag(t *testing.T) {
+func TestCompatCommand_MigrateApplyRejectsDirFormatFlag(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1883,7 +1879,7 @@ func TestNewAtlasCommand_MigrateApplyRejectsDirFormatFlag(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "unknown flag: --dir-format")
 }
 
-func TestNewAtlasCommand_SchemaFmtFormatsHCLFiles(t *testing.T) {
+func TestCompatCommand_SchemaFmtFormatsHCLFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "schema.hcl")
@@ -1896,7 +1892,7 @@ type=int
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1913,7 +1909,7 @@ type=int
 	c.Assert(string(formatted), qt.Not(qt.Contains), "schema=schema.main")
 }
 
-func TestNewAtlasCommand_SchemaDiffPrintsLocalFileDiff(t *testing.T) {
+func TestCompatCommand_SchemaDiffPrintsLocalFileDiff(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	from := filepath.Join(dir, "from.hcl")
@@ -1943,7 +1939,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1960,7 +1956,7 @@ table "users" {
 	c.Assert(out.String(), qt.Contains, `ALTER TABLE "users" ADD COLUMN "email" varchar(255) NOT NULL;`)
 }
 
-func TestNewAtlasCommand_SchemaDiffReportsSyncedLocalFiles(t *testing.T) {
+func TestCompatCommand_SchemaDiffReportsSyncedLocalFiles(t *testing.T) {
 	c := qt.New(t)
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(`
@@ -1971,7 +1967,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -1988,9 +1984,9 @@ table "users" {
 	c.Assert(out.String(), qt.Equals, "Schemas are synced, no changes to be made.\n")
 }
 
-func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedRemoteTarget(t *testing.T) {
+func TestCompatCommand_SchemaDiffRejectsUnsupportedRemoteTarget(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2007,7 +2003,7 @@ func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedRemoteTarget(t *testing.T) 
 	c.Assert(out.String(), qt.Contains, `error: --from "atlas://remote/schema": atlas:// registry URLs are not supported`)
 }
 
-func TestNewAtlasCommand_SchemaDiffFormatsCustomSQLTemplate(t *testing.T) {
+func TestCompatCommand_SchemaDiffFormatsCustomSQLTemplate(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	from := filepath.Join(dir, "from.hcl")
@@ -2031,7 +2027,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2050,7 +2046,7 @@ table "users" {
 	c.Assert(out.String(), qt.Contains, `  ALTER TABLE "users" ADD COLUMN "email" varchar(255) NOT NULL;`)
 }
 
-func TestNewAtlasCommand_SchemaDiffFormatsSyncedCustomTemplate(t *testing.T) {
+func TestCompatCommand_SchemaDiffFormatsSyncedCustomTemplate(t *testing.T) {
 	c := qt.New(t)
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(`
@@ -2061,7 +2057,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2079,7 +2075,7 @@ table "users" {
 	c.Assert(out.String(), qt.Equals, "synced")
 }
 
-func TestNewAtlasCommand_SchemaDiffUsesAtlasProjectEnvDefaultsAndDiffSkip(t *testing.T) {
+func TestCompatCommand_SchemaDiffUsesAtlasProjectEnvDefaultsAndDiffSkip(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2112,7 +2108,7 @@ table "old_users" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2128,7 +2124,7 @@ table "old_users" {
 	c.Assert(out.String(), qt.Equals, "synced")
 }
 
-func TestNewAtlasCommand_SchemaDiffUsesConfigPathAndVariableOverride(t *testing.T) {
+func TestCompatCommand_SchemaDiffUsesConfigPathAndVariableOverride(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2164,7 +2160,7 @@ env "local" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2183,7 +2179,7 @@ env "local" {
 	c.Assert(out.String(), qt.Contains, `ALTER TABLE "users" ADD COLUMN "email" varchar(255) NOT NULL;`)
 }
 
-func TestNewAtlasCommand_SchemaDiffRejectsMalformedVariableOverride(t *testing.T) {
+func TestCompatCommand_SchemaDiffRejectsMalformedVariableOverride(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2205,7 +2201,7 @@ env "local" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2222,7 +2218,7 @@ env "local" {
 	c.Assert(out.String(), qt.Contains, `error: atlas variable overrides must use name=value, got "destructive"`)
 }
 
-func TestNewAtlasCommand_SchemaDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
+func TestCompatCommand_SchemaDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2251,7 +2247,7 @@ table "old_users" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2268,7 +2264,7 @@ table "old_users" {
 	c.Assert(out.String(), qt.Equals, "synced")
 }
 
-func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedAtlasProjectDiffPolicy(t *testing.T) {
+func TestCompatCommand_SchemaDiffRejectsUnsupportedAtlasProjectDiffPolicy(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2285,7 +2281,7 @@ func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedAtlasProjectDiffPolicy(t *t
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2301,9 +2297,9 @@ func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedAtlasProjectDiffPolicy(t *t
 	c.Assert(out.String(), qt.Contains, `error: atlas.hcl diff.concurrent_index.drop is not supported yet`)
 }
 
-func TestNewAtlasCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
+func TestCompatCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2321,7 +2317,7 @@ func TestNewAtlasCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *tes
 	c.Assert(out.String(), qt.Not(qt.Contains), "load --from schema")
 }
 
-func TestNewAtlasCommand_SchemaApplyAppliesLocalSchemaToSQLite(t *testing.T) {
+func TestCompatCommand_SchemaApplyAppliesLocalSchemaToSQLite(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
@@ -2333,7 +2329,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	first := NewAtlasCommand()
+	first := NewCompatCommand("atlas")
 	var firstOut bytes.Buffer
 	first.SetOut(&firstOut)
 	first.SetErr(&firstOut)
@@ -2353,7 +2349,7 @@ CREATE TABLE users (
 	c.Assert(firstOut.String(), qt.Contains, "Schema apply completed successfully.")
 	assertSQLiteTableExists(c, dbPath, "users")
 
-	second := NewAtlasCommand()
+	second := NewCompatCommand("atlas")
 	var secondOut bytes.Buffer
 	second.SetOut(&secondOut)
 	second.SetErr(&secondOut)
@@ -2369,7 +2365,7 @@ CREATE TABLE users (
 	c.Assert(secondOut.String(), qt.Equals, "Schema is synced, no changes to be made.\n")
 }
 
-func TestNewAtlasCommand_SchemaApplyDryRunDoesNotApply(t *testing.T) {
+func TestCompatCommand_SchemaApplyDryRunDoesNotApply(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "dry-run.db")
@@ -2380,7 +2376,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2399,7 +2395,7 @@ CREATE TABLE users (
 	assertSQLiteTableMissing(c, dbPath, "users")
 }
 
-func TestNewAtlasCommand_SchemaApplyFileShorthandDryRun(t *testing.T) {
+func TestCompatCommand_SchemaApplyFileShorthandDryRun(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "file-shorthand-dry-run.db")
@@ -2410,7 +2406,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2429,7 +2425,7 @@ CREATE TABLE users (
 	assertSQLiteTableMissing(c, dbPath, "users")
 }
 
-func TestNewAtlasCommand_SchemaApplyAcceptsTxMode(t *testing.T) {
+func TestCompatCommand_SchemaApplyAcceptsTxMode(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "tx-mode-command.db")
@@ -2440,7 +2436,7 @@ CREATE TABLE tx_mode_users (
 );
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2459,13 +2455,13 @@ CREATE TABLE tx_mode_users (
 	assertSQLiteTableExists(c, dbPath, "tx_mode_users")
 }
 
-func TestNewAtlasCommand_SchemaApplyRejectsInvalidTxMode(t *testing.T) {
+func TestCompatCommand_SchemaApplyRejectsInvalidTxMode(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE tx_mode_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2507,12 +2503,12 @@ func TestNewCompatCommand_SchemaApplyDryRunUsesAtlasRoot(t *testing.T) {
 	assertSQLiteTableMissing(c, dbPath, "users")
 }
 
-func TestNewAtlasCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
+func TestCompatCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2529,11 +2525,11 @@ func TestNewAtlasCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
 }
 
-func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T) {
+func TestCompatCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T) {
 	c := qt.New(t)
 
 	c.Run("migrate_diff_qualifier_invalid_value", func(c *qt.C) {
-		cmd := NewAtlasCommand()
+		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -2553,7 +2549,7 @@ func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing
 		schemaPath := filepath.Join(dir, "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE users (id INTEGER PRIMARY KEY);
 `), 0o600), qt.IsNil)
-		cmd := NewAtlasCommand()
+		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -2575,7 +2571,7 @@ func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing
 	})
 
 	c.Run("schema_apply_plan_registry_url", func(c *qt.C) {
-		cmd := NewAtlasCommand()
+		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -2589,7 +2585,7 @@ func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing
 	})
 
 	c.Run("schema_apply_lock_timeout_invalid", func(c *qt.C) {
-		cmd := NewAtlasCommand()
+		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -2603,7 +2599,7 @@ func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing
 	})
 }
 
-func TestNewAtlasCommand_MigrateApplyAmountSQLite(t *testing.T) {
+func TestCompatCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-migrations.db")
@@ -2612,7 +2608,7 @@ func TestNewAtlasCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE apply_two (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE apply_three (id INTEGER PRIMARY KEY);")
 
-	first := NewAtlasCommand()
+	first := NewCompatCommand("atlas")
 	var firstOut bytes.Buffer
 	first.SetOut(&firstOut)
 	first.SetErr(&firstOut)
@@ -2632,7 +2628,7 @@ func TestNewAtlasCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	assertSQLiteTableExists(c, dbPath, "apply_two")
 	assertSQLiteTableMissing(c, dbPath, "apply_three")
 
-	second := NewAtlasCommand()
+	second := NewCompatCommand("atlas")
 	var secondOut bytes.Buffer
 	second.SetOut(&secondOut)
 	second.SetErr(&secondOut)
@@ -2651,7 +2647,7 @@ func TestNewAtlasCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	assertSQLiteTableExists(c, dbPath, "apply_three")
 }
 
-func TestNewAtlasCommand_MigrateApplyBaselineUsesAtlasRevisions(t *testing.T) {
+func TestCompatCommand_MigrateApplyBaselineUsesAtlasRevisions(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "baseline.db")
@@ -2660,7 +2656,7 @@ func TestNewAtlasCommand_MigrateApplyBaselineUsesAtlasRevisions(t *testing.T) {
 	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE baseline_two (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE baseline_three (id INTEGER PRIMARY KEY);")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2681,7 +2677,7 @@ func TestNewAtlasCommand_MigrateApplyBaselineUsesAtlasRevisions(t *testing.T) {
 	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"2", "3"})
 }
 
-func TestNewAtlasCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *testing.T) {
+func TestCompatCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "baseline-dry-run.db")
@@ -2690,7 +2686,7 @@ func TestNewAtlasCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *t
 	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE dry_baseline_two (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE dry_baseline_three (id INTEGER PRIMARY KEY);")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2713,7 +2709,7 @@ func TestNewAtlasCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *t
 	assertSQLiteTableMissing(c, dbPath, "dry_baseline_three")
 }
 
-func TestNewAtlasCommand_MigrateApplyFormatsJSONResult(t *testing.T) {
+func TestCompatCommand_MigrateApplyFormatsJSONResult(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-json.db")
@@ -2724,7 +2720,7 @@ CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
 `)
 	dbURL := "sqlite://user:secret@" + dbPath + "?password=hidden"
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2766,7 +2762,7 @@ CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
 	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
-func TestNewAtlasCommand_MigrateApplyFormatsCustomTemplate(t *testing.T) {
+func TestCompatCommand_MigrateApplyFormatsCustomTemplate(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-template.db")
@@ -2774,7 +2770,7 @@ func TestNewAtlasCommand_MigrateApplyFormatsCustomTemplate(t *testing.T) {
 	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE format_template_one (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE format_template_two (id INTEGER PRIMARY KEY);")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2794,7 +2790,7 @@ func TestNewAtlasCommand_MigrateApplyFormatsCustomTemplate(t *testing.T) {
 	assertSQLiteTableMissing(c, dbPath, "format_template_two")
 }
 
-func TestNewAtlasCommand_MigrateApplyUsesAtlasProjectEnvDefaultsAndFormat(t *testing.T) {
+func TestCompatCommand_MigrateApplyUsesAtlasProjectEnvDefaultsAndFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2815,7 +2811,7 @@ func TestNewAtlasCommand_MigrateApplyUsesAtlasProjectEnvDefaultsAndFormat(t *tes
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2831,7 +2827,7 @@ func TestNewAtlasCommand_MigrateApplyUsesAtlasProjectEnvDefaultsAndFormat(t *tes
 	assertSQLiteTableExists(c, dbPath, "apply_env_users")
 }
 
-func TestNewAtlasCommand_MigrateApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
+func TestCompatCommand_MigrateApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2848,7 +2844,7 @@ func TestNewAtlasCommand_MigrateApplyUsesAtlasProjectDefaultsWithExplicitTargetF
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2865,14 +2861,14 @@ func TestNewAtlasCommand_MigrateApplyUsesAtlasProjectDefaultsWithExplicitTargetF
 	assertSQLiteTableExists(c, dbPath, "apply_explicit_defaults")
 }
 
-func TestNewAtlasCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
+func TestCompatCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-dry-run.db")
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyMigration(c, migrationsDir, "1_dry_run.sql", "CREATE TABLE format_dry_run (id INTEGER PRIMARY KEY);")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2897,7 +2893,7 @@ func TestNewAtlasCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
 	assertSQLiteTableMissing(c, dbPath, "format_dry_run")
 }
 
-func TestNewAtlasCommand_MigrateApplyFormatsDryRunBaselineResult(t *testing.T) {
+func TestCompatCommand_MigrateApplyFormatsDryRunBaselineResult(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-dry-baseline.db")
@@ -2906,7 +2902,7 @@ func TestNewAtlasCommand_MigrateApplyFormatsDryRunBaselineResult(t *testing.T) {
 	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE format_dry_baseline_two (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE format_dry_baseline_three (id INTEGER PRIMARY KEY);")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2934,14 +2930,14 @@ func TestNewAtlasCommand_MigrateApplyFormatsDryRunBaselineResult(t *testing.T) {
 	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_three")
 }
 
-func TestNewAtlasCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
+func TestCompatCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-noop.db")
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyMigration(c, migrationsDir, "1_noop.sql", "CREATE TABLE format_noop (id INTEGER PRIMARY KEY);")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2952,7 +2948,7 @@ func TestNewAtlasCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
 	})
 	c.Assert(cmd.Execute(), qt.IsNil)
 
-	cmd = NewAtlasCommand()
+	cmd = NewCompatCommand("atlas")
 	out.Reset()
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2976,9 +2972,9 @@ func TestNewAtlasCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
 	c.Assert(result.Applied, qt.HasLen, 0)
 }
 
-func TestNewAtlasCommand_MigrateApplyRejectsEmptyFormat(t *testing.T) {
+func TestCompatCommand_MigrateApplyRejectsEmptyFormat(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -2989,14 +2985,14 @@ func TestNewAtlasCommand_MigrateApplyRejectsEmptyFormat(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `--format must not be empty`)
 }
 
-func TestNewAtlasCommand_MigrateApplyRejectsInvalidFormatBeforeApply(t *testing.T) {
+func TestCompatCommand_MigrateApplyRejectsInvalidFormatBeforeApply(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "invalid-format.db")
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyMigration(c, migrationsDir, "1_invalid_format.sql", "CREATE TABLE invalid_format_applied (id INTEGER PRIMARY KEY);")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3013,14 +3009,14 @@ func TestNewAtlasCommand_MigrateApplyRejectsInvalidFormatBeforeApply(t *testing.
 	assertSQLiteTableMissing(c, dbPath, "invalid_format_applied")
 }
 
-func TestNewAtlasCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
+func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-error.db")
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyMigration(c, migrationsDir, "1_error.sql", "CREATE TABLE error_before (id INTEGER PRIMARY KEY); SELECT * FROM missing_table;")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -3048,11 +3044,11 @@ func TestNewAtlasCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 	assertSQLiteTableMissing(c, dbPath, "error_before")
 }
 
-func TestNewAtlasCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
+func TestCompatCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
 	c := qt.New(t)
 
 	c.Run("to_version", func(c *qt.C) {
-		cmd := NewAtlasCommand()
+		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -3064,7 +3060,7 @@ func TestNewAtlasCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
 	})
 
 	c.Run("lock_name", func(c *qt.C) {
-		cmd := NewAtlasCommand()
+		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -3076,9 +3072,9 @@ func TestNewAtlasCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
 	})
 }
 
-func TestNewAtlasCommand_MigrateDiffSchemaShorthandParses(t *testing.T) {
+func TestCompatCommand_MigrateDiffSchemaShorthandParses(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3095,7 +3091,7 @@ func TestNewAtlasCommand_MigrateDiffSchemaShorthandParses(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, `error: atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL`)
 }
 
-func TestNewAtlasCommand_MigrateDiffCreatesAtlasMigrationFromLocalSchema(t *testing.T) {
+func TestCompatCommand_MigrateDiffCreatesAtlasMigrationFromLocalSchema(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -3114,7 +3110,7 @@ CREATE TABLE users (
 `), 0o600), qt.IsNil)
 	devURL := "sqlite://" + filepath.Join(dir, "dev.db")
 
-	first := NewAtlasCommand()
+	first := NewCompatCommand("atlas")
 	var firstOut bytes.Buffer
 	first.SetOut(&firstOut)
 	first.SetErr(&firstOut)
@@ -3144,7 +3140,7 @@ CREATE TABLE users (
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(sum), qt.Contains, filepath.Base(newMigration))
 
-	second := NewAtlasCommand()
+	second := NewCompatCommand("atlas")
 	var secondOut bytes.Buffer
 	second.SetOut(&secondOut)
 	second.SetErr(&secondOut)
@@ -3163,7 +3159,7 @@ CREATE TABLE users (
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 2)
 }
 
-func TestNewAtlasCommand_MigrateDiffDryRunPrintsMigrationWithoutWritingFiles(t *testing.T) {
+func TestCompatCommand_MigrateDiffDryRunPrintsMigrationWithoutWritingFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -3181,7 +3177,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3208,7 +3204,7 @@ CREATE TABLE users (
 	c.Assert(lockStatErr, qt.ErrorIs, os.ErrNotExist)
 }
 
-func TestNewAtlasCommand_MigrateDiffCustomFormatWritesFormattedMigration(t *testing.T) {
+func TestCompatCommand_MigrateDiffCustomFormatWritesFormattedMigration(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -3226,7 +3222,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3252,7 +3248,7 @@ CREATE TABLE users (
 	c.Assert(string(newSQL), qt.Contains, "email")
 }
 
-func TestNewAtlasCommand_MigrateDiffUsesAtlasProjectEnvDefaultsAndFormat(t *testing.T) {
+func TestCompatCommand_MigrateDiffUsesAtlasProjectEnvDefaultsAndFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -3285,7 +3281,7 @@ CREATE TABLE users (
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3309,7 +3305,7 @@ CREATE TABLE users (
 	c.Assert(string(newSQL), qt.Contains, "email")
 }
 
-func TestNewAtlasCommand_MigrateDiffUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
+func TestCompatCommand_MigrateDiffUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -3338,7 +3334,7 @@ CREATE TABLE old_users (
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3355,7 +3351,7 @@ CREATE TABLE old_users (
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 
-func TestNewAtlasCommand_MigrateDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
+func TestCompatCommand_MigrateDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -3383,7 +3379,7 @@ CREATE TABLE old_users (
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3402,7 +3398,7 @@ CREATE TABLE old_users (
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 
-func TestNewAtlasCommand_MigrateDiffAcceptsAtlasProjectConcurrentIndexPolicy(t *testing.T) {
+func TestCompatCommand_MigrateDiffAcceptsAtlasProjectConcurrentIndexPolicy(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -3426,7 +3422,7 @@ func TestNewAtlasCommand_MigrateDiffAcceptsAtlasProjectConcurrentIndexPolicy(t *
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3450,7 +3446,7 @@ func TestNewAtlasCommand_MigrateDiffAcceptsAtlasProjectConcurrentIndexPolicy(t *
 	c.Assert(string(migrationSQL), qt.Not(qt.Contains), "atlas:txmode")
 }
 
-func TestNewAtlasCommand_MigrateDiffSchemaFilterIgnoresOutOfScopeDesiredSchema(t *testing.T) {
+func TestCompatCommand_MigrateDiffSchemaFilterIgnoresOutOfScopeDesiredSchema(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -3470,7 +3466,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3490,7 +3486,7 @@ table "users" {
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 }
 
-func TestNewAtlasCommand_MigrateDiffRejectsChecksumDrift(t *testing.T) {
+func TestCompatCommand_MigrateDiffRejectsChecksumDrift(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -3516,7 +3512,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3535,9 +3531,9 @@ CREATE TABLE users (
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 
-func TestNewAtlasCommand_MigrateDiffRejectsInvalidLockTimeout(t *testing.T) {
+func TestCompatCommand_MigrateDiffRejectsInvalidLockTimeout(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3554,7 +3550,7 @@ func TestNewAtlasCommand_MigrateDiffRejectsInvalidLockTimeout(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `invalid migration lock timeout: must be greater than zero`)
 }
 
-func TestNewAtlasCommand_MigrateDiffLockTimeout(t *testing.T) {
+func TestCompatCommand_MigrateDiffLockTimeout(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -3563,7 +3559,7 @@ func TestNewAtlasCommand_MigrateDiffLockTimeout(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE locked_diff (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3582,9 +3578,9 @@ func TestNewAtlasCommand_MigrateDiffLockTimeout(t *testing.T) {
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 }
 
-func TestNewAtlasCommand_MigrateDiffRejectsInvalidFormat(t *testing.T) {
+func TestCompatCommand_MigrateDiffRejectsInvalidFormat(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3601,7 +3597,7 @@ func TestNewAtlasCommand_MigrateDiffRejectsInvalidFormat(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "json" not defined.*`)
 }
 
-func TestNewAtlasCommand_MigrateApplyResolvesProjectRelativeMigrationDir(t *testing.T) {
+func TestCompatCommand_MigrateApplyResolvesProjectRelativeMigrationDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3620,7 +3616,7 @@ func TestNewAtlasCommand_MigrateApplyResolvesProjectRelativeMigrationDir(t *test
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3636,7 +3632,7 @@ func TestNewAtlasCommand_MigrateApplyResolvesProjectRelativeMigrationDir(t *test
 	assertSQLiteTableExists(c, dbPath, "apply_relative_users")
 }
 
-func TestNewAtlasCommand_MigrateStatusResolvesProjectRelativeMigrationDir(t *testing.T) {
+func TestCompatCommand_MigrateStatusResolvesProjectRelativeMigrationDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3655,7 +3651,7 @@ func TestNewAtlasCommand_MigrateStatusResolvesProjectRelativeMigrationDir(t *tes
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3671,7 +3667,7 @@ func TestNewAtlasCommand_MigrateStatusResolvesProjectRelativeMigrationDir(t *tes
 	c.Assert(out.String(), qt.Contains, "Pending Migrations: 1")
 }
 
-func TestNewAtlasCommand_MigrateValidateResolvesProjectRelativeMigrationDir(t *testing.T) {
+func TestCompatCommand_MigrateValidateResolvesProjectRelativeMigrationDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3690,7 +3686,7 @@ func TestNewAtlasCommand_MigrateValidateResolvesProjectRelativeMigrationDir(t *t
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3706,7 +3702,7 @@ func TestNewAtlasCommand_MigrateValidateResolvesProjectRelativeMigrationDir(t *t
 	c.Assert(out.String(), qt.Equals, "")
 }
 
-func TestNewAtlasCommand_MigrateHashResolvesProjectRelativeMigrationDir(t *testing.T) {
+func TestCompatCommand_MigrateHashResolvesProjectRelativeMigrationDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3722,7 +3718,7 @@ func TestNewAtlasCommand_MigrateHashResolvesProjectRelativeMigrationDir(t *testi
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3740,7 +3736,7 @@ func TestNewAtlasCommand_MigrateHashResolvesProjectRelativeMigrationDir(t *testi
 	c.Assert(err, qt.IsNil)
 }
 
-func TestNewAtlasCommand_MigrateNewResolvesProjectRelativeMigrationDir(t *testing.T) {
+func TestCompatCommand_MigrateNewResolvesProjectRelativeMigrationDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3756,7 +3752,7 @@ func TestNewAtlasCommand_MigrateNewResolvesProjectRelativeMigrationDir(t *testin
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3775,7 +3771,7 @@ func TestNewAtlasCommand_MigrateNewResolvesProjectRelativeMigrationDir(t *testin
 	c.Assert(err, qt.IsNil)
 }
 
-func TestNewAtlasCommand_MigrateSetResolvesProjectRelativeMigrationDir(t *testing.T) {
+func TestCompatCommand_MigrateSetResolvesProjectRelativeMigrationDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3793,7 +3789,7 @@ func TestNewAtlasCommand_MigrateSetResolvesProjectRelativeMigrationDir(t *testin
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3810,7 +3806,7 @@ func TestNewAtlasCommand_MigrateSetResolvesProjectRelativeMigrationDir(t *testin
 	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
-func TestNewAtlasCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *testing.T) {
+func TestCompatCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3829,7 +3825,7 @@ func TestNewAtlasCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *test
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3847,7 +3843,7 @@ func TestNewAtlasCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *test
 	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
-func TestNewAtlasCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing.T) {
+func TestCompatCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3866,7 +3862,7 @@ func TestNewAtlasCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testi
 }
 `), 0o600), qt.IsNil)
 
-	apply := NewAtlasCommand()
+	apply := NewCompatCommand("atlas")
 	var applyOut bytes.Buffer
 	apply.SetOut(&applyOut)
 	apply.SetErr(&applyOut)
@@ -3879,7 +3875,7 @@ func TestNewAtlasCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testi
 	c.Assert(err, qt.IsNil)
 	assertSQLiteTableExists(c, dbPath, "down_relative_users")
 
-	down := NewAtlasCommand()
+	down := NewCompatCommand("atlas")
 	var downOut bytes.Buffer
 	down.SetIn(strings.NewReader("YES\n"))
 	down.SetOut(&downOut)
@@ -3898,7 +3894,7 @@ func TestNewAtlasCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testi
 	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.HasLen, 0)
 }
 
-func TestNewAtlasCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProjectDir(t *testing.T) {
+func TestCompatCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProjectDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3917,7 +3913,7 @@ func TestNewAtlasCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProj
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3934,7 +3930,7 @@ func TestNewAtlasCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProj
 	c.Assert(out.String(), qt.Contains, "Pending Migrations: 1")
 }
 
-func TestNewAtlasCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *testing.T) {
+func TestCompatCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3951,7 +3947,7 @@ func TestNewAtlasCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *te
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -3966,7 +3962,7 @@ func TestNewAtlasCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *te
 	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: only local file:// migration directories are supported`)
 }
 
-func TestNewAtlasCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.T) {
+func TestCompatCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -3985,7 +3981,7 @@ func TestNewAtlasCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4001,7 +3997,7 @@ func TestNewAtlasCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.
 	c.Assert(out.String(), qt.Contains, "Pending Migrations: 1")
 }
 
-func TestNewAtlasCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.T) {
+func TestCompatCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -4020,7 +4016,7 @@ func TestNewAtlasCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetIn(strings.NewReader("y\n"))
 	cmd.SetOut(&out)
@@ -4038,7 +4034,7 @@ func TestNewAtlasCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.
 	assertSQLiteTableExists(c, dbPath, "schema_apply_relative")
 }
 
-func TestNewAtlasCommand_SchemaDiffResolvesProjectRelativeSchemaSrc(t *testing.T) {
+func TestCompatCommand_SchemaDiffResolvesProjectRelativeSchemaSrc(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -4057,7 +4053,7 @@ func TestNewAtlasCommand_SchemaDiffResolvesProjectRelativeSchemaSrc(t *testing.T
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4074,7 +4070,7 @@ func TestNewAtlasCommand_SchemaDiffResolvesProjectRelativeSchemaSrc(t *testing.T
 	c.Assert(out.String(), qt.Contains, `CREATE TABLE "schema_diff_relative"`)
 }
 
-func TestNewAtlasCommand_MigrateDiffResolvesProjectRelativeDirAndSchemaSrc(t *testing.T) {
+func TestCompatCommand_MigrateDiffResolvesProjectRelativeDirAndSchemaSrc(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -4095,7 +4091,7 @@ func TestNewAtlasCommand_MigrateDiffResolvesProjectRelativeDirAndSchemaSrc(t *te
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4112,7 +4108,7 @@ func TestNewAtlasCommand_MigrateDiffResolvesProjectRelativeDirAndSchemaSrc(t *te
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 1)
 }
 
-func TestNewAtlasCommand_ProjectRelativeSchemaSrcRejectsUnsupportedScheme(t *testing.T) {
+func TestCompatCommand_ProjectRelativeSchemaSrcRejectsUnsupportedScheme(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -4130,7 +4126,7 @@ func TestNewAtlasCommand_ProjectRelativeSchemaSrcRejectsUnsupportedScheme(t *tes
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4146,7 +4142,7 @@ func TestNewAtlasCommand_ProjectRelativeSchemaSrcRejectsUnsupportedScheme(t *tes
 	c.Assert(err, qt.ErrorMatches, `atlas.hcl schema.src: only local file:// schema files are supported`)
 }
 
-func TestNewAtlasCommand_ProjectRelativeSchemaSrcRejectsQuery(t *testing.T) {
+func TestCompatCommand_ProjectRelativeSchemaSrcRejectsQuery(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -4165,7 +4161,7 @@ func TestNewAtlasCommand_ProjectRelativeSchemaSrcRejectsQuery(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4374,7 +4370,7 @@ func sqliteTableExists(c *qt.C, dbPath, table string) bool {
 	return false
 }
 
-func TestNewAtlasCommand_SchemaFmtWalksDirectoriesAndPrintsOnlyChangedFiles(t *testing.T) {
+func TestCompatCommand_SchemaFmtWalksDirectoriesAndPrintsOnlyChangedFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	changed := filepath.Join(dir, "changed.hcl")
@@ -4388,7 +4384,7 @@ func TestNewAtlasCommand_SchemaFmtWalksDirectoriesAndPrintsOnlyChangedFiles(t *t
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(ignored, []byte(`schema "main"{}`+"\n"), 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4407,7 +4403,7 @@ func TestNewAtlasCommand_SchemaFmtWalksDirectoriesAndPrintsOnlyChangedFiles(t *t
 	c.Assert(string(ignoredData), qt.Equals, `schema "main"{}`+"\n")
 }
 
-func TestNewAtlasCommand_SchemaFmtDefaultsToCurrentDirectory(t *testing.T) {
+func TestCompatCommand_SchemaFmtDefaultsToCurrentDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "schema.hcl")
@@ -4419,7 +4415,7 @@ func TestNewAtlasCommand_SchemaFmtDefaultsToCurrentDirectory(t *testing.T) {
 	})
 	c.Assert(os.Chdir(dir), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4435,7 +4431,7 @@ func TestNewAtlasCommand_SchemaFmtDefaultsToCurrentDirectory(t *testing.T) {
 `)
 }
 
-func TestNewAtlasCommand_SchemaFmtRejectsInvalidHCLWithoutRewriting(t *testing.T) {
+func TestCompatCommand_SchemaFmtRejectsInvalidHCLWithoutRewriting(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.hcl")
@@ -4443,7 +4439,7 @@ func TestNewAtlasCommand_SchemaFmtRejectsInvalidHCLWithoutRewriting(t *testing.T
 `)
 	c.Assert(os.WriteFile(path, original, 0o600), qt.IsNil)
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4479,7 +4475,7 @@ func TestNewCompatCommand_SchemaFmtResolvesAtRoot(t *testing.T) {
 `)
 }
 
-func TestNewAtlasCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
+func TestCompatCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
@@ -4488,7 +4484,7 @@ func TestNewAtlasCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
 	writeAtlasTestFile(c, source, "V2__add_posts.sql", "CREATE TABLE posts (id int);\n")
 	writeAtlasTestFile(c, source, "U1__initial.sql", "DROP TABLE skipped;\n")
 
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4528,9 +4524,9 @@ func TestNewCompatCommand_MigrateImportResolvesAtRoot(t *testing.T) {
 	c.Assert(readAtlasTestFile(c, target, "atlas.sum"), qt.Contains, "1_initial.sql h1:")
 }
 
-func TestNewAtlasCommand_MigrateImportRejectsRemoteSource(t *testing.T) {
+func TestCompatCommand_MigrateImportRejectsRemoteSource(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewAtlasCommand()
+	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -4542,24 +4538,22 @@ func TestNewAtlasCommand_MigrateImportRejectsRemoteSource(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "error: import --from: only local file:// migration directories are supported")
 }
 
-func TestNewAtlasCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing.T) {
+func TestCompatCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing.T) {
 	c := qt.New(t)
-	root := &cobra.Command{Use: "ptah"}
-	root.AddCommand(migrateup.NewMigrateUpCommand())
-	root.AddCommand(NewAtlasCommand())
+	root := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"atlas", "migrate", "apply", "--help"})
+	root.SetArgs([]string{"migrate", "apply", "--help"})
 
 	err := root.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "ptah atlas migrate apply [flags] [amount]")
+	c.Assert(out.String(), qt.Contains, "atlas migrate apply [flags] [amount]")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Usage:\n  migrate-up")
 }
 
-func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
+func TestCompatCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 	tests := []struct {
 		name     string
 		args     []string
@@ -4583,7 +4577,7 @@ func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := NewAtlasCommand()
+			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)

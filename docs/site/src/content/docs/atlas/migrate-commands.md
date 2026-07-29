@@ -1,12 +1,14 @@
 ---
 title: Atlas migrate commands
-description: Run Atlas-style migration workflows with ptah atlas migrate apply, down, status, diff, lint, and the directory-maintenance verbs.
+description: Run Atlas-style migration workflows with atlas migrate apply, down, status, diff, lint, and the directory-maintenance verbs.
 ---
 
 You have an Atlas-format migration directory — or scripts that manage one with
 `atlas migrate ...` — and want to run that workflow through Ptah. This page
-covers the `ptah atlas migrate` verbs: what each one does, a worked example,
-and the behavior details that differ from a first guess. The surfaces and flag
+covers the `atlas migrate` verbs: what each one does, a worked example,
+and the behavior details that differ from a first guess. Every `atlas ...`
+invocation on this page runs the separate `ptah-compat` drop-in binary
+installed under the name `atlas`; the build and install steps plus the flag
 translation rules are on the
 [Atlas compatibility overview](../overview/).
 
@@ -14,22 +16,22 @@ translation rules are on the
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up`; executes every Atlas OSS directory format. |
-| `ptah atlas migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and Atlas revision bookkeeping by default; `--dev-url` verifies the rollback plan first. |
-| `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata. |
-| `ptah atlas migrate hash` | Forwards to `ptah migrations hash`; writes `atlas.sum` by default. |
-| `ptah atlas migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
-| `ptah atlas migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
-| `ptah atlas migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
-| `ptah atlas migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL: existing clean rows through the target are preserved, missing rows are recorded as manually set, dirty rows retain diagnostics with the combined applied and manually-set type, and rows above the target are removed. |
-| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local files, a live database, a migration directory, or `env://`, writes Atlas-style migration files (split when concurrent index builds require `-- atlas:txmode none`), and updates `atlas.sum` atomically. |
-| `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
-| `ptah atlas migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a ptah-format cumulative-schema checkpoint pair. |
-| `ptah atlas migrate test [paths]` | Forwards to `ptah migrations test` with Ptah-native YAML test cases. |
-| `ptah atlas migrate edit {name \| version}` | Forwards to `ptah migrations edit` and rewrites the directory checksum. |
-| `ptah atlas migrate rebase {name \| version}` | Forwards to `ptah migrations rebase`; one migration per run. |
-| `ptah atlas migrate rm {name \| version}` | Forwards to `ptah migrations rm` and rewrites the directory checksum. |
-| `ptah atlas migrate push` | Atlas CE boundary stub; the native `ptah migrations push` to any OCI registry is the open replacement. |
+| `atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up`; executes every Atlas OSS directory format. |
+| `atlas migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and Atlas revision bookkeeping by default; `--dev-url` verifies the rollback plan first. |
+| `atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata. |
+| `atlas migrate hash` | Forwards to `ptah migrations hash`; writes `atlas.sum` by default. |
+| `atlas migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
+| `atlas migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
+| `atlas migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
+| `atlas migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL: existing clean rows through the target are preserved, missing rows are recorded as manually set, dirty rows retain diagnostics with the combined applied and manually-set type, and rows above the target are removed. |
+| `atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local files, a live database, a migration directory, or `env://`, writes Atlas-style migration files (split when concurrent index builds require `-- atlas:txmode none`), and updates `atlas.sum` atomically. |
+| `atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
+| `atlas migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a ptah-format cumulative-schema checkpoint pair. |
+| `atlas migrate test [paths]` | Forwards to `ptah migrations test` with Ptah-native YAML test cases. |
+| `atlas migrate edit {name \| version}` | Forwards to `ptah migrations edit` and rewrites the directory checksum. |
+| `atlas migrate rebase {name \| version}` | Forwards to `ptah migrations rebase`; one migration per run. |
+| `atlas migrate rm {name \| version}` | Forwards to `ptah migrations rm` and rewrites the directory checksum. |
+| `atlas migrate push` | Atlas CE boundary stub; the native `ptah migrations push` to any OCI registry is the open replacement. |
 
 Per-verb status detail — Atlas differences, waivers, and the inputs that fail
 explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/).
@@ -64,8 +66,8 @@ migrations/20260721120000_create_users.sql
 Hash and validate the directory:
 
 ```bash
-ptah atlas migrate hash --dir file://migrations
-ptah atlas migrate validate --dir file://migrations
+atlas migrate hash --dir file://migrations
+atlas migrate validate --dir file://migrations
 ```
 
 Expected output includes:
@@ -80,11 +82,11 @@ A successful `validate` is silent.
 Apply it, then check status:
 
 ```bash
-ptah atlas migrate apply \
+atlas migrate apply \
   --url "$DATABASE_URL" \
   --dir file://migrations
 
-ptah atlas migrate status \
+atlas migrate status \
   --url "$DATABASE_URL" \
   --dir file://migrations
 ```
@@ -105,12 +107,12 @@ Pending Migrations: 0
 Status: Database is up to date
 ```
 
-Roll back using the `down.sql` section. A bare `ptah atlas migrate down` reads
+Roll back using the `down.sql` section. A bare `atlas migrate down` reads
 the Atlas revision rows `migrate apply` wrote, and asks for a `YES`
 confirmation before touching the database (`--dry-run` skips both):
 
 ```bash
-ptah atlas migrate down \
+atlas migrate down \
   --url "$DATABASE_URL" \
   --dir file://migrations \
   --to-version 0
@@ -132,14 +134,14 @@ executed.
 
 ## Apply a migration directory
 
-`ptah atlas migrate apply` reads a local Atlas migration directory and records
+`atlas migrate apply` reads a local Atlas migration directory and records
 runtime history in Atlas revision-table format by default. The optional
 positional `amount` applies only the first N pending migrations. Use
 `--baseline` to mark earlier migration files as applied without executing their
 SQL bodies before applying the remaining pending migrations.
 
 ```bash
-ptah atlas migrate apply 2 \
+atlas migrate apply 2 \
   --url "$DATABASE_URL" \
   --dir file://migrations
 ```
@@ -159,7 +161,7 @@ The apply path executes every Atlas OSS migration directory format selected by
 and down migrations. Every other format is read and converted in memory to Atlas
 single-file, up-only migrations, so apply executes only the source tool's
 forward (up) SQL and never its down, rollback, undo, or metadata section. This
-reuses the same format-loading layer as `ptah atlas migrate import`, so apply
+reuses the same format-loading layer as `atlas migrate import`, so apply
 and import agree on every format's semantics. An explicit `?format=` query on
 the effective directory URL, from either `migration.dir` or CLI `--dir`,
 overrides the `migration.format` project default, matching Atlas; an empty query
@@ -167,7 +169,7 @@ value selects the native `atlas` format.
 
 ```bash
 # Apply a Goose directory directly — no separate import step.
-ptah atlas migrate apply --url "$DATABASE_URL" \
+atlas migrate apply --url "$DATABASE_URL" \
   --dir "file://migrations?format=goose"
 ```
 
@@ -185,7 +187,7 @@ Several inputs still fail before Ptah opens the target database rather than gues
 at semantics: unknown formats; goose/dbmate files missing their up directive
 (never falling back to executing the whole file); Flyway repeatable (`R__`)
 migrations, which Ptah cannot yet execute as versioned migrations (matching how
-`ptah atlas migrate import` handles them); and two source files that resolve to
+`atlas migrate import` handles them); and two source files that resolve to
 the same version. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
@@ -194,7 +196,7 @@ Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
 
 ## Generate a migration with migrate diff
 
-`ptah atlas migrate diff` accepts a local `--dir` migration directory, a
+`atlas migrate diff` accepts a local `--dir` migration directory, a
 directly connectable `--dev-url`, and one desired schema source through
 `--to`. The source can be one or more local schema files, one directly
 connectable database URL, one local Atlas migration directory, or one `env://`
@@ -218,7 +220,7 @@ a failed write rolls the whole generation back so no partial files or
 checksums remain.
 
 ```bash
-ptah atlas migrate diff add_users \
+atlas migrate diff add_users \
   --dir file://migrations \
   --to file://schema.sql \
   --dev-url "sqlite://dev.db"
@@ -234,7 +236,7 @@ Updated migration checksum: .../migrations/atlas.sum
 Use a live database as the desired schema:
 
 ```bash
-ptah atlas migrate diff mirror_schema \
+atlas migrate diff mirror_schema \
   --dir file://migrations \
   --to "$DESIRED_DATABASE_URL" \
   --dev-url "$DEV_DATABASE_URL"
@@ -243,7 +245,7 @@ ptah atlas migrate diff mirror_schema \
 Use an evaluated project attribute as the desired schema:
 
 ```bash
-ptah atlas migrate diff mirror_schema \
+atlas migrate diff mirror_schema \
   --config file://atlas.hcl \
   --env local \
   --to env://url
@@ -262,7 +264,7 @@ dev database.
 Use an Atlas migration directory as the desired state:
 
 ```bash
-ptah atlas migrate diff import_history \
+atlas migrate diff import_history \
   --dir file://migrations \
   --to file://desired-migrations \
   --dev-url "$DEV_DATABASE_URL"
@@ -277,7 +279,7 @@ same hidden flag and prints the generated SQL instead of writing a migration
 file or updating `atlas.sum`:
 
 ```bash
-ptah atlas migrate diff add_users \
+atlas migrate diff add_users \
   --dir file://migrations \
   --to file://schema.sql \
   --dev-url "sqlite://dev.db" \
@@ -291,7 +293,7 @@ migration-file format matches Atlas's two-space SQL indentation template. Use
 templates with `sql` and `.MarshalSQL`, for example to disable indentation:
 
 ```bash
-ptah atlas migrate diff add_users \
+atlas migrate diff add_users \
   --dir file://migrations \
   --to file://schema.sql \
   --dev-url "sqlite://dev.db" \
@@ -308,7 +310,7 @@ the generated statements is prefixed with the custom schema qualifier, so the
 file can be applied to a schema other than the one it was planned against:
 
 ```bash
-ptah atlas migrate diff add_items \
+atlas migrate diff add_items \
   --dir file://migrations \
   --to file://schema.sql \
   --dev-url "postgres://user:pass@localhost:5432/dev" \
@@ -342,7 +344,7 @@ databases fail explicitly until their provisioning semantics are implemented.
 
 ## Validate integrity
 
-`ptah atlas migrate validate` verifies the migration directory against
+`atlas migrate validate` verifies the migration directory against
 `atlas.sum`. When `--dev-url` is set, Ptah first checks integrity
 and then treats the dev database as scratch space: it drops user tables and
 replays the migration directory to validate SQL execution semantics. If
@@ -357,12 +359,12 @@ missing, the command prints the same recovery guidance and writes
 migration files, the stdout guidance includes the first mismatched `atlas.sum`
 line, file name, and reason.
 
-This compatibility behavior is scoped to `ptah atlas` and `ptah-compat`.
+This compatibility behavior is scoped to the `ptah-compat` binary.
 Native `ptah migrations validate` keeps Ptah's success banner and native error
 output; missing or malformed sum files remain exit-`2` usage failures.
 
 ```bash
-ptah atlas migrate validate \
+atlas migrate validate \
   --dir file://migrations \
   --dir-format atlas \
   --dev-url "sqlite://dev.db"
@@ -371,7 +373,7 @@ ptah atlas migrate validate \
 ## Lint migrations
 
 ```bash
-ptah atlas migrate lint \
+atlas migrate lint \
   --dir file://migrations \
   --dev-url "sqlite://dev.db" \
   --latest 1
@@ -382,7 +384,7 @@ tables, replays the migration directory, and then runs static lint
 reporting. Docker `--dev-url` values remain an explicit gap; use a directly
 connectable database URL.
 
-With no `--format` and no project template, `ptah atlas migrate lint` prints
+With no `--format` and no project template, `atlas migrate lint` prints
 Atlas's default migration-analysis text report: an `Analyzing changes …` header,
 a per-version block listing each analyzer group's diagnostics (with a suggested
 fix where the analyzer provides one), a `-- ok (…)` line per version, and a
@@ -417,7 +419,7 @@ Ptah's native lint rules, see
 [Comparison: Atlas Pro analyzer coverage](../comparison/#atlas-pro-analyzer-coverage).
 
 Atlas-compatible lint directives are enabled only under the
-`ptah atlas migrate lint` compatibility profile. A statement-local
+`atlas migrate lint` compatibility profile. A statement-local
 `-- atlas:nolint <selector>` suppresses the following statement. A first
 nonempty `-- atlas:nolint <selector>` header followed by a blank line applies
 to the whole file. A bare file header ignores the file completely, so it is
@@ -430,38 +432,38 @@ semantics unless the Atlas compatibility profile is selected explicitly.
 ## Metadata commands and directory formats
 
 Atlas-compatible migration metadata commands default to Atlas directory format.
-`ptah atlas migrate hash`, `lint`, `new`, `set`, `status`, and `validate`
+`atlas migrate hash`, `lint`, `new`, `set`, `status`, and `validate`
 register `--dir-format` with Atlas's default value `atlas`. The supported value
 is `atlas`; Atlas's external migration-tool formats (`golang-migrate`, `goose`,
 `flyway`, `liquibase`, and `dbmate`) fail explicitly on those commands until
-they are imported with `ptah atlas migrate import` or implemented natively.
-`ptah atlas migrate set [version]` moves Atlas revision history to the selected
+they are imported with `atlas migrate import` or implemented natively.
+`atlas migrate set [version]` moves Atlas revision history to the selected
 boundary without executing migration SQL. It preserves existing clean rows
 through the target, inserts missing rows as manually set, keeps dirty-row
 diagnostics with the combined applied and manually-set type, and removes rows
 above the target. With `--env`, it reads `env.url`, `migration.dir`, and
 `migration.revisions_schema` from `atlas.hcl`; explicit `--url`, `--dir`, and
 `--revisions-schema` flags keep CLI precedence.
-`ptah atlas migrate status` also accepts `--revisions-schema` and runs against
+`atlas migrate status` also accepts `--revisions-schema` and runs against
 Atlas revision-table metadata.
 
 A pre-apply check sequence for CI looks like:
 
 ```bash
-ptah atlas migrate hash --dir file://migrations
-ptah atlas migrate new add_users --dir file://migrations
-ptah atlas migrate validate --dir file://migrations --dev-url "sqlite://dev.db"
-ptah atlas migrate status --url "$DATABASE_URL" --dir file://migrations
+atlas migrate hash --dir file://migrations
+atlas migrate new add_users --dir file://migrations
+atlas migrate validate --dir file://migrations --dev-url "sqlite://dev.db"
+atlas migrate status --url "$DATABASE_URL" --dir file://migrations
 ```
 
 ## Import from other tools
 
-`ptah atlas migrate import` converts a local `file://` migration directory from
+`atlas migrate import` converts a local `file://` migration directory from
 an Atlas-supported format into a separate Atlas single-file directory and
 writes `atlas.sum`:
 
 ```bash
-ptah atlas migrate import \
+atlas migrate import \
   --from "file://flyway?format=flyway" \
   --to "file://migrations"
 ```
@@ -480,11 +482,11 @@ Ptah-native migrations instead; see
 
 | Command | Format data fields |
 | --- | --- |
-| `ptah atlas migrate apply --format` | `.Driver`, `.URL`, `.Dir`, `.Env`, `.Pending`, `.Applied`, `.Current`, `.Target`, `.Start`, `.End`, `.Error`, and JSON `.Message` for successful or no-op reports. `.Pending` and `.Applied` entries expose `.Name`, `.Version`, `.Description`; applied entries also expose `.Applied`, `.Skipped`, `.Checks`, and statement `.Error`. |
-| `ptah atlas migrate diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
-| `ptah atlas migrate lint --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Steps`, and `.Files`. Step entries expose `.Name`, `.Text`, `.Error`, and `.Result`; file entries expose `.Name`, `.Text`, `.Error`, and `.Findings`. |
-| `ptah atlas migrate status --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`. Available and pending migration file entries expose `.Name`, `.Version`, and `.Description`. Applied revision entries expose `.Version`, `.Description`, `.Type`, `.Applied`, `.Total`, `.ExecutedAt`, `.ExecutionTime`, `.Error`, `.ErrorStmt`, and `.OperatorVersion`. |
-| `ptah atlas migrate down --format` | `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`, `.End`, and `.Error`. |
+| `atlas migrate apply --format` | `.Driver`, `.URL`, `.Dir`, `.Env`, `.Pending`, `.Applied`, `.Current`, `.Target`, `.Start`, `.End`, `.Error`, and JSON `.Message` for successful or no-op reports. `.Pending` and `.Applied` entries expose `.Name`, `.Version`, `.Description`; applied entries also expose `.Applied`, `.Skipped`, `.Checks`, and statement `.Error`. |
+| `atlas migrate diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
+| `atlas migrate lint --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Steps`, and `.Files`. Step entries expose `.Name`, `.Text`, `.Error`, and `.Result`; file entries expose `.Name`, `.Text`, `.Error`, and `.Findings`. |
+| `atlas migrate status --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`. Available and pending migration file entries expose `.Name`, `.Version`, and `.Description`. Applied revision entries expose `.Version`, `.Description`, `.Type`, `.Applied`, `.Total`, `.ExecutedAt`, `.ExecutionTime`, `.Error`, `.ErrorStmt`, and `.OperatorVersion`. |
+| `atlas migrate down --format` | `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`, `.End`, and `.Error`. |
 
 The shared report shape and URL redaction rules are described on the
 [Atlas compatibility overview](../overview/#format-reports-and-redaction).

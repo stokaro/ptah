@@ -28,7 +28,7 @@ func writeMigrateDownFixture(c *qt.C, migrationsDir, dbPath string) {
 	write("2_add_audit.sql", "CREATE TABLE down_fmt_audit (id INTEGER PRIMARY KEY);")
 	write("2_add_audit.down.sql", "DROP TABLE down_fmt_audit;")
 
-	apply := atlas.NewAtlasCommand()
+	apply := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	apply.SetOut(&out)
 	apply.SetErr(&out)
@@ -59,14 +59,14 @@ type migrateDownJSONReport struct {
 	Error   string `json:"Error"`
 }
 
-func TestNewAtlasCommand_MigrateDownFormatRendersReportAndReverts(t *testing.T) {
+func TestCompatCommand_MigrateDownFormatRendersReportAndReverts(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-format.db")
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
 	cmd.SetIn(strings.NewReader("YES\n"))
 	cmd.SetOut(&out)
@@ -101,14 +101,14 @@ func TestNewAtlasCommand_MigrateDownFormatRendersReportAndReverts(t *testing.T) 
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
 }
 
-func TestNewAtlasCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T) {
+func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-dry.db")
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -129,7 +129,7 @@ func TestNewAtlasCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
 }
 
-func TestNewAtlasCommand_MigrateDownFormatFromEnvValue(t *testing.T) {
+func TestCompatCommand_MigrateDownFormatFromEnvValue(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -137,7 +137,7 @@ func TestNewAtlasCommand_MigrateDownFormatFromEnvValue(t *testing.T) {
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 	t.Setenv("PTAH_FORMAT", "planned={{ len .Planned }}")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -156,14 +156,14 @@ func TestNewAtlasCommand_MigrateDownFormatFromEnvValue(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "planned=2")
 }
 
-func TestNewAtlasCommand_MigrateDownFormatDevURLVerifiesThenApplies(t *testing.T) {
+func TestCompatCommand_MigrateDownFormatDevURLVerifiesThenApplies(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-dev.db")
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
 	cmd.SetIn(strings.NewReader("YES\n"))
 	cmd.SetOut(&out)
@@ -184,7 +184,7 @@ func TestNewAtlasCommand_MigrateDownFormatDevURLVerifiesThenApplies(t *testing.T
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 0)
 }
 
-func TestNewAtlasCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) {
+func TestCompatCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -194,7 +194,7 @@ func TestNewAtlasCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T
 	// catch it.
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "2_add_audit.down.sql"), []byte("DROP TABLE no_such_table;\n"), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -217,14 +217,14 @@ func TestNewAtlasCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T
 	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
-func TestNewAtlasCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *testing.T) {
+func TestCompatCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-native-dev.db")
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetIn(strings.NewReader("YES\n"))
 	cmd.SetOut(&out)
@@ -249,7 +249,7 @@ func TestNewAtlasCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
 }
 
-func TestNewAtlasCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T) {
+func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -257,7 +257,7 @@ func TestNewAtlasCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "2_add_audit.down.sql"), []byte("DROP TABLE no_such_table;\n"), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -275,13 +275,13 @@ func TestNewAtlasCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
-// TestNewAtlasCommand_MigrateDownDefaultOutputMatchesNativeCommand pins the
+// TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand pins the
 // byte-identity contract: without --format, the wrapped verb forwards to the
 // native `ptah migrations down` and its stdout is exactly the native
 // command's stdout. The native invocation selects --revision-format atlas
 // explicitly because the forward injects that default itself, so both runs
 // perform the same real rollback against the Atlas revision table.
-func TestNewAtlasCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T) {
+func TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 
@@ -297,7 +297,7 @@ func TestNewAtlasCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing
 	}
 
 	atlasOut := runDown("atlas-default", func(migrationsDir, dbPath string) (string, error) {
-		cmd := atlas.NewAtlasCommand()
+		cmd := atlas.NewCompatCommand("atlas")
 		var out, errOut bytes.Buffer
 		cmd.SetIn(strings.NewReader("YES\n"))
 		cmd.SetOut(&out)
@@ -331,18 +331,18 @@ func TestNewAtlasCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing
 	c.Assert(atlasOut, qt.Equals, nativeOut)
 }
 
-// TestNewAtlasCommand_MigrateDownDefaultsToAtlasRevisionFormat pins the
+// TestCompatCommand_MigrateDownDefaultsToAtlasRevisionFormat pins the
 // revision-format default of the forward: a bare `atlas migrate down` must
 // revert revisions created by `atlas migrate apply` (Atlas revision
 // bookkeeping), not silently no-op against an empty ptah revision table.
-func TestNewAtlasCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) {
+func TestCompatCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-default-revisions.db")
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetIn(strings.NewReader("YES\n"))
 	cmd.SetOut(&out)
@@ -362,18 +362,18 @@ func TestNewAtlasCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) 
 	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
-// TestNewAtlasCommand_MigrateDownRevisionFormatPtahOverridesDefault pins the
+// TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault pins the
 // escape hatch: an explicit native `--revision-format ptah` pass-through is
 // appended after the forward's Atlas default and wins, so the run reads ptah
 // revision bookkeeping and leaves the Atlas-applied state untouched.
-func TestNewAtlasCommand_MigrateDownRevisionFormatPtahOverridesDefault(t *testing.T) {
+func TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-ptah-revisions.db")
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -395,14 +395,14 @@ func TestNewAtlasCommand_MigrateDownRevisionFormatPtahOverridesDefault(t *testin
 	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
-func TestNewAtlasCommand_MigrateDownFormatDeclinedConfirmationWritesNoReport(t *testing.T) {
+func TestCompatCommand_MigrateDownFormatDeclinedConfirmationWritesNoReport(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-declined.db")
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
 	cmd.SetIn(strings.NewReader("NO\n"))
 	cmd.SetOut(&out)
@@ -424,7 +424,7 @@ func TestNewAtlasCommand_MigrateDownFormatDeclinedConfirmationWritesNoReport(t *
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
-func TestNewAtlasCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
+func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -442,7 +442,7 @@ func TestNewAtlasCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -464,7 +464,7 @@ func TestNewAtlasCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "migrations|2")
 }
 
-func TestNewAtlasCommand_MigrateDownFormatValidation(t *testing.T) {
+func TestCompatCommand_MigrateDownFormatValidation(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
@@ -515,7 +515,7 @@ func TestNewAtlasCommand_MigrateDownFormatValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := atlas.NewAtlasCommand()
+			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -528,10 +528,10 @@ func TestNewAtlasCommand_MigrateDownFormatValidation(t *testing.T) {
 	}
 }
 
-// TestNewAtlasCommand_MigrateDownWaivedFlagsRejectWithRationale pins the
+// TestCompatCommand_MigrateDownWaivedFlagsRejectWithRationale pins the
 // recorded waivers for the registry/cloud-bound down flags on both the
 // forward path and the --format path: identical wording, no silent drops.
-func TestNewAtlasCommand_MigrateDownWaivedFlagsRejectWithRationale(t *testing.T) {
+func TestCompatCommand_MigrateDownWaivedFlagsRejectWithRationale(t *testing.T) {
 	waived := []struct {
 		name string
 		args []string
@@ -564,7 +564,7 @@ func TestNewAtlasCommand_MigrateDownWaivedFlagsRejectWithRationale(t *testing.T)
 		} {
 			t.Run(tt.name+"_"+path.name, func(t *testing.T) {
 				c := qt.New(t)
-				cmd := atlas.NewAtlasCommand()
+				cmd := atlas.NewCompatCommand("atlas")
 				var out bytes.Buffer
 				cmd.SetOut(&out)
 				cmd.SetErr(&out)

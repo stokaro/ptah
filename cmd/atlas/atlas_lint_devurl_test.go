@@ -14,14 +14,14 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 )
 
-func TestNewAtlasCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
+func TestCompatCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
 	writeAtlasLintDevURLFile(c, migrationsDir, "1_create_atlas_lint_dev_url.sql",
 		"CREATE TABLE atlas_lint_dev_url (id INTEGER PRIMARY KEY);\n")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -41,13 +41,13 @@ func TestNewAtlasCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
 	assertAtlasLintDevURLSQLiteTableCount(c, devDBPath, "atlas_lint_dev_url", 1)
 }
 
-func TestNewAtlasCommand_MigrateLintRejectsDockerDevURL(t *testing.T) {
+func TestCompatCommand_MigrateLintRejectsDockerDevURL(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	writeAtlasLintDevURLFile(c, migrationsDir, "1_create_atlas_lint_dev_url.sql",
 		"CREATE TABLE atlas_lint_dev_url_docker (id INTEGER PRIMARY KEY);\n")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -63,7 +63,7 @@ func TestNewAtlasCommand_MigrateLintRejectsDockerDevURL(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay")
 }
 
-func TestNewAtlasCommand_MigrateLintUsesAtlasProjectEnvPolicy(t *testing.T) {
+func TestCompatCommand_MigrateLintUsesAtlasProjectEnvPolicy(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -88,7 +88,7 @@ func TestNewAtlasCommand_MigrateLintUsesAtlasProjectEnvPolicy(t *testing.T) {
 		c.Assert(os.Chdir(originalWD), qt.IsNil)
 	}()
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

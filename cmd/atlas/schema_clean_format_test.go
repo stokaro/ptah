@@ -21,7 +21,7 @@ func TestSchemaCleanFormatDryRunJSONDoesNotApply(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "clean-format-dry-run.db")
 	createSQLiteSchemaCleanTable(c, dbPath, "users")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -56,7 +56,7 @@ func TestSchemaCleanFormatCustomTemplate(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "clean-format-template.db")
 	createSQLiteSchemaCleanTable(c, dbPath, "events")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -78,7 +78,7 @@ func TestSchemaCleanInvalidFormatFailsBeforeConnecting(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "clean-format-invalid.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -100,7 +100,7 @@ func TestSchemaCleanRuntimeInvalidFormatFailsBeforeConnecting(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "clean-format-runtime-invalid.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -124,7 +124,7 @@ func TestSchemaCleanActualInvalidFormatFailsBeforeApplying(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "clean-format-actual-invalid.db")
 	createSQLiteSchemaCleanTable(c, dbPath, "kept_users")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -146,7 +146,7 @@ func TestSchemaCleanFormatRequiresInteractiveApproval(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "clean-format-prompt.db")
 	createSQLiteSchemaCleanTable(c, dbPath, "prompt_users")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -170,7 +170,7 @@ func TestSchemaCleanFormatAutoApproveApplies(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "clean-format-apply.db")
 	createSQLiteSchemaCleanTable(c, dbPath, "applied_users")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -199,7 +199,7 @@ func TestSchemaCleanDefaultOutputDryRun(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "clean-default-dry-run.db")
 	createSQLiteSchemaCleanTable(c, dbPath, "default_users")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -233,7 +233,7 @@ func TestSchemaCleanUsesAtlasProjectEnvURLAndFormat(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
