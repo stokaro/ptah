@@ -123,14 +123,14 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 		},
 		{
 			name:  "sqlite relative and absolute paths identify the same file",
-			left:  "sqlite://" + sqlitePath,
-			right: "sqlite://" + filepath.Join(dir, ".", "dev.db") + "?mode=rwc",
+			left:  atlasurl.SQLiteURLFromPath(sqlitePath),
+			right: atlasurl.SQLiteURLFromPath(filepath.Join(dir, ".", "dev.db")) + "?mode=rwc",
 			want:  true,
 		},
 		{
 			name:  "sqlite hard links identify the same file",
-			left:  "sqlite://" + sqlitePath,
-			right: "sqlite://" + sqliteHardLink,
+			left:  atlasurl.SQLiteURLFromPath(sqlitePath),
+			right: atlasurl.SQLiteURLFromPath(sqliteHardLink),
 			want:  true,
 		},
 		{
@@ -165,8 +165,8 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 		},
 		{
 			name:  "different sqlite files",
-			left:  "sqlite://" + sqlitePath,
-			right: "sqlite://" + filepath.Join(dir, "other.db"),
+			left:  atlasurl.SQLiteURLFromPath(sqlitePath),
+			right: atlasurl.SQLiteURLFromPath(filepath.Join(dir, "other.db")),
 			want:  false,
 		},
 	}

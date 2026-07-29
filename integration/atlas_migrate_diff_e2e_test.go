@@ -64,7 +64,7 @@ CREATE TYPE z_stale_dev_range AS RANGE (
 );
 `)
 	c.Assert(err, qt.IsNil)
-	t.Run("cleanup rejects dependencies owned by another schema", func(t *testing.T) {
+	t.Run("database realm cleans dependencies across schemas", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := devDB.ExecContext(ctx, `
 CREATE TABLE public.stale_dependency_parent (id integer PRIMARY KEY);
@@ -98,10 +98,9 @@ CREATE TABLE audit.external_child (
 			"--to", "file://"+schemaPath,
 			"--dev-url", testDBURL,
 			"--dir", "file://"+migrationsDir,
-			"must_reject_external_dependencies")
+			"database_realm_dependencies")
 
-		c.Assert(err, qt.IsNotNil)
-		c.Assert(output, qt.Contains, `refusing to clean schema "public"`)
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
 		var externalObjectCount int
 		err = devDB.QueryRowContext(ctx, `
 SELECT
@@ -115,10 +114,14 @@ SELECT
 	   AND c.relname = 'stale_dependency_parent')
 `).Scan(&externalObjectCount)
 		c.Assert(err, qt.IsNil)
-		c.Assert(externalObjectCount, qt.Equals, 3)
-		entries, err := os.ReadDir(migrationsDir)
-		c.Assert(err, qt.IsNil)
-		c.Assert(entries, qt.HasLen, 0)
+		c.Assert(externalObjectCount, qt.Equals, 0)
+		migrationSQL := readFirstMatchingFile(
+			c,
+			migrationsDir,
+			"*_database_realm_dependencies.sql",
+		)
+		c.Assert(migrationSQL, qt.Contains, "CREATE TABLE")
+		c.Assert(migrationSQL, qt.Contains, "desired_items")
 	})
 	desiredDBName := testDBName + "_desired"
 	createE2EDatabase(c, ctx, adminDB, desiredDBName)

@@ -25,6 +25,13 @@ var defaultPorts = map[string]string{
 	platform.ClickHouse:  "9000",
 }
 
+// SQLiteURLFromPath returns a SQLite URL whose path remains unambiguous on the
+// current operating system. Windows drive paths use the URL's opaque form
+// instead of being misparsed as a host and port.
+func SQLiteURLFromPath(path string) string {
+	return "sqlite:" + filepath.ToSlash(filepath.Clean(path))
+}
+
 func DialectFromURL(rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {

@@ -10,12 +10,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/devlock"
 )
 
 func TestAcquire_SQLiteSerializesSameRealm(t *testing.T) {
 	c := qt.New(t)
-	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
+	devURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "dev.db"))
 	firstConn, err := dbschema.ConnectToDatabase(t.Context(), devURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(firstConn)
@@ -42,13 +43,13 @@ func TestAcquire_SQLiteSeparatesDifferentRealms(t *testing.T) {
 	c := qt.New(t)
 	firstConn, err := dbschema.ConnectToDatabase(
 		t.Context(),
-		"sqlite://"+filepath.Join(t.TempDir(), "first.db"),
+		atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "first.db")),
 	)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(firstConn)
 	secondConn, err := dbschema.ConnectToDatabase(
 		t.Context(),
-		"sqlite://"+filepath.Join(t.TempDir(), "second.db"),
+		atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "second.db")),
 	)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(secondConn)
@@ -69,7 +70,7 @@ func TestAcquire_SQLiteSerializesHardLinkAliases(t *testing.T) {
 	aliasPath := filepath.Join(dir, "dev-alias.db")
 	firstConn, err := dbschema.ConnectToDatabase(
 		t.Context(),
-		"sqlite://"+databasePath,
+		atlasurl.SQLiteURLFromPath(databasePath),
 	)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(firstConn)
@@ -78,7 +79,7 @@ func TestAcquire_SQLiteSerializesHardLinkAliases(t *testing.T) {
 	c.Assert(os.Link(databasePath, aliasPath), qt.IsNil)
 	secondConn, err := dbschema.ConnectToDatabase(
 		t.Context(),
-		"sqlite://"+aliasPath,
+		atlasurl.SQLiteURLFromPath(aliasPath),
 	)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(secondConn)

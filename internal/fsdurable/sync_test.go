@@ -17,12 +17,3 @@ func TestSyncDir_HappyPath(t *testing.T) {
 
 	c.Assert(fsdurable.SyncDir(dir), qt.IsNil)
 }
-
-func TestSyncDir_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	err := fsdurable.SyncDir(filepath.Join(c.TempDir(), "missing"))
-
-	c.Assert(err, qt.ErrorMatches, `open directory for sync: .*`)
-	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-}

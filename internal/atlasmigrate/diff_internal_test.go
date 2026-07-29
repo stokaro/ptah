@@ -20,6 +20,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlassource"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/migrationreplay"
 	"github.com/stokaro/ptah/internal/migrationsnapshot"
@@ -1004,7 +1005,10 @@ CREATE VIEW replayed_user_ids AS SELECT id FROM replayed_users;
 		atlassource.ProjectEnv{},
 	)
 	c.Assert(err, qt.IsNil)
-	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(dir, "dev.db"))
+	conn, err := dbschema.ConnectToDatabase(
+		c.Context(),
+		atlasurl.SQLiteURLFromPath(filepath.Join(dir, "dev.db")),
+	)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		dbschema.CloseAndWarn(conn)
