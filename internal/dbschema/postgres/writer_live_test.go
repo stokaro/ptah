@@ -16,6 +16,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/stokaro/ptah/internal/dbschema/postgres"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
 type postgresWriterFamilyLiveCase struct {
@@ -240,12 +241,147 @@ func TestWriterDropDatabaseRealm_LivePostgresFamilyCleansCrossSchemaGraph(t *tes
 			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "public"), qt.Equals, 1)
 			c.Assert(postgresWriterLiveRelationCount(c, ctx, db, "public"), qt.Equals, 0)
 			c.Assert(
+				postgresWriterLiveNamedTypeCount(c, ctx, db, "public", "ptah_root_status"),
+				qt.Equals,
+				0,
+			)
+			c.Assert(
+				postgresWriterLiveRoutineCount(c, ctx, db, "public", "ptah_root_answer"),
+				qt.Equals,
+				0,
+			)
+			c.Assert(
 				loadPostgresWriterLiveSchemaMetadata(c, ctx, db, "public"),
 				qt.DeepEquals,
 				rootMetadata,
 			)
 			c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, systemExtensions)
 			c.Assert(postgresWriterLiveCurrentDatabase(c, ctx, db), qt.Equals, liveDatabase.name)
+		})
+	}
+}
+
+func TestWriterDropDatabaseRealm_LivePostgresCleansToastTable(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+
+	liveDatabase := newPostgresWriterLiveDatabase(
+		c,
+		ctx,
+		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+	)
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE public.ptah_toast_items (
+			id bigint PRIMARY KEY,
+			payload text NOT NULL
+		);
+		INSERT INTO public.ptah_toast_items (id, payload)
+		SELECT 1, string_agg(md5(value::text), '')
+		FROM generate_series(1, 20000) AS value;
+	`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLiveToastOID(c, ctx, db, "public", "ptah_toast_items"), qt.Not(qt.Equals), 0)
+	c.Assert(postgresWriterLiveStoredColumnSize(c, ctx, db), qt.Not(qt.Equals), 0)
+
+	writer := postgres.NewPostgreSQLWriter(db, "public")
+	err = writer.DropDatabaseRealm(ctx)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLiveRelationCount(c, ctx, db, "public"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "public"), qt.Equals, 1)
+}
+
+func TestWriterDropDatabaseRealm_LivePostgresRollsBackOnTemporaryPolicyDependency(
+	t *testing.T,
+) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+
+	liveDatabase := newPostgresWriterLiveDatabase(
+		c,
+		ctx,
+		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+	)
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	conn, err := db.Conn(ctx)
+	c.Assert(err, qt.IsNil)
+	defer conn.Close()
+
+	_, err = conn.ExecContext(ctx, `
+		CREATE FUNCTION public.ptah_policy_guard()
+			RETURNS boolean
+			LANGUAGE sql
+			IMMUTABLE
+			AS 'SELECT true';
+		CREATE TABLE public.ptah_realm_items (id bigint PRIMARY KEY);
+		CREATE TEMP TABLE ptah_preserved_items (id bigint PRIMARY KEY);
+		ALTER TABLE pg_temp.ptah_preserved_items ENABLE ROW LEVEL SECURITY;
+		CREATE POLICY ptah_preserved_policy
+			ON pg_temp.ptah_preserved_items
+			USING (public.ptah_policy_guard());
+	`)
+	c.Assert(err, qt.IsNil)
+
+	writer := postgres.NewPostgreSQLWriterForRunner(sqlrunner.NewConn(ctx, conn), "public")
+	err = writer.DropDatabaseRealm(ctx)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "because other objects depend on it")
+	c.Assert(postgresWriterLiveObjectCount(c, ctx, db, "public", "ptah_realm_items"), qt.Equals, 1)
+	c.Assert(
+		postgresWriterLiveRoutineCount(c, ctx, db, "public", "ptah_policy_guard"),
+		qt.Equals,
+		1,
+	)
+	c.Assert(postgresWriterLiveTemporaryPolicyCount(c, ctx, conn), qt.Equals, 1)
+}
+
+func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name     string
+		urlEnv   string
+		database string
+	}{
+		{
+			name:     "postgres",
+			urlEnv:   "POSTGRES_URL",
+			database: "postgres",
+		},
+		{
+			name:     "cockroachdb",
+			urlEnv:   "COCKROACHDB_URL",
+			database: "defaultdb",
+		},
+		{
+			name:     "yugabytedb",
+			urlEnv:   "YUGABYTEDB_URL",
+			database: "yugabyte",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			db := openPostgresWriterProtectedLiveDatabase(
+				c,
+				requirePostgresWriterFamilyLiveURL(c, test.urlEnv),
+				test.database,
+			)
+			writer := postgres.NewPostgreSQLWriter(db, "public")
+
+			err := writer.DropDatabaseRealm(c.Context())
+
+			c.Assert(
+				err,
+				qt.ErrorMatches,
+				`refusing to clean protected PostgreSQL-family database "`+test.database+`"`,
+			)
 		})
 	}
 }
@@ -453,6 +589,21 @@ func requirePostgresWriterFamilyLiveURL(c *qt.C, name string) string {
 	return parsed.String()
 }
 
+func openPostgresWriterProtectedLiveDatabase(c *qt.C, rawURL, database string) *sql.DB {
+	c.Helper()
+	parsed, err := url.Parse(rawURL)
+	c.Assert(err, qt.IsNil)
+	parsed.Path = "/" + database
+	parsed.RawPath = ""
+	db, err := sql.Open("pgx", parsed.String())
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.PingContext(c.Context()), qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(db.Close(), qt.IsNil)
+	})
+	return db
+}
+
 func requirePostgresWriterLiveURL(t *testing.T) string {
 	t.Helper()
 	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
@@ -649,6 +800,95 @@ func postgresWriterLiveRelationCount(
 		WHERE n.nspname = $1
 		  AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
 	`, schema).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+func postgresWriterLiveNamedTypeCount(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	schema string,
+	name string,
+) int {
+	c.Helper()
+	var count int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM pg_type t
+		JOIN pg_namespace n ON n.oid = t.typnamespace
+		WHERE n.nspname = $1
+		  AND t.typname = $2
+	`, schema, name).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+func postgresWriterLiveRoutineCount(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	schema string,
+	name string,
+) int {
+	c.Helper()
+	var count int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM pg_proc p
+		JOIN pg_namespace n ON n.oid = p.pronamespace
+		WHERE n.nspname = $1
+		  AND p.proname = $2
+	`, schema, name).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+func postgresWriterLiveToastOID(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	schema string,
+	table string,
+) int64 {
+	c.Helper()
+	var oid int64
+	err := db.QueryRowContext(ctx, `
+		SELECT c.reltoastrelid
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1
+		  AND c.relname = $2
+	`, schema, table).Scan(&oid)
+	c.Assert(err, qt.IsNil)
+	return oid
+}
+
+func postgresWriterLiveStoredColumnSize(c *qt.C, ctx context.Context, db *sql.DB) int {
+	c.Helper()
+	var size int
+	err := db.QueryRowContext(
+		ctx,
+		"SELECT pg_column_size(payload) FROM public.ptah_toast_items WHERE id = 1",
+	).Scan(&size)
+	c.Assert(err, qt.IsNil)
+	return size
+}
+
+func postgresWriterLiveTemporaryPolicyCount(
+	c *qt.C,
+	ctx context.Context,
+	conn *sql.Conn,
+) int {
+	c.Helper()
+	var count int
+	err := conn.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM pg_policy p
+		JOIN pg_class c ON c.oid = p.polrelid
+		WHERE c.relnamespace = pg_my_temp_schema()
+		  AND p.polname = 'ptah_preserved_policy'
+	`).Scan(&count)
 	c.Assert(err, qt.IsNil)
 	return count
 }

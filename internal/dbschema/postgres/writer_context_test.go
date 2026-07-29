@@ -197,30 +197,47 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(catalogQueries, qt.HasLen, 8)
+	c.Assert(catalogQueries, qt.HasLen, 9)
 	c.Assert(catalogQueries[0], qt.Equals, "SELECT version()")
-	c.Assert(catalogQueries[1], qt.Contains, "obj_description")
-	c.Assert(catalogQueries[1], qt.Contains, "COMMENT ON SCHEMA %I IS %L")
-	c.Assert(catalogQueries[2], qt.Contains, "aclexplode")
-	c.Assert(catalogQueries[3], qt.Contains, "n.nspname NOT LIKE 'pg\\_%'")
-	c.Assert(catalogQueries[3], qt.Not(qt.Contains), "n.nspname NOT LIKE 'yb\\_%'")
-	c.Assert(catalogQueries[4], qt.Contains, "DROP EXTENSION IF EXISTS %I CASCADE")
-	c.Assert(catalogQueries[6], qt.Contains, "SELECT e.extname FROM pg_extension")
-	c.Assert(catalogQueries[7], qt.Contains, "residual_objects")
-	c.Assert(catalogQueries[7], qt.Contains, "FROM pg_collation")
-	c.Assert(catalogQueries[7], qt.Contains, "FROM pg_default_acl")
+	c.Assert(catalogQueries[1], qt.Equals, "SELECT current_database()")
+	c.Assert(catalogQueries[2], qt.Contains, "obj_description")
+	c.Assert(catalogQueries[2], qt.Contains, "COMMENT ON SCHEMA %I IS %L")
+	c.Assert(catalogQueries[3], qt.Contains, "aclexplode")
+	c.Assert(catalogQueries[4], qt.Contains, "n.nspname NOT LIKE 'pg\\_%'")
+	c.Assert(catalogQueries[4], qt.Not(qt.Contains), "n.nspname NOT LIKE 'yb\\_%'")
+	c.Assert(catalogQueries[5], qt.Contains, "cleanup_objects")
+	c.Assert(catalogQueries[5], qt.Contains, "DROP EXTENSION IF EXISTS %I RESTRICT")
+	c.Assert(catalogQueries[5], qt.Contains, "DROP COLLATION IF EXISTS %I.%I RESTRICT")
+	c.Assert(catalogQueries[5], qt.Contains, "ALTER DEFAULT PRIVILEGES FOR ROLE %I")
+	c.Assert(catalogQueries[7], qt.Contains, "SELECT e.extname FROM pg_extension")
+	c.Assert(catalogQueries[8], qt.Contains, "residual_objects")
+	c.Assert(catalogQueries[8], qt.Contains, "FROM pg_collation")
+	c.Assert(catalogQueries[8], qt.Contains, "FROM pg_default_acl")
 	c.Assert(catalogArgs[0], qt.HasLen, 0)
-	c.Assert(catalogArgs[1], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "public"}})
+	c.Assert(catalogArgs[1], qt.HasLen, 0)
 	c.Assert(catalogArgs[2], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "public"}})
-	c.Assert(catalogArgs[3], qt.HasLen, 0)
-	c.Assert(catalogArgs[4], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "plpgsql"}})
-	c.Assert(catalogArgs[5], qt.HasLen, 0)
-	c.Assert(catalogArgs[6], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "plpgsql"}})
-	c.Assert(catalogArgs[7], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "public"}})
+	c.Assert(catalogArgs[3], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "public"}})
+	c.Assert(catalogArgs[4], qt.HasLen, 0)
+	c.Assert(catalogArgs[5], qt.DeepEquals, []driver.NamedValue{
+		{Ordinal: 1, Value: "audit"},
+		{Ordinal: 2, Value: "public"},
+		{Ordinal: 3, Value: "plpgsql"},
+	})
+	c.Assert(catalogArgs[6], qt.HasLen, 0)
+	c.Assert(catalogArgs[7], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "plpgsql"}})
+	c.Assert(catalogArgs[8], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "public"}})
 	c.Assert(execQueries, qt.DeepEquals, []string{
-		`DROP EXTENSION IF EXISTS "hstore" CASCADE`,
-		`DROP SCHEMA IF EXISTS "audit" CASCADE`,
-		`DROP SCHEMA IF EXISTS "public" CASCADE`,
+		`SAVEPOINT ptah_cleanup_object`,
+		`DROP EXTENSION IF EXISTS "hstore" RESTRICT`,
+		`RELEASE SAVEPOINT ptah_cleanup_object`,
+		`SAVEPOINT ptah_cleanup_object`,
+		`DROP COLLATION IF EXISTS "public"."ptah_case_sensitive" RESTRICT`,
+		`RELEASE SAVEPOINT ptah_cleanup_object`,
+		`SAVEPOINT ptah_cleanup_object`,
+		`ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" IN SCHEMA "public" REVOKE ALL PRIVILEGES ON TABLES FROM PUBLIC`,
+		`RELEASE SAVEPOINT ptah_cleanup_object`,
+		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
+		`DROP SCHEMA IF EXISTS "public" RESTRICT`,
 		`CREATE SCHEMA "public" AUTHORIZATION "app_owner"`,
 		`REVOKE ALL PRIVILEGES ON SCHEMA "public" FROM PUBLIC`,
 		`REVOKE ALL PRIVILEGES ON SCHEMA "public" FROM "app_owner"`,
@@ -232,8 +249,8 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 		`COMMENT ON SCHEMA "public" IS 'application root'`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 8)
-	c.Assert(db.ExecCount(), qt.Equals, 12)
+	c.Assert(db.QueryCount(), qt.Equals, 9)
+	c.Assert(db.ExecCount(), qt.Equals, 20)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
@@ -255,12 +272,12 @@ func TestWriterDropDatabaseRealm_CreatesAbsentRootSchema(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(execQueries, qt.DeepEquals, []string{
-		`DROP SCHEMA IF EXISTS "audit" CASCADE`,
-		`DROP SCHEMA IF EXISTS "public" CASCADE`,
+		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
+		`DROP SCHEMA IF EXISTS "public" RESTRICT`,
 		`CREATE SCHEMA "shadow"`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 7)
+	c.Assert(db.QueryCount(), qt.Equals, 8)
 	c.Assert(db.ExecCount(), qt.Equals, 3)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
@@ -283,8 +300,8 @@ func TestWriterDropDatabaseRealm_CockroachPreservesPublicSchemaContainer(t *test
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(execQueries, qt.DeepEquals, []string{
-		`DROP SCHEMA IF EXISTS "audit" CASCADE`,
 		`DROP TABLE IF EXISTS "public"."stale_items" RESTRICT`,
+		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 8)
@@ -304,7 +321,7 @@ func TestWriterDropDatabaseRealm_RollsBackOnResidualObject(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches,
 		`PostgreSQL database realm cleanup left residual collation "public"\."stale_collation"`)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 7)
+	c.Assert(db.QueryCount(), qt.Equals, 8)
 	c.Assert(db.ExecCount(), qt.Equals, 3)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
@@ -324,6 +341,94 @@ func TestWriterDropDatabaseRealm_RejectsSystemRootSchema(t *testing.T) {
 	c.Assert(db.ExecCount(), qt.Equals, 0)
 }
 
+func TestWriterDropDatabaseRealm_RejectsProtectedDatabasesBeforeMutation(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name     string
+		version  string
+		database string
+	}{
+		{name: "postgres database", version: "PostgreSQL 18.0", database: "POSTGRES"},
+		{name: "postgres template0", version: "PostgreSQL 18.0", database: "template0"},
+		{name: "postgres template1", version: "PostgreSQL 18.0", database: "template1"},
+		{name: "cockroach defaultdb", version: "CockroachDB CCL v26.2.4", database: "defaultdb"},
+		{name: "cockroach postgres", version: "CockroachDB CCL v26.2.4", database: "postgres"},
+		{name: "cockroach system", version: "CockroachDB CCL v26.2.4", database: "system"},
+		{name: "yugabyte database", version: "YugabyteDB 2026.1", database: "yugabyte"},
+		{name: "yugabyte postgres", version: "YugabyteDB 2026.1", database: "postgres"},
+		{name: "yugabyte template0", version: "YugabyteDB 2026.1", database: "template0"},
+		{name: "yugabyte template1", version: "YugabyteDB 2026.1", database: "template1"},
+		{name: "yugabyte system platform", version: "YugabyteDB 2026.1", database: "system_platform"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			queryHandler := &postgresRealmQuery{
+				version:  test.version,
+				database: test.database,
+			}
+			db := dbtest.Open(t, queryHandler.query)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropDatabaseRealm(t.Context())
+
+			c.Assert(
+				err,
+				qt.ErrorMatches,
+				`refusing to clean protected PostgreSQL-family database ".*"`,
+			)
+			c.Assert(db.QueryCount(), qt.Equals, 2)
+			c.Assert(db.BeginCount(), qt.Equals, 1)
+			c.Assert(db.ExecCount(), qt.Equals, 0)
+			c.Assert(db.CommitCount(), qt.Equals, 0)
+			c.Assert(db.RollbackCount(), qt.Equals, 1)
+		})
+	}
+}
+
+func TestWriterDropDatabaseRealm_PostgresAllowsOtherFamilyProtectedNames(t *testing.T) {
+	c := qt.New(t)
+	tests := []string{"defaultdb", "system", "system_platform", "yugabyte"}
+
+	for _, database := range tests {
+		c.Run(database, func(c *qt.C) {
+			queryHandler := newPostgresRealmMetadataQuery()
+			queryHandler.database = database
+			queryHandler.publicObjects = nil
+			db := dbtest.OpenWithExec(t, queryHandler.query, nil)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropDatabaseRealm(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.CommitCount(), qt.Equals, 1)
+			c.Assert(db.RollbackCount(), qt.Equals, 0)
+		})
+	}
+}
+
+func TestWriterDropDatabaseRealm_RollsBackOnPreservedDependency(t *testing.T) {
+	c := qt.New(t)
+	queryHandler := newPostgresRealmMetadataQuery()
+	queryHandler.publicObjects = [][]driver.Value{{
+		"function",
+		"public",
+		"is_allowed",
+		`DROP FUNCTION IF EXISTS "public"."is_allowed"() RESTRICT`,
+	}}
+	db := dbtest.OpenWithExec(t, queryHandler.query, failPostgresPreservedFunctionDrop)
+	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.ErrorMatches, `(?s)refusing to clean PostgreSQL database realm: failed to drop function is_allowed: SQL execution failed: cannot drop function because other objects depend on it.*`)
+	c.Assert(db.BeginCount(), qt.Equals, 1)
+	c.Assert(db.QueryCount(), qt.Equals, 6)
+	c.Assert(db.ExecCount(), qt.Equals, 4)
+	c.Assert(db.CommitCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
 func TestWriterDropDatabaseRealm_RollsBackOnResidualExtension(t *testing.T) {
 	c := qt.New(t)
 	queryHandler := newPostgresRealmResidualExtensionQuery()
@@ -335,7 +440,7 @@ func TestWriterDropDatabaseRealm_RollsBackOnResidualExtension(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches,
 		`PostgreSQL database realm cleanup left residual user extension "hstore"`)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 6)
+	c.Assert(db.QueryCount(), qt.Equals, 7)
 	c.Assert(db.ExecCount(), qt.Equals, 3)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
@@ -367,7 +472,7 @@ func TestWriterDropDatabaseRealm_RejectsUnsupportedPrivilegeBeforeMutation(t *te
 	c.Assert(err, qt.ErrorMatches,
 		`refusing to restore unsupported PostgreSQL schema privilege "TEMPORARY"`)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 3)
+	c.Assert(db.QueryCount(), qt.Equals, 4)
 	c.Assert(db.ExecCount(), qt.Equals, 0)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
@@ -513,12 +618,12 @@ func cockroachOrderedDependencyQuery(
 
 type postgresRealmQuery struct {
 	version           string
+	database          string
 	metadata          [][]driver.Value
 	privileges        [][]driver.Value
 	initialSchemas    [][]driver.Value
 	finalSchemas      [][]driver.Value
 	publicObjects     [][]driver.Value
-	userExtensions    [][]driver.Value
 	residualExtension [][]driver.Value
 	residualObjects   [][]driver.Value
 	schemaQueryCount  int
@@ -526,7 +631,8 @@ type postgresRealmQuery struct {
 
 func newPostgresRealmMetadataQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
-		version: "PostgreSQL 18.0",
+		version:  "PostgreSQL 18.0",
+		database: "ptah_test",
 		metadata: [][]driver.Value{{
 			"app_owner",
 			false,
@@ -540,16 +646,33 @@ func newPostgresRealmMetadataQuery() *postgresRealmQuery {
 		},
 		initialSchemas: [][]driver.Value{{"audit"}, {"public"}},
 		finalSchemas:   [][]driver.Value{{"public"}},
-		userExtensions: [][]driver.Value{{
-			"hstore",
-			`DROP EXTENSION IF EXISTS "hstore" CASCADE`,
-		}},
+		publicObjects: [][]driver.Value{
+			{
+				"extension",
+				"public",
+				"hstore",
+				`DROP EXTENSION IF EXISTS "hstore" RESTRICT`,
+			},
+			{
+				"collation",
+				"public",
+				"ptah_case_sensitive",
+				`DROP COLLATION IF EXISTS "public"."ptah_case_sensitive" RESTRICT`,
+			},
+			{
+				"default privilege",
+				"public",
+				"app_owner/r/PUBLIC",
+				`ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" IN SCHEMA "public" REVOKE ALL PRIVILEGES ON TABLES FROM PUBLIC`,
+			},
+		},
 	}
 }
 
 func newPostgresRealmAbsentRootQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
 		version:        "PostgreSQL 18.0",
+		database:       "ptah_test",
 		initialSchemas: [][]driver.Value{{"audit"}, {"public"}},
 		finalSchemas:   [][]driver.Value{{"shadow"}},
 	}
@@ -558,6 +681,7 @@ func newPostgresRealmAbsentRootQuery() *postgresRealmQuery {
 func newPostgresRealmCockroachQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
 		version:        "CockroachDB CCL v26.2.4",
+		database:       "ptah_test",
 		metadata:       [][]driver.Value{{"root", true, `COMMENT ON SCHEMA "public" IS NULL`}},
 		initialSchemas: [][]driver.Value{{"audit"}, {"public"}},
 		finalSchemas:   [][]driver.Value{{"public"}},
@@ -573,6 +697,7 @@ func newPostgresRealmCockroachQuery() *postgresRealmQuery {
 func newPostgresRealmResidualQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
 		version:         "PostgreSQL 18.0",
+		database:        "ptah_test",
 		metadata:        [][]driver.Value{{"app_owner", true, `COMMENT ON SCHEMA "public" IS NULL`}},
 		initialSchemas:  [][]driver.Value{{"public"}},
 		finalSchemas:    [][]driver.Value{{"public"}},
@@ -583,6 +708,7 @@ func newPostgresRealmResidualQuery() *postgresRealmQuery {
 func newPostgresRealmResidualExtensionQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
 		version:           "PostgreSQL 18.0",
+		database:          "ptah_test",
 		metadata:          [][]driver.Value{{"app_owner", true, `COMMENT ON SCHEMA "public" IS NULL`}},
 		initialSchemas:    [][]driver.Value{{"public"}},
 		finalSchemas:      [][]driver.Value{{"public"}},
@@ -593,6 +719,7 @@ func newPostgresRealmResidualExtensionQuery() *postgresRealmQuery {
 func newPostgresRealmUnsupportedPrivilegeQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
 		version:    "YugabyteDB 2026.1",
+		database:   "ptah_test",
 		metadata:   [][]driver.Value{{"yugabyte", false, `COMMENT ON SCHEMA "public" IS NULL`}},
 		privileges: [][]driver.Value{{"yugabyte", "TEMPORARY", false}},
 	}
@@ -603,6 +730,8 @@ func (q *postgresRealmQuery) query(
 	_ []driver.NamedValue,
 ) (dbtest.QueryResult, error) {
 	switch {
+	case strings.Contains(query, "current_database()"):
+		return postgresCurrentDatabaseResult(q.database), nil
 	case strings.Contains(query, "SELECT version()"):
 		return postgresVersionResult(q.version), nil
 	case strings.Contains(query, "obj_description"):
@@ -610,20 +739,15 @@ func (q *postgresRealmQuery) query(
 			Columns: []string{"owner", "acl_is_default", "comment_statement"},
 			Rows:    q.metadata,
 		}, nil
-	case strings.Contains(query, "aclexplode"):
-		return dbtest.QueryResult{
-			Columns: []string{"grantee", "privilege_type", "is_grantable"},
-			Rows:    q.privileges,
-		}, nil
 	case strings.Contains(query, "cleanup_objects"):
 		return dbtest.QueryResult{
 			Columns: []string{"object_kind", "object_schema", "object_name", "drop_statement"},
 			Rows:    q.publicObjects,
 		}, nil
-	case strings.Contains(query, "DROP EXTENSION IF EXISTS %I CASCADE"):
+	case strings.Contains(query, "aclexplode"):
 		return dbtest.QueryResult{
-			Columns: []string{"extname", "drop_statement"},
-			Rows:    q.userExtensions,
+			Columns: []string{"grantee", "privilege_type", "is_grantable"},
+			Rows:    q.privileges,
 		}, nil
 	case strings.Contains(query, "SELECT e.extname FROM pg_extension"):
 		return dbtest.QueryResult{
@@ -650,6 +774,23 @@ func (q *postgresRealmQuery) query(
 	default:
 		return dbtest.QueryResult{}, nil
 	}
+}
+
+func postgresCurrentDatabaseResult(database string) dbtest.QueryResult {
+	return dbtest.QueryResult{
+		Columns: []string{"current_database"},
+		Rows:    [][]driver.Value{{database}},
+	}
+}
+
+func failPostgresPreservedFunctionDrop(
+	query string,
+	_ []driver.NamedValue,
+) (driver.Result, error) {
+	if strings.HasPrefix(query, "DROP FUNCTION") {
+		return nil, errors.New("cannot drop function because other objects depend on it")
+	}
+	return driver.RowsAffected(0), nil
 }
 
 func postgresPartitionEdgeQuery(test postgresPartitionEdgeTest) func(
