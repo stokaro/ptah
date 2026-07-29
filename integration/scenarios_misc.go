@@ -141,7 +141,7 @@ func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConn
 		// server-wide privilege table, giving this probe a side-effect-free
 		// distinction between scenario and cleanup credentials.
 		var userCount int
-		err := conn.QueryRow("SELECT COUNT(*) FROM mysql.user").Scan(&userCount)
+		err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM mysql.user").Scan(&userCount)
 		if err == nil {
 			return fmt.Errorf("restricted %s connection unexpectedly read mysql.user", dialect)
 		}
