@@ -29,12 +29,12 @@ func TestParseManagedDataAnnotation(t *testing.T) {
 			db := mustParseSource(c, "schema.go", `
 package fixture
 
-//migrator:schema:data table="countries" key="`+tt.key+`" file="countries.yaml"
+//ptah:schema:data table="countries" key="`+tt.key+`" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	//ptah:schema:field name="code" type="VARCHAR(2)" primary="true"
 	Code string
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 }
 `)
@@ -55,12 +55,12 @@ func TestParseManagedDataAnnotation_Schema(t *testing.T) {
 	db := mustParseSource(c, "schema.go", `
 package fixture
 
-//migrator:schema:data table="countries" schema="reference" key="code" file="countries.yaml"
+//ptah:schema:data table="countries" schema="reference" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	//ptah:schema:field name="code" type="VARCHAR(2)" primary="true"
 	Code string
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 }
 `)
@@ -75,12 +75,12 @@ func TestParseManagedDataAnnotation_SchemaDefaultsEmpty(t *testing.T) {
 	db := mustParseSource(c, "schema.go", `
 package fixture
 
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	//ptah:schema:field name="code" type="VARCHAR(2)" primary="true"
 	Code string
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 }
 `)
@@ -97,17 +97,17 @@ func TestParseManagedDataAnnotation_MissingRequiredAttributeRejected(t *testing.
 	}{
 		{
 			name:          "missing file",
-			annotation:    `//migrator:schema:data table="countries" key="code"`,
+			annotation:    `//ptah:schema:data table="countries" key="code"`,
 			wantAttribute: "file",
 		},
 		{
 			name:          "missing key",
-			annotation:    `//migrator:schema:data table="countries" file="countries.yaml"`,
+			annotation:    `//ptah:schema:data table="countries" file="countries.yaml"`,
 			wantAttribute: "key",
 		},
 		{
 			name:          "missing table",
-			annotation:    `//migrator:schema:data key="code" file="countries.yaml"`,
+			annotation:    `//ptah:schema:data key="code" file="countries.yaml"`,
 			wantAttribute: "table",
 		},
 	}
@@ -147,7 +147,7 @@ func TestParseManagedDataAnnotation_EmptyKeyListRejected(t *testing.T) {
 			_, err := goschema.ParseSource("schema.go", `
 package fixture
 
-//migrator:schema:data table="countries" key="`+tt.key+`" file="countries.yaml"
+//ptah:schema:data table="countries" key="`+tt.key+`" file="countries.yaml"
 type Country struct{}
 `)
 
@@ -171,9 +171,9 @@ func TestParseManagedDataAnnotation_LoadRowsAfterParseDir(t *testing.T) {
 	writeGoFile(c, sub, "countries.go", `
 package reference
 
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	//ptah:schema:field name="code" type="VARCHAR(2)" primary="true"
 	Code string
 }
 `)
@@ -202,10 +202,10 @@ func TestMerge_PreservesManagedDataSourceRoots(t *testing.T) {
 	source := `
 package reference
 
-//migrator:schema:table name="countries"
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:table name="countries"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	//ptah:schema:field name="code" type="VARCHAR(2)" primary="true"
 	Code string
 }
 `
@@ -239,18 +239,18 @@ func TestParseManagedDataAnnotation_AggregatesAcrossFiles(t *testing.T) {
 	writeGoFile(c, root, "countries.go", `
 package fixture
 
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	//ptah:schema:field name="code" type="VARCHAR(2)" primary="true"
 	Code string
 }
 `)
 	writeGoFile(c, root, "currencies.go", `
 package fixture
 
-//migrator:schema:data table="currencies" key="tenant_id,code" file="currencies.yaml"
+//ptah:schema:data table="currencies" key="tenant_id,code" file="currencies.yaml"
 type Currency struct {
-	//migrator:schema:field name="code" type="VARCHAR(3)" primary="true"
+	//ptah:schema:field name="code" type="VARCHAR(3)" primary="true"
 	Code string
 }
 `)

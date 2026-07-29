@@ -11,15 +11,15 @@ import (
 	"github.com/stokaro/ptah/internal/annotationmeta"
 )
 
-const SchemaPath = "schemas/migrator-annotations.schema.json"
+const SchemaPath = "schemas/ptah-annotations.schema.json"
 
 // Generate renders the JSON Schema document.
 func Generate() ([]byte, error) {
 	doc := map[string]any{
 		"$schema":     "https://json-schema.org/draft/2020-12/schema",
-		"$id":         "https://stokaro.github.io/ptah/schemas/migrator-annotations.schema.json",
+		"$id":         "https://stokaro.github.io/ptah/schemas/ptah-annotations.schema.json",
 		"title":       "Ptah Go Annotation Directives",
-		"description": "Schema for parsed Ptah //migrator Go annotation directives.",
+		"description": "Schema for parsed //ptah Go annotation directives.",
 		"oneOf":       directiveRefs(),
 		"$defs":       directiveDefs(),
 	}

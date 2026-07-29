@@ -1,4 +1,4 @@
-// Migrator Parser - A comprehensive database schema parser and DDL generator
+// Annotation Parser - A comprehensive database schema parser and DDL generator
 //
 // This tool parses Go struct definitions with migration annotations and generates
 // database-specific DDL statements for PostgreSQL, MySQL, and MariaDB. It demonstrates
@@ -11,11 +11,11 @@
 // - Supporting platform-specific overrides
 //
 // Usage:
-//   migrator_parser <filename.go>
+//   annotation_parser <filename.go>
 //
 // Example:
-//   migrator_parser ./entities/user.go
-//   migrator_parser ./models/product.go
+//   annotation_parser ./entities/user.go
+//   annotation_parser ./models/product.go
 //
 // The tool will automatically discover and parse related files in the same directory
 // to resolve embedded type references and generate complete schema definitions.
@@ -71,10 +71,10 @@ func main() {
 
 // printUsage displays the command usage information
 func printUsage() {
-	fmt.Println("Migrator Parser - Database Schema DDL Generator")
+	fmt.Println("Annotation Parser - Database Schema DDL Generator")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  migrator_parser <filename.go>")
+	fmt.Println("  annotation_parser <filename.go>")
 	fmt.Println()
 	fmt.Println("Arguments:")
 	fmt.Println("  filename.go    Path to the Go file containing entity definitions")
@@ -83,9 +83,9 @@ func printUsage() {
 	fmt.Println("  SHOW_DETAILS=1    Show detailed schema information")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  migrator_parser ./entities/user.go")
-	fmt.Println("  migrator_parser ./models/product.go")
-	fmt.Println("  SHOW_DETAILS=1 migrator_parser ./entities/user.go")
+	fmt.Println("  annotation_parser ./entities/user.go")
+	fmt.Println("  annotation_parser ./models/product.go")
+	fmt.Println("  SHOW_DETAILS=1 annotation_parser ./entities/user.go")
 }
 
 // shouldShowDetails checks if detailed schema information should be displayed

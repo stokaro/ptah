@@ -22,12 +22,12 @@ func TestRLSPolicyParsingRobustness(t *testing.T) {
 			goCode: `package test
 
 // Enable RLS for multi-tenant isolation
-//migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
-//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
+//ptah:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      1,
@@ -40,12 +40,12 @@ type User struct {
 			goCode: `package test
 
 // Enable RLS for multi-tenant isolation
-//migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
-//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
+//ptah:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
 //
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      1,
@@ -57,11 +57,11 @@ type User struct {
 			name: "RLS annotations directly adjacent to table annotation",
 			goCode: `package test
 
-//migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
-//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
-//migrator:schema:table name="users"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
+//ptah:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      1,
@@ -73,12 +73,12 @@ type User struct {
 			name: "Multiple RLS policies for same table",
 			goCode: `package test
 
-//migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
-//migrator:schema:rls:policy name="user_select_policy" table="users" for="SELECT" to="app_user" using="tenant_id = get_current_tenant_id()" comment="Select policy"
-//migrator:schema:rls:policy name="user_insert_policy" table="users" for="INSERT" to="app_user" with_check="tenant_id = get_current_tenant_id()" comment="Insert policy"
-//migrator:schema:table name="users"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
+//ptah:schema:rls:policy name="user_select_policy" table="users" for="SELECT" to="app_user" using="tenant_id = get_current_tenant_id()" comment="Select policy"
+//ptah:schema:rls:policy name="user_insert_policy" table="users" for="INSERT" to="app_user" with_check="tenant_id = get_current_tenant_id()" comment="Insert policy"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      2,
@@ -93,16 +93,16 @@ type User struct {
 // Enable RLS for multi-tenant isolation
 
 
-//migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
 
 
-//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
+//ptah:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
 
 
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      1,
@@ -116,13 +116,13 @@ type User struct {
 
 /* Block comment */
 // Enable RLS for multi-tenant isolation
-//migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for multi-tenant user isolation"
 /* Another block comment */
-//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
+//ptah:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      1,

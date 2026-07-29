@@ -37,7 +37,7 @@ func newRegionsConn(t *testing.T, rows [][2]string) *dbschema.DatabaseConnection
 	return conn
 }
 
-// writeRegionsFixture writes a Go source carrying a //migrator:schema:data
+// writeRegionsFixture writes a Go source carrying a //ptah:schema:data
 // annotation for the "regions" table and the referenced YAML rows file into
 // root, so goschema.ParseDir + LoadManagedRows resolve the desired rows.
 func writeRegionsFixture(t *testing.T, root, yamlRows string) {
@@ -46,12 +46,12 @@ func writeRegionsFixture(t *testing.T, root, yamlRows string) {
 
 	goSrc := `package fixture
 
-//migrator:schema:data table="regions" key="code" file="regions.yaml"
+//ptah:schema:data table="regions" key="code" file="regions.yaml"
 type Region struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string
 }
 `
@@ -192,12 +192,12 @@ func TestGenerate_SchemaQualifiedTable(t *testing.T) {
 	root := t.TempDir()
 	goSrc := `package fixture
 
-//migrator:schema:data table="regions" schema="reference" key="code" file="regions.yaml"
+//ptah:schema:data table="regions" schema="reference" key="code" file="regions.yaml"
 type Region struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string
 }
 `
@@ -267,12 +267,12 @@ func TestGenerate_ProtectedSchemaQualifiedTable(t *testing.T) {
 		root := t.TempDir()
 		goSrc := `package fixture
 
-//migrator:schema:data table="regions" schema="reference" key="code" file="regions.yaml"
+//ptah:schema:data table="regions" schema="reference" key="code" file="regions.yaml"
 type Region struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string
 }
 `
@@ -340,28 +340,28 @@ func TestGenerate_ForeignKeyOrdering(t *testing.T) {
 	root := t.TempDir()
 	goSrc := `package fixture
 
-//migrator:schema:table name="countries"
+//ptah:schema:table name="countries"
 type Country struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string
 }
 
-//migrator:schema:table name="regions"
+//ptah:schema:table name="regions"
 type Region struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
-	//migrator:schema:field name="country_code" type="TEXT" not_null="true" foreign="countries(code)"
+	//ptah:schema:field name="country_code" type="TEXT" not_null="true" foreign="countries(code)"
 	CountryCode string
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string
 }
 
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type countryData struct{ _ int }
 
-//migrator:schema:data table="regions" key="code" file="regions.yaml"
+//ptah:schema:data table="regions" key="code" file="regions.yaml"
 type regionData struct{ _ int }
 `
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
@@ -500,7 +500,7 @@ func TestGenerate_EmptyDesiredFullFidelityDeleteRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	goSrc := `package fixture
 
-//migrator:schema:data table="widgets" key="id" file="widgets.yaml"
+//ptah:schema:data table="widgets" key="id" file="widgets.yaml"
 type widgetData struct{ _ int }
 `
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
@@ -582,7 +582,7 @@ func TestGenerate_EmptyDesiredRestoresTimestampColumn(t *testing.T) {
 	root := t.TempDir()
 	goSrc := `package fixture
 
-//migrator:schema:data table="events" key="id" file="events.yaml"
+//ptah:schema:data table="events" key="id" file="events.yaml"
 type eventData struct{ _ int }
 `
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
@@ -646,7 +646,7 @@ func TestGenerate_EmptyDesiredPreservesAutoincrementKey(t *testing.T) {
 	root := t.TempDir()
 	goSrc := `package fixture
 
-//migrator:schema:data table="tickets" key="id" file="tickets.yaml"
+//ptah:schema:data table="tickets" key="id" file="tickets.yaml"
 type ticketData struct{ _ int }
 `
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
@@ -708,7 +708,7 @@ func TestGenerate_EmptyDesiredExplicitDefaultSchema(t *testing.T) {
 	root := t.TempDir()
 	goSrc := `package fixture
 
-//migrator:schema:data table="regions" schema="main" key="code" file="regions.yaml"
+//ptah:schema:data table="regions" schema="main" key="code" file="regions.yaml"
 type regionData struct{ _ int }
 `
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
@@ -947,7 +947,7 @@ func newMultiTableConn(t *testing.T, regions, countries [][2]string) *dbschema.D
 	return conn
 }
 
-// writeMultiTableFixture writes //migrator:schema:data annotations for both
+// writeMultiTableFixture writes //ptah:schema:data annotations for both
 // "regions" and "countries" and their YAML rows files into root.
 func writeMultiTableFixture(t *testing.T, root, regionsYAML, countriesYAML string) {
 	t.Helper()
@@ -955,21 +955,21 @@ func writeMultiTableFixture(t *testing.T, root, regionsYAML, countriesYAML strin
 
 	goSrc := `package fixture
 
-//migrator:schema:data table="regions" key="code" file="regions.yaml"
+//ptah:schema:data table="regions" key="code" file="regions.yaml"
 type Region struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string
 }
 
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 
-	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
 	Name string
 }
 `

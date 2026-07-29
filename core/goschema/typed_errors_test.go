@@ -23,9 +23,9 @@ func TestParseDir_EmbedPathReportsTypedParseError(t *testing.T) {
 	root := t.TempDir()
 	err := os.WriteFile(filepath.Join(root, "models.go"), []byte(`package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INT" bogus="y"
+	//ptah:schema:field name="id" type="INT" bogus="y"
 	ID int64
 }
 `), 0o600)
@@ -38,7 +38,7 @@ type User struct {
 	c.Assert(parseErr.File, qt.Equals, "models.go")
 	c.Assert(parseErr.Line, qt.Equals, 5)
 	c.Assert(parseErr.Attribute, qt.Equals, "bogus")
-	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:field")
+	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:field")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
 }
 
@@ -48,17 +48,17 @@ func TestParseFS_ReportsAllTypedParseErrors(t *testing.T) {
 	fsys := fstest.MapFS{
 		"one.go": &fstest.MapFile{Data: []byte(`package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INT" bogus="y"
+	//ptah:schema:field name="id" type="INT" bogus="y"
 	ID int64
 }
 `)},
 		"two.go": &fstest.MapFile{Data: []byte(`package models
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:schema:field name="id" type="INT" mystery="z"
+	//ptah:schema:field name="id" type="INT" mystery="z"
 	ID int64
 }
 `)},
@@ -75,16 +75,16 @@ func TestParseSource_InvalidAttributeValueIsTyped(t *testing.T) {
 
 	_, err := goschema.ParseSource("schema.go", `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INT" identity_generation="BY_DEFUALT"
+	//ptah:schema:field name="id" type="INT" identity_generation="BY_DEFUALT"
 	ID int64
 }
 `)
 
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
-	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:field")
+	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:field")
 	c.Assert(parseErr.Attribute, qt.Equals, "identity_generation")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 }
@@ -95,17 +95,17 @@ func TestParseFS_AccumulatesInvalidAttributeValues(t *testing.T) {
 	fsys := fstest.MapFS{
 		"one.go": &fstest.MapFile{Data: []byte(`package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INT" identity_generation="BY_DEFUALT"
+	//ptah:schema:field name="id" type="INT" identity_generation="BY_DEFUALT"
 	ID int64
 }
 `)},
 		"two.go": &fstest.MapFile{Data: []byte(`package models
 
-//migrator:schema:table name="events"
+//ptah:schema:table name="events"
 type Event struct {
-	//migrator:schema:index name="idx_events_id" fields="id" granularity="-1"
+	//ptah:schema:index name="idx_events_id" fields="id" granularity="-1"
 	_ int
 }
 `)},

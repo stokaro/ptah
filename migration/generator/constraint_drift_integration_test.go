@@ -52,23 +52,23 @@ CREATE TABLE ptah_constraint_drift (
 	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(entitiesDir, "schema.go"), []byte(`package entities
 
-//migrator:schema:table name="ptah_constraint_drift"
-//migrator:schema:constraint name="ptah_constraint_price_check" type="CHECK" check="price >= 0"
-//migrator:schema:constraint name="ptah_constraint_unique" type="UNIQUE" columns="sku,region,category"
+//ptah:schema:table name="ptah_constraint_drift"
+//ptah:schema:constraint name="ptah_constraint_price_check" type="CHECK" check="price >= 0"
+//ptah:schema:constraint name="ptah_constraint_unique" type="UNIQUE" columns="sku,region,category"
 type Product struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int
 
-	//migrator:schema:field name="price" type="INTEGER" not_null="true"
+	//ptah:schema:field name="price" type="INTEGER" not_null="true"
 	Price int
 
-	//migrator:schema:field name="sku" type="TEXT" not_null="true"
+	//ptah:schema:field name="sku" type="TEXT" not_null="true"
 	SKU string
 
-	//migrator:schema:field name="region" type="TEXT" not_null="true"
+	//ptah:schema:field name="region" type="TEXT" not_null="true"
 	Region string
 
-	//migrator:schema:field name="category" type="TEXT" not_null="true"
+	//ptah:schema:field name="category" type="TEXT" not_null="true"
 	Category string
 }
 `), 0600), qt.IsNil)
@@ -147,19 +147,19 @@ CREATE TABLE ptah_unique_constraint_drift (
 			c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(entitiesDir, "schema.go"), []byte(`package entities
 
-//migrator:schema:table name="ptah_unique_constraint_drift"
-//migrator:schema:constraint name="ptah_unique_constraint_unique" type="UNIQUE" columns="sku,region,category"
+//ptah:schema:table name="ptah_unique_constraint_drift"
+//ptah:schema:constraint name="ptah_unique_constraint_unique" type="UNIQUE" columns="sku,region,category"
 type Product struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int
 
-	//migrator:schema:field name="sku" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="sku" type="VARCHAR(255)" not_null="true"
 	SKU string
 
-	//migrator:schema:field name="region" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="region" type="VARCHAR(255)" not_null="true"
 	Region string
 
-	//migrator:schema:field name="category" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="category" type="VARCHAR(255)" not_null="true"
 	Category string
 }
 `), 0600), qt.IsNil)

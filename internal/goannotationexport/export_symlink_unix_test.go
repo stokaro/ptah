@@ -67,10 +67,10 @@ func TestExport_FailurePath_OutputHardLinkAliasCannotOverwriteManagedData(t *tes
 	output := filepath.Join(outside, "schema.hcl")
 	sourceData := []byte(`package models
 
-//migrator:schema:table name="countries"
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:table name="countries"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 }
 `)
@@ -100,10 +100,10 @@ func TestExport_FailurePath_OutputSymlinkAliasCannotOverwriteManagedData(t *test
 	output := filepath.Join(outside, "schema.hcl")
 	sourceData := []byte(`package models
 
-//migrator:schema:table name="countries"
-//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:table name="countries"
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
 type Country struct {
-	//migrator:schema:field name="code" type="TEXT" primary="true"
+	//ptah:schema:field name="code" type="TEXT" primary="true"
 	Code string
 }
 `)

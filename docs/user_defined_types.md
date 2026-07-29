@@ -11,7 +11,7 @@ User-defined types are PostgreSQL-only. On MySQL, MariaDB, and SQLite they are n
 A domain is a base type constrained with optional `NOT NULL`, `DEFAULT`, and `CHECK` clauses.
 
 ```go
-//migrator:schema:domain name="email" type="TEXT" not_null="true" check="VALUE ~ '@'"
+//ptah:schema:domain name="email" type="TEXT" not_null="true" check="VALUE ~ '@'"
 type EmailDomain struct{}
 ```
 
@@ -38,7 +38,7 @@ Renders `CREATE DOMAIN "email" AS TEXT NOT NULL CHECK (VALUE ~ '@');`.
 A composite type is a structured set of named fields, usable as a column type.
 
 ```go
-//migrator:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:INTEGER"
+//ptah:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:INTEGER"
 type AddressType struct{}
 ```
 
@@ -56,7 +56,7 @@ Renders `CREATE TYPE "address" AS ("street" TEXT, "city" TEXT, "zip" INTEGER);`.
 A range type describes a range of values over an ordered subtype.
 
 ```go
-//migrator:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
+//ptah:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
 type FloatRange struct{}
 ```
 

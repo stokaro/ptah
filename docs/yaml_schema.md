@@ -48,21 +48,21 @@ tables:
 This is equivalent to:
 
 ```go
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-    //migrator:schema:field name="id" type="SERIAL" primary="true"
+    //ptah:schema:field name="id" type="SERIAL" primary="true"
     ID int64
 
-    //migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+    //ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
     Email string
 
-    //migrator:schema:field name="email_lc" type="TEXT" generated="lower(email)" stored="true"
+    //ptah:schema:field name="email_lc" type="TEXT" generated="lower(email)" stored="true"
     EmailLC string
 
-    //migrator:schema:index name="idx_users_email" fields="email"
+    //ptah:schema:index name="idx_users_email" fields="email"
     _ int
 
-    //migrator:schema:index name="idx_active_users_email" fields="email" where="deleted_at IS NULL"
+    //ptah:schema:index name="idx_active_users_email" fields="email" where="deleted_at IS NULL"
     _ int
 }
 ```

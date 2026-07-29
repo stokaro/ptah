@@ -39,13 +39,13 @@ Each table becomes one struct. The generated `models/customers.go`:
 
 package models
 
-//migrator:schema:table name="customers"
+//ptah:schema:table name="customers"
 type Customers struct {
-	//migrator:schema:field name="id" type="INTEGER" not_null="true" primary="true" auto_increment="true"
+	//ptah:schema:field name="id" type="INTEGER" not_null="true" primary="true" auto_increment="true"
 	Id int
-	//migrator:schema:field name="email" type="TEXT" not_null="true" unique="true"
+	//ptah:schema:field name="email" type="TEXT" not_null="true" unique="true"
 	Email string
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name *string
 }
 ```

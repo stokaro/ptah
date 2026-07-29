@@ -234,7 +234,7 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
 	for _, enum := range sortedEnums(ctx.db.Enums) {
-		w.writeComment(annotation("migrator:schema:enum",
+		w.writeComment(annotation("ptah:schema:enum",
 			attr{name: "name", value: enum.Name, set: true},
 			attr{name: "values", value: strings.Join(enum.Values, ","), set: len(enum.Values) > 0},
 		))
@@ -259,13 +259,13 @@ func (ctx *renderContext) writeEnums(w *sourceWriter) {
 
 func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	for _, schema := range sortedSchemas(ctx.db.Schemas) {
-		w.writeComment(annotation("migrator:schema:schema",
+		w.writeComment(annotation("ptah:schema:schema",
 			attr{name: "name", value: schema.Name, set: true},
 			attr{name: "comment", value: schema.Comment, set: schema.Comment != ""},
 		))
 	}
 	for _, extension := range sortedExtensions(ctx.db.Extensions) {
-		w.writeComment(annotation("migrator:schema:extension",
+		w.writeComment(annotation("ptah:schema:extension",
 			attr{name: "name", value: extension.Name, set: true},
 			attr{name: "if_not_exists", value: strconv.FormatBool(extension.IfNotExists), set: extension.IfNotExists},
 			attr{name: "version", value: extension.Version, set: extension.Version != ""},
@@ -276,7 +276,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		w.writeComment(functionAnnotation(function))
 	}
 	for _, view := range sortedViews(ctx.db.Views) {
-		w.writeComment(annotation("migrator:schema:view",
+		w.writeComment(annotation("ptah:schema:view",
 			attr{name: "name", value: view.Name, set: true},
 			attr{name: "body", value: view.Body, set: true},
 			attr{name: "with_check", value: strconv.FormatBool(view.WithCheck), set: view.WithCheck},
@@ -284,7 +284,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		))
 	}
 	for _, view := range sortedMaterializedViews(ctx.db.MaterializedViews) {
-		w.writeComment(annotation("migrator:schema:matview",
+		w.writeComment(annotation("ptah:schema:matview",
 			attr{name: "name", value: view.Name, set: true},
 			attr{name: "body", value: view.Body, set: true},
 			attr{name: "refresh_strategy", value: view.RefreshStrategy, set: view.RefreshStrategy != ""},
@@ -308,7 +308,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table goschema.Table) {
 		w.writeComment(rlsPolicyAnnotation(policy))
 	}
 	for _, enabled := range ctx.rlsEnabledByTable[table.StructName] {
-		w.writeComment(annotation("migrator:schema:rls:enable",
+		w.writeComment(annotation("ptah:schema:rls:enable",
 			attr{name: "table", value: enabled.Table, set: true},
 			attr{name: "comment", value: enabled.Comment, set: enabled.Comment != ""},
 		))
@@ -325,11 +325,11 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table goschema.Table) {
 	usedNames := map[string]struct{}{}
 	for _, field := range ctx.fieldsByTable[table.StructName] {
 		fieldName := ctx.fieldIdentifier(field, usedNames)
-		w.writeComment("\t" + annotation("migrator:schema:field", fieldAttrs(field)...))
+		w.writeComment("\t" + annotation("ptah:schema:field", fieldAttrs(field)...))
 		w.writeLine("\t" + fieldName + " " + ctx.goType(field) + structTags(field, ctx.opts))
 	}
 	for _, index := range ctx.indexesByTable[table.StructName] {
-		w.writeComment("\t" + annotation("migrator:schema:index", indexAttrs(index)...))
+		w.writeComment("\t" + annotation("ptah:schema:index", indexAttrs(index)...))
 		w.writeLine("\t_ struct{}")
 	}
 	w.writeLine("}")
@@ -367,7 +367,7 @@ func (ctx *renderContext) goType(field goschema.Field) string {
 }
 
 func tableAnnotation(table goschema.Table) string {
-	return annotation("migrator:schema:table",
+	return annotation("ptah:schema:table",
 		attr{name: "name", value: table.Name, set: true},
 		attr{name: "schema", value: table.Schema, set: table.Schema != ""},
 		attr{name: "engine", value: table.Engine, set: table.Engine != ""},
@@ -420,7 +420,7 @@ func indexAttrs(index goschema.Index) []attr {
 }
 
 func constraintAnnotation(constraint goschema.Constraint) string {
-	return annotation("migrator:schema:constraint",
+	return annotation("ptah:schema:constraint",
 		attr{name: "name", value: constraint.Name, set: true},
 		attr{name: "type", value: constraint.Type, set: true},
 		attr{name: "table", value: constraint.Table, set: constraint.Table != ""},
@@ -440,7 +440,7 @@ func constraintAnnotation(constraint goschema.Constraint) string {
 }
 
 func functionAnnotation(function goschema.Function) string {
-	return annotation("migrator:schema:function",
+	return annotation("ptah:schema:function",
 		attr{name: "name", value: function.Name, set: true},
 		attr{name: "params", value: function.Parameters, set: function.Parameters != ""},
 		attr{name: "returns", value: function.Returns, set: function.Returns != ""},
@@ -453,7 +453,7 @@ func functionAnnotation(function goschema.Function) string {
 }
 
 func rlsPolicyAnnotation(policy goschema.RLSPolicy) string {
-	return annotation("migrator:schema:rls:policy",
+	return annotation("ptah:schema:rls:policy",
 		attr{name: "name", value: policy.Name, set: true},
 		attr{name: "table", value: policy.Table, set: true},
 		attr{name: "for", value: policy.PolicyFor, set: policy.PolicyFor != ""},
@@ -465,7 +465,7 @@ func rlsPolicyAnnotation(policy goschema.RLSPolicy) string {
 }
 
 func triggerAnnotation(trigger goschema.Trigger) string {
-	return annotation("migrator:schema:trigger",
+	return annotation("ptah:schema:trigger",
 		attr{name: "name", value: trigger.Name, set: true},
 		attr{name: "table", value: trigger.Table, set: true},
 		attr{name: "timing", value: trigger.Timing, set: trigger.Timing != ""},
@@ -477,7 +477,7 @@ func triggerAnnotation(trigger goschema.Trigger) string {
 }
 
 func roleAnnotation(role goschema.Role) string {
-	return annotation("migrator:schema:role",
+	return annotation("ptah:schema:role",
 		attr{name: "name", value: role.Name, set: true},
 		attr{name: "login", value: strconv.FormatBool(role.Login), set: role.Login},
 		attr{name: "superuser", value: strconv.FormatBool(role.Superuser), set: role.Superuser},
@@ -490,7 +490,7 @@ func roleAnnotation(role goschema.Role) string {
 }
 
 func grantAnnotation(grant goschema.Grant) string {
-	return annotation("migrator:schema:grant",
+	return annotation("ptah:schema:grant",
 		attr{name: "role", value: grant.Role, set: true},
 		attr{name: "privilege", value: strings.Join(grant.Privileges, ","), set: len(grant.Privileges) > 0},
 		attr{name: "on_table", value: grant.OnTable, set: grant.OnTable != ""},

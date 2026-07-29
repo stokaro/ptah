@@ -18,13 +18,13 @@ func TestCleanDirDryRunDiffAndWrite(t *testing.T) {
 	original := `package models
 
 // User is business documentation.
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
 	// ID is business documentation.
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	Timestamps
 }
 `
@@ -37,7 +37,7 @@ type User struct {
 	results := plan.DiffResults()
 	c.Assert(results, qt.HasLen, 1)
 	c.Assert(results[0].RemovedLines, qt.Equals, 3)
-	c.Assert(results[0].Diff, qt.Contains, `-//migrator:schema:table name="users"`)
+	c.Assert(results[0].Diff, qt.Contains, `-//ptah:schema:table name="users"`)
 	content, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, original)
@@ -52,8 +52,8 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Contains, "// User is business documentation.")
 	c.Assert(string(content), qt.Contains, "// ID is business documentation.")
-	c.Assert(string(content), qt.Not(qt.Contains), "migrator:schema")
-	c.Assert(string(content), qt.Not(qt.Contains), "migrator:embedded")
+	c.Assert(string(content), qt.Not(qt.Contains), "ptah:schema")
+	c.Assert(string(content), qt.Not(qt.Contains), "ptah:embedded")
 	info, err := os.Stat(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))
@@ -69,7 +69,7 @@ func TestCleanDirPreservesUnrelatedFormattingByteForByte(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "model.go")
-	original := "package models\n\n// User is business documentation.\n//migrator:schema:table name=\"users\"\ntype User struct{ID int64}\n"
+	original := "package models\n\n// User is business documentation.\n//ptah:schema:table name=\"users\"\ntype User struct{ID int64}\n"
 	expected := "package models\n\n// User is business documentation.\ntype User struct{ID int64}\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 
@@ -88,7 +88,7 @@ func TestCleanDirDiffReportsDuplicateRemovedLinesByPosition(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "model.go")
-	annotation := "//migrator:schema:field name=\"id\" type=\"SERIAL\"\n"
+	annotation := "//ptah:schema:field name=\"id\" type=\"SERIAL\"\n"
 	original := "package models\n\ntype User struct {\n" +
 		annotation +
 		"ID int64\n\n" +
@@ -114,32 +114,32 @@ func TestCleanDir_HappyPath_PreservesStringLiteralsAndRemovesStandaloneAnnotatio
 	path := filepath.Join(dir, "model.go")
 	original := "package models\n\n" +
 		"const raw = `header\n" +
-		"//migrator:schema:table name=\"raw_literal\"\n" +
-		"//migrator:embedded mode=\"raw_literal\"\n" +
+		"//ptah:schema:table name=\"raw_literal\"\n" +
+		"//ptah:embedded mode=\"raw_literal\"\n" +
 		"footer`\n\n" +
-		"const interpreted = \"//migrator:schema:field name=\\\"interpreted_literal\\\" type=\\\"TEXT\\\"\"\n" +
-		"const multiline = \"header\\n//migrator:embedded mode=\\\"interpreted_literal\\\"\\nfooter\"\n" +
-		"const inline = 1 //migrator:schema:table name=\"inline_comment\"\n\n" +
-		"//migrator:embeddedness is ordinary documentation.\n" +
-		"//migrator:schema:not-a-known-directive is ordinary documentation.\n" +
+		"const interpreted = \"//ptah:schema:field name=\\\"interpreted_literal\\\" type=\\\"TEXT\\\"\"\n" +
+		"const multiline = \"header\\n//ptah:embedded mode=\\\"interpreted_literal\\\"\\nfooter\"\n" +
+		"const inline = 1 //ptah:schema:table name=\"inline_comment\"\n\n" +
+		"//ptah:embeddedness is ordinary documentation.\n" +
+		"//ptah:schema:not-a-known-directive is ordinary documentation.\n" +
 		"// User is business documentation.\n" +
-		"//migrator:schema:table name=\"users\"\n" +
+		"//ptah:schema:table name=\"users\"\n" +
 		"type User struct {\n" +
-		"\t//migrator:schema:field name=\"id\" type=\"BIGINT\"\n" +
+		"\t//ptah:schema:field name=\"id\" type=\"BIGINT\"\n" +
 		"\tID int64\n" +
-		"\t//migrator:embedded mode=\"inline\"\n" +
+		"\t//ptah:embedded mode=\"inline\"\n" +
 		"\tTimestamps\n" +
 		"}\n"
 	expected := "package models\n\n" +
 		"const raw = `header\n" +
-		"//migrator:schema:table name=\"raw_literal\"\n" +
-		"//migrator:embedded mode=\"raw_literal\"\n" +
+		"//ptah:schema:table name=\"raw_literal\"\n" +
+		"//ptah:embedded mode=\"raw_literal\"\n" +
 		"footer`\n\n" +
-		"const interpreted = \"//migrator:schema:field name=\\\"interpreted_literal\\\" type=\\\"TEXT\\\"\"\n" +
-		"const multiline = \"header\\n//migrator:embedded mode=\\\"interpreted_literal\\\"\\nfooter\"\n" +
-		"const inline = 1 //migrator:schema:table name=\"inline_comment\"\n\n" +
-		"//migrator:embeddedness is ordinary documentation.\n" +
-		"//migrator:schema:not-a-known-directive is ordinary documentation.\n" +
+		"const interpreted = \"//ptah:schema:field name=\\\"interpreted_literal\\\" type=\\\"TEXT\\\"\"\n" +
+		"const multiline = \"header\\n//ptah:embedded mode=\\\"interpreted_literal\\\"\\nfooter\"\n" +
+		"const inline = 1 //ptah:schema:table name=\"inline_comment\"\n\n" +
+		"//ptah:embeddedness is ordinary documentation.\n" +
+		"//ptah:schema:not-a-known-directive is ordinary documentation.\n" +
 		"// User is business documentation.\n" +
 		"type User struct {\n" +
 		"\tID int64\n" +
@@ -171,11 +171,11 @@ func TestCleanDir_HappyPath_SkipsTestVendorAndHiddenSources(t *testing.T) {
 	vendorPath := filepath.Join(vendorDir, "model.go")
 	hiddenDir := filepath.Join(dir, "models", ".codex", "worktrees")
 	hiddenPath := filepath.Join(hiddenDir, "model.go")
-	original := "package models\n\n//migrator:schema:table name=\"users\" platform.mysql.engine=\"InnoDB\"\ntype User struct{}\n"
+	original := "package models\n\n//ptah:schema:table name=\"users\" platform.mysql.engine=\"InnoDB\"\ntype User struct{}\n"
 	expected := "package models\n\ntype User struct{}\n"
-	skippedTest := "package models\n\n//migrator:schema:table name=\"test_only\"\ntype TestOnly struct {\n"
-	skippedVendor := "package example\n\n//migrator:schema:table name=\"vendor_only\"\ntype VendorOnly struct {\n"
-	skippedHidden := "package worktrees\n\n//migrator:schema:table name=\"hidden_only\"\ntype HiddenOnly struct {\n"
+	skippedTest := "package models\n\n//ptah:schema:table name=\"test_only\"\ntype TestOnly struct {\n"
+	skippedVendor := "package example\n\n//ptah:schema:table name=\"vendor_only\"\ntype VendorOnly struct {\n"
+	skippedHidden := "package worktrees\n\n//ptah:schema:table name=\"hidden_only\"\ntype HiddenOnly struct {\n"
 	c.Assert(os.MkdirAll(vendorDir, 0o755), qt.IsNil)
 	c.Assert(os.MkdirAll(hiddenDir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
@@ -209,8 +209,8 @@ func TestCleanDir_FailurePath_InvalidGoSourceIsNotModified(t *testing.T) {
 	dir := t.TempDir()
 	validPath := filepath.Join(dir, "a_valid.go")
 	invalidPath := filepath.Join(dir, "z_invalid.go")
-	validOriginal := "package models\n\n//migrator:schema:table name=\"users\"\ntype User struct{}\n"
-	invalidOriginal := "package models\n\n//migrator:schema:table name=\"broken\"\ntype Broken struct {\n"
+	validOriginal := "package models\n\n//ptah:schema:table name=\"users\"\ntype User struct{}\n"
+	invalidOriginal := "package models\n\n//ptah:schema:table name=\"broken\"\ntype Broken struct {\n"
 	c.Assert(os.WriteFile(validPath, []byte(validOriginal), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(invalidPath, []byte(invalidOriginal), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(validPath, 0o640), qt.IsNil)
@@ -240,8 +240,8 @@ func TestPlanApply_FailurePath_PrevalidatesEverySourceBeforeWriting(t *testing.T
 	dir := t.TempDir()
 	firstPath := filepath.Join(dir, "a_model.go")
 	changedPath := filepath.Join(dir, "z_model.go")
-	firstData := []byte("package models\n\n//migrator:schema:table name=\"first\"\ntype First struct{}\n")
-	changedData := []byte("package models\n\n//migrator:schema:table name=\"changed\"\ntype Changed struct{}\n")
+	firstData := []byte("package models\n\n//ptah:schema:table name=\"first\"\ntype First struct{}\n")
+	changedData := []byte("package models\n\n//ptah:schema:table name=\"changed\"\ntype Changed struct{}\n")
 	replacementData := []byte("package models\n\ntype Changed struct{ ID int64 }\n")
 	c.Assert(os.WriteFile(firstPath, firstData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(changedPath, changedData, 0o600), qt.IsNil)
@@ -268,9 +268,9 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	original := "package models\r\n" +
 		"\r\n" +
 		"// User keeps business documentation.  \r\n" +
-		"//migrator:schema:table name=\"users\"\r\n" +
+		"//ptah:schema:table name=\"users\"\r\n" +
 		"type User struct{ID int64}\r\n" +
-		"\t//migrator:embedded mode=\"inline\"\r\n" +
+		"\t//ptah:embedded mode=\"inline\"\r\n" +
 		"type Audit struct{CreatedAt int64}\r\n"
 	expected := "package models\r\n" +
 		"\r\n" +
@@ -304,8 +304,8 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(diffResults[0].Path, qt.Equals, dryRunResults[0].Path)
 	c.Assert(diffResults[0].Changed, qt.Equals, dryRunResults[0].Changed)
 	c.Assert(diffResults[0].RemovedLines, qt.Equals, dryRunResults[0].RemovedLines)
-	c.Assert(diffResults[0].Diff, qt.Contains, "-//migrator:schema:table name=\"users\"\r\n")
-	c.Assert(diffResults[0].Diff, qt.Contains, "-\t//migrator:embedded mode=\"inline\"\r\n")
+	c.Assert(diffResults[0].Diff, qt.Contains, "-//ptah:schema:table name=\"users\"\r\n")
+	c.Assert(diffResults[0].Diff, qt.Contains, "-\t//ptah:embedded mode=\"inline\"\r\n")
 	content, err = os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, original)
@@ -354,12 +354,12 @@ func TestCleanDir_HappyPath_DiffMarksMissingFinalNewline(t *testing.T) {
 	}{
 		{
 			name:         "removed final annotation",
-			original:     "package models\n//migrator:schema:table name=\"users\"",
-			wantDiffLine: "-//migrator:schema:table name=\"users\"\n",
+			original:     "package models\n//ptah:schema:table name=\"users\"",
+			wantDiffLine: "-//ptah:schema:table name=\"users\"\n",
 		},
 		{
 			name:         "final context line",
-			original:     "package models\n//migrator:schema:table name=\"users\"\ntype User struct{}",
+			original:     "package models\n//ptah:schema:table name=\"users\"\ntype User struct{}",
 			wantDiffLine: " type User struct{}\n",
 		},
 	}
@@ -388,7 +388,7 @@ func TestPlanSourceAlias_HappyPath_ReportsExactSourceAndMissingPath(t *testing.T
 	c := qt.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "model.go")
-	original := "package models\n\n//migrator:schema:table name=\"users\" platform.mysql.engine=\"InnoDB\"\ntype User struct{}\n"
+	original := "package models\n\n//ptah:schema:table name=\"users\" platform.mysql.engine=\"InnoDB\"\ntype User struct{}\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 
 	plan, err := goannotationcleanup.PlanDir(dir)
@@ -397,7 +397,7 @@ func TestPlanSourceAlias_HappyPath_ReportsExactSourceAndMissingPath(t *testing.T
 		{
 			Path:       path,
 			Line:       3,
-			Directive:  "migrator:schema:table",
+			Directive:  "ptah:schema:table",
 			Attributes: []string{"name", "platform.mysql.engine"},
 		},
 	})

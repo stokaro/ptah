@@ -1,5 +1,5 @@
 // Package datamigrate composes the declarative reference/seed data pipeline:
-// it parses //migrator:schema:data annotations, reads the corresponding live
+// it parses //ptah:schema:data annotations, reads the corresponding live
 // rows, diffs them, and renders the difference as a single reversible SQL
 // migration body pair.
 //
@@ -30,7 +30,7 @@ import (
 
 // Options configures [Generate].
 type Options struct {
-	// RootDir is the directory of Go sources carrying //migrator:schema:data
+	// RootDir is the directory of Go sources carrying //ptah:schema:data
 	// annotations. It is passed verbatim to goschema.ParseDir and reused to
 	// resolve each annotation's YAML row-data file, so it must be the same root
 	// the annotations were authored against.
@@ -62,7 +62,7 @@ type Options struct {
 // single reversible SQL body pair covering every managed table.
 //
 // It parses the Go annotations under opts.RootDir and, for each declared
-// //migrator:schema:data table, loads the desired rows, reads the live rows
+// //ptah:schema:data table, loads the desired rows, reads the live rows
 // projected onto the managed column set (the union of the desired rows' columns
 // plus the key columns), and computes the row-level diff. When a table's desired
 // set is empty but the live table is populated, every live row becomes a full
@@ -96,7 +96,7 @@ type Options struct {
 // apply path.
 //
 // Each table is read and rendered under the schema declared on its
-// //migrator:schema:data annotation (the "schema" attribute, carried on
+// //ptah:schema:data annotation (the "schema" attribute, carried on
 // goschema.ManagedData); an empty schema targets the connection's default
 // schema. The schema qualifies both the live-row read and the generated DML.
 func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (upSQL, downSQL string, err error) {
@@ -171,7 +171,7 @@ func (c tableChange) qualified() string {
 
 // mergeByTable folds multiple change entries for the same schema-qualified table
 // into one, summing their volumes and preserving first-seen order. More than one
-// //migrator:schema:data annotation can target the same table, which would
+// //ptah:schema:data annotation can target the same table, which would
 // otherwise make the gates report and count that table twice. Tables that share
 // a bare name across different schemas stay distinct.
 func mergeByTable(changes []tableChange) []tableChange {
@@ -408,8 +408,8 @@ func findManagedTable(dbSchema *types.DBSchema, wantSchema, defaultSchema, table
 func orderByDependency(db *goschema.Database, diffs []*datadiff.DataDiff) {
 	// Index the dependency-sorted tables by their fully-qualified name, and also
 	// by bare name where that name is unambiguous across the schema. The bare
-	// index is a fallback for when a //migrator:schema:data annotation omits the
-	// schema attribute while its //migrator:schema:table definition sets one (or
+	// index is a fallback for when a //ptah:schema:data annotation omits the
+	// schema attribute while its //ptah:schema:table definition sets one (or
 	// vice versa); without it the qualified lookup would miss and FK ordering
 	// would silently degrade to alphabetical for that table. A bare name shared
 	// by tables in different schemas is left out of the fallback so it can never

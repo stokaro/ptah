@@ -60,13 +60,13 @@ func TestRowSecurityCommentGoAnnotationParity(t *testing.T) {
 
 	goDB, err := goschema.ParseSource("users.go", `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int
 }
 
-//migrator:schema:rls:enable table="users" comment="tenant isolation"
+//ptah:schema:rls:enable table="users" comment="tenant isolation"
 type SecurityMarker struct{}
 `)
 	c.Assert(err, qt.IsNil)

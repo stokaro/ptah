@@ -19,21 +19,21 @@ func (et *EntityTemplate) BasicUserEntity() string {
 
 import "time"
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
 	Email string
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	UpdatedAt time.Time
 }
 `
@@ -45,32 +45,32 @@ func (et *EntityTemplate) BasicPostEntity() string {
 
 import "time"
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null="true"
 	Title string
 
-	//migrator:schema:field name="content" type="TEXT"
+	//ptah:schema:field name="content" type="TEXT"
 	Content string
 
-	//migrator:schema:field name="published" type="BOOLEAN" not_null="true" default_expr="false"
+	//ptah:schema:field name="published" type="BOOLEAN" not_null="true" default_expr="false"
 	Published bool
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	UpdatedAt time.Time
 }
 
-//migrator:schema:index table="posts" name="idx_posts_user_id" columns="user_id"
-//migrator:schema:index table="posts" name="idx_posts_published" columns="published"
+//ptah:schema:index table="posts" name="idx_posts_user_id" columns="user_id"
+//ptah:schema:index table="posts" name="idx_posts_published" columns="published"
 `
 }
 
@@ -80,29 +80,29 @@ func (et *EntityTemplate) BasicCommentEntity() string {
 
 import "time"
 
-//migrator:schema:table name="comments"
+//ptah:schema:table name="comments"
 type Comment struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="post_id" type="INTEGER" not_null="true" foreign="posts(id)"
+	//ptah:schema:field name="post_id" type="INTEGER" not_null="true" foreign="posts(id)"
 	PostID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64
 
-	//migrator:schema:field name="content" type="TEXT" not_null="true"
+	//ptah:schema:field name="content" type="TEXT" not_null="true"
 	Content string
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	UpdatedAt time.Time
 }
 
-//migrator:schema:index table="comments" name="idx_comments_post_id" columns="post_id"
-//migrator:schema:index table="comments" name="idx_comments_user_id" columns="user_id"
+//ptah:schema:index table="comments" name="idx_comments_post_id" columns="post_id"
+//ptah:schema:index table="comments" name="idx_comments_user_id" columns="user_id"
 `
 }
 
@@ -112,32 +112,32 @@ func (et *EntityTemplate) ProductEntity() string {
 
 import "time"
 
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 type Product struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="description" type="TEXT"
+	//ptah:schema:field name="description" type="TEXT"
 	Description string
 
-	//migrator:schema:field name="price" type="DECIMAL(10,2)" not_null="true"
+	//ptah:schema:field name="price" type="DECIMAL(10,2)" not_null="true"
 	Price float64
 
-	//migrator:schema:field name="active" type="BOOLEAN" not_null="true" default_expr="true"
+	//ptah:schema:field name="active" type="BOOLEAN" not_null="true" default_expr="true"
 	Active bool
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	UpdatedAt time.Time
 }
 
-//migrator:schema:index table="products" name="idx_products_name" columns="name"
-//migrator:schema:index table="products" name="idx_products_active" columns="active"
+//ptah:schema:index table="products" name="idx_products_name" columns="name"
+//ptah:schema:index table="products" name="idx_products_active" columns="active"
 `
 }
 
@@ -147,35 +147,35 @@ func (et *EntityTemplate) UserWithExtraFields() string {
 
 import "time"
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
 	Email string
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="age" type="INTEGER"
+	//ptah:schema:field name="age" type="INTEGER"
 	Age int
 
-	//migrator:schema:field name="bio" type="TEXT"
+	//ptah:schema:field name="bio" type="TEXT"
 	Bio string
 
-	//migrator:schema:field name="active" type="BOOLEAN" not_null="true" default_expr="true"
+	//ptah:schema:field name="active" type="BOOLEAN" not_null="true" default_expr="true"
 	Active bool
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	UpdatedAt time.Time
 }
 
-//migrator:schema:index table="users" name="idx_users_email" columns="email"
-//migrator:schema:index table="users" name="idx_users_active" columns="active"
+//ptah:schema:index table="users" name="idx_users_email" columns="email"
+//ptah:schema:index table="users" name="idx_users_active" columns="active"
 `
 }
 
@@ -185,7 +185,7 @@ func (et *EntityTemplate) StatusEnumEntity() string {
 
 import "time"
 
-//migrator:schema:enum name="status_type" values="draft,published,archived"
+//ptah:schema:enum name="status_type" values="draft,published,archived"
 type StatusType string
 
 const (
@@ -194,28 +194,28 @@ const (
 	StatusArchived  StatusType = "archived"
 )
 
-//migrator:schema:table name="articles"
+//ptah:schema:table name="articles"
 type Article struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null="true"
 	Title string
 
-	//migrator:schema:field name="content" type="TEXT"
+	//ptah:schema:field name="content" type="TEXT"
 	Content string
 
-	//migrator:schema:field name="status" type="status_type" not_null="true" default="draft"
+	//ptah:schema:field name="status" type="status_type" not_null="true" default="draft"
 	Status StatusType
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	UpdatedAt time.Time
 }
 
-//migrator:schema:index table="articles" name="idx_articles_status" columns="status"
+//ptah:schema:index table="articles" name="idx_articles_status" columns="status"
 `
 }
 
@@ -225,11 +225,11 @@ func (et *EntityTemplate) CustomEntity(tableName, structName string, fields []En
 
 	sb.WriteString("package entities\n\n")
 	sb.WriteString("import \"time\"\n\n")
-	fmt.Fprintf(&sb, "//migrator:schema:table name=\"%s\"\n", tableName)
+	fmt.Fprintf(&sb, "//ptah:schema:table name=\"%s\"\n", tableName)
 	fmt.Fprintf(&sb, "type %s struct {\n", structName)
 
 	for _, field := range fields {
-		fmt.Fprintf(&sb, "\t//migrator:schema:field name=\"%s\" type=\"%s\"", field.Name, field.Type)
+		fmt.Fprintf(&sb, "\t//ptah:schema:field name=\"%s\" type=\"%s\"", field.Name, field.Type)
 
 		if field.Primary {
 			sb.WriteString(" primary=\"true\"")

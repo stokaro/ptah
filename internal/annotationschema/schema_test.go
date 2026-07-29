@@ -30,7 +30,7 @@ func TestGenerateFieldSchemaRejectsUnknownAttributes(t *testing.T) {
 	var doc map[string]any
 	c.Assert(json.Unmarshal(generated, &doc), qt.IsNil)
 	defs := doc["$defs"].(map[string]any)
-	field := defs["migrator.schema.field"].(map[string]any)
+	field := defs["ptah.schema.field"].(map[string]any)
 	properties := field["properties"].(map[string]any)
 	attrs := properties["attributes"].(map[string]any)
 
@@ -53,7 +53,7 @@ func TestGenerateOmitsDroppedAnnotationSyntax(t *testing.T) {
 	c.Assert(json.Unmarshal(generated, &doc), qt.IsNil)
 	defs := doc["$defs"].(map[string]any)
 
-	field := defs["migrator.schema.field"].(map[string]any)
+	field := defs["ptah.schema.field"].(map[string]any)
 	fieldContainer := field["properties"].(map[string]any)
 	fieldAttributes := fieldContainer["attributes"].(map[string]any)
 	fieldProperties := fieldAttributes["properties"].(map[string]any)
@@ -61,7 +61,7 @@ func TestGenerateOmitsDroppedAnnotationSyntax(t *testing.T) {
 	c.Assert(fieldProperties["autoincrement"], qt.IsNil)
 	c.Assert(fieldProperties["index"], qt.IsNil)
 
-	embedded := defs["migrator.embedded"].(map[string]any)
+	embedded := defs["ptah.embedded"].(map[string]any)
 	embeddedContainer := embedded["properties"].(map[string]any)
 	embeddedAttributes := embeddedContainer["attributes"].(map[string]any)
 	embeddedProperties := embeddedAttributes["properties"].(map[string]any)
@@ -69,11 +69,11 @@ func TestGenerateOmitsDroppedAnnotationSyntax(t *testing.T) {
 	c.Assert(embeddedProperties["index"], qt.IsNil)
 
 	directivesWithoutPlatformOverrides := []string{
-		"migrator.schema.index",
-		"migrator.schema.schema",
-		"migrator.schema.view",
-		"migrator.schema.matview",
-		"migrator.schema.trigger",
+		"ptah.schema.index",
+		"ptah.schema.schema",
+		"ptah.schema.view",
+		"ptah.schema.matview",
+		"ptah.schema.trigger",
 	}
 	for _, directive := range directivesWithoutPlatformOverrides {
 		c.Run(directive, func(c *qt.C) {

@@ -255,21 +255,21 @@ func writeModel(c *qt.C, dir string) {
 	path := filepath.Join(dir, "model.go")
 	content := `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="TEXT"
+	//ptah:schema:field name="email" type="TEXT"
 	Email string
 }
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="author_id" type="INTEGER" foreign="users(id)" foreign_key_name="fk_posts_author"
+	//ptah:schema:field name="author_id" type="INTEGER" foreign="users(id)" foreign_key_name="fk_posts_author"
 	AuthorID int64
 }
 `
@@ -284,12 +284,12 @@ type UserMetadata struct {
 	TraceID string
 }
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:embedded mode="json" name="metadata" type="JSONB"
+	//ptah:embedded mode="json" name="metadata" type="JSONB"
 	Metadata UserMetadata
 }
 `

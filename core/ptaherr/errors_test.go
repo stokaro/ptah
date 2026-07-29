@@ -15,20 +15,20 @@ func TestParseError(t *testing.T) {
 	err := &ptaherr.ParseError{
 		File:      "models.go",
 		Line:      12,
-		Directive: "migrator:schema:field",
+		Directive: "ptah:schema:field",
 		Attribute: "bogus",
 		Err:       ptaherr.ErrUnknownAttribute,
-		Message:   `unknown annotation attribute "bogus" on //migrator:schema:field at models.go:12`,
+		Message:   `unknown annotation attribute "bogus" on //ptah:schema:field at models.go:12`,
 	}
 
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.File, qt.Equals, "models.go")
 	c.Assert(parseErr.Line, qt.Equals, 12)
-	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:field")
+	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:field")
 	c.Assert(parseErr.Attribute, qt.Equals, "bogus")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
-	c.Assert(err.Error(), qt.Equals, `unknown annotation attribute "bogus" on //migrator:schema:field at models.go:12`)
+	c.Assert(err.Error(), qt.Equals, `unknown annotation attribute "bogus" on //ptah:schema:field at models.go:12`)
 	c.Assert(err.Unwrap(), qt.Equals, ptaherr.ErrUnknownAttribute)
 }
 

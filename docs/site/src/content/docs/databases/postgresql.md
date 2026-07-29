@@ -51,7 +51,7 @@ summarize behavior that affects how you plan changes.
 
 ## Roles and grants
 
-`//migrator:schema:role` and `//migrator:schema:grant` declare roles and their
+`//ptah:schema:role` and `//ptah:schema:grant` declare roles and their
 privileges next to your entities. Ptah emits `CREATE ROLE` for new roles,
 `ALTER ROLE` for attribute changes, and `GRANT`/`REVOKE` as declared grants
 change. Grants target a table, a schema, or a sequence, and table grants are
@@ -76,15 +76,15 @@ warning comment to generated SQL when a value looks like a plaintext password.
 
 ## Row-level security
 
-`//migrator:schema:rls:enable` switches RLS on for a table and
-`//migrator:schema:rls:policy` declares each policy, including the roles it
+`//ptah:schema:rls:enable` switches RLS on for a table and
+`//ptah:schema:rls:policy` declares each policy, including the roles it
 applies to and its `USING`/`WITH CHECK` expressions. Policies are created
 after the roles they reference, so a role and the policy that uses it can land
 in the same migration.
 
 ## Extensions
 
-`//migrator:schema:extension` manages `CREATE EXTENSION`. Some extensions are
+`//ptah:schema:extension` manages `CREATE EXTENSION`. Some extensions are
 pre-installed and should not be migration-managed, so Ptah keeps an ignore
 list, with `plpgsql` ignored by default. An ignored extension can still be
 created when your schema declares it, but it is never dropped and never
@@ -96,7 +96,7 @@ Go API — see [Reusable components](../../extend/components/).
 PostgreSQL creates an implicit sequence for every `SERIAL` column and identity
 column; you do not declare those, and Ptah's introspection deliberately
 excludes them, so a plain `SERIAL` column never produces a spurious diff. A
-*standalone* sequence — declared with `//migrator:schema:sequence`, typically
+*standalone* sequence — declared with `//ptah:schema:sequence`, typically
 to share one number generator across tables — is a first-class object with the
 full lifecycle.
 
@@ -110,7 +110,7 @@ never reported as drift.
 ## User-defined types
 
 Domains, composite types, and range types are declared with
-`//migrator:schema:domain`, `:composite`, and `:range`. They are created after
+`//ptah:schema:domain`, `:composite`, and `:range`. They are created after
 extensions and enums but before tables, and their drops are classified as
 destructive by the safety gate. Reconciliation is deliberately conservative:
 

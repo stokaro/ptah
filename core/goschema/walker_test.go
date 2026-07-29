@@ -28,8 +28,8 @@ func TestParseDir_ExtensionMerging(t *testing.T) {
 	// Create extensions.go file
 	extensionsContent := `package models
 
-//migrator:schema:extension name="pg_trgm" if_not_exists="true" comment="Enable trigram similarity search"
-//migrator:schema:extension name="btree_gin" if_not_exists="true" comment="Enable GIN indexes on btree types"
+//ptah:schema:extension name="pg_trgm" if_not_exists="true" comment="Enable trigram similarity search"
+//ptah:schema:extension name="btree_gin" if_not_exists="true" comment="Enable GIN indexes on btree types"
 type DatabaseExtensions struct{}`
 
 	err = os.WriteFile(filepath.Join(modelsDir, "extensions.go"), []byte(extensionsContent), 0600)
@@ -40,26 +40,26 @@ type DatabaseExtensions struct{}`
 
 import "time"
 
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 type Product struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="tags" type="JSONB"
+	//ptah:schema:field name="tags" type="JSONB"
 	Tags []string
 
-	//migrator:schema:field name="deleted_at" type="TIMESTAMP"
+	//ptah:schema:field name="deleted_at" type="TIMESTAMP"
 	DeletedAt *time.Time
 }
 
 type ProductIndexes struct {
-	//migrator:schema:index name="idx_product_tags" fields="tags" type="GIN" table="products"
+	//ptah:schema:index name="idx_product_tags" fields="tags" type="GIN" table="products"
 	_ int
 
-	//migrator:schema:index name="idx_product_name_trgm" fields="name" type="GIN" ops="gin_trgm_ops" table="products"
+	//ptah:schema:index name="idx_product_name_trgm" fields="name" type="GIN" ops="gin_trgm_ops" table="products"
 	_ int
 }`
 
@@ -97,15 +97,15 @@ func TestParseDir_FileFiltering(t *testing.T) {
 			name: "excludes test files",
 			files: map[string]string{
 				"entity.go": `package test
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 				"entity_test.go": `package test
-//migrator:schema:table name="test_users"
+//ptah:schema:table name="test_users"
 type TestUser struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 			},
@@ -116,15 +116,15 @@ type TestUser struct {
 			name: "excludes vendor directories",
 			files: map[string]string{
 				"entity.go": `package test
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 				"vendor/lib/entity.go": `package lib
-//migrator:schema:table name="vendor_users"
+//ptah:schema:table name="vendor_users"
 type VendorUser struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 			},
@@ -135,9 +135,9 @@ type VendorUser struct {
 			name: "excludes non-go files",
 			files: map[string]string{
 				"entity.go": `package test
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 				"README.md":   "# Documentation",
@@ -188,30 +188,30 @@ func TestParseDir_MultipleFileTypes(t *testing.T) {
 	// Create files with different entity types
 	files := map[string]string{
 		"extensions.go": `package test
-//migrator:schema:extension name="pg_trgm" if_not_exists="true"
+//ptah:schema:extension name="pg_trgm" if_not_exists="true"
 type DatabaseExtensions struct{}`,
 
 		"tables.go": `package test
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
-	//migrator:schema:field name="status" type="ENUM" enum="active,inactive,pending" not_null="true"
+	//ptah:schema:field name="status" type="ENUM" enum="active,inactive,pending" not_null="true"
 	Status string
 }`,
 
 		"indexes.go": `package test
 type UserIndexes struct {
-	//migrator:schema:index name="idx_users_name" fields="name" table="users"
+	//ptah:schema:index name="idx_users_name" fields="name" table="users"
 	_ int
 }`,
 
 		"subdir/more_entities.go": `package test
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 type Product struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 	}
@@ -294,9 +294,9 @@ func TestParseDir_InvalidFieldAttributeReturnsError(t *testing.T) {
 	rootDir := c.TempDir()
 	source := `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="int" bogus="y"
+	//ptah:schema:field name="id" type="int" bogus="y"
 	ID int64
 }
 `
@@ -305,14 +305,14 @@ type User struct {
 
 	result, err := goschema.ParseDir(rootDir)
 	c.Assert(result, qt.IsNil)
-	c.Assert(err, qt.ErrorMatches, `unknown annotation attribute "bogus" on //migrator:schema:field at User.ID`)
+	c.Assert(err, qt.ErrorMatches, `unknown annotation attribute "bogus" on //ptah:schema:field at User.ID`)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
 
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.File, qt.Equals, "user.go")
 	c.Assert(parseErr.Line, qt.Equals, 5)
-	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:field")
+	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:field")
 	c.Assert(parseErr.Attribute, qt.Equals, "bogus")
 }
 
@@ -322,17 +322,17 @@ func TestParseDir_MultipleInvalidFieldAttributesReturnsJoinedError(t *testing.T)
 	rootDir := c.TempDir()
 	first := `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="int" bogus="y"
+	//ptah:schema:field name="id" type="int" bogus="y"
 	ID int64
 }
 `
 	second := `package models
 
-//migrator:schema:table name="posts"
+//ptah:schema:table name="posts"
 type Post struct {
-	//migrator:schema:field name="id" type="int" wrong="y"
+	//ptah:schema:field name="id" type="int" wrong="y"
 	ID int64
 }
 `
@@ -368,20 +368,20 @@ func TestParseDir_Deduplication(t *testing.T) {
 
 	// Create files with duplicate entities (same table defined in multiple files)
 	file1Content := `package test
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 }`
 
 	file2Content := `package test
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
-	//migrator:schema:field name="email" type="VARCHAR(255)" unique="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" unique="true"
 	Email string
 }`
 
@@ -493,9 +493,9 @@ func TestParseFS_ClosesFilesDuringWalk(t *testing.T) {
 	for i := range 100 {
 		files[fmt.Sprintf("model_%03d.go", i)] = fmt.Sprintf(`package models
 
-//migrator:schema:table name="table_%03d"
+//ptah:schema:table name="table_%03d"
 type Model%03d struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 `, i, i)
@@ -526,15 +526,15 @@ func TestParseFS_HappyPath(t *testing.T) {
 			files: map[string]string{
 				"user.go": `package models
 
-//migrator:schema:table name="users" comment="User accounts"
+//ptah:schema:table name="users" comment="User accounts"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
 	Email string
 
-	//migrator:schema:field name="name" type="VARCHAR(100)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(100)" not_null="true"
 	Name string
 }`,
 			},
@@ -550,25 +550,25 @@ type User struct {
 			files: map[string]string{
 				"user.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
 	Email string
 }`,
 				"article.go": `package models
 
-//migrator:schema:table name="articles"
+//ptah:schema:table name="articles"
 type Article struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null="true"
 	Title string
 
-	//migrator:schema:field name="user_id" type="INT" not_null="true" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INT" not_null="true" foreign="users(id)"
 	UserID int64
 }`,
 			},
@@ -584,19 +584,19 @@ type Article struct {
 			files: map[string]string{
 				"models/user.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 				"models/auth/session.go": `package auth
 
-//migrator:schema:table name="sessions"
+//ptah:schema:table name="sessions"
 type Session struct {
-	//migrator:schema:field name="id" type="VARCHAR(255)" primary="true"
+	//ptah:schema:field name="id" type="VARCHAR(255)" primary="true"
 	ID string
 
-	//migrator:schema:field name="user_id" type="INT" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INT" foreign="users(id)"
 	UserID int64
 }`,
 			},
@@ -612,14 +612,14 @@ type Session struct {
 			files: map[string]string{
 				"models.go": `package models
 
-//migrator:schema:extension name="uuid-ossp" comment="UUID generation functions"
+//ptah:schema:extension name="uuid-ossp" comment="UUID generation functions"
 
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 type Product struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="status" type="ENUM" enum="active,inactive,discontinued" not_null="true"
+	//ptah:schema:field name="status" type="ENUM" enum="active,inactive,discontinued" not_null="true"
 	Status string
 }`,
 			},
@@ -699,16 +699,16 @@ func TestParseFS_FileFiltering(t *testing.T) {
 			files: map[string]string{
 				"user.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 				"user_test.go": `package models
 
-//migrator:schema:table name="test_users"
+//ptah:schema:table name="test_users"
 type TestUser struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 			},
@@ -720,16 +720,16 @@ type TestUser struct {
 			files: map[string]string{
 				"user.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 				"vendor/github.com/example/lib/model.go": `package lib
 
-//migrator:schema:table name="vendor_table"
+//ptah:schema:table name="vendor_table"
 type VendorModel struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 			},
@@ -741,9 +741,9 @@ type VendorModel struct {
 			files: map[string]string{
 				"user.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 				"README.md":   "# Documentation",
@@ -820,9 +820,9 @@ func TestParseFS_SyntaxErrorReturnsError(t *testing.T) {
 			files: map[string]string{
 				"invalid.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 	// Missing closing brace
 `,
@@ -856,18 +856,18 @@ func TestParseFS_DependencyResolution(t *testing.T) {
 			files: map[string]string{
 				"models.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 
-//migrator:schema:table name="articles"
+//ptah:schema:table name="articles"
 type Article struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INT" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INT" foreign="users(id)"
 	UserID int64
 }`,
 			},
@@ -882,12 +882,12 @@ type Article struct {
 			files: map[string]string{
 				"models.go": `package models
 
-//migrator:schema:table name="categories"
+//ptah:schema:table name="categories"
 type Category struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="parent_id" type="INT" foreign="categories(id)"
+	//ptah:schema:field name="parent_id" type="INT" foreign="categories(id)"
 	ParentID *int64
 }`,
 			},
@@ -903,36 +903,36 @@ type Category struct {
 			files: map[string]string{
 				"models.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 
-//migrator:schema:table name="categories"
+//ptah:schema:table name="categories"
 type Category struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 type Product struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="category_id" type="INT" foreign="categories(id)"
+	//ptah:schema:field name="category_id" type="INT" foreign="categories(id)"
 	CategoryID int64
 }
 
-//migrator:schema:table name="orders"
+//ptah:schema:table name="orders"
 type Order struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INT" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INT" foreign="users(id)"
 	UserID int64
 
-	//migrator:schema:field name="product_id" type="INT" foreign="products(id)"
+	//ptah:schema:field name="product_id" type="INT" foreign="products(id)"
 	ProductID int64
 }`,
 			},
@@ -985,22 +985,22 @@ func TestParseFS_Deduplication(t *testing.T) {
 			files: map[string]string{
 				"user1.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
 	Email string
 }`,
 				"user2.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
 	Email string
 }`,
 			},
@@ -1049,24 +1049,24 @@ func TestParseFS_EmbeddedFields(t *testing.T) {
 			files: map[string]string{
 				"models.go": `package models
 
-//migrator:schema:embed
+//ptah:schema:embed
 type BaseModel struct {
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true"
 	CreatedAt string
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP"
 	UpdatedAt string
 }
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
 	Email string
 
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	BaseModel
 }`,
 			},
@@ -1126,20 +1126,20 @@ func TestParseFS_PostgreSQLFeatures(t *testing.T) {
 			files: map[string]string{
 				"models.go": `package models
 
-//migrator:schema:extension name="uuid-ossp" comment="UUID generation functions"
-//migrator:schema:extension name="pg_trgm" comment="Trigram matching"
+//ptah:schema:extension name="uuid-ossp" comment="UUID generation functions"
+//ptah:schema:extension name="pg_trgm" comment="Trigram matching"
 type DatabaseExtensions struct{}
 
-//migrator:schema:function name="update_timestamp" params="" returns="TRIGGER" language="plpgsql" body="BEGIN NEW.updated_at = NOW(); RETURN NEW; END;"
-//migrator:schema:role name="app_user" login="true" password="encrypted_password"
-//migrator:schema:rls:enable table="users" comment="Enable RLS for users"
-//migrator:schema:rls:policy name="user_policy" table="users" for="ALL" to="app_user" using="user_id = current_user_id()"
-//migrator:schema:table name="users"
+//ptah:schema:function name="update_timestamp" params="" returns="TRIGGER" language="plpgsql" body="BEGIN NEW.updated_at = NOW(); RETURN NEW; END;"
+//ptah:schema:role name="app_user" login="true" password="encrypted_password"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for users"
+//ptah:schema:rls:policy name="user_policy" table="users" for="ALL" to="app_user" using="user_id = current_user_id()"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
 	Email string
 }`,
 			},
@@ -1237,9 +1237,9 @@ type RegularStruct struct {
 	Name string
 }
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 
@@ -1257,9 +1257,9 @@ type AnotherStruct struct {
 			files: map[string]string{
 				"a/b/c/d/e/deep.go": `package deep
 
-//migrator:schema:table name="deep_table"
+//ptah:schema:table name="deep_table"
 type DeepTable struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 			},
@@ -1272,16 +1272,16 @@ type DeepTable struct {
 			files: map[string]string{
 				"models/user.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 				"other/other.go": `package other
 
-//migrator:schema:table name="other_table"
+//ptah:schema:table name="other_table"
 type OtherTable struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }`,
 			},
@@ -1348,25 +1348,25 @@ func BenchmarkParseFS_SmallProject(b *testing.B) {
 	files := map[string]string{
 		"user.go": `package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
 	Email string
 }`,
 		"product.go": `package models
 
-//migrator:schema:table name="products"
+//ptah:schema:table name="products"
 type Product struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="user_id" type="INT" foreign="users(id)"
+	//ptah:schema:field name="user_id" type="INT" foreign="users(id)"
 	UserID int64
 }`,
 	}
@@ -1520,45 +1520,45 @@ func TestParseFS_ConflictingDuplicateSchemaObjectsFail(t *testing.T) {
 	}{
 		{
 			name:    "view body",
-			sourceA: `//migrator:schema:view name="active_users" body="SELECT id FROM users"`,
-			sourceB: `//migrator:schema:view name="active_users" body="SELECT email FROM users"`,
+			sourceA: `//ptah:schema:view name="active_users" body="SELECT id FROM users"`,
+			sourceB: `//ptah:schema:view name="active_users" body="SELECT email FROM users"`,
 			err:     `conflicting view "active_users" definitions`,
 		},
 		{
 			name:    "materialized view body",
-			sourceA: `//migrator:schema:matview name="user_stats" body="SELECT count(*) FROM users"`,
-			sourceB: `//migrator:schema:matview name="user_stats" body="SELECT count(id) FROM users"`,
+			sourceA: `//ptah:schema:matview name="user_stats" body="SELECT count(*) FROM users"`,
+			sourceB: `//ptah:schema:matview name="user_stats" body="SELECT count(id) FROM users"`,
 			err:     `conflicting materialized view "user_stats" definitions`,
 		},
 		{
 			name:    "trigger body",
-			sourceA: `//migrator:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" body="RETURN NEW;"`,
-			sourceB: `//migrator:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" body="NEW.updated_at = NOW(); RETURN NEW;"`,
+			sourceA: `//ptah:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" body="RETURN NEW;"`,
+			sourceB: `//ptah:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" body="NEW.updated_at = NOW(); RETURN NEW;"`,
 			err:     `conflicting trigger "set_updated_at" definitions on table "users"`,
 		},
 		{
 			name:     "constraint expression",
-			sourceA:  `//migrator:schema:constraint name="users_email_check" type="CHECK" check="email <> ''"`,
-			sourceB:  `//migrator:schema:constraint name="users_email_check" type="CHECK" check="length(email) > 3"`,
+			sourceA:  `//ptah:schema:constraint name="users_email_check" type="CHECK" check="email <> ''"`,
+			sourceB:  `//ptah:schema:constraint name="users_email_check" type="CHECK" check="length(email) > 3"`,
 			err:      `conflicting constraint "users_email_check" definitions in scope "DuplicateHost"`,
 			sameHost: true,
 		},
 		{
 			name:    "explicit table constraint expression",
-			sourceA: `//migrator:schema:constraint name="users_email_check" type="CHECK" table="users" check="email <> ''"`,
-			sourceB: `//migrator:schema:constraint name="users_email_check" type="CHECK" table="users" check="length(email) > 3"`,
+			sourceA: `//ptah:schema:constraint name="users_email_check" type="CHECK" table="users" check="email <> ''"`,
+			sourceB: `//ptah:schema:constraint name="users_email_check" type="CHECK" table="users" check="length(email) > 3"`,
 			err:     `conflicting constraint "users_email_check" definitions in scope "users"`,
 		},
 		{
 			name:    "role attributes",
-			sourceA: `//migrator:schema:role name="app_user" inherit="true"`,
-			sourceB: `//migrator:schema:role name="app_user" login="true" inherit="true"`,
+			sourceA: `//ptah:schema:role name="app_user" inherit="true"`,
+			sourceB: `//ptah:schema:role name="app_user" login="true" inherit="true"`,
 			err:     `conflicting role "app_user" definitions`,
 		},
 		{
 			name:    "schema comment",
-			sourceA: `//migrator:schema:schema name="auth" comment="Authentication schema"`,
-			sourceB: `//migrator:schema:schema name="auth" comment="Identity schema"`,
+			sourceA: `//ptah:schema:schema name="auth" comment="Authentication schema"`,
+			sourceB: `//ptah:schema:schema name="auth" comment="Identity schema"`,
 			err:     `conflicting schema "auth" definitions`,
 		},
 	}
@@ -1591,12 +1591,12 @@ func TestParseFS_IdenticalDuplicateSchemaObjectsAreNoOp(t *testing.T) {
 	fsys := fstest.MapFS{
 		"a.go": {Data: []byte(`package fixtures
 
-//migrator:schema:view name="active_users" body="SELECT id FROM users" comment="first"
+//ptah:schema:view name="active_users" body="SELECT id FROM users" comment="first"
 type First struct{}
 `)},
 		"b.go": {Data: []byte(`package fixtures
 
-//migrator:schema:view name="active_users" body="SELECT id FROM users" comment="first"
+//ptah:schema:view name="active_users" body="SELECT id FROM users" comment="first"
 type Second struct{}
 `)},
 	}
@@ -1614,12 +1614,12 @@ func TestParseFS_IdenticalDuplicateSchemasAreNoOp(t *testing.T) {
 	fsys := fstest.MapFS{
 		"a.go": {Data: []byte(`package fixtures
 
-//migrator:schema:schema name="auth" comment="Authentication schema"
+//ptah:schema:schema name="auth" comment="Authentication schema"
 type First struct{}
 `)},
 		"b.go": {Data: []byte(`package fixtures
 
-//migrator:schema:schema name="auth" comment="Authentication schema"
+//ptah:schema:schema name="auth" comment="Authentication schema"
 type Second struct{}
 `)},
 	}
@@ -1644,18 +1644,18 @@ func BenchmarkParseFS_LargeProject(b *testing.B) {
 
 		content := fmt.Sprintf(`package models
 
-//migrator:schema:table name="%s"
+//ptah:schema:table name="%s"
 type Model%d struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string
 
-	//migrator:schema:field name="description" type="TEXT"
+	//ptah:schema:field name="description" type="TEXT"
 	Description string
 
-	//migrator:schema:field name="status" type="ENUM" enum="active,inactive" not_null="true"
+	//ptah:schema:field name="status" type="ENUM" enum="active,inactive" not_null="true"
 	Status string
 }`, tableName, i)
 

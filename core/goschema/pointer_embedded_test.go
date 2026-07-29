@@ -18,46 +18,46 @@ func TestParseFile_PointerEmbeddedFields(t *testing.T) {
 
 // BaseID represents a common ID structure that can be embedded in other entities
 type BaseID struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 }
 
 // Timestamps represents common timestamp fields that can be embedded in other entities
 type Timestamps struct {
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
+	//ptah:schema:field name="updated_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	UpdatedAt time.Time
 }
 
 // BlogPost demonstrates pointer embedded fields
-//migrator:schema:table name="blog_posts"
+//ptah:schema:table name="blog_posts"
 type BlogPost struct {
 	// Pointer embedded field - should be parsed correctly
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	*BaseID
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null="true"
 	Title string
 
 	// Another pointer embedded field
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	*Timestamps
 }
 
 // RegularPost demonstrates value embedded fields for comparison
-//migrator:schema:table name="regular_posts"
+//ptah:schema:table name="regular_posts"
 type RegularPost struct {
 	// Value embedded field - should be parsed correctly
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	BaseID
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:field name="title" type="VARCHAR(255)" not_null="true"
 	Title string
 
 	// Another value embedded field
-	//migrator:embedded mode="inline"
+	//ptah:embedded mode="inline"
 	Timestamps
 }
 `

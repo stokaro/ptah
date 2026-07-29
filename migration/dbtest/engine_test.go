@@ -231,12 +231,12 @@ func TestRunMigrationTest_ApplySchemaConvergesOverlappingTable(t *testing.T) {
 	rootDir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(rootDir, "user.go"), []byte(`package models
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 }
 `), 0o600), qt.IsNil)

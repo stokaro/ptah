@@ -174,15 +174,15 @@ func writeShadowE2EEntities(c *qt.C, dir string) string {
 	c.Assert(os.MkdirAll(entitiesDir, 0755), qt.IsNil)
 	content := `package entities
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="name" type="TEXT"
+	//ptah:schema:field name="name" type="TEXT"
 	Name string
 
-	//migrator:schema:field name="email" type="TEXT"
+	//ptah:schema:field name="email" type="TEXT"
 	Email string
 }
 `

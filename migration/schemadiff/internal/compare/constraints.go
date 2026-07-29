@@ -75,7 +75,7 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 
 	// Synthesize table-level Constraint entries from field-level `check=`
 	// annotations so they participate in drift comparison alongside table
-	// constraints from `//migrator:schema:constraint`. Only synthesized for
+	// constraints from `//ptah:schema:constraint`. Only synthesized for
 	// columns that already exist in the database — new tables/columns get
 	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
 	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the

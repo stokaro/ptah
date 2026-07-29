@@ -20,12 +20,12 @@ func TestRLSPolicyEdgeCases(t *testing.T) {
 			name: "RLS annotation without corresponding table",
 			goCode: `package test
 
-//migrator:schema:rls:enable table="nonexistent" comment="Enable RLS for non-existent table"
-//migrator:schema:rls:policy name="nonexistent_policy" table="nonexistent" for="ALL" to="app_user" using="true" comment="Policy for non-existent table"
+//ptah:schema:rls:enable table="nonexistent" comment="Enable RLS for non-existent table"
+//ptah:schema:rls:policy name="nonexistent_policy" table="nonexistent" for="ALL" to="app_user" using="true" comment="Policy for non-existent table"
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      0,
@@ -36,12 +36,12 @@ type User struct {
 			name: "RLS annotation with missing table parameter",
 			goCode: `package test
 
-//migrator:schema:rls:enable comment="Enable RLS without table parameter"
-//migrator:schema:rls:policy name="invalid_policy" for="ALL" to="app_user" using="true" comment="Policy without table parameter"
+//ptah:schema:rls:enable comment="Enable RLS without table parameter"
+//ptah:schema:rls:policy name="invalid_policy" for="ALL" to="app_user" using="true" comment="Policy without table parameter"
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      0,
@@ -52,12 +52,12 @@ type User struct {
 			name: "RLS annotation with missing policy name",
 			goCode: `package test
 
-//migrator:schema:rls:enable table="users" comment="Enable RLS for users"
-//migrator:schema:rls:policy table="users" for="ALL" to="app_user" using="true" comment="Policy without name"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for users"
+//ptah:schema:rls:policy table="users" for="ALL" to="app_user" using="true" comment="Policy without name"
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      0,
@@ -68,13 +68,13 @@ type User struct {
 			name: "Duplicate RLS policies with same name",
 			goCode: `package test
 
-//migrator:schema:rls:enable table="users" comment="Enable RLS for users"
-//migrator:schema:rls:policy name="user_policy" table="users" for="ALL" to="app_user" using="true" comment="First policy"
-//migrator:schema:rls:policy name="user_policy" table="users" for="SELECT" to="app_user" using="true" comment="Duplicate policy"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for users"
+//ptah:schema:rls:policy name="user_policy" table="users" for="ALL" to="app_user" using="true" comment="First policy"
+//ptah:schema:rls:policy name="user_policy" table="users" for="SELECT" to="app_user" using="true" comment="Duplicate policy"
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      1,
@@ -85,13 +85,13 @@ type User struct {
 			name: "Duplicate RLS enable for same table",
 			goCode: `package test
 
-//migrator:schema:rls:enable table="users" comment="First enable"
-//migrator:schema:rls:enable table="users" comment="Duplicate enable"
-//migrator:schema:rls:policy name="user_policy" table="users" for="ALL" to="app_user" using="true" comment="Policy"
+//ptah:schema:rls:enable table="users" comment="First enable"
+//ptah:schema:rls:enable table="users" comment="Duplicate enable"
+//ptah:schema:rls:policy name="user_policy" table="users" for="ALL" to="app_user" using="true" comment="Policy"
 
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      1,
@@ -103,15 +103,15 @@ type User struct {
 			goCode: `package test
 
 // First comment block
-//migrator:schema:rls:enable table="users" comment="Enable RLS for users"
+//ptah:schema:rls:enable table="users" comment="Enable RLS for users"
 
 // Second comment block
-//migrator:schema:rls:policy name="user_policy" table="users" for="ALL" to="app_user" using="true" comment="Policy"
+//ptah:schema:rls:policy name="user_policy" table="users" for="ALL" to="app_user" using="true" comment="Policy"
 
 // Third comment block
-//migrator:schema:table name="users"
+//ptah:schema:table name="users"
 type User struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64 ` + "`json:\"id\" db:\"id\"`" + `
 }`,
 			expectedPolicies:      1,

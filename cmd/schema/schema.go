@@ -89,9 +89,9 @@ func newSchemaAnnotationsCommand() *cobra.Command {
 		Long: `Export Ptah Go annotation metadata.
 
 The JSON Schema output describes the parsed representation of every supported
-//migrator directive and attribute:
+//ptah directive and attribute:
 
-  ptah schema annotations --format json-schema --out schemas/migrator-annotations.schema.json`,
+  ptah schema annotations --format json-schema --out schemas/ptah-annotations.schema.json`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {

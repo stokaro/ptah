@@ -2904,7 +2904,7 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 }
 
 // TestFromDatabase_EmbeddedRelationFKActions verifies that on_delete /
-// on_update declared on a //migrator:embedded mode="relation" annotation
+// on_update declared on a //ptah:embedded mode="relation" annotation
 // flow through to the generated foreign key constraint.
 //
 // Regression coverage for the embedded path of issue #117 — the field-level
