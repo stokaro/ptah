@@ -334,6 +334,9 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err != nil {
 		return nil, err
 	}
+	if err := recoverMigrationPublication(ctx, opts.OutputDir); err != nil {
+		return nil, err
+	}
 	outputState, err := captureMigrationDirectoryState(opts.OutputDir)
 	if err != nil {
 		return nil, fmt.Errorf("capture migration directory before planning: %w", err)
@@ -456,6 +459,19 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		reportFormat: opts.ReportFormat,
 		specs:        specs,
 	}, nil
+}
+
+func recoverMigrationPublication(ctx context.Context, outputDir string) error {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(outputDir)), 0755); err != nil {
+		return fmt.Errorf("create migration directory parent: %w", err)
+	}
+	err := atlasmigrate.WithMigrationDirectoryLock(ctx, outputDir, 0, func() error {
+		return atlasmigrate.RecoverPendingPublicationLocked(outputDir)
+	})
+	if err != nil {
+		return fmt.Errorf("recover migration publication before planning: %w", err)
+	}
+	return nil
 }
 
 // WriteFiles publishes the migration artifacts represented by the plan. A plan

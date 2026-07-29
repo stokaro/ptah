@@ -26,6 +26,7 @@ const (
 	publicationJournalVersion     = 5
 	publicationJournalSuffix      = ".ptah-migrate-diff.pending"
 	publicationCommitMarkerSuffix = ".committed"
+	publicationCleanupSuffix      = ".cleanup"
 	stagedMigrationPattern        = ".ptah-migrate-diff-*.tmp"
 
 	publicationCommitModeAtlasSum = "atlas-sum"
@@ -369,10 +370,6 @@ func beginMarkerPublication(
 	return journal, nil
 }
 
-func publishMigrationBatch(dir string, batch migrationBatch) (int, error) {
-	return publishMigrationBatchContext(context.Background(), dir, batch)
-}
-
 func publishMigrationBatchContext(
 	ctx context.Context,
 	dir string,
@@ -497,6 +494,12 @@ func recoverPendingPublication(dir string) error {
 	return rollBackPendingPublication(dir, journalPath, journal)
 }
 
+// RecoverPendingPublicationLocked resolves an interrupted artifact publication.
+// The caller must hold the migration-directory lock for dir.
+func RecoverPendingPublicationLocked(dir string) error {
+	return recoverPendingPublication(dir)
+}
+
 func publicationCommitted(dir string, journal publicationJournal) (bool, error) {
 	switch journal.CommitMode {
 	case publicationCommitModeAtlasSum:
@@ -571,7 +574,7 @@ func rollBackPendingPublication(
 
 func rollBackPublicationEntry(
 	stagedPath, finalPath, expectedDigest string,
-	mode publicationMode,
+	_ publicationMode,
 ) error {
 	quarantineDir := stagedPath + ".rollback"
 	quarantinePath := filepath.Join(quarantineDir, "published")
@@ -579,11 +582,16 @@ func rollBackPublicationEntry(
 	if err := os.Mkdir(quarantineDir, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 		return fmt.Errorf("create migration rollback quarantine: %w", err)
 	}
+	if err := fsdurable.SyncDir(filepath.Dir(quarantineDir)); err != nil {
+		return fmt.Errorf("sync migration rollback quarantine directory: %w", err)
+	}
 	if _, err := os.Stat(quarantinePath); errors.Is(err, os.ErrNotExist) {
-		if renameErr := os.Rename(finalPath, quarantinePath); renameErr != nil {
-			if !errors.Is(renameErr, os.ErrNotExist) {
-				return fmt.Errorf("quarantine published migration file: %w", renameErr)
+		if moveErr := fsdurable.MoveFileNoReplace(finalPath, quarantinePath); moveErr != nil {
+			if !errors.Is(moveErr, os.ErrNotExist) {
+				return fmt.Errorf("quarantine published migration file: %w", moveErr)
 			}
+		} else if err := syncQuarantineMove(finalPath, quarantineDir); err != nil {
+			return err
 		}
 	} else if err != nil {
 		return fmt.Errorf("inspect quarantined migration file: %w", err)
@@ -601,10 +609,9 @@ func rollBackPublicationEntry(
 				stagedPath,
 			)
 		}
-		return errors.Join(removeFiles([]string{stagedPath}), removeEmptyQuarantineDir(quarantineDir))
+		return removeRollbackFiles(quarantineDir, stagedPath)
 	case errors.Is(stagedErr, os.ErrNotExist) &&
-		quarantineErr == nil &&
-		mode == publicationModeWriteThroughMove:
+		quarantineErr == nil:
 		if quarantinedDigest != expectedDigest {
 			return fmt.Errorf(
 				"cannot safely recover migration publication: %s content changed; preserved at %s",
@@ -612,10 +619,7 @@ func rollBackPublicationEntry(
 				quarantinePath,
 			)
 		}
-		return errors.Join(
-			removeFiles([]string{quarantinePath}),
-			removeEmptyQuarantineDir(quarantineDir),
-		)
+		return removeRollbackFiles(quarantineDir, quarantinePath)
 	case stagedErr != nil:
 		return fmt.Errorf("inspect staged migration file: %w", stagedErr)
 	case quarantineErr != nil:
@@ -633,11 +637,27 @@ func rollBackPublicationEntry(
 			quarantinePath,
 		)
 	default:
-		return errors.Join(
-			removeFiles([]string{quarantinePath, stagedPath}),
-			removeEmptyQuarantineDir(quarantineDir),
-		)
+		return removeRollbackFiles(quarantineDir, quarantinePath, stagedPath)
 	}
+}
+
+func syncQuarantineMove(finalPath, quarantineDir string) error {
+	if err := fsdurable.SyncDir(filepath.Dir(finalPath)); err != nil {
+		return fmt.Errorf("sync migration directory after quarantine move: %w", err)
+	}
+	if err := fsdurable.SyncDir(quarantineDir); err != nil {
+		return fmt.Errorf("sync migration rollback quarantine: %w", err)
+	}
+	return nil
+}
+
+func removeRollbackFiles(quarantineDir string, paths ...string) error {
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", path, err)
+		}
+	}
+	return removeEmptyQuarantineDir(quarantineDir)
 }
 
 func fileDigest(path string) (string, error) {
@@ -657,21 +677,47 @@ func removeEmptyQuarantineDir(path string) error {
 }
 
 func removePublicationJournal(journalPath string) error {
+	return removePublicationJournalWithRetirer(journalPath, retirePublicationJournal)
+}
+
+func removePublicationJournalWithRetirer(
+	journalPath string,
+	retire func(string, string) error,
+) error {
 	journalTemps, err := filepath.Glob(journalPath + ".*.tmp")
 	if err != nil {
 		return fmt.Errorf("find migration publication journal backups: %w", err)
 	}
+	cleanupPath := journalPath + publicationCleanupSuffix
+	if err := retire(journalPath, cleanupPath); err != nil {
+		return fmt.Errorf("retire migration publication journal: %w", err)
+	}
+	parent := filepath.Dir(journalPath)
+	if err := fsdurable.SyncDir(parent); err != nil {
+		return fmt.Errorf("sync retired migration publication journal: %w", err)
+	}
 	paths := append(
-		[]string{journalPath, publicationCommitMarkerPath(journalPath)},
+		[]string{publicationCommitMarkerPath(journalPath), cleanupPath},
 		journalTemps...,
 	)
 	if err := removeFiles(paths); err != nil {
-		return fmt.Errorf("remove migration publication journal: %w", err)
+		return fmt.Errorf("remove retired migration publication metadata: %w", err)
 	}
-	if err := fsdurable.SyncDir(filepath.Dir(journalPath)); err != nil {
+	if err := fsdurable.SyncDir(parent); err != nil {
 		return fmt.Errorf("sync migration publication journal directory: %w", err)
 	}
 	return nil
+}
+
+func retirePublicationJournal(journalPath, cleanupPath string) error {
+	_, err := os.Stat(journalPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return fsdurable.ReplaceFile(journalPath, cleanupPath)
 }
 
 func removeOrphanPublicationTemps(dir, journalPath string) error {
@@ -686,7 +732,10 @@ func removeOrphanPublicationTemps(dir, journalPath string) error {
 	orphanPaths := slices.Concat(
 		stagedPaths,
 		journalTemps,
-		[]string{publicationCommitMarkerPath(journalPath)},
+		[]string{
+			publicationCommitMarkerPath(journalPath),
+			journalPath + publicationCleanupSuffix,
+		},
 	)
 	if err := removeFiles(orphanPaths); err != nil {
 		return fmt.Errorf("remove orphan migration publication files: %w", err)
@@ -997,25 +1046,6 @@ func removeFiles(paths []string) error {
 	return resultErr
 }
 
-// writeMigrationFiles writes every planned migration file with consecutive
-// versions. It is retained as a focused white-box primitive; production
-// publication uses writeDiffArtifacts so the batch is journaled through the
-// atlas.sum commit.
-func writeMigrationFiles(dir, name string, contents []MigrationFileContent) ([]string, error) {
-	batch, err := stageMigrationBatch(dir, name, contents)
-	if err != nil {
-		return nil, err
-	}
-	published, err := publishMigrationBatch(dir, batch)
-	if err != nil {
-		return nil, errors.Join(err, rollBackUnjournaledBatch(dir, batch, published))
-	}
-	if err := removeFiles(batch.stagedPaths); err != nil {
-		return nil, errors.Join(err, removeFiles(batch.paths))
-	}
-	return batch.paths, nil
-}
-
 func stageArtifactBatch(
 	dir string,
 	artifacts []PublicationArtifact,
@@ -1142,40 +1172,6 @@ func detectPublicationModeWithLink(
 		return "", fmt.Errorf("remove migration publication link probe: %w", err)
 	}
 	return publicationModeHardLink, nil
-}
-
-// writeMigrationFilesAt stages and syncs one complete batch before publishing
-// each final path without overwriting an existing migration.
-func writeMigrationFilesAt(
-	dir, name string,
-	version int64,
-	contents []MigrationFileContent,
-) ([]string, error) {
-	batch, err := stageMigrationBatchAt(dir, name, version, contents)
-	if err != nil {
-		return nil, err
-	}
-	published, err := publishMigrationBatch(dir, batch)
-	if err != nil {
-		return nil, errors.Join(err, rollBackUnjournaledBatch(dir, batch, published))
-	}
-	if err := removeFiles(batch.stagedPaths); err != nil {
-		return nil, errors.Join(err, removeFiles(batch.paths))
-	}
-	return batch.paths, nil
-}
-
-func rollBackUnjournaledBatch(dir string, batch migrationBatch, published int) error {
-	if err := removeFiles(batch.paths[:published]); err != nil {
-		return fmt.Errorf("roll back published migration files: %w", err)
-	}
-	if err := removeFiles(batch.stagedPaths); err != nil {
-		return fmt.Errorf("remove rolled back migration staging files: %w", err)
-	}
-	if err := fsdurable.SyncDir(dir); err != nil {
-		return fmt.Errorf("sync rolled back migration directory: %w", err)
-	}
-	return nil
 }
 
 func stageMigrationFile(dir, migrationSQL string) (string, error) {
