@@ -1,3 +1,5 @@
+// Package migratedown implements "ptah migrations down", which rolls back
+// applied migrations to a target version against a live database.
 package migratedown
 
 import (

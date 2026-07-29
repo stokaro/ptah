@@ -1,3 +1,6 @@
+// Package atlasurl interprets Atlas-style database URLs: mapping a URL to a
+// Ptah dialect, validating that a URL matches a target dialect, and deciding
+// whether two URLs address the same database.
 package atlasurl
 
 import (

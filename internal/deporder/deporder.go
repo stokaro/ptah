@@ -1,3 +1,6 @@
+// Package deporder provides deterministic dependency ordering for schema
+// objects: stable topological sorts used to create objects such as views in
+// dependency order and drop them in reverse.
 package deporder
 
 import (

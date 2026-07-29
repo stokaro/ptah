@@ -1,3 +1,7 @@
+// Package dbschematogo converts an introspected database schema
+// (dbschema/types.DBSchema) into the goschema entity model, so live databases
+// can flow through the same diff and planning pipeline as annotated Go
+// sources.
 package dbschematogo
 
 import (

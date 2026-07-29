@@ -1,3 +1,6 @@
+// Package migratestatus implements "ptah migrations status", which reports
+// applied and pending migrations for a live database and migrations
+// directory.
 package migratestatus
 
 import (

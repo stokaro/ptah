@@ -1,3 +1,6 @@
+// Package stubs contains annotated Go entities exercising the Ptah annotation
+// surface end to end. The files serve as parser input for goschema tests and
+// demos; they are parsed from source rather than imported.
 package stubs
 
 //ptah:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product catalog" platform.mariadb.engine="InnoDB" platform.mariadb.comment="Product catalog"

@@ -1,3 +1,7 @@
+// Package types defines the schema difference model (SchemaDiff and the
+// per-object diffs for tables, columns, enums, functions, triggers, RLS
+// policies, roles, and grants) produced by schemadiff and consumed by the
+// migration planner.
 package types
 
 import (

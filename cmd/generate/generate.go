@@ -1,3 +1,6 @@
+// Package generate implements "ptah schema render", which renders the desired
+// schema from Go entity annotations or local schema files as dialect-specific
+// SQL DDL.
 package generate
 
 import (

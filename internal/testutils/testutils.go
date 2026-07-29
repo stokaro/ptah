@@ -1,3 +1,5 @@
+// Package testutils provides canned goschema fixtures and small lookup helpers
+// shared by dbschema-related unit tests.
 package testutils
 
 import (

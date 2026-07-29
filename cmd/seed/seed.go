@@ -1,3 +1,5 @@
+// Package seed implements "ptah seed", which applies environment-scoped SQL
+// seed files to a live database.
 package seed
 
 import (

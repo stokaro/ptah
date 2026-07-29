@@ -1,3 +1,6 @@
+// Package dbtest provides an in-memory database/sql driver whose query and
+// exec behavior is scripted per test, so dialect readers and writers can be
+// tested without a live database.
 package dbtest
 
 import (

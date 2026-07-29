@@ -1,3 +1,5 @@
+// Package bufwriter provides the small line-oriented output buffer the dialect
+// renderers share for accumulating generated SQL.
 package bufwriter
 
 import (

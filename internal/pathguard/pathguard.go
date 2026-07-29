@@ -1,3 +1,6 @@
+// Package pathguard validates user-supplied filesystem paths, resolving them
+// against an allowed root and rejecting escapes so CLI flags cannot traverse
+// outside the intended directory.
 package pathguard
 
 import (

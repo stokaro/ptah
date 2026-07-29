@@ -1,3 +1,6 @@
+// Package compare implements "ptah schema compare", which builds the desired
+// schema from Go entities or schema files and reports how it differs from a
+// live database.
 package compare
 
 import (

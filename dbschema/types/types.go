@@ -1,3 +1,6 @@
+// Package types defines the database-agnostic model of an introspected live
+// schema (DBSchema and its tables, columns, indexes, and constraints) shared by
+// the dbschema readers and writers and consumed by schema diffing.
 package types
 
 import (
