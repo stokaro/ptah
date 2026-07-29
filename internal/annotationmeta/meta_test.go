@@ -19,6 +19,82 @@ func TestAllowsAttributeValidatesPlatformOverrideShape(t *testing.T) {
 	c.Assert(annotationmeta.AllowsAttribute("migrator:schema:field", "platform.mysql.тип"), qt.IsFalse)
 }
 
+func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
+	c := qt.New(t)
+
+	directives := []string{
+		"migrator:schema:field",
+		"migrator:embedded",
+		"migrator:schema:table",
+	}
+
+	for _, directive := range directives {
+		c.Run(directive, func(c *qt.C) {
+			c.Assert(annotationmeta.AllowsAttribute(directive, "platform.postgres.type"), qt.IsTrue)
+		})
+	}
+}
+
+func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name      string
+		directive string
+		attribute string
+	}{
+		{
+			name:      "field nullable",
+			directive: "migrator:schema:field",
+			attribute: "nullable",
+		},
+		{
+			name:      "field autoincrement",
+			directive: "migrator:schema:field",
+			attribute: "autoincrement",
+		},
+		{
+			name:      "field index",
+			directive: "migrator:schema:field",
+			attribute: "index",
+		},
+		{
+			name:      "embedded not null",
+			directive: "migrator:embedded",
+			attribute: "not_null",
+		},
+		{
+			name:      "embedded index",
+			directive: "migrator:embedded",
+			attribute: "index",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(annotationmeta.AllowsAttribute(test.directive, test.attribute), qt.IsFalse)
+		})
+	}
+}
+
+func TestAllowsAttribute_RejectsPlatformOverridesWithoutRuntimeSupport(t *testing.T) {
+	c := qt.New(t)
+
+	directives := []string{
+		"migrator:schema:index",
+		"migrator:schema:schema",
+		"migrator:schema:view",
+		"migrator:schema:matview",
+		"migrator:schema:trigger",
+	}
+
+	for _, directive := range directives {
+		c.Run(directive, func(c *qt.C) {
+			c.Assert(annotationmeta.AllowsAttribute(directive, "platform.postgres.type"), qt.IsFalse)
+		})
+	}
+}
+
 func TestDetachedFileScopesMatchParserSupport(t *testing.T) {
 	c := qt.New(t)
 

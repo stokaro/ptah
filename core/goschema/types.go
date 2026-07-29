@@ -95,7 +95,6 @@ type EmbeddedField struct {
 	Name             string                       // For json mode - column name
 	Type             string                       // For json mode - column type (JSON/JSONB)
 	Nullable         bool                         // Whether the field can be null
-	Index            bool                         // Whether to create an index
 	Field            string                       // For relation mode - foreign key field name
 	Ref              string                       // For relation mode - reference table(column)
 	OnDelete         string                       // For relation mode - ON DELETE action

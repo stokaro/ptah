@@ -24,7 +24,7 @@ Use Go annotations when the Go model types remain the primary schema source:
 
 - schema metadata lives next to the model fields it describes
 - embedded structs are expanded into concrete columns during parsing
-- platform overrides can remain attached to fields and schema objects
+- platform overrides can remain attached to concrete fields and tables
 
 Use HCL schema files when a language-neutral schema file should become the
 primary source:
@@ -48,40 +48,50 @@ its existing Ptah metadata.
 
 ## Exported schema shape
 
-The exporter writes deterministic HCL for the schema subset that maps
-directly from Ptah's IR:
+The exporter writes deterministic HCL for every schema semantic accepted by the
+Go annotation parser:
 
 - schemas
 - enums
 - tables and concrete columns, including columns from embedded Go structs
-- primary keys
+- table checks, custom CREATE TABLE SQL, and table platform overrides
+- column checks, inline enums, generated and identity metadata, multi-word SQL
+  types, and column platform overrides
+- primary keys and named `PRIMARY KEY` constraints
 - indexes, including uniqueness, predicates, include columns, comments,
-  ClickHouse data-skipping granularity, and supported index part metadata
-- unique constraints
-- foreign keys from both field annotations and table constraints
-- check constraints from both field annotations and table constraints
+  ClickHouse data-skipping granularity, operator classes, and supported index
+  part metadata
+- named `CHECK`, `UNIQUE`, `FOREIGN KEY`, `PRIMARY KEY`, and `EXCLUDE`
+  constraints with their complete Ptah IR metadata and comments
+- foreign keys from both field annotations and table constraints, including
+  composite referenced columns
 - defaults and default SQL expressions
-- generated and identity columns where represented by the IR
-- PostgreSQL extensions with version and comments
-- PostgreSQL roles
-- PostgreSQL grants as Atlas `permission` blocks for table and schema targets
-- PostgreSQL functions with body, language, return type, simple argument
-  blocks, security, volatility, and comments
+- PostgreSQL extensions with `if_not_exists`, version, and comments
+- standalone PostgreSQL sequences and sequence grants
+- PostgreSQL domains, composite types, and ranges
+- PostgreSQL roles, including passwords
+- PostgreSQL grants for table, schema, and sequence targets
+- PostgreSQL functions with body, language, return type, security, volatility,
+  comments, and either Atlas-style argument blocks or lossless raw `params`
 - PostgreSQL views and materialized views with query bodies, comments, and
   materialized-view refresh strategies (`refresh_strategy`)
 - PostgreSQL triggers with timing/event blocks, `for`, body, and comments
 - PostgreSQL row-level security enablement as `table.row_security`, including its
   optional comment
 - PostgreSQL row-level security policies
+- managed data declarations, including their table, keys, and data-file path
 
-Unsupported or lossy details are reported as export diagnostics on stderr.
-Examples include platform-specific overrides, table custom SQL, extension
-`if_not_exists`, role passwords, grantor metadata,
-standalone sequence objects (`//migrator:schema:sequence`) and their grants,
-user-defined types (`//migrator:schema:domain` / `:composite` / `:range`), and
-function parameter strings that cannot be split into Atlas `arg` blocks without
-losing meaning. These warnings are intentional; the exporter must not silently
-drop schema intent.
+The generated file may use Ptah HCL extensions in addition to the
+Atlas-compatible subset. These extensions are deliberate: they preserve
+annotation semantics that cannot be represented by the corresponding Atlas
+schema block without loss. A valid Go annotation source is expected to export
+without diagnostics. Diagnostics indicate incomplete or orphaned IR that was
+constructed outside the validated annotation parser and must never be silently
+dropped.
+
+Role passwords are written to HCL as string values. Treat an export containing
+passwords as sensitive. Ptah writes such exports with owner-only `0600`
+permissions. Do not commit them unless that is appropriate for the repository.
 
 ## Cleanup mode
 
@@ -100,7 +110,7 @@ Cleanup is a one-time source migration. Before Ptah writes the HCL file or
 changes Go source, it verifies all of these conditions:
 
 - the cleanup plan contains at least one real Ptah annotation
-- the output path does not alias a Go source file
+- the output path does not alias a Go source or referenced managed-data file
 - the HCL renderer reports no lossy or unsupported details
 - the rendered HCL parses and remains byte-stable after canonical re-rendering
 
@@ -129,19 +139,22 @@ ptah schema export --root-dir ./models --out schema.hcl \
 ```
 
 Both dry-run and diff mode require `--cleanup-go-annotations`. They write the
-validated HCL export but do not modify Go source. Any export diagnostic blocks
-all three cleanup modes with
+validated HCL export but do not modify Go source. Any unexpected export
+diagnostic blocks all three cleanup modes with
 `refuse to clean Go annotations after a lossy HCL export`; run without cleanup
-to inspect the partial HCL and its diagnostics.
+to inspect the HCL and its diagnostics.
 
 ## Current limits
 
-The exporter targets the HCL schema subset documented in
-[HCL Schema Input](atlas_hcl_schema.md). Objects that need their own
-structural model, parser, or renderer are not emitted as best-effort SQL blobs.
-They produce diagnostics instead. A non-destructive export writes that partial
-HCL and reports every diagnostic. Destructive cleanup refuses the same export
-because the HCL cannot safely replace the original Go annotations.
+The exporter targets the Atlas-compatible subset and Ptah parity extensions
+documented in [HCL Schema Input](atlas_hcl_schema.md). Go-only provenance such
+as struct and field names is not schema intent and is intentionally omitted.
+Embedded annotations are exported as their finalized concrete columns and
+foreign keys rather than as Go embedding metadata.
+
+HCL can model additional schema semantics beyond Go annotations. Parity is
+one-way: every valid Go annotation semantic has a lossless HCL representation,
+but not every accepted HCL construct has a Go annotation spelling.
 
 Some PostgreSQL object blocks documented by Atlas are gated by Atlas plans at
 runtime. Ptah's guarantee here is IR preservation through Atlas-compatible HCL

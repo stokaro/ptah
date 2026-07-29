@@ -1109,11 +1109,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "core/goschema/internal/parseutils/parseutils_test.go",
-      "package": "parseutils",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "core/renderer/internal/dialects/mssql/mssql_test.go",
       "package": "mssql",
       "reason": "same-package test file is not named *_internal_test.go"

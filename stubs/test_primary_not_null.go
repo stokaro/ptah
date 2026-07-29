@@ -18,7 +18,7 @@ type PrimaryNotNullTest struct {
 	//migrator:schema:field name="email" type="VARCHAR(255)" unique not_null
 	Email string `db:"email"`
 
-	// Nullable field (should not show NOT NULL)
-	//migrator:schema:field name="description" type="TEXT" nullable
+	// Nullable field (nullable is the default when not_null is omitted)
+	//migrator:schema:field name="description" type="TEXT"
 	Description *string `db:"description"`
 }

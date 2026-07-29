@@ -88,9 +88,10 @@ the [Atlas project config subset](../../atlas/project-config/).
 
 :::caution[Supported subset]
 Ptah's HCL schema format is compatible with the Atlas HCL schema language for
-the supported subset. Ptah is not affiliated with or endorsed by Ariga or
-Atlas. If a construct is not implemented, the command fails with an explicit
-error; treat that as a compatibility gap and check the conformance reports.
+the supported subset and adds documented Ptah extensions for lossless Go
+annotation export. Ptah is not affiliated with or endorsed by Ariga or Atlas.
+If a construct is not implemented, the command fails with an explicit error;
+treat that as a compatibility gap and check the conformance reports.
 :::
 
 ## Next steps

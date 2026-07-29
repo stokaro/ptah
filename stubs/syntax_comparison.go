@@ -9,13 +9,14 @@ type VerboseSyntaxUser struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true" not_null="true"
 	ID int `db:"id"`
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" unique="true" not_null="true" index="true"
+	//migrator:schema:field name="email" type="VARCHAR(255)" unique="true" not_null="true"
+	//migrator:schema:index name="idx_verbose_syntax_users_email" fields="email"
 	Email string `db:"email"`
 
 	//migrator:schema:field name="is_active" type="BOOLEAN" not_null="true" default_expr="true"
 	IsActive bool `db:"is_active"`
 
-	//migrator:schema:field name="description" type="TEXT" nullable="true"
+	//migrator:schema:field name="description" type="TEXT"
 	Description *string `db:"description"`
 }
 
@@ -26,13 +27,14 @@ type NewSyntaxUser struct {
 	//migrator:schema:field name="id" type="SERIAL" primary not_null
 	ID int `db:"id"`
 
-	//migrator:schema:field name="email" type="VARCHAR(255)" unique not_null index
+	//migrator:schema:field name="email" type="VARCHAR(255)" unique not_null
+	//migrator:schema:index name="idx_new_syntax_users_email" fields="email"
 	Email string `db:"email"`
 
 	//migrator:schema:field name="is_active" type="BOOLEAN" not_null default_expr="true"
 	IsActive bool `db:"is_active"`
 
-	//migrator:schema:field name="description" type="TEXT" nullable
+	//migrator:schema:field name="description" type="TEXT"
 	Description *string `db:"description"`
 }
 
@@ -43,10 +45,11 @@ type MixedSyntaxPost struct {
 	//migrator:schema:field name="id" type="SERIAL" primary not_null
 	ID int `db:"id"`
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null unique="true" index
+	//migrator:schema:field name="title" type="VARCHAR(255)" not_null unique="true"
+	//migrator:schema:index name="idx_mixed_syntax_posts_title" fields="title"
 	Title string `db:"title"`
 
-	//migrator:schema:field name="content" type="TEXT" nullable="true"
+	//migrator:schema:field name="content" type="TEXT"
 	Content *string `db:"content"`
 
 	//migrator:schema:field name="view_count" type="INTEGER" not_null default_expr="0" check="view_count >= 0"
@@ -63,7 +66,7 @@ type ModernTimestamps struct {
 	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null default_expr="CURRENT_TIMESTAMP"
 	CreatedAt string `db:"created_at"`
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" nullable
+	//migrator:schema:field name="updated_at" type="TIMESTAMP"
 	UpdatedAt *string `db:"updated_at"`
 }
 
@@ -72,12 +75,13 @@ type ModernArticle struct {
 	//migrator:schema:field name="id" type="SERIAL" primary not_null
 	ID int `db:"id"`
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null unique index
+	//migrator:schema:field name="title" type="VARCHAR(255)" not_null unique
+	//migrator:schema:index name="idx_modern_articles_title" fields="title"
 	Title string `db:"title"`
 
 	//migrator:embedded mode="inline"
 	ModernTimestamps
 
-	//migrator:embedded mode="json" name="metadata" type="JSONB" not_null platform.mysql.type="JSON"
+	//migrator:embedded mode="json" name="metadata" type="JSONB" platform.mysql.type="JSON"
 	Metadata map[string]any `json:"metadata"`
 }

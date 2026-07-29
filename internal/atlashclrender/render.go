@@ -9,6 +9,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/hashicorp/hcl/v2/hclwrite"
+	"github.com/zclconf/go-cty/cty"
+
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/internal/tableref"
 )
@@ -139,10 +144,9 @@ func (r *renderer) renderTable(
 	constraints []goschema.Constraint,
 	rlsEnabled *goschema.RLSEnabledTable,
 ) {
-	r.warnOverrides("table "+table.QualifiedName(), table.Overrides)
 	r.linef(`table %s {`, quote(table.Name))
 	if table.Schema != "" {
-		r.rawAttr(1, "schema", "schema."+table.Schema)
+		r.rawAttr(1, "schema", schemaRef(table.Schema))
 	}
 	r.stringAttr(1, "engine", table.Engine)
 	r.stringAttr(1, "charset", table.Charset)
@@ -157,6 +161,11 @@ func (r *renderer) renderTable(
 	if table.WithoutRowID {
 		r.rawAttr(1, "without_rowid", "true")
 	}
+	if len(table.Checks) > 0 {
+		r.rawAttr(1, "checks", stringList(table.Checks))
+	}
+	r.stringAttr(1, "custom", table.CustomSQL)
+	r.renderPlatformOverrides(1, table.Overrides)
 	r.renderRowSecurity(rlsEnabled)
 
 	sort.SliceStable(fields, func(i, j int) bool {
@@ -170,27 +179,18 @@ func (r *renderer) renderTable(
 	}
 	r.renderPrimaryKey(table, fields)
 	r.renderPartition(table.Partition)
-	constraintNames := constraintNameSet(constraints)
-	r.renderFieldChecks(table, fields, constraintNames)
-	r.renderFieldForeignKeys(table, fields, constraintNames)
+	r.renderFieldForeignKeys(table, fields, constraints)
 	for _, constraint := range constraints {
-		r.renderConstraint(table, constraint)
+		r.renderConstraint(constraint)
 	}
 	for _, index := range indexes {
 		r.renderIndex(index)
-	}
-	if table.CustomSQL != "" {
-		r.warn("table "+table.QualifiedName(), "custom SQL cannot be represented in HCL schema output")
-	}
-	if len(table.Checks) > 0 {
-		r.warn("table "+table.QualifiedName(), "legacy table checks cannot be represented in HCL schema output")
 	}
 	r.line("}")
 	r.line("")
 }
 
 func (r *renderer) renderColumn(field goschema.Field) {
-	r.warnOverrides("column "+field.StructName+"."+field.Name, field.Overrides)
 	r.linef(`  column %s {`, quote(field.Name))
 	r.rawAttr(2, "type", typeExpr(field.Type))
 	if field.Nullable {
@@ -227,9 +227,15 @@ func (r *renderer) renderColumn(field goschema.Field) {
 	if field.UniqueExpr != "" {
 		r.stringAttr(2, "unique_expr", field.UniqueExpr)
 	}
+	if len(field.Enum) > 0 {
+		r.rawAttr(2, "enum", stringList(field.Enum))
+	}
+	r.stringAttr(2, "check", field.Check)
+	r.stringAttr(2, "check_name", field.CheckName)
 	r.stringAttr(2, "charset", field.Charset)
 	r.stringAttr(2, "collate", field.Collate)
 	r.stringAttr(2, "comment", field.Comment)
+	r.renderPlatformOverrides(2, field.Overrides)
 	r.line("  }")
 }
 
@@ -241,25 +247,12 @@ func fieldIsPrimary(table goschema.Table, field goschema.Field) bool {
 		})
 }
 
-func (r *renderer) renderFieldChecks(table goschema.Table, fields []goschema.Field, constraintNames map[string]struct{}) {
-	for _, field := range fields {
-		if field.Check == "" {
-			continue
-		}
-		name := field.CheckName
-		if name == "" {
-			name = table.Name + "_" + field.Name + "_check"
-		}
-		if _, ok := constraintNames[name]; ok {
-			continue
-		}
-		r.linef(`  check %s {`, quote(name))
-		r.stringAttr(2, "expr", field.Check)
-		r.line("  }")
-	}
-}
-
-func (r *renderer) renderFieldForeignKeys(table goschema.Table, fields []goschema.Field, constraintNames map[string]struct{}) {
+func (r *renderer) renderFieldForeignKeys(
+	table goschema.Table,
+	fields []goschema.Field,
+	constraints []goschema.Constraint,
+) {
+	constraintNames := foreignKeyConstraintNames(constraints)
 	for _, field := range fields {
 		if field.Foreign == "" {
 			continue
@@ -268,12 +261,22 @@ func (r *renderer) renderFieldForeignKeys(table goschema.Table, fields []goschem
 		if name == "" {
 			name = "fk_" + table.Name + "_" + field.Name
 		}
-		if _, ok := constraintNames[name]; ok {
+		if constraintNames[name] {
 			continue
 		}
 		foreignTable, foreignColumns := parseForeignReference(field.Foreign)
 		r.renderForeignKey(name, []string{field.Name}, foreignTable, foreignColumns, field.OnDelete, field.OnUpdate)
 	}
+}
+
+func foreignKeyConstraintNames(constraints []goschema.Constraint) map[string]bool {
+	result := make(map[string]bool)
+	for _, constraint := range constraints {
+		if strings.EqualFold(constraint.Type, "FOREIGN KEY") && constraint.Name != "" {
+			result[constraint.Name] = true
+		}
+	}
+	return result
 }
 
 func (r *renderer) renderPrimaryKey(table goschema.Table, fields []goschema.Field) {
@@ -293,7 +296,7 @@ func (r *renderer) renderPrimaryKey(table goschema.Table, fields []goschema.Fiel
 		for _, part := range table.PrimaryKeyParts {
 			r.line("    on {")
 			if part.Name != "" {
-				r.rawAttr(3, "column", "column."+part.Name)
+				r.rawAttr(3, "column", columnRef(part.Name))
 			}
 			r.stringAttr(3, "prefix", part.Prefix)
 			if part.Desc {
@@ -319,7 +322,7 @@ func (r *renderer) renderPartition(partition *goschema.PartitionSpec) {
 	for _, part := range partition.Parts {
 		r.line("    by {")
 		if part.Name != "" {
-			r.rawAttr(3, "column", "column."+part.Name)
+			r.rawAttr(3, "column", columnRef(part.Name))
 		}
 		r.stringAttr(3, "expr", part.Expr)
 		r.line("    }")
@@ -327,17 +330,31 @@ func (r *renderer) renderPartition(partition *goschema.PartitionSpec) {
 	r.line("  }")
 }
 
-func (r *renderer) renderConstraint(table goschema.Table, constraint goschema.Constraint) {
+func (r *renderer) renderConstraint(constraint goschema.Constraint) {
+	if r.renderAtlasConstraint(constraint) {
+		return
+	}
+	r.renderPtahConstraint(constraint)
+}
+
+func (r *renderer) renderAtlasConstraint(constraint goschema.Constraint) bool {
 	switch strings.ToUpper(constraint.Type) {
 	case "CHECK":
-		name := constraint.Name
-		if name == "" {
-			name = table.Name + "_check"
+		if !atlasCheckConstraint(constraint) {
+			return false
 		}
-		r.linef(`  check %s {`, quote(name))
-		r.stringAttr(2, "expr", firstNonEmpty(constraint.CheckExpression, constraint.WhereCondition))
+		if constraint.Name == "" {
+			r.line("  check {")
+		} else {
+			r.linef(`  check %s {`, quote(constraint.Name))
+		}
+		r.stringAttr(2, "expr", constraint.CheckExpression)
 		r.line("  }")
+		return true
 	case "UNIQUE":
+		if !atlasUniqueConstraint(constraint) {
+			return false
+		}
 		r.linef(`  unique %s {`, quote(constraint.Name))
 		r.rawAttr(2, "columns", columnRefs(constraint.Columns))
 		if len(constraint.IncludeColumns) > 0 {
@@ -345,25 +362,115 @@ func (r *renderer) renderConstraint(table goschema.Table, constraint goschema.Co
 		}
 		r.boolPtrAttr(2, "nulls_distinct", constraint.NullsDistinct)
 		r.line("  }")
+		return true
 	case "FOREIGN KEY":
-		r.renderForeignKeyConstraint(table, constraint)
+		if !atlasForeignKeyConstraint(constraint) {
+			return false
+		}
+		r.renderForeignKey(
+			constraint.Name,
+			constraint.Columns,
+			constraint.ForeignTable,
+			constraint.ForeignColumnsOrDefault(),
+			constraint.OnDelete,
+			constraint.OnUpdate,
+		)
+		return true
 	case "PRIMARY KEY":
+		if !atlasPrimaryKeyConstraint(constraint) {
+			return false
+		}
 		r.line("  primary_key {")
 		r.rawAttr(2, "columns", columnRefs(constraint.Columns))
+		if len(constraint.IncludeColumns) > 0 {
+			r.rawAttr(2, "include", columnRefs(constraint.IncludeColumns))
+		}
 		r.line("  }")
-	case "EXCLUDE":
-		r.warn("constraint "+constraint.Name, "EXCLUDE constraints cannot be represented in the supported HCL subset")
+		return true
 	default:
-		r.warn("constraint "+constraint.Name, "unknown constraint type "+strconv.Quote(constraint.Type))
+		return false
 	}
 }
 
-func (r *renderer) renderForeignKeyConstraint(table goschema.Table, constraint goschema.Constraint) {
-	name := constraint.Name
-	if name == "" {
-		name = table.Name + "_fk"
+func (r *renderer) renderPtahConstraint(constraint goschema.Constraint) {
+	r.linef(`  constraint %s {`, quote(constraint.Name))
+	r.stringAttr(2, "type", constraint.Type)
+	r.stringAttr(2, "using", constraint.UsingMethod)
+	r.stringAttr(2, "elements", constraint.ExcludeElements)
+	r.stringAttr(2, "condition", constraint.WhereCondition)
+	r.stringAttr(2, "check", constraint.CheckExpression)
+	if len(constraint.Columns) > 0 {
+		r.rawAttr(2, "columns", stringList(constraint.Columns))
 	}
-	r.renderForeignKey(name, constraint.Columns, constraint.ForeignTable, constraint.ForeignColumnsOrDefault(), constraint.OnDelete, constraint.OnUpdate)
+	if len(constraint.IncludeColumns) > 0 {
+		r.rawAttr(2, "include", stringList(constraint.IncludeColumns))
+	}
+	r.boolPtrAttr(2, "nulls_distinct", constraint.NullsDistinct)
+	r.stringAttr(2, "foreign_table", constraint.ForeignTable)
+	if foreignColumns := constraint.ForeignColumnsOrDefault(); len(foreignColumns) > 0 {
+		r.rawAttr(2, "foreign_columns", stringList(foreignColumns))
+	}
+	r.stringAttr(2, "on_delete", constraint.OnDelete)
+	r.stringAttr(2, "on_update", constraint.OnUpdate)
+	r.stringAttr(2, "comment", constraint.Comment)
+	r.line("  }")
+}
+
+func atlasCheckConstraint(constraint goschema.Constraint) bool {
+	return constraint.CheckExpression != "" &&
+		constraint.UsingMethod == "" &&
+		constraint.ExcludeElements == "" &&
+		constraint.WhereCondition == "" &&
+		len(constraint.Columns) == 0 &&
+		len(constraint.IncludeColumns) == 0 &&
+		constraint.NullsDistinct == nil &&
+		constraint.ForeignTable == "" &&
+		len(constraint.ForeignColumnsOrDefault()) == 0 &&
+		constraint.OnDelete == "" &&
+		constraint.OnUpdate == "" &&
+		constraint.Comment == ""
+}
+
+func atlasUniqueConstraint(constraint goschema.Constraint) bool {
+	return constraint.Name != "" &&
+		len(constraint.Columns) > 0 &&
+		constraint.UsingMethod == "" &&
+		constraint.ExcludeElements == "" &&
+		constraint.WhereCondition == "" &&
+		constraint.CheckExpression == "" &&
+		constraint.ForeignTable == "" &&
+		len(constraint.ForeignColumnsOrDefault()) == 0 &&
+		constraint.OnDelete == "" &&
+		constraint.OnUpdate == "" &&
+		constraint.Comment == ""
+}
+
+func atlasForeignKeyConstraint(constraint goschema.Constraint) bool {
+	return len(constraint.Columns) > 0 &&
+		constraint.ForeignTable != "" &&
+		len(constraint.ForeignColumnsOrDefault()) == len(constraint.Columns) &&
+		constraint.UsingMethod == "" &&
+		constraint.ExcludeElements == "" &&
+		constraint.WhereCondition == "" &&
+		constraint.CheckExpression == "" &&
+		len(constraint.IncludeColumns) == 0 &&
+		constraint.NullsDistinct == nil &&
+		constraint.Comment == ""
+}
+
+func atlasPrimaryKeyConstraint(constraint goschema.Constraint) bool {
+	return constraint.Name == "" &&
+		len(constraint.Columns) > 0 &&
+		constraint.UsingMethod == "" &&
+		constraint.ExcludeElements == "" &&
+		constraint.WhereCondition == "" &&
+		constraint.CheckExpression == "" &&
+		constraint.NullsDistinct == nil &&
+		constraint.ForeignTable == "" &&
+		len(constraint.ForeignColumnsOrDefault()) == 0 &&
+		constraint.OnDelete == "" &&
+		constraint.OnUpdate == "" &&
+		constraint.Comment == ""
 }
 
 func (r *renderer) renderForeignKey(name string, columns []string, foreignTable string, foreignColumns []string, onDelete string, onUpdate string) {
@@ -384,6 +491,7 @@ func (r *renderer) renderIndex(index goschema.Index) {
 	r.stringAttr(2, "parser", index.Parser)
 	r.stringAttr(2, "where", index.Condition)
 	r.stringAttr(2, "comment", index.Comment)
+	r.stringAttr(2, "ops", index.Operator)
 	r.boolPtrAttr(2, "nulls_distinct", index.NullsDistinct)
 	// Granularity is always non-negative (the parser rejects negatives) and 0 is
 	// the implicit dialect default, so emit only a positive value; the parser
@@ -402,7 +510,7 @@ func (r *renderer) renderIndex(index goschema.Index) {
 		for _, part := range index.Parts {
 			r.line("    on {")
 			if part.Name != "" {
-				r.rawAttr(3, "column", "column."+part.Name)
+				r.rawAttr(3, "column", columnRef(part.Name))
 			}
 			r.stringAttr(3, "expr", part.Expr)
 			r.stringAttr(3, "ops", part.Operator)
@@ -415,17 +523,23 @@ func (r *renderer) renderIndex(index goschema.Index) {
 	} else {
 		r.rawAttr(2, "columns", columnRefs(firstNonEmptySlice(index.Fields, indexPartNames(index.Parts))))
 	}
-	if index.Operator != "" {
-		r.warn("index "+index.Name, "legacy index operator field was not exported; use structured index parts")
-	}
 	r.line("  }")
 }
 
-func (r *renderer) warnOverrides(path string, overrides map[string]map[string]string) {
-	if len(overrides) == 0 {
-		return
+func (r *renderer) renderPlatformOverrides(indent int, overrides map[string]map[string]string) {
+	for _, dialect := range sortedMapKeys(overrides) {
+		values := overrides[dialect]
+		if len(values) == 0 {
+			continue
+		}
+		r.linef("%splatform %s {", strings.Repeat("  ", indent), quote(dialect))
+		for _, key := range sortedMapKeys(values) {
+			r.linef("%soverride %s {", strings.Repeat("  ", indent+1), quote(key))
+			r.rawAttr(indent+2, "value", quote(values[key]))
+			r.linef("%s}", strings.Repeat("  ", indent+1))
+		}
+		r.linef("%s}", strings.Repeat("  ", indent))
 	}
-	r.warn(path, "platform overrides cannot be represented exactly in HCL schema output")
 }
 
 func (r *renderer) warn(path, message string) {
@@ -528,16 +642,6 @@ func groupTableObjects[T any](
 	}
 	slices.SortFunc(orphan, compare)
 	return result, orphan
-}
-
-func constraintNameSet(constraints []goschema.Constraint) map[string]struct{} {
-	result := make(map[string]struct{}, len(constraints))
-	for _, constraint := range constraints {
-		if constraint.Name != "" {
-			result[constraint.Name] = struct{}{}
-		}
-	}
-	return result
 }
 
 func resolveTable(tables []goschema.Table, structName, tableName string) *goschema.Table {
@@ -643,6 +747,13 @@ func typeExpr(value string) string {
 	if value == "" {
 		return "text"
 	}
+	if _, err := strconv.Unquote(value); err == nil {
+		return quote(value)
+	}
+	_, diagnostics := hclsyntax.ParseExpression([]byte(value), "<type>", hcl.InitialPos)
+	if diagnostics.HasErrors() {
+		return quote(value)
+	}
 	return value
 }
 
@@ -651,7 +762,7 @@ func sqlCall(value string) string {
 }
 
 func quote(value string) string {
-	return strconv.Quote(value)
+	return string(hclwrite.TokensForValue(cty.StringVal(value)).Bytes())
 }
 
 func stringList(values []string) string {
@@ -662,15 +773,32 @@ func stringList(values []string) string {
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
+func sortedMapKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
 func columnRefs(columns []string) string {
 	refs := make([]string, 0, len(columns))
 	for _, column := range columns {
 		if column == "" {
 			continue
 		}
-		refs = append(refs, "column."+column)
+		refs = append(refs, columnRef(column))
 	}
 	return "[" + strings.Join(refs, ", ") + "]"
+}
+
+func columnRef(name string) string {
+	return "column" + objectRefPart(name)
+}
+
+func schemaRef(name string) string {
+	return "schema" + objectRefPart(name)
 }
 
 func tableColumnRefs(table string, columns []string) string {

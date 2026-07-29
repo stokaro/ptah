@@ -10,7 +10,8 @@ type SimplifiedUser struct {
 	//migrator:schema:field name="email" type="VARCHAR(255)" unique not_null
 	Email string `db:"email"`
 
-	//migrator:schema:field name="username" type="VARCHAR(100)" unique not_null index
+	//migrator:schema:field name="username" type="VARCHAR(100)" unique not_null
+	//migrator:schema:index name="idx_simplified_users_username" fields="username"
 	Username string `db:"username"`
 
 	//migrator:schema:field name="password_hash" type="TEXT" not_null
@@ -25,7 +26,7 @@ type SimplifiedUser struct {
 	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time `db:"created_at"`
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" nullable
+	//migrator:schema:field name="updated_at" type="TIMESTAMP"
 	UpdatedAt *time.Time `db:"updated_at"`
 }
 
@@ -37,10 +38,11 @@ type SimplifiedPost struct {
 	//migrator:schema:field name="user_id" type="INTEGER" not_null foreign="simplified_users(id)" foreign_key_name="fk_post_user"
 	UserID int `db:"user_id"`
 
-	//migrator:schema:field name="title" type="VARCHAR(255)" not_null index
+	//migrator:schema:field name="title" type="VARCHAR(255)" not_null
+	//migrator:schema:index name="idx_simplified_posts_title" fields="title"
 	Title string `db:"title"`
 
-	//migrator:schema:field name="content" type="TEXT" nullable
+	//migrator:schema:field name="content" type="TEXT"
 	Content *string `db:"content"`
 
 	//migrator:schema:field name="is_published" type="BOOLEAN" not_null default_expr="false"
@@ -63,16 +65,16 @@ type SimpleTimestamps struct {
 	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time `db:"created_at"`
 
-	//migrator:schema:field name="updated_at" type="TIMESTAMP" nullable
+	//migrator:schema:field name="updated_at" type="TIMESTAMP"
 	UpdatedAt *time.Time `db:"updated_at"`
 }
 
 //migrator:schema:embed
 type SimpleAudit struct {
-	//migrator:schema:field name="created_by" type="VARCHAR(100)" nullable
+	//migrator:schema:field name="created_by" type="VARCHAR(100)"
 	CreatedBy *string `db:"created_by"`
 
-	//migrator:schema:field name="updated_by" type="VARCHAR(100)" nullable
+	//migrator:schema:field name="updated_by" type="VARCHAR(100)"
 	UpdatedBy *string `db:"updated_by"`
 }
 
@@ -84,7 +86,8 @@ type SimplifiedArticle struct {
 	//migrator:schema:field name="title" type="VARCHAR(255)" not_null unique
 	Title string `db:"title"`
 
-	//migrator:schema:field name="slug" type="VARCHAR(255)" not_null unique index
+	//migrator:schema:field name="slug" type="VARCHAR(255)" not_null unique
+	//migrator:schema:index name="idx_simplified_articles_slug" fields="slug"
 	Slug string `db:"slug"`
 
 	//migrator:embedded mode="inline"

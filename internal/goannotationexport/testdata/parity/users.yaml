@@ -1,0 +1,5 @@
+- id: 1
+  email: admin@example.test
+  score: 42.5
+  slug: admin@example.test
+  status: active

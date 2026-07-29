@@ -116,7 +116,6 @@ Maps a Go struct field to a database column.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `auto_increment` | No | Marks the column as auto-incrementing. `true`/`false`; bare form allowed. |
-| `autoincrement` | No | Alternate spelling of `auto_increment`. `true`/`false`; bare form allowed. |
 | `check` | No | Column CHECK expression. |
 | `check_name` | No | Explicit CHECK constraint name. |
 | `comment` | No | Column comment. |
@@ -131,10 +130,8 @@ Maps a Go struct field to a database column.
 | `identity_increment` | No | SQL identity increment value. |
 | `identity_options` | No | Raw SQL identity options. |
 | `identity_start` | No | SQL identity start value. |
-| `index` | No | Bareword compatibility flag accepted by the parser. `true`/`false`; bare form allowed. |
 | `name` | No | Column name. |
 | `not_null` | No | Marks the column NOT NULL. `true`/`false`; bare form allowed. |
-| `nullable` | No | Bareword compatibility flag accepted by the parser. `true`/`false`; bare form allowed. |
 | `on_delete` | No | Foreign key ON DELETE action. |
 | `on_update` | No | Foreign key ON UPDATE action. |
 | `primary` | No | Marks the column as part of the primary key. `true`/`false`; bare form allowed. |
@@ -153,10 +150,8 @@ Controls how an embedded Go field contributes schema objects.
 | --- | --- | --- |
 | `comment` | No | Generated column comment. |
 | `field` | No | Generated relation field name. |
-| `index` | No | Requests an index for generated relation columns. `true`/`false`; bare form allowed. |
 | `mode` | No | Embedding mode: inline, json, or relation. |
 | `name` | No | Column name for json embedding. |
-| `not_null` | No | Compatibility flag accepted on embedded annotations. `true`/`false`; bare form allowed. |
 | `nullable` | No | Marks generated embedded columns nullable. `true`/`false`; bare form allowed. |
 | `on_delete` | No | Generated foreign key ON DELETE action. |
 | `on_update` | No | Generated foreign key ON UPDATE action. |
@@ -184,8 +179,6 @@ Declares an index for a table.
 | `type` | No | Index type or method. |
 | `unique` | No | Creates a unique index. `true`/`false`; bare form allowed. |
 | `where` | No | Atlas-style partial index condition alias. |
-
-Platform overrides: yes.
 
 ### `//migrator:schema:constraint`
 
@@ -273,8 +266,6 @@ Declares a database schema or namespace.
 | `comment` | No | Schema comment. |
 | `name` | Yes | Schema name. |
 
-Platform overrides: yes.
-
 ### `//migrator:schema:extension`
 
 Declares a PostgreSQL extension.
@@ -334,8 +325,6 @@ Declares a database trigger.
 | `table` | Yes | Target table. |
 | `timing` | Yes | Trigger timing, such as BEFORE or AFTER. |
 
-Platform overrides: yes.
-
 ### `//migrator:schema:view`
 
 Declares a database view.
@@ -347,8 +336,6 @@ Declares a database view.
 | `name` | Yes | View name. |
 | `with_check` | No | Controls WITH CHECK OPTION where supported. `true`/`false`. |
 
-Platform overrides: yes.
-
 ### `//migrator:schema:matview`
 
 Declares a materialized view.
@@ -359,8 +346,6 @@ Declares a materialized view.
 | `comment` | No | Materialized view comment. |
 | `name` | Yes | Materialized view name. |
 | `refresh_strategy` | No | Refresh strategy; defaults to manual. |
-
-Platform overrides: yes.
 
 ## Security
 

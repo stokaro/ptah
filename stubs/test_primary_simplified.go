@@ -10,11 +10,12 @@ type TestPrimary struct {
 	//migrator:schema:field name="email" type="VARCHAR(255)" unique not_null
 	Email string `db:"email"`
 
-	// Test simplified nullable syntax
-	//migrator:schema:field name="description" type="TEXT" nullable
+	// Nullable is the default when not_null is omitted.
+	//migrator:schema:field name="description" type="TEXT"
 	Description *string `db:"description"`
 
-	// Test simplified index syntax
-	//migrator:schema:field name="username" type="VARCHAR(100)" unique not_null index
+	// Test a separate index directive on the field.
+	//migrator:schema:field name="username" type="VARCHAR(100)" unique not_null
+	//migrator:schema:index name="idx_test_primary_username" fields="username"
 	Username string `db:"username"`
 }

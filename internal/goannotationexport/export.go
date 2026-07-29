@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/annotationmeta"
 	"github.com/stokaro/ptah/internal/atlashcl"
 	"github.com/stokaro/ptah/internal/atlashclrender"
 	"github.com/stokaro/ptah/internal/goannotationcleanup"
@@ -29,6 +29,9 @@ var (
 	ErrInvalidHCL = errors.New("generated HCL failed round-trip validation")
 	// ErrOutputAliasesSource reports that the output aliases an input Go source.
 	ErrOutputAliasesSource = errors.New("HCL output aliases a Go source file")
+	// ErrOutputAliasesManagedData reports that the output aliases a managed-data
+	// source and would overwrite the referenced row data.
+	ErrOutputAliasesManagedData = errors.New("HCL output aliases a managed data file")
 )
 
 // Options controls one Go-annotation-to-HCL export.
@@ -76,7 +79,11 @@ func Export(opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := writeOutput(plan.outputPath, rendered.hcl); err != nil {
+	mode, err := outputMode(plan.outputPath, rendered.database.Roles)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := writeOutput(plan.outputPath, rendered.hcl, mode); err != nil {
 		return Result{}, err
 	}
 	if err := plan.applyCleanup(); err != nil {
@@ -135,14 +142,24 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("parse Go annotations: %w", err)
 	}
+	if alias, err := managedDataSourceAlias(db.ManagedData, plan.outputPath); err != nil {
+		return renderedExport{}, err
+	} else if alias != "" {
+		return renderedExport{}, fmt.Errorf(
+			"%w: output %s refers to %s",
+			ErrOutputAliasesManagedData,
+			plan.outputPath,
+			alias,
+		)
+	}
+	if err := rebaseManagedDataFiles(db.ManagedData, plan.outputPath); err != nil {
+		return renderedExport{}, err
+	}
 	rendered, err := atlashclrender.Render(db)
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("render HCL schema: %w", err)
 	}
-	diagnostics := append(
-		append([]atlashclrender.Diagnostic(nil), rendered.Diagnostics...),
-		unretainedPlatformOverrideDiagnostics(plan.rootDir, plan.cleanup)...,
-	)
+	diagnostics := append([]atlashclrender.Diagnostic(nil), rendered.Diagnostics...)
 	sortDiagnostics(diagnostics)
 	canonicalHCL, err := canonicalRoundTrip(rendered.Data)
 	if err != nil {
@@ -156,6 +173,58 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 		hcl:         canonicalHCL,
 		diagnostics: diagnostics,
 	}, nil
+}
+
+func managedDataSourceAlias(values []goschema.ManagedData, outputPath string) (string, error) {
+	outputInfo, err := os.Stat(outputPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("stat HCL output %s: %w", outputPath, err)
+	}
+
+	for _, value := range values {
+		sourcePath := value.File
+		if !filepath.IsAbs(sourcePath) {
+			sourcePath = filepath.Join(value.SourceDir, sourcePath)
+		}
+		resolvedSource, err := pathguard.ResolveWithinRoot(sourcePath, "")
+		if err != nil {
+			return "", fmt.Errorf("resolve managed data file %q: %w", value.File, err)
+		}
+		if resolvedSource == outputPath {
+			return resolvedSource, nil
+		}
+		if outputInfo == nil {
+			continue
+		}
+		sourceInfo, err := os.Stat(resolvedSource)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("stat managed data file %s: %w", resolvedSource, err)
+		}
+		if os.SameFile(outputInfo, sourceInfo) {
+			return resolvedSource, nil
+		}
+	}
+	return "", nil
+}
+
+func rebaseManagedDataFiles(values []goschema.ManagedData, outputPath string) error {
+	outputDir := filepath.Dir(outputPath)
+	for i := range values {
+		sourcePath := values[i].File
+		if !filepath.IsAbs(sourcePath) {
+			sourcePath = filepath.Join(values[i].SourceDir, sourcePath)
+		}
+		relativePath, err := filepath.Rel(outputDir, sourcePath)
+		if err != nil {
+			return fmt.Errorf("rebase managed data file %q: %w", values[i].File, err)
+		}
+		values[i].File = filepath.ToSlash(relativePath)
+		values[i].SourceDir = outputDir
+	}
+	return nil
 }
 
 func (p exportPlan) applyCleanup() error {
@@ -228,46 +297,6 @@ func canonicalRoundTrip(data []byte) ([]byte, error) {
 	return canonical.Data, nil
 }
 
-func unretainedPlatformOverrideDiagnostics(
-	root string,
-	plan *goannotationcleanup.Plan,
-) []atlashclrender.Diagnostic {
-	var diagnostics []atlashclrender.Diagnostic
-	for _, annotation := range plan.Annotations() {
-		spec, ok := annotationmeta.Lookup(annotation.Directive)
-		if !ok || !spec.AllowPlatform || platformOverridesRetained(annotation.Directive) {
-			continue
-		}
-		for _, attribute := range annotation.Attributes {
-			if !strings.HasPrefix(attribute, "platform.") {
-				continue
-			}
-			path, err := filepath.Rel(root, annotation.Path)
-			if err != nil {
-				path = annotation.Path
-			}
-			diagnostics = append(diagnostics, atlashclrender.Diagnostic{
-				Severity: atlashclrender.SeverityWarning,
-				Path:     fmt.Sprintf("annotations.%s:%d", filepath.ToSlash(path), annotation.Line),
-				Message: fmt.Sprintf(
-					"%s is accepted by annotation syntax but is not retained in the schema IR",
-					attribute,
-				),
-			})
-		}
-	}
-	return diagnostics
-}
-
-func platformOverridesRetained(directive string) bool {
-	switch directive {
-	case "migrator:schema:field", "migrator:embedded", "migrator:schema:table":
-		return true
-	default:
-		return false
-	}
-}
-
 func sortDiagnostics(diagnostics []atlashclrender.Diagnostic) {
 	sort.SliceStable(diagnostics, func(i, j int) bool {
 		if diagnostics[i].Path != diagnostics[j].Path {
@@ -285,16 +314,18 @@ func lossyCleanupError(diagnostics []atlashclrender.Diagnostic) error {
 	return fmt.Errorf("%w:%s", ErrLossyCleanup, builder.String())
 }
 
-func writeOutput(path string, data []byte) error {
+func hasRolePasswords(roles []goschema.Role) bool {
+	return slices.ContainsFunc(roles, func(role goschema.Role) bool {
+		return role.Password != ""
+	})
+}
+
+func writeOutput(path string, data []byte, mode os.FileMode) error {
 	parent := filepath.Dir(path)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return fmt.Errorf("create HCL output directory: %w", err)
 	}
 
-	mode, err := outputMode(path)
-	if err != nil {
-		return err
-	}
 	file, err := os.CreateTemp(parent, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("create temporary HCL output: %w", err)
@@ -325,7 +356,7 @@ func writeOutput(path string, data []byte) error {
 	return nil
 }
 
-func outputMode(path string) (os.FileMode, error) {
+func outputMode(path string, roles []goschema.Role) (os.FileMode, error) {
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return 0o600, nil
@@ -335,6 +366,9 @@ func outputMode(path string) (os.FileMode, error) {
 	}
 	if !info.Mode().IsRegular() {
 		return 0, fmt.Errorf("HCL output is not a regular file: %s", path)
+	}
+	if hasRolePasswords(roles) {
+		return 0o600, nil
 	}
 	return info.Mode().Perm(), nil
 }

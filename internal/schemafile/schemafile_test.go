@@ -9,6 +9,8 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/atlashclrender"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
@@ -32,6 +34,59 @@ CREATE INDEX idx_users_name ON users (name);
 	c.Assert(db.Fields, qt.HasLen, 2)
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	c.Assert(db.Indexes[0].Name, qt.Equals, "idx_users_name")
+}
+
+func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "schema.hcl")
+	db := &goschema.Database{
+		Schemas: []goschema.Schema{{Name: "app"}},
+		Tables:  []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
+		Fields:  []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		Sequences: []goschema.Sequence{{
+			Name:   "order_seq",
+			Schema: "app",
+		}},
+		Domains: []goschema.Domain{{
+			Name:     "email",
+			Schema:   "app",
+			BaseType: "text",
+		}},
+		CompositeTypes: []goschema.CompositeType{{
+			Name:   "address",
+			Schema: "app",
+			Fields: []goschema.CompositeTypeField{{Name: "city", Type: "text"}},
+		}},
+		Ranges: []goschema.Range{{
+			Name:    "price_range",
+			Schema:  "app",
+			Subtype: "numeric",
+		}},
+		ManagedData: []goschema.ManagedData{{
+			Table:  "users",
+			Schema: "app",
+			Keys:   []string{"id"},
+			File:   "users.yaml",
+		}},
+	}
+	rendered, err := atlashclrender.Render(db)
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
+	c.Assert(os.WriteFile(path, rendered.Data, 0o600), qt.IsNil)
+
+	got, err := schemafile.LoadAll([]string{path}, schemafile.Options{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Schemas, qt.HasLen, 1)
+	c.Assert(got.Sequences, qt.HasLen, 1)
+	c.Assert(got.Domains, qt.HasLen, 1)
+	c.Assert(got.CompositeTypes, qt.HasLen, 1)
+	c.Assert(got.Ranges, qt.HasLen, 1)
+	c.Assert(got.ManagedData, qt.HasLen, 1)
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.ManagedData[0].SourceDir, qt.Equals, resolvedDir)
 }
 
 func TestToDBSchema_PreservesTableAndColumnMetadata(t *testing.T) {
@@ -71,6 +126,69 @@ table "users" {
 	c.Assert(got.Indexes, qt.HasLen, 1)
 	c.Assert(got.Indexes[0].Name, qt.Equals, "idx_users_email")
 	c.Assert(got.Indexes[0].IsUnique, qt.IsTrue)
+}
+
+func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Schemas: []goschema.Schema{{Name: "app", Comment: "Application"}},
+		Tables:  []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
+		Fields:  []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		Sequences: []goschema.Sequence{{
+			Name:      "order_seq",
+			Schema:    "app",
+			AsType:    "bigint",
+			Increment: new(int64(2)),
+		}},
+		Domains: []goschema.Domain{{
+			Name:     "email",
+			Schema:   "app",
+			BaseType: "text",
+			NotNull:  true,
+		}},
+		CompositeTypes: []goschema.CompositeType{{
+			Name:   "address",
+			Schema: "app",
+			Fields: []goschema.CompositeTypeField{{Name: "city", Type: "text"}},
+		}},
+		Ranges: []goschema.Range{{
+			Name:    "price_range",
+			Schema:  "app",
+			Subtype: "numeric",
+		}},
+		RLSEnabledTables: []goschema.RLSEnabledTable{{
+			StructName: "User",
+			Table:      "app.users",
+		}},
+		Grants: []goschema.Grant{{
+			Role:       "app_user",
+			Privileges: []string{"USAGE"},
+			OnSequence: "app.order_seq",
+		}},
+	}
+	goschema.Finalize(db)
+
+	got := schemafile.ToDBSchema(db)
+
+	c.Assert(got.Schemas, qt.HasLen, 1)
+	c.Assert(got.Schemas[0].Comment, qt.Equals, "Application")
+	c.Assert(got.Tables[0].RLSEnabled, qt.IsTrue)
+	c.Assert(got.Sequences, qt.HasLen, 1)
+	c.Assert(got.Sequences[0].Increment, qt.DeepEquals, new(int64(2)))
+	c.Assert(got.Domains, qt.HasLen, 1)
+	c.Assert(got.Domains[0].NotNull, qt.IsTrue)
+	c.Assert(got.Composites, qt.HasLen, 1)
+	c.Assert(got.Composites[0].Fields, qt.DeepEquals, []dbschematypes.DBCompositeField{{
+		Name: "city",
+		Type: "text",
+	}})
+	c.Assert(got.Ranges, qt.HasLen, 1)
+	c.Assert(got.Grants, qt.HasLen, 1)
+	c.Assert(got.Grants[0].ObjectType, qt.Equals, "SEQUENCE")
+	c.Assert(got.Grants[0].Schema, qt.Equals, "app")
+	c.Assert(got.Grants[0].ObjectName, qt.Equals, "order_seq")
+	diff := schemadiff.CompareWithDialect(db, got, platform.Postgres)
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("extended HCL objects should not churn: %#v", diff))
 }
 
 func TestToDBSchema_FieldLevelConstraintsStayIdempotent(t *testing.T) {

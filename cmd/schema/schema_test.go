@@ -157,33 +157,19 @@ func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(stdout.String(), qt.Contains, "7 export warning(s) reported")
-	c.Assert(stderr.String(), qt.Contains, "domain types are not yet representable")
-	c.Assert(stderr.String(), qt.Contains, "composite types are not yet representable")
-	c.Assert(stderr.String(), qt.Contains, "range types are not yet representable")
-	c.Assert(stderr.String(), qt.Contains, "extension if_not_exists")
-	c.Assert(stderr.String(), qt.Contains, "standalone sequence objects are not yet representable")
-	c.Assert(stderr.String(), qt.Contains, "sequence grants are not yet representable")
-	for _, oldObjectWarning := range []string{
-		"extensions cannot be represented",
-		"functions contain raw SQL bodies",
-		"views contain raw SQL bodies",
-		"materialized views contain raw SQL bodies",
-		"triggers contain raw SQL bodies",
-		"RLS policies cannot be represented",
-		"RLS enablement cannot be represented",
-		"RLS enablement comments cannot be represented",
-		"roles cannot be represented",
-		"grants cannot be represented",
-	} {
-		c.Assert(stderr.String(), qt.Not(qt.Contains), oldObjectWarning)
-	}
+	c.Assert(stdout.String(), qt.Not(qt.Contains), "export warning(s) reported")
+	c.Assert(stderr.String(), qt.Equals, "")
 
 	content, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.Parse(content, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
 	c.Assert(parsed.Extensions, qt.HasLen, 1)
+	c.Assert(parsed.Extensions[0].IfNotExists, qt.IsTrue)
+	c.Assert(parsed.Sequences, qt.HasLen, 1)
+	c.Assert(parsed.Domains, qt.HasLen, 1)
+	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
+	c.Assert(parsed.Ranges, qt.HasLen, 1)
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(parsed.Views, qt.HasLen, 1)
 	c.Assert(parsed.MaterializedViews, qt.HasLen, 1)
@@ -192,7 +178,9 @@ func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
 	c.Assert(parsed.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(parsed.RLSEnabledTables[0].Comment, qt.Equals, "Enable RLS for fixture users")
 	c.Assert(parsed.Roles, qt.HasLen, 1)
-	c.Assert(parsed.Grants, qt.HasLen, 3)
+	c.Assert(parsed.Grants, qt.HasLen, 4)
+	c.Assert(parsed.Grants[1].OnSequence, qt.Equals, "fixture_order_seq")
+	c.Assert(parsed.ManagedData, qt.HasLen, 1)
 }
 
 func TestSchemaCommand_RegistersNativePaths(t *testing.T) {
@@ -310,8 +298,8 @@ func TestSchemaExportCommand_FailurePath_LossyCleanupPreservesSourcesAndOutput(t
 	outPath := filepath.Join(dir, "schema.hcl")
 	modelData := []byte(`package models
 
-//migrator:schema:table name="users" custom="WITHOUT OIDS"
-type User struct{}
+//migrator:schema:rls:enable table="users"
+type SecurityMarker struct{}
 `)
 	outData := []byte("previous schema\n")
 	c.Assert(os.WriteFile(modelPath, modelData, 0o600), qt.IsNil)
@@ -330,7 +318,7 @@ type User struct{}
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
-	c.Assert(stderr.String(), qt.Contains, "custom SQL")
+	c.Assert(stderr.String(), qt.Contains, "RLS enablement cannot be rendered because the target table is absent")
 	modelAfter, err := os.ReadFile(modelPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(modelAfter, qt.DeepEquals, modelData)
