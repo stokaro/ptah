@@ -359,7 +359,13 @@ func testPartialFailureRecovery(ctx context.Context, conn *dbschema.DatabaseConn
 // testMigrationGeneratorValidation tests the migration generator with forward and rollback migrations
 // This test validates the correctness of migration generation and application using the ptah/migration/generator module.
 // It ensures that the resulting database schema is consistent with goschema, and that schemadiff reports no differences.
-func testMigrationGeneratorValidation(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+func testMigrationGeneratorValidation(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	fixtures fs.FS,
+	recorder *StepRecorder,
+	cleanup databaseCleanupFunc,
+) error {
 	// Create versioned entity manager
 	vem, err := NewVersionedEntityManager(fixtures)
 	if err != nil {
@@ -572,7 +578,7 @@ func testMigrationGeneratorValidation(ctx context.Context, conn *dbschema.Databa
 
 	err = recorder.RecordStep("7.3 Drop Schema", "Drop all tables to clean up", func() error {
 		// Step 7.3: Drop the schema to clean up
-		if err := rollbackToEmptyState(ctx, conn); err != nil {
+		if err := cleanup(ctx); err != nil {
 			return fmt.Errorf("failed to drop schema: %w", err)
 		}
 		return nil
@@ -655,16 +661,6 @@ func rollbackToVersion(ctx context.Context, conn *dbschema.DatabaseConnection, v
 	// Apply the rollback migration
 	if err := vem.ApplyMigrationFromEntities(ctx, conn, description); err != nil {
 		return fmt.Errorf("failed to apply rollback migration: %w", err)
-	}
-
-	return nil
-}
-
-// rollbackToEmptyState drops all tables to return to an empty database state
-func rollbackToEmptyState(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	// Drop all tables to return to empty state
-	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
-		return fmt.Errorf("failed to drop all tables: %w", err)
 	}
 
 	return nil

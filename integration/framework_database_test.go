@@ -33,16 +33,3 @@ func TestTestRunnerAddDatabaseWithCleanup_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, "mysql cleanup URL must address the scenario database")
 }
-
-func TestCleanupScenariosUseCleanupConnection(t *testing.T) {
-	c := qt.New(t)
-	scenarios := make(map[string]integration.TestScenario)
-	for _, scenario := range integration.GetAllScenarios() {
-		scenarios[scenario.Name] = scenario
-	}
-
-	c.Assert(scenarios["migration_generator_validation"].UseCleanupConnection, qt.IsTrue)
-	c.Assert(scenarios["migration_generator_roundtrip_fixtures"].UseCleanupConnection, qt.IsTrue)
-	c.Assert(scenarios["cleanup_support"].UseCleanupConnection, qt.IsTrue)
-	c.Assert(scenarios["permission_restrictions"].UseCleanupConnection, qt.IsFalse)
-}

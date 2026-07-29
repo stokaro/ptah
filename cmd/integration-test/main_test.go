@@ -36,9 +36,11 @@ func TestGetStaticScenarios(t *testing.T) {
 		c.Assert(scenario.Name, qt.Not(qt.Equals), "", qt.Commentf("Static scenario name should not be empty"))
 		c.Assert(scenario.Description, qt.Not(qt.Equals), "", qt.Commentf("Static scenario description should not be empty"))
 
-		// Should have either TestFunc or EnhancedTestFunc
-		hasTestFunc := scenario.TestFunc != nil || scenario.EnhancedTestFunc != nil
-		c.Assert(hasTestFunc, qt.IsTrue, qt.Commentf("Static scenario %s should have a test function", scenario.Name))
+		c.Assert(
+			scenario.IsRunnable(),
+			qt.IsTrue,
+			qt.Commentf("Static scenario %s should have a test function", scenario.Name),
+		)
 	}
 }
 

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"strings"
 
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
 )
 
@@ -143,6 +145,24 @@ func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConn
 	restrictedSQL := "CREATE DATABASE test_restricted_db"
 	err := helper.ExecuteSQL(ctx, restrictedSQL)
 
+	dialect := platform.NormalizeDialect(conn.Info().Dialect)
+	if dialect == platform.MySQL || dialect == platform.MariaDB {
+		if err == nil {
+			_ = helper.ExecuteSQL(ctx, "DROP DATABASE IF EXISTS test_restricted_db")
+			return fmt.Errorf("restricted %s connection unexpectedly created a database", dialect)
+		}
+		if err.Error() == "" {
+			return fmt.Errorf("restricted %s failure message should not be empty", dialect)
+		}
+		errorMessage := strings.ToLower(err.Error())
+		if !strings.Contains(errorMessage, "denied") &&
+			!strings.Contains(errorMessage, "permission") &&
+			!strings.Contains(errorMessage, "privilege") {
+			return fmt.Errorf("restricted %s connection returned a non-permission error: %w", dialect, err)
+		}
+		return nil
+	}
+
 	// We expect this might fail, and that's okay for this test
 	// The important thing is that we handle the error gracefully
 	if err != nil {
@@ -170,7 +190,13 @@ func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConn
 }
 
 // testCleanupSupport tests dropping all tables and re-running migrations
-func testCleanupSupport(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error {
+func testCleanupSupport(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	fixtures fs.FS,
+	_ *StepRecorder,
+	cleanup databaseCleanupFunc,
+) error {
 	helper := NewDatabaseHelper(conn)
 
 	migrationsFS, err := GetMigrationsFS(fixtures, conn, "basic")
@@ -193,7 +219,7 @@ func testCleanupSupport(ctx context.Context, conn *dbschema.DatabaseConnection, 
 	}
 
 	// Drop all tables (cleanup)
-	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
+	if err := cleanup(ctx); err != nil {
 		return fmt.Errorf("failed to drop all tables: %w", err)
 	}
 

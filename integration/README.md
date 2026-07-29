@@ -48,7 +48,9 @@ The standalone integration runner reads scenario connections from
 `<DATABASE>_URL`. Set the optional matching `<DATABASE>_CLEANUP_URL` when
 cleanup requires broader privileges. The scenario and cleanup URLs may use
 different credentials, but the runner rejects a cleanup URL that addresses a
-different database.
+different database. Cleanup credentials are exposed only to database reset
+operations; migration generation, application, validation, and permission
+scenarios continue to use the restricted scenario connection.
 
 For MySQL and MariaDB, keep scenario execution restricted while granting the
 cleanup connection the global metadata and destructive privileges listed

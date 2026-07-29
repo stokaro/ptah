@@ -100,10 +100,13 @@ type TestScenario struct {
 	TestFunc    func(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error
 	// Optional enhanced test function that supports step recording
 	EnhancedTestFunc func(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error
-	// UseCleanupConnection runs the scenario itself with the cleanup URL. Set
-	// this only for scenarios that intentionally exercise destructive reset
-	// operations requiring broader privileges.
-	UseCleanupConnection bool
+	cleanupTestFunc  func(
+		ctx context.Context,
+		conn *dbschema.DatabaseConnection,
+		fixtures fs.FS,
+		recorder *StepRecorder,
+		cleanup databaseCleanupFunc,
+	) error
 	// ClickHouseCompatible opts a scenario in to running against a live
 	// ClickHouse connection. Default false because most existing scenarios
 	// exercise features ClickHouse cannot meaningfully support (functions,
@@ -128,6 +131,13 @@ type TestScenario struct {
 	SQLServerCompatible bool
 }
 
+// IsRunnable reports whether the scenario has an executable test function.
+func (s TestScenario) IsRunnable() bool {
+	return s.TestFunc != nil ||
+		s.EnhancedTestFunc != nil ||
+		s.cleanupTestFunc != nil
+}
+
 // TestRunner manages and executes integration tests
 type TestRunner struct {
 	scenarios []TestScenario
@@ -141,6 +151,8 @@ type databaseTarget struct {
 	connectionURL string
 	cleanupURL    string
 }
+
+type databaseCleanupFunc func(context.Context) error
 
 // NewTestRunner creates a new test runner
 func NewTestRunner(fixtures fs.FS) *TestRunner {
@@ -293,25 +305,8 @@ func (tr *TestRunner) runSingleTest(
 		return result
 	}
 
-	executionConn := conn
-	if scenario.UseCleanupConnection && target.cleanupURL != target.connectionURL {
-		executionConn, err = dbschema.ConnectToDatabase(ctx, target.cleanupURL)
-		if err != nil {
-			result.Success = false
-			result.Error = fmt.Sprintf("Failed to connect to cleanup database: %v", err)
-			result.Duration = time.Since(start)
-			return result
-		}
-		defer func() {
-			if cerr := executionConn.Close(); cerr != nil && result.Success {
-				result.Success = false
-				result.Error = fmt.Sprintf("Failed to close cleanup database connection: %v", cerr)
-			}
-		}()
-	}
-
 	// Clean database before test
-	if err := tr.cleanDatabase(ctx, executionConn, target.cleanupURL); err != nil {
+	if err := tr.cleanDatabase(ctx, conn, target.cleanupURL); err != nil {
 		result.Success = false
 		result.Error = fmt.Sprintf("Failed to clean database: %v", err)
 		result.Duration = time.Since(start)
@@ -321,11 +316,18 @@ func (tr *TestRunner) runSingleTest(
 	// Create step recorder
 	recorder := &StepRecorder{}
 
-	// Run the test scenario - use enhanced function if available, otherwise use regular function
-	if scenario.EnhancedTestFunc != nil {
-		err = scenario.EnhancedTestFunc(ctx, executionConn, tr.fixtures, recorder)
-	} else {
-		err = scenario.TestFunc(ctx, executionConn, tr.fixtures)
+	cleanup := func(cleanupCtx context.Context) error {
+		return tr.cleanDatabase(cleanupCtx, conn, target.cleanupURL)
+	}
+
+	// Run the test scenario - use cleanup-aware or enhanced functions when available.
+	switch {
+	case scenario.cleanupTestFunc != nil:
+		err = scenario.cleanupTestFunc(ctx, conn, tr.fixtures, recorder, cleanup)
+	case scenario.EnhancedTestFunc != nil:
+		err = scenario.EnhancedTestFunc(ctx, conn, tr.fixtures, recorder)
+	default:
+		err = scenario.TestFunc(ctx, conn, tr.fixtures)
 	}
 
 	if err != nil {
@@ -335,8 +337,8 @@ func (tr *TestRunner) runSingleTest(
 		result.Success = true
 	}
 
-	// Capture recorded steps (only if enhanced function was used)
-	if scenario.EnhancedTestFunc != nil {
+	// Capture recorded steps when the selected scenario function supports them.
+	if scenario.cleanupTestFunc != nil || scenario.EnhancedTestFunc != nil {
 		result.Steps = recorder.GetSteps()
 	}
 
