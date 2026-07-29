@@ -1,6 +1,7 @@
 package reusable_components_test
 
 import (
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -123,6 +124,35 @@ func TestMigrationIntegrityAndLint(t *testing.T) {
 	findings, err := lint.LintFS(fsys, lint.Options{Dialect: "sqlite"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0)
+}
+
+func TestCustomLintRule(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		"0000000001_create_notes.up.sql": {
+			Data: []byte("CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT);\n"),
+		},
+		"0000000001_create_notes.down.sql": {
+			Data: []byte("DROP TABLE notes;\n"),
+		},
+	}
+
+	findings, err := lint.LintFS(fsys, lint.Options{
+		Dialect: "postgres",
+		ExtraRules: []lint.Rule{{
+			Code:     "ORG101",
+			Title:    "TEXT column without explicit limit",
+			Severity: lint.SeverityWarning,
+			CheckStatement: func(stmt *lint.Statement) (bool, string) {
+				return slices.Contains(stmt.Words, "TEXT"), "use VARCHAR(n) so limits stay reviewable"
+			},
+		}},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(findings[0].Rule, qt.Equals, "ORG101")
+	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityWarning)
 }
 
 func TestCapabilitiesRender(t *testing.T) {
