@@ -540,7 +540,7 @@ func TestGetOrderedCreateStatements(t *testing.T) {
 
 	c.Assert(createTables, qt.Equals, len(result.Tables))
 	c.Assert(foreignKeyAlters > 0, qt.IsTrue)
-	c.Assert(indexes, qt.Equals, 2)
+	c.Assert(indexes, qt.Equals, len(result.Indexes))
 }
 
 func TestGetOrderedCreateStatements_MySQLFamilyInlineEnumsAreExecutable(t *testing.T) {

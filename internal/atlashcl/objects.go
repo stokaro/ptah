@@ -42,9 +42,19 @@ func (p *parser) parseFunction(block *hclsyntax.Block) error {
 	if err := p.rejectUnsupportedFunctionAttrs(block); err != nil {
 		return err
 	}
-	args, err := p.parseFunctionArgs(block)
+	parameters, err := p.stringAttr(block, "params", "function")
 	if err != nil {
 		return err
+	}
+	if block.Body.Attributes["params"] != nil && len(block.Body.Blocks) > 0 {
+		return p.blockError(block.Body.Blocks[0], "function cannot mix params attribute with arg blocks")
+	}
+	if block.Body.Attributes["params"] == nil {
+		args, err := p.parseFunctionArgs(block)
+		if err != nil {
+			return err
+		}
+		parameters = strings.Join(args, ", ")
 	}
 	body := p.optionalString(block.Body.Attributes["as"])
 	if body == "" {
@@ -52,8 +62,8 @@ func (p *parser) parseFunction(block *hclsyntax.Block) error {
 	}
 	function := goschema.Function{
 		Name:       tableref.Canonical(schema, name),
-		Parameters: strings.Join(args, ", "),
-		Returns:    p.optionalRawExpr(block.Body.Attributes["return"]),
+		Parameters: parameters,
+		Returns:    p.optionalString(block.Body.Attributes["return"]),
 		Language:   p.optionalString(block.Body.Attributes["lang"]),
 		Security:   p.optionalString(block.Body.Attributes["security"]),
 		Volatility: p.optionalString(block.Body.Attributes["volatility"]),
@@ -260,9 +270,14 @@ func (p *parser) parseRole(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
+	password, err := p.stringAttr(block, "password", "role")
+	if err != nil {
+		return err
+	}
 	p.db.Roles = append(p.db.Roles, goschema.Role{
 		Name:        name,
 		Login:       attrs.login,
+		Password:    password,
 		Superuser:   attrs.superuser,
 		CreateDB:    attrs.createDB,
 		CreateRole:  attrs.createRole,
@@ -358,6 +373,52 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 	return nil
 }
 
+func (p *parser) parseManagedData(block *hclsyntax.Block) error {
+	if len(block.Labels) != 0 {
+		return p.blockError(block, "data block does not accept labels")
+	}
+	if len(block.Body.Blocks) > 0 {
+		return p.blockError(block.Body.Blocks[0], "unsupported data block %q", block.Body.Blocks[0].Type)
+	}
+	if err := p.rejectUnsupportedAttrs(block, map[string]bool{
+		"table": true,
+		"keys":  true,
+		"file":  true,
+	}, "data"); err != nil {
+		return err
+	}
+	tableName, ok := traversalObjectRefName(p.optionalRawExpr(block.Body.Attributes["table"]), "table")
+	if !ok {
+		return p.blockError(block, "data requires table reference")
+	}
+	tableRef, ok := tableref.Parse(tableName)
+	if !ok {
+		return p.blockError(block, "data table reference is invalid")
+	}
+	keys, err := p.stringListAttr(block, "keys")
+	if err != nil {
+		return err
+	}
+	if len(keys) == 0 {
+		return p.blockError(block, "data requires keys")
+	}
+	file, err := p.stringAttr(block, "file", "data")
+	if err != nil {
+		return err
+	}
+	if file == "" {
+		return p.blockError(block, "data requires file")
+	}
+	p.db.ManagedData = append(p.db.ManagedData, goschema.ManagedData{
+		Table:     tableRef.Name,
+		Schema:    tableRef.Schema,
+		Keys:      keys,
+		File:      file,
+		SourceDir: p.sourceDir,
+	})
+	return nil
+}
+
 func (p *parser) objectName(block *hclsyntax.Block, blockType string) (string, error) {
 	switch len(block.Labels) {
 	case 1:
@@ -415,6 +476,7 @@ func (p *parser) rejectUnsupportedExtensionAttrs(block *hclsyntax.Block) error {
 func (p *parser) rejectUnsupportedFunctionAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema":     true,
+		"params":     true,
 		"lang":       true,
 		"return":     true,
 		"security":   true,
@@ -509,6 +571,7 @@ func (p *parser) rejectUnsupportedRoleAttrs(block *hclsyntax.Block) error {
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"login":       true,
+		"password":    true,
 		"superuser":   true,
 		"create_db":   true,
 		"create_role": true,
@@ -632,6 +695,11 @@ func traversalPart(step hcl.Traverser) (string, bool) {
 }
 
 func roleTargetName(raw string) string {
+	if name, ok := traversalObjectRefName(raw, "role"); ok {
+		if ref, parsed := tableref.Parse(name); parsed && !ref.Qualified {
+			return ref.Name
+		}
+	}
 	raw = rawIdentifierOrString(raw)
 	if name, ok := strings.CutPrefix(raw, "role."); ok {
 		return name
@@ -644,8 +712,12 @@ func roleTargetName(raw string) string {
 
 func rawIdentifierOrString(raw string) string {
 	raw = strings.TrimSpace(raw)
-	if unquoted, err := strconv.Unquote(raw); err == nil {
-		return unquoted
+	expr, diags := hclsyntax.ParseExpression([]byte(raw), "literal.hcl", hcl.InitialPos)
+	if !diags.HasErrors() {
+		value, valueDiags := expr.Value(nil)
+		if !valueDiags.HasErrors() && value.IsKnown() && !value.IsNull() && value.Type() == cty.String {
+			return value.AsString()
+		}
 	}
 	return raw
 }

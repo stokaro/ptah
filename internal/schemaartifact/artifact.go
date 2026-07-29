@@ -71,6 +71,11 @@ func Capture(db *goschema.Database) (fs.FS, error) {
 	if len(db.ManagedData) > 0 {
 		return nil, fmt.Errorf("schema artifact cannot represent managed data without loss")
 	}
+	for _, role := range db.Roles {
+		if role.Password != "" {
+			return nil, fmt.Errorf("schema artifact cannot contain password for role %q", role.Name)
+		}
+	}
 	rendered, err := atlashclrender.Render(db)
 	if err != nil {
 		return nil, fmt.Errorf("render canonical schema HCL: %w", err)

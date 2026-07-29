@@ -310,6 +310,8 @@ Schema publication fails closed:
 
 - managed reference data is rejected because it cannot be represented without
   loss;
+- role passwords are rejected so credentials cannot be published in an
+  artifact;
 - any lossy HCL renderer diagnostic rejects publication;
 - the generated HCL must parse and render back to identical canonical bytes.
 

@@ -58,7 +58,10 @@ func ParseKeyValueComment(comment string) map[string]string {
 	cleanComment := keyValuePairRe.ReplaceAllString(comment, "")
 	for _, match := range boolRe.FindAllStringSubmatch(cleanComment, -1) {
 		attr := match[1]
-		if !isAutoPromotedBoolean(attr, skip) {
+		if skip[attr] {
+			continue
+		}
+		if !isAutoPromotedBoolean(attr, skip) && !isUnknownAttribute(comment, attr) {
 			continue
 		}
 		// Only set if not already set by key=value parsing
@@ -68,6 +71,11 @@ func ParseKeyValueComment(comment string) map[string]string {
 	}
 
 	return result
+}
+
+func isUnknownAttribute(comment, attr string) bool {
+	directive, ok := annotationmeta.MatchCommentDirective(comment)
+	return ok && !annotationmeta.AllowsAttribute(directive.Name, attr)
 }
 
 // isIndexDirectiveHeader reports whether `comment` is the
@@ -112,36 +120,29 @@ func isAutoPromotedBoolean(attr string, skip map[string]bool) bool {
 
 func ParsePlatformSpecific(kv map[string]string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		if engine := kv["engine"]; engine != "" {
+			out[dialect] = map[string]string{"engine": engine}
+		}
+		if comment := kv["comment"]; comment != "" {
+			if out[dialect] == nil {
+				out[dialect] = make(map[string]string)
+			}
+			out[dialect]["comment"] = comment
+		}
+	}
+
 	for k, v := range kv {
-		// Only use platform. prefix, dropping override. completely
-		if annotationmeta.IsPlatformAttribute(k) {
-			parts := strings.SplitN(k, ".", 3)
-			db := parts[1]
-			key := parts[2]
-			if _, ok := out[db]; !ok {
-				out[db] = make(map[string]string)
-			}
-			out[db][key] = v
+		if !annotationmeta.IsPlatformAttribute(k) {
+			continue
 		}
-
-		// Move engine and comment to platform-specific attributes
-		if k == "engine" {
-			for _, dialect := range []string{"mysql", "mariadb"} {
-				if _, ok := out[dialect]; !ok {
-					out[dialect] = make(map[string]string)
-				}
-				out[dialect]["engine"] = v
-			}
+		parts := strings.SplitN(k, ".", 3)
+		dialect := parts[1]
+		key := parts[2]
+		if out[dialect] == nil {
+			out[dialect] = make(map[string]string)
 		}
-
-		if k == "comment" {
-			for _, dialect := range []string{"mysql", "mariadb"} {
-				if _, ok := out[dialect]; !ok {
-					out[dialect] = make(map[string]string)
-				}
-				out[dialect]["comment"] = v
-			}
-		}
+		out[dialect][key] = v
 	}
 	return out
 }

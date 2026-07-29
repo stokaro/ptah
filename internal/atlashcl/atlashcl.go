@@ -4,6 +4,8 @@ package atlashcl
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -41,7 +43,11 @@ func Parse(data []byte, filename string) (*goschema.Database, error) {
 		return nil, fmt.Errorf("parse HCL schema: unsupported body type %T", file.Body)
 	}
 
-	p := parser{src: data, db: &goschema.Database{}}
+	p := parser{
+		src:       data,
+		sourceDir: filepath.Dir(filename),
+		db:        &goschema.Database{},
+	}
 	if err := p.parseBody(body); err != nil {
 		return nil, err
 	}
@@ -50,8 +56,9 @@ func Parse(data []byte, filename string) (*goschema.Database, error) {
 }
 
 type parser struct {
-	src []byte
-	db  *goschema.Database
+	src       []byte
+	sourceDir string
+	db        *goschema.Database
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -95,6 +102,8 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		return p.parseRole(block)
 	case "permission":
 		return p.parsePermission(block)
+	case "data":
+		return p.parseManagedData(block)
 	case "env", "variable":
 		// Project-level HCL can carry env/variable blocks next to schema blocks.
 		// They do not define schema objects directly.
@@ -147,6 +156,18 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		return err
 	}
 
+	checks, err := p.stringListAttr(block, "checks")
+	if err != nil {
+		return err
+	}
+	customSQL, err := p.stringAttr(block, "custom", "table")
+	if err != nil {
+		return err
+	}
+	overrides, err := p.parsePlatformOverrides(block, "table")
+	if err != nil {
+		return err
+	}
 	strict, err := p.optionalTableBool(block, "strict", false)
 	if err != nil {
 		return err
@@ -167,6 +188,9 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		Strict:        strict,
 		WithoutRowID:  withoutRowID,
 		Comment:       p.optionalString(block.Body.Attributes["comment"]),
+		Checks:        checks,
+		CustomSQL:     customSQL,
+		Overrides:     overrides,
 	}
 
 	fieldsStart := len(p.db.Fields)
@@ -278,6 +302,23 @@ func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart, unlabeledCh
 		}
 		p.db.RLSEnabledTables = append(p.db.RLSEnabledTables, rlsEnabled)
 	default:
+		return p.parseAdditionalTableBlock(table, block)
+	}
+	return nil
+}
+
+func (p *parser) parseAdditionalTableBlock(table *goschema.Table, block *hclsyntax.Block) error {
+	switch block.Type {
+	case "constraint":
+		constraint, err := p.parseConstraint(table, block)
+		if err != nil {
+			return err
+		}
+		p.db.Constraints = append(p.db.Constraints, constraint)
+	case "platform":
+		// Parsed before the child walk so duplicate dialect/key pairs are
+		// detected across all platform blocks on the table.
+	default:
 		return p.blockError(block, "unsupported table block %q", block.Type)
 	}
 	return nil
@@ -306,6 +347,14 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 	if generated.expression != "" && identity.generation != "" {
 		return goschema.Field{}, p.blockError(block, "column cannot mix as and identity blocks")
 	}
+	overrides, err := p.parsePlatformOverrides(block, "column")
+	if err != nil {
+		return goschema.Field{}, err
+	}
+	enumValues, err := p.stringListAttr(block, "enum")
+	if err != nil {
+		return goschema.Field{}, err
+	}
 
 	field := goschema.Field{
 		StructName:          structName,
@@ -322,12 +371,14 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 		GeneratedKind:       generated.kind,
 		UpdateExpression:    p.optionalSQLExpression(block.Body.Attributes["on_update"]),
 		UniqueExpr:          p.optionalSQLExpression(block.Body.Attributes["unique_expr"]),
+		Enum:                enumValues,
 		Check:               p.optionalSQLExpression(block.Body.Attributes["check"]),
 		CheckName:           p.optionalString(block.Body.Attributes["check_name"]),
 		IdentityOptions:     identity.options,
 		Charset:             p.optionalString(block.Body.Attributes["charset"]),
 		Collate:             p.optionalString(block.Body.Attributes["collate"]),
 		Comment:             p.optionalString(block.Body.Attributes["comment"]),
+		Overrides:           overrides,
 	}
 	if attr := block.Body.Attributes["default"]; attr != nil {
 		p.setDefault(&field, attr)
@@ -347,7 +398,7 @@ func (p *parser) parseGeneratedColumn(block *hclsyntax.Block) (generatedColumnSp
 		switch nested.Type {
 		case "as":
 			asBlocks = append(asBlocks, nested)
-		case "identity":
+		case "identity", "platform":
 			continue
 		default:
 			return generatedColumnSpec{}, p.blockError(nested, "unsupported column block %q", nested.Type)
@@ -393,7 +444,7 @@ func (p *parser) parseIdentityColumn(block *hclsyntax.Block) (identityColumnSpec
 		switch nested.Type {
 		case "identity":
 			identityBlocks = append(identityBlocks, nested)
-		case "as":
+		case "as", "platform":
 			continue
 		default:
 			return identityColumnSpec{}, p.blockError(nested, "unsupported column block %q", nested.Type)
@@ -459,6 +510,10 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		return goschema.Index{}, err
 	}
 	indexType := p.optionalString(block.Body.Attributes["type"])
+	operator, err := p.stringAttr(block, "ops", "index")
+	if err != nil {
+		return goschema.Index{}, err
+	}
 	nullsDistinct, err := p.optionalBlockBoolPtr(block, "nulls_distinct", "index")
 	if err != nil {
 		return goschema.Index{}, err
@@ -483,6 +538,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		Unique:         unique,
 		NullsDistinct:  nullsDistinct,
 		Type:           indexType,
+		Operator:       operator,
 		Parser:         parserName,
 		Condition:      p.optionalString(block.Body.Attributes["where"]),
 		Comment:        p.optionalString(block.Body.Attributes["comment"]),
@@ -491,6 +547,178 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		Granularity:    granularity,
 		TableName:      tableName,
 	}, nil
+}
+
+func (p *parser) parseConstraint(table *goschema.Table, block *hclsyntax.Block) (goschema.Constraint, error) {
+	if len(block.Labels) != 1 {
+		return goschema.Constraint{}, p.blockError(block, "constraint block requires exactly one label")
+	}
+	if len(block.Body.Blocks) > 0 {
+		return goschema.Constraint{}, p.blockError(block.Body.Blocks[0], "unsupported constraint block %q", block.Body.Blocks[0].Type)
+	}
+	if err := p.rejectUnsupportedConstraintAttrs(block); err != nil {
+		return goschema.Constraint{}, err
+	}
+	constraintType, err := p.stringAttr(block, "type", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	if constraintType == "" {
+		return goschema.Constraint{}, p.blockError(block, "constraint %q requires type", block.Labels[0])
+	}
+	columns, err := p.stringListAttr(block, "columns")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	include, err := p.stringListAttr(block, "include")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	foreignColumns, err := p.stringListAttr(block, "foreign_columns")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	nullsDistinct, err := p.optionalBlockBoolPtr(block, "nulls_distinct", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	usingMethod, err := p.stringAttr(block, "using", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	excludeElements, err := p.stringAttr(block, "elements", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	whereCondition, err := p.stringAttr(block, "condition", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	checkExpression, err := p.stringAttr(block, "check", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	foreignTable, err := p.stringAttr(block, "foreign_table", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	onDelete, err := p.stringAttr(block, "on_delete", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	onUpdate, err := p.stringAttr(block, "on_update", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	comment, err := p.stringAttr(block, "comment", "constraint")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	return goschema.Constraint{
+		StructName:      table.StructName,
+		Name:            block.Labels[0],
+		Type:            constraintType,
+		Table:           table.QualifiedName(),
+		UsingMethod:     usingMethod,
+		ExcludeElements: excludeElements,
+		WhereCondition:  whereCondition,
+		CheckExpression: checkExpression,
+		Columns:         columns,
+		IncludeColumns:  include,
+		NullsDistinct:   nullsDistinct,
+		ForeignTable:    foreignTable,
+		ForeignColumns:  foreignColumns,
+		OnDelete:        onDelete,
+		OnUpdate:        onUpdate,
+		Comment:         comment,
+	}, nil
+}
+
+func (p *parser) parsePlatformOverrides(block *hclsyntax.Block, owner string) (map[string]map[string]string, error) {
+	overrides := make(map[string]map[string]string)
+	for _, platformBlock := range block.Body.Blocks {
+		if platformBlock.Type != "platform" {
+			continue
+		}
+		if err := p.parsePlatformBlock(overrides, platformBlock, owner); err != nil {
+			return nil, err
+		}
+	}
+	if len(overrides) == 0 {
+		return nil, nil
+	}
+	return overrides, nil
+}
+
+func (p *parser) parsePlatformBlock(
+	overrides map[string]map[string]string,
+	block *hclsyntax.Block,
+	owner string,
+) error {
+	if len(block.Labels) != 1 || strings.TrimSpace(block.Labels[0]) == "" {
+		return p.blockError(block, "%s platform block requires exactly one dialect label", owner)
+	}
+	for name := range block.Body.Attributes {
+		return p.blockError(block, "unsupported %s platform attribute %q", owner, name)
+	}
+	dialect := block.Labels[0]
+	if overrides[dialect] == nil {
+		overrides[dialect] = make(map[string]string)
+	}
+	for _, overrideBlock := range block.Body.Blocks {
+		override, err := p.parsePlatformOverride(overrideBlock, owner)
+		if err != nil {
+			return err
+		}
+		if _, exists := overrides[dialect][override.key]; exists {
+			return p.blockError(
+				overrideBlock,
+				"%s platform override %q for dialect %q is duplicated",
+				owner,
+				override.key,
+				dialect,
+			)
+		}
+		overrides[dialect][override.key] = override.value
+	}
+	return nil
+}
+
+type platformOverride struct {
+	key   string
+	value string
+}
+
+func (p *parser) parsePlatformOverride(block *hclsyntax.Block, owner string) (platformOverride, error) {
+	if block.Type != "override" {
+		return platformOverride{}, p.blockError(block, "unsupported %s platform block %q", owner, block.Type)
+	}
+	if len(block.Labels) != 1 || strings.TrimSpace(block.Labels[0]) == "" {
+		return platformOverride{}, p.blockError(block, "%s platform override requires exactly one key label", owner)
+	}
+	if len(block.Body.Blocks) > 0 {
+		return platformOverride{}, p.blockError(
+			block.Body.Blocks[0],
+			"unsupported %s platform override block %q",
+			owner,
+			block.Body.Blocks[0].Type,
+		)
+	}
+	if err := p.rejectUnsupportedAttrs(
+		block,
+		map[string]bool{"value": true},
+		owner+" platform override",
+	); err != nil {
+		return platformOverride{}, err
+	}
+	if block.Body.Attributes["value"] == nil {
+		return platformOverride{}, p.blockError(block, "%s platform override %q requires value", owner, block.Labels[0])
+	}
+	value, err := p.stringAttr(block, "value", owner+" platform override")
+	if err != nil {
+		return platformOverride{}, err
+	}
+	return platformOverride{key: block.Labels[0], value: value}, nil
 }
 
 // optionalGranularity reads the optional ClickHouse data-skipping index
@@ -963,6 +1191,8 @@ func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 		"strict":         true,
 		"without_rowid":  true,
 		"comment":        true,
+		"checks":         true,
+		"custom":         true,
 	}, "table")
 }
 
@@ -1007,6 +1237,7 @@ func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {
 		"on_update":      true,
 		"check":          true,
 		"check_name":     true,
+		"enum":           true,
 		"as":             true,
 		"charset":        true,
 		"collate":        true,
@@ -1050,7 +1281,26 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 		"where":           true,
 		"comment":         true,
 		"granularity":     true,
+		"ops":             true,
 	}, "index")
+}
+
+func (p *parser) rejectUnsupportedConstraintAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"type":            true,
+		"using":           true,
+		"elements":        true,
+		"condition":       true,
+		"check":           true,
+		"columns":         true,
+		"include":         true,
+		"nulls_distinct":  true,
+		"foreign_table":   true,
+		"foreign_columns": true,
+		"on_delete":       true,
+		"on_update":       true,
+		"comment":         true,
+	}, "constraint")
 }
 
 func (p *parser) rejectUnsupportedUniqueAttrs(block *hclsyntax.Block) error {
@@ -1087,12 +1337,17 @@ func (p *parser) rejectUnsupportedCheckAttrs(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedAttrs(block *hclsyntax.Block, supported map[string]bool, label string) error {
+	var unsupported []string
 	for name := range block.Body.Attributes {
 		if !supported[name] {
-			return p.blockError(block, "unsupported %s attribute %q", label, name)
+			unsupported = append(unsupported, name)
 		}
 	}
-	return nil
+	if len(unsupported) == 0 {
+		return nil
+	}
+	slices.Sort(unsupported)
+	return p.blockError(block, "unsupported %s attribute %q", label, unsupported[0])
 }
 
 func markPrimaryFields(fields []goschema.Field, columns []string) {
@@ -1129,6 +1384,18 @@ func (p *parser) optionalString(attr *hclsyntax.Attribute) string {
 		return ""
 	}
 	return p.exprString(attr)
+}
+
+func (p *parser) stringAttr(block *hclsyntax.Block, name, label string) (string, error) {
+	attr := block.Body.Attributes[name]
+	if attr == nil {
+		return "", nil
+	}
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() || !value.IsKnown() || value.IsNull() || value.Type() != cty.String {
+		return "", p.blockError(block, "%s attribute %q must be a string", label, name)
+	}
+	return value.AsString(), nil
 }
 
 func (p *parser) optionalBool(attr *hclsyntax.Attribute, fallback bool) bool {
@@ -1217,10 +1484,11 @@ func (p *parser) exprString(attr *hclsyntax.Attribute) string {
 }
 
 func (p *parser) columnTypeName(block *hclsyntax.Block, attr *hclsyntax.Attribute) string {
-	typ := p.rawExpr(attr)
-	if enumName, ok := strings.CutPrefix(typ, "enum."); ok {
+	rawType := p.rawExpr(attr)
+	if enumName, ok := strings.CutPrefix(rawType, "enum."); ok {
 		return enumName
 	}
+	typ := p.exprString(attr)
 	if p.optionalBool(block.Body.Attributes["unsigned"], false) && !strings.Contains(strings.ToLower(typ), "unsigned") {
 		return typ + " unsigned"
 	}
@@ -1233,14 +1501,15 @@ func (p *parser) stringListAttr(block *hclsyntax.Block, attrName string) ([]stri
 		return nil, nil
 	}
 	value, diags := attr.Expr.Value(nil)
-	if diags.HasErrors() || !value.CanIterateElements() {
+	valueType := value.Type()
+	if diags.HasErrors() || !valueType.IsTupleType() && !valueType.IsListType() {
 		return nil, p.blockError(block, "%s must be a list of strings", attrName)
 	}
 	values := make([]string, 0, value.LengthInt())
 	it := value.ElementIterator()
 	for it.Next() {
 		_, item := it.Element()
-		if item.Type() != cty.String {
+		if !item.IsKnown() || item.IsNull() || item.Type() != cty.String {
 			return nil, p.blockError(block, "%s must be a list of strings", attrName)
 		}
 		values = append(values, item.AsString())
@@ -1268,6 +1537,11 @@ func refName(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if unquoted, err := strconv.Unquote(raw); err == nil {
 		return unquoted
+	}
+	if name, ok := traversalObjectRefName(raw, "schema"); ok {
+		if ref, parsed := tableref.Parse(name); parsed && !ref.Qualified {
+			return ref.Name
+		}
 	}
 	if suffix, ok := strings.CutPrefix(raw, "schema."); ok {
 		return suffix

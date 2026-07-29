@@ -665,6 +665,7 @@ func processEmbeddedInlineModeRecursive(generatedFields []Field, embedded Embedd
 		// Clone the field and reassign to target struct
 		newField := field
 		newField.StructName = structName
+		newField.Overrides = mergePlatformOverrides(field.Overrides, embedded.Overrides)
 
 		// Apply prefix to column name if specified
 		if embedded.Prefix != "" {
@@ -685,6 +686,10 @@ func processEmbeddedInlineModeRecursive(generatedFields []Field, embedded Embedd
 			// Create a new embedded field with the target struct name and combined prefix
 			recursiveEmbedded := nestedEmbedded
 			recursiveEmbedded.StructName = structName
+			recursiveEmbedded.Overrides = mergePlatformOverrides(
+				nestedEmbedded.Overrides,
+				embedded.Overrides,
+			)
 
 			// Combine prefixes: if the parent has a prefix, prepend it to the nested prefix
 			if embedded.Prefix != "" {
@@ -725,7 +730,7 @@ func processEmbeddedJSONMode(generatedFields []Field, embedded EmbeddedField, st
 		Type:       columnType,
 		Nullable:   embedded.Nullable,
 		Comment:    embedded.Comment,
-		Overrides:  embedded.Overrides,
+		Overrides:  mergePlatformOverrides(nil, embedded.Overrides),
 	})
 
 	return generatedFields
@@ -757,6 +762,7 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 		overrides["mysql"] = map[string]string{"type": "INT"}
 		overrides["mariadb"] = map[string]string{"type": "INT"}
 	}
+	overrides = mergePlatformOverrides(overrides, embedded.Overrides)
 
 	// Create the foreign key field
 	generatedFields = append(generatedFields, Field{
@@ -774,6 +780,26 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 	})
 
 	return generatedFields
+}
+
+func mergePlatformOverrides(
+	base map[string]map[string]string,
+	explicit map[string]map[string]string,
+) map[string]map[string]string {
+	if len(base) == 0 && len(explicit) == 0 {
+		return nil
+	}
+	result := make(map[string]map[string]string, len(base)+len(explicit))
+	for dialect, values := range base {
+		result[dialect] = maps.Clone(values)
+	}
+	for dialect, values := range explicit {
+		if result[dialect] == nil {
+			result[dialect] = make(map[string]string)
+		}
+		maps.Copy(result[dialect], values)
+	}
+	return result
 }
 
 // buildFunctionDependencies analyzes function body content to identify function-to-function dependencies.
