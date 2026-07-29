@@ -24,6 +24,11 @@ func NewReplayGuard(info types.DBInfo) *ReplayGuard {
 // the replay database realm.
 func (g *ReplayGuard) ValidateStatement(stmt string) error {
 	dialect := platform.NormalizeDialect(g.info.Dialect)
+	if dialect == platform.MySQL || dialect == platform.MariaDB {
+		if err := rejectMySQLExecutableComments(dialect, stmt); err != nil {
+			return err
+		}
+	}
 	tokens := significantTokens(stmt, replayLexerOptions(dialect))
 	switch dialect {
 	case platform.SQLite:
@@ -42,6 +47,23 @@ func (g *ReplayGuard) ValidateStatement(stmt string) error {
 			unsupportedDialect = "unknown"
 		}
 		return unsafeReplayStatement(unsupportedDialect, "unsupported dialect")
+	}
+}
+
+func rejectMySQLExecutableComments(dialect, stmt string) error {
+	lex := lexer.NewLexerWithOptions(stmt, replayLexerOptions(dialect))
+	for {
+		token := lex.NextToken()
+		if token.Type == lexer.TokenEOF {
+			return nil
+		}
+		if token.Type != lexer.TokenComment {
+			continue
+		}
+		comment := strings.ToUpper(token.Value)
+		if strings.HasPrefix(comment, "/*!") || strings.HasPrefix(comment, "/*M!") {
+			return unsafeReplayStatement(dialect, "executable comment")
+		}
 	}
 }
 

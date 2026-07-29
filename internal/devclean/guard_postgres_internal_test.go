@@ -58,31 +58,6 @@ func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
 			dialect:   platform.Postgres,
 			statement: `COMMENT ON TABLE app.users IS 'application users'`,
 		},
-		{
-			name:      "ordinary function definition",
-			dialect:   platform.Postgres,
-			statement: `CREATE FUNCTION app.answer() RETURNS integer LANGUAGE SQL AS $$ SELECT 42 $$`,
-		},
-		{
-			name:      "ordinary anonymous block",
-			dialect:   platform.Postgres,
-			statement: `DO $$ BEGIN RAISE NOTICE 'replay'; END $$`,
-		},
-		{
-			name:      "ordinary procedure call",
-			dialect:   platform.Postgres,
-			statement: `CALL app.refresh_materialized_data()`,
-		},
-		{
-			name:      "session search path",
-			dialect:   platform.Postgres,
-			statement: `SET search_path TO app, public`,
-		},
-		{
-			name:      "explicit session search path",
-			dialect:   platform.Postgres,
-			statement: `SET SESSION search_path TO app, public`,
-		},
 	}
 
 	for _, test := range tests {
@@ -271,6 +246,12 @@ func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 			wantErr:   `postgres migration replay rejects TEMP object .*`,
 		},
 		{
+			name:      "select into protected namespace",
+			dialect:   platform.Postgres,
+			statement: `SELECT 1 INTO pg_catalog.ptah_leak`,
+			wantErr:   `postgres migration replay rejects protected namespace "pg_catalog" mutation .*`,
+		},
+		{
 			name:      "begin transaction",
 			dialect:   platform.Postgres,
 			statement: `BEGIN`,
@@ -359,6 +340,60 @@ func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 			dialect:   platform.Postgres,
 			statement: `COPY app.users TO PROGRAM 'cat > /tmp/users'`,
 			wantErr:   `postgres migration replay rejects external COPY .*`,
+		},
+		{
+			name:      "function definition",
+			dialect:   platform.Postgres,
+			statement: `CREATE OR REPLACE FUNCTION app.answer() RETURNS integer LANGUAGE SQL AS $$ SELECT 42 $$`,
+			wantErr:   `postgres migration replay rejects CREATE routine definition .*`,
+		},
+		{
+			name:      "procedure definition",
+			dialect:   platform.Postgres,
+			statement: `CREATE PROCEDURE app.refresh() LANGUAGE SQL AS $$ DELETE FROM app.cache $$`,
+			wantErr:   `postgres migration replay rejects CREATE routine definition .*`,
+		},
+		{
+			name:      "alter routine",
+			dialect:   platform.Postgres,
+			statement: `ALTER ROUTINE app.answer() SECURITY DEFINER`,
+			wantErr:   `postgres migration replay rejects ALTER routine definition .*`,
+		},
+		{
+			name:      "anonymous block",
+			dialect:   platform.Postgres,
+			statement: `DO $$ BEGIN RAISE NOTICE 'replay'; END $$`,
+			wantErr:   `postgres migration replay rejects DO sublanguage .*`,
+		},
+		{
+			name:      "procedure call",
+			dialect:   platform.Postgres,
+			statement: `CALL app.refresh_materialized_data()`,
+			wantErr:   `postgres migration replay rejects CALL sublanguage .*`,
+		},
+		{
+			name:      "session search path",
+			dialect:   platform.Postgres,
+			statement: `SET search_path TO app, public`,
+			wantErr:   `postgres migration replay rejects SET search_path .*`,
+		},
+		{
+			name:      "explicit session search path",
+			dialect:   platform.Postgres,
+			statement: `SET SESSION search_path TO app, public`,
+			wantErr:   `postgres migration replay rejects SET search_path .*`,
+		},
+		{
+			name:      "foreign table",
+			dialect:   platform.Postgres,
+			statement: `CREATE FOREIGN TABLE app.remote_users (id bigint) SERVER upstream`,
+			wantErr:   `postgres migration replay rejects CREATE FOREIGN .*`,
+		},
+		{
+			name:      "foreign schema import",
+			dialect:   platform.Postgres,
+			statement: `IMPORT FOREIGN SCHEMA remote FROM SERVER upstream INTO app`,
+			wantErr:   `postgres migration replay rejects IMPORT FOREIGN SCHEMA .*`,
 		},
 	}
 

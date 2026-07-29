@@ -27,6 +27,10 @@ func TestValidateClickHouseReplayStatement_HappyPath(t *testing.T) {
 			statement: "CREATE TABLE ptah_dev.events (id UInt64) ENGINE = MergeTree ORDER BY id",
 		},
 		{
+			name:      "embedded local engine",
+			statement: "CREATE TABLE ptah_dev.kv (id UInt64, value String) ENGINE = EmbeddedRocksDB PRIMARY KEY id",
+		},
+		{
 			name:      "unqualified local insert",
 			statement: "INSERT INTO events VALUES (1)",
 		},
@@ -100,6 +104,26 @@ func TestValidateClickHouseReplayStatement_HappyPath(t *testing.T) {
 		{
 			name:      "ordinary session setting",
 			statement: "SET max_threads = 4",
+		},
+		{
+			name:      "column named freeze",
+			statement: "ALTER TABLE ptah_dev.events ADD COLUMN freeze String",
+		},
+		{
+			name:      "quoted column named freeze",
+			statement: "ALTER TABLE ptah_dev.events ADD COLUMN `FREEZE` String",
+		},
+		{
+			name:      "freeze in string literal",
+			statement: "ALTER TABLE ptah_dev.events ADD COLUMN note String DEFAULT 'FREEZE'",
+		},
+		{
+			name:      "rename column to unfreeze",
+			statement: "ALTER TABLE ptah_dev.events RENAME COLUMN id TO unfreeze",
+		},
+		{
+			name:      "nested freeze column",
+			statement: "ALTER TABLE ptah_dev.events ADD COLUMN metadata Tuple(freeze String)",
 		},
 	}
 
@@ -181,6 +205,81 @@ func TestValidateClickHouseReplayStatement_GlobalFailurePath(t *testing.T) {
 			name:      "temporary view",
 			statement: "CREATE TEMPORARY VIEW events_view AS SELECT 1",
 			wantErr:   `clickhouse migration replay rejects TEMP object .*`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			err := validateClickHouseReplayStatement(
+				"ptah_dev",
+				clickHouseReplayTokens(test.statement),
+			)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+func TestValidateClickHouseReplayStatement_EngineFailurePath(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		statement string
+		wantErr   string
+	}{
+		{
+			name:      "distributed engine",
+			statement: "CREATE TABLE ptah_dev.events (id UInt64) ENGINE = Distributed(cluster, production, events)",
+			wantErr:   `clickhouse migration replay rejects DISTRIBUTED table engine .*`,
+		},
+		{
+			name:      "implicit default table engine",
+			statement: "CREATE TABLE ptah_dev.events (id UInt64)",
+			wantErr:   `clickhouse migration replay rejects implicit/default table engine .*`,
+		},
+		{
+			name:      "table as select with implicit default engine",
+			statement: "CREATE TABLE ptah_dev.copied AS SELECT engine FROM ptah_dev.source",
+			wantErr:   `clickhouse migration replay rejects implicit/default table engine .*`,
+		},
+		{
+			name:      "external dictionary source",
+			statement: "CREATE DICTIONARY ptah_dev.remote (id UInt64) PRIMARY KEY id SOURCE(HTTP(URL 'https://example.test/data')) LAYOUT(FLAT())",
+			wantErr:   `clickhouse migration replay rejects HTTP dictionary source .*`,
+		},
+		{
+			name:      "executable dictionary source",
+			statement: "CREATE DICTIONARY ptah_dev.remote (id UInt64) PRIMARY KEY id SOURCE(EXECUTABLE(COMMAND 'touch /tmp/escaped')) LAYOUT(FLAT())",
+			wantErr:   `clickhouse migration replay rejects EXECUTABLE dictionary source .*`,
+		},
+		{
+			name:      "persistent table snapshot",
+			statement: "ALTER TABLE ptah_dev.events FREEZE",
+			wantErr:   `clickhouse migration replay rejects persistent table snapshot .*`,
+		},
+		{
+			name:      "persistent table unfreeze",
+			statement: "ALTER TABLE ptah_dev.events UNFREEZE WITH NAME 'snapshot'",
+			wantErr:   `clickhouse migration replay rejects persistent table snapshot .*`,
+		},
+		{
+			name:      "persistent snapshot as second alter action",
+			statement: "ALTER TABLE ptah_dev.events ADD COLUMN note String, FREEZE",
+			wantErr:   `clickhouse migration replay rejects persistent table snapshot .*`,
+		},
+		{
+			name:      "remote PostgreSQL engine",
+			statement: "CREATE TABLE ptah_dev.events (id UInt64) ENGINE = PostgreSQL('host:5432', 'db', 'events', 'user', 'pass')",
+			wantErr:   `clickhouse migration replay rejects POSTGRESQL table engine .*`,
+		},
+		{
+			name:      "replicated engine",
+			statement: "CREATE TABLE ptah_dev.events (id UInt64) ENGINE = ReplicatedMergeTree('/tables/events', '{replica}') ORDER BY id",
+			wantErr:   `clickhouse migration replay rejects REPLICATEDMERGETREE table engine .*`,
+		},
+		{
+			name:      "unknown engine fails closed",
+			statement: "CREATE TABLE ptah_dev.events (id UInt64) ENGINE = FutureRemoteEngine('endpoint')",
+			wantErr:   `clickhouse migration replay rejects FUTUREREMOTEENGINE table engine .*`,
 		},
 	}
 

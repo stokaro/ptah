@@ -21,6 +21,9 @@ func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 	if first == "EXEC" || first == "EXECUTE" {
 		return unsafeReplayStatement(platform.SQLServer, "EXEC/EXECUTE sublanguage")
 	}
+	if operation := sqlServerExternalOrServerOperation(tokens); operation != "" {
+		return unsafeReplayStatement(platform.SQLServer, operation)
+	}
 	if first == "GRANT" || first == "DENY" || first == "REVOKE" {
 		return unsafeReplayStatement(platform.SQLServer, "permission mutation")
 	}
@@ -32,6 +35,9 @@ func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 			platform.SQLServer,
 			first+" DATABASE DDL TRIGGER",
 		)
+	}
+	if sqlServerDefinesExecutableBody(tokens) {
+		return unsafeReplayStatement(platform.SQLServer, first+" executable stored body")
 	}
 	if sqlServerSelectIntoEscapesRealm(tokens) {
 		return unsafeReplayStatement(platform.SQLServer, "cross-database SELECT INTO")
@@ -55,6 +61,9 @@ func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 			"CREATE EXTERNAL TABLE AS SELECT",
 		)
 	}
+	if sqlServerRejectsExternalTableDDL(tokens) {
+		return unsafeReplayStatement(platform.SQLServer, first+" EXTERNAL TABLE")
+	}
 	if sqlServerEnablesLedger(tokens) {
 		return unsafeReplayStatement(platform.SQLServer, "LEDGER table")
 	}
@@ -62,6 +71,47 @@ func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 		return unsafeReplayStatement(platform.SQLServer, operation)
 	}
 	return nil
+}
+
+func sqlServerRejectsExternalTableDDL(tokens []lexer.Token) bool {
+	return normalizedIdentifier(tokens[0]) != "DROP" &&
+		sqlServerDDLStartsWith(tokens, "EXTERNAL", "TABLE")
+}
+
+func sqlServerExternalOrServerOperation(tokens []lexer.Token) string {
+	first := normalizedIdentifier(tokens[0])
+	switch first {
+	case "BACKUP", "RESTORE":
+		return first + " external storage operation"
+	case "BULK":
+		if sqlServerKeywordSequenceAt(tokens, 1, "INSERT") {
+			return "BULK INSERT external data operation"
+		}
+	case "DBCC":
+		if !sqlServerDatabaseLocalDBCC(tokens) {
+			return first + " server operation"
+		}
+	case "KILL", "RECONFIGURE", "SHUTDOWN":
+		return first + " server operation"
+	}
+	return ""
+}
+
+func sqlServerDefinesExecutableBody(tokens []lexer.Token) bool {
+	if normalizedIdentifier(tokens[0]) == "DROP" &&
+		sqlServerDDLStartsWith(tokens, "FUNCTION") {
+		return false
+	}
+	return sqlServerDDLStartsWith(tokens, "FUNCTION") ||
+		sqlServerDDLStartsWith(tokens, "PROCEDURE") ||
+		sqlServerDDLStartsWith(tokens, "PROC") ||
+		sqlServerDDLStartsWith(tokens, "TRIGGER")
+}
+
+func sqlServerDatabaseLocalDBCC(tokens []lexer.Token) bool {
+	return sqlServerKeywordSequenceAt(tokens, 1, "CHECKIDENT") ||
+		sqlServerKeywordSequenceAt(tokens, 1, "CHECKTABLE") ||
+		sqlServerKeywordSequenceAt(tokens, 1, "CHECKCONSTRAINTS")
 }
 
 func sqlServerHasGlobalScope(tokens []lexer.Token) bool {

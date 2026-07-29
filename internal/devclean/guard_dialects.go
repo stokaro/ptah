@@ -55,28 +55,13 @@ func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token
 	if len(tokens) == 0 {
 		return nil
 	}
+	tokens = leadingCTEExecutableTokens(tokens)
 	first := normalizedIdentifier(tokens[0])
-	switch first {
-	case "USE", "INSTALL", "UNINSTALL", "FLUSH", "RESET":
-		return unsafeReplayStatement(dialect, first)
-	case "SET":
-		if tokenSequenceAt(tokens, 1, "GLOBAL") ||
-			tokenSequenceAt(tokens, 1, "PERSIST") ||
-			tokenSequenceAt(tokens, 1, "PERSIST_ONLY") {
-			return unsafeReplayStatement(dialect, "global or persistent SET")
-		}
-	case "GRANT", "REVOKE":
-		return unsafeReplayStatement(dialect, "privilege or role mutation")
-	case "PREPARE", "EXECUTE", "DEALLOCATE":
-		return unsafeReplayStatement(dialect, "prepared statement")
-	case "LOCK":
-		if tokenSequenceAt(tokens, 1, "TABLES") {
-			return unsafeReplayStatement(dialect, "LOCK TABLES")
-		}
-	case "ALTER":
-		if tokenSequenceAt(tokens, 1, "INSTANCE") {
-			return unsafeReplayStatement(dialect, "ALTER INSTANCE")
-		}
+	if err := rejectMySQLExecutableObjects(dialect, first, tokens); err != nil {
+		return err
+	}
+	if operation := unsafeMySQLReplayOperation(tokens); operation != "" {
+		return unsafeReplayStatement(dialect, operation)
 	}
 	if isGlobalMySQLDDL(tokens) {
 		return unsafeReplayStatement(dialect, describeStatementObject(tokens))
@@ -92,15 +77,168 @@ func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token
 	if err := rejectMySQLRenameDestinations(dialect, database, tokens); err != nil {
 		return err
 	}
-	return rejectCrossDatabaseTargets(dialect, database, tokens)
+	return rejectMySQLCrossDatabaseTargets(dialect, database, tokens)
+}
+
+func unsafeMySQLReplayOperation(tokens []lexer.Token) string {
+	first := normalizedIdentifier(tokens[0])
+	switch first {
+	case "USE", "INSTALL", "UNINSTALL", "FLUSH", "RESET":
+		return first
+	case "CALL":
+		return "CALL sublanguage"
+	case "LOAD":
+		if tokenSequenceAt(tokens, 1, "DATA") || tokenSequenceAt(tokens, 1, "XML") {
+			return first + " external data operation"
+		}
+	case "SET":
+		if tokenSequenceAt(tokens, 1, "GLOBAL") ||
+			tokenSequenceAt(tokens, 1, "PERSIST") ||
+			tokenSequenceAt(tokens, 1, "PERSIST_ONLY") {
+			return "global or persistent SET"
+		}
+	case "GRANT", "REVOKE":
+		return "privilege or role mutation"
+	case "PREPARE", "EXECUTE", "DEALLOCATE":
+		return "prepared statement"
+	case "LOCK":
+		if tokenSequenceAt(tokens, 1, "TABLES") {
+			return "LOCK TABLES"
+		}
+	case "ALTER":
+		if tokenSequenceAt(tokens, 1, "INSTANCE") {
+			return "ALTER INSTANCE"
+		}
+	}
+	return ""
+}
+
+func rejectMySQLExecutableObjects(dialect, first string, tokens []lexer.Token) error {
+	if definesMySQLExecutableBody(tokens) {
+		return unsafeReplayStatement(dialect, first+" executable stored body")
+	}
+	if engine := unconfinedMySQLStorageEngine(tokens); engine != "" {
+		return unsafeReplayStatement(dialect, engine+" storage engine")
+	}
+	return nil
 }
 
 func rejectMySQLRenameDestinations(dialect, database string, tokens []lexer.Token) error {
-	if tokenSequenceAt(tokens, 0, "RENAME", "TABLE") ||
-		tokenSequenceAt(tokens, 0, "ALTER", "TABLE") && containsIdentifier(tokens, "RENAME") {
+	if tokenSequenceAt(tokens, 0, "ALTER", "TABLE") && containsIdentifier(tokens, "RENAME") {
 		return rejectTargetsAfterKeyword(dialect, database, tokens, "TO")
 	}
 	return nil
+}
+
+func rejectMySQLCrossDatabaseTargets(dialect, database string, tokens []lexer.Token) error {
+	if strings.TrimSpace(database) == "" {
+		return unsafeReplayStatement(dialect, "qualified target without a configured database")
+	}
+	for _, target := range mysqlMutationTargets(tokens) {
+		if len(target) < 2 || target[0] == database {
+			continue
+		}
+		return unsafeReplayStatement(
+			dialect,
+			fmt.Sprintf("cross-database target %q", strings.Join(target, ".")),
+		)
+	}
+	return nil
+}
+
+func mysqlMutationTargets(tokens []lexer.Token) [][]string {
+	switch normalizedIdentifier(tokens[0]) {
+	case "RENAME":
+		return mysqlRenameTargets(tokens)
+	case "DROP":
+		kindIndex := statementObjectKindIndex(tokens)
+		if kindIndex != mutationTargetNotFound &&
+			(normalizedIdentifier(tokens[kindIndex]) == "TABLE" ||
+				normalizedIdentifier(tokens[kindIndex]) == "VIEW") {
+			return commaSeparatedQualifiedTargets(
+				tokens,
+				objectNameIndex(tokens, kindIndex),
+				"",
+			)
+		}
+	case "UPDATE":
+		return mysqlUpdateTargets(tokens)
+	}
+	return mutationTargets(tokens)
+}
+
+func mysqlUpdateTargets(tokens []lexer.Token) [][]string {
+	index := 1
+	for index < len(tokens) {
+		switch normalizedIdentifier(tokens[index]) {
+		case "LOW_PRIORITY", "IGNORE", "ONLY":
+			index++
+		default:
+			return mysqlTableReferenceTargets(tokens, index)
+		}
+	}
+	return nil
+}
+
+func mysqlTableReferenceTargets(tokens []lexer.Token, start int) [][]string {
+	var targets [][]string
+	expectTarget := true
+	depth := 0
+	for index := start; index < len(tokens); index++ {
+		if depth == 0 && tokens[index].MatchIdentifierValue("SET") {
+			return targets
+		}
+		if expectTarget {
+			target, next := qualifiedIdentifierAt(tokens, index)
+			if len(target) == 0 {
+				continue
+			}
+			targets = append(targets, target)
+			expectTarget = false
+			index = next - 1
+			continue
+		}
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth = max(depth-1, 0)
+		case depth == 0 && tokens[index].MatchOperatorValue(","):
+			expectTarget = true
+		case depth == 0 && (tokens[index].MatchIdentifierValue("JOIN") ||
+			tokens[index].MatchIdentifierValue("STRAIGHT_JOIN")):
+			expectTarget = true
+		}
+	}
+	return targets
+}
+
+func mysqlRenameTargets(tokens []lexer.Token) [][]string {
+	index := 1
+	if index < len(tokens) && tokens[index].MatchIdentifierValue("TABLE") {
+		index++
+	}
+	var targets [][]string
+	for index < len(tokens) {
+		source, next := qualifiedIdentifierAt(tokens, index)
+		if len(source) == 0 {
+			return targets
+		}
+		targets = append(targets, source)
+		if next >= len(tokens) || !tokens[next].MatchIdentifierValue("TO") {
+			return targets
+		}
+		destination, next := qualifiedIdentifierAt(tokens, next+1)
+		if len(destination) == 0 {
+			return targets
+		}
+		targets = append(targets, destination)
+		if next >= len(tokens) || !tokens[next].MatchOperatorValue(",") {
+			return targets
+		}
+		index = next + 1
+	}
+	return targets
 }
 
 func validateSQLServerReplayStatementBase(tokens []lexer.Token) error {
@@ -122,7 +260,7 @@ func validateSQLServerReplayStatementBase(tokens []lexer.Token) error {
 	if usesTemporaryObject(tokens) || containsTemporaryTarget(tokens) {
 		return unsafeReplayStatement(platform.SQLServer, "temporary object")
 	}
-	for _, target := range mutationTargets(tokens) {
+	for _, target := range sqlServerMutationTargets(tokens) {
 		if len(target) >= 3 {
 			return unsafeReplayStatement(
 				platform.SQLServer,
@@ -177,7 +315,8 @@ func isGlobalPostgresDDL(tokens []lexer.Token) bool {
 	case "EVENT":
 		return tokenSequenceAt(tokens, kindIndex, "EVENT", "TRIGGER")
 	case "FOREIGN":
-		return !tokenSequenceAt(tokens, kindIndex, "FOREIGN", "TABLE")
+		return normalizedIdentifier(tokens[0]) != "DROP" ||
+			!tokenSequenceAt(tokens, kindIndex, "FOREIGN", "TABLE")
 	case "SERVER":
 		return true
 	case "TEXT":
@@ -221,6 +360,8 @@ func isGlobalSQLServerDDL(tokens []lexer.Token) bool {
 		return true
 	case "SERVER":
 		return true
+	case "SYNONYM":
+		return normalizedIdentifier(tokens[0]) != "DROP"
 	case "EXTERNAL":
 		return !tokenSequenceAt(tokens, kindIndex, "EXTERNAL", "TABLE")
 	default:
@@ -286,6 +427,106 @@ func usesTemporaryObject(tokens []lexer.Token) bool {
 		containsIdentifier(tokens[1:kindIndex], "TEMPORARY")
 }
 
+func definesMySQLExecutableBody(tokens []lexer.Token) bool {
+	if !isDDLAction(tokens) {
+		return false
+	}
+	first := normalizedIdentifier(tokens[0])
+	if first != "CREATE" && first != "ALTER" {
+		return false
+	}
+	index := 1
+	if first == "CREATE" && tokenSequenceAt(tokens, index, "OR", "REPLACE") {
+		index += 2
+	}
+	if first == "CREATE" && tokenSequenceAt(tokens, index, "DEFINER") {
+		index = skipMySQLDefiner(tokens, index+1)
+	}
+	if tokenSequenceAt(tokens, index, "AGGREGATE", "FUNCTION") {
+		return true
+	}
+	return tokenSequenceAt(tokens, index, "EVENT") ||
+		tokenSequenceAt(tokens, index, "FUNCTION") ||
+		tokenSequenceAt(tokens, index, "PROCEDURE") ||
+		tokenSequenceAt(tokens, index, "TRIGGER")
+}
+
+func skipMySQLDefiner(tokens []lexer.Token, index int) int {
+	if index < len(tokens) && tokens[index].MatchOperatorValue("=") {
+		index++
+	}
+	if index >= len(tokens) {
+		return index
+	}
+	index++
+	if index < len(tokens) && tokens[index].MatchOperatorValue("(") {
+		index = skipBalancedParentheses(tokens, index)
+	}
+	if index < len(tokens) && tokens[index].MatchOperatorValue("@") {
+		index += min(2, len(tokens)-index)
+	}
+	return index
+}
+
+func skipBalancedParentheses(tokens []lexer.Token, index int) int {
+	depth := 0
+	for index < len(tokens) {
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth--
+			if depth == 0 {
+				return index + 1
+			}
+		}
+		index++
+	}
+	return index
+}
+
+func unconfinedMySQLStorageEngine(tokens []lexer.Token) string {
+	if !isDDLAction(tokens) {
+		return ""
+	}
+	kindIndex := statementObjectKindIndex(tokens)
+	if kindIndex == mutationTargetNotFound ||
+		normalizedIdentifier(tokens[kindIndex]) != "TABLE" {
+		return ""
+	}
+	engine, _ := topLevelValueAfterKeyword(tokens, "ENGINE", objectNameIndex(tokens, kindIndex)+1)
+	if engine == "FEDERATED" || engine == "CONNECT" {
+		return engine
+	}
+	return ""
+}
+
+func topLevelValueAfterKeyword(tokens []lexer.Token, keyword string, start int) (string, bool) {
+	depth := 0
+	for index := max(start, 0); index < len(tokens); index++ {
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth = max(depth-1, 0)
+		case depth == 0 && normalizedIdentifier(tokens[index]) == "SELECT":
+			return "", false
+		case depth == 0 && normalizedIdentifier(tokens[index]) == keyword:
+			index++
+			assigned := false
+			if index < len(tokens) && tokens[index].MatchOperatorValue("=") {
+				index++
+				assigned = true
+			}
+			if index < len(tokens) {
+				return normalizedIdentifier(tokens[index]), assigned
+			}
+			return "", assigned
+		}
+	}
+	return "", false
+}
+
 func containsTemporaryTarget(tokens []lexer.Token) bool {
 	for _, target := range mutationTargets(tokens) {
 		for _, part := range target {
@@ -311,6 +552,107 @@ func rejectCrossDatabaseTargets(dialect, database string, tokens []lexer.Token) 
 		)
 	}
 	return nil
+}
+
+func sqlServerMutationTargets(tokens []lexer.Token) [][]string {
+	if normalizedIdentifier(tokens[0]) != "DROP" {
+		return mutationTargets(tokens)
+	}
+	kindIndex := statementObjectKindIndex(tokens)
+	if kindIndex == mutationTargetNotFound {
+		return mutationTargets(tokens)
+	}
+	if normalizedIdentifier(tokens[kindIndex]) == "INDEX" {
+		return sqlServerDropIndexTargets(tokens, kindIndex+1)
+	}
+	return commaSeparatedQualifiedTargets(
+		tokens,
+		objectNameIndex(tokens, kindIndex),
+		"",
+	)
+}
+
+func sqlServerDropIndexTargets(tokens []lexer.Token, start int) [][]string {
+	var targets [][]string
+	for index := start; index < len(tokens); index++ {
+		if !tokens[index].MatchIdentifierValue("ON") {
+			continue
+		}
+		target, next := qualifiedIdentifierAt(tokens, index+1)
+		if len(target) != 0 {
+			targets = append(targets, target)
+		}
+		index = next - 1
+	}
+	return targets
+}
+
+func commaSeparatedQualifiedTargets(
+	tokens []lexer.Token,
+	start int,
+	stopKeyword string,
+) [][]string {
+	var targets [][]string
+	expectTarget := true
+	depth := 0
+	for index := start; index < len(tokens); index++ {
+		if depth == 0 && stopKeyword != "" &&
+			tokens[index].MatchIdentifierValue(stopKeyword) {
+			return targets
+		}
+		if expectTarget {
+			target, next := qualifiedIdentifierAt(tokens, index)
+			if len(target) == 0 {
+				continue
+			}
+			targets = append(targets, target)
+			expectTarget = false
+			index = next - 1
+			continue
+		}
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth = max(depth-1, 0)
+		case depth == 0 && tokens[index].MatchOperatorValue(","):
+			expectTarget = true
+		}
+	}
+	return targets
+}
+
+func leadingCTEExecutableTokens(tokens []lexer.Token) []lexer.Token {
+	if len(tokens) == 0 || !tokens[0].MatchIdentifierValue("WITH") {
+		return tokens
+	}
+	depth := 0
+	closedDefinition := false
+	for index := 1; index < len(tokens); index++ {
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth = max(depth-1, 0)
+			closedDefinition = depth == 0
+		case depth == 0 && closedDefinition && isDMLStatementToken(tokens[index]):
+			return tokens[index:]
+		}
+	}
+	return tokens
+}
+
+func isDMLStatementToken(token lexer.Token) bool {
+	switch {
+	case token.MatchIdentifierValue("SELECT"),
+		token.MatchIdentifierValue("INSERT"),
+		token.MatchIdentifierValue("UPDATE"),
+		token.MatchIdentifierValue("DELETE"),
+		token.MatchIdentifierValue("MERGE"):
+		return true
+	default:
+		return false
+	}
 }
 
 func rejectTargetsAfterKeyword(
@@ -415,7 +757,7 @@ func isStatementObjectKind(value string) bool {
 		"LOGIN", "LOGFILE", "MATERIALIZED", "NAMED", "NONCLUSTERED",
 		"PROCEDURE", "PUBLICATION", "QUOTA", "RESOURCE", "ROLE", "ROW",
 		"SCHEMA", "SEQUENCE", "SERVER", "SETTINGS", "SPATIAL", "SUBSCRIPTION",
-		"TABLE", "TABLESPACE", "TEXT", "TRANSFORM", "TRIGGER", "TYPE",
+		"SYNONYM", "TABLE", "TABLESPACE", "TEXT", "TRANSFORM", "TRIGGER", "TYPE",
 		"UNDO", "UNIQUE", "USER", "VIEW", "WINDOW", "WORKLOAD":
 		return true
 	default:

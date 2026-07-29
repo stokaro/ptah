@@ -18,6 +18,12 @@ func validateClickHouseReplayStatement(database string, tokens []lexer.Token) er
 	if err := rejectClickHouseGlobalMutation(tokens); err != nil {
 		return err
 	}
+	if source := unsafeClickHouseDictionarySource(tokens); source != "" {
+		return unsafeReplayStatement(platform.ClickHouse, source+" dictionary source")
+	}
+	if engine := unconfinedClickHouseEngine(tokens); engine != "" {
+		return unsafeReplayStatement(platform.ClickHouse, engine+" table engine")
+	}
 	if err := validateClickHouseReplayStatementBase(database, tokens); err != nil {
 		return err
 	}
@@ -27,6 +33,97 @@ func validateClickHouseReplayStatement(database string, tokens []lexer.Token) er
 	return validateClickHouseSecondaryTargets(database, tokens)
 }
 
+func unconfinedClickHouseEngine(tokens []lexer.Token) string {
+	if normalizedIdentifier(tokens[0]) != "CREATE" || usesTemporaryObject(tokens) {
+		return ""
+	}
+	kindIndex := statementObjectKindIndex(tokens)
+	if kindIndex == mutationTargetNotFound ||
+		!isClickHouseTableLikeKind(normalizedIdentifier(tokens[kindIndex])) {
+		return ""
+	}
+	engine, assigned := topLevelValueAfterKeyword(
+		tokens,
+		"ENGINE",
+		objectNameIndex(tokens, kindIndex)+1,
+	)
+	if !assigned || engine == "" {
+		if normalizedIdentifier(tokens[kindIndex]) == "TABLE" ||
+			normalizedIdentifier(tokens[kindIndex]) == "MATERIALIZED" &&
+				!containsIdentifier(tokens, "TO") {
+			return "implicit/default"
+		}
+		return ""
+	}
+	if isConfinedClickHouseEngine(engine) {
+		return ""
+	}
+	return engine
+}
+
+func unsafeClickHouseDictionarySource(tokens []lexer.Token) string {
+	if !isDDLAction(tokens) {
+		return ""
+	}
+	kindIndex := statementObjectKindIndex(tokens)
+	if kindIndex == mutationTargetNotFound ||
+		normalizedIdentifier(tokens[kindIndex]) != "DICTIONARY" {
+		return ""
+	}
+	source := clickHouseDictionarySource(tokens, objectNameIndex(tokens, kindIndex)+1)
+	if source == "" || source == "NULL" {
+		return ""
+	}
+	return source
+}
+
+func clickHouseDictionarySource(tokens []lexer.Token, start int) string {
+	depth := 0
+	for index := max(start, 0); index < len(tokens); index++ {
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth = max(depth-1, 0)
+		case depth == 0 && normalizedIdentifier(tokens[index]) == "SOURCE":
+			index++
+			if index < len(tokens) && tokens[index].MatchOperatorValue("(") {
+				index++
+			}
+			if index < len(tokens) {
+				return normalizedIdentifier(tokens[index])
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+func isClickHouseTableLikeKind(kind string) bool {
+	switch kind {
+	case "LIVE", "MATERIALIZED", "TABLE", "WINDOW":
+		return true
+	default:
+		return false
+	}
+}
+
+// Only engines whose data is owned by the disposable local table are allowed.
+// Unknown engines fail closed because their storage and replication scope is
+// not structurally provable from the statement.
+func isConfinedClickHouseEngine(engine string) bool {
+	switch engine {
+	case "AGGREGATINGMERGETREE", "COLLAPSINGMERGETREE", "EMBEDDEDROCKSDB",
+		"GENERATERANDOM", "GRAPHITEMERGETREE", "JOIN", "LOG", "MEMORY", "MERGE",
+		"MERGETREE", "NULL", "REPLACINGMERGETREE", "SET", "STRIPELOG",
+		"SUMMINGMERGETREE", "TINYLOG",
+		"VERSIONEDCOLLAPSINGMERGETREE":
+		return true
+	default:
+		return false
+	}
+}
+
 func rejectClickHouseGlobalMutation(tokens []lexer.Token) error {
 	first := normalizedIdentifier(tokens[0])
 	switch first {
@@ -34,6 +131,10 @@ func rejectClickHouseGlobalMutation(tokens []lexer.Token) error {
 		return unsafeReplayStatement(platform.ClickHouse, first+" RBAC change")
 	case "ATTACH", "DETACH", "UNDROP", "BACKUP", "RESTORE":
 		return unsafeReplayStatement(platform.ClickHouse, first)
+	case "ALTER":
+		if clickHouseHasPersistentSnapshotAction(tokens) {
+			return unsafeReplayStatement(platform.ClickHouse, "persistent table snapshot")
+		}
 	case "SET":
 		if clickHouseKeywordSequenceAt(tokens, 1, "ROLE") ||
 			clickHouseKeywordSequenceAt(tokens, 1, "DEFAULT", "ROLE") {
@@ -47,6 +148,35 @@ func rejectClickHouseGlobalMutation(tokens []lexer.Token) error {
 		}
 	}
 	return nil
+}
+
+func clickHouseHasPersistentSnapshotAction(tokens []lexer.Token) bool {
+	if !clickHouseKeywordSequenceAt(tokens, 0, "ALTER", "TABLE") {
+		return false
+	}
+	_, index := qualifiedIdentifierAt(tokens, 2)
+	if clickHouseKeywordSequenceAt(tokens, index, "ON", "CLUSTER") {
+		_, index = qualifiedIdentifierAt(tokens, index+2)
+	}
+	expectAction := true
+	depth := 0
+	for ; index < len(tokens); index++ {
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth = max(depth-1, 0)
+		case depth == 0 && tokens[index].MatchOperatorValue(","):
+			expectAction = true
+		case depth == 0 && expectAction:
+			if clickHouseKeywordSequenceAt(tokens, index, "FREEZE") ||
+				clickHouseKeywordSequenceAt(tokens, index, "UNFREEZE") {
+				return true
+			}
+			expectAction = false
+		}
+	}
+	return false
 }
 
 func validateClickHouseInsertTarget(database string, tokens []lexer.Token) error {

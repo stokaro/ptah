@@ -15,13 +15,22 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error
 
 	first := normalizedIdentifier(tokens[0])
 	if first == "DO" {
-		return nil
+		return unsafeReplayStatement(dialect, "DO sublanguage")
+	}
+	if first == "CALL" {
+		return unsafeReplayStatement(dialect, "CALL sublanguage")
+	}
+	if definesPostgresRoutine(tokens) {
+		return unsafeReplayStatement(dialect, first+" routine definition")
 	}
 	if namespace := protectedPostgresMutationNamespace(tokens); namespace != "" {
 		return unsafeReplayStatement(
 			dialect,
 			fmt.Sprintf("protected namespace %q mutation", namespace),
 		)
+	}
+	if first == "IMPORT" && containsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
+		return unsafeReplayStatement(dialect, "IMPORT FOREIGN SCHEMA")
 	}
 	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" {
 		return unsafeReplayStatement(dialect, operation)
@@ -46,6 +55,9 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error
 }
 
 func protectedPostgresMutationNamespace(tokens []lexer.Token) string {
+	if namespace := protectedPostgresSelectIntoNamespace(tokens); namespace != "" {
+		return namespace
+	}
 	for _, target := range postgresMutationTargets(tokens) {
 		if namespace := protectedNamespaceFromMutationTarget(tokens, target); namespace != "" {
 			return namespace
@@ -70,6 +82,29 @@ func protectedPostgresMutationNamespace(tokens []lexer.Token) string {
 			return namespace
 		}
 		return protectedPostgresObjectTarget(tokens)
+	}
+	return ""
+}
+
+func protectedPostgresSelectIntoNamespace(tokens []lexer.Token) string {
+	tokens = leadingCTEExecutableTokens(tokens)
+	if normalizedIdentifier(tokens[0]) != "SELECT" {
+		return ""
+	}
+	for index := 1; index < len(tokens); index++ {
+		if normalizedIdentifier(tokens[index]) != "INTO" {
+			continue
+		}
+		targetIndex := index + 1
+		for targetIndex < len(tokens) {
+			switch normalizedIdentifier(tokens[targetIndex]) {
+			case "GLOBAL", "LOCAL", "TEMP", "TEMPORARY", "UNLOGGED", "TABLE":
+				targetIndex++
+			default:
+				return protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
+			}
+		}
+		return ""
 	}
 	return ""
 }
@@ -129,14 +164,12 @@ func protectedPostgresMutationListNamespace(tokens []lexer.Token) string {
 	first := normalizedIdentifier(tokens[0])
 	switch first {
 	case "DROP":
-		kindIndex := statementObjectKindIndex(tokens)
-		if kindIndex == mutationTargetNotFound {
+		const kindIndex = 1
+		if kindIndex >= len(tokens) {
 			return ""
 		}
 		kind := normalizedIdentifier(tokens[kindIndex])
-		if kind != "FOREIGN" && kind != "INDEX" && kind != "MATERIALIZED" &&
-			kind != "SCHEMA" && kind != "SEQUENCE" && kind != "TABLE" &&
-			kind != "TYPE" && kind != "VIEW" {
+		if !postgresDropSupportsObjectList(tokens, kindIndex, kind) {
 			return ""
 		}
 		targetAt := protectedPostgresQualifiedNamespaceAt
@@ -165,6 +198,21 @@ func protectedPostgresMutationListNamespace(tokens []lexer.Token) string {
 		)
 	default:
 		return ""
+	}
+}
+
+func postgresDropSupportsObjectList(tokens []lexer.Token, kindIndex int, kind string) bool {
+	switch kind {
+	case "AGGREGATE", "COLLATION", "CONVERSION", "DOMAIN", "FUNCTION", "INDEX",
+		"OPERATOR", "PROCEDURE", "ROUTINE", "SCHEMA", "SEQUENCE", "STATISTICS",
+		"TABLE", "TYPE", "VIEW":
+		return true
+	case "FOREIGN":
+		return tokenSequenceAt(tokens, kindIndex, "FOREIGN", "TABLE")
+	case "MATERIALIZED":
+		return tokenSequenceAt(tokens, kindIndex, "MATERIALIZED", "VIEW")
+	default:
+		return false
 	}
 }
 
@@ -617,7 +665,7 @@ func postgresSessionOrControlOperation(tokens []lexer.Token) string {
 		return "REINDEX database or system"
 	}
 	if first == "SET" && setsPostgresSearchPath(tokens) {
-		return ""
+		return "SET search_path"
 	}
 	switch first {
 	case "ABORT", "BEGIN", "CHECKPOINT", "COMMIT", "DEALLOCATE", "DECLARE",
@@ -693,16 +741,20 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token) string {
 }
 
 func definesPostgresRoutine(tokens []lexer.Token) bool {
-	if normalizedIdentifier(tokens[0]) != "CREATE" &&
-		normalizedIdentifier(tokens[0]) != "ALTER" {
+	if len(tokens) == 0 {
 		return false
 	}
-	kindIndex := statementObjectKindIndex(tokens)
-	if kindIndex == mutationTargetNotFound {
+	first := normalizedIdentifier(tokens[0])
+	if first != "CREATE" && first != "ALTER" {
 		return false
 	}
-	kind := normalizedIdentifier(tokens[kindIndex])
-	return kind == "FUNCTION" || kind == "PROCEDURE"
+	index := 1
+	if first == "CREATE" && tokenSequenceAt(tokens, index, "OR", "REPLACE") {
+		index += 2
+	}
+	return tokenSequenceAt(tokens, index, "FUNCTION") ||
+		tokenSequenceAt(tokens, index, "PROCEDURE") ||
+		first == "ALTER" && tokenSequenceAt(tokens, index, "ROUTINE")
 }
 
 func postgresObjectClassWidth(tokens []lexer.Token, index int) int {

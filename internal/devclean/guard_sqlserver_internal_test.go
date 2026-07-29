@@ -30,16 +30,6 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 			statement: "CREATE TABLE dbo.accounts (id bigint PRIMARY KEY, balance decimal(18,2));",
 		},
 		{
-			name: "ordinary external table metadata",
-			statement: "CREATE EXTERNAL TABLE dbo.remote_data (" +
-				"id int, [as] nvarchar(32)) WITH (" +
-				"LOCATION = '/data', DATA_SOURCE = remote_source);",
-		},
-		{
-			name:      "drop external table metadata",
-			statement: "DROP EXTERNAL TABLE IF EXISTS dbo.remote_data;",
-		},
-		{
 			name: "unsupported kind words used as local column names",
 			statement: "CREATE TABLE dbo.words (" +
 				"service int, queue int, route int, contract int, " +
@@ -64,6 +54,10 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 		{
 			name:      "local select into quoted keyword",
 			statement: "SELECT id INTO [IF] FROM dbo.source;",
+		},
+		{
+			name:      "drop external table metadata",
+			statement: "DROP EXTERNAL TABLE IF EXISTS dbo.remote_data;",
 		},
 		{
 			name:      "string literal resembling into keyword",
@@ -107,10 +101,6 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 				"CHECK ([ledger] = 'ON'));",
 		},
 		{
-			name:      "local dml trigger",
-			statement: "CREATE TRIGGER dbo.audit_insert ON dbo.accounts AFTER INSERT AS SELECT 1;",
-		},
-		{
 			name: "local security policy",
 			statement: "CREATE SECURITY POLICY dbo.tenant_policy " +
 				"ADD FILTER PREDICATE dbo.tenant_filter(tenant_id) ON dbo.accounts;",
@@ -126,10 +116,6 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 		{
 			name:      "local xml schema collection",
 			statement: "CREATE XML SCHEMA COLLECTION dbo.documents AS N'<schema />';",
-		},
-		{
-			name:      "local synonym",
-			statement: "CREATE SYNONYM dbo.current_accounts FOR dbo.accounts;",
 		},
 		{
 			name:      "local schema with authorization",
@@ -303,6 +289,26 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 			wantOperation: "CREATE EXTERNAL TABLE AS SELECT",
 		},
 		{
+			name:          "bulk insert",
+			statement:     `BULK INSERT otherdb.dbo.users FROM '\\host\share\users.csv';`,
+			wantOperation: "BULK INSERT external data operation",
+		},
+		{
+			name:          "backup database",
+			statement:     `BACKUP DATABASE ptah_dev TO DISK = '\\host\share\ptah.bak';`,
+			wantOperation: "BACKUP external storage operation",
+		},
+		{
+			name:          "restore database",
+			statement:     `RESTORE DATABASE ptah_dev FROM DISK = '\\host\share\ptah.bak';`,
+			wantOperation: "RESTORE external storage operation",
+		},
+		{
+			name:          "DBCC server operation",
+			statement:     "DBCC FREEPROCCACHE;",
+			wantOperation: "DBCC server operation",
+		},
+		{
 			name: "create external table as cte select",
 			statement: "CREATE EXTERNAL TABLE dbo.remote_export " +
 				"WITH (LOCATION = '/export', DATA_SOURCE = remote_source, " +
@@ -310,6 +316,33 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 				"WITH source_rows AS (SELECT id FROM dbo.source) " +
 				"SELECT id FROM source_rows;",
 			wantOperation: "CREATE EXTERNAL TABLE AS SELECT",
+		},
+		{
+			name: "create external table metadata",
+			statement: "CREATE EXTERNAL TABLE dbo.remote_data (" +
+				"id int, [as] nvarchar(32)) WITH (" +
+				"LOCATION = '/data', DATA_SOURCE = remote_source);",
+			wantOperation: "CREATE EXTERNAL TABLE",
+		},
+		{
+			name:          "local dml trigger body",
+			statement:     "CREATE TRIGGER dbo.audit_insert ON dbo.accounts AFTER INSERT AS SELECT 1;",
+			wantOperation: "CREATE executable stored body",
+		},
+		{
+			name:          "local procedure body",
+			statement:     "CREATE OR ALTER PROCEDURE dbo.rebuild AS DELETE FROM dbo.accounts;",
+			wantOperation: "CREATE executable stored body",
+		},
+		{
+			name:          "local function body",
+			statement:     "ALTER FUNCTION dbo.answer() RETURNS int AS BEGIN RETURN 42 END;",
+			wantOperation: "ALTER executable stored body",
+		},
+		{
+			name:          "local synonym",
+			statement:     "CREATE SYNONYM dbo.current_accounts FOR dbo.accounts;",
+			wantOperation: "CREATE SYNONYM",
 		},
 		{
 			name:          "create ledger table",
