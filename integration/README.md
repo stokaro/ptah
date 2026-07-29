@@ -44,6 +44,40 @@ The integration test suite covers all aspects of the migration system as outline
 - Drop all tables and re-run from empty state on PostgreSQL, MySQL, MariaDB,
   ClickHouse, and opt-in SQL Server
 
+The database-realm cleanup tests use dedicated scratch databases and verify
+that replay cleanup removes database-scoped artifacts without crossing into
+another database. Set the matching URL and run the focused package:
+
+```bash
+PTAH_CLICKHOUSE_REALM_TEST_URL="$CLICKHOUSE_ADMIN_URL" \
+  go test -v -count=1 ./internal/dbschema/clickhouse \
+  -run '^TestWriterDropDatabaseRealm_Live$'
+
+PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL="$CLICKHOUSE_24_10_ADMIN_URL" \
+  go test -v -count=1 ./internal/dbschema/clickhouse \
+  -run '^TestWriterDropDatabaseRealm_RejectsLegacyServerLive$'
+
+MYSQL_ADMIN_TEST_DSN="$MYSQL_ADMIN_DSN" \
+MARIADB_ADMIN_TEST_DSN="$MARIADB_ADMIN_DSN" \
+  go test -v -count=1 ./internal/dbschema/mysql -tags=integration \
+  -run '^TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase$'
+
+PTAH_SQLSERVER_REALM_TEST_URL="$SQLSERVER_ADMIN_URL" \
+  go test -v -count=1 ./internal/dbschema/mssql \
+  -run '^TestWriterDropDatabaseRealm_.*Live$'
+
+POSTGRES_URL="$POSTGRES_ADMIN_URL" \
+COCKROACHDB_URL="$COCKROACHDB_ADMIN_URL" \
+YUGABYTEDB_URL="$YUGABYTEDB_ADMIN_URL" \
+  go test -v -count=1 ./internal/dbschema/postgres -tags=integration \
+  -run '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|RejectsProtectedDatabase)$'
+```
+
+Each URL must identify an administrative connection intended for tests. The
+success-path tests create a separate temporary database and drop it during
+cleanup. Protected-name tests connect to the named administrative database
+only to prove cleanup fails before mutation.
+
 ## Architecture
 
 ### Components
@@ -245,6 +279,11 @@ Rich, interactive report with:
 - Version: 10.11+
 - Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
 - Compatible with MySQL driver
+
+### ClickHouse
+- Version: 24.11+ for database-realm replay cleanup
+- Required permissions: CHECK GRANT, SHOW DATABASES, SHOW TABLES, CREATE DATABASE, DROP DATABASE, and the required DROP privileges for every supported object type in the scratch database
+- Cleanup fails before mutation on older servers because complete catalog visibility cannot be proven
 
 ### SQL Server
 - Version: SQL Server 2022 / Azure SQL compatible subset

@@ -52,4 +52,7 @@ jobs:
         run: go mod download
 
       - name: Run Windows filesystem publication tests
-        run: go test -v ./internal/fsdurable ./internal/migratesum ./internal/atlasmigrate -timeout 5m
+        run: |
+          go test -v ./internal/fsdurable ./internal/migratesum ./internal/devlock -timeout 5m
+          go test -v ./internal/atlasmigrate -run '^(TestPublishArtifactsLocked_|TestGenerateDiff_PreparedContentsArePublishedWithMatchingChecksum)' -timeout 5m
+          go test -v ./migration/generator -run '^TestMigrationPlanWriteFiles_' -timeout 5m

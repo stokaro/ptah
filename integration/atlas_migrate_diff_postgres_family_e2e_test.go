@@ -27,8 +27,8 @@ func TestAtlasMigrateDiffPostgresFamilyDevCleanupE2E(t *testing.T) {
 	defer cancel()
 
 	repoRoot := e2eRepoRoot(t)
-	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c, ctx, repoRoot, binaryPath)
+	binaryPath := filepath.Join(t.TempDir(), "ptah-compat")
+	buildPtahCompat(c, ctx, repoRoot, binaryPath)
 
 	tests := []postgresFamilyMigrateDiffCase{
 		{name: "cockroachdb", urlEnv: "COCKROACHDB_URL"},

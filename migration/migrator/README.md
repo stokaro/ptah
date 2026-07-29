@@ -267,6 +267,7 @@ pending and out of order.
 - **`WithMigrationDirFormat(format)`**: Selects `auto`, `ptah`, or `atlas` filesystem discovery
 - **`WithAtlasTemplateData(data)`**: Supplies data, including `.Env`, for Atlas SQL template migrations
 - **`WithStatementInterceptor(interceptor)`**: Lets an external executor take over selected statements
+- **`WithStatementValidator(validator)`**: Validates every statement before the migration executes its first statement
 - **`WithStatementObserver(observer)`**: Reports each statement after successful execution without replacing the execution path
 - **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout or Atlas's `atlas_schema_revisions` layout
 - **`Baseline(ctx, version)` / `BaselineWithOptions(ctx, opts)`**: Records provider migrations without executing their SQL bodies; Atlas metadata records only the exact baseline revision
@@ -391,6 +392,28 @@ if err != nil {
     panic(err)
 }
 ```
+
+### Validating statements before execution
+
+Use a statement validator when an embedder must reject SQL that can escape a
+disposable database or is unsupported by its execution policy. The provider
+splits and validates every statement in a migration before executing the first
+statement. A rejected later statement therefore leaves the migration
+untouched.
+
+```go
+provider, err := migrator.NewFSMigrationProvider(
+    os.DirFS("/path/to/migrations"),
+    migrator.WithStatementValidator(replayGuard),
+)
+if err != nil {
+    panic(err)
+}
+```
+
+`replayGuard` implements `migrator.StatementValidator`. The validator observes
+SQL only; combine it with `WithStatementInterceptor` when accepted statements
+may be executed by an external tool.
 
 `StatementEvent.Directives` is an event-local copy. An observer must not
 modify migration execution. A database-aware observer may capture a connection

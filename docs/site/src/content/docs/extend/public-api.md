@@ -71,6 +71,29 @@ the callback failed.
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.
 
+## Pinned database sessions
+
+`dbschema.DatabaseConnection.WithSession` pins one physical database session
+for the duration of a callback and rebinds the dialect reader, writer, and SQL
+runner to that session. Use it for cleanup, replay, and inspection workflows
+that depend on session-local state or SQLite attached-database visibility.
+
+The scoped connection must not escape the callback. Ptah discards the physical
+connection afterward so session-local state cannot leak to a later pool user.
+
+## Migration statement validation
+
+`migration/migrator.WithStatementValidator` attaches a pre-execution SQL
+safety gate to a filesystem provider. Ptah splits and validates every
+statement in one migration before executing its first statement. Rejecting a
+later statement cannot leave an earlier statement applied.
+
+Implement `migrator.StatementValidator` when an embedder must confine replay to
+a disposable database or reject unsupported statement forms. Validators
+inspect SQL but do not replace execution. Combine a validator with
+`StatementInterceptor` only when an external tool must execute accepted
+statements.
+
 ## Schema diff and planning contracts
 
 `migration/schemadiff/types.SchemaDiff` stores index additions and removals as
@@ -83,6 +106,11 @@ schema whose live catalog semantics must survive checkpoint planning.
 `GenerateCheckpointWithDatabaseInfo` accepts a caller-supplied complete
 identifier snapshot; the dialect-only checkpoint helper uses conservative
 offline rules.
+`migration/generator.PlanMigration` returns an unpublished plan bound to the
+migration-directory snapshot used during planning. `MigrationPlan.WriteFiles`
+rejects changed history under the shared cross-process publication lock.
+Embedders that need cancellation while waiting for that lock use
+`WriteFilesContext`.
 `migration/planner.Planner` exposes only checked planning; malformed references,
 unresolved additions, and target index-namespace conflicts fail before SQL is
 returned.

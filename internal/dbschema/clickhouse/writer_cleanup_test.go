@@ -394,38 +394,22 @@ func TestWriterDropDatabaseRealm_IsIdempotentWhenDatabaseIsEmpty(t *testing.T) {
 	assertClickHouseSQLMockComplete(c, db, queries, nil)
 }
 
-func TestWriterDropDatabaseRealm_ClickHouse2410UsesCompatibleCatalogPath(t *testing.T) {
+func TestWriterDropDatabaseRealm_ClickHouse2410FailsClosedBeforeCatalogRead(t *testing.T) {
 	c := qt.New(t)
-	database := "analytics"
-	queryArgs := []driver.NamedValue{{Ordinal: 1, Value: database}}
-	emptyObjectsQuery := sqlMockQuery{
-		sql:    databaseRealmObjectsQuery,
-		args:   queryArgs,
-		result: dbtest.QueryResult{Columns: []string{"name", "engine", "create_table_query"}},
-	}
 	queries := []sqlMockQuery{
 		databaseRealmVersionResult("24.10.2.80"),
-		{
-			sql:  databaseRealmEngineQuery,
-			args: queryArgs,
-			result: dbtest.QueryResult{
-				Columns: []string{"engine"},
-				Rows:    [][]driver.Value{{"Atomic"}},
-			},
-		},
-		{
-			sql:    databaseRealmTemporaryObjectsQuery,
-			result: dbtest.QueryResult{Columns: []string{"name"}},
-		},
-		emptyObjectsQuery,
-		emptyObjectsQuery,
 	}
 	db := openClickHouseSQLMock(t, c, queries, nil)
-	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
+	writer := clickhouse.NewClickHouseWriter(db.SQL, "analytics")
 
 	err := writer.DropDatabaseRealm(t.Context())
 
-	c.Assert(err, qt.IsNil)
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`clickhouse: refusing database-realm cleanup on server version "24\.10\.2\.80": `+
+			`ClickHouse 24\.11 or newer is required to prove complete catalog visibility with CHECK GRANT`,
+	)
 	assertClickHouseSQLMockComplete(c, db, queries, nil)
 }
 

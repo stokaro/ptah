@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,19 @@ const (
 	sessionRestoreTimeout = 5 * time.Second
 	metadataLockPollDelay = 10 * time.Millisecond
 )
+
+var protectedMySQLDatabases = []string{
+	"information_schema",
+	"metrics_schema",
+	"mysql",
+	"mysql_innodb_cluster_metadata",
+	"mysql_innodb_cluster_metadata_backup",
+	"mysql_innodb_cluster_metadata_bkp",
+	"mysql_innodb_cluster_metadata_previous",
+	"ndbinfo",
+	"performance_schema",
+	"sys",
+}
 
 func quoteIdent(name string) string {
 	return sqlident.Quote(platform.MySQL, name)
@@ -401,11 +415,25 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 		return nil
 	}
 	return w.withCleanupConnection(ctx, "realm-cleanup", func(conn *sql.Conn) error {
+		schema, err := w.cleanupSchema(ctx, conn)
+		if err != nil {
+			return err
+		}
+		if err := rejectProtectedMySQLDatabase(schema); err != nil {
+			return err
+		}
 		if err := w.dropAllTablesOnConnection(ctx, conn); err != nil {
 			return err
 		}
 		return w.verifyDatabaseRealm(ctx, conn)
 	})
+}
+
+func rejectProtectedMySQLDatabase(database string) error {
+	if slices.Contains(protectedMySQLDatabases, strings.ToLower(database)) {
+		return fmt.Errorf("mysql: refusing to clean protected database %q", database)
+	}
+	return nil
 }
 
 func (w *Writer) verifyDatabaseRealm(ctx context.Context, conn *sql.Conn) error {

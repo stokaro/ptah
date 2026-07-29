@@ -114,7 +114,8 @@ ClickHouse support is capability-limited. The preset models enums as inline
 `Enum8`/`Enum16` column types; foreign keys and enforced `CHECK` constraints
 are outside the preset. Review generated SQL and the
 [capability gates](../../reference/capabilities/) before adopting a workflow
-on ClickHouse.
+on ClickHouse. Dev-database replay cleanup requires ClickHouse 24.11 or newer
+so Ptah can prove complete catalog visibility with `CHECK GRANT`.
 
 ## Choosing behavior by capability, not by name
 

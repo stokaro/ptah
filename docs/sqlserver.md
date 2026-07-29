@@ -172,9 +172,10 @@ PTAH_SQLSERVER_TEST_URL='sqlserver://sa:pass@localhost:1433?database=ptah&encryp
 The test creates a temporary schema, tables with `IDENTITY`, a reserved-word
 table name, computed columns, CHECK/UNIQUE/FK constraints, and an index, then
 verifies that Ptah can introspect them through the SQL Server reader. The live
-coverage also verifies schema-scoped cleanup of FK-linked tables and migration
-metadata placement through the URL `schema` parameter. Cleanup fails safely when
-another schema owns a foreign key into the selected schema, and computed column
+coverage also verifies full database-realm cleanup of cross-schema dependency
+graphs and migration metadata placement through the URL `schema` parameter.
+Schema-scoped cleanup fails safely when another schema owns a foreign key into
+the selected schema, and computed column
 and default catalog readback are compared as a zero-diff schema. SQL Server
 advisory-lock coverage verifies both normal migration progress and timeout
 reporting when another session holds `ptah_migrate`. Identifier-collation

@@ -61,7 +61,8 @@ exercise a real server dialect — see
 - **Disposable means Ptah may drop everything it supports.** Dev and shadow
   database workflows clean user objects, and test seed steps bypass the
   seeder's protected-environment guards. Point these flags at scratch databases
-  only, never at a real environment.
+  only, never at a real environment. Cleanup rejects known system, template,
+  metadata, and administrative database names.
 - **Comparison scope does not reduce the replay realm.** Repeated
   `--schema` values select which schemas Ptah compares and emits. They do not
   limit which schemas a migration may create or which user schemas final
@@ -72,6 +73,9 @@ exercise a real server dialect — see
   ClickHouse cleanup owns the selected database. SQL Server cleanup owns all
   supported user schemas in the selected database. SQLite cleanup owns `main`
   on one pinned session.
+- **ClickHouse realm cleanup requires 24.11 or newer.** Ptah uses `CHECK GRANT`
+  to prove complete catalog visibility before dropping objects. Older servers
+  fail before cleanup because role-aware visibility cannot be proven safely.
 - **Cross-realm operations fail before execution.** Ptah rejects direct
   statements that switch or mutate another database, protected namespace,
   server, cluster, temporary namespace, external file, or attached SQLite
@@ -80,15 +84,44 @@ exercise a real server dialect — see
 - **Replay cleanup is serialized by realm.** PostgreSQL, YugabyteDB, MySQL,
   MariaDB, and SQL Server use database advisory locks. SQLite, ClickHouse, and
   CockroachDB use an operating-system file lock keyed by the normalized
-  database identity, which coordinates Ptah processes on the same host.
-  Cross-host ClickHouse and CockroachDB replay is unsupported because neither
-  engine provides the required effective session advisory lock.
+  database identity. That file lock coordinates only Ptah processes that
+  resolve the same temporary lock path and can access it, normally processes
+  running as the same operating-system user with the same temporary-directory
+  configuration. Different users, different temporary directories, other
+  hosts, and non-Ptah clients are not coordinated. Cross-host ClickHouse and
+  CockroachDB replay is unsupported because neither engine provides the
+  required effective session advisory lock.
 - **Match the target engine.** Replay verification proves the SQL executes on
   the engine it ran against, so a dev or shadow database should run the same
   engine (and ideally the same version) as the target.
 - **Every flag has an environment variable.** `PTAH_DB_URL`, `PTAH_DEV_URL`,
   and `PTAH_SHADOW_DB` set the corresponding flags, which keeps credentials
   out of CI command lines — see [Configuration](../../reference/configuration/).
+
+### Statement forms that fail closed
+
+Replay rejects SQL sublanguages and storage mechanisms whose effects cannot be
+proven to stay inside the disposable realm:
+
+- PostgreSQL-family `DO`, `CALL`, routine creation or alteration, foreign-table
+  creation or alteration, foreign servers, `IMPORT FOREIGN SCHEMA`,
+  `SET search_path`, and `SELECT INTO` protected namespaces.
+- MySQL and MariaDB executable comments, `CALL`, events, triggers, routines,
+  `LOAD DATA`/`LOAD XML`, and externally backed `FEDERATED` or `CONNECT`
+  tables.
+- SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
+  alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
+  `RESTORE`, and server-level maintenance statements.
+- ClickHouse remote, distributed, replicated, and unknown table engines,
+  external dictionary sources, and `FREEZE`/`UNFREEZE`. Tables and standalone
+  materialized views must select an explicitly allowlisted engine.
+- SQLite `ATTACH`, `DETACH`, temporary objects, and non-restorable pragmas.
+
+The rejection happens while Ptah validates the whole migration, before its
+first statement executes. Realm-local removal forms that Ptah can classify
+without interpreting a routine body, such as `DROP FUNCTION`,
+`DROP FOREIGN TABLE`, `DROP SYNONYM`, and `DROP EXTERNAL TABLE`, remain
+allowed.
 
 ## Where it appears
 

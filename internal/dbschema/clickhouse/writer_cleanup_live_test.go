@@ -18,7 +18,7 @@ import (
 
 func TestWriterDropDatabaseRealm_Live(t *testing.T) {
 	c := qt.New(t)
-	db, database := openLiveClickHouseRealmDatabase(t)
+	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
 	writer := clickhouse.NewClickHouseWriter(db, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
@@ -53,11 +53,43 @@ func TestWriterDropDatabaseRealm_Live(t *testing.T) {
 	c.Assert(objectCount, qt.Equals, uint64(0))
 }
 
-func openLiveClickHouseRealmDatabase(t *testing.T) (*sql.DB, string) {
+func TestWriterDropDatabaseRealm_RejectsLegacyServerLive(t *testing.T) {
+	c := qt.New(t)
+	db, database := openLiveClickHouseRealmDatabase(
+		t,
+		"PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL",
+	)
+	writer := clickhouse.NewClickHouseWriter(db, database)
+	table := sqlident.Qualified(platform.ClickHouse, database, "events")
+	_, err := db.ExecContext(
+		t.Context(),
+		"CREATE TABLE "+table+" (id UInt64) ENGINE = MergeTree ORDER BY id",
+	)
+	c.Assert(err, qt.IsNil)
+
+	err = writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(
+		err.Error(),
+		qt.Contains,
+		"ClickHouse 24.11 or newer is required to prove complete catalog visibility with CHECK GRANT",
+	)
+	var objectCount uint64
+	err = db.QueryRowContext(
+		t.Context(),
+		"SELECT count() FROM system.tables WHERE database = ? AND is_temporary = 0",
+		database,
+	).Scan(&objectCount)
+	c.Assert(err, qt.IsNil)
+	c.Assert(objectCount, qt.Equals, uint64(1))
+}
+
+func openLiveClickHouseRealmDatabase(t *testing.T, environmentVariable string) (*sql.DB, string) {
 	t.Helper()
-	adminURL, configured := os.LookupEnv("PTAH_CLICKHOUSE_REALM_TEST_URL")
+	adminURL, configured := os.LookupEnv(environmentVariable)
 	if !configured {
-		t.Skip("PTAH_CLICKHOUSE_REALM_TEST_URL is not configured")
+		t.Skip(environmentVariable + " is not configured")
 	}
 
 	admin, err := sql.Open("clickhouse", adminURL)

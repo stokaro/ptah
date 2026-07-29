@@ -115,6 +115,72 @@ func TestWriterDropDatabaseRealm_UsesPinnedConnectionForVerification(t *testing.
 	c.Assert(recorder.statements(), qt.HasLen, 0)
 }
 
+func TestWriterDropDatabaseRealm_RejectsProtectedDatabasesBeforeMutation(t *testing.T) {
+	c := qt.New(t)
+	tests := []string{
+		"information_schema",
+		"METRICS_SCHEMA",
+		"mysql",
+		"mysql_innodb_cluster_metadata",
+		"mysql_innodb_cluster_metadata_backup",
+		"mysql_innodb_cluster_metadata_bkp",
+		"mysql_innodb_cluster_metadata_previous",
+		"ndbinfo",
+		"performance_schema",
+		"sys",
+	}
+
+	for _, database := range tests {
+		c.Run(database, func(c *qt.C) {
+			recorder := &mysqlCleanupRecorder{}
+			db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+			writer := mysql.NewMySQLWriterWithServerVersion(
+				db.SQL,
+				database,
+				platform.MySQL,
+				"8.0.13",
+			)
+
+			err := writer.DropDatabaseRealm(t.Context())
+
+			c.Assert(
+				err,
+				qt.ErrorMatches,
+				`mysql: refusing to clean protected database ".*"`,
+			)
+			c.Assert(db.QueryCount(), qt.Equals, 0)
+			c.Assert(recorder.statements(), qt.HasLen, 0)
+		})
+	}
+}
+
+func TestWriterDropDatabaseRealm_RejectsProtectedSelectedDatabaseBeforeMutation(t *testing.T) {
+	c := qt.New(t)
+	recorder := &mysqlCleanupRecorder{}
+	db := dbtest.OpenWithExec(t, func(
+		query string,
+		_ []driver.NamedValue,
+	) (dbtest.QueryResult, error) {
+		c.Assert(query, qt.Equals, "SELECT DATABASE()")
+		return dbtest.QueryResult{
+			Columns: []string{"database"},
+			Rows:    [][]driver.Value{{"mysql"}},
+		}, nil
+	}, recorder.exec)
+	writer := mysql.NewMySQLWriterWithServerVersion(
+		db.SQL,
+		"",
+		platform.MySQL,
+		"8.0.13",
+	)
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.ErrorMatches, `mysql: refusing to clean protected database "mysql"`)
+	c.Assert(db.QueryCount(), qt.Equals, 1)
+	c.Assert(recorder.statements(), qt.HasLen, 0)
+}
+
 func TestWriterDropAllTables_RestoresAfterEnableFailure(t *testing.T) {
 	c := qt.New(t)
 	enableErr := errors.New("enable outcome unknown")

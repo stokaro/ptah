@@ -246,8 +246,7 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 	if slices.Contains(protectedClickHouseDatabases, w.schema) {
 		return fmt.Errorf("clickhouse: refusing database-realm cleanup of protected database %q", w.schema)
 	}
-	checkGrants, err := w.validateDatabaseRealmTarget(ctx)
-	if err != nil {
+	if err := w.validateDatabaseRealmTarget(ctx); err != nil {
 		return err
 	}
 
@@ -261,10 +260,8 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 		}
 	}
 
-	if checkGrants {
-		if err := w.checkDatabaseRealmPrivileges(ctx); err != nil {
-			return fmt.Errorf("clickhouse: verify database %q remains fully visible: %w", w.schema, err)
-		}
+	if err := w.checkDatabaseRealmPrivileges(ctx); err != nil {
+		return fmt.Errorf("clickhouse: verify database %q remains fully visible: %w", w.schema, err)
 	}
 	remaining, err := w.listDatabaseRealmObjects(ctx)
 	if err != nil {
@@ -280,30 +277,32 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 	return nil
 }
 
-func (w *Writer) validateDatabaseRealmTarget(ctx context.Context) (bool, error) {
+func (w *Writer) validateDatabaseRealmTarget(ctx context.Context) error {
 	var version string
 	if err := w.db.QueryRowContext(ctx, databaseRealmVersionQuery).Scan(&version); err != nil {
-		return false, fmt.Errorf("clickhouse: inspect server version: %w", err)
+		return fmt.Errorf("clickhouse: inspect server version: %w", err)
 	}
 	checkGrants, err := supportsCheckGrant(version)
 	if err != nil {
-		return false, err
+		return err
 	}
-	// CHECK GRANT was added in ClickHouse 24.11. Older supported servers
-	// still get preclassification and residual checks, but cannot prove
-	// effective grants without parsing role-aware SHOW GRANTS output.
-	if checkGrants {
-		if err := w.checkDatabaseRealmPrivileges(ctx); err != nil {
-			return false, err
-		}
+	if !checkGrants {
+		return fmt.Errorf(
+			"clickhouse: refusing database-realm cleanup on server version %q: "+
+				"ClickHouse 24.11 or newer is required to prove complete catalog visibility with CHECK GRANT",
+			version,
+		)
+	}
+	if err := w.checkDatabaseRealmPrivileges(ctx); err != nil {
+		return err
 	}
 
 	var engine string
 	if err := w.db.QueryRowContext(ctx, databaseRealmEngineQuery, w.schema).Scan(&engine); err != nil {
-		return false, fmt.Errorf("clickhouse: inspect database %q: %w", w.schema, err)
+		return fmt.Errorf("clickhouse: inspect database %q: %w", w.schema, err)
 	}
 	if !slices.Contains(databaseRealmCleanupEngines, engine) {
-		return false, fmt.Errorf(
+		return fmt.Errorf(
 			"clickhouse: refusing to clean database %q with unsupported engine %q",
 			w.schema,
 			engine,
@@ -312,15 +311,15 @@ func (w *Writer) validateDatabaseRealmTarget(ctx context.Context) (bool, error) 
 
 	temporaryObjects, err := w.listTemporaryObjects(ctx)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if len(temporaryObjects) != 0 {
-		return false, fmt.Errorf(
+		return fmt.Errorf(
 			"clickhouse: refusing database-realm cleanup while session-temporary objects exist: %q",
 			temporaryObjects,
 		)
 	}
-	return checkGrants, nil
+	return nil
 }
 
 func supportsCheckGrant(version string) (bool, error) {

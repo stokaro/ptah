@@ -63,7 +63,7 @@ jobs:
           - 3307:3306
 
       clickhouse:
-        image: clickhouse/clickhouse-server:24
+        image: clickhouse/clickhouse-server:24.12
         env:
           CLICKHOUSE_DB: ptah_test
           CLICKHOUSE_USER: ptah_user
@@ -77,6 +77,22 @@ jobs:
         ports:
           - 8123:8123
           - 9000:9000
+
+      clickhouse-legacy:
+        image: clickhouse/clickhouse-server:24.10
+        env:
+          CLICKHOUSE_DB: ptah_test
+          CLICKHOUSE_USER: ptah_user
+          CLICKHOUSE_PASSWORD: ptah_password
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+        options: >-
+          --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:8123/ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 8124:8123
+          - 9001:9000
 
       sqlserver:
         image: mcr.microsoft.com/mssql/server:2025-latest
@@ -152,6 +168,13 @@ jobs:
           done
           echo "ClickHouse is ready!"
 
+          echo "Waiting for legacy ClickHouse..."
+          until curl --silent --fail http://127.0.0.1:8124/ping; do
+            echo "Legacy ClickHouse is unavailable - sleeping"
+            sleep 2
+          done
+          echo "Legacy ClickHouse is ready!"
+
           echo "Waiting for CockroachDB..."
           until docker exec ptah-cockroachdb /cockroach/cockroach sql --insecure --host=127.0.0.1:26257 --execute="SELECT 1"; do
             echo "CockroachDB is unavailable - sleeping"
@@ -194,19 +217,37 @@ jobs:
           MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
           MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
+          PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_OCI_TEST_REGISTRY: "127.0.0.1:5000"
         run: |
           go test -v ./integration -tags=integration -timeout 15m
           go test -v ./integration/gonative -tags=integration -timeout 15m
-          go test -v ./internal/dblock -run '^TestAdvisoryLock_PostgresFamilyLive$' -timeout 3m
-          go test -v ./internal/devlock -run '^TestAcquire_CockroachDBSerializesSameRealmLive$' -timeout 3m
-          go test -v ./internal/dbschema/clickhouse -run '^TestWriterDropDatabaseRealm_Live$' -timeout 3m
-          go test -v ./internal/dbschema/mssql -run '^TestWriterDropDatabaseRealm_(Live|RejectsDatabaseScopedArtifactLive|RejectsPreservedSchemaPermissionLive)$' -timeout 3m
-          go test -v ./internal/dbschema/postgres -tags=integration -run '^TestWriterDrop(DatabaseRealm|AllTables)_Live' -timeout 5m
           go test -v ./dbschema -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)' -timeout 3m
           go test -v ./migration/migrator -run 'TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestAtlasRevisionMetadata_SQLServerIntegration' -timeout 3m
           go test -v ./migration/generator -run 'TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive' -timeout 5m
+
+      - name: Run database-realm cleanup and replay tests
+        env:
+          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
+          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+          MYSQL_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3306)/mysql"
+          MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/mysql"
+          MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
+          MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
+          PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
+          PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"
+          PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
+        run: |
+          go test -v -count=1 ./internal/dblock -run '^TestAdvisoryLock_PostgresFamilyLive$' -timeout 3m
+          go test -v -count=1 ./internal/devlock -run '^TestAcquire_CockroachDBSerializesSameRealmLive$' -timeout 3m
+          go test -v -count=1 ./internal/dbschema/mysql -tags=integration -run '^TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase$' -timeout 3m
+          go test -v -count=1 ./internal/dbschema/clickhouse -run '^TestWriterDropDatabaseRealm_(Live|RejectsLegacyServerLive)$' -timeout 3m
+          go test -v -count=1 ./internal/dbschema/mssql -run '^TestWriterDropDatabaseRealm_(Live|RejectsDatabaseScopedArtifactLive|RejectsPreservedSchemaPermissionLive)$' -timeout 3m
+          go test -v -count=1 ./internal/dbschema/postgres -tags=integration -run '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|RejectsProtectedDatabase)$' -timeout 5m
+          go test -v -count=1 ./internal/migrationreplay -tags=integration -run '^TestWithReplayedSnapshot_(ClickHouse|SQLServer)Live$' -timeout 5m
+          go test -v -count=1 ./integration -tags=integration -run '^TestAtlasMigrateDiff(MySQLFamilyDatabaseDesiredState|PostgresFamilyDevCleanup)E2E$' -timeout 12m
 
       - name: Build integration test binary
         run: |
