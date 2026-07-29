@@ -334,13 +334,6 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err != nil {
 		return nil, err
 	}
-	if err := recoverMigrationPublication(ctx, opts.OutputDir); err != nil {
-		return nil, err
-	}
-	outputState, err := captureMigrationDirectoryState(opts.OutputDir)
-	if err != nil {
-		return nil, fmt.Errorf("capture migration directory before planning: %w", err)
-	}
 
 	// 1. Determine the desired schema: use a pre-merged one when provided (for a
 	// composite desired-state assembled from several sources), otherwise parse the
@@ -388,6 +381,13 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, opts.Schemas)
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
+	}
+	if err := recoverMigrationPublication(ctx, opts.OutputDir); err != nil {
+		return nil, err
+	}
+	outputState, err := captureMigrationDirectoryState(opts.OutputDir)
+	if err != nil {
+		return nil, fmt.Errorf("capture migration directory before planning: %w", err)
 	}
 
 	// 3. Calculate the diff between desired and current schema using live
@@ -465,10 +465,7 @@ func recoverMigrationPublication(ctx context.Context, outputDir string) error {
 	if err := os.MkdirAll(filepath.Dir(filepath.Clean(outputDir)), 0755); err != nil {
 		return fmt.Errorf("create migration directory parent: %w", err)
 	}
-	err := atlasmigrate.WithMigrationDirectoryLock(ctx, outputDir, 0, func() error {
-		return atlasmigrate.RecoverPendingPublicationLocked(outputDir)
-	})
-	if err != nil {
+	if err := atlasmigrate.RecoverPendingPublication(ctx, outputDir); err != nil {
 		return fmt.Errorf("recover migration publication before planning: %w", err)
 	}
 	return nil
@@ -500,7 +497,7 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 		return nil, fmt.Errorf("create migration directory parent: %w", err)
 	}
 	var files *MigrationFiles
-	err := atlasmigrate.WithMigrationDirectoryLock(ctx, p.outputDir, 0, func() error {
+	err := atlasmigrate.WithMigrationDirectoryLock(ctx, p.outputDir, 0, func(context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

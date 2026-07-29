@@ -454,7 +454,6 @@ func abortPendingPublication(dir string, batch migrationBatch, published int) er
 			batch.stagedPaths[i],
 			batch.paths[i],
 			batch.digests[i],
-			batch.mode,
 		); err != nil {
 			return fmt.Errorf("roll back published migration files: %w", err)
 		}
@@ -498,6 +497,22 @@ func recoverPendingPublication(dir string) error {
 // The caller must hold the migration-directory lock for dir.
 func RecoverPendingPublicationLocked(dir string) error {
 	return recoverPendingPublication(dir)
+}
+
+// RecoverPendingPublication resolves an interrupted artifact publication,
+// acquiring the migration-directory lock unless ctx proves that the caller
+// already holds it.
+func RecoverPendingPublication(ctx context.Context, dir string) error {
+	held, err := migrationDirectoryLockHeld(ctx, dir)
+	if err != nil {
+		return fmt.Errorf("resolve migration directory lock path: %w", err)
+	}
+	if held {
+		return recoverPendingPublication(dir)
+	}
+	return WithMigrationDirectoryLock(ctx, dir, 0, func(context.Context) error {
+		return recoverPendingPublication(dir)
+	})
 }
 
 func publicationCommitted(dir string, journal publicationJournal) (bool, error) {
@@ -561,7 +576,6 @@ func rollBackPendingPublication(
 			stagedPath,
 			finalPath,
 			entry.Digest,
-			publicationMode(entry.Mode),
 		); err != nil {
 			return err
 		}
@@ -574,11 +588,29 @@ func rollBackPendingPublication(
 
 func rollBackPublicationEntry(
 	stagedPath, finalPath, expectedDigest string,
-	_ publicationMode,
 ) error {
 	quarantineDir := stagedPath + ".rollback"
 	quarantinePath := filepath.Join(quarantineDir, "published")
 
+	if err := quarantinePublishedMigration(finalPath, quarantineDir, quarantinePath); err != nil {
+		return err
+	}
+	stagedDigest, stagedErr := fileDigest(stagedPath)
+	quarantinedDigest, quarantineErr := fileDigest(quarantinePath)
+	return reconcileRollbackFiles(rollbackFileState{
+		stagedPath:        stagedPath,
+		finalPath:         finalPath,
+		quarantineDir:     quarantineDir,
+		quarantinePath:    quarantinePath,
+		expectedDigest:    expectedDigest,
+		stagedDigest:      stagedDigest,
+		stagedErr:         stagedErr,
+		quarantinedDigest: quarantinedDigest,
+		quarantineErr:     quarantineErr,
+	})
+}
+
+func quarantinePublishedMigration(finalPath, quarantineDir, quarantinePath string) error {
 	if err := os.Mkdir(quarantineDir, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 		return fmt.Errorf("create migration rollback quarantine: %w", err)
 	}
@@ -596,48 +628,61 @@ func rollBackPublicationEntry(
 	} else if err != nil {
 		return fmt.Errorf("inspect quarantined migration file: %w", err)
 	}
+	return nil
+}
 
-	stagedDigest, stagedErr := fileDigest(stagedPath)
-	quarantinedDigest, quarantineErr := fileDigest(quarantinePath)
+type rollbackFileState struct {
+	stagedPath        string
+	finalPath         string
+	quarantineDir     string
+	quarantinePath    string
+	expectedDigest    string
+	stagedDigest      string
+	stagedErr         error
+	quarantinedDigest string
+	quarantineErr     error
+}
+
+func reconcileRollbackFiles(state rollbackFileState) error {
 	switch {
-	case errors.Is(stagedErr, os.ErrNotExist) && errors.Is(quarantineErr, os.ErrNotExist):
-		return removeEmptyQuarantineDir(quarantineDir)
-	case stagedErr == nil && errors.Is(quarantineErr, os.ErrNotExist):
-		if stagedDigest != expectedDigest {
+	case errors.Is(state.stagedErr, os.ErrNotExist) && errors.Is(state.quarantineErr, os.ErrNotExist):
+		return removeEmptyQuarantineDir(state.quarantineDir)
+	case state.stagedErr == nil && errors.Is(state.quarantineErr, os.ErrNotExist):
+		if state.stagedDigest != state.expectedDigest {
 			return fmt.Errorf(
 				"cannot safely recover migration publication: staging file content changed; preserved %s",
-				stagedPath,
+				state.stagedPath,
 			)
 		}
-		return removeRollbackFiles(quarantineDir, stagedPath)
-	case errors.Is(stagedErr, os.ErrNotExist) &&
-		quarantineErr == nil:
-		if quarantinedDigest != expectedDigest {
+		return removeRollbackFiles(state.quarantineDir, state.stagedPath)
+	case errors.Is(state.stagedErr, os.ErrNotExist) &&
+		state.quarantineErr == nil:
+		if state.quarantinedDigest != state.expectedDigest {
 			return fmt.Errorf(
 				"cannot safely recover migration publication: %s content changed; preserved at %s",
-				finalPath,
-				quarantinePath,
+				state.finalPath,
+				state.quarantinePath,
 			)
 		}
-		return removeRollbackFiles(quarantineDir, quarantinePath)
-	case stagedErr != nil:
-		return fmt.Errorf("inspect staged migration file: %w", stagedErr)
-	case quarantineErr != nil:
-		return fmt.Errorf("inspect quarantined migration file: %w", quarantineErr)
-	case stagedDigest != expectedDigest:
+		return removeRollbackFiles(state.quarantineDir, state.quarantinePath)
+	case state.stagedErr != nil:
+		return fmt.Errorf("inspect staged migration file: %w", state.stagedErr)
+	case state.quarantineErr != nil:
+		return fmt.Errorf("inspect quarantined migration file: %w", state.quarantineErr)
+	case state.stagedDigest != state.expectedDigest:
 		return fmt.Errorf(
 			"cannot safely recover migration publication: staging file content changed; preserved %s and %s",
-			stagedPath,
-			quarantinePath,
+			state.stagedPath,
+			state.quarantinePath,
 		)
-	case quarantinedDigest != expectedDigest:
+	case state.quarantinedDigest != state.expectedDigest:
 		return fmt.Errorf(
 			"cannot safely recover migration publication: %s content changed; preserved at %s",
-			finalPath,
-			quarantinePath,
+			state.finalPath,
+			state.quarantinePath,
 		)
 	default:
-		return removeRollbackFiles(quarantineDir, quarantinePath, stagedPath)
+		return removeRollbackFiles(state.quarantineDir, state.quarantinePath, state.stagedPath)
 	}
 }
 

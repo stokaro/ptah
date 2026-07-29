@@ -283,16 +283,19 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			cmd.Context(),
 			migrationsDir,
 			0,
-			func() error {
+			func(lockedCtx context.Context) error {
+				if err := atlasmigrate.RecoverPendingPublicationLocked(migrationsDir); err != nil {
+					return fmt.Errorf("recover migration publication before replay: %w", err)
+				}
 				return migrationreplay.WithReplayedDirectory(
-					cmd.Context(),
+					lockedCtx,
 					devConn,
 					migrationsDir,
 					dirFormat,
 					func(replayConn *dbschema.DatabaseConnection) error {
 						replayOpts := generateOpts
 						replayOpts.DBConn = replayConn
-						plan, err = generator.PlanMigration(connectCtx, replayOpts)
+						plan, err = generator.PlanMigration(lockedCtx, replayOpts)
 						return err
 					},
 				)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 )
 
@@ -15,25 +16,63 @@ type dirLock struct {
 	file *os.File
 }
 
+type heldMigrationDirectoryLock struct {
+	active       atomic.Bool
+	canonicalDir string
+	parent       *heldMigrationDirectoryLock
+}
+
+type heldMigrationDirectoryLockContextKey struct{}
+
 // WithMigrationDirectoryLock invokes consume while holding the cross-process
-// lock shared by migration directory readers and publishers.
+// lock shared by migration directory readers and publishers. The callback must
+// use its scoped context for nested operations that may acquire the same lock.
 func WithMigrationDirectoryLock(
 	ctx context.Context,
 	migrationsDir string,
 	timeout time.Duration,
-	consume func() error,
+	consume func(context.Context) error,
 ) (resultErr error) {
 	if consume == nil {
 		return errors.New("migration directory lock callback is nil")
 	}
-	lock, err := acquireDirLock(ctx, migrationsDir, timeout)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("acquire migration directory lock: %w", err)
+	}
+	canonicalDir, err := canonicalMigrationDir(migrationsDir)
+	if err != nil {
+		return fmt.Errorf("resolve migration directory lock path: %w", err)
+	}
+	held, _ := ctx.Value(heldMigrationDirectoryLockContextKey{}).(*heldMigrationDirectoryLock)
+	lock, err := acquireDirLock(ctx, canonicalDir, timeout)
 	if err != nil {
 		return err
 	}
+	current := &heldMigrationDirectoryLock{
+		canonicalDir: canonicalDir,
+		parent:       held,
+	}
+	current.active.Store(true)
+	lockedCtx := context.WithValue(ctx, heldMigrationDirectoryLockContextKey{}, current)
 	defer func() {
+		current.active.Store(false)
 		resultErr = errors.Join(resultErr, lock.release())
 	}()
-	return consume()
+	return consume(lockedCtx)
+}
+
+func migrationDirectoryLockHeld(ctx context.Context, migrationsDir string) (bool, error) {
+	canonicalDir, err := canonicalMigrationDir(migrationsDir)
+	if err != nil {
+		return false, err
+	}
+	held, _ := ctx.Value(heldMigrationDirectoryLockContextKey{}).(*heldMigrationDirectoryLock)
+	for current := held; current != nil; current = current.parent {
+		if current.active.Load() && current.canonicalDir == canonicalDir {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func acquireDirLock(ctx context.Context, migrationsDir string, timeout time.Duration) (*dirLock, error) {

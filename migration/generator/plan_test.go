@@ -99,7 +99,7 @@ func TestMigrationPlanWriteFilesContext_RejectsConcurrentUse(t *testing.T) {
 			t.Context(),
 			outputDir,
 			0,
-			func() error {
+			func(context.Context) error {
 				close(lockHeld)
 				<-releaseLock
 				return nil
@@ -156,7 +156,7 @@ func TestMigrationPlanWriteFilesContext_CancelsWhileWaitingForLock(t *testing.T)
 			t.Context(),
 			outputDir,
 			0,
-			func() error {
+			func(context.Context) error {
 				close(lockHeld)
 				<-releaseLock
 				return nil
@@ -200,7 +200,7 @@ func TestGenerateMigration_CancelsWhileWaitingForRecoveryLock(t *testing.T) {
 			t.Context(),
 			outputDir,
 			0,
-			func() error {
+			func(context.Context) error {
 				close(lockHeld)
 				<-releaseLock
 				return nil
