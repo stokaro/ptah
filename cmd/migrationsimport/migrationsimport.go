@@ -1,6 +1,6 @@
 // Package migrationsimport implements the migrations import command: it converts
 // a migration directory produced by another versioned-migration tool
-// (golang-migrate, Goose, Flyway, and Liquibase) into Ptah's native
+// (golang-migrate, Goose, Flyway, Liquibase, and dbmate) into Ptah's native
 // NNNNNNNNNN_description.up.sql / .down.sql layout, preserving version order and
 // history (#667).
 package migrationsimport
@@ -35,10 +35,11 @@ versioned-migration tool into Ptah's native NNNNNNNNNN_description.up.sql /
 .down.sql layout, preserving version order and rewriting ptah.sum, so a team can
 adopt Ptah without hand-rewriting its migration history.
 
-Supported source tools: golang-migrate, Goose, Flyway, and Liquibase. The source
-tool is auto-detected from the directory layout, or set it explicitly with
---from. For Liquibase, only formatted-SQL changelogs are supported; XML, YAML,
-and JSON changelogs are detected and rejected with a message.
+Supported source tools: golang-migrate, Goose, Flyway, Liquibase, and dbmate.
+The source tool is auto-detected from the directory layout, or set it
+explicitly with --from. For Liquibase, only formatted-SQL changelogs are
+supported; XML, YAML, and JSON changelogs are detected and rejected with a
+message.
 
 A source migration with no rollback file gets a placeholder down migration. A
 Flyway repeatable (R__) migration is imported as a one-time migration ordered

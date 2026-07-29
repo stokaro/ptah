@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -24,6 +25,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t 
 		100,
 		"add_user_email_index",
 		DiffPolicy{},
+		atlasmigrate.Qualifier{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -72,7 +74,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexRequiresPopulatedCapablePost
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			specs, _, err := planGeneratedMigrationSpecs(indexOnlyDiff(), indexOnlyGeneratedSchema(), tt.dbSchema, tt.info, 100, "add_index", DiffPolicy{})
+			specs, _, err := planGeneratedMigrationSpecs(indexOnlyDiff(), indexOnlyGeneratedSchema(), tt.dbSchema, tt.info, 100, "add_index", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(specs, qt.HasLen, 1)
@@ -107,6 +109,7 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 		100,
 		"add_posts_and_user_index",
 		DiffPolicy{},
+		atlasmigrate.Qualifier{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -147,7 +150,7 @@ func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *test
 		{Name: "posts", Type: "BASE TABLE", EstimatedRows: 0},
 	}}
 
-	specs, _, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, postgresInfo(capability.Postgres16()), 100, "add_indexes", DiffPolicy{})
+	specs, _, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, postgresInfo(capability.Postgres16()), 100, "add_indexes", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 2)
@@ -181,7 +184,7 @@ func TestPlanGeneratedMigrationSpecs_RefusesUnsplitNonTransactionalMix(t *testin
 		Enums: []goschema.Enum{{Name: "status", Values: []string{"active", "archived"}}},
 	}
 
-	specs, _, err := planGeneratedMigrationSpecs(diff, generated, &dbschematypes.DBSchema{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{})
+	specs, _, err := planGeneratedMigrationSpecs(diff, generated, &dbschematypes.DBSchema{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 	c.Assert(specs, qt.IsNil)
 	c.Assert(err, qt.ErrorMatches, "generated migration mixes transactional statements with non-transactional statements that cannot be split automatically")

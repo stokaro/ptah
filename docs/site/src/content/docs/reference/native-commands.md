@@ -17,6 +17,11 @@ has its own page: [Atlas-compatible commands](../atlas-commands/). Use
 | `ptah schema annotations` | Export Ptah Go annotation metadata as a JSON Schema document. |
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
+| `ptah schema apply` | Apply a desired schema directly to a database, with an advisory lock, optional dev-database rehearsal, and interactive approval (`--auto-approve` for scripts). |
+| `ptah schema plan` | Save the declarative apply plan as a fingerprinted local plan file; `ptah schema apply --plan` executes it only while the target still matches the recorded fingerprint. |
+| `ptah schema inspect` | Inspect a live database, a schema file, or an Atlas-format migration directory as machine-clean HCL, SQL, or JSON; `--out-dir`/`--split` export files. |
+| `ptah schema diff` | Diff two arbitrary schema states (files, database URLs, or migration directories) into migration SQL or JSON. |
+| `ptah schema fmt` | Format HCL schema files canonically; `--check` is a no-write CI gate. |
 | `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
 | `ptah schema push` | Publish a lossless canonical desired schema to an OCI registry. |
 | `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
@@ -27,11 +32,12 @@ has its own page: [Atlas-compatible commands](../atlas-commands/). Use
 | Command | Purpose |
 | --- | --- |
 | `ptah migrations plan` | Print migration SQL from desired/live schema differences. |
-| `ptah migrations generate` | Generate migration files from desired/live schema differences. |
+| `ptah migrations generate` | Generate migration files from desired/live schema differences; `--replay` derives the current state by replaying the directory on a `--dev-url` database instead of introspecting `--db-url`. |
 | `ptah migrations create` | Create empty migration files for manual SQL; `--edit` opens them in `$VISUAL`/`$EDITOR` (or `--editor`) and refreshes `atlas.sum` for Atlas-format directories. |
-| `ptah migrations import` | Convert a golang-migrate, Goose, Flyway, or Liquibase migration directory into Ptah's native format, auto-detecting the source tool unless `--from` is set. |
+| `ptah migrations import` | Convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format, auto-detecting the source tool unless `--from` is set. |
 | `ptah migrations baseline` | Record existing migrations as applied in the revision table without executing their SQL; `--shadow-db` verifies the baselined history reproduces the target schema. |
-| `ptah migrations up` | Run pending migrations. |
+| `ptah migrations set` | Move the revision boundary to an arbitrary version in both directions without executing SQL: everything through `--version` is recorded applied, rows above it are removed. |
+| `ptah migrations up` | Run pending migrations; `--limit N` applies only the first N, and `--allow-dirty` is the explicit recovery escape hatch past a dirty revision row. |
 | `ptah migrations down` | Roll back migrations. |
 | `ptah migrations status` | Show migration status. |
 | `ptah migrations repair` | Repair migration revision metadata after a dirty or partial migration state; `--resume-from` executes the remaining up statements before marking the version applied. |
@@ -69,6 +75,7 @@ has its own page: [Atlas-compatible commands](../atlas-commands/). Use
 | `ptah seed` | Apply environment-scoped SQL seed files. |
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah version` | Print Ptah build information. |
+| `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
 | `ptah completion <shell>` | Generate shell completion output for the full `ptah` command tree, including the Atlas-compatible namespace. |
 
 ## OCI transport behavior

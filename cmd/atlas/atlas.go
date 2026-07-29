@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/cmd/internal/licensetext"
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratecheckpoint"
 	"github.com/stokaro/ptah/cmd/migratedown"
@@ -653,12 +654,7 @@ func newAtlasLicenseCommand() *cobra.Command {
 		Use:   "license",
 		Short: "Print license information",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, "Ptah")
-			fmt.Fprintln(out, "License: MIT")
-			fmt.Fprintln(out, "Copyright (c) 2025, 2026 Denis Voytyuk")
-			fmt.Fprintln(out, "Source: https://github.com/stokaro/ptah")
-			fmt.Fprintln(out, "Atlas compatibility: independent implementation; Ptah does not use Atlas source code.")
+			licensetext.Write(cmd.OutOrStdout())
 			return nil
 		},
 	}

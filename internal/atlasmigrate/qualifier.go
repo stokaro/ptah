@@ -24,6 +24,28 @@ import (
 // The zero value means "no qualifier".
 type Qualifier struct {
 	name string
+	// label is the flag spelling used in diagnostics. Empty keeps the
+	// historical Atlas-compatible spelling, so the compat surface's error
+	// text is unchanged; the native command tree overrides it with
+	// WithErrorLabel.
+	label string
+}
+
+// defaultQualifierLabel is the historical Atlas-compatible diagnostic prefix.
+const defaultQualifierLabel = "atlas migrate diff --qualifier"
+
+// WithErrorLabel returns a copy of the qualifier whose diagnostics name the
+// given flag spelling (for example "--qualifier" on the native command tree).
+func (q Qualifier) WithErrorLabel(label string) Qualifier {
+	q.label = label
+	return q
+}
+
+func (q Qualifier) errLabel() string {
+	if q.label == "" {
+		return defaultQualifierLabel
+	}
+	return q.label
 }
 
 // ParseQualifier validates and builds a Qualifier from the raw --qualifier
@@ -69,10 +91,10 @@ func (q Qualifier) ValidateScope(dialect string, schemas []string) error {
 		return nil
 	}
 	if !qualifierSupportsDialect(dialect) {
-		return fmt.Errorf("atlas migrate diff --qualifier is not supported for dialect %q", dialect)
+		return fmt.Errorf("%s is not supported for dialect %q", q.errLabel(), dialect)
 	}
 	if len(schemas) > 1 {
-		return fmt.Errorf("atlas migrate diff --qualifier %q requires a single schema scope, got --schema %q", q.name, strings.Join(schemas, ","))
+		return fmt.Errorf("%s %q requires a single schema scope, got --schema %q", q.errLabel(), q.name, strings.Join(schemas, ","))
 	}
 	return nil
 }
@@ -97,7 +119,7 @@ func (q Qualifier) ApplyToPlan(dialect string, desired *goschema.Database, nodes
 		return nil
 	}
 	if !qualifierSupportsDialect(dialect) {
-		return fmt.Errorf("atlas migrate diff --qualifier is not supported for dialect %q", dialect)
+		return fmt.Errorf("%s is not supported for dialect %q", q.errLabel(), dialect)
 	}
 	state := &qualifyState{
 		qualifier: q,
@@ -134,7 +156,7 @@ func (s *qualifyState) rewriteNode(node ast.Node) error {
 	case *ast.DropTableNode:
 		return s.rewriteDropTable(n)
 	default:
-		return fmt.Errorf("atlas migrate diff --qualifier %q does not support %T statements yet", s.qualifier.name, node)
+		return fmt.Errorf("%s %q does not support %T statements yet", s.qualifier.errLabel(), s.qualifier.name, node)
 	}
 }
 
@@ -181,7 +203,7 @@ func (s *qualifyState) rewriteAlterOperation(tableName string, operation ast.Alt
 		*ast.RenameColumnOperation, *ast.AlterGeneratedColumnExpressionOperation:
 		return nil // column- and constraint-name only; no table references
 	default:
-		return fmt.Errorf("atlas migrate diff --qualifier %q does not support %T alter operations yet", s.qualifier.name, operation)
+		return fmt.Errorf("%s %q does not support %T alter operations yet", s.qualifier.errLabel(), s.qualifier.name, operation)
 	}
 }
 
@@ -191,8 +213,8 @@ func (s *qualifyState) rewriteColumn(tableName string, column *ast.ColumnNode) e
 	}
 	if columnUsesEnumType(s.enums, column.Type) {
 		return fmt.Errorf(
-			"atlas migrate diff --qualifier %q: table %q column %q uses enum type %q; qualifying enum type references is not supported yet",
-			s.qualifier.name, tableName, column.Name, column.Type)
+			"%s %q: table %q column %q uses enum type %q; qualifying enum type references is not supported yet",
+			s.qualifier.errLabel(), s.qualifier.name, tableName, column.Name, column.Type)
 	}
 	if column.ForeignKey == nil {
 		return nil
@@ -210,7 +232,7 @@ func (s *qualifyState) rewriteConstraint(constraint *ast.ConstraintNode) error {
 func (s *qualifyState) rewriteDropIndex(node *ast.DropIndexNode) error {
 	if strings.TrimSpace(node.Table) == "" {
 		return fmt.Errorf(
-			"atlas migrate diff --qualifier %q cannot qualify DROP INDEX %q without its owning table", s.qualifier.name, node.Name)
+			"%s %q cannot qualify DROP INDEX %q without its owning table", s.qualifier.errLabel(), s.qualifier.name, node.Name)
 	}
 	return s.rewriteStringName(&node.Table)
 }
@@ -235,10 +257,10 @@ func (s *qualifyState) rewriteStringName(name *string) error {
 	}
 	ref, ok := tableref.Parse(trimmed)
 	if !ok {
-		return fmt.Errorf("atlas migrate diff --qualifier %q cannot parse object name %q", s.qualifier.name, *name)
+		return fmt.Errorf("%s %q cannot parse object name %q", s.qualifier.errLabel(), s.qualifier.name, *name)
 	}
 	if strings.ContainsAny(ref.Name, ".\"`[]") {
-		return fmt.Errorf("atlas migrate diff --qualifier %q does not support quoted object name %q yet", s.qualifier.name, *name)
+		return fmt.Errorf("%s %q does not support quoted object name %q yet", s.qualifier.errLabel(), s.qualifier.name, *name)
 	}
 	if ref.Qualified {
 		s.schemas[ref.Schema] = struct{}{}
