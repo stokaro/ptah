@@ -21,15 +21,6 @@
               "description": "Generated relation field name.",
               "type": "string"
             },
-            "index": {
-              "description": "Requests an index for generated relation columns.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
-            },
             "mode": {
               "description": "Embedding mode: inline, json, or relation.",
               "type": "string"
@@ -37,15 +28,6 @@
             "name": {
               "description": "Column name for json embedding.",
               "type": "string"
-            },
-            "not_null": {
-              "description": "Compatibility flag accepted on embedded annotations.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
             },
             "nullable": {
               "description": "Marks generated embedded columns nullable.",
@@ -412,16 +394,6 @@
               "type": "string",
               "x-ptah-bare-boolean": true
             },
-            "autoincrement": {
-              "description": "Legacy auto-increment spelling.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-alias-for": "auto_increment",
-              "x-ptah-bare-boolean": true
-            },
             "check": {
               "description": "Column CHECK expression.",
               "type": "string"
@@ -478,30 +450,12 @@
               "description": "SQL identity start value.",
               "type": "string"
             },
-            "index": {
-              "description": "Bareword compatibility flag accepted by the parser.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
-            },
             "name": {
               "description": "Column name.",
               "type": "string"
             },
             "not_null": {
               "description": "Marks the column NOT NULL.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
-            },
-            "nullable": {
-              "description": "Bareword compatibility flag accepted by the parser.",
               "enum": [
                 "true",
                 "false"
@@ -688,12 +642,6 @@
       "properties": {
         "attributes": {
           "additionalProperties": false,
-          "patternProperties": {
-            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
-              "description": "Dialect-specific platform override.",
-              "type": "string"
-            }
-          },
           "properties": {
             "columns": {
               "description": "Legacy synonym for fields.",
@@ -773,12 +721,6 @@
       "properties": {
         "attributes": {
           "additionalProperties": false,
-          "patternProperties": {
-            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
-              "description": "Dialect-specific platform override.",
-              "type": "string"
-            }
-          },
           "properties": {
             "body": {
               "description": "Materialized view SELECT body.",
@@ -1049,12 +991,6 @@
       "properties": {
         "attributes": {
           "additionalProperties": false,
-          "patternProperties": {
-            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
-              "description": "Dialect-specific platform override.",
-              "type": "string"
-            }
-          },
           "properties": {
             "comment": {
               "description": "Schema comment.",
@@ -1219,12 +1155,6 @@
       "properties": {
         "attributes": {
           "additionalProperties": false,
-          "patternProperties": {
-            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
-              "description": "Dialect-specific platform override.",
-              "type": "string"
-            }
-          },
           "properties": {
             "body": {
               "description": "Trigger body SQL.",
@@ -1280,12 +1210,6 @@
       "properties": {
         "attributes": {
           "additionalProperties": false,
-          "patternProperties": {
-            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
-              "description": "Dialect-specific platform override.",
-              "type": "string"
-            }
-          },
           "properties": {
             "body": {
               "description": "View SELECT body.",

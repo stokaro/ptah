@@ -141,8 +141,9 @@ ptah schema export \
 ```
 
 Ptah parses the generated HCL and verifies that its canonical re-render is
-stable before it writes `schema.hcl`. Review any diagnostics on stderr. They
-identify schema intent that HCL did not preserve.
+stable before it writes `schema.hcl`. Every valid Go annotation semantic has an
+HCL representation, so the export is expected to have no diagnostics. Review
+any unexpected diagnostic before cleanup.
 
 Preview annotation removal only after the export has no diagnostics:
 
@@ -161,9 +162,10 @@ the same command without `--cleanup-diff` to apply the prevalidated cleanup
 plan.
 
 :::caution[Cleanup is a one-time migration]
-Cleanup fails before any write if the export is lossy, the output aliases a Go
-source file, or no removable annotations remain. Do not repeat the cleanup
-command after a successful migration; use `schema.hcl` as the new source.
+Cleanup fails before any write if the export reports diagnostics, the output
+aliases a Go source or referenced managed-data file, or no removable
+annotations remain. Do not repeat the cleanup command after a successful
+migration; use `schema.hcl` as the new source.
 :::
 
 ## Next steps

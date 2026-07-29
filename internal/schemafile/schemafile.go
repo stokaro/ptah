@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
@@ -95,12 +96,17 @@ func ToDBSchema(db *goschema.Database) *dbschematypes.DBSchema {
 	}
 
 	out := &dbschematypes.DBSchema{
-		Tables:      toDBTables(db.Tables, db.Fields),
+		Schemas:     toDBSchemas(db.Schemas),
+		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables),
 		Enums:       toDBEnums(db.Enums),
 		Indexes:     toDBIndexes(db.Indexes, tableByStruct),
 		Constraints: toDBConstraints(db.Tables, db.Fields, db.Constraints, tableByStruct),
 		Extensions:  toDBExtensions(db.Extensions),
 		Functions:   toDBFunctions(db.Functions),
+		Sequences:   toDBSequences(db.Sequences),
+		Domains:     toDBDomains(db.Domains),
+		Composites:  toDBCompositeTypes(db.CompositeTypes),
+		Ranges:      toDBRanges(db.Ranges),
 		Views:       toDBViews(db.Views),
 		MatViews:    toDBMaterializedViews(db.MaterializedViews),
 		Triggers:    toDBTriggers(db.Triggers, tableByStruct),
@@ -163,6 +169,10 @@ func appendDatabase(dst, src *goschema.Database) {
 	dst.Enums = append(dst.Enums, src.Enums...)
 	dst.EmbeddedFields = append(dst.EmbeddedFields, src.EmbeddedFields...)
 	dst.Extensions = append(dst.Extensions, src.Extensions...)
+	dst.Sequences = append(dst.Sequences, src.Sequences...)
+	dst.Domains = append(dst.Domains, src.Domains...)
+	dst.CompositeTypes = append(dst.CompositeTypes, src.CompositeTypes...)
+	dst.Ranges = append(dst.Ranges, src.Ranges...)
 	dst.Functions = append(dst.Functions, src.Functions...)
 	dst.Views = append(dst.Views, src.Views...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
@@ -171,9 +181,27 @@ func appendDatabase(dst, src *goschema.Database) {
 	dst.RLSEnabledTables = append(dst.RLSEnabledTables, src.RLSEnabledTables...)
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
+	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 }
 
-func toDBTables(tables []goschema.Table, fields []goschema.Field) []dbschematypes.DBTable {
+func toDBSchemas(schemas []goschema.Schema) []dbschematypes.DBSchemaInfo {
+	out := make([]dbschematypes.DBSchemaInfo, 0, len(schemas))
+	for _, schema := range schemas {
+		out = append(out, dbschematypes.DBSchemaInfo{
+			Name:    schema.Name,
+			Comment: schema.Comment,
+			Charset: schema.Charset,
+			Collate: schema.Collate,
+		})
+	}
+	return out
+}
+
+func toDBTables(
+	tables []goschema.Table,
+	fields []goschema.Field,
+	rlsEnabledTables []goschema.RLSEnabledTable,
+) []dbschematypes.DBTable {
 	fieldsByStruct := make(map[string][]goschema.Field)
 	for _, field := range fields {
 		fieldsByStruct[field.StructName] = append(fieldsByStruct[field.StructName], field)
@@ -182,14 +210,25 @@ func toDBTables(tables []goschema.Table, fields []goschema.Field) []dbschematype
 	out := make([]dbschematypes.DBTable, 0, len(tables))
 	for _, table := range tables {
 		out = append(out, dbschematypes.DBTable{
-			Name:    table.Name,
-			Schema:  table.Schema,
-			Type:    "TABLE",
-			Comment: table.Comment,
-			Columns: toDBColumns(fieldsByStruct[table.StructName]),
+			Name:         table.Name,
+			Schema:       table.Schema,
+			Type:         "TABLE",
+			Comment:      table.Comment,
+			Columns:      toDBColumns(fieldsByStruct[table.StructName]),
+			RLSEnabled:   tableRLSEnabled(table, rlsEnabledTables),
+			Strict:       table.Strict,
+			WithoutRowID: table.WithoutRowID,
 		})
 	}
 	return out
+}
+
+func tableRLSEnabled(table goschema.Table, enabledTables []goschema.RLSEnabledTable) bool {
+	return slices.ContainsFunc(enabledTables, func(enabled goschema.RLSEnabledTable) bool {
+		return enabled.StructName != "" && enabled.StructName == table.StructName ||
+			enabled.Table == table.QualifiedName() ||
+			table.Schema == "" && enabled.Table == table.Name
+	})
 }
 
 func toDBColumns(fields []goschema.Field) []dbschematypes.DBColumn {
@@ -449,6 +488,76 @@ func toDBExtensions(extensions []goschema.Extension) []dbschematypes.DBExtension
 	return out
 }
 
+func toDBSequences(sequences []goschema.Sequence) []dbschematypes.DBSequence {
+	out := make([]dbschematypes.DBSequence, 0, len(sequences))
+	for _, sequence := range sequences {
+		out = append(out, dbschematypes.DBSequence{
+			Name:      sequence.Name,
+			Schema:    sequence.Schema,
+			DataType:  sequence.AsType,
+			Start:     clonePtr(sequence.Start),
+			Increment: clonePtr(sequence.Increment),
+			MinValue:  clonePtr(sequence.MinValue),
+			MaxValue:  clonePtr(sequence.MaxValue),
+			Cache:     clonePtr(sequence.Cache),
+			Cycle:     sequence.Cycle,
+			OwnedBy:   sequence.OwnedBy,
+			Comment:   sequence.Comment,
+		})
+	}
+	return out
+}
+
+func toDBDomains(domains []goschema.Domain) []dbschematypes.DBDomain {
+	out := make([]dbschematypes.DBDomain, 0, len(domains))
+	for _, domain := range domains {
+		defaultValue := domain.Default
+		if domain.DefaultExpr != "" {
+			defaultValue = domain.DefaultExpr
+		}
+		out = append(out, dbschematypes.DBDomain{
+			Name:     domain.Name,
+			Schema:   domain.Schema,
+			BaseType: domain.BaseType,
+			NotNull:  domain.NotNull,
+			Default:  defaultValue,
+			Check:    domain.Check,
+		})
+	}
+	return out
+}
+
+func toDBCompositeTypes(composites []goschema.CompositeType) []dbschematypes.DBComposite {
+	out := make([]dbschematypes.DBComposite, 0, len(composites))
+	for _, composite := range composites {
+		fields := make([]dbschematypes.DBCompositeField, 0, len(composite.Fields))
+		for _, field := range composite.Fields {
+			fields = append(fields, dbschematypes.DBCompositeField{
+				Name: field.Name,
+				Type: field.Type,
+			})
+		}
+		out = append(out, dbschematypes.DBComposite{
+			Name:   composite.Name,
+			Schema: composite.Schema,
+			Fields: fields,
+		})
+	}
+	return out
+}
+
+func toDBRanges(ranges []goschema.Range) []dbschematypes.DBRange {
+	out := make([]dbschematypes.DBRange, 0, len(ranges))
+	for _, rangeType := range ranges {
+		out = append(out, dbschematypes.DBRange{
+			Name:    rangeType.Name,
+			Schema:  rangeType.Schema,
+			Subtype: rangeType.Subtype,
+		})
+	}
+	return out
+}
+
 func toDBFunctions(functions []goschema.Function) []dbschematypes.DBFunction {
 	out := make([]dbschematypes.DBFunction, 0, len(functions))
 	for _, function := range functions {
@@ -563,10 +672,14 @@ func toDBGrants(grants []goschema.Grant) []dbschematypes.DBGrant {
 			objectType := "TABLE"
 			objectName := grant.OnTable
 			objectSchema := ""
-			if grant.OnSchema != "" {
+			switch {
+			case grant.OnSchema != "":
 				objectType = "SCHEMA"
 				objectName = grant.OnSchema
-			} else {
+			case grant.OnSequence != "":
+				objectType = "SEQUENCE"
+				objectName, objectSchema = splitTableIdentity(grant.OnSequence)
+			default:
 				objectName, objectSchema = splitTableIdentity(objectName)
 			}
 			out = append(out, dbschematypes.DBGrant{
@@ -581,6 +694,13 @@ func toDBGrants(grants []goschema.Grant) []dbschematypes.DBGrant {
 		}
 	}
 	return out
+}
+
+func clonePtr[T any](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	return new(*value)
 }
 
 func first(values []string) string {

@@ -19,6 +19,7 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 	c := qt.New(t)
 	store := memory.New()
 	db := usersDatabase()
+	db.Sequences = []goschema.Sequence{{Name: "users_id_seq"}}
 
 	pushed, err := schemaartifact.PushTo(context.Background(), store, db, schemaartifact.PushOptions{
 		Tags: []string{"stable"},
@@ -34,6 +35,8 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(pulled.Database.Tables, qt.HasLen, 1)
 	c.Assert(pulled.Database.Tables[0].Name, qt.Equals, "users")
+	c.Assert(pulled.Database.Sequences, qt.HasLen, 1)
+	c.Assert(pulled.Database.Sequences[0].Name, qt.Equals, "users_id_seq")
 	c.Assert(pulled.Database.Fields, qt.HasLen, 2)
 	c.Assert(
 		[]string{pulled.Database.Fields[0].Name, pulled.Database.Fields[1].Name},
@@ -62,11 +65,19 @@ func TestCapture_FailurePath(t *testing.T) {
 		c.Assert(snapshot, qt.IsNil)
 	})
 
+	c.Run("role password", func(c *qt.C) {
+		db := usersDatabase()
+		db.Roles = []goschema.Role{{Name: "app_user", Password: "secret"}}
+		snapshot, err := schemaartifact.Capture(db)
+		c.Assert(err, qt.ErrorMatches, `schema artifact cannot contain password for role "app_user"`)
+		c.Assert(snapshot, qt.IsNil)
+	})
+
 	c.Run("lossy HCL export", func(c *qt.C) {
 		db := usersDatabase()
-		db.Sequences = []goschema.Sequence{{Name: "users_id_seq"}}
+		db.Indexes = []goschema.Index{{Name: "missing_idx", TableName: "missing"}}
 		snapshot, err := schemaartifact.Capture(db)
-		c.Assert(err, qt.ErrorMatches, "(?s).*schema artifact cannot be rendered without loss:.*sequences.users_id_seq.*")
+		c.Assert(err, qt.ErrorMatches, "(?s).*schema artifact cannot be rendered without loss:.*index missing_idx.*")
 		c.Assert(snapshot, qt.IsNil)
 	})
 }

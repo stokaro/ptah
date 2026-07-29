@@ -39,7 +39,9 @@ a database — the merge rules live on
   workflow applies the change.
 - **Sources are interchangeable.** `ptah schema export` converts between
   representations, so starting with Go annotations does not lock you in, and
-  a brownfield database can be introspected into sources at any time.
+  a brownfield database can be introspected into sources at any time. Every
+  valid Go annotation semantic has a lossless HCL representation; HCL may
+  additionally express schema semantics that have no Go annotation spelling.
 - **Declaring is not supporting.** What a concrete target accepts is decided
   later, by capability-aware planning — see
   [Dialects and capabilities](../dialects-and-capabilities/).

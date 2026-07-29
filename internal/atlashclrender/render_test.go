@@ -1,6 +1,7 @@
 package atlashclrender_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -117,18 +118,21 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	c.Assert(string(first.Data), qt.Contains, `table "users"`)
 	c.Assert(string(first.Data), qt.Contains, `default = sql("CURRENT_TIMESTAMP")`)
 	c.Assert(string(first.Data), qt.Contains, `foreign_key "users_account_fk"`)
+	c.Assert(string(first.Data), qt.Contains, `check "users_status_check"`)
+	c.Assert(string(first.Data), qt.Contains, `unique "users_email_key"`)
 	c.Assert(string(first.Data), qt.Contains, `foreign_key "fk_users_team_id"`)
-	c.Assert(string(first.Data), qt.Contains, `check "users_created_at_check"`)
+	c.Assert(string(first.Data), qt.Contains, `check = "created_at IS NOT NULL"`)
 	c.Assert(string(first.Data), qt.Contains, `include = [column.created_at]`)
 	c.Assert(string(first.Data), qt.Contains, `nulls_distinct = false`)
 	c.Assert(string(first.Data), qt.Contains, `function "set_tenant_context"`)
+	c.Assert(strings.Count(string(first.Data), `foreign_key "users_account_fk"`), qt.Equals, 1)
 	c.Assert(first.Diagnostics, qt.HasLen, 0)
 
 	parsed, err := atlashcl.Parse(first.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(first.Data)))
 	c.Assert(parsed.Tables, qt.HasLen, 3)
 	c.Assert(parsed.Enums, qt.HasLen, 1)
-	c.Assert(parsed.Constraints, qt.HasLen, 3)
+	c.Assert(parsed.Constraints, qt.HasLen, 2)
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(constraintByName(parsed.Constraints, "users_email_key").IncludeColumns, qt.DeepEquals, []string{"created_at"})
 	c.Assert(fieldByName(parsed.Fields, "account_id").Foreign, qt.Equals, "auth.accounts(id)")
@@ -262,14 +266,22 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, `trigger "users_set_updated_at"`)
 	c.Assert(hcl, qt.Contains, `policy "users_tenant_policy"`)
 	c.Assert(hcl, qt.Contains, `permission {`)
-	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{"extensions.pg_trgm", "sequences.fixture_order_seq", "domains.fixture_email", "composite_types.fixture_address", "ranges.fixture_floatrange", "grants.fixture_app_user", "managed_data.users"})
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
 
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.Extensions, qt.HasLen, 1)
 	c.Assert(parsed.Extensions[0].Name, qt.Equals, "pg_trgm")
 	c.Assert(parsed.Extensions[0].Comment, qt.Equals, "Fixture extension")
-	c.Assert(parsed.Extensions[0].IfNotExists, qt.IsFalse)
+	c.Assert(parsed.Extensions[0].IfNotExists, qt.IsTrue)
+	c.Assert(parsed.Sequences, qt.HasLen, 1)
+	c.Assert(parsed.Sequences[0].Name, qt.Equals, "fixture_order_seq")
+	c.Assert(parsed.Domains, qt.HasLen, 1)
+	c.Assert(parsed.Domains[0].Name, qt.Equals, "fixture_email")
+	c.Assert(parsed.CompositeTypes, qt.HasLen, 1)
+	c.Assert(parsed.CompositeTypes[0].Name, qt.Equals, "fixture_address")
+	c.Assert(parsed.Ranges, qt.HasLen, 1)
+	c.Assert(parsed.Ranges[0].Name, qt.Equals, "fixture_floatrange")
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(parsed.Functions[0].Name, qt.Equals, "get_fixture_tenant_id")
 	c.Assert(parsed.Functions[0].Returns, qt.Equals, "text")
@@ -300,10 +312,12 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c.Assert(parsed.Roles, qt.HasLen, 1)
 	c.Assert(parsed.Roles[0].Name, qt.Equals, "fixture_app_user")
 	c.Assert(parsed.Roles[0].Inherit, qt.IsTrue)
-	c.Assert(parsed.Grants, qt.HasLen, 3)
+	c.Assert(parsed.Grants, qt.HasLen, 4)
+	c.Assert(parsed.ManagedData, qt.HasLen, 1)
+	c.Assert(parsed.ManagedData[0].Table, qt.Equals, "users")
 }
 
-func TestRenderReportsLossyObjectDetails(t *testing.T) {
+func TestRenderPreservesSensitiveAndComplexValuesWhileReportingInvalidObjects(t *testing.T) {
 	c := qt.New(t)
 	db := &goschema.Database{
 		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
@@ -334,16 +348,18 @@ func TestRenderReportsLossyObjectDetails(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{
-		"role app_user",
-		"function filter_user",
 		"triggers.bad_event",
 		"grants.app_user",
 	})
-	_, err = atlashcl.Parse(rendered.Data, "schema.hcl")
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
+	c.Assert(parsed.Roles, qt.HasLen, 1)
+	c.Assert(parsed.Roles[0].Password, qt.Equals, "secret")
+	c.Assert(parsed.Functions, qt.HasLen, 1)
+	c.Assert(parsed.Functions[0].Parameters, qt.Equals, "out tenant_id text")
 }
 
-func TestRenderReportsLegacyChecksAndManagedData(t *testing.T) {
+func TestRenderPreservesTableChecksAndManagedDataWhileReportingOrphans(t *testing.T) {
 	c := qt.New(t)
 	db := &goschema.Database{
 		Tables: []goschema.Table{{
@@ -376,11 +392,6 @@ func TestRenderReportsLegacyChecksAndManagedData(t *testing.T) {
 	c.Assert(rendered.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
 		{
 			Severity: atlashclrender.SeverityWarning,
-			Path:     "table users",
-			Message:  "legacy table checks cannot be represented in HCL schema output",
-		},
-		{
-			Severity: atlashclrender.SeverityWarning,
 			Path:     "index missing_table_idx",
 			Message:  "index cannot be rendered because the target table is absent from the exported schema",
 		},
@@ -389,12 +400,14 @@ func TestRenderReportsLegacyChecksAndManagedData(t *testing.T) {
 			Path:     "constraint missing_table_check",
 			Message:  "constraint cannot be rendered because the target table is absent from the exported schema",
 		},
-		{
-			Severity: atlashclrender.SeverityWarning,
-			Path:     "managed_data.users",
-			Message:  "managed data cannot be represented in HCL schema output",
-		},
 	})
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
+	c.Assert(parsed.Tables, qt.HasLen, 1)
+	c.Assert(parsed.Tables[0].Checks, qt.DeepEquals, []string{"id > 0"})
+	c.Assert(parsed.ManagedData, qt.HasLen, 1)
+	c.Assert(parsed.ManagedData[0].Keys, qt.DeepEquals, []string{"id"})
+	c.Assert(parsed.ManagedData[0].File, qt.Equals, "users.yaml")
 }
 
 func TestRenderMaterializedViewRefreshStrategyRoundTrip(t *testing.T) {
@@ -514,9 +527,13 @@ func TestRenderIndexZeroGranularityOmitsAttribute(t *testing.T) {
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "granularity")
 }
 
-func TestRenderReportsPlatformOverrideDiagnostics(t *testing.T) {
+func TestRenderColumnParityExtensionsRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	db := &goschema.Database{
+		Enums: []goschema.Enum{{
+			Name:   "enum_user_status",
+			Values: []string{"active", "disabled"},
+		}},
 		Tables: []goschema.Table{{
 			StructName: "User",
 			Name:       "users",
@@ -524,29 +541,115 @@ func TestRenderReportsPlatformOverrideDiagnostics(t *testing.T) {
 				"mysql": {"engine": "InnoDB"},
 			},
 		}},
-		Fields: []goschema.Field{{
-			StructName: "User",
-			FieldName:  "ID",
-			Name:       "id",
-			Type:       "SERIAL",
-			Primary:    true,
-			Overrides: map[string]map[string]string{
-				"mysql": {"type": "INT AUTO_INCREMENT"},
+		Fields: []goschema.Field{
+			{
+				StructName: "User",
+				FieldName:  "ID",
+				Name:       "id",
+				Type:       "SERIAL",
+				Primary:    true,
+				Overrides: map[string]map[string]string{
+					"mysql": {"type": "INT AUTO_INCREMENT"},
+				},
 			},
+			{
+				StructName: "User",
+				FieldName:  "Status",
+				Name:       "status",
+				Type:       "enum_user_status",
+				Enum:       []string{"active", "disabled"},
+			},
+		},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
+	c.Assert(string(rendered.Data), qt.Contains, `table "users"`)
+	c.Assert(string(rendered.Data), qt.Contains, `column "id"`)
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
+	c.Assert(parsed.Tables, qt.HasLen, 1)
+	c.Assert(parsed.Tables[0].Overrides, qt.DeepEquals, db.Tables[0].Overrides)
+	c.Assert(parsed.Fields, qt.HasLen, 2)
+	c.Assert(parsed.Fields[0].Overrides, qt.DeepEquals, db.Fields[0].Overrides)
+	c.Assert(parsed.Fields[1].Enum, qt.DeepEquals, db.Fields[1].Enum)
+}
+
+func TestRenderStringTemplateIntroducersRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "Template",
+			Name:       "templates",
+			Comment:    "literal ${tenant} and %{if enabled}",
+		}},
+		Fields: []goschema.Field{{
+			StructName: "Template",
+			FieldName:  "Body",
+			Name:       "body",
+			Type:       "TEXT",
+			Default:    "${literal}",
+			DefaultSet: true,
+		}},
+		Roles: []goschema.Role{{Name: "role${literal}"}},
+		Grants: []goschema.Grant{{
+			Role:       "role${literal}",
+			Privileges: []string{"SELECT"},
+			OnTable:    "templates",
 		}},
 	}
 
 	rendered, err := atlashclrender.Render(db)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{
-		"table users",
-		"column User.id",
-	})
-	c.Assert(string(rendered.Data), qt.Contains, `table "users"`)
-	c.Assert(string(rendered.Data), qt.Contains, `column "id"`)
-	_, err = atlashcl.Parse(rendered.Data, "schema.hcl")
-	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
+	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
+	c.Assert(string(rendered.Data), qt.Contains, `$${tenant}`)
+	c.Assert(string(rendered.Data), qt.Contains, `%%{if enabled}`)
+	c.Assert(string(rendered.Data), qt.Contains, `$${literal}`)
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Tables[0].Comment, qt.Equals, db.Tables[0].Comment)
+	c.Assert(parsed.Fields[0].Default, qt.Equals, db.Fields[0].Default)
+	c.Assert(parsed.Roles[0].Name, qt.Equals, db.Roles[0].Name)
+	c.Assert(parsed.Grants[0].Role, qt.Equals, db.Grants[0].Role)
+}
+
+func TestRenderQuotedIdentifiersRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Schemas: []goschema.Schema{{Name: "tenant.data"}},
+		Tables: []goschema.Table{{
+			StructName: "Record",
+			Name:       "user-records",
+			Schema:     "tenant.data",
+			PrimaryKey: []string{"tenant-id"},
+		}},
+		Fields: []goschema.Field{
+			{StructName: "Record", FieldName: "TenantID", Name: "tenant-id", Type: "TEXT"},
+			{StructName: "Record", FieldName: "DisplayName", Name: "display.name", Type: "TEXT"},
+		},
+		Indexes: []goschema.Index{{
+			StructName: "Record",
+			Name:       "display-name-index",
+			Fields:     []string{"display.name"},
+		}},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
+	hcl := string(rendered.Data)
+	c.Assert(hcl, qt.Contains, `schema["tenant.data"]`)
+	c.Assert(hcl, qt.Contains, `column["tenant-id"]`)
+	c.Assert(hcl, qt.Contains, `column["display.name"]`)
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Tables[0].Schema, qt.Equals, "tenant.data")
+	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"tenant-id"})
+	c.Assert(parsed.Indexes[0].Fields, qt.DeepEquals, []string{"display.name"})
 }
 
 func TestRenderPreservesQualifiedTargetsAndRoleInheritance(t *testing.T) {

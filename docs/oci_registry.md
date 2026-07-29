@@ -367,6 +367,8 @@ exactly one canonical `schema.hcl` layer. Publication fails closed if the schema
 cannot be represented without loss. In particular:
 
 - managed reference data is rejected;
+- role passwords are rejected so credentials cannot be published in an
+  artifact;
 - any lossy renderer diagnostic rejects the artifact;
 - the generated HCL must parse and render back to identical canonical bytes.
 

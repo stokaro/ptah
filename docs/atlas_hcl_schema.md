@@ -31,16 +31,22 @@ current schema IR:
 
 - `schema` labels and `comment`, for table namespace references such as
   `schema = schema.main`
-- `table` blocks
+- `table` blocks, including Ptah `checks`, `custom`, and nested `platform`
+  parity extensions
 - `column` blocks with `type`, `null`, `auto_increment`, `unique`,
   `unique_expr`, `default`, `check`, `check_name`, `identity` (including its
-  `options`), and `comment`
+  `options`), `comment`, and nested `platform` parity extensions; the Ptah
+  `enum` parity extension preserves inline Go-annotation enum values
 - `primary_key` blocks with `columns`; PostgreSQL primary keys also support
   `include`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
   `on { expr = "..." }`, `desc`, `unique`, `type`, `where`, and `comment`;
   PostgreSQL indexes also support `include`, BRIN `page_per_range`, and
-  `nulls_distinct`, and ClickHouse data-skipping indexes support `granularity`
+  `nulls_distinct`, ClickHouse data-skipping indexes support `granularity`, and
+  the Ptah `ops` parity extension preserves the Go annotation operator class
+- Ptah `constraint` blocks when complete annotation metadata cannot fit the
+  Atlas-native `check`, `unique`, `primary_key`, or `foreign_key` shape, and
+  for `EXCLUDE` constraints
 - `unique` blocks with `columns`; PostgreSQL unique constraints also support
   `include` and `nulls_distinct`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
@@ -51,11 +57,13 @@ current schema IR:
   `comment`
 - PostgreSQL `extension` blocks with `if_not_exists`, `version`, and `comment`
 - PostgreSQL `role` blocks with `login`, `superuser`, `create_db`,
-  `create_role`, `inherit`, `replication`, and `comment`
+  `create_role`, `inherit`, `replication`, `password`, and `comment`
 - PostgreSQL `permission` blocks for table, schema, and sequence targets with
   `to`, `for`, `privileges`, `grantable`, and `comment`
 - PostgreSQL `function` blocks with `schema`, `lang`, `arg`, `return`,
-  `security`, `volatility`, `as`, and `comment`
+  `security`, `volatility`, `as`, and `comment`; the Ptah `params` parity
+  extension preserves parameter declarations that cannot be decomposed into
+  Atlas-style `arg` blocks without changing their text
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, and `comment`
 - PostgreSQL `materialized` blocks with `schema`, `as`, `refresh_strategy`, and
   `comment`
@@ -72,9 +80,81 @@ current schema IR:
   and `comment`
 - PostgreSQL `range` blocks with `subtype`, `subtype_opclass`, `collation`,
   `canonical`, `subtype_diff`, and `comment`
+- Ptah `data` blocks with a table reference, key columns, and a data-file path
 
 Unsupported schema semantics are rejected with an explicit parse error instead
 of being silently dropped from the generated Ptah IR.
+
+## Ptah Go-annotation parity extensions
+
+Ptah accepts the Atlas-compatible subset above and a small set of explicitly
+documented extensions. The extensions make Go annotation export lossless; they
+are Ptah syntax and should not be assumed to work in the Atlas CLI.
+
+```hcl
+schema "app" {}
+
+table "users" {
+  schema = schema.app
+  checks = ["id > 0"]
+  custom = "WITHOUT OIDS"
+
+  platform "mysql" {
+    override "engine" {
+      value = "InnoDB"
+    }
+  }
+
+  column "status" {
+    type = enum_user_status
+    enum = ["active", "disabled"]
+  }
+
+  column "score" {
+    type       = "DOUBLE PRECISION"
+    check      = "score >= 0"
+    check_name = "users_score_nonnegative"
+
+    platform "mysql" {
+      override "type" {
+        value = "BIGINT"
+      }
+    }
+  }
+
+  constraint "users_no_overlap" {
+    type      = "EXCLUDE"
+    using     = "gist"
+    elements  = "id WITH ="
+    condition = "id > 0"
+    comment   = "No overlapping identifiers"
+  }
+}
+
+role "app_user" {
+  login    = true
+  password = "SCRAM-SHA-256$..."
+}
+
+function "lookup_user" {
+  schema = schema.app
+  params = "IN user_id BIGINT, OUT display_value DOUBLE PRECISION"
+  return = "DOUBLE PRECISION"
+  lang   = SQL
+  as     = "SELECT user_id::double precision"
+}
+
+data {
+  table = table.app.users
+  keys  = ["id"]
+  file  = "users.yaml"
+}
+```
+
+The `data.file` path is relative to the HCL file. Go annotation export rebases
+paths that were relative to a Go source file so the same data file is loaded
+after migration. Role passwords remain string literals in the exported HCL;
+treat those files as sensitive.
 
 ## Minimal Example
 
@@ -383,8 +463,8 @@ example, `extension.schema`, `row_security.enforced`, materialized-view column
 blocks, trigger `execute` blocks, policy `as`, and permission targets other
 than `table`, `schema`, or `sequence` are rejected instead of being accepted and
 dropped.
-Function arguments are accepted as Atlas `arg` blocks; export diagnostics are
-reported when a Go annotation `params` string cannot be represented this way.
+Function arguments are accepted as Atlas `arg` blocks. Ptah also accepts a raw
+`params` string and rejects a function that mixes the two representations.
 
 Some PostgreSQL object blocks documented by Atlas are gated by Atlas plans at
 runtime. Ptah can still preserve their HCL shape for schema input/export; this
@@ -396,9 +476,7 @@ OSS.
 The HCL schema frontend is intentionally conservative. It does not yet model
 Atlas features that Ptah cannot represent without losing semantics, including:
 
-- composite foreign keys
 - `extension.schema`
-- role passwords
 - forced row-level security (`row_security.enforced`)
 - grantor metadata
 - function options outside Ptah's current IR, such as `leakproof`, `parallel`,

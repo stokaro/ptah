@@ -18,9 +18,9 @@ import (
 )
 
 // validateAttributes rejects any key the directive does not recognize.
-// Platform-specific overrides (platform.*) are always allowed. This catches
-// typos like default_fn-vs-default_expr at parse time instead of silently
-// dropping them and producing wrong SQL.
+// Platform-specific overrides are accepted only for directives whose schema IR
+// retains them. This catches typos and unsupported overrides at parse time
+// instead of silently dropping them and producing wrong SQL.
 type annotationErrorContext struct {
 	file      string
 	line      int
@@ -215,7 +215,6 @@ func (s *schemaParseState) parseEmbeddedComment(comment *ast.Comment, field *ast
 		Name:             kv["name"],
 		Type:             kv["type"],
 		Nullable:         kv["nullable"] == "true",
-		Index:            kv["index"] == "true",
 		Field:            kv["field"],
 		Ref:              kv["ref"],
 		OnDelete:         kv["on_delete"],

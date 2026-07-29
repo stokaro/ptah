@@ -1,15 +1,15 @@
 ---
 title: HCL Schema Reference
-description: Atlas-compatible HCL schema subset supported by Ptah.
+description: Atlas-compatible HCL schema subset and Ptah parity extensions.
 ---
 
 Ptah can read HCL schema files as desired schema input. The parser builds the
 same schema IR as Go annotations and YAML schema files, then uses Ptah's normal
 rendering and planning paths.
 
-Ptah's HCL schema syntax is compatible with the supported subset of Atlas HCL
-schema files. Ptah is an independent implementation and is not affiliated with
-or endorsed by Ariga or Atlas.
+Ptah's HCL schema syntax includes a supported subset of Atlas HCL schema files
+plus Ptah extensions for lossless Go annotation export. Ptah is an independent
+implementation and is not affiliated with or endorsed by Ariga or Atlas.
 
 ## Command
 
@@ -54,17 +54,18 @@ table "users" {
 | Object | Supported shape |
 | --- | --- |
 | `schema` | Labels and comments for table namespace references. |
-| `table` | Table blocks with columns, primary keys, indexes, uniques, foreign keys, checks, and row security. |
-| `column` | `type`, `null`, `auto_increment`, `unique`, `unique_expr`, `default`, `check`, `check_name`, `identity` (with `options`), and comments. |
+| `table` | Columns, keys, indexes, constraints, checks, row security, and Ptah `checks`, `custom`, and `platform` extensions. |
+| `column` | Type, nullability, defaults, generated/identity metadata, comments, checks, and Ptah `enum` and `platform` extensions. |
 | `primary_key` | `columns`; PostgreSQL also supports `include`. |
 | `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `unique`, `type`, `where`, `comment`, ClickHouse `granularity`, and PostgreSQL include/storage options. |
+| `constraint` | Ptah block used when annotation metadata cannot fit the Atlas-native constraint blocks, and for `EXCLUDE` constraints. |
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
 | `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry. |
 | `check` | `expr`. |
 | `extension` | PostgreSQL `if_not_exists`, `version`, and comments. |
-| `role` | PostgreSQL role attributes such as `login`, `superuser`, `create_db`, and `inherit`. |
+| `role` | PostgreSQL role attributes, including `password`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |
-| `function` | PostgreSQL function metadata and raw body. |
+| `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
 | `view` / `materialized` | SQL body plus schema and comments; `materialized` also supports `refresh_strategy`. |
 | `trigger` | Trigger timing, target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
@@ -72,9 +73,68 @@ table "users" {
 | `domain` | PostgreSQL `type`, `null`, `default`, and `check`. |
 | `composite` | PostgreSQL composite type with ordered `field` sub-blocks. |
 | `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. |
+| `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
 
 Unsupported semantics fail explicitly. Ptah does not silently drop HCL objects
-that it cannot represent in the schema IR.
+that it cannot represent in the schema IR. The Ptah `ops` index attribute
+preserves a Go annotation operator class.
+
+## Go annotation parity
+
+Every schema semantic accepted by Ptah's Go annotation parser has an HCL
+representation. Export may use Ptah-specific blocks and attributes when the
+Atlas-compatible shape would lose information:
+
+```hcl
+schema "app" {}
+
+enum "enum_user_status" {
+  values = ["active", "disabled"]
+}
+
+table "users" {
+  schema = schema.app
+  checks = ["id > 0"]
+  custom = "WITHOUT OIDS"
+
+  column "status" {
+    type = enum_user_status
+    enum = ["active", "disabled"]
+  }
+
+  platform "mysql" {
+    override "engine" {
+      value = "InnoDB"
+    }
+  }
+
+  constraint "users_no_overlap" {
+    type      = "EXCLUDE"
+    using     = "gist"
+    elements  = "id WITH ="
+    condition = "id > 0"
+  }
+}
+
+function "lookup_user" {
+  params = "IN user_id BIGINT, OUT display_value DOUBLE PRECISION"
+  return = "DOUBLE PRECISION"
+  lang   = SQL
+  as     = "SELECT user_id::double precision"
+}
+
+data {
+  table = table.users
+  keys  = ["id"]
+  file  = "users.yaml"
+}
+```
+
+Embedded Go annotations export as finalized concrete columns and foreign keys.
+Go struct and field names are provenance rather than schema semantics and are
+intentionally not written to HCL. Role passwords are written as string
+literals, and Ptah forces generated files containing them to owner-only `0600`
+permissions. Treat those files as sensitive.
 
 ## PostgreSQL include columns
 

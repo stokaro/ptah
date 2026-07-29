@@ -57,13 +57,12 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 		},
 		{
 			name:    "Mixed syntax",
-			comment: `//migrator:schema:field name="email" type="VARCHAR(255)" unique not_null index default="test@example.com"`,
+			comment: `//migrator:schema:field name="email" type="VARCHAR(255)" unique not_null default="test@example.com"`,
 			expected: map[string]string{
 				"name":     "email",
 				"type":     "VARCHAR(255)",
 				"unique":   "true",
 				"not_null": "true",
-				"index":    "true",
 				"default":  "test@example.com",
 			},
 		},
@@ -89,23 +88,21 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 			},
 		},
 		{
-			name:    "Nullable attribute",
-			comment: `//migrator:schema:field name="description" type="TEXT" nullable`,
+			name:    "Nullable column omits not null",
+			comment: `//migrator:schema:field name="description" type="TEXT"`,
 			expected: map[string]string{
-				"name":     "description",
-				"type":     "TEXT",
-				"nullable": "true",
+				"name": "description",
+				"type": "TEXT",
 			},
 		},
 		{
 			name:    "Complex check constraint with simplified booleans",
-			comment: `//migrator:schema:field name="price" type="DECIMAL(10,2)" not_null check="price > 0" index`,
+			comment: `//migrator:schema:field name="price" type="DECIMAL(10,2)" not_null check="price > 0"`,
 			expected: map[string]string{
 				"name":     "price",
 				"type":     "DECIMAL(10,2)",
 				"not_null": "true",
 				"check":    "price > 0",
-				"index":    "true",
 			},
 		},
 		{
@@ -358,12 +355,6 @@ func TestParseKeyValueComment_BooleanPatterns(t *testing.T) {
 			expected: "true",
 		},
 		{
-			name:     "nullable should be boolean",
-			comment:  `//migrator:schema:field nullable`,
-			attr:     "nullable",
-			expected: "true",
-		},
-		{
 			name:     "primary should be boolean",
 			comment:  `//migrator:schema:field primary`,
 			attr:     "primary",
@@ -379,12 +370,6 @@ func TestParseKeyValueComment_BooleanPatterns(t *testing.T) {
 			name:     "auto_increment should be boolean",
 			comment:  `//migrator:schema:field auto_increment`,
 			attr:     "auto_increment",
-			expected: "true",
-		},
-		{
-			name:     "index should be boolean",
-			comment:  `//migrator:schema:field index`,
-			attr:     "index",
 			expected: "true",
 		},
 		{

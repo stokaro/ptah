@@ -3,6 +3,7 @@ package atlashclrender
 import (
 	"cmp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
@@ -16,62 +17,156 @@ func (r *renderer) renderExtensions() {
 	})
 	for _, extension := range extensions {
 		r.linef(`extension %s {`, quote(extension.Name))
+		if extension.IfNotExists {
+			r.trueAttr(1, "if_not_exists")
+		}
 		r.stringAttr(1, "version", extension.Version)
 		r.stringAttr(1, "comment", extension.Comment)
-		if extension.IfNotExists {
-			r.warn("extensions."+extension.Name, "extension if_not_exists is migration execution behavior and cannot be represented in HCL schema output")
-		}
 		r.line("}")
 		r.line("")
 	}
 }
 
-// renderSequences reports standalone sequences as a currently-unsupported
-// export path. Atlas HCL sequence blocks are not part of Ptah's HCL surface
-// yet (the atlashcl parser does not read them), so emitting them would produce
-// non-round-trippable output. A diagnostic keeps the loss explicit rather than
-// silently dropping the objects.
 func (r *renderer) renderSequences() {
 	sequences := append([]goschema.Sequence(nil), r.db.Sequences...)
 	slices.SortFunc(sequences, func(a, b goschema.Sequence) int {
-		return cmp.Compare(a.Name, b.Name)
+		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
 	for _, sequence := range sequences {
-		r.warn("sequences."+sequence.Name, "standalone sequence objects are not yet representable in HCL schema output")
+		sequence.Canonicalize()
+		r.linef(`sequence %s {`, quote(sequence.Name))
+		if sequence.Schema != "" {
+			r.rawAttr(1, "schema", schemaRef(sequence.Schema))
+		}
+		if sequence.AsType != "" {
+			r.rawAttr(1, "type", typeExpr(sequence.AsType))
+		}
+		r.int64PtrAttr(1, "start", sequence.Start)
+		r.int64PtrAttr(1, "increment", sequence.Increment)
+		r.int64PtrAttr(1, "min_value", sequence.MinValue)
+		r.int64PtrAttr(1, "max_value", sequence.MaxValue)
+		r.int64PtrAttr(1, "cache", sequence.Cache)
+		if sequence.Cycle {
+			r.trueAttr(1, "cycle")
+		}
+		r.stringAttr(1, "owned_by", sequence.OwnedBy)
+		if sequence.IfNotExists {
+			r.trueAttr(1, "if_not_exists")
+		}
+		r.stringAttr(1, "comment", sequence.Comment)
+		r.line("}")
+		r.line("")
 	}
 }
 
-// renderUserTypes reports PostgreSQL domain, composite, and range types as a
-// currently-unsupported export path. Atlas HCL representations for these objects
-// are not part of Ptah's HCL surface yet (the atlashcl parser does not read
-// them), so emitting them would produce non-round-trippable output. Diagnostics
-// keep the loss explicit rather than silently dropping the objects.
 func (r *renderer) renderUserTypes() {
 	domains := append([]goschema.Domain(nil), r.db.Domains...)
-	slices.SortFunc(domains, func(a, b goschema.Domain) int { return cmp.Compare(a.Name, b.Name) })
+	slices.SortFunc(domains, func(a, b goschema.Domain) int {
+		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
+	})
 	for _, domain := range domains {
-		r.warn("domains."+domain.Name, "domain types are not yet representable in HCL schema output")
+		r.renderDomain(domain)
 	}
+
 	composites := append([]goschema.CompositeType(nil), r.db.CompositeTypes...)
-	slices.SortFunc(composites, func(a, b goschema.CompositeType) int { return cmp.Compare(a.Name, b.Name) })
+	slices.SortFunc(composites, func(a, b goschema.CompositeType) int {
+		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
+	})
 	for _, composite := range composites {
-		r.warn("composite_types."+composite.Name, "composite types are not yet representable in HCL schema output")
+		r.renderComposite(composite)
 	}
+
 	ranges := append([]goschema.Range(nil), r.db.Ranges...)
-	slices.SortFunc(ranges, func(a, b goschema.Range) int { return cmp.Compare(a.Name, b.Name) })
+	slices.SortFunc(ranges, func(a, b goschema.Range) int {
+		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
+	})
 	for _, rangeType := range ranges {
-		r.warn("ranges."+rangeType.Name, "range types are not yet representable in HCL schema output")
+		r.renderRange(rangeType)
 	}
+}
+
+func (r *renderer) renderDomain(domain goschema.Domain) {
+	domain.Canonicalize()
+	r.linef(`domain %s {`, quote(domain.Name))
+	if domain.Schema != "" {
+		r.rawAttr(1, "schema", schemaRef(domain.Schema))
+	}
+	r.rawAttr(1, "type", typeExpr(domain.BaseType))
+	if domain.NotNull {
+		r.rawAttr(1, "null", "false")
+	}
+	if domain.DefaultExpr != "" {
+		r.rawAttr(1, "default", sqlCall(domain.DefaultExpr))
+	} else {
+		r.stringAttr(1, "default", domain.Default)
+	}
+	if domain.Check != "" {
+		r.rawAttr(1, "check", sqlCall(domain.Check))
+	}
+	r.stringAttr(1, "comment", domain.Comment)
+	r.line("}")
+	r.line("")
+}
+
+func (r *renderer) renderComposite(composite goschema.CompositeType) {
+	composite.Canonicalize()
+	r.linef(`composite %s {`, quote(composite.Name))
+	if composite.Schema != "" {
+		r.rawAttr(1, "schema", schemaRef(composite.Schema))
+	}
+	r.stringAttr(1, "comment", composite.Comment)
+	for _, field := range composite.Fields {
+		r.linef(`  field %s {`, quote(field.Name))
+		r.rawAttr(2, "type", typeExpr(field.Type))
+		r.line("  }")
+	}
+	r.line("}")
+	r.line("")
+}
+
+func (r *renderer) renderRange(rangeType goschema.Range) {
+	rangeType.Canonicalize()
+	r.linef(`range %s {`, quote(rangeType.Name))
+	if rangeType.Schema != "" {
+		r.rawAttr(1, "schema", schemaRef(rangeType.Schema))
+	}
+	r.rawAttr(1, "subtype", typeExpr(rangeType.Subtype))
+	r.stringAttr(1, "subtype_opclass", rangeType.SubtypeOpClass)
+	r.stringAttr(1, "collation", rangeType.Collation)
+	r.stringAttr(1, "canonical", rangeType.Canonical)
+	r.stringAttr(1, "subtype_diff", rangeType.SubtypeDiff)
+	r.stringAttr(1, "comment", rangeType.Comment)
+	r.line("}")
+	r.line("")
 }
 
 func (r *renderer) renderManagedData() {
 	managedData := append([]goschema.ManagedData(nil), r.db.ManagedData...)
 	slices.SortFunc(managedData, func(a, b goschema.ManagedData) int {
-		return cmp.Compare(a.Table, b.Table)
+		return cmp.Or(
+			cmp.Compare(managedDataTable(a), managedDataTable(b)),
+			cmp.Compare(strings.Join(a.Keys, ","), strings.Join(b.Keys, ",")),
+			cmp.Compare(a.File, b.File),
+		)
 	})
 	for _, data := range managedData {
-		r.warn("managed_data."+data.Table, "managed data cannot be represented in HCL schema output")
+		r.line("data {")
+		r.rawAttr(1, "table", objectRef("table", managedDataTable(data)))
+		r.rawAttr(1, "keys", stringList(data.Keys))
+		r.stringAttr(1, "file", data.File)
+		r.line("}")
+		r.line("")
 	}
+}
+
+func managedDataTable(data goschema.ManagedData) string {
+	if data.Schema == "" {
+		return data.Table
+	}
+	if ref, ok := tableref.Parse(data.Table); ok && ref.Qualified {
+		return data.Table
+	}
+	return tableref.Canonical(data.Schema, data.Table)
 }
 
 func (r *renderer) renderRoles() {
@@ -101,10 +196,8 @@ func (r *renderer) renderRoles() {
 		if role.Replication {
 			r.trueAttr(1, "replication")
 		}
+		r.stringAttr(1, "password", role.Password)
 		r.stringAttr(1, "comment", role.Comment)
-		if role.Password != "" {
-			r.warn("role "+role.Name, "role passwords must be provided through Atlas user/runtime variable configuration")
-		}
 		r.line("}")
 		r.line("")
 	}
@@ -139,15 +232,15 @@ func (r *renderer) renderFunction(function goschema.Function) {
 	name := objectNameFromQualified(function.Name)
 	r.linef(`function %s {`, quote(name))
 	if schema := schemaNameFromQualified(function.Name); schema != "" {
-		r.rawAttr(1, "schema", "schema."+schema)
+		r.rawAttr(1, "schema", schemaRef(schema))
 	}
 	r.rawAttr(1, "lang", atlasLanguage(function.Language))
 	if function.Returns != "" {
 		r.rawAttr(1, "return", typeExpr(function.Returns))
 	}
 	r.renderFunctionArgs(function)
-	r.rawAttr(1, "security", function.Security)
-	r.rawAttr(1, "volatility", function.Volatility)
+	r.rawAttr(1, "security", rawIdentifier(function.Security))
+	r.rawAttr(1, "volatility", rawIdentifier(function.Volatility))
 	r.stringAttr(1, "as", function.Body)
 	r.stringAttr(1, "comment", function.Comment)
 	r.line("}")
@@ -157,7 +250,7 @@ func (r *renderer) renderFunction(function goschema.Function) {
 func (r *renderer) renderFunctionArgs(function goschema.Function) {
 	args, ok := splitFunctionArgs(function.Parameters)
 	if !ok {
-		r.warn("function "+function.Name, "function parameters cannot be represented as HCL schema arg blocks")
+		r.stringAttr(1, "params", function.Parameters)
 		return
 	}
 	for _, arg := range args {
@@ -180,7 +273,7 @@ func (r *renderer) renderViews() {
 		name := objectNameFromQualified(view.Name)
 		r.linef(`view %s {`, quote(name))
 		if schema := schemaNameFromQualified(view.Name); schema != "" {
-			r.rawAttr(1, "schema", "schema."+schema)
+			r.rawAttr(1, "schema", schemaRef(schema))
 		}
 		r.stringAttr(1, "as", view.Body)
 		if view.WithCheck {
@@ -211,7 +304,7 @@ func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
 	name := objectNameFromQualified(view.Name)
 	r.linef(`materialized %s {`, quote(name))
 	if schema := schemaNameFromQualified(view.Name); schema != "" {
-		r.rawAttr(1, "schema", "schema."+schema)
+		r.rawAttr(1, "schema", schemaRef(schema))
 	}
 	r.stringAttr(1, "as", view.Body)
 	// Emit refresh_strategy only when it differs from the canonical default so
@@ -256,7 +349,7 @@ func (r *renderer) renderTrigger(trigger goschema.Trigger) {
 	r.linef("  %s {", timing)
 	r.rawAttr(2, event, "true")
 	r.line("  }")
-	r.rawAttr(1, "for", firstNonEmpty(trigger.ForEach, "ROW"))
+	r.rawAttr(1, "for", rawIdentifier(firstNonEmpty(trigger.ForEach, "ROW")))
 	r.stringAttr(1, "as", trigger.Body)
 	r.stringAttr(1, "comment", trigger.Comment)
 	r.line("}")
@@ -275,7 +368,7 @@ func (r *renderer) renderRLSPolicies() {
 		}
 		r.linef(`policy %s {`, quote(policy.Name))
 		r.rawAttr(1, "on", objectRef("table", policy.Table))
-		r.rawAttr(1, "for", firstNonEmpty(strings.ToUpper(policy.PolicyFor), "ALL"))
+		r.rawAttr(1, "for", rawIdentifier(firstNonEmpty(strings.ToUpper(policy.PolicyFor), "ALL")))
 		if policy.ToRoles != "" {
 			r.rawAttr(1, "to", roleTargets(policy.ToRoles))
 		}
@@ -298,13 +391,9 @@ func (r *renderer) renderGrants() {
 	})
 	for _, grant := range grants {
 		grant.Canonicalize()
-		if grant.OnSequence != "" {
-			r.warn("grants."+grant.Role, "sequence grants are not yet representable in HCL schema output")
-			continue
-		}
 		target := grantTarget(grant)
 		if grant.Role == "" || target == "" || len(grant.Privileges) == 0 {
-			r.warn("grants."+grant.Role, "grant requires role, table or schema target, and at least one privilege")
+			r.warn("grants."+grant.Role, "grant requires role, table, schema, or sequence target, and at least one privilege")
 			continue
 		}
 		r.line("permission {")
@@ -347,21 +436,30 @@ type functionArg struct {
 }
 
 func splitFunctionArgs(value string) ([]functionArg, bool) {
+	original := value
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return nil, true
+	}
+	if value != original {
+		return nil, false
 	}
 	parts, ok := splitTopLevelComma(value)
 	if !ok {
 		return nil, false
 	}
 	args := make([]functionArg, 0, len(parts))
+	rendered := make([]string, 0, len(parts))
 	for _, part := range parts {
 		arg, ok := parseFunctionArg(part)
-		if !ok {
+		if !ok || typeExpr(arg.typ) != arg.typ {
 			return nil, false
 		}
 		args = append(args, arg)
+		rendered = append(rendered, arg.name+" "+arg.typ)
+	}
+	if strings.Join(rendered, ", ") != value {
+		return nil, false
 	}
 	return args, true
 }
@@ -482,10 +580,13 @@ func roleTarget(value string) string {
 
 func grantTarget(grant goschema.Grant) string {
 	if grant.OnSchema != "" {
-		return objectRef("schema", grant.OnSchema)
+		return schemaRef(grant.OnSchema)
 	}
 	if grant.OnTable != "" {
 		return objectRef("table", grant.OnTable)
+	}
+	if grant.OnSequence != "" {
+		return objectRef("sequence", grant.OnSequence)
 	}
 	return ""
 }
@@ -546,6 +647,13 @@ func schemaNameFromQualified(value string) string {
 
 func (r *renderer) trueAttr(indent int, name string) {
 	r.rawAttr(indent, name, "true")
+}
+
+func (r *renderer) int64PtrAttr(indent int, name string, value *int64) {
+	if value == nil {
+		return
+	}
+	r.rawAttr(indent, name, strconv.FormatInt(*value, 10))
 }
 
 func objectRefPart(value string) string {
