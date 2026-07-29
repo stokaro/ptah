@@ -199,12 +199,12 @@ Expected `db read` output now includes both `CREATE TABLE "posts"` and `CREATE T
 Atlas-compatible commands live in the separate `ptah-compat` drop-in binary:
 
 ```bash
-GOWORK=off go build -o ./bin/atlas ./cmd/ptah-compat
+GOWORK=off go build -o ./bin/ptah-compat ./cmd/ptah-compat
 
-./bin/atlas migrate hash \
+./bin/ptah-compat migrate hash \
   --dir /tmp/ptah-quickstart/migrations
 
-./bin/atlas migrate validate \
+./bin/ptah-compat migrate validate \
   --dir /tmp/ptah-quickstart/migrations
 ```
 

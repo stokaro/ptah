@@ -52,36 +52,36 @@ root-level command spellings are removed instead of preserved.
 ## Atlas-Compatible Command Surfaces
 
 The Atlas-compatible commands live in the separate `ptah-compat` binary, the
-drop-in Atlas replacement (invocations below assume it is installed under the
-name `atlas`). They either translate implemented Atlas-compatible flags and
+drop-in Atlas replacement; invocations below use the `ptah-compat` binary
+name. They either translate implemented Atlas-compatible flags and
 delegate to the matching native command, or execute Ptah-owned Atlas-shaped
 behavior such as migration apply, the license notice, or schema formatting.
 
 | Atlas-compatible command | Behavior |
 | --- | --- |
-| `atlas version` | `ptah version` |
-| `atlas license` | Ptah license notice |
-| `atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
-| `atlas migrate down` | `ptah migrations down`; with `--format`, an Atlas Go-template down report over the same rollback engine (prompt on stderr, report on stdout, same success/failure codes) |
-| `atlas migrate diff` | Atlas-style migration diff from a supported desired schema source, `atlas.sum` update, or dry-run output printed |
-| `atlas migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
-| `atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |
-| `atlas migrate hash` | `ptah migrations hash` |
-| `atlas migrate validate` | Atlas-format integrity validation with Atlas checksum diagnostics |
-| `atlas migrate lint` | `ptah migrations lint` |
-| `atlas migrate checkpoint` | `ptah migrations checkpoint` |
-| `atlas migrate test` | `ptah migrations test` |
-| `atlas migrate edit` | `ptah migrations edit` |
-| `atlas migrate rebase` | `ptah migrations rebase` |
-| `atlas migrate rm` | `ptah migrations rm` |
-| `atlas schema inspect` | Atlas-shaped schema inspection |
-| `atlas schema apply` | Local Atlas-style schema apply |
-| `atlas schema diff` | Local Atlas-style schema-file diff |
-| `atlas schema fmt` | Format local `.hcl` files |
-| `atlas schema test` | `ptah schema test` |
-| `atlas schema plan` | Local Atlas-style plan computation saved to a fingerprinted plan file; its registry sub-verbs stay boundary stubs |
-| `atlas migrate push` | Atlas CE community-version unsupported boundary stub |
-| `atlas schema push` | Atlas CE community-version unsupported boundary stub |
+| `ptah-compat version` | `ptah version` |
+| `ptah-compat license` | Ptah license notice |
+| `ptah-compat migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
+| `ptah-compat migrate down` | `ptah migrations down`; with `--format`, an Atlas Go-template down report over the same rollback engine (prompt on stderr, report on stdout, same success/failure codes) |
+| `ptah-compat migrate diff` | Atlas-style migration diff from a supported desired schema source, `atlas.sum` update, or dry-run output printed |
+| `ptah-compat migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
+| `ptah-compat migrate status` | Atlas-format migration status with Atlas revision-table metadata |
+| `ptah-compat migrate hash` | `ptah migrations hash` |
+| `ptah-compat migrate validate` | Atlas-format integrity validation with Atlas checksum diagnostics |
+| `ptah-compat migrate lint` | `ptah migrations lint` |
+| `ptah-compat migrate checkpoint` | `ptah migrations checkpoint` |
+| `ptah-compat migrate test` | `ptah migrations test` |
+| `ptah-compat migrate edit` | `ptah migrations edit` |
+| `ptah-compat migrate rebase` | `ptah migrations rebase` |
+| `ptah-compat migrate rm` | `ptah migrations rm` |
+| `ptah-compat schema inspect` | Atlas-shaped schema inspection |
+| `ptah-compat schema apply` | Local Atlas-style schema apply |
+| `ptah-compat schema diff` | Local Atlas-style schema-file diff |
+| `ptah-compat schema fmt` | Format local `.hcl` files |
+| `ptah-compat schema test` | `ptah schema test` |
+| `ptah-compat schema plan` | Local Atlas-style plan computation saved to a fingerprinted plan file; its registry sub-verbs stay boundary stubs |
+| `ptah-compat migrate push` | Atlas CE community-version unsupported boundary stub |
+| `ptah-compat schema push` | Atlas CE community-version unsupported boundary stub |
 
 Atlas CE community-version unsupported boundary stubs mirror Atlas CE: `--help`
 prints the unsupported notice and exits `0`, while direct execution prints the

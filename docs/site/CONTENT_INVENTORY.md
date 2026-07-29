@@ -282,7 +282,7 @@ Verified with repository-wide searches at the audited commit.
 | Term | Current usage (measured) | Canonical decision |
 | --- | --- | --- |
 | native commands | consistent: "native" used for the `ptah <verb>` tree | keep; never described with Atlas spellings; root-level Atlas aliases are documented as intentionally absent |
-| Atlas-compatible commands | `atlas <command> ...` invocations across the atlas group and references | #850 pass: the `ptah atlas` namespace was removed from the main binary; Atlas-compatible invocations are spelled `atlas <command> ...` via the `ptah-compat` binary, with the installed-as-`atlas` assumption stated once per page |
+| Atlas-compatible commands | `ptah-compat <command> ...` invocations across the atlas group and references | #850 pass: the `ptah atlas` namespace was removed from the main binary; Atlas-compatible invocations are spelled `ptah-compat <command> ...` (there is no `atlas` command), with the drop-in rename documented once on the Atlas compatibility overview |
 | `ptah-compat` | the only Atlas-compatible command surface | #850 pass: promoted from prose-only mention to the documented host of the Atlas-compatible tree (including the `atlas/comparison` command-parity column) |
 | desired schema vs desired state | "desired schema" appears 60 times across 18 pages; "desired state" 3 times (`workflows/migrations.md` twice, `workflows/schema-files.md` once) | standardize on **desired schema**; retire "desired state" outside the composite-source discussion (done: the final pass also replaced the hyphenated "desired-state" uses in Atlas status prose) |
 | schema source | used informally | canonicalize: Go annotations, YAML, HCL, SQL file, external loader, or live database used as input |
@@ -414,7 +414,7 @@ Model your schema
   schema/visualize                    howto (new, from examples/schema-viz)
   schema/export                       howto (current workflows/api-schema-export)
 Direct schema changes
-  direct/inspect                      howto (new: db read, introspect, atlas schema inspect)
+  direct/inspect                      howto (new: db read, introspect, ptah-compat schema inspect)
   direct/compare-and-drift            howto (new: schema compare, schema drift, plan-only runs)
   direct/apply                        howto (new: Atlas-compatible schema apply; hybrid patterns)
 Versioned migrations

@@ -5,7 +5,7 @@ description: Apply desired-schema changes straight to a database with ptah schem
 
 Direct application ships natively as `ptah schema apply`. The separate
 `ptah-compat` drop-in binary exposes the same engine to scripts that expect an
-Atlas-style executable (`atlas schema apply`); the plan, the approval prompt,
+Atlas-style executable (`ptah-compat schema apply`); the plan, the approval prompt,
 the plan files, and the fingerprint checks behave identically. This page
 covers the workflow, the saved plan files that separate review from execution,
 and the hybrid patterns that combine a native drift gate with a direct apply.
