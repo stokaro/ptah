@@ -82,7 +82,7 @@ entrypoint and deeper reference/site pages for the same behavior.
 
 Use these routes to avoid missing a class of docs:
 
-- **Native CLI**: `README.md`, `docs/native_cli.md`,
+- **Native CLI**: `README.md`,
   `docs/site/src/content/docs/reference/native-commands.md`, the
   `docs/site/src/content/docs/versioned/`, `direct/`, `testing/`, and
   `operate/` workflow pages, and `docs/exit_codes.md`.
@@ -102,7 +102,7 @@ Use these routes to avoid missing a class of docs:
   `docs/site/src/content/docs/atlas/project-config.md`, and related CLI
   workflow pages.
 - **Go annotations, YAML, and Atlas HCL schema sources**:
-  `docs/go_annotations_vs_atlas_hcl.md`, `docs/yaml_schema.md`,
+  `docs/yaml_schema.md`, `docs/atlas_hcl_schema.md`,
   `docs/site/src/content/docs/schema/go-annotations.md`,
   `docs/site/src/content/docs/reference/go-annotations.md`, and the
   `docs/site/src/content/docs/schema/` source pages (`yaml.md`, `hcl.md`,
