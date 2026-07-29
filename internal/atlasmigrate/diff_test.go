@@ -133,7 +133,6 @@ CREATE TABLE users (
 		DryRun:      true,
 	})
 	_, statErr := os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
-	_, lockStatErr := os.Stat(diffLockPath(migrationsDir))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Synced, qt.IsFalse)
@@ -144,7 +143,7 @@ CREATE TABLE users (
 	c.Assert(result.SumPath, qt.Equals, "")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
-	c.Assert(lockStatErr, qt.ErrorIs, os.ErrNotExist)
+	assertDiffLockReleased(c, migrationsDir)
 	assertDevDatabaseEmpty(c, conn)
 }
 
@@ -471,7 +470,7 @@ THIS IS NOT SQL;
 
 	c.Assert(err, qt.ErrorMatches, `(?s)replay migration 1 on dev database: .*`)
 	c.Assert(result.Synced, qt.IsFalse)
-	c.Assert(fileExists(diffLockPath(migrationsDir)), qt.IsFalse)
+	assertDiffLockReleased(c, migrationsDir)
 	assertDevDatabaseEmpty(c, conn)
 }
 
@@ -685,7 +684,7 @@ CREATE TABLE users (
 	afterSum, sumErr := os.ReadFile(sumPath)
 	c.Assert(sumErr, qt.IsNil)
 	c.Assert(afterSum, qt.Not(qt.DeepEquals), previousSum)
-	c.Assert(fileExists(diffLockPath(migrationsDir)), qt.IsFalse)
+	assertDiffLockReleased(c, migrationsDir)
 	assertDevDatabaseEmpty(c, conn)
 }
 
@@ -702,6 +701,13 @@ func diffLockPath(migrationsDir string) string {
 		filepath.Dir(cleanDir),
 		"."+filepath.Base(cleanDir)+".ptah-migrate-diff.lock",
 	)
+}
+
+func assertDiffLockReleased(c *qt.C, migrationsDir string) {
+	c.Helper()
+	release, err := testutils.AcquireExclusiveFileLock(diffLockPath(migrationsDir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(release(), qt.IsNil)
 }
 
 func assertDevDatabaseEmpty(c *qt.C, conn *dbschema.DatabaseConnection) {

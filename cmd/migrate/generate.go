@@ -279,20 +279,27 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	var files *generator.MigrationFiles
 	if replay {
 		var plan *generator.MigrationPlan
-		err = migrationreplay.WithReplayedDirectory(
+		err = atlasmigrate.WithMigrationDirectoryLock(
 			cmd.Context(),
-			devConn,
 			migrationsDir,
-			dirFormat,
-			func(replayConn *dbschema.DatabaseConnection) error {
-				replayOpts := generateOpts
-				replayOpts.DBConn = replayConn
-				plan, err = generator.PlanMigration(connectCtx, replayOpts)
-				return err
+			0,
+			func() error {
+				return migrationreplay.WithReplayedDirectory(
+					cmd.Context(),
+					devConn,
+					migrationsDir,
+					dirFormat,
+					func(replayConn *dbschema.DatabaseConnection) error {
+						replayOpts := generateOpts
+						replayOpts.DBConn = replayConn
+						plan, err = generator.PlanMigration(connectCtx, replayOpts)
+						return err
+					},
+				)
 			},
 		)
 		if err == nil && plan != nil {
-			files, err = plan.WriteFiles()
+			files, err = plan.WriteFilesContext(cmd.Context())
 		}
 	} else {
 		files, err = generator.GenerateMigration(connectCtx, generateOpts)

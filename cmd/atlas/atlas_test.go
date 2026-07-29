@@ -3193,7 +3193,10 @@ CREATE TABLE users (
 
 	err := cmd.Execute()
 	_, statErr := os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
-	_, lockStatErr := os.Stat(atlasMigrateDiffLockPath(migrationsDir))
+	lockInfo, lockStatErr := os.Stat(atlasMigrateDiffLockPath(migrationsDir))
+	releaseLock, lockErr := testutils.AcquireExclusiveFileLock(
+		atlasMigrateDiffLockPath(migrationsDir),
+	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "ALTER TABLE")
@@ -3202,7 +3205,10 @@ CREATE TABLE users (
 	c.Assert(out.String(), qt.Not(qt.Contains), "Created migration file:")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
-	c.Assert(lockStatErr, qt.ErrorIs, os.ErrNotExist)
+	c.Assert(lockStatErr, qt.IsNil)
+	c.Assert(lockInfo.Mode().IsRegular(), qt.IsTrue)
+	c.Assert(lockErr, qt.IsNil)
+	c.Assert(releaseLock(), qt.IsNil)
 }
 
 func TestCompatCommand_MigrateDiffCustomFormatWritesFormattedMigration(t *testing.T) {

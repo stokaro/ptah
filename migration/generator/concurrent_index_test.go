@@ -194,9 +194,14 @@ func TestCreateMigrationFilesFromSpecs_WritesAllPairs(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 
-	files, err := createMigrationFilesFromSpecs(dir, "", []generatedMigrationSpec{
-		{Version: 100, Name: "transactional", UpSQL: "SELECT 1;\n", DownSQL: "SELECT 2;\n"},
-		{Version: 101, Name: "concurrent_indexes", UpSQL: "-- +ptah no_transaction\nSELECT 3;\n", DownSQL: "-- +ptah no_transaction\nSELECT 4;\n", NoTransaction: true},
+	var files *MigrationFiles
+	var publishErr error
+	err := atlasmigrate.WithMigrationDirectoryLock(t.Context(), dir, 0, func() error {
+		files, publishErr = createMigrationFilesFromSpecs(t.Context(), dir, "", []generatedMigrationSpec{
+			{Version: 100, Name: "transactional", UpSQL: "SELECT 1;\n", DownSQL: "SELECT 2;\n"},
+			{Version: 101, Name: "concurrent_indexes", UpSQL: "-- +ptah no_transaction\nSELECT 3;\n", DownSQL: "-- +ptah no_transaction\nSELECT 4;\n", NoTransaction: true},
+		})
+		return publishErr
 	})
 
 	c.Assert(err, qt.IsNil)

@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -28,7 +29,9 @@ import (
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/deporder"
+	"github.com/stokaro/ptah/internal/fsnapshot"
 	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/internal/tableref"
 	"github.com/stokaro/ptah/migration/diffpolicy"
@@ -126,9 +129,15 @@ type MigrationFiles struct {
 type MigrationPlan struct {
 	mu           sync.Mutex
 	outputDir    string
+	outputState  migrationDirectoryState
 	reportFormat string
 	specs        []generatedMigrationSpec
 	written      bool
+}
+
+type migrationDirectoryState struct {
+	exists   bool
+	snapshot fsnapshot.Snapshot
 }
 
 // EmptyMigrationOptions contains options for skeleton migration creation.
@@ -319,6 +328,10 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err != nil {
 		return nil, err
 	}
+	outputState, err := captureMigrationDirectoryState(opts.OutputDir)
+	if err != nil {
+		return nil, fmt.Errorf("capture migration directory before planning: %w", err)
+	}
 
 	// 1. Determine the desired schema: use a pre-merged one when provided (for a
 	// composite desired-state assembled from several sources), otherwise parse the
@@ -433,6 +446,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 
 	return &MigrationPlan{
 		outputDir:    opts.OutputDir,
+		outputState:  outputState,
 		reportFormat: opts.ReportFormat,
 		specs:        specs,
 	}, nil
@@ -441,6 +455,12 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 // WriteFiles publishes the migration artifacts represented by the plan. A plan
 // is single-use after a successful publication.
 func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error) {
+	return p.WriteFilesContext(context.Background())
+}
+
+// WriteFilesContext publishes the migration artifacts represented by the plan.
+// The context bounds waiting for the migration-directory publication lock.
+func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles, error) {
 	if p == nil {
 		return nil, fmt.Errorf("migration plan is nil")
 	}
@@ -449,12 +469,60 @@ func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error) {
 	if p.written {
 		return nil, fmt.Errorf("migration plan has already been written")
 	}
-	files, err := createMigrationFilesFromSpecs(p.outputDir, p.reportFormat, p.specs)
-	if err != nil {
-		return nil, fmt.Errorf("error creating migration files: %w", err)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	p.written = true
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(p.outputDir)), 0755); err != nil {
+		return nil, fmt.Errorf("create migration directory parent: %w", err)
+	}
+	var files *MigrationFiles
+	err := atlasmigrate.WithMigrationDirectoryLock(ctx, p.outputDir, 0, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		currentState, err := captureMigrationDirectoryState(p.outputDir)
+		if err != nil {
+			return fmt.Errorf("capture migration directory before publication: %w", err)
+		}
+		if !p.outputState.equal(currentState) {
+			return fmt.Errorf("migration directory changed after migration planning")
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		files, err = createMigrationFilesFromSpecs(ctx, p.outputDir, p.reportFormat, p.specs)
+		if err != nil {
+			return fmt.Errorf("error creating migration files: %w", err)
+		}
+		p.written = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
 	return files, nil
+}
+
+func captureMigrationDirectoryState(outputDir string) (migrationDirectoryState, error) {
+	info, err := os.Stat(outputDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return migrationDirectoryState{}, nil
+	}
+	if err != nil {
+		return migrationDirectoryState{}, err
+	}
+	if !info.IsDir() {
+		return migrationDirectoryState{}, fmt.Errorf("%q exists and is not a directory", outputDir)
+	}
+	snapshot, err := migrationsnapshot.CaptureStable(os.DirFS(outputDir))
+	if err != nil {
+		return migrationDirectoryState{}, err
+	}
+	return migrationDirectoryState{exists: true, snapshot: snapshot}, nil
+}
+
+func (s migrationDirectoryState) equal(other migrationDirectoryState) bool {
+	return s.exists == other.exists && s.snapshot.Equal(other.snapshot)
 }
 
 func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateMigrationOptions, error) {
@@ -900,37 +968,27 @@ func cloneIdentifierSemanticsValue(
 	return semantics.Clone()
 }
 
-func createSafetyReportFile(upFile, format string, assessments []safety.StatementAssessment) (string, error) {
+func renderSafetyReport(
+	upFile, format string,
+	assessments []safety.StatementAssessment,
+) (string, []byte, error) {
+	var contents bytes.Buffer
+	var reportFile string
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "html":
-		reportFile := strings.TrimSuffix(upFile, ".up.sql") + ".safety.html"
-		return writeSafetyReportFile(reportFile, func(file *os.File) error {
-			return safety.RenderHTML(file, assessments)
-		})
-	case "json":
-		reportFile := strings.TrimSuffix(upFile, ".up.sql") + ".safety.json"
-		return writeSafetyReportFile(reportFile, func(file *os.File) error {
-			return safety.RenderJSON(file, assessments)
-		})
-	default:
-		return "", fmt.Errorf("unsupported safety report format %q", format)
-	}
-}
-
-func writeSafetyReportFile(reportFile string, render func(*os.File) error) (string, error) {
-	file, err := os.Create(reportFile)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			slog.Warn("failed to close safety report", "path", reportFile, "error", closeErr)
+		reportFile = strings.TrimSuffix(upFile, ".up.sql") + ".safety.html"
+		if err := safety.RenderHTML(&contents, assessments); err != nil {
+			return "", nil, err
 		}
-	}()
-	if err := render(file); err != nil {
-		return "", err
+	case "json":
+		reportFile = strings.TrimSuffix(upFile, ".up.sql") + ".safety.json"
+		if err := safety.RenderJSON(&contents, assessments); err != nil {
+			return "", nil, err
+		}
+	default:
+		return "", nil, fmt.Errorf("unsupported safety report format %q", format)
 	}
-	return reportFile, nil
+	return reportFile, contents.Bytes(), nil
 }
 
 // hasActualSQLStatements checks if the statements contain actual SQL operations (not just comments)
@@ -1940,37 +1998,65 @@ func createMigrationFiles(outputDir string, version int64, migrationName, upSQL,
 	}
 }
 
-func createMigrationFilesFromSpecs(outputDir, reportFormat string, specs []generatedMigrationSpec) (*MigrationFiles, error) {
-	pairs := make([]MigrationFilePair, 0, len(specs))
-	cleanup := func() {
-		for _, pair := range pairs {
-			_ = os.Remove(pair.UpFile)
-			_ = os.Remove(pair.DownFile)
-			if pair.ReportFile != "" {
-				_ = os.Remove(pair.ReportFile)
-			}
-		}
+func createMigrationFilesFromSpecs(
+	ctx context.Context,
+	outputDir, reportFormat string,
+	specs []generatedMigrationSpec,
+) (*MigrationFiles, error) {
+	if len(specs) == 0 {
+		return nil, nil
 	}
+	artifacts, pairs, err := renderMigrationArtifacts(outputDir, reportFormat, specs)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureMigrationOutputDir(outputDir); err != nil {
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	}
+	if _, err := atlasmigrate.PublishArtifactsLocked(ctx, outputDir, artifacts); err != nil {
+		return nil, err
+	}
+	return migrationFilesFromPairs(pairs), nil
+}
+
+func renderMigrationArtifacts(
+	outputDir, reportFormat string,
+	specs []generatedMigrationSpec,
+) ([]atlasmigrate.PublicationArtifact, []MigrationFilePair, error) {
+	artifacts := make([]atlasmigrate.PublicationArtifact, 0, len(specs)*3)
+	pairs := make([]MigrationFilePair, 0, len(specs))
 	for _, spec := range specs {
-		files, err := createMigrationFiles(outputDir, spec.Version, spec.Name, spec.UpSQL, spec.DownSQL)
-		if err != nil {
-			cleanup()
-			return nil, err
+		upName := migrator.GenerateMigrationFileName(spec.Version, spec.Name, "up")
+		downName := migrator.GenerateMigrationFileName(spec.Version, spec.Name, "down")
+		pair := MigrationFilePair{
+			UpFile:        filepath.Join(outputDir, upName),
+			DownFile:      filepath.Join(outputDir, downName),
+			Version:       spec.Version,
+			NoTransaction: spec.NoTransaction,
 		}
-		pair := files.Files[0]
-		pair.NoTransaction = spec.NoTransaction
+		artifacts = append(
+			artifacts,
+			atlasmigrate.PublicationArtifact{Name: upName, Contents: []byte(spec.UpSQL)},
+			atlasmigrate.PublicationArtifact{Name: downName, Contents: []byte(spec.DownSQL)},
+		)
 		if reportFormat != "" {
-			reportFile, err := createSafetyReportFile(pair.UpFile, reportFormat, spec.Assessments)
+			reportName, reportContents, err := renderSafetyReport(
+				upName,
+				reportFormat,
+				spec.Assessments,
+			)
 			if err != nil {
-				pairs = append(pairs, pair)
-				cleanup()
-				return nil, fmt.Errorf("error creating safety report: %w", err)
+				return nil, nil, fmt.Errorf("error creating safety report: %w", err)
 			}
-			pair.ReportFile = reportFile
+			pair.ReportFile = filepath.Join(outputDir, reportName)
+			artifacts = append(artifacts, atlasmigrate.PublicationArtifact{
+				Name:     reportName,
+				Contents: reportContents,
+			})
 		}
 		pairs = append(pairs, pair)
 	}
-	return migrationFilesFromPairs(pairs), nil
+	return artifacts, pairs, nil
 }
 
 func shadowCandidatesFromSpecs(specs []generatedMigrationSpec) []shadowCandidate {

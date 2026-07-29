@@ -7,18 +7,39 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/stokaro/ptah/internal/fsdurable"
 )
 
 var errDirLocked = errors.New("migration directory is locked")
 
 type dirLock struct {
-	path string
 	file *os.File
 }
 
+// WithMigrationDirectoryLock invokes consume while holding the cross-process
+// lock shared by migration directory readers and publishers.
+func WithMigrationDirectoryLock(
+	ctx context.Context,
+	migrationsDir string,
+	timeout time.Duration,
+	consume func() error,
+) (resultErr error) {
+	if consume == nil {
+		return errors.New("migration directory lock callback is nil")
+	}
+	lock, err := acquireDirLock(ctx, migrationsDir, timeout)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, lock.release())
+	}()
+	return consume()
+}
+
 func acquireDirLock(ctx context.Context, migrationsDir string, timeout time.Duration) (*dirLock, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("acquire migration directory lock: %w", err)
+	}
 	canonicalDir, err := canonicalMigrationDir(migrationsDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve migration directory lock path: %w", err)
@@ -28,6 +49,12 @@ func acquireDirLock(ctx context.Context, migrationsDir string, timeout time.Dura
 	for {
 		lock, err := tryAcquireDirLock(lockPath)
 		if err == nil {
+			if contextErr := ctx.Err(); contextErr != nil {
+				return nil, errors.Join(
+					fmt.Errorf("acquire migration directory lock: %w", contextErr),
+					lock.release(),
+				)
+			}
 			return lock, nil
 		}
 		if !errors.Is(err, errDirLocked) {
@@ -89,7 +116,7 @@ func tryAcquireDirLock(lockPath string) (*dirLock, error) {
 	if err != nil || !os.SameFile(current, pathInfo) {
 		return nil, errors.Join(errDirLocked, unlockFile(file), file.Close())
 	}
-	return &dirLock{path: lockPath, file: file}, nil
+	return &dirLock{file: file}, nil
 }
 
 func waitForDirLockRetry(ctx context.Context, startedAt time.Time, timeout time.Duration) error {
@@ -115,30 +142,10 @@ func (l *dirLock) release() error {
 	if l == nil {
 		return nil
 	}
-	removeErr := removeLockPath(l.path, l.file)
-	syncErr := fsdurable.SyncDir(filepath.Dir(l.path))
 	unlockErr := unlockFile(l.file)
 	closeErr := l.file.Close()
-	if err := errors.Join(removeErr, syncErr, unlockErr, closeErr); err != nil {
+	if err := errors.Join(unlockErr, closeErr); err != nil {
 		return fmt.Errorf("release migration directory lock: %w", err)
 	}
 	return nil
-}
-
-func removeLockPath(path string, file *os.File) error {
-	current, err := file.Stat()
-	if err != nil {
-		return err
-	}
-	pathInfo, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if !os.SameFile(current, pathInfo) {
-		return errors.New("migration directory lock path changed while held")
-	}
-	return os.Remove(path)
 }

@@ -5999,6 +5999,7 @@ type MigrationPlan struct {
 
 func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error)
 func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error)
+func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles, error)
 
 ### github.com/stokaro/ptah/migration/generator.RollbackFromShadowOptions
 

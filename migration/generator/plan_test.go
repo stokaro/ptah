@@ -1,13 +1,17 @@
 package generator_test
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/migration/generator"
 )
 
@@ -47,6 +51,79 @@ func TestMigrationPlanWriteFiles_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `migration plan has already been written`)
 	c.Assert(files, qt.IsNil)
+}
+
+func TestMigrationPlanWriteFiles_RejectsChangedDirectory(t *testing.T) {
+	c := qt.New(t)
+	plan, outputDir := newSQLiteMigrationPlan(c)
+	concurrentMigration := filepath.Join(outputDir, "20000101000000_concurrent.up.sql")
+	c.Assert(os.WriteFile(concurrentMigration, []byte("SELECT 1;\n"), 0o600), qt.IsNil)
+
+	files, err := plan.WriteFiles()
+
+	c.Assert(err, qt.ErrorMatches, `migration directory changed after migration planning`)
+	c.Assert(files, qt.IsNil)
+	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(matches, qt.DeepEquals, []string{concurrentMigration})
+}
+
+func TestMigrationPlanWriteFilesContext_RejectsCanceledContext(t *testing.T) {
+	c := qt.New(t)
+	plan, outputDir := newSQLiteMigrationPlan(c)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	files, err := plan.WriteFilesContext(ctx)
+
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+	c.Assert(files, qt.IsNil)
+	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 0)
+}
+
+func TestMigrationPlanWriteFilesContext_CancelsWhileWaitingForLock(t *testing.T) {
+	c := qt.New(t)
+	plan, outputDir := newSQLiteMigrationPlan(c)
+	lockHeld := make(chan struct{})
+	releaseLock := make(chan struct{})
+	lockDone := make(chan error, 1)
+	go func() {
+		lockDone <- atlasmigrate.WithMigrationDirectoryLock(
+			t.Context(),
+			outputDir,
+			0,
+			func() error {
+				close(lockHeld)
+				<-releaseLock
+				return nil
+			},
+		)
+	}()
+	<-lockHeld
+
+	ctx, cancel := context.WithCancel(t.Context())
+	type writeResult struct {
+		files *generator.MigrationFiles
+		err   error
+	}
+	writeDone := make(chan writeResult, 1)
+	go func() {
+		files, err := plan.WriteFilesContext(ctx)
+		writeDone <- writeResult{files: files, err: err}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	result := <-writeDone
+	close(releaseLock)
+
+	c.Assert(result.err, qt.ErrorIs, context.Canceled)
+	c.Assert(result.files, qt.IsNil)
+	c.Assert(<-lockDone, qt.IsNil)
+	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 0)
 }
 
 func newSQLiteMigrationPlan(c *qt.C) (*generator.MigrationPlan, string) {

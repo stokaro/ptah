@@ -44,6 +44,10 @@ type DiffOptions struct {
 	Policy               atlasschema.DiffPolicy
 	Qualifier            Qualifier
 	DryRun               bool
+	// PreparePublication may edit the staged migration files before they are
+	// durably published and included in atlas.sum. The callback runs while the
+	// migration-directory lock is held.
+	PreparePublication func([]string) error
 }
 
 type DiffResult struct {
@@ -189,7 +193,14 @@ func generateDiff(
 	if opts.DryRun {
 		return DiffResult{SQL: joinFileContentSQL(contents)}, nil
 	}
-	return writeDiffArtifacts(ctx, opts.Dir, opts.Name, contents, migrationSnapshot)
+	return writeDiffArtifacts(
+		ctx,
+		opts.Dir,
+		opts.Name,
+		contents,
+		migrationSnapshot,
+		opts.PreparePublication,
+	)
 }
 
 func prepareDiff(
