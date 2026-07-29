@@ -13,8 +13,27 @@ compatibility boundary is — before you pick up the per-command usage pages.
 
 The main `ptah` binary is a purely native CLI — it has no Atlas-style command
 paths. The separate `ptah-compat` binary is a binary-level drop-in replacement
-for the Atlas CLI, built for scripts that need Atlas-style root commands,
-including scripts that call an executable named `atlas`:
+for the Atlas CLI, built for scripts that need Atlas-style root commands:
+
+```bash
+go install github.com/stokaro/ptah/cmd/ptah-compat@latest
+
+ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
+```
+
+Command examples on the Atlas compatibility pages are written as
+`ptah-compat <command> ...` — the name the binary ships under.
+
+Every Atlas-compatible command has a native `ptah` twin — for example
+`ptah-compat migrate apply` and `ptah migrations up`, or `ptah-compat schema inspect` and
+`ptah schema inspect --db-url ...`. Use the native tree for new Ptah-authored
+work and the compat binary for existing Atlas scripts; the per-verb mapping is
+listed in the [Atlas-compatible commands reference](../../reference/atlas-commands/).
+
+### Installing under the name `atlas`
+
+For a byte-level drop-in with existing scripts that call an executable named
+`atlas`, install the binary under that name:
 
 ```bash
 # Build it under the name your scripts expect:
@@ -24,22 +43,10 @@ go build -o atlas ./cmd/ptah-compat
 go install github.com/stokaro/ptah/cmd/ptah-compat@latest
 install_dir="$(go env GOPATH)/bin"
 ln -sf "$install_dir/ptah-compat" "$install_dir/atlas"
-
-atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
 ```
 
-The binary adopts the name it is invoked as, so help and error output read
-`atlas migrate apply ...` when the executable is named `atlas`.
-
-Command examples on the Atlas compatibility pages are written as
-`atlas <command> ...` and assume the `ptah-compat` binary installed under the
-name `atlas`.
-
-Every Atlas-compatible command has a native `ptah` twin — for example
-`atlas migrate apply` and `ptah migrations up`, or `atlas schema inspect` and
-`ptah schema inspect --db-url ...`. Use the native tree for new Ptah-authored
-work and the compat binary for existing Atlas scripts; the per-verb mapping is
-listed in the [Atlas-compatible commands reference](../../reference/atlas-commands/).
+The binary adopts the name it is invoked as, so usage, help, and error output
+read `atlas migrate apply ...` when the executable is named `atlas`.
 
 ## Translation model
 
@@ -51,7 +58,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 | --- | --- |
 | `--url` | `--db-url` |
 | `--dir` | `--migrations-dir` |
-| `atlas.hcl` env | Project config IR for supported `atlas ... --env` defaults |
+| `atlas.hcl` env | Project config IR for supported `ptah-compat ... --env` defaults |
 | `--config`, `-c` | Local Atlas project config path for `schema` and `migrate` commands |
 | `--var name=value` | Atlas HCL variable override for supported local expressions |
 | Atlas revision table mode | Ptah revision format and table settings |
@@ -60,8 +67,8 @@ Atlas project flags are persistent on the Atlas-compatible `schema` and
 `migrate` command groups, so both of these forms are valid:
 
 ```bash
-atlas migrate --config project.hcl --env local hash
-atlas migrate hash --config project.hcl --env local
+ptah-compat migrate --config project.hcl --env local hash
+ptah-compat migrate hash --config project.hcl --env local
 ```
 
 The supported `atlas.hcl` subset those flags read is documented in
@@ -77,9 +84,9 @@ prefer the native `ptah schema apply` verb in new Ptah-authored scripts.
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `atlas version` | Prints Ptah build information. |
-| `atlas license` | Prints Ptah MIT license and license-clean Atlas compatibility notice. |
-| `atlas completion <shell>` | Generates Cobra completion output for the Atlas-compatible command tree. |
+| `ptah-compat version` | Prints Ptah build information. |
+| `ptah-compat license` | Prints Ptah MIT license and license-clean Atlas compatibility notice. |
+| `ptah-compat completion <shell>` | Generates Cobra completion output for the Atlas-compatible command tree. |
 
 ## Format reports and redaction
 

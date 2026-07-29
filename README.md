@@ -89,10 +89,8 @@ Ptah has two CLI surfaces:
   `migrate apply` and `schema inspect`.
 
 The `ptah-compat` binary is the binary-level drop-in replacement for scripts
-that need Atlas-style root commands. A copied or symlinked `ptah-compat`
-executable named `atlas` presents those commands under the executable name
-expected by existing scripts. The main `ptah` binary has no Atlas command
-paths.
+that need Atlas-style root commands, invoked as `ptah-compat <command> ...`.
+The main `ptah` binary has no Atlas command paths.
 
 Do not use root-level Atlas spellings such as `ptah migrate apply`; those
 paths are intentionally absent from the native `ptah` binary, whose migration

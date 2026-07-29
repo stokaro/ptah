@@ -59,11 +59,11 @@ native and Atlas directory formats — is on
 [The migration directory](../../concepts/migration-directory/).
 
 Atlas-compatible command paths for the same lifecycle live in the separate
-`ptah-compat` drop-in binary (installed here under the name `atlas`):
+`ptah-compat` drop-in binary:
 
 ```bash
-atlas migrate hash --dir ./migrations
-atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
+ptah-compat migrate hash --dir ./migrations
+ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
 ```
 
 ## Next steps

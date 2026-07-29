@@ -1,10 +1,10 @@
 ---
 title: Atlas-compatible commands
-description: Per-command status for every atlas verb, with Atlas differences and known gaps.
+description: Per-command status for every ptah-compat verb, with Atlas differences and known gaps.
 ---
 
 This page is the lookup reference for the Atlas-compatible surface: what each
-`atlas <command>` does, where it differs from Atlas, and which inputs
+`ptah-compat <command>` does, where it differs from Atlas, and which inputs
 fail explicitly. Usage, flags, and worked examples live on
 [Atlas migrate commands](../../atlas/migrate-commands/) and
 [Atlas schema commands](../../atlas/schema-commands/); the surfaces and
@@ -14,22 +14,21 @@ translation model are on the
 
 The Atlas-compatible commands are hosted by the separate `ptah-compat` binary,
 a drop-in replacement for scripts that need Atlas-style root commands; the main
-`ptah` binary has no Atlas command paths. When `ptah-compat` is copied or
-symlinked as `atlas`, usage and help paths render as `atlas <command> ...`
-where Cobra can derive them from the executable name — the invocations on this
-page assume that name. Each verb section names its native `ptah` twin.
+`ptah` binary has no Atlas command paths. The invocations on this page are
+written as `ptah-compat <command> ...`, the name the binary ships under. Each
+verb section names its native `ptah` twin.
 
 ## Utility commands
 
 | Command | Behavior |
 | --- | --- |
-| `atlas version` | Prints Ptah build information. |
-| `atlas license` | Prints Ptah's MIT license and the license-clean Atlas compatibility notice. |
-| `atlas completion <shell>` | Generates shell completion output for the Atlas-compatible command tree under the invoked executable name. |
+| `ptah-compat version` | Prints Ptah build information. |
+| `ptah-compat license` | Prints Ptah's MIT license and the license-clean Atlas compatibility notice. |
+| `ptah-compat completion <shell>` | Generates shell completion output for the Atlas-compatible command tree under the invoked executable name. |
 
 ## Migrate commands
 
-### `atlas migrate apply`
+### `ptah-compat migrate apply`
 
 Applies Atlas-format migration directories with Atlas-compatible apply flags
 and Atlas revision bookkeeping by default. With `--env`, reads `env.url`,
@@ -42,7 +41,7 @@ database is opened. Matching Atlas OSS, `--dir-format`, `--to-version`, and
 `--lock-name` are rejected on this verb. Native twin:
 [`ptah migrations up`](../native-commands/).
 
-### `atlas migrate status`
+### `ptah-compat migrate status`
 
 Reports Atlas-format migration status with Atlas revision-table metadata and
 Atlas-format migration directories by default. Supports `--dir-format atlas`,
@@ -50,12 +49,12 @@ Atlas-format migration directories by default. Supports `--dir-format atlas`,
 `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`.
 Native twin: [`ptah migrations status`](../native-commands/).
 
-### `atlas migrate hash`
+### `ptah-compat migrate hash`
 
 Forwards to `ptah migrations hash` with Atlas `--dir-format` defaulting to
 `atlas`, so the compatibility path writes `atlas.sum` by default.
 
-### `atlas migrate validate`
+### `ptah-compat migrate validate`
 
 Silently verifies `atlas.sum` on success. Missing or mismatched checksum files
 use Atlas-compatible exit-1 stdout/stderr diagnostics, and `--dev-url` cleans
@@ -63,7 +62,7 @@ the dev database and replays the migration directory to validate SQL
 execution. Native `ptah migrations validate` keeps its own banner and exit
 contract.
 
-### `atlas migrate lint`
+### `ptah-compat migrate lint`
 
 Runs Ptah migration linting with Atlas `--dir-format` defaulting to `atlas`.
 Maps `--latest N` and `--git-base`/`--git-dir` to native changeset linting,
@@ -73,14 +72,14 @@ report by default, and supports Atlas Go-template `--format` output over
 `.Env`, `.Steps`, and `.Files`. Docker dev databases and web reports remain
 explicit gaps. Native twin: [`ptah migrations lint`](../native-commands/).
 
-### `atlas migrate new`
+### `ptah-compat migrate new`
 
 Creates an Atlas single-file skeleton migration and updates `atlas.sum` by
 default; the native equivalent is `ptah migrations create`. Supports
 `--dir-format atlas`, and `--edit` opens the created file in
 `$VISUAL`/`$EDITOR` before `atlas.sum` is refreshed.
 
-### `atlas migrate set [version]`
+### `ptah-compat migrate set [version]`
 
 Moves Atlas revision history to the positional version without executing
 migration SQL, with Atlas revision-table metadata and Atlas-format migration
@@ -89,7 +88,7 @@ directories by default. With `--env`, reads `env.url`, `migration.dir`, and
 `--revisions-schema` flags keep CLI precedence. Native twin:
 [`ptah migrations set`](../native-commands/).
 
-### `atlas migrate down`
+### `ptah-compat migrate down`
 
 Forwards to `ptah migrations down` with mapped Atlas flags. `--dev-url`
 replays and verifies the rollback plan on the dev database before the target
@@ -98,11 +97,11 @@ renders an Atlas Go-template report with the `YES` confirmation prompt on
 stderr (`--dry-run` or the native `--confirm` pass-through skip it). The
 forward defaults to Atlas revision bookkeeping (`--revision-format atlas`,
 like `migrate set`), so a bare invocation reverts the revisions
-`atlas migrate apply` wrote; the native `--revision-format ptah` pass-through
+`ptah-compat migrate apply` wrote; the native `--revision-format ptah` pass-through
 selects ptah bookkeeping. The registry-bound `--to-tag`, `--skip-checks`, and
 `--plan` flags are recorded waivers that fail loudly with their rationale.
 
-### `atlas migrate diff`
+### `ptah-compat migrate diff`
 
 Validates an existing `atlas.sum`, replays a local Atlas migration directory
 on `--dev-url`, diffs it against `--to`, writes new Atlas-style migration
@@ -132,7 +131,7 @@ Ptah cannot re-qualify yet (for example enum types) fail explicitly before any
 file or checksum is written. Docker dev databases remain an explicit gap.
 Native twin: [`ptah migrations generate`](../native-commands/).
 
-### `atlas migrate import`
+### `ptah-compat migrate import`
 
 Imports local `file://` migration directories from `atlas`, `golang-migrate`,
 `goose`, `flyway`, `liquibase`, or `dbmate` format into a separate Atlas
@@ -141,7 +140,7 @@ fail explicitly until Ptah can execute Atlas R-suffixed imported migrations.
 The native `ptah migrations import` converts the same source formats into
 Ptah-native migrations instead.
 
-### `atlas migrate checkpoint [name]`
+### `ptah-compat migrate checkpoint [name]`
 
 Forwards to `ptah migrations checkpoint`, replaying the migration directory on
 the `--dev-url` dev database and writing a ptah-format cumulative-schema
@@ -155,7 +154,7 @@ directive has no reader support, so an Atlas-format checkpoint file would
 replay as an ordinary migration). Atlas keeps `migrate checkpoint` in its Pro
 build, so this is a free Ptah capability rather than an Atlas CE stub.
 
-### `atlas migrate test [paths]`
+### `ptah-compat migrate test [paths]`
 
 Forwards to `ptah migrations test`: `--dir` maps to the native migration
 directory (Atlas-format by default via `--dir-format`), `--dev-url` to the
@@ -166,7 +165,7 @@ the native runner: 0 when all cases pass, 1 on test failure. Atlas keeps
 `migrate test` in its Pro build, so this is a free Ptah capability rather than
 an Atlas CE stub.
 
-### `atlas migrate edit {name | version}`
+### `ptah-compat migrate edit {name | version}`
 
 Forwards to `ptah migrations edit`: the positional maps to the native
 `--version` (a migration file name contributes its leading version digits),
@@ -176,7 +175,7 @@ directory checksum is rewritten afterwards. Atlas keeps `migrate edit` outside
 its community build, so this is a free Ptah capability rather than an Atlas CE
 stub.
 
-### `atlas migrate rebase {name | version}`
+### `ptah-compat migrate rebase {name | version}`
 
 Forwards to `ptah migrations rebase`: re-timestamps the selected migration
 past every existing version and rewrites the directory checksum. Multiple
@@ -184,14 +183,14 @@ positional values and `a...b` version ranges are rejected loudly; forward one
 migration per run. Atlas keeps `migrate rebase` outside its community build,
 so this is a free Ptah capability rather than an Atlas CE stub.
 
-### `atlas migrate rm {name | version}`
+### `ptah-compat migrate rm {name | version}`
 
 Forwards to `ptah migrations rm`: deletes the selected migration's files and
 rewrites the directory checksum. Atlas keeps `migrate rm` outside its
 community build, so this is a free Ptah capability rather than an Atlas CE
 stub.
 
-### `atlas migrate push`
+### `ptah-compat migrate push`
 
 Registered Atlas CE boundary stub for a community-version unsupported command,
 kept by decision: Atlas push targets the proprietary, account-bound Atlas
@@ -201,7 +200,7 @@ replacement is the native `ptah migrations push` to any OCI registry.
 
 ## Schema commands
 
-### `atlas schema inspect`
+### `ptah-compat schema inspect`
 
 Inspects the `--url` source — a live database URL, a local `.hcl`, `.yaml`,
 `.yml`, or `.sql` schema file, a migration directory (a directory containing
@@ -233,7 +232,7 @@ type selectors on non-final pattern segments fail explicitly; include
 filtering and exporter blocks remain explicit gaps. Native twin:
 [`ptah schema inspect`](../native-commands/).
 
-### `atlas schema apply`
+### `ptah-compat schema apply`
 
 Diffs a live database against the `--to` desired state — local `file://`
 `.hcl`, `.yaml`, `.yml`, or `.sql` schema files, one directly connectable
@@ -282,7 +281,7 @@ apply with the target unchanged; the dev database must not be the target and
 must share its schema scope. Native twin:
 [`ptah schema apply`](../native-commands/).
 
-### `atlas schema plan`
+### `ptah-compat schema plan`
 
 Computes the declarative migration from the `--from` target database to local
 `--to` schema files and saves it as a fingerprinted local plan file: `--save`
@@ -302,7 +301,7 @@ keeps `schema plan` in its Pro registry flow, so this is a free Ptah
 capability rather than an Atlas CE stub. Native twin:
 [`ptah schema plan`](../native-commands/).
 
-### `atlas schema diff`
+### `ptah-compat schema diff`
 
 Diffs two desired-state sources: each of `--from/-f` and `--to` accepts
 local `file://` schema files with `.hcl`, `.yaml`, `.yml`, or `.sql`
@@ -323,12 +322,12 @@ empty selections. With `--env`, reads `env.schema.src`, `env.dev`,
 policy from `atlas.hcl`. Unsupported schemes such as `atlas://` fail during
 validation. Native twin: [`ptah schema diff`](../native-commands/).
 
-### `atlas schema fmt`
+### `ptah-compat schema fmt`
 
 Formats local `.hcl` files using HCL canonical layout. Native twin:
 [`ptah schema fmt`](../native-commands/).
 
-### `atlas schema clean`
+### `ptah-compat schema clean`
 
 Cleans user-owned schema objects through Ptah's destructive database-cleanup
 runtime: `--dry-run` prints the planned cleanup, interactive confirmation is
@@ -339,7 +338,7 @@ drops today: user tables across supported dialects, PostgreSQL enum types and
 sequences, and SQL Server foreign-key constraints that must be dropped before
 tables. Native twin: [`ptah schema clean`](../native-commands/).
 
-### `atlas schema test [paths]`
+### `ptah-compat schema test [paths]`
 
 Forwards to `ptah schema test`: `-u/--url` maps the desired schema URL (a
 local `file://` directory of Go schema annotations) to the native
@@ -351,7 +350,7 @@ database. Exit codes match the native runner: 0 when all cases pass, 1 on test
 failure. Atlas keeps `schema test` in its Pro build, so this is a free Ptah
 capability rather than an Atlas CE stub.
 
-### `atlas schema push`
+### `ptah-compat schema push`
 
 Registered Atlas CE boundary stub for a community-version unsupported command,
 kept by decision: Atlas push targets the proprietary, account-bound Atlas
