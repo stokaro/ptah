@@ -2,8 +2,8 @@
 
 Ptah is a schema and migration toolkit for Go projects. It can read annotated Go
 models, YAML schema files, supported HCL schema files, and live databases;
-render SQL; plan and run migrations; validate migration hashes; and expose
-Atlas-compatible command paths under `ptah atlas <command> ...`.
+render SQL; plan and run migrations; and validate migration hashes. A separate
+`ptah-compat` binary is a drop-in replacement for the Atlas CLI.
 
 Ptah is pre-GA. The native command tree is still allowed to change when a cleaner
 architecture is better.
@@ -83,19 +83,18 @@ For a complete copy-pasteable SQLite run, use the
 
 Ptah has two CLI surfaces:
 
-- Native Ptah commands such as `ptah schema render`, `ptah db read`,
-  `ptah migrations up`, and `ptah viz`.
-- Atlas-compatible commands under `ptah atlas <command> ...`, such as
-  `ptah atlas migrate apply` and `ptah atlas schema inspect`.
+- Native Ptah commands in the `ptah` binary, such as `ptah schema render`,
+  `ptah db read`, `ptah migrations up`, and `ptah viz`.
+- Atlas-compatible commands in the separate `ptah-compat` binary, such as
+  `migrate apply` and `schema inspect`.
 
-The separate `ptah-compat` binary is the binary-level drop-in replacement for
-scripts that need Atlas-style root commands. A copied or symlinked
-`ptah-compat` executable named `atlas` presents those commands under the
-executable name expected by existing scripts.
+The `ptah-compat` binary is the binary-level drop-in replacement for scripts
+that need Atlas-style root commands, invoked as `ptah-compat <command> ...`.
+The main `ptah` binary has no Atlas command paths.
 
-Do not use root-level Atlas spellings such as `ptah migrate apply` or
-`ptah schema inspect`; those paths are intentionally absent from the native
-`ptah` binary.
+Do not use root-level Atlas spellings such as `ptah migrate apply`; those
+paths are intentionally absent from the native `ptah` binary, whose migration
+verbs live under `ptah migrations ...`.
 
 See the [native CLI command reference](docs/site/src/content/docs/reference/native-commands.md) and
 [Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md).

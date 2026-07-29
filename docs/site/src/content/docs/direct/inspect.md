@@ -125,7 +125,7 @@ stream — one file per object by default, or grouped with `--split schema` /
 ptah schema inspect --db-url "sqlite://$PWD/app.db" --format sql --out-dir ./schema
 ```
 
-The Atlas-compatible spelling, `ptah atlas schema inspect --url ...`, adds
+The Atlas-compatible spelling, `ptah-compat schema inspect --url ...`, adds
 custom Go templates, Mermaid output, and template-driven split exports; see
 [Atlas schema commands](../../atlas/schema-commands/#inspect-a-schema-source).
 

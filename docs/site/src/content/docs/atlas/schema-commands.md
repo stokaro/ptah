@@ -1,33 +1,34 @@
 ---
 title: Atlas schema commands
-description: Inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah atlas schema verbs.
+description: Inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs.
 ---
 
 You want Atlas-style declarative schema work — inspect a live database, diff
 schema files, apply or plan desired-schema changes — through Ptah. This page
-covers the `ptah atlas schema` verbs with runnable examples. The surfaces and
-flag translation rules are on the
+covers the `ptah-compat schema` verbs with runnable examples. Every invocation
+on this page uses the separate `ptah-compat` drop-in binary; the install steps
+plus the flag translation rules are on the
 [Atlas compatibility overview](../overview/).
 
 ## Command behavior
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas schema inspect` | Inspects a live database, a local schema file, a migration directory, or an `env://` reference (non-database sources evaluated on the `--dev-url` dev database) and writes Atlas-shaped HCL, SQL, JSON, or custom-template output, including split/write file exports. |
-| `ptah atlas schema apply` | Diffs a desired-state source (schema files, a database URL, a migration directory, or an `env://` reference) against a live database and applies the planned SQL after confirmation. |
-| `ptah atlas schema plan` | Saves the declarative plan as a fingerprinted local plan file for a later `schema apply --plan`. |
-| `ptah atlas schema diff` | Diffs two desired-state sources (schema files, database URLs, migration directories, or `env://` references) and prints migration SQL. |
-| `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
-| `ptah atlas schema clean` | Plans and applies destructive cleanup of user-owned schema objects. |
-| `ptah atlas schema test [paths]` | Forwards to `ptah schema test` with Ptah-native YAML test cases. |
-| `ptah atlas schema push` | Atlas CE boundary stub; the native `ptah schema push` to any OCI registry is the open replacement. |
+| `ptah-compat schema inspect` | Inspects a live database, a local schema file, a migration directory, or an `env://` reference (non-database sources evaluated on the `--dev-url` dev database) and writes Atlas-shaped HCL, SQL, JSON, or custom-template output, including split/write file exports. |
+| `ptah-compat schema apply` | Diffs a desired-state source (schema files, a database URL, a migration directory, or an `env://` reference) against a live database and applies the planned SQL after confirmation. |
+| `ptah-compat schema plan` | Saves the declarative plan as a fingerprinted local plan file for a later `schema apply --plan`. |
+| `ptah-compat schema diff` | Diffs two desired-state sources (schema files, database URLs, migration directories, or `env://` references) and prints migration SQL. |
+| `ptah-compat schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
+| `ptah-compat schema clean` | Plans and applies destructive cleanup of user-owned schema objects. |
+| `ptah-compat schema test [paths]` | Forwards to `ptah schema test` with Ptah-native YAML test cases. |
+| `ptah-compat schema push` | Atlas CE boundary stub; the native `ptah schema push` to any OCI registry is the open replacement. |
 
 Per-verb status detail — Atlas differences, waivers, and the inputs that fail
 explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/).
 
 ## Inspect a schema source
 
-`ptah atlas schema inspect` accepts a `--url` inspection source and writes
+`ptah-compat schema inspect` accepts a `--url` inspection source and writes
 machine-oriented schema output without native Ptah status banners. The default
 format is Atlas-compatible HCL. The source is a live database URL, a local
 schema file (`.hcl`, `.yaml`, `.yml`, or `.sql`), a migration directory (a
@@ -35,9 +36,9 @@ directory containing `atlas.sum`), or an `env://` reference into the evaluated
 `atlas.hcl` environment.
 
 ```bash
-ptah atlas schema inspect --url "$DATABASE_URL" > schema.hcl
-ptah atlas schema inspect --url "$DATABASE_URL" --format sql > schema.sql
-ptah atlas schema inspect --url "$DATABASE_URL" --format json > schema.json
+ptah-compat schema inspect --url "$DATABASE_URL" > schema.hcl
+ptah-compat schema inspect --url "$DATABASE_URL" --format sql > schema.sql
+ptah-compat schema inspect --url "$DATABASE_URL" --format json > schema.json
 ```
 
 Non-database sources require `--dev-url`, mirroring Atlas dev-database
@@ -47,7 +48,7 @@ and the result is introspected. Inspecting a file without `--dev-url` fails
 with Atlas's `--dev-url cannot be empty` message.
 
 ```bash
-ptah atlas schema inspect \
+ptah-compat schema inspect \
   --url file://schema.sql \
   --dev-url "$DEV_DATABASE_URL" > schema.hcl
 ```
@@ -63,15 +64,15 @@ schema), and `"type"` (one file per object type), plus an optional
 file-extension argument:
 
 ```bash
-ptah atlas schema inspect \
+ptah-compat schema inspect \
   --url "$DATABASE_URL" \
   --format '{{ hcl . | split | write "schema" }}'
 
-ptah atlas schema inspect \
+ptah-compat schema inspect \
   --url "$DATABASE_URL" \
   --format '{{ sql . | split "type" | write "schema" }}'
 
-ptah atlas schema inspect \
+ptah-compat schema inspect \
   --url "$DATABASE_URL" \
   --format '{{ hcl . | split "schema" ".pg.hcl" | write "schema" }}'
 ```
@@ -100,7 +101,7 @@ Exporter blocks remain an explicit gap.
 
 ## Apply a desired schema
 
-`ptah atlas schema apply` accepts a live database `--url` and a `--to`
+`ptah-compat schema apply` accepts a live database `--url` and a `--to`
 desired state: one or more local schema file URLs, one directly connectable
 database URL whose live schema becomes the desired state, one migration
 directory (a `file://` directory containing `atlas.sum`) replayed on the
@@ -129,7 +130,7 @@ local desired-schema loading path as `--to`. `--file` and `--to` are mutually
 exclusive.
 
 ```bash
-ptah atlas schema apply \
+ptah-compat schema apply \
   --url "$DATABASE_URL" \
   --to file://schema.sql \
   --dry-run
@@ -171,7 +172,7 @@ env "local" {
 ```
 
 ```bash
-ptah atlas schema apply --env local --dry-run
+ptah-compat schema apply --env local --dry-run
 ```
 
 `--dev-url` must match the target database dialect. For migration-directory
@@ -259,7 +260,7 @@ validation, before any database is contacted.
 supported template surface includes the `sql` helper and `.MarshalSQL`:
 
 ```bash
-ptah atlas schema apply \
+ptah-compat schema apply \
   --url "$DATABASE_URL" \
   --to file://schema.sql \
   --dry-run \
@@ -268,7 +269,7 @@ ptah atlas schema apply \
 
 ## Save and execute plan files
 
-`ptah atlas schema plan` is the open local replacement for Atlas's Pro
+`ptah-compat schema plan` is the open local replacement for Atlas's Pro
 registry-gated plan workflow. It computes the same declarative plan `schema
 apply` would generate — from the `--from` target database to the local `--to`
 schema files — and saves it as a local JSON plan file (`format_version` 1) that
@@ -281,13 +282,13 @@ running reviewed SQL against unreviewed state.
 
 ```bash
 # Compute and save the plan for review (or --save for ./<name>.plan.json).
-ptah atlas schema plan \
+ptah-compat schema plan \
   --from "$DATABASE_URL" \
   --to file://schema.sql \
   --output add-orders.plan.json
 
 # Later, execute exactly the reviewed plan; drift refuses loudly.
-ptah atlas schema apply \
+ptah-compat schema apply \
   --url "$DATABASE_URL" \
   --plan file://add-orders.plan.json \
   --auto-approve
@@ -308,7 +309,7 @@ error: pre-planned migration is stale: the target database schema does not match
 
 ## Diff schema files
 
-`ptah atlas schema diff` accepts a desired-state source on each side: one or
+`ptah-compat schema diff` accepts a desired-state source on each side: one or
 more local `--from`/`--to` schema file URLs, one directly connectable database
 URL whose live schema is introspected, one migration directory (a `file://`
 directory containing `atlas.sum`) replayed on the required `--dev-url` dev
@@ -323,7 +324,7 @@ current implementation does not execute Atlas's dev-database simulation; the
 dev URL selects the dialect and hosts migration-directory replays.
 
 ```bash
-ptah atlas schema diff \
+ptah-compat schema diff \
   -f file://old.hcl \
   --to file://schema.hcl \
   --dev-url "sqlite://dev.db"
@@ -343,7 +344,7 @@ CREATE TABLE "main"."posts" (
 supported template surface includes the `sql` helper and `.MarshalSQL`:
 
 ```bash
-ptah atlas schema diff \
+ptah-compat schema diff \
   --from file://old.hcl \
   --to file://schema.hcl \
   --dev-url "sqlite://dev.db" \
@@ -364,19 +365,19 @@ instead of emitting SQL the dialect cannot run in place.
 
 ## Format schema files
 
-`ptah atlas schema fmt` rewrites local `.hcl` files into HCL canonical layout:
+`ptah-compat schema fmt` rewrites local `.hcl` files into HCL canonical layout:
 
 ```bash
-ptah atlas schema fmt schema.hcl
+ptah-compat schema fmt schema.hcl
 ```
 
 ## Clean a database
 
-`ptah atlas schema clean` plans and applies destructive cleanup of user-owned
+`ptah-compat schema clean` plans and applies destructive cleanup of user-owned
 schema objects. Preview first:
 
 ```bash
-ptah atlas schema clean --url "$DATABASE_URL" --dry-run
+ptah-compat schema clean --url "$DATABASE_URL" --dry-run
 ```
 
 Against a SQLite database containing one `users` table, expected output
@@ -397,10 +398,10 @@ Without `--dry-run`, cleanup drops the listed objects after confirmation
 
 | Command | Format data fields |
 | --- | --- |
-| `ptah atlas schema inspect --format` | `.Realm`, `.Schema`, `.MarshalHCL`, `.MarshalSQL`, `.MarshalJSON`, plus `hcl`, `sql`, `json`, `base64url`, `mermaid`, `split`, and `write` template helpers. |
-| `ptah atlas schema apply --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for the planned SQL statements. |
-| `ptah atlas schema diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
-| `ptah atlas schema clean --format` | `.Env.Driver`, `.Env.URL`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`. |
+| `ptah-compat schema inspect --format` | `.Realm`, `.Schema`, `.MarshalHCL`, `.MarshalSQL`, `.MarshalJSON`, plus `hcl`, `sql`, `json`, `base64url`, `mermaid`, `split`, and `write` template helpers. |
+| `ptah-compat schema apply --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for the planned SQL statements. |
+| `ptah-compat schema diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
+| `ptah-compat schema clean --format` | `.Env.Driver`, `.Env.URL`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`. |
 
 The shared report shape and URL redaction rules are described on the
 [Atlas compatibility overview](../overview/#format-reports-and-redaction).

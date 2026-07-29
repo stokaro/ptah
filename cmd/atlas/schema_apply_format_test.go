@@ -22,7 +22,7 @@ func TestSchemaApplySupportsFormat(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -50,7 +50,7 @@ func TestSchemaApplyFormatDryRunDoesNotApply(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE dry_run_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -76,7 +76,7 @@ func TestSchemaApplyFormatSeparatesInteractivePrompt(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE prompt_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -108,7 +108,7 @@ func TestSchemaApplyFormatReportsSynced(t *testing.T) {
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
 	dbschema.CloseAndWarn(conn)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -138,7 +138,7 @@ func TestSchemaApplyUsesAtlasProjectEnvSource(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -174,7 +174,7 @@ func TestSchemaApplyUsesAtlasProjectEnvSchemaBlockAndFormat(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -213,7 +213,7 @@ func TestSchemaApplyUsesAtlasProjectSchemaMode(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -250,7 +250,7 @@ func TestSchemaApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -302,7 +302,7 @@ env "local" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -336,7 +336,7 @@ CREATE TABLE env_skip (id INTEGER PRIMARY KEY);
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -383,7 +383,7 @@ func TestSchemaApplyUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -419,7 +419,7 @@ func TestSchemaApplyAllowsAtlasProjectConcurrentIndexPolicyForSQLite(t *testing.
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -450,7 +450,7 @@ func TestSchemaApplyPrefersExplicitFlagsOverProjectEnv(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -484,7 +484,7 @@ env "prod" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -518,7 +518,7 @@ func TestSchemaApplyAtlasEnvIgnoresMismatchedPtahEnv(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -537,7 +537,7 @@ func TestSchemaApplyAtlasEnvIgnoresMismatchedPtahEnv(t *testing.T) {
 
 func TestSchemaApplyRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
 	c := qt.New(t)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

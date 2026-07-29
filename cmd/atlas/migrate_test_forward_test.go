@@ -35,13 +35,13 @@ func writeMigrateTestFixture(c *qt.C, migrationsDir, testsDir string) {
 			"          scalar: \"1\"\n"), 0o600), qt.IsNil)
 }
 
-func TestNewAtlasCommand_MigrateTestForwardsToNative(t *testing.T) {
+func TestCompatCommand_MigrateTestForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()
 	writeMigrateTestFixture(c, migrationsDir, testsDir)
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -62,7 +62,7 @@ func TestNewAtlasCommand_MigrateTestForwardsToNative(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "1 cases, 1 passed, 0 failed")
 }
 
-func TestNewAtlasCommand_MigrateTestFailingCaseExits1(t *testing.T) {
+func TestCompatCommand_MigrateTestFailingCaseExits1(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()
 	writeMigrateTestFixture(c, migrationsDir, testsDir)
@@ -75,7 +75,7 @@ func TestNewAtlasCommand_MigrateTestFailingCaseExits1(t *testing.T) {
 			"          query: SELECT COUNT(*) FROM users\n"+
 			"          scalar: \"42\"\n"), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -88,12 +88,12 @@ func TestNewAtlasCommand_MigrateTestFailingCaseExits1(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, `FAIL  case "failing expectation"`)
 }
 
-func TestNewAtlasCommand_MigrateTestRunFilterSelectsCases(t *testing.T) {
+func TestCompatCommand_MigrateTestRunFilterSelectsCases(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()
 	writeMigrateTestFixture(c, migrationsDir, testsDir)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -110,12 +110,12 @@ func TestNewAtlasCommand_MigrateTestRunFilterSelectsCases(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `no test cases match --run "\^does-not-match\$"`)
 }
 
-func TestNewAtlasCommand_MigrateTestRejectsUnsupportedDirFormat(t *testing.T) {
+func TestCompatCommand_MigrateTestRejectsUnsupportedDirFormat(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()
 	writeMigrateTestFixture(c, migrationsDir, testsDir)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -131,10 +131,10 @@ func TestNewAtlasCommand_MigrateTestRejectsUnsupportedDirFormat(t *testing.T) {
 		`atlas migrate test --dir-format: Atlas accepts --dir-format=goose, but Ptah does not implement that directory format yet`)
 }
 
-func TestNewAtlasCommand_MigrateTestRejectsMultiplePaths(t *testing.T) {
+func TestCompatCommand_MigrateTestRejectsMultiplePaths(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -145,7 +145,7 @@ func TestNewAtlasCommand_MigrateTestRejectsMultiplePaths(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `atlas migrate test accepts one paths argument, got \["tests-a" "tests-b"\]`)
 }
 
-func TestNewAtlasCommand_MigrateTestUsesAtlasProjectConfig(t *testing.T) {
+func TestCompatCommand_MigrateTestUsesAtlasProjectConfig(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -173,7 +173,7 @@ func TestNewAtlasCommand_MigrateTestUsesAtlasProjectConfig(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

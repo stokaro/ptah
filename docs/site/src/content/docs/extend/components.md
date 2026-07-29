@@ -6,12 +6,9 @@ description: Use Ptah as a Go schema engine, not only as a CLI.
 Ptah can be used in three different ways:
 
 - the native CLI, such as `ptah schema render` and `ptah migrations up`;
-- the Atlas-compatible CLI surface under `ptah atlas <command> ...`;
+- the Atlas-compatible CLI surface of the separate `ptah-compat` drop-in
+  binary;
 - stable Go packages imported by another Go program.
-
-The separate `ptah-compat` binary is the binary-level drop-in replacement for
-scripts that need Atlas-style root commands. It uses the same Atlas-compatible
-surface as `ptah atlas`, so it is not listed as a separate component category.
 
 The CLI is only one consumer of the engine. The same public packages can power
 internal platform CLIs, CI gates, schema documentation generators, migration

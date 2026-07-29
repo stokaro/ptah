@@ -58,13 +58,13 @@ func assertNativeValidatePasses(c *qt.C, dir string) {
 	c.Assert(cmd.Execute(), qt.IsNil, qt.Commentf("%s", out.String()))
 }
 
-func TestNewAtlasCommand_MigrateEditForwardsToNative(t *testing.T) {
+func TestCompatCommand_MigrateEditForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeMigrateMaintFixture(c, dir)
 	installAppendEditor(t, "-- edited through atlas verb")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -84,13 +84,13 @@ func TestNewAtlasCommand_MigrateEditForwardsToNative(t *testing.T) {
 	assertNativeValidatePasses(c, dir)
 }
 
-func TestNewAtlasCommand_MigrateEditAcceptsMigrationFileName(t *testing.T) {
+func TestCompatCommand_MigrateEditAcceptsMigrationFileName(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeMigrateMaintFixture(c, dir)
 	installAppendEditor(t, "-- edited by name")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -106,14 +106,14 @@ func TestNewAtlasCommand_MigrateEditAcceptsMigrationFileName(t *testing.T) {
 	c.Assert(string(content), qt.Contains, "-- edited by name")
 }
 
-func TestNewAtlasCommand_MigrateEditWithoutEditorFails(t *testing.T) {
+func TestCompatCommand_MigrateEditWithoutEditorFails(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeMigrateMaintFixture(c, dir)
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -124,10 +124,10 @@ func TestNewAtlasCommand_MigrateEditWithoutEditorFails(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `no editor configured.*`)
 }
 
-func TestNewAtlasCommand_MigrateEditRequiresVersionArgument(t *testing.T) {
+func TestCompatCommand_MigrateEditRequiresVersionArgument(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -138,10 +138,10 @@ func TestNewAtlasCommand_MigrateEditRequiresVersionArgument(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `atlas migrate edit requires version argument`)
 }
 
-func TestNewAtlasCommand_MigrateEditRejectsUnparsableVersion(t *testing.T) {
+func TestCompatCommand_MigrateEditRejectsUnparsableVersion(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -153,7 +153,7 @@ func TestNewAtlasCommand_MigrateEditRejectsUnparsableVersion(t *testing.T) {
 		`atlas migrate edit version argument: cannot determine a migration version from "nope.sql"`)
 }
 
-func TestNewAtlasCommand_MigrateMaintRejectsNativeOnlyFlags(t *testing.T) {
+func TestCompatCommand_MigrateMaintRejectsNativeOnlyFlags(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
@@ -194,7 +194,7 @@ func TestNewAtlasCommand_MigrateMaintRejectsNativeOnlyFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := atlas.NewAtlasCommand()
+			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -207,12 +207,12 @@ func TestNewAtlasCommand_MigrateMaintRejectsNativeOnlyFlags(t *testing.T) {
 	}
 }
 
-func TestNewAtlasCommand_MigrateRebaseForwardsToNative(t *testing.T) {
+func TestCompatCommand_MigrateRebaseForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeMigrateMaintFixture(c, dir)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -233,10 +233,10 @@ func TestNewAtlasCommand_MigrateRebaseForwardsToNative(t *testing.T) {
 	assertNativeValidatePasses(c, dir)
 }
 
-func TestNewAtlasCommand_MigrateRebaseRejectsMultipleVersions(t *testing.T) {
+func TestCompatCommand_MigrateRebaseRejectsMultipleVersions(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -250,10 +250,10 @@ func TestNewAtlasCommand_MigrateRebaseRejectsMultipleVersions(t *testing.T) {
 		`atlas migrate rebase accepts multiple version arguments, but Ptah does not implement processing more than one per run yet`)
 }
 
-func TestNewAtlasCommand_MigrateRebaseRejectsVersionRanges(t *testing.T) {
+func TestCompatCommand_MigrateRebaseRejectsVersionRanges(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -265,12 +265,12 @@ func TestNewAtlasCommand_MigrateRebaseRejectsVersionRanges(t *testing.T) {
 		`atlas migrate rebase version argument: Atlas accepts version ranges, but Ptah does not implement range selection yet`)
 }
 
-func TestNewAtlasCommand_MigrateRmForwardsToNative(t *testing.T) {
+func TestCompatCommand_MigrateRmForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeMigrateMaintFixture(c, dir)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -288,10 +288,10 @@ func TestNewAtlasCommand_MigrateRmForwardsToNative(t *testing.T) {
 	assertNativeValidatePasses(c, dir)
 }
 
-func TestNewAtlasCommand_MigrateRmRequiresVersionArgument(t *testing.T) {
+func TestCompatCommand_MigrateRmRequiresVersionArgument(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -302,7 +302,7 @@ func TestNewAtlasCommand_MigrateRmRequiresVersionArgument(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `atlas migrate rm requires version argument`)
 }
 
-func TestNewAtlasCommand_MigrateEditUsesAtlasProjectConfig(t *testing.T) {
+func TestCompatCommand_MigrateEditUsesAtlasProjectConfig(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -317,7 +317,7 @@ func TestNewAtlasCommand_MigrateEditUsesAtlasProjectConfig(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

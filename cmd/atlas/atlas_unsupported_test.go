@@ -11,14 +11,14 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
-func TestNewAtlasCommand_UnsupportedCommunityCommands(t *testing.T) {
+func TestCompatCommand_UnsupportedCommunityCommands(t *testing.T) {
 	c := qt.New(t)
 
 	tests := unsupportedCommunityCommandTests()
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			cmd := atlas.NewAtlasCommand()
+			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -33,14 +33,14 @@ func TestNewAtlasCommand_UnsupportedCommunityCommands(t *testing.T) {
 	}
 }
 
-func TestNewAtlasCommand_UnsupportedCommunityCommandsHelp(t *testing.T) {
+func TestCompatCommand_UnsupportedCommunityCommandsHelp(t *testing.T) {
 	c := qt.New(t)
 
 	tests := unsupportedCommunityCommandTests()
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			cmd := atlas.NewAtlasCommand()
+			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)

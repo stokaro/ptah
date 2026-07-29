@@ -16,8 +16,8 @@ func NewDBCommand() *cobra.Command {
 		Short: "Work with live database schemas",
 		Long: `Work with live database schemas.
 
-This is Ptah's native live-database namespace. Atlas-compatible spellings stay
-under ptah atlas.`,
+This is Ptah's native live-database namespace. Atlas-compatible spellings live
+in the separate ptah-compat binary.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},

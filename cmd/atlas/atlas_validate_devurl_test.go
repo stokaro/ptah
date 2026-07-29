@@ -15,7 +15,7 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-func TestNewAtlasCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) {
+func TestCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
@@ -23,7 +23,7 @@ func TestNewAtlasCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T
 		"CREATE TABLE atlas_validate_dev_url (id INTEGER PRIMARY KEY);\n")
 
 	var out bytes.Buffer
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{

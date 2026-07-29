@@ -14,12 +14,12 @@ import (
 	"github.com/stokaro/ptah/internal/migratesum"
 )
 
-func TestNewAtlasCommand_MigrateNewEditOpensEditor(t *testing.T) {
+func TestCompatCommand_MigrateNewEditOpensEditor(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	installAppendEditor(t, "-- authored in editor")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -43,12 +43,12 @@ func TestNewAtlasCommand_MigrateNewEditOpensEditor(t *testing.T) {
 	c.Assert(res.OK(), qt.IsTrue)
 }
 
-func TestNewAtlasCommand_MigrateNewEditWithoutEditorFails(t *testing.T) {
+func TestCompatCommand_MigrateNewEditWithoutEditorFails(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -59,7 +59,7 @@ func TestNewAtlasCommand_MigrateNewEditWithoutEditorFails(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `no editor configured: set \$EDITOR or \$VISUAL, or pass --editor`)
 }
 
-func TestNewAtlasCommand_MigrateDiffEditOpensEditor(t *testing.T) {
+func TestCompatCommand_MigrateDiffEditOpensEditor(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -78,7 +78,7 @@ CREATE TABLE users (
 `), 0o600), qt.IsNil)
 	installAppendEditor(t, "-- reviewed in editor")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -108,10 +108,10 @@ CREATE TABLE users (
 	c.Assert(res.OK(), qt.IsTrue)
 }
 
-func TestNewAtlasCommand_MigrateDiffEditRejectsDryRun(t *testing.T) {
+func TestCompatCommand_MigrateDiffEditRejectsDryRun(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -128,7 +128,7 @@ func TestNewAtlasCommand_MigrateDiffEditRejectsDryRun(t *testing.T) {
 		`atlas migrate diff --edit cannot be combined with --dry-run: dry runs write no migration file to edit`)
 }
 
-func TestNewAtlasCommand_SchemaApplyEditAppliesEditedSQL(t *testing.T) {
+func TestCompatCommand_SchemaApplyEditAppliesEditedSQL(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
@@ -140,7 +140,7 @@ CREATE TABLE users (
 `), 0o600), qt.IsNil)
 	installAppendEditor(t, "CREATE TABLE audit_log (id INTEGER PRIMARY KEY);")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -165,7 +165,7 @@ CREATE TABLE users (
 	assertEditorFlagsSQLiteTableExists(c, dbPath, "audit_log")
 }
 
-func TestNewAtlasCommand_SchemaApplyEditWithoutEditorFails(t *testing.T) {
+func TestCompatCommand_SchemaApplyEditWithoutEditorFails(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")
@@ -173,7 +173,7 @@ func TestNewAtlasCommand_SchemaApplyEditWithoutEditorFails(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

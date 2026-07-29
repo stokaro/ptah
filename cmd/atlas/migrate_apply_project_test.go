@@ -84,7 +84,7 @@ func TestMigrateApplyExecutesGooseFormatFromURL(t *testing.T) {
 	writeAtlasApplyProjectMigration(c, "migrations", "1_create_widgets.sql", "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE widgets;\n")
 	dbPath := filepath.Join(root, "apply.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var output bytes.Buffer
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)
@@ -168,7 +168,7 @@ func writeAtlasApplyProjectConfigWithDir(c *qt.C, dbPath, dir, format, execOrder
 }
 
 func executeAtlasProjectCommand(args ...string) (string, error) {
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var output bytes.Buffer
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)

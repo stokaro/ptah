@@ -127,8 +127,8 @@ fast.
 
 ## Atlas-compatible surface
 
-`ptah atlas migrate checkpoint [name]` forwards to the native command for
-drop-in Atlas familiarity: `--dir` maps to the migrations directory, `--dev-url`
+The `ptah-compat` binary's `migrate checkpoint [name]` forwards to the native
+command for drop-in Atlas familiarity: `--dir` maps to the migrations directory, `--dev-url`
 to the shadow database, and the optional positional name to the checkpoint
 description. Checkpoint output is Ptah-format only today, so this verb operates
 on Ptah-format directories; Atlas-format checkpoint output is a tracked

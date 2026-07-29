@@ -1,15 +1,14 @@
 ---
 title: Apply directly
-description: Apply desired-schema changes straight to a database with the Atlas-compatible schema apply, saved plan files, and hybrid patterns.
+description: Apply desired-schema changes straight to a database with ptah schema apply, saved plan files, and hybrid patterns.
 ---
 
-Direct application ships natively as `ptah schema apply` and on the
-Atlas-compatible surface as `ptah atlas schema apply` (the `ptah-compat`
-drop-in exposes the latter to scripts that expect an Atlas-style executable).
-Both wrap the same engine: the plan, the approval prompt, the plan files, and
-the fingerprint checks behave identically. This page covers the workflow, the
-saved plan files that separate review from execution, and the hybrid patterns
-that combine a native drift gate with a direct apply.
+Direct application ships natively as `ptah schema apply`. The separate
+`ptah-compat` drop-in binary exposes the same engine to scripts that expect an
+Atlas-style executable (`ptah-compat schema apply`); the plan, the approval prompt,
+the plan files, and the fingerprint checks behave identically. This page
+covers the workflow, the saved plan files that separate review from execution,
+and the hybrid patterns that combine a native drift gate with a direct apply.
 
 Prerequisites:
 
@@ -41,25 +40,24 @@ ptah schema plan  --db-url "sqlite://$PWD/app.db" --schema-file schema.sql --out
 ptah schema apply --db-url "sqlite://$PWD/app.db" --plan change.plan.json
 ```
 
-`--to` additionally accepts a database URL whose live schema becomes the
-desired state, or an Atlas-format migration directory replayed on the required
-`--dev-url` dev database. When `--dev-url` is set, the exact ordered plan is
-rehearsed on the dev database before the target is touched, and a failed
-rehearsal refuses the apply. `--lock-timeout` bounds the session advisory
-lock that serializes concurrent applies, `--tx-mode` selects the transaction
-mode, `--edit` opens the planned SQL in `$VISUAL`/`$EDITOR`, and `--schemas`,
-`--include`, and `--exclude` scope both comparison sides. The remaining
-examples on this page use the Atlas-compatible spellings; every step has a
-native equivalent with the flags above.
+On the Atlas-compatible surface, `--to` additionally accepts a database URL
+whose live schema becomes the desired state, or an Atlas-format migration
+directory replayed on the required `--dev-url` dev database. When `--dev-url`
+is set, the exact ordered plan is rehearsed on the dev database before the
+target is touched, and a failed rehearsal refuses the apply. `--lock-timeout`
+bounds the session advisory lock that serializes concurrent applies,
+`--tx-mode` selects the transaction mode, `--edit` opens the planned SQL in
+`$VISUAL`/`$EDITOR`, and `--schemas`, `--include`, and `--exclude` scope both
+comparison sides.
 
 ## Preview the plan
 
 `--dry-run` prints the planned SQL and stops:
 
 ```bash
-ptah atlas schema apply \
-  --url "sqlite://$PWD/app.db" \
-  --to file://schema.sql \
+ptah schema apply \
+  --db-url "sqlite://$PWD/app.db" \
+  --schema-file schema.sql \
   --dry-run
 ```
 
@@ -76,9 +74,9 @@ Without `--dry-run`, the command shows the same plan and asks for confirmation
 before executing; anything other than `YES` cancels:
 
 ```bash
-ptah atlas schema apply \
-  --url "sqlite://$PWD/app.db" \
-  --to file://schema.sql
+ptah schema apply \
+  --db-url "sqlite://$PWD/app.db" \
+  --schema-file schema.sql
 ```
 
 Expected output includes:
@@ -104,14 +102,14 @@ edited SQL is what gets applied.
 ## Separate review from execution with a plan file
 
 Approving whatever the tool plans at execution time is the workflow's weakest
-point. `ptah atlas schema plan` computes the same plan and saves it as a local
-JSON file instead, so the SQL can be reviewed — or code-reviewed — before
-anything runs:
+point. `ptah schema plan` computes the same plan and saves it as a local JSON
+file instead, so the SQL can be reviewed — or code-reviewed — before anything
+runs:
 
 ```bash
-ptah atlas schema plan \
-  --from "sqlite://$PWD/app.db" \
-  --to file://schema.sql \
+ptah schema plan \
+  --db-url "sqlite://$PWD/app.db" \
+  --schema-file schema.sql \
   --output add-created-at.plan.json
 ```
 
@@ -144,14 +142,13 @@ SHA-256 fingerprints of the starting and desired schema states:
 }
 ```
 
-`ptah atlas schema apply --plan` executes exactly the reviewed statements,
-after verifying that the database still matches the plan's starting
-fingerprint:
+`ptah schema apply --plan` executes exactly the reviewed statements, after
+verifying that the database still matches the plan's starting fingerprint:
 
 ```bash
-ptah atlas schema apply \
-  --url "sqlite://$PWD/app.db" \
-  --plan file://add-created-at.plan.json \
+ptah schema apply \
+  --db-url "sqlite://$PWD/app.db" \
+  --plan add-created-at.plan.json \
   --auto-approve
 ```
 
@@ -169,9 +166,9 @@ Schema apply completed successfully.
 After an apply, rerunning the dry run confirms nothing is left to change:
 
 ```bash
-ptah atlas schema apply \
-  --url "sqlite://$PWD/app.db" \
-  --to file://schema.sql \
+ptah schema apply \
+  --db-url "sqlite://$PWD/app.db" \
+  --schema-file schema.sql \
   --dry-run
 ```
 
@@ -189,10 +186,10 @@ YAML, or HCL — `ptah schema drift` gives the same confirmation with
 
 - **Gate natively, apply on approval.** `ptah schema drift --severity
   destructive` in a pipeline blocks data-risking divergence, while routine
-  changes go through `ptah atlas schema apply` with a saved plan file as the
+  changes go through `ptah schema apply` with a saved plan file as the
   review artifact. [Compare and drift](../compare-and-drift/) covers the gate.
 - **Iterate directly, ship versioned.** Prototype against a disposable local
-  database with `ptah atlas schema apply`, then run `ptah migrations generate`
+  database with `ptah schema apply`, then run `ptah migrations generate`
   against a database at the released state, so the reviewed migration file —
   not the ad-hoc changes — is what reaches shared environments.
   [Generate migrations](../../versioned/generate/) covers that step.
@@ -215,11 +212,11 @@ YAML, or HCL — `ptah schema drift` gives the same confirmation with
 
 ## Limitations
 
-- `--to` accepts local `file://` schema files (HCL, YAML, or SQL); database
-  URLs and migration directories as the desired schema are explicit gaps, and
-  registry `atlas://` plan URLs are rejected.
-- The full flag surface, `--env` project-config support, and transaction modes
-  are documented in
+- `--schema-file` accepts local schema files (HCL, YAML, or SQL); database
+  URLs and migration directories as the desired schema are explicit gaps of
+  the native verb, and registry `atlas://` plan URLs are rejected.
+- The Atlas-compatible flag surface, `--env` project-config support, and
+  transaction modes are documented in
   [Atlas schema commands](../../atlas/schema-commands/#apply-a-desired-schema).
 
 ## Next steps

@@ -74,7 +74,7 @@ func TestMigrateApplyExecutesExternalFormatsUpOnly(t *testing.T) {
 			}
 			dbPath := filepath.Join(dir, "apply.db")
 
-			cmd := atlas.NewAtlasCommand()
+			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -101,7 +101,7 @@ func TestMigrateApplyFormatOutputRendersFromConvertedFilesystem(t *testing.T) {
 		"-- +goose Up\nCREATE TABLE up_ran (id INTEGER PRIMARY KEY);\n-- +goose Down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);")
 	dbPath := filepath.Join(dir, "apply.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -133,7 +133,7 @@ func TestMigrateApplyFlywayMajorMinorVersionsExecuteInOrder(t *testing.T) {
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V2__extend.sql", "ALTER TABLE widgets ADD COLUMN label TEXT;")
 	dbPath := filepath.Join(dir, "apply.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -160,7 +160,7 @@ func TestMigrateApplyDBMateTransactionDirectiveOptionUpOnly(t *testing.T) {
 		"-- migrate:up transaction:false\nCREATE TABLE up_ran (id INTEGER PRIMARY KEY);\n-- migrate:down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);")
 	dbPath := filepath.Join(dir, "apply.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -187,7 +187,7 @@ func TestMigrateApplyGooseStatementBlockExecutesUpOnly(t *testing.T) {
 		"-- +goose Up\n-- +goose StatementBegin\nCREATE TABLE up_ran (id INTEGER PRIMARY KEY);\nINSERT INTO up_ran (id) VALUES (1);\n-- +goose StatementEnd\n-- +goose Down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);")
 	dbPath := filepath.Join(dir, "apply.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -213,7 +213,7 @@ func TestMigrateApplyRejectsFlywayVersionCollisionBeforeOpeningDatabase(t *testi
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V1_5__b.sql", "CREATE TABLE b (id INTEGER PRIMARY KEY);")
 	dbPath := filepath.Join(dir, "collision.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -238,7 +238,7 @@ func TestMigrateApplyRejectsDuplicateConvertedVersionBeforeOpeningDatabase(t *te
 	writeAtlasApplyProjectMigration(c, migrationsDir, "01_init.sql", "-- +goose Up\nCREATE TABLE b (id INTEGER PRIMARY KEY);")
 	dbPath := filepath.Join(dir, "dup-version.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -281,7 +281,7 @@ func TestMigrateApplyRejectsMissingUpDirectiveBeforeOpeningDatabase(t *testing.T
 			writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", tt.content)
 			dbPath := filepath.Join(dir, "missing-directive.db")
 
-			cmd := atlas.NewAtlasCommand()
+			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -307,7 +307,7 @@ func TestMigrateApplyRejectsUnknownURLFormatBeforeOpeningDatabase(t *testing.T) 
 	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", "CREATE TABLE never_created (id INTEGER PRIMARY KEY);")
 	dbPath := filepath.Join(dir, "unknown-url-format.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -368,7 +368,7 @@ func TestMigrateApplyFlywayMidSequenceInsertionKeepsStableVersions(t *testing.T)
 }
 
 func runFlywayApply(migrationsDir, dbPath string) error {
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

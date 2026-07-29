@@ -32,7 +32,7 @@ func TestSchemaInspectLocalFileRequiresDevURL(t *testing.T) {
 	c := qt.New(t)
 	schemaPath := filepath.Join(t.TempDir(), "a.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE users (id int);\n"), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -51,7 +51,7 @@ func TestSchemaInspectLocalSQLFileWithDevURL(t *testing.T) {
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "a.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL\n);\n"), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -72,7 +72,7 @@ func TestSchemaInspectLocalSQLFileWithDevURL(t *testing.T) {
 func TestSchemaInspectMigrationDirWithDevURL(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := writeAtlasFormatMigrations(t, "CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -97,7 +97,7 @@ func TestSchemaInspectFileExportRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := seedSQLiteDB(t, inspectSourceFixtureDDL)
 
-	liveCmd := atlas.NewAtlasCommand()
+	liveCmd := atlas.NewCompatCommand("atlas")
 	var live bytes.Buffer
 	liveCmd.SetOut(&live)
 	liveCmd.SetErr(&live)
@@ -106,7 +106,7 @@ func TestSchemaInspectFileExportRoundTrip(t *testing.T) {
 	exported := filepath.Join(dir, "schema.hcl")
 	c.Assert(os.WriteFile(exported, live.Bytes(), 0o600), qt.IsNil)
 
-	reloadCmd := atlas.NewAtlasCommand()
+	reloadCmd := atlas.NewCompatCommand("atlas")
 	var reloaded bytes.Buffer
 	reloadCmd.SetOut(&reloaded)
 	reloadCmd.SetErr(&reloaded)
@@ -127,7 +127,7 @@ func TestSchemaInspectSplitTypeModeWritesGroupedFiles(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := seedSQLiteDB(t, inspectSourceFixtureDDL)
 	outDir := filepath.Join(dir, "schema")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

@@ -34,7 +34,7 @@ func writeAtlasLintFile(c *qt.C, dir, name, body string) {
 
 func runAtlasMigrateLint(c *qt.C, args ...string) (stdout, stderr string, err error) {
 	c.Helper()
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -43,7 +43,7 @@ func runAtlasMigrateLint(c *qt.C, args ...string) (stdout, stderr string, err er
 	return out.String(), errOut.String(), err
 }
 
-func TestNewAtlasCommand_MigrateLintDefaultTextClean(t *testing.T) {
+func TestCompatCommand_MigrateLintDefaultTextClean(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "clean.db")
@@ -65,7 +65,7 @@ func TestNewAtlasCommand_MigrateLintDefaultTextClean(t *testing.T) {
 			"  -- 1 schema change\n")
 }
 
-func TestNewAtlasCommand_MigrateLintDefaultTextDestructive(t *testing.T) {
+func TestCompatCommand_MigrateLintDefaultTextDestructive(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "destructive.db")
@@ -92,7 +92,7 @@ func TestNewAtlasCommand_MigrateLintDefaultTextDestructive(t *testing.T) {
 			"  -- 1 diagnostic\n")
 }
 
-func TestNewAtlasCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T) {
+func TestCompatCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "warning.db")
@@ -118,12 +118,12 @@ func TestNewAtlasCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T
 			"  -- 1 diagnostic\n")
 }
 
-// TestNewAtlasCommand_MigrateLintDefaultTextAddNotNullFixture reproduces the
+// TestCompatCommand_MigrateLintDefaultTextAddNotNullFixture reproduces the
 // upstream cli-migrate-lint-add-notnull txtar fixture byte-for-byte: version 1
 // adds a NOT NULL column to a table created in the same file (exempt), version 2
 // adds one to the now-pre-existing table (MF103) and one with a DEFAULT (no
 // report).
-func TestNewAtlasCommand_MigrateLintDefaultTextAddNotNullFixture(t *testing.T) {
+func TestCompatCommand_MigrateLintDefaultTextAddNotNullFixture(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "add-notnull.db")
@@ -153,7 +153,7 @@ func TestNewAtlasCommand_MigrateLintDefaultTextAddNotNullFixture(t *testing.T) {
 			"  -- 1 diagnostic\n")
 }
 
-func TestNewAtlasCommand_MigrateLintDefaultTextInlineSuppressed(t *testing.T) {
+func TestCompatCommand_MigrateLintDefaultTextInlineSuppressed(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "suppressed.db")
@@ -200,7 +200,7 @@ env "log_count" {
 }
 `
 
-func TestNewAtlasCommand_MigrateLintProjectGlobalLintLog(t *testing.T) {
+func TestCompatCommand_MigrateLintProjectGlobalLintLog(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")
@@ -215,7 +215,7 @@ func TestNewAtlasCommand_MigrateLintProjectGlobalLintLog(t *testing.T) {
 	c.Assert(stdout, qt.Equals, "3.sql\n")
 }
 
-func TestNewAtlasCommand_MigrateLintProjectEnvLintLog(t *testing.T) {
+func TestCompatCommand_MigrateLintProjectEnvLintLog(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")

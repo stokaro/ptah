@@ -196,13 +196,15 @@ Expected `db read` output now includes both `CREATE TABLE "posts"` and `CREATE T
 
 ## Try the Atlas-compatible path
 
-Atlas-compatible commands live under `ptah atlas <command> ...`.
+Atlas-compatible commands live in the separate `ptah-compat` drop-in binary:
 
 ```bash
-./bin/ptah atlas migrate hash \
+GOWORK=off go build -o ./bin/ptah-compat ./cmd/ptah-compat
+
+./bin/ptah-compat migrate hash \
   --dir /tmp/ptah-quickstart/migrations
 
-./bin/ptah atlas migrate validate \
+./bin/ptah-compat migrate validate \
   --dir /tmp/ptah-quickstart/migrations
 ```
 

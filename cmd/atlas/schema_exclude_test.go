@@ -25,7 +25,7 @@ CREATE TABLE diff_skip (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -59,7 +59,7 @@ CREATE TABLE apply_skip (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.SetOut(&out)

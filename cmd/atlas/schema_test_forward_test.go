@@ -39,13 +39,13 @@ type User struct {
 			"          scalar: ada\n"), 0o600), qt.IsNil)
 }
 
-func TestNewAtlasCommand_SchemaTestForwardsToNative(t *testing.T) {
+func TestCompatCommand_SchemaTestForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	modelsDir, testsDir := t.TempDir(), t.TempDir()
 	writeSchemaTestFixture(c, modelsDir, testsDir)
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -65,7 +65,7 @@ func TestNewAtlasCommand_SchemaTestForwardsToNative(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "1 cases, 1 passed, 0 failed")
 }
 
-func TestNewAtlasCommand_SchemaTestFailingCaseExits1(t *testing.T) {
+func TestCompatCommand_SchemaTestFailingCaseExits1(t *testing.T) {
 	c := qt.New(t)
 	modelsDir, testsDir := t.TempDir(), t.TempDir()
 	writeSchemaTestFixture(c, modelsDir, testsDir)
@@ -77,7 +77,7 @@ func TestNewAtlasCommand_SchemaTestFailingCaseExits1(t *testing.T) {
 			"          query: SELECT COUNT(*) FROM users\n"+
 			"          scalar: \"42\"\n"), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -90,12 +90,12 @@ func TestNewAtlasCommand_SchemaTestFailingCaseExits1(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, `FAIL  case "failing expectation"`)
 }
 
-func TestNewAtlasCommand_SchemaTestRunFilterSelectsCases(t *testing.T) {
+func TestCompatCommand_SchemaTestRunFilterSelectsCases(t *testing.T) {
 	c := qt.New(t)
 	modelsDir, testsDir := t.TempDir(), t.TempDir()
 	writeSchemaTestFixture(c, modelsDir, testsDir)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -112,10 +112,10 @@ func TestNewAtlasCommand_SchemaTestRunFilterSelectsCases(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `no test cases match --run "\^does-not-match\$"`)
 }
 
-func TestNewAtlasCommand_SchemaTestRejectsRemoteSchemaURL(t *testing.T) {
+func TestCompatCommand_SchemaTestRejectsRemoteSchemaURL(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -126,7 +126,7 @@ func TestNewAtlasCommand_SchemaTestRejectsRemoteSchemaURL(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `atlas schema test --url: only local file:// migration directories are supported`)
 }
 
-func TestNewAtlasCommand_SchemaTestUsesAtlasProjectConfig(t *testing.T) {
+func TestCompatCommand_SchemaTestUsesAtlasProjectConfig(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -140,7 +140,7 @@ func TestNewAtlasCommand_SchemaTestUsesAtlasProjectConfig(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -155,7 +155,7 @@ func TestNewAtlasCommand_SchemaTestUsesAtlasProjectConfig(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, `PASS  case "users schema works"`)
 }
 
-func TestNewAtlasCommand_SchemaTestRejectsMultipleProjectSchemaSources(t *testing.T) {
+func TestCompatCommand_SchemaTestRejectsMultipleProjectSchemaSources(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -164,7 +164,7 @@ func TestNewAtlasCommand_SchemaTestRejectsMultipleProjectSchemaSources(t *testin
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

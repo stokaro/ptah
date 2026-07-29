@@ -23,7 +23,7 @@ func planFileFixture(c *qt.C, dir, dbPath, desiredSQL string) string {
 	schemaPath := filepath.Join(dir, "desired.sql")
 	planPath := filepath.Join(dir, "fixture.plan.json")
 	c.Assert(os.WriteFile(schemaPath, []byte(desiredSQL), 0o600), qt.IsNil)
-	out, err := runSchemaPlan(atlas.NewAtlasCommand(),
+	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		"--from", "sqlite://"+dbPath,
 		"--to", "file://"+schemaPath,
 		"--output", planPath,
@@ -58,7 +58,7 @@ func TestSchemaApplyPlanFileExecutesPlannedSQL(t *testing.T) {
 	planPath := planFileFixture(c, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE planned_orders (id INTEGER PRIMARY KEY);\n")
 
-	out, err := runSchemaApplyPlan(atlas.NewAtlasCommand(), "", dbPath, planPath, "--auto-approve")
+	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
 
 	// The pre-approved plan executes exactly the planned SQL instead of
 	// re-planning, and the target ends up with the planned schema.
@@ -80,7 +80,7 @@ func TestSchemaApplyPlanFileRefusesStaleTarget(t *testing.T) {
 	// The database drifts after the plan was computed.
 	seedSQLiteSchema(c, dbPath, `CREATE TABLE drifted (id INTEGER PRIMARY KEY);`)
 
-	out, err := runSchemaApplyPlan(atlas.NewAtlasCommand(), "", dbPath, planPath, "--auto-approve")
+	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
 
 	// Refusing a drifted target is the entire value of a pre-approved plan:
 	// nothing is executed and the failure names both fingerprints. The atlas
@@ -100,7 +100,7 @@ func TestSchemaApplyPlanFileDryRunDoesNotApply(t *testing.T) {
 	planPath := planFileFixture(c, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE dry_orders (id INTEGER PRIMARY KEY);\n")
 
-	out, err := runSchemaApplyPlan(atlas.NewAtlasCommand(), "", dbPath, planPath, "--dry-run")
+	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--dry-run")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, `CREATE TABLE "dry_orders"`)
@@ -116,7 +116,7 @@ func TestSchemaApplyPlanFileDeclinedConfirmationDoesNotApply(t *testing.T) {
 	planPath := planFileFixture(c, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE declined_orders (id INTEGER PRIMARY KEY);\n")
 
-	out, err := runSchemaApplyPlan(atlas.NewAtlasCommand(), "NO\n", dbPath, planPath)
+	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "NO\n", dbPath, planPath)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Apply these schema changes? Type 'YES' to confirm:")
@@ -132,7 +132,7 @@ func TestSchemaApplyPlanFileConfirmedApplies(t *testing.T) {
 	planPath := planFileFixture(c, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE confirmed_orders (id INTEGER PRIMARY KEY);\n")
 
-	out, err := runSchemaApplyPlan(atlas.NewAtlasCommand(), "YES\n", dbPath, planPath)
+	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "YES\n", dbPath, planPath)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
@@ -147,7 +147,7 @@ func TestSchemaApplyPlanFileSupportsFormat(t *testing.T) {
 	planPath := planFileFixture(c, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE format_orders (id INTEGER PRIMARY KEY);\n")
 
-	out, err := runSchemaApplyPlan(atlas.NewAtlasCommand(), "", dbPath, planPath,
+	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
 		"--auto-approve", "--format", `{{ len .Changes }}`)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
@@ -205,7 +205,7 @@ func TestSchemaApplyPlanFileRejectsCombinedPlanningFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			cmd := atlas.NewAtlasCommand()
+			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
@@ -233,7 +233,7 @@ func TestSchemaApplyPlanFileRejectsWrongDialect(t *testing.T) {
 		document["dialect"] = "postgres"
 	})
 
-	_, err := runSchemaApplyPlan(atlas.NewAtlasCommand(), "", dbPath, planPath, "--auto-approve")
+	_, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
 
 	c.Assert(err, qt.ErrorMatches, `plan file targets dialect "postgres", but the --url database dialect is "sqlite"`)
 	c.Assert(sqliteTableCount(c, dbPath, "dialect_orders"), qt.Equals, 0)
@@ -278,7 +278,7 @@ func TestSchemaApplyPlanFileRejectsMalformedDocuments(t *testing.T) {
 				"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE malformed_orders (id INTEGER PRIMARY KEY);\n")
 			rewritePlanDocument(c, planPath, tt.rewrite)
 
-			_, err := runSchemaApplyPlan(atlas.NewAtlasCommand(), "", dbPath, planPath, "--auto-approve")
+			_, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
 		})

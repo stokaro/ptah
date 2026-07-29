@@ -6,6 +6,9 @@ description: Supported `atlas.hcl` project configuration subset.
 Ptah can read a strict subset of Atlas project configuration from `atlas.hcl`
 and translate it into Ptah's project config IR. This is command configuration,
 not schema HCL input. For schema HCL, see [HCL schema](../../reference/hcl-schema/).
+`ptah-compat <command> ...` invocations on this page run the separate
+`ptah-compat` drop-in binary; see the
+[Atlas compatibility overview](../overview/).
 
 ## Supported blocks
 
@@ -128,7 +131,7 @@ selection last, exactly like CLI `--exclude`. See
 [Scope the comparison with `--schema` and `--include`](../schema-commands/#scope-the-comparison-with---schema-and---include).
 
 Ptah accepts Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
-and `dbmate` values while evaluating `atlas.hcl`, and `ptah atlas migrate apply`
+and `dbmate` values while evaluating `atlas.hcl`, and `ptah-compat migrate apply`
 executes all of them. The native `atlas` format is read from disk unchanged
 (preserving `atlas.sum` verification and down migrations); every other format is
 converted in memory to Atlas single-file, up-only migrations, so apply runs only
@@ -141,11 +144,11 @@ matching Atlas's URL precedence. An empty query value selects the native
 
 ```bash
 # Apply a Goose directory directly.
-ptah atlas migrate apply --env local \
+ptah-compat migrate apply --env local \
   --dir "file://migrations?format=goose"
 ```
 
-Apply and `ptah atlas migrate import` share one format-loading implementation,
+Apply and `ptah-compat migrate import` share one format-loading implementation,
 so they agree on every format's up/down semantics. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
@@ -178,13 +181,13 @@ URI validation.
 
 ## Environment selection
 
-Use Atlas project flags on commands under `ptah atlas schema ...` and
-`ptah atlas migrate ...`:
+Use Atlas project flags on commands under `ptah-compat schema ...` and
+`ptah-compat migrate ...`:
 
 ```bash
-ptah atlas schema inspect --config project.hcl --env local
-ptah atlas migrate apply -c project.hcl --env local
-ptah atlas migrate hash --env local --var dir=migrations
+ptah-compat schema inspect --config project.hcl --env local
+ptah-compat migrate apply -c project.hcl --env local
+ptah-compat migrate hash --env local --var dir=migrations
 ```
 
 `--config` and `-c` select a local project config path. `file://` config URLs

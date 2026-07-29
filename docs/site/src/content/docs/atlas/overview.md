@@ -1,37 +1,52 @@
 ---
 title: Atlas compatibility overview
-description: How the ptah atlas command surface and the ptah-compat binary relate to native Ptah, and how Atlas-style flags translate.
+description: How the ptah-compat drop-in binary replaces the Atlas CLI, and how Atlas-style flags translate to native Ptah concepts.
 ---
 
 You run scripts, CI jobs, or habits built around the Atlas CLI and want to know
-how Ptah fits them. This page explains the two Atlas-compatible surfaces, how
-Atlas-style flags translate to Ptah concepts, and where the compatibility
-boundary is — before you pick up the per-command usage pages.
+how Ptah fits them. Ptah ships a separate drop-in binary, `ptah-compat`, that
+presents the Atlas-compatible command surface. This page explains how to
+install it, how Atlas-style flags translate to Ptah concepts, and where the
+compatibility boundary is — before you pick up the per-command usage pages.
 
-## Command surfaces
+## The drop-in binary
 
-Atlas-compatible command paths live under `ptah atlas <command> ...` inside the
-native Ptah CLI tree.
-
-The separate `ptah-compat` binary is a binary-level drop-in replacement for
-scripts that need Atlas-style root commands, including scripts that call an
-executable named `atlas`:
+The main `ptah` binary is a purely native CLI — it has no Atlas-style command
+paths. The separate `ptah-compat` binary is a binary-level drop-in replacement
+for the Atlas CLI, built for scripts that need Atlas-style root commands:
 
 ```bash
-install_dir="$(go env GOPATH)/bin"
-ln -sf "$(command -v ptah-compat)" "$install_dir/atlas"
-atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
+go install github.com/stokaro/ptah/cmd/ptah-compat@latest
+
+ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
 ```
 
-Ptah does not add root-level Atlas spellings such as `ptah migrate apply` or
-`ptah schema inspect` to the native `ptah` binary. Those paths are intentionally
-invalid because the native Ptah command tree is being designed separately before
-GA. When converting scripts, keep the `atlas` namespace in the Ptah command:
+Command examples on the Atlas compatibility pages are written as
+`ptah-compat <command> ...` — the name the binary ships under.
 
-| Do | Do not |
-| --- | --- |
-| `ptah atlas migrate apply --url "$DATABASE_URL" --dir ./migrations` | `ptah migrate apply --url "$DATABASE_URL" --dir ./migrations` |
-| `ptah atlas schema inspect --url "$DATABASE_URL"` | `ptah schema inspect --url "$DATABASE_URL"` |
+Every Atlas-compatible command has a native `ptah` twin — for example
+`ptah-compat migrate apply` and `ptah migrations up`, or `ptah-compat schema inspect` and
+`ptah schema inspect --db-url ...`. Use the native tree for new Ptah-authored
+work and the compat binary for existing Atlas scripts; the per-verb mapping is
+listed in the [Atlas-compatible commands reference](../../reference/atlas-commands/).
+
+### Installing under the name `atlas`
+
+For a byte-level drop-in with existing scripts that call an executable named
+`atlas`, install the binary under that name:
+
+```bash
+# Build it under the name your scripts expect:
+go build -o atlas ./cmd/ptah-compat
+
+# Or install it and link the atlas name:
+go install github.com/stokaro/ptah/cmd/ptah-compat@latest
+install_dir="$(go env GOPATH)/bin"
+ln -sf "$install_dir/ptah-compat" "$install_dir/atlas"
+```
+
+The binary adopts the name it is invoked as, so usage, help, and error output
+read `atlas migrate apply ...` when the executable is named `atlas`.
 
 ## Translation model
 
@@ -43,7 +58,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 | --- | --- |
 | `--url` | `--db-url` |
 | `--dir` | `--migrations-dir` |
-| `atlas.hcl` env | Project config IR for supported `ptah atlas ... --env` defaults |
+| `atlas.hcl` env | Project config IR for supported `ptah-compat ... --env` defaults |
 | `--config`, `-c` | Local Atlas project config path for `schema` and `migrate` commands |
 | `--var name=value` | Atlas HCL variable override for supported local expressions |
 | Atlas revision table mode | Ptah revision format and table settings |
@@ -52,8 +67,8 @@ Atlas project flags are persistent on the Atlas-compatible `schema` and
 `migrate` command groups, so both of these forms are valid:
 
 ```bash
-ptah atlas migrate --config project.hcl --env local hash
-ptah atlas migrate hash --config project.hcl --env local
+ptah-compat migrate --config project.hcl --env local hash
+ptah-compat migrate hash --config project.hcl --env local
 ```
 
 The supported `atlas.hcl` subset those flags read is documented in
@@ -63,25 +78,25 @@ Atlas OSS shorthand aliases are part of the compatibility surface. Ptah accepts
 `-u` for `--url`, `-c` for `--config`, `-s` for `--schema` on Atlas commands
 that register schema selection, and `-f` for `schema diff --from`. `schema apply`
 also accepts Atlas's hidden `--file/-f` input alias for local HCL or SQL paths;
-prefer `--to` in new Ptah-authored scripts.
+prefer the native `ptah schema apply` verb in new Ptah-authored scripts.
 
 ## Utility commands
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas version` | Prints Ptah build information. |
-| `ptah atlas license` | Prints Ptah MIT license and license-clean Atlas compatibility notice. |
-| `ptah atlas completion <shell>` | Generates Cobra completion output for the full `ptah` command tree, including the Atlas-compatible namespace. |
+| `ptah-compat version` | Prints Ptah build information. |
+| `ptah-compat license` | Prints Ptah MIT license and license-clean Atlas compatibility notice. |
+| `ptah-compat completion <shell>` | Generates Cobra completion output for the Atlas-compatible command tree. |
 
 ## Format reports and redaction
 
-Atlas-compatible `--format` reports use the same data shape for `ptah atlas`
-and `ptah-compat`. URL fields render as redacted URL strings in Go templates
-such as `{{ .Env.URL }}`, but `{{ json . }}` emits an Atlas-like URL object
-with `Scheme`, `User`, `Host`, `Path`, `RawQuery`, `Fragment`, `RawPath`,
-`RawFragment`, `ForceQuery`, `OmitHost`, and, for SQLite URLs, `Schema`. Query
-keys that look like passwords, tokens, secrets, or API keys are replaced with
-`xxxxx`; URL userinfo passwords are removed.
+Atlas-compatible `--format` reports use the Atlas data shape. URL fields render
+as redacted URL strings in Go templates such as `{{ .Env.URL }}`, but
+`{{ json . }}` emits an Atlas-like URL object with `Scheme`, `User`, `Host`,
+`Path`, `RawQuery`, `Fragment`, `RawPath`, `RawFragment`, `ForceQuery`,
+`OmitHost`, and, for SQLite URLs, `Schema`. Query keys that look like
+passwords, tokens, secrets, or API keys are replaced with `xxxxx`; URL userinfo
+passwords are removed.
 
 The per-command template fields are listed on
 [Atlas migrate commands](../migrate-commands/#format-template-fields) and
