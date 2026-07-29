@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/atlas"
 	"github.com/stokaro/ptah/cmd/db"
 	"github.com/stokaro/ptah/cmd/internal/buildinfo"
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
@@ -47,7 +46,6 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(seed.NewSeedCommand())
 	cmd.AddCommand(sqlcmd.NewSQLCommand())
 	cmd.AddCommand(viz.NewCommand())
-	cmd.AddCommand(atlas.NewAtlasCommand())
 	cmd.AddCommand(version.NewVersionCommand())
 	cmd.AddCommand(license.NewLicenseCommand())
 
@@ -92,5 +90,5 @@ const rootLongDescription = `Ptah generates database schemas from Go entities,
 compares desired schemas with live databases, and manages database migrations.
 
 It supports PostgreSQL-family targets, MySQL, MariaDB, SQLite, ClickHouse, and
-Spanner-oriented schema workflows, with Atlas-compatible commands grouped
-under ptah atlas.`
+Spanner-oriented schema workflows. Scripts that expect the Atlas CLI can use
+the separate ptah-compat binary, a drop-in Atlas replacement.`

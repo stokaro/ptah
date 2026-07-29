@@ -16,7 +16,7 @@ func TestMigrateHashRejectsExplicitEmptyDirectoryWithoutWritingSum(t *testing.T)
 	c := qt.New(t)
 	root := t.TempDir()
 	t.Chdir(root)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var output bytes.Buffer
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)

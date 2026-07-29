@@ -97,9 +97,9 @@ justifies it.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `direct/inspect.md` (631) | any user with a live database | How do I see the schema a live database actually has? | howto | this page; `ptah db read`, `ptah introspect`, and `ptah atlas schema inspect` runs against the built binary | `start/adopt-an-existing-database` (introspect flow, canonical there), `workflows/atlas-cli` (inspect template surface, canonical there) | created (section 10 target, per D5); keep |
+| `direct/inspect.md` (631) | any user with a live database | How do I see the schema a live database actually has? | howto | this page; `ptah db read`, `ptah introspect`, and `ptah schema inspect` runs against the built binary | `start/adopt-an-existing-database` (introspect flow, canonical there), `workflows/atlas-cli` (inspect template surface, canonical there) | created (section 10 target, per D5); keep; #850 pass: leads with the native `ptah schema inspect`, compat spelling mentioned secondarily |
 | `direct/compare-and-drift.md` (739) | direct-workflow user, CI operator | How does a live database differ from the desired schema, and how do I gate on that? | howto | this page; `ptah schema compare`, `ptah schema drift` (severity, formats, exit codes), and `ptah migrations plan` runs against the built binary | `start/choose-a-workflow` (workflow decision), `versioned/generate` (plan-to-files path), `reference/commands` rows | created (section 10 target, per D5); keep |
-| `direct/apply.md` (865) | direct-workflow user | How do I apply desired-schema changes straight to a database? | howto | this page; `ptah atlas schema apply` (dry-run, prompt, auto-approve), `ptah atlas schema plan` plan files, and the stale-plan refusal run against the built binary | `workflows/atlas-cli` (full `schema apply`/`schema plan` flag surface, canonical there), `start/choose-a-workflow` (hybrid pattern) | created (section 10 target, per D5: states that native Ptah has no direct apply verb and that direct application ships on the Atlas-compatible surface); keep |
+| `direct/apply.md` (865) | direct-workflow user | How do I apply desired-schema changes straight to a database? | howto | this page; `ptah schema apply` (dry-run, prompt, auto-approve), `ptah schema plan` plan files, and the stale-plan refusal run against the built binary | `workflows/atlas-cli` (full `schema apply`/`schema plan` flag surface, canonical there), `start/choose-a-workflow` (hybrid pattern) | created (section 10 target, per D5); keep; #850 pass: rewritten to lead with the native `ptah schema apply`/`ptah schema plan` verbs, compat spellings mentioned secondarily |
 
 ### `Versioned migrations` group (added by the restructuring)
 
@@ -282,8 +282,8 @@ Verified with repository-wide searches at the audited commit.
 | Term | Current usage (measured) | Canonical decision |
 | --- | --- | --- |
 | native commands | consistent: "native" used for the `ptah <verb>` tree | keep; never described with Atlas spellings; root-level Atlas aliases are documented as intentionally absent |
-| `ptah atlas ...` | consistent prefix across all pages | keep; always spelled with the `ptah atlas` prefix |
-| `ptah-compat` | mentioned in prose on 10 site pages; never a table column | keep: a binary-level drop-in described in prose, never a third command surface |
+| Atlas-compatible commands | `atlas <command> ...` invocations across the atlas group and references | #850 pass: the `ptah atlas` namespace was removed from the main binary; Atlas-compatible invocations are spelled `atlas <command> ...` via the `ptah-compat` binary, with the installed-as-`atlas` assumption stated once per page |
+| `ptah-compat` | the only Atlas-compatible command surface | #850 pass: promoted from prose-only mention to the documented host of the Atlas-compatible tree (including the `atlas/comparison` command-parity column) |
 | desired schema vs desired state | "desired schema" appears 60 times across 18 pages; "desired state" 3 times (`workflows/migrations.md` twice, `workflows/schema-files.md` once) | standardize on **desired schema**; retire "desired state" outside the composite-source discussion (done: the final pass also replaced the hyphenated "desired-state" uses in Atlas status prose) |
 | schema source | used informally | canonicalize: Go annotations, YAML, HCL, SQL file, external loader, or live database used as input |
 | dev database / shadow database / throwaway database | all three exist and are real, distinct flags: `--dev-url` (replay validation on `migrations validate`, `migrations lint`, Atlas-compatible verbs), `--shadow-db` (`migrations generate`, `checkpoint`, `baseline` verification replay), throwaway databases in `migrations test` / `schema test` | keep all three as distinct terms; define each once in `concepts/database-urls-and-dev-databases` and link instead of re-defining (done: page exists and first uses link to it) |
@@ -335,7 +335,7 @@ these are merely misplaced content.
    `reference/native-commands`. Done: rows added (plus `ptah completion`),
    every row verified against the built binary's `--help`.
 2. **Two stale Atlas rows.** `reference/commands.md` still lists
-   `ptah atlas migrate test` and `ptah atlas schema test` among "Registered
+   the Atlas-compatible `migrate test` and `schema test` among "Registered
    Atlas CE boundary stubs"; both were flipped to working forwards of the
    native test runners at the audited commit itself (`f5c59b5`, #805, which
    updated `workflows/atlas-cli.md`, `workflows/testing.md`, exit codes, and
@@ -549,8 +549,8 @@ Rejected or adapted:
 The design proposal attached to #804 was drafted against `master` at
 `3fdc3c8`. This audit re-verified it at `f5c59b5` and corrects the record:
 
-- **#805 landed in between.** `ptah atlas migrate test` and
-  `ptah atlas schema test` are now working forwards to the native test
+- **#805 landed in between.** The Atlas-compatible `migrate test` and
+  `schema test` are now working forwards to the native test
   runners, not CE boundary stubs. `workflows/atlas-cli.md` grew from 3,942 to
   4,137 words; `reference/commands.md` was not updated and is now stale on
   those two rows (section 9, item 2).

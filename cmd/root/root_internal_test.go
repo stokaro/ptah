@@ -172,44 +172,28 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 	}
 }
 
-func TestZZZAtlasUsageErrorsExit1WithoutUsage(t *testing.T) {
-	tests := []struct {
-		name       string
-		args       []string
-		wantStderr string
-	}{
-		{
-			name:       "unknown flag",
-			args:       []string{"atlas", "version", "--bogus-flag"},
-			wantStderr: "error: unknown flag: --bogus-flag\n",
-		},
-		{
-			name: "mutually exclusive flags",
-			args: []string{
-				"atlas", "schema", "apply",
-				"--url", "sqlite://schema.db",
-				"--to", "file://schema.sql",
-				"--file", "schema.sql",
-				"--dry-run",
-			},
-			wantStderr: "error: if any flags in the group [file to] are set none of the others can be; [file to] were all set\n",
-		},
-		{
-			name:       "lazy completion command",
-			args:       []string{"atlas", "completion", "bash", "extra"},
-			wantStderr: "Error: unknown command \"extra\" for \"atlas completion bash\"\n",
-		},
+// TestZZZAtlasNamespaceNotRegistered pins the removal of the ptah atlas
+// command tree (#850): Atlas-compatible spellings live only in the separate
+// ptah-compat binary, so any atlas invocation is a plain unknown command with
+// the native exit-code contract.
+func TestZZZAtlasNamespaceNotRegistered(t *testing.T) {
+	tests := [][]string{
+		{"atlas"},
+		{"atlas", "version"},
+		{"atlas", "migrate", "apply"},
+		{"atlas", "schema", "inspect"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			c := qt.New(t)
 
-			_, stderr, err := executeRoot(tt.args...)
+			_, stderr, err := executeRoot(args...)
 
 			c.Assert(err, qt.IsNotNil)
-			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-			c.Assert(stderr, qt.Equals, tt.wantStderr)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stderr, qt.Contains, `unknown command "atlas" for "ptah"`)
+			c.Assert(stderr, qt.Not(qt.Contains), "Usage:")
 		})
 	}
 }

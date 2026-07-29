@@ -41,14 +41,14 @@ migration commands (`ptah migrations plan` / `ptah migrations generate`).
 
 ## Diff two SQL files locally
 
-The Atlas-compatible command surface compares local SQL files directly. With
-`old.sql` describing the deployed shape and `schema.sql` adding a `pets`
-table, a dev database replays both sides:
+`ptah schema diff` compares local SQL files directly. With `old.sql`
+describing the deployed shape and `schema.sql` adding a `pets` table, a dev
+database replays both sides:
 
 ```bash
-ptah atlas schema diff \
-  --from file://old.sql \
-  --to file://schema.sql \
+ptah schema diff \
+  --from old.sql \
+  --to schema.sql \
   --dev-url "sqlite://dev?mode=memory"
 ```
 

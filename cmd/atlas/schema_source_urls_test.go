@@ -56,7 +56,7 @@ func TestSchemaApplyDatabaseURLSource(t *testing.T) {
 	c := qt.New(t)
 	sourcePath := seedSQLiteDB(t, "CREATE TABLE mirrored_users (id INTEGER PRIMARY KEY)")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -79,7 +79,7 @@ func TestSchemaApplyMigrationDirSource(t *testing.T) {
 	migrationsDir := writeAtlasFormatMigrations(t, "CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -101,7 +101,7 @@ func TestSchemaApplyMigrationDirSourceRequiresDevURLBeforeTarget(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := writeAtlasFormatMigrations(t, "CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -125,7 +125,7 @@ func TestSchemaApplyMigrationDirSourceRequiresDevURLBeforeTarget(t *testing.T) {
 func TestSchemaApplyUnsupportedSchemeFailsBeforeTarget(t *testing.T) {
 	c := qt.New(t)
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -149,7 +149,7 @@ func TestSchemaApplyMixedSourceKindsFailBeforeTarget(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(""), 0o600), qt.IsNil)
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -182,7 +182,7 @@ CREATE TABLE audit_logs (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -208,7 +208,7 @@ func TestSchemaDiffMigrationDirFromSource(t *testing.T) {
 	to := filepath.Join(dir, "to.sql")
 	c.Assert(os.WriteFile(to, []byte(""), 0o600), qt.IsNil)
 	devPath := filepath.Join(t.TempDir(), "dev.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -242,7 +242,7 @@ CREATE TABLE env_users (
 `), 0o600), qt.IsNil)
 	from := filepath.Join(t.TempDir(), "from.sql")
 	c.Assert(os.WriteFile(from, []byte(""), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -275,7 +275,7 @@ CREATE TABLE env_users (
 );
 `), 0o600), qt.IsNil)
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -298,7 +298,7 @@ func TestSchemaDiffEnvSrcWithoutConfigFails(t *testing.T) {
 	c := qt.New(t)
 	from := filepath.Join(t.TempDir(), "from.sql")
 	c.Assert(os.WriteFile(from, []byte(""), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

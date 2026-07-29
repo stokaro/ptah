@@ -58,12 +58,12 @@ file layout, version ordering, integrity files, checkpoint markers, and the
 native and Atlas directory formats — is on
 [The migration directory](../../concepts/migration-directory/).
 
-Atlas-compatible command paths for the same lifecycle live under
-`ptah atlas migrate ...`:
+Atlas-compatible command paths for the same lifecycle live in the separate
+`ptah-compat` drop-in binary (installed here under the name `atlas`):
 
 ```bash
-ptah atlas migrate hash --dir ./migrations
-ptah atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
+atlas migrate hash --dir ./migrations
+atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
 ```
 
 ## Next steps

@@ -9,8 +9,8 @@ tests:
 Both commands use the exported `migration/dbtest` engine, require no account or
 cloud service, and support text, JSON, and HTML reports. Atlas keeps the
 corresponding testing framework outside its open-source core. On the
-Atlas-compatible surface, `ptah atlas migrate test` and `ptah atlas schema
-test` (and the same verbs under the `ptah-compat` binary) forward to these
+Atlas-compatible surface, the `ptah-compat` binary's `migrate test` and
+`schema test` verbs forward to these
 native runners: `--dir` / `-u --url` select the migration directory or desired
 schema, `--dev-url` the throwaway database, and `--run` the case filter, with
 Ptah-native YAML test files as the executable payload.

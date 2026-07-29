@@ -4,10 +4,10 @@ description: Complete verb table for the native ptah command tree.
 ---
 
 This page lists every native `ptah` verb with its purpose. Native commands use
-Ptah-owned spellings; root-level Atlas aliases are intentionally absent from
-the `ptah` binary. The Atlas-compatible surface under `ptah atlas <command> ...`
-has its own page: [Atlas-compatible commands](../atlas-commands/). Use
-`ptah <command> --help` for the exact flag set in an installed binary.
+Ptah-owned spellings; Atlas aliases are intentionally absent from the `ptah`
+binary. The Atlas-compatible surface — the separate `ptah-compat` drop-in
+binary — has its own page: [Atlas-compatible commands](../atlas-commands/).
+Use `ptah <command> --help` for the exact flag set in an installed binary.
 
 ## Desired schema: `ptah schema`
 
@@ -76,7 +76,7 @@ has its own page: [Atlas-compatible commands](../atlas-commands/). Use
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah version` | Print Ptah build information. |
 | `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
-| `ptah completion <shell>` | Generate shell completion output for the full `ptah` command tree, including the Atlas-compatible namespace. |
+| `ptah completion <shell>` | Generate shell completion output for the native `ptah` command tree. |
 
 ## OCI transport behavior
 
@@ -97,10 +97,10 @@ credentials and HTTPS are the defaults; `--plain-http` is only for an
 explicitly trusted local registry. The command lists metadata, not attachment
 payload contents.
 
-This does not implement the Atlas Cloud command paths. `ptah atlas migrate
-push` and `ptah atlas schema push` remain Atlas community-edition boundary
-stubs, and Atlas-compatible apply commands do not expose the native OCI
-transport flags.
+This does not implement the Atlas Cloud command paths. The Atlas-compatible
+`migrate push` and `schema push` remain Atlas community-edition boundary
+stubs in the `ptah-compat` binary, and Atlas-compatible apply commands do not
+expose the native OCI transport flags.
 
 ## External desired-schema inputs
 

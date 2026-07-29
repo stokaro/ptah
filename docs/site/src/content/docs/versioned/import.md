@@ -99,7 +99,7 @@ assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`,
 | dbmate | Annotated single files (`-- migrate:up` / `-- migrate:down`); directive options such as `transaction:false` are dropped from the SQL. |
 
 This is native Ptah-format import, distinct from the Atlas-compatible
-`ptah atlas migrate import`, which writes an Atlas-format directory with
+`migrate import` verb of the `ptah-compat` binary, which writes an Atlas-format directory with
 `atlas.sum`.
 
 ## After the import

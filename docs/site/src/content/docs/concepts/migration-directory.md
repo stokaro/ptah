@@ -52,8 +52,8 @@ ptah migrations validate --dir ./migrations --dir-format atlas
 
 Atlas-format directories use `atlas.sum` as their integrity file and can be
 tracked with Atlas revision-table metadata (`--revision-format atlas`). The
-Atlas-compatible command surface operates on the same directories through
-`ptah atlas migrate ...` — see the
+Atlas-compatible command surface — the `ptah-compat` drop-in binary — operates
+on the same directories through its `migrate ...` commands; see the
 [Atlas compatibility overview](../../atlas/overview/).
 
 ## Consequences

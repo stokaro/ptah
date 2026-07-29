@@ -23,7 +23,7 @@ func TestSchemaApplyLockTimeoutSQLiteIsExplicitNoOp(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE lock_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -52,7 +52,7 @@ func TestSchemaApplyWithoutLockTimeoutPrintsNoLockNote(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE quiet_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -79,7 +79,7 @@ func TestSchemaApplyPlanFileAcceptsLockTimeout(t *testing.T) {
 	planPath := planFileFixture(c, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE locked_orders (id INTEGER PRIMARY KEY);\n")
 
-	out, err := runSchemaApplyPlan(atlas.NewAtlasCommand(), "", dbPath, planPath,
+	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
 		"--auto-approve", "--lock-timeout", "10s")
 
 	// The pre-approved plan path serializes its fingerprint verification and
@@ -105,7 +105,7 @@ CREATE TABLE sim_users (id INTEGER PRIMARY KEY);
 CREATE TABLE sim_orders (id INTEGER PRIMARY KEY);
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -140,7 +140,7 @@ func TestSchemaApplyDevSimulationFailureLeavesTargetUnchanged(t *testing.T) {
 	// the rehearsal on the dev database fails deterministically.
 	installAppendEditor(t, "CREATE TABLE sim_fail_users (id INTEGER PRIMARY KEY);")
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -173,7 +173,7 @@ CREATE TABLE sim_same_users (id INTEGER PRIMARY KEY);
 CREATE TABLE sim_same_orders (id INTEGER PRIMARY KEY);
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

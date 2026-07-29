@@ -14,65 +14,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
-func TestNewAtlasCommand_UsageMatchesAtlasCE(t *testing.T) {
-	c := qt.New(t)
-
-	tests := []struct {
-		name      string
-		args      []string
-		wantUsage string
-	}{
-		{
-			name:      "root",
-			args:      []string{"atlas", "--help"},
-			wantUsage: "Usage:\n  ptah atlas [command]",
-		},
-		{
-			name:      "migrate",
-			args:      []string{"atlas", "migrate", "--help"},
-			wantUsage: "Usage:\n  ptah atlas migrate [command]",
-		},
-		{
-			name:      "schema",
-			args:      []string{"atlas", "schema", "--help"},
-			wantUsage: "Usage:\n  ptah atlas schema [command]",
-		},
-		{
-			name:      "migrate_apply",
-			args:      []string{"atlas", "migrate", "apply", "--help"},
-			wantUsage: "Usage:\n  ptah atlas migrate apply [flags] [amount]",
-		},
-		{
-			name:      "migrate_diff",
-			args:      []string{"atlas", "migrate", "diff", "--help"},
-			wantUsage: "Usage:\n  ptah atlas migrate diff [flags] [name]",
-		},
-		{
-			name:      "migrate_new",
-			args:      []string{"atlas", "migrate", "new", "--help"},
-			wantUsage: "Usage:\n  ptah atlas migrate new [flags] [name]",
-		},
-		{
-			name:      "migrate_set",
-			args:      []string{"atlas", "migrate", "set", "--help"},
-			wantUsage: "Usage:\n  ptah atlas migrate set [flags] [version]",
-		},
-	}
-
-	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			cmd := &cobra.Command{Use: "ptah"}
-			cmd.AddCommand(atlas.NewAtlasCommand())
-
-			out, err := executeAtlasUsageTestCommand(cmd, tt.args)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, tt.wantUsage)
-			c.Assert(out, qt.Not(qt.Contains), "Usage:\n  atlas [flags]")
-		})
-	}
-}
-
 func TestNewCompatCommandNamedAtlas_UsageMatchesAtlasCE(t *testing.T) {
 	c := qt.New(t)
 
@@ -129,10 +70,10 @@ func TestNewCompatCommandNamedAtlas_UsageMatchesAtlasCE(t *testing.T) {
 	}
 }
 
-func TestNewAtlasCommand_ForwardedNativeFailureExits1(t *testing.T) {
+func TestCompatCommand_ForwardedNativeFailureExits1(t *testing.T) {
 	c := qt.New(t)
 	missingDir := filepath.Join(t.TempDir(), "missing")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -154,17 +95,13 @@ func TestAtlasCompatibilityRoots_UnknownCommandMatchesAtlasCE(t *testing.T) {
 		args []string
 	}{
 		{
-			name: "ptah atlas",
-			cmd: func() *cobra.Command {
-				root := &cobra.Command{Use: "ptah", SilenceUsage: true, SilenceErrors: true}
-				root.AddCommand(atlas.NewAtlasCommand())
-				return root
-			}(),
-			args: []string{"atlas", "definitely-not-a-command", "ignored-extra-token"},
-		},
-		{
 			name: "compatibility binary",
 			cmd:  atlas.NewCompatCommand("ptah-compat"),
+			args: []string{"definitely-not-a-command", "ignored-extra-token"},
+		},
+		{
+			name: "compatibility binary named atlas",
+			cmd:  atlas.NewCompatCommand("atlas"),
 			args: []string{"definitely-not-a-command", "ignored-extra-token"},
 		},
 	}
@@ -351,17 +288,13 @@ func TestAtlasCompatibilityCompletion_ExtraTokenMatchesAtlasCE(t *testing.T) {
 		args []string
 	}{
 		{
-			name: "ptah atlas",
-			cmd: func() *cobra.Command {
-				root := &cobra.Command{Use: "ptah", SilenceUsage: true, SilenceErrors: true}
-				root.AddCommand(atlas.NewAtlasCommand())
-				return root
-			}(),
-			args: []string{"atlas", "completion", "bash", "extra"},
-		},
-		{
 			name: "compatibility binary",
 			cmd:  atlas.NewCompatCommand("ptah-compat"),
+			args: []string{"completion", "bash", "extra"},
+		},
+		{
+			name: "compatibility binary named atlas",
+			cmd:  atlas.NewCompatCommand("atlas"),
 			args: []string{"completion", "bash", "extra"},
 		},
 	}

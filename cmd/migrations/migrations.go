@@ -35,8 +35,8 @@ func NewMigrationsCommand() *cobra.Command {
 
 This is Ptah's native migration namespace. It deliberately uses Ptah-owned
 spellings such as "plan" and "up" instead of root-level Atlas-looking paths such as
-"migrate diff" or "migrate apply". Atlas-compatible commands stay under
-ptah atlas.`,
+"migrate diff" or "migrate apply". Atlas-compatible commands live in the
+separate ptah-compat binary.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},

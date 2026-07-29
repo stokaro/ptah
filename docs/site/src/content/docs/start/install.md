@@ -82,13 +82,12 @@ editor as described in
 ```bash
 ptah --help
 ptah migrations --help
-ptah atlas migrate --help
 ptah-compat migrate --help
 ```
 
-Atlas-compatible commands are nested under `ptah atlas <command> ...` in the
-native `ptah` binary. Root-level Atlas spellings such as `ptah migrate apply`
-are intentionally not part of that command tree.
+The native `ptah` binary has no Atlas command paths: Atlas spellings such as
+`ptah migrate apply` or a `ptah atlas` namespace are intentionally not part of
+its command tree.
 
 Use `ptah-compat <command> ...` when a script needs Atlas-style root commands.
 You can also copy or symlink that executable as `atlas` so existing scripts can

@@ -291,7 +291,7 @@ func TestMigrateSet_OutputMatchesAtlasBytes(t *testing.T) {
 func TestMigrateSet_OutputFailureIsReported(t *testing.T) {
 	c := qt.New(t)
 	fixture := newAtlasRevisionFixture(c)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	cmd.SetOut(closedWriter{})
 	var errOut bytes.Buffer
 	cmd.SetErr(&errOut)
@@ -335,7 +335,7 @@ func TestMigrateApply_BaselineRecordsAtlasRevisionMetadata(t *testing.T) {
 func TestMigrateApply_BaselineRejectsMissingAtlasVersion(t *testing.T) {
 	c := qt.New(t)
 	fixture := newAtlasRevisionFixture(c)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -489,7 +489,7 @@ func runAtlasCommand(c *qt.C, args ...string) string {
 
 func executeAtlasCommand(c *qt.C, args ...string) string {
 	c.Helper()
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
