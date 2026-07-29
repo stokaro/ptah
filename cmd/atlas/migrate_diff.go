@@ -15,7 +15,6 @@ import (
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/atlassource"
-	"github.com/stokaro/ptah/internal/migrateops"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -155,6 +154,12 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	var preparePublication func([]string) error
+	if opts.edit {
+		preparePublication = func(stagedPaths []string) error {
+			return editor.Open("", stagedPaths...)
+		}
+	}
 	diffResult, err := atlasmigrate.GenerateDiff(cmd.Context(), conn, atlasmigrate.DiffOptions{
 		Dir:                  migrationsDir,
 		Desired:              desired,
@@ -166,6 +171,7 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		Policy:               policy,
 		Qualifier:            qualifier,
 		DryRun:               opts.dryRun,
+		PreparePublication:   preparePublication,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -177,18 +183,6 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 	if opts.dryRun {
 		fmt.Fprint(cmd.OutOrStdout(), diffResult.SQL)
 		return nil
-	}
-	if opts.edit {
-		for _, migrationPath := range diffResult.MigrationPaths {
-			if err := editor.Open("", migrationPath); err != nil {
-				return cmdutil.Fail(cmd, err)
-			}
-		}
-		// Editing changes the just-hashed migration content, so atlas.sum is
-		// refreshed to keep the directory valid.
-		if _, err := migrateops.Rehash(migrationsDir, migrator.MigrationDirFormatAtlas); err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("refresh atlas.sum after editing: %w", err))
-		}
 	}
 	for _, migrationPath := range diffResult.MigrationPaths {
 		fmt.Fprintf(cmd.OutOrStdout(), "Created migration file: %s\n", migrationPath)

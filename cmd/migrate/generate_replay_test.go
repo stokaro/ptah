@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/migrate"
+	"github.com/stokaro/ptah/dbschema"
 )
 
 func runGenerate(args ...string) (string, error) {
@@ -65,6 +66,22 @@ func TestMigrateGenerateReplayDerivesCurrentStateFromDirectory(t *testing.T) {
 	// The replayed state already contains users, so only orders is created.
 	c.Assert(string(upSQL), qt.Contains, `CREATE TABLE "orders"`)
 	c.Assert(string(upSQL), qt.Not(qt.Contains), `CREATE TABLE "users"`)
+	assertGenerateReplayDevEmpty(c, devPath)
+}
+
+func assertGenerateReplayDevEmpty(c *qt.C, path string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+path)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var count int
+	err = conn.QueryRowContext(c.Context(), `
+		SELECT COUNT(*)
+		FROM main.sqlite_schema
+		WHERE name NOT LIKE 'sqlite_%'
+	`).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 0)
 }
 
 func TestMigrateGenerateReplayRequiresDevURL(t *testing.T) {

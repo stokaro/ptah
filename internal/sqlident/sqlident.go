@@ -26,13 +26,10 @@ func Quote(dialect, name string) string {
 }
 
 // Qualified returns a dialect-quoted identifier optionally qualified by schema,
-// as in "schema"."name". Leading and trailing whitespace is trimmed from schema
-// and name before quoting; an empty (or whitespace-only) schema yields just the
-// quoted name.
+// as in "schema"."name". A whitespace-only schema yields just the quoted name.
+// Otherwise, schema and name are quoted verbatim.
 func Qualified(dialect, schema, name string) string {
-	schema = strings.TrimSpace(schema)
-	name = strings.TrimSpace(name)
-	if schema == "" {
+	if strings.TrimSpace(schema) == "" {
 		return Quote(dialect, name)
 	}
 	return Quote(dialect, schema) + "." + Quote(dialect, name)

@@ -10,6 +10,8 @@ import (
 
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
+	"github.com/stokaro/ptah/internal/sqlident"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
 var triggerHeaderPattern = regexp.MustCompile(
@@ -20,7 +22,7 @@ var triggerHeaderPattern = regexp.MustCompile(
 
 // Reader reads schema information from SQLite databases.
 type Reader struct {
-	db     *sql.DB
+	db     sqlrunner.Runner
 	schema string
 }
 
@@ -30,7 +32,7 @@ type tableColumnKey struct {
 }
 
 // NewSQLiteReader creates a SQLite schema reader.
-func NewSQLiteReader(db *sql.DB, schema string) *Reader {
+func NewSQLiteReader(db sqlrunner.Runner, schema string) *Reader {
 	if schema == "" {
 		schema = "main"
 	}
@@ -116,7 +118,7 @@ func (c sqliteSchemaCatalog) triggers(schema string) []types.DBTrigger {
 }
 
 func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
-	query := formatSQLiteCatalogQuery(`
+	query := fmt.Sprintf(`
 		SELECT type, name, tbl_name, sql
 		FROM %s
 		WHERE type IN ('table', 'index', 'view', 'trigger')
@@ -209,19 +211,11 @@ func (r *Reader) schemaObject(name string) string {
 	if schema == "" {
 		schema = "main"
 	}
-	return quoteSQLiteIdentifier(schema) + "." + name
-}
-
-func quoteSQLiteIdentifier(value string) string {
-	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
-}
-
-func formatSQLiteCatalogQuery(format string, objects ...any) string {
-	return fmt.Sprintf(format, objects...)
+	return sqlident.Qualified("sqlite", schema, name)
 }
 
 func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
-	query := formatSQLiteCatalogQuery(`
+	query := fmt.Sprintf(`
 		SELECT m.name, x.cid, x.name, x.type, x."notnull", x.dflt_value, x.pk, x.hidden, m.sql
 		FROM %s AS m
 		JOIN pragma_table_xinfo(m.name, ?) AS x
@@ -363,7 +357,7 @@ func (r *Reader) readIndexesByTable(
 }
 
 func (r *Reader) readIndexEntriesByTable() (map[string][]sqliteIndexEntry, error) {
-	query := formatSQLiteCatalogQuery(`
+	query := fmt.Sprintf(`
 		SELECT m.name, il.seq, il.name, il."unique", il.origin, il.partial
 		FROM %s AS m
 		JOIN pragma_index_list(m.name, ?) AS il
@@ -468,7 +462,7 @@ type sqliteIndexColumns struct {
 }
 
 func (r *Reader) readIndexColumnsByIndex() (map[string]sqliteIndexColumns, error) {
-	query := formatSQLiteCatalogQuery(`
+	query := fmt.Sprintf(`
 		SELECT il.name, ix.seqno, ix.cid, ix.name, ix.key
 		FROM %s AS m
 		JOIN pragma_index_list(m.name, ?) AS il
@@ -658,7 +652,7 @@ func primaryKeyConstraint(tableName, schema string, columns []types.DBColumn, dd
 }
 
 func (r *Reader) readForeignKeysByTable(tableDDLByName map[string]string) (map[string][]types.DBConstraint, error) {
-	query := formatSQLiteCatalogQuery(`
+	query := fmt.Sprintf(`
 		SELECT m.name, fk.id, fk.seq, fk."table", fk."from", fk."to", fk.on_update, fk.on_delete, fk.match
 		FROM %s AS m
 		JOIN pragma_foreign_key_list(m.name, ?) AS fk

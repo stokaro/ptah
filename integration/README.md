@@ -44,6 +44,67 @@ The integration test suite covers all aspects of the migration system as outline
 - Drop all tables and re-run from empty state on PostgreSQL, MySQL, MariaDB,
   ClickHouse, and opt-in SQL Server
 
+The standalone integration runner reads scenario connections from
+`<DATABASE>_URL`. Set the optional matching `<DATABASE>_CLEANUP_URL` when
+cleanup requires broader privileges. The scenario and cleanup URLs may use
+different credentials, but the runner rejects a cleanup URL that addresses a
+different database. Cleanup credentials are exposed only to database reset
+operations; migration generation, application, validation, and permission
+scenarios continue to use the restricted scenario connection.
+
+For MySQL and MariaDB, keep scenario execution restricted while granting the
+cleanup connection the global metadata and destructive privileges listed
+below:
+
+```bash
+MYSQL_URL="$MYSQL_RESTRICTED_URL" \
+MYSQL_CLEANUP_URL="$MYSQL_ADMIN_URL" \
+MARIADB_URL="$MARIADB_RESTRICTED_URL" \
+MARIADB_CLEANUP_URL="$MARIADB_ADMIN_URL" \
+  ./integration-test --databases=mysql,mariadb
+```
+
+The database-realm cleanup tests use dedicated scratch databases and verify
+that replay cleanup removes database-scoped artifacts without crossing into
+another database. Set the matching URL and run the focused package:
+
+```bash
+PTAH_CLICKHOUSE_REALM_TEST_URL="$CLICKHOUSE_ADMIN_URL" \
+  go test -v -count=1 ./internal/dbschema/clickhouse \
+  -run '^TestWriterDropDatabaseRealm_(Live|RejectsExternalDependencyLive)$'
+
+PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL="$CLICKHOUSE_24_10_ADMIN_URL" \
+  go test -v -count=1 ./internal/dbschema/clickhouse \
+  -run '^TestWriterDropDatabaseRealm_RejectsLegacyServerLive$'
+
+MYSQL_ADMIN_TEST_DSN="$MYSQL_ADMIN_DSN" \
+MARIADB_ADMIN_TEST_DSN="$MARIADB_ADMIN_DSN" \
+  go test -v -count=1 ./internal/dbschema/mysql -tags=integration \
+  -run '^TestWriterDropDatabaseRealm_Live(RejectsProtectedDatabase|RejectsExternalStoredProgram|RejectsMissingTriggerPrivilege)$'
+
+PTAH_SQLSERVER_REALM_TEST_URL="$SQLSERVER_ADMIN_URL" \
+  go test -v -count=1 ./internal/dbschema/mssql \
+  -run '^TestWriterDropDatabaseRealm_.*Live$'
+
+POSTGRES_URL="$POSTGRES_ADMIN_URL" \
+COCKROACHDB_URL="$COCKROACHDB_ADMIN_URL" \
+YUGABYTEDB_URL="$YUGABYTEDB_ADMIN_URL" \
+  go test -v -count=1 ./internal/dbschema/postgres -tags=integration \
+  -run '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|RejectsProtectedDatabase)$'
+```
+
+Each URL must identify an administrative connection intended for tests. The
+success-path tests create a separate temporary database and drop it during
+cleanup. Protected-name tests connect to the named administrative database
+only to prove cleanup fails before mutation.
+
+ClickHouse cleanup requires global `SHOW DATABASES` and `SHOW TABLES`
+visibility. ClickHouse does not expose dependency metadata for ordinary views,
+so Ptah fails closed when another user database contains a view, materialized
+view, live/window view, dictionary, or `Buffer`, `Distributed`, or `Merge`
+table. Use a dedicated ClickHouse development server without unrelated
+dependency-capable objects.
+
 ## Architecture
 
 ### Components
@@ -238,13 +299,22 @@ Rich, interactive report with:
 
 ### MySQL
 - Version: 8+
-- Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
+- Required cleanup permissions: global SELECT, DROP, ALTER, ALTER ROUTINE,
+  EVENT, LOCK TABLES, PROCESS, and TRIGGER. MySQL 8.0.20 and newer also
+  requires SHOW_ROUTINE. Use these credentials only for a disposable dev
+  database. Restricted credentials remain suitable for non-cleanup tests.
 - Authentication: default MySQL authentication (`caching_sha2_password` on current MySQL images)
 
 ### MariaDB
 - Version: 10.11+
-- Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
+- Required cleanup permissions: the MySQL cleanup privileges plus global
+  SHOW VIEW. Use these credentials only for a disposable dev database.
 - Compatible with MySQL driver
+
+### ClickHouse
+- Version: 24.11+ for database-realm replay cleanup
+- Required permissions: CHECK GRANT, SHOW DATABASES, SHOW TABLES, CREATE DATABASE, DROP DATABASE, and the required DROP privileges for every supported object type in the scratch database
+- Cleanup fails before mutation on older servers because complete catalog visibility cannot be proven
 
 ### SQL Server
 - Version: SQL Server 2022 / Azure SQL compatible subset

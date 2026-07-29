@@ -52,8 +52,8 @@ func TestQualified(t *testing.T) {
 	}{
 		{name: "postgres schema qualified", dialect: "postgres", schema: "public", ident: "users", want: `"public"."users"`},
 		{name: "empty schema yields bare name", dialect: "postgres", schema: "", ident: "users", want: `"users"`},
-		{name: "whitespace schema treated as empty", dialect: "postgres", schema: "  ", ident: "users", want: `"users"`},
-		{name: "schema and name are trimmed", dialect: "mysql", schema: " app ", ident: " users ", want: "`app`.`users`"},
+		{name: "whitespace schema treated as empty", dialect: "postgres", schema: "  ", ident: " users ", want: `" users "`},
+		{name: "schema and name bytes are preserved", dialect: "mysql", schema: " app ", ident: " users ", want: "` app `.` users `"},
 		{name: "sqlserver schema qualified", dialect: "sqlserver", schema: "dbo", ident: "users", want: "[dbo].[users]"},
 	}
 

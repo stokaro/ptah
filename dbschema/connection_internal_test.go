@@ -5,14 +5,165 @@ package dbschema
 // the public connection API alone.
 
 import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/dbschema/dbtest"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
+
+type connectionTestWriter struct {
+	executed string
+}
+
+func (w *connectionTestWriter) ExecuteSQL(_ context.Context, statement string, _ ...any) error {
+	w.executed = statement
+	return nil
+}
+
+func (w *connectionTestWriter) ExecContext(
+	_ context.Context,
+	statement string,
+	_ ...any,
+) (sql.Result, error) {
+	w.executed = statement
+	return driver.RowsAffected(1), nil
+}
+
+func (w *connectionTestWriter) DropAllTables(context.Context) error {
+	return nil
+}
+
+func (w *connectionTestWriter) BeginTransaction(context.Context) (types.SchemaTransaction, error) {
+	return nil, nil
+}
+
+func (w *connectionTestWriter) SetDryRun(bool) {}
+
+func (w *connectionTestWriter) IsDryRun() bool {
+	return false
+}
+
+type connectionTestExecutor struct{}
+
+func (*connectionTestExecutor) ExecuteSQL(context.Context, string, ...any) error {
+	return nil
+}
+
+func (*connectionTestExecutor) IsDryRun() bool {
+	return false
+}
+
+func TestDatabaseConnectionWithExecutor_PreservesRootWriterForNarrowExecutor(t *testing.T) {
+	c := qt.New(t)
+	root := new(connectionTestWriter)
+	executor := new(connectionTestExecutor)
+	conn := &DatabaseConnection{writer: root}
+
+	scoped := conn.WithExecutor(executor)
+
+	c.Assert(scoped.SchemaWriter(), qt.Equals, types.SchemaWriter(root))
+	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
+}
+
+type connectionSessionReader struct {
+	runner sqlrunner.Runner
+}
+
+func (r *connectionSessionReader) ReadSchema() (*types.DBSchema, error) {
+	var value int
+	err := r.runner.QueryRow("SELECT 1").Scan(&value)
+	return &types.DBSchema{}, err
+}
+
+type connectionSessionWriter struct {
+	runner sqlrunner.Runner
+}
+
+func (w *connectionSessionWriter) ExecuteSQL(
+	ctx context.Context,
+	statement string,
+	args ...any,
+) error {
+	_, err := w.runner.ExecContext(ctx, statement, args...)
+	return err
+}
+
+func (w *connectionSessionWriter) DropAllTables(context.Context) error {
+	return nil
+}
+
+func (w *connectionSessionWriter) BeginTransaction(context.Context) (types.SchemaTransaction, error) {
+	return nil, nil
+}
+
+func (w *connectionSessionWriter) SetDryRun(bool) {}
+
+func (w *connectionSessionWriter) IsDryRun() bool {
+	return false
+}
+
+func TestDatabaseConnectionWithSession_RebindsAllDatabaseOperations(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.OpenWithExec(
+		t,
+		func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+			return dbtest.QueryResult{
+				Columns: []string{"value"},
+				Rows:    [][]driver.Value{{int64(1)}},
+			}, nil
+		},
+		func(string, []driver.NamedValue) (driver.Result, error) {
+			return driver.RowsAffected(1), nil
+		},
+	)
+	db.SQL.SetMaxOpenConns(1)
+	newReader := func(runner sqlrunner.Runner) types.SchemaReader {
+		return &connectionSessionReader{runner: runner}
+	}
+	newWriter := func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+		return &connectionSessionWriter{runner: runner}
+	}
+	rootRunner := sqlrunner.Runner(db.SQL)
+	conn := &DatabaseConnection{
+		db:        db.SQL,
+		runner:    rootRunner,
+		reader:    newReader(rootRunner),
+		writer:    newWriter(rootRunner, nil),
+		newReader: newReader,
+		newWriter: newWriter,
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	t.Cleanup(cancel)
+
+	err := conn.WithSession(ctx, func(scoped *DatabaseConnection) error {
+		_, execErr := scoped.ExecContext(ctx, "DIRECT")
+		c.Assert(execErr, qt.IsNil)
+		_, readErr := scoped.Reader().ReadSchema()
+		c.Assert(readErr, qt.IsNil)
+		writerErr := scoped.Writer().ExecuteSQL(ctx, "WRITER")
+		c.Assert(writerErr, qt.IsNil)
+		nested, nestedErr := scoped.Conn(ctx)
+		c.Assert(nestedErr, qt.ErrorMatches, `database connection is already pinned to a session`)
+		c.Assert(nested, qt.IsNil)
+		c.Assert(scoped.Close(), qt.IsNil)
+		return nil
+	})
+
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, "ROOT")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.QueryCount(), qt.Equals, 1)
+	c.Assert(db.ExecCount(), qt.Equals, 3)
+}
 
 func TestConvertClickHouseURL(t *testing.T) {
 	tests := []struct {
@@ -275,6 +426,47 @@ func TestDetectPostgresWireDialect(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(detectPostgresWireDialect(tt.declared, tt.version), qt.Equals, tt.expected)
+		})
+	}
+}
+
+func TestDetectMySQLWireDialect(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		version  string
+		expected string
+	}{
+		{
+			name:     "mysql server",
+			declared: "mysql",
+			version:  "9.7.0",
+			expected: "mysql",
+		},
+		{
+			name:     "mariadb detected from mysql URL",
+			declared: "mysql",
+			version:  "10.11.15-MariaDB-ubu2204",
+			expected: "mariadb",
+		},
+		{
+			name:     "mariadb replication prefix",
+			declared: "mysql",
+			version:  "5.5.5-10.11.15-MariaDB-ubu2204",
+			expected: "mariadb",
+		},
+		{
+			name:     "explicit mariadb survives generic banner",
+			declared: "mariadb",
+			version:  "MySQL-compatible server",
+			expected: "mariadb",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(detectMySQLWireDialect(tt.declared, tt.version), qt.Equals, tt.expected)
 		})
 	}
 }

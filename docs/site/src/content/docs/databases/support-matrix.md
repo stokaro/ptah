@@ -52,6 +52,15 @@ SQL:
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 
+Database-realm cleanup requires global `SELECT`, `DROP`, `ALTER`,
+`ALTER ROUTINE`, `EVENT`, `LOCK TABLES`, and `PROCESS`. MySQL also requires
+global `TRIGGER` and, on MySQL 8.0.20 and newer, `SHOW_ROUTINE`; MariaDB
+requires global `SHOW VIEW`. Ptah verifies this privilege set before destructive
+DDL. Cleanup fails closed when another user database contains a routine, event,
+or trigger because its body can reference the cleanup realm without a catalog
+dependency. Grant these privileges only to credentials used with a dedicated
+disposable dev database.
+
 For large tables, `ptah migrations up` and `down` can route `ALTER TABLE`
 statements through gh-ost or pt-online-schema-change, either per migration
 with a `-- +ptah online_ddl_tool=ghost` directive or automatically above a
@@ -107,6 +116,11 @@ matching preset automatically.
 CockroachDB and YugabyteDB run in integration coverage against live
 open-source containers; Spanner coverage is offline (capability, planning,
 rendering, URL, and detection), so review generated SQL before relying on it.
+PostgreSQL and YugabyteDB reject unsupported database-scoped publications,
+subscriptions, logical replication slots, event triggers, and non-extension
+foreign-data objects before dev-database cleanup. PostgreSQL additionally
+removes database large objects inside the cleanup transaction; YugabyteDB does
+not support that catalog write path.
 
 ## ClickHouse
 
@@ -114,7 +128,11 @@ ClickHouse support is capability-limited. The preset models enums as inline
 `Enum8`/`Enum16` column types; foreign keys and enforced `CHECK` constraints
 are outside the preset. Review generated SQL and the
 [capability gates](../../reference/capabilities/) before adopting a workflow
-on ClickHouse.
+on ClickHouse. Dev-database replay cleanup requires ClickHouse 24.11 or newer
+and global `SHOW DATABASES` plus `SHOW TABLES`. Because ordinary views have no
+complete catalog dependency metadata, cleanup also requires that other user
+databases contain no view-like or dictionary objects and no `Buffer`,
+`Distributed`, or `Merge` tables.
 
 ## Choosing behavior by capability, not by name
 

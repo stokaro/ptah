@@ -2,12 +2,15 @@
 package migrationsnapshot
 
 import (
+	"errors"
 	"io/fs"
 	"path"
 	"strings"
 
 	"github.com/stokaro/ptah/internal/fsnapshot"
 )
+
+var ErrChangedDuringCapture = errors.New("migration directory changed during snapshot capture")
 
 var metadataFiles = map[string]struct{}{
 	".ptah-lint.yaml": {},
@@ -25,4 +28,21 @@ func Capture(fsys fs.FS) (fsnapshot.Snapshot, error) {
 		_, ok := metadataFiles[path.Base(name)]
 		return ok
 	})
+}
+
+// CaptureStable requires two consecutive snapshots to match. This rejects a
+// directory that changed while its files were being read.
+func CaptureStable(fsys fs.FS) (fsnapshot.Snapshot, error) {
+	first, err := Capture(fsys)
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	second, err := Capture(fsys)
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	if !first.Equal(second) {
+		return fsnapshot.Snapshot{}, ErrChangedDuringCapture
+	}
+	return second, nil
 }

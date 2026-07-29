@@ -137,7 +137,9 @@ services:
     environment:
       POSTGRES_URL: "postgres://ptah_user:ptah_password@postgres:5432/ptah_test?sslmode=disable"
       MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(mysql:3306)/ptah_test"
+      MYSQL_CLEANUP_URL: "mysql://root:root_password@tcp(mysql:3306)/ptah_test"
       MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(mariadb:3306)/ptah_test"
+      MARIADB_CLEANUP_URL: "mariadb://root:root_password@tcp(mariadb:3306)/ptah_test"
       CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@clickhouse:9000/ptah_test"
       COCKROACHDB_URL: "cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable"
       YUGABYTEDB_URL: "yugabytedb://yugabyte@yugabytedb:5433/yugabyte?sslmode=disable"

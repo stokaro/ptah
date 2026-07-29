@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"strings"
 
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
 )
 
@@ -133,13 +135,31 @@ func testManualPatchDetection(ctx context.Context, conn *dbschema.DatabaseConnec
 
 // testPermissionRestrictions tests behavior with limited database permissions
 func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error {
-	// This test is challenging to implement without actually creating a restricted user
-	// For now, we'll simulate the scenario by testing error handling
-
-	helper := NewDatabaseHelper(conn)
+	dialect := platform.NormalizeDialect(conn.Info().Dialect)
+	if dialect == platform.MySQL || dialect == platform.MariaDB {
+		// CI provisions these scenario connections without access to the
+		// server-wide privilege table, giving this probe a side-effect-free
+		// distinction between scenario and cleanup credentials.
+		var userCount int
+		err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM mysql.user").Scan(&userCount)
+		if err == nil {
+			return fmt.Errorf("restricted %s connection unexpectedly read mysql.user", dialect)
+		}
+		if err.Error() == "" {
+			return fmt.Errorf("restricted %s failure message should not be empty", dialect)
+		}
+		errorMessage := strings.ToLower(err.Error())
+		if !strings.Contains(errorMessage, "denied") &&
+			!strings.Contains(errorMessage, "permission") &&
+			!strings.Contains(errorMessage, "privilege") {
+			return fmt.Errorf("restricted %s connection returned a non-permission error: %w", dialect, err)
+		}
+		return nil
+	}
 
 	// Try to execute a statement that might fail due to permissions
 	// This is a simplified test - in a real scenario, you'd connect with a restricted user
+	helper := NewDatabaseHelper(conn)
 	restrictedSQL := "CREATE DATABASE test_restricted_db"
 	err := helper.ExecuteSQL(ctx, restrictedSQL)
 
@@ -170,7 +190,13 @@ func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConn
 }
 
 // testCleanupSupport tests dropping all tables and re-running migrations
-func testCleanupSupport(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error {
+func testCleanupSupport(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	fixtures fs.FS,
+	_ *StepRecorder,
+	cleanup databaseCleanupFunc,
+) error {
 	helper := NewDatabaseHelper(conn)
 
 	migrationsFS, err := GetMigrationsFS(fixtures, conn, "basic")
@@ -193,7 +219,7 @@ func testCleanupSupport(ctx context.Context, conn *dbschema.DatabaseConnection, 
 	}
 
 	// Drop all tables (cleanup)
-	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
+	if err := cleanup(ctx); err != nil {
 		return fmt.Errorf("failed to drop all tables: %w", err)
 	}
 

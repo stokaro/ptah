@@ -116,6 +116,7 @@ func testMigrationGeneratorRoundTripFixtures(
 	conn *dbschema.DatabaseConnection,
 	fixtures fs.FS,
 	recorder *StepRecorder,
+	cleanup databaseCleanupFunc,
 ) error {
 	for _, fixture := range roundTripFixtures {
 		if issue := fixture.BlockedByDialect[conn.Info().Dialect]; issue != "" {
@@ -129,7 +130,7 @@ func testMigrationGeneratorRoundTripFixtures(
 			"Round-trip fixture "+fixture.Name,
 			fixture.Description,
 			func() error {
-				return runRoundTripFixture(ctx, conn, fixtures, fixture)
+				return runRoundTripFixture(ctx, conn, fixtures, fixture, cleanup)
 			},
 		); err != nil {
 			return err
@@ -151,6 +152,7 @@ func runRoundTripFixture(
 	conn *dbschema.DatabaseConnection,
 	fixtures fs.FS,
 	fixture roundTripFixture,
+	cleanup databaseCleanupFunc,
 ) error {
 	vem, err := NewVersionedEntityManager(fixtures)
 	if err != nil {
@@ -167,7 +169,7 @@ func runRoundTripFixture(
 	migrationsFS := os.DirFS(migrationsDir)
 	dh := NewDatabaseHelper(conn)
 
-	if err := resetRoundTripFixtureDatabase(ctx, conn); err != nil {
+	if err := resetRoundTripFixtureDatabase(ctx, conn, cleanup); err != nil {
 		return err
 	}
 
@@ -201,7 +203,7 @@ func runRoundTripFixture(
 		}
 	}
 
-	return resetRoundTripFixtureDatabase(ctx, conn)
+	return resetRoundTripFixtureDatabase(ctx, conn, cleanup)
 }
 
 func previousRoundTripVersion(versions []string, versionIndex int) string {
@@ -251,9 +253,13 @@ func validateRoundTripRollbackState(
 	return nil
 }
 
-func resetRoundTripFixtureDatabase(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	if err := rollbackToEmptyState(ctx, conn); err != nil {
-		return err
+func resetRoundTripFixtureDatabase(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	cleanup databaseCleanupFunc,
+) error {
+	if err := cleanup(ctx); err != nil {
+		return fmt.Errorf("reset round-trip fixture database: %w", err)
 	}
 	return validateEmptySchema(ctx, conn)
 }

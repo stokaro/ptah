@@ -120,10 +120,17 @@ files. With `--env`, reads `env.schema.src`, `env.dev`, `migration.dir`,
 `-- atlas:txmode none` directive, splitting mixed plans into a transactional
 file followed by a concurrent-index file (unsplittable mixes are refused).
 Generated SQL uses Atlas-style two-space indentation by default; `--format`
-renders it with `sql` and `.MarshalSQL` templates. `--schema/-s` narrows both
-the replayed dev database state and the desired schema. `--edit` opens the
-generated migrations in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized.
-`--lock-timeout` bounds waiting for Ptah's local migration-directory lock.
+renders it with `sql` and `.MarshalSQL` templates. `--schema/-s` narrows the
+current and desired schemas used for comparison and output; migration replay
+and cleanup still own the complete [dev database realm](../../concepts/database-urls-and-dev-databases/).
+`--edit` opens the generated migrations in `$VISUAL`/`$EDITOR` before
+`atlas.sum` is finalized.
+`--lock-timeout` bounds waiting for both Ptah's local migration-directory lock
+and the exclusive dev-database lock. PostgreSQL, YugabyteDB, MySQL, MariaDB,
+and SQL Server use session advisory locks; SQLite, ClickHouse, and CockroachDB
+use an operating-system lock keyed by normalized database identity. Cross-host
+ClickHouse and CockroachDB replay is unsupported. Dialects without a safe
+dev-database lock fail before cleanup.
 `--qualifier` prefixes every object in the generated statements with a custom
 schema qualifier on PostgreSQL-family, MySQL, and MariaDB dev databases;
 invalid values, unsupported dialects, multi-schema plans, and statement kinds

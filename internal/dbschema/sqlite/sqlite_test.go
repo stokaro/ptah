@@ -33,9 +33,9 @@ func openMemoryDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func execSQL(t *testing.T, db *sql.DB, statement string) {
+func execSQL(t *testing.T, db *sql.DB, statement string, args ...any) {
 	t.Helper()
-	if _, err := db.ExecContext(context.Background(), statement); err != nil {
+	if _, err := db.ExecContext(context.Background(), statement, args...); err != nil {
 		t.Fatalf("exec %q: %v", statement, err)
 	}
 }
@@ -142,6 +142,7 @@ func TestWriterDropAllTables(t *testing.T) {
 		id INTEGER PRIMARY KEY,
 		parent_id INTEGER NOT NULL REFERENCES parents(id)
 	)`)
+	execSQL(t, db, `CREATE VIEW parent_ids AS SELECT id FROM parents`)
 
 	writer := sqlite.NewSQLiteWriter(db, "main")
 	err := writer.DropAllTables(t.Context())
@@ -150,6 +151,7 @@ func TestWriterDropAllTables(t *testing.T) {
 	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 0)
+	c.Assert(schema.Views, qt.HasLen, 0)
 
 	var foreignKeys int
 	err = db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys)

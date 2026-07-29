@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -30,7 +31,15 @@ func TestMigrationGeneratorValidation(t *testing.T) {
 
 	// Run the migration generator validation test
 	recorder := &StepRecorder{}
-	err = testMigrationGeneratorValidation(ctx, conn, testFixtures, recorder)
+	err = testMigrationGeneratorValidation(
+		ctx,
+		conn,
+		testFixtures,
+		recorder,
+		func(cleanupCtx context.Context) error {
+			return conn.SchemaWriter().DropAllTables(cleanupCtx)
+		},
+	)
 	c.Assert(err, qt.IsNil)
 }
 

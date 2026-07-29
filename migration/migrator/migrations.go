@@ -77,6 +77,13 @@ type StatementInterceptor interface {
 	ExecuteStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, directives map[string]string) (handled bool, err error)
 }
 
+// StatementValidator rejects unsafe or unsupported migration statements
+// without taking over their execution. Every statement in a migration file is
+// validated before the first statement runs.
+type StatementValidator interface {
+	ValidateStatement(stmt string) error
+}
+
 // StatementEvent describes one successfully executed migration statement.
 // Directives is an event-local copy; observers may modify it without affecting
 // migration execution or later events.
@@ -108,6 +115,7 @@ func (f StatementObserverFunc) ObserveStatement(
 
 type statementExecutionHooks struct {
 	interceptor StatementInterceptor
+	validator   StatementValidator
 	observer    StatementObserver
 }
 
@@ -555,6 +563,9 @@ func executeMigrationFileSQL(
 	}
 
 	statements := splitSQLStatementsForConnection(conn, sql)
+	if err := validateMigrationStatements(filename, statements, hooks.validator); err != nil {
+		return err
+	}
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
@@ -598,6 +609,31 @@ func executeMigrationFileSQL(
 					Err:   err,
 					Event: event,
 				}
+			}
+		}
+	}
+	return nil
+}
+
+func validateMigrationStatements(
+	filename string,
+	statements []string,
+	validator StatementValidator,
+) error {
+	if validator == nil {
+		return nil
+	}
+	for i, statement := range statements {
+		statement = strings.TrimSpace(statement)
+		if statement == "" {
+			continue
+		}
+		if err := validator.ValidateStatement(statement); err != nil {
+			return &MigrationExecutionError{
+				Err:            fmt.Errorf("failed to validate migration SQL in %s: %w", filename, err),
+				Statement:      statement,
+				StatementIndex: i + 1,
+				Total:          len(statements),
 			}
 		}
 	}

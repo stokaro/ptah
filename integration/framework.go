@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -98,6 +100,13 @@ type TestScenario struct {
 	TestFunc    func(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error
 	// Optional enhanced test function that supports step recording
 	EnhancedTestFunc func(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error
+	cleanupTestFunc  func(
+		ctx context.Context,
+		conn *dbschema.DatabaseConnection,
+		fixtures fs.FS,
+		recorder *StepRecorder,
+		cleanup databaseCleanupFunc,
+	) error
 	// ClickHouseCompatible opts a scenario in to running against a live
 	// ClickHouse connection. Default false because most existing scenarios
 	// exercise features ClickHouse cannot meaningfully support (functions,
@@ -122,20 +131,34 @@ type TestScenario struct {
 	SQLServerCompatible bool
 }
 
+// IsRunnable reports whether the scenario has an executable test function.
+func (s TestScenario) IsRunnable() bool {
+	return s.TestFunc != nil ||
+		s.EnhancedTestFunc != nil ||
+		s.cleanupTestFunc != nil
+}
+
 // TestRunner manages and executes integration tests
 type TestRunner struct {
 	scenarios []TestScenario
-	databases map[string]string // name -> connection URL
+	databases map[string]databaseTarget
 	fixtures  fs.FS
 	report    *TestReport
 	mu        sync.Mutex
 }
 
+type databaseTarget struct {
+	connectionURL string
+	cleanupURL    string
+}
+
+type databaseCleanupFunc func(context.Context) error
+
 // NewTestRunner creates a new test runner
 func NewTestRunner(fixtures fs.FS) *TestRunner {
 	return &TestRunner{
 		scenarios: make([]TestScenario, 0),
-		databases: make(map[string]string),
+		databases: make(map[string]databaseTarget),
 		fixtures:  fixtures,
 		report: &TestReport{
 			Results: make([]TestResult, 0),
@@ -143,9 +166,30 @@ func NewTestRunner(fixtures fs.FS) *TestRunner {
 	}
 }
 
-// AddDatabase adds a database connection for testing
+// AddDatabase adds a database connection used for both scenarios and cleanup.
 func (tr *TestRunner) AddDatabase(name, connectionURL string) {
-	tr.databases[name] = connectionURL
+	tr.databases[name] = databaseTarget{
+		connectionURL: connectionURL,
+		cleanupURL:    connectionURL,
+	}
+}
+
+// AddDatabaseWithCleanup adds separate scenario and cleanup credentials for
+// the same database. The cleanup URL may grant broader destructive privileges,
+// but it must not address a different database realm.
+func (tr *TestRunner) AddDatabaseWithCleanup(name, connectionURL, cleanupURL string) error {
+	sameDatabase, err := atlasurl.SameDatabase(connectionURL, cleanupURL)
+	if err != nil {
+		return fmt.Errorf("validate %s cleanup database URL: %w", name, err)
+	}
+	if !sameDatabase {
+		return fmt.Errorf("%s cleanup URL must address the scenario database", name)
+	}
+	tr.databases[name] = databaseTarget{
+		connectionURL: connectionURL,
+		cleanupURL:    cleanupURL,
+	}
+	return nil
 }
 
 // AddScenario adds a test scenario
@@ -157,9 +201,9 @@ func (tr *TestRunner) AddScenario(scenario TestScenario) {
 func (tr *TestRunner) RunAll(ctx context.Context) error {
 	tr.report.StartTime = time.Now()
 
-	for dbName, dbURL := range tr.databases {
+	for dbName, target := range tr.databases {
 		for _, scenario := range tr.scenarios {
-			result := tr.runSingleTest(ctx, scenario, dbName, dbURL)
+			result := tr.runSingleTest(ctx, scenario, dbName, target)
 			tr.mu.Lock()
 			tr.report.Results = append(tr.report.Results, result)
 			tr.report.TotalTests++
@@ -186,7 +230,12 @@ func (tr *TestRunner) RunAll(ctx context.Context) error {
 // The return value is named so the deferred Close handler can promote a
 // connection-close failure into a test failure when the scenario itself
 // succeeded — otherwise the close error would be silently lost.
-func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, dbName, dbURL string) (result TestResult) {
+func (tr *TestRunner) runSingleTest(
+	ctx context.Context,
+	scenario TestScenario,
+	dbName string,
+	target databaseTarget,
+) (result TestResult) {
 	start := time.Now()
 
 	result = TestResult{
@@ -196,7 +245,7 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 	}
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	conn, err := dbschema.ConnectToDatabase(ctx, target.connectionURL)
 	if err != nil {
 		result.Success = false
 		result.Error = fmt.Sprintf("Failed to connect to database: %v", err)
@@ -257,7 +306,7 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 	}
 
 	// Clean database before test
-	if err := tr.cleanDatabase(ctx, conn); err != nil {
+	if err := tr.cleanDatabase(ctx, conn, target.cleanupURL); err != nil {
 		result.Success = false
 		result.Error = fmt.Sprintf("Failed to clean database: %v", err)
 		result.Duration = time.Since(start)
@@ -267,10 +316,17 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 	// Create step recorder
 	recorder := &StepRecorder{}
 
-	// Run the test scenario - use enhanced function if available, otherwise use regular function
-	if scenario.EnhancedTestFunc != nil {
+	cleanup := func(cleanupCtx context.Context) error {
+		return tr.cleanDatabase(cleanupCtx, conn, target.cleanupURL)
+	}
+
+	// Run the test scenario - use cleanup-aware or enhanced functions when available.
+	switch {
+	case scenario.cleanupTestFunc != nil:
+		err = scenario.cleanupTestFunc(ctx, conn, tr.fixtures, recorder, cleanup)
+	case scenario.EnhancedTestFunc != nil:
 		err = scenario.EnhancedTestFunc(ctx, conn, tr.fixtures, recorder)
-	} else {
+	default:
 		err = scenario.TestFunc(ctx, conn, tr.fixtures)
 	}
 
@@ -281,8 +337,8 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 		result.Success = true
 	}
 
-	// Capture recorded steps (only if enhanced function was used)
-	if scenario.EnhancedTestFunc != nil {
+	// Capture recorded steps when the selected scenario function supports them.
+	if scenario.cleanupTestFunc != nil || scenario.EnhancedTestFunc != nil {
 		result.Steps = recorder.GetSteps()
 	}
 
@@ -300,12 +356,27 @@ func isPostgresDistributedSQL(dialect string) bool {
 }
 
 // cleanDatabase drops all scenario-owned objects and resets the database to a clean state.
-func (tr *TestRunner) cleanDatabase(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
+func (tr *TestRunner) cleanDatabase(
+	ctx context.Context,
+	scenarioConn *dbschema.DatabaseConnection,
+	cleanupURL string,
+) (resultErr error) {
+	cleanupConn := scenarioConn
+	if cleanupURL != scenarioConn.Info().URL {
+		var err error
+		cleanupConn, err = dbschema.ConnectToDatabase(ctx, cleanupURL)
+		if err != nil {
+			return fmt.Errorf("connect to cleanup database: %w", err)
+		}
+		defer func() {
+			resultErr = errors.Join(resultErr, cleanupConn.Close())
+		}()
+	}
+	if err := cleanupConn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return err
 	}
-	if platform.NormalizeDialect(conn.Info().Dialect) == platform.Postgres {
-		return cleanPostgresFixtureFunctions(ctx, conn)
+	if platform.NormalizeDialect(cleanupConn.Info().Dialect) == platform.Postgres {
+		return cleanPostgresFixtureFunctions(ctx, cleanupConn)
 	}
 	return nil
 }

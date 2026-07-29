@@ -247,8 +247,9 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	defer cancelConnect()
 
 	var devConn *dbschema.DatabaseConnection
+	var dirFormat migrator.MigrationDirFormat
 	if replay {
-		dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+		dirFormat, err = migrator.ParseMigrationDirFormat(dirFormatValue)
 		if err != nil {
 			return err
 		}
@@ -257,15 +258,11 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("connect to --%s: %w", generateDevURLFlag, err)
 		}
 		defer dbschema.CloseAndWarn(devConn)
-		if err := migrationreplay.ReplayOnConnection(cmd.Context(), devConn, migrationsDir, dirFormat); err != nil {
-			return err
-		}
 	}
 
-	files, err := generator.GenerateMigration(connectCtx, generator.GenerateMigrationOptions{
+	generateOpts := generator.GenerateMigrationOptions{
 		Generated:         generated,
 		DatabaseURL:       targetURL,
-		DBConn:            devConn,
 		MigrationName:     name,
 		OutputDir:         migrationsDir,
 		Schemas:           dbcli.ParseSchemas(schemasValue),
@@ -278,7 +275,38 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			SkipChangeKinds: projectCfg.Diff.SkipChangeKinds(),
 			ConcurrentIndex: projectCfg.Diff.ConcurrentIndexCreate(),
 		},
-	})
+	}
+	var files *generator.MigrationFiles
+	if replay {
+		var plan *generator.MigrationPlan
+		err = atlasmigrate.WithMigrationDirectoryLock(
+			cmd.Context(),
+			migrationsDir,
+			0,
+			func(lockedCtx context.Context) error {
+				if err := atlasmigrate.RecoverPendingPublicationLocked(migrationsDir); err != nil {
+					return fmt.Errorf("recover migration publication before replay: %w", err)
+				}
+				return migrationreplay.WithReplayedDirectory(
+					lockedCtx,
+					devConn,
+					migrationsDir,
+					dirFormat,
+					func(replayConn *dbschema.DatabaseConnection) error {
+						replayOpts := generateOpts
+						replayOpts.DBConn = replayConn
+						plan, err = generator.PlanMigration(lockedCtx, replayOpts)
+						return err
+					},
+				)
+			},
+		)
+		if err == nil && plan != nil {
+			files, err = plan.WriteFilesContext(cmd.Context())
+		}
+	} else {
+		files, err = generator.GenerateMigration(connectCtx, generateOpts)
+	}
 	if err != nil {
 		return err
 	}

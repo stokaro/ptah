@@ -8,6 +8,7 @@ package dblock
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -19,9 +20,12 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 )
 
-// mariaDBDefaultTimeoutSeconds stands in for an infinite GET_LOCK wait on
-// MariaDB, which rejects the negative timeout MySQL uses for "wait forever".
-const mariaDBDefaultTimeoutSeconds = 31_536_000
+const (
+	// mariaDBDefaultTimeoutSeconds stands in for an infinite GET_LOCK wait on
+	// MariaDB, which rejects the negative timeout MySQL uses for "wait forever".
+	mariaDBDefaultTimeoutSeconds = 31_536_000
+	postgresLockPollInterval     = 25 * time.Millisecond
+)
 
 // DefaultReleaseTimeout bounds the deferred release of an advisory lock so a
 // canceled command still returns its dedicated session connection promptly.
@@ -49,7 +53,11 @@ func IsTimeout(err error) bool {
 // semantics. [Acquire] returns a no-op lock on unsupported dialects.
 func Supported(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.MySQL, platform.MariaDB, platform.SQLServer:
+	case platform.Postgres,
+		platform.YugabyteDB,
+		platform.MySQL,
+		platform.MariaDB,
+		platform.SQLServer:
 		return true
 	default:
 		return false
@@ -64,6 +72,18 @@ type Lock struct {
 	release func(context.Context) error
 }
 
+type ambiguousAcquisitionError struct {
+	err error
+}
+
+func (e *ambiguousAcquisitionError) Error() string {
+	return e.err.Error()
+}
+
+func (e *ambiguousAcquisitionError) Unwrap() error {
+	return e.err
+}
+
 // Supported reports whether the lock is backed by a real database lock, as
 // opposed to the no-op lock acquired on dialects without advisory locks.
 func (l *Lock) Supported() bool {
@@ -76,8 +96,13 @@ func (l *Lock) Release(ctx context.Context) error {
 	if l == nil || l.conn == nil {
 		return nil
 	}
-	defer l.conn.Close()
-	return l.release(ctx)
+	conn := l.conn
+	l.conn = nil
+	releaseErr := l.release(ctx)
+	if releaseErr != nil {
+		return errors.Join(releaseErr, discardConnection(conn))
+	}
+	return conn.Close()
 }
 
 // Acquire takes the dialect-specific session advisory lock named name on a
@@ -99,7 +124,7 @@ func Acquire(
 	if name == "" {
 		return nil, errors.New("advisory lock name must not be empty")
 	}
-	dialect := conn.Info().Dialect
+	dialect := platform.NormalizeDialect(conn.Info().Dialect)
 	if !Supported(dialect) {
 		return &Lock{}, nil
 	}
@@ -111,10 +136,10 @@ func Acquire(
 
 	lock := &Lock{conn: session}
 	var acquireErr error
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres:
-		lock.release = releasePostgresLock(session, name)
-		acquireErr = acquirePostgresLock(ctx, session, name, timeout)
+	switch dialect {
+	case platform.Postgres, platform.YugabyteDB:
+		lock.release = releasePostgresLock(session, dialect, name)
+		acquireErr = acquirePostgresLock(ctx, session, dialect, name, timeout)
 	case platform.MySQL, platform.MariaDB:
 		lock.release = releaseMySQLLock(session, name)
 		acquireErr = acquireMySQLLock(ctx, session, dialect, name, timeout)
@@ -123,8 +148,7 @@ func Acquire(
 		acquireErr = acquireSQLServerLock(ctx, session, name, timeout)
 	}
 	if acquireErr != nil {
-		_ = session.Close()
-		return nil, acquireErr
+		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}
 	return lock, nil
 }
@@ -136,30 +160,75 @@ func PostgresKey(name string) int64 {
 	return int64(hash.Sum32())
 }
 
-func acquirePostgresLock(ctx context.Context, conn *sql.Conn, name string, timeout time.Duration) error {
+func acquirePostgresLock(
+	ctx context.Context,
+	conn *sql.Conn,
+	dialect, name string,
+	timeout time.Duration,
+) error {
 	lockCtx := ctx
 	var cancel context.CancelFunc
 	if timeout > 0 {
 		lockCtx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	if _, err := conn.ExecContext(lockCtx, "SELECT pg_advisory_lock($1)", PostgresKey(name)); err != nil {
-		if timeout > 0 && errors.Is(lockCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-			return &TimeoutError{Dialect: platform.Postgres, Name: name, Timeout: timeout}
+
+	ticker := time.NewTicker(postgresLockPollInterval)
+	defer ticker.Stop()
+	for {
+		var acquired bool
+		if err := conn.QueryRowContext(
+			lockCtx,
+			"SELECT pg_try_advisory_lock($1)",
+			PostgresKey(name),
+		).Scan(&acquired); err != nil {
+			return &ambiguousAcquisitionError{
+				err: postgresLockWaitError(ctx, lockCtx, dialect, name, timeout, err),
+			}
 		}
-		return err
+		if acquired {
+			return nil
+		}
+
+		select {
+		case <-lockCtx.Done():
+			return postgresLockWaitError(
+				ctx,
+				lockCtx,
+				dialect,
+				name,
+				timeout,
+				lockCtx.Err(),
+			)
+		case <-ticker.C:
+		}
 	}
-	return nil
 }
 
-func releasePostgresLock(conn *sql.Conn, name string) func(context.Context) error {
+func postgresLockWaitError(
+	ctx,
+	lockCtx context.Context,
+	dialect,
+	name string,
+	timeout time.Duration,
+	fallback error,
+) error {
+	if timeout > 0 &&
+		errors.Is(lockCtx.Err(), context.DeadlineExceeded) &&
+		ctx.Err() == nil {
+		return &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout}
+	}
+	return fallback
+}
+
+func releasePostgresLock(conn *sql.Conn, dialect, name string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		var released bool
 		if err := conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", PostgresKey(name)).Scan(&released); err != nil {
 			return err
 		}
 		if !released {
-			return fmt.Errorf("postgres advisory lock was not held")
+			return fmt.Errorf("%s advisory lock was not held", dialect)
 		}
 		return nil
 	}
@@ -170,7 +239,7 @@ func acquireMySQLLock(ctx context.Context, conn *sql.Conn, dialect string, name 
 
 	var acquired sql.NullInt64
 	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", name, timeoutSeconds).Scan(&acquired); err != nil {
-		return err
+		return &ambiguousAcquisitionError{err: err}
 	}
 	if !acquired.Valid {
 		return fmt.Errorf("GET_LOCK(%q) returned NULL", name)
@@ -209,7 +278,7 @@ EXEC @result = sys.sp_getapplock
     @LockOwner = 'Session',
     @LockTimeout = @p2;
 SELECT @result;`, name, timeoutMilliseconds).Scan(&result); err != nil {
-		return err
+		return &ambiguousAcquisitionError{err: err}
 	}
 	if result >= 0 {
 		return nil
@@ -257,4 +326,25 @@ func sqlServerLockTimeoutMilliseconds(timeout time.Duration) int {
 		return math.MaxInt32
 	}
 	return int(milliseconds)
+}
+
+func closeAfterFailedAcquisition(conn *sql.Conn, acquireErr error) error {
+	if _, ok := errors.AsType[*ambiguousAcquisitionError](acquireErr); ok {
+		return errors.Join(acquireErr, discardConnection(conn))
+	}
+	return errors.Join(acquireErr, conn.Close())
+}
+
+func discardConnection(conn *sql.Conn) error {
+	discardErr := conn.Raw(func(any) error {
+		return driver.ErrBadConn
+	})
+	if errors.Is(discardErr, driver.ErrBadConn) {
+		discardErr = nil
+	}
+	closeErr := conn.Close()
+	if errors.Is(closeErr, sql.ErrConnDone) {
+		closeErr = nil
+	}
+	return errors.Join(discardErr, closeErr)
 }

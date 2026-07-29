@@ -32,7 +32,7 @@ func TestValidate_WithDevURLReplaysAtlasMigration(t *testing.T) {
 	c.Assert(result.Integrity.OK(), qt.IsTrue)
 	c.Assert(result.Integrity.SumFileName, qt.Equals, migratesum.AtlasFileName)
 	c.Assert(result.DevSQLValidated, qt.IsTrue)
-	assertSQLiteTableCount(c, devDBPath, "validate_dev_url_runtime", 1)
+	assertSQLiteTableCount(c, devDBPath, "validate_dev_url_runtime", 0)
 }
 
 func TestValidate_WithDevURLReportsSQLExecutionFailure(t *testing.T) {

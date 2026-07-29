@@ -32,7 +32,7 @@ func TestMigrateValidate_DevURLReplaysAtlasMigration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "OK: migrations directory matches atlas.sum")
 	c.Assert(stdout, qt.Contains, "OK: migration SQL validated on dev database")
-	assertSQLiteTableCount(c, devDBPath, "native_validate_dev_url", 1)
+	assertSQLiteTableCount(c, devDBPath, "native_validate_dev_url", 0)
 }
 
 func TestMigrateValidate_DevURLFailureExitsTwo(t *testing.T) {

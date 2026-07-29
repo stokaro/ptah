@@ -58,6 +58,50 @@ func TestCapture_ClonesExistingSnapshotWithoutReadingSourceAgain(t *testing.T) {
 	c.Assert(secondContents, qt.DeepEquals, firstContents)
 }
 
+func TestSnapshotEqualComparesPathsAndContents(t *testing.T) {
+	c := qt.New(t)
+	left, err := fsnapshot.FromFiles(map[string][]byte{
+		"1.sql": []byte("SELECT 1;\n"),
+	})
+	c.Assert(err, qt.IsNil)
+	equal, err := fsnapshot.FromFiles(map[string][]byte{
+		"1.sql": []byte("SELECT 1;\n"),
+	})
+	c.Assert(err, qt.IsNil)
+	differentContents, err := fsnapshot.FromFiles(map[string][]byte{
+		"1.sql": []byte("SELECT 2;\n"),
+	})
+	c.Assert(err, qt.IsNil)
+	differentPaths, err := fsnapshot.FromFiles(map[string][]byte{
+		"2.sql": []byte("SELECT 1;\n"),
+	})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(left.Equal(equal), qt.IsTrue)
+	c.Assert(left.Equal(differentContents), qt.IsFalse)
+	c.Assert(left.Equal(differentPaths), qt.IsFalse)
+}
+
+func TestSnapshotWithFilesReturnsIndependentOverlay(t *testing.T) {
+	c := qt.New(t)
+	original, err := fsnapshot.FromFiles(map[string][]byte{
+		"1_initial.sql": []byte("SELECT 1;"),
+	})
+	c.Assert(err, qt.IsNil)
+	added := []byte("SELECT 2;")
+
+	overlay, err := original.WithFiles(map[string][]byte{"2_next.sql": added})
+	c.Assert(err, qt.IsNil)
+	added[0] = 'X'
+
+	originalEntries, err := fs.ReadDir(original, ".")
+	c.Assert(err, qt.IsNil)
+	c.Assert(originalEntries, qt.HasLen, 1)
+	contents, err := fs.ReadFile(overlay, "2_next.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "SELECT 2;")
+}
+
 func TestFromFiles_ClonesInput(t *testing.T) {
 	c := qt.New(t)
 	files := map[string][]byte{

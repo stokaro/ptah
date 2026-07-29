@@ -59,6 +59,42 @@ func main() {
 }
 ```
 
+### Planning before publication
+
+`GenerateMigration` plans and writes in one call. Use `PlanMigration` when a
+caller must finish database cleanup or another pre-publication step before any
+migration file appears:
+
+```go
+plan, err := generator.PlanMigration(ctx, opts)
+if err != nil {
+    return err
+}
+if plan == nil {
+    return nil
+}
+
+files, err := plan.WriteFiles()
+if err != nil {
+    return err
+}
+fmt.Printf("published %s and %s\n", files.UpFile, files.DownFile)
+```
+
+Planning does not write migration artifacts. A successful `WriteFiles` call
+consumes the plan; call it once after all surrounding work has succeeded.
+The plan records the migration-directory snapshot used for planning.
+`WriteFiles` acquires the shared cross-process directory lock and rejects the
+plan if migration SQL or integrity metadata changed before publication. It
+never renumbers and publishes a plan derived from stale history.
+It renders every up/down file and requested safety report before publishing
+the artifacts as one batch. A filename collision leaves no partial new files.
+Use `WriteFilesContext` when lock acquisition must honor cancellation or an
+operation deadline. Callers can branch on
+`generator.ErrMigrationDirectoryChanged` when another process changed the
+migration history after planning, and on `generator.ErrMigrationPlanInUse`
+when the same plan is already being published.
+
 ### Migration Process
 
 The generator follows this process:

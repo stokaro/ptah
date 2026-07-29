@@ -28,6 +28,7 @@ func TestSupported(t *testing.T) {
 		{name: "sqlite", dialect: "sqlite", want: false},
 		{name: "clickhouse", dialect: "clickhouse", want: false},
 		{name: "cockroachdb", dialect: "cockroachdb", want: false},
+		{name: "yugabytedb", dialect: "yugabytedb", want: true},
 		{name: "spanner", dialect: "spanner", want: false},
 		{name: "unknown", dialect: "not-a-dialect", want: false},
 	}

@@ -68,6 +68,30 @@ interceptor, splitter, directive, or transaction path. Observers receive
 structured source and statement metadata after execution but no connection
 handle, so they cannot alter the migrator execution path.
 
+`migration/migrator.WithStatementValidator` installs a pre-execution safety
+gate on a filesystem provider. Ptah splits and validates every statement in one
+migration before executing its first statement, so a rejected later statement
+cannot leave an earlier statement applied. Validators inspect SQL but do not
+replace the migrator's execution path; use `WithStatementInterceptor` only when
+an external executor must take over accepted statements.
+
+`dbschema.DatabaseConnection.WithSession` pins one physical database session
+for a callback and rebinds the dialect reader, writer, and SQL runner to it.
+Use it when session-local state must remain consistent across cleanup, replay,
+introspection, and verification. The scoped connection must not escape the
+callback.
+
+`migration/generator.PlanMigration` performs loading, diff planning, safety
+checks, and optional shadow verification without publishing files. Its
+`MigrationPlan.WriteFiles` method publishes the validated artifacts once. The
+plan records the migration-directory snapshot used during planning and refuses
+publication with `generator.ErrMigrationDirectoryChanged` if that history
+changed. `WriteFilesContext` additionally lets an embedder cancel waiting for
+the cross-process publication lock and rejects concurrent use of one plan with
+`generator.ErrMigrationPlanInUse`.
+`GenerateMigration` remains the convenience composition of planning and
+publication and propagates its context through both phases.
+
 Atlas revision metadata is represented explicitly by `AtlasRevisionType` on
 `MigrationRevision`. `SetAtlasRevision` implements Atlas's metadata-only
 history transition: it preserves existing clean rows through the target, adds
