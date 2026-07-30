@@ -2,6 +2,7 @@ package atlasmigrate_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -23,6 +24,7 @@ func TestStatus_SQLiteMainRevisionsSchema(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:             migrationsDir,
+		FS:              os.DirFS(migrationsDir),
 		ExecOrder:       migrator.ExecOrderLinear,
 		TxMode:          migrator.MigrationTxModeFile,
 		RevisionsSchema: "main",
@@ -33,6 +35,7 @@ func TestStatus_SQLiteMainRevisionsSchema(t *testing.T) {
 
 	got, err := atlasmigrate.Status(ctx, conn, atlasmigrate.StatusOptions{
 		Dir:             migrationsDir,
+		FS:              os.DirFS(migrationsDir),
 		RevisionsSchema: "main",
 	})
 

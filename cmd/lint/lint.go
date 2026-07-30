@@ -208,7 +208,22 @@ func prepareReportOptions(
 		return migrationlintreport.Options{}, nil, errors.New("--attach requires an OCI migration source")
 	}
 	if !isOCI {
-		return opts, nil, nil
+		prepared, err := migrationlintreport.PrepareSourceOptions(opts, projectCfg)
+		if err != nil {
+			return migrationlintreport.Options{}, nil, err
+		}
+		source, err := migrationsource.Resolve(cmd.Context(), prepared.Dir, migrationsource.Options{
+			DirFormat: migrator.MigrationDirFormat(prepared.DirFormat),
+			PlainHTTP: sourceOpts.plainHTTP,
+		})
+		if err != nil {
+			return migrationlintreport.Options{}, nil, err
+		}
+		prepared.FS = source.FileSystem
+		prepared.DirFormat = string(source.DirFormat)
+		prepared.Changed.Dir = true
+		prepared.Changed.DirFormat = true
+		return prepared, nil, nil
 	}
 
 	effectiveGitBase := dbcli.EffectiveString(

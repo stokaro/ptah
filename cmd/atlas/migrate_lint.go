@@ -3,7 +3,6 @@ package atlas
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,8 +15,6 @@ import (
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/migrationlintreport"
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
-	"github.com/stokaro/ptah/internal/pathguard"
 	migrationlint "github.com/stokaro/ptah/migration/lint"
 )
 
@@ -62,12 +59,17 @@ Native Ptah equivalent: ptah migrations lint.`,
 	return cmd
 }
 
-func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error {
+func runAtlasMigrateLint(
+	cmd *cobra.Command,
+	opts atlasMigrateLintOptions,
+) (runErr error) {
 	formatOutput := cmd.Flags().Changed("format")
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+	project, loaded, err := openAtlasProjectForCommand(cmd, ignoreMissingEnvSelection)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	defer closeAtlasProject(&project, &runErr)
+	projectCfg := project.Config
 	if loaded {
 		opts.devURL = dbcli.EffectiveString(
 			cmd,
@@ -111,14 +113,6 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatOutput = formatOutput || formatValue.Present
 	}
-	if loaded &&
-		!cmd.Flags().Changed("dir") &&
-		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		opts.dir, err = atlasProjectConfigLocalDir(cmd, opts.dir)
-		if err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
-		}
-	}
 	if err := validateAtlasMigrateLintOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -134,18 +128,28 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	dir, err := atlasargs.LocalDirValue(opts.dir)
+	var localDir atlasargs.LocalDir
+	if loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
+		localDir, err = project.localDirWithQuery(opts.dir)
+	} else {
+		localDir, err = atlasargs.ParseLocalDir(opts.dir)
+	}
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
-	dir, err = pathguard.ResolveCLIPath(dir)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
+	if len(localDir.Query) > 0 {
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"atlas migrate lint --dir: migration directory URL query parameters are not supported for this command",
+		))
 	}
-	snapshot, err := migrationsnapshot.Capture(os.DirFS(dir))
+	source, err := project.captureLocal(localDir)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
+	dir := source.Display
+	snapshot := source.FileSystem
 	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

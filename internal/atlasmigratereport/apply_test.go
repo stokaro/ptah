@@ -41,10 +41,10 @@ func TestWriteApplyFormat_CustomTemplate(t *testing.T) {
 		&out,
 		`{{ .Driver }}|{{ .Dir }}|{{ len .Pending }}|{{ len .Applied }}|{{ .Target }}|{{ printf "%.12s" (index (index .Applied 0).Applied 0) }}`,
 		atlasmigratereport.ApplyFormatOptions{
-			Conn:        conn,
-			ResolvedDir: migrationsDir,
-			Dir:         "file://migrations",
-			URL:         "sqlite://" + dbPath,
+			Conn: conn,
+			FS:   os.DirFS(migrationsDir),
+			Dir:  "file://migrations",
+			URL:  "sqlite://" + dbPath,
 			Result: atlasmigrate.ApplyResult{
 				Status: &migrator.MigrationStatus{
 					CurrentVersion:    0,
@@ -66,4 +66,16 @@ func TestWriteApplyFormat_CustomTemplate(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "sqlite|file://migrations|1|1|1|CREATE TABLE")
+}
+
+func TestWriteApplyFormat_FailurePathRequiresMigrationFilesystem(t *testing.T) {
+	c := qt.New(t)
+
+	err := atlasmigratereport.WriteApplyFormat(
+		&bytes.Buffer{},
+		"{{ .Driver }}",
+		atlasmigratereport.ApplyFormatOptions{},
+	)
+
+	c.Assert(err, qt.ErrorMatches, "migrate apply format requires migration filesystem")
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/licensetext"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratecheckpoint"
 	"github.com/stokaro/ptah/cmd/migratedown"
@@ -728,7 +729,11 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 }
 
 func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
-	return func(cmd *cobra.Command, args []string) ([]string, context.Context, error) {
+	return func(
+		cmd *cobra.Command,
+		args []string,
+		cleanup *cmdadapter.CleanupScope,
+	) ([]string, context.Context, error) {
 		forwardContext := cmd.Context()
 		parentProjectFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
 		if err != nil {
@@ -745,18 +750,23 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		project = mergeAtlasProjectArgs(parentProject, project)
 		args = remaining
 		if project.changed {
-			cfg, targetCfg, err := loadAtlasAdapterProjectConfig(verb, project.flags)
+			loadedProject, targetCfg, err := loadAtlasAdapterProjectConfig(verb, project.flags)
 			if err != nil {
+				return nil, nil, err
+			}
+			cleanup.Add(loadedProject.Close)
+			if err := loadedProject.resolveMigrationDirForArgs(verb.flags, args); err != nil {
 				return nil, nil, err
 			}
 			applyProjectConfig := verb.projectConfig
 			if applyProjectConfig == nil {
 				applyProjectConfig = applyAtlasProjectConfigToArgs
 			}
-			args, err = applyProjectConfig(verb.flags, args, cfg, project.flags)
+			args, err = applyProjectConfig(verb.flags, args, loadedProject, project.flags)
 			if err != nil {
 				return nil, nil, err
 			}
+			forwardContext = withAtlasProjectMigrationRoot(forwardContext, group, loadedProject)
 			if verb.nativeProjectConfig {
 				forwardContext = dbcli.WithProjectConfig(forwardContext, targetCfg)
 			}
@@ -776,15 +786,30 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 	}
 }
 
+func withAtlasProjectMigrationRoot(
+	ctx context.Context,
+	group string,
+	project atlasProject,
+) context.Context {
+	if group != "migrate" || !project.migrationDirResolved {
+		return ctx
+	}
+	localOptions := project.localOptions(project.migrationDir)
+	if localOptions.Root != nil {
+		return migrationsource.WithRootedLocal(ctx, project.migrationDir.Path, localOptions.Root)
+	}
+	return migrationsource.WithLocalRoot(ctx, project.migrationDir.Path, localOptions.AllowedRoot)
+}
+
 func loadAtlasAdapterProjectConfig(
 	verb atlasVerb,
 	flags atlasProjectFlagValues,
-) (atlasConfig, targetConfig projectconfig.Config, err error) {
+) (project atlasProject, targetConfig projectconfig.Config, err error) {
 	if !verb.nativeProjectConfig {
-		cfg, err := loadRequiredAtlasProjectConfig(flags)
-		return cfg, projectconfig.Config{}, err
+		project, _, err := openAtlasProject(flags, requiredAtlasProject)
+		return project, projectconfig.Config{}, err
 	}
-	return loadRequiredMergedProjectConfig(flags)
+	return openRequiredMergedProjectConfig(flags)
 }
 
 func rejectNativeOnlyAtlasFlags(group string, verb atlasVerb, args []string) error {

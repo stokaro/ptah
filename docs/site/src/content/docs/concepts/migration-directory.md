@@ -56,6 +56,35 @@ Atlas-compatible command surface — the `ptah-compat` drop-in binary — operat
 on the same directories through its `migrate ...` commands; see the
 [Atlas compatibility overview](../../atlas/overview/).
 
+## Stable local snapshots
+
+Native `migrations up`, `migrations down`, `migrations status`,
+`migrations set`, and `lint`, plus Atlas-compatible `migrate apply`,
+`migrate down`, `migrate status`, `migrate set`, and `migrate lint`, open a
+local migration directory through a rooted handle and capture an immutable
+in-memory snapshot before connecting to a database. Their reports and rollback
+verification reuse that snapshot. It contains migration SQL,
+`.ptah-lint.yaml`, `ptah.sum`, and `atlas.sum`; unrelated files are excluded.
+
+Relative CLI paths are rooted at the process working directory. Traversal and
+symlink escapes outside that root are rejected. Explicit absolute paths remain
+supported. A relative `migration.dir` in `atlas.hcl` resolves from the project
+file's directory. Ptah keeps that project directory handle open from
+`atlas.hcl` evaluation, including `file()` and `fileset()`, through migration
+capture, so replacing the project pathname cannot redirect the command.
+Parent-relative project paths such as `../shared-migrations` are intentionally
+external and use unrooted compatibility semantics. An explicit CLI `--dir`
+keeps CLI path semantics.
+
+Ptah reads the directory twice and accepts it only when both observed captures
+match. This best-effort check rejects observed differences, but cannot defeat
+coordinated writers or an ABA change that restores the original bytes before
+the next observation. Hostile writers require trusted immutable input, manifest
+or process controls, or a filesystem-level snapshot. After acceptance, checksum
+verification, migration registration, destructive linting, shadow rollback
+verification, execution, and template reports all consume the same captured
+bytes.
+
 ## Consequences
 
 - **The directory is portable.** Every environment replays the same files in

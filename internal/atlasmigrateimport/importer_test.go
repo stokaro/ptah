@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -12,6 +13,32 @@ import (
 	"github.com/stokaro/ptah/internal/atlasmigrateimport"
 	"github.com/stokaro/ptah/migration/migrator"
 )
+
+func TestLoadFS_RejectsUnsupportedSourceFiles(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("Go-based Goose migration", func(c *qt.C) {
+		source := fstest.MapFS{
+			"1_init.sql": &fstest.MapFile{Data: []byte("-- +goose Up\nCREATE TABLE users (id int);\n")},
+			"2_seed.go":  &fstest.MapFile{Data: []byte("package migrations\n")},
+		}
+
+		_, err := atlasmigrateimport.LoadFS(source, "migrations", atlasmigrateimport.FormatGoose)
+
+		c.Assert(err, qt.ErrorMatches, `Go-based Goose migration "2_seed\.go" is not supported \(SQL migrations only\)`)
+	})
+
+	c.Run("Liquibase XML changelog", func(c *qt.C) {
+		source := fstest.MapFS{
+			"1_init.sql":    &fstest.MapFile{Data: []byte("--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")},
+			"changelog.xml": &fstest.MapFile{Data: []byte("<databaseChangeLog></databaseChangeLog>\n")},
+		}
+
+		_, err := atlasmigrateimport.LoadFS(source, "migrations", atlasmigrateimport.FormatLiquibase)
+
+		c.Assert(err, qt.ErrorMatches, `liquibase XML/YAML/JSON changelogs are not yet supported .* found changelog\.xml`)
+	})
+}
 
 func TestImportFlywayBaselineAndUndo(t *testing.T) {
 	c := qt.New(t)

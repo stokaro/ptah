@@ -36,14 +36,38 @@ func LoadAtlasFile(path, envName string) (Config, error) {
 // config file with Atlas-compatible evaluation options. A missing file returns
 // an empty config.
 func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error) {
-	raw, err := os.ReadFile(path)
+	return loadAtlasFileWithOptions(path, opts)
+}
+
+func loadAtlasFileWithOptions(
+	path string,
+	opts AtlasLoadOptions,
+) (
+	cfg Config,
+	returnErr error,
+) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve atlas config path %s: %w", path, err)
+	}
+	root, err := os.OpenRoot(filepath.Dir(absolute))
+	if errors.Is(err, fs.ErrNotExist) {
+		return Config{}, nil
+	}
+	if err != nil {
+		return Config{}, fmt.Errorf("open atlas config directory %s: %w", filepath.Dir(path), err)
+	}
+	defer func() {
+		returnErr = errors.Join(returnErr, root.Close())
+	}()
+	raw, err := fs.ReadFile(root.FS(), filepath.Base(absolute))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return Config{}, nil
 	case err != nil:
 		return Config{}, fmt.Errorf("failed to read atlas config %s: %w", path, err)
 	}
-	return ParseAtlasWithOptions(raw, path, opts)
+	return ParseAtlasFSWithOptions(raw, path, root.FS(), opts)
 }
 
 // ParseAtlas parses the supported subset of an Atlas project config file.
@@ -57,6 +81,21 @@ func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) 
 	if filename == "" {
 		filename = AtlasFileName
 	}
+	return ParseAtlasFSWithOptions(data, filename, os.DirFS(filepath.Dir(filename)), opts)
+}
+
+// ParseAtlasFSWithOptions parses an Atlas project config while resolving
+// file() and fileset() through fsys. fsys must be rooted at the directory that
+// contains filename.
+func ParseAtlasFSWithOptions(
+	data []byte,
+	filename string,
+	fsys fs.FS,
+	opts AtlasLoadOptions,
+) (Config, error) {
+	if filename == "" {
+		filename = AtlasFileName
+	}
 	file, diags := hclsyntax.ParseConfig(data, filename, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
 		return Config{}, fmt.Errorf("parse atlas project config: %s", diags.Error())
@@ -66,8 +105,7 @@ func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) 
 		return Config{}, fmt.Errorf("parse atlas project config: unsupported body type %T", file.Body)
 	}
 
-	baseDir := filepath.Dir(filename)
-	p, err := newAtlasParser(baseDir, opts.Vars)
+	p, err := newAtlasParser(fsys, opts.Vars)
 	if err != nil {
 		return Config{}, err
 	}
@@ -79,7 +117,7 @@ type atlasParser struct {
 	varOverride map[string]cty.Value
 }
 
-func newAtlasParser(baseDir string, rawVars []string) (atlasParser, error) {
+func newAtlasParser(fsys fs.FS, rawVars []string) (atlasParser, error) {
 	overrides, err := parseAtlasVarOverrides(rawVars)
 	if err != nil {
 		return atlasParser{}, err
@@ -88,8 +126,8 @@ func newAtlasParser(baseDir string, rawVars []string) (atlasParser, error) {
 		ctx: &hcl.EvalContext{
 			Variables: map[string]cty.Value{},
 			Functions: map[string]function.Function{
-				"file":       atlasFileFunc(baseDir),
-				"fileset":    atlasFilesetFunc(baseDir),
+				"file":       atlasFileFunc(fsys),
+				"fileset":    atlasFilesetFunc(fsys),
 				"format":     stdlib.FormatFunc,
 				"getenv":     atlasGetenvFunc(),
 				"jsonencode": stdlib.JSONEncodeFunc,
@@ -1230,7 +1268,7 @@ func atlasGetenvFunc() function.Function {
 	})
 }
 
-func atlasFileFunc(baseDir string) function.Function {
+func atlasFileFunc(fsys fs.FS) function.Function {
 	return function.New(&function.Spec{
 		Params: []function.Parameter{
 			{
@@ -1240,11 +1278,11 @@ func atlasFileFunc(baseDir string) function.Function {
 		},
 		Type: function.StaticReturnType(cty.String),
 		Impl: func(args []cty.Value, _ cty.Type) (cty.Value, error) {
-			path, err := atlasLocalPath(baseDir, args[0].AsString())
+			path, err := atlasLocalFSPath(args[0].AsString())
 			if err != nil {
 				return cty.NilVal, err
 			}
-			raw, err := os.ReadFile(path)
+			raw, err := fs.ReadFile(fsys, path)
 			if err != nil {
 				return cty.NilVal, err
 			}
@@ -1253,7 +1291,7 @@ func atlasFileFunc(baseDir string) function.Function {
 	})
 }
 
-func atlasFilesetFunc(baseDir string) function.Function {
+func atlasFilesetFunc(fsys fs.FS) function.Function {
 	return function.New(&function.Spec{
 		Params: []function.Parameter{
 			{
@@ -1263,7 +1301,7 @@ func atlasFilesetFunc(baseDir string) function.Function {
 		},
 		Type: function.StaticReturnType(cty.List(cty.String)),
 		Impl: func(args []cty.Value, _ cty.Type) (cty.Value, error) {
-			values, err := atlasFileset(baseDir, args[0].AsString())
+			values, err := atlasFileset(fsys, args[0].AsString())
 			if err != nil {
 				return cty.NilVal, err
 			}
@@ -1272,64 +1310,58 @@ func atlasFilesetFunc(baseDir string) function.Function {
 	})
 }
 
-func atlasFileset(baseDir, pattern string) ([]string, error) {
+func atlasFileset(fsys fs.FS, pattern string) ([]string, error) {
 	if err := validateAtlasLocalPathValue(pattern); err != nil {
 		return nil, err
 	}
 	if strings.Contains(pattern, "**") {
-		return atlasRecursiveFileset(baseDir, pattern)
+		return atlasRecursiveFileset(fsys, pattern)
 	}
-	fullPattern, err := atlasLocalPath(baseDir, pattern)
+	localPattern, err := atlasLocalFSPath(pattern)
 	if err != nil {
 		return nil, err
 	}
-	matches, err := filepath.Glob(fullPattern)
-	if err != nil {
-		return nil, err
-	}
-	baseAbs, err := filepath.Abs(baseDir)
+	matches, err := fs.Glob(fsys, localPattern)
 	if err != nil {
 		return nil, err
 	}
 	values := make([]string, 0, len(matches))
 	for _, match := range matches {
-		info, err := os.Stat(match)
+		info, err := fs.Stat(fsys, match)
 		if err != nil {
 			return nil, err
 		}
 		if info.IsDir() {
 			continue
 		}
-		rel, err := filepath.Rel(baseAbs, match)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, filepath.ToSlash(rel))
+		values = append(values, filepath.ToSlash(match))
 	}
 	sort.Strings(values)
 	return values, nil
 }
 
-func atlasRecursiveFileset(baseDir, pattern string) ([]string, error) {
-	localPattern := strings.TrimPrefix(filepath.ToSlash(pattern), "file://")
+func atlasRecursiveFileset(fsys fs.FS, pattern string) ([]string, error) {
+	localPattern, err := atlasLocalFSPath(pattern)
+	if err != nil {
+		return nil, err
+	}
 	values := []string{}
-	err := filepath.WalkDir(baseDir, func(rawPath string, entry fs.DirEntry, err error) error {
+	err = fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
 			return nil
 		}
-		rel, err := filepath.Rel(baseDir, rawPath)
-		if err != nil {
-			return err
-		}
-		slashRel := filepath.ToSlash(rel)
+		slashRel := filepath.ToSlash(name)
 		matched, err := atlasMatchDoubleStar(localPattern, slashRel)
 		if err != nil {
 			return err
 		}
 		if matched {
+			if _, err := fs.Stat(fsys, name); err != nil {
+				return err
+			}
 			values = append(values, slashRel)
 		}
 		return nil
@@ -1369,27 +1401,16 @@ func atlasMatchSegments(patternParts, nameParts []string) (bool, error) {
 	return atlasMatchSegments(patternParts[1:], nameParts[1:])
 }
 
-func atlasLocalPath(baseDir, value string) (string, error) {
+func atlasLocalFSPath(value string) (string, error) {
 	if err := validateAtlasLocalPathValue(value); err != nil {
 		return "", err
 	}
 	rawPath := strings.TrimPrefix(value, "file://")
-	fullPath, err := filepath.Abs(filepath.Join(baseDir, filepath.FromSlash(rawPath)))
-	if err != nil {
-		return "", err
-	}
-	baseAbs, err := filepath.Abs(baseDir)
-	if err != nil {
-		return "", err
-	}
-	rel, err := filepath.Rel(baseAbs, fullPath)
-	if err != nil {
-		return "", err
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	localPath := filepath.Clean(filepath.FromSlash(rawPath))
+	if localPath == ".." || strings.HasPrefix(localPath, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("path escapes atlas.hcl directory: %s", value)
 	}
-	return fullPath, nil
+	return filepath.ToSlash(localPath), nil
 }
 
 func validateAtlasLocalPathValue(value string) error {

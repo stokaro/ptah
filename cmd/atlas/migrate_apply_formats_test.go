@@ -300,6 +300,62 @@ func TestMigrateApplyRejectsMissingUpDirectiveBeforeOpeningDatabase(t *testing.T
 	}
 }
 
+func TestMigrateApplyRejectsUnsupportedFormatFilesBeforeOpeningDatabase(t *testing.T) {
+	tests := []struct {
+		name    string
+		format  string
+		files   map[string]string
+		wantErr string
+	}{
+		{
+			name:   "Go-based Goose migration",
+			format: "goose",
+			files: map[string]string{
+				"1_init.sql": "-- +goose Up\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+				"2_seed.go":  "package migrations\n",
+			},
+			wantErr: `atlas migrate apply --dir: Go-based Goose migration "2_seed\.go" is not supported \(SQL migrations only\)`,
+		},
+		{
+			name:   "Liquibase XML changelog",
+			format: "liquibase",
+			files: map[string]string{
+				"1_init.sql":    "--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+				"changelog.xml": "<databaseChangeLog></databaseChangeLog>\n",
+			},
+			wantErr: `atlas migrate apply --dir: liquibase XML/YAML/JSON changelogs are not yet supported .* found changelog\.xml`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			migrationsDir := filepath.Join(dir, "migrations")
+			for name, content := range test.files {
+				writeAtlasApplyProjectMigration(c, migrationsDir, name, content)
+			}
+			dbPath := filepath.Join(dir, "must-not-exist.db")
+
+			cmd := atlas.NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs([]string{
+				"migrate", "apply",
+				"--url", "sqlite://" + dbPath,
+				"--dir", "file://" + migrationsDir + "?format=" + test.format,
+			})
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			_, statErr := os.Stat(dbPath)
+			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+		})
+	}
+}
+
 func TestMigrateApplyRejectsUnknownURLFormatBeforeOpeningDatabase(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

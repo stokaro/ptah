@@ -794,6 +794,65 @@ func TestRunLint_InvalidFlagValuesExitCode2(t *testing.T) {
 	c.Assert(stderr, qt.Contains, "unexpected positional arguments")
 }
 
+func TestRunLint_LocalSourceValidationPrecedence(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	missingDir := filepath.Join(root, "missing")
+	validDir := filepath.Join(root, "valid")
+	c.Assert(os.Mkdir(validDir, 0o700), qt.IsNil)
+	invalidMetadataDir := filepath.Join(root, "invalid-metadata")
+	c.Assert(os.Mkdir(invalidMetadataDir, 0o700), qt.IsNil)
+	writeLintTestFile(c, invalidMetadataDir, "ATLAS.SUM", "metadata\n")
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "dialect before directory",
+			args: []string{"--dir", missingDir, "--dialect", "oracle"},
+			want: "invalid --dialect",
+		},
+		{
+			name: "positional arguments before directory",
+			args: []string{"--dir", missingDir, "unexpected"},
+			want: "unexpected positional arguments",
+		},
+		{
+			name: "directory before directory format",
+			args: []string{"--dir", missingDir, "--dir-format", "custom"},
+			want: "migrations directory",
+		},
+		{
+			name: "directory format before dev url",
+			args: []string{
+				"--dir", validDir,
+				"--dir-format", "custom",
+				"--dev-url", "spanner://localhost/dev",
+			},
+			want: `unknown migration directory format "custom"`,
+		},
+		{
+			name: "dev url before directory capture",
+			args: []string{
+				"--dir", invalidMetadataDir,
+				"--dev-url", "spanner://localhost/dev",
+			},
+			want: `unsupported --dev-url dialect "spanner://localhost/dev"`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			_, stderr, err := execute(test.args...)
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stderr, qt.Contains, test.want)
+		})
+	}
+}
+
 func TestRunLint_ExplicitEmptyDialectOverridesConfig(t *testing.T) {
 	c := qt.New(t)
 

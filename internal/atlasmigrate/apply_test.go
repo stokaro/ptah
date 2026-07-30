@@ -26,6 +26,7 @@ func TestPrepareApplyExecute_HappyPathAppliesSelectedAmount(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
 		ExecOrder: migrator.ExecOrderLinear,
 		TxMode:    migrator.MigrationTxModeFile,
 		Amount:    2,
@@ -51,7 +52,12 @@ func TestPrepareApplyExecute_AppliesConvertedExternalFormatFS(t *testing.T) {
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyMigrationFile(c, migrationsDir, "1_widgets.sql",
 		"-- +goose Up\nCREATE TABLE goose_up (id INTEGER PRIMARY KEY);\n-- +goose Down\nCREATE TABLE goose_down (id INTEGER PRIMARY KEY);\n")
-	migrationFS, err := atlasmigrate.ResolveApplyDir(migrationsDir, "goose", nil)
+	migrationFS, err := atlasmigrate.ResolveApplySource(
+		os.DirFS(migrationsDir),
+		migrationsDir,
+		"goose",
+		nil,
+	)
 	c.Assert(err, qt.IsNil)
 	conn := connectSQLite(c, filepath.Join(dir, "goose.db"))
 	defer dbschema.CloseAndWarn(conn)
@@ -88,6 +94,7 @@ func TestPrepareApplyExecute_BaselineRecordsAtlasRevisions(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:             migrationsDir,
+		FS:              os.DirFS(migrationsDir),
 		ExecOrder:       migrator.ExecOrderLinear,
 		TxMode:          migrator.MigrationTxModeFile,
 		BaselineVersion: 2,
@@ -118,6 +125,7 @@ func TestPrepareApplyExecute_SQLiteMainRevisionsSchema(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:             migrationsDir,
+		FS:              os.DirFS(migrationsDir),
 		ExecOrder:       migrator.ExecOrderLinear,
 		TxMode:          migrator.MigrationTxModeFile,
 		RevisionsSchema: "main",
@@ -147,6 +155,7 @@ func TestPrepareApplyExecute_DryRunBaselinePlansRemaining(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:             migrationsDir,
+		FS:              os.DirFS(migrationsDir),
 		DryRun:          true,
 		ExecOrder:       migrator.ExecOrderLinear,
 		TxMode:          migrator.MigrationTxModeFile,
@@ -177,6 +186,7 @@ func TestPrepareApplyExecute_NoopReturnsResult(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 	firstPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
 		ExecOrder: migrator.ExecOrderLinear,
 		TxMode:    migrator.MigrationTxModeFile,
 	})
@@ -186,6 +196,7 @@ func TestPrepareApplyExecute_NoopReturnsResult(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
 		ExecOrder: migrator.ExecOrderLinear,
 		TxMode:    migrator.MigrationTxModeFile,
 	})
@@ -210,6 +221,7 @@ func TestPrepareApplyExecute_ReturnsPlannedResultOnApplyError(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
 		ExecOrder: migrator.ExecOrderLinear,
 		TxMode:    migrator.MigrationTxModeFile,
 	})
@@ -247,12 +259,24 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 		c.Assert(plan.SelectedVersions, qt.HasLen, 0)
 	})
 
+	c.Run("missing migration filesystem", func(c *qt.C) {
+		conn := connectSQLite(c, filepath.Join(c.TempDir(), "missing-fs.db"))
+		defer dbschema.CloseAndWarn(conn)
+
+		plan, err := atlasmigrate.PrepareApply(context.Background(), conn, atlasmigrate.ApplyOptions{
+			Dir: c.TempDir(),
+		})
+		c.Assert(err, qt.ErrorMatches, "migrate apply requires migration filesystem")
+		c.Assert(plan.SelectedVersions, qt.HasLen, 0)
+	})
+
 	c.Run("negative baseline version", func(c *qt.C) {
 		conn := connectSQLite(c, filepath.Join(c.TempDir(), "negative-baseline.db"))
 		defer dbschema.CloseAndWarn(conn)
 
 		plan, err := atlasmigrate.PrepareApply(context.Background(), conn, atlasmigrate.ApplyOptions{
 			Dir:             c.TempDir(),
+			FS:              os.DirFS(c.TempDir()),
 			BaselineVersion: -1,
 		})
 		c.Assert(err, qt.ErrorMatches, "migrate apply baseline version must be greater than or equal to zero")
@@ -268,6 +292,7 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 
 		plan, err := atlasmigrate.PrepareApply(context.Background(), conn, atlasmigrate.ApplyOptions{
 			Dir:             migrationsDir,
+			FS:              os.DirFS(migrationsDir),
 			DryRun:          true,
 			BaselineVersion: 2,
 		})

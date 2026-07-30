@@ -1,8 +1,8 @@
 package atlas
 
 // White-box testing required: this test verifies the unexported Atlas argument
-// mapper's snapshot boundary between project evaluation and native consumption;
-// no exported API exposes a deterministic hook at that point.
+// mapper's config snapshot boundary between project evaluation and native
+// consumption; no exported API exposes a deterministic hook at that point.
 
 import (
 	"os"
@@ -11,10 +11,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 )
 
-func TestAtlasArgMapperPreservesProjectFilesSnapshot(t *testing.T) {
+func TestAtlasArgMapperPreservesProjectConfigSnapshot(t *testing.T) {
 	c := qt.New(t)
 	t.Chdir(t.TempDir())
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
@@ -33,10 +34,11 @@ func TestAtlasArgMapperPreservesProjectFilesSnapshot(t *testing.T) {
 	mapperCommand := &cobra.Command{Use: "down"}
 	mapperCommand.SetContext(t.Context())
 	mapper := atlasArgMapper("migrate", atlasMigrateDownVerb())
+	cleanup := &cmdadapter.CleanupScope{}
 	_, snapshotContext, err := mapper(mapperCommand, []string{
 		"--config", "file://atlas.hcl",
 		"--env", "local",
-	})
+	}, cleanup)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
@@ -59,4 +61,5 @@ func TestAtlasArgMapperPreservesProjectFilesSnapshot(t *testing.T) {
 	c.Assert(loaded.DatabaseURL, qt.Equals, "sqlite://generation-one.db")
 	c.Assert(loaded.Migration.Dir, qt.Equals, "generation-one-migrations")
 	c.Assert(loaded.Migration.PreDownHook, qt.Equals, "generation-one-hook")
+	c.Assert(cleanup.Close(), qt.IsNil)
 }

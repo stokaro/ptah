@@ -153,6 +153,7 @@ type Config struct{ ... }
     func LoadPtahFile(path, envName string) (Config, error)
     func Merge(base, override Config) Config
     func ParseAtlas(data []byte, filename, envName string) (Config, error)
+    func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) (Config, error)
     func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
     func ParsePtah(data []byte, filename, envName string) (Config, error)
 type ConfigBool struct{ ... }
@@ -230,6 +231,7 @@ func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error
 func LoadPtahFile(path, envName string) (Config, error)
 func Merge(base, override Config) Config
 func ParseAtlas(data []byte, filename, envName string) (Config, error)
+func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) (Config, error)
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
 func ParsePtah(data []byte, filename, envName string) (Config, error)
 func (c Config) LintLatestValue() Value[int]
