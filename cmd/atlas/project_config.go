@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/internal/atlasprojectpath"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/atlassource"
+	"github.com/stokaro/ptah/internal/pathguard"
 )
 
 const (
@@ -165,7 +166,21 @@ func atlasProjectConfigLocalDirWithQueryFromFlags(
 	if err != nil {
 		return atlasargs.LocalDir{}, err
 	}
-	return atlasargs.LocalDir{Path: path, Query: query}, nil
+	parsed, err := atlasargs.ParseLocalDir(raw)
+	if err != nil {
+		return atlasargs.LocalDir{}, err
+	}
+	allowedRoot := ""
+	if !filepath.IsAbs(parsed.Path) {
+		if _, rootErr := pathguard.ResolveWithinRoot(path, baseDir); rootErr == nil {
+			allowedRoot = baseDir
+		}
+	}
+	return atlasargs.LocalDir{
+		Path:        path,
+		Query:       query,
+		AllowedRoot: allowedRoot,
+	}, nil
 }
 
 func atlasProjectConfigSchemaURLsFromFlags(flags atlasProjectFlagValues, raw []string) ([]string, error) {

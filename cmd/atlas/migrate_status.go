@@ -2,19 +2,18 @@ package atlas
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlasreport"
-	"github.com/stokaro/ptah/internal/pathguard"
 )
 
 type atlasMigrateStatusOptions struct {
@@ -96,13 +95,21 @@ func runAtlasMigrateStatus(cmd *cobra.Command, opts atlasMigrateStatusOptions) e
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatOutput = formatOutput || formatValue.Present
 	}
+	var localDir atlasargs.LocalDir
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		opts.dir, err = atlasProjectConfigLocalDir(cmd, opts.dir)
-		if err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
-		}
+		localDir, err = atlasProjectConfigLocalDirWithQuery(cmd, opts.dir)
+	} else {
+		localDir, err = atlasargs.ParseLocalDir(opts.dir)
+	}
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
+	}
+	if len(localDir.Query) > 0 {
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"atlas migrate status --dir: migration directory URL query parameters are not supported for this command",
+		))
 	}
 	if err := validateAtlasMigrateStatusOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -123,14 +130,13 @@ func runAtlasMigrateStatus(cmd *cobra.Command, opts atlasMigrateStatusOptions) e
 		}
 	}
 
-	dir, err := atlasargs.LocalDirValue(opts.dir)
+	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
+		AllowedRoot: localDir.AllowedRoot,
+	})
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
 	}
-	dir, err = pathguard.ResolveCLIPath(dir)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
-	}
+	dir := source.Display
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
@@ -141,6 +147,7 @@ func runAtlasMigrateStatus(cmd *cobra.Command, opts atlasMigrateStatusOptions) e
 
 	result, err := atlasmigrate.Status(cmd.Context(), conn, atlasmigrate.StatusOptions{
 		Dir:             dir,
+		FS:              source.FileSystem,
 		AtlasEnv:        opts.atlasEnv,
 		RevisionsSchema: opts.revisionsSchema,
 	})
@@ -152,7 +159,7 @@ func runAtlasMigrateStatus(cmd *cobra.Command, opts atlasMigrateStatusOptions) e
 			Driver:           conn.Info().Dialect,
 			URL:              opts.url,
 			Dir:              atlasStatusDirURL(opts.dir),
-			FS:               os.DirFS(dir),
+			FS:               source.FileSystem,
 			Status:           result.Status,
 			AppliedRevisions: result.AppliedRevisions,
 		})

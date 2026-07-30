@@ -3,18 +3,17 @@ package atlas
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -58,7 +57,10 @@ func atlasMigrateSetExactArgs(cmd *cobra.Command, args []string) error {
 }
 
 func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []string) error {
-	opts, dir, err := prepareAtlasMigrateSet(cmd, opts)
+	if err := atlasMigrateSetExactArgs(cmd, args); err != nil {
+		return err
+	}
+	opts, source, err := prepareAtlasMigrateSet(cmd, opts)
 	if err != nil {
 		return failAtlasCommand(cmd, err)
 	}
@@ -74,16 +76,13 @@ func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	if err := atlasMigrateSetExactArgs(cmd, args); err != nil {
-		return err
-	}
 	version, err := parseAtlasMigrateSetVersion(args[0])
 	if err != nil {
 		return failAtlasCommand(cmd, err)
 	}
 	result, err := atlasmigrate.Set(cmd.Context(), conn, version, atlasmigrate.SetOptions{
-		Dir:             dir,
-		FS:              os.DirFS(dir),
+		Dir:             source.Display,
+		FS:              source.FileSystem,
 		AtlasEnv:        opts.atlasEnv,
 		RevisionsSchema: opts.revisionsSchema,
 	})
@@ -99,13 +98,13 @@ func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []
 func prepareAtlasMigrateSet(
 	cmd *cobra.Command,
 	opts atlasMigrateSetOptions,
-) (atlasMigrateSetOptions, string, error) {
+) (atlasMigrateSetOptions, migrationsource.LocalSource, error) {
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if !cmd.Flags().Changed("url") {
 		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
 	}
 	if err != nil {
-		return atlasMigrateSetOptions{}, "", err
+		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, err
 	}
 	if loaded {
 		opts.url = dbcli.EffectiveString(
@@ -140,39 +139,38 @@ func prepareAtlasMigrateSet(
 		)
 	}
 	if opts.dir == "" {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("migrations directory is required")
+		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("migrations directory is required")
 	}
 	format, err := atlasMigrateDirFormatValue(opts.dirFormat)
 	if err != nil {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir-format: %w", err)
+		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("atlas migrate set --dir-format: %w", err)
 	}
 	if format != atlasDirFormatDefault {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir-format: expected atlas")
+		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("atlas migrate set --dir-format: expected atlas")
 	}
+
+	var localDir atlasargs.LocalDir
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		opts.dir, err = atlasProjectConfigLocalDir(cmd, opts.dir)
-		if err != nil {
-			return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir: %w", err)
-		}
+		localDir, err = atlasProjectConfigLocalDirWithQuery(cmd, opts.dir)
+	} else {
+		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
-	dir, err := atlasargs.LocalDirValue(opts.dir)
 	if err != nil {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir: %w", err)
+		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("atlas migrate set --dir: %w", err)
 	}
-	info, err := os.Stat(dir)
+	if len(localDir.Query) > 0 {
+		return atlasMigrateSetOptions{}, migrationsource.LocalSource{},
+			fmt.Errorf("atlas migrate set --dir: migration directory URL query parameters are not supported for this command")
+	}
+	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
+		AllowedRoot: localDir.AllowedRoot,
+	})
 	if err != nil {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("sql/migrate: %w", err)
+		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("atlas migrate set --dir: %w", err)
 	}
-	if !info.IsDir() {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("sql/migrate: %q is not a dir", dir)
-	}
-	dir, err = pathguard.ResolveCLIPath(dir)
-	if err != nil {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("resolve migration directory: %w", err)
-	}
-	return opts, dir, nil
+	return opts, source, nil
 }
 
 func parseAtlasMigrateSetVersion(value string) (int64, error) {

@@ -11,12 +11,12 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlasreport"
-	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -100,6 +100,9 @@ type atlasMigrateDownFormatOptions struct {
 	flagSet *pflag.FlagSet
 	// rawDir preserves the pre-resolution --dir value for the report's Env.Dir.
 	rawDir string
+	// dirRoot constrains a project-relative migration directory to atlas.hcl's
+	// directory while explicit absolute paths remain supported.
+	dirRoot string
 }
 
 func runAtlasMigrateDownFormat(cmd *cobra.Command, verb atlasVerb, args []string) error {
@@ -140,10 +143,13 @@ func runAtlasMigrateDownFormat(cmd *cobra.Command, verb atlasVerb, args []string
 	if err != nil {
 		return err
 	}
-	dir, err := pathguard.ResolveCLIPath(opts.dir)
+	source, err := migrationsource.CaptureLocal(opts.dir, migrationsource.LocalOptions{
+		AllowedRoot: opts.dirRoot,
+	})
 	if err != nil {
-		return fmt.Errorf("invalid migration directory: %w", err)
+		return fmt.Errorf("atlas migrate down --dir: %w", err)
 	}
+	dir := source.Display
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
@@ -155,6 +161,7 @@ func runAtlasMigrateDownFormat(cmd *cobra.Command, verb atlasVerb, args []string
 
 	plan, err := atlasmigrate.PrepareDown(cmd.Context(), conn, atlasmigrate.DownOptions{
 		Dir:                  dir,
+		FS:                   source.FileSystem,
 		TargetVersion:        targetVersion,
 		DryRun:               opts.dryRun,
 		RevisionsSchema:      opts.revisionsSchema,
@@ -170,7 +177,7 @@ func runAtlasMigrateDownFormat(cmd *cobra.Command, verb atlasVerb, args []string
 		err := generator.VerifyRollbackFromShadow(cmd.Context(), generator.RollbackFromShadowOptions{
 			TargetConnection:  conn,
 			ShadowDatabaseURL: opts.devURL,
-			FS:                os.DirFS(dir),
+			FS:                source.FileSystem,
 			CurrentVersion:    plan.CurrentVersion,
 			TargetVersion:     targetVersion,
 			ProviderOptions: []migrator.FSProviderOption{
@@ -198,7 +205,7 @@ func runAtlasMigrateDownFormat(cmd *cobra.Command, verb atlasVerb, args []string
 		Driver:           conn.Info().Dialect,
 		URL:              opts.url,
 		Dir:              opts.rawDir,
-		FS:               os.DirFS(dir),
+		FS:               source.FileSystem,
 		Migrations:       result.Migrations,
 		PlannedVersions:  result.PlannedVersions,
 		RevertedVersions: result.RevertedVersions,
@@ -366,12 +373,16 @@ func applyAtlasMigrateDownFormatProjectConfig(opts *atlasMigrateDownFormatOption
 	}
 	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
 	if !opts.flagSet.Changed("dir") && migrationDir.Present {
-		dir, err := atlasProjectConfigLocalDirFromFlags(project.flags, migrationDir.Value)
+		dir, err := atlasProjectConfigLocalDirWithQueryFromFlags(project.flags, migrationDir.Value)
 		if err != nil {
 			return fmt.Errorf("atlas.hcl migration.dir: %w", err)
 		}
+		if len(dir.Query) > 0 {
+			return fmt.Errorf("atlas.hcl migration.dir: migration directory URL query parameters are not supported for this command")
+		}
 		opts.rawDir = migrationDir.Value
-		opts.dir = dir
+		opts.dir = dir.Path
+		opts.dirRoot = dir.AllowedRoot
 	}
 	return nil
 }

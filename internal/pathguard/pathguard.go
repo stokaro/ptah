@@ -141,13 +141,25 @@ func OpenDirectoryWithinRoot(path, allowedRoot string) (*OpenedDirectory, error)
 }
 
 func openUnboundedDirectory(path string) (*OpenedDirectory, error) {
-	resolved, err := ResolveWithinRoot(path, "")
+	if strings.TrimSpace(path) == "" {
+		return nil, fmt.Errorf("path is required")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve absolute path: %w", err)
+	}
+	absolute = filepath.Clean(absolute)
+	root, err := os.OpenRoot(absolute)
 	if err != nil {
 		return nil, err
 	}
-	root, err := os.OpenRoot(resolved)
-	if err != nil {
-		return nil, err
+	resolved, resolveErr := resolvePath(absolute)
+	if resolveErr != nil {
+		closeErr := root.Close()
+		if closeErr != nil {
+			return nil, errors.Join(resolveErr, fmt.Errorf("close opened directory: %w", closeErr))
+		}
+		return nil, resolveErr
 	}
 	return &OpenedDirectory{root: root, path: resolved}, nil
 }
