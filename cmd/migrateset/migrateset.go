@@ -13,10 +13,10 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -157,11 +157,8 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	migrationsDir, err := pathguard.ResolveCLIPath(opts.migrationsDir)
+	source, err := migrationsource.CaptureLocal(opts.migrationsDir, migrationsource.LocalOptions{})
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("invalid migrations directory: %w", err))
-	}
-	if err := cmdutil.StatDir(migrationsDir); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -175,7 +172,8 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
 	result, err := atlasmigrate.Set(cmd.Context(), conn, version, atlasmigrate.SetOptions{
-		Dir:             migrationsDir,
+		Dir:             source.Display,
+		FS:              source.FileSystem,
 		AtlasEnv:        opts.atlasEnv,
 		RevisionsSchema: opts.migrationsSchema,
 		RevisionsTable:  opts.migrationsTable,

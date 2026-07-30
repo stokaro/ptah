@@ -3,7 +3,7 @@ package atlasmigrate
 import (
 	"context"
 	"fmt"
-	"os"
+	"io/fs"
 
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -11,6 +11,7 @@ import (
 
 type StatusOptions struct {
 	Dir             string
+	FS              fs.FS
 	AtlasEnv        string
 	RevisionsSchema string
 }
@@ -27,9 +28,12 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 	if opts.Dir == "" {
 		return StatusResult{}, fmt.Errorf("migrate status requires migration directory")
 	}
+	if opts.FS == nil {
+		return StatusResult{}, fmt.Errorf("migrate status requires migration filesystem")
+	}
 	mig, err := migrator.NewFSMigrator(
 		conn,
-		os.DirFS(opts.Dir),
+		opts.FS,
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
 	)

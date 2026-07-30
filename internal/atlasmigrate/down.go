@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -20,11 +19,9 @@ import (
 // DownOptions configures PrepareDown against an Atlas-format migration
 // directory and Atlas revision metadata, mirroring PrepareApply.
 type DownOptions struct {
-	// Dir is the resolved migration directory path. It is used for diagnostics
-	// and as the fallback filesystem when FS is nil.
+	// Dir is the resolved migration directory path used for diagnostics.
 	Dir string
-	// FS is the migration filesystem to roll back. When nil, PrepareDown reads
-	// Dir from disk with os.DirFS.
+	// FS is the already captured migration filesystem to roll back.
 	FS                   fs.FS
 	TargetVersion        int64
 	DryRun               bool
@@ -77,13 +74,9 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	}
 	startedAt := time.Now()
 
-	migrationFS := opts.FS
-	if migrationFS == nil {
-		migrationFS = os.DirFS(opts.Dir)
-	}
 	mig, err := migrator.NewFSMigrator(
 		conn,
-		migrationFS,
+		opts.FS,
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
 	)
@@ -200,6 +193,9 @@ func validateDownOptions(conn *dbschema.DatabaseConnection, opts DownOptions) er
 	}
 	if strings.TrimSpace(opts.Dir) == "" {
 		return errors.New("migrate down requires migration directory")
+	}
+	if opts.FS == nil {
+		return errors.New("migrate down requires migration filesystem")
 	}
 	if opts.TargetVersion < 0 {
 		return errors.New("migrate down target version must be greater than or equal to zero")

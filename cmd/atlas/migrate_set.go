@@ -3,7 +3,6 @@ package atlas
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,7 +13,6 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -24,6 +22,12 @@ type atlasMigrateSetOptions struct {
 	dirFormat       string
 	atlasEnv        string
 	revisionsSchema string
+}
+
+type atlasMigrateSetPreparation struct {
+	options atlasMigrateSetOptions
+	dir     atlasargs.LocalDir
+	project atlasProject
 }
 
 func newAtlasMigrateSetCommand() *cobra.Command {
@@ -57,13 +61,23 @@ func atlasMigrateSetExactArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []string) error {
-	opts, dir, err := prepareAtlasMigrateSet(cmd, opts)
+func runAtlasMigrateSet(
+	cmd *cobra.Command,
+	opts atlasMigrateSetOptions,
+	args []string,
+) (runErr error) {
+	prepared, err := prepareAtlasMigrateSet(cmd, opts)
 	if err != nil {
 		return failAtlasCommand(cmd, err)
 	}
+	defer closeAtlasProject(&prepared.project, &runErr)
+	opts = prepared.options
 	if opts.url == "" {
 		return failAtlasCommand(cmd, fmt.Errorf("sql/sqlclient: missing driver. See: https://atlasgo.io/url"))
+	}
+	source, err := prepared.project.captureLocal(prepared.dir)
+	if err != nil {
+		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
 	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
@@ -74,6 +88,9 @@ func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	// Atlas validates the environment, migration directory, and database
+	// connection before the positional version. Binary compatibility tests pin
+	// this otherwise surprising diagnostic and side-effect order.
 	if err := atlasMigrateSetExactArgs(cmd, args); err != nil {
 		return err
 	}
@@ -82,8 +99,8 @@ func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []
 		return failAtlasCommand(cmd, err)
 	}
 	result, err := atlasmigrate.Set(cmd.Context(), conn, version, atlasmigrate.SetOptions{
-		Dir:             dir,
-		FS:              os.DirFS(dir),
+		Dir:             source.Display,
+		FS:              source.FileSystem,
 		AtlasEnv:        opts.atlasEnv,
 		RevisionsSchema: opts.revisionsSchema,
 	})
@@ -99,14 +116,21 @@ func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []
 func prepareAtlasMigrateSet(
 	cmd *cobra.Command,
 	opts atlasMigrateSetOptions,
-) (atlasMigrateSetOptions, string, error) {
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+) (
+	prepared atlasMigrateSetPreparation,
+	returnErr error,
+) {
+	mode := ignoreMissingEnvSelection
 	if !cmd.Flags().Changed("url") {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
+		mode = reportMissingEnvSelection
 	}
+	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
 	if err != nil {
-		return atlasMigrateSetOptions{}, "", err
+		return atlasMigrateSetPreparation{}, err
 	}
+	prepared.project = project
+	defer closeAtlasProjectOnError(&prepared.project, &returnErr)
+	projectCfg := project.Config
 	if loaded {
 		opts.url = dbcli.EffectiveString(
 			cmd,
@@ -140,39 +164,44 @@ func prepareAtlasMigrateSet(
 		)
 	}
 	if opts.dir == "" {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("migrations directory is required")
+		return prepared, fmt.Errorf("migrations directory is required")
 	}
 	format, err := atlasMigrateDirFormatValue(opts.dirFormat)
 	if err != nil {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir-format: %w", err)
+		return prepared, fmt.Errorf("atlas migrate set --dir-format: %w", err)
 	}
 	if format != atlasDirFormatDefault {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir-format: expected atlas")
+		return prepared, fmt.Errorf("atlas migrate set --dir-format: expected atlas")
 	}
+
+	var localDir atlasargs.LocalDir
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		opts.dir, err = atlasProjectConfigLocalDir(cmd, opts.dir)
-		if err != nil {
-			return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir: %w", err)
-		}
+		localDir, err = project.localDirWithQuery(opts.dir)
+	} else {
+		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
-	dir, err := atlasargs.LocalDirValue(opts.dir)
 	if err != nil {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("atlas migrate set --dir: %w", err)
+		return prepared, fmt.Errorf("atlas migrate set --dir: %w", err)
 	}
-	info, err := os.Stat(dir)
+	if len(localDir.Query) > 0 {
+		return prepared,
+			fmt.Errorf("atlas migrate set --dir: migration directory URL query parameters are not supported for this command")
+	}
+	// Preserve Atlas-compatible directory diagnostics; the subsequent
+	// CaptureLocal call remains the authoritative rooted read and rejects any
+	// path changed after this check.
+	info, err := project.statLocalDir(localDir)
 	if err != nil {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("sql/migrate: %w", err)
+		return prepared, fmt.Errorf("sql/migrate: %w", err)
 	}
 	if !info.IsDir() {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("sql/migrate: %q is not a dir", dir)
+		return prepared, fmt.Errorf("sql/migrate: %q is not a dir", localDir.Path)
 	}
-	dir, err = pathguard.ResolveCLIPath(dir)
-	if err != nil {
-		return atlasMigrateSetOptions{}, "", fmt.Errorf("resolve migration directory: %w", err)
-	}
-	return opts, dir, nil
+	prepared.options = opts
+	prepared.dir = localDir
+	return prepared, nil
 }
 
 func parseAtlasMigrateSetVersion(value string) (int64, error) {

@@ -5,7 +5,9 @@ package cmdadapter
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -19,8 +21,32 @@ const envPrefix = "PTAH"
 const defaultSliceAnnotation = "ptah.cmdadapter.default-slice"
 
 // ArgMapper rewrites command arguments and returns the context for one
-// forwarded target execution.
-type ArgMapper func(*cobra.Command, []string) ([]string, context.Context, error)
+// forwarded target execution. Resources retained by the mapped execution must
+// be registered with cleanup.
+type ArgMapper func(*cobra.Command, []string, *CleanupScope) ([]string, context.Context, error)
+
+// CleanupScope owns resources retained while one forwarded command executes.
+type CleanupScope struct {
+	cleanups []func() error
+}
+
+// Add registers cleanup to run in reverse registration order.
+func (s *CleanupScope) Add(cleanup func() error) {
+	if cleanup != nil {
+		s.cleanups = append(s.cleanups, cleanup)
+	}
+}
+
+// Close releases registered resources in reverse registration order. It is
+// idempotent so tests and callers that transfer a scope can close it safely.
+func (s *CleanupScope) Close() error {
+	errs := make([]error, 0, len(s.cleanups))
+	for _, cleanup := range slices.Backward(s.cleanups) {
+		errs = append(errs, cleanup())
+	}
+	s.cleanups = nil
+	return errors.Join(errs...)
+}
 
 type helpBehavior int
 
@@ -96,14 +122,18 @@ func newForwardCommandWithArgsMapper(
 			cmd.SetContext(cmd.Root().Context())
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+			cleanup := &CleanupScope{}
+			defer func() {
+				runErr = errors.Join(runErr, cleanup.Close())
+			}()
 			if help == adapterHelp && hasHelpArg(args) {
 				return cmd.Help()
 			}
 			forwardContext := cmd.Context()
 			if mapper != nil {
 				var err error
-				args, forwardContext, err = mapper(cmd, args)
+				args, forwardContext, err = mapper(cmd, args, cleanup)
 				if err != nil {
 					return err
 				}

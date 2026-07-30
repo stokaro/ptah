@@ -173,15 +173,22 @@ read `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`.
 The apply path executes every Atlas OSS migration directory format selected by
 `migration.format` or the directory URL `?format=` parameter: `atlas`,
 `golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate`. The native
-`atlas` format is read from disk unchanged, preserving `atlas.sum` verification
-and down migrations. Every other format is read and converted in memory to Atlas
-single-file, up-only migrations, so apply executes only the source tool's
-forward (up) SQL and never its down, rollback, undo, or metadata section. This
-reuses the same format-loading layer as `ptah-compat migrate import`, so apply
-and import agree on every format's semantics. An explicit `?format=` query on
-the effective directory URL, from either `migration.dir` or CLI `--dir`,
-overrides the `migration.format` project default, matching Atlas; an empty query
-value selects the native `atlas` format.
+`atlas` format is captured unchanged, preserving `atlas.sum` verification and
+down migrations. Every other format is captured first and then converted in
+memory to Atlas single-file, up-only migrations, so apply executes only the
+source tool's forward (up) SQL and never its down, rollback, undo, or metadata
+section. This reuses the same format-loading layer as
+`ptah-compat migrate import`, so apply and import agree on every format's
+semantics. An explicit `?format=` query on the effective directory URL, from
+either `migration.dir` or CLI `--dir`, overrides the `migration.format` project
+default, matching Atlas; an empty query value selects the native `atlas`
+format.
+
+The local directory is opened through a rooted handle and captured twice before
+the target database is opened. The command aborts when the captures differ or a
+migration symlink escapes the root. Apply planning, execution, `atlas.sum`
+verification, and `--format` output all use the resulting immutable filesystem
+instead of reopening the path.
 
 ```bash
 # Apply a Goose directory directly — no separate import step.
@@ -209,6 +216,11 @@ the same version. See
 Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
 `--lock-name`; Ptah follows that surface and rejects those flags on
 `migrate apply`.
+
+The direct `migrate down --format` path uses the same snapshot for rollback
+planning, optional `--dev-url` shadow verification, target execution, and the
+rendered report. `migrate status`, `migrate lint`, and `migrate set` also capture
+their local directory before database work and do not reopen it later.
 
 ## Generate a migration with migrate diff
 

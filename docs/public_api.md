@@ -48,6 +48,9 @@ packages importable directly.
 `config/projectconfig` is the canonical typed project configuration IR. Its
 online-DDL policy is parsed, merged, validated, and then passed to migration
 execution without a second configuration-file read.
+`ParseAtlasFSWithOptions` lets embedders evaluate `atlas.hcl` against an
+already anchored or immutable `fs.FS`; `file()` and `fileset()` resolve only
+through that filesystem.
 
 `migration/lint` provides the compact `LintFS` findings API and the richer
 `AnalyzeFS` API. `AnalyzeFS` captures each migration input once: SQL files,

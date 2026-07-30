@@ -2,6 +2,7 @@ package atlasmigrate_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -29,6 +30,7 @@ func prepareDownFixture(c *qt.C, secondDownSQL string) (migrationsDir string, co
 
 	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
 		ExecOrder: migrator.ExecOrderLinear,
 		TxMode:    migrator.MigrationTxModeFile,
 	})
@@ -46,6 +48,7 @@ func TestPrepareDownExecute_HappyPathRevertsToTarget(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{
 		Dir:           migrationsDir,
+		FS:            os.DirFS(migrationsDir),
 		TargetVersion: 1,
 	})
 	c.Assert(err, qt.IsNil)
@@ -70,6 +73,7 @@ func TestPrepareDownExecute_RevertsAllInNewestFirstOrder(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{
 		Dir:           migrationsDir,
+		FS:            os.DirFS(migrationsDir),
 		TargetVersion: 0,
 	})
 	c.Assert(err, qt.IsNil)
@@ -91,6 +95,7 @@ func TestPrepareDownExecute_DryRunLeavesRevisionsUntouched(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{
 		Dir:           migrationsDir,
+		FS:            os.DirFS(migrationsDir),
 		TargetVersion: 0,
 		DryRun:        true,
 	})
@@ -113,6 +118,7 @@ func TestPrepareDownExecute_NoopWhenTargetAtOrAboveCurrent(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{
 		Dir:           migrationsDir,
+		FS:            os.DirFS(migrationsDir),
 		TargetVersion: 2,
 	})
 	c.Assert(err, qt.IsNil)
@@ -140,6 +146,7 @@ func TestPrepareDownExecute_FailurePathReportsRevertedPrefix(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 	applyPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
 		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
 		ExecOrder: migrator.ExecOrderLinear,
 		TxMode:    migrator.MigrationTxModeFile,
 	})
@@ -149,6 +156,7 @@ func TestPrepareDownExecute_FailurePathReportsRevertedPrefix(t *testing.T) {
 
 	plan, err := atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{
 		Dir:           migrationsDir,
+		FS:            os.DirFS(migrationsDir),
 		TargetVersion: 0,
 	})
 	c.Assert(err, qt.IsNil)
@@ -174,6 +182,13 @@ func TestPrepareDown_FailurePathValidatesOptions(t *testing.T) {
 	_, err = atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{})
 	c.Assert(err, qt.ErrorMatches, `migrate down requires migration directory`)
 
-	_, err = atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{Dir: "migrations", TargetVersion: -1})
+	_, err = atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{Dir: "migrations"})
+	c.Assert(err, qt.ErrorMatches, `migrate down requires migration filesystem`)
+
+	_, err = atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{
+		Dir:           "migrations",
+		FS:            os.DirFS(t.TempDir()),
+		TargetVersion: -1,
+	})
 	c.Assert(err, qt.ErrorMatches, `migrate down target version must be greater than or equal to zero`)
 }

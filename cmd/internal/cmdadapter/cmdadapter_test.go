@@ -22,6 +22,9 @@ type testContextKey struct{}
 type middlewareContextKey struct{}
 
 var errAdapterCanceled = errors.New("adapter canceled")
+var errMapperFailed = errors.New("mapper failed")
+var errTargetFailed = errors.New("target failed")
+var errCleanupFailed = errors.New("cleanup failed")
 
 func TestForwardCommandWithTargetHelpShowsTargetFlags(t *testing.T) {
 	c := qt.New(t)
@@ -268,6 +271,7 @@ func TestForwardCommandPassesProjectConfigSnapshotWithoutReloading(t *testing.T)
 	mapper := func(
 		cmd *cobra.Command,
 		args []string,
+		_ *cmdadapter.CleanupScope,
 	) ([]string, context.Context, error) {
 		ctx := dbcli.WithProjectConfig(cmd.Root().Context(), snapshot)
 		return args, ctx, nil
@@ -294,6 +298,136 @@ func TestForwardCommandPassesProjectConfigSnapshotWithoutReloading(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	c.Assert(loaded.Migration.PreDownHook, qt.Equals, "echo second-snapshot-hook; exit 9")
 	c.Assert(target.Context(), qt.IsNil)
+}
+
+func TestForwardCommandRunsMapperCleanupAfterEachSuccessfulExecution(t *testing.T) {
+	c := qt.New(t)
+	var events []string
+	mapper := func(
+		cmd *cobra.Command,
+		args []string,
+		cleanup *cmdadapter.CleanupScope,
+	) ([]string, context.Context, error) {
+		events = append(events, "mapper")
+		cleanup.Add(func() error {
+			events = append(events, "cleanup")
+			return nil
+		})
+		return args, cmd.Context(), nil
+	}
+	target := &cobra.Command{
+		Use: "target",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			events = append(events, "target")
+			return nil
+		},
+	}
+	cmd := cmdadapter.NewForwardCommandWithArgsMapper(
+		"atlas",
+		"Atlas adapter command",
+		"target",
+		func() *cobra.Command {
+			return target
+		},
+		mapper,
+	)
+
+	err := cmd.Execute()
+	c.Assert(err, qt.IsNil)
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(events, qt.DeepEquals, []string{
+		"mapper", "target", "cleanup",
+		"mapper", "target", "cleanup",
+	})
+}
+
+func TestForwardCommandRunsMapperCleanupAfterMapperFailure(t *testing.T) {
+	c := qt.New(t)
+	cleanupCalls := 0
+	mapper := func(
+		cmd *cobra.Command,
+		args []string,
+		cleanup *cmdadapter.CleanupScope,
+	) ([]string, context.Context, error) {
+		cleanup.Add(func() error {
+			cleanupCalls++
+			return nil
+		})
+		return args, cmd.Context(), errMapperFailed
+	}
+	cmd := cmdadapter.NewForwardCommandWithArgsMapper(
+		"atlas",
+		"Atlas adapter command",
+		"target",
+		func() *cobra.Command {
+			return &cobra.Command{Use: "target"}
+		},
+		mapper,
+	)
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorIs, errMapperFailed)
+	c.Assert(cleanupCalls, qt.Equals, 1)
+}
+
+func TestForwardCommandJoinsTargetAndCleanupFailures(t *testing.T) {
+	c := qt.New(t)
+	cleanupCalls := 0
+	mapper := func(
+		cmd *cobra.Command,
+		args []string,
+		cleanup *cmdadapter.CleanupScope,
+	) ([]string, context.Context, error) {
+		cleanup.Add(func() error {
+			cleanupCalls++
+			return errCleanupFailed
+		})
+		return args, cmd.Context(), nil
+	}
+	cmd := cmdadapter.NewForwardCommandWithArgsMapper(
+		"atlas",
+		"Atlas adapter command",
+		"target",
+		func() *cobra.Command {
+			return &cobra.Command{
+				Use: "target",
+				RunE: func(_ *cobra.Command, _ []string) error {
+					return errTargetFailed
+				},
+			}
+		},
+		mapper,
+	)
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorIs, errTargetFailed)
+	c.Assert(err, qt.ErrorIs, errCleanupFailed)
+	c.Assert(cleanupCalls, qt.Equals, 1)
+}
+
+func TestCleanupScopeClosesInReverseOrderAndOnlyOnce(t *testing.T) {
+	c := qt.New(t)
+	var order []string
+	cleanup := &cmdadapter.CleanupScope{}
+	cleanup.Add(func() error {
+		order = append(order, "first")
+		return nil
+	})
+	cleanup.Add(func() error {
+		order = append(order, "second")
+		return nil
+	})
+
+	err := cleanup.Close()
+	c.Assert(err, qt.IsNil)
+	err = cleanup.Close()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(order, qt.DeepEquals, []string{"second", "first"})
 }
 
 func TestForwardCommandResetsStringArrayEmptyDefault(t *testing.T) {

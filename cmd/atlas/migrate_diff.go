@@ -87,16 +87,23 @@ diff policy values.`,
 	return cmd
 }
 
-func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name string) error {
+func runAtlasMigrateDiff(
+	cmd *cobra.Command,
+	opts atlasMigrateDiffOptions,
+	name string,
+) (runErr error) {
 	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+	mode := ignoreMissingEnvSelection
 	if needsAtlasMigrateDiffConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
+		mode = reportMissingEnvSelection
 	}
+	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	defer closeAtlasProject(&project, &runErr)
+	projectCfg := project.Config
 	if loaded {
 		opts.devURL = dbcli.EffectiveString(
 			cmd,
@@ -116,14 +123,6 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		policy, err = atlasDiffPolicy(projectCfg)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
-		}
-	}
-	if loaded &&
-		!cmd.Flags().Changed("dir") &&
-		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		opts.dirURL, err = atlasProjectConfigLocalDir(cmd, opts.dirURL)
-		if err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 		}
 	}
 	projectEnv := atlassource.ProjectEnv{}
@@ -156,11 +155,23 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		return cmdutil.Fail(cmd, err)
 	}
 
-	migrationsDir, err := atlasargs.LocalDirValue(opts.dirURL)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("--dir %q: %w", opts.dirURL, err))
+	var localDir atlasargs.LocalDir
+	if loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
+		localDir, err = project.localDirWithQuery(opts.dirURL)
+	} else {
+		localDir, err = atlasargs.ParseLocalDir(opts.dirURL)
 	}
-	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
+	}
+	if len(localDir.Query) > 0 {
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"atlas migrate diff --dir: migration directory URL query parameters are not supported for this command",
+		))
+	}
+	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
 	}
@@ -208,6 +219,13 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
+}
+
+func resolveMigrateDiffDirectory(dir atlasargs.LocalDir) (string, error) {
+	if dir.AllowedRoot != "" {
+		return pathguard.ResolveWithinRoot(dir.Path, dir.AllowedRoot)
+	}
+	return pathguard.ResolveCLIPath(dir.Path)
 }
 
 func needsAtlasMigrateDiffConfig(cmd *cobra.Command) bool {

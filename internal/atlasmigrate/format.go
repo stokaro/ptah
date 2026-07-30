@@ -5,39 +5,57 @@ import (
 	"io/fs"
 	"maps"
 	"net/url"
-	"os"
 	"slices"
 
 	"github.com/stokaro/ptah/internal/atlasmigrateimport"
+	"github.com/stokaro/ptah/internal/fsnapshot"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 )
 
-// ResolveApplyDir validates the requested migration directory format and returns
-// the filesystem the Atlas apply migrator should read. The native Atlas format
-// is read from disk unchanged, preserving atlas.sum verification and down
-// migrations. Every other supported Atlas OSS format (golang-migrate, goose,
-// flyway, liquibase, dbmate) is read and converted in memory to Atlas
-// single-file, up-only migrations, so applying it executes only the source
-// tool's up SQL and never its down or rollback section.
+// ResolveApplySource validates the requested migration directory format and
+// returns the immutable filesystem the Atlas apply migrator should read. The
+// native Atlas format preserves atlas.sum and down migrations. Every other
+// supported Atlas OSS format (golang-migrate, goose, flyway, liquibase, dbmate)
+// is converted in memory to Atlas single-file, up-only migrations, so applying
+// it executes only the source tool's up SQL and never its down or rollback
+// section.
 //
 // Unknown formats, unsupported URL query parameters, and formats Ptah cannot
 // execute yet (such as Flyway repeatable migrations) return an error.
-// ResolveApplyDir never opens a database connection, so callers can reject a
-// bad format or a malformed layout before mutating the target database. The URL
-// ?format= query value, when present, overrides the configured project format;
-// an empty query value selects the native Atlas format.
-func ResolveApplyDir(dir, configured string, query url.Values) (fs.FS, error) {
+// ResolveApplySource never opens a pathname or database connection, so callers
+// can capture a rooted source and reject a bad format or malformed layout
+// before mutating the target database. The URL ?format= query value, when
+// present, overrides the configured project format; an empty query value
+// selects the native Atlas format.
+func ResolveApplySource(
+	source fs.FS,
+	display string,
+	configured string,
+	query url.Values,
+) (fsnapshot.Snapshot, error) {
 	format, err := resolveApplyDirFormat(configured, query)
 	if err != nil {
-		return nil, err
+		return fsnapshot.Snapshot{}, err
+	}
+	if source == nil {
+		return fsnapshot.Snapshot{}, fmt.Errorf("migration directory filesystem is required")
+	}
+	snapshot, err := atlasmigrateimport.CaptureFS(source, format)
+	if err != nil {
+		return fsnapshot.Snapshot{}, fmt.Errorf("capture migration directory: %w", err)
 	}
 	if format == atlasmigrateimport.FormatAtlas {
-		return os.DirFS(dir), nil
+		return snapshot, nil
 	}
-	loaded, err := atlasmigrateimport.LoadDir(dir, format)
+	loaded, err := atlasmigrateimport.LoadFS(snapshot, display, format)
 	if err != nil {
-		return nil, err
+		return fsnapshot.Snapshot{}, err
 	}
-	return loaded.FS(), nil
+	converted, err := migrationsnapshot.Capture(loaded.FS())
+	if err != nil {
+		return fsnapshot.Snapshot{}, fmt.Errorf("capture converted migration directory: %w", err)
+	}
+	return converted, nil
 }
 
 func resolveApplyDirFormat(configured string, query url.Values) (atlasmigrateimport.Format, error) {

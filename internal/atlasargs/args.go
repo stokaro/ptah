@@ -13,8 +13,9 @@ import (
 
 // LocalDir describes a parsed local Atlas migration directory URL.
 type LocalDir struct {
-	Path  string
-	Query url.Values
+	Path        string
+	Query       url.Values
+	AllowedRoot string
 }
 
 type FlagKind int
