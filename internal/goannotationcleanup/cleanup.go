@@ -15,6 +15,7 @@ import (
 
 	"github.com/stokaro/ptah/internal/annotationmeta"
 	"github.com/stokaro/ptah/internal/annotationparse"
+	"github.com/stokaro/ptah/internal/goannotationsource"
 )
 
 // Result describes cleanup changes for one file.
@@ -38,14 +39,9 @@ type removedLine struct {
 	annotation Annotation
 }
 
-type sourceFile struct {
-	path string
-	info os.FileInfo
-}
-
 type filePlan struct {
 	result  Result
-	info    os.FileInfo
+	source  goannotationsource.File
 	before  []byte
 	after   []byte
 	removed []removedLine
@@ -60,49 +56,25 @@ type stagedPlan struct {
 
 // Plan is an immutable set of validated annotation removals.
 type Plan struct {
-	sources []sourceFile
-	changes []filePlan
+	snapshot *goannotationsource.Snapshot
+	changes  []filePlan
 }
 
-// PlanDir validates Go sources under root and plans annotation removals without
-// modifying any files.
-func PlanDir(root string) (*Plan, error) {
-	if root == "" {
-		root = "."
+// NewPlan plans annotation removals from one captured source view.
+func NewPlan(snapshot *goannotationsource.Snapshot) (*Plan, error) {
+	if snapshot == nil {
+		return nil, errors.New("Go annotation source snapshot is nil")
 	}
-	root = filepath.Clean(root)
-	cleanupPlan := &Plan{}
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+	cleanupPlan := &Plan{snapshot: snapshot}
+	for _, source := range snapshot.Files() {
+		file, err := planFile(source)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if entry.IsDir() {
-			if path != root && (entry.Name() == "vendor" || strings.HasPrefix(entry.Name(), ".")) {
-				return filepath.SkipDir
-			}
-			return nil
+		if !file.result.Changed {
+			continue
 		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refuse to clean symlinked Go source %s", path)
-		}
-		file, err := planFile(path)
-		if err != nil {
-			return err
-		}
-		cleanupPlan.sources = append(cleanupPlan.sources, sourceFile{
-			path: file.result.Path,
-			info: file.info,
-		})
-		if file.result.Changed {
-			cleanupPlan.changes = append(cleanupPlan.changes, file)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		cleanupPlan.changes = append(cleanupPlan.changes, file)
 	}
 	return cleanupPlan, nil
 }
@@ -140,74 +112,41 @@ func (p *Plan) Annotations() []Annotation {
 
 // Apply commits the validated annotation-removal plan.
 func (p *Plan) Apply() error {
-	return applyPlans(p.changes)
+	if err := p.snapshot.Revalidate(); err != nil {
+		return fmt.Errorf("revalidate Go annotation sources before cleanup: %w", err)
+	}
+	return applyPlans(p.changes, p.snapshot.Revalidate)
 }
 
-// SourceAlias returns the planned Go source aliased by path, or an empty string
-// when path does not refer to any source in the plan.
-func (p *Plan) SourceAlias(path string) (string, error) {
-	path = filepath.Clean(path)
-	for _, source := range p.sources {
-		if path == source.path {
-			return source.path, nil
-		}
-	}
-
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("stat potential Go source alias %s: %w", path, err)
-	}
-	for _, source := range p.sources {
-		if os.SameFile(source.info, info) {
-			return source.path, nil
-		}
-	}
-	return "", nil
-}
-
-func planFile(path string) (filePlan, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return filePlan{}, fmt.Errorf("stat %s: %w", path, err)
-	}
-	if !info.Mode().IsRegular() {
-		return filePlan{}, fmt.Errorf("refuse to clean non-regular Go source %s", path)
-	}
-	before, err := os.ReadFile(path)
-	if err != nil {
-		return filePlan{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	after, removed, err := removeAnnotationLines(path, before)
+func planFile(source goannotationsource.File) (filePlan, error) {
+	after, removed, err := removeAnnotationLines(source.Path, source.Contents)
 	if err != nil {
 		return filePlan{}, err
 	}
 	if len(removed) == 0 {
 		return filePlan{
-			result: Result{Path: path},
-			info:   info,
-			before: before,
+			result: Result{Path: source.Path},
+			source: source,
+			before: source.Contents,
 			after:  after,
 		}, nil
 	}
 	result := Result{
-		Path:         path,
-		Changed:      !bytes.Equal(before, after),
+		Path:         source.Path,
+		Changed:      !bytes.Equal(source.Contents, after),
 		RemovedLines: len(removed),
-		Diff:         unifiedRemovalDiff(path, before, removed),
+		Diff:         unifiedRemovalDiff(source.Path, source.Contents, removed),
 	}
 	return filePlan{
 		result:  result,
-		info:    info,
-		before:  before,
+		source:  source,
+		before:  source.Contents,
 		after:   after,
 		removed: removed,
 	}, nil
 }
 
-func applyPlans(plans []filePlan) error {
+func applyPlans(plans []filePlan, revalidate func() error) error {
 	files := make([]*os.File, 0, len(plans))
 	for _, plan := range plans {
 		file, err := openValidatedPlan(plan)
@@ -228,6 +167,12 @@ func applyPlans(plans []filePlan) error {
 	}
 	if err := closeFiles(files); err != nil {
 		return errors.Join(err, cleanupStagedPlans(staged))
+	}
+	if err := revalidate(); err != nil {
+		return errors.Join(
+			fmt.Errorf("revalidate Go annotation sources before cleanup commit: %w", err),
+			cleanupStagedPlans(staged),
+		)
 	}
 	if err := commitStagedPlans(staged); err != nil {
 		return errors.Join(err, cleanupStagedPlans(staged))
@@ -258,7 +203,7 @@ func validatePlanPath(plan filePlan) error {
 	if info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("refuse to clean symlinked Go source %s", plan.result.Path)
 	}
-	if !info.Mode().IsRegular() || !os.SameFile(plan.info, info) {
+	if !info.Mode().IsRegular() || !plan.source.SameFile(info) {
 		return fmt.Errorf("go source changed before cleanup: %s", plan.result.Path)
 	}
 	current, err := os.ReadFile(plan.result.Path)
@@ -276,7 +221,7 @@ func validateOpenPlan(file *os.File, plan filePlan) error {
 	if err != nil {
 		return fmt.Errorf("stat opened Go source %s: %w", plan.result.Path, err)
 	}
-	if !os.SameFile(plan.info, currentInfo) {
+	if !plan.source.SameFile(currentInfo) {
 		return fmt.Errorf("go source changed before cleanup: %s", plan.result.Path)
 	}
 	return validatePlanContent(file, plan)
@@ -332,7 +277,7 @@ func stageFile(plan filePlan, kind string, data []byte) (string, error) {
 		return "", fmt.Errorf("create staged %s for %s: %w", kind, plan.result.Path, err)
 	}
 	path := file.Name()
-	if err := file.Chmod(plan.info.Mode()); err != nil {
+	if err := file.Chmod(plan.source.Mode()); err != nil {
 		_ = file.Close()
 		return "", errors.Join(
 			fmt.Errorf("set staged %s mode for %s: %w", kind, plan.result.Path, err),

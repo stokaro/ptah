@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/internal/atlashcl"
 	"github.com/stokaro/ptah/internal/atlashclrender"
 	"github.com/stokaro/ptah/internal/goannotationcleanup"
+	"github.com/stokaro/ptah/internal/goannotationsource"
 	"github.com/stokaro/ptah/internal/pathguard"
 )
 
@@ -29,6 +30,8 @@ var (
 	ErrInvalidHCL = errors.New("generated HCL failed round-trip validation")
 	// ErrOutputAliasesSource reports that the output aliases an input Go source.
 	ErrOutputAliasesSource = errors.New("HCL output aliases a Go source file")
+	// ErrOutputIsGoSource reports that the HCL destination uses a Go source path.
+	ErrOutputIsGoSource = errors.New("HCL output path must not end in .go")
 	// ErrOutputAliasesManagedData reports that the output aliases a managed-data
 	// source and would overwrite the referenced row data.
 	ErrOutputAliasesManagedData = errors.New("HCL output aliases a managed data file")
@@ -56,8 +59,8 @@ type Result struct {
 
 type exportPlan struct {
 	options        Options
-	rootDir        string
 	outputPath     string
+	snapshot       *goannotationsource.Snapshot
 	cleanup        *goannotationcleanup.Plan
 	cleanupResults []goannotationcleanup.Result
 }
@@ -68,9 +71,18 @@ type renderedExport struct {
 	diagnostics []atlashclrender.Diagnostic
 }
 
+type stagedOutput struct {
+	outputPath string
+	tempPath   string
+}
+
 // Export renders Go annotations to HCL and optionally applies one validated
 // cleanup plan after the output has been committed.
 func Export(opts Options) (Result, error) {
+	return export(opts, func() {})
+}
+
+func export(opts Options, afterOutputStage func()) (Result, error) {
 	plan, err := prepareExport(opts)
 	if err != nil {
 		return Result{}, err
@@ -83,8 +95,16 @@ func Export(opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := writeOutput(plan.outputPath, rendered.hcl, mode); err != nil {
+	staged, err := stageOutput(plan.outputPath, rendered.hcl, mode)
+	if err != nil {
 		return Result{}, err
+	}
+	afterOutputStage()
+	if err := plan.validatePublication(rendered.database.ManagedData); err != nil {
+		return Result{}, errors.Join(err, staged.cleanup())
+	}
+	if err := staged.commit(); err != nil {
+		return Result{}, errors.Join(err, staged.cleanup())
 	}
 	if err := plan.applyCleanup(); err != nil {
 		return Result{}, err
@@ -110,14 +130,21 @@ func prepareExport(opts Options) (exportPlan, error) {
 		return exportPlan{}, err
 	}
 
-	cleanupPlan, err := goannotationcleanup.PlanDir(rootDir)
+	snapshot, err := goannotationsource.Capture(rootDir)
+	if err != nil {
+		return exportPlan{}, fmt.Errorf("capture Go annotation sources: %w", err)
+	}
+	cleanupPlan, err := goannotationcleanup.NewPlan(snapshot)
 	if err != nil {
 		return exportPlan{}, fmt.Errorf("plan Go annotation cleanup: %w", err)
 	}
-	if alias, err := cleanupPlan.SourceAlias(outputPath); err != nil {
+	if alias, err := snapshot.SourceAlias(outputPath); err != nil {
 		return exportPlan{}, err
 	} else if alias != "" {
 		return exportPlan{}, fmt.Errorf("%w: output %s refers to %s", ErrOutputAliasesSource, outputPath, alias)
+	}
+	if strings.HasSuffix(outputPath, ".go") {
+		return exportPlan{}, fmt.Errorf("%w: %s", ErrOutputIsGoSource, outputPath)
 	}
 
 	cleanupResults := cleanupPlan.Results()
@@ -130,18 +157,19 @@ func prepareExport(opts Options) (exportPlan, error) {
 
 	return exportPlan{
 		options:        opts,
-		rootDir:        rootDir,
 		outputPath:     outputPath,
+		snapshot:       snapshot,
 		cleanup:        cleanupPlan,
 		cleanupResults: cleanupResults,
 	}, nil
 }
 
 func renderExport(plan exportPlan) (renderedExport, error) {
-	db, err := goschema.ParseDir(plan.rootDir)
+	db, err := goschema.ParseFS(plan.snapshot.FS(), ".")
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("parse Go annotations: %w", err)
 	}
+	bindSnapshotManagedDataSourceRoot(db.ManagedData, plan.snapshot.Root())
 	if alias, err := managedDataSourceAlias(db.ManagedData, plan.outputPath); err != nil {
 		return renderedExport{}, err
 	} else if alias != "" {
@@ -173,6 +201,46 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 		hcl:         canonicalHCL,
 		diagnostics: diagnostics,
 	}, nil
+}
+
+func bindSnapshotManagedDataSourceRoot(values []goschema.ManagedData, root string) {
+	for i := range values {
+		if filepath.IsAbs(values[i].SourceDir) {
+			continue
+		}
+		values[i].SourceDir = filepath.Clean(
+			filepath.Join(root, filepath.FromSlash(values[i].SourceDir)),
+		)
+	}
+}
+
+func (p exportPlan) validatePublication(managedData []goschema.ManagedData) error {
+	if err := p.snapshot.Revalidate(); err != nil {
+		return fmt.Errorf("revalidate Go annotation sources before HCL publication: %w", err)
+	}
+	alias, err := p.snapshot.SourceAlias(p.outputPath)
+	if err != nil {
+		return err
+	}
+	if alias != "" {
+		return fmt.Errorf(
+			"%w: output %s refers to %s",
+			ErrOutputAliasesSource,
+			p.outputPath,
+			alias,
+		)
+	}
+	if alias, err := managedDataSourceAlias(managedData, p.outputPath); err != nil {
+		return err
+	} else if alias != "" {
+		return fmt.Errorf(
+			"%w: output %s refers to %s",
+			ErrOutputAliasesManagedData,
+			p.outputPath,
+			alias,
+		)
+	}
+	return nil
 }
 
 func managedDataSourceAlias(values []goschema.ManagedData, outputPath string) (string, error) {
@@ -320,39 +388,69 @@ func hasRolePasswords(roles []goschema.Role) bool {
 	})
 }
 
-func writeOutput(path string, data []byte, mode os.FileMode) error {
+func stageOutput(path string, data []byte, mode os.FileMode) (stagedOutput, error) {
 	parent := filepath.Dir(path)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return fmt.Errorf("create HCL output directory: %w", err)
+		return stagedOutput{}, fmt.Errorf("create HCL output directory: %w", err)
 	}
 
 	file, err := os.CreateTemp(parent, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("create temporary HCL output: %w", err)
+		return stagedOutput{}, fmt.Errorf("create temporary HCL output: %w", err)
 	}
 	tempPath := file.Name()
-	defer func() {
-		_ = os.Remove(tempPath)
-	}()
+	staged := stagedOutput{outputPath: path, tempPath: tempPath}
 
 	if err := file.Chmod(mode); err != nil {
 		_ = file.Close()
-		return fmt.Errorf("set temporary HCL output mode: %w", err)
+		return stagedOutput{}, errors.Join(
+			fmt.Errorf("set temporary HCL output mode: %w", err),
+			staged.cleanup(),
+		)
 	}
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
-		return fmt.Errorf("write temporary HCL output: %w", err)
+		return stagedOutput{}, errors.Join(
+			fmt.Errorf("write temporary HCL output: %w", err),
+			staged.cleanup(),
+		)
 	}
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
-		return fmt.Errorf("sync temporary HCL output: %w", err)
+		return stagedOutput{}, errors.Join(
+			fmt.Errorf("sync temporary HCL output: %w", err),
+			staged.cleanup(),
+		)
 	}
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("close temporary HCL output: %w", err)
+		return stagedOutput{}, errors.Join(
+			fmt.Errorf("close temporary HCL output: %w", err),
+			staged.cleanup(),
+		)
 	}
-	if err := os.Rename(tempPath, path); err != nil {
+	return staged, nil
+}
+
+func (s *stagedOutput) commit() error {
+	if err := os.Rename(s.tempPath, s.outputPath); err != nil {
 		return fmt.Errorf("commit HCL output: %w", err)
 	}
+	s.tempPath = ""
+	return nil
+}
+
+func (s *stagedOutput) cleanup() error {
+	if s.tempPath == "" {
+		return nil
+	}
+	err := os.Remove(s.tempPath)
+	if errors.Is(err, os.ErrNotExist) {
+		err = nil
+	}
+	if err != nil {
+		return fmt.Errorf("remove temporary HCL output: %w", err)
+	}
+	s.tempPath = ""
 	return nil
 }
 

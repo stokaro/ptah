@@ -14,6 +14,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/ptaherr"
+	"github.com/stokaro/ptah/internal/goannotationsource"
 )
 
 func TestParseDir_ExtensionMerging(t *testing.T) {
@@ -716,6 +717,48 @@ type TestUser struct {
 			expectedFields: 1,
 		},
 		{
+			name: "excludes hidden directories",
+			files: map[string]string{
+				"user.go": `package models
+
+//ptah:schema:table name="users"
+type User struct {
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}`,
+				".hidden/model.go": `package hidden
+
+//ptah:schema:table name="hidden_table"
+type HiddenModel struct {
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}`,
+			},
+			expectedTables: 1,
+			expectedFields: 1,
+		},
+		{
+			name: "includes directory containing vendor substring",
+			files: map[string]string{
+				"user.go": `package models
+
+//ptah:schema:table name="users"
+type User struct {
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}`,
+				"myvendor/model.go": `package myvendor
+
+//ptah:schema:table name="application_table"
+type ApplicationModel struct {
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}`,
+			},
+			expectedTables: 2,
+			expectedFields: 2,
+		},
+		{
 			name: "excludes vendor directories",
 			files: map[string]string{
 				"user.go": `package models
@@ -771,6 +814,104 @@ type User struct {
 			// Check counts
 			c.Assert(result.Tables, qt.HasLen, tt.expectedTables)
 			c.Assert(result.Fields, qt.HasLen, tt.expectedFields)
+		})
+	}
+}
+
+func TestParseDir_HappyPath_UsesSharedFileFiltering(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	files := []struct {
+		name string
+		data string
+	}{
+		{
+			name: ".generated.go",
+			data: "package models\n\n//ptah:schema:table name=\"generated\"\ntype Generated struct{}\n",
+		},
+		{
+			name: "myvendor/model.go",
+			data: "package myvendor\n\n//ptah:schema:table name=\"included\"\ntype Included struct{}\n",
+		},
+		{
+			name: ".hidden/model.go",
+			data: "package hidden\n\n//ptah:schema:table name=\"hidden\"\ntype Hidden struct{}\n",
+		},
+		{
+			name: "vendor/model.go",
+			data: "package vendor\n\n//ptah:schema:table name=\"vendored\"\ntype Vendored struct{}\n",
+		},
+		{
+			name: "model_test.go",
+			data: "package models_test\n\n//ptah:schema:table name=\"test_table\"\ntype TestModel struct{}\n",
+		},
+	}
+	for _, file := range files {
+		path := filepath.Join(root, file.name)
+		c.Assert(os.MkdirAll(filepath.Dir(path), 0o755), qt.IsNil)
+		c.Assert(os.WriteFile(path, []byte(file.data), 0o600), qt.IsNil)
+	}
+
+	result, err := goschema.ParseDir(root)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Tables, qt.HasLen, 2)
+	c.Assert(result.Tables[0].Name, qt.Equals, "generated")
+	c.Assert(result.Tables[1].Name, qt.Equals, "included")
+}
+
+func TestParseFS_HappyPath_ParsesCapturedSourceBytes(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	c.Assert(os.WriteFile(
+		source,
+		[]byte("package models\n\n//ptah:schema:table name=\"captured\"\ntype Captured struct{}\n"),
+		0o600,
+	), qt.IsNil)
+	snapshot, err := goannotationsource.Capture(root)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(
+		source,
+		[]byte("package models\n\n//ptah:schema:table name=\"live\"\ntype Live struct{}\n"),
+		0o600,
+	), qt.IsNil)
+
+	result, err := goschema.ParseFS(snapshot.FS(), ".")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Tables, qt.HasLen, 1)
+	c.Assert(result.Tables[0].Name, qt.Equals, "captured")
+}
+
+func TestParseFS_FailurePath_RejectsSelectedNonRegularSources(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		mode    fs.FileMode
+		wantErr string
+	}{
+		{
+			name:    "symlink",
+			mode:    fs.ModeSymlink,
+			wantErr: "refuse to parse symlinked Go source model.go",
+		},
+		{
+			name:    "named pipe",
+			mode:    fs.ModeNamedPipe,
+			wantErr: "refuse to parse non-regular Go source model.go",
+		},
+	}
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			fsys := fstest.MapFS{
+				"model.go": &fstest.MapFile{Mode: test.mode},
+			}
+
+			result, err := goschema.ParseFS(fsys, ".")
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(result, qt.IsNil)
 		})
 	}
 }

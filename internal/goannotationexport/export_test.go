@@ -50,6 +50,50 @@ func TestExport_HappyPath_WritesValidatedHCLAndCleansAnnotations(t *testing.T) {
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
 }
 
+func TestExport_HappyPath_UsesOneSourcePolicyForParsingAndCleanup(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	included := filepath.Join(root, "myvendor", "included.go")
+	hidden := filepath.Join(root, ".hidden", "hidden.go")
+	vendored := filepath.Join(root, "vendor", "vendored.go")
+	testSource := filepath.Join(root, "model_test.go")
+	c.Assert(os.MkdirAll(filepath.Dir(included), 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(filepath.Dir(hidden), 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(filepath.Dir(vendored), 0o755), qt.IsNil)
+	includedData := []byte("package myvendor\n\n//ptah:schema:table name=\"included\"\ntype Included struct{}\n")
+	hiddenData := []byte("package hidden\n\n//ptah:schema:table name=\"hidden\"\ntype Hidden struct{}\n")
+	vendoredData := []byte("package vendor\n\n//ptah:schema:table name=\"vendored\"\ntype Vendored struct{}\n")
+	testData := []byte("package models_test\n\n//ptah:schema:table name=\"test_table\"\ntype TestModel struct{}\n")
+	c.Assert(os.WriteFile(included, includedData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(hidden, hiddenData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(vendored, vendoredData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(testSource, testData, 0o600), qt.IsNil)
+	output := filepath.Join(root, "schema.hcl")
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Tables, qt.Equals, 1)
+	c.Assert(result.Cleanup, qt.HasLen, 1)
+	resolvedIncluded, err := filepath.EvalSymlinks(included)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Cleanup[0].Path, qt.Equals, resolvedIncluded)
+	assertFileBytes(c, included, []byte("package myvendor\n\ntype Included struct{}\n"))
+	assertFileBytes(c, hidden, hiddenData)
+	assertFileBytes(c, vendored, vendoredData)
+	assertFileBytes(c, testSource, testData)
+	outputData, err := os.ReadFile(output)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(outputData), qt.Contains, `table "included"`)
+	c.Assert(string(outputData), qt.Not(qt.Contains), `table "hidden"`)
+	c.Assert(string(outputData), qt.Not(qt.Contains), `table "vendored"`)
+	c.Assert(string(outputData), qt.Not(qt.Contains), `table "test_table"`)
+}
+
 func TestExport_HappyPath_TightensPermissionsForRolePasswords(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
@@ -339,6 +383,27 @@ func TestExport_FailurePath_OutputCannotAliasGoSource(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesSource)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
 	assertFileBytes(c, source, sourceData)
+}
+
+func TestExport_FailurePath_OutputCannotUseExcludedGoPath(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := writeSimpleModel(c, root)
+	sourceData, err := os.ReadFile(source)
+	c.Assert(err, qt.IsNil)
+	output := filepath.Join(root, ".hidden", "schema.go")
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputIsGoSource)
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	_, err = os.Stat(output)
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
 
 func TestExport_FailurePath_OutputCannotAliasManagedData(t *testing.T) {

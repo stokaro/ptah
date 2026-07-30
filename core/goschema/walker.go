@@ -3,10 +3,12 @@ package goschema
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/stokaro/ptah/internal/goannotationsource"
 )
 
 // ParseDir parses all Go files in the given root directory and its subdirectories
@@ -19,7 +21,8 @@ import (
 //
 // The parsing process includes:
 //   - Recursive directory traversal starting from rootDir
-//   - Filtering to include only .go files (excluding tests and vendor)
+//   - Filtering to include only .go files (excluding tests, hidden directories,
+//     and directories named exactly vendor)
 //   - Extraction of tables, fields, indexes, enums, and embedded fields
 //   - Deduplication of entities found in multiple files
 //   - Dependency analysis based on foreign key relationships
@@ -152,32 +155,35 @@ func bindManagedDataSourceRoot(result *Database, root string) {
 	}
 }
 
-// accumulateGoFiles walks the non-test, non-vendor Go source files under rootDir
-// in fsys and appends each parsed file's schema objects onto result without
+// accumulateGoFiles walks the selected Go annotation sources under rootDir in
+// fsys and appends each parsed file's schema objects onto result without
 // finalizing. It is the shared, pre-finalize body of ParseFS and ParseDirs, so
 // multiple roots can accumulate into one result before a single finalize pass.
 func accumulateGoFiles(result *Database, fsys fs.FS, rootDir string) error {
 	var parseErrors []error
 
-	// Walk through all directories recursively
 	err := fs.WalkDir(fsys, rootDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-
-		// Skip non-Go files
-		if !strings.HasSuffix(path, ".go") {
+		if d.IsDir() {
+			if path != rootDir && goannotationsource.SkipDirectory(d.Name()) {
+				return fs.SkipDir
+			}
 			return nil
 		}
-
-		// Skip test files
-		if strings.HasSuffix(path, "_test.go") {
+		if !goannotationsource.IsSource(path) {
 			return nil
 		}
-
-		// Skip vendor directories (handle both Unix and Windows path separators)
-		if strings.Contains(path, "vendor/") || strings.Contains(path, "vendor\\") {
-			return nil
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("refuse to parse symlinked Go source %s", path)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("stat Go source %s: %w", path, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("refuse to parse non-regular Go source %s", path)
 		}
 
 		database, err := parseDatabaseFile(fsys, path)
@@ -186,7 +192,6 @@ func accumulateGoFiles(result *Database, fsys fs.FS, rootDir string) error {
 			return nil
 		}
 
-		// Add this file's schema objects to the accumulator.
 		appendDatabase(result, &database)
 
 		return nil
