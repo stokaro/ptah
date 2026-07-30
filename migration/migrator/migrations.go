@@ -458,8 +458,8 @@ type Migration struct {
 	IsCheckpoint bool
 }
 
-// atlasFilenameDescription preserves Atlas's raw filename description for
-// baseline and set metadata. Normal execution records Description instead.
+// atlasFilenameDescription preserves Atlas's raw filename description in
+// revision metadata while allowing Ptah to retain a human-readable description.
 func (m *Migration) atlasFilenameDescription() string {
 	if m.hasRevisionDescription {
 		return m.revisionDescription

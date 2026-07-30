@@ -22,7 +22,7 @@ const (
 	atlasProjectConfigSeedVersion    = "20260719010000"
 	atlasProjectConfigPendingVersion = "20260719010101"
 	atlasProjectConfigSeedHash       = "BH+RgWEaFyoTPktaYRIv/patf+c8tCfnN+p6QfFNmR0="
-	atlasProjectConfigPendingHash    = "EcuB2Y9oYkkrUBgA88MQGlzZAClvWSpHb1LUBOr+yAw="
+	atlasProjectConfigPendingHash    = "JEFa2gqj5DNU9CSHe+Qmj7tnAsZeeRxI0pwuvymOX+0="
 )
 
 type atlasProjectConfigRevision struct {
@@ -36,6 +36,11 @@ type atlasProjectConfigRevision struct {
 	Hash            string
 	PartialHashes   sql.NullString
 	OperatorVersion string
+}
+
+type atlasProjectConfigRevisionTiming struct {
+	ExecutedAt    time.Time
+	ExecutionTime int64
 }
 
 func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
@@ -77,7 +82,9 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, []any{float64(20260719010101)})
 	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, true)
 
+	applyStarted := time.Now()
 	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrations", "up", "--env", "local", "--verify-sum")
+	applyFinished := time.Now()
 	c.Assert(err, qt.IsNil, qt.Commentf("migrations up output:\n%s", output))
 	c.Assert(output, qt.Contains, "Migration directory format: atlas")
 	c.Assert(output, qt.Contains, "Database is now at version: 20260719010101")
@@ -92,7 +99,7 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, []any{})
 	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, false)
 
-	verifyAtlasProjectConfigDatabaseState(c, ctx, testDBURL)
+	verifyAtlasProjectConfigDatabaseState(c, ctx, testDBURL, applyStarted, applyFinished)
 }
 
 func writeAtlasProjectConfigFixture(c *qt.C, repoRoot, workDir string) {
@@ -110,18 +117,18 @@ func seedAtlasProjectConfigDatabaseState(c *qt.C, ctx context.Context, dbURL str
 	_, err = db.ExecContext(ctx, "CREATE SCHEMA ptah_issue_276")
 	c.Assert(err, qt.IsNil)
 	_, err = db.ExecContext(ctx, `CREATE TABLE ptah_issue_276.atlas_schema_revisions (
-    version VARCHAR(255) PRIMARY KEY,
-    description TEXT NOT NULL,
+    version VARCHAR PRIMARY KEY,
+    description VARCHAR NOT NULL,
     type BIGINT NOT NULL DEFAULT 2,
     applied BIGINT NOT NULL DEFAULT 0,
     total BIGINT NOT NULL DEFAULT 0,
-    executed_at TIMESTAMP NOT NULL,
+    executed_at TIMESTAMPTZ NOT NULL,
     execution_time BIGINT NOT NULL,
     error TEXT NULL,
     error_stmt TEXT NULL,
-    hash VARCHAR(255) NOT NULL,
+    hash VARCHAR NOT NULL,
     partial_hashes JSONB NULL,
-    operator_version VARCHAR(255) NOT NULL
+    operator_version VARCHAR NOT NULL
 )`)
 	c.Assert(err, qt.IsNil)
 	_, err = db.ExecContext(ctx, `INSERT INTO ptah_issue_276.atlas_schema_revisions
@@ -149,7 +156,13 @@ func readStatusField(c *qt.C, output, field string) any {
 	return payload[field]
 }
 
-func verifyAtlasProjectConfigDatabaseState(c *qt.C, ctx context.Context, dbURL string) {
+func verifyAtlasProjectConfigDatabaseState(
+	c *qt.C,
+	ctx context.Context,
+	dbURL string,
+	applyStarted time.Time,
+	applyFinished time.Time,
+) {
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
@@ -174,7 +187,7 @@ WHERE schemaname = 'public' AND indexname = 'idx_ptah_issue_276_seed_id'`).Scan(
 	c.Assert(err, qt.IsNil)
 	c.Assert(indexName, qt.Equals, "idx_ptah_issue_276_seed_id")
 
-	seedRevision := readAtlasProjectConfigRevision(c, ctx, db, atlasProjectConfigSeedVersion)
+	seedRevision, seedTiming := readAtlasProjectConfigRevision(c, ctx, db, atlasProjectConfigSeedVersion)
 	c.Assert(seedRevision, qt.DeepEquals, atlasProjectConfigRevision{
 		Version:         atlasProjectConfigSeedVersion,
 		Description:     "Seed project config",
@@ -184,17 +197,32 @@ WHERE schemaname = 'public' AND indexname = 'idx_ptah_issue_276_seed_id'`).Scan(
 		Hash:            atlasProjectConfigSeedHash,
 		OperatorVersion: "Atlas",
 	})
+	c.Assert(seedTiming.ExecutedAt.IsZero(), qt.IsFalse)
+	c.Assert(seedTiming.ExecutionTime, qt.Equals, int64(100))
 
-	pendingRevision := readAtlasProjectConfigRevision(c, ctx, db, atlasProjectConfigPendingVersion)
+	pendingRevision, pendingTiming := readAtlasProjectConfigRevision(c, ctx, db, atlasProjectConfigPendingVersion)
 	c.Assert(pendingRevision, qt.DeepEquals, atlasProjectConfigRevision{
 		Version:         atlasProjectConfigPendingVersion,
-		Description:     "Create Project Config Widgets",
+		Description:     "create_project_config_widgets",
 		Type:            2,
-		Applied:         2,
-		Total:           2,
+		Applied:         3,
+		Total:           3,
+		Error:           sql.NullString{Valid: true},
+		ErrorStatement:  sql.NullString{Valid: true},
 		Hash:            atlasProjectConfigPendingHash,
+		PartialHashes:   sql.NullString{String: "null", Valid: true},
 		OperatorVersion: "Ptah",
 	})
+	timingComment := qt.Commentf(
+		"executed_at=%s apply_started=%s apply_finished=%s execution_time=%s",
+		pendingTiming.ExecutedAt,
+		applyStarted,
+		applyFinished,
+		time.Duration(pendingTiming.ExecutionTime),
+	)
+	c.Assert(pendingTiming.ExecutedAt.Before(applyStarted), qt.IsFalse, timingComment)
+	c.Assert(pendingTiming.ExecutedAt.After(applyFinished), qt.IsFalse, timingComment)
+	c.Assert(pendingTiming.ExecutionTime >= int64(50*time.Millisecond), qt.IsTrue, timingComment)
 
 	var revisionCount int
 	err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ptah_issue_276.atlas_schema_revisions`).Scan(&revisionCount)
@@ -207,16 +235,19 @@ func readAtlasProjectConfigRevision(
 	ctx context.Context,
 	db *sql.DB,
 	version string,
-) atlasProjectConfigRevision {
+) (atlasProjectConfigRevision, atlasProjectConfigRevisionTiming) {
 	c.Helper()
 
 	var revision atlasProjectConfigRevision
+	var timing atlasProjectConfigRevisionTiming
 	err := db.QueryRowContext(ctx, `SELECT
     version,
     description,
     type,
     applied,
     total,
+    executed_at,
+    execution_time,
     error,
     error_stmt,
     hash,
@@ -229,6 +260,8 @@ WHERE version = $1`, version).Scan(
 		&revision.Type,
 		&revision.Applied,
 		&revision.Total,
+		&timing.ExecutedAt,
+		&timing.ExecutionTime,
 		&revision.Error,
 		&revision.ErrorStatement,
 		&revision.Hash,
@@ -236,5 +269,5 @@ WHERE version = $1`, version).Scan(
 		&revision.OperatorVersion,
 	)
 	c.Assert(err, qt.IsNil)
-	return revision
+	return revision, timing
 }

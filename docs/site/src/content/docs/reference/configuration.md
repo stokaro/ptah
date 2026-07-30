@@ -65,8 +65,10 @@ ptah migrations status --env dev
 ptah migrations up --env dev --verify-sum
 ```
 
-If a config file has multiple environments, pass `--env`. Ptah fails instead of
-guessing.
+If a command needs project values from a config file with multiple
+environments, pass `--env`. Commands whose required inputs are all explicit do
+not need to select an environment. Ptah fails instead of guessing only when
+project values are required and the environment remains ambiguous.
 
 ## Operational settings
 

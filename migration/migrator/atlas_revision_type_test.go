@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -122,6 +123,147 @@ WHERE version = '1'`,
 	c.Assert(snapshot.Status.DirtyRevision.Dirty, qt.IsTrue)
 }
 
+func TestAtlasMigrationExecutionPreservesStartTimestamp(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "atlas-start-time.sqlite"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	err = mig.Initialize(t.Context())
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(
+		t.Context(),
+		`CREATE TABLE atlas_revision_start_times (executed_at TEXT NOT NULL);
+CREATE TRIGGER capture_atlas_revision_start_time
+AFTER INSERT ON atlas_schema_revisions
+BEGIN
+    INSERT INTO atlas_revision_start_times (executed_at) VALUES (NEW.executed_at);
+END;`,
+	)
+	c.Assert(err, qt.IsNil)
+
+	err = mig.MigrateUp(t.Context())
+	c.Assert(err, qt.IsNil)
+
+	var startedAt, storedAt string
+	err = conn.QueryRowContext(
+		t.Context(),
+		`SELECT captured.executed_at, CAST(revisions.executed_at AS TEXT)
+FROM atlas_revision_start_times AS captured
+CROSS JOIN atlas_schema_revisions AS revisions
+WHERE revisions.version = '1'`,
+	).Scan(&startedAt, &storedAt)
+	c.Assert(err, qt.IsNil)
+	c.Assert(storedAt, qt.Equals, startedAt)
+}
+
+func TestAtlasMigrationExecutionTimeline_TxModeAllSuccess(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "atlas-tx-all-success.sqlite"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_slow_success.sql": &fstest.MapFile{
+				Data: []byte("SELECT length(randomblob(67108864));\n"),
+			},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.
+		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
+		WithTransactionMode(migrator.MigrationTxModeAll)
+
+	commandStartedAt := time.Now()
+	err = mig.MigrateUp(t.Context())
+	commandFinishedAt := time.Now()
+	c.Assert(err, qt.IsNil)
+
+	var executedAtText string
+	var executionNanos int64
+	err = conn.QueryRowContext(
+		t.Context(),
+		`SELECT CAST(executed_at AS TEXT), execution_time
+FROM atlas_schema_revisions
+WHERE version = '1'`,
+	).Scan(&executedAtText, &executionNanos)
+	c.Assert(err, qt.IsNil)
+
+	executedAt, err := time.Parse(time.RFC3339Nano, executedAtText)
+	c.Assert(err, qt.IsNil)
+	executionTime := time.Duration(executionNanos)
+	c.Assert(executedAt.Before(commandStartedAt), qt.IsFalse)
+	c.Assert(executionTime >= 10*time.Millisecond, qt.IsTrue)
+	c.Assert(executedAt.Add(executionTime).After(commandFinishedAt.Add(5*time.Millisecond)), qt.IsFalse)
+}
+
+func TestAtlasMigrationExecutionTimeline_TxModeAllFailure(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "atlas-tx-all-failure.sqlite"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_slow_failure.sql": &fstest.MapFile{
+				Data: []byte(`SELECT length(randomblob(67108864));
+INSERT INTO missing_table (id) VALUES (1);
+`),
+			},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.
+		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
+		WithTransactionMode(migrator.MigrationTxModeAll)
+
+	commandStartedAt := time.Now()
+	err = mig.MigrateUp(t.Context())
+	commandFinishedAt := time.Now()
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "no such table: missing_table")
+
+	var executedAtText string
+	var executionNanos int64
+	err = conn.QueryRowContext(
+		t.Context(),
+		`SELECT CAST(executed_at AS TEXT), execution_time
+FROM atlas_schema_revisions
+WHERE version = '1'`,
+	).Scan(&executedAtText, &executionNanos)
+	c.Assert(err, qt.IsNil)
+
+	executedAt, err := time.Parse(time.RFC3339Nano, executedAtText)
+	c.Assert(err, qt.IsNil)
+	executionTime := time.Duration(executionNanos)
+	c.Assert(executedAt.Before(commandStartedAt), qt.IsFalse)
+	c.Assert(executionTime >= 10*time.Millisecond, qt.IsTrue)
+	c.Assert(executedAt.Add(executionTime).After(commandFinishedAt.Add(5*time.Millisecond)), qt.IsFalse)
+}
+
 func TestAtlasRollbackFailure_PreservesNormalApplyMetadata(t *testing.T) {
 	c := qt.New(t)
 	conn, err := dbschema.ConnectToDatabase(
@@ -157,14 +299,16 @@ DROP TABLE missing_users;
 	var description string
 	var revisionType int
 	var partialHashes sql.NullString
+	var partialHashesType string
 	err = conn.QueryRowContext(
 		t.Context(),
-		`SELECT description, type, partial_hashes
+		`SELECT description, type, partial_hashes, typeof(partial_hashes)
 FROM atlas_schema_revisions
 WHERE version = '1'`,
-	).Scan(&description, &revisionType, &partialHashes)
+	).Scan(&description, &revisionType, &partialHashes, &partialHashesType)
 	c.Assert(err, qt.IsNil)
-	c.Assert(description, qt.Equals, "Create Users")
+	c.Assert(description, qt.Equals, "create_users")
 	c.Assert(revisionType, qt.Equals, int(migrator.AtlasRevisionTypeApplied))
-	c.Assert(partialHashes.Valid, qt.IsFalse)
+	c.Assert(partialHashes, qt.DeepEquals, sql.NullString{String: "null", Valid: true})
+	c.Assert(partialHashesType, qt.Equals, "blob")
 }
