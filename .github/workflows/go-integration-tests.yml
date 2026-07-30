@@ -63,7 +63,7 @@ jobs:
           - 3307:3306
 
       clickhouse:
-        image: clickhouse/clickhouse-server:24.12
+        image: clickhouse/clickhouse-server:26.7
         env:
           CLICKHOUSE_DB: ptah_test
           CLICKHOUSE_USER: ptah_user
@@ -79,7 +79,7 @@ jobs:
           - 9000:9000
 
       clickhouse-legacy:
-        image: clickhouse/clickhouse-server:24.10
+        image: clickhouse/clickhouse-server:26.7
         env:
           CLICKHOUSE_DB: ptah_test
           CLICKHOUSE_USER: ptah_user
