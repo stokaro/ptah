@@ -7,3 +7,4 @@
 # an incompatible public API change before v1. The PR must explain the
 # compatibility rationale and update docs/public_api.md when the stable package
 # set changes.
+v0.1.1 github.com/stokaro/ptah/migration/generator

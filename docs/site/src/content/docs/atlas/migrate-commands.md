@@ -136,8 +136,10 @@ ptah-compat migrate down \
   --to-version 0
 ```
 
-The dev database must identify a different database from `--url`. Ptah rejects
-equivalent URL aliases before connecting to or resetting the dev database.
+The dev database must select a different live database or catalog from
+`--url`. Ptah rejects equivalent URL aliases first, then connects and verifies
+the actual dialects and selected database/catalog names before resetting the
+dev database. Equal live names fail closed across different endpoints.
 
 Native `ptah migrations` commands read the same directory when `--dir-format
 atlas` is passed; the native lifecycle is documented under

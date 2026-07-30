@@ -277,14 +277,20 @@ func installAtlasProjectFlagResetSubtree(cmd, group *cobra.Command) {
 }
 
 func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
-	if validateArgs := cmd.Args; validateArgs != nil {
-		cmd.Args = func(cmd *cobra.Command, args []string) error {
-			err := validateArgs(cmd, args)
-			if err != nil {
-				resetAtlasProjectFlags(group)
-			}
-			return err
+	validateArgs := cmd.Args
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		// Cobra retains a child command's first context when a root command is
+		// reused. Refresh it before validation so each ExecuteContext call
+		// reaches direct commands as well as adapter-backed commands.
+		cmd.SetContext(cmd.Root().Context())
+		if validateArgs == nil {
+			return nil
 		}
+		err := validateArgs(cmd, args)
+		if err != nil {
+			resetAtlasProjectFlags(group)
+		}
+		return err
 	}
 	if persistentPreRunE := cmd.PersistentPreRunE; persistentPreRunE != nil {
 		cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
@@ -342,17 +348,48 @@ func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
 }
 
 func installAtlasProjectFlagResetRoot(root *cobra.Command, groups ...*cobra.Command) {
+	resetGroups := func() {
+		for _, group := range groups {
+			resetAtlasProjectFlags(group)
+		}
+	}
+	rootArgs := root.Args
+	root.Args = func(cmd *cobra.Command, args []string) error {
+		err := rootArgs(cmd, args)
+		if err != nil {
+			resetGroups()
+		}
+		return err
+	}
+	rootHelp := root.HelpFunc()
+	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		defer resetGroups()
+		rootHelp(cmd, args)
+	})
+	rootFlagError := root.FlagErrorFunc()
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		defer resetGroups()
+		return rootFlagError(cmd, err)
+	})
+	if runE := root.RunE; runE != nil {
+		root.RunE = func(cmd *cobra.Command, args []string) error {
+			defer resetGroups()
+			return runE(cmd, args)
+		}
+	}
+	if run := root.Run; run != nil {
+		root.Run = func(cmd *cobra.Command, args []string) {
+			defer resetGroups()
+			run(cmd, args)
+		}
+	}
 	// Generated commands such as __complete do not pass through the wrapped
-	// static tree, so successful root-level execution needs the same cleanup.
+	// static tree, so successful child execution needs the same cleanup.
 	persistentPostRunE := root.PersistentPostRunE
 	persistentPostRun := root.PersistentPostRun
 	root.PersistentPostRun = nil
 	root.PersistentPostRunE = func(cmd *cobra.Command, args []string) error {
-		defer func() {
-			for _, group := range groups {
-				resetAtlasProjectFlags(group)
-			}
-		}()
+		defer resetGroups()
 		if persistentPostRunE != nil {
 			return persistentPostRunE(cmd, args)
 		}

@@ -64,8 +64,11 @@ exercise a real server dialect — see
   seeder's protected-environment guards. Point these flags at scratch databases
   only, never at a real environment. Rollback verification rejects a dev or
   shadow URL that identifies the target database, including equivalent URL
-  aliases, before it connects to or resets the replay database. Cleanup rejects
-  known system, template, metadata, and administrative database names.
+  aliases. Before reset it also compares the live dialect and selected
+  database/catalog realm from both connections. Equal network database names
+  fail closed across different endpoints because DNS aliases and replicated
+  members cannot be proven independent before destructive cleanup. Cleanup
+  rejects known system, template, metadata, and administrative database names.
 - **Comparison scope does not reduce the replay realm.** Repeated
   `--schema` values select which schemas Ptah compares and emits. They do not
   limit which schemas a migration may create or which user schemas final

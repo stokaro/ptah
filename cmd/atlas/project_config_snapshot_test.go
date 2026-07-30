@@ -2,6 +2,7 @@ package atlas_test
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -490,4 +491,110 @@ func TestCompatCommandProjectEnvironmentRemainsEffectiveAcrossRootReuse(t *testi
 
 	c.Assert(secondErr, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+}
+
+func TestCompatCommandProjectSelectionDoesNotLeakAfterRootHelp(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "1_init.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile("second.hcl", []byte(`env "local" {
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+	t.Setenv("PTAH_CONFIG", "file://second.hcl")
+	t.Setenv("PTAH_ENV", "local")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	migrate, _, err := cmd.Find([]string{"migrate"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrate.PersistentFlags().Set("config", "file://missing-first.hcl"), qt.IsNil)
+	c.Assert(migrate.PersistentFlags().Set("env", "first"), qt.IsNil)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--help"})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	out.Reset()
+	cmd.SetArgs([]string{"migrate", "hash"})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+}
+
+func TestCompatCommandProjectSelectionDoesNotLeakAfterRootArgumentFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "1_init.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile("second.hcl", []byte(`env "local" {
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+	t.Setenv("PTAH_CONFIG", "file://second.hcl")
+	t.Setenv("PTAH_ENV", "local")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	migrate, _, err := cmd.Find([]string{"migrate"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrate.PersistentFlags().Set("config", "file://missing-first.hcl"), qt.IsNil)
+	c.Assert(migrate.PersistentFlags().Set("env", "first"), qt.IsNil)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"unexpected"})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unknown command "unexpected" for "atlas"`)
+	out.Reset()
+	cmd.SetArgs([]string{"migrate", "hash"})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+}
+
+func TestCompatCommandDirectExecutionRefreshesContextAcrossRootReuse(t *testing.T) {
+	c := qt.New(t)
+	dbURL := "sqlite://" + filepath.Join(t.TempDir(), "target.db")
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "inspect", "--url", dbURL})
+
+	err := cmd.ExecuteContext(context.Background())
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	out.Reset()
+	canceledContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetArgs([]string{"schema", "inspect", "--url", dbURL})
+
+	err = cmd.ExecuteContext(canceledContext)
+
+	c.Assert(err, qt.ErrorMatches, `connect to --url: failed to ping database: context canceled`)
 }

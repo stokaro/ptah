@@ -83,10 +83,12 @@ Expected output includes the verification pass before the real rollback:
 Database is now at version: 1785255952
 ```
 
-The shadow database must match the target dialect and identify a different
-database from `--db-url` — use an empty scratch database of the same engine,
-never a real environment. Ptah rejects equivalent URL aliases before connecting
-to or resetting the shadow database:
+The shadow database must match the target dialect and select a different live
+database or catalog from `--db-url` — use an empty scratch database of the same
+engine, never a real environment. Ptah first rejects equivalent URL aliases,
+then connects to the shadow and checks both live dialects and selected
+database/catalog names before resetting it. Equal live names fail closed even
+when the URLs use different hosts, driver overrides, or scheme spellings:
 
 ```text
 rollback verification failed: shadow database must be distinct from target database

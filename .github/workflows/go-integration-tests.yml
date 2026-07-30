@@ -230,9 +230,14 @@ jobs:
 
       - name: Run database-realm cleanup and replay tests
         env:
+          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
+          PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           MYSQL_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3306)/mysql"
           MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/mysql"
           MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
@@ -242,7 +247,8 @@ jobs:
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
           go test -v -count=1 ./internal/dblock -run '^TestAdvisoryLock_PostgresFamilyLive$' -timeout 3m
-          go test -v -count=1 ./internal/devlock -run '^TestAcquire_CockroachDBSerializesSameRealmLive$' -timeout 3m
+          go test -v -count=1 ./internal/devlock -run '^Test(Acquire_CockroachDBSerializesSameRealmLive|SameRealm_(PostgresDriverURLOverridesLive|NetworkDatabasesLive))$' -timeout 3m
+          go test -v -count=1 ./migration/generator -run '^TestVerifyRollbackFromShadow_FailurePathRejects(DriverOverrideAliasLive|LiveDialectMismatch)$' -timeout 3m
           go test -v -count=1 ./internal/dbschema/mysql -tags=integration -run '^TestWriterDropDatabaseRealm_Live(RejectsProtectedDatabase|RejectsExternalStoredProgram|RejectsMissingTriggerPrivilege)$' -timeout 3m
           go test -v -count=1 ./internal/dbschema/clickhouse -run '^TestWriterDropDatabaseRealm_(Live|RejectsExternalDependencyLive|RejectsLegacyServerLive)$' -timeout 3m
           go test -v -count=1 ./internal/dbschema/mssql -run '^TestWriterDropDatabaseRealm_(Live|RejectsDatabaseScopedArtifactLive|RejectsPreservedSchemaPermissionLive)$' -timeout 3m
