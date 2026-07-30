@@ -286,6 +286,37 @@ func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
 			return err
 		}
 	}
+	if persistentPreRunE := cmd.PersistentPreRunE; persistentPreRunE != nil {
+		cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+			err := persistentPreRunE(cmd, args)
+			if err != nil {
+				resetAtlasProjectFlags(group)
+			}
+			return err
+		}
+	}
+	preRunE := cmd.PreRunE
+	preRun := cmd.PreRun
+	cmd.PreRun = nil
+	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if preRunE != nil {
+			if err := preRunE(cmd, args); err != nil {
+				resetAtlasProjectFlags(group)
+				return err
+			}
+		} else if preRun != nil {
+			preRun(cmd, args)
+		}
+		if err := cmd.ValidateRequiredFlags(); err != nil {
+			resetAtlasProjectFlags(group)
+			return err
+		}
+		if err := cmd.ValidateFlagGroups(); err != nil {
+			resetAtlasProjectFlags(group)
+			return err
+		}
+		return nil
+	}
 	if runE := cmd.RunE; runE != nil {
 		cmd.RunE = func(cmd *cobra.Command, args []string) error {
 			defer resetAtlasProjectFlags(group)
@@ -308,6 +339,28 @@ func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
 		defer resetAtlasProjectFlags(group)
 		return flagError(cmd, err)
 	})
+}
+
+func installAtlasProjectFlagResetRoot(root *cobra.Command, groups ...*cobra.Command) {
+	// Generated commands such as __complete do not pass through the wrapped
+	// static tree, so successful root-level execution needs the same cleanup.
+	persistentPostRunE := root.PersistentPostRunE
+	persistentPostRun := root.PersistentPostRun
+	root.PersistentPostRun = nil
+	root.PersistentPostRunE = func(cmd *cobra.Command, args []string) error {
+		defer func() {
+			for _, group := range groups {
+				resetAtlasProjectFlags(group)
+			}
+		}()
+		if persistentPostRunE != nil {
+			return persistentPostRunE(cmd, args)
+		}
+		if persistentPostRun != nil {
+			persistentPostRun(cmd, args)
+		}
+		return nil
+	}
 }
 
 func resetAtlasProjectFlags(group *cobra.Command) {

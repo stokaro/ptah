@@ -355,6 +355,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	emit.Println()
 
 	if err := verifyRollbackOnShadow(shadowVerification{
+		targetDB:       dbURL,
 		shadowDB:       resolvedOpts.shadowDB,
 		migrationsFS:   migrationsFS,
 		dialect:        conn.Info().Dialect,
@@ -436,6 +437,7 @@ func observeNoopDown(runtime *cliobs.Runtime, dialect string, currentVersion, ta
 }
 
 type shadowVerification struct {
+	targetDB       string
 	shadowDB       string
 	migrationsFS   fs.FS
 	dialect        string
@@ -455,6 +457,7 @@ func verifyRollbackOnShadow(v shadowVerification, emit cliobs.Emitter) error {
 		return nil
 	}
 	err := generator.VerifyRollbackFromShadow(context.Background(), generator.RollbackFromShadowOptions{
+		TargetDatabaseURL: v.targetDB,
 		ShadowDatabaseURL: v.shadowDB,
 		FS:                v.migrationsFS,
 		Dialect:           v.dialect,

@@ -168,6 +168,7 @@ func runAtlasMigrateDownFormat(cmd *cobra.Command, verb atlasVerb, args []string
 	// missing down migration aborts before the target is touched.
 	if opts.devURL != "" && !plan.Noop() {
 		err := generator.VerifyRollbackFromShadow(cmd.Context(), generator.RollbackFromShadowOptions{
+			TargetDatabaseURL: opts.url,
 			ShadowDatabaseURL: opts.devURL,
 			FS:                os.DirFS(dir),
 			Dialect:           conn.Info().Dialect,

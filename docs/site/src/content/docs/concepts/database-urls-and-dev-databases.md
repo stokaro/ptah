@@ -38,9 +38,9 @@ whose state matters after the command exits.
 **A dev database** (`--dev-url`) is a disposable replay target used for
 validation: `ptah migrations validate` and `ptah migrations lint` clean it and
 replay the migration directory on it to prove the SQL executes, and
-Atlas-compatible verbs use it for planning and linting the same way. Ptah
-cleans the replay realm before migration execution, after a failed replay, and
-after a successful replay. Commands that inspect the replayed state do so
+Atlas-compatible verbs use it for planning, linting, and rollback verification.
+Ptah cleans the replay realm before migration execution, after a failed replay,
+and after a successful replay. Commands that inspect the replayed state do so
 between execution and the final cleanup on the same pinned database session.
 
 **A shadow database** (`--shadow-db`) is a disposable verification target for
@@ -48,7 +48,8 @@ commands that write or record migrations: `ptah migrations generate` replays
 the directory — including the new migration, up, down, and up again — before
 keeping any files, and `ptah migrations checkpoint` and
 `ptah migrations baseline` use it to verify that migrations reproduce the
-expected schema before anything is recorded.
+expected schema before anything is recorded. `ptah migrations down` uses it to
+verify the rollback plan before changing the target.
 
 **A throwaway test database** is what `ptah migrations test` and
 `ptah schema test` run cases against: by default a fresh ephemeral SQLite
@@ -61,8 +62,10 @@ exercise a real server dialect — see
 - **Disposable means Ptah may drop everything it supports.** Dev and shadow
   database workflows clean user objects, and test seed steps bypass the
   seeder's protected-environment guards. Point these flags at scratch databases
-  only, never at a real environment. Cleanup rejects known system, template,
-  metadata, and administrative database names.
+  only, never at a real environment. Rollback verification rejects a dev or
+  shadow URL that identifies the target database, including equivalent URL
+  aliases, before it connects to or resets the replay database. Cleanup rejects
+  known system, template, metadata, and administrative database names.
 - **Comparison scope does not reduce the replay realm.** Repeated
   `--schema` values select which schemas Ptah compares and emits. They do not
   limit which schemas a migration may create or which user schemas final

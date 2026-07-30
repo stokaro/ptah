@@ -389,6 +389,70 @@ func TestCompatCommandProjectSelectionDoesNotLeakAfterArgumentValidationFailure(
 	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
 }
 
+func TestCompatCommandProjectSelectionDoesNotLeakAfterFlagGroupValidationFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--config", "file://missing-first.hcl",
+		"--env", "first",
+		"--var", "name=first",
+		"--file", "schema.hcl",
+		"--to", "schema.sql",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `if any flags in the group \[file to\] are set none of the others can be; \[file to\] were all set`)
+	out.Reset()
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + filepath.Join(dir, "target.db"),
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+}
+
+func TestCompatCommandProjectSelectionDoesNotLeakAfterCompletion(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"__complete",
+		"schema", "inspect",
+		"--config", "file://missing-first.hcl",
+		"--env", "first",
+		"--var", "name=first",
+		"",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	out.Reset()
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + filepath.Join(dir, "target.db"),
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+}
+
 func TestCompatCommandProjectEnvironmentRemainsEffectiveAcrossRootReuse(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

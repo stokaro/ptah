@@ -1,4 +1,4 @@
-# Atlas Project Config
+# Atlas project config
 
 Ptah can read a limited Atlas project config subset from `atlas.hcl` and
 translate it into Ptah's project config IR. This is project configuration for
@@ -6,7 +6,7 @@ commands, not schema HCL input. Schema HCL input is documented separately in
 [HCL Schema Input](atlas_hcl_schema.md). `ptah-compat <command> ...`
 invocations in this document run the separate `ptah-compat` drop-in binary.
 
-## Supported Subset
+## Supported subset
 
 Ptah accepts top-level `variable`, `locals`, `data "hcl_schema"`, `env`,
 `lint`, and `diff` blocks. `env` blocks may have either one label or no label:
@@ -82,7 +82,7 @@ The supported attributes map to Ptah settings as follows:
 | Atlas setting | Ptah setting |
 | --- | --- |
 | `env.url` | `--db-url`, `ptah-compat schema inspect --url`, `ptah-compat schema apply --url`, `ptah-compat migrate apply --url`, or `ptah-compat migrate status --url` default |
-| `env.dev` | `migrations generate --shadow-db`, `migrations down --shadow-db`, `ptah-compat schema inspect --dev-url`, `ptah-compat schema apply --dev-url`, `ptah-compat schema diff --dev-url`, `ptah-compat migrate down --dev-url`, `ptah-compat migrate diff --dev-url`, or `ptah-compat migrate lint --dev-url` default |
+| `env.dev` | Disposable replay database default for `migrations generate --shadow-db`, `migrations down --shadow-db`, and compatible `--dev-url` workflows; rollback verification resets it and requires it to identify a different database from `env.url` |
 | `env.src` | `ptah-compat schema apply --to` default |
 | `env.schema.src` | `ptah-compat schema apply --to`, `ptah-compat schema diff --to`, or `ptah-compat migrate diff --to` default |
 | `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds |
@@ -235,7 +235,7 @@ that `atlas.hcl` file, not the process working directory. Explicit CLI `--dir`
 values keep CLI semantics and resolve relative to the process working directory
 unless they are absolute. Other URI schemes are rejected.
 
-## Expression Evaluation
+## Expression evaluation
 
 Ptah evaluates a scoped Atlas-compatible expression subset for local project
 config workflows:
@@ -290,7 +290,7 @@ when the invocation provides a matching `--var name=value`. Variable `type` and
 Unsupported dynamic data sources such as external schemas, SQL data sources,
 registry-backed sources, and Cloud-specific sources still fail explicitly.
 
-## Env Selection
+## Env selection
 
 Use `--env <name>` when an `atlas.hcl` file contains multiple `env` blocks.
 When the file contains exactly one `env` block, Ptah selects it automatically.
@@ -374,7 +374,7 @@ supported `diff` policy.
 `ptah-compat migrate diff` reads `env.schema.src`, `env.dev`, `migration.dir`,
 `format.migrate.diff`, and supported `diff` policy.
 
-## Unsupported Constructs
+## Unsupported constructs
 
 Ptah intentionally rejects everything outside the documented subset. Unsupported
 attributes, unsupported data sources, unsupported lint policy blocks or attributes,

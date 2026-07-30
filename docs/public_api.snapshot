@@ -6037,6 +6037,9 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 package generator // import "github.com/stokaro/ptah/migration/generator"
 
 type RollbackFromShadowOptions struct {
+    // TargetDatabaseURL identifies the database the verified rollback would
+    // eventually modify. It must be distinct from ShadowDatabaseURL.
+    TargetDatabaseURL string
     // ShadowDatabaseURL is an ephemeral database the verification drops clean
     // and replays the migration directory into. Its contents are discarded.
     ShadowDatabaseURL string

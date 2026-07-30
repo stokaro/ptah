@@ -118,6 +118,7 @@ func newAtlasCommand(use, short, long string) *cobra.Command {
 	installAtlasUsageTree(cmd)
 	installAtlasProjectFlagResetTree(schemaCommand)
 	installAtlasProjectFlagResetTree(migrateCommand)
+	installAtlasProjectFlagResetRoot(cmd, schemaCommand, migrateCommand)
 	return cmd
 }
 
@@ -728,7 +729,7 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 
 func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 	return func(cmd *cobra.Command, args []string) ([]string, context.Context, error) {
-		forwardContext := cmd.Root().Context()
+		forwardContext := cmd.Context()
 		parentProjectFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
 		if err != nil {
 			return nil, nil, err

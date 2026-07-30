@@ -90,11 +90,17 @@ func newForwardCommandWithArgsMapper(
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,
+		Args: func(cmd *cobra.Command, _ []string) error {
+			// ExecuteContext replaces only the root context. Refresh this child
+			// before inherited pre-runs derive command-scoped values from it.
+			cmd.SetContext(cmd.Root().Context())
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if help == adapterHelp && hasHelpArg(args) {
 				return cmd.Help()
 			}
-			forwardContext := cmd.Root().Context()
+			forwardContext := cmd.Context()
 			if mapper != nil {
 				var err error
 				args, forwardContext, err = mapper(cmd, args)

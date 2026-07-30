@@ -94,7 +94,7 @@ env "local" {
 | Atlas setting | Ptah behavior |
 | --- | --- |
 | `env.url` | Default database URL for compatible schema and migration commands. |
-| `env.dev` | Default shadow/dev database URL, including rollback verification for `ptah-compat migrate down`. |
+| `env.dev` | Default disposable replay database URL. Rollback verification resets it and requires it to identify a different database from `env.url`. |
 | `env.src` | Default desired schema source for `schema apply`. |
 | `env.schema.src` | Default desired schema source for `schema apply`, `schema diff`, and `migrate diff`. |
 | `env.schema.mode.<object>` | Default object-kind exclusions for supported schema object kinds. |

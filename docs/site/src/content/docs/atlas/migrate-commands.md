@@ -124,6 +124,21 @@ Expected output ends with:
 Database is now at version: 0
 ```
 
+Add `--dev-url` to reset a disposable dev database, replay the migration
+directory to the target's current version, and verify the rollback there before
+the target is touched:
+
+```bash
+ptah-compat migrate down \
+  --url "$DATABASE_URL" \
+  --dev-url "$DEV_DATABASE_URL" \
+  --dir file://migrations \
+  --to-version 0
+```
+
+The dev database must identify a different database from `--url`. Ptah rejects
+equivalent URL aliases before connecting to or resetting the dev database.
+
 Native `ptah migrations` commands read the same directory when `--dir-format
 atlas` is passed; the native lifecycle is documented under
 [Versioned migrations](../../versioned/overview/). If parsing fails, force

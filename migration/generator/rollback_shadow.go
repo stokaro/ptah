@@ -7,11 +7,15 @@ import (
 	"time"
 
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
 // RollbackFromShadowOptions configures VerifyRollbackFromShadow.
 type RollbackFromShadowOptions struct {
+	// TargetDatabaseURL identifies the database the verified rollback would
+	// eventually modify. It must be distinct from ShadowDatabaseURL.
+	TargetDatabaseURL string
 	// ShadowDatabaseURL is an ephemeral database the verification drops clean
 	// and replays the migration directory into. Its contents are discarded.
 	ShadowDatabaseURL string
@@ -44,8 +48,18 @@ func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOption
 	if opts.ShadowDatabaseURL == "" {
 		return fmt.Errorf("rollback verification failed: a shadow database URL is required")
 	}
+	if opts.TargetDatabaseURL == "" {
+		return fmt.Errorf("rollback verification failed: a target database URL is required")
+	}
 	if opts.FS == nil {
 		return fmt.Errorf("rollback verification failed: a migration filesystem is required")
+	}
+	sameDatabase, err := atlasurl.SameDatabase(opts.TargetDatabaseURL, opts.ShadowDatabaseURL)
+	if err != nil {
+		return fmt.Errorf("rollback verification failed: compare target and shadow databases: %w", err)
+	}
+	if sameDatabase {
+		return fmt.Errorf("rollback verification failed: shadow database must be distinct from target database")
 	}
 
 	connectCtx, cancelConnect := baselineShadowConnectContext(ctx, opts.ConnectTimeout)

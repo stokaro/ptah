@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -17,6 +18,8 @@ import (
 )
 
 type testContextKey struct{}
+
+type middlewareContextKey struct{}
 
 var errAdapterCanceled = errors.New("adapter canceled")
 
@@ -196,6 +199,51 @@ func TestForwardCommandReplacesContextAcrossReusedTargetTree(t *testing.T) {
 	c.Assert(receivedCauses[1], qt.IsNil)
 	c.Assert(target.Context(), qt.IsNil)
 	c.Assert(target.Commands()[0].Context(), qt.IsNil)
+}
+
+func TestForwardCommandCarriesFreshExecutingContextAcrossRootReuse(t *testing.T) {
+	c := qt.New(t)
+	var receivedValues []string
+	target := &cobra.Command{
+		Use: "target",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			receivedValues = append(
+				receivedValues,
+				fmt.Sprint(cmd.Context().Value(middlewareContextKey{})),
+			)
+			return nil
+		},
+	}
+	adapter := cmdadapter.NewForwardCommand(
+		"adapter",
+		"Adapter command",
+		"target",
+		func() *cobra.Command {
+			return target
+		},
+	)
+	root := &cobra.Command{
+		Use: "root",
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			cmd.SetContext(context.WithValue(
+				cmd.Context(),
+				middlewareContextKey{},
+				cmd.Context().Value(testContextKey{}),
+			))
+		},
+	}
+	root.AddCommand(adapter)
+	root.SetArgs([]string{"adapter"})
+
+	err := root.ExecuteContext(context.WithValue(t.Context(), testContextKey{}, "first"))
+
+	c.Assert(err, qt.IsNil)
+	root.SetArgs([]string{"adapter"})
+	err = root.ExecuteContext(context.WithValue(t.Context(), testContextKey{}, "second"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(receivedValues, qt.DeepEquals, []string{"first", "second"})
+	c.Assert(target.Context(), qt.IsNil)
 }
 
 func TestForwardCommandPassesProjectConfigSnapshotWithoutReloading(t *testing.T) {
