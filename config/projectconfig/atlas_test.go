@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -790,6 +791,42 @@ env "local" {
 		"file://schema/a.hcl",
 		"file://schema/b.hcl",
 		"file://schema/nested/c.hcl",
+	})
+}
+
+func TestParseAtlasFSWithOptionsEvaluatesFunctionsThroughProvidedFS(t *testing.T) {
+	c := qt.New(t)
+	projectFS := fstest.MapFS{
+		"database-url.txt":  {Data: []byte("sqlite://rooted.db")},
+		"schema/a.hcl":      {Data: []byte(`schema "main" {}`)},
+		"schema/nested.hcl": {Data: []byte(`schema "main" {}`)},
+	}
+	raw := []byte(`locals {
+  database_url = file("database-url.txt")
+}
+
+data "hcl_schema" "app" {
+  paths = fileset("schema/**/*.hcl")
+}
+
+env "local" {
+  url = local.database_url
+  src = data.hcl_schema.app.url
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlasFSWithOptions(
+		raw,
+		"/path/that/must/not/be-read/atlas.hcl",
+		projectFS,
+		projectconfig.AtlasLoadOptions{EnvName: "local"},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://rooted.db")
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{
+		"file://schema/a.hcl",
+		"file://schema/nested.hcl",
 	})
 }
 

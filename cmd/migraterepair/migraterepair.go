@@ -3,15 +3,14 @@
 package migraterepair
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -105,7 +104,21 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	source, err := migrationsource.CaptureLocal(opts.migrationsDir, migrationsource.LocalOptions{})
+	if err != nil {
+		return fmt.Errorf("error registering migrations: %w", err)
+	}
+	provider, err := migrator.NewFSMigrationProvider(
+		source.FileSystem,
+		migrator.WithMigrationDirFormat(dirFormat),
+		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.atlasEnv}),
+	)
+	if err != nil {
+		return fmt.Errorf("error registering migrations: %w", err)
+	}
+
+	ctx := cmd.Context()
+	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
@@ -113,19 +126,11 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	mig, err := migrator.NewFSMigrator(
-		conn,
-		os.DirFS(opts.migrationsDir),
-		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.atlasEnv}),
-	)
-	if err != nil {
-		return fmt.Errorf("error registering migrations: %w", err)
-	}
-	mig = mig.WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
+	mig := migrator.NewMigrator(conn, provider).
+		WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
 		WithRevisionTableFormat(revisionFormat)
 
-	err = mig.RepairMigration(context.Background(), migrator.RepairMigrationOptions{
+	err = mig.RepairMigration(ctx, migrator.RepairMigrationOptions{
 		Version:    version,
 		Force:      opts.force,
 		ResumeFrom: resumeFrom,

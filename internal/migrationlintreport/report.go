@@ -163,18 +163,11 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	opts, err := normalizeOptions(opts, projectCfg)
+	prepared, err := prepareSourceOptions(opts, projectCfg)
 	if err != nil {
 		return Report{}, err
 	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(opts.DirFormat)
-	if err != nil {
-		return Report{}, err
-	}
-	devDialect, err := atlasurl.DialectFromURL(opts.DevURL)
-	if err != nil {
-		return Report{}, err
-	}
+	opts = prepared.options
 	sourceFS := opts.FS
 	if sourceFS == nil {
 		sourceFS = os.DirFS(opts.Dir)
@@ -191,12 +184,12 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	if err != nil {
 		return Report{}, err
 	}
-	dialect, err := effectiveDialect(opts, cfg.Dialect, devDialect)
+	dialect, err := effectiveDialect(opts, cfg.Dialect, prepared.devDialect)
 	if err != nil {
 		return Report{}, err
 	}
 	disabled := append(append([]string{}, cfg.DisabledRules...), opts.Disabled...)
-	analysis, err := lintDirectory(ctx, opts, snapshot, dirFormat, lint.Options{
+	analysis, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, lint.Options{
 		Compatibility: opts.Compatibility,
 		Dialect:       dialect,
 		Disabled:      disabled,
@@ -205,7 +198,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 			Versions:   versions,
 			Restricted: restrictVersions,
 		},
-		DirFormat:         dirFormat,
+		DirFormat:         prepared.dirFormat,
 		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
 		RuleConfigs:       cfg.Rules,
 	})
@@ -225,6 +218,45 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		return report, err
 	}
 	return report, nil
+}
+
+type preparedSourceOptions struct {
+	options    Options
+	dirFormat  migrator.MigrationDirFormat
+	devDialect string
+}
+
+// PrepareSourceOptions resolves project-backed values and validates every
+// option whose error precedes migration source capture in Build.
+func PrepareSourceOptions(opts Options, projectCfg projectconfig.Config) (Options, error) {
+	prepared, err := prepareSourceOptions(opts, projectCfg)
+	if err != nil {
+		return Options{}, err
+	}
+	return prepared.options, nil
+}
+
+func prepareSourceOptions(
+	opts Options,
+	projectCfg projectconfig.Config,
+) (preparedSourceOptions, error) {
+	opts, err := normalizeOptions(opts, projectCfg)
+	if err != nil {
+		return preparedSourceOptions{}, err
+	}
+	dirFormat, err := migrator.ParseMigrationDirFormat(opts.DirFormat)
+	if err != nil {
+		return preparedSourceOptions{}, err
+	}
+	devDialect, err := atlasurl.DialectFromURL(opts.DevURL)
+	if err != nil {
+		return preparedSourceOptions{}, err
+	}
+	return preparedSourceOptions{
+		options:    opts,
+		dirFormat:  dirFormat,
+		devDialect: devDialect,
+	}, nil
 }
 
 func normalizeOptions(opts Options, projectCfg projectconfig.Config) (Options, error) {

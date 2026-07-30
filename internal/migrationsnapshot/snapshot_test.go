@@ -81,6 +81,30 @@ func TestCaptureStable_RejectsChangingDirectory(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, migrationsnapshot.ErrChangedDuringCapture)
 }
 
+func TestCaptureStable_HappyPathAcceptsUnobservedABAChange(t *testing.T) {
+	c := qt.New(t)
+	initial := []byte("SELECT 1;\n")
+	intermediate := []byte("SELECT 2;\n")
+	source := &recordingABAFS{
+		MapFS: fstest.MapFS{
+			"1.sql": {Data: slices.Clone(initial)},
+		},
+		transitions: map[int][][]byte{
+			0: {intermediate, initial},
+		},
+		history: [][]byte{slices.Clone(initial)},
+	}
+
+	snapshot, err := migrationsnapshot.CaptureStable(source)
+	c.Assert(err, qt.IsNil)
+	captured, err := fs.ReadFile(snapshot, "1.sql")
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(captured, qt.DeepEquals, initial)
+	c.Assert(source.observations, qt.DeepEquals, [][]byte{initial, initial})
+	c.Assert(source.history, qt.DeepEquals, [][]byte{initial, intermediate, initial})
+}
+
 type changingFS struct {
 	fs.FS
 	first  []byte
@@ -94,4 +118,23 @@ func (f *changingFS) ReadFile(string) ([]byte, error) {
 		return slices.Clone(f.first), nil
 	}
 	return slices.Clone(f.second), nil
+}
+
+type recordingABAFS struct {
+	fstest.MapFS
+	transitions  map[int][][]byte
+	observations [][]byte
+	history      [][]byte
+	reads        int
+}
+
+func (f *recordingABAFS) ReadFile(name string) ([]byte, error) {
+	observed := slices.Clone(f.MapFS[name].Data)
+	f.observations = append(f.observations, slices.Clone(observed))
+	for _, contents := range f.transitions[f.reads] {
+		f.MapFS[name].Data = slices.Clone(contents)
+		f.history = append(f.history, slices.Clone(contents))
+	}
+	f.reads++
+	return observed, nil
 }

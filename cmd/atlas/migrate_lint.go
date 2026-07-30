@@ -10,7 +10,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasreport"
@@ -60,12 +59,17 @@ Native Ptah equivalent: ptah migrations lint.`,
 	return cmd
 }
 
-func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error {
+func runAtlasMigrateLint(
+	cmd *cobra.Command,
+	opts atlasMigrateLintOptions,
+) (runErr error) {
 	formatOutput := cmd.Flags().Changed("format")
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+	project, loaded, err := openAtlasProjectForCommand(cmd, ignoreMissingEnvSelection)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	defer closeAtlasProject(&project, &runErr)
+	projectCfg := project.Config
 	if loaded {
 		opts.devURL = dbcli.EffectiveString(
 			cmd,
@@ -128,7 +132,7 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		localDir, err = atlasProjectConfigLocalDirWithQuery(cmd, opts.dir)
+		localDir, err = project.localDirWithQuery(opts.dir)
 	} else {
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
@@ -140,9 +144,7 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 			"atlas migrate lint --dir: migration directory URL query parameters are not supported for this command",
 		))
 	}
-	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
-		AllowedRoot: localDir.AllowedRoot,
-	})
+	source, err := project.captureLocal(localDir)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}

@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/editor"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
@@ -16,7 +18,6 @@ import (
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/atlassource"
-	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -87,16 +88,23 @@ diff policy values.`,
 	return cmd
 }
 
-func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name string) error {
+func runAtlasMigrateDiff(
+	cmd *cobra.Command,
+	opts atlasMigrateDiffOptions,
+	name string,
+) (runErr error) {
 	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+	mode := ignoreMissingEnvSelection
 	if needsAtlasMigrateDiffConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
+		mode = reportMissingEnvSelection
 	}
+	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	defer closeAtlasProject(&project, &runErr)
+	projectCfg := project.Config
 	if loaded {
 		opts.devURL = dbcli.EffectiveString(
 			cmd,
@@ -116,14 +124,6 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		policy, err = atlasDiffPolicy(projectCfg)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
-		}
-	}
-	if loaded &&
-		!cmd.Flags().Changed("dir") &&
-		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		opts.dirURL, err = atlasProjectConfigLocalDir(cmd, opts.dirURL)
-		if err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 		}
 	}
 	projectEnv := atlassource.ProjectEnv{}
@@ -156,14 +156,48 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		return cmdutil.Fail(cmd, err)
 	}
 
-	migrationsDir, err := atlasargs.LocalDirValue(opts.dirURL)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("--dir %q: %w", opts.dirURL, err))
+	var localDir atlasargs.LocalDir
+	if loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
+		localDir, err = project.localDirWithQuery(opts.dirURL)
+	} else {
+		localDir, err = atlasargs.ParseLocalDir(opts.dirURL)
 	}
-	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
+	if len(localDir.Query) > 0 {
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"atlas migrate diff --dir: migration directory URL query parameters are not supported for this command",
+		))
+	}
+	directory, err := migrationsource.OpenOrCreateLocal(
+		localDir.Path,
+		project.localOptions(localDir),
+		0o755,
+	)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
+	}
+	preparedDirectory, prepareErr := atlasmigrate.PrepareDiffDirectory(
+		cmd.Context(),
+		directory.Display(),
+		directory,
+		lockTimeout,
+	)
+	if prepareErr != nil {
+		closeErr := directory.DiscardIfCreatedEmpty()
+		return cmdutil.Fail(cmd, errors.Join(prepareErr, closeErr))
+	}
+	defer func() {
+		if runErr != nil && !preparedDirectory.MayHavePublicationArtifacts() {
+			runErr = errors.Join(runErr, directory.DiscardIfCreatedEmpty())
+			return
+		}
+		runErr = errors.Join(runErr, directory.Close())
+	}()
+	migrationsDir := directory.Display()
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
@@ -181,6 +215,7 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 	}
 	diffResult, err := atlasmigrate.GenerateDiff(cmd.Context(), conn, atlasmigrate.DiffOptions{
 		Dir:                  migrationsDir,
+		Directory:            preparedDirectory,
 		Desired:              desired,
 		SourceConnectTimeout: dbcli.DefaultConnectTimeout,
 		Name:                 name,

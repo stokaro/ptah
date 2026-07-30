@@ -47,6 +47,10 @@ commands, including regular-expression case selection through `FilterCases`.
 See [Test migrations and schemas](../../testing/migrations-and-schema/) for
 its case model and [Database test commands](../../reference/test-cases/) for CLI behavior.
 
+`projectconfig.ParseAtlasFSWithOptions` evaluates `atlas.hcl` against a
+caller-provided `fs.FS`. Use it when project config and its `file()` or
+`fileset()` inputs must come from one anchored or immutable filesystem view.
+
 The separate [`testkit`](https://github.com/stokaro/ptah/tree/master/testkit)
 module (`github.com/stokaro/ptah/testkit`) is an opt-in helper for tests that
 need real databases. It keeps `testcontainers-go` out of Ptah's main module

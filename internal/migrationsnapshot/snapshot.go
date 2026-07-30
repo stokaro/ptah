@@ -38,8 +38,9 @@ func Capture(fsys fs.FS) (fsnapshot.Snapshot, error) {
 	return snapshot, nil
 }
 
-// CaptureStable requires two consecutive snapshots to match. This rejects a
-// directory that changed while its files were being read.
+// CaptureStable returns the second of two matching snapshots. This is
+// best-effort change detection: it rejects only differences observed between
+// captures and cannot detect coordinated or ABA changes that make them match.
 func CaptureStable(fsys fs.FS) (fsnapshot.Snapshot, error) {
 	first, err := Capture(fsys)
 	if err != nil {

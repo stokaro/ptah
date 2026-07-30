@@ -246,10 +246,17 @@ protect the policy the way it protects the SQL.
 Local migration commands capture the migration directory before database
 connection, checksum verification, provider registration, and destructive
 linting. `up`, `down`, `status`, `lint`, and `set` therefore use the same
-immutable SQL and metadata bytes throughout one invocation. A change during
-capture aborts; a change after capture is visible only to a later invocation.
+immutable SQL and metadata bytes throughout one invocation. Each command
+compares two captures and aborts only when the observed captures differ. This
+best-effort check cannot defeat coordinated writers or ABA changes that restore
+the original bytes before the next observation. Hostile writers require trusted
+immutable input, manifest or process controls, or filesystem-level snapshots.
 Relative CLI directories are rooted at the working directory and symlink
-escapes are rejected, while explicit absolute paths remain supported.
+escapes are rejected, while explicit absolute paths remain supported. A
+contained relative `atlas.hcl` migration directory remains bound to the project
+directory handle opened for config evaluation until capture completes;
+replacing the project pathname does not retarget it. Parent-relative project
+directories are external compatibility paths and do not inherit that root.
 
 ## Pre-migration checks
 

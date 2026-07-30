@@ -9,7 +9,6 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
@@ -77,16 +76,23 @@ func atlasMigrateApplyArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, args []string) error {
+func runAtlasMigrateApply(
+	cmd *cobra.Command,
+	opts atlasMigrateApplyOptions,
+	args []string,
+) (runErr error) {
 	formatOutput := cmd.Flags().Changed("format")
 	projectDirFormatPresent := false
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+	mode := ignoreMissingEnvSelection
 	if needsAtlasMigrateApplyConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
+		mode = reportMissingEnvSelection
 	}
+	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
 	if err != nil {
 		return err
 	}
+	defer closeAtlasProject(&project, &runErr)
+	projectCfg := project.Config
 	if loaded {
 		opts.url = dbcli.EffectiveString(
 			cmd,
@@ -152,7 +158,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		localDir, err = atlasProjectConfigLocalDirWithQuery(cmd, opts.dir)
+		localDir, err = project.localDirWithQuery(opts.dir)
 	} else {
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
@@ -186,9 +192,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		return err
 	}
 
-	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
-		AllowedRoot: localDir.AllowedRoot,
-	})
+	source, err := project.captureLocal(localDir)
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}

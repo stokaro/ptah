@@ -729,7 +729,11 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 }
 
 func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
-	return func(cmd *cobra.Command, args []string) ([]string, context.Context, error) {
+	return func(
+		cmd *cobra.Command,
+		args []string,
+		cleanup *cmdadapter.CleanupScope,
+	) ([]string, context.Context, error) {
 		forwardContext := cmd.Context()
 		parentProjectFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
 		if err != nil {
@@ -746,29 +750,23 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		project = mergeAtlasProjectArgs(parentProject, project)
 		args = remaining
 		if project.changed {
-			cfg, targetCfg, err := loadAtlasAdapterProjectConfig(verb, project.flags)
+			loadedProject, targetCfg, err := loadAtlasAdapterProjectConfig(verb, project.flags)
 			if err != nil {
 				return nil, nil, err
 			}
-			forwardContext, err = withAtlasProjectMigrationRoot(
-				forwardContext,
-				group,
-				verb,
-				args,
-				cfg,
-				project.flags,
-			)
-			if err != nil {
+			cleanup.Add(loadedProject.Close)
+			if err := loadedProject.resolveMigrationDirForArgs(verb.flags, args); err != nil {
 				return nil, nil, err
 			}
 			applyProjectConfig := verb.projectConfig
 			if applyProjectConfig == nil {
 				applyProjectConfig = applyAtlasProjectConfigToArgs
 			}
-			args, err = applyProjectConfig(verb.flags, args, cfg, project.flags)
+			args, err = applyProjectConfig(verb.flags, args, loadedProject, project.flags)
 			if err != nil {
 				return nil, nil, err
 			}
+			forwardContext = withAtlasProjectMigrationRoot(forwardContext, group, loadedProject)
 			if verb.nativeProjectConfig {
 				forwardContext = dbcli.WithProjectConfig(forwardContext, targetCfg)
 			}
@@ -791,39 +789,27 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 func withAtlasProjectMigrationRoot(
 	ctx context.Context,
 	group string,
-	verb atlasVerb,
-	args []string,
-	cfg projectconfig.Config,
-	projectFlags atlasProjectFlagValues,
-) (context.Context, error) {
-	if group != "migrate" ||
-		verb.use != "down" ||
-		atlasFlagValueSet(verb.flags, args, "dir") {
-		return ctx, nil
+	project atlasProject,
+) context.Context {
+	if group != "migrate" || !project.migrationDirResolved {
+		return ctx
 	}
-	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
-	if !migrationDir.Present {
-		return ctx, nil
+	localOptions := project.localOptions(project.migrationDir)
+	if localOptions.Root != nil {
+		return migrationsource.WithRootedLocal(ctx, project.migrationDir.Path, localOptions.Root)
 	}
-	dir, err := atlasProjectConfigLocalDirWithQueryFromFlags(projectFlags, migrationDir.Value)
-	if err != nil {
-		return nil, fmt.Errorf("atlas.hcl migration.dir: %w", err)
-	}
-	if len(dir.Query) > 0 {
-		return nil, fmt.Errorf("atlas.hcl migration.dir: migration directory URL query parameters are not supported yet")
-	}
-	return migrationsource.WithLocalRoot(ctx, dir.Path, dir.AllowedRoot), nil
+	return migrationsource.WithLocalRoot(ctx, project.migrationDir.Path, localOptions.AllowedRoot)
 }
 
 func loadAtlasAdapterProjectConfig(
 	verb atlasVerb,
 	flags atlasProjectFlagValues,
-) (atlasConfig, targetConfig projectconfig.Config, err error) {
+) (project atlasProject, targetConfig projectconfig.Config, err error) {
 	if !verb.nativeProjectConfig {
-		cfg, err := loadRequiredAtlasProjectConfig(flags)
-		return cfg, projectconfig.Config{}, err
+		project, _, err := openAtlasProject(flags, requiredAtlasProject)
+		return project, projectconfig.Config{}, err
 	}
-	return loadRequiredMergedProjectConfig(flags)
+	return openRequiredMergedProjectConfig(flags)
 }
 
 func rejectNativeOnlyAtlasFlags(group string, verb atlasVerb, args []string) error {

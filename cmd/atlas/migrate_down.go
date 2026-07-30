@@ -100,12 +100,15 @@ type atlasMigrateDownFormatOptions struct {
 	flagSet *pflag.FlagSet
 	// rawDir preserves the pre-resolution --dir value for the report's Env.Dir.
 	rawDir string
-	// dirRoot constrains a project-relative migration directory to atlas.hcl's
-	// directory while explicit absolute paths remain supported.
-	dirRoot string
+	// dirOptions preserve the live atlas.hcl root for contained project paths.
+	dirOptions migrationsource.LocalOptions
 }
 
-func runAtlasMigrateDownFormat(cmd *cobra.Command, verb atlasVerb, args []string) error {
+func runAtlasMigrateDownFormat(
+	cmd *cobra.Command,
+	verb atlasVerb,
+	args []string,
+) (runErr error) {
 	parentFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
 		return err
@@ -120,9 +123,11 @@ func runAtlasMigrateDownFormat(cmd *cobra.Command, verb atlasVerb, args []string
 	if err != nil {
 		return err
 	}
-	if err := applyAtlasMigrateDownFormatProjectConfig(opts, project); err != nil {
+	loadedProject, err := applyAtlasMigrateDownFormatProjectConfig(opts, project)
+	if err != nil {
 		return err
 	}
+	defer closeAtlasProject(&loadedProject, &runErr)
 	if strings.TrimSpace(opts.format) == "" {
 		return fmt.Errorf("--format must not be empty")
 	}
@@ -143,9 +148,7 @@ func runAtlasMigrateDownFormat(cmd *cobra.Command, verb atlasVerb, args []string
 	if err != nil {
 		return err
 	}
-	source, err := migrationsource.CaptureLocal(opts.dir, migrationsource.LocalOptions{
-		AllowedRoot: opts.dirRoot,
-	})
+	source, err := migrationsource.CaptureLocal(opts.dir, opts.dirOptions)
 	if err != nil {
 		return fmt.Errorf("atlas migrate down --dir: %w", err)
 	}
@@ -331,14 +334,22 @@ func atlasVerbFlag(verb atlasVerb, name string) (atlasargs.Flag, bool) {
 // the format path with the same precedence the dedicated apply and status
 // commands use: an explicitly changed flag wins, an unset flag falls back to
 // the selected env.
-func applyAtlasMigrateDownFormatProjectConfig(opts *atlasMigrateDownFormatOptions, project atlasProjectArgValues) error {
-	if !project.changed {
-		return nil
+func applyAtlasMigrateDownFormatProjectConfig(
+	opts *atlasMigrateDownFormatOptions,
+	projectArgs atlasProjectArgValues,
+) (
+	project atlasProject,
+	returnErr error,
+) {
+	if !projectArgs.changed {
+		return atlasProject{}, nil
 	}
-	cfg, err := loadRequiredAtlasProjectConfig(project.flags)
+	project, _, err := openAtlasProject(projectArgs.flags, requiredAtlasProject)
 	if err != nil {
-		return err
+		return atlasProject{}, err
 	}
+	defer closeAtlasProjectOnError(&project, &returnErr)
+	cfg := project.Config
 	opts.url = atlasDownEffective(
 		opts.flagSet,
 		"url",
@@ -368,23 +379,24 @@ func applyAtlasMigrateDownFormatProjectConfig(opts *atlasMigrateDownFormatOption
 		// The format path executes Atlas-format directories only, matching the
 		// dedicated apply and status commands.
 		if _, err := atlasMigrateDirFormatValue(dirFormat.Value); err != nil {
-			return fmt.Errorf("atlas.hcl migration.format: %w", err)
+			return project, fmt.Errorf("atlas.hcl migration.format: %w", err)
 		}
 	}
 	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
 	if !opts.flagSet.Changed("dir") && migrationDir.Present {
-		dir, err := atlasProjectConfigLocalDirWithQueryFromFlags(project.flags, migrationDir.Value)
+		dir, err := project.localDirWithQuery(migrationDir.Value)
 		if err != nil {
-			return fmt.Errorf("atlas.hcl migration.dir: %w", err)
+			return project, fmt.Errorf("atlas.hcl migration.dir: %w", err)
 		}
 		if len(dir.Query) > 0 {
-			return fmt.Errorf("atlas.hcl migration.dir: migration directory URL query parameters are not supported for this command")
+			return project,
+				fmt.Errorf("atlas.hcl migration.dir: migration directory URL query parameters are not supported for this command")
 		}
 		opts.rawDir = migrationDir.Value
 		opts.dir = dir.Path
-		opts.dirRoot = dir.AllowedRoot
+		opts.dirOptions = project.localOptions(dir)
 	}
-	return nil
+	return project, nil
 }
 
 func atlasDownEffective(

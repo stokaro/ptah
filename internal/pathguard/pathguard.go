@@ -12,8 +12,13 @@ import (
 	"strings"
 )
 
-// ErrOutsideRoot reports that a path escapes its configured filesystem root.
-var ErrOutsideRoot = errors.New("outside allowed root")
+var (
+	// ErrOutsideRoot reports that a path escapes its configured filesystem root.
+	ErrOutsideRoot = errors.New("outside allowed root")
+	// ErrPathReplaced reports that an opened directory's pathname no longer
+	// identifies the same filesystem object.
+	ErrPathReplaced = errors.New("opened directory path was replaced")
+)
 
 // OpenedDirectory is a directory handle anchored to the filesystem object
 // selected by one rooted open. Renaming or replacing the pathname does not
@@ -28,7 +33,9 @@ type rootedPath struct {
 	display  string
 }
 
-// Path returns the absolute display path for the opened directory.
+// Path returns the stable absolute lexical path selected for the directory.
+// It is intentionally not canonicalized after opening because the pathname
+// could then describe a different filesystem object than the rooted handle.
 func (d *OpenedDirectory) Path() string {
 	return d.path
 }
@@ -36,6 +43,69 @@ func (d *OpenedDirectory) Path() string {
 // FS returns an escape-resistant filesystem rooted at the opened directory.
 func (d *OpenedDirectory) FS() fs.FS {
 	return d.root.FS()
+}
+
+// OpenDirectory opens path through this directory handle. The returned handle
+// remains valid after the receiver is closed.
+func (d *OpenedDirectory) OpenDirectory(path string) (*OpenedDirectory, error) {
+	target, err := rootedRelativePath(path, d.path)
+	if err != nil {
+		return nil, err
+	}
+	opened, err := d.root.OpenRoot(target.relative)
+	if err != nil {
+		_, containmentErr := ResolveWithinRoot(target.display, d.path)
+		if errors.Is(containmentErr, ErrOutsideRoot) {
+			return nil, containmentErr
+		}
+		return nil, err
+	}
+	return &OpenedDirectory{root: opened, path: target.display}, nil
+}
+
+// OpenOrCreateDirectory creates path and missing parents through this directory
+// handle, then opens the resulting directory through the same rooted boundary.
+func (d *OpenedDirectory) OpenOrCreateDirectory(
+	path string,
+	perm fs.FileMode,
+) (*OpenedDirectory, error) {
+	target, err := rootedRelativePath(path, d.path)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.root.MkdirAll(target.relative, perm); err != nil {
+		_, containmentErr := ResolveWithinRoot(target.display, d.path)
+		if errors.Is(containmentErr, ErrOutsideRoot) {
+			return nil, containmentErr
+		}
+		return nil, err
+	}
+	opened, err := d.root.OpenRoot(target.relative)
+	if err != nil {
+		return nil, err
+	}
+	return &OpenedDirectory{root: opened, path: target.display}, nil
+}
+
+// Stat returns information about name through the rooted handle.
+func (d *OpenedDirectory) Stat(name string) (fs.FileInfo, error) {
+	return d.root.Stat(name)
+}
+
+// VerifyPath checks that Path still identifies the opened directory.
+func (d *OpenedDirectory) VerifyPath() error {
+	openedInfo, err := d.root.Stat(".")
+	if err != nil {
+		return fmt.Errorf("inspect opened directory: %w", err)
+	}
+	pathInfo, err := os.Stat(d.path)
+	if err != nil {
+		return fmt.Errorf("inspect opened directory path %q: %w", d.path, err)
+	}
+	if !os.SameFile(openedInfo, pathInfo) {
+		return fmt.Errorf("%q: %w", d.path, ErrPathReplaced)
+	}
+	return nil
 }
 
 // Close releases the underlying directory handle.
@@ -84,13 +154,48 @@ func ResolveCLIPath(path string) (string, error) {
 // allowed root. Explicit absolute paths preserve their unbounded CLI behavior.
 func OpenCLIDirectory(path string) (*OpenedDirectory, error) {
 	if filepath.IsAbs(path) {
-		return openUnboundedDirectory(path)
+		return OpenDirectory(path)
+	}
+	root, err := OpenCurrentDirectory()
+	if err != nil {
+		return nil, err
+	}
+	return openDirectoryAndCloseRoot(root, path)
+}
+
+// OpenOrCreateCLIDirectory applies CLI path semantics while creating a missing
+// directory. Relative paths are created through the anchored working-directory
+// handle. Explicit absolute paths preserve their unbounded CLI behavior.
+func OpenOrCreateCLIDirectory(path string, perm fs.FileMode) (*OpenedDirectory, error) {
+	if filepath.IsAbs(path) {
+		if err := os.MkdirAll(path, perm); err != nil {
+			return nil, err
+		}
+		return OpenDirectory(path)
+	}
+	root, err := OpenCurrentDirectory()
+	if err != nil {
+		return nil, err
+	}
+	return openOrCreateDirectoryAndCloseRoot(root, path, perm)
+}
+
+// OpenCurrentDirectory anchors the process working directory before resolving
+// its pathname. The caller owns the returned handle.
+func OpenCurrentDirectory() (*OpenedDirectory, error) {
+	root, err := os.OpenRoot(".")
+	if err != nil {
+		return nil, fmt.Errorf("open working directory: %w", err)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("resolve working directory: %w", err)
+		closeErr := root.Close()
+		return nil, errors.Join(
+			fmt.Errorf("resolve working directory display path: %w", err),
+			closeErr,
+		)
 	}
-	return OpenDirectoryWithinRoot(path, cwd)
+	return &OpenedDirectory{root: root, path: filepath.Clean(cwd)}, nil
 }
 
 // OpenDirectoryWithinRoot binds allowedRoot first, then opens path only through
@@ -99,50 +204,70 @@ func OpenDirectoryWithinRoot(path, allowedRoot string) (*OpenedDirectory, error)
 	if strings.TrimSpace(allowedRoot) == "" {
 		return nil, fmt.Errorf("allowed root is required")
 	}
-	rootPath, err := filepath.Abs(allowedRoot)
-	if err != nil {
-		return nil, fmt.Errorf("resolve absolute allowed root: %w", err)
-	}
-	rootPath = filepath.Clean(rootPath)
-	root, err := os.OpenRoot(rootPath)
+	root, err := OpenDirectory(allowedRoot)
 	if err != nil {
 		return nil, fmt.Errorf("open allowed root: %w", err)
 	}
+	return openDirectoryAndCloseRoot(root, path)
+}
 
-	target, pathErr := rootedRelativePath(path, rootPath)
-	if pathErr != nil {
-		closeErr := root.Close()
-		if closeErr != nil {
-			return nil, errors.Join(pathErr, fmt.Errorf("close allowed root: %w", closeErr))
-		}
-		return nil, pathErr
+// OpenOrCreateDirectoryWithinRoot binds allowedRoot first, then creates and
+// opens path only through that handle.
+func OpenOrCreateDirectoryWithinRoot(
+	path, allowedRoot string,
+	perm fs.FileMode,
+) (*OpenedDirectory, error) {
+	if strings.TrimSpace(allowedRoot) == "" {
+		return nil, fmt.Errorf("allowed root is required")
 	}
+	root, err := OpenDirectory(allowedRoot)
+	if err != nil {
+		return nil, fmt.Errorf("open allowed root: %w", err)
+	}
+	return openOrCreateDirectoryAndCloseRoot(root, path, perm)
+}
 
-	opened, openErr := root.OpenRoot(target.relative)
-	if openErr != nil {
-		_, containmentErr := ResolveWithinRoot(target.display, rootPath)
-		if errors.Is(containmentErr, ErrOutsideRoot) {
-			openErr = containmentErr
-		}
-	}
+func openDirectoryAndCloseRoot(
+	root *OpenedDirectory,
+	path string,
+) (*OpenedDirectory, error) {
+	opened, openErr := root.OpenDirectory(path)
+	return closeParentAfterOpen(root, opened, openErr)
+}
+
+func openOrCreateDirectoryAndCloseRoot(
+	root *OpenedDirectory,
+	path string,
+	perm fs.FileMode,
+) (*OpenedDirectory, error) {
+	opened, openErr := root.OpenOrCreateDirectory(path, perm)
+	return closeParentAfterOpen(root, opened, openErr)
+}
+
+func closeParentAfterOpen(
+	root, opened *OpenedDirectory,
+	openErr error,
+) (*OpenedDirectory, error) {
 	closeErr := root.Close()
 	if openErr != nil {
 		if closeErr != nil {
-			return nil, errors.Join(openErr, fmt.Errorf("close allowed root: %w", closeErr))
+			return nil, errors.Join(openErr, fmt.Errorf("close directory root: %w", closeErr))
 		}
 		return nil, openErr
 	}
 	if closeErr != nil {
 		openedCloseErr := opened.Close()
 		return nil, errors.Join(
-			fmt.Errorf("close allowed root: %w", closeErr),
+			fmt.Errorf("close directory root: %w", closeErr),
 			openedCloseErr,
 		)
 	}
-	return &OpenedDirectory{root: opened, path: target.display}, nil
+	return opened, nil
 }
 
-func openUnboundedDirectory(path string) (*OpenedDirectory, error) {
+// OpenDirectory opens path as a rooted directory handle without imposing an
+// enclosing path boundary. The caller owns the returned handle.
+func OpenDirectory(path string) (*OpenedDirectory, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("path is required")
 	}
@@ -155,15 +280,7 @@ func openUnboundedDirectory(path string) (*OpenedDirectory, error) {
 	if err != nil {
 		return nil, err
 	}
-	resolved, resolveErr := resolvePath(absolute)
-	if resolveErr != nil {
-		closeErr := root.Close()
-		if closeErr != nil {
-			return nil, errors.Join(resolveErr, fmt.Errorf("close opened directory: %w", closeErr))
-		}
-		return nil, resolveErr
-	}
-	return &OpenedDirectory{root: root, path: resolved}, nil
+	return &OpenedDirectory{root: root, path: absolute}, nil
 }
 
 func rootedRelativePath(path, root string) (rootedPath, error) {
@@ -176,7 +293,7 @@ func rootedRelativePath(path, root string) (rootedPath, error) {
 		if !isSubpath(root, absolute) {
 			return rootedPath{}, outsideRootError(absolute, root)
 		}
-		return rootedPath{relative: relative, display: resolvedDisplayPath(absolute)}, nil
+		return rootedPath{relative: relative, display: absolute}, nil
 	}
 
 	absolute := filepath.Clean(path)
@@ -185,7 +302,7 @@ func rootedRelativePath(path, root string) (rootedPath, error) {
 		if err != nil {
 			return rootedPath{}, fmt.Errorf("resolve path relative to allowed root: %w", err)
 		}
-		return rootedPath{relative: relative, display: resolvedDisplayPath(absolute)}, nil
+		return rootedPath{relative: relative, display: absolute}, nil
 	}
 
 	resolvedRoot, err := resolvePath(root)
@@ -203,15 +320,7 @@ func rootedRelativePath(path, root string) (rootedPath, error) {
 	if err != nil {
 		return rootedPath{}, fmt.Errorf("resolve path relative to allowed root: %w", err)
 	}
-	return rootedPath{relative: relative, display: resolved}, nil
-}
-
-func resolvedDisplayPath(path string) string {
-	resolved, err := resolvePath(path)
-	if err != nil {
-		return path
-	}
-	return resolved
+	return rootedPath{relative: relative, display: absolute}, nil
 }
 
 func outsideRootError(path, root string) error {

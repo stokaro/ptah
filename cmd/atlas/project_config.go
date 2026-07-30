@@ -1,7 +1,9 @@
 package atlas
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,16 +14,25 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasprojectpath"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/atlassource"
+	"github.com/stokaro/ptah/internal/pathguard"
 )
 
 const (
 	atlasConfigFlagName = "config"
 	atlasVarFlagName    = "var"
+)
+
+type atlasProjectRequirement int
+
+const (
+	optionalAtlasProject atlasProjectRequirement = iota
+	requiredAtlasProject
 )
 
 type atlasProjectFlagValues struct {
@@ -37,6 +48,85 @@ type atlasProjectArgValues struct {
 	envChanged    bool
 }
 
+type atlasProject struct {
+	projectconfig.Config
+	root                 *pathguard.OpenedDirectory
+	migrationDir         atlasargs.LocalDir
+	migrationDirResolved bool
+}
+
+func (p *atlasProject) Close() error {
+	if p == nil || p.root == nil {
+		return nil
+	}
+	err := p.root.Close()
+	p.root = nil
+	return err
+}
+
+func closeAtlasProject(project *atlasProject, runErr *error) {
+	*runErr = errors.Join(*runErr, project.Close())
+}
+
+func closeAtlasProjectOnError(project *atlasProject, runErr *error) {
+	if *runErr != nil {
+		closeAtlasProject(project, runErr)
+	}
+}
+
+func (p atlasProject) localDirWithQuery(raw string) (atlasargs.LocalDir, error) {
+	if p.root == nil {
+		return atlasargs.LocalDir{}, fmt.Errorf("atlas project root is unavailable")
+	}
+	return atlasProjectConfigLocalDirWithQueryFromBaseDir(raw, p.root.Path())
+}
+
+func (p *atlasProject) resolveMigrationDirForArgs(
+	flags []atlasargs.Flag,
+	args []string,
+) error {
+	migrationDir := p.StringValue(projectconfig.StringMigrationDir)
+	if !migrationDir.Present ||
+		!atlasFlagRegistered(flags, "dir") ||
+		atlasFlagValueSet(flags, args, "dir") {
+		return nil
+	}
+	dir, err := p.localDirWithQuery(migrationDir.Value)
+	if err != nil {
+		return fmt.Errorf("atlas.hcl migration.dir: %w", err)
+	}
+	if len(dir.Query) > 0 {
+		return fmt.Errorf("atlas.hcl migration.dir: migration directory URL query parameters are not supported yet")
+	}
+	p.migrationDir = dir
+	p.migrationDirResolved = true
+	return nil
+}
+
+func (p atlasProject) localOptions(dir atlasargs.LocalDir) migrationsource.LocalOptions {
+	if dir.AllowedRoot != "" && p.root != nil {
+		return migrationsource.LocalOptions{Root: p.root}
+	}
+	return migrationsource.LocalOptions{AllowedRoot: dir.AllowedRoot}
+}
+
+func (p atlasProject) captureLocal(dir atlasargs.LocalDir) (migrationsource.LocalSource, error) {
+	return migrationsource.CaptureLocal(dir.Path, p.localOptions(dir))
+}
+
+func (p atlasProject) statLocalDir(dir atlasargs.LocalDir) (fs.FileInfo, error) {
+	if dir.AllowedRoot == "" || p.root == nil {
+		return os.Stat(dir.Path)
+	}
+	opened, err := p.root.OpenDirectory(dir.Path)
+	if err != nil {
+		return nil, err
+	}
+	info, statErr := opened.Stat(".")
+	closeErr := opened.Close()
+	return info, errors.Join(statErr, closeErr)
+}
+
 func registerAtlasProjectFlags(flags *pflag.FlagSet, target *atlasProjectFlagValues) {
 	if flags.Lookup(atlasConfigFlagName) == nil {
 		flags.StringVarP(&target.configPath, atlasConfigFlagName, "c", "file://"+projectconfig.AtlasFileName, "select config (project) file using URL format")
@@ -49,44 +139,61 @@ func registerAtlasProjectFlags(flags *pflag.FlagSet, target *atlasProjectFlagVal
 	}
 }
 
-func loadAtlasProjectConfig(flags atlasProjectFlagValues) (projectconfig.Config, error) {
-	path, err := atlasConfigPathValue(flags.configPath)
-	if err != nil {
-		return projectconfig.Config{}, err
-	}
-	return projectconfig.LoadAtlasFileWithOptions(path, projectconfig.AtlasLoadOptions{
-		EnvName: flags.envName,
-		Vars:    flags.vars,
-	})
-}
-
-func loadRequiredAtlasProjectConfig(flags atlasProjectFlagValues) (projectconfig.Config, error) {
-	path, err := atlasConfigPathValue(flags.configPath)
-	if err != nil {
-		return projectconfig.Config{}, err
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return projectconfig.Config{}, fmt.Errorf("failed to read atlas config %s: %w", path, err)
-	}
-	return projectconfig.ParseAtlasWithOptions(raw, path, projectconfig.AtlasLoadOptions{
-		EnvName: flags.envName,
-		Vars:    flags.vars,
-	})
-}
-
-func loadRequiredMergedProjectConfig(
+func openAtlasProject(
 	flags atlasProjectFlagValues,
-) (atlasConfig, mergedConfig projectconfig.Config, err error) {
-	atlas, err := loadRequiredAtlasProjectConfig(flags)
+	requirement atlasProjectRequirement,
+) (atlasProject, bool, error) {
+	path, err := atlasConfigPathValue(flags.configPath)
 	if err != nil {
-		return projectconfig.Config{}, projectconfig.Config{}, err
+		return atlasProject{}, false, err
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return atlasProject{}, false, fmt.Errorf("resolve atlas config path %s: %w", path, err)
+	}
+	root, err := pathguard.OpenDirectory(filepath.Dir(absolute))
+	if err != nil {
+		return atlasProject{}, false, fmt.Errorf("open atlas config directory %s: %w", filepath.Dir(path), err)
+	}
+	raw, err := fs.ReadFile(root.FS(), filepath.Base(absolute))
+	if errors.Is(err, fs.ErrNotExist) && requirement == optionalAtlasProject {
+		closeErr := root.Close()
+		return atlasProject{}, false, closeErr
+	}
+	if err != nil {
+		closeErr := root.Close()
+		return atlasProject{}, false, errors.Join(
+			fmt.Errorf("failed to read atlas config %s: %w", path, err),
+			closeErr,
+		)
+	}
+	cfg, err := projectconfig.ParseAtlasFSWithOptions(raw, path, root.FS(), projectconfig.AtlasLoadOptions{
+		EnvName: flags.envName,
+		Vars:    flags.vars,
+	})
+	if err != nil {
+		closeErr := root.Close()
+		return atlasProject{}, false, errors.Join(err, closeErr)
+	}
+	return atlasProject{
+		Config: cfg,
+		root:   root,
+	}, true, nil
+}
+
+func openRequiredMergedProjectConfig(
+	flags atlasProjectFlagValues,
+) (project atlasProject, mergedConfig projectconfig.Config, err error) {
+	project, _, err = openAtlasProject(flags, requiredAtlasProject)
+	if err != nil {
+		return atlasProject{}, projectconfig.Config{}, err
 	}
 	ptah, err := projectconfig.LoadPtahFile(projectconfig.PtahFileName, flags.envName)
 	if err != nil {
-		return projectconfig.Config{}, projectconfig.Config{}, err
+		closeErr := project.Close()
+		return atlasProject{}, projectconfig.Config{}, errors.Join(err, closeErr)
 	}
-	return atlas, projectconfig.Merge(ptah, atlas), nil
+	return project, projectconfig.Merge(ptah, project.Config), nil
 }
 
 func atlasConfigPathValue(value string) (string, error) {
@@ -118,22 +225,6 @@ func loadRequiredAtlasProjectConfigForCommand(
 	return loadAtlasProjectConfigForCommand(cmd, reportMissingEnvSelection)
 }
 
-func atlasProjectConfigLocalDir(cmd *cobra.Command, raw string) (string, error) {
-	flags, _, err := atlasProjectFlagsFromCommand(cmd)
-	if err != nil {
-		return "", err
-	}
-	return atlasProjectConfigLocalDirFromFlags(flags, raw)
-}
-
-func atlasProjectConfigLocalDirWithQuery(cmd *cobra.Command, raw string) (atlasargs.LocalDir, error) {
-	flags, _, err := atlasProjectFlagsFromCommand(cmd)
-	if err != nil {
-		return atlasargs.LocalDir{}, err
-	}
-	return atlasProjectConfigLocalDirWithQueryFromFlags(flags, raw)
-}
-
 func atlasProjectConfigSchemaURLs(cmd *cobra.Command, raw []string) ([]string, error) {
 	flags, _, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
@@ -142,25 +233,10 @@ func atlasProjectConfigSchemaURLs(cmd *cobra.Command, raw []string) ([]string, e
 	return atlasProjectConfigSchemaURLsFromFlags(flags, raw)
 }
 
-func atlasProjectConfigLocalDirFromFlags(flags atlasProjectFlagValues, raw string) (string, error) {
-	dir, err := atlasProjectConfigLocalDirWithQueryFromFlags(flags, raw)
-	if err != nil {
-		return "", err
-	}
-	if len(dir.Query) > 0 {
-		return "", fmt.Errorf("migration directory URL query parameters are not supported yet")
-	}
-	return dir.Path, nil
-}
-
-func atlasProjectConfigLocalDirWithQueryFromFlags(
-	flags atlasProjectFlagValues,
+func atlasProjectConfigLocalDirWithQueryFromBaseDir(
 	raw string,
+	baseDir string,
 ) (atlasargs.LocalDir, error) {
-	baseDir, err := atlasProjectConfigBaseDir(flags)
-	if err != nil {
-		return atlasargs.LocalDir{}, err
-	}
 	path, query, err := atlasprojectpath.LocalDirWithQuery(raw, baseDir)
 	if err != nil {
 		return atlasargs.LocalDir{}, err
@@ -213,29 +289,33 @@ func loadAtlasProjectConfigForCommand(
 	cmd *cobra.Command,
 	mode missingAtlasEnvSelectionMode,
 ) (projectconfig.Config, bool, error) {
+	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
+	if err != nil {
+		return projectconfig.Config{}, false, err
+	}
+	closeErr := project.Close()
+	return project.Config, loaded, closeErr
+}
+
+func openAtlasProjectForCommand(
+	cmd *cobra.Command,
+	mode missingAtlasEnvSelectionMode,
+) (atlasProject, bool, error) {
 	flags, changed, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
-		return projectconfig.Config{}, false, err
+		return atlasProject{}, false, err
 	}
 	if changed {
-		cfg, err := loadRequiredAtlasProjectConfig(flags)
-		return cfg, true, err
+		return openAtlasProject(flags, requiredAtlasProject)
 	}
-	path, err := atlasConfigPathValue(flags.configPath)
-	if err != nil {
-		return projectconfig.Config{}, false, err
-	}
-	if !atlasProjectConfigExists(path) {
-		return projectconfig.Config{}, false, nil
-	}
-	cfg, err := loadAtlasProjectConfig(flags)
+	project, loaded, err := openAtlasProject(flags, optionalAtlasProject)
 	if err != nil {
 		if isAtlasEnvSelectionRequired(err) && mode == ignoreMissingEnvSelection {
-			return projectconfig.Config{}, false, nil
+			return atlasProject{}, false, nil
 		}
-		return projectconfig.Config{}, false, err
+		return atlasProject{}, false, err
 	}
-	return cfg, true, nil
+	return project, loaded, nil
 }
 
 func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, bool, error) {
@@ -433,11 +513,6 @@ func resetAtlasProjectFlags(group *cobra.Command) {
 	}
 }
 
-func atlasProjectConfigExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
 func extractAtlasProjectArgs(args []string) (atlasProjectArgValues, []string, error) {
 	project := atlasProjectArgValues{
 		flags: atlasProjectFlagValues{configPath: "file://" + projectconfig.AtlasFileName},
@@ -549,66 +624,59 @@ func nextAtlasProjectArgValue(args []string, index int, flagName string) (string
 type atlasProjectArgsApplier func(
 	flags []atlasargs.Flag,
 	args []string,
-	cfg projectconfig.Config,
+	project atlasProject,
 	projectFlags atlasProjectFlagValues,
 ) ([]string, error)
 
 func applyAtlasProjectConfigToArgs(
 	flags []atlasargs.Flag,
 	args []string,
-	cfg projectconfig.Config,
-	projectFlags atlasProjectFlagValues,
+	project atlasProject,
+	_ atlasProjectFlagValues,
 ) ([]string, error) {
 	args = appendAtlasProjectStringArg(
 		flags,
 		args,
 		"url",
-		cfg.StringValue(projectconfig.StringDatabaseURL),
+		project.StringValue(projectconfig.StringDatabaseURL),
 	)
 	args = appendAtlasProjectStringArg(
 		flags,
 		args,
 		"dev-url",
-		cfg.StringValue(projectconfig.StringDevURL),
+		project.StringValue(projectconfig.StringDevURL),
 	)
-	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
-	if migrationDir.Present &&
-		atlasFlagRegistered(flags, "dir") &&
-		!atlasFlagValueSet(flags, args, "dir") {
-		dir, err := atlasProjectConfigLocalDirFromFlags(projectFlags, migrationDir.Value)
-		if err != nil {
-			return nil, fmt.Errorf("atlas.hcl migration.dir: %w", err)
-		}
-		args = append(args, "--dir", dir)
+	if project.migrationDirResolved {
+		args = append(args, "--dir", project.migrationDir.Path)
 	}
 	args = appendAtlasProjectStringArg(
 		flags,
 		args,
 		"dir-format",
-		cfg.StringValue(projectconfig.StringMigrationFormat),
+		project.StringValue(projectconfig.StringMigrationFormat),
 	)
 	args = appendAtlasProjectStringArg(
 		flags,
 		args,
 		"revisions-schema",
-		cfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
+		project.StringValue(projectconfig.StringMigrationRevisionsSchema),
 	)
 	args = appendAtlasProjectStringArg(
 		flags,
 		args,
 		"lock-timeout",
-		cfg.StringValue(projectconfig.StringMigrationLockTimeout),
+		project.StringValue(projectconfig.StringMigrationLockTimeout),
 	)
 	cliLatest := atlasFlagValueSet(flags, args, "latest")
 	cliGitBase := atlasFlagValueSet(flags, args, "git-base")
 	if !cliGitBase {
-		args = appendAtlasProjectStringArg(flags, args, "latest", atlasProjectLatest(cfg))
+		args = appendAtlasProjectStringArg(flags, args, "latest", atlasProjectLatest(project.Config))
 	}
-	gitBase := cfg.StringValue(projectconfig.StringLintGitBase)
+	gitBase := project.StringValue(projectconfig.StringLintGitBase)
 	if !cliLatest && gitBase.Value != "" {
 		args = appendAtlasProjectStringArg(flags, args, "git-base", gitBase)
 	}
-	gitDir := cfg.StringValue(projectconfig.StringLintGitDir)
+	gitDir := project.StringValue(projectconfig.StringLintGitDir)
 	if !cliLatest && gitDir.Value != "" {
 		args = appendAtlasProjectStringArg(flags, args, "git-dir", gitDir)
 	}
@@ -624,9 +692,10 @@ func applyAtlasProjectConfigToArgs(
 func applyAtlasSchemaTestProjectConfig(
 	flags []atlasargs.Flag,
 	args []string,
-	cfg projectconfig.Config,
+	project atlasProject,
 	projectFlags atlasProjectFlagValues,
 ) ([]string, error) {
+	cfg := project.Config
 	args = appendAtlasProjectStringArg(
 		flags,
 		args,

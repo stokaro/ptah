@@ -69,13 +69,21 @@ verification reuse that snapshot. It contains migration SQL,
 Relative CLI paths are rooted at the process working directory. Traversal and
 symlink escapes outside that root are rejected. Explicit absolute paths remain
 supported. A relative `migration.dir` in `atlas.hcl` resolves from the project
-file's directory, while an explicit CLI `--dir` keeps CLI path semantics.
+file's directory. Ptah keeps that project directory handle open from
+`atlas.hcl` evaluation, including `file()` and `fileset()`, through migration
+capture, so replacing the project pathname cannot redirect the command.
+Parent-relative project paths such as `../shared-migrations` are intentionally
+external and use unrooted compatibility semantics. An explicit CLI `--dir`
+keeps CLI path semantics.
 
-Ptah reads the directory twice and accepts it only when both captures match.
-Changing a migration during capture fails the command. Changes made after
-capture affect only a later invocation: checksum verification, migration
-registration, destructive linting, shadow rollback verification, execution,
-and template reports all consume the same captured bytes.
+Ptah reads the directory twice and accepts it only when both observed captures
+match. This best-effort check rejects observed differences, but cannot defeat
+coordinated writers or an ABA change that restores the original bytes before
+the next observation. Hostile writers require trusted immutable input, manifest
+or process controls, or a filesystem-level snapshot. After acceptance, checksum
+verification, migration registration, destructive linting, shadow rollback
+verification, execution, and template reports all consume the same captured
+bytes.
 
 ## Consequences
 

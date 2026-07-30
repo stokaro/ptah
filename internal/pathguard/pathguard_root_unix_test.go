@@ -42,6 +42,34 @@ func TestOpenDirectoryWithinRootAnchorsOpenedDirectory(t *testing.T) {
 	c.Assert(string(contents), qt.Equals, "SELECT 'safe';\n")
 }
 
+func TestOpenCLIDirectoryKeepsLexicalDisplayPathAfterSymlinkReplacement(t *testing.T) {
+	c := qt.New(t)
+	parent := t.TempDir()
+	original := filepath.Join(parent, "original")
+	replacement := filepath.Join(parent, "replacement")
+	link := filepath.Join(parent, "migrations")
+	c.Assert(os.Mkdir(original, 0o700), qt.IsNil)
+	c.Assert(os.Mkdir(replacement, 0o700), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(original, "1.sql"), []byte("SELECT 'original';\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(replacement, "1.sql"), []byte("SELECT 'replacement';\n"), 0o600), qt.IsNil)
+	c.Assert(os.Symlink(original, link), qt.IsNil)
+
+	opened, err := pathguard.OpenCLIDirectory(link)
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Assert(opened.Close(), qt.IsNil)
+	})
+
+	c.Assert(os.Remove(link), qt.IsNil)
+	c.Assert(os.Symlink(replacement, link), qt.IsNil)
+
+	contents, err := fs.ReadFile(opened.FS(), "1.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "SELECT 'original';\n")
+	c.Assert(opened.Path(), qt.Equals, link)
+	c.Assert(opened.VerifyPath(), qt.ErrorIs, pathguard.ErrPathReplaced)
+}
+
 func TestOpenDirectoryWithinRootRejectsEscapingSymlink(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
@@ -86,4 +114,57 @@ func TestOpenDirectoryWithinRootAnchorsAllowedRoot(t *testing.T) {
 	contents, err := fs.ReadFile(opened.FS(), "1.sql")
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "SELECT 'safe';\n")
+}
+
+func TestOpenCurrentDirectoryAnchorsBeforePathReplacement(t *testing.T) {
+	c := qt.New(t)
+	parent := t.TempDir()
+	current := filepath.Join(parent, "current")
+	migrations := filepath.Join(current, "migrations")
+	c.Assert(os.MkdirAll(migrations, 0o700), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "1.sql"), []byte("SELECT 'safe';\n"), 0o600), qt.IsNil)
+	t.Chdir(current)
+
+	root, err := pathguard.OpenCurrentDirectory()
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Assert(root.Close(), qt.IsNil)
+	})
+
+	captured := filepath.Join(parent, "captured")
+	c.Assert(os.Rename(current, captured), qt.IsNil)
+	outside := t.TempDir()
+	c.Assert(os.Mkdir(filepath.Join(outside, "migrations"), 0o700), qt.IsNil)
+	c.Assert(
+		os.WriteFile(filepath.Join(outside, "migrations", "1.sql"), []byte("SELECT 'outside';\n"), 0o600),
+		qt.IsNil,
+	)
+	c.Assert(os.Symlink(outside, current), qt.IsNil)
+
+	opened, err := root.OpenDirectory("migrations")
+	c.Assert(err, qt.IsNil)
+	contents, err := fs.ReadFile(opened.FS(), "1.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "SELECT 'safe';\n")
+	c.Assert(opened.Close(), qt.IsNil)
+}
+
+func TestOpenOrCreateDirectoryWithinRootRejectsEscapingSymlink(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	outside := t.TempDir()
+	link := filepath.Join(root, "nested")
+	c.Assert(os.Symlink(outside, link), qt.IsNil)
+
+	opened, err := pathguard.OpenOrCreateDirectoryWithinRoot(
+		filepath.Join(link, "migrations"),
+		root,
+		0o755,
+	)
+
+	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
+	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
+	c.Assert(opened, qt.IsNil)
+	_, err = os.Stat(filepath.Join(outside, "migrations"))
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
 }

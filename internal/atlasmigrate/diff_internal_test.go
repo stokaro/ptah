@@ -26,6 +26,7 @@ import (
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/migrationreplay"
 	"github.com/stokaro/ptah/internal/migrationsnapshot"
+	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -1124,10 +1125,23 @@ CREATE VIEW replayed_user_ids AS SELECT id FROM replayed_users;
 	c.Cleanup(func() {
 		dbschema.CloseAndWarn(conn)
 	})
+	opened, err := pathguard.OpenDirectory(migrationsDir)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(opened.Close(), qt.IsNil)
+	})
+	prepared, err := PrepareDiffDirectory(
+		c.Context(),
+		migrationsDir,
+		opened,
+		time.Second,
+	)
+	c.Assert(err, qt.IsNil)
 	return conn, DiffOptions{
-		Dir:     migrationsDir,
-		Desired: desired,
-		Name:    "fault_injection",
+		Dir:       migrationsDir,
+		Directory: prepared,
+		Desired:   desired,
+		Name:      "fault_injection",
 	}
 }
 
