@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/internal/goannotationcleanup"
+	"github.com/stokaro/ptah/internal/goannotationsource"
 )
 
 func TestCleanDirDryRunDiffAndWrite(t *testing.T) {
@@ -31,7 +32,7 @@ type User struct {
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(path, 0o644), qt.IsNil)
 
-	plan, err := goannotationcleanup.PlanDir(dir)
+	plan, err := planDir(dir)
 
 	c.Assert(err, qt.IsNil)
 	results := plan.DiffResults()
@@ -42,7 +43,7 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, original)
 
-	plan, err = goannotationcleanup.PlanDir(dir)
+	plan, err = planDir(dir)
 
 	c.Assert(err, qt.IsNil)
 	results = plan.Results()
@@ -58,7 +59,7 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))
 
-	plan, err = goannotationcleanup.PlanDir(dir)
+	plan, err = planDir(dir)
 	c.Assert(err, qt.IsNil)
 	results = plan.Results()
 	c.Assert(results, qt.HasLen, 0)
@@ -73,7 +74,7 @@ func TestCleanDirPreservesUnrelatedFormattingByteForByte(t *testing.T) {
 	expected := "package models\n\n// User is business documentation.\ntype User struct{ID int64}\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 
-	plan, err := goannotationcleanup.PlanDir(dir)
+	plan, err := planDir(dir)
 
 	c.Assert(err, qt.IsNil)
 	results := plan.Results()
@@ -96,7 +97,7 @@ func TestCleanDirDiffReportsDuplicateRemovedLinesByPosition(t *testing.T) {
 		"OtherID int64\n}\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 
-	plan, err := goannotationcleanup.PlanDir(dir)
+	plan, err := planDir(dir)
 
 	c.Assert(err, qt.IsNil)
 	results := plan.DiffResults()
@@ -147,7 +148,7 @@ func TestCleanDir_HappyPath_PreservesStringLiteralsAndRemovesStandaloneAnnotatio
 		"}\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 
-	plan, err := goannotationcleanup.PlanDir(dir)
+	plan, err := planDir(dir)
 
 	c.Assert(err, qt.IsNil)
 	results := plan.Results()
@@ -183,7 +184,7 @@ func TestCleanDir_HappyPath_SkipsTestVendorAndHiddenSources(t *testing.T) {
 	c.Assert(os.WriteFile(vendorPath, []byte(skippedVendor), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(hiddenPath, []byte(skippedHidden), 0o600), qt.IsNil)
 
-	plan, err := goannotationcleanup.PlanDir(dir)
+	plan, err := planDir(dir)
 
 	c.Assert(err, qt.IsNil)
 	results := plan.Results()
@@ -216,7 +217,7 @@ func TestCleanDir_FailurePath_InvalidGoSourceIsNotModified(t *testing.T) {
 	c.Assert(os.Chmod(validPath, 0o640), qt.IsNil)
 	c.Assert(os.Chmod(invalidPath, 0o640), qt.IsNil)
 
-	plan, err := goannotationcleanup.PlanDir(dir)
+	plan, err := planDir(dir)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "z_invalid.go")
@@ -246,13 +247,15 @@ func TestPlanApply_FailurePath_PrevalidatesEverySourceBeforeWriting(t *testing.T
 	c.Assert(os.WriteFile(firstPath, firstData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(changedPath, changedData, 0o600), qt.IsNil)
 
-	plan, err := goannotationcleanup.PlanDir(dir)
+	plan, err := planDir(dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(changedPath, replacementData, 0o600), qt.IsNil)
 
 	err = plan.Apply()
 
-	c.Assert(err, qt.ErrorMatches, "go source changed before cleanup: .*z_model.go")
+	c.Assert(err, qt.ErrorIs, goannotationsource.ErrChanged)
+	c.Assert(err.Error(), qt.Contains, "source contents changed")
+	c.Assert(err.Error(), qt.Contains, "z_model.go")
 	firstAfter, err := os.ReadFile(firstPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(firstAfter, qt.DeepEquals, firstData)
@@ -280,7 +283,7 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(path, 0o640), qt.IsNil)
 
-	dryRunPlan, err := goannotationcleanup.PlanDir(dir)
+	dryRunPlan, err := planDir(dir)
 
 	c.Assert(err, qt.IsNil)
 	dryRunResults := dryRunPlan.Results()
@@ -296,7 +299,7 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
 
-	diffPlan, err := goannotationcleanup.PlanDir(dir)
+	diffPlan, err := planDir(dir)
 
 	c.Assert(err, qt.IsNil)
 	diffResults := diffPlan.DiffResults()
@@ -313,7 +316,7 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
 
-	writePlan, err := goannotationcleanup.PlanDir(dir)
+	writePlan, err := planDir(dir)
 
 	c.Assert(err, qt.IsNil)
 	writeResults := writePlan.Results()
@@ -330,12 +333,12 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
 
-	idempotentDryRunPlan, err := goannotationcleanup.PlanDir(dir)
+	idempotentDryRunPlan, err := planDir(dir)
 	c.Assert(err, qt.IsNil)
 	idempotentDryRunResults := idempotentDryRunPlan.DiffResults()
 	c.Assert(idempotentDryRunResults, qt.HasLen, 0)
 
-	idempotentWritePlan, err := goannotationcleanup.PlanDir(dir)
+	idempotentWritePlan, err := planDir(dir)
 	c.Assert(err, qt.IsNil)
 	idempotentWriteResults := idempotentWritePlan.Results()
 	c.Assert(idempotentWriteResults, qt.HasLen, 0)
@@ -370,7 +373,7 @@ func TestCleanDir_HappyPath_DiffMarksMissingFinalNewline(t *testing.T) {
 			path := filepath.Join(dir, "model.go")
 			c.Assert(os.WriteFile(path, []byte(tt.original), 0o600), qt.IsNil)
 
-			plan, err := goannotationcleanup.PlanDir(dir)
+			plan, err := planDir(dir)
 
 			c.Assert(err, qt.IsNil)
 			results := plan.DiffResults()
@@ -384,14 +387,14 @@ func TestCleanDir_HappyPath_DiffMarksMissingFinalNewline(t *testing.T) {
 	}
 }
 
-func TestPlanSourceAlias_HappyPath_ReportsExactSourceAndMissingPath(t *testing.T) {
+func TestPlanAnnotations_HappyPath_ReturnsMetadata(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "model.go")
 	original := "package models\n\n//ptah:schema:table name=\"users\" platform.mysql.engine=\"InnoDB\"\ntype User struct{}\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 
-	plan, err := goannotationcleanup.PlanDir(dir)
+	plan, err := planDir(dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Annotations(), qt.DeepEquals, []goannotationcleanup.Annotation{
 		{
@@ -401,12 +404,21 @@ func TestPlanSourceAlias_HappyPath_ReportsExactSourceAndMissingPath(t *testing.T
 			Attributes: []string{"name", "platform.mysql.engine"},
 		},
 	})
+}
 
-	alias, err := plan.SourceAlias(path)
-	c.Assert(err, qt.IsNil)
-	c.Assert(alias, qt.Equals, path)
+func TestNewPlan_FailurePath_RejectsNilSnapshot(t *testing.T) {
+	c := qt.New(t)
 
-	alias, err = plan.SourceAlias(filepath.Join(dir, "schema.hcl"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(alias, qt.Equals, "")
+	plan, err := goannotationcleanup.NewPlan(nil)
+
+	c.Assert(err, qt.ErrorMatches, "Go annotation source snapshot is nil")
+	c.Assert(plan, qt.IsNil)
+}
+
+func planDir(root string) (*goannotationcleanup.Plan, error) {
+	snapshot, err := goannotationsource.Capture(root)
+	if err != nil {
+		return nil, err
+	}
+	return goannotationcleanup.NewPlan(snapshot)
 }

@@ -41,6 +41,11 @@ type Account struct {
 }
 ```
 
+Ptah recursively reads regular `*.go` files under each `--root-dir`. It skips
+`*_test.go`, hidden directories, and directories named exactly `vendor`.
+Names that merely contain that word, such as `myvendor`, remain part of the
+source tree.
+
 Render the desired SQL before connecting to a database:
 
 ```bash
@@ -145,6 +150,11 @@ stable before it writes `schema.hcl`. Every valid Go annotation semantic has an
 HCL representation, so the export is expected to have no diagnostics. Review
 any unexpected diagnostic before cleanup.
 
+One export captures the complete selected Go source set and uses that immutable
+view for both HCL parsing and cleanup planning. Ptah rechecks source membership,
+file identity, permissions, and contents before publishing the HCL; a concurrent
+source change aborts the export.
+
 Preview annotation removal only after the export has no diagnostics:
 
 ```bash
@@ -162,10 +172,13 @@ the same command without `--cleanup-diff` to apply the prevalidated cleanup
 plan.
 
 :::caution[Cleanup is a one-time migration]
-Cleanup fails before any write if the export reports diagnostics, the output
-aliases a Go source or referenced managed-data file, or no removable
-annotations remain. Do not repeat the cleanup command after a successful
-migration; use `schema.hcl` as the new source.
+Cleanup fails before HCL publication if the export reports diagnostics, the
+output uses a `.go` path or aliases a protected source, or no removable
+annotations remain. Ptah revalidates the Go source set before HCL publication
+and again before cleanup. If a source changes between those steps, the HCL file
+remains published but cleanup leaves every Go file unchanged and returns an
+error. Do not repeat the cleanup command after a successful migration; use
+`schema.hcl` as the new source.
 :::
 
 ## Next steps
