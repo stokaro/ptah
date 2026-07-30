@@ -2,11 +2,13 @@ package atlas
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
@@ -66,6 +68,7 @@ Atlas Cloud web output is an explicit follow-up gap.`,
 }
 
 func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
+	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasSchemaDiffConfig(cmd) {
@@ -76,9 +79,16 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	}
 	if loaded {
 		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
-		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
+		opts.devURL = dbcli.EffectiveString(
+			cmd,
+			"dev-url",
+			opts.devURL,
+			projectCfg.StringValue(projectconfig.StringDevURL),
+		)
 		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Schema.Diff)
+		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaDiff)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+		formatConfigured = formatConfigured || formatValue.Present
 		policy, err = atlasDiffPolicy(projectCfg)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
@@ -89,6 +99,9 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
 		}
+	}
+	if formatConfigured && strings.TrimSpace(opts.format) == "" {
+		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
 	}
 	format := atlasreport.NormalizeSchemaDiffFormat(opts.format)
 	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {

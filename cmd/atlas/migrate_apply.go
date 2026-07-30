@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
@@ -78,6 +79,7 @@ func atlasMigrateApplyArgs(cmd *cobra.Command, args []string) error {
 
 func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, args []string) error {
 	formatOutput := cmd.Flags().Changed("format")
+	projectDirFormatPresent := false
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasMigrateApplyConfig(cmd) {
 		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
@@ -86,17 +88,50 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		return err
 	}
 	if loaded {
-		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
-		opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
-		if projectCfg.Migration.Format != "" {
-			opts.dirFormat = projectCfg.Migration.Format
+		opts.url = dbcli.EffectiveString(
+			cmd,
+			"url",
+			opts.url,
+			projectCfg.StringValue(projectconfig.StringDatabaseURL),
+		)
+		opts.dir = dbcli.EffectiveString(
+			cmd,
+			"dir",
+			opts.dir,
+			projectCfg.StringValue(projectconfig.StringMigrationDir),
+		)
+		dirFormat := projectCfg.StringValue(projectconfig.StringMigrationFormat)
+		projectDirFormatPresent = dirFormat.Present
+		if dirFormat.Present {
+			opts.dirFormat = dirFormat.Value
 		}
-		opts.txMode = dbcli.EffectiveString(cmd, "tx-mode", opts.txMode, projectCfg.Migration.TxMode)
-		opts.execOrder = dbcli.EffectiveString(cmd, "exec-order", opts.execOrder, projectCfg.Migration.ExecOrder)
-		opts.revisionsSchema = dbcli.EffectiveString(cmd, "revisions-schema", opts.revisionsSchema, projectCfg.Migration.RevisionsSchema)
-		opts.lockTimeout = dbcli.EffectiveString(cmd, "lock-timeout", opts.lockTimeout, projectCfg.Migration.LockTimeout)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Migrate.Apply)
-		formatOutput = formatOutput || projectCfg.Format.Migrate.Apply != ""
+		opts.txMode = dbcli.EffectiveString(
+			cmd,
+			"tx-mode",
+			opts.txMode,
+			projectCfg.StringValue(projectconfig.StringMigrationTxMode),
+		)
+		opts.execOrder = dbcli.EffectiveString(
+			cmd,
+			"exec-order",
+			opts.execOrder,
+			projectCfg.StringValue(projectconfig.StringMigrationExecOrder),
+		)
+		opts.revisionsSchema = dbcli.EffectiveString(
+			cmd,
+			"revisions-schema",
+			opts.revisionsSchema,
+			projectCfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
+		)
+		opts.lockTimeout = dbcli.EffectiveString(
+			cmd,
+			"lock-timeout",
+			opts.lockTimeout,
+			projectCfg.StringValue(projectconfig.StringMigrationLockTimeout),
+		)
+		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateApply)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+		formatOutput = formatOutput || formatValue.Present
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return fmt.Errorf("--format must not be empty")
@@ -114,13 +149,20 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	}
 
 	var localDir atlasargs.LocalDir
-	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
+	if loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
 		localDir, err = atlasProjectConfigLocalDirWithQuery(cmd, opts.dir)
 	} else {
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+	if projectDirFormatPresent && opts.dirFormat == "" {
+		if _, queryOverridesProjectFormat := localDir.Query["format"]; !queryOverridesProjectFormat {
+			return fmt.Errorf("atlas migrate apply --dir: migration directory format must not be empty")
+		}
 	}
 	dir := localDir.Path
 	dir, err = pathguard.ResolveCLIPath(dir)

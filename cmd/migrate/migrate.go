@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
@@ -111,8 +112,18 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	dbURL := dbcli.EffectiveString(cmd, dbURLFlag, opts.dbURL, projectCfg.DatabaseURL)
-	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemas, dbcli.JoinSchemas(projectCfg.Schemas))
+	dbURL := dbcli.EffectiveString(
+		cmd,
+		dbURLFlag,
+		opts.dbURL,
+		projectCfg.StringValue(projectconfig.StringDatabaseURL),
+	)
+	schemasValue := dbcli.EffectiveString(
+		cmd,
+		dbcli.SchemasFlagName,
+		opts.schemas,
+		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
+	)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")

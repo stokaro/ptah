@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/schemaclean"
@@ -57,9 +58,15 @@ func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 	if loaded {
-		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Schema.Clean)
-		formatOutput = formatOutput || projectCfg.Format.Schema.Clean != ""
+		opts.url = dbcli.EffectiveString(
+			cmd,
+			"url",
+			opts.url,
+			projectCfg.StringValue(projectconfig.StringDatabaseURL),
+		)
+		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaClean)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+		formatOutput = formatOutput || formatValue.Present
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))

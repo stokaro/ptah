@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/editor"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasreport"
@@ -120,12 +121,23 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 	if loaded {
-		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
-		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
+		opts.url = dbcli.EffectiveString(
+			cmd,
+			"url",
+			opts.url,
+			projectCfg.StringValue(projectconfig.StringDatabaseURL),
+		)
+		opts.devURL = dbcli.EffectiveString(
+			cmd,
+			"dev-url",
+			opts.devURL,
+			projectCfg.StringValue(projectconfig.StringDevURL),
+		)
 		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
 		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Schema.Apply)
-		formatOutput = formatOutput || projectCfg.Format.Schema.Apply != ""
+		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaApply)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+		formatOutput = formatOutput || formatValue.Present
 		policy, err = atlasDiffPolicy(projectCfg)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)

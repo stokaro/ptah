@@ -13,6 +13,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/pathguard"
@@ -85,14 +86,54 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	opts.dbURL = dbcli.EffectiveString(cmd, dbURLFlag, opts.dbURL, projectCfg.DatabaseURL)
-	opts.migrationsDir = dbcli.EffectiveString(cmd, migrationsFlag, opts.migrationsDir, projectCfg.Migration.Dir)
-	opts.dirFormat = dbcli.EffectiveString(cmd, dirFormatFlag, opts.dirFormat, projectCfg.Migration.Format)
-	opts.atlasEnv = dbcli.EffectiveString(cmd, atlasEnvFlag, opts.atlasEnv, projectCfg.EnvName)
-	opts.migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, opts.migrationsSchema, projectCfg.Migration.RevisionsSchema)
-	opts.migrationsTable = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, opts.migrationsTable, projectCfg.Migration.RevisionsTable)
-	opts.revisionTableFormat = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, opts.revisionTableFormat, projectCfg.Migration.RevisionFormat)
-	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout)
+	opts.dbURL = dbcli.EffectiveString(
+		cmd,
+		dbURLFlag,
+		opts.dbURL,
+		projectCfg.StringValue(projectconfig.StringDatabaseURL),
+	)
+	opts.migrationsDir = dbcli.EffectiveString(
+		cmd,
+		migrationsFlag,
+		opts.migrationsDir,
+		projectCfg.StringValue(projectconfig.StringMigrationDir),
+	)
+	opts.dirFormat = dbcli.EffectiveString(
+		cmd,
+		dirFormatFlag,
+		opts.dirFormat,
+		projectCfg.StringValue(projectconfig.StringMigrationFormat),
+	)
+	opts.atlasEnv = dbcli.EffectiveString(
+		cmd,
+		atlasEnvFlag,
+		opts.atlasEnv,
+		projectCfg.StringValue(projectconfig.StringEnvName),
+	)
+	opts.migrationsSchema = dbcli.EffectiveString(
+		cmd,
+		dbcli.MigrationsSchemaFlagName,
+		opts.migrationsSchema,
+		projectCfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
+	)
+	opts.migrationsTable = dbcli.EffectiveString(
+		cmd,
+		dbcli.MigrationsTableFlagName,
+		opts.migrationsTable,
+		projectCfg.StringValue(projectconfig.StringMigrationRevisionsTable),
+	)
+	opts.revisionTableFormat = dbcli.EffectiveString(
+		cmd,
+		dbcli.RevisionTableFormatFlagName,
+		opts.revisionTableFormat,
+		projectCfg.StringValue(projectconfig.StringMigrationRevisionFormat),
+	)
+	connectTimeoutValue := dbcli.EffectiveString(
+		cmd,
+		dbcli.ConnectTimeoutFlagName,
+		opts.connectTimeout,
+		projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
+	)
 
 	if strings.TrimSpace(opts.dbURL) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("database URL is required"))

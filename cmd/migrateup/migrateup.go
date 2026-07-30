@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/migrationsource"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/deploymentreport"
 	"github.com/stokaro/ptah/internal/migratesum"
@@ -206,45 +207,77 @@ func parseMigrationSettings(
 	}, nil
 }
 
-func migrateUpCommand(cmd *cobra.Command, opts *options) error {
-	dbURL := opts.dbURL
-	migrationsDir := opts.migrationsDir
-	dirFormatValue := opts.dirFormat
-	atlasEnv := opts.atlasEnv
-	execOrderValue := opts.execOrder
-	txModeValue := opts.txMode
-	migrationLockTimeoutValue := opts.migrationLockTimeout
-	lockTimeout := opts.lockTimeout
-	statementTimeout := opts.statementTimeout
-	preUpHook := opts.preUpHook
-	pgDumpTo := opts.pgDumpTo
-	mySQLDumpTo := opts.mySQLDumpTo
-	webhook := opts.webhook
-	migrationsSchema := opts.migrationsSchema
-	migrationsTable := opts.migrationsTable
-	revisionFormatValue := opts.revisionTableFormat
+func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) options {
+	effectiveString := func(flagName, flagValue string, field projectconfig.StringField) string {
+		return dbcli.EffectiveString(cmd, flagName, flagValue, projectCfg.StringValue(field))
+	}
+	opts.dbURL = effectiveString(dbURLFlag, opts.dbURL, projectconfig.StringDatabaseURL)
+	opts.migrationsDir = effectiveString(migrationsFlag, opts.migrationsDir, projectconfig.StringMigrationDir)
+	opts.dirFormat = effectiveString(dirFormatFlag, opts.dirFormat, projectconfig.StringMigrationFormat)
+	opts.atlasEnv = effectiveString(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
+	opts.execOrder = effectiveString(execOrderFlag, opts.execOrder, projectconfig.StringMigrationExecOrder)
+	opts.txMode = effectiveString(txModeFlag, opts.txMode, projectconfig.StringMigrationTxMode)
+	opts.migrationLockTimeout = effectiveString(
+		migrationLockTimeoutFlag,
+		opts.migrationLockTimeout,
+		projectconfig.StringMigrationMigrationLockTimeout,
+	)
+	opts.lockTimeout = effectiveString(lockTimeoutFlag, opts.lockTimeout, projectconfig.StringMigrationLockTimeout)
+	opts.statementTimeout = effectiveString(
+		statementTimeoutFlag,
+		opts.statementTimeout,
+		projectconfig.StringMigrationStatementTimeout,
+	)
+	opts.preUpHook = effectiveString(preUpHookFlag, opts.preUpHook, projectconfig.StringMigrationPreUpHook)
+	opts.pgDumpTo = effectiveString(pgDumpToFlag, opts.pgDumpTo, projectconfig.StringMigrationPostgresDumpTo)
+	opts.mySQLDumpTo = effectiveString(mySQLDumpToFlag, opts.mySQLDumpTo, projectconfig.StringMigrationMySQLDumpTo)
+	opts.webhook = effectiveString(webhookFlag, opts.webhook, projectconfig.StringMigrationWebhook)
+	opts.migrationsSchema = effectiveString(
+		dbcli.MigrationsSchemaFlagName,
+		opts.migrationsSchema,
+		projectconfig.StringMigrationRevisionsSchema,
+	)
+	opts.migrationsTable = effectiveString(
+		dbcli.MigrationsTableFlagName,
+		opts.migrationsTable,
+		projectconfig.StringMigrationRevisionsTable,
+	)
+	opts.revisionTableFormat = effectiveString(
+		dbcli.RevisionTableFormatFlagName,
+		opts.revisionTableFormat,
+		projectconfig.StringMigrationRevisionFormat,
+	)
+	opts.connectTimeout = effectiveString(
+		dbcli.ConnectTimeoutFlagName,
+		opts.connectTimeout,
+		projectconfig.StringMigrationConnectTimeout,
+	)
+	return opts
+}
 
+func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return err
 	}
-	dbURL = dbcli.EffectiveString(cmd, dbURLFlag, dbURL, projectCfg.DatabaseURL)
-	migrationsDir = dbcli.EffectiveString(cmd, migrationsFlag, migrationsDir, projectCfg.Migration.Dir)
-	dirFormatValue = dbcli.EffectiveString(cmd, dirFormatFlag, dirFormatValue, projectCfg.Migration.Format)
-	atlasEnv = dbcli.EffectiveString(cmd, atlasEnvFlag, atlasEnv, projectCfg.EnvName)
-	execOrderValue = dbcli.EffectiveString(cmd, execOrderFlag, execOrderValue, projectCfg.Migration.ExecOrder)
-	txModeValue = dbcli.EffectiveString(cmd, txModeFlag, txModeValue, projectCfg.Migration.TxMode)
-	migrationLockTimeoutValue = dbcli.EffectiveString(cmd, migrationLockTimeoutFlag, migrationLockTimeoutValue, projectCfg.Migration.MigrationLockTimeout)
-	lockTimeout = dbcli.EffectiveString(cmd, lockTimeoutFlag, lockTimeout, projectCfg.Migration.LockTimeout)
-	statementTimeout = dbcli.EffectiveString(cmd, statementTimeoutFlag, statementTimeout, projectCfg.Migration.StatementTimeout)
-	preUpHook = dbcli.EffectiveString(cmd, preUpHookFlag, preUpHook, projectCfg.Migration.PreUpHook)
-	pgDumpTo = dbcli.EffectiveString(cmd, pgDumpToFlag, pgDumpTo, projectCfg.Migration.PostgresDumpTo)
-	mySQLDumpTo = dbcli.EffectiveString(cmd, mySQLDumpToFlag, mySQLDumpTo, projectCfg.Migration.MySQLDumpTo)
-	webhook = dbcli.EffectiveString(cmd, webhookFlag, webhook, projectCfg.Migration.Webhook)
-	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
-	migrationsTable = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, migrationsTable, projectCfg.Migration.RevisionsTable)
-	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
-	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout)
+	resolvedOpts := resolveProjectOptions(cmd, *opts, projectCfg)
+	dbURL := resolvedOpts.dbURL
+	migrationsDir := resolvedOpts.migrationsDir
+	dirFormatValue := resolvedOpts.dirFormat
+	atlasEnv := resolvedOpts.atlasEnv
+	execOrderValue := resolvedOpts.execOrder
+	txModeValue := resolvedOpts.txMode
+	migrationLockTimeoutValue := resolvedOpts.migrationLockTimeout
+	lockTimeout := resolvedOpts.lockTimeout
+	statementTimeout := resolvedOpts.statementTimeout
+	preUpHook := resolvedOpts.preUpHook
+	pgDumpTo := resolvedOpts.pgDumpTo
+	mySQLDumpTo := resolvedOpts.mySQLDumpTo
+	webhook := resolvedOpts.webhook
+	migrationsSchema := resolvedOpts.migrationsSchema
+	migrationsTable := resolvedOpts.migrationsTable
+	revisionFormatValue := resolvedOpts.revisionTableFormat
+	connectTimeoutValue := resolvedOpts.connectTimeout
 
 	logWriter := cmd.ErrOrStderr()
 	if opts.logFormat == "json" {

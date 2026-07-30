@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
@@ -82,7 +83,12 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	opts.devURL = dbcli.EffectiveString(cmd, diffDevURLFlag, opts.devURL, projectCfg.DevURL)
+	opts.devURL = dbcli.EffectiveString(
+		cmd,
+		diffDevURLFlag,
+		opts.devURL,
+		projectCfg.StringValue(projectconfig.StringDevURL),
+	)
 	policy := nativeDiffPolicy(projectCfg)
 
 	format := strings.ToLower(strings.TrimSpace(opts.format))
@@ -97,7 +103,12 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(
-		dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout))
+		dbcli.EffectiveString(
+			cmd,
+			dbcli.ConnectTimeoutFlagName,
+			opts.connectTimeout,
+			projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
+		))
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

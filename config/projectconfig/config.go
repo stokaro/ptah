@@ -5,6 +5,7 @@ package projectconfig
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/stokaro/ptah/migration/diffpolicy"
 )
@@ -69,19 +70,338 @@ type Config struct {
 	presence configPresence
 }
 
-type configPresence struct {
-	databaseURL            bool
-	devURL                 bool
-	schemaSources          bool
-	schemas                bool
-	exclude                bool
-	lintDisabledRules      bool
-	externalSchemaProgram  bool
-	externalSchemaEnv      bool
-	onlineDDLTool          bool
-	onlineDDLThresholdRows bool
-	onlineDDLArgs          bool
-	onlineDDLFallback      bool
+// Value carries a project-config value together with whether a source or
+// programmatic override supplied it. Command defaults must apply only when
+// Present is false.
+type Value[T any] struct {
+	Value   T
+	Present bool
+}
+
+// StringField identifies one string-valued Config field for presence-aware
+// command-default resolution.
+type StringField uint8
+
+// String-valued project-config fields.
+const (
+	StringEnvName StringField = iota
+	StringDatabaseURL
+	StringDevURL
+	StringMigrationDir
+	StringMigrationFormat
+	StringMigrationRevisionsSchema
+	StringMigrationRevisionsTable
+	StringMigrationRevisionFormat
+	StringMigrationLockTimeout
+	StringMigrationStatementTimeout
+	StringMigrationConnectTimeout
+	StringMigrationMigrationLockTimeout
+	StringMigrationExecOrder
+	StringMigrationTxMode
+	StringMigrationPreUpHook
+	StringMigrationPreDownHook
+	StringMigrationPostgresDumpTo
+	StringMigrationMySQLDumpTo
+	StringMigrationWebhook
+	StringOnlineDDLTool
+	StringOnlineDDLFallback
+	StringLintDialect
+	StringLintGitBase
+	StringLintGitDir
+	StringFormatMigrateApply
+	StringFormatMigrateDiff
+	StringFormatMigrateLint
+	StringFormatMigrateStatus
+	StringFormatSchemaApply
+	StringFormatSchemaClean
+	StringFormatSchemaDiff
+	StringFormatSchemaInspect
+	StringExternalSchemaFormat
+	StringExternalSchemaWorkingDir
+	stringFieldCount
+)
+
+type configField string
+
+const (
+	fieldEnvName                   configField = "env.name"
+	fieldDatabaseURL               configField = "database.url"
+	fieldDevURL                    configField = "database.dev_url"
+	fieldSchemaSources             configField = "schema.sources"
+	fieldSchemas                   configField = "database.schemas"
+	fieldExclude                   configField = "database.exclude"
+	fieldMigrationDir              configField = "migration.dir"
+	fieldMigrationFormat           configField = "migration.format"
+	fieldMigrationRevisionsSchema  configField = "migration.revisions_schema"
+	fieldMigrationRevisionsTable   configField = "migration.revisions_table"
+	fieldMigrationRevisionFormat   configField = "migration.revision_format"
+	fieldMigrationLockTimeout      configField = "migration.lock_timeout"
+	fieldMigrationStatementTimeout configField = "migration.statement_timeout"
+	fieldMigrationConnectTimeout   configField = "migration.connect_timeout"
+	fieldMigrationMigrationLock    configField = "migration.migration_lock_timeout"
+	fieldMigrationExecOrder        configField = "migration.exec_order"
+	fieldMigrationTxMode           configField = "migration.tx_mode"
+	fieldMigrationPreUpHook        configField = "migration.pre_up_hook"
+	fieldMigrationPreDownHook      configField = "migration.pre_down_hook"
+	fieldMigrationPostgresDumpTo   configField = "migration.pg_dump_to"
+	fieldMigrationMySQLDumpTo      configField = "migration.mysqldump_to"
+	fieldMigrationWebhook          configField = "migration.webhook"
+	fieldOnlineDDLTool             configField = "online_ddl.tool"
+	fieldOnlineDDLThresholdRows    configField = "online_ddl.threshold_rows"
+	fieldOnlineDDLArgs             configField = "online_ddl.args"
+	fieldOnlineDDLFallback         configField = "online_ddl.fallback"
+	fieldLintDialect               configField = "lint.dialect"
+	fieldLintDisabledRules         configField = "lint.disabled_rules"
+	fieldLintRuleConfigs           configField = "lint.rules"
+	fieldLintLatest                configField = "lint.latest"
+	fieldLintGitBase               configField = "lint.git.base"
+	fieldLintGitDir                configField = "lint.git.dir"
+	fieldFormatMigrateApply        configField = "format.migrate.apply"
+	fieldFormatMigrateDiff         configField = "format.migrate.diff"
+	fieldFormatMigrateLint         configField = "format.migrate.lint"
+	fieldFormatMigrateStatus       configField = "format.migrate.status"
+	fieldFormatSchemaApply         configField = "format.schema.apply"
+	fieldFormatSchemaClean         configField = "format.schema.clean"
+	fieldFormatSchemaDiff          configField = "format.schema.diff"
+	fieldFormatSchemaInspect       configField = "format.schema.inspect"
+	fieldExternalSchemaProgram     configField = "external_schema.program"
+	fieldExternalSchemaFormat      configField = "external_schema.format"
+	fieldExternalSchemaWorkingDir  configField = "external_schema.working_dir"
+	fieldExternalSchemaEnv         configField = "external_schema.env"
+	lintRuleConfigFieldPrefix                  = "lint.rules."
+)
+
+type configPresence map[configField]struct{}
+
+func (p configPresence) has(field configField) bool {
+	_, ok := p[field]
+	return ok
+}
+
+func (p *configPresence) mark(field configField) {
+	if *p == nil {
+		*p = configPresence{}
+	}
+	(*p)[field] = struct{}{}
+}
+
+func (p *configPresence) unmark(field configField) {
+	delete(*p, field)
+}
+
+func (p *configPresence) removePrefix(prefix string) {
+	for field := range *p {
+		if strings.HasPrefix(string(field), prefix) {
+			delete(*p, field)
+		}
+	}
+}
+
+func (p configPresence) clone() configPresence {
+	if len(p) == 0 {
+		return nil
+	}
+	result := make(configPresence, len(p))
+	for field := range p {
+		result[field] = struct{}{}
+	}
+	return result
+}
+
+func lintRuleSeverityField(code string) configField {
+	return configField(lintRuleConfigFieldPrefix + code + ".severity")
+}
+
+func lintRuleExcludeField(code string) configField {
+	return configField(lintRuleConfigFieldPrefix + code + ".exclude")
+}
+
+type stringFieldDescriptor struct {
+	presence configField
+	value    func(Config) string
+}
+
+var stringFieldDescriptors = [stringFieldCount]stringFieldDescriptor{
+	StringEnvName: {
+		presence: fieldEnvName,
+		value:    func(c Config) string { return c.EnvName },
+	},
+	StringDatabaseURL: {
+		presence: fieldDatabaseURL,
+		value:    func(c Config) string { return c.DatabaseURL },
+	},
+	StringDevURL: {
+		presence: fieldDevURL,
+		value:    func(c Config) string { return c.DevURL },
+	},
+	StringMigrationDir: {
+		presence: fieldMigrationDir,
+		value:    func(c Config) string { return c.Migration.Dir },
+	},
+	StringMigrationFormat: {
+		presence: fieldMigrationFormat,
+		value:    func(c Config) string { return c.Migration.Format },
+	},
+	StringMigrationRevisionsSchema: {
+		presence: fieldMigrationRevisionsSchema,
+		value:    func(c Config) string { return c.Migration.RevisionsSchema },
+	},
+	StringMigrationRevisionsTable: {
+		presence: fieldMigrationRevisionsTable,
+		value:    func(c Config) string { return c.Migration.RevisionsTable },
+	},
+	StringMigrationRevisionFormat: {
+		presence: fieldMigrationRevisionFormat,
+		value:    func(c Config) string { return c.Migration.RevisionFormat },
+	},
+	StringMigrationLockTimeout: {
+		presence: fieldMigrationLockTimeout,
+		value:    func(c Config) string { return c.Migration.LockTimeout },
+	},
+	StringMigrationStatementTimeout: {
+		presence: fieldMigrationStatementTimeout,
+		value:    func(c Config) string { return c.Migration.StatementTimeout },
+	},
+	StringMigrationConnectTimeout: {
+		presence: fieldMigrationConnectTimeout,
+		value:    func(c Config) string { return c.Migration.ConnectTimeout },
+	},
+	StringMigrationMigrationLockTimeout: {
+		presence: fieldMigrationMigrationLock,
+		value:    func(c Config) string { return c.Migration.MigrationLockTimeout },
+	},
+	StringMigrationExecOrder: {
+		presence: fieldMigrationExecOrder,
+		value:    func(c Config) string { return c.Migration.ExecOrder },
+	},
+	StringMigrationTxMode: {
+		presence: fieldMigrationTxMode,
+		value:    func(c Config) string { return c.Migration.TxMode },
+	},
+	StringMigrationPreUpHook: {
+		presence: fieldMigrationPreUpHook,
+		value:    func(c Config) string { return c.Migration.PreUpHook },
+	},
+	StringMigrationPreDownHook: {
+		presence: fieldMigrationPreDownHook,
+		value:    func(c Config) string { return c.Migration.PreDownHook },
+	},
+	StringMigrationPostgresDumpTo: {
+		presence: fieldMigrationPostgresDumpTo,
+		value:    func(c Config) string { return c.Migration.PostgresDumpTo },
+	},
+	StringMigrationMySQLDumpTo: {
+		presence: fieldMigrationMySQLDumpTo,
+		value:    func(c Config) string { return c.Migration.MySQLDumpTo },
+	},
+	StringMigrationWebhook: {
+		presence: fieldMigrationWebhook,
+		value:    func(c Config) string { return c.Migration.Webhook },
+	},
+	StringOnlineDDLTool: {
+		presence: fieldOnlineDDLTool,
+		value:    func(c Config) string { return c.OnlineDDL.Tool },
+	},
+	StringOnlineDDLFallback: {
+		presence: fieldOnlineDDLFallback,
+		value:    func(c Config) string { return c.OnlineDDL.Fallback },
+	},
+	StringLintDialect: {
+		presence: fieldLintDialect,
+		value:    func(c Config) string { return c.Lint.Dialect },
+	},
+	StringLintGitBase: {
+		presence: fieldLintGitBase,
+		value:    func(c Config) string { return c.Lint.GitBase },
+	},
+	StringLintGitDir: {
+		presence: fieldLintGitDir,
+		value:    func(c Config) string { return c.Lint.GitDir },
+	},
+	StringFormatMigrateApply: {
+		presence: fieldFormatMigrateApply,
+		value:    func(c Config) string { return c.Format.Migrate.Apply },
+	},
+	StringFormatMigrateDiff: {
+		presence: fieldFormatMigrateDiff,
+		value:    func(c Config) string { return c.Format.Migrate.Diff },
+	},
+	StringFormatMigrateLint: {
+		presence: fieldFormatMigrateLint,
+		value:    func(c Config) string { return c.Format.Migrate.Lint },
+	},
+	StringFormatMigrateStatus: {
+		presence: fieldFormatMigrateStatus,
+		value:    func(c Config) string { return c.Format.Migrate.Status },
+	},
+	StringFormatSchemaApply: {
+		presence: fieldFormatSchemaApply,
+		value:    func(c Config) string { return c.Format.Schema.Apply },
+	},
+	StringFormatSchemaClean: {
+		presence: fieldFormatSchemaClean,
+		value:    func(c Config) string { return c.Format.Schema.Clean },
+	},
+	StringFormatSchemaDiff: {
+		presence: fieldFormatSchemaDiff,
+		value:    func(c Config) string { return c.Format.Schema.Diff },
+	},
+	StringFormatSchemaInspect: {
+		presence: fieldFormatSchemaInspect,
+		value:    func(c Config) string { return c.Format.Schema.Inspect },
+	},
+	StringExternalSchemaFormat: {
+		presence: fieldExternalSchemaFormat,
+		value:    func(c Config) string { return c.ExternalSchema.Format },
+	},
+	StringExternalSchemaWorkingDir: {
+		presence: fieldExternalSchemaWorkingDir,
+		value:    func(c Config) string { return c.ExternalSchema.WorkingDir },
+	},
+}
+
+// StringValue returns a string-valued field together with its source presence.
+// Non-empty programmatic values count as present even without loader metadata.
+// Unknown fields return an absent value.
+func (c Config) StringValue(field StringField) Value[string] {
+	if field >= stringFieldCount {
+		return Value[string]{}
+	}
+	descriptor := stringFieldDescriptors[field]
+	value := descriptor.value(c)
+	return Value[string]{
+		Value:   value,
+		Present: c.presence.has(descriptor.presence) || value != "",
+	}
+}
+
+// SchemaSourcesValue returns the desired schema sources with presence.
+func (c Config) SchemaSourcesValue() Value[[]string] {
+	return Value[[]string]{
+		Value:   slices.Clone(c.SchemaSources),
+		Present: c.presence.has(fieldSchemaSources) || len(c.SchemaSources) > 0,
+	}
+}
+
+// SchemasValue returns the configured introspection schemas with presence.
+func (c Config) SchemasValue() Value[[]string] {
+	return Value[[]string]{
+		Value:   slices.Clone(c.Schemas),
+		Present: c.presence.has(fieldSchemas) || len(c.Schemas) > 0,
+	}
+}
+
+// LintLatestValue returns lint.latest with presence. A present nil pointer is
+// retained for completeness even though supported loaders materialize an int.
+func (c Config) LintLatestValue() Value[int] {
+	value := 0
+	if c.Lint.Latest != nil {
+		value = *c.Lint.Latest
+	}
+	return Value[int]{
+		Value:   value,
+		Present: c.presence.has(fieldLintLatest) || c.Lint.Latest != nil,
+	}
 }
 
 // OnlineDDLConfig configures automatic online-DDL routing for ALTER TABLE
@@ -309,109 +629,209 @@ func appendDisabledMode(patterns []string, option ConfigBool, pattern string) []
 	return patterns
 }
 
-// Merge returns base overridden by non-zero values from override.
+// Merge returns base overridden by explicitly present loader values and
+// non-zero programmatic values from override.
 func Merge(base, override Config) Config {
 	result := base
-	if override.EnvName != "" {
-		result.EnvName = override.EnvName
-	}
-	if override.presence.databaseURL || override.DatabaseURL != "" {
-		result.DatabaseURL = override.DatabaseURL
-		result.presence.databaseURL = true
-	}
-	if override.presence.devURL || override.DevURL != "" {
-		result.DevURL = override.DevURL
-		result.presence.devURL = true
-	}
-	if override.presence.schemaSources || len(override.SchemaSources) > 0 {
-		result.SchemaSources = slices.Clone(override.SchemaSources)
-		result.presence.schemaSources = true
-	}
-	if override.presence.schemas || len(override.Schemas) > 0 {
-		result.Schemas = slices.Clone(override.Schemas)
-		result.presence.schemas = true
-	}
-	if override.presence.exclude || len(override.Exclude) > 0 {
-		result.Exclude = slices.Clone(override.Exclude)
-		result.presence.exclude = true
-	}
+	result.presence = base.presence.clone()
+	result.EnvName = mergeStringValue(
+		base.EnvName,
+		override.EnvName,
+		fieldEnvName,
+		override.presence,
+		&result.presence,
+	)
+	result.DatabaseURL = mergeStringValue(
+		base.DatabaseURL,
+		override.DatabaseURL,
+		fieldDatabaseURL,
+		override.presence,
+		&result.presence,
+	)
+	result.DevURL = mergeStringValue(
+		base.DevURL,
+		override.DevURL,
+		fieldDevURL,
+		override.presence,
+		&result.presence,
+	)
+	result.SchemaSources = mergeStringSliceValue(
+		base.SchemaSources,
+		override.SchemaSources,
+		fieldSchemaSources,
+		override.presence,
+		&result.presence,
+	)
+	result.Schemas = mergeStringSliceValue(
+		base.Schemas,
+		override.Schemas,
+		fieldSchemas,
+		override.presence,
+		&result.presence,
+	)
+	result.Exclude = mergeStringSliceValue(
+		base.Exclude,
+		override.Exclude,
+		fieldExclude,
+		override.presence,
+		&result.presence,
+	)
 	result.Schema = mergeSchema(result.Schema, override.Schema)
-	result.Migration = mergeMigration(result.Migration, override.Migration)
-	result.OnlineDDL = mergeOnlineDDL(result.OnlineDDL, override.OnlineDDL, override.presence)
-	result.Lint = mergeLint(result.Lint, override.Lint, override.presence)
-	result.Format = mergeFormat(result.Format, override.Format)
+	result.Migration = mergeMigration(
+		result.Migration,
+		override.Migration,
+		override.presence,
+		&result.presence,
+	)
+	result.OnlineDDL = mergeOnlineDDL(
+		result.OnlineDDL,
+		override.OnlineDDL,
+		override.presence,
+		&result.presence,
+	)
+	result.Lint = mergeLint(
+		result.Lint,
+		override.Lint,
+		override.presence,
+		&result.presence,
+	)
+	result.Format = mergeFormat(
+		result.Format,
+		override.Format,
+		override.presence,
+		&result.presence,
+	)
 	result.Diff = mergeDiff(result.Diff, override.Diff)
-	result.ExternalSchema = mergeExternalSchema(result.ExternalSchema, override.ExternalSchema, override.presence)
-	result.presence = mergeConfigPresence(result.presence, override)
+	result.ExternalSchema = mergeExternalSchema(
+		result.ExternalSchema,
+		override.ExternalSchema,
+		override.presence,
+		&result.presence,
+	)
 	return result
 }
 
-func mergeConfigPresence(result configPresence, override Config) configPresence {
-	if override.presence.lintDisabledRules || len(override.Lint.DisabledRules) > 0 {
-		result.lintDisabledRules = true
+func mergeStringValue(
+	base string,
+	override string,
+	field configField,
+	overridePresence configPresence,
+	resultPresence *configPresence,
+) string {
+	if !overridePresence.has(field) && override == "" {
+		return base
 	}
-	if override.presence.externalSchemaProgram || len(override.ExternalSchema.Program) > 0 {
-		result.externalSchemaProgram = true
+	resultPresence.mark(field)
+	return override
+}
+
+func mergeStringSliceValue(
+	base []string,
+	override []string,
+	field configField,
+	overridePresence configPresence,
+	resultPresence *configPresence,
+) []string {
+	if !overridePresence.has(field) && len(override) == 0 {
+		return slices.Clone(base)
 	}
-	if override.presence.externalSchemaEnv || len(override.ExternalSchema.Env) > 0 {
-		result.externalSchemaEnv = true
+	resultPresence.mark(field)
+	return slices.Clone(override)
+}
+
+func mergeInt64Value(
+	base int64,
+	override int64,
+	field configField,
+	overridePresence configPresence,
+	resultPresence *configPresence,
+) int64 {
+	if !overridePresence.has(field) && override == 0 {
+		return base
 	}
-	if override.presence.onlineDDLTool || override.OnlineDDL.Tool != "" {
-		result.onlineDDLTool = true
-	}
-	if override.presence.onlineDDLThresholdRows || override.OnlineDDL.ThresholdRows != 0 {
-		result.onlineDDLThresholdRows = true
-	}
-	if override.presence.onlineDDLArgs || len(override.OnlineDDL.Args) > 0 {
-		result.onlineDDLArgs = true
-	}
-	if override.presence.onlineDDLFallback || override.OnlineDDL.Fallback != "" {
-		result.onlineDDLFallback = true
-	}
-	return result
+	resultPresence.mark(field)
+	return override
 }
 
 func mergeOnlineDDL(
 	base OnlineDDLConfig,
 	override OnlineDDLConfig,
-	presence configPresence,
+	overridePresence configPresence,
+	resultPresence *configPresence,
 ) OnlineDDLConfig {
 	result := base
 	result.Args = slices.Clone(base.Args)
-	toolSet := presence.onlineDDLTool || override.Tool != ""
-	thresholdSet := presence.onlineDDLThresholdRows || override.ThresholdRows != 0
+	toolSet := overridePresence.has(fieldOnlineDDLTool) || override.Tool != ""
+	thresholdSet := overridePresence.has(fieldOnlineDDLThresholdRows) || override.ThresholdRows != 0
 	if toolSet {
 		result.Tool = override.Tool
+		resultPresence.mark(fieldOnlineDDLTool)
 		if override.Tool == "" && !thresholdSet {
 			result.ThresholdRows = 0
+			resultPresence.mark(fieldOnlineDDLThresholdRows)
 		}
 	}
 	if thresholdSet {
-		result.ThresholdRows = override.ThresholdRows
+		result.ThresholdRows = mergeInt64Value(
+			result.ThresholdRows,
+			override.ThresholdRows,
+			fieldOnlineDDLThresholdRows,
+			overridePresence,
+			resultPresence,
+		)
 	}
-	if presence.onlineDDLArgs || len(override.Args) > 0 {
-		result.Args = slices.Clone(override.Args)
-	}
-	if presence.onlineDDLFallback || override.Fallback != "" {
-		result.Fallback = override.Fallback
-	}
+	result.Args = mergeStringSliceValue(
+		result.Args,
+		override.Args,
+		fieldOnlineDDLArgs,
+		overridePresence,
+		resultPresence,
+	)
+	result.Fallback = mergeStringValue(
+		result.Fallback,
+		override.Fallback,
+		fieldOnlineDDLFallback,
+		overridePresence,
+		resultPresence,
+	)
 	return result
 }
 
-func mergeExternalSchema(base, override ExternalSchemaConfig, presence configPresence) ExternalSchemaConfig {
+func mergeExternalSchema(
+	base ExternalSchemaConfig,
+	override ExternalSchemaConfig,
+	overridePresence configPresence,
+	resultPresence *configPresence,
+) ExternalSchemaConfig {
 	result := base
-	if presence.externalSchemaProgram || len(override.Program) > 0 {
-		result.Program = slices.Clone(override.Program)
-	}
-	if override.Format != "" {
-		result.Format = override.Format
-	}
-	if override.WorkingDir != "" {
-		result.WorkingDir = override.WorkingDir
-	}
-	if presence.externalSchemaEnv || len(override.Env) > 0 {
-		result.Env = slices.Clone(override.Env)
-	}
+	result.Program = mergeStringSliceValue(
+		base.Program,
+		override.Program,
+		fieldExternalSchemaProgram,
+		overridePresence,
+		resultPresence,
+	)
+	result.Format = mergeStringValue(
+		base.Format,
+		override.Format,
+		fieldExternalSchemaFormat,
+		overridePresence,
+		resultPresence,
+	)
+	result.WorkingDir = mergeStringValue(
+		base.WorkingDir,
+		override.WorkingDir,
+		fieldExternalSchemaWorkingDir,
+		overridePresence,
+		resultPresence,
+	)
+	result.Env = mergeStringSliceValue(
+		base.Env,
+		override.Env,
+		fieldExternalSchemaEnv,
+		overridePresence,
+		resultPresence,
+	)
 	return result
 }
 
@@ -428,102 +848,210 @@ func mergeSchema(base, override SchemaConfig) SchemaConfig {
 	return result
 }
 
-func mergeMigration(base, override MigrationConfig) MigrationConfig {
+func mergeMigration(
+	base MigrationConfig,
+	override MigrationConfig,
+	overridePresence configPresence,
+	resultPresence *configPresence,
+) MigrationConfig {
 	result := base
-	if override.Dir != "" {
-		result.Dir = override.Dir
-	}
-	if override.Format != "" {
-		result.Format = override.Format
-	}
-	if override.RevisionsSchema != "" {
-		result.RevisionsSchema = override.RevisionsSchema
-	}
-	if override.RevisionsTable != "" {
-		result.RevisionsTable = override.RevisionsTable
-	}
-	if override.RevisionFormat != "" {
-		result.RevisionFormat = override.RevisionFormat
-	}
-	if override.LockTimeout != "" {
-		result.LockTimeout = override.LockTimeout
-	}
-	if override.StatementTimeout != "" {
-		result.StatementTimeout = override.StatementTimeout
-	}
-	if override.ConnectTimeout != "" {
-		result.ConnectTimeout = override.ConnectTimeout
-	}
-	if override.MigrationLockTimeout != "" {
-		result.MigrationLockTimeout = override.MigrationLockTimeout
-	}
-	if override.ExecOrder != "" {
-		result.ExecOrder = override.ExecOrder
-	}
-	if override.TxMode != "" {
-		result.TxMode = override.TxMode
-	}
-	if override.PreUpHook != "" {
-		result.PreUpHook = override.PreUpHook
-	}
-	if override.PreDownHook != "" {
-		result.PreDownHook = override.PreDownHook
-	}
-	if override.PostgresDumpTo != "" {
-		result.PostgresDumpTo = override.PostgresDumpTo
-	}
-	if override.MySQLDumpTo != "" {
-		result.MySQLDumpTo = override.MySQLDumpTo
-	}
-	if override.Webhook != "" {
-		result.Webhook = override.Webhook
-	}
+	result.Dir = mergeStringValue(base.Dir, override.Dir, fieldMigrationDir, overridePresence, resultPresence)
+	result.Format = mergeStringValue(
+		base.Format,
+		override.Format,
+		fieldMigrationFormat,
+		overridePresence,
+		resultPresence,
+	)
+	result.RevisionsSchema = mergeStringValue(
+		base.RevisionsSchema,
+		override.RevisionsSchema,
+		fieldMigrationRevisionsSchema,
+		overridePresence,
+		resultPresence,
+	)
+	result.RevisionsTable = mergeStringValue(
+		base.RevisionsTable,
+		override.RevisionsTable,
+		fieldMigrationRevisionsTable,
+		overridePresence,
+		resultPresence,
+	)
+	result.RevisionFormat = mergeStringValue(
+		base.RevisionFormat,
+		override.RevisionFormat,
+		fieldMigrationRevisionFormat,
+		overridePresence,
+		resultPresence,
+	)
+	result.LockTimeout = mergeStringValue(
+		base.LockTimeout,
+		override.LockTimeout,
+		fieldMigrationLockTimeout,
+		overridePresence,
+		resultPresence,
+	)
+	result.StatementTimeout = mergeStringValue(
+		base.StatementTimeout,
+		override.StatementTimeout,
+		fieldMigrationStatementTimeout,
+		overridePresence,
+		resultPresence,
+	)
+	result.ConnectTimeout = mergeStringValue(
+		base.ConnectTimeout,
+		override.ConnectTimeout,
+		fieldMigrationConnectTimeout,
+		overridePresence,
+		resultPresence,
+	)
+	result.MigrationLockTimeout = mergeStringValue(
+		base.MigrationLockTimeout,
+		override.MigrationLockTimeout,
+		fieldMigrationMigrationLock,
+		overridePresence,
+		resultPresence,
+	)
+	result.ExecOrder = mergeStringValue(
+		base.ExecOrder,
+		override.ExecOrder,
+		fieldMigrationExecOrder,
+		overridePresence,
+		resultPresence,
+	)
+	result.TxMode = mergeStringValue(
+		base.TxMode,
+		override.TxMode,
+		fieldMigrationTxMode,
+		overridePresence,
+		resultPresence,
+	)
+	result.PreUpHook = mergeStringValue(
+		base.PreUpHook,
+		override.PreUpHook,
+		fieldMigrationPreUpHook,
+		overridePresence,
+		resultPresence,
+	)
+	result.PreDownHook = mergeStringValue(
+		base.PreDownHook,
+		override.PreDownHook,
+		fieldMigrationPreDownHook,
+		overridePresence,
+		resultPresence,
+	)
+	result.PostgresDumpTo = mergeStringValue(
+		base.PostgresDumpTo,
+		override.PostgresDumpTo,
+		fieldMigrationPostgresDumpTo,
+		overridePresence,
+		resultPresence,
+	)
+	result.MySQLDumpTo = mergeStringValue(
+		base.MySQLDumpTo,
+		override.MySQLDumpTo,
+		fieldMigrationMySQLDumpTo,
+		overridePresence,
+		resultPresence,
+	)
+	result.Webhook = mergeStringValue(
+		base.Webhook,
+		override.Webhook,
+		fieldMigrationWebhook,
+		overridePresence,
+		resultPresence,
+	)
 	return result
 }
 
-func mergeLint(base, override LintConfig, presence configPresence) LintConfig {
+func mergeLint(
+	base LintConfig,
+	override LintConfig,
+	overridePresence configPresence,
+	resultPresence *configPresence,
+) LintConfig {
 	result := base
-	if override.Dialect != "" {
-		result.Dialect = override.Dialect
-	}
-	if presence.lintDisabledRules || len(override.DisabledRules) > 0 {
-		result.DisabledRules = slices.Clone(override.DisabledRules)
-	}
-	if len(override.RuleConfigs) > 0 {
-		result.RuleConfigs = mergeLintRuleConfigs(result.RuleConfigs, override.RuleConfigs)
-	}
-	if override.Latest != nil {
-		latest := *override.Latest
-		result.Latest = &latest
+	result.Latest = clonePointer(base.Latest)
+	result.Dialect = mergeStringValue(
+		base.Dialect,
+		override.Dialect,
+		fieldLintDialect,
+		overridePresence,
+		resultPresence,
+	)
+	result.DisabledRules = mergeStringSliceValue(
+		base.DisabledRules,
+		override.DisabledRules,
+		fieldLintDisabledRules,
+		overridePresence,
+		resultPresence,
+	)
+	result.RuleConfigs = mergeLintRuleConfigs(
+		base.RuleConfigs,
+		override.RuleConfigs,
+		overridePresence,
+		resultPresence,
+	)
+	if overridePresence.has(fieldLintLatest) || override.Latest != nil {
+		result.Latest = clonePointer(override.Latest)
 		result.GitBase = ""
 		result.GitDir = ""
+		resultPresence.mark(fieldLintLatest)
+		resultPresence.unmark(fieldLintGitBase)
+		resultPresence.unmark(fieldLintGitDir)
 	}
-	if override.GitBase != "" {
+	if overridePresence.has(fieldLintGitBase) || override.GitBase != "" {
 		result.GitBase = override.GitBase
-		result.Latest = nil
+		resultPresence.mark(fieldLintGitBase)
+		if override.GitBase != "" {
+			result.Latest = nil
+			resultPresence.unmark(fieldLintLatest)
+		}
 	}
-	if override.GitDir != "" {
-		result.GitDir = override.GitDir
-	}
+	result.GitDir = mergeStringValue(
+		result.GitDir,
+		override.GitDir,
+		fieldLintGitDir,
+		overridePresence,
+		resultPresence,
+	)
 	return result
 }
 
 func mergeLintRuleConfigs(
 	base map[string]LintRuleConfig,
 	override map[string]LintRuleConfig,
+	overridePresence configPresence,
+	resultPresence *configPresence,
 ) map[string]LintRuleConfig {
 	result := cloneLintRuleConfigs(base)
+	if !overridePresence.has(fieldLintRuleConfigs) && len(override) == 0 {
+		return result
+	}
+	resultPresence.mark(fieldLintRuleConfigs)
+	if len(override) == 0 {
+		resultPresence.removePrefix(lintRuleConfigFieldPrefix)
+		return map[string]LintRuleConfig{}
+	}
 	if result == nil {
 		result = make(map[string]LintRuleConfig, len(override))
 	}
 	for code, config := range override {
 		baseConfig := result[code]
-		if config.Severity != "" {
-			baseConfig.Severity = config.Severity
-		}
-		if len(config.Exclude) > 0 {
-			baseConfig.Exclude = slices.Clone(config.Exclude)
-		}
+		baseConfig.Severity = mergeStringValue(
+			baseConfig.Severity,
+			config.Severity,
+			lintRuleSeverityField(code),
+			overridePresence,
+			resultPresence,
+		)
+		baseConfig.Exclude = mergeStringSliceValue(
+			baseConfig.Exclude,
+			config.Exclude,
+			lintRuleExcludeField(code),
+			overridePresence,
+			resultPresence,
+		)
 		result[code] = baseConfig
 	}
 	return result
@@ -541,33 +1069,78 @@ func cloneLintRuleConfigs(values map[string]LintRuleConfig) map[string]LintRuleC
 	return cloned
 }
 
-func mergeFormat(base, override FormatConfig) FormatConfig {
+func mergeFormat(
+	base FormatConfig,
+	override FormatConfig,
+	overridePresence configPresence,
+	resultPresence *configPresence,
+) FormatConfig {
 	result := base
-	if override.Migrate.Apply != "" {
-		result.Migrate.Apply = override.Migrate.Apply
-	}
-	if override.Migrate.Diff != "" {
-		result.Migrate.Diff = override.Migrate.Diff
-	}
-	if override.Migrate.Lint != "" {
-		result.Migrate.Lint = override.Migrate.Lint
-	}
-	if override.Migrate.Status != "" {
-		result.Migrate.Status = override.Migrate.Status
-	}
-	if override.Schema.Apply != "" {
-		result.Schema.Apply = override.Schema.Apply
-	}
-	if override.Schema.Clean != "" {
-		result.Schema.Clean = override.Schema.Clean
-	}
-	if override.Schema.Diff != "" {
-		result.Schema.Diff = override.Schema.Diff
-	}
-	if override.Schema.Inspect != "" {
-		result.Schema.Inspect = override.Schema.Inspect
-	}
+	result.Migrate.Apply = mergeStringValue(
+		base.Migrate.Apply,
+		override.Migrate.Apply,
+		fieldFormatMigrateApply,
+		overridePresence,
+		resultPresence,
+	)
+	result.Migrate.Diff = mergeStringValue(
+		base.Migrate.Diff,
+		override.Migrate.Diff,
+		fieldFormatMigrateDiff,
+		overridePresence,
+		resultPresence,
+	)
+	result.Migrate.Lint = mergeStringValue(
+		base.Migrate.Lint,
+		override.Migrate.Lint,
+		fieldFormatMigrateLint,
+		overridePresence,
+		resultPresence,
+	)
+	result.Migrate.Status = mergeStringValue(
+		base.Migrate.Status,
+		override.Migrate.Status,
+		fieldFormatMigrateStatus,
+		overridePresence,
+		resultPresence,
+	)
+	result.Schema.Apply = mergeStringValue(
+		base.Schema.Apply,
+		override.Schema.Apply,
+		fieldFormatSchemaApply,
+		overridePresence,
+		resultPresence,
+	)
+	result.Schema.Clean = mergeStringValue(
+		base.Schema.Clean,
+		override.Schema.Clean,
+		fieldFormatSchemaClean,
+		overridePresence,
+		resultPresence,
+	)
+	result.Schema.Diff = mergeStringValue(
+		base.Schema.Diff,
+		override.Schema.Diff,
+		fieldFormatSchemaDiff,
+		overridePresence,
+		resultPresence,
+	)
+	result.Schema.Inspect = mergeStringValue(
+		base.Schema.Inspect,
+		override.Schema.Inspect,
+		fieldFormatSchemaInspect,
+		overridePresence,
+		resultPresence,
+	)
 	return result
+}
+
+func clonePointer[T any](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func mergeDiff(base, override DiffConfig) DiffConfig {

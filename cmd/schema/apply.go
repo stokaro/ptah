@@ -133,8 +133,18 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	opts.dbURL = dbcli.EffectiveString(cmd, applyDBURLFlag, opts.dbURL, projectCfg.DatabaseURL)
-	opts.devURL = dbcli.EffectiveString(cmd, applyDevURLFlag, opts.devURL, projectCfg.DevURL)
+	opts.dbURL = dbcli.EffectiveString(
+		cmd,
+		applyDBURLFlag,
+		opts.dbURL,
+		projectCfg.StringValue(projectconfig.StringDatabaseURL),
+	)
+	opts.devURL = dbcli.EffectiveString(
+		cmd,
+		applyDevURLFlag,
+		opts.devURL,
+		projectCfg.StringValue(projectconfig.StringDevURL),
+	)
 	policy := nativeDiffPolicy(projectCfg)
 
 	if strings.TrimSpace(opts.dbURL) == "" {
@@ -172,7 +182,12 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(
-		dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout))
+		dbcli.EffectiveString(
+			cmd,
+			dbcli.ConnectTimeoutFlagName,
+			opts.connectTimeout,
+			projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
+		))
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

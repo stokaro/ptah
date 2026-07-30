@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlasurl"
@@ -150,9 +151,9 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	dbURL = dbcli.EffectiveString(cmd, generateDBURLFlag, dbURL, projectCfg.DatabaseURL)
-	migrationsDir = dbcli.EffectiveString(cmd, generateMigrationsDirFlag, migrationsDir, projectCfg.Migration.Dir)
-	shadowDB = dbcli.EffectiveString(cmd, generateShadowDBFlag, shadowDB, projectCfg.DevURL)
+	dbURL = dbcli.EffectiveString(cmd, generateDBURLFlag, dbURL, projectCfg.StringValue(projectconfig.StringDatabaseURL))
+	migrationsDir = dbcli.EffectiveString(cmd, generateMigrationsDirFlag, migrationsDir, projectCfg.StringValue(projectconfig.StringMigrationDir))
+	shadowDB = dbcli.EffectiveString(cmd, generateShadowDBFlag, shadowDB, projectCfg.StringValue(projectconfig.StringDevURL))
 	reportFormat, err := cmd.Flags().GetString(generateReportFormatFlag)
 	if err != nil {
 		return err
@@ -192,8 +193,18 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	schemasValue = dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, schemasValue, dbcli.JoinSchemas(projectCfg.Schemas))
-	connectTimeoutValue = dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, connectTimeoutValue, projectCfg.Migration.ConnectTimeout)
+	schemasValue = dbcli.EffectiveString(
+		cmd,
+		dbcli.SchemasFlagName,
+		schemasValue,
+		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
+	)
+	connectTimeoutValue = dbcli.EffectiveString(
+		cmd,
+		dbcli.ConnectTimeoutFlagName,
+		connectTimeoutValue,
+		projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
+	)
 
 	// Early qualifier syntax validation; the generator re-validates the
 	// single-schema scope and dialect support once the dialect is known.
