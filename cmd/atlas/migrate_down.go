@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
@@ -331,33 +332,60 @@ func applyAtlasMigrateDownFormatProjectConfig(opts *atlasMigrateDownFormatOption
 	if err != nil {
 		return err
 	}
-	opts.url = atlasDownEffective(opts.flagSet, "url", opts.url, cfg.DatabaseURL)
-	opts.devURL = atlasDownEffective(opts.flagSet, "dev-url", opts.devURL, cfg.DevURL)
-	opts.revisionsSchema = atlasDownEffective(opts.flagSet, "revisions-schema", opts.revisionsSchema, cfg.Migration.RevisionsSchema)
-	opts.lockTimeout = atlasDownEffective(opts.flagSet, "lock-timeout", opts.lockTimeout, cfg.Migration.LockTimeout)
-	if cfg.Migration.Format != "" {
+	opts.url = atlasDownEffective(
+		opts.flagSet,
+		"url",
+		opts.url,
+		cfg.StringValue(projectconfig.StringDatabaseURL),
+	)
+	opts.devURL = atlasDownEffective(
+		opts.flagSet,
+		"dev-url",
+		opts.devURL,
+		cfg.StringValue(projectconfig.StringDevURL),
+	)
+	opts.revisionsSchema = atlasDownEffective(
+		opts.flagSet,
+		"revisions-schema",
+		opts.revisionsSchema,
+		cfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
+	)
+	opts.lockTimeout = atlasDownEffective(
+		opts.flagSet,
+		"lock-timeout",
+		opts.lockTimeout,
+		cfg.StringValue(projectconfig.StringMigrationLockTimeout),
+	)
+	dirFormat := cfg.StringValue(projectconfig.StringMigrationFormat)
+	if dirFormat.Present {
 		// The format path executes Atlas-format directories only, matching the
 		// dedicated apply and status commands.
-		if _, err := atlasMigrateDirFormatValue(cfg.Migration.Format); err != nil {
+		if _, err := atlasMigrateDirFormatValue(dirFormat.Value); err != nil {
 			return fmt.Errorf("atlas.hcl migration.format: %w", err)
 		}
 	}
-	if !opts.flagSet.Changed("dir") && cfg.Migration.Dir != "" {
-		dir, err := atlasProjectConfigLocalDirFromFlags(project.flags, cfg.Migration.Dir)
+	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
+	if !opts.flagSet.Changed("dir") && migrationDir.Present {
+		dir, err := atlasProjectConfigLocalDirFromFlags(project.flags, migrationDir.Value)
 		if err != nil {
 			return fmt.Errorf("atlas.hcl migration.dir: %w", err)
 		}
-		opts.rawDir = cfg.Migration.Dir
+		opts.rawDir = migrationDir.Value
 		opts.dir = dir
 	}
 	return nil
 }
 
-func atlasDownEffective(flagSet *pflag.FlagSet, name, flagValue, configValue string) string {
-	if flagSet.Changed(name) || configValue == "" {
+func atlasDownEffective(
+	flagSet *pflag.FlagSet,
+	name string,
+	flagValue string,
+	configValue projectconfig.Value[string],
+) string {
+	if flagSet.Changed(name) || !configValue.Present {
 		return flagValue
 	}
-	return configValue
+	return configValue.Value
 }
 
 func parseAtlasMigrateDownTarget(value string) (int64, error) {

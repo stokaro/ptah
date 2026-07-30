@@ -120,8 +120,15 @@ env "local" {
 | `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 
-Explicit CLI flags win over `atlas.hcl`, and `atlas.hcl` wins over built-in
-defaults.
+Project config precedence is explicit CLI flags, environment variables,
+`atlas.hcl`, `ptah.yaml`, then built-in defaults. Project-file merging
+preserves source presence. For a supported field, an explicitly present value
+replaces the lower-precedence value instead of being treated as absent. This
+includes an empty string, zero, `false`, or an empty list when the field accepts
+that type. After project sources are merged, a command applies its built-in
+default only when a field is absent. An explicitly present empty or zero value
+instead reaches normal validation. Fields that do not accept empty values,
+including Atlas format templates, fail during parsing or command validation.
 
 `env.exclude` and disabled `env.schema.mode` values compose with the
 `schema apply`/`schema diff` positive selection flags in a fixed order:

@@ -18,6 +18,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/migrationsource"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -112,14 +113,54 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	dbURL = dbcli.EffectiveString(cmd, dbURLFlag, dbURL, projectCfg.DatabaseURL)
-	migrationsDir = dbcli.EffectiveString(cmd, migrationsFlag, migrationsDir, projectCfg.Migration.Dir)
-	dirFormatValue = dbcli.EffectiveString(cmd, dirFormatFlag, dirFormatValue, projectCfg.Migration.Format)
-	atlasEnv = dbcli.EffectiveString(cmd, atlasEnvFlag, atlasEnv, projectCfg.EnvName)
-	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
-	migrationsTable = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, migrationsTable, projectCfg.Migration.RevisionsTable)
-	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
-	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout)
+	dbURL = dbcli.EffectiveString(
+		cmd,
+		dbURLFlag,
+		dbURL,
+		projectCfg.StringValue(projectconfig.StringDatabaseURL),
+	)
+	migrationsDir = dbcli.EffectiveString(
+		cmd,
+		migrationsFlag,
+		migrationsDir,
+		projectCfg.StringValue(projectconfig.StringMigrationDir),
+	)
+	dirFormatValue = dbcli.EffectiveString(
+		cmd,
+		dirFormatFlag,
+		dirFormatValue,
+		projectCfg.StringValue(projectconfig.StringMigrationFormat),
+	)
+	atlasEnv = dbcli.EffectiveString(
+		cmd,
+		atlasEnvFlag,
+		atlasEnv,
+		projectCfg.StringValue(projectconfig.StringEnvName),
+	)
+	migrationsSchema = dbcli.EffectiveString(
+		cmd,
+		dbcli.MigrationsSchemaFlagName,
+		migrationsSchema,
+		projectCfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
+	)
+	migrationsTable = dbcli.EffectiveString(
+		cmd,
+		dbcli.MigrationsTableFlagName,
+		migrationsTable,
+		projectCfg.StringValue(projectconfig.StringMigrationRevisionsTable),
+	)
+	revisionFormatValue = dbcli.EffectiveString(
+		cmd,
+		dbcli.RevisionTableFormatFlagName,
+		revisionFormatValue,
+		projectCfg.StringValue(projectconfig.StringMigrationRevisionFormat),
+	)
+	connectTimeoutValue := dbcli.EffectiveString(
+		cmd,
+		dbcli.ConnectTimeoutFlagName,
+		opts.connectTimeout,
+		projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
+	)
 
 	logWriter := cmd.ErrOrStderr()
 	if opts.logFormat == "json" && !opts.jsonOutput {

@@ -272,7 +272,6 @@ env:
 	cfg, err := projectconfig.ParsePtah(raw, "ptah.yaml", "prod")
 
 	c.Assert(err, qt.IsNil)
-	// Base drop_table is inherited; prod adds drop_column.
-	c.Assert(cfg.Diff.Skip.DropTable.Value, qt.IsTrue)
+	c.Assert(cfg.Diff.Skip.DropTable, qt.DeepEquals, projectconfig.ConfigBool{Set: true})
 	c.Assert(cfg.Diff.Skip.DropColumn.Value, qt.IsTrue)
 }

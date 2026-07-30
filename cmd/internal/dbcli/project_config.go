@@ -86,13 +86,26 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	})
 }
 
-// EffectiveString returns flagValue when flagName was explicitly set, otherwise
-// configValue when it is non-empty, otherwise flagValue.
-func EffectiveString(cmd *cobra.Command, flagName, flagValue, configValue string) string {
-	if flagChanged(cmd, flagName) || configValue == "" {
+// EffectiveString returns an explicit CLI value first, then a present project
+// config value (including an empty value), then the flag's built-in default.
+func EffectiveString(
+	cmd *cobra.Command,
+	flagName string,
+	flagValue string,
+	configValue projectconfig.Value[string],
+) string {
+	if flagChanged(cmd, flagName) || !configValue.Present {
 		return flagValue
 	}
-	return configValue
+	return configValue.Value
+}
+
+// JoinSchemasValue converts a presence-aware schema list to its CLI form.
+func JoinSchemasValue(value projectconfig.Value[[]string]) projectconfig.Value[string] {
+	return projectconfig.Value[string]{
+		Value:   JoinSchemas(value.Value),
+		Present: value.Present,
+	}
 }
 
 // ResolveExternalSchemaCommands resolves the external-command schema source for

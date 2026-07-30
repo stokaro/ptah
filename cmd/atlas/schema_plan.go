@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasschema"
 )
@@ -99,11 +100,17 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	if loaded {
-		if !cmd.Flags().Changed(atlasFromFlagName) && strings.TrimSpace(projectCfg.DatabaseURL) != "" {
-			opts.fromURLs = []string{projectCfg.DatabaseURL}
+		databaseURL := projectCfg.StringValue(projectconfig.StringDatabaseURL)
+		if !cmd.Flags().Changed(atlasFromFlagName) && databaseURL.Present {
+			opts.fromURLs = []string{databaseURL.Value}
 		}
 		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
-		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
+		opts.devURL = dbcli.EffectiveString(
+			cmd,
+			"dev-url",
+			opts.devURL,
+			projectCfg.StringValue(projectconfig.StringDevURL),
+		)
 		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
 		policy, err = atlasDiffPolicy(projectCfg)
 		if err != nil {

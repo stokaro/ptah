@@ -349,21 +349,57 @@ func applyAtlasProjectConfigToArgs(
 	cfg projectconfig.Config,
 	projectFlags atlasProjectFlagValues,
 ) ([]string, error) {
-	args = appendAtlasProjectStringArg(flags, args, "url", cfg.DatabaseURL)
-	args = appendAtlasProjectStringArg(flags, args, "dev-url", cfg.DevURL)
-	if cfg.Migration.Dir != "" && atlasFlagRegistered(flags, "dir") && !atlasFlagPresent(flags, args, "dir") {
-		dir, err := atlasProjectConfigLocalDirFromFlags(projectFlags, cfg.Migration.Dir)
+	args = appendAtlasProjectStringArg(
+		flags,
+		args,
+		"url",
+		cfg.StringValue(projectconfig.StringDatabaseURL),
+	)
+	args = appendAtlasProjectStringArg(
+		flags,
+		args,
+		"dev-url",
+		cfg.StringValue(projectconfig.StringDevURL),
+	)
+	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
+	if migrationDir.Present && atlasFlagRegistered(flags, "dir") && !atlasFlagPresent(flags, args, "dir") {
+		dir, err := atlasProjectConfigLocalDirFromFlags(projectFlags, migrationDir.Value)
 		if err != nil {
 			return nil, fmt.Errorf("atlas.hcl migration.dir: %w", err)
 		}
 		args = append(args, "--dir", dir)
 	}
-	args = appendAtlasProjectStringArg(flags, args, "dir-format", cfg.Migration.Format)
-	args = appendAtlasProjectStringArg(flags, args, "revisions-schema", cfg.Migration.RevisionsSchema)
-	args = appendAtlasProjectStringArg(flags, args, "lock-timeout", cfg.Migration.LockTimeout)
-	args = appendAtlasProjectStringArg(flags, args, "latest", atlasProjectLatest(cfg))
-	args = appendAtlasProjectStringArg(flags, args, "git-base", cfg.Lint.GitBase)
-	args = appendAtlasProjectStringArg(flags, args, "git-dir", cfg.Lint.GitDir)
+	args = appendAtlasProjectStringArg(
+		flags,
+		args,
+		"dir-format",
+		cfg.StringValue(projectconfig.StringMigrationFormat),
+	)
+	args = appendAtlasProjectStringArg(
+		flags,
+		args,
+		"revisions-schema",
+		cfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
+	)
+	args = appendAtlasProjectStringArg(
+		flags,
+		args,
+		"lock-timeout",
+		cfg.StringValue(projectconfig.StringMigrationLockTimeout),
+	)
+	cliLatest := atlasFlagPresent(flags, args, "latest")
+	cliGitBase := atlasFlagPresent(flags, args, "git-base")
+	if !cliGitBase {
+		args = appendAtlasProjectStringArg(flags, args, "latest", atlasProjectLatest(cfg))
+	}
+	gitBase := cfg.StringValue(projectconfig.StringLintGitBase)
+	if !cliLatest && gitBase.Value != "" {
+		args = appendAtlasProjectStringArg(flags, args, "git-base", gitBase)
+	}
+	gitDir := cfg.StringValue(projectconfig.StringLintGitDir)
+	if !cliLatest && gitDir.Value != "" {
+		args = appendAtlasProjectStringArg(flags, args, "git-dir", gitDir)
+	}
 	return args, nil
 }
 
@@ -379,14 +415,26 @@ func applyAtlasSchemaTestProjectConfig(
 	cfg projectconfig.Config,
 	projectFlags atlasProjectFlagValues,
 ) ([]string, error) {
-	args = appendAtlasProjectStringArg(flags, args, "dev-url", cfg.DevURL)
-	if len(cfg.SchemaSources) == 0 || atlasFlagPresent(flags, args, "url") {
+	args = appendAtlasProjectStringArg(
+		flags,
+		args,
+		"dev-url",
+		cfg.StringValue(projectconfig.StringDevURL),
+	)
+	if atlasFlagPresent(flags, args, "url") {
 		return args, nil
 	}
-	if len(cfg.SchemaSources) > 1 {
-		return nil, fmt.Errorf("atlas schema test supports one atlas.hcl schema source, got %d", len(cfg.SchemaSources))
+	sources := cfg.SchemaSourcesValue()
+	if !sources.Present {
+		return args, nil
 	}
-	urls, err := atlasProjectConfigSchemaURLsFromFlags(projectFlags, cfg.SchemaSources)
+	if len(sources.Value) == 0 {
+		return nil, fmt.Errorf("atlas.hcl schema.src: desired schema source is required")
+	}
+	if len(sources.Value) > 1 {
+		return nil, fmt.Errorf("atlas schema test supports one atlas.hcl schema source, got %d", len(sources.Value))
+	}
+	urls, err := atlasProjectConfigSchemaURLsFromFlags(projectFlags, sources.Value)
 	if err != nil {
 		return nil, fmt.Errorf("atlas.hcl schema.src: %w", err)
 	}
@@ -408,18 +456,24 @@ func applyAtlasProjectConfigToNativeArgs(args []string, flags atlasProjectFlagVa
 	return args, nil
 }
 
-func atlasProjectLatest(cfg projectconfig.Config) string {
-	if cfg.Lint.Latest == nil {
-		return ""
+func atlasProjectLatest(cfg projectconfig.Config) projectconfig.Value[string] {
+	latest := cfg.LintLatestValue()
+	return projectconfig.Value[string]{
+		Value:   fmt.Sprint(latest.Value),
+		Present: latest.Present,
 	}
-	return fmt.Sprint(*cfg.Lint.Latest)
 }
 
-func appendAtlasProjectStringArg(flags []atlasargs.Flag, args []string, name string, value string) []string {
-	if strings.TrimSpace(value) == "" || !atlasFlagRegistered(flags, name) || atlasFlagPresent(flags, args, name) {
+func appendAtlasProjectStringArg(
+	flags []atlasargs.Flag,
+	args []string,
+	name string,
+	value projectconfig.Value[string],
+) []string {
+	if !value.Present || !atlasFlagRegistered(flags, name) || atlasFlagPresent(flags, args, name) {
 		return args
 	}
-	return append(args, "--"+name, value)
+	return append(args, "--"+name, value.Value)
 }
 
 func atlasFlagRegistered(flags []atlasargs.Flag, name string) bool {

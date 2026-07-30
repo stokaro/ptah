@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasschema"
 )
@@ -86,8 +87,18 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	opts.dbURL = dbcli.EffectiveString(cmd, planDBURLFlag, opts.dbURL, projectCfg.DatabaseURL)
-	opts.devURL = dbcli.EffectiveString(cmd, planDevURLFlag, opts.devURL, projectCfg.DevURL)
+	opts.dbURL = dbcli.EffectiveString(
+		cmd,
+		planDBURLFlag,
+		opts.dbURL,
+		projectCfg.StringValue(projectconfig.StringDatabaseURL),
+	)
+	opts.devURL = dbcli.EffectiveString(
+		cmd,
+		planDevURLFlag,
+		opts.devURL,
+		projectCfg.StringValue(projectconfig.StringDevURL),
+	)
 	policy := nativeDiffPolicy(projectCfg)
 
 	if strings.TrimSpace(opts.dbURL) == "" {
@@ -107,7 +118,12 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("--%s must not contain path separators; use --%s to choose the plan file location", planNameFlag, planOutputFlag))
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(
-		dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout))
+		dbcli.EffectiveString(
+			cmd,
+			dbcli.ConnectTimeoutFlagName,
+			opts.connectTimeout,
+			projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
+		))
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

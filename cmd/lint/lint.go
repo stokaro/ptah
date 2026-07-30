@@ -197,10 +197,12 @@ func prepareReportOptions(
 	projectCfg projectconfig.Config,
 	sourceOpts sourceOptions,
 ) (migrationlintreport.Options, *migrationsource.OCI, error) {
-	effectiveDir := opts.Dir
-	if !opts.Changed.Dir && projectCfg.Migration.Dir != "" {
-		effectiveDir = projectCfg.Migration.Dir
-	}
+	effectiveDir := dbcli.EffectiveString(
+		cmd,
+		"dir",
+		opts.Dir,
+		projectCfg.StringValue(projectconfig.StringMigrationDir),
+	)
 	isOCI := strings.HasPrefix(effectiveDir, ociartifact.Scheme)
 	if sourceOpts.attach && !isOCI {
 		return migrationlintreport.Options{}, nil, errors.New("--attach requires an OCI migration source")
@@ -209,18 +211,22 @@ func prepareReportOptions(
 		return opts, nil, nil
 	}
 
-	effectiveGitBase := opts.GitBase
-	if !opts.Changed.GitBase {
-		effectiveGitBase = projectCfg.Lint.GitBase
-	}
+	effectiveGitBase := dbcli.EffectiveString(
+		cmd,
+		gitBaseFlag,
+		opts.GitBase,
+		projectCfg.StringValue(projectconfig.StringLintGitBase),
+	)
 	if strings.TrimSpace(effectiveGitBase) != "" {
 		return migrationlintreport.Options{}, nil, errors.New("--git-base is not supported with OCI migration sources")
 	}
 
-	effectiveDirFormat := opts.DirFormat
-	if !opts.Changed.DirFormat && projectCfg.Migration.Format != "" {
-		effectiveDirFormat = projectCfg.Migration.Format
-	}
+	effectiveDirFormat := dbcli.EffectiveString(
+		cmd,
+		"dir-format",
+		opts.DirFormat,
+		projectCfg.StringValue(projectconfig.StringMigrationFormat),
+	)
 	source, err := migrationsource.Resolve(cmd.Context(), effectiveDir, migrationsource.Options{
 		DirFormat: migrator.MigrationDirFormat(effectiveDirFormat),
 		PlainHTTP: sourceOpts.plainHTTP,
