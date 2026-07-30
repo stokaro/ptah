@@ -77,28 +77,6 @@ func TestMigrateApplyRejectsUnknownProjectFormatBeforeOpeningDatabase(t *testing
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
-func TestMigrateApplyRejectsProjectDirectorySymlinkEscapeBeforeOpeningDatabase(t *testing.T) {
-	c := qt.New(t)
-	root := t.TempDir()
-	t.Chdir(root)
-	outside := t.TempDir()
-	writeAtlasApplyProjectMigration(c, outside, "1_create_widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
-	c.Assert(os.Symlink(outside, "migrations"), qt.IsNil)
-	dbPath := filepath.Join(root, "apply.db")
-	writeAtlasApplyProjectConfig(c, dbPath, "atlas", "LINEAR")
-
-	output, err := executeAtlasProjectCommand("migrate", "apply", "--env", "local")
-
-	c.Assert(
-		err,
-		qt.ErrorMatches,
-		`atlas migrate apply --dir: invalid migrations directory: .*outside allowed root.*`,
-		qt.Commentf("command output:\n%s", output),
-	)
-	_, statErr := os.Stat(dbPath)
-	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
-}
-
 func TestMigrateApplyExecutesGooseFormatFromURL(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()

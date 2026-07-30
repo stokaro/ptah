@@ -164,6 +164,28 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 			return fmt.Errorf("atlas migrate apply --dir: migration directory format must not be empty")
 		}
 	}
+
+	amount, err := atlasmigrate.ParseApplyAmount(args)
+	if err != nil {
+		return err
+	}
+	baselineVersion, err := atlasmigrate.ParseMigrationVersionFlag("baseline", opts.baseline)
+	if err != nil {
+		return err
+	}
+	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
+	if err != nil {
+		return err
+	}
+	execOrder, err := migrator.ParseExecOrder(opts.execOrder)
+	if err != nil {
+		return err
+	}
+	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
+	if err != nil {
+		return err
+	}
+
 	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
 		AllowedRoot: localDir.AllowedRoot,
 	})
@@ -179,28 +201,6 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	)
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
-	}
-
-	amount, err := atlasmigrate.ParseApplyAmount(args)
-	if err != nil {
-		return err
-	}
-	baselineVersion, err := atlasmigrate.ParseMigrationVersionFlag("baseline", opts.baseline)
-	if err != nil {
-		return err
-	}
-
-	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
-	if err != nil {
-		return err
-	}
-	execOrder, err := migrator.ParseExecOrder(opts.execOrder)
-	if err != nil {
-		return err
-	}
-	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
-	if err != nil {
-		return err
 	}
 
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.url)

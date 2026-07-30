@@ -10,6 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/internal/migrationsource"
+	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -96,22 +98,54 @@ func TestCaptureLocal_SnapshotIgnoresLaterPathAndFileChanges(t *testing.T) {
 	c.Assert(string(sum), qt.Equals, "h1:original\n")
 }
 
-func TestCaptureLocal_RejectsSymlinkedFileEscape(t *testing.T) {
+func TestCaptureLocal_ExecutionUsesCapturedBytesAfterPathReplacement(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	dir := filepath.Join(root, "migrations")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	outside := filepath.Join(t.TempDir(), "outside.sql")
-	writeFile(c, outside, "SELECT 'outside';\n")
-	c.Assert(os.Symlink(outside, filepath.Join(dir, "1_init.sql")), qt.IsNil)
+	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE captured_input (id INTEGER PRIMARY KEY);\n")
 
 	source, err := migrationsource.CaptureLocal(
 		dir,
 		migrationsource.LocalOptions{AllowedRoot: root},
 	)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(err, qt.ErrorMatches, `capture migrations directory: .*`)
-	c.Assert(source, qt.DeepEquals, migrationsource.LocalSource{})
+	c.Assert(os.Rename(dir, filepath.Join(root, "captured")), qt.IsNil)
+	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
+	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE replacement_input (id INTEGER PRIMARY KEY);\n")
+
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(root, "apply.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		dbschema.CloseAndWarn(conn)
+	})
+	plan, err := atlasmigrate.PrepareApply(c.Context(), conn, atlasmigrate.ApplyOptions{
+		Dir:       source.Display,
+		FS:        source.FileSystem,
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+
+	result, err := plan.Execute(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Applied, qt.IsTrue)
+	c.Assert(sqliteTableCount(c, conn, "captured_input"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, conn, "replacement_input"), qt.Equals, 0)
+}
+
+func sqliteTableCount(c *qt.C, conn *dbschema.DatabaseConnection, table string) int {
+	c.Helper()
+	var count int
+	err := conn.QueryRowContext(
+		c.Context(),
+		`SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = ?`,
+		table,
+	).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
 }
 
 func writeFile(c *qt.C, path, contents string) {

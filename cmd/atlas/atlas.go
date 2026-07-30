@@ -18,6 +18,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/licensetext"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratecheckpoint"
 	"github.com/stokaro/ptah/cmd/migratedown"
@@ -749,6 +750,17 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 			if err != nil {
 				return nil, nil, err
 			}
+			forwardContext, err = withAtlasProjectMigrationRoot(
+				forwardContext,
+				group,
+				verb,
+				args,
+				cfg,
+				project.flags,
+			)
+			if err != nil {
+				return nil, nil, err
+			}
 			applyProjectConfig := verb.projectConfig
 			if applyProjectConfig == nil {
 				applyProjectConfig = applyAtlasProjectConfigToArgs
@@ -774,6 +786,33 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		}
 		return append(mapped, nativeTail...), forwardContext, nil
 	}
+}
+
+func withAtlasProjectMigrationRoot(
+	ctx context.Context,
+	group string,
+	verb atlasVerb,
+	args []string,
+	cfg projectconfig.Config,
+	projectFlags atlasProjectFlagValues,
+) (context.Context, error) {
+	if group != "migrate" ||
+		verb.use != "down" ||
+		atlasFlagValueSet(verb.flags, args, "dir") {
+		return ctx, nil
+	}
+	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
+	if !migrationDir.Present {
+		return ctx, nil
+	}
+	dir, err := atlasProjectConfigLocalDirWithQueryFromFlags(projectFlags, migrationDir.Value)
+	if err != nil {
+		return nil, fmt.Errorf("atlas.hcl migration.dir: %w", err)
+	}
+	if len(dir.Query) > 0 {
+		return nil, fmt.Errorf("atlas.hcl migration.dir: migration directory URL query parameters are not supported yet")
+	}
+	return migrationsource.WithLocalRoot(ctx, dir.Path, dir.AllowedRoot), nil
 }
 
 func loadAtlasAdapterProjectConfig(

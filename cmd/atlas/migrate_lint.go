@@ -109,6 +109,21 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatOutput = formatOutput || formatValue.Present
 	}
+	if err := validateAtlasMigrateLintOptions(opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	dirFormat, err := atlasMigrateDirFormatValue(opts.dirFormat)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir-format: %w", err))
+	}
+	if formatOutput {
+		if err := validateAtlasMigrateLintFormat(opts.format); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		if err := atlasreport.ValidateMigrateLintTemplate(opts.format); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	var localDir atlasargs.LocalDir
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
@@ -124,21 +139,6 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 		return cmdutil.Fail(cmd, fmt.Errorf(
 			"atlas migrate lint --dir: migration directory URL query parameters are not supported for this command",
 		))
-	}
-	if err := validateAtlasMigrateLintOptions(opts); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	dirFormat, err := atlasMigrateDirFormatValue(opts.dirFormat)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir-format: %w", err))
-	}
-	if formatOutput {
-		if err := validateAtlasMigrateLintFormat(opts.format); err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
-		if err := atlasreport.ValidateMigrateLintTemplate(opts.format); err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
 	}
 	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
 		AllowedRoot: localDir.AllowedRoot,

@@ -95,22 +95,6 @@ func runAtlasMigrateStatus(cmd *cobra.Command, opts atlasMigrateStatusOptions) e
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatOutput = formatOutput || formatValue.Present
 	}
-	var localDir atlasargs.LocalDir
-	if loaded &&
-		!cmd.Flags().Changed("dir") &&
-		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		localDir, err = atlasProjectConfigLocalDirWithQuery(cmd, opts.dir)
-	} else {
-		localDir, err = atlasargs.ParseLocalDir(opts.dir)
-	}
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
-	}
-	if len(localDir.Query) > 0 {
-		return cmdutil.Fail(cmd, fmt.Errorf(
-			"atlas migrate status --dir: migration directory URL query parameters are not supported for this command",
-		))
-	}
 	if err := validateAtlasMigrateStatusOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -130,6 +114,22 @@ func runAtlasMigrateStatus(cmd *cobra.Command, opts atlasMigrateStatusOptions) e
 		}
 	}
 
+	var localDir atlasargs.LocalDir
+	if loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
+		localDir, err = atlasProjectConfigLocalDirWithQuery(cmd, opts.dir)
+	} else {
+		localDir, err = atlasargs.ParseLocalDir(opts.dir)
+	}
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
+	}
+	if len(localDir.Query) > 0 {
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"atlas migrate status --dir: migration directory URL query parameters are not supported for this command",
+		))
+	}
 	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
 		AllowedRoot: localDir.AllowedRoot,
 	})

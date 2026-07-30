@@ -58,12 +58,18 @@ func atlasMigrateSetExactArgs(cmd *cobra.Command, args []string) error {
 }
 
 func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []string) error {
-	opts, source, err := prepareAtlasMigrateSet(cmd, opts)
+	opts, localDir, err := prepareAtlasMigrateSet(cmd, opts)
 	if err != nil {
 		return failAtlasCommand(cmd, err)
 	}
 	if opts.url == "" {
 		return failAtlasCommand(cmd, fmt.Errorf("sql/sqlclient: missing driver. See: https://atlasgo.io/url"))
+	}
+	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
+		AllowedRoot: localDir.AllowedRoot,
+	})
+	if err != nil {
+		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
 	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
@@ -99,13 +105,13 @@ func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []
 func prepareAtlasMigrateSet(
 	cmd *cobra.Command,
 	opts atlasMigrateSetOptions,
-) (atlasMigrateSetOptions, migrationsource.LocalSource, error) {
+) (atlasMigrateSetOptions, atlasargs.LocalDir, error) {
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if !cmd.Flags().Changed("url") {
 		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
 	}
 	if err != nil {
-		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, err
+		return atlasMigrateSetOptions{}, atlasargs.LocalDir{}, err
 	}
 	if loaded {
 		opts.url = dbcli.EffectiveString(
@@ -140,14 +146,14 @@ func prepareAtlasMigrateSet(
 		)
 	}
 	if opts.dir == "" {
-		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("migrations directory is required")
+		return atlasMigrateSetOptions{}, atlasargs.LocalDir{}, fmt.Errorf("migrations directory is required")
 	}
 	format, err := atlasMigrateDirFormatValue(opts.dirFormat)
 	if err != nil {
-		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("atlas migrate set --dir-format: %w", err)
+		return atlasMigrateSetOptions{}, atlasargs.LocalDir{}, fmt.Errorf("atlas migrate set --dir-format: %w", err)
 	}
 	if format != atlasDirFormatDefault {
-		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("atlas migrate set --dir-format: expected atlas")
+		return atlasMigrateSetOptions{}, atlasargs.LocalDir{}, fmt.Errorf("atlas migrate set --dir-format: expected atlas")
 	}
 
 	var localDir atlasargs.LocalDir
@@ -159,29 +165,24 @@ func prepareAtlasMigrateSet(
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
 	if err != nil {
-		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("atlas migrate set --dir: %w", err)
+		return atlasMigrateSetOptions{}, atlasargs.LocalDir{}, fmt.Errorf("atlas migrate set --dir: %w", err)
 	}
 	if len(localDir.Query) > 0 {
-		return atlasMigrateSetOptions{}, migrationsource.LocalSource{},
+		return atlasMigrateSetOptions{}, atlasargs.LocalDir{},
 			fmt.Errorf("atlas migrate set --dir: migration directory URL query parameters are not supported for this command")
 	}
-	// Preserve Atlas-compatible directory diagnostics; CaptureLocal below remains
-	// the authoritative rooted read and rejects any path changed after this check.
+	// Preserve Atlas-compatible directory diagnostics; the subsequent
+	// CaptureLocal call remains the authoritative rooted read and rejects any
+	// path changed after this check.
 	info, err := os.Stat(localDir.Path)
 	if err != nil {
-		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("sql/migrate: %w", err)
+		return atlasMigrateSetOptions{}, atlasargs.LocalDir{}, fmt.Errorf("sql/migrate: %w", err)
 	}
 	if !info.IsDir() {
-		return atlasMigrateSetOptions{}, migrationsource.LocalSource{},
+		return atlasMigrateSetOptions{}, atlasargs.LocalDir{},
 			fmt.Errorf("sql/migrate: %q is not a dir", localDir.Path)
 	}
-	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
-		AllowedRoot: localDir.AllowedRoot,
-	})
-	if err != nil {
-		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("atlas migrate set --dir: %w", err)
-	}
-	return opts, source, nil
+	return opts, localDir, nil
 }
 
 func parseAtlasMigrateSetVersion(value string) (int64, error) {

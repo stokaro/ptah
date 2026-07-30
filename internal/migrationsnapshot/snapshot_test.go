@@ -37,6 +37,35 @@ func TestCapture_IncludesOnlyMigrationInputs(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
 }
 
+func TestCapture_FailurePathRejectsNoncanonicalMetadataNames(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		filename  string
+		canonical string
+	}{
+		{name: "atlas sum", filename: "ATLAS.SUM", canonical: "atlas.sum"},
+		{name: "ptah sum", filename: "PTAH.SUM", canonical: "ptah.sum"},
+		{name: "lint policy", filename: ".PTAH-LINT.YAML", canonical: ".ptah-lint.yaml"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			source := fstest.MapFS{
+				test.filename: {Data: []byte("metadata\n")},
+			}
+
+			_, err := migrationsnapshot.Capture(source)
+
+			c.Assert(
+				err,
+				qt.ErrorMatches,
+				`migration metadata file "`+test.filename+`" must use canonical name "`+test.canonical+`"`,
+			)
+		})
+	}
+}
+
 func TestCaptureStable_RejectsChangingDirectory(t *testing.T) {
 	c := qt.New(t)
 	source := &changingFS{

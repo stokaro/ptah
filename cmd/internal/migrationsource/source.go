@@ -52,16 +52,35 @@ type LocalSource struct {
 	Display    string
 }
 
+type localRootContextKey struct{}
+
+type localRootContextValue struct {
+	raw         string
+	allowedRoot string
+}
+
+// WithLocalRoot returns a context that preserves the allowed-root provenance
+// for one forwarded local migration path.
+func WithLocalRoot(ctx context.Context, raw, allowedRoot string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, localRootContextKey{}, localRootContextValue{
+		raw:         raw,
+		allowedRoot: allowedRoot,
+	})
+}
+
 // Resolve loads raw as a local directory or an oci:// artifact.
 func Resolve(ctx context.Context, raw string, opts Options) (Source, error) {
 	if strings.HasPrefix(raw, ociartifact.Scheme) {
 		return resolveOCI(ctx, raw, opts)
 	}
-	return resolveLocal(raw, opts)
+	return resolveLocal(raw, opts, localOptionsFromContext(ctx, raw))
 }
 
-func resolveLocal(raw string, opts Options) (Source, error) {
-	local, err := CaptureLocal(raw, LocalOptions{})
+func resolveLocal(raw string, opts Options, localOpts LocalOptions) (Source, error) {
+	local, err := CaptureLocal(raw, localOpts)
 	if err != nil {
 		return Source{}, err
 	}
@@ -74,6 +93,17 @@ func resolveLocal(raw string, opts Options) (Source, error) {
 		Display:    local.Display,
 		DirFormat:  format,
 	}, nil
+}
+
+func localOptionsFromContext(ctx context.Context, raw string) LocalOptions {
+	if ctx == nil {
+		return LocalOptions{}
+	}
+	value, ok := ctx.Value(localRootContextKey{}).(localRootContextValue)
+	if !ok || value.raw != raw {
+		return LocalOptions{}
+	}
+	return LocalOptions{AllowedRoot: value.allowedRoot}
 }
 
 // CaptureLocal validates and opens raw through its allowed root, then captures
