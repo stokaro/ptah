@@ -10,9 +10,21 @@ keys. Unlike the OpenAPI and GraphQL targets on
 are permanent wire identifiers, so the file Ptah wrote last time is read back
 and used as the source of every number it already pins.
 
+Ptah emits messages and enums, not Protobuf services or remote procedure calls
+(RPCs). It does not create a server, access database rows, or implement
+authorization. Publishing the generated file still reveals the selected table
+and column names, translated types, enum values, and exported source comments.
+
 Prerequisites: a built `ptah` binary and a directory of annotated Go models.
 `buf` and `protoc` are needed only if you want to lint or compatibility-check
 the result yourself.
+
+:::caution[Wire compatibility is not API safety]
+Compatibility checks prevent accidental field-number reuse and detect selected
+wire or JSON contract breaks. They do not decide whether a field is appropriate
+for an API. Once a table is selected, every exportable column enters its
+generated message.
+:::
 
 ## Generate the first file
 
@@ -452,6 +464,22 @@ Every check below runs before anything is written, and each exits with code
 - The source is Go annotations only. There is no `--schema-file` or database
   URL for this target; run [`ptah introspect`](../../start/adopt-an-existing-database/)
   first to generate annotated models from an existing database.
+- Table selection is the narrowest available projection. There are no
+  field-level allowlists, read/write visibility rules, sensitive-field markers,
+  or API-specific aliases. Use a curated annotation source or wrapper messages
+  when a public contract must expose only part of a table.
+- Database identifiers determine generated API identifiers after Protobuf name
+  normalization. Renaming a table or column can therefore rename a public
+  symbol even when its wire number remains stable.
+- Additive compatibility is not the same as intentional exposure. Adding a
+  column to a selected table adds a field on the next export unless the whole
+  table is excluded.
+- The generated definition contains no authorization or tenant-isolation
+  semantics. RLS policies are not emitted, and their presence in the database
+  does not define who may use a message field.
+- Table and field comments are copied into the generated definition. Review them
+  for internal implementation details or sensitive operational information
+  before publishing the file.
 - One file per run. Ptah writes a single compilation unit, so splitting a
   schema across `.proto` files means several exports with disjoint
   `--include-tables` sets and separate packages.
