@@ -204,6 +204,10 @@ outside the migration flow. It never runs or reverts migration SQL — the
 database schema itself is untouched. `--revision-format atlas` targets Atlas
 revision bookkeeping (`atlas_schema_revisions`) instead of Ptah's native
 table, and `--dry-run` validates the inputs without changing anything.
+Rows that Ptah writes in Atlas revision mode preserve Atlas's filename
+description, start timestamp, nanosecond execution duration, empty successful
+error fields, checksum hash, and operator metadata. PostgreSQL-family revision
+tables use `TIMESTAMPTZ` for `executed_at`, matching Atlas-created tables.
 
 ## Atlas-compatible surface
 

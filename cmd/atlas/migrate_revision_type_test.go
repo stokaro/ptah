@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite"
@@ -30,14 +31,25 @@ func TestMigrateApply_RecordsAppliedAtlasRevisionMetadata(t *testing.T) {
 	got := readAtlasRevision(c, fixture.dbPath, fixture.version)
 	c.Assert(got, qt.DeepEquals, atlasRevisionRow{
 		Version:         fixture.version,
-		Description:     "Create Users",
+		Description:     "create_users",
 		Type:            2,
 		Applied:         1,
 		Total:           1,
 		Hash:            fixture.hash,
-		PartialHashes:   "sql-null",
+		PartialHashes:   "null",
 		OperatorVersion: "Ptah",
 	})
+	c.Assert(
+		readAtlasRevisionStorageTypes(c, fixture.dbPath, fixture.version),
+		qt.DeepEquals,
+		atlasRevisionStorageTypes{
+			Error:          "text",
+			ErrorStatement: "text",
+			PartialHashes:  "blob",
+		},
+	)
+	_, err := time.Parse(time.RFC3339Nano, readAtlasRevisionExecutedAt(c, fixture.dbPath, fixture.version))
+	c.Assert(err, qt.IsNil)
 	c.Assert(readAtlasRevisionVersions(c, fixture.dbPath), qt.DeepEquals, []string{
 		"20260719000000",
 		fixture.version,
@@ -96,12 +108,12 @@ func TestMigrateSet_PreservesExistingAtlasRevisions(t *testing.T) {
 	first := readAtlasRevision(c, fixture.dbPath, fixture.previousVersion)
 	c.Assert(first, qt.DeepEquals, atlasRevisionRow{
 		Version:         fixture.previousVersion,
-		Description:     "Create Accounts",
+		Description:     "create_accounts",
 		Type:            2,
 		Applied:         1,
 		Total:           1,
 		Hash:            fixture.previousHash,
-		PartialHashes:   "sql-null",
+		PartialHashes:   "null",
 		OperatorVersion: "Ptah",
 	})
 	second := readAtlasRevision(c, fixture.dbPath, fixture.version)
@@ -229,7 +241,7 @@ func TestMigrateSet_ReportsSetAndRemovedRevisions(t *testing.T) {
 	c.Assert(output, qt.Equals,
 		"Current version is 20260719000000 (1 set, 1 removed):\n\n"+
 			"  + 20260719000000 (create_accounts)\n"+
-			"  - 20260719010000 (Create Users)",
+			"  - 20260719010000 (create_users)",
 	)
 }
 
@@ -406,6 +418,12 @@ type atlasRevisionRow struct {
 	OperatorVersion string
 }
 
+type atlasRevisionStorageTypes struct {
+	Error          string
+	ErrorStatement string
+	PartialHashes  string
+}
+
 func readAtlasRevision(c *qt.C, dbPath, version string) atlasRevisionRow {
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
@@ -431,6 +449,42 @@ WHERE version = ?
 		&got.PartialHashes,
 		&got.OperatorVersion,
 	)
+	c.Assert(err, qt.IsNil)
+	return got
+}
+
+func readAtlasRevisionExecutedAt(c *qt.C, dbPath, version string) string {
+	c.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(db.Close(), qt.IsNil)
+	})
+
+	var executedAt string
+	err = db.QueryRow(
+		`SELECT CAST(executed_at AS TEXT) FROM atlas_schema_revisions WHERE version = ?`,
+		version,
+	).Scan(&executedAt)
+	c.Assert(err, qt.IsNil)
+	return executedAt
+}
+
+func readAtlasRevisionStorageTypes(c *qt.C, dbPath, version string) atlasRevisionStorageTypes {
+	c.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(db.Close(), qt.IsNil)
+	})
+
+	var got atlasRevisionStorageTypes
+	err = db.QueryRow(
+		`SELECT typeof(error), typeof(error_stmt), typeof(partial_hashes)
+FROM atlas_schema_revisions
+WHERE version = ?`,
+		version,
+	).Scan(&got.Error, &got.ErrorStatement, &got.PartialHashes)
 	c.Assert(err, qt.IsNil)
 	return got
 }

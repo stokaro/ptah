@@ -122,6 +122,52 @@ WHERE version = '1'`,
 	c.Assert(snapshot.Status.DirtyRevision.Dirty, qt.IsTrue)
 }
 
+func TestAtlasMigrationExecutionPreservesStartTimestamp(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "atlas-start-time.sqlite"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	err = mig.Initialize(t.Context())
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(
+		t.Context(),
+		`CREATE TABLE atlas_revision_start_times (executed_at TEXT NOT NULL);
+CREATE TRIGGER capture_atlas_revision_start_time
+AFTER INSERT ON atlas_schema_revisions
+BEGIN
+    INSERT INTO atlas_revision_start_times (executed_at) VALUES (NEW.executed_at);
+END;`,
+	)
+	c.Assert(err, qt.IsNil)
+
+	err = mig.MigrateUp(t.Context())
+	c.Assert(err, qt.IsNil)
+
+	var startedAt, storedAt string
+	err = conn.QueryRowContext(
+		t.Context(),
+		`SELECT captured.executed_at, CAST(revisions.executed_at AS TEXT)
+FROM atlas_revision_start_times AS captured
+CROSS JOIN atlas_schema_revisions AS revisions
+WHERE revisions.version = '1'`,
+	).Scan(&startedAt, &storedAt)
+	c.Assert(err, qt.IsNil)
+	c.Assert(storedAt, qt.Equals, startedAt)
+}
+
 func TestAtlasRollbackFailure_PreservesNormalApplyMetadata(t *testing.T) {
 	c := qt.New(t)
 	conn, err := dbschema.ConnectToDatabase(
@@ -157,14 +203,16 @@ DROP TABLE missing_users;
 	var description string
 	var revisionType int
 	var partialHashes sql.NullString
+	var partialHashesType string
 	err = conn.QueryRowContext(
 		t.Context(),
-		`SELECT description, type, partial_hashes
+		`SELECT description, type, partial_hashes, typeof(partial_hashes)
 FROM atlas_schema_revisions
 WHERE version = '1'`,
-	).Scan(&description, &revisionType, &partialHashes)
+	).Scan(&description, &revisionType, &partialHashes, &partialHashesType)
 	c.Assert(err, qt.IsNil)
-	c.Assert(description, qt.Equals, "Create Users")
+	c.Assert(description, qt.Equals, "create_users")
 	c.Assert(revisionType, qt.Equals, int(migrator.AtlasRevisionTypeApplied))
-	c.Assert(partialHashes.Valid, qt.IsFalse)
+	c.Assert(partialHashes, qt.DeepEquals, sql.NullString{String: "null", Valid: true})
+	c.Assert(partialHashesType, qt.Equals, "blob")
 }

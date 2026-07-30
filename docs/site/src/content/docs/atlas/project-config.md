@@ -213,9 +213,10 @@ repeated. Repeating the same variable name produces a string list for supported
 Atlas HCL expressions. Variable overrides are strings; Atlas variable `type`
 and `sensitive` attributes remain unsupported and fail explicitly.
 
-If an `atlas.hcl` file has exactly one unnamed `env` block, Ptah can use it as
-the default. Ambiguous or unsupported environment layouts fail instead of
-guessing.
+If an `atlas.hcl` file has exactly one `env` block, named or unnamed, Ptah can
+use it as the default. Atlas-compatible `migrate apply` does not need to select
+an environment when both `--url` and `--dir` are explicit. Other ambiguous or
+unsupported environment layouts fail instead of guessing.
 
 ## Unsupported means error
 
