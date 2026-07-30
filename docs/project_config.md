@@ -58,10 +58,12 @@ env:
       concurrent_index: true
 ```
 
-Select an environment with `--env <name>` on commands that load project
-configuration. If `ptah.yaml` contains exactly one environment, Ptah selects it
-automatically. If it contains multiple environments and no `--env` is passed,
-Ptah fails instead of guessing.
+Select an environment with `--env <name>` when a command needs project
+configuration from one of multiple environments. If `ptah.yaml` contains
+exactly one environment, Ptah selects it automatically. A command whose
+required inputs are all explicit does not need to select an environment. If
+project values are required and multiple environments remain ambiguous, Ptah
+fails instead of guessing.
 
 Top-level settings are allowed and are merged as defaults for every named
 environment:

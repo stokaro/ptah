@@ -301,9 +301,11 @@ registry-backed sources, and Cloud-specific sources still fail explicitly.
 
 ## Env selection
 
-Use `--env <name>` when an `atlas.hcl` file contains multiple `env` blocks.
-When the file contains exactly one `env` block, Ptah selects it automatically.
-If the file contains multiple envs and no `--env` is provided, Ptah returns:
+Use `--env <name>` when a command needs values from one of multiple
+`atlas.hcl` `env` blocks. When the file contains exactly one `env` block, Ptah
+selects it automatically. Atlas-compatible `migrate apply` does not need to
+select an environment when both `--url` and `--dir` are explicit. If project
+values are required and multiple envs remain ambiguous, Ptah returns:
 
 ```text
 atlas.hcl contains multiple env blocks; pass --env

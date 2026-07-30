@@ -39,6 +39,53 @@ func TestAtlasRevisionTable_PostgresIntegration(t *testing.T) {
 	runAtlasRevisionTableIntegration(t, postgresTestURL(t))
 }
 
+func TestAtlasRevisionTable_PostgresUsesTimestamptzIntegration(t *testing.T) {
+	runAtlasRevisionTableTimestampTypeIntegration(t, postgresTestURL(t))
+}
+
+func TestAtlasRevisionTable_CockroachDBUsesTimestamptzIntegration(t *testing.T) {
+	runAtlasRevisionTableTimestampTypeIntegration(t, cockroachDBAtlasTestURL(t))
+}
+
+func TestAtlasRevisionTable_YugabyteDBUsesTimestamptzIntegration(t *testing.T) {
+	runAtlasRevisionTableTimestampTypeIntegration(t, yugabyteDBAtlasTestURL(t))
+}
+
+func runAtlasRevisionTableTimestampTypeIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue275(t, conn)
+	defer cleanupIssue275(t, conn)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.Initialize(t.Context()), qt.IsNil)
+
+	var dataType string
+	err = conn.QueryRowContext(
+		t.Context(),
+		`SELECT data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'atlas_schema_revisions'
+  AND column_name = 'executed_at'`,
+	).Scan(&dataType)
+	c.Assert(err, qt.IsNil)
+	c.Assert(dataType, qt.Equals, "timestamp with time zone")
+}
+
 func TestAtlasTxtarDown_MySQLIntegration(t *testing.T) {
 	runAtlasTxtarDownIntegration(t, mysqlAtlasTestURL(t))
 }
@@ -153,11 +200,15 @@ VALUES ('3', 'external', 2, 1, 1, NOW(), 0, NULL, NULL, 'external', 'null'::json
 	c.Assert(issue819RevisionVersions(setCall.Result.Removed), qt.DeepEquals, []int64{2, 3})
 	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
-			Version:       "1",
-			Description:   "create_accounts",
-			RevisionType:  4,
-			Hash:          issue819SQLHash("SELECT 1;\n"),
-			PartialHashes: sql.NullString{String: "null", Valid: true},
+			Version:           "1",
+			Description:       "create_accounts",
+			RevisionType:      4,
+			ExecutedAtNonZero: true,
+			Error:             sql.NullString{Valid: true},
+			ErrorStatement:    sql.NullString{Valid: true},
+			Hash:              issue819SQLHash("SELECT 1;\n"),
+			PartialHashes:     sql.NullString{String: "null", Valid: true},
+			OperatorVersion:   "Ptah",
 		},
 	})
 }
@@ -420,7 +471,7 @@ DROP TABLE ptah_issue_275_next;
 	c.Assert(tableExists(t, conn, "ptah_issue_275_next"), qt.IsTrue)
 	c.Assert(issue275Revisions(t, conn), qt.DeepEquals, []issue275Revision{
 		{Version: strconv.FormatInt(firstVersion, 10), Description: "Seed", RevisionType: 2, Applied: 1, Total: 1, Hash: "seedhash", OperatorVersion: "Atlas"},
-		{Version: strconv.FormatInt(secondVersion, 10), Description: "Next", RevisionType: 2, Applied: 1, Total: 1, Hash: "nexthash", OperatorVersion: "Ptah"},
+		{Version: strconv.FormatInt(secondVersion, 10), Description: "next", RevisionType: 2, Applied: 1, Total: 1, Hash: "nexthash", OperatorVersion: "Ptah"},
 	})
 
 	err = nextMigrator.MigrateDownTo(ctx, firstVersion)
@@ -465,12 +516,18 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
-			Version:      "1",
-			Description:  "Create Accounts",
-			RevisionType: 2,
-			Applied:      1,
-			Total:        1,
-			Hash:         issue819SQLHash(firstSQL),
+			Version:               "1",
+			Description:           "create_accounts",
+			RevisionType:          2,
+			Applied:               1,
+			Total:                 1,
+			ExecutedAtNonZero:     true,
+			ExecutionTimePositive: true,
+			Error:                 sql.NullString{Valid: true},
+			ErrorStatement:        sql.NullString{Valid: true},
+			Hash:                  issue819SQLHash(firstSQL),
+			PartialHashes:         sql.NullString{String: "null", Valid: true},
+			OperatorVersion:       "Ptah",
 		},
 	})
 
@@ -480,26 +537,40 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	c.Assert(result.Removed, qt.HasLen, 0)
 	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
-			Version:      "1",
-			Description:  "Create Accounts",
-			RevisionType: 2,
-			Applied:      1,
-			Total:        1,
-			Hash:         issue819SQLHash(firstSQL),
+			Version:               "1",
+			Description:           "create_accounts",
+			RevisionType:          2,
+			Applied:               1,
+			Total:                 1,
+			ExecutedAtNonZero:     true,
+			ExecutionTimePositive: true,
+			Error:                 sql.NullString{Valid: true},
+			ErrorStatement:        sql.NullString{Valid: true},
+			Hash:                  issue819SQLHash(firstSQL),
+			PartialHashes:         sql.NullString{String: "null", Valid: true},
+			OperatorVersion:       "Ptah",
 		},
 		{
-			Version:       "2",
-			Description:   "create_users",
-			RevisionType:  4,
-			Hash:          issue819SQLHash(secondSQL),
-			PartialHashes: sql.NullString{String: "null", Valid: true},
+			Version:           "2",
+			Description:       "create_users",
+			RevisionType:      4,
+			ExecutedAtNonZero: true,
+			Error:             sql.NullString{Valid: true},
+			ErrorStatement:    sql.NullString{Valid: true},
+			Hash:              issue819SQLHash(secondSQL),
+			PartialHashes:     sql.NullString{String: "null", Valid: true},
+			OperatorVersion:   "Ptah",
 		},
 		{
-			Version:       "3",
-			Description:   "add_audit",
-			RevisionType:  4,
-			Hash:          issue819SQLHash(thirdSQL),
-			PartialHashes: sql.NullString{String: "null", Valid: true},
+			Version:           "3",
+			Description:       "add_audit",
+			RevisionType:      4,
+			ExecutedAtNonZero: true,
+			Error:             sql.NullString{Valid: true},
+			ErrorStatement:    sql.NullString{Valid: true},
+			Hash:              issue819SQLHash(thirdSQL),
+			PartialHashes:     sql.NullString{String: "null", Valid: true},
+			OperatorVersion:   "Ptah",
 		},
 	})
 
@@ -510,19 +581,28 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	c.Assert(issue819RevisionVersions(result.Removed), qt.DeepEquals, []int64{3})
 	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
-			Version:      "1",
-			Description:  "Create Accounts",
-			RevisionType: 6,
-			Total:        1,
-			Error:        "broken",
-			Hash:         issue819SQLHash(firstSQL),
+			Version:               "1",
+			Description:           "create_accounts",
+			RevisionType:          6,
+			Total:                 1,
+			ExecutedAtNonZero:     true,
+			ExecutionTimePositive: true,
+			Error:                 sql.NullString{String: "broken", Valid: true},
+			ErrorStatement:        sql.NullString{Valid: true},
+			Hash:                  issue819SQLHash(firstSQL),
+			PartialHashes:         sql.NullString{String: "null", Valid: true},
+			OperatorVersion:       "Ptah",
 		},
 		{
-			Version:       "2",
-			Description:   "create_users",
-			RevisionType:  4,
-			Hash:          issue819SQLHash(secondSQL),
-			PartialHashes: sql.NullString{String: "null", Valid: true},
+			Version:           "2",
+			Description:       "create_users",
+			RevisionType:      4,
+			ExecutedAtNonZero: true,
+			Error:             sql.NullString{Valid: true},
+			ErrorStatement:    sql.NullString{Valid: true},
+			Hash:              issue819SQLHash(secondSQL),
+			PartialHashes:     sql.NullString{String: "null", Valid: true},
+			OperatorVersion:   "Ptah",
 		},
 	})
 
@@ -538,23 +618,31 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
-			Version:       "2",
-			Description:   "create_users",
-			RevisionType:  1,
-			PartialHashes: sql.NullString{String: "null", Valid: true},
+			Version:           "2",
+			Description:       "create_users",
+			RevisionType:      1,
+			ExecutedAtNonZero: true,
+			Error:             sql.NullString{Valid: true},
+			ErrorStatement:    sql.NullString{Valid: true},
+			PartialHashes:     sql.NullString{String: "null", Valid: true},
+			OperatorVersion:   "Ptah",
 		},
 	})
 }
 
 type issue819Revision struct {
-	Version       string
-	Description   string
-	RevisionType  int
-	Applied       int
-	Total         int
-	Error         string
-	Hash          string
-	PartialHashes sql.NullString
+	Version               string
+	Description           string
+	RevisionType          int
+	Applied               int
+	Total                 int
+	ExecutedAtNonZero     bool
+	ExecutionTimePositive bool
+	Error                 sql.NullString
+	ErrorStatement        sql.NullString
+	Hash                  string
+	PartialHashes         sql.NullString
+	OperatorVersion       string
 }
 
 func readIssue819Revisions(c *qt.C, conn *dbschema.DatabaseConnection) []issue819Revision {
@@ -562,7 +650,8 @@ func readIssue819Revisions(c *qt.C, conn *dbschema.DatabaseConnection) []issue81
 
 	rows, err := conn.QueryContext(
 		context.Background(),
-		`SELECT version, description, type, applied, total, COALESCE(error, ''), hash, partial_hashes
+		`SELECT version, description, type, applied, total, executed_at, execution_time,
+	error, error_stmt, hash, partial_hashes, operator_version
 FROM atlas_schema_revisions
 ORDER BY version`,
 	)
@@ -574,17 +663,25 @@ ORDER BY version`,
 	revisions := make([]issue819Revision, 0)
 	for rows.Next() {
 		var revision issue819Revision
+		var executedAt sql.NullString
+		var executionTime int64
 		err = rows.Scan(
 			&revision.Version,
 			&revision.Description,
 			&revision.RevisionType,
 			&revision.Applied,
 			&revision.Total,
+			&executedAt,
+			&executionTime,
 			&revision.Error,
+			&revision.ErrorStatement,
 			&revision.Hash,
 			&revision.PartialHashes,
+			&revision.OperatorVersion,
 		)
 		c.Assert(err, qt.IsNil)
+		revision.ExecutedAtNonZero = executedAt.Valid && strings.TrimSpace(executedAt.String) != ""
+		revision.ExecutionTimePositive = executionTime > 0
 		revisions = append(revisions, revision)
 	}
 	c.Assert(rows.Err(), qt.IsNil)

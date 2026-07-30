@@ -72,9 +72,9 @@ FROM atlas_schema_revisions
 WHERE version = '1'`,
 	).Scan(&description, &revisionType, &applied, &total, &partialHashes)
 	c.Assert(err, qt.IsNil)
-	c.Assert(description, qt.Equals, "Create Users")
+	c.Assert(description, qt.Equals, "create_users")
 	c.Assert(revisionType, qt.Equals, 2)
 	c.Assert(applied, qt.Equals, 1)
 	c.Assert(total, qt.Equals, 1)
-	c.Assert(partialHashes, qt.Equals, "sql-null")
+	c.Assert(partialHashes, qt.Equals, "null")
 }
