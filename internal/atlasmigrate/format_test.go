@@ -241,6 +241,28 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `no importable migration files found in .* for format "goose"`)
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
+
+	c.Run("Go-based Goose migration", func(c *qt.C) {
+		dir := c.TempDir()
+		writeFormatFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE users (id int);\n")
+		writeFormatFile(c, dir, "2_seed.go", "package migrations\n")
+
+		gotFS, err := atlasmigrate.ResolveApplySource(os.DirFS(dir), dir, "goose", nil)
+
+		c.Assert(err, qt.ErrorMatches, `Go-based Goose migration "2_seed\.go" is not supported \(SQL migrations only\)`)
+		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
+	})
+
+	c.Run("Liquibase XML changelog", func(c *qt.C) {
+		dir := c.TempDir()
+		writeFormatFile(c, dir, "1_init.sql", "--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")
+		writeFormatFile(c, dir, "changelog.xml", "<databaseChangeLog></databaseChangeLog>\n")
+
+		gotFS, err := atlasmigrate.ResolveApplySource(os.DirFS(dir), dir, "liquibase", nil)
+
+		c.Assert(err, qt.ErrorMatches, `liquibase XML/YAML/JSON changelogs are not yet supported .* found changelog\.xml`)
+		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
+	})
 }
 
 func writeFormatFile(c *qt.C, dir, name, content string) {

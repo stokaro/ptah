@@ -40,7 +40,7 @@ func ResolveApplySource(
 	if source == nil {
 		return fsnapshot.Snapshot{}, fmt.Errorf("migration directory filesystem is required")
 	}
-	snapshot, err := migrationsnapshot.CaptureStable(source)
+	snapshot, err := atlasmigrateimport.CaptureFS(source, format)
 	if err != nil {
 		return fsnapshot.Snapshot{}, fmt.Errorf("capture migration directory: %w", err)
 	}

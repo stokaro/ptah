@@ -20,6 +20,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -27,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/atlascompat"
+	"github.com/stokaro/ptah/internal/fsnapshot"
 	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -201,9 +203,18 @@ var (
 	flywayVersionedRe   = regexp.MustCompile(`(?i)^[vbu].+__.+\.sql$`)
 	golangMigrateFileRe = regexp.MustCompile(`^([0-9]+)_(.+)\.(up|down)\.sql$`)
 	golangMigrateLikeRe = regexp.MustCompile(`^[0-9]+_.+\.(up|down)\.sql$`)
+	gooseGoFileRe       = regexp.MustCompile(`^[0-9]+_.+\.go$`)
+	liquibaseRootRe     = regexp.MustCompile(`(?m)<databaseChangeLog|"databaseChangeLog"|^\s*databaseChangeLog\s*:`)
 	numberedSQLFileRe   = regexp.MustCompile(`^[0-9]+_.+\.sql$`)
 	unsafeNameRe        = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
 )
+
+var liquibaseChangelogExtensions = map[string]bool{
+	".json": true,
+	".xml":  true,
+	".yaml": true,
+	".yml":  true,
+}
 
 // Import converts a local source migration directory to Atlas single-file
 // migrations and writes atlas.sum in the target directory.
@@ -262,7 +273,7 @@ func LoadDir(dir string, format Format) (*Loaded, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read source migration directory %s: %w", dir, err)
 	}
-	snapshot, captureErr := migrationsnapshot.CaptureStable(root.FS())
+	snapshot, captureErr := CaptureFS(root.FS(), format)
 	closeErr := root.Close()
 	if captureErr != nil {
 		if closeErr != nil {
@@ -274,6 +285,61 @@ func LoadDir(dir string, format Format) (*Loaded, error) {
 		return nil, fmt.Errorf("close source migration directory: %w", closeErr)
 	}
 	return LoadFS(snapshot, dir, format)
+}
+
+// CaptureFS captures the root-level files that define a source directory in
+// format. Unsupported Goose and Liquibase inputs remain in the immutable
+// snapshot so LoadFS can reject them instead of silently ignoring them.
+func CaptureFS(fsys fs.FS, format Format) (fsnapshot.Snapshot, error) {
+	if fsys == nil {
+		return fsnapshot.Snapshot{}, fmt.Errorf("source migration filesystem is required")
+	}
+	if format == FormatAtlas {
+		return migrationsnapshot.CaptureStable(fsys)
+	}
+	if err := validateExternalFormat(format); err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	include := func(name string, _ fs.DirEntry) bool {
+		return path.Dir(name) == "." && sourceExtensionIncluded(format, strings.ToLower(path.Ext(name)))
+	}
+	first, err := fsnapshot.CaptureMatching(fsys, include)
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	second, err := fsnapshot.CaptureMatching(fsys, include)
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	if !first.Equal(second) {
+		return fsnapshot.Snapshot{}, migrationsnapshot.ErrChangedDuringCapture
+	}
+	return second, nil
+}
+
+func validateExternalFormat(format Format) error {
+	switch format {
+	case FormatGolangMigrate, FormatGoose, FormatFlyway, FormatLiquibase, FormatDBMate:
+		return nil
+	case FormatAtlas:
+		return nil
+	default:
+		return fmt.Errorf("unknown migration import format %q", format)
+	}
+}
+
+func sourceExtensionIncluded(format Format, extension string) bool {
+	switch format {
+	case FormatGoose:
+		return extension == ".sql" || extension == ".go"
+	case FormatLiquibase:
+		return extension == ".sql" || liquibaseChangelogExtensions[extension]
+	case FormatGolangMigrate, FormatFlyway, FormatDBMate:
+		return extension == ".sql"
+	case FormatAtlas:
+		return false
+	}
+	return false
 }
 
 // LoadFS converts one caller-owned migration filesystem into in-memory Atlas
@@ -418,16 +484,49 @@ func loadEntries(fsys fs.FS, display string, format Format) ([]Entry, error) {
 	case FormatGolangMigrate:
 		return loadGolangMigrateEntries(fsys, files)
 	case FormatGoose:
-		return loadDirectiveSectionEntries(fsys, files, "-- +goose Up", gooseUpSQL)
+		return loadGooseEntries(fsys, files)
 	case FormatDBMate:
 		return loadDirectiveSectionEntries(fsys, files, "-- migrate:up", dbmateUpSQL)
 	case FormatLiquibase:
-		return loadDirectiveSectionEntries(fsys, files, "", liquibaseSQL)
+		return loadLiquibaseEntries(fsys, files)
 	case FormatFlyway:
 		return loadFlywayEntries(fsys, files)
 	default:
 		return nil, fmt.Errorf("unknown migration import format %q", format)
 	}
+}
+
+func loadGooseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
+	for _, file := range files {
+		if !file.IsDir() && gooseGoFileRe.MatchString(file.Name()) {
+			return nil, fmt.Errorf("Go-based Goose migration %q is not supported (SQL migrations only)", file.Name())
+		}
+	}
+	return loadDirectiveSectionEntries(fsys, files, "-- +goose Up", gooseUpSQL)
+}
+
+func loadLiquibaseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
+	var changelogFiles []string
+	for _, file := range files {
+		if file.IsDir() || !liquibaseChangelogExtensions[strings.ToLower(filepath.Ext(file.Name()))] {
+			continue
+		}
+		data, err := fs.ReadFile(fsys, file.Name())
+		if err != nil {
+			return nil, fmt.Errorf("read migration file %s: %w", file.Name(), err)
+		}
+		if liquibaseRootRe.Match(data) {
+			changelogFiles = append(changelogFiles, file.Name())
+		}
+	}
+	if len(changelogFiles) > 0 {
+		return nil, fmt.Errorf(
+			"liquibase XML/YAML/JSON changelogs are not yet supported (only formatted-SQL changelogs beginning with %q); found %s",
+			"--liquibase formatted sql",
+			strings.Join(changelogFiles, ", "),
+		)
+	}
+	return loadDirectiveSectionEntries(fsys, files, "", liquibaseSQL)
 }
 
 func loadAtlasEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
