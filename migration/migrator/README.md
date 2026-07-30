@@ -112,10 +112,14 @@ on the CLI or `WithRevisionTableFormat(RevisionTableFormatAtlas)` in Go. Atlas
 revision mode uses `atlas_schema_revisions` by default, stores string migration
 versions, reads the Atlas `applied`/`total` and `error` state fields, and writes
 the Atlas `hash` value from `atlas.sum` when it is available. Successful rows
-use the migration filename description, retain the migration start timestamp,
-record execution time in nanoseconds, store empty `error` and `error_stmt`
-values, and identify Ptah as the operator. On PostgreSQL-family databases,
-Ptah creates the Atlas-compatible `executed_at TIMESTAMPTZ` column. Custom
+use the migration filename description, store empty `error` and `error_stmt`
+values, and identify Ptah as the operator. Ptah records a coherent timing
+interval: `executed_at` is the migration lifecycle start and `execution_time`
+is the full elapsed duration in nanoseconds. Atlas CE can read these values,
+but exact dynamic timing equality is not claimed: Atlas CE v1.2.0 rewrites
+`executed_at` during per-statement revision updates and can persist a different
+write-order-dependent interval. On PostgreSQL-family databases, Ptah creates
+the Atlas-compatible `executed_at TIMESTAMPTZ` column. Custom
 `--migrations-schema` / `--migrations-table` values still override the metadata
 table location.
 

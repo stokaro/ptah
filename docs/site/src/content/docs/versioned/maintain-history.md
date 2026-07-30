@@ -205,9 +205,13 @@ database schema itself is untouched. `--revision-format atlas` targets Atlas
 revision bookkeeping (`atlas_schema_revisions`) instead of Ptah's native
 table, and `--dry-run` validates the inputs without changing anything.
 Rows that Ptah writes in Atlas revision mode preserve Atlas's filename
-description, start timestamp, nanosecond execution duration, empty successful
-error fields, checksum hash, and operator metadata. PostgreSQL-family revision
-tables use `TIMESTAMPTZ` for `executed_at`, matching Atlas-created tables.
+description, empty successful error fields, checksum hash, and operator
+metadata. Ptah uses `executed_at` for the migration lifecycle start and stores
+the full elapsed duration in nanoseconds. Atlas CE can read this coherent
+interval, but exact dynamic timing equality is not claimed: Atlas CE v1.2.0
+rewrites its timestamp during per-statement revision updates. PostgreSQL-family
+revision tables use `TIMESTAMPTZ` for `executed_at`, matching Atlas-created
+tables.
 
 ## Atlas-compatible surface
 
