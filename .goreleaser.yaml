@@ -176,6 +176,12 @@ brews:
       owner: stokaro
       name: homebrew-ptah
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    # The formula is always generated, but publishing it needs the tap
+    # repository and a token that can push to it. Without HOMEBREW_TAP_TOKEN
+    # the upload is skipped instead of failing the whole release.
+    # index, not .Env.X: the snapshot job does not define the variable at all,
+    # and .Env.X errors on a missing key while index yields an empty string.
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_TOKEN" }}false{{ else }}true{{ end }}'
     directory: Formula
     homepage: "https://github.com/stokaro/ptah"
     description: "Schema management and migration tooling for Go projects"
