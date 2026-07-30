@@ -20,3 +20,15 @@ func TestSyncDir_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `open directory for sync: .*`)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
+
+func TestSyncRoot_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	root, err := os.OpenRoot(c.TempDir())
+	c.Assert(err, qt.IsNil)
+	c.Assert(root.Close(), qt.IsNil)
+
+	err = fsdurable.SyncRoot(root)
+
+	c.Assert(err, qt.ErrorMatches, `open rooted directory for sync: .*`)
+	c.Assert(err, qt.ErrorIs, os.ErrClosed)
+}

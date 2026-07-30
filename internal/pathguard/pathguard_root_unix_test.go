@@ -147,3 +147,43 @@ func TestOpenCurrentDirectoryAnchorsBeforePathReplacement(t *testing.T) {
 	c.Assert(string(contents), qt.Equals, "SELECT 'safe';\n")
 	c.Assert(opened.Close(), qt.IsNil)
 }
+
+func TestOpenedDirectoryReplaceFileAnchorsBeforeAncestorReplacement(t *testing.T) {
+	c := qt.New(t)
+	parent := c.TempDir()
+	directory := filepath.Join(parent, "root")
+	c.Assert(os.Mkdir(directory, 0o700), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(directory, "target"), []byte("old"), 0o600), qt.IsNil)
+	opened, err := pathguard.OpenDirectory(directory)
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Assert(opened.Close(), qt.IsNil)
+	})
+
+	staged, stagedName, err := opened.CreateTemp("staged-*")
+	c.Assert(err, qt.IsNil)
+	_, err = staged.WriteString("new")
+	c.Assert(err, qt.IsNil)
+	c.Assert(staged.Sync(), qt.IsNil)
+	c.Assert(staged.Close(), qt.IsNil)
+
+	captured := filepath.Join(parent, "captured")
+	c.Assert(os.Rename(directory, captured), qt.IsNil)
+	outside := filepath.Join(parent, "outside")
+	c.Assert(os.Mkdir(outside, 0o700), qt.IsNil)
+	outsideContents := []byte("outside")
+	c.Assert(os.WriteFile(filepath.Join(outside, "target"), outsideContents, 0o600), qt.IsNil)
+	c.Assert(os.Symlink(outside, directory), qt.IsNil)
+
+	c.Assert(opened.ReplaceFile(stagedName, "target"), qt.IsNil)
+	c.Assert(opened.Sync(), qt.IsNil)
+
+	contents, err := os.ReadFile(filepath.Join(captured, "target"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "new")
+	contents, err = os.ReadFile(filepath.Join(outside, "target"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(contents, qt.DeepEquals, outsideContents)
+	_, err = os.Stat(filepath.Join(captured, stagedName))
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+}
