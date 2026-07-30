@@ -79,23 +79,17 @@ func resolveLocal(raw string, opts Options) (Source, error) {
 // CaptureLocal validates and opens raw through its allowed root, then captures
 // one stable immutable snapshot before returning.
 func CaptureLocal(raw string, opts LocalOptions) (LocalSource, error) {
-	var err error
-	if opts.AllowedRoot == "" {
-		_, err = pathguard.ResolveCLIPath(raw)
-	} else {
-		_, err = pathguard.ResolveWithinRoot(raw, opts.AllowedRoot)
-	}
-	if err != nil {
-		return LocalSource{}, fmt.Errorf("invalid migrations directory: %w", err)
-	}
-
 	var opened *pathguard.OpenedDirectory
+	var err error
 	if opts.AllowedRoot == "" {
 		opened, err = pathguard.OpenCLIDirectory(raw)
 	} else {
 		opened, err = pathguard.OpenDirectoryWithinRoot(raw, opts.AllowedRoot)
 	}
 	if err != nil {
+		if errors.Is(err, pathguard.ErrOutsideRoot) {
+			return LocalSource{}, fmt.Errorf("invalid migrations directory: %w", err)
+		}
 		return LocalSource{}, fmt.Errorf("open migrations directory: %w", err)
 	}
 	snapshot, captureErr := migrationsnapshot.CaptureStable(opened.FS())

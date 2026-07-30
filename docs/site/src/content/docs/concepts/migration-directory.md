@@ -58,11 +58,13 @@ on the same directories through its `migrate ...` commands; see the
 
 ## Stable local snapshots
 
-Commands that read a local migration directory for execution, status, linting,
-revision updates, rollback verification, or reports open it through a rooted
-directory handle and capture an immutable in-memory snapshot before connecting
-to a database. The snapshot contains migration SQL, `.ptah-lint.yaml`,
-`ptah.sum`, and `atlas.sum`; unrelated files are excluded.
+Native `migrations up`, `migrations down`, `migrations status`,
+`migrations set`, and `lint`, plus Atlas-compatible `migrate apply`,
+`migrate down`, `migrate status`, `migrate set`, and `migrate lint`, open a
+local migration directory through a rooted handle and capture an immutable
+in-memory snapshot before connecting to a database. Their reports and rollback
+verification reuse that snapshot. It contains migration SQL,
+`.ptah-lint.yaml`, `ptah.sum`, and `atlas.sum`; unrelated files are excluded.
 
 Relative CLI paths are rooted at the process working directory. Traversal and
 symlink escapes outside that root are rejected. Explicit absolute paths remain

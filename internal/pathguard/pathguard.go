@@ -12,15 +12,23 @@ import (
 	"strings"
 )
 
+// ErrOutsideRoot reports that a path escapes its configured filesystem root.
+var ErrOutsideRoot = errors.New("outside allowed root")
+
 // OpenedDirectory is a directory handle anchored to the filesystem object
-// opened after path validation. Renaming or replacing the pathname does not
+// selected by one rooted open. Renaming or replacing the pathname does not
 // retarget its filesystem view.
 type OpenedDirectory struct {
 	root *os.Root
 	path string
 }
 
-// Path returns the absolute path resolved during validation.
+type rootedPath struct {
+	relative string
+	display  string
+}
+
+// Path returns the absolute display path for the opened directory.
 func (d *OpenedDirectory) Path() string {
 	return d.path
 }
@@ -53,7 +61,7 @@ func ResolveWithinRoot(path, allowedRoot string) (string, error) {
 		return "", fmt.Errorf("resolve allowed root: %w", err)
 	}
 	if !isSubpath(root, resolved) {
-		return "", fmt.Errorf("%q is outside allowed root %q", resolved, root)
+		return "", outsideRootError(resolved, root)
 	}
 	return resolved, nil
 }
@@ -85,44 +93,38 @@ func OpenCLIDirectory(path string) (*OpenedDirectory, error) {
 	return OpenDirectoryWithinRoot(path, cwd)
 }
 
-// OpenDirectoryWithinRoot validates and opens path through an already opened
-// allowed-root handle. A pathname swap after validation therefore cannot
-// redirect the opened directory outside allowedRoot.
+// OpenDirectoryWithinRoot binds allowedRoot first, then opens path only through
+// that handle. Pathname replacement cannot redirect either rooted open.
 func OpenDirectoryWithinRoot(path, allowedRoot string) (*OpenedDirectory, error) {
 	if strings.TrimSpace(allowedRoot) == "" {
 		return nil, fmt.Errorf("allowed root is required")
 	}
-	resolvedRoot, err := resolvePath(allowedRoot)
+	rootPath, err := filepath.Abs(allowedRoot)
 	if err != nil {
-		return nil, fmt.Errorf("resolve allowed root: %w", err)
+		return nil, fmt.Errorf("resolve absolute allowed root: %w", err)
 	}
-	root, err := os.OpenRoot(resolvedRoot)
+	rootPath = filepath.Clean(rootPath)
+	root, err := os.OpenRoot(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("open allowed root: %w", err)
 	}
 
-	candidate := path
-	if !filepath.IsAbs(candidate) {
-		candidate = filepath.Join(resolvedRoot, candidate)
-	}
-	resolved, resolveErr := resolvePath(candidate)
-	if resolveErr == nil && !isSubpath(resolvedRoot, resolved) {
-		resolveErr = fmt.Errorf("%q is outside allowed root %q", resolved, resolvedRoot)
-	}
-	if resolveErr != nil {
+	target, pathErr := rootedRelativePath(path, rootPath)
+	if pathErr != nil {
 		closeErr := root.Close()
 		if closeErr != nil {
-			return nil, errors.Join(resolveErr, fmt.Errorf("close allowed root: %w", closeErr))
+			return nil, errors.Join(pathErr, fmt.Errorf("close allowed root: %w", closeErr))
 		}
-		return nil, resolveErr
+		return nil, pathErr
 	}
 
-	relative, err := filepath.Rel(resolvedRoot, resolved)
-	if err != nil {
-		_ = root.Close()
-		return nil, fmt.Errorf("resolve path relative to allowed root: %w", err)
+	opened, openErr := root.OpenRoot(target.relative)
+	if openErr != nil {
+		_, containmentErr := ResolveWithinRoot(target.display, rootPath)
+		if errors.Is(containmentErr, ErrOutsideRoot) {
+			openErr = containmentErr
+		}
 	}
-	opened, openErr := root.OpenRoot(relative)
 	closeErr := root.Close()
 	if openErr != nil {
 		if closeErr != nil {
@@ -137,7 +139,7 @@ func OpenDirectoryWithinRoot(path, allowedRoot string) (*OpenedDirectory, error)
 			openedCloseErr,
 		)
 	}
-	return &OpenedDirectory{root: opened, path: resolved}, nil
+	return &OpenedDirectory{root: opened, path: target.display}, nil
 }
 
 func openUnboundedDirectory(path string) (*OpenedDirectory, error) {
@@ -162,6 +164,58 @@ func openUnboundedDirectory(path string) (*OpenedDirectory, error) {
 		return nil, resolveErr
 	}
 	return &OpenedDirectory{root: root, path: resolved}, nil
+}
+
+func rootedRelativePath(path, root string) (rootedPath, error) {
+	if strings.TrimSpace(path) == "" {
+		return rootedPath{}, fmt.Errorf("path is required")
+	}
+	if !filepath.IsAbs(path) {
+		relative := filepath.Clean(path)
+		absolute := filepath.Clean(filepath.Join(root, relative))
+		if !isSubpath(root, absolute) {
+			return rootedPath{}, outsideRootError(absolute, root)
+		}
+		return rootedPath{relative: relative, display: resolvedDisplayPath(absolute)}, nil
+	}
+
+	absolute := filepath.Clean(path)
+	if isSubpath(root, absolute) {
+		relative, err := filepath.Rel(root, absolute)
+		if err != nil {
+			return rootedPath{}, fmt.Errorf("resolve path relative to allowed root: %w", err)
+		}
+		return rootedPath{relative: relative, display: resolvedDisplayPath(absolute)}, nil
+	}
+
+	resolvedRoot, err := resolvePath(root)
+	if err != nil {
+		return rootedPath{}, fmt.Errorf("resolve allowed root display path: %w", err)
+	}
+	resolved, err := resolvePath(absolute)
+	if err != nil {
+		return rootedPath{}, err
+	}
+	if !isSubpath(resolvedRoot, resolved) {
+		return rootedPath{}, outsideRootError(resolved, resolvedRoot)
+	}
+	relative, err := filepath.Rel(resolvedRoot, resolved)
+	if err != nil {
+		return rootedPath{}, fmt.Errorf("resolve path relative to allowed root: %w", err)
+	}
+	return rootedPath{relative: relative, display: resolved}, nil
+}
+
+func resolvedDisplayPath(path string) string {
+	resolved, err := resolvePath(path)
+	if err != nil {
+		return path
+	}
+	return resolved
+}
+
+func outsideRootError(path, root string) error {
+	return fmt.Errorf("%q is %w %q", path, ErrOutsideRoot, root)
 }
 
 func resolvePath(path string) (string, error) {
