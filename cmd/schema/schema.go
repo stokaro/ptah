@@ -21,6 +21,7 @@ import (
 	"github.com/stokaro/ptah/internal/graphqlrender"
 	"github.com/stokaro/ptah/internal/openapirender"
 	"github.com/stokaro/ptah/internal/pathguard"
+	"github.com/stokaro/ptah/internal/protobufrender"
 	"github.com/stokaro/ptah/internal/schemaexport"
 )
 
@@ -40,6 +41,13 @@ const (
 	exportFormatLegacyHCL    = "atlas-hcl"
 	exportFormatOpenAPI      = "openapi-v3"
 	exportFormatGraphQL      = "graphql"
+	exportFormatProtobuf     = "protobuf"
+
+	protoPackageFlag              = "proto-package"
+	protoGoPackageFlag            = "go-package"
+	protoTypeRemovalFlag          = "proto-type-removal"
+	protoOnIncompatibleChangeFlag = "proto-on-incompatible-change"
+	protoOnNameReuseFlag          = "proto-on-name-reuse"
 )
 
 // NewSchemaCommand returns the native schema command tree.
@@ -144,51 +152,76 @@ func newSchemaExportCommand() *cobra.Command {
 	var cleanupAnnotations bool
 	var cleanupDryRun bool
 	var cleanupDiff bool
+	var protoPackage string
+	var protoGoPackage string
+	var protoTypeRemoval string
+	var protoOnIncompatibleChange string
+	var protoOnNameReuse string
 
 	cmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export one schema source format to another",
 		Long: `Export a Ptah schema to another format.
 
-Convert Go annotations to an HCL schema, an OpenAPI 3.0 component schema, or
-a GraphQL SDL:
+Convert Go annotations to an HCL schema, an OpenAPI 3.0 component schema, a
+GraphQL SDL, or a Protobuf definition:
 
   ptah schema export --to hcl         --root-dir ./models --out schema.hcl
   ptah schema export --to openapi-v3  --root-dir ./models --out openapi.yaml
   ptah schema export --to graphql     --root-dir ./models --out schema.graphql
+  ptah schema export --to protobuf    --root-dir ./models \
+    --out ./proto/acme/inventory/v1/schema.proto --proto-package acme.inventory.v1
 
 For openapi-v3 and graphql, --out is optional; the schema is written to stdout
 when omitted. Use --include-tables / --exclude-tables to select which tables are
-exported.`,
+exported.
+
+The protobuf target is stateful: field numbers are persistent wire identifiers,
+so --out is required and the previously generated file is read back as the
+source of every number it already pins. Commit that file; deleting it starts a
+new, incompatible numbering history.`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runExport(cmd, exportOptions{
-				from:               from,
-				to:                 to,
-				rootDir:            rootDir,
-				outPath:            outPath,
-				includeTables:      includeTables,
-				excludeTables:      excludeTables,
-				title:              title,
-				cleanupAnnotations: cleanupAnnotations,
-				cleanupDryRun:      cleanupDryRun,
-				cleanupDiff:        cleanupDiff,
+				from:                      from,
+				to:                        to,
+				rootDir:                   rootDir,
+				outPath:                   outPath,
+				includeTables:             includeTables,
+				excludeTables:             excludeTables,
+				title:                     title,
+				cleanupAnnotations:        cleanupAnnotations,
+				cleanupDryRun:             cleanupDryRun,
+				cleanupDiff:               cleanupDiff,
+				protoPackage:              protoPackage,
+				protoGoPackage:            protoGoPackage,
+				protoTypeRemoval:          protoTypeRemoval,
+				protoOnIncompatibleChange: protoOnIncompatibleChange,
+				protoOnNameReuse:          protoOnNameReuse,
 			})
 		},
 	}
 
 	flags := cmd.Flags()
 	flags.StringVar(&from, exportFromFlag, exportFormatGo, "Source schema format: go")
-	flags.StringVar(&to, exportToFlag, exportFormatHCL, "Target schema format: hcl, openapi-v3, or graphql")
+	flags.StringVar(&to, exportToFlag, exportFormatHCL, "Target schema format: hcl, openapi-v3, graphql, or protobuf")
 	flags.StringVar(&rootDir, exportRootDirFlag, ".", "Root directory to scan for Go annotations")
-	flags.StringVar(&outPath, exportOutFlag, "", "Output file (optional for openapi-v3/graphql; writes to stdout when omitted)")
-	flags.StringSliceVar(&includeTables, exportIncludeTablesFlag, nil, "Only export these tables (comma-separated); applies to openapi-v3/graphql")
-	flags.StringSliceVar(&excludeTables, exportExcludeTablesFlag, nil, "Exclude these tables (comma-separated); applies to openapi-v3/graphql")
+	flags.StringVar(&outPath, exportOutFlag, "", "Output file (optional for openapi-v3/graphql; required for protobuf)")
+	flags.StringSliceVar(&includeTables, exportIncludeTablesFlag, nil, "Only export these tables (comma-separated); applies to openapi-v3/graphql/protobuf")
+	flags.StringSliceVar(&excludeTables, exportExcludeTablesFlag, nil, "Exclude these tables (comma-separated); applies to openapi-v3/graphql/protobuf")
 	flags.StringVar(&title, exportTitleFlag, "", "OpenAPI info.title (openapi-v3 only)")
 	flags.BoolVar(&cleanupAnnotations, cleanupGoAnnotationsFlag, false, "Remove Ptah schema annotations after a lossless HCL export")
 	flags.BoolVar(&cleanupDryRun, cleanupDryRunFlag, false, "Show cleanup summary without modifying Go files")
 	flags.BoolVar(&cleanupDiff, cleanupDiffFlag, false, "Print cleanup diff without modifying Go files")
+	flags.StringVar(&protoPackage, protoPackageFlag, "", "Protobuf package for the generated file (required for protobuf)")
+	flags.StringVar(&protoGoPackage, protoGoPackageFlag, "", "Emit option go_package with this value (protobuf only)")
+	flags.StringVar(&protoTypeRemoval, protoTypeRemovalFlag, string(protobufrender.RemovalError),
+		"Behavior when a whole message or enum disappears: error, tombstone, or drop (protobuf only)")
+	flags.StringVar(&protoOnIncompatibleChange, protoOnIncompatibleChangeFlag, string(protobufrender.ChangeError),
+		"Behavior when a retained field's protobuf type or cardinality changes: error or renumber (protobuf only)")
+	flags.StringVar(&protoOnNameReuse, protoOnNameReuseFlag, string(protobufrender.NameReuseError),
+		"Behavior when a reserved field or enum value name comes back: error or release (protobuf only)")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -204,6 +237,12 @@ type exportOptions struct {
 	cleanupAnnotations bool
 	cleanupDryRun      bool
 	cleanupDiff        bool
+
+	protoPackage              string
+	protoGoPackage            string
+	protoTypeRemoval          string
+	protoOnIncompatibleChange string
+	protoOnNameReuse          string
 }
 
 func runExport(cmd *cobra.Command, opts exportOptions) error {
@@ -220,6 +259,10 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 		fmt.Fprintf(cmd.ErrOrStderr(),
 			"warning: --%s/--%s/--%s are ignored for --%s %s\n",
 			exportIncludeTablesFlag, exportExcludeTablesFlag, exportTitleFlag, exportToFlag, exportFormatHCL)
+	}
+	if opts.to == exportFormatProtobuf && strings.TrimSpace(opts.title) != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"warning: --%s is ignored for --%s %s\n", exportTitleFlag, exportToFlag, exportFormatProtobuf)
 	}
 	rootDir, err := pathguard.ResolveCLIPath(opts.rootDir)
 	if err != nil {
@@ -259,6 +302,10 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 		if err := emitAPISchema(cmd, opts, db, rendered.Data, rendered.Diagnostics, "GraphQL schema"); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	case exportFormatProtobuf:
+		if err := runProtobufExport(cmd, opts, db); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 	default:
@@ -360,13 +407,20 @@ func validateExportOptions(opts exportOptions) error {
 		return fmt.Errorf("unsupported --from %q: expected %s", opts.from, exportFormatGo)
 	}
 	switch opts.to {
-	case exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL:
+	case exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf:
 	default:
-		return fmt.Errorf("unsupported --to %q: expected %s, %s, or %s",
-			opts.to, exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL)
+		return fmt.Errorf("unsupported --to %q: expected %s, %s, %s, or %s",
+			opts.to, exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf)
 	}
 	if opts.to == exportFormatHCL && strings.TrimSpace(opts.outPath) == "" {
 		return fmt.Errorf("--out is required for --%s %s", exportToFlag, exportFormatHCL)
+	}
+	if opts.to == exportFormatProtobuf {
+		if err := validateProtobufExportOptions(opts); err != nil {
+			return err
+		}
+	} else if err := rejectProtobufOnlyFlags(opts); err != nil {
+		return err
 	}
 	if (opts.cleanupDryRun || opts.cleanupDiff) && !opts.cleanupAnnotations {
 		return fmt.Errorf("--cleanup-dry-run and --cleanup-diff require --cleanup-go-annotations")

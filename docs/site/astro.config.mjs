@@ -92,6 +92,7 @@ export default defineConfig({
             { slug: 'schema/composite' },
             { slug: 'schema/visualize' },
             { slug: 'schema/export' },
+            { slug: 'schema/protobuf' },
           ],
         },
         {
