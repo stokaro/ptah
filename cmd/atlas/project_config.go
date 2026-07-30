@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasargs"
@@ -64,10 +65,28 @@ func loadRequiredAtlasProjectConfig(flags atlasProjectFlagValues) (projectconfig
 	if err != nil {
 		return projectconfig.Config{}, err
 	}
-	if _, err := os.Stat(path); err != nil {
+	raw, err := os.ReadFile(path)
+	if err != nil {
 		return projectconfig.Config{}, fmt.Errorf("failed to read atlas config %s: %w", path, err)
 	}
-	return loadAtlasProjectConfig(flags)
+	return projectconfig.ParseAtlasWithOptions(raw, path, projectconfig.AtlasLoadOptions{
+		EnvName: flags.envName,
+		Vars:    flags.vars,
+	})
+}
+
+func loadRequiredMergedProjectConfig(
+	flags atlasProjectFlagValues,
+) (atlasConfig, mergedConfig projectconfig.Config, err error) {
+	atlas, err := loadRequiredAtlasProjectConfig(flags)
+	if err != nil {
+		return projectconfig.Config{}, projectconfig.Config{}, err
+	}
+	ptah, err := projectconfig.LoadPtahFile(projectconfig.PtahFileName, flags.envName)
+	if err != nil {
+		return projectconfig.Config{}, projectconfig.Config{}, err
+	}
+	return atlas, projectconfig.Merge(ptah, atlas), nil
 }
 
 func atlasConfigPathValue(value string) (string, error) {
@@ -202,6 +221,9 @@ func loadAtlasProjectConfigForCommand(
 }
 
 func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, bool, error) {
+	if err := refreshAtlasProjectFlagEnvironment(cmd); err != nil {
+		return atlasProjectFlagValues{}, false, err
+	}
 	flags := atlasProjectFlagValues{configPath: "file://" + projectconfig.AtlasFileName}
 	changed := false
 	if flag := cmd.Flags().Lookup(atlasConfigFlagName); flag != nil {
@@ -221,6 +243,176 @@ func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, b
 		changed = changed || flag.Changed
 	}
 	return flags, changed, nil
+}
+
+func refreshAtlasProjectFlagEnvironment(cmd *cobra.Command) error {
+	for _, name := range []string{atlasConfigFlagName, dbcli.EnvFlagName, atlasVarFlagName} {
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil || flag.Changed {
+			continue
+		}
+		value, ok := os.LookupEnv(cmdflags.EnvName("PTAH", name))
+		if !ok || value == "" {
+			continue
+		}
+		if err := cmd.Flags().Set(name, value); err != nil {
+			return fmt.Errorf("apply %s: %w", cmdflags.EnvName("PTAH", name), err)
+		}
+	}
+	return nil
+}
+
+func installAtlasProjectFlagResetTree(group *cobra.Command) {
+	wrapAtlasProjectFlagReset(group, group)
+	for _, child := range group.Commands() {
+		installAtlasProjectFlagResetSubtree(child, group)
+	}
+}
+
+func installAtlasProjectFlagResetSubtree(cmd, group *cobra.Command) {
+	wrapAtlasProjectFlagReset(cmd, group)
+	for _, child := range cmd.Commands() {
+		installAtlasProjectFlagResetSubtree(child, group)
+	}
+}
+
+func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
+	validateArgs := cmd.Args
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		// Cobra retains a child command's first context when a root command is
+		// reused. Refresh it before validation so each ExecuteContext call
+		// reaches direct commands as well as adapter-backed commands.
+		cmd.SetContext(cmd.Root().Context())
+		if validateArgs == nil {
+			return nil
+		}
+		err := validateArgs(cmd, args)
+		if err != nil {
+			resetAtlasProjectFlags(group)
+		}
+		return err
+	}
+	if persistentPreRunE := cmd.PersistentPreRunE; persistentPreRunE != nil {
+		cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+			err := persistentPreRunE(cmd, args)
+			if err != nil {
+				resetAtlasProjectFlags(group)
+			}
+			return err
+		}
+	}
+	preRunE := cmd.PreRunE
+	preRun := cmd.PreRun
+	cmd.PreRun = nil
+	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if preRunE != nil {
+			if err := preRunE(cmd, args); err != nil {
+				resetAtlasProjectFlags(group)
+				return err
+			}
+		} else if preRun != nil {
+			preRun(cmd, args)
+		}
+		if err := cmd.ValidateRequiredFlags(); err != nil {
+			resetAtlasProjectFlags(group)
+			return err
+		}
+		if err := cmd.ValidateFlagGroups(); err != nil {
+			resetAtlasProjectFlags(group)
+			return err
+		}
+		return nil
+	}
+	if runE := cmd.RunE; runE != nil {
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			defer resetAtlasProjectFlags(group)
+			return runE(cmd, args)
+		}
+	}
+	if run := cmd.Run; run != nil {
+		cmd.Run = func(cmd *cobra.Command, args []string) {
+			defer resetAtlasProjectFlags(group)
+			run(cmd, args)
+		}
+	}
+	help := cmd.HelpFunc()
+	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		defer resetAtlasProjectFlags(group)
+		help(cmd, args)
+	})
+	flagError := cmd.FlagErrorFunc()
+	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		defer resetAtlasProjectFlags(group)
+		return flagError(cmd, err)
+	})
+}
+
+func installAtlasProjectFlagResetRoot(root *cobra.Command, groups ...*cobra.Command) {
+	resetGroups := func() {
+		for _, group := range groups {
+			resetAtlasProjectFlags(group)
+		}
+	}
+	rootArgs := root.Args
+	root.Args = func(cmd *cobra.Command, args []string) error {
+		err := rootArgs(cmd, args)
+		if err != nil {
+			resetGroups()
+		}
+		return err
+	}
+	rootHelp := root.HelpFunc()
+	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		defer resetGroups()
+		rootHelp(cmd, args)
+	})
+	rootFlagError := root.FlagErrorFunc()
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		defer resetGroups()
+		return rootFlagError(cmd, err)
+	})
+	if runE := root.RunE; runE != nil {
+		root.RunE = func(cmd *cobra.Command, args []string) error {
+			defer resetGroups()
+			return runE(cmd, args)
+		}
+	}
+	if run := root.Run; run != nil {
+		root.Run = func(cmd *cobra.Command, args []string) {
+			defer resetGroups()
+			run(cmd, args)
+		}
+	}
+	// Generated commands such as __complete do not pass through the wrapped
+	// static tree, so successful child execution needs the same cleanup.
+	persistentPostRunE := root.PersistentPostRunE
+	persistentPostRun := root.PersistentPostRun
+	root.PersistentPostRun = nil
+	root.PersistentPostRunE = func(cmd *cobra.Command, args []string) error {
+		defer resetGroups()
+		if persistentPostRunE != nil {
+			return persistentPostRunE(cmd, args)
+		}
+		if persistentPostRun != nil {
+			persistentPostRun(cmd, args)
+		}
+		return nil
+	}
+}
+
+func resetAtlasProjectFlags(group *cobra.Command) {
+	for _, name := range []string{atlasConfigFlagName, dbcli.EnvFlagName, atlasVarFlagName} {
+		flag := group.PersistentFlags().Lookup(name)
+		if flag == nil {
+			continue
+		}
+		if value, ok := flag.Value.(pflag.SliceValue); ok {
+			_ = value.Replace(nil)
+		} else {
+			_ = flag.Value.Set(flag.DefValue)
+		}
+		flag.Changed = false
+	}
 }
 
 func atlasProjectConfigExists(path string) bool {
@@ -362,7 +554,9 @@ func applyAtlasProjectConfigToArgs(
 		cfg.StringValue(projectconfig.StringDevURL),
 	)
 	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
-	if migrationDir.Present && atlasFlagRegistered(flags, "dir") && !atlasFlagPresent(flags, args, "dir") {
+	if migrationDir.Present &&
+		atlasFlagRegistered(flags, "dir") &&
+		!atlasFlagValueSet(flags, args, "dir") {
 		dir, err := atlasProjectConfigLocalDirFromFlags(projectFlags, migrationDir.Value)
 		if err != nil {
 			return nil, fmt.Errorf("atlas.hcl migration.dir: %w", err)
@@ -387,8 +581,8 @@ func applyAtlasProjectConfigToArgs(
 		"lock-timeout",
 		cfg.StringValue(projectconfig.StringMigrationLockTimeout),
 	)
-	cliLatest := atlasFlagPresent(flags, args, "latest")
-	cliGitBase := atlasFlagPresent(flags, args, "git-base")
+	cliLatest := atlasFlagValueSet(flags, args, "latest")
+	cliGitBase := atlasFlagValueSet(flags, args, "git-base")
 	if !cliGitBase {
 		args = appendAtlasProjectStringArg(flags, args, "latest", atlasProjectLatest(cfg))
 	}
@@ -421,7 +615,7 @@ func applyAtlasSchemaTestProjectConfig(
 		"dev-url",
 		cfg.StringValue(projectconfig.StringDevURL),
 	)
-	if atlasFlagPresent(flags, args, "url") {
+	if atlasFlagValueSet(flags, args, "url") {
 		return args, nil
 	}
 	sources := cfg.SchemaSourcesValue()
@@ -441,21 +635,6 @@ func applyAtlasSchemaTestProjectConfig(
 	return append(args, "--url", urls[0]), nil
 }
 
-func applyAtlasProjectConfigToNativeArgs(args []string, flags atlasProjectFlagValues) ([]string, error) {
-	path, err := atlasConfigPathValue(flags.configPath)
-	if err != nil {
-		return nil, err
-	}
-	args = append(args, "--"+dbcli.AtlasProjectConfigFlagName, path)
-	if strings.TrimSpace(flags.envName) != "" && !atlasFlagPresentByName(args, dbcli.EnvFlagName, "") {
-		args = append(args, "--"+dbcli.EnvFlagName, flags.envName)
-	}
-	for _, value := range flags.vars {
-		args = append(args, "--"+dbcli.AtlasProjectVarFlagName, value)
-	}
-	return args, nil
-}
-
 func atlasProjectLatest(cfg projectconfig.Config) projectconfig.Value[string] {
 	latest := cfg.LintLatestValue()
 	return projectconfig.Value[string]{
@@ -470,7 +649,7 @@ func appendAtlasProjectStringArg(
 	name string,
 	value projectconfig.Value[string],
 ) []string {
-	if !value.Present || !atlasFlagRegistered(flags, name) || atlasFlagPresent(flags, args, name) {
+	if !value.Present || !atlasFlagRegistered(flags, name) || atlasFlagValueSet(flags, args, name) {
 		return args
 	}
 	return append(args, "--"+name, value.Value)
@@ -487,6 +666,31 @@ func atlasFlagRegistered(flags []atlasargs.Flag, name string) bool {
 
 func atlasFlagPresent(flags []atlasargs.Flag, args []string, name string) bool {
 	return atlasFlagPresentByName(args, name, atlasFlagShorthand(flags, name))
+}
+
+func atlasFlagValueSet(flags []atlasargs.Flag, args []string, name string) bool {
+	return atlasFlagPresent(flags, args, name) || atlasFlagEnvironmentPresent(flags, name)
+}
+
+func atlasFlagEnvironmentPresent(flags []atlasargs.Flag, name string) bool {
+	for _, flag := range flags {
+		if flag.Name != name || flag.EnvDisabled {
+			continue
+		}
+		if nonEmptyEnvironmentVariable(cmdflags.EnvName("PTAH", flag.Name)) {
+			return true
+		}
+		if flag.NativeName != "" &&
+			nonEmptyEnvironmentVariable(cmdflags.EnvName("PTAH", flag.NativeName)) {
+			return true
+		}
+	}
+	return false
+}
+
+func nonEmptyEnvironmentVariable(name string) bool {
+	value, ok := os.LookupEnv(name)
+	return ok && value != ""
 }
 
 func atlasFlagPresentByName(args []string, name string, short string) bool {

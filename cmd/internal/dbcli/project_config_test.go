@@ -199,6 +199,57 @@ func TestLoadProjectConfigReadsNamedPtahEnvRuntimeDefaults(t *testing.T) {
 	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, []string{"MF103"})
 }
 
+func TestLoadProjectConfigUsesImmutableContextSnapshot(t *testing.T) {
+	c := qt.New(t)
+	snapshot, err := projectconfig.ParsePtah([]byte(`url: postgres://snapshot/db
+schemas: [public]
+`), "snapshot.yaml", "")
+	c.Assert(err, qt.IsNil)
+	latest := 3
+	snapshot.Lint.Latest = &latest
+	snapshot.Lint.RuleConfigs = map[string]projectconfig.LintRuleConfig{
+		"DS": {
+			Severity: "warning",
+			Exclude:  []string{"migrations/legacy/*"},
+		},
+	}
+	cmd := &cobra.Command{Use: "test"}
+	cmd.SetContext(dbcli.WithProjectConfig(cmd.Context(), snapshot))
+	snapshot.DatabaseURL = "postgres://mutated/db"
+	snapshot.Schemas[0] = "mutated"
+	latest = 9
+	snapshot.Lint.RuleConfigs["DS"] = projectconfig.LintRuleConfig{
+		Severity: "error",
+		Exclude:  []string{"mutated/*"},
+	}
+
+	first, err := dbcli.LoadProjectConfig(cmd, filepath.Join(t.TempDir(), "missing.yaml"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(first.DatabaseURL, qt.Equals, "postgres://snapshot/db")
+	c.Assert(first.Schemas, qt.DeepEquals, []string{"public"})
+	c.Assert(*first.Lint.Latest, qt.Equals, 3)
+	c.Assert(first.Lint.RuleConfigs["DS"], qt.DeepEquals, projectconfig.LintRuleConfig{
+		Severity: "warning",
+		Exclude:  []string{"migrations/legacy/*"},
+	})
+	first.DatabaseURL = "postgres://consumer-mutation/db"
+	first.Schemas[0] = "consumer-mutation"
+	*first.Lint.Latest = 12
+	first.Lint.RuleConfigs["DS"] = projectconfig.LintRuleConfig{Severity: "off"}
+
+	second, err := dbcli.LoadProjectConfig(cmd, filepath.Join(t.TempDir(), "missing.yaml"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(second.DatabaseURL, qt.Equals, "postgres://snapshot/db")
+	c.Assert(second.Schemas, qt.DeepEquals, []string{"public"})
+	c.Assert(*second.Lint.Latest, qt.Equals, 3)
+	c.Assert(second.Lint.RuleConfigs["DS"], qt.DeepEquals, projectconfig.LintRuleConfig{
+		Severity: "warning",
+		Exclude:  []string{"migrations/legacy/*"},
+	})
+}
+
 func TestExternalSchemaCommandsPrefersFlag(t *testing.T) {
 	c := qt.New(t)
 	cmd := &cobra.Command{Use: "test"}

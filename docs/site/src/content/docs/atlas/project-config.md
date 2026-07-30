@@ -94,7 +94,7 @@ env "local" {
 | Atlas setting | Ptah behavior |
 | --- | --- |
 | `env.url` | Default database URL for compatible schema and migration commands. |
-| `env.dev` | Default shadow/dev database URL where the command supports one. |
+| `env.dev` | Default disposable replay database URL. Rollback verification resets it and requires it to identify a different database from `env.url`. |
 | `env.src` | Default desired schema source for `schema apply`. |
 | `env.schema.src` | Default desired schema source for `schema apply`, `schema diff`, and `migrate diff`. |
 | `env.schema.mode.<object>` | Default object-kind exclusions for supported schema object kinds. |
@@ -129,6 +129,10 @@ that type. After project sources are merged, a command applies its built-in
 default only when a field is absent. An explicitly present empty or zero value
 instead reaches normal validation. Fields that do not accept empty values,
 including Atlas format templates, fail during parsing or command validation.
+When a forwarded native implementation also consumes project configuration,
+the adapter passes this merged snapshot instead of reopening either project
+file. This currently applies to `migrate down`; other adapters map evaluated
+Atlas project values to explicit native command arguments.
 
 `env.exclude` and disabled `env.schema.mode` values compose with the
 `schema apply`/`schema diff` positive selection flags in a fixed order:

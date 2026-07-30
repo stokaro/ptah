@@ -1,4 +1,4 @@
-# Ptah Project Config
+# Ptah project config
 
 `ptah.yaml` is Ptah's project-level configuration file. It selects command
 defaults and can select an external desired-schema program; the program's
@@ -12,10 +12,15 @@ the operator expected.
 
 Each command reads `ptah.yaml` once into the typed project configuration IR.
 Database settings, migration settings, and online-DDL execution policy
-therefore come from the same file generation. An explicit `--config` path must
-exist; the conventional `./ptah.yaml` remains optional.
+therefore come from the same file generation. When an Atlas-compatible adapter
+delegates to a native command that also consumes project configuration, the
+adapter passes the merged IR instead of letting that command reopen
+`ptah.yaml` or `atlas.hcl`. This snapshot path currently applies to
+`migrate down`; other adapters evaluate Atlas project configuration once and
+map supported values to explicit native command arguments. An explicit
+`--config` path must exist; the conventional `./ptah.yaml` remains optional.
 
-## Named Environments
+## Named environments
 
 Use `env` blocks to name reusable database targets:
 
@@ -74,12 +79,12 @@ env:
       exec_order: non-linear
 ```
 
-## Supported Keys
+## Supported keys
 
 | Key | Meaning |
 | --- | --- |
 | `url` | Default target database URL for migration commands |
-| `dev` | Disposable dev/shadow database URL for `migrations generate` |
+| `dev` | Disposable dev/shadow database URL for `migrations generate` and rollback verification in `migrations down`; replay resets this database, and rollback verification requires a different live database/catalog realm from `url` |
 | `schemas` | Default schemas to introspect when the command supports schema scoping |
 | `exclude` | Project-level exclude patterns for config consumers |
 | `external_schema.program` | External schema command as an explicit argument list; the first item is the executable |
@@ -123,7 +128,7 @@ high-precision UTC timestamp. Webhooks have a 30-second timeout and redirects
 are not followed. Dry-run migration commands do not execute hooks because
 backups and webhooks are side effects.
 
-## External Desired Schema
+## External desired schema
 
 Use `external_schema` when an ORM, framework, or generator owns the desired
 schema:
@@ -176,7 +181,7 @@ descendants left behind after a successful parent exit.
 See the canonical [ORM and external loaders](site/src/content/docs/schema/orm-and-external.md)
 page and [composite desired schema](site/src/content/docs/schema/composite.md) rules.
 
-## Diff Policy
+## Diff policy
 
 The `diff` block declaratively controls which changes `migrations generate`
 emits, so a project can shape generated migrations without editing Go code or

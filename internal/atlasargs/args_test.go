@@ -192,6 +192,24 @@ func TestMap_HappyPathEnvFlagWinsOverStringDefault(t *testing.T) {
 	c.Assert(got, qt.DeepEquals, []string{"--dir-format=ptah"})
 }
 
+func TestMap_HappyPathNativeEnvFlagWinsOverAtlasStringDefault(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_MIGRATIONS_DIR", "/env/migrations")
+	flag := atlasargs.NativeStringDefault(
+		"dir",
+		"",
+		"Migration directory",
+		"migrations-dir",
+		"file://migrations",
+	)
+	flag.MapValue = atlasargs.LocalDirValue
+
+	got, err := atlasargs.Map("migrate", "test", []atlasargs.Flag{flag}, nil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 0)
+}
+
 func TestMap_HappyPathSchemaCleanAutoApproveMapsToNativeFlag(t *testing.T) {
 	c := qt.New(t)
 

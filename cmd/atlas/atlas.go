@@ -2,6 +2,7 @@
 package atlas
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/licensetext"
 	"github.com/stokaro/ptah/cmd/migrate"
@@ -26,6 +28,7 @@ import (
 	"github.com/stokaro/ptah/cmd/migratevalidate"
 	"github.com/stokaro/ptah/cmd/migrationstest"
 	"github.com/stokaro/ptah/cmd/schema"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasargs"
 )
 
@@ -105,12 +108,17 @@ func newAtlasCommand(use, short, long string) *cobra.Command {
 		RunE:  runAtlasGroupHelp,
 	}
 	cmdutil.ConfigureCommandArgs(cmd, atlasRootArgs)
+	schemaCommand := newAtlasSchemaCommand()
+	migrateCommand := newAtlasMigrateCommand()
 	cmd.AddCommand(newAtlasVersionCommand())
 	cmd.AddCommand(newAtlasLicenseCommand())
-	cmd.AddCommand(newAtlasSchemaCommand())
-	cmd.AddCommand(newAtlasMigrateCommand())
+	cmd.AddCommand(schemaCommand)
+	cmd.AddCommand(migrateCommand)
 	installAtlasCompletionCommand(cmd)
 	installAtlasUsageTree(cmd)
+	installAtlasProjectFlagResetTree(schemaCommand)
+	installAtlasProjectFlagResetTree(migrateCommand)
+	installAtlasProjectFlagResetRoot(cmd, schemaCommand, migrateCommand)
 	return cmd
 }
 
@@ -720,10 +728,11 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 }
 
 func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
-	return func(cmd *cobra.Command, args []string) ([]string, error) {
+	return func(cmd *cobra.Command, args []string) ([]string, context.Context, error) {
+		forwardContext := cmd.Context()
 		parentProjectFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		parentProject := atlasProjectArgValues{
 			flags:   parentProjectFlags,
@@ -731,14 +740,14 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		}
 		project, remaining, err := extractAtlasProjectArgs(args)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		project = mergeAtlasProjectArgs(parentProject, project)
 		args = remaining
 		if project.changed {
-			cfg, err := loadRequiredAtlasProjectConfig(project.flags)
+			cfg, targetCfg, err := loadAtlasAdapterProjectConfig(verb, project.flags)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			applyProjectConfig := verb.projectConfig
 			if applyProjectConfig == nil {
@@ -746,28 +755,36 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 			}
 			args, err = applyProjectConfig(verb.flags, args, cfg, project.flags)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if verb.nativeProjectConfig {
-				args, err = applyAtlasProjectConfigToNativeArgs(args, project.flags)
-				if err != nil {
-					return nil, err
-				}
+				forwardContext = dbcli.WithProjectConfig(forwardContext, targetCfg)
 			}
 		}
 		if err := rejectNativeOnlyAtlasFlags(group, verb, args); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		args, nativeTail, err := mapAtlasPositionalArgs(group, verb, args)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		mapped, err := atlasargs.Map(group, verb.use, verb.flags, args)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return append(mapped, nativeTail...), nil
+		return append(mapped, nativeTail...), forwardContext, nil
 	}
+}
+
+func loadAtlasAdapterProjectConfig(
+	verb atlasVerb,
+	flags atlasProjectFlagValues,
+) (atlasConfig, targetConfig projectconfig.Config, err error) {
+	if !verb.nativeProjectConfig {
+		cfg, err := loadRequiredAtlasProjectConfig(flags)
+		return cfg, projectconfig.Config{}, err
+	}
+	return loadRequiredMergedProjectConfig(flags)
 }
 
 func rejectNativeOnlyAtlasFlags(group string, verb atlasVerb, args []string) error {
