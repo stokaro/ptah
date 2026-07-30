@@ -8,7 +8,6 @@ import (
 // Example demonstrating embedded field functionality
 
 // Embedded types
-//
 type Timestamps struct {
 	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time `db:"created_at"`
