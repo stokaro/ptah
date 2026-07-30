@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -192,19 +193,26 @@ func runAtlasMigrateApply(
 		return err
 	}
 
-	source, err := project.captureLocal(localDir)
+	source, err := project.openLocal(localDir)
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
-	dir := source.Display
+	dir := source.Display()
 	migrationFS, err := atlasmigrate.ResolveApplySource(
-		source.FileSystem,
+		source.FS(),
 		dir,
 		opts.dirFormat,
 		localDir.Query,
 	)
+	closeErr := source.Close()
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return errors.Join(
+			fmt.Errorf("atlas migrate apply --dir: %w", err),
+			closeErr,
+		)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("atlas migrate apply --dir: close migrations directory: %w", closeErr)
 	}
 
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.url)

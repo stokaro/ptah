@@ -114,6 +114,10 @@ func (p atlasProject) captureLocal(dir atlasargs.LocalDir) (migrationsource.Loca
 	return migrationsource.CaptureLocal(dir.Path, p.localOptions(dir))
 }
 
+func (p atlasProject) openLocal(dir atlasargs.LocalDir) (*migrationsource.LocalDirectory, error) {
+	return migrationsource.OpenLocal(dir.Path, p.localOptions(dir))
+}
+
 func (p atlasProject) statLocalDir(dir atlasargs.LocalDir) (fs.FileInfo, error) {
 	if dir.AllowedRoot == "" || p.root == nil {
 		return os.Stat(dir.Path)

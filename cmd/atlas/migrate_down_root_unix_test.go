@@ -92,7 +92,7 @@ func TestMigrateApplyRejectsSymlinkEscapeBeforeOpeningDatabase(t *testing.T) {
 
 			err := cmd.Execute()
 
-			c.Assert(err, qt.ErrorMatches, `(?s)atlas migrate apply --dir: capture migrations directory:.*`)
+			c.Assert(err, qt.ErrorMatches, `(?s)atlas migrate apply --dir: capture migration directory:.*`)
 			_, statErr := os.Stat(dbPath)
 			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 		})
