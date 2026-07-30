@@ -17,7 +17,8 @@ import (
 // Snapshot is an immutable in-memory filesystem. Its read methods return
 // independent values, and Clone returns an independent filesystem view.
 type Snapshot struct {
-	files map[string][]byte
+	files       map[string][]byte
+	directories map[string][]fs.DirEntry
 }
 
 // FromFiles returns an immutable snapshot containing files. Every path must be
@@ -26,11 +27,11 @@ func FromFiles(files map[string][]byte) (Snapshot, error) {
 	if err := validateFilePaths(files); err != nil {
 		return Snapshot{}, err
 	}
-	snapshot := Snapshot{files: make(map[string][]byte, len(files))}
+	cloned := make(map[string][]byte, len(files))
 	for name, contents := range files {
-		snapshot.files[name] = slices.Clone(contents)
+		cloned[name] = slices.Clone(contents)
 	}
-	return snapshot, nil
+	return snapshotFromValidatedFiles(cloned), nil
 }
 
 // TakeFiles returns an immutable snapshot by taking exclusive ownership of
@@ -40,7 +41,7 @@ func TakeFiles(files map[string][]byte) (Snapshot, error) {
 	if err := validateFilePaths(files); err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{files: files}, nil
+	return snapshotFromValidatedFiles(files), nil
 }
 
 func validateFilePaths(files map[string][]byte) error {
@@ -80,7 +81,7 @@ func CaptureMatching(
 	if snapshot, ok := fsys.(Snapshot); ok {
 		return snapshot.matching(include), nil
 	}
-	snapshot := Snapshot{files: map[string][]byte{}}
+	files := map[string][]byte{}
 	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -92,18 +93,24 @@ func CaptureMatching(
 		if err != nil {
 			return fmt.Errorf("read snapshot file %s: %w", name, err)
 		}
-		snapshot.files[name] = slices.Clone(contents)
+		files[name] = slices.Clone(contents)
 		return nil
 	})
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("capture filesystem snapshot: %w", err)
 	}
-	return snapshot, nil
+	if err := validateFilePaths(files); err != nil {
+		return Snapshot{}, fmt.Errorf("capture filesystem snapshot: %w", err)
+	}
+	return snapshotFromValidatedFiles(files), nil
 }
 
 // Clone returns an independent view of the same captured files.
 func (s Snapshot) Clone() Snapshot {
-	cloned := Snapshot{files: make(map[string][]byte, len(s.files))}
+	cloned := Snapshot{
+		files:       make(map[string][]byte, len(s.files)),
+		directories: s.directories,
+	}
 	maps.Copy(cloned.files, s.files)
 	return cloned
 }
@@ -125,19 +132,19 @@ func (s Snapshot) WithFiles(files map[string][]byte) (Snapshot, error) {
 	if err := validateFilePaths(combined); err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{files: combined}, nil
+	return snapshotFromValidatedFiles(combined), nil
 }
 
 func (s Snapshot) matching(include func(name string, entry fs.DirEntry) bool) Snapshot {
-	filtered := Snapshot{files: make(map[string][]byte, len(s.files))}
+	filtered := make(map[string][]byte, len(s.files))
 	for _, name := range slices.Sorted(maps.Keys(s.files)) {
 		contents := s.files[name]
 		entry := snapshotFileInfo{name: path.Base(name), size: int64(len(contents))}
 		if include(name, entry) {
-			filtered.files[name] = contents
+			filtered[name] = contents
 		}
 	}
-	return filtered
+	return snapshotFromValidatedFiles(filtered)
 }
 
 // Open implements fs.FS.
@@ -151,8 +158,8 @@ func (s Snapshot) Open(name string) (fs.File, error) {
 			info:   snapshotFileInfo{name: path.Base(name), size: int64(len(contents))},
 		}, nil
 	}
-	entries := s.directoryEntries(name)
-	if len(entries) == 0 && name != "." {
+	entries, ok := s.lookupDirectory(name)
+	if !ok {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 	}
 	return &snapshotDirectory{
@@ -178,11 +185,11 @@ func (s Snapshot) ReadDir(name string) ([]fs.DirEntry, error) {
 	if !fs.ValidPath(name) {
 		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrInvalid}
 	}
-	entries := s.directoryEntries(name)
-	if len(entries) == 0 && name != "." {
+	entries, ok := s.lookupDirectory(name)
+	if !ok {
 		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrNotExist}
 	}
-	return entries, nil
+	return slices.Clone(entries), nil
 }
 
 // Stat implements fs.StatFS.
@@ -193,38 +200,78 @@ func (s Snapshot) Stat(name string) (fs.FileInfo, error) {
 	if contents, ok := s.files[name]; ok {
 		return snapshotFileInfo{name: path.Base(name), size: int64(len(contents))}, nil
 	}
-	if entries := s.directoryEntries(name); len(entries) > 0 || name == "." {
+	if s.hasDirectory(name) {
 		return snapshotFileInfo{name: path.Base(name), directory: true}, nil
 	}
 	return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrNotExist}
 }
 
-func (s Snapshot) directoryEntries(name string) []fs.DirEntry {
-	prefix := ""
-	if name != "." {
-		prefix = name + "/"
+func snapshotFromValidatedFiles(files map[string][]byte) Snapshot {
+	return Snapshot{
+		files:       files,
+		directories: buildDirectoryIndex(files),
 	}
-	seen := make(map[string]snapshotFileInfo)
-	for filename, contents := range s.files {
-		relative, ok := strings.CutPrefix(filename, prefix)
-		if !ok || relative == "" {
-			continue
+}
+
+func buildDirectoryIndex(files map[string][]byte) map[string][]fs.DirEntry {
+	infos := map[string]map[string]snapshotFileInfo{
+		".": {},
+	}
+	for filename, contents := range files {
+		parent := path.Dir(filename)
+		addDirectoryInfo(infos, parent, snapshotFileInfo{
+			name: path.Base(filename),
+			size: int64(len(contents)),
+		})
+		for directory := parent; directory != "."; directory = path.Dir(directory) {
+			addDirectoryInfo(infos, path.Dir(directory), snapshotFileInfo{
+				name:      path.Base(directory),
+				directory: true,
+			})
 		}
-		entryName, remainder, _ := strings.Cut(relative, "/")
-		info := snapshotFileInfo{name: entryName, directory: remainder != ""}
-		if !info.directory {
-			info.size = int64(len(contents))
+	}
+
+	index := make(map[string][]fs.DirEntry, len(infos))
+	for directory, directoryInfos := range infos {
+		entries := make([]fs.DirEntry, 0, len(directoryInfos))
+		for _, info := range directoryInfos {
+			entries = append(entries, info)
 		}
-		seen[entryName] = info
+		slices.SortFunc(entries, func(a, b fs.DirEntry) int {
+			return strings.Compare(a.Name(), b.Name())
+		})
+		index[directory] = entries
 	}
-	entries := make([]fs.DirEntry, 0, len(seen))
-	for _, info := range seen {
-		entries = append(entries, info)
+	return index
+}
+
+func addDirectoryInfo(
+	directories map[string]map[string]snapshotFileInfo,
+	directory string,
+	info snapshotFileInfo,
+) {
+	entries, ok := directories[directory]
+	if !ok {
+		entries = make(map[string]snapshotFileInfo)
+		directories[directory] = entries
 	}
-	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
-		return strings.Compare(a.Name(), b.Name())
-	})
-	return entries
+	entries[info.name] = info
+}
+
+func (s Snapshot) lookupDirectory(name string) ([]fs.DirEntry, bool) {
+	entries, ok := s.directories[name]
+	if name == "." {
+		return entries, true
+	}
+	return entries, ok
+}
+
+func (s Snapshot) hasDirectory(name string) bool {
+	if name == "." {
+		return true
+	}
+	_, ok := s.directories[name]
+	return ok
 }
 
 type snapshotFile struct {
