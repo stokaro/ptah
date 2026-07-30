@@ -6037,14 +6037,15 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 package generator // import "github.com/stokaro/ptah/migration/generator"
 
 type RollbackFromShadowOptions struct {
+    // TargetConnection is the already-open database the verified rollback
+    // would eventually modify. Its live realm must be distinct from the shadow
+    // database.
+    TargetConnection *dbschema.DatabaseConnection
     // ShadowDatabaseURL is an ephemeral database the verification drops clean
     // and replays the migration directory into. Its contents are discarded.
     ShadowDatabaseURL string
     // FS is the migration filesystem whose rollback plan is verified.
     FS fs.FS
-    // Dialect, when set, must match the shadow database dialect so the verified
-    // SQL is the SQL the target would execute.
-    Dialect string
     // CurrentVersion is the target database's current migration version. The
     // shadow database is migrated up to it before the rollback is replayed.
     CurrentVersion int64

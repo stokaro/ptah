@@ -92,6 +92,11 @@ the cross-process publication lock and rejects concurrent use of one plan with
 `GenerateMigration` remains the convenience composition of planning and
 publication and propagates its context through both phases.
 
+`migration/generator.VerifyRollbackFromShadow` requires the caller's open
+target `dbschema.DatabaseConnection`. It checks the target and shadow's live
+dialects and selected database realms before resetting the shadow, rather than
+trusting a caller-supplied dialect or URL-derived database name.
+
 Atlas revision metadata is represented explicitly by `AtlasRevisionType` on
 `MigrationRevision`. `SetAtlasRevision` implements Atlas's metadata-only
 history transition: it preserves existing clean rows through the target, adds

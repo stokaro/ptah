@@ -3,6 +3,7 @@
 package cmdadapter
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"strings"
@@ -17,9 +18,9 @@ const envPrefix = "PTAH"
 
 const defaultSliceAnnotation = "ptah.cmdadapter.default-slice"
 
-// ArgMapper rewrites command arguments before they are forwarded to the target
-// command implementation.
-type ArgMapper func(*cobra.Command, []string) ([]string, error)
+// ArgMapper rewrites command arguments and returns the context for one
+// forwarded target execution.
+type ArgMapper func(*cobra.Command, []string) ([]string, context.Context, error)
 
 type helpBehavior int
 
@@ -89,18 +90,31 @@ func newForwardCommandWithArgsMapper(
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,
+		Args: func(cmd *cobra.Command, _ []string) error {
+			// ExecuteContext replaces only the root context. Refresh this child
+			// before inherited pre-runs derive command-scoped values from it.
+			cmd.SetContext(cmd.Root().Context())
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if help == adapterHelp && hasHelpArg(args) {
 				return cmd.Help()
 			}
+			forwardContext := cmd.Context()
 			if mapper != nil {
 				var err error
-				args, err = mapper(cmd, args)
+				args, forwardContext, err = mapper(cmd, args)
 				if err != nil {
 					return err
 				}
 			}
 			target := factory()
+			targetContexts := captureCommandContexts(target)
+			if forwardContext == nil {
+				forwardContext = context.Background()
+			}
+			setCommandContext(target, forwardContext)
+			defer restoreCommandContexts(target, targetContexts)
 			resetCommandFlags(target)
 			initializeForwardedTarget(target)
 			defer resetCommandFlags(target)
@@ -127,6 +141,33 @@ func newForwardCommandWithArgsMapper(
 			defer resetCommandIO(target)
 			return target.Execute()
 		},
+	}
+}
+
+func captureCommandContexts(root *cobra.Command) map[*cobra.Command]context.Context {
+	contexts := make(map[*cobra.Command]context.Context)
+	walkCommands(root, func(cmd *cobra.Command) {
+		contexts[cmd] = cmd.Context()
+	})
+	return contexts
+}
+
+func setCommandContext(root *cobra.Command, ctx context.Context) {
+	walkCommands(root, func(cmd *cobra.Command) {
+		cmd.SetContext(ctx)
+	})
+}
+
+func restoreCommandContexts(root *cobra.Command, contexts map[*cobra.Command]context.Context) {
+	walkCommands(root, func(cmd *cobra.Command) {
+		cmd.SetContext(contexts[cmd])
+	})
+}
+
+func walkCommands(root *cobra.Command, visit func(*cobra.Command)) {
+	visit(root)
+	for _, child := range root.Commands() {
+		walkCommands(child, visit)
 	}
 }
 

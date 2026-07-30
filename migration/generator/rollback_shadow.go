@@ -7,19 +7,22 @@ import (
 	"time"
 
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasurl"
+	"github.com/stokaro/ptah/internal/devlock"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
 // RollbackFromShadowOptions configures VerifyRollbackFromShadow.
 type RollbackFromShadowOptions struct {
+	// TargetConnection is the already-open database the verified rollback
+	// would eventually modify. Its live realm must be distinct from the shadow
+	// database.
+	TargetConnection *dbschema.DatabaseConnection
 	// ShadowDatabaseURL is an ephemeral database the verification drops clean
 	// and replays the migration directory into. Its contents are discarded.
 	ShadowDatabaseURL string
 	// FS is the migration filesystem whose rollback plan is verified.
 	FS fs.FS
-	// Dialect, when set, must match the shadow database dialect so the verified
-	// SQL is the SQL the target would execute.
-	Dialect string
 	// CurrentVersion is the target database's current migration version. The
 	// shadow database is migrated up to it before the rollback is replayed.
 	CurrentVersion int64
@@ -44,8 +47,21 @@ func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOption
 	if opts.ShadowDatabaseURL == "" {
 		return fmt.Errorf("rollback verification failed: a shadow database URL is required")
 	}
+	if opts.TargetConnection == nil {
+		return fmt.Errorf("rollback verification failed: a target database connection is required")
+	}
 	if opts.FS == nil {
 		return fmt.Errorf("rollback verification failed: a migration filesystem is required")
+	}
+	sameDatabase, err := atlasurl.SameDatabase(
+		opts.TargetConnection.Info().URL,
+		opts.ShadowDatabaseURL,
+	)
+	if err != nil {
+		return fmt.Errorf("rollback verification failed: compare target and shadow databases: %w", err)
+	}
+	if sameDatabase {
+		return fmt.Errorf("rollback verification failed: shadow database must be distinct from target database")
 	}
 
 	connectCtx, cancelConnect := baselineShadowConnectContext(ctx, opts.ConnectTimeout)
@@ -56,12 +72,19 @@ func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOption
 	}
 	defer dbschema.CloseAndWarn(shadowConn)
 
-	if opts.Dialect != "" && !sameDialect(opts.Dialect, shadowConn.Info().Dialect) {
+	if !sameDialect(opts.TargetConnection.Info().Dialect, shadowConn.Info().Dialect) {
 		return fmt.Errorf(
 			"rollback verification failed: shadow database dialect %q does not match target dialect %q",
 			shadowConn.Info().Dialect,
-			opts.Dialect,
+			opts.TargetConnection.Info().Dialect,
 		)
+	}
+	sameDatabase, err = devlock.SameRealm(ctx, opts.TargetConnection, shadowConn)
+	if err != nil {
+		return fmt.Errorf("rollback verification failed: compare live target and shadow database realms: %w", err)
+	}
+	if sameDatabase {
+		return fmt.Errorf("rollback verification failed: shadow database must be distinct from target database")
 	}
 
 	if err := shadowConn.SchemaWriter().DropAllTables(ctx); err != nil {

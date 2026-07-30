@@ -5,6 +5,7 @@ package devlock
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net"
@@ -30,6 +31,33 @@ var errLocked = errors.New("dev database realm is locked")
 type Lock struct {
 	advisory *dblock.Lock
 	file     *os.File
+}
+
+// SameRealm reports whether two live connections select the same destructive
+// database realm. Network endpoints are intentionally excluded from the
+// identity: aliases and replicated members cannot be proven independent before
+// cleanup, so equal live database/catalog names fail closed across hosts.
+func SameRealm(
+	ctx context.Context,
+	left, right *dbschema.DatabaseConnection,
+) (bool, error) {
+	if left == nil || right == nil {
+		return false, errors.New("compare dev database realms requires two database connections")
+	}
+	leftDialect := platform.NormalizeDialect(left.Info().Dialect)
+	rightDialect := platform.NormalizeDialect(right.Info().Dialect)
+	if leftDialect != rightDialect {
+		return false, nil
+	}
+	leftIdentity, err := realmIdentity(ctx, left, leftDialect)
+	if err != nil {
+		return false, err
+	}
+	rightIdentity, err := realmIdentity(ctx, right, rightDialect)
+	if err != nil {
+		return false, err
+	}
+	return leftIdentity == rightIdentity, nil
 }
 
 // Acquire locks the selected disposable database realm. A zero timeout waits
@@ -117,29 +145,34 @@ func realmIdentity(
 	dialect string,
 ) (string, error) {
 	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		var database string
-		if err := conn.QueryRowContext(ctx, "SELECT current_database()").Scan(&database); err != nil {
-			return "", fmt.Errorf("resolve %s dev database realm: %w", dialect, err)
-		}
-		return database, nil
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return selectedDatabase(ctx, conn, dialect, "SELECT current_database()")
 	case platform.SQLServer:
-		var database string
-		if err := conn.QueryRowContext(ctx, "SELECT DB_NAME()").Scan(&database); err != nil {
-			return "", fmt.Errorf("resolve sqlserver dev database realm: %w", err)
-		}
-		return database, nil
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
-		database := strings.TrimSpace(conn.Info().Schema)
-		if database == "" {
-			return "", fmt.Errorf("%s dev database realm has no selected database", dialect)
-		}
-		return database, nil
+		return selectedDatabase(ctx, conn, dialect, "SELECT DB_NAME()")
+	case platform.MySQL, platform.MariaDB:
+		return selectedDatabase(ctx, conn, dialect, "SELECT DATABASE()")
+	case platform.ClickHouse:
+		return selectedDatabase(ctx, conn, dialect, "SELECT currentDatabase()")
 	case platform.SQLite:
 		return sqliteIdentity(ctx, conn)
 	default:
 		return "", fmt.Errorf("unsupported dev database lock dialect %q", dialect)
 	}
+}
+
+func selectedDatabase(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	dialect, query string,
+) (string, error) {
+	var database sql.NullString
+	if err := conn.QueryRowContext(ctx, query).Scan(&database); err != nil {
+		return "", fmt.Errorf("resolve %s dev database realm: %w", dialect, err)
+	}
+	if !database.Valid || strings.TrimSpace(database.String) == "" {
+		return "", fmt.Errorf("%s dev database realm has no selected database", dialect)
+	}
+	return database.String, nil
 }
 
 func sqliteIdentity(

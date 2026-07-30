@@ -2,13 +2,26 @@ package cmdadapter_test
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 )
+
+type testContextKey struct{}
+
+type middlewareContextKey struct{}
+
+var errAdapterCanceled = errors.New("adapter canceled")
 
 func TestForwardCommandWithTargetHelpShowsTargetFlags(t *testing.T) {
 	c := qt.New(t)
@@ -90,6 +103,7 @@ func TestForwardCommandResetsTargetFlagsAndIO(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(adapterOut.String(), qt.Equals, "changed\n")
 	c.Assert(values, qt.DeepEquals, []string{"changed"})
+	c.Assert(target.Context(), qt.IsNil)
 
 	var directOut bytes.Buffer
 	target.SetOut(&directOut)
@@ -100,6 +114,186 @@ func TestForwardCommandResetsTargetFlagsAndIO(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(directOut.String(), qt.Equals, "default\n")
 	c.Assert(values, qt.DeepEquals, []string{"changed", "default"})
+}
+
+func TestForwardCommandCarriesAndRestoresContext(t *testing.T) {
+	c := qt.New(t)
+	targetContext := context.WithValue(t.Context(), testContextKey{}, "target")
+	var receivedValue string
+	var receivedCause error
+	var receivedDeadline time.Time
+	var receivedDeadlineSet bool
+	target := &cobra.Command{
+		Use: "target",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			receivedValue, _ = cmd.Context().Value(testContextKey{}).(string)
+			receivedCause = context.Cause(cmd.Context())
+			receivedDeadline, receivedDeadlineSet = cmd.Context().Deadline()
+			return nil
+		},
+	}
+	target.SetContext(targetContext)
+	cmd := cmdadapter.NewForwardCommand("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+		return target
+	})
+	deadline := time.Now().Add(time.Hour)
+	deadlineContext, cancelDeadline := context.WithDeadline(t.Context(), deadline)
+	defer cancelDeadline()
+	adapterContext, cancel := context.WithCancelCause(
+		context.WithValue(deadlineContext, testContextKey{}, "adapter"),
+	)
+	cancel(errAdapterCanceled)
+	cmd.SetContext(adapterContext)
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(receivedValue, qt.Equals, "adapter")
+	c.Assert(receivedCause, qt.ErrorIs, errAdapterCanceled)
+	c.Assert(receivedDeadlineSet, qt.IsTrue)
+	c.Assert(receivedDeadline, qt.Equals, deadline)
+	c.Assert(target.Context().Value(testContextKey{}), qt.Equals, "target")
+	c.Assert(context.Cause(target.Context()), qt.IsNil)
+}
+
+func TestForwardCommandReplacesContextAcrossReusedTargetTree(t *testing.T) {
+	c := qt.New(t)
+	var receivedValues []string
+	var receivedCauses []error
+	target := &cobra.Command{Use: "target"}
+	target.AddCommand(&cobra.Command{
+		Use: "child",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			receivedValues = append(
+				receivedValues,
+				cmd.Context().Value(testContextKey{}).(string),
+			)
+			receivedCauses = append(receivedCauses, context.Cause(cmd.Context()))
+			return nil
+		},
+	})
+	cmd := cmdadapter.NewForwardCommandWithArgs(
+		"atlas",
+		"Atlas adapter command",
+		"target child",
+		func() *cobra.Command {
+			return target
+		},
+		"child",
+	)
+	cmd.SetArgs([]string{})
+	firstContext, cancelFirst := context.WithCancelCause(
+		context.WithValue(t.Context(), testContextKey{}, "first"),
+	)
+	cancelFirst(errAdapterCanceled)
+
+	err := cmd.ExecuteContext(firstContext)
+
+	c.Assert(err, qt.IsNil)
+	secondContext := context.WithValue(t.Context(), testContextKey{}, "second")
+	err = cmd.ExecuteContext(secondContext)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(receivedValues, qt.DeepEquals, []string{"first", "second"})
+	c.Assert(receivedCauses[0], qt.ErrorIs, errAdapterCanceled)
+	c.Assert(receivedCauses[1], qt.IsNil)
+	c.Assert(target.Context(), qt.IsNil)
+	c.Assert(target.Commands()[0].Context(), qt.IsNil)
+}
+
+func TestForwardCommandCarriesFreshExecutingContextAcrossRootReuse(t *testing.T) {
+	c := qt.New(t)
+	var receivedValues []string
+	target := &cobra.Command{
+		Use: "target",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			receivedValues = append(
+				receivedValues,
+				fmt.Sprint(cmd.Context().Value(middlewareContextKey{})),
+			)
+			return nil
+		},
+	}
+	adapter := cmdadapter.NewForwardCommand(
+		"adapter",
+		"Adapter command",
+		"target",
+		func() *cobra.Command {
+			return target
+		},
+	)
+	root := &cobra.Command{
+		Use: "root",
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			cmd.SetContext(context.WithValue(
+				cmd.Context(),
+				middlewareContextKey{},
+				cmd.Context().Value(testContextKey{}),
+			))
+		},
+	}
+	root.AddCommand(adapter)
+	root.SetArgs([]string{"adapter"})
+
+	err := root.ExecuteContext(context.WithValue(t.Context(), testContextKey{}, "first"))
+
+	c.Assert(err, qt.IsNil)
+	root.SetArgs([]string{"adapter"})
+	err = root.ExecuteContext(context.WithValue(t.Context(), testContextKey{}, "second"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(receivedValues, qt.DeepEquals, []string{"first", "second"})
+	c.Assert(target.Context(), qt.IsNil)
+}
+
+func TestForwardCommandPassesProjectConfigSnapshotWithoutReloading(t *testing.T) {
+	c := qt.New(t)
+	snapshot := projectconfig.Config{
+		Migration: projectconfig.MigrationConfig{
+			PreDownHook: "echo snapshot-hook; exit 8",
+		},
+	}
+	var loaded projectconfig.Config
+	target := &cobra.Command{
+		Use: "target",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var err error
+			loaded, err = dbcli.LoadProjectConfig(
+				cmd,
+				filepath.Join(t.TempDir(), "missing.yaml"),
+			)
+			return err
+		},
+	}
+	mapper := func(
+		cmd *cobra.Command,
+		args []string,
+	) ([]string, context.Context, error) {
+		ctx := dbcli.WithProjectConfig(cmd.Root().Context(), snapshot)
+		return args, ctx, nil
+	}
+	cmd := cmdadapter.NewForwardCommandWithArgsMapper(
+		"atlas",
+		"Atlas adapter command",
+		"target",
+		func() *cobra.Command {
+			return target
+		},
+		mapper,
+	)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(loaded.Migration.PreDownHook, qt.Equals, "echo snapshot-hook; exit 8")
+	snapshot.Migration.PreDownHook = "echo second-snapshot-hook; exit 9"
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(loaded.Migration.PreDownHook, qt.Equals, "echo second-snapshot-hook; exit 9")
+	c.Assert(target.Context(), qt.IsNil)
 }
 
 func TestForwardCommandResetsStringArrayEmptyDefault(t *testing.T) {

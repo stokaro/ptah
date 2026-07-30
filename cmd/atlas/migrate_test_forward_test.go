@@ -62,6 +62,28 @@ func TestCompatCommand_MigrateTestForwardsToNative(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "1 cases, 1 passed, 0 failed")
 }
 
+func TestCompatCommand_MigrateTestNativeDirectoryEnvironmentOverridesAtlasDefault(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	migrationsDir, testsDir := t.TempDir(), t.TempDir()
+	writeMigrateTestFixture(c, migrationsDir, testsDir)
+	t.Setenv("PTAH_MIGRATIONS_DIR", migrationsDir)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "test", testsDir,
+		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, `PASS  case "users table accepts rows"`)
+}
+
 func TestCompatCommand_MigrateTestFailingCaseExits1(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()

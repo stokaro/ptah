@@ -138,6 +138,7 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	}
 	opts.dbURL = effectiveString(dbURLFlag, opts.dbURL, projectconfig.StringDatabaseURL)
 	opts.migrationsDir = effectiveString(migrationsFlag, opts.migrationsDir, projectconfig.StringMigrationDir)
+	opts.shadowDB = effectiveString(shadowDBFlag, opts.shadowDB, projectconfig.StringDevURL)
 	opts.dirFormat = effectiveString(dirFormatFlag, opts.dirFormat, projectconfig.StringMigrationFormat)
 	opts.atlasEnv = effectiveString(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
 	opts.execOrder = effectiveString(execOrderFlag, opts.execOrder, projectconfig.StringMigrationExecOrder)
@@ -353,15 +354,15 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 
 	emit.Println()
 
-	if err := verifyRollbackOnShadow(shadowVerification{
-		shadowDB:       opts.shadowDB,
-		migrationsFS:   migrationsFS,
-		dialect:        conn.Info().Dialect,
-		currentVersion: status.CurrentVersion,
-		targetVersion:  targetVersion,
-		dirFormat:      dirFormat,
-		atlasEnv:       atlasEnv,
-		connectTimeout: connectTimeout,
+	if err := verifyRollbackOnShadow(cmd.Context(), shadowVerification{
+		targetConnection: conn,
+		shadowDB:         resolvedOpts.shadowDB,
+		migrationsFS:     migrationsFS,
+		currentVersion:   status.CurrentVersion,
+		targetVersion:    targetVersion,
+		dirFormat:        dirFormat,
+		atlasEnv:         atlasEnv,
+		connectTimeout:   connectTimeout,
 	}, emit); err != nil {
 		return err
 	}
@@ -435,28 +436,32 @@ func observeNoopDown(runtime *cliobs.Runtime, dialect string, currentVersion, ta
 }
 
 type shadowVerification struct {
-	shadowDB       string
-	migrationsFS   fs.FS
-	dialect        string
-	currentVersion int64
-	targetVersion  int64
-	dirFormat      migrator.MigrationDirFormat
-	atlasEnv       string
-	connectTimeout time.Duration
+	targetConnection *dbschema.DatabaseConnection
+	shadowDB         string
+	migrationsFS     fs.FS
+	currentVersion   int64
+	targetVersion    int64
+	dirFormat        migrator.MigrationDirFormat
+	atlasEnv         string
+	connectTimeout   time.Duration
 }
 
 // verifyRollbackOnShadow replays the rollback plan on a disposable shadow
 // database first, so a down file that fails or a missing down migration aborts
 // before the target is touched (and before the operator is asked to confirm).
 // Without --shadow-db it is a no-op, keeping the default output unchanged.
-func verifyRollbackOnShadow(v shadowVerification, emit cliobs.Emitter) error {
+func verifyRollbackOnShadow(
+	ctx context.Context,
+	v shadowVerification,
+	emit cliobs.Emitter,
+) error {
 	if v.shadowDB == "" {
 		return nil
 	}
-	err := generator.VerifyRollbackFromShadow(context.Background(), generator.RollbackFromShadowOptions{
+	err := generator.VerifyRollbackFromShadow(ctx, generator.RollbackFromShadowOptions{
+		TargetConnection:  v.targetConnection,
 		ShadowDatabaseURL: v.shadowDB,
 		FS:                v.migrationsFS,
-		Dialect:           v.dialect,
 		CurrentVersion:    v.currentVersion,
 		TargetVersion:     v.targetVersion,
 		ProviderOptions: []migrator.FSProviderOption{
