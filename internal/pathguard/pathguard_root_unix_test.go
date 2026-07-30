@@ -67,7 +67,6 @@ func TestOpenCLIDirectoryKeepsLexicalDisplayPathAfterSymlinkReplacement(t *testi
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "SELECT 'original';\n")
 	c.Assert(opened.Path(), qt.Equals, link)
-	c.Assert(opened.VerifyPath(), qt.ErrorIs, pathguard.ErrPathReplaced)
 }
 
 func TestOpenDirectoryWithinRootRejectsEscapingSymlink(t *testing.T) {
@@ -147,24 +146,4 @@ func TestOpenCurrentDirectoryAnchorsBeforePathReplacement(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "SELECT 'safe';\n")
 	c.Assert(opened.Close(), qt.IsNil)
-}
-
-func TestOpenOrCreateDirectoryWithinRootRejectsEscapingSymlink(t *testing.T) {
-	c := qt.New(t)
-	root := t.TempDir()
-	outside := t.TempDir()
-	link := filepath.Join(root, "nested")
-	c.Assert(os.Symlink(outside, link), qt.IsNil)
-
-	opened, err := pathguard.OpenOrCreateDirectoryWithinRoot(
-		filepath.Join(link, "migrations"),
-		root,
-		0o755,
-	)
-
-	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
-	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
-	c.Assert(opened, qt.IsNil)
-	_, err = os.Stat(filepath.Join(outside, "migrations"))
-	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
 }

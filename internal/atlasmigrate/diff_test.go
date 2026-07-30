@@ -12,10 +12,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/dbschema"
+	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlassource"
 	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/internal/testutils"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -42,10 +42,10 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-		Dir:       migrationsDir,
-		Directory: prepareDiffDirectory(c, migrationsDir),
-		Desired:   localDesiredSet(c, "file://"+schemaPath),
-		Name:      "add_email",
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "add_email",
+		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -88,11 +88,11 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-		Dir:       migrationsDir,
-		Directory: prepareDiffDirectory(c, migrationsDir),
-		Desired:   localDesiredSet(c, "file://"+schemaPath),
-		Name:      "add_email",
-		Format:    `{{ sql . "" }}`,
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "add_email",
+		Format:      `{{ sql . "" }}`,
+		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -126,11 +126,11 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-		Dir:       migrationsDir,
-		Directory: prepareDiffDirectory(c, migrationsDir),
-		Desired:   localDesiredSet(c, "file://"+schemaPath),
-		Name:      "add_email",
-		DryRun:    true,
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "add_email",
+		LockTimeout: time.Second,
+		DryRun:      true,
 	})
 	_, statErr := os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
 
@@ -174,11 +174,11 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-		Dir:       migrationsDir,
-		Directory: prepareDiffDirectory(c, migrationsDir),
-		Desired:   localDesiredSet(c, "file://"+schemaPath),
-		Name:      "add_email",
-		DryRun:    true,
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "add_email",
+		LockTimeout: time.Second,
+		DryRun:      true,
 	})
 	afterSum, readErr := os.ReadFile(sumPath)
 
@@ -214,10 +214,10 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-		Dir:       migrationsDir,
-		Directory: prepareDiffDirectory(c, migrationsDir),
-		Desired:   localDesiredSet(c, "file://"+schemaPath),
-		Name:      "noop",
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "noop",
+		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -252,11 +252,11 @@ table "users" {
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-		Dir:       migrationsDir,
-		Directory: prepareDiffDirectory(c, migrationsDir),
-		Desired:   localDesiredSet(c, "file://"+schemaPath),
-		Name:      "out_of_scope",
-		Schemas:   []string{"billing"},
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "out_of_scope",
+		Schemas:     []string{"billing"},
+		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -266,7 +266,7 @@ table "users" {
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 }
 
-func TestPrepareDiffDirectory_RejectsChecksumDriftBeforeDatabaseConnection(t *testing.T) {
+func TestGenerateDiff_RejectsChecksumDrift(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -284,24 +284,39 @@ CREATE TABLE users (
   name TEXT
 );
 `), 0o600), qt.IsNil)
-	opened, err := pathguard.OpenDirectory(migrationsDir)
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL DEFAULT ''
+);
+`), 0o600), qt.IsNil)
+
+	conn := connectSQLite(c, filepath.Join(dir, "dev.db"))
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(t.Context(), "CREATE TABLE protected_users (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() {
-		c.Check(opened.Close(), qt.IsNil)
+
+	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "add_email",
+		LockTimeout: time.Second,
 	})
 
-	prepared, err := atlasmigrate.PrepareDiffDirectory(
-		t.Context(),
-		migrationsDir,
-		opened,
-		time.Second,
-	)
-
 	c.Assert(err, qt.ErrorMatches, `(?s)migration directory checksum verification failed:.*migration directory does not match atlas\.sum:.*changed: 1_init\.sql.*`)
-	c.Assert(prepared, qt.IsNil)
+	c.Assert(result.Synced, qt.IsFalse)
+	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
-	_, err = os.Stat(filepath.Join(dir, "dev.db"))
-	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+	var protectedCount int
+	err = conn.QueryRowContext(
+		t.Context(),
+		`SELECT COUNT(*) FROM pragma_table_list WHERE schema = ? AND name = ?`,
+		"main",
+		"protected_users",
+	).Scan(&protectedCount)
+	c.Assert(err, qt.IsNil)
+	c.Assert(protectedCount, qt.Equals, 1)
 }
 
 func TestGenerateDiff_LockTimeout(t *testing.T) {
@@ -309,7 +324,6 @@ func TestGenerateDiff_LockTimeout(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-	prepared := prepareDiffDirectory(c, migrationsDir)
 	releaseLock, err := testutils.AcquireExclusiveFileLock(diffLockPath(migrationsDir))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
@@ -323,7 +337,6 @@ func TestGenerateDiff_LockTimeout(t *testing.T) {
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
 		Dir:         migrationsDir,
-		Directory:   prepared,
 		Desired:     localDesiredSet(c, "file://"+schemaPath),
 		Name:        "locked_diff",
 		LockTimeout: time.Millisecond,
@@ -340,7 +353,6 @@ func TestGenerateDiff_LockCoversMigrationDirectoryDesiredResolution(t *testing.T
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
-	prepared := prepareDiffDirectory(c, migrationsDir)
 	releaseLock, err := testutils.AcquireExclusiveFileLock(diffLockPath(migrationsDir))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
@@ -362,7 +374,6 @@ func TestGenerateDiff_LockCoversMigrationDirectoryDesiredResolution(t *testing.T
 
 	result, err := atlasmigrate.GenerateDiff(t.Context(), conn, atlasmigrate.DiffOptions{
 		Dir:         migrationsDir,
-		Directory:   prepared,
 		Desired:     localDesiredSet(c, "file://"+desiredDir),
 		Name:        "locked_diff",
 		LockTimeout: time.Millisecond,
@@ -421,11 +432,11 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-		Dir:       migrationsDir,
-		Directory: prepareDiffDirectory(c, migrationsDir),
-		Desired:   localDesiredSet(c, "file://"+schemaPath),
-		Name:      "add_email",
-		Format:    `{{ sql . "  " "extra" }}`,
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "add_email",
+		Format:      `{{ sql . "  " "extra" }}`,
+		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.ErrorMatches, `execute --format template: .*unexpected number of arguments: 2.*`)
@@ -451,10 +462,10 @@ THIS IS NOT SQL;
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-		Dir:       migrationsDir,
-		Directory: prepareDiffDirectory(c, migrationsDir),
-		Desired:   localDesiredSet(c, "file://"+schemaPath),
-		Name:      "invalid_replay",
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "invalid_replay",
+		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.ErrorMatches, `(?s)replay migration 1 on dev database: .*`)
@@ -502,7 +513,7 @@ func TestGenerateDiff_PreCanceledContextPreservesDevAndSkipsDirectory(t *testing
 	c.Assert(count, qt.Equals, 1)
 }
 
-func TestPrepareDiffDirectory_InvalidSnapshotFailsBeforeDatabaseConnection(t *testing.T) {
+func TestGenerateDiff_InvalidMigrationSnapshotDoesNotResetDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -511,23 +522,31 @@ func TestPrepareDiffDirectory_InvalidSnapshotFailsBeforeDatabaseConnection(t *te
 		filepath.Join(dir, "missing.sql"),
 		filepath.Join(migrationsDir, "1_broken.sql"),
 	), qt.IsNil)
-	opened, err := pathguard.OpenDirectory(migrationsDir)
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(
+		schemaPath,
+		[]byte("CREATE TABLE desired_users (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+	conn := connectSQLite(c, filepath.Join(dir, "dev.db"))
+	defer dbschema.CloseAndWarn(conn)
+	_, err := conn.ExecContext(context.Background(), "CREATE TABLE protected_users (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() {
-		c.Check(opened.Close(), qt.IsNil)
-	})
 
-	prepared, err := atlasmigrate.PrepareDiffDirectory(
-		t.Context(),
-		migrationsDir,
-		opened,
-		time.Second,
-	)
+	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "must_not_reset",
+		LockTimeout: time.Second,
+	})
+	devSchema, readErr := dbschema.ReadSchemaWithSchemas(conn, nil)
 
 	c.Assert(err, qt.ErrorMatches, `capture migration directory: capture filesystem snapshot: .*`)
-	c.Assert(prepared, qt.IsNil)
-	_, err = os.Stat(filepath.Join(dir, "dev.db"))
-	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+	c.Assert(result.MigrationPaths, qt.HasLen, 0)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(slices.ContainsFunc(devSchema.Tables, func(table dbschematypes.DBTable) bool {
+		return table.Name == "protected_users"
+	}), qt.IsTrue)
 }
 
 func TestGenerateDiff_FailurePath(t *testing.T) {
@@ -651,10 +670,10 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-		Dir:       migrationsDir,
-		Directory: prepareDiffDirectory(c, migrationsDir),
-		Desired:   localDesiredSet(c, "file://"+schemaPath),
-		Name:      "add_email",
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "add_email",
+		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -727,26 +746,6 @@ func atlasSQLFiles(c *qt.C, dir string) []string {
 	})
 	slices.Sort(files)
 	return files
-}
-
-func prepareDiffDirectory(
-	c *qt.C,
-	dir string,
-) *atlasmigrate.PreparedDiffDirectory {
-	c.Helper()
-	opened, err := pathguard.OpenDirectory(dir)
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() {
-		c.Check(opened.Close(), qt.IsNil)
-	})
-	prepared, err := atlasmigrate.PrepareDiffDirectory(
-		c.Context(),
-		dir,
-		opened,
-		time.Second,
-	)
-	c.Assert(err, qt.IsNil)
-	return prepared
 }
 
 func fileExists(path string) bool {

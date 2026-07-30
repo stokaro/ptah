@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"strings"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -59,8 +58,7 @@ type LocalSource struct {
 // LocalDirectory is one rooted local directory handle. The caller must close
 // it after finishing any path-bound preparation.
 type LocalDirectory struct {
-	opened  *pathguard.OpenedDirectory
-	created bool
+	opened *pathguard.OpenedDirectory
 }
 
 // FS returns the escape-resistant filesystem rooted at the opened directory.
@@ -73,47 +71,9 @@ func (d *LocalDirectory) Display() string {
 	return d.opened.Path()
 }
 
-// VerifyPath checks that Display still identifies the opened directory.
-func (d *LocalDirectory) VerifyPath() error {
-	return d.opened.VerifyPath()
-}
-
-// Created reports whether OpenOrCreateLocal observed the directory as missing
-// before creating it.
-func (d *LocalDirectory) Created() bool {
-	return d.created
-}
-
 // Close releases the underlying directory handle.
 func (d *LocalDirectory) Close() error {
 	return d.opened.Close()
-}
-
-// DiscardIfCreatedEmpty closes the directory and removes it when this opener
-// created it and it remains the same empty filesystem object. Nonempty
-// directories are closed and preserved.
-func (d *LocalDirectory) DiscardIfCreatedEmpty() error {
-	if !d.created {
-		return d.Close()
-	}
-	entries, err := fs.ReadDir(d.FS(), ".")
-	if err != nil {
-		return errors.Join(err, d.Close())
-	}
-	if len(entries) != 0 {
-		return d.Close()
-	}
-	if err := d.VerifyPath(); err != nil {
-		return errors.Join(err, d.Close())
-	}
-	path := d.Display()
-	if err := d.Close(); err != nil {
-		return err
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove empty migrations directory: %w", err)
-	}
-	return nil
 }
 
 type localRootContextKey struct{}
@@ -216,39 +176,6 @@ func OpenLocal(raw string, opts LocalOptions) (*LocalDirectory, error) {
 		return nil, fmt.Errorf("open migrations directory: %w", err)
 	}
 	return &LocalDirectory{opened: opened}, nil
-}
-
-// OpenOrCreateLocal creates a missing local directory through its configured
-// rooted boundary and returns an owned handle.
-func OpenOrCreateLocal(
-	raw string,
-	opts LocalOptions,
-	perm fs.FileMode,
-) (*LocalDirectory, error) {
-	existing, err := OpenLocal(raw, opts)
-	if err == nil {
-		return existing, nil
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-
-	var opened *pathguard.OpenedDirectory
-	switch {
-	case opts.Root != nil:
-		opened, err = opts.Root.OpenOrCreateDirectory(raw, perm)
-	case opts.AllowedRoot == "":
-		opened, err = pathguard.OpenOrCreateCLIDirectory(raw, perm)
-	default:
-		opened, err = pathguard.OpenOrCreateDirectoryWithinRoot(raw, opts.AllowedRoot, perm)
-	}
-	if err != nil {
-		if errors.Is(err, pathguard.ErrOutsideRoot) {
-			return nil, fmt.Errorf("invalid migrations directory: %w", err)
-		}
-		return nil, fmt.Errorf("open migrations directory: %w", err)
-	}
-	return &LocalDirectory{opened: opened, created: true}, nil
 }
 
 func captureAndCloseLocal(opened *LocalDirectory) (LocalSource, error) {

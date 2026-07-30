@@ -15,9 +15,6 @@ import (
 var (
 	// ErrOutsideRoot reports that a path escapes its configured filesystem root.
 	ErrOutsideRoot = errors.New("outside allowed root")
-	// ErrPathReplaced reports that an opened directory's pathname no longer
-	// identifies the same filesystem object.
-	ErrPathReplaced = errors.New("opened directory path was replaced")
 )
 
 // OpenedDirectory is a directory handle anchored to the filesystem object
@@ -63,49 +60,9 @@ func (d *OpenedDirectory) OpenDirectory(path string) (*OpenedDirectory, error) {
 	return &OpenedDirectory{root: opened, path: target.display}, nil
 }
 
-// OpenOrCreateDirectory creates path and missing parents through this directory
-// handle, then opens the resulting directory through the same rooted boundary.
-func (d *OpenedDirectory) OpenOrCreateDirectory(
-	path string,
-	perm fs.FileMode,
-) (*OpenedDirectory, error) {
-	target, err := rootedRelativePath(path, d.path)
-	if err != nil {
-		return nil, err
-	}
-	if err := d.root.MkdirAll(target.relative, perm); err != nil {
-		_, containmentErr := ResolveWithinRoot(target.display, d.path)
-		if errors.Is(containmentErr, ErrOutsideRoot) {
-			return nil, containmentErr
-		}
-		return nil, err
-	}
-	opened, err := d.root.OpenRoot(target.relative)
-	if err != nil {
-		return nil, err
-	}
-	return &OpenedDirectory{root: opened, path: target.display}, nil
-}
-
 // Stat returns information about name through the rooted handle.
 func (d *OpenedDirectory) Stat(name string) (fs.FileInfo, error) {
 	return d.root.Stat(name)
-}
-
-// VerifyPath checks that Path still identifies the opened directory.
-func (d *OpenedDirectory) VerifyPath() error {
-	openedInfo, err := d.root.Stat(".")
-	if err != nil {
-		return fmt.Errorf("inspect opened directory: %w", err)
-	}
-	pathInfo, err := os.Stat(d.path)
-	if err != nil {
-		return fmt.Errorf("inspect opened directory path %q: %w", d.path, err)
-	}
-	if !os.SameFile(openedInfo, pathInfo) {
-		return fmt.Errorf("%q: %w", d.path, ErrPathReplaced)
-	}
-	return nil
 }
 
 // Close releases the underlying directory handle.
@@ -163,23 +120,6 @@ func OpenCLIDirectory(path string) (*OpenedDirectory, error) {
 	return openDirectoryAndCloseRoot(root, path)
 }
 
-// OpenOrCreateCLIDirectory applies CLI path semantics while creating a missing
-// directory. Relative paths are created through the anchored working-directory
-// handle. Explicit absolute paths preserve their unbounded CLI behavior.
-func OpenOrCreateCLIDirectory(path string, perm fs.FileMode) (*OpenedDirectory, error) {
-	if filepath.IsAbs(path) {
-		if err := os.MkdirAll(path, perm); err != nil {
-			return nil, err
-		}
-		return OpenDirectory(path)
-	}
-	root, err := OpenCurrentDirectory()
-	if err != nil {
-		return nil, err
-	}
-	return openOrCreateDirectoryAndCloseRoot(root, path, perm)
-}
-
 // OpenCurrentDirectory anchors the process working directory before resolving
 // its pathname. The caller owns the returned handle.
 func OpenCurrentDirectory() (*OpenedDirectory, error) {
@@ -211,36 +151,11 @@ func OpenDirectoryWithinRoot(path, allowedRoot string) (*OpenedDirectory, error)
 	return openDirectoryAndCloseRoot(root, path)
 }
 
-// OpenOrCreateDirectoryWithinRoot binds allowedRoot first, then creates and
-// opens path only through that handle.
-func OpenOrCreateDirectoryWithinRoot(
-	path, allowedRoot string,
-	perm fs.FileMode,
-) (*OpenedDirectory, error) {
-	if strings.TrimSpace(allowedRoot) == "" {
-		return nil, fmt.Errorf("allowed root is required")
-	}
-	root, err := OpenDirectory(allowedRoot)
-	if err != nil {
-		return nil, fmt.Errorf("open allowed root: %w", err)
-	}
-	return openOrCreateDirectoryAndCloseRoot(root, path, perm)
-}
-
 func openDirectoryAndCloseRoot(
 	root *OpenedDirectory,
 	path string,
 ) (*OpenedDirectory, error) {
 	opened, openErr := root.OpenDirectory(path)
-	return closeParentAfterOpen(root, opened, openErr)
-}
-
-func openOrCreateDirectoryAndCloseRoot(
-	root *OpenedDirectory,
-	path string,
-	perm fs.FileMode,
-) (*OpenedDirectory, error) {
-	opened, openErr := root.OpenOrCreateDirectory(path, perm)
 	return closeParentAfterOpen(root, opened, openErr)
 }
 

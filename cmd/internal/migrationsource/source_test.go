@@ -12,7 +12,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -135,66 +134,6 @@ func TestCaptureLocal_ExecutionUsesCapturedBytesAfterPathReplacement(t *testing.
 	c.Assert(result.Applied, qt.IsTrue)
 	c.Assert(sqliteTableCount(c, conn, "captured_input"), qt.Equals, 1)
 	c.Assert(sqliteTableCount(c, conn, "replacement_input"), qt.Equals, 0)
-}
-
-func TestOpenOrCreateLocal_CreatesDirectoryThroughBorrowedRoot(t *testing.T) {
-	c := qt.New(t)
-	rootPath := t.TempDir()
-	root, err := pathguard.OpenDirectory(rootPath)
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() {
-		c.Check(root.Close(), qt.IsNil)
-	})
-
-	opened, err := migrationsource.OpenOrCreateLocal(
-		filepath.Join(rootPath, "nested", "migrations"),
-		migrationsource.LocalOptions{Root: root},
-		0o755,
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(opened.Created(), qt.IsTrue)
-	c.Assert(opened.Display(), qt.Equals, filepath.Join(rootPath, "nested", "migrations"))
-	info, err := fs.Stat(opened.FS(), ".")
-	c.Assert(err, qt.IsNil)
-	c.Assert(info.IsDir(), qt.IsTrue)
-	c.Assert(opened.Close(), qt.IsNil)
-}
-
-func TestOpenOrCreateLocal_DiscardsCreatedEmptyDirectory(t *testing.T) {
-	c := qt.New(t)
-	root := t.TempDir()
-	dir := filepath.Join(root, "migrations")
-
-	opened, err := migrationsource.OpenOrCreateLocal(
-		dir,
-		migrationsource.LocalOptions{AllowedRoot: root},
-		0o755,
-	)
-	c.Assert(err, qt.IsNil)
-	c.Assert(opened.Created(), qt.IsTrue)
-
-	c.Assert(opened.DiscardIfCreatedEmpty(), qt.IsNil)
-	_, err = os.Stat(dir)
-	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
-}
-
-func TestOpenOrCreateLocal_PreservesExistingEmptyDirectory(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-
-	opened, err := migrationsource.OpenOrCreateLocal(
-		dir,
-		migrationsource.LocalOptions{},
-		0o755,
-	)
-	c.Assert(err, qt.IsNil)
-	c.Assert(opened.Created(), qt.IsFalse)
-
-	c.Assert(opened.DiscardIfCreatedEmpty(), qt.IsNil)
-	info, err := os.Stat(dir)
-	c.Assert(err, qt.IsNil)
-	c.Assert(info.IsDir(), qt.IsTrue)
 }
 
 func sqliteTableCount(c *qt.C, conn *dbschema.DatabaseConnection, table string) int {

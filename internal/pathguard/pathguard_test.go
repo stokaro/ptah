@@ -69,21 +69,3 @@ func TestOpenCLIDirectoryPreservesExplicitAbsolutePath(t *testing.T) {
 	c.Assert(opened.Path(), qt.Equals, absolute)
 	c.Assert(opened.Close(), qt.IsNil)
 }
-
-func TestOpenOrCreateCLIDirectoryCreatesRelativeParents(t *testing.T) {
-	c := qt.New(t)
-	root := t.TempDir()
-	t.Chdir(root)
-
-	opened, err := pathguard.OpenOrCreateCLIDirectory(
-		filepath.Join("nested", "migrations"),
-		0o755,
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(opened.Path(), qt.Equals, filepath.Join(root, "nested", "migrations"))
-	info, err := opened.Stat(".")
-	c.Assert(err, qt.IsNil)
-	c.Assert(info.IsDir(), qt.IsTrue)
-	c.Assert(opened.Close(), qt.IsNil)
-}

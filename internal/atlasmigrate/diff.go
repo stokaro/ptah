@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
@@ -35,7 +35,6 @@ const (
 
 type DiffOptions struct {
 	Dir                  string
-	Directory            *PreparedDiffDirectory
 	Desired              atlassource.Set
 	SourceConnectTimeout time.Duration
 	Name                 string
@@ -49,22 +48,6 @@ type DiffOptions struct {
 	// durably published and included in atlas.sum. The callback runs while the
 	// migration-directory lock is held.
 	PreparePublication func([]string) error
-}
-
-// DiffDirectorySource is a rooted live view of a writable migration directory.
-// VerifyPath must fail when the directory pathname no longer identifies the
-// rooted filesystem object.
-type DiffDirectorySource interface {
-	FS() fs.FS
-	VerifyPath() error
-}
-
-// PreparedDiffDirectory holds the immutable migration input and the rooted live
-// directory used to reject changes before publication.
-type PreparedDiffDirectory struct {
-	snapshot           fsnapshot.Snapshot
-	source             DiffDirectorySource
-	publicationStarted atomic.Bool
 }
 
 type DiffResult struct {
@@ -102,51 +85,6 @@ type preparedDiff struct {
 	format  string
 }
 
-// PrepareDiffDirectory recovers interrupted publication and captures one
-// immutable migration snapshot while holding the directory lock. Callers must
-// complete this preparation before opening the dev database and keep source
-// open until GenerateDiff returns.
-func PrepareDiffDirectory(
-	ctx context.Context,
-	dir string,
-	source DiffDirectorySource,
-	lockTimeout time.Duration,
-) (prepared *PreparedDiffDirectory, resultErr error) {
-	if strings.TrimSpace(dir) == "" {
-		return nil, errors.New("migrate diff requires migration directory")
-	}
-	if source == nil {
-		return nil, errors.New("migrate diff requires rooted migration directory")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	dirLock, err := acquireDirLock(ctx, dir, lockTimeout)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		resultErr = errors.Join(resultErr, dirLock.release())
-	}()
-	if err := source.VerifyPath(); err != nil {
-		return nil, fmt.Errorf("verify migration directory identity: %w", err)
-	}
-	if err := recoverPendingPublication(dir); err != nil {
-		return nil, fmt.Errorf("recover migration artifact publication: %w", err)
-	}
-	if err := source.VerifyPath(); err != nil {
-		return nil, fmt.Errorf("verify migration directory identity: %w", err)
-	}
-	snapshot, err := migrationsnapshot.CaptureStable(source.FS())
-	if err != nil {
-		return nil, fmt.Errorf("capture migration directory: %w", err)
-	}
-	if err := verifyDirSum(snapshot); err != nil {
-		return nil, err
-	}
-	return &PreparedDiffDirectory{snapshot: snapshot, source: source}, nil
-}
-
 func GenerateDiff(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -172,6 +110,9 @@ func generateDiff(
 	schemas := prepared.schemas
 	format := prepared.format
 
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(opts.Dir)), 0755); err != nil {
+		return DiffResult{}, fmt.Errorf("create migration directory parent: %w", err)
+	}
 	dirLock, err := acquireDirLock(ctx, opts.Dir, opts.LockTimeout)
 	if err != nil {
 		return DiffResult{}, err
@@ -179,16 +120,6 @@ func generateDiff(
 	defer func() {
 		err = errors.Join(err, dirLock.release())
 	}()
-	if err := opts.Directory.verifyIdentity(); err != nil {
-		return DiffResult{}, err
-	}
-	if err := recoverPendingPublication(opts.Dir); err != nil {
-		return DiffResult{}, fmt.Errorf("recover migration artifact publication: %w", err)
-	}
-	migrationSnapshot, err := opts.Directory.currentSnapshot()
-	if err != nil {
-		return DiffResult{}, err
-	}
 	devLock, err := acquireDevDatabaseLock(ctx, conn, opts.LockTimeout)
 	if err != nil {
 		return DiffResult{}, err
@@ -198,6 +129,19 @@ func generateDiff(
 	}()
 	desiredState, err := resolveDesiredState(ctx, conn, opts)
 	if err != nil {
+		return DiffResult{}, err
+	}
+	if err := os.MkdirAll(opts.Dir, 0755); err != nil {
+		return DiffResult{}, fmt.Errorf("create migration directory: %w", err)
+	}
+	if err := recoverPendingPublication(opts.Dir); err != nil {
+		return DiffResult{}, fmt.Errorf("recover migration artifact publication: %w", err)
+	}
+	migrationSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(opts.Dir))
+	if err != nil {
+		return DiffResult{}, fmt.Errorf("capture migration directory: %w", err)
+	}
+	if err := verifyDirSum(migrationSnapshot); err != nil {
 		return DiffResult{}, err
 	}
 
@@ -243,67 +187,20 @@ func generateDiff(
 	if err := ctx.Err(); err != nil {
 		return DiffResult{}, err
 	}
-	if err := opts.Directory.verifySnapshot(migrationSnapshot); err != nil {
+	if err := verifyMigrationDirUnchanged(opts.Dir, migrationSnapshot); err != nil {
 		return DiffResult{}, err
 	}
 	if opts.DryRun {
 		return DiffResult{SQL: joinFileContentSQL(contents)}, nil
 	}
-	preparePublication := func(stagedPaths []string) error {
-		if opts.PreparePublication != nil {
-			if err := opts.PreparePublication(stagedPaths); err != nil {
-				return err
-			}
-		}
-		return opts.Directory.verifySnapshot(migrationSnapshot)
-	}
-	opts.Directory.publicationStarted.Store(true)
 	return writeDiffArtifacts(
 		ctx,
 		opts.Dir,
 		opts.Name,
 		contents,
 		migrationSnapshot,
-		preparePublication,
+		opts.PreparePublication,
 	)
-}
-
-// MayHavePublicationArtifacts reports whether GenerateDiff entered journaled
-// publication. Callers must preserve the directory on errors after this point
-// so a later run can recover staged artifacts.
-func (d *PreparedDiffDirectory) MayHavePublicationArtifacts() bool {
-	return d != nil && d.publicationStarted.Load()
-}
-
-func (d *PreparedDiffDirectory) currentSnapshot() (fsnapshot.Snapshot, error) {
-	if d == nil {
-		return fsnapshot.Snapshot{}, errors.New("migrate diff requires prepared migration directory")
-	}
-	if err := d.verifySnapshot(d.snapshot); err != nil {
-		return fsnapshot.Snapshot{}, err
-	}
-	return d.snapshot.Clone(), nil
-}
-
-func (d *PreparedDiffDirectory) verifyIdentity() error {
-	if err := d.source.VerifyPath(); err != nil {
-		return fmt.Errorf("migration directory changed during migrate diff planning: %w", err)
-	}
-	return nil
-}
-
-func (d *PreparedDiffDirectory) verifySnapshot(expected fsnapshot.Snapshot) error {
-	if err := d.verifyIdentity(); err != nil {
-		return err
-	}
-	current, err := migrationsnapshot.CaptureStable(d.source.FS())
-	if err != nil {
-		return fmt.Errorf("verify migration directory after diff planning: %w", err)
-	}
-	if !current.Equal(expected) {
-		return fmt.Errorf("migration directory changed during migrate diff planning")
-	}
-	return nil
 }
 
 func prepareDiff(
@@ -331,9 +228,6 @@ func prepareDiff(
 	}
 	if err := ctx.Err(); err != nil {
 		return preparedDiff{}, err
-	}
-	if opts.Directory == nil {
-		return preparedDiff{}, errors.New("migrate diff requires prepared migration directory")
 	}
 	return preparedDiff{opts: opts, schemas: schemas, format: format}, nil
 }

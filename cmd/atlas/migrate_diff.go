@@ -1,7 +1,6 @@
 package atlas
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -10,7 +9,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/editor"
-	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
@@ -18,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/atlassource"
+	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -172,32 +171,10 @@ func runAtlasMigrateDiff(
 			"atlas migrate diff --dir: migration directory URL query parameters are not supported for this command",
 		))
 	}
-	directory, err := migrationsource.OpenOrCreateLocal(
-		localDir.Path,
-		project.localOptions(localDir),
-		0o755,
-	)
+	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
+		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
 	}
-	preparedDirectory, prepareErr := atlasmigrate.PrepareDiffDirectory(
-		cmd.Context(),
-		directory.Display(),
-		directory,
-		lockTimeout,
-	)
-	if prepareErr != nil {
-		closeErr := directory.DiscardIfCreatedEmpty()
-		return cmdutil.Fail(cmd, errors.Join(prepareErr, closeErr))
-	}
-	defer func() {
-		if runErr != nil && !preparedDirectory.MayHavePublicationArtifacts() {
-			runErr = errors.Join(runErr, directory.DiscardIfCreatedEmpty())
-			return
-		}
-		runErr = errors.Join(runErr, directory.Close())
-	}()
-	migrationsDir := directory.Display()
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
@@ -215,7 +192,6 @@ func runAtlasMigrateDiff(
 	}
 	diffResult, err := atlasmigrate.GenerateDiff(cmd.Context(), conn, atlasmigrate.DiffOptions{
 		Dir:                  migrationsDir,
-		Directory:            preparedDirectory,
 		Desired:              desired,
 		SourceConnectTimeout: dbcli.DefaultConnectTimeout,
 		Name:                 name,
@@ -243,6 +219,13 @@ func runAtlasMigrateDiff(
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
+}
+
+func resolveMigrateDiffDirectory(dir atlasargs.LocalDir) (string, error) {
+	if dir.AllowedRoot != "" {
+		return pathguard.ResolveWithinRoot(dir.Path, dir.AllowedRoot)
+	}
+	return pathguard.ResolveCLIPath(dir.Path)
 }
 
 func needsAtlasMigrateDiffConfig(cmd *cobra.Command) bool {
