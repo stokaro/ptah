@@ -663,20 +663,25 @@ func (m *Migrator) failIfDirty(ctx context.Context) error {
 	return nil
 }
 
-func (m *Migrator) beginMigrationRevision(ctx context.Context, migration *Migration) error {
-	return m.beginMigrationRevisionOn(ctx, m.conn, migration)
+func (m *Migrator) beginMigrationRevision(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+) error {
+	return m.beginMigrationRevisionOn(ctx, m.conn, migration, startedAt)
 }
 
 func (m *Migrator) beginMigrationRevisionOn(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
+	startedAt time.Time,
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
 	if m.revisionTableFormat.isAtlas() {
-		return m.beginAtlasMigrationRevisionOn(ctx, conn, migration)
+		return m.beginAtlasMigrationRevisionOn(ctx, conn, migration, startedAt)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginMigrationSQL())
 	return executeSQLOn(
@@ -685,7 +690,7 @@ func (m *Migrator) beginMigrationRevisionOn(
 		query,
 		migration.Version,
 		migration.Description,
-		time.Now(),
+		startedAt,
 		migrationStatePending,
 		0,
 		m.migrationStatementCount(migration.UpSQL),
@@ -700,6 +705,7 @@ func (m *Migrator) beginAtlasMigrationRevisionOn(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
+	startedAt time.Time,
 ) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginMigrationSQL())
 	return executeSQLOn(
@@ -711,7 +717,7 @@ func (m *Migrator) beginAtlasMigrationRevisionOn(
 		AtlasRevisionTypeApplied,
 		0,
 		m.migrationStatementCount(migration.UpSQL),
-		m.atlasRevisionTimestamp(),
+		m.atlasRevisionTimestamp(startedAt),
 		int64(0),
 		"",
 		"",
@@ -772,12 +778,16 @@ func (m *Migrator) completeAtlasMigrationRevisionOn(
 	)
 }
 
-func (m *Migrator) beginRollbackRevision(ctx context.Context, migration *Migration) error {
+func (m *Migrator) beginRollbackRevision(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
 	if m.revisionTableFormat.isAtlas() {
-		return m.beginAtlasRollbackRevision(ctx, migration)
+		return m.beginAtlasRollbackRevision(ctx, migration, startedAt)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginRollbackSQL())
 	return executeSQLOutsideTransaction(
@@ -792,7 +802,11 @@ func (m *Migrator) beginRollbackRevision(ctx context.Context, migration *Migrati
 	)
 }
 
-func (m *Migrator) beginAtlasRollbackRevision(ctx context.Context, migration *Migration) error {
+func (m *Migrator) beginAtlasRollbackRevision(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginRollbackSQL())
 	return executeSQLOutsideTransaction(
 		ctx,
@@ -800,7 +814,7 @@ func (m *Migrator) beginAtlasRollbackRevision(ctx context.Context, migration *Mi
 		query,
 		0,
 		m.migrationStatementCount(migration.DownSQL),
-		m.atlasRevisionTimestamp(),
+		m.atlasRevisionTimestamp(startedAt),
 		int64(0),
 		m.atlasNullJSONValue(),
 		ptahOperatorVersion,
@@ -1058,7 +1072,7 @@ func (m *Migrator) writeAtlasBaselineMigrationRow(
 		AtlasRevisionTypeBaseline,
 		0,
 		0,
-		m.atlasRevisionTimestamp(),
+		m.atlasRevisionTimestamp(time.Now()),
 		int64(0),
 		"",
 		m.atlasNullJSONValue(),
@@ -1448,7 +1462,7 @@ func (m *Migrator) forceAppliedAtlasMigration(ctx context.Context, migration *Mi
 		AtlasRevisionTypeApplied,
 		total,
 		total,
-		m.atlasRevisionTimestamp(),
+		m.atlasRevisionTimestamp(time.Now()),
 		int64(0),
 		migrationRevisionHash(migration),
 		m.atlasNullJSONValue(),
@@ -1470,7 +1484,7 @@ func (m *Migrator) writeAtlasManuallySetMigrationRow(
 		AtlasRevisionTypeManuallySet,
 		0,
 		0,
-		m.atlasRevisionTimestamp(),
+		m.atlasRevisionTimestamp(time.Now()),
 		int64(0),
 		migrationRevisionHash(migration),
 		m.atlasNullJSONValue(),
@@ -1481,8 +1495,8 @@ func (m *Migrator) writeAtlasManuallySetMigrationRow(
 	return nil
 }
 
-func (m *Migrator) atlasRevisionTimestamp() any {
-	now := time.Now().UTC().Round(0)
+func (m *Migrator) atlasRevisionTimestamp(at time.Time) any {
+	now := at.UTC().Round(0)
 	if m.conn != nil && platform.NormalizeDialect(m.conn.Info().Dialect) == platform.SQLite {
 		return now.Format(time.RFC3339Nano)
 	}

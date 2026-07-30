@@ -1441,7 +1441,7 @@ func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migr
 	}()
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
-	if err := m.beginMigrationRevision(ctx, migration); err != nil {
+	if err := m.beginMigrationRevision(ctx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}
 	if migration.upExecutionMode() == migrationExecutionNoTransaction {
@@ -1470,7 +1470,7 @@ func (m *Migrator) applyUpMigrationForcedNoTransactionObserved(ctx context.Conte
 }
 
 func (m *Migrator) applyUpMigrationForcedNoTransactionAt(ctx context.Context, migration *Migration, startedAt time.Time) error {
-	if err := m.beginMigrationRevision(ctx, migration); err != nil {
+	if err := m.beginMigrationRevision(ctx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}
 	return m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
@@ -1508,7 +1508,7 @@ func (m *Migrator) recordRolledBackBatchFailure(
 	startedAt time.Time,
 	failure error,
 ) error {
-	if beginErr := m.beginMigrationRevision(ctx, migration); beginErr != nil {
+	if beginErr := m.beginMigrationRevision(ctx, migration, startedAt); beginErr != nil {
 		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %v", failure, migration.Version, beginErr)
 	}
 	return m.failMigrationWithDirtyStateWithMode(
@@ -1528,7 +1528,7 @@ func (m *Migrator) recordAppliedMigrationOn(
 	migration *Migration,
 	startedAt time.Time,
 ) error {
-	if err := m.beginMigrationRevisionOn(ctx, conn, migration); err != nil {
+	if err := m.beginMigrationRevisionOn(ctx, conn, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}
 	if err := m.completeMigrationRevisionOn(ctx, conn, migration, startedAt); err != nil {
@@ -1671,7 +1671,7 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	}()
 
 	m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
-	if err := m.beginRollbackRevision(ctx, migration); err != nil {
+	if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
 	}
 	if migration.downUnavailable {
