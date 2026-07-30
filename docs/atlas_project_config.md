@@ -319,6 +319,8 @@ project sources are merged, a command applies its built-in default only when a
 field is absent. An explicitly present empty or zero value instead reaches the
 command's normal validation. Fields that do not accept empty values, including
 Atlas format templates, fail during parsing or command validation.
+Forwarded Atlas-compatible commands pass this merged configuration snapshot to
+the native implementation instead of reopening either project file.
 
 This means a repo can keep an Atlas-shaped migration setup while still letting
 one-off CLI invocations override any value:

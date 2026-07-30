@@ -129,6 +129,8 @@ that type. After project sources are merged, a command applies its built-in
 default only when a field is absent. An explicitly present empty or zero value
 instead reaches normal validation. Fields that do not accept empty values,
 including Atlas format templates, fail during parsing or command validation.
+Forwarded commands pass this merged configuration snapshot to the native
+implementation instead of reopening either project file.
 
 `env.exclude` and disabled `env.schema.mode` values compose with the
 `schema apply`/`schema diff` positive selection flags in a fixed order:

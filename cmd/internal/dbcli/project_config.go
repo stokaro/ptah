@@ -1,6 +1,7 @@
 package dbcli
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -27,6 +28,23 @@ const (
 	AtlasProjectVarFlagName = "atlas-project-var"
 	schemaCommandFlagName   = "schema-cmd"
 )
+
+type projectConfigContextKey struct{}
+
+type projectConfigContextValue struct {
+	config projectconfig.Config
+}
+
+// WithProjectConfig returns a context carrying an immutable project-config
+// snapshot for a forwarded native command.
+func WithProjectConfig(ctx context.Context, config projectconfig.Config) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, projectConfigContextKey{}, projectConfigContextValue{
+		config: cloneProjectConfig(config),
+	})
+}
 
 // RegisterEnvFlag registers the shared project env selection flag.
 func RegisterEnvFlag(flags *pflag.FlagSet, target *string) {
@@ -64,8 +82,12 @@ func RegisterAtlasProjectInternalFlags(flags *pflag.FlagSet) {
 // LoadProjectConfig loads project-level configuration for a command. The
 // explicit Ptah config path controls ptah.yaml only; Atlas-compatible adapters
 // can pass an internal atlas.hcl path and variable overrides through hidden
-// flags.
+// flags. A project-config snapshot supplied by an adapter takes precedence and
+// avoids reopening project files during the forwarded execution.
 func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig.Config, error) {
+	if config, ok := projectConfigFromContext(cmd.Context()); ok {
+		return cloneProjectConfig(config), nil
+	}
 	envName, err := stringFlag(cmd, EnvFlagName)
 	if err != nil {
 		return projectconfig.Config{}, err
@@ -84,6 +106,18 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 		EnvName:   envName,
 		AtlasVars: atlasVars,
 	})
+}
+
+func projectConfigFromContext(ctx context.Context) (projectconfig.Config, bool) {
+	if ctx == nil {
+		return projectconfig.Config{}, false
+	}
+	value, ok := ctx.Value(projectConfigContextKey{}).(projectConfigContextValue)
+	return value.config, ok
+}
+
+func cloneProjectConfig(config projectconfig.Config) projectconfig.Config {
+	return projectconfig.Merge(projectconfig.Config{}, config)
 }
 
 // EffectiveString returns an explicit CLI value first, then a present project

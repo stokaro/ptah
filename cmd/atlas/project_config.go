@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasargs"
@@ -64,10 +65,55 @@ func loadRequiredAtlasProjectConfig(flags atlasProjectFlagValues) (projectconfig
 	if err != nil {
 		return projectconfig.Config{}, err
 	}
-	if _, err := os.Stat(path); err != nil {
+	raw, err := os.ReadFile(path)
+	if err != nil {
 		return projectconfig.Config{}, fmt.Errorf("failed to read atlas config %s: %w", path, err)
 	}
-	return loadAtlasProjectConfig(flags)
+	return projectconfig.ParseAtlasWithOptions(raw, path, projectconfig.AtlasLoadOptions{
+		EnvName: flags.envName,
+		Vars:    flags.vars,
+	})
+}
+
+func loadRequiredMergedProjectConfig(
+	flags atlasProjectFlagValues,
+) (atlasConfig, mergedConfig projectconfig.Config, err error) {
+	atlas, err := loadRequiredAtlasProjectConfig(flags)
+	if err != nil {
+		return projectconfig.Config{}, projectconfig.Config{}, err
+	}
+	resolvedAtlas, err := resolveAtlasProjectConfigPaths(flags, atlas)
+	if err != nil {
+		return projectconfig.Config{}, projectconfig.Config{}, err
+	}
+	ptah, err := projectconfig.LoadPtahFile(projectconfig.PtahFileName, flags.envName)
+	if err != nil {
+		return projectconfig.Config{}, projectconfig.Config{}, err
+	}
+	return atlas, projectconfig.Merge(ptah, resolvedAtlas), nil
+}
+
+func resolveAtlasProjectConfigPaths(
+	flags atlasProjectFlagValues,
+	config projectconfig.Config,
+) (projectconfig.Config, error) {
+	migrationDir := config.StringValue(projectconfig.StringMigrationDir)
+	if migrationDir.Present {
+		resolved, err := atlasProjectConfigLocalDirFromFlags(flags, migrationDir.Value)
+		if err != nil {
+			return projectconfig.Config{}, fmt.Errorf("atlas.hcl migration.dir: %w", err)
+		}
+		config.Migration.Dir = resolved
+	}
+	sources := config.SchemaSourcesValue()
+	if sources.Present {
+		resolved, err := atlasProjectConfigSchemaURLsFromFlags(flags, sources.Value)
+		if err != nil {
+			return projectconfig.Config{}, fmt.Errorf("atlas.hcl schema.src: %w", err)
+		}
+		config.SchemaSources = resolved
+	}
+	return config, nil
 }
 
 func atlasConfigPathValue(value string) (string, error) {
@@ -362,7 +408,9 @@ func applyAtlasProjectConfigToArgs(
 		cfg.StringValue(projectconfig.StringDevURL),
 	)
 	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
-	if migrationDir.Present && atlasFlagRegistered(flags, "dir") && !atlasFlagPresent(flags, args, "dir") {
+	if migrationDir.Present &&
+		atlasFlagRegistered(flags, "dir") &&
+		!atlasFlagValueSet(flags, args, "dir") {
 		dir, err := atlasProjectConfigLocalDirFromFlags(projectFlags, migrationDir.Value)
 		if err != nil {
 			return nil, fmt.Errorf("atlas.hcl migration.dir: %w", err)
@@ -387,8 +435,8 @@ func applyAtlasProjectConfigToArgs(
 		"lock-timeout",
 		cfg.StringValue(projectconfig.StringMigrationLockTimeout),
 	)
-	cliLatest := atlasFlagPresent(flags, args, "latest")
-	cliGitBase := atlasFlagPresent(flags, args, "git-base")
+	cliLatest := atlasFlagValueSet(flags, args, "latest")
+	cliGitBase := atlasFlagValueSet(flags, args, "git-base")
 	if !cliGitBase {
 		args = appendAtlasProjectStringArg(flags, args, "latest", atlasProjectLatest(cfg))
 	}
@@ -421,7 +469,7 @@ func applyAtlasSchemaTestProjectConfig(
 		"dev-url",
 		cfg.StringValue(projectconfig.StringDevURL),
 	)
-	if atlasFlagPresent(flags, args, "url") {
+	if atlasFlagValueSet(flags, args, "url") {
 		return args, nil
 	}
 	sources := cfg.SchemaSourcesValue()
@@ -441,21 +489,6 @@ func applyAtlasSchemaTestProjectConfig(
 	return append(args, "--url", urls[0]), nil
 }
 
-func applyAtlasProjectConfigToNativeArgs(args []string, flags atlasProjectFlagValues) ([]string, error) {
-	path, err := atlasConfigPathValue(flags.configPath)
-	if err != nil {
-		return nil, err
-	}
-	args = append(args, "--"+dbcli.AtlasProjectConfigFlagName, path)
-	if strings.TrimSpace(flags.envName) != "" && !atlasFlagPresentByName(args, dbcli.EnvFlagName, "") {
-		args = append(args, "--"+dbcli.EnvFlagName, flags.envName)
-	}
-	for _, value := range flags.vars {
-		args = append(args, "--"+dbcli.AtlasProjectVarFlagName, value)
-	}
-	return args, nil
-}
-
 func atlasProjectLatest(cfg projectconfig.Config) projectconfig.Value[string] {
 	latest := cfg.LintLatestValue()
 	return projectconfig.Value[string]{
@@ -470,7 +503,7 @@ func appendAtlasProjectStringArg(
 	name string,
 	value projectconfig.Value[string],
 ) []string {
-	if !value.Present || !atlasFlagRegistered(flags, name) || atlasFlagPresent(flags, args, name) {
+	if !value.Present || !atlasFlagRegistered(flags, name) || atlasFlagValueSet(flags, args, name) {
 		return args
 	}
 	return append(args, "--"+name, value.Value)
@@ -487,6 +520,31 @@ func atlasFlagRegistered(flags []atlasargs.Flag, name string) bool {
 
 func atlasFlagPresent(flags []atlasargs.Flag, args []string, name string) bool {
 	return atlasFlagPresentByName(args, name, atlasFlagShorthand(flags, name))
+}
+
+func atlasFlagValueSet(flags []atlasargs.Flag, args []string, name string) bool {
+	return atlasFlagPresent(flags, args, name) || atlasFlagEnvironmentPresent(flags, name)
+}
+
+func atlasFlagEnvironmentPresent(flags []atlasargs.Flag, name string) bool {
+	for _, flag := range flags {
+		if flag.Name != name || flag.EnvDisabled {
+			continue
+		}
+		if nonEmptyEnvironmentVariable(cmdflags.EnvName("PTAH", flag.Name)) {
+			return true
+		}
+		if flag.NativeName != "" &&
+			nonEmptyEnvironmentVariable(cmdflags.EnvName("PTAH", flag.NativeName)) {
+			return true
+		}
+	}
+	return false
+}
+
+func nonEmptyEnvironmentVariable(name string) bool {
+	value, ok := os.LookupEnv(name)
+	return ok && value != ""
 }
 
 func atlasFlagPresentByName(args []string, name string, short string) bool {
