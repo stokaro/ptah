@@ -1,15 +1,22 @@
 # API Schema Export (OpenAPI / GraphQL)
 
 Ptah exports the schema it parses from Go annotations to API-facing formats:
-OpenAPI 3.0 component schemas and GraphQL SDL. The parsed `goschema.Database`
-already carries types, nullability, enums and foreign keys, so each format is a
-direct projection of that intermediate representation.
+OpenAPI 3.0 component schemas, GraphQL SDL, and Protobuf definitions. The parsed
+`goschema.Database` already carries types, nullability, enums and foreign keys,
+so each format is a direct projection of that intermediate representation.
 
 - Generated OpenAPI passes [`redocly lint`](https://redocly.com/docs/cli/commands/lint/).
 - Generated GraphQL passes [`graphql-js`](https://github.com/graphql/graphql-js)
   `parse` and `buildSchema`.
 
 Both are exercised in CI (`.github/workflows/export-acceptance.yml`).
+
+This file covers the two stateless targets. The Protobuf target (`--to protobuf`,
+rendered by `internal/protobufrender`) is stateful — field numbers are persistent
+wire identifiers, so `--out` is required and the previously generated file is
+read back as committed compatibility state. Its mapping, Edition 2023 rationale,
+and the `--proto-*` policy flags are documented in
+[Protobuf schema export](./site/src/content/docs/schema/protobuf.md).
 
 ## Commands
 
@@ -27,11 +34,11 @@ ptah schema export --to graphql --root-dir ./models > schema.graphql
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
 | `--from` | all | Source format. Only `go` is supported. |
-| `--to` | all | Target format: `hcl`, `openapi-v3`, or `graphql`. The old `atlas-hcl` value is accepted as an alias. |
+| `--to` | all | Target format: `hcl`, `openapi-v3`, `graphql`, or [`protobuf`](./site/src/content/docs/schema/protobuf.md). The old `atlas-hcl` value is accepted as an alias. |
 | `--root-dir` | all | Directory scanned for Go annotations. |
-| `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl`. |
-| `--include-tables` | `openapi-v3`, `graphql` | Comma-separated allowlist of tables. |
-| `--exclude-tables` | `openapi-v3`, `graphql` | Comma-separated denylist, applied after the allowlist. |
+| `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl` and for [`protobuf`](./site/src/content/docs/schema/protobuf.md), where it is also the compatibility state read back on the next run. |
+| `--include-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated allowlist of tables. |
+| `--exclude-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated denylist, applied after the allowlist. |
 | `--title` | `openapi-v3` | Value for `info.title` (default `Ptah Exported Schema`). |
 
 Export warnings — such as an enum whose values cannot be resolved, or a foreign
@@ -102,4 +109,8 @@ indexes) are not part of an API schema and are not emitted. Use `--include-table
 
 The HCL schema target (`--to hcl`) is documented in
 [HCL Schema](atlas_hcl_schema.md). The old `--to atlas-hcl` spelling remains an
-accepted alias for existing scripts.
+accepted alias for existing scripts. The Protobuf target (`--to protobuf`) is
+documented in
+[Protobuf schema export](./site/src/content/docs/schema/protobuf.md); its scope
+is narrower still, since Protobuf also has no way to express `NOT NULL` and
+cannot distinguish an empty repeated field from SQL `NULL`.
