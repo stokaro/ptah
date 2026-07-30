@@ -51,8 +51,11 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Run Windows filesystem publication tests
-        run: |
-          go test -v -count=1 ./internal/fsdurable ./internal/migratesum ./internal/devlock -timeout 5m
-          go test -v -count=1 ./internal/atlasmigrate -run '^(TestPublishArtifactsLocked_|TestGenerateDiff_PreparedContentsArePublishedWithMatchingChecksum)' -timeout 5m
-          go test -v -count=1 ./migration/generator -run '^TestMigrationPlanWriteFiles_' -timeout 5m
+      - name: Run Windows durable filesystem tests
+        run: go test -v -count=1 ./internal/fsdurable ./internal/pathguard ./internal/migratesum ./internal/devlock -timeout 5m
+
+      - name: Run Windows migration publication tests
+        run: go test -v -count=1 ./internal/atlasmigrate -run '^(TestPublishArtifactsLocked_|TestGenerateDiff_PreparedContentsArePublishedWithMatchingChecksum)' -timeout 5m
+
+      - name: Run Windows migration generator tests
+        run: go test -v -count=1 ./migration/generator -run '^TestMigrationPlanWriteFiles_' -timeout 5m

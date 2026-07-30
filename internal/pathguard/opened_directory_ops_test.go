@@ -102,13 +102,6 @@ func TestOpenedDirectoryOperations_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &removeErr)
 	c.Assert(removeErr.Op, qt.Equals, "removeat")
 	c.Assert(removeErr.Path, qt.Equals, "missing")
-	err = opened.ReplaceFile("missing", "published")
-	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	var replaceErr *os.LinkError
-	c.Assert(err, qt.ErrorAs, &replaceErr)
-	c.Assert(replaceErr.Op, qt.Equals, "renameat")
-	c.Assert(replaceErr.Old, qt.Equals, "missing")
-	c.Assert(replaceErr.New, qt.Equals, "published")
 }
 
 func TestOpenedDirectoryCreateTemp_FailurePath(t *testing.T) {

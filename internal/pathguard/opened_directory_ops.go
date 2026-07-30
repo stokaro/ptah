@@ -65,6 +65,9 @@ func (d *OpenedDirectory) CreateTemp(pattern string) (*os.File, string, error) {
 // ReplaceFile atomically replaces newName with oldName through the rooted
 // directory handle. On Unix, callers must follow successful replacement with
 // Sync. On Windows, replacement flushes the published file and Sync is a no-op.
+// Windows requires oldName to identify a writable regular file. An error
+// wrapping fsdurable.ErrReplacementCommitted means the rooted rename succeeded,
+// so callers must not treat it as a pre-commit failure.
 func (d *OpenedDirectory) ReplaceFile(oldName, newName string) error {
 	return fsdurable.ReplaceFileAt(d.root, oldName, newName)
 }

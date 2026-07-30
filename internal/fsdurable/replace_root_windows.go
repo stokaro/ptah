@@ -26,28 +26,18 @@ func ReplaceFileAt(root *os.Root, oldName, newName string) error {
 	if err := root.Rename(oldName, newName); err != nil {
 		return errors.Join(err, staged.Close())
 	}
-	published, err := root.Open(newName)
-	if err != nil {
-		return replacementCommittedError(errors.Join(err, staged.Close()))
+
+	publishedInfo, verifyErr := root.Lstat(newName)
+	if verifyErr != nil {
+		verifyErr = fmt.Errorf("stat published file after rooted replacement %s: %w", newName, verifyErr)
 	}
-	publishedInfo, statErr := published.Stat()
-	if statErr != nil {
-		return replacementCommittedError(errors.Join(
-			fmt.Errorf("stat published file after rooted replacement %s: %w", newName, statErr),
-			published.Close(),
-			staged.Close(),
-		))
+	if verifyErr == nil && !publishedInfo.Mode().IsRegular() {
+		verifyErr = fmt.Errorf("published file is not regular after rooted replacement: %s", newName)
 	}
-	if closeErr := published.Close(); closeErr != nil {
-		return replacementCommittedError(errors.Join(closeErr, staged.Close()))
+	if verifyErr == nil && !os.SameFile(stagedInfo, publishedInfo) {
+		verifyErr = fmt.Errorf("published file changed during rooted replacement: %s", newName)
 	}
-	if !os.SameFile(stagedInfo, publishedInfo) {
-		return replacementCommittedError(errors.Join(
-			fmt.Errorf("published file changed during rooted replacement: %s", newName),
-			staged.Close(),
-		))
-	}
-	return replacementCommittedError(errors.Join(staged.Sync(), staged.Close()))
+	return replacementCommittedError(errors.Join(verifyErr, staged.Sync(), staged.Close()))
 }
 
 func replacementCommittedError(err error) error {
