@@ -12,10 +12,13 @@ the operator expected.
 
 Each command reads `ptah.yaml` once into the typed project configuration IR.
 Database settings, migration settings, and online-DDL execution policy
-therefore come from the same file generation. Atlas-compatible command adapters
-pass the merged IR to the native command implementation instead of reopening
-`ptah.yaml` or `atlas.hcl`. An explicit `--config` path must exist; the
-conventional `./ptah.yaml` remains optional.
+therefore come from the same file generation. When an Atlas-compatible adapter
+delegates to a native command that also consumes project configuration, the
+adapter passes the merged IR instead of letting that command reopen
+`ptah.yaml` or `atlas.hcl`. This snapshot path currently applies to
+`migrate down`; other adapters evaluate Atlas project configuration once and
+map supported values to explicit native command arguments. An explicit
+`--config` path must exist; the conventional `./ptah.yaml` remains optional.
 
 ## Named Environments
 

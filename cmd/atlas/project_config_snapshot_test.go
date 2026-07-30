@@ -350,6 +350,45 @@ func TestCompatCommandProjectSelectionDoesNotLeakAcrossRootReuse(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
 }
 
+func TestCompatCommandProjectSelectionDoesNotLeakAfterArgumentValidationFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "1_init.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate",
+		"--config", "file://missing-first.hcl",
+		"--env", "first",
+		"--var", "name=first",
+		"status", "unexpected",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["unexpected"\]`)
+	out.Reset()
+	cmd.SetArgs([]string{
+		"migrate", "hash",
+		"--dir", "file://" + migrationsDir,
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+}
+
 func TestCompatCommandProjectEnvironmentRemainsEffectiveAcrossRootReuse(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

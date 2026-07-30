@@ -34,9 +34,13 @@ and local `diff` policy defaults for the `ptah-compat` binary's commands.
 Ptah reads each selected project config once per command and converts it to a
 typed configuration value. Migration database settings and online-DDL policy
 therefore cannot come from different generations of a concurrently replaced
-`ptah.yaml`. Atlas-compatible command adapters pass that same typed snapshot to
-the native command implementation instead of reopening either project file. An
-explicit `--config` path must exist; the conventional `./ptah.yaml` is optional.
+`ptah.yaml`. When an Atlas-compatible adapter delegates to a native command
+that also consumes project configuration, the adapter passes the merged typed
+snapshot instead of letting that command reopen either project file. This
+currently applies to `migrate down`; other adapters evaluate Atlas project
+configuration once and map supported values to explicit native command
+arguments. An explicit `--config` path must exist; the conventional
+`./ptah.yaml` is optional.
 
 For Atlas-compatible commands, plain local schema paths, relative `file://`
 schema URLs, and relative `migration.dir` values declared in `atlas.hcl` resolve

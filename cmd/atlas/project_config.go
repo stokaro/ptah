@@ -277,6 +277,15 @@ func installAtlasProjectFlagResetSubtree(cmd, group *cobra.Command) {
 }
 
 func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
+	if validateArgs := cmd.Args; validateArgs != nil {
+		cmd.Args = func(cmd *cobra.Command, args []string) error {
+			err := validateArgs(cmd, args)
+			if err != nil {
+				resetAtlasProjectFlags(group)
+			}
+			return err
+		}
+	}
 	if runE := cmd.RunE; runE != nil {
 		cmd.RunE = func(cmd *cobra.Command, args []string) error {
 			defer resetAtlasProjectFlags(group)
