@@ -52,6 +52,14 @@ func render(f file) string {
 
 func renderMessage(sb *strings.Builder, msg message) {
 	writeComment(sb, "", msg.Comment)
+	// buf format collapses an empty body to "{}", so emitting "{\n}" would make
+	// the file a non-fixed point: one `buf format -w` would rewrite it and
+	// invalidate the content digest. Reachable through a tombstone whose type
+	// never had any fields.
+	if len(msg.Fields) == 0 && !hasReservations(msg.Reserved) {
+		sb.WriteString("message " + msg.Name + " {}\n")
+		return
+	}
 	sb.WriteString("message " + msg.Name + " {\n")
 	for _, fld := range msg.Fields {
 		writeComment(sb, "  ", fld.Comment)
@@ -120,6 +128,12 @@ func writeComment(sb *strings.Builder, indent, comment string) {
 	for line := range strings.SplitSeq(strings.ReplaceAll(comment, "\r\n", "\n"), "\n") {
 		sb.WriteString(indent + "//")
 		clean := stripControl(line)
+		// A top-level comment reproducing a header marker would give the file a
+		// second "// ptah:content-sha256=" line and break the digest invariant.
+		// One extra space keeps the text readable and out of that namespace.
+		if indent == "" && strings.HasPrefix(clean, "ptah:") {
+			clean = " " + clean
+		}
 		if clean != "" {
 			sb.WriteString(" " + clean)
 		}

@@ -115,6 +115,10 @@ type builder struct {
 	// enum produce exactly one Protobuf enum.
 	enumByKey map[string]string
 	enums     []enum
+	// messageOwners maps a generated message name to the table that produced it,
+	// so an enum that would take the same name is rejected with both sources
+	// named rather than dying on an opaque protocompile duplicate-symbol error.
+	messageOwners map[string]string
 	// valueOwners maps an enum value identifier to the sources that produced
 	// it. Protobuf enum values are siblings of their type at package scope, so
 	// uniqueness is a file-wide property, not a per-enum one.
@@ -132,10 +136,11 @@ func Render(ctx context.Context, db *goschema.Database, opts Options) (Result, e
 	}
 
 	b := &builder{
-		opts:        opts,
-		imports:     map[string]bool{},
-		enumByKey:   map[string]string{},
-		valueOwners: map[string][]string{},
+		opts:          opts,
+		imports:       map[string]bool{},
+		enumByKey:     map[string]string{},
+		valueOwners:   map[string][]string{},
+		messageOwners: map[string]string{},
 	}
 
 	logicalPath := protoLogicalPath(opts)
@@ -252,12 +257,20 @@ func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 
 	shape := desiredShape{}
 	for _, table := range tables {
+		tableFields := schemaexport.FieldsFor(db, table)
+		if len(tableFields) == 0 {
+			// An empty message would render as "message X {}" and, more
+			// importantly, could never be told apart from a tombstone on the
+			// next run. internal/graphqlrender omits such a table too.
+			b.warn(table.Name, "table has no exportable columns; message omitted")
+			continue
+		}
 		msg := desiredMessage{
 			Name:    names[table.QualifiedName()],
 			Comment: table.Comment,
 		}
 		seen := map[string]string{}
-		for _, f := range schemaexport.FieldsFor(db, table) {
+		for _, f := range tableFields {
 			df, err := b.buildField(table, f, enumIndex)
 			if err != nil {
 				return desiredShape{}, err
@@ -325,21 +338,37 @@ func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string
 			"tables map to the same protobuf message name: %s; set a distinct schema= on one of them or exclude it with --exclude-tables",
 			strings.Join(collisions, "; "))
 	}
+	for name, group := range final {
+		b.messageOwners[name] = fmt.Sprintf("%s (struct %s)", group[0].QualifiedName(), group[0].StructName)
+	}
 	return names, nil
 }
 
 func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex map[string][]string) (desiredField, error) {
-	name, changed := fieldName(f.Name)
+	name, changed, lintDirty := fieldName(f.Name)
+	path := table.Name + "." + f.Name
 	if changed {
-		b.warn(table.Name+"."+f.Name, fmt.Sprintf(
-			"column %q was sanitized to protobuf field %q; buf lint STANDARD will report FIELD_LOWER_SNAKE_CASE for it",
-			f.Name, name))
+		b.warn(path, fmt.Sprintf("column %q was sanitized to protobuf field %q", f.Name, name))
+	}
+	if lintDirty {
+		b.warn(path, fmt.Sprintf(
+			"protobuf field %q is not lower_snake_case; buf lint STANDARD reports FIELD_LOWER_SNAKE_CASE for it", name))
 	}
 
 	element, isArray := schemaexport.ElementType(f.Type)
+	if isArray && f.Nullable {
+		b.warn(path, "nullable array column exported as repeated; protobuf cannot distinguish SQL NULL from an empty list")
+	}
 
-	if values, ok := schemaexport.ResolveEnumValues(f, enumIndex); ok {
-		enumName, err := b.registerEnum(table, f, values)
+	// Resolve the enum against the ELEMENT type. An array of an enum still names
+	// that enum, and looking it up under the "enum_x[]" spelling would miss,
+	// silently pinning `repeated string` as the wire type forever. Mirrors
+	// internal/graphqlrender, which resolves the element the same way.
+	elementField := f
+	elementField.Type = element
+
+	if values, ok := schemaexport.ResolveEnumValues(elementField, enumIndex); ok {
+		enumName, err := b.registerEnum(table, elementField, values)
 		if err != nil {
 			return desiredField{}, err
 		}
@@ -350,15 +379,11 @@ func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex m
 	if mapped.Import != "" {
 		b.imports[mapped.Import] = true
 	}
-	path := table.Name + "." + f.Name
 	if !mapped.Known {
 		b.warn(path, fmt.Sprintf("column type %q is not recognized and was exported as string", f.Type))
 	}
 	if mapped.Lossy != "" {
 		b.warn(path, mapped.Lossy)
-	}
-	if isArray && f.Nullable {
-		b.warn(path, "nullable array column exported as repeated; protobuf cannot distinguish SQL NULL from an empty list")
 	}
 	return desiredField{Name: name, Type: mapped.Name, Repeated: isArray, Comment: f.Comment}, nil
 }
@@ -399,6 +424,11 @@ func (b *builder) registerEnum(table goschema.Table, f goschema.Field, values []
 				"enum type name %q is produced by more than one source; rename the enum or the column that produces it", name)
 		}
 	}
+	if owner, taken := b.messageOwners[name]; taken {
+		return "", fmt.Errorf(
+			"protobuf name %q is produced by both table %s and the enum for column %s.%s; rename one of them or exclude it with --exclude-tables",
+			name, owner, table.Name, f.Name)
+	}
 
 	built := enum{Name: name}
 	zero := unspecifiedValueName(name)
@@ -406,10 +436,15 @@ func (b *builder) registerEnum(table goschema.Table, f goschema.Field, values []
 	b.valueOwners[zero] = append(b.valueOwners[zero], fmt.Sprintf("synthesized zero value of enum %s", name))
 
 	for i, value := range values {
-		valueName, valueChanged := enumValueName(name, value)
+		valueName, valueChanged, valueLintDirty := enumValueName(name, value)
 		if valueChanged {
 			b.warn(table.Name+"."+f.Name, fmt.Sprintf(
 				"enum label %q was sanitized to protobuf value %q", value, valueName))
+		}
+		if valueLintDirty {
+			b.warn(table.Name+"."+f.Name, fmt.Sprintf(
+				"protobuf enum value %q is not UPPER_SNAKE_CASE; buf lint STANDARD reports ENUM_VALUE_UPPER_SNAKE_CASE for it",
+				valueName))
 		}
 		b.valueOwners[valueName] = append(b.valueOwners[valueName],
 			fmt.Sprintf("label %q of enum %s", value, name))

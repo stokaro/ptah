@@ -135,12 +135,22 @@ func TestDigitLeadingColumnsSanitizeAndWarn(t *testing.T) {
 			"  string mixed_case = 3;\n"+
 			"}")
 	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
-		`column "2fa_enabled" was sanitized to protobuf field "_2fa_enabled"; `+
-			`buf lint STANDARD will report FIELD_LOWER_SNAKE_CASE for it`)
+		`column "2fa_enabled" was sanitized to protobuf field "_2fa_enabled"`)
 	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
 		`column "3d_model_url" was sanitized to protobuf field "_3d_model_url"`)
 	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
 		`column "Mixed-Case" was sanitized to protobuf field "mixed_case"`)
+
+	// The lint claim is a separate signal computed from buf's own rule, not a
+	// restatement of "characters were replaced". A leading underscore is not
+	// lower_snake_case, so those two warn; "mixed_case" is clean and must not.
+	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
+		`protobuf field "_2fa_enabled" is not lower_snake_case; `+
+			`buf lint STANDARD reports FIELD_LOWER_SNAKE_CASE for it`)
+	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
+		`protobuf field "_3d_model_url" is not lower_snake_case`)
+	c.Assert(diagnosticMessages(res), qt.Not(qt.Any(qt.Contains)),
+		`protobuf field "mixed_case" is not lower_snake_case`)
 }
 
 func TestSanitizedTableNameWarns(t *testing.T) {

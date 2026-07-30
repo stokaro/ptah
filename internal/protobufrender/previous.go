@@ -115,7 +115,7 @@ func loadPrevious(ctx context.Context, path string, raw []byte, wantPackage stri
 	}
 	for i := range fd.Messages().Len() {
 		md := fd.Messages().Get(i)
-		prev.Messages[string(md.Name())] = messageState(md, fd.Package())
+		prev.Messages[string(md.Name())] = messageState(md, fd)
 	}
 	for i := range fd.Enums().Len() {
 		ed := fd.Enums().Get(i)
@@ -133,7 +133,7 @@ func shortDigest(s string) string {
 
 // messageState reads a message's live numbers, field shapes and reservations.
 // Message reserved ranges carry an EXCLUSIVE end, unlike enum ranges.
-func messageState(md protoreflect.MessageDescriptor, pkg protoreflect.FullName) previousType {
+func messageState(md protoreflect.MessageDescriptor, file protoreflect.FileDescriptor) previousType {
 	state := previousType{
 		Numbers: map[string]int32{},
 		Fields:  map[string]previousField{},
@@ -142,7 +142,7 @@ func messageState(md protoreflect.MessageDescriptor, pkg protoreflect.FullName) 
 		fd := md.Fields().Get(i)
 		state.Numbers[string(fd.Name())] = int32(fd.Number())
 		state.Fields[string(fd.Name())] = previousField{
-			Type:     fieldTypeString(fd, pkg),
+			Type:     fieldTypeString(fd, file),
 			Repeated: fd.IsList(),
 		}
 	}
@@ -194,22 +194,27 @@ func addRange(res *reservations, start, end int64) {
 }
 
 // fieldTypeString spells a field's type exactly as the generator writes it, so
-// the two can be compared to detect a wire-incompatible change. Types in the
-// file's own package are written bare; everything else keeps its full name.
-func fieldTypeString(fd protoreflect.FieldDescriptor, pkg protoreflect.FullName) string {
+// the two can be compared to detect a wire-incompatible change. Types defined by
+// this file are written bare; imported types keep their full name.
+//
+// The test is the DEFINING FILE, not the package prefix. Trimming by package
+// would also shorten "google.protobuf.Timestamp" when --proto-package is
+// "google.protobuf", so the previous spelling would never match what the
+// renderer writes and every run would report a spurious type change.
+func fieldTypeString(fd protoreflect.FieldDescriptor, file protoreflect.FileDescriptor) string {
 	switch fd.Kind() {
 	case protoreflect.MessageKind, protoreflect.GroupKind:
-		return relativeName(fd.Message().FullName(), pkg)
+		return localName(fd.Message().FullName(), fd.Message().ParentFile(), file)
 	case protoreflect.EnumKind:
-		return relativeName(fd.Enum().FullName(), pkg)
+		return localName(fd.Enum().FullName(), fd.Enum().ParentFile(), file)
 	default:
 		return fd.Kind().String()
 	}
 }
 
-func relativeName(full, pkg protoreflect.FullName) string {
-	prefix := string(pkg) + "."
-	if pkg != "" && strings.HasPrefix(string(full), prefix) {
+func localName(full protoreflect.FullName, definedIn, file protoreflect.FileDescriptor) string {
+	if definedIn != nil && file != nil && definedIn.Path() == file.Path() {
+		prefix := string(file.Package()) + "."
 		return strings.TrimPrefix(string(full), prefix)
 	}
 	return string(full)

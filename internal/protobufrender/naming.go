@@ -101,17 +101,25 @@ func qualifiedMessageName(schema, table string) (string, bool) {
 }
 
 // fieldName derives a lower_snake_case Protobuf field name from a column name.
-func fieldName(column string) (string, bool) {
+// The two report flags are deliberately separate: "changed" means characters had
+// to be replaced, "lintDirty" means buf lint will report the result. They are not
+// the same set - a column "UserID" is sanitized to nothing but lowercased, while
+// "_2fa" is sanitized and still not a legal lower_snake_case name.
+func fieldName(column string) (name string, changed, lintDirty bool) {
 	ident, changed := sanitizeIdent(column)
-	return strings.ToLower(ident), changed || strings.ToLower(ident) != ident
+	name = strings.ToLower(ident)
+	return name, changed, strings.ToLower(bufSnakeCase(name)) != name
 }
 
 // enumValueName builds a value name for enumType from a source label. The
 // mandatory ENUM_NAME_ prefix is derived from the generated enum type name via
-// buf's own rule, so the result satisfies ENUM_VALUE_PREFIX.
-func enumValueName(enumType, label string) (string, bool) {
+// buf's own rule, so the result satisfies ENUM_VALUE_PREFIX. lintDirty reports
+// whether the whole identifier is a fixed point of buf's rule, which is what
+// ENUM_VALUE_UPPER_SNAKE_CASE actually checks.
+func enumValueName(enumType, label string) (name string, changed, lintDirty bool) {
 	sanitized, changed := sanitizeIdent(label)
-	return enumValuePrefix(enumType) + bufUpperSnakeCase(sanitized), changed
+	name = enumValuePrefix(enumType) + bufUpperSnakeCase(sanitized)
+	return name, changed, bufUpperSnakeCase(name) != name
 }
 
 // enumValuePrefix is the prefix buf lint's ENUM_VALUE_PREFIX requires for every
