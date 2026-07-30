@@ -4,8 +4,10 @@ Ptah releases are produced by GoReleaser from annotated version tags.
 
 ## Prerequisites
 
-- `HOMEBREW_TAP_TOKEN` repository secret with permission to push to
-  `stokaro/homebrew-ptah`.
+- Optional, for Homebrew publishing: the `stokaro/homebrew-ptah` tap repository
+  and a `HOMEBREW_TAP_TOKEN` repository secret that can push to it. Neither
+  exists yet, so the formula is generated and its upload is skipped; the rest of
+  the release publishes normally. Create both to start shipping the tap.
 - GitHub Actions package permissions enabled for publishing
   `ghcr.io/stokaro/ptah`.
 - GoReleaser `v2.15.4`. The GitHub Actions workflow pins this version because
@@ -26,24 +28,35 @@ Ptah releases are produced by GoReleaser from annotated version tags.
    goreleaser release --snapshot --clean --skip=sign,docker
    ```
 
-3. Create and push an annotated semver tag:
+3. Create and push an annotated semver tag. Never move or delete a pushed tag;
+   if a release run fails, fix the cause and cut the next patch version:
 
    ```bash
-   git tag -a v0.1.0 -m "Release v0.1.0"
-   git push origin v0.1.0
+   git tag -a v0.1.2 -m "Release v0.1.2"
+   git push origin v0.1.2
    ```
 
 4. Wait for the `Release` workflow to finish.
 5. Verify the GitHub Release contains archives for Linux, macOS, and Windows,
-   `checksums.txt`, SBOM artifacts, and cosign signature/certificate files.
+   the source archive, `checksums.txt`, SBOM artifacts, and one
+   `<artifact>.sigstore.json` cosign bundle per checksum and SBOM file. Verify a
+   bundle:
+
+   ```bash
+   cosign verify-blob --bundle checksums.txt.sigstore.json checksums.txt \
+     --certificate-identity-regexp 'github.com/stokaro/ptah' \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+   ```
+
 6. Verify the container images exist:
 
    ```bash
-   docker pull ghcr.io/stokaro/ptah:v0.1.0
+   docker pull ghcr.io/stokaro/ptah:0.1.2
    docker pull ghcr.io/stokaro/ptah:latest
    ```
 
-7. Verify Homebrew install:
+7. Verify the Homebrew install, once the tap repository and
+   `HOMEBREW_TAP_TOKEN` exist (until then the formula upload is skipped):
 
    ```bash
    brew update
