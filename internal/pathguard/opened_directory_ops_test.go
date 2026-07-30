@@ -120,6 +120,11 @@ func TestOpenedDirectoryCreateTemp_FailurePath(t *testing.T) {
 	file, name, err := opened.CreateTemp("staged-*")
 
 	c.Assert(err, qt.ErrorMatches, `create rooted temporary file staged-.*: .*`)
+	c.Assert(err, qt.ErrorIs, os.ErrClosed)
+	var pathErr *fs.PathError
+	c.Assert(err, qt.ErrorAs, &pathErr)
+	c.Assert(pathErr.Op, qt.Equals, "openat")
+	c.Assert(pathErr.Path, qt.Matches, `staged-.*`)
 	c.Assert(file, qt.IsNil)
 	c.Assert(name, qt.Equals, "")
 }
