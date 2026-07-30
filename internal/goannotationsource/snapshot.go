@@ -244,7 +244,7 @@ func captureOpenedRoot(root *pathguard.OpenedDirectory) (*Snapshot, error) {
 	slices.SortFunc(files, func(a, b File) int {
 		return strings.Compare(a.RelativePath, b.RelativePath)
 	})
-	filesystem, err := fsnapshot.FromFiles(contents)
+	filesystem, err := fsnapshot.TakeFiles(contents)
 	if err != nil {
 		return nil, fmt.Errorf("build Go annotation source filesystem: %w", err)
 	}
