@@ -13,13 +13,11 @@ func TestParseSource_EmbeddedPlatformOverridesReachConcreteFields(t *testing.T) 
 	source := `
 package models
 
-//ptah:schema:embed
 type Audit struct {
 	//ptah:schema:field name="created_at" type="TIMESTAMP" platform.mysql.type="DATETIME"
 	CreatedAt string
 }
 
-//ptah:schema:embed
 type AuditEnvelope struct {
 	//ptah:embedded mode="inline" prefix="inner_" platform.mysql.type="DATETIME(3)"
 	Audit

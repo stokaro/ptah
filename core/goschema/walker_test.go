@@ -1190,7 +1190,6 @@ func TestParseFS_EmbeddedFields(t *testing.T) {
 			files: map[string]string{
 				"models.go": `package models
 
-//ptah:schema:embed
 type BaseModel struct {
 	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true"
 	CreatedAt string

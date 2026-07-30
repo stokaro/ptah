@@ -10,6 +10,11 @@ name: Export Acceptance
 # builds, and must be byte-identical when regenerated. WIRE_JSON checks cover
 # additive changes, reordering, reserved field removals, tombstones, and an
 # intentionally incompatible type change.
+#
+# Go annotation to HCL export acceptance (issue #898) runs through the compiled
+# binary, checks deterministic output, consumes the generated HCL through
+# `schema render`, and verifies preview, destructive, and repeated cleanup
+# behavior.
 on:
   push:
     branches:
@@ -57,3 +62,6 @@ jobs:
 
       - name: Protobuf acceptance
         run: bash scripts/check-protobuf-export-acceptance.sh
+
+      - name: Go annotation to HCL acceptance
+        run: bash scripts/check-hcl-export-acceptance.sh

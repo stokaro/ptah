@@ -18,7 +18,6 @@ type PostalAddress struct{}
 //ptah:schema:range name="price_range" schema="app" subtype="NUMERIC" subtype_opclass="numeric_ops" collation="C" canonical="canonical_price" subtype_diff="numeric_subdiff" comment="Price interval"
 type PriceRange struct{}
 
-//ptah:schema:embed
 type Audit struct {
 	//ptah:schema:field name="created_at" type="TIMESTAMPTZ" not_null="true" platform.mysql.type="DATETIME"
 	CreatedAt string
