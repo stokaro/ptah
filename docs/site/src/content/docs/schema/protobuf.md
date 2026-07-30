@@ -462,6 +462,9 @@ Every check below runs before anything is written, and each exits with code
 - A table with no exportable columns is skipped with
   `table has no exportable columns; message omitted`. Protobuf has no way to
   tell an empty message apart from a type retained only for its reservations.
+- A previous type whose `reserved` ranges expand past 1,048,576 individual
+  numbers is refused instead of being loaded partially. Partial loading could
+  reallocate a number that remains reserved in the published wire contract.
 - The three header comment lines are copied into whatever `protoc-gen-go`
   generates, so the content digest appears at the top of the `.pb.go` files
   too. It changes only when the schema changes.

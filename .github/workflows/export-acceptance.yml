@@ -6,9 +6,10 @@ name: Export Acceptance
 #
 # It also enforces the acceptance criteria for `--to protobuf` (issue #893): the
 # generated .proto must pass `buf lint` with the STANDARD category, must already
-# be a `buf format` fixed point, must compile and produce Go that builds, must be
-# byte-identical when regenerated, and must stay wire/JSON compatible across an
-# additive schema change.
+# be a `buf format` fixed point, must compile with protoc and produce Go that
+# builds, and must be byte-identical when regenerated. WIRE_JSON checks cover
+# additive changes, reordering, reserved field removals, tombstones, and an
+# intentionally incompatible type change.
 on:
   push:
     branches:
@@ -23,11 +24,12 @@ jobs:
     name: export-acceptance
     runs-on: ubuntu-latest
     env:
-      # Both tools are pinned on purpose. The membership of buf's STANDARD lint
+      # The tools are pinned on purpose. The membership of buf's STANDARD lint
       # category and the exact fixed point of `buf format` are version-sensitive,
       # and the renderer is written against these versions; floating them would
       # turn an upstream release into a red build on an unrelated PR.
       BUF_VERSION: v1.72.0
+      PROTOC_VERSION: '35.1'
       PROTOC_GEN_GO_VERSION: v1.36.11
     steps:
       - uses: actions/checkout@v7
@@ -44,170 +46,14 @@ jobs:
         with:
           node-version: '24'
 
-      # protoc itself is deliberately not installed. Nothing here needs it:
-      # `buf build` runs a full parse + link of the generated file, `buf generate`
-      # invokes protoc-gen-go directly over its own descriptor set, and ptah
-      # re-parses its own output with bufbuild/protocompile before writing it. A
-      # protoc install would add a third compiler (and a third pinned version) to
-      # keep in sync without checking anything the steps below do not.
       - name: Install pinned Protobuf tooling
-        run: |
-          go install "github.com/bufbuild/buf/cmd/buf@${BUF_VERSION}"
-          go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}"
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        run: bash scripts/install-protobuf-export-tools.sh "${RUNNER_TEMP}/protobuf-tools"
 
       - name: Build ptah
         run: go build -o bin/ptah ./cmd/ptah
 
-      - name: Generate API schemas from the example models
-        run: |
-          ./bin/ptah schema export --to openapi-v3 --root-dir ./stubs --out artifacts/openapi.yaml
-          ./bin/ptah schema export --to graphql   --root-dir ./stubs --out artifacts/schema.graphql
+      - name: OpenAPI and GraphQL acceptance
+        run: bash scripts/check-api-export-acceptance.sh
 
-      - name: OpenAPI passes redocly lint
-        run: npx -y @redocly/cli@1 lint artifacts/openapi.yaml
-
-      - name: GraphQL parses and builds with graphql-js
-        run: |
-          npm init -y >/dev/null 2>&1
-          npm install graphql@16 >/dev/null 2>&1
-          node -e "
-            const { parse, buildSchema } = require('graphql');
-            const fs = require('fs');
-            const sdl = fs.readFileSync('artifacts/schema.graphql', 'utf8');
-            parse(sdl);
-            buildSchema(sdl);
-            console.log('graphql-js parse + buildSchema: OK');
-          "
-
-      # The output path has to mirror the package for buf lint's
-      # PACKAGE_DIRECTORY_MATCH: acme.inventory.v1 lives at
-      # acme/inventory/v1/schema.proto relative to the buf module root.
-      - name: Generate Protobuf schema from the example models
-        run: |
-          ./bin/ptah schema export --to protobuf \
-            --root-dir ./stubs \
-            --out artifacts/proto/acme/inventory/v1/schema.proto \
-            --proto-package acme.inventory.v1 \
-            --go-package 'example.com/ptahprotoacceptance/acme/inventory/v1;inventoryv1'
-
-          cat > artifacts/proto/buf.yaml <<'YAML'
-          version: v2
-          modules:
-            - path: .
-          lint:
-            use:
-              - STANDARD
-          breaking:
-            use:
-              - WIRE_JSON
-          YAML
-
-          cat > artifacts/proto/buf.gen.yaml <<'YAML'
-          version: v2
-          plugins:
-            - local: protoc-gen-go
-              out: ../gen
-              opt: paths=source_relative
-          YAML
-
-      - name: Protobuf passes buf lint (STANDARD)
-        working-directory: artifacts/proto
-        run: |
-          buf lint
-          echo 'buf lint STANDARD: OK (no findings)'
-
-      # The renderer's layout is a buf format fixed point, so a `buf format -w`
-      # pre-commit hook cannot rewrite a committed export, invalidate its content
-      # digest and wedge every later run.
-      - name: Protobuf output is a buf format fixed point
-        working-directory: artifacts/proto
-        run: |
-          buf format --diff --exit-code
-          echo 'buf format: OK (no changes)'
-
-      - name: Protobuf compiles and generates Go that builds
-        working-directory: artifacts/proto
-        run: |
-          buf build -o /dev/null
-          buf generate
-
-          # Throwaway module: nested under artifacts/, so it is invisible to the
-          # repository module. Its language version is read from the repository's
-          # go.mod so a Go bump cannot leave a stale pin here, and its runtime is
-          # the version protoc-gen-go was built from.
-          GO_LANGUAGE_VERSION="$(awk '/^go /{print $2; exit}' "${GITHUB_WORKSPACE}/go.mod")"
-          cat > ../gen/go.mod <<EOF
-          module example.com/ptahprotoacceptance
-
-          go ${GO_LANGUAGE_VERSION}
-
-          require google.golang.org/protobuf ${PROTOC_GEN_GO_VERSION}
-          EOF
-
-          cd ../gen
-          go mod tidy
-          go build ./...
-          echo 'protoc-gen-go + go build: OK'
-
-      - name: Protobuf export is idempotent
-        run: |
-          cp artifacts/proto/acme/inventory/v1/schema.proto "${RUNNER_TEMP}/schema.first.proto"
-          ./bin/ptah schema export --to protobuf \
-            --root-dir ./stubs \
-            --out artifacts/proto/acme/inventory/v1/schema.proto \
-            --proto-package acme.inventory.v1 \
-            --go-package 'example.com/ptahprotoacceptance/acme/inventory/v1;inventoryv1'
-          cmp "${RUNNER_TEMP}/schema.first.proto" artifacts/proto/acme/inventory/v1/schema.proto
-          echo 'regenerated export: byte-identical'
-
-      # `buf breaking` builds both inputs as modules, so the baseline has to live
-      # in a module root of its own, as a sibling of artifacts/proto. A copy
-      # nested inside artifacts/proto is swept into the current module - even
-      # with a buf.yaml of its own - and the run dies on `Article declared
-      # multiple times` before any rule is evaluated; other nestings are rejected
-      # outright with `failed to build input ... contained by module at path "."`.
-      # Copying the whole directory keeps buf.yaml - and therefore the WIRE_JSON
-      # rule set - alongside the baseline .proto.
-      - name: Additive column is not a WIRE_JSON breaking change
-        run: |
-          cp -R artifacts/proto artifacts/proto-baseline
-          cp -R ./stubs "${RUNNER_TEMP}/stubs-mutated"
-
-          python3 - "${RUNNER_TEMP}/stubs-mutated/category.go" <<'PY'
-          import pathlib
-          import sys
-
-          path = pathlib.Path(sys.argv[1])
-          source = path.read_text()
-          anchor = '\t//ptah:schema:index name="idx_categories_parent" fields="parent_id"'
-          added = (
-              '\t//ptah:schema:field name="tagline" type="VARCHAR(200)" not_null="false"\n'
-              '\tTagline string\n\n'
-          )
-          if anchor not in source:
-              raise SystemExit(f"anchor not found in {path}; update the mutation")
-          path.write_text(source.replace(anchor, added + anchor, 1))
-          PY
-
-          ./bin/ptah schema export --to protobuf \
-            --root-dir "${RUNNER_TEMP}/stubs-mutated" \
-            --out artifacts/proto/acme/inventory/v1/schema.proto \
-            --proto-package acme.inventory.v1 \
-            --go-package 'example.com/ptahprotoacceptance/acme/inventory/v1;inventoryv1'
-
-          # Guard against a vacuous comparison: if the added column never reached
-          # the export, `buf breaking` would be diffing a file against itself.
-          if cmp -s artifacts/proto-baseline/acme/inventory/v1/schema.proto artifacts/proto/acme/inventory/v1/schema.proto; then
-            echo 'the added column did not change the export; the breaking check would be vacuous' >&2
-            exit 1
-          fi
-          diff -u artifacts/proto-baseline/acme/inventory/v1/schema.proto artifacts/proto/acme/inventory/v1/schema.proto || true
-
-      - name: Protobuf stays compatible, lintable and formatted after the change
-        working-directory: artifacts/proto
-        run: |
-          buf breaking --against ../proto-baseline
-          buf lint
-          buf format --diff --exit-code
-          echo 'buf breaking WIRE_JSON + lint + format after the additive change: OK'
+      - name: Protobuf acceptance
+        run: bash scripts/check-protobuf-export-acceptance.sh

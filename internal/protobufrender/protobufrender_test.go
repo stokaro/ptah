@@ -59,9 +59,7 @@ func mustRenderText(c *qt.C, db *goschema.Database, opts protobufrender.Options)
 	return string(mustRender(c, db, opts).Data)
 }
 
-// mustFail asserts the export was refused and returns the message, which is the
-// only channel a caller has for telling the refusals apart: the package keeps
-// its validation sentinels unexported.
+// mustFail asserts the export was refused and returns its user-facing message.
 func mustFail(c *qt.C, db *goschema.Database, opts protobufrender.Options) string {
 	c.Helper()
 	res, err := protobufrender.Render(context.Background(), db, opts)

@@ -70,6 +70,24 @@ func rejectionCases() []rejectionCase {
 		wantMsg:      "output file is not valid protobuf",
 		wantSentinel: protobufrender.ErrMalformed,
 	}, {
+		name: "oversized reserved state",
+		damage: func(_ *qt.C, _ []byte) []byte {
+			return previousExport(
+				"enum Huge {\n  HUGE_UNSPECIFIED = 0;\n  reserved 1 to 1048577;\n}\n")
+		},
+		wantMsg: "output file is not valid protobuf: enum \"Huge\": reserved ranges expand to more than 1048576 numbers; " +
+			"refusing to truncate compatibility state",
+		wantSentinel: protobufrender.ErrMalformed,
+	}, {
+		name: "unsupported negative reserved state",
+		damage: func(_ *qt.C, _ []byte) []byte {
+			return previousExport(
+				"enum Negative {\n  NEGATIVE_UNSPECIFIED = 0;\n  reserved -1;\n}\n")
+		},
+		wantMsg: "output file is not valid protobuf: enum \"Negative\": " +
+			"reserved range -1 to -1 is outside Ptah's supported numbering space",
+		wantSentinel: protobufrender.ErrMalformed,
+	}, {
 		name: "package mismatch",
 		damage: func(_ *qt.C, good []byte) []byte {
 			return stampProto(strings.Replace(string(good),

@@ -115,11 +115,19 @@ func loadPrevious(ctx context.Context, path string, raw []byte, wantPackage stri
 	}
 	for i := range fd.Messages().Len() {
 		md := fd.Messages().Get(i)
-		prev.Messages[string(md.Name())] = messageState(md, fd)
+		state, err := messageState(md, fd)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
+		}
+		prev.Messages[string(md.Name())] = state
 	}
 	for i := range fd.Enums().Len() {
 		ed := fd.Enums().Get(i)
-		prev.Enums[string(ed.Name())] = enumState(ed)
+		state, err := enumState(ed)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
+		}
+		prev.Enums[string(ed.Name())] = state
 	}
 	return prev, nil
 }
@@ -133,7 +141,7 @@ func shortDigest(s string) string {
 
 // messageState reads a message's live numbers, field shapes and reservations.
 // Message reserved ranges carry an EXCLUSIVE end, unlike enum ranges.
-func messageState(md protoreflect.MessageDescriptor, file protoreflect.FileDescriptor) previousType {
+func messageState(md protoreflect.MessageDescriptor, file protoreflect.FileDescriptor) (previousType, error) {
 	state := previousType{
 		Numbers: map[string]int32{},
 		Fields:  map[string]previousField{},
@@ -150,19 +158,21 @@ func messageState(md protoreflect.MessageDescriptor, file protoreflect.FileDescr
 	for i := range ranges.Len() {
 		r := ranges.Get(i)
 		// End is EXCLUSIVE for message ranges.
-		addRange(&state.Reserved, int64(r[0]), int64(r[1])-1)
+		if err := addRange(&state.Reserved, int64(r[0]), int64(r[1])-1); err != nil {
+			return previousType{}, fmt.Errorf("message %q: %w", md.Name(), err)
+		}
 	}
 	names := md.ReservedNames()
 	for i := range names.Len() {
 		state.Reserved.addName(string(names.Get(i)))
 	}
-	return state
+	return state, nil
 }
 
 // enumState reads an enum's live numbers and reservations. Enum reserved ranges
 // carry an INCLUSIVE end, unlike message ranges - a real asymmetry in
 // protoreflect that silently drops the last reserved number if ignored.
-func enumState(ed protoreflect.EnumDescriptor) previousType {
+func enumState(ed protoreflect.EnumDescriptor) (previousType, error) {
 	state := previousType{Numbers: map[string]int32{}}
 	for i := range ed.Values().Len() {
 		vd := ed.Values().Get(i)
@@ -172,25 +182,42 @@ func enumState(ed protoreflect.EnumDescriptor) previousType {
 	for i := range ranges.Len() {
 		r := ranges.Get(i)
 		// End is INCLUSIVE for enum ranges.
-		addRange(&state.Reserved, int64(r[0]), int64(r[1]))
+		if err := addRange(&state.Reserved, int64(r[0]), int64(r[1])); err != nil {
+			return previousType{}, fmt.Errorf("enum %q: %w", ed.Name(), err)
+		}
 	}
 	names := ed.ReservedNames()
 	for i := range names.Len() {
 		state.Reserved.addName(string(names.Get(i)))
 	}
-	return state
+	return state, nil
 }
 
 // addRange records every number in [start, end] (inclusive) as reserved,
-// iterating in int64 so an end of MaxInt32 cannot overflow the counter and
-// stopping at maxReservedNumbers so a pathological range cannot exhaust memory.
-func addRange(res *reservations, start, end int64) {
-	for n := start; n <= end && res.count() < maxReservedNumbers; n++ {
-		if n < 0 || n > maxFieldNumber {
-			continue
-		}
-		res.addNumber(int32(n))
+// iterating in int64 so an end of MaxInt32 cannot overflow the counter. It
+// refuses unsupported or oversized state instead of truncating it: truncation
+// could make a later allocation reuse a number that remains reserved on the
+// wire.
+func addRange(res *reservations, start, end int64) error {
+	if start < 0 || end > maxFieldNumber {
+		return fmt.Errorf("reserved range %d to %d is outside Ptah's supported numbering space", start, end)
 	}
+	size := end - start + 1
+	remaining := int64(maxReservedNumbers - res.count())
+	if size > remaining {
+		return fmt.Errorf(
+			"reserved ranges expand to more than %d numbers; refusing to truncate compatibility state",
+			maxReservedNumbers)
+	}
+	// protocompile has already rejected overlapping ranges. Append directly so
+	// loading a large valid range stays O(n); addNumber's duplicate scan would
+	// make this loop quadratic.
+	for n := start; n <= end; n++ {
+		// The bounds check above proves n fits the generator's int32 range.
+		number := int32(n) //nolint:gosec // Conversion is guarded by the supported-numbering-space check.
+		res.Numbers = append(res.Numbers, number)
+	}
+	return nil
 }
 
 // fieldTypeString spells a field's type exactly as the generator writes it, so
