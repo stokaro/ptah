@@ -111,17 +111,18 @@ that already uses Atlas's runtime history table, pass `--revision-format atlas`
 on the CLI or `WithRevisionTableFormat(RevisionTableFormatAtlas)` in Go. Atlas
 revision mode uses `atlas_schema_revisions` by default, stores string migration
 versions, reads the Atlas `applied`/`total` and `error` state fields, and writes
-the Atlas `hash` value from `atlas.sum` when it is available. Rows created by
-migration execution use the migration filename description, store empty
-`error` and `error_stmt` values, and identify Ptah as the operator. Ptah records
-a coherent timing interval for executed SQL: `executed_at` is the migration
-lifecycle start and `execution_time` is the full elapsed duration in
-nanoseconds. Metadata-only baseline, set, and force operations record their
-write timestamp with zero duration, or preserve existing timing metadata when
-updating a row. Atlas CE can read these values, but exact dynamic timing
-equality is not claimed: Atlas CE v1.2.0 can persist a near-final timestamp and
-write-order-dependent duration. On PostgreSQL-family databases, Ptah creates
-the Atlas-compatible `executed_at TIMESTAMPTZ` column. Custom
+the Atlas `hash` value from `atlas.sum` when it is available. Successful rows
+created by migration execution use the migration filename description, store
+empty `error` and `error_stmt` values, and identify Ptah as the operator. Ptah
+records a coherent timing interval for executed SQL: `executed_at` is the
+migration lifecycle start and `execution_time` is the full elapsed duration in
+nanoseconds. Failed rows preserve their execution diagnostics. Metadata-only
+baseline, set, and force operations record their write timestamp with zero
+duration, or preserve existing timing metadata when updating a row. Atlas CE
+can read these values, but exact dynamic timing equality is not claimed: Atlas
+CE v1.2.0 can persist a near-final timestamp and write-order-dependent duration.
+On PostgreSQL-family databases, Ptah creates the Atlas-compatible
+`executed_at TIMESTAMPTZ` column. Custom
 `--migrations-schema` / `--migrations-table` values still override the metadata
 table location.
 
