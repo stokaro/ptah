@@ -17,7 +17,6 @@ import (
 	"github.com/stokaro/ptah/internal/atlasprojectpath"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/atlassource"
-	"github.com/stokaro/ptah/internal/pathguard"
 )
 
 const (
@@ -172,7 +171,11 @@ func atlasProjectConfigLocalDirWithQueryFromFlags(
 	}
 	allowedRoot := ""
 	if !filepath.IsAbs(parsed.Path) {
-		if _, rootErr := pathguard.ResolveWithinRoot(path, baseDir); rootErr == nil {
+		relative, relativeErr := filepath.Rel(baseDir, filepath.Join(baseDir, parsed.Path))
+		if relativeErr == nil &&
+			relative != ".." &&
+			!strings.HasPrefix(relative, ".."+string(filepath.Separator)) &&
+			!filepath.IsAbs(relative) {
 			allowedRoot = baseDir
 		}
 	}

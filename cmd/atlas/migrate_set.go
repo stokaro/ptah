@@ -3,6 +3,7 @@ package atlas
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -57,9 +58,6 @@ func atlasMigrateSetExactArgs(cmd *cobra.Command, args []string) error {
 }
 
 func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []string) error {
-	if err := atlasMigrateSetExactArgs(cmd, args); err != nil {
-		return err
-	}
 	opts, source, err := prepareAtlasMigrateSet(cmd, opts)
 	if err != nil {
 		return failAtlasCommand(cmd, err)
@@ -76,6 +74,9 @@ func runAtlasMigrateSet(cmd *cobra.Command, opts atlasMigrateSetOptions, args []
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	if err := atlasMigrateSetExactArgs(cmd, args); err != nil {
+		return err
+	}
 	version, err := parseAtlasMigrateSetVersion(args[0])
 	if err != nil {
 		return failAtlasCommand(cmd, err)
@@ -163,6 +164,16 @@ func prepareAtlasMigrateSet(
 	if len(localDir.Query) > 0 {
 		return atlasMigrateSetOptions{}, migrationsource.LocalSource{},
 			fmt.Errorf("atlas migrate set --dir: migration directory URL query parameters are not supported for this command")
+	}
+	// Preserve Atlas-compatible directory diagnostics; CaptureLocal below remains
+	// the authoritative rooted read and rejects any path changed after this check.
+	info, err := os.Stat(localDir.Path)
+	if err != nil {
+		return atlasMigrateSetOptions{}, migrationsource.LocalSource{}, fmt.Errorf("sql/migrate: %w", err)
+	}
+	if !info.IsDir() {
+		return atlasMigrateSetOptions{}, migrationsource.LocalSource{},
+			fmt.Errorf("sql/migrate: %q is not a dir", localDir.Path)
 	}
 	source, err := migrationsource.CaptureLocal(localDir.Path, migrationsource.LocalOptions{
 		AllowedRoot: localDir.AllowedRoot,

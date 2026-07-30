@@ -132,6 +132,14 @@ a supported local file or database URL. `env://url` and `env://dev` resolve the
 corresponding database URL; `env://migration.dir` resolves the configured
 local migration directory. Nested `env://` references fail explicitly.
 
+Relative `migration.dir` values resolve from the directory containing
+`atlas.hcl`. Migration-reading commands open the resolved directory through a
+rooted handle and capture an immutable snapshot before database work. Relative
+CLI `--dir` paths remain rooted at the process working directory, symlink
+escapes are rejected, and explicit absolute paths remain supported. Intentional
+config-relative paths such as `../shared-migrations` retain their meaning and
+are captured at the resolved location.
+
 Ptah's `ptah.yaml external_schema` block is a separate native configuration
 surface. It supplies an explicit external-program argument list and SQL, HCL,
 or YAML stdout to `ptah schema render`, `ptah schema compare`,

@@ -243,10 +243,13 @@ any edit to it as an edit to the gate in review, and restrict writes to
 the deployed migration directory, because the integrity file does not
 protect the policy the way it protects the SQL.
 
-`ptah migrations up` captures the migration directory before checksum
-verification, provider registration, and destructive linting. The safety gate
-therefore checks the same immutable SQL bytes that the migrator will execute,
-even if files on disk change while the command is running.
+Local migration commands capture the migration directory before database
+connection, checksum verification, provider registration, and destructive
+linting. `up`, `down`, `status`, `lint`, and `set` therefore use the same
+immutable SQL and metadata bytes throughout one invocation. A change during
+capture aborts; a change after capture is visible only to a later invocation.
+Relative CLI directories are rooted at the working directory and symlink
+escapes are rejected, while explicit absolute paths remain supported.
 
 ## Pre-migration checks
 

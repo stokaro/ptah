@@ -326,6 +326,56 @@ func TestMigrateApplyRejectsUnknownURLFormatBeforeOpeningDatabase(t *testing.T) 
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
+func TestMigrateApplyRejectsSymlinkEscapeBeforeOpeningDatabase(t *testing.T) {
+	tests := []struct {
+		name     string
+		format   string
+		filename string
+	}{
+		{name: "atlas", format: "atlas", filename: "1_init.sql"},
+		{name: "golang-migrate", format: "golang-migrate", filename: "1_init.up.sql"},
+		{name: "goose", format: "goose", filename: "1_init.sql"},
+		{name: "flyway", format: "flyway", filename: "V1__init.sql"},
+		{name: "liquibase", format: "liquibase", filename: "1_init.sql"},
+		{name: "dbmate", format: "dbmate", filename: "1_init.sql"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			migrationsDir := filepath.Join(dir, "migrations")
+			c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+			outsideMigration := filepath.Join(dir, "outside.sql")
+			c.Assert(
+				os.WriteFile(outsideMigration, []byte("CREATE TABLE escaped (id INTEGER PRIMARY KEY);"), 0o600),
+				qt.IsNil,
+			)
+			c.Assert(
+				os.Symlink(outsideMigration, filepath.Join(migrationsDir, test.filename)),
+				qt.IsNil,
+			)
+			dbPath := filepath.Join(dir, "must-not-exist.db")
+
+			cmd := atlas.NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs([]string{
+				"migrate", "apply",
+				"--url", "sqlite://" + dbPath,
+				"--dir", "file://" + migrationsDir + "?format=" + test.format,
+			})
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, `(?s)atlas migrate apply --dir: capture migrations directory:.*`)
+			_, statErr := os.Stat(dbPath)
+			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+		})
+	}
+}
+
 // TestMigrateApplyFlywayMidSequenceInsertionKeepsStableVersions is the
 // regression guard for the position-based numbering bug: inserting a migration
 // that sorts before an already-applied one must not renumber the others (which

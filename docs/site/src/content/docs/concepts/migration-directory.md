@@ -56,6 +56,25 @@ Atlas-compatible command surface — the `ptah-compat` drop-in binary — operat
 on the same directories through its `migrate ...` commands; see the
 [Atlas compatibility overview](../../atlas/overview/).
 
+## Stable local snapshots
+
+Commands that read a local migration directory for execution, status, linting,
+revision updates, rollback verification, or reports open it through a rooted
+directory handle and capture an immutable in-memory snapshot before connecting
+to a database. The snapshot contains migration SQL, `.ptah-lint.yaml`,
+`ptah.sum`, and `atlas.sum`; unrelated files are excluded.
+
+Relative CLI paths are rooted at the process working directory. Traversal and
+symlink escapes outside that root are rejected. Explicit absolute paths remain
+supported. A relative `migration.dir` in `atlas.hcl` resolves from the project
+file's directory, while an explicit CLI `--dir` keeps CLI path semantics.
+
+Ptah reads the directory twice and accepts it only when both captures match.
+Changing a migration during capture fails the command. Changes made after
+capture affect only a later invocation: checksum verification, migration
+registration, destructive linting, shadow rollback verification, execution,
+and template reports all consume the same captured bytes.
+
 ## Consequences
 
 - **The directory is portable.** Every environment replays the same files in

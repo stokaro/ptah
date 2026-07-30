@@ -547,12 +547,6 @@
       "count": 4
     },
     {
-      "path": "internal/pathguard/pathguard_test.go",
-      "function": "TestResolveWithinRootRejectsSymlinkEscape",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "internal/planner/dialects/mysql/fk_actions_test.go",
       "function": "TestPlanner_FieldLevelForeignKeyActions",
       "kind": "if",
@@ -1150,11 +1144,6 @@
     {
       "path": "internal/onlineddl/executor_test.go",
       "package": "onlineddl",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "internal/pathguard/pathguard_test.go",
-      "package": "pathguard",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
