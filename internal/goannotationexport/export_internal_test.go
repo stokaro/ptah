@@ -39,8 +39,10 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 		{
 			name: "identity replacement",
 			mutate: func(c *qt.C, _ string, source string, original []byte) {
+				replacement := source + ".replacement"
+				c.Assert(os.WriteFile(replacement, original, 0o600), qt.IsNil)
 				c.Assert(os.Remove(source), qt.IsNil)
-				c.Assert(os.WriteFile(source, original, 0o600), qt.IsNil)
+				c.Assert(os.Rename(replacement, source), qt.IsNil)
 			},
 			wantSource: []byte(
 				"package models\n\n//ptah:schema:table name=\"users\"\ntype User struct{}\n",
