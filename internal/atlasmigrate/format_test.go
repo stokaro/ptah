@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/internal/atlasmigrate"
+	"github.com/stokaro/ptah/internal/fsnapshot"
 )
 
 func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
@@ -45,11 +46,17 @@ func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
 			writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
 			writeFormatFile(c, dir, "1_init.down.sql", "DROP TABLE atlas_unchanged;\n")
 
-			gotFS, err := atlasmigrate.ResolveApplyDir(dir, tt.configured, tt.query)
+			gotFS, err := atlasmigrate.ResolveApplySource(
+				os.DirFS(dir),
+				dir,
+				tt.configured,
+				tt.query,
+			)
 
 			c.Assert(err, qt.IsNil)
-			// The Atlas format is read from disk unchanged: both the up file
-			// (byte-for-byte) and the accompanying down file are visible.
+			writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE changed_after_capture (id INTEGER PRIMARY KEY);\n")
+			// The Atlas snapshot preserves both the byte-for-byte up file and
+			// the accompanying down file after the source changes.
 			c.Assert(readFSFile(c, gotFS, "1_init.sql"), qt.Equals, "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
 			c.Assert(readFSFile(c, gotFS, "1_init.down.sql"), qt.Equals, "DROP TABLE atlas_unchanged;\n")
 		})
@@ -125,7 +132,12 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 			dir := c.TempDir()
 			writeFormatFile(c, dir, tt.file, tt.source)
 
-			gotFS, err := atlasmigrate.ResolveApplyDir(dir, tt.configured, tt.query)
+			gotFS, err := atlasmigrate.ResolveApplySource(
+				os.DirFS(dir),
+				dir,
+				tt.configured,
+				tt.query,
+			)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(readFSFile(c, gotFS, tt.wantFile), qt.Equals, tt.wantSQL)
@@ -194,10 +206,16 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			gotFS, err := atlasmigrate.ResolveApplyDir(c.TempDir(), tt.configured, tt.query)
+			dir := c.TempDir()
+			gotFS, err := atlasmigrate.ResolveApplySource(
+				os.DirFS(dir),
+				dir,
+				tt.configured,
+				tt.query,
+			)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
-			c.Assert(gotFS, qt.IsNil)
+			c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 		})
 	}
 }
@@ -210,17 +228,18 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		writeFormatFile(c, dir, "V1__init.sql", "CREATE TABLE flyway_versioned (id int);\n")
 		writeFormatFile(c, dir, "R__views.sql", "CREATE VIEW v AS SELECT 1;\n")
 
-		gotFS, err := atlasmigrate.ResolveApplyDir(dir, "flyway", nil)
+		gotFS, err := atlasmigrate.ResolveApplySource(os.DirFS(dir), dir, "flyway", nil)
 
 		c.Assert(err, qt.ErrorMatches, `Flyway repeatable migration R__views\.sql cannot be imported yet because Ptah does not execute Atlas R-suffixed migrations`)
-		c.Assert(gotFS, qt.IsNil)
+		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
 
 	c.Run("empty external directory", func(c *qt.C) {
-		gotFS, err := atlasmigrate.ResolveApplyDir(c.TempDir(), "goose", nil)
+		dir := c.TempDir()
+		gotFS, err := atlasmigrate.ResolveApplySource(os.DirFS(dir), dir, "goose", nil)
 
 		c.Assert(err, qt.ErrorMatches, `no importable migration files found in .* for format "goose"`)
-		c.Assert(gotFS, qt.IsNil)
+		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
 }
 

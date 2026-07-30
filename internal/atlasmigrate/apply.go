@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,12 +16,9 @@ import (
 )
 
 type ApplyOptions struct {
-	// Dir is the resolved migration directory path. It is used for diagnostics
-	// and as the fallback filesystem when FS is nil.
+	// Dir is the resolved migration directory path used for diagnostics.
 	Dir string
-	// FS is the migration filesystem to execute. When set (as the CLI does via
-	// ResolveApplyDir) it lets callers apply an in-memory, format-converted
-	// directory. When nil, PrepareApply reads Dir from disk with os.DirFS.
+	// FS is the already captured migration filesystem to execute.
 	FS                   fs.FS
 	DryRun               bool
 	ExecOrder            migrator.ExecOrder
@@ -73,11 +69,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 	startedAt := time.Now()
 
 	conn.SchemaWriter().SetDryRun(opts.DryRun)
-	migrationFS := opts.FS
-	if migrationFS == nil {
-		migrationFS = os.DirFS(opts.Dir)
-	}
-	mig, err := newApplyMigrator(conn, migrationFS, applyMigratorOptions{
+	mig, err := newApplyMigrator(conn, opts.FS, applyMigratorOptions{
 		execOrder:            opts.ExecOrder,
 		txMode:               opts.TxMode,
 		revisionsSchema:      opts.RevisionsSchema,
@@ -204,6 +196,9 @@ func validateApplyOptions(conn *dbschema.DatabaseConnection, opts ApplyOptions) 
 	}
 	if strings.TrimSpace(opts.Dir) == "" {
 		return errors.New("migrate apply requires migration directory")
+	}
+	if opts.FS == nil {
+		return errors.New("migrate apply requires migration filesystem")
 	}
 	if opts.BaselineVersion < 0 {
 		return errors.New("migrate apply baseline version must be greater than or equal to zero")

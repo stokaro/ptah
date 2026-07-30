@@ -62,6 +62,58 @@ func TestResolve_EmptyLocalDirectory(t *testing.T) {
 	c.Assert(source.OCI, qt.IsNil)
 }
 
+func TestCaptureLocal_SnapshotIgnoresLaterPathAndFileChanges(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	dir := filepath.Join(root, "migrations")
+	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
+	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE original (id INTEGER);\n")
+	writeFile(c, filepath.Join(dir, "1_init.down.sql"), "DROP TABLE original;\n")
+	writeFile(c, filepath.Join(dir, "atlas.sum"), "h1:original\n")
+
+	source, err := migrationsource.CaptureLocal(
+		dir,
+		migrationsource.LocalOptions{AllowedRoot: root},
+	)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(
+		os.WriteFile(filepath.Join(dir, "1_init.sql"), []byte("CREATE TABLE changed (id INTEGER);\n"), 0o600),
+		qt.IsNil,
+	)
+	c.Assert(os.Rename(dir, filepath.Join(root, "captured")), qt.IsNil)
+	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
+	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE replacement (id INTEGER);\n")
+
+	up, err := fs.ReadFile(source.FileSystem, "1_init.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(up), qt.Equals, "CREATE TABLE original (id INTEGER);\n")
+	down, err := fs.ReadFile(source.FileSystem, "1_init.down.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(down), qt.Equals, "DROP TABLE original;\n")
+	sum, err := fs.ReadFile(source.FileSystem, "atlas.sum")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(sum), qt.Equals, "h1:original\n")
+}
+
+func TestCaptureLocal_RejectsSymlinkedFileEscape(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	dir := filepath.Join(root, "migrations")
+	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
+	outside := filepath.Join(t.TempDir(), "outside.sql")
+	writeFile(c, outside, "SELECT 'outside';\n")
+	c.Assert(os.Symlink(outside, filepath.Join(dir, "1_init.sql")), qt.IsNil)
+
+	source, err := migrationsource.CaptureLocal(
+		dir,
+		migrationsource.LocalOptions{AllowedRoot: root},
+	)
+
+	c.Assert(err, qt.ErrorMatches, `capture migrations directory: .*`)
+	c.Assert(source, qt.DeepEquals, migrationsource.LocalSource{})
+}
+
 func writeFile(c *qt.C, path, contents string) {
 	c.Helper()
 	err := os.WriteFile(path, []byte(contents), 0o600)

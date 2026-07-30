@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"os"
 	"strings"
 
 	"github.com/stokaro/ptah/dbschema"
@@ -38,8 +37,11 @@ func Set(
 	if conn == nil {
 		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("migrate set requires database connection")
 	}
-	if strings.TrimSpace(opts.Dir) == "" && opts.FS == nil {
+	if strings.TrimSpace(opts.Dir) == "" {
 		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("migrate set requires migration directory")
+	}
+	if opts.FS == nil {
+		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("migrate set requires migration filesystem")
 	}
 	dirFormat := opts.DirFormat
 	if dirFormat == "" {
@@ -50,13 +52,9 @@ func Set(
 		revisionFormat = migrator.RevisionTableFormatAtlas
 	}
 
-	migrationFS := opts.FS
-	if migrationFS == nil {
-		migrationFS = os.DirFS(opts.Dir)
-	}
 	mig, err := migrator.NewFSMigrator(
 		conn,
-		migrationFS,
+		opts.FS,
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
 	)

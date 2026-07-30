@@ -3,9 +3,9 @@ package migrationsource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"strings"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -38,6 +38,20 @@ type Source struct {
 	OCI        *OCI
 }
 
+// LocalOptions controls rooted local migration-directory capture.
+type LocalOptions struct {
+	// AllowedRoot constrains raw even when raw is absolute. Leave empty for CLI
+	// semantics: relative paths are constrained to the working directory and
+	// explicit absolute paths remain allowed.
+	AllowedRoot string
+}
+
+// LocalSource is one immutable local migration-directory snapshot.
+type LocalSource struct {
+	FileSystem fs.FS
+	Display    string
+}
+
 // Resolve loads raw as a local directory or an oci:// artifact.
 func Resolve(ctx context.Context, raw string, opts Options) (Source, error) {
 	if strings.HasPrefix(raw, ociartifact.Scheme) {
@@ -47,28 +61,55 @@ func Resolve(ctx context.Context, raw string, opts Options) (Source, error) {
 }
 
 func resolveLocal(raw string, opts Options) (Source, error) {
-	resolved, err := pathguard.ResolveCLIPath(raw)
+	local, err := CaptureLocal(raw, LocalOptions{})
 	if err != nil {
-		return Source{}, fmt.Errorf("invalid migrations directory: %w", err)
-	}
-	root, err := os.OpenRoot(resolved)
-	if err != nil {
-		return Source{}, fmt.Errorf("open migrations directory: %w", err)
-	}
-	defer root.Close()
-	snapshot, err := migrationsnapshot.Capture(root.FS())
-	if err != nil {
-		return Source{}, fmt.Errorf("capture migrations directory: %w", err)
+		return Source{}, err
 	}
 	format, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
 	if err != nil {
 		return Source{}, err
 	}
 	return Source{
-		FileSystem: snapshot,
-		Display:    resolved,
+		FileSystem: local.FileSystem,
+		Display:    local.Display,
 		DirFormat:  format,
 	}, nil
+}
+
+// CaptureLocal validates and opens raw through its allowed root, then captures
+// one stable immutable snapshot before returning.
+func CaptureLocal(raw string, opts LocalOptions) (LocalSource, error) {
+	var err error
+	if opts.AllowedRoot == "" {
+		_, err = pathguard.ResolveCLIPath(raw)
+	} else {
+		_, err = pathguard.ResolveWithinRoot(raw, opts.AllowedRoot)
+	}
+	if err != nil {
+		return LocalSource{}, fmt.Errorf("invalid migrations directory: %w", err)
+	}
+
+	var opened *pathguard.OpenedDirectory
+	if opts.AllowedRoot == "" {
+		opened, err = pathguard.OpenCLIDirectory(raw)
+	} else {
+		opened, err = pathguard.OpenDirectoryWithinRoot(raw, opts.AllowedRoot)
+	}
+	if err != nil {
+		return LocalSource{}, fmt.Errorf("open migrations directory: %w", err)
+	}
+	snapshot, captureErr := migrationsnapshot.CaptureStable(opened.FS())
+	closeErr := opened.Close()
+	if captureErr != nil {
+		if closeErr != nil {
+			captureErr = errors.Join(captureErr, fmt.Errorf("close migrations directory: %w", closeErr))
+		}
+		return LocalSource{}, fmt.Errorf("capture migrations directory: %w", captureErr)
+	}
+	if closeErr != nil {
+		return LocalSource{}, fmt.Errorf("close migrations directory: %w", closeErr)
+	}
+	return LocalSource{FileSystem: snapshot, Display: opened.Path()}, nil
 }
 
 func resolveOCI(ctx context.Context, raw string, opts Options) (Source, error) {
