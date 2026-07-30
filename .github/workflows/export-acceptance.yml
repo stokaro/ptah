@@ -3,6 +3,13 @@ name: Export Acceptance
 # Enforces the acceptance criteria for `ptah schema export --to openapi-v3` and
 # `--to graphql` (issue #172): the generated OpenAPI must pass redocly lint and
 # the generated GraphQL must parse (and build) with graphql-js.
+#
+# It also enforces the acceptance criteria for `--to protobuf` (issue #893): the
+# generated .proto must pass `buf lint` with the STANDARD category, must already
+# be a `buf format` fixed point, must compile with protoc and produce Go that
+# builds, and must be byte-identical when regenerated. WIRE_JSON checks cover
+# additive changes, reordering, reserved field removals, tombstones, and an
+# intentionally incompatible type change.
 on:
   push:
     branches:
@@ -16,6 +23,14 @@ jobs:
   export-acceptance:
     name: export-acceptance
     runs-on: ubuntu-latest
+    env:
+      # The tools are pinned on purpose. The membership of buf's STANDARD lint
+      # category and the exact fixed point of `buf format` are version-sensitive,
+      # and the renderer is written against these versions; floating them would
+      # turn an upstream release into a red build on an unrelated PR.
+      BUF_VERSION: v1.72.0
+      PROTOC_VERSION: '35.1'
+      PROTOC_GEN_GO_VERSION: v1.36.11
     steps:
       - uses: actions/checkout@v7
 
@@ -31,26 +46,14 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Install pinned Protobuf tooling
+        run: bash scripts/install-protobuf-export-tools.sh "${RUNNER_TEMP}/protobuf-tools"
+
       - name: Build ptah
         run: go build -o bin/ptah ./cmd/ptah
 
-      - name: Generate API schemas from the example models
-        run: |
-          ./bin/ptah schema export --to openapi-v3 --root-dir ./stubs --out artifacts/openapi.yaml
-          ./bin/ptah schema export --to graphql   --root-dir ./stubs --out artifacts/schema.graphql
+      - name: OpenAPI and GraphQL acceptance
+        run: bash scripts/check-api-export-acceptance.sh
 
-      - name: OpenAPI passes redocly lint
-        run: npx -y @redocly/cli@1 lint artifacts/openapi.yaml
-
-      - name: GraphQL parses and builds with graphql-js
-        run: |
-          npm init -y >/dev/null 2>&1
-          npm install graphql@16 >/dev/null 2>&1
-          node -e "
-            const { parse, buildSchema } = require('graphql');
-            const fs = require('fs');
-            const sdl = fs.readFileSync('artifacts/schema.graphql', 'utf8');
-            parse(sdl);
-            buildSchema(sdl);
-            console.log('graphql-js parse + buildSchema: OK');
-          "
+      - name: Protobuf acceptance
+        run: bash scripts/check-protobuf-export-acceptance.sh

@@ -4,12 +4,18 @@ description: Export Go entities to OpenAPI 3.0 component schemas or GraphQL SDL.
 ---
 
 Ptah projects the schema it parses from Go annotations into API-facing formats:
-OpenAPI 3.0 component schemas and GraphQL SDL. The parsed schema already carries
-types, nullability, enums and foreign keys, so each format is a direct projection
-of it — handy for teams that hand-author API specs from a database schema.
+OpenAPI 3.0 component schemas, GraphQL SDL, and Protobuf definitions. The parsed
+schema already carries types, nullability, enums and foreign keys, so each format
+is a direct projection of it — handy for teams that hand-author API specs from a
+database schema.
 
 The generated OpenAPI passes `redocly lint`; the generated GraphQL parses and
 builds with `graphql-js`.
+
+This page covers the OpenAPI and GraphQL targets, which are stateless. The
+Protobuf target is stateful — field numbers are persistent wire identifiers, so
+its generated file is committed compatibility state — and has its own page:
+[Protobuf schema export](../protobuf/).
 
 ## Commands
 
@@ -26,11 +32,11 @@ ptah schema export --to graphql --root-dir ./models > schema.graphql
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
-| `--to` | all | `hcl`, `openapi-v3`, or `graphql`. The old `atlas-hcl` value is accepted as an alias. |
+| `--to` | all | `hcl`, `openapi-v3`, `graphql`, or [`protobuf`](../protobuf/). The old `atlas-hcl` value is accepted as an alias. |
 | `--root-dir` | all | Directory scanned for Go annotations. |
-| `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl`. |
-| `--include-tables` | `openapi-v3`, `graphql` | Comma-separated allowlist of tables. |
-| `--exclude-tables` | `openapi-v3`, `graphql` | Comma-separated denylist, applied after the allowlist. |
+| `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl` and for [`protobuf`](../protobuf/), where it is also the compatibility state read back on the next run. |
+| `--include-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated allowlist of tables. |
+| `--exclude-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated denylist, applied after the allowlist. |
 | `--title` | `openapi-v3` | Value for `info.title` (default `Ptah Exported Schema`). |
 
 Export warnings (for example an enum whose values cannot be resolved) are written
