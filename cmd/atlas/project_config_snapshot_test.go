@@ -140,6 +140,84 @@ func TestCompatCommandMigrateDownEnvironmentOverridesSafetySnapshot(t *testing.T
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
+func TestCompatCommandMigrateDownUsesProjectDevURLForShadowVerification(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "project-dev.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "2_add_audit.down.sql"),
+		[]byte("DROP TABLE no_such_table;\n"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
+  local:
+    dev: "sqlite://`+filepath.Join(dir, "shadow.db")+`"
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--config", "project.hcl",
+		"--env", "local",
+		"--to-version", "1",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+}
+
+func TestCompatCommandMigrateDownExplicitDirectoryOverridesUnsupportedProjectPaths(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "explicit-migrations")
+	dbPath := filepath.Join(dir, "explicit-directory.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  schema {
+    src = ["postgres://unused/schema"]
+  }
+  migration {
+    dir = "atlas://remote/migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetIn(strings.NewReader("YES\n"))
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--config", "project.hcl",
+		"--env", "local",
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+}
+
 func TestCompatCommandMigrateDownNativeDirectoryEnvironmentOverridesProjectConfig(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -154,8 +232,11 @@ func TestCompatCommandMigrateDownNativeDirectoryEnvironmentOverridesProjectConfi
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
   url = "sqlite://`+dbPath+`"
+  schema {
+    src = ["postgres://unused/schema"]
+  }
   migration {
-    dir = "file://missing-config-migrations"
+    dir = "atlas://remote/migrations"
   }
 }
 `), 0o600), qt.IsNil)
@@ -228,4 +309,82 @@ func TestCompatCommandProjectConfigDefersToDirectoryEnvironment(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "2 migration file(s) hashed")
+}
+
+func TestCompatCommandProjectSelectionDoesNotLeakAcrossRootReuse(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "1_init.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate",
+		"--config", "file://missing-first.hcl",
+		"--env", "first",
+		"--var", "name=first",
+		"--help",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	out.Reset()
+	cmd.SetArgs([]string{
+		"migrate", "hash",
+		"--dir", "file://" + migrationsDir,
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+}
+
+func TestCompatCommandProjectEnvironmentRemainsEffectiveAcrossRootReuse(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "environment-migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "1_init.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
+  migration {
+    dir = "file://environment-migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+	t.Setenv("PTAH_CONFIG", "file://project.hcl")
+	t.Setenv("PTAH_ENV", "local")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "hash"})
+
+	firstErr := cmd.Execute()
+
+	c.Assert(firstErr, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	out.Reset()
+	cmd.SetArgs([]string{"migrate", "hash"})
+
+	secondErr := cmd.Execute()
+
+	c.Assert(secondErr, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
 }

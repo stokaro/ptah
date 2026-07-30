@@ -82,38 +82,11 @@ func loadRequiredMergedProjectConfig(
 	if err != nil {
 		return projectconfig.Config{}, projectconfig.Config{}, err
 	}
-	resolvedAtlas, err := resolveAtlasProjectConfigPaths(flags, atlas)
-	if err != nil {
-		return projectconfig.Config{}, projectconfig.Config{}, err
-	}
 	ptah, err := projectconfig.LoadPtahFile(projectconfig.PtahFileName, flags.envName)
 	if err != nil {
 		return projectconfig.Config{}, projectconfig.Config{}, err
 	}
-	return atlas, projectconfig.Merge(ptah, resolvedAtlas), nil
-}
-
-func resolveAtlasProjectConfigPaths(
-	flags atlasProjectFlagValues,
-	config projectconfig.Config,
-) (projectconfig.Config, error) {
-	migrationDir := config.StringValue(projectconfig.StringMigrationDir)
-	if migrationDir.Present {
-		resolved, err := atlasProjectConfigLocalDirFromFlags(flags, migrationDir.Value)
-		if err != nil {
-			return projectconfig.Config{}, fmt.Errorf("atlas.hcl migration.dir: %w", err)
-		}
-		config.Migration.Dir = resolved
-	}
-	sources := config.SchemaSourcesValue()
-	if sources.Present {
-		resolved, err := atlasProjectConfigSchemaURLsFromFlags(flags, sources.Value)
-		if err != nil {
-			return projectconfig.Config{}, fmt.Errorf("atlas.hcl schema.src: %w", err)
-		}
-		config.SchemaSources = resolved
-	}
-	return config, nil
+	return atlas, projectconfig.Merge(ptah, atlas), nil
 }
 
 func atlasConfigPathValue(value string) (string, error) {
@@ -248,6 +221,9 @@ func loadAtlasProjectConfigForCommand(
 }
 
 func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, bool, error) {
+	if err := refreshAtlasProjectFlagEnvironment(cmd); err != nil {
+		return atlasProjectFlagValues{}, false, err
+	}
 	flags := atlasProjectFlagValues{configPath: "file://" + projectconfig.AtlasFileName}
 	changed := false
 	if flag := cmd.Flags().Lookup(atlasConfigFlagName); flag != nil {
@@ -267,6 +243,77 @@ func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, b
 		changed = changed || flag.Changed
 	}
 	return flags, changed, nil
+}
+
+func refreshAtlasProjectFlagEnvironment(cmd *cobra.Command) error {
+	for _, name := range []string{atlasConfigFlagName, dbcli.EnvFlagName, atlasVarFlagName} {
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil || flag.Changed {
+			continue
+		}
+		value, ok := os.LookupEnv(cmdflags.EnvName("PTAH", name))
+		if !ok || value == "" {
+			continue
+		}
+		if err := cmd.Flags().Set(name, value); err != nil {
+			return fmt.Errorf("apply %s: %w", cmdflags.EnvName("PTAH", name), err)
+		}
+	}
+	return nil
+}
+
+func installAtlasProjectFlagResetTree(group *cobra.Command) {
+	wrapAtlasProjectFlagReset(group, group)
+	for _, child := range group.Commands() {
+		installAtlasProjectFlagResetSubtree(child, group)
+	}
+}
+
+func installAtlasProjectFlagResetSubtree(cmd, group *cobra.Command) {
+	wrapAtlasProjectFlagReset(cmd, group)
+	for _, child := range cmd.Commands() {
+		installAtlasProjectFlagResetSubtree(child, group)
+	}
+}
+
+func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
+	if runE := cmd.RunE; runE != nil {
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			defer resetAtlasProjectFlags(group)
+			return runE(cmd, args)
+		}
+	}
+	if run := cmd.Run; run != nil {
+		cmd.Run = func(cmd *cobra.Command, args []string) {
+			defer resetAtlasProjectFlags(group)
+			run(cmd, args)
+		}
+	}
+	help := cmd.HelpFunc()
+	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		defer resetAtlasProjectFlags(group)
+		help(cmd, args)
+	})
+	flagError := cmd.FlagErrorFunc()
+	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		defer resetAtlasProjectFlags(group)
+		return flagError(cmd, err)
+	})
+}
+
+func resetAtlasProjectFlags(group *cobra.Command) {
+	for _, name := range []string{atlasConfigFlagName, dbcli.EnvFlagName, atlasVarFlagName} {
+		flag := group.PersistentFlags().Lookup(name)
+		if flag == nil {
+			continue
+		}
+		if value, ok := flag.Value.(pflag.SliceValue); ok {
+			_ = value.Replace(nil)
+		} else {
+			_ = flag.Value.Set(flag.DefValue)
+		}
+		flag.Changed = false
+	}
 }
 
 func atlasProjectConfigExists(path string) bool {

@@ -108,12 +108,16 @@ func newAtlasCommand(use, short, long string) *cobra.Command {
 		RunE:  runAtlasGroupHelp,
 	}
 	cmdutil.ConfigureCommandArgs(cmd, atlasRootArgs)
+	schemaCommand := newAtlasSchemaCommand()
+	migrateCommand := newAtlasMigrateCommand()
 	cmd.AddCommand(newAtlasVersionCommand())
 	cmd.AddCommand(newAtlasLicenseCommand())
-	cmd.AddCommand(newAtlasSchemaCommand())
-	cmd.AddCommand(newAtlasMigrateCommand())
+	cmd.AddCommand(schemaCommand)
+	cmd.AddCommand(migrateCommand)
 	installAtlasCompletionCommand(cmd)
 	installAtlasUsageTree(cmd)
+	installAtlasProjectFlagResetTree(schemaCommand)
+	installAtlasProjectFlagResetTree(migrateCommand)
 	return cmd
 }
 

@@ -355,7 +355,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	emit.Println()
 
 	if err := verifyRollbackOnShadow(shadowVerification{
-		shadowDB:       opts.shadowDB,
+		shadowDB:       resolvedOpts.shadowDB,
 		migrationsFS:   migrationsFS,
 		dialect:        conn.Info().Dialect,
 		currentVersion: status.CurrentVersion,

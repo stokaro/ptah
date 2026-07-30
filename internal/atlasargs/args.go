@@ -273,7 +273,7 @@ func appendDefaultArgs(flags []Flag, args []string) []string {
 	out := args
 	cloned := false
 	for _, flag := range flags {
-		if flag.Default == "" || flagPresent(args, flag) {
+		if flag.Default == "" || flagPresent(args, flag) || nativeEnvironmentPresent(flag) {
 			continue
 		}
 		if !cloned {
@@ -283,6 +283,14 @@ func appendDefaultArgs(flags []Flag, args []string) []string {
 		out = append(out, "--"+flag.Name+"="+flag.Default)
 	}
 	return out
+}
+
+func nativeEnvironmentPresent(flag Flag) bool {
+	if flag.EnvDisabled || flag.NativeName == "" || flag.NativeName == flag.Name {
+		return false
+	}
+	value, ok := os.LookupEnv(envName("PTAH", flag.NativeName))
+	return ok && value != ""
 }
 
 func appendEnvArgs(flags []Flag, args []string) []string {

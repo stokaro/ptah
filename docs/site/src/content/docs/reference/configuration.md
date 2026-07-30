@@ -70,6 +70,9 @@ Project config can also define timeouts, revision table layout, migration
 directory format, transaction mode, backup destinations, pre-flight hooks,
 webhooks, lint defaults, and online-DDL policy.
 
+The `dev` value supplies the disposable database for migration generation and
+the shadow rehearsal that `migrations down` performs before touching its target.
+
 | Setting area | Example keys |
 | --- | --- |
 | Database target | `url`, `src`, `schema.src`, `dev`, `schemas` |

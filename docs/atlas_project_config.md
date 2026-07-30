@@ -82,7 +82,7 @@ The supported attributes map to Ptah settings as follows:
 | Atlas setting | Ptah setting |
 | --- | --- |
 | `env.url` | `--db-url`, `ptah-compat schema inspect --url`, `ptah-compat schema apply --url`, `ptah-compat migrate apply --url`, or `ptah-compat migrate status --url` default |
-| `env.dev` | `migrations generate --shadow-db`, `ptah-compat schema inspect --dev-url`, `ptah-compat schema apply --dev-url`, `ptah-compat schema diff --dev-url`, `ptah-compat migrate diff --dev-url`, or `ptah-compat migrate lint --dev-url` default |
+| `env.dev` | `migrations generate --shadow-db`, `migrations down --shadow-db`, `ptah-compat schema inspect --dev-url`, `ptah-compat schema apply --dev-url`, `ptah-compat schema diff --dev-url`, `ptah-compat migrate down --dev-url`, `ptah-compat migrate diff --dev-url`, or `ptah-compat migrate lint --dev-url` default |
 | `env.src` | `ptah-compat schema apply --to` default |
 | `env.schema.src` | `ptah-compat schema apply --to`, `ptah-compat schema diff --to`, or `ptah-compat migrate diff --to` default |
 | `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds |

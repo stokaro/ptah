@@ -81,7 +81,7 @@ env:
 | Key | Meaning |
 | --- | --- |
 | `url` | Default target database URL for migration commands |
-| `dev` | Disposable dev/shadow database URL for `migrations generate` |
+| `dev` | Disposable dev/shadow database URL for `migrations generate` and rollback verification in `migrations down` |
 | `schemas` | Default schemas to introspect when the command supports schema scoping |
 | `exclude` | Project-level exclude patterns for config consumers |
 | `external_schema.program` | External schema command as an explicit argument list; the first item is the executable |
