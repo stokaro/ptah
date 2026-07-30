@@ -186,11 +186,12 @@ When an `atlas.hcl` `migration` block is present, Ptah defaults
 `migration.dir` values declared in `atlas.hcl` resolve relative to the directory
 containing that `atlas.hcl` file. Explicit CLI `--dir` values keep CLI semantics
 and resolve relative to the process working directory unless they are absolute.
-Migration-reading commands open the resolved directory through a rooted handle
-and capture an immutable snapshot before database work. Relative CLI traversal
-and symlink escapes are rejected; explicit absolute paths remain supported.
-Intentional project-relative paths such as `../shared-migrations` retain their
-config-relative meaning and are captured at the resolved location.
+Apply, down, status, lint, set, and native repair commands open the resolved
+directory through a rooted handle and capture an immutable snapshot before
+database work. Relative CLI traversal and symlink escapes are rejected;
+explicit absolute paths remain supported. Intentional project-relative paths
+such as `../shared-migrations` retain their config-relative meaning and are
+captured at the resolved location.
 Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when a
 command needs that configured value; an explicit CLI path flag still wins before
 URI validation.
