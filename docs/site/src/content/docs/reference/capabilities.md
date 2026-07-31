@@ -13,14 +13,17 @@ per-engine status and operational notes are on the
 
 Capabilities answer questions that a dialect name alone cannot answer:
 
-| Question | Example capability |
-| --- | --- |
-| Can this target drop constraints with the generic SQL spelling? | `drop_constraint_generic` |
-| Can this target guard index drops with `IF EXISTS`? | `drop_index_if_exists` |
-| Are CHECK constraints enforced? | `check_constraints_enforced` |
-| Are enums inline column types or standalone custom types? | `enum_inline_column`, `enum_custom_type` |
-| Can PostgreSQL-style concurrent indexes be emitted? | `create_index_concurrently` |
-| Does the target support roles, RLS, XML, or advisory locks? | `role_management`, `row_level_security`, `xml_type`, `advisory_locks` |
+- Can this target drop constraints with the generic SQL spelling?
+  `drop_constraint_generic`
+- Can this target guard index drops with `IF EXISTS`?
+  `drop_index_if_exists`
+- Are CHECK constraints enforced? `check_constraints_enforced`
+- Are enums inline column types or standalone custom types?
+  `enum_inline_column`, `enum_custom_type`
+- Can PostgreSQL-style concurrent indexes be emitted?
+  `create_index_concurrently`
+- Does the target support roles, RLS, XML, or advisory locks?
+  `role_management`, `row_level_security`, `xml_type`, `advisory_locks`
 
 ## Declarative database testing
 

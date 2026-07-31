@@ -7,6 +7,12 @@
 // American English, code-fence labels, banned filler, the admonition set, and
 // testify in samples. Rules that need editorial judgement (page taxonomy,
 // section templates, table design) remain a review responsibility.
+//
+// Usage:
+//   node scripts/check-style.mjs [--selftest]
+//
+// The check has no npm dependencies on purpose: CI runs it from a bare checkout
+// for changes that touch no site page at all.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +25,19 @@ const docsRoot = join(siteRoot, 'src', 'content', 'docs');
 // docs/STYLE_GUIDE.md defines the banned words, so it necessarily contains
 // them. It is the rule source, not prose that has to obey the rule.
 const exemptFiles = new Set(['docs/STYLE_GUIDE.md']);
+
+// Directories that never hold governed documentation. Test fixtures are
+// excluded because their contents are inputs to a test, not prose a reader
+// meets; build output and dependencies are excluded because they are generated.
+const skipDirectories = new Set([
+  'node_modules',
+  'dist',
+  'bin',
+  'testdata',
+  'test-reports',
+  'coverage',
+  'tmp',
+]);
 
 // British spellings that docs/STYLE_GUIDE.md section 4 rules out. Each entry is
 // matched as a whole word, case-insensitively, with an optional suffix so that
@@ -62,34 +81,43 @@ function toPosix(value) {
   return value.split(sep).join('/');
 }
 
-function walk(dir, extensions) {
+function walk(dir, matches) {
   const files = [];
   if (!existsSync(dir)) return files;
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.astro') continue;
-      files.push(...walk(fullPath, extensions));
+      // Dot directories hold tooling, git state, and nested worktrees, none of
+      // which are reader-facing documentation.
+      if (entry.name.startsWith('.') || skipDirectories.has(entry.name)) continue;
+      files.push(...walk(fullPath, matches));
       continue;
     }
-    if (entry.isFile() && extensions.includes(extname(entry.name))) {
-      files.push(fullPath);
-    }
+    if (entry.isFile() && matches(entry.name)) files.push(fullPath);
   }
   return files;
 }
 
+const markdown = (name) => extname(name) === '.md' || extname(name) === '.mdx';
+const readme = (name) => name === 'README.md';
+
 // documentationFiles returns every file the style guide governs: the site, the
-// contributor docs, and the READMEs that readers reach from them.
+// repository docs, the example and integration docs, every package README, and
+// the contributor entry point that mandates the guide.
 function documentationFiles() {
   const files = [
-    ...walk(docsRoot, ['.md', '.mdx']),
-    ...walk(join(repoRoot, 'docs'), ['.md']).filter((file) => !toPosix(file).includes('/docs/site/')),
-    ...walk(join(repoRoot, 'examples'), ['.md']),
-    ...walk(join(repoRoot, 'integration'), ['.md']),
+    ...walk(docsRoot, markdown),
+    ...walk(join(repoRoot, 'docs'), markdown).filter((file) => !toPosix(file).includes('/docs/site/')),
+    ...walk(join(repoRoot, 'examples'), markdown),
+    ...walk(join(repoRoot, 'integration'), markdown),
+    // Package READMEs are in scope but scattered, so they are discovered rather
+    // than listed: a new package must not be able to opt out by existing.
+    ...walk(repoRoot, readme),
   ];
-  const readme = join(repoRoot, 'README.md');
-  if (existsSync(readme) && statSync(readme).isFile()) files.push(readme);
+  for (const name of ['README.md', 'AGENTS.md']) {
+    const path = join(repoRoot, name);
+    if (existsSync(path) && statSync(path).isFile()) files.push(path);
+  }
 
   const seen = new Set();
   return files.filter((file) => {
@@ -100,51 +128,67 @@ function documentationFiles() {
   });
 }
 
-// stripCode removes fenced blocks and inline spans so prose rules never fire on
-// SQL keywords, identifiers, or sample output. A column really can be named
-// "cancelled", and that is not a spelling error.
-function stripCode(source) {
+// splitSource separates prose from fenced code, keeping both arrays aligned to
+// the original line numbers so a finding can name the line a reader would edit.
+//
+// Prose rules must never fire inside code: a column really can be named
+// "cancelled". Code rules must never fire outside it: docs/STYLE_GUIDE.md and
+// AGENTS.md both name `testify` in prose in order to ban it.
+function splitSource(source) {
   const lines = source.split('\n');
-  const out = [];
-  let inFence = false;
-  for (const line of lines) {
-    if (line.trimStart().startsWith('```')) {
-      inFence = !inFence;
-      out.push('');
-      continue;
-    }
-    out.push(inFence ? '' : line.replace(/`[^`]*`/g, ''));
-  }
-  return out;
-}
+  const prose = [];
+  const code = [];
+  const fenceErrors = [];
+  let fence = null;
 
-// fenceViolations reports opening fences with no language label.
-function fenceViolations(source) {
-  const violations = [];
-  const lines = source.split('\n');
-  let inFence = false;
   for (const [index, line] of lines.entries()) {
     const trimmed = line.trimStart();
-    if (!trimmed.startsWith('```')) continue;
-    if (inFence) {
-      inFence = false;
+    const marker = trimmed.match(/^(`{3,}|~{3,})(.*)$/);
+
+    if (fence) {
+      const closes =
+        marker && marker[1][0] === fence.char && marker[1].length >= fence.length && marker[2].trim() === '';
+      if (closes) {
+        fence = null;
+        prose.push('');
+        code.push('');
+        continue;
+      }
+      // A fence of the other character, or a longer run, is content here.
+      prose.push('');
+      code.push(line);
       continue;
     }
-    inFence = true;
-    if (trimmed.replace(/`+/g, '').trim() === '') {
-      violations.push({ line: index + 1, message: 'fenced code block has no language label' });
+
+    if (marker) {
+      fence = { char: marker[1][0], length: marker[1].length };
+      if (marker[2].trim() === '') {
+        fenceErrors.push({ line: index + 1, message: 'fenced code block has no language label' });
+      }
+      prose.push('');
+      code.push('');
+      continue;
     }
+
+    // Inline spans are code too, and for the same reason.
+    prose.push(line.replace(/`[^`]*`/g, ''));
+    code.push('');
   }
-  return violations;
+
+  if (fence) {
+    fenceErrors.push({ line: lines.length, message: 'fenced code block is never closed' });
+  }
+  return { prose, code, fenceErrors };
 }
 
-function checkFile(file) {
-  const source = readFileSync(file, 'utf8');
-  const displayPath = toPosix(relative(repoRoot, file));
+// analyze is the single implementation of every rule. checkFile and the
+// self-test both call it, so a rule that stops firing here fails the self-test
+// instead of quietly passing every file forever.
+export function analyze(source) {
   const findings = [];
-  const proseLines = stripCode(source);
+  const { prose, code, fenceErrors } = splitSource(source);
 
-  for (const [index, line] of proseLines.entries()) {
+  for (const [index, line] of prose.entries()) {
     const lineNumber = index + 1;
 
     for (const [british, american] of britishSpellings) {
@@ -165,13 +209,17 @@ function checkFile(file) {
         });
       }
     }
+  }
 
+  // The guide bans testify in samples, and a sample is a code block, so this
+  // rule reads the code side rather than the prose side.
+  for (const [index, line] of code.entries()) {
     if (/\bstretchr\/testify\b/.test(line) || /\btestify\./.test(line)) {
-      findings.push({ line: lineNumber, message: 'testify appears in documentation; use quicktest (qt)' });
+      findings.push({ line: index + 1, message: 'testify appears in a code sample; use quicktest (qt)' });
     }
   }
 
-  for (const [index, line] of source.split('\n').entries()) {
+  for (const [index, line] of prose.entries()) {
     const match = line.match(/^:::([a-zA-Z]+)/);
     if (match && !allowedAdmonitions.has(match[1].toLowerCase())) {
       findings.push({
@@ -181,54 +229,91 @@ function checkFile(file) {
     }
   }
 
-  findings.push(...fenceViolations(source));
-  return findings.map((finding) => `${displayPath}:${finding.line}: ${finding.message}`);
+  findings.push(...fenceErrors);
+  return findings.sort((a, b) => a.line - b.line);
 }
 
-// selftest proves each rule actually fires, so a refactor cannot quietly turn
-// this check into a no-op that reports OK forever.
+function checkFile(file) {
+  const displayPath = toPosix(relative(repoRoot, file));
+  return analyze(readFileSync(file, 'utf8')).map(
+    (finding) => `${displayPath}:${finding.line}: ${finding.message}`,
+  );
+}
+
+// selftest drives the production analyze() over fixtures, so it fails whenever a
+// rule stops firing or starts firing on clean prose. Re-implementing the rules
+// here would let a broken checker keep reporting OK.
 function selftest() {
-  const cases = [
-    ['behaviour is documented', 'British spelling'],
-    ['this simply works', 'banned filler'],
-    ['use testify.Assert here', 'testify'],
-    [':::warning\ntext\n:::', 'admonition'],
-    ['```\nunlabeled\n```', 'no language label'],
-  ];
   const failures = [];
-  for (const [sample, expected] of cases) {
-    const findings = [];
-    const proseLines = stripCode(sample);
-    for (const [index, line] of proseLines.entries()) {
-      for (const [british] of britishSpellings) {
-        if (new RegExp(`\\b${british.replace(/ /g, '\\s')}[a-z]*`, 'i').test(line)) {
-          findings.push(`${index + 1}: British spelling`);
-        }
-      }
-      for (const word of bannedFiller) {
-        if (new RegExp(`\\b${word}\\b`, 'i').test(line)) findings.push(`${index + 1}: banned filler`);
-      }
-      if (/\btestify\./.test(line)) findings.push(`${index + 1}: testify`);
-    }
-    for (const line of sample.split('\n')) {
-      const match = line.match(/^:::([a-zA-Z]+)/);
-      if (match && !allowedAdmonitions.has(match[1].toLowerCase())) findings.push('admonition');
-    }
-    for (const violation of fenceViolations(sample)) findings.push(violation.message);
 
-    if (!findings.some((finding) => finding.includes(expected))) {
-      failures.push(`rule "${expected}" did not fire for sample ${JSON.stringify(sample)}`);
+  const violating = [
+    'The behaviour is documented.',
+    '',
+    'This simply works.',
+    '',
+    ':::warning',
+    'text',
+    ':::',
+    '',
+    '```go',
+    'import "github.com/stretchr/testify/require"',
+    '```',
+    '',
+    '```',
+    'unlabeled',
+    '```',
+    '',
+    '~~~',
+    'tilde fence, also unlabeled',
+    '~~~',
+  ].join('\n');
+
+  const expected = [
+    { line: 1, needle: 'British spelling' },
+    { line: 3, needle: 'banned filler' },
+    { line: 5, needle: 'admonition' },
+    { line: 10, needle: 'testify' },
+    { line: 13, needle: 'no language label' },
+    { line: 17, needle: 'no language label' },
+  ];
+
+  const findings = analyze(violating);
+  for (const { line, needle } of expected) {
+    if (!findings.some((finding) => finding.line === line && finding.message.includes(needle))) {
+      failures.push(`rule "${needle}" did not fire on line ${line}`);
     }
   }
 
-  // A clean sample must stay clean, or the check would fail every build.
-  const cleanFindings = [];
-  for (const line of stripCode('The behavior is documented.\n\n```bash\nls\n```\n')) {
-    for (const word of bannedFiller) {
-      if (new RegExp(`\\b${word}\\b`, 'i').test(line)) cleanFindings.push(word);
-    }
+  // Every rule must leave correct prose alone, and must not reach into code.
+  // Both halves matter: a check that fires on valid content is as broken as one
+  // that never fires, and it is the half that gets a rule deleted.
+  const clean = [
+    'The behavior is documented and a column may be named `cancelled`.',
+    '',
+    '```sql',
+    'SELECT * FROM orders WHERE status = \'cancelled\';',
+    '```',
+    '',
+    'Never use testify in Ptah tests; use `quicktest` instead.',
+    '',
+    ':::note',
+    'Adjust the value; this sentence contains no banned word.',
+    ':::',
+    '',
+    '```text',
+    'plain output',
+    '```',
+  ].join('\n');
+
+  for (const finding of analyze(clean)) {
+    failures.push(`clean fixture produced a finding at line ${finding.line}: ${finding.message}`);
   }
-  if (cleanFindings.length > 0) failures.push(`clean sample produced findings: ${cleanFindings.join(', ')}`);
+
+  // An unterminated fence would otherwise swallow the rest of the file and
+  // silence every later rule, so it is reported rather than tolerated.
+  if (!analyze('```go\nnever closed\n').some((finding) => finding.message.includes('never closed'))) {
+    failures.push('unterminated fence was not reported');
+  }
 
   if (failures.length > 0) {
     console.error('check-style.mjs --selftest: FAILED');
@@ -236,7 +321,7 @@ function selftest() {
     process.exitCode = 1;
     return;
   }
-  console.log(`check-style.mjs --selftest: OK (${cases.length} rules verified)`);
+  console.log(`check-style.mjs --selftest: OK (${expected.length} rule assertions via analyze())`);
 }
 
 function main() {

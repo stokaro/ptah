@@ -2,9 +2,10 @@
 
 This is the authoritative style guide for all Ptah documentation: the site
 under `docs/site/src/content/docs/`, the repository docs under `docs/*.md`,
-package READMEs, example READMEs, and integration docs. Contributor guidance
-(`AGENTS.md`) and the documentation-maintenance skill
-(`.agents/skills/ptah-documentation-maintenance/SKILL.md`) require it.
+package READMEs, example READMEs, integration docs, and `AGENTS.md` itself.
+Contributor guidance (`AGENTS.md`) and the documentation-maintenance skill
+(`.agents/skills/ptah-documentation-maintenance/SKILL.md`) require it. Section
+13 lists which of its rules CI enforces.
 
 It is contributor-facing and stays out of the reader sidebar. Site pages must
 not link to it on GitHub (`check-core-doc-links.mjs` forbids root-docs GitHub
@@ -243,7 +244,7 @@ in this guide is a review responsibility.
 | No `simply` / `easily` / `just` | 4, 11 | `check:style` |
 | Fenced blocks carry a language label | 6 | `check:style` |
 | Admonitions limited to note/tip/caution/danger | 7 | `check:style` |
-| No `testify` in samples | 6 | `check:style` |
+| No `testify` in code samples | 6 | `check:style` |
 | `title` and `description` frontmatter | 3 | `check:page-health` |
 | Page registered in the sidebar | 9 | `check:page-health` |
 | No `TODO`/`TBD`/`FIXME`/"coming soon" | 11 | `check:page-health` |
@@ -254,7 +255,26 @@ in this guide is a review responsibility.
 | No page scrolls sideways at 390px or 1280px | 10 | `check:responsive` |
 
 `check:style` governs every layer the guide covers — `docs/site`, `docs/*.md`,
-`examples/**`, `integration/*.md`, and `README.md` — not only the site. It skips
-this file, which necessarily contains the words it bans. Each rule has a
-self-test (`npm run check:style:selftest`) so a refactor cannot turn the check
-into a no-op that reports success forever.
+`examples/**`, `integration/*.md`, every package `README.md`, and `AGENTS.md` —
+not only the site. Package READMEs are discovered by walking the repository, so
+a new package cannot opt out by existing. This file is the one exemption: it
+necessarily contains the words it bans.
+
+Two properties keep these checks honest:
+
+- **They run for every layer they claim.** The Docs workflow builds the site
+  only for `docs/site/**` changes, so `check:style` has its own job that also
+  triggers on `docs/**`, `examples/**`, `integration/**`, any `README.md`, and
+  `AGENTS.md`. A change to a package README cannot merge unchecked.
+- **The self-tests drive the real checker.** `check:style:selftest` and
+  `check:responsive:selftest` call the same functions the checks call, on
+  fixtures that must produce findings and fixtures that must not. Deleting a
+  rule fails its self-test rather than passing every file forever.
+
+Prose rules never read code, and code rules never read prose. A column may be
+named `cancelled`, and this guide names `testify` in order to ban it; neither is
+a violation.
+
+`check:responsive` needs a browser. Without one it skips locally with an install
+hint, and fails in CI — a green check that rendered nothing is worse than a red
+one.

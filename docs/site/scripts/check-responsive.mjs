@@ -11,10 +11,12 @@
 // Usage:
 //   node scripts/check-responsive.mjs [--dist <dir>] [--selftest]
 //
-// Requires Playwright's chromium. Skips with a clear message when it is absent,
-// so a contributor without the browser is told rather than failing obscurely.
+// Requires Playwright's chromium. A contributor without it is told what to
+// install and the check skips; in CI it fails instead, because a green check
+// that measured nothing is worse than a red one.
 import { createServer } from 'node:http';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -163,33 +165,124 @@ async function loadChromium() {
   }
 }
 
+// unavailable reports the browser as missing. In CI that is a failure: the
+// dependency is installed by the workflow, so its absence means the check would
+// have reported success without rendering a single page.
+function unavailable(reason) {
+  const install = 'npm i -D playwright && npx playwright install chromium';
+  if (process.env.CI) {
+    console.error(`check-responsive.mjs: ${reason}; CI must not report success without rendering the site.`);
+    console.error(`Install it with: ${install}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`check-responsive.mjs: SKIPPED (${reason}; run "${install}")`);
+}
+
+// watchStylesheets records failed stylesheet responses for the page. A page
+// served without its stylesheets has none of the layout that causes overflow,
+// so it looks clean and the check reports a false OK. Watching for failed
+// STYLESHEET requests catches that directly: it is how a wrong base path, a
+// renamed asset, or a broken build shows up. Other 404s are ignored on purpose
+// - versions.json, for one, is produced by the deploy workflow rather than by
+// `npm run build`, and its absence locally says nothing about layout.
+function watchStylesheets(page) {
+  let failures = [];
+  page.on('response', (response) => {
+    if (response.status() < 400) return;
+    const path = new URL(response.url()).pathname;
+    if (response.request().resourceType() === 'stylesheet' || path.endsWith('.css')) {
+      failures.push(`${response.status()} ${path}`);
+    }
+  });
+  return {
+    reset: () => {
+      failures = [];
+    },
+    failures: () => [...new Set(failures)],
+  };
+}
+
+// writeFixtureDist builds the smallest site that exercises base detection: one
+// page whose stylesheet lives under the build's base path.
+function writeFixtureDist(base) {
+  const root = mkdtempSync(join(tmpdir(), 'ptah-responsive-'));
+  mkdirSync(join(root, '_astro'), { recursive: true });
+  writeFileSync(join(root, '_astro', 'style.css'), 'main { color: #000; }\n');
+  writeFileSync(
+    join(root, 'index.html'),
+    `<!doctype html><html><head><link rel="stylesheet" href="${base}/_astro/style.css"></head>` +
+      '<body><main><p>fits</p></main></body></html>\n',
+  );
+  return root;
+}
+
 async function main() {
   if (process.argv.includes('--selftest')) {
-    // The self-test proves the overflow detector fires, using a page built to
-    // overflow, so this check cannot silently degrade into always passing.
+    // The self-test proves both halves of the check fire: the overflow detector
+    // on a page built to overflow, and the unstyled-page guard on a site served
+    // at the wrong base. The second half is not hypothetical - an early version
+    // of this script ignored the base path, rendered every page unstyled, and
+    // reported 289 overflow findings that were entirely its own fault.
     const chromium = await loadChromium();
     if (!chromium) {
-      console.log('check-responsive.mjs --selftest: SKIPPED (playwright not installed)');
+      unavailable('playwright is not installed');
       return;
     }
-    const browser = await chromium.launch();
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await page.setContent('<main><div style="width:1200px">wide</div></main>');
-    const wide = await page.evaluate(measure, overflowTolerance);
-    await page.setContent('<main><div style="width:100px">narrow</div></main>');
-    const narrow = await page.evaluate(measure, overflowTolerance);
-    await browser.close();
-
     const failures = [];
-    if (wide.offenders.length === 0) failures.push('overflow detector did not fire on a 1200px element at 390px');
-    if (narrow.offenders.length > 0) failures.push('overflow detector fired on a page that fits');
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      await page.setContent('<main><div style="width:1200px">wide</div></main>');
+      const wide = await page.evaluate(measure, overflowTolerance);
+      await page.setContent('<main><div style="width:100px">narrow</div></main>');
+      const narrow = await page.evaluate(measure, overflowTolerance);
+      if (wide.offenders.length === 0) failures.push('overflow detector did not fire on a 1200px element at 390px');
+      if (narrow.offenders.length > 0) failures.push('overflow detector fired on a page that fits');
+
+      const fixtureBase = '/ptah/edge';
+      const distRoot = writeFixtureDist(fixtureBase);
+      try {
+        const detected = detectBase(distRoot);
+        if (detected !== fixtureBase) {
+          failures.push(`base detection returned ${JSON.stringify(detected)}, expected ${fixtureBase}`);
+        }
+        if (htmlRoutes(distRoot).length !== 1) failures.push('route discovery did not find the fixture page');
+
+        const watcher = watchStylesheets(page);
+
+        // Correct base: the stylesheet resolves, so the guard stays quiet.
+        const good = await startServer(distRoot, detected);
+        watcher.reset();
+        await page.goto(`http://127.0.0.1:${good.port}${detected}/`, { waitUntil: 'load' });
+        if (watcher.failures().length > 0) {
+          failures.push(`unstyled-page guard fired on a correctly served page: ${watcher.failures().join(', ')}`);
+        }
+        good.server.close();
+
+        // Wrong base, which is the defect this guard exists for: the stylesheet
+        // 404s and the page renders unstyled.
+        const bad = await startServer(distRoot, '');
+        watcher.reset();
+        await page.goto(`http://127.0.0.1:${bad.port}/`, { waitUntil: 'load' });
+        if (watcher.failures().length === 0) {
+          failures.push('unstyled-page guard did not fire when every stylesheet 404s');
+        }
+        bad.server.close();
+      } finally {
+        rmSync(distRoot, { recursive: true, force: true });
+      }
+    } finally {
+      await browser.close();
+    }
+
     if (failures.length > 0) {
       console.error('check-responsive.mjs --selftest: FAILED');
       for (const failure of failures) console.error(`- ${failure}`);
       process.exitCode = 1;
       return;
     }
-    console.log('check-responsive.mjs --selftest: OK (overflow detector verified both ways)');
+    console.log('check-responsive.mjs --selftest: OK (overflow detector and unstyled-page guard both verified)');
     return;
   }
 
@@ -202,43 +295,36 @@ async function main() {
 
   const chromium = await loadChromium();
   if (!chromium) {
-    console.log('check-responsive.mjs: SKIPPED (playwright not installed; run "npm i -D playwright && npx playwright install chromium")');
+    unavailable('playwright is not installed');
     return;
   }
 
   const routes = htmlRoutes(distRoot);
   const base = detectBase(distRoot);
   const { server, port } = await startServer(distRoot, base);
-  const browser = await chromium.launch();
+  let browser;
+  try {
+    browser = await chromium.launch();
+  } catch (error) {
+    server.close();
+    unavailable(`chromium failed to launch (${error.message.split('\n')[0]})`);
+    return;
+  }
   const errors = [];
 
   try {
     for (const viewport of viewports) {
       const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
       const page = await context.newPage();
+      const stylesheets = watchStylesheets(page);
 
-      // A page served without its stylesheets has none of the layout that
-      // causes overflow, so it looks clean and the check reports a false OK.
-      // Watching for failed STYLESHEET requests catches that directly: it is how
-      // a wrong base path, a renamed asset, or a broken build shows up. Other
-      // 404s are ignored on purpose - versions.json, for one, is produced by the
-      // deploy workflow rather than by `npm run build`, and its absence locally
-      // says nothing about layout.
-      let failedStylesheets = [];
-      page.on('response', (response) => {
-        if (response.status() < 400) return;
-        const path = new URL(response.url()).pathname;
-        if (response.request().resourceType() === 'stylesheet' || path.endsWith('.css')) {
-          failedStylesheets.push(`${response.status()} ${path}`);
-        }
-      });
       for (const route of routes) {
-        failedStylesheets = [];
+        stylesheets.reset();
         await page.goto(`http://127.0.0.1:${port}${base}${route}`, { waitUntil: 'load' });
-        if (failedStylesheets.length > 0) {
+        if (stylesheets.failures().length > 0) {
           errors.push(
             `${route} [${viewport.name}]: stylesheet request(s) failed ` +
-              `(${[...new Set(failedStylesheets)].slice(0, 3).join(', ')}); the page rendered unstyled, ` +
+              `(${stylesheets.failures().slice(0, 3).join(', ')}); the page rendered unstyled, ` +
               'so any overflow result would be meaningless',
           );
           continue;

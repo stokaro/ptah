@@ -7,7 +7,15 @@ on:
       - 'v*'
   pull_request:
     paths:
-      - 'docs/site/**'
+      # The style check governs every documentation layer, so the workflow has
+      # to see changes to all of them. Only the site build is gated on
+      # docs/site/** below.
+      - 'docs/**'
+      - 'examples/**'
+      - 'integration/**'
+      - 'README.md'
+      - '**/README.md'
+      - 'AGENTS.md'
       - '.github/workflows/docs.yml'
 
 permissions:
@@ -26,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
+      style: ${{ steps.filter.outputs.style }}
     steps:
       - uses: actions/checkout@v7
       - id: filter
@@ -35,6 +44,40 @@ jobs:
             docs:
               - 'docs/site/**'
               - '.github/workflows/docs.yml'
+            style:
+              - 'docs/**'
+              - 'examples/**'
+              - 'integration/**'
+              - 'README.md'
+              - '**/README.md'
+              - 'AGENTS.md'
+              - '.github/workflows/docs.yml'
+
+  style:
+    name: Documentation style
+    needs: changes
+    # The site build only runs for docs/site changes, but the style guide also
+    # governs the repository docs, examples, integration docs, package READMEs,
+    # and AGENTS.md. Those layers get their own job so a change to one of them
+    # cannot merge unchecked.
+    if: >-
+      github.event_name == 'pull_request' ||
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' &&
+        needs.changes.outputs.style == 'true' )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      # check-style.mjs has no npm dependencies, so this needs no install step.
+      - name: Check documentation style
+        run: |
+          set -euo pipefail
+          node docs/site/scripts/check-style.mjs --selftest
+          node docs/site/scripts/check-style.mjs
 
   build:
     name: Build versioned site

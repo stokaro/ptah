@@ -77,7 +77,7 @@ site as the quality reference.
 Ptah treats `.golangci.yml` as a strict contract. Fix code to satisfy the configured linters instead of relaxing thresholds, disabling checks, or broadening exclusions. In particular, keep `revive` `error-strings` enabled and preserve the current "stricter wins" lint posture unless a maintainer explicitly asks for a config change.
 
 Ptah is pre-GA. Do not preserve old command aliases, compatibility wrappers,
-fallback APIs, or backward-compatibility behavior just to keep an older internal
+fallback APIs, or backward-compatibility behavior only to keep an older internal
 shape. Prefer the cleaner architecture and update callers/tests/docs unless a
 maintainer explicitly asks for a compatibility layer.
 

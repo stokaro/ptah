@@ -238,17 +238,24 @@ practical, live commands:
   npm run build
   # Renders every built page at 390px and 1280px and fails on horizontal
   # overflow. Needs the built site, so it runs after the build. Requires
-  # Playwright's chromium (npx playwright install chromium); it skips with a
-  # message rather than failing when the browser is absent.
+  # Playwright's chromium (npx playwright install chromium); without it the
+  # check skips locally and fails in CI.
+  npm run check:responsive:selftest
   npm run check:responsive
   npm audit --audit-level=low
   ```
 
   `check:style` covers every layer the style guide governs — `docs/site`,
-  `docs/*.md`, `examples/**`, `integration/*.md`, and `README.md` — so run it
-  even when the change touches no site page. Section 13 of
+  `docs/*.md`, `examples/**`, `integration/*.md`, every package `README.md`,
+  and `AGENTS.md` — so run it even when the change touches no site page. It has
+  no npm dependencies, so `node docs/site/scripts/check-style.mjs` works from a
+  bare checkout; CI runs it that way in its own job. Section 13 of
   `docs/STYLE_GUIDE.md` lists which rules these checks enforce; anything not in
   that table is your responsibility to review by reading.
+
+  Never weaken a check to make a change pass. If a rule fires on correct
+  content, fix the rule and add the case to that check's `--selftest`, so the
+  next agent inherits the decision instead of rediscovering it.
 
 - After the suite passes, `rg` for stale links, retired command spellings, and
   unsupported claims. The checks verify structure, not whether a sentence is
