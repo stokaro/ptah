@@ -19,6 +19,12 @@ merged, split, or retired, update the content inventory at
 [`docs/site/CONTENT_INVENTORY.md`](docs/site/CONTENT_INVENTORY.md) in the same
 PR.
 
+CI enforces the mechanical half of that guide. Section 13 of the guide lists
+exactly which rules fail a build and which stay a reading responsibility. Run
+`node docs/site/scripts/check-style.mjs` for any documentation change: it needs
+no npm install, and it governs this file, the repository docs, the examples,
+the integration docs, and every package README — not only the site.
+
 Before finishing any change that affects external behavior, inspect and update
 the relevant documentation. Do this as a required verification step, not as an
 opportunistic cleanup. Purely code-internal refactors that do not alter public
@@ -77,7 +83,7 @@ site as the quality reference.
 Ptah treats `.golangci.yml` as a strict contract. Fix code to satisfy the configured linters instead of relaxing thresholds, disabling checks, or broadening exclusions. In particular, keep `revive` `error-strings` enabled and preserve the current "stricter wins" lint posture unless a maintainer explicitly asks for a config change.
 
 Ptah is pre-GA. Do not preserve old command aliases, compatibility wrappers,
-fallback APIs, or backward-compatibility behavior just to keep an older internal
+fallback APIs, or backward-compatibility behavior only to keep an older internal
 shape. Prefer the cleaner architecture and update callers/tests/docs unless a
 maintainer explicitly asks for a compatibility layer.
 

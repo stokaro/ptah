@@ -136,7 +136,7 @@ aborts if either direction fails.
 ### File Naming Convention
 
 Migration files follow the pattern:
-```
+```text
 <timestamp>_<migration_name>.<up|down>.sql
 ```
 

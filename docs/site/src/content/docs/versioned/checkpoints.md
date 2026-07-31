@@ -56,7 +56,7 @@ ptah migrations checkpoint --migrations-dir ./migrations \
 A checkpoint is an ordinary Ptah migration pair carrying a `.checkpoint` marker
 between the description and the direction:
 
-```
+```text
 0000000042_squash.checkpoint.up.sql
 0000000042_squash.checkpoint.down.sql
 ```

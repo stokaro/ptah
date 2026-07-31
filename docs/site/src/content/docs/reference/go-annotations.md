@@ -438,5 +438,5 @@ LSP-capable editor can run `ptah-ls` directly as a stdio language server.
 ## Next steps
 
 - Modeling a schema with these directives: [Go annotations](../../schema/go-annotations/).
-- Declaring rows, not just structure: [Reference data](../../versioned/reference-data/).
+- Declaring rows, not only structure: [Reference data](../../versioned/reference-data/).
 - Checking which features your dialect supports: [Capabilities](../capabilities/).

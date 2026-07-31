@@ -18,7 +18,7 @@ The Ptah Migrator provides versioned database migration capabilities with up/dow
 
 Migrations are stored with the following naming convention:
 
-```
+```text
 NNNNNNNNNN_description.up.sql    # Up migration
 NNNNNNNNNN_description.down.sql  # Down migration
 ```
