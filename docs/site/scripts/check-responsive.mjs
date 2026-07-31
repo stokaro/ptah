@@ -171,6 +171,32 @@ const measure = ({ tolerance, cellLineLimit }) => {
       right: Math.round(rect.right),
     });
   }
+  // A table wider than the container it sits in. Starlight gives tables their
+  // own scroll container, so this never reaches the page-level overflow check
+  // above - the reader just finds a table whose right-hand columns are cut off
+  // at desktop width, with no hint that the rest exists.
+  //
+  // This fires on content that is too wide and on styling that stops content
+  // from wrapping. A `white-space: nowrap` on table code, added to keep short
+  // flags like `--dry-run` from breaking at the hyphen, also froze
+  // ninety-character error strings and pushed several tables past their
+  // container. Nothing caught it, because scrolling inside a container is
+  // normally correct.
+  const wideTables = [];
+  for (const table of document.querySelectorAll('main table')) {
+    const holder = table.parentElement;
+    if (!holder) continue;
+    const overflow = Math.round(table.scrollWidth - holder.clientWidth);
+    if (overflow <= tolerance) continue;
+    const heading = table.querySelector('th');
+    wideTables.push({
+      overflow,
+      width: Math.round(table.scrollWidth),
+      container: Math.round(holder.clientWidth),
+      firstColumn: heading ? heading.textContent.trim().slice(0, 30) : '',
+    });
+  }
+
   // Rendered height in lines, not characters. A cell squeezed into a narrow
   // column is exactly as unreadable as a cell holding an essay.
   const tallCells = [];
@@ -189,6 +215,7 @@ const measure = ({ tolerance, cellLineLimit }) => {
     clientWidth: viewportWidth,
     offenders: offenders.slice(0, 5).map(({ tag, className, right }) => ({ tag, className, right })),
     tallCells: tallCells.sort((a, b) => b.lines - a.lines).slice(0, 5),
+    wideTables: wideTables.sort((a, b) => b.overflow - a.overflow).slice(0, 3),
   };
 };
 
@@ -306,6 +333,25 @@ async function main() {
         failures.push(`tall-cell detector fired on a one-line cell (${short.tallCells[0]?.lines} lines)`);
       }
 
+      // The wide-table rule, both ways. The overflowing fixture reproduces the
+      // regression that motivated it: content that cannot wrap, inside a
+      // container narrower than it needs.
+      const inHolder = (style, cell) =>
+        `<main><div style="width:300px;overflow-x:auto">` +
+        `<table style="${style}"><tbody><tr>${cell}</tr></tbody></table></div></main>`;
+      await page.setContent(
+        inHolder('line-height:20px', '<td><code style="white-space:nowrap">' + 'x'.repeat(160) + '</code></td>'),
+      );
+      const wideTable = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      await page.setContent(inHolder('line-height:20px;width:200px', '<td>fits</td>'));
+      const narrowTable = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      if (wideTable.wideTables.length === 0) {
+        failures.push('wide-table detector did not fire on a table that overflows its container');
+      }
+      if (narrowTable.wideTables.length > 0) {
+        failures.push('wide-table detector fired on a table that fits its container');
+      }
+
       const fixtureBase = '/ptah/edge';
       const distRoot = writeFixtureDist(fixtureBase);
       try {
@@ -348,7 +394,7 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    console.log('check-responsive.mjs --selftest: OK (overflow, tall-cell, and unstyled-page guards verified)');
+    console.log('check-responsive.mjs --selftest: OK (overflow, wide-table, tall-cell, and unstyled-page guards verified)');
     return;
   }
 
@@ -408,6 +454,15 @@ async function main() {
             `${route} [${viewport.name} ${viewport.width}px]: <${offender.tag}${offender.className ? ` class="${offender.className}"` : ''}> ` +
               `extends to ${offender.right}px, past the ${result.clientWidth}px viewport`,
           );
+        }
+        if (viewport.name === 'desktop') {
+          for (const table of result.wideTables) {
+            errors.push(
+              `${route}: a table is ${table.width}px wide inside a ${table.container}px container ` +
+                `(+${table.overflow}px), so its right-hand columns are cut off` +
+                (table.firstColumn ? ` — first column "${table.firstColumn}"` : ''),
+            );
+          }
         }
         if (viewport.name === 'desktop' && result.tallCells.length > 0) {
           routesWithTallCells.add(route);
