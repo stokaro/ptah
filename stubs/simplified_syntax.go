@@ -59,8 +59,6 @@ type SimplifiedPost struct {
 var _ = SimplifiedPost{}
 
 // Embedded types with simplified syntax
-//
-//ptah:schema:embed
 type SimpleTimestamps struct {
 	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time `db:"created_at"`
@@ -69,7 +67,6 @@ type SimpleTimestamps struct {
 	UpdatedAt *time.Time `db:"updated_at"`
 }
 
-//ptah:schema:embed
 type SimpleAudit struct {
 	//ptah:schema:field name="created_by" type="VARCHAR(100)"
 	CreatedBy *string `db:"created_by"`
