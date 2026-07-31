@@ -1,6 +1,6 @@
 # PostgreSQL Sequences with Ptah
 
-Ptah supports standalone PostgreSQL sequences as a first-class schema object through the `//ptah:schema:sequence` annotation. A standalone sequence is created with `CREATE SEQUENCE`, altered with `ALTER SEQUENCE`, and dropped with `DROP SEQUENCE`, and participates in the full generate / compare / migrate / rollback lifecycle just like tables, views, functions, and roles.
+Ptah supports standalone PostgreSQL sequences as a first-class schema object through the `//ptah:schema:sequence` annotation. A standalone sequence is created with `CREATE SEQUENCE`, altered with `ALTER SEQUENCE`, and dropped with `DROP SEQUENCE`, and participates in the full generate / compare / migrate / rollback lifecycle in the same way as tables, views, functions, and roles.
 
 Standalone sequences are a PostgreSQL feature that Atlas keeps out of its open-source core (it lives only in the proprietary "Pro" build). Ptah provides it as an open (MIT), local, no-account capability — see epic [#654](https://github.com/stokaro/ptah/issues/654).
 

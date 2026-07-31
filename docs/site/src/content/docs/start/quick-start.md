@@ -135,7 +135,7 @@ Database is now at version: ...
 
 ## Change the schema and regenerate
 
-This is the loop Ptah is built for. Change your annotations and generate again: Ptah diffs your desired schema against the live database and writes a migration for **just the delta** — here, a new `posts` table — instead of a full rebuild.
+This is the loop Ptah is built for. Change your annotations and generate again: Ptah diffs your desired schema against the live database and writes a migration for **only the delta** — here, a new `posts` table — instead of a full rebuild.
 
 ```bash
 cat > /tmp/ptah-quickstart/models/post.go <<'EOF'
