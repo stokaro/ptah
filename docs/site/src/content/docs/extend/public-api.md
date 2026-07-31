@@ -101,24 +101,27 @@ statements.
 ## Schema diff and planning contracts
 
 `migration/schemadiff/types.SchemaDiff` stores index additions and removals as
-canonical `[]IndexRef` fields. Every index reference includes its owning table.
-Live comparisons snapshot catalog identifier semantics into the diff so
+canonical `[]IndexRef` fields. Every index reference includes its owning
+table. Live comparisons snapshot catalog identifier semantics into the diff so
 comparison, policy, forward planning, and reverse planning share one source of
 truth.
+
 Use `migration/generator.GenerateCheckpointWithDatabase` for a SQL Server
 schema whose live catalog semantics must survive checkpoint planning.
 `GenerateCheckpointWithDatabaseInfo` accepts a caller-supplied complete
 identifier snapshot; the dialect-only checkpoint helper uses conservative
 offline rules.
+
 `migration/generator.PlanMigration` returns an unpublished plan bound to the
 migration-directory snapshot used during planning. `MigrationPlan.WriteFiles`
 rejects changed history with `generator.ErrMigrationDirectoryChanged` under
-the shared cross-process publication lock. Embedders that need cancellation
-while waiting for that lock use `WriteFilesContext`; concurrent use of one plan
-fails with `generator.ErrMigrationPlanInUse`.
-`migration/planner.Planner` exposes only checked planning; malformed references,
-unresolved additions, and target index-namespace conflicts fail before SQL is
-returned.
+the shared cross-process publication lock.
+
+Embedders that need cancellation while waiting for that lock use
+`WriteFilesContext`; concurrent use of one plan fails with
+`generator.ErrMigrationPlanInUse`. `migration/planner.Planner` exposes only
+checked planning; malformed references, unresolved additions, and target
+index-namespace conflicts fail before SQL is returned.
 
 ## Error contracts
 

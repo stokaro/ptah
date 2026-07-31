@@ -124,6 +124,19 @@ const allowedAdmonitions = new Set(['note', 'tip', 'caution', 'danger']);
 // what a narrow column actually does to a long cell.
 const maxTableCellChars = 350;
 
+// docs/STYLE_GUIDE.md section 4 asks for paragraphs at or under four
+// sentences. This ceiling is the point past which a paragraph has stopped
+// being a paragraph and become a wall.
+//
+// Reference pages grew single paragraphs of 1,700 to 3,300 characters that
+// enumerated a dozen flags inline, each wrapped in backticks. A reader cannot
+// find one flag in that, and cannot tell where its description ends. The
+// remedy is a table or a list, and the guide says so; nothing checked it.
+//
+// Counted on the rendered text, so a paragraph that is mostly `code spans` is
+// measured at what a reader has to wade through, not at its markdown length.
+const maxParagraphChars = 900;
+
 function toPosix(value) {
   return value.split(sep).join('/');
 }
@@ -305,6 +318,51 @@ function tableViolations(lines) {
   return findings;
 }
 
+// A line that starts a block which is not flowing prose. List items and their
+// indented continuations matter most: a numbered list reads as a list, and
+// joining its items would invent a paragraph nobody wrote.
+const blockStart =
+  /^\s*(?:[-*+]\s|\d+[.)]\s|>|\||#{1,6}\s|:::|<|\[\^[^\]]+\]:|\!\[|\s{2,}\S)/;
+
+// paragraphViolations reports prose blocks that have grown into walls. Blank
+// lines, headings, tables, lists, list continuations, admonition markers, HTML,
+// and footnote definitions all end a paragraph.
+function paragraphViolations(lines) {
+  const findings = [];
+  let buffer = [];
+  let start = 0;
+
+  const flush = () => {
+    if (buffer.length === 0) return;
+    // Measure what a reader sees: code spans keep their text, not their ticks,
+    // and a link is its label rather than its href.
+    const rendered = buffer
+      .join(' ')
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+    if (rendered.length > maxParagraphChars) {
+      findings.push({
+        line: start,
+        message:
+          `paragraph is ${rendered.length} rendered characters, over the ${maxParagraphChars} limit; ` +
+          'a list or a table reads better than a wall (docs/STYLE_GUIDE.md section 4)',
+      });
+    }
+    buffer = [];
+  };
+
+  for (const [index, line] of lines.entries()) {
+    if (line.trim() === '' || blockStart.test(line)) {
+      flush();
+      continue;
+    }
+    if (buffer.length === 0) start = index + 1;
+    buffer.push(line.trim());
+  }
+  flush();
+  return findings;
+}
+
 // analyze is the single implementation of every rule. checkFile and the
 // self-test both call it, so a rule that stops firing here fails the self-test
 // instead of quietly passing every file forever.
@@ -354,6 +412,7 @@ export function analyze(source) {
   }
 
   findings.push(...tableViolations(text));
+  findings.push(...paragraphViolations(text));
   findings.push(...fenceErrors);
   return findings.sort((a, b) => a.line - b.line);
 }
@@ -401,6 +460,8 @@ function selftest() {
     '| Gap | Boundary | Tracking |',
     '| --- | --- | --- |',
     '| Exports | HCL/SQL `split | write` file exports | #510 |',
+    '',
+    `A wall of prose. ${'Every flag is described inline rather than in a list. '.repeat(20)}`,
   ].join('\n');
 
   const expected = [
@@ -412,6 +473,7 @@ function selftest() {
     { line: 17, needle: 'no language label' },
     { line: 23, needle: 'over the 350 limit' },
     { line: 27, needle: 'cells but the header has 3' },
+    { line: 29, needle: 'over the 900 limit' },
   ];
 
   const findings = analyze(violating);
@@ -440,6 +502,28 @@ function selftest() {
     '```text',
     'plain output',
     '```',
+    '',
+    // A numbered list and an indented list continuation. Both were measured as
+    // one giant paragraph by the first version of the length rule, which would
+    // have flagged well-formed lists as walls.
+    '1. Use `--include-tables` rather than exporting the entire model by default.',
+    '2. Inspect every generated field, including identifiers, audit columns, and',
+    '   server-managed values, because an additive database column can be an',
+    '   additive but unintended API change and the generated diff is the only',
+    '   place that shows it, which is why this review step exists at all.',
+    '3. Define authorization, tenant isolation, validation, and assignment rules',
+    '   in the implementing service rather than in the exported schema, which',
+    '   cannot express them and should not appear to a consumer to express them.',
+    '4. Run the target linter or compiler and the consumer compatibility tests',
+    '   before publishing the artifact, so a breaking change is caught by a tool',
+    '   rather than by the first consumer to upgrade past it in production.',
+    '5. Review the generated diff whenever the database model changes, treating',
+    '   every added, removed, or retyped field as a deliberate contract change',
+    '   that a reviewer has to approve rather than as incidental churn.',
+    '',
+    // Under the limit as a reader sees it, over it as raw markdown. Only the
+    // rendered measurement keeps this from being reported.
+    'Reference prose is dense with flag names, so the measurement counts what a reader reads rather than the markdown around it: `--flag-00` `--flag-01` `--flag-02` `--flag-03` `--flag-04` `--flag-05` `--flag-06` `--flag-07` `--flag-08` `--flag-09` `--flag-10` `--flag-11` `--flag-12` `--flag-13` `--flag-14` `--flag-15` `--flag-16` `--flag-17` `--flag-18` `--flag-19` `--flag-20` `--flag-21` `--flag-22` `--flag-23` `--flag-24` `--flag-25` `--flag-26` `--flag-27` `--flag-28` `--flag-29` `--flag-30` `--flag-31` `--flag-32` `--flag-33` `--flag-34` `--flag-35` `--flag-36` `--flag-37` `--flag-38` `--flag-39` `--flag-40` `--flag-41` `--flag-42` `--flag-43` `--flag-44` `--flag-45` `--flag-46` `--flag-47` `--flag-48` `--flag-49` `--flag-50` `--flag-51` `--flag-52` `--flag-53` `--flag-54` `--flag-55` `--flag-56` `--flag-57` `--flag-58` `--flag-59` `--flag-60` `--flag-61` `--flag-62` `--flag-63` `--flag-64` `--flag-65` `--flag-66` `--flag-67` `--flag-68` `--flag-69`, and see [the command reference](https://example.com/a/long/documentation/url/that/inflates/raw/markdown) for the rest of them.',
     '',
     // American words that begin with a British stem in the deny-list. Each one
     // was a live false positive during review, so each stays asserted here.

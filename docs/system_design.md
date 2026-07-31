@@ -131,13 +131,17 @@ Indexes are identified by `(qualified table, index name)`, not by name alone.
 MySQL, MariaDB, CockroachDB, SQL Server, and ClickHouse use table-scoped index
 names. PostgreSQL, YugabyteDB, Spanner, and SQLite use schema-scoped index
 names. CockroachDB drops use its `table@index` target form so duplicate index
-names on other tables remain unambiguous. `SchemaDiff.IndexAdditions()` and
-`SchemaDiff.IndexRemovals()` return copies of the canonical `[]IndexRef`
-fields. Every reference carries its owning table; planners reject incomplete
-references and target-schema index collisions before generating SQL.
-For schema-scoped engines, an unqualified owner belongs to the dialect's
-default schema (`public` for the PostgreSQL family and `main` for SQLite); it
-does not conflict with the same index name in other named schemas.
+names on other tables remain unambiguous.
+
+`SchemaDiff.IndexAdditions()` and `SchemaDiff.IndexRemovals()` return copies
+of the canonical `[]IndexRef` fields.
+
+Every reference carries its owning table; planners reject incomplete
+references and target-schema index collisions before generating SQL. For
+schema-scoped engines, an unqualified owner belongs to the dialect's default
+schema (`public` for the PostgreSQL family and `main` for SQLite); it does not
+conflict with the same index name in other named schemas.
+
 Diff-policy filtering uses the target dialect's index namespace: replacements
 are matched by schema for PostgreSQL, YugabyteDB, Spanner, and SQLite, and by
 owning table for the table-scoped engines.
@@ -151,14 +155,17 @@ owning table for the table-scoped engines.
 
 Planner ordering is separate from diff sorting. The schemadiff layer keeps
 change lists deterministic so generated migrations are stable across runs, but
-the planner must not treat that sorted order as a dependency model. Dialect
-planners build graph order from explicit dependency data where it exists:
-foreign-key table dependencies, function dependencies, and reverse
+the planner must not treat that sorted order as a dependency model.
+
+Dialect planners build graph order from explicit dependency data where it
+exists: foreign-key table dependencies, function dependencies, and reverse
 child-before-parent ordering for table drops. PostgreSQL view-like objects use
-conservative body reference detection for dependencies between managed views and
-materialized views. Grants, RLS policies, triggers, and roles still rely on
-typed phase ordering plus deterministic diff order within each phase.
-Independent operations keep their deterministic diff order.
+conservative body reference detection for dependencies between managed views
+and materialized views.
+
+Grants, RLS policies, triggers, and roles still rely on typed phase ordering
+plus deterministic diff order within each phase. Independent operations keep
+their deterministic diff order.
 
 For table creation, planners create all selected tables without foreign keys
 first, then add foreign keys in a separate phase after the participating tables

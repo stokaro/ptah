@@ -126,13 +126,17 @@ identifiers come back bracket-quoted and numeric literals parenthesized, so
 `status = 1` is stored as `([status]=(1))`. Predicate comparison therefore
 normalizes case, whitespace, wrapping parentheses, bracket identifier quoting,
 and parentheses around bare numeric literals before deciding whether an index
-changed. Rewrites SQL Server applies beyond that spelling — for example the
-`N'...'` prefix it adds to Unicode string literals or implicit `CAST`
-insertions — are not reconstructed: such predicates compare as changed and are
-re-planned as a replacement on every run. If a predicate keeps reporting drift
-after it was applied, spell the annotation the way the catalog stores it
-(compare with `ptah db read`); the rendered SQL always preserves the annotation
-text verbatim, so no predicate is ever silently dropped.
+changed.
+
+Rewrites SQL Server applies beyond that spelling — for example the `N'...'`
+prefix it adds to Unicode string literals or implicit `CAST` insertions — are
+not reconstructed: such predicates compare as changed and are re-planned as a
+replacement on every run.
+
+If a predicate keeps reporting drift after it was applied, spell the
+annotation the way the catalog stores it (compare with `ptah db read`); the
+rendered SQL always preserves the annotation text verbatim, so no predicate is
+ever silently dropped.
 
 ## Limitations
 
@@ -180,22 +184,27 @@ table name, computed columns, CHECK/UNIQUE/FK constraints, and an index, then
 verifies that Ptah can introspect them through the SQL Server reader. The live
 coverage also verifies full database-realm cleanup of cross-schema dependency
 graphs and migration metadata placement through the URL `schema` parameter.
+
 The cleanup suite executes replication-state catalog checks on a real SQL
 Server and unit coverage verifies fail-closed subscriber and replicated-table
-states.
-Schema-scoped cleanup fails safely when another schema owns a foreign key into
-the selected schema, and computed column
-and default catalog readback are compared as a zero-diff schema. SQL Server
-advisory-lock coverage verifies both normal migration progress and timeout
-reporting when another session holds `ptah_migrate`. Identifier-collation
-coverage creates separate CI and CS databases, verifies discovered semantics,
-executes case-only, changed-column, and ASC-to-DESC replacements safely, proves
-case variants coexist only on the CS database, and covers Turkish dotless-I,
-accent-insensitive Latin, Greek sigma, Japanese kana, and width equivalence.
+states. Schema-scoped cleanup fails safely when another schema owns a foreign
+key into the selected schema, and computed column and default catalog readback
+are compared as a zero-diff schema.
+
+SQL Server advisory-lock coverage verifies both normal migration progress and
+timeout reporting when another session holds `ptah_migrate`.
+
+Identifier-collation coverage creates separate CI and CS databases, verifies
+discovered semantics, executes case-only, changed-column, and ASC-to-DESC
+replacements safely, proves case variants coexist only on the CS database, and
+covers Turkish dotless-I, accent-insensitive Latin, Greek sigma, Japanese
+kana, and width equivalence.
+
 Filtered-index coverage creates a filtered index from a natural-spelling
-`condition` annotation, replaces a changed predicate through
-`DROP INDEX` + `CREATE INDEX ... WHERE`, and re-introspects to a zero diff
-against the canonical `filter_definition` spelling.
+`condition` annotation, replaces a changed predicate through `DROP INDEX` +
+`CREATE INDEX ... WHERE`, and re-introspects to a zero diff against the
+canonical `filter_definition` spelling.
+
 The generator contour replays the prior schema on a separate SQL Server shadow
 database, then applies the generated ASC-to-DESC migration up, down, and up
 again while re-introspecting the index direction after every transition.

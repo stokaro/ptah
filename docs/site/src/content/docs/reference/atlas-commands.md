@@ -32,14 +32,20 @@ verb section names its native `ptah` twin.
 
 Applies Atlas-format migration directories with Atlas-compatible apply flags
 and Atlas revision bookkeeping by default. With `--env`, reads `env.url`,
-`migration`, and `format.migrate.apply` from `atlas.hcl`. Executes every Atlas
-OSS directory format selected by `migration.format` or a `?format=` directory
-URL query; non-`atlas` formats are converted in memory to up-only migrations.
-Unknown formats, Flyway repeatable (`R__`) migrations, goose/dbmate files
-missing their up directive, and colliding versions fail before the target
-database is opened. Matching Atlas OSS, `--dir-format`, `--to-version`, and
-`--lock-name` are rejected on this verb. Native twin:
-[`ptah migrations up`](../native-commands/).
+`migration`, and `format.migrate.apply` from `atlas.hcl`.
+
+Executes every Atlas OSS directory format selected by `migration.format` or a
+`?format=` directory URL query; non-`atlas` formats are converted in memory to
+up-only migrations.
+
+**Fails before the target database is opened:** unknown formats, Flyway
+repeatable (`R__`) migrations, goose/dbmate files missing their up directive,
+and colliding versions.
+
+**Rejected on this verb, matching Atlas OSS:** `--dir-format`, `--to-version`,
+and `--lock-name`.
+
+Native twin: [`ptah migrations up`](../native-commands/).
 
 ### `ptah-compat migrate status`
 
@@ -65,12 +71,16 @@ contract.
 ### `ptah-compat migrate lint`
 
 Runs Ptah migration linting with Atlas `--dir-format` defaulting to `atlas`.
-Maps `--latest N` and `--git-base`/`--git-dir` to native changeset linting,
-infers the lint dialect from `--dev-url`, cleans and replays migrations on
-directly connectable dev databases, prints Atlas's migration-analysis text
-report by default, and supports Atlas Go-template `--format` output over
-`.Env`, `.Steps`, and `.Files`. Docker dev databases and web reports remain
-explicit gaps. Native twin: [`ptah migrations lint`](../native-commands/).
+
+| Flag | Behavior |
+| --- | --- |
+| `--latest N` | Maps to native changeset linting. |
+| `--git-base`, `--git-dir` | Map to native changeset linting. |
+| `--dev-url` | Infers the lint dialect, and cleans and replays migrations on directly connectable dev databases. |
+| `--format` | Atlas Go-template output over `.Env`, `.Steps`, and `.Files`. The default is Atlas's migration-analysis text report. |
+
+Docker dev databases and web reports remain explicit gaps.
+Native twin: [`ptah migrations lint`](../native-commands/).
 
 ### `ptah-compat migrate new`
 
@@ -90,52 +100,71 @@ directories by default. With `--env`, reads `env.url`, `migration.dir`, and
 
 ### `ptah-compat migrate down`
 
-Forwards to `ptah migrations down` with mapped Atlas flags. `--dev-url`
-replays and verifies the rollback plan on the dev database before the target
-is touched (native `--shadow-db`), and `--format` (flag or `PTAH_FORMAT`)
-renders an Atlas Go-template report with the `YES` confirmation prompt on
-stderr (`--dry-run` or the native `--confirm` pass-through skip it). The
-forward defaults to Atlas revision bookkeeping (`--revision-format atlas`,
-like `migrate set`), so a bare invocation reverts the revisions
-`ptah-compat migrate apply` wrote; the native `--revision-format ptah` pass-through
-selects ptah bookkeeping. The registry-bound `--to-tag`, `--skip-checks`, and
-`--plan` flags are recorded waivers that fail loudly with their rationale.
+Forwards to `ptah migrations down` with mapped Atlas flags.
+
+| Flag | Behavior |
+| --- | --- |
+| `--dev-url` | Replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`). |
+| `--format` | Flag or `PTAH_FORMAT`; renders an Atlas Go-template report with the `YES` confirmation prompt on stderr. `--dry-run` and the native `--confirm` pass-through skip the prompt. |
+| `--revision-format` | Defaults to `atlas`, like `migrate set`. The native `ptah` pass-through selects ptah bookkeeping. |
+
+Because the forward defaults to Atlas revision bookkeeping, a bare invocation
+reverts the revisions `ptah-compat migrate apply` wrote.
+
+The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded
+waivers that fail loudly with their rationale.
 
 ### `ptah-compat migrate diff`
 
-Validates an existing `atlas.sum`, replays a local Atlas migration directory
-on `--dev-url`, diffs it against `--to`, writes new Atlas-style migration
-files, and updates `atlas.sum` only after every file was written; a failed
-write rolls the whole generation back. `--to` accepts local `.hcl`, `.yaml`,
-`.yml`, or `.sql` files, one directly connectable database URL, one local
-Atlas migration directory, or one `env://` reference into the evaluated
-`atlas.hcl` environment. Source kinds cannot be mixed, the database source
-must use the `--dev-url` dialect, and a desired database must not identify the
-same database as `--dev-url`.
-The Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing
-files. With `--env`, reads `env.schema.src`, `env.dev`, `migration.dir`,
-`format.migrate.diff`, and supported `diff` policy from `atlas.hcl`; with
-`diff.concurrent_index.create`, new indexes are planned as
-`CREATE INDEX CONCURRENTLY` and their files are tagged with the Atlas
-`-- atlas:txmode none` directive, splitting mixed plans into a transactional
-file followed by a concurrent-index file (unsplittable mixes are refused).
-Generated SQL uses Atlas-style two-space indentation by default; `--format`
-renders it with `sql` and `.MarshalSQL` templates. `--schema/-s` narrows the
-current and desired schemas used for comparison and output; migration replay
-and cleanup still own the complete [dev database realm](../../concepts/database-urls-and-dev-databases/).
-`--edit` opens the generated migrations in `$VISUAL`/`$EDITOR` before
-`atlas.sum` is finalized.
-`--lock-timeout` bounds waiting for both Ptah's local migration-directory lock
-and the exclusive dev-database lock. PostgreSQL, YugabyteDB, MySQL, MariaDB,
-and SQL Server use session advisory locks; SQLite, ClickHouse, and CockroachDB
-use an operating-system lock keyed by normalized database identity. Cross-host
-ClickHouse and CockroachDB replay is unsupported. Dialects without a safe
-dev-database lock fail before cleanup.
-`--qualifier` prefixes every object in the generated statements with a custom
-schema qualifier on PostgreSQL-family, MySQL, and MariaDB dev databases;
-invalid values, unsupported dialects, multi-schema plans, and statement kinds
+Validates an existing `atlas.sum`, replays a local Atlas migration directory on
+`--dev-url`, diffs it against `--to`, and writes new Atlas-style migration
+files. `atlas.sum` updates only after every file was written; a failed write
+rolls the whole generation back.
+
+**Desired state (`--to`)** accepts one of: local `.hcl`, `.yaml`, `.yml`, or
+`.sql` files; one directly connectable database URL; one local Atlas migration
+directory; or one `env://` reference into the evaluated `atlas.hcl`
+environment. Source kinds cannot be mixed, the database source must use the
+`--dev-url` dialect, and a desired database must not identify the same database
+as `--dev-url`.
+
+**Flags**
+
+| Flag | Behavior |
+| --- | --- |
+| `--dry-run` | Atlas-hidden; prints the generated SQL instead of writing files. |
+| `--format` | Renders generated SQL with `sql` and `.MarshalSQL` templates. The default is Atlas-style two-space indentation. |
+| `--schema`/`-s` | Narrows the current and desired schemas used for comparison and output. |
+| `--edit` | Opens the generated migrations in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized. |
+| `--env` | Reads `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and supported `diff` policy from `atlas.hcl`. |
+
+`--schema` narrows comparison only: migration replay and cleanup still own the
+complete [dev database realm](../../concepts/database-urls-and-dev-databases/).
+
+**Concurrent indexes.** With `diff.concurrent_index.create`, new indexes are
+planned as `CREATE INDEX CONCURRENTLY` and their files are tagged with the
+Atlas `-- atlas:txmode none` directive, splitting mixed plans into a
+transactional file followed by a concurrent-index file. Unsplittable mixes are
+refused.
+
+**`--lock-timeout`** bounds waiting for both Ptah's local migration-directory
+lock and the exclusive dev-database lock:
+
+- PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server use session advisory
+  locks;
+- SQLite, ClickHouse, and CockroachDB use an operating-system lock keyed by
+  normalized database identity;
+- dialects without a safe dev-database lock fail before cleanup.
+
+Cross-host ClickHouse and CockroachDB replay is unsupported.
+
+**`--qualifier`** prefixes every object in the generated statements with a
+custom schema qualifier on PostgreSQL-family, MySQL, and MariaDB dev databases.
+Invalid values, unsupported dialects, multi-schema plans, and statement kinds
 Ptah cannot re-qualify yet (for example enum types) fail explicitly before any
-file or checksum is written. Docker dev databases remain an explicit gap.
+file or checksum is written.
+
+Docker dev databases remain an explicit gap.
 Native twin: [`ptah migrations generate`](../native-commands/).
 
 ### `ptah-compat migrate import`
@@ -151,26 +180,38 @@ Ptah-native migrations instead.
 
 Forwards to `ptah migrations checkpoint`, replaying the migration directory on
 the `--dev-url` dev database and writing a ptah-format cumulative-schema
-checkpoint pair with `ptah.sum` refreshed. `--dir` maps to the native
-migrations directory and the optional positional name to the checkpoint
-description. Checkpoint output is ptah-format only, so this verb operates on
-ptah-format directories: `--dir-format=ptah` passes through, and
-`--dir-format=atlas` is a recorded waiver rejected loudly (Ptah marks
-checkpoints via the ptah file-name convention; Atlas's `-- atlas:checkpoint`
-directive has no reader support, so an Atlas-format checkpoint file would
-replay as an ordinary migration). Atlas keeps `migrate checkpoint` in its Pro
-build, so this is a free Ptah capability rather than an Atlas CE stub.
+checkpoint pair with `ptah.sum` refreshed.
+
+| Argument | Maps to |
+| --- | --- |
+| `--dir` | The native migrations directory. |
+| Positional name (optional) | The checkpoint description. |
+| `--dir-format=ptah` | Passes through. |
+| `--dir-format=atlas` | A recorded waiver, rejected loudly. |
+
+Checkpoint output is ptah-format only, so this verb operates on ptah-format
+directories. Ptah marks checkpoints via the ptah file-name convention; Atlas's
+`-- atlas:checkpoint` directive has no reader support, so an Atlas-format
+checkpoint file would replay as an ordinary migration.
+
+Atlas keeps `migrate checkpoint` in its Pro build, so this is a free Ptah
+capability rather than an Atlas CE stub.
 
 ### `ptah-compat migrate test [paths]`
 
-Forwards to `ptah migrations test`: `--dir` maps to the native migration
-directory (Atlas-format by default via `--dir-format`), `--dev-url` to the
-native throwaway database (an ephemeral SQLite database when omitted), `--run`
-to the native case-name filter, and the optional positional path to the
-directory of Ptah-native YAML test cases (default `./tests`). Exit codes match
-the native runner: 0 when all cases pass, 1 on test failure. Atlas keeps
-`migrate test` in its Pro build, so this is a free Ptah capability rather than
-an Atlas CE stub.
+Forwards to `ptah migrations test`.
+
+| Atlas flag | Native equivalent |
+| --- | --- |
+| `--dir` | The native migration directory, Atlas-format by default via `--dir-format`. |
+| `--dev-url` | The native throwaway database; an ephemeral SQLite database when omitted. |
+| `--run` | The native case-name filter. |
+| Positional path (optional) | The directory of Ptah-native YAML test cases, default `./tests`. |
+
+Exit codes match the native runner: 0 when all cases pass, 1 on test failure.
+
+Atlas keeps `migrate test` in its Pro build, so this is a free Ptah capability
+rather than an Atlas CE stub.
 
 ### `ptah-compat migrate edit {name | version}`
 
@@ -209,125 +250,179 @@ replacement is the native `ptah migrations push` to any OCI registry.
 
 ### `ptah-compat schema inspect`
 
-Inspects the `--url` source — a live database URL, a local `.hcl`, `.yaml`,
-`.yml`, or `.sql` schema file, a migration directory (a directory containing
-`atlas.sum`), or an `env://` reference resolved through the evaluated
-`atlas.hcl` env — and writes Atlas-compatible schema output without Ptah
-status banners. Non-database sources require `--dev-url` and are evaluated on
-the dev database: the dev database is reset, the source is materialized on it
-(schema files executed, migration directories replayed), and the result is
-introspected; inspecting a file without `--dev-url` fails with Atlas's
-`--dev-url cannot be empty` message. The default output is HCL; SQL output is
-supported with `--format sql` or `--format '{{ sql . }}'`; JSON and custom
-templates are supported through `--format json`, `{{ json . }}`,
-`{{ .MarshalHCL }}`, `{{ hcl . }}`, `{{ sql . }}`, and `{{ mermaid . }}`.
-`{{ hcl . | split | write "schema" }}` and
-`{{ sql . | split | write "schema" }}` exports support the documented Atlas
-split strategies — per object (default, with a `main.sql` `atlas:import`
-entry point for SQL), `split "schema"`, and `split "type"`, plus an optional
-file-extension argument — through one rendered output plan applied by a
-single writer: duplicate output paths, traversal or escape from the output
-directory, planned file/directory collisions, and existing-directory
-destinations fail explicitly before anything is written. The pinned Atlas CE
-binary rejects `split`, `write`, and `hcl` as non-community template
-functions, so these exports are an open Ptah extension. `--schema/-s`
-narrows inspection when supported by the database reader. The OSS `--exclude`
-flag filters inspected resources with Atlas-style globs and `[type=...]`
-selectors, including the Atlas-documented `*[type=extension].version` field
-selector with schema-qualified globs. Other field-level exclude selectors and
-type selectors on non-final pattern segments fail explicitly; include
-filtering and exporter blocks remain explicit gaps. Native twin:
-[`ptah schema inspect`](../native-commands/).
+Inspects the `--url` source and writes Atlas-compatible schema output without
+Ptah status banners.
+
+**Sources (`--url`)** accepts one of: a live database URL; a local `.hcl`,
+`.yaml`, `.yml`, or `.sql` schema file; a migration directory (a directory
+containing `atlas.sum`); or an `env://` reference resolved through the
+evaluated `atlas.hcl` env.
+
+Non-database sources require `--dev-url` and are evaluated on the dev database:
+it is reset, the source is materialized on it (schema files executed, migration
+directories replayed), and the result is introspected. Inspecting a file
+without `--dev-url` fails with Atlas's `--dev-url cannot be empty` message.
+
+**Output formats**
+
+| Output | How to request it |
+| --- | --- |
+| HCL | The default. |
+| SQL | `--format sql` or `--format '{{ sql . }}'`. |
+| JSON | `--format json` or `{{ json . }}`. |
+| Custom templates | `{{ .MarshalHCL }}`, `{{ hcl . }}`, `{{ sql . }}`, `{{ mermaid . }}`. |
+
+**Split-write exports.** `{{ hcl . | split | write "schema" }}` and
+`{{ sql . | split | write "schema" }}` support the documented Atlas split
+strategies: per object (the default, with a `main.sql` `atlas:import` entry
+point for SQL), `split "schema"`, and `split "type"`, plus an optional
+file-extension argument.
+
+Exports render one output plan applied by a single writer. Duplicate output
+paths, traversal or escape from the output directory, planned file/directory
+collisions, and existing-directory destinations fail explicitly before anything
+is written. The pinned Atlas CE binary rejects `split`, `write`, and `hcl` as
+non-community template functions, so these exports are an open Ptah extension.
+
+**Filtering**
+
+- `--schema`/`-s` narrows inspection when supported by the database reader.
+- The OSS `--exclude` flag filters inspected resources with Atlas-style globs
+  and `[type=...]` selectors, including the Atlas-documented
+  `*[type=extension].version` field selector with schema-qualified globs.
+- Other field-level exclude selectors and type selectors on non-final pattern
+  segments fail explicitly; include filtering and exporter blocks remain
+  explicit gaps.
+
+Native twin: [`ptah schema inspect`](../native-commands/).
 
 ### `ptah-compat schema apply`
 
-Diffs a live database against the `--to` desired state — local `file://`
-`.hcl`, `.yaml`, `.yml`, or `.sql` schema files, one directly connectable
-database URL, one migration directory (a `file://` directory containing
-`atlas.sum`) replayed on the required `--dev-url` dev database, or one
-`env://<attribute>` reference (`src`, `schema.src`, `url`, `dev`,
-`migration.dir`) resolved through the evaluated `atlas.hcl` env — prints the
-planned SQL, and applies it after interactive confirmation or explicit
-`--auto-approve`; `--dry-run` prints the plan without applying. All `--to`
-values must be one source kind, database and migration-directory sources
-accept one URL, and unsupported schemes such as `atlas://` fail before the
-target database is contacted. With `--env`, reads `env.url`, `env.src`,
-`env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
-`format.schema.apply`, and supported `diff` policy from `atlas.hcl`, including
-local variable defaults, locals, `getenv`, `file`, `fileset`, `format`,
-`jsonencode`, and `data.hcl_schema.<name>.url` references. `--tx-mode=file`
-and `--tx-mode=all` execute the generated plan in one transaction;
-`--tx-mode=none` executes statements without transaction wrapping. `--format`
-supports Atlas-style templates over planned changes with `sql` and
-`.MarshalSQL`. `--exclude` and disabled `schema.mode` values filter matching
-resources out of both sides of the comparison before planning. `--edit` opens
-the planned SQL in `$VISUAL`/`$EDITOR` before approval, and the edited SQL is
-what gets applied. `--plan file://<path>` executes a pre-approved local plan
-file saved by `schema plan` after verifying the database still matches the
-plan's source fingerprint; a drifted target refuses with a stale-plan error,
-registry `atlas://` plan URLs are rejected, and `--plan` cannot be combined
-with `--to`, `--file`, `--dev-url`, `--exclude`, `--schema`, `--include`, or
-`--edit`. Atlas's hidden `--file/-f` alias is accepted for local HCL or SQL
-paths. `--schema/-s` restricts both comparison sides to the named schema
-scopes and `--include` positively selects top-level resources with
-Atlas-style glob selectors and `[type=...]` filters; repeated values union
-deterministically, `--exclude` plus disabled `schema.mode` values subtract
-afterward, cross-scope dependencies refuse the plan with explicit
-diagnostics, and an empty selection reports a synced schema.
-`--lock-timeout` bounds waiting for the session advisory lock
-that serializes concurrent schema applies against one target: the lock is
-acquired before target inspection and planning, held through simulation,
-confirmation, and execution, and released on every exit path; empty waits
-indefinitely, an elapsed timeout fails before the target is inspected, and
-dialects without advisory locks (SQLite, ClickHouse, CockroachDB, YugabyteDB,
-Spanner) proceed unlocked with a stderr note. Before a non-dry-run apply,
-`--dev-url` rehearses the exact ordered plan on the dev database — reset, the
-target's current schema recreated, then the planned (or edited) statements
-executed under the same transaction mode — and a failed rehearsal refuses the
-apply with the target unchanged; the dev database must not be the target and
-must share its schema scope. Native twin:
-[`ptah schema apply`](../native-commands/).
+Diffs a live database against the `--to` desired state, prints the planned SQL,
+and applies it after interactive confirmation or explicit `--auto-approve`.
+
+**Desired state (`--to`)** accepts one of:
+
+- local `file://` `.hcl`, `.yaml`, `.yml`, or `.sql` schema files;
+- one directly connectable database URL;
+- one migration directory (a `file://` directory containing `atlas.sum`)
+  replayed on the required `--dev-url` dev database;
+- one `env://<attribute>` reference (`src`, `schema.src`, `url`, `dev`,
+  `migration.dir`) resolved through the evaluated `atlas.hcl` env.
+
+All `--to` values must be one source kind, database and migration-directory
+sources accept one URL, and unsupported schemes such as `atlas://` fail before
+the target database is contacted.
+
+**Flags**
+
+| Flag | Behavior |
+| --- | --- |
+| `--dry-run` | Prints the plan without applying. |
+| `--tx-mode` | `file` and `all` execute the generated plan in one transaction; `none` executes statements without transaction wrapping. |
+| `--format` | Atlas-style templates over planned changes with `sql` and `.MarshalSQL`. |
+| `--exclude` | Filters matching resources out of both sides of the comparison before planning, as do disabled `schema.mode` values. |
+| `--edit` | Opens the planned SQL in `$VISUAL`/`$EDITOR` before approval; the edited SQL is what gets applied. |
+| `--file`/`-f` | Atlas's hidden alias, accepted for local HCL or SQL paths. |
+| `--env` | Reads `env.url`, `env.src`, `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff` policy from `atlas.hcl`. |
+
+`--env` evaluation includes local variable defaults, locals, `getenv`, `file`,
+`fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url` references.
+
+**`--schema`/`-s` and `--include`** scope both sides of the comparison.
+`--schema` restricts them to the named schema scopes; `--include` positively
+selects top-level resources with Atlas-style glob selectors and `[type=...]`
+filters. Repeated values union deterministically, `--exclude` plus disabled
+`schema.mode` values subtract afterward, cross-scope dependencies refuse the
+plan with explicit diagnostics, and an empty selection reports a synced schema.
+
+**`--plan file://<path>`** executes a pre-approved local plan file saved by
+`schema plan`, after verifying the database still matches the plan's source
+fingerprint. A drifted target refuses with a stale-plan error, registry
+`atlas://` plan URLs are rejected, and `--plan` cannot be combined with `--to`,
+`--file`, `--dev-url`, `--exclude`, `--schema`, `--include`, or `--edit`.
+
+**`--lock-timeout`** bounds waiting for the session advisory lock that
+serializes concurrent schema applies against one target. The lock is acquired
+before target inspection and planning, held through simulation, confirmation,
+and execution, and released on every exit path. Empty waits indefinitely, an
+elapsed timeout fails before the target is inspected, and dialects without
+advisory locks (SQLite, ClickHouse, CockroachDB, YugabyteDB, Spanner) proceed
+unlocked with a stderr note.
+
+**`--dev-url` rehearsal.** Before a non-dry-run apply, `--dev-url` rehearses the
+exact ordered plan on the dev database — reset, the target's current schema
+recreated, then the planned (or edited) statements executed under the same
+transaction mode. A failed rehearsal refuses the apply with the target
+unchanged; the dev database must not be the target and must share its schema
+scope.
+
+Native twin: [`ptah schema apply`](../native-commands/).
 
 ### `ptah-compat schema plan`
 
 Computes the declarative migration from the `--from` target database to local
-`--to` schema files and saves it as a fingerprinted local plan file: `--save`
-writes `<name>.plan.json` (deterministic fingerprint-derived default name, or
-`--name`), `--output <path>` chooses the location, and `--dry-run` prints the
-plan document without saving. The JSON plan records the ordered SQL statements
-with per-statement safety severity, the dialect, the exclude patterns, and
-SHA-256 fingerprints of the source and desired schema states. With `--env`,
-reads `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`,
-and supported `diff` policy from `atlas.hcl`. The registry-bound `--push`,
-`--pending`, `--repo`, and `--auto-approve` flags are recorded waivers that
-fail loudly; `--edit`, `--skip-lint`, `--format`, `--name-format`,
-`--directive`, `--schema`, `--include`, and `--lock-timeout` fail explicitly
-until implemented. The registry sub-verbs (`approve`, `lint`, `list`, `new`,
-`pull`, `push`, `rm`, `test`, `validate`) stay Atlas CE boundary stubs. Atlas
-keeps `schema plan` in its Pro registry flow, so this is a free Ptah
-capability rather than an Atlas CE stub. Native twin:
-[`ptah schema plan`](../native-commands/).
+`--to` schema files and saves it as a fingerprinted local plan file.
+
+**Flags**
+
+| Flag | Behavior |
+| --- | --- |
+| `--save` | Writes `<name>.plan.json`, using a deterministic fingerprint-derived default name or `--name`. |
+| `--output <path>` | Chooses the location. |
+| `--dry-run` | Prints the plan document without saving. |
+| `--env` | Reads `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported `diff` policy from `atlas.hcl`. |
+
+The JSON plan records the ordered SQL statements with per-statement safety
+severity, the dialect, the exclude patterns, and SHA-256 fingerprints of the
+source and desired schema states.
+
+**Not implemented**
+
+- Registry-bound `--push`, `--pending`, `--repo`, and `--auto-approve` are
+  recorded waivers that fail loudly.
+- `--edit`, `--skip-lint`, `--format`, `--name-format`, `--directive`,
+  `--schema`, `--include`, and `--lock-timeout` fail explicitly until
+  implemented.
+- The registry sub-verbs (`approve`, `lint`, `list`, `new`, `pull`, `push`,
+  `rm`, `test`, `validate`) stay Atlas CE boundary stubs.
+
+Atlas keeps `schema plan` in its Pro registry flow, so this is a free Ptah
+capability rather than an Atlas CE stub.
+Native twin: [`ptah schema plan`](../native-commands/).
 
 ### `ptah-compat schema diff`
 
-Diffs two desired-state sources: each of `--from/-f` and `--to` accepts
-local `file://` schema files with `.hcl`, `.yaml`, `.yml`, or `.sql`
-extensions, one directly connectable database URL whose live schema is
-introspected, one migration directory (a `file://` directory containing
-`atlas.sum`) replayed on the required `--dev-url` dev database, or one
-`env://<attribute>` reference resolved through the evaluated `atlas.hcl` env.
-Prints migration SQL, supports Atlas-style `--format` templates with `sql`
-and `.MarshalSQL`, and applies `--exclude` plus disabled `schema.mode`
-resource filters to both sides before diffing. The SQL dialect is pinned by
-`--dev-url` first, then by `--from` and `--to` database URLs; local schema
-files alone still require `--dev-url`. `--schema/-s` and `--include`
-positively scope both sides with the same selection semantics as
-`schema apply`: schema universe first, include selection inside it,
-exclusion last, cross-scope dependency diagnostics, and synced output for
-empty selections. With `--env`, reads `env.schema.src`, `env.dev`,
-`env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff`
-policy from `atlas.hcl`. Unsupported schemes such as `atlas://` fail during
-validation. Native twin: [`ptah schema diff`](../native-commands/).
+Diffs two desired-state sources and prints migration SQL.
+
+**Sources.** Each of `--from`/`-f` and `--to` accepts one of:
+
+- local `file://` schema files with `.hcl`, `.yaml`, `.yml`, or `.sql`
+  extensions;
+- one directly connectable database URL, whose live schema is introspected;
+- one migration directory (a `file://` directory containing `atlas.sum`)
+  replayed on the required `--dev-url` dev database;
+- one `env://<attribute>` reference resolved through the evaluated `atlas.hcl`
+  env.
+
+Unsupported schemes such as `atlas://` fail during validation. The SQL dialect
+is pinned by `--dev-url` first, then by `--from` and `--to` database URLs; local
+schema files alone still require `--dev-url`.
+
+**Flags**
+
+| Flag | Behavior |
+| --- | --- |
+| `--format` | Atlas-style templates with `sql` and `.MarshalSQL`. |
+| `--exclude` | Filters resources out of both sides before diffing, as do disabled `schema.mode` values. |
+| `--schema`/`-s`, `--include` | Positively scope both sides, with the same selection semantics as `schema apply`. |
+| `--env` | Reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy from `atlas.hcl`. |
+
+Selection order matches `schema apply`: schema universe first, include selection
+inside it, exclusion last, cross-scope dependency diagnostics, and synced output
+for empty selections.
+
+Native twin: [`ptah schema diff`](../native-commands/).
 
 ### `ptah-compat schema fmt`
 
@@ -337,25 +432,38 @@ Formats local `.hcl` files using HCL canonical layout. Native twin:
 ### `ptah-compat schema clean`
 
 Cleans user-owned schema objects through Ptah's destructive database-cleanup
-runtime: `--dry-run` prints the planned cleanup, interactive confirmation is
-preserved unless `--auto-approve` is explicit, `--format` renders Atlas-style
-templates over the cleanup plan, and `env.url` plus `format.schema.clean` are
-read from `atlas.hcl`. Cleanup covers the object types Ptah cleanly models and
-drops today: user tables across supported dialects, PostgreSQL enum types and
-sequences, and SQL Server foreign-key constraints that must be dropped before
-tables. Native twin: [`ptah schema clean`](../native-commands/).
+runtime.
+
+| Flag | Behavior |
+| --- | --- |
+| `--dry-run` | Prints the planned cleanup. |
+| `--auto-approve` | Skips the interactive confirmation, which is otherwise preserved. |
+| `--format` | Renders Atlas-style templates over the cleanup plan. |
+| `--env` | Reads `env.url` and `format.schema.clean` from `atlas.hcl`. |
+
+Cleanup covers the object types Ptah cleanly models and drops today: user
+tables across supported dialects, PostgreSQL enum types and sequences, and SQL
+Server foreign-key constraints that must be dropped before tables.
+
+Native twin: [`ptah schema clean`](../native-commands/).
 
 ### `ptah-compat schema test [paths]`
 
-Forwards to `ptah schema test`: `-u/--url` maps the desired schema URL (a
-local `file://` directory of Go schema annotations) to the native
-`--root-dir`, `--dev-url` to the native throwaway database (an ephemeral
-SQLite database when omitted), `--run` to the native case-name filter, and the
-optional positional path to the directory of Ptah-native YAML test cases. With
-`--env`, `schema.src` supplies the desired schema URL and `dev` the dev
+Forwards to `ptah schema test`.
+
+| Atlas flag | Native equivalent |
+| --- | --- |
+| `-u`/`--url` | `--root-dir`. The desired schema URL is a local `file://` directory of Go schema annotations. |
+| `--dev-url` | The native throwaway database; an ephemeral SQLite database when omitted. |
+| `--run` | The native case-name filter. |
+| Positional path (optional) | The directory of Ptah-native YAML test cases. |
+
+With `--env`, `schema.src` supplies the desired schema URL and `dev` the dev
 database. Exit codes match the native runner: 0 when all cases pass, 1 on test
-failure. Atlas keeps `schema test` in its Pro build, so this is a free Ptah
-capability rather than an Atlas CE stub.
+failure.
+
+Atlas keeps `schema test` in its Pro build, so this is a free Ptah capability
+rather than an Atlas CE stub.
 
 ### `ptah-compat schema push`
 

@@ -55,13 +55,16 @@ through that filesystem.
 `migration/lint` provides the compact `LintFS` findings API and the richer
 `AnalyzeFS` API. `AnalyzeFS` captures each migration input once: SQL files,
 integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
-prepared files and findings together with a read-only source snapshot. Finding
-contexts identify the exact statement and affected tables or columns; column
-subjects can also carry the parent table and declared data type. Each prepared
-up-migration file also carries the semantic schema changes it expresses
-(`File.Changes`, typed `SchemaChange`), recovered from Ptah's dialect-aware SQL
-parser so one statement can map to zero, one, or several changes. Atlas-ignored
-files are marked explicitly without changing version selection.
+prepared files and findings together with a read-only source snapshot.
+
+Finding contexts identify the exact statement and affected tables or columns;
+column subjects can also carry the parent table and declared data type. Each
+prepared up-migration file also carries the semantic schema changes it
+expresses (`File.Changes`, typed `SchemaChange`), recovered from Ptah's
+dialect-aware SQL parser so one statement can map to zero, one, or several
+changes.
+
+Atlas-ignored files are marked explicitly without changing version selection.
 Compatibility-specific directive behavior must be selected explicitly; native
 Ptah behavior is the zero-value default.
 
@@ -89,11 +92,13 @@ checks, and optional shadow verification without publishing files. Its
 `MigrationPlan.WriteFiles` method publishes the validated artifacts once. The
 plan records the migration-directory snapshot used during planning and refuses
 publication with `generator.ErrMigrationDirectoryChanged` if that history
-changed. `WriteFilesContext` additionally lets an embedder cancel waiting for
-the cross-process publication lock and rejects concurrent use of one plan with
-`generator.ErrMigrationPlanInUse`.
-`GenerateMigration` remains the convenience composition of planning and
-publication and propagates its context through both phases.
+changed.
+
+`WriteFilesContext` additionally lets an embedder cancel waiting for the
+cross-process publication lock and rejects concurrent use of one plan with
+`generator.ErrMigrationPlanInUse`. `GenerateMigration` remains the convenience
+composition of planning and publication and propagates its context through
+both phases.
 
 `migration/generator.VerifyRollbackFromShadow` requires the caller's open
 target `dbschema.DatabaseConnection`. It checks the target and shadow's live
@@ -126,19 +131,24 @@ and terminal-safe. Embedders can use the same external desired-schema contract
 as the CLI without depending on Cobra or any `cmd/internal` package.
 
 `migration/schemadiff/types.SchemaDiff` stores index additions and removals as
-canonical `[]IndexRef` fields. Every index reference includes its owning table.
-Live comparisons also snapshot catalog identifier semantics into the diff so
-comparison, destructive-change policy, forward planning, and reverse planning
-use one source of truth. `core/platform/identifier` exposes the reusable value
-types and conservative dialect defaults behind that contract.
+canonical `[]IndexRef` fields. Every index reference includes its owning
+table. Live comparisons also snapshot catalog identifier semantics into the
+diff so comparison, destructive-change policy, forward planning, and reverse
+planning use one source of truth.
+
+`core/platform/identifier` exposes the reusable value types and conservative
+dialect defaults behind that contract.
+
 `migration/generator.GenerateCheckpointWithDatabaseInfo` preserves the same
 live semantics when an introspected schema is rendered as a checkpoint, but
-SQL Server callers should use `GenerateCheckpointWithDatabase` so Ptah resolves
-the complete candidate identifier set under the target catalog collation.
-`GenerateCheckpoint` remains the conservative dialect-only entry point.
-`migration/planner.Planner` exposes only checked planning; malformed references,
-unresolved additions, and target index-namespace conflicts fail before SQL is
-returned.
+SQL Server callers should use `GenerateCheckpointWithDatabase` so Ptah
+resolves the complete candidate identifier set under the target catalog
+collation. `GenerateCheckpoint` remains the conservative dialect-only entry
+point.
+
+`migration/planner.Planner` exposes only checked planning; malformed
+references, unresolved additions, and target index-namespace conflicts fail
+before SQL is returned.
 
 Public failures from these packages should use `core/ptaherr` where the caller
 can reasonably branch on the error. In particular, annotation failures should
