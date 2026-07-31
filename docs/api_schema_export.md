@@ -1,15 +1,23 @@
-# API Schema Export (OpenAPI / GraphQL)
+# API schema export (OpenAPI / GraphQL)
 
 Ptah exports the schema it parses from Go annotations to API-facing formats:
 OpenAPI 3.0 component schemas, GraphQL SDL, and Protobuf definitions. The parsed
 `goschema.Database` already carries types, nullability, enums and foreign keys,
 so each format is a direct projection of that intermediate representation.
+This is contract generation, not database publication: Ptah emits no runtime
+server, data access, authentication, or authorization.
 
 - Generated OpenAPI passes [`redocly lint`](https://redocly.com/docs/cli/commands/lint/).
 - Generated GraphQL passes [`graphql-js`](https://github.com/graphql/graphql-js)
   `parse` and `buildSchema`.
 
 Both are exercised in CI (`.github/workflows/export-acceptance.yml`).
+
+The generated artifact is not automatically a safe public API. Database models
+can contain internal, tenant, audit, credential, and personally identifiable
+fields. Use direct projection only where the selected persistence entities
+intentionally match the transport model, and review every generated field
+before publishing it.
 
 This file covers the two stateless targets. The Protobuf target (`--to protobuf`,
 rendered by `internal/protobufrender`) is stateful — field numbers are persistent
@@ -101,11 +109,41 @@ visible rather than silently wrong.
 
 ## Scope and limitations
 
-The export describes what an API component schema or GraphQL type needs: table
-columns, primary keys, foreign keys and enums. Non-column database objects
-(views, materialized views, triggers, functions, RLS policies, standalone
-indexes) are not part of an API schema and are not emitted. Use `--include-tables`
-/ `--exclude-tables` to scope the output to the entities you actually expose.
+The export describes selected table columns, primary keys, foreign keys, and
+enums. Non-column database objects such as views, materialized views, triggers,
+functions, row-level security (RLS) policies, and standalone indexes are not
+emitted.
+
+`--include-tables` and `--exclude-tables` select whole tables. Once a table is
+selected, every exportable column enters the generated shape. Ptah does not
+currently provide field allowlists, separate read/write projections,
+sensitive-field markers, or stable API aliases independent of database names.
+An additive database column can therefore become an unintended API change.
+Generated descriptions also expose table and field comments.
+
+OpenAPI output contains components but no paths. Protobuf output contains
+messages and enums but no services. GraphQL output includes a `Query` root and
+create-shaped inputs, but Ptah does not generate resolvers or define their
+authorization, tenant isolation, assignment, filtering, or transaction
+behavior.
+
+The projection is lossy. It does not carry database defaults, unique or check
+constraints, generated expressions, or transaction behavior. GraphQL `Int`
+cannot represent the full `BIGINT` range, decimal values mapped to GraphQL
+`Float` can lose precision, and custom `DateTime`/`JSON` scalars have no runtime
+implementation. A GraphQL create input recognizes serial and auto-increment
+columns as server-generated, but it does not infer every server-managed or
+database-defaulted field.
+
+Treat these outputs as reviewed contract inputs:
+
+1. Select the smallest set of tables needed.
+2. Inspect every generated field, relation, and exported source comment.
+3. Keep field and row authorization in the implementing service.
+4. Do not pass generated GraphQL inputs directly to persistence code without an
+   assignment allowlist.
+5. Review generated diffs and run consumer compatibility tests before
+   publication.
 
 The HCL schema target (`--to hcl`) is documented in
 [HCL Schema](atlas_hcl_schema.md). The old `--to atlas-hcl` spelling remains an
