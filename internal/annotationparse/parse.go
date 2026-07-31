@@ -112,6 +112,14 @@ func readDirective(body string) (string, int) {
 	return body[:end], end
 }
 
+// ScanAttributes returns every key="value" attribute on a single line, with
+// source ranges, without requiring the line to resolve to a known directive.
+// Redaction needs this: it must mask a credential even on a spelling the
+// directive recognizer rejects.
+func ScanAttributes(line string) []Attribute {
+	return scanAttributes(0, line)
+}
+
 func scanAttributes(lineNo int, line string) []Attribute {
 	matches := attrRe.FindAllStringSubmatchIndex(line, -1)
 	attrs := make([]Attribute, 0, len(matches))
