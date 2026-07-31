@@ -66,10 +66,14 @@ func fileNormalizationDiagnostics(name, source string) []atlashclrender.Diagnost
 			// through the HCL.
 			continue
 		}
-		if annotation.Line < 1 || annotation.Line > len(lines) {
+		// annotationparse.Scan numbers lines from zero, so the slice index is
+		// the line number itself. Reading lines[Line-1] would decode the
+		// PREVIOUS line, whose ranges never match, silently falling back to the
+		// quote-trimmed value and missing escaped code points entirely.
+		if annotation.Line < 0 || annotation.Line >= len(lines) {
 			continue
 		}
-		line := lines[annotation.Line-1]
+		line := lines[annotation.Line]
 
 		for _, attribute := range annotation.Attributes {
 			value, ok := decodeAttributeValue(line, attribute)
@@ -79,7 +83,7 @@ func fileNormalizationDiagnostics(name, source string) []atlashclrender.Diagnost
 			diagnostics = append(diagnostics, atlashclrender.Diagnostic{
 				Severity: atlashclrender.SeverityWarning,
 				Path:     name,
-				Message: "line " + strconv.Itoa(annotation.Line) + ": " + annotation.Directive +
+				Message: "line " + strconv.Itoa(annotation.Line+1) + ": " + annotation.Directive +
 					" attribute " + attribute.Name +
 					" is not Unicode NFC; HCL rendering composes it, so exporting changes its bytes",
 			})

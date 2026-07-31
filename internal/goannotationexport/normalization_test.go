@@ -57,6 +57,37 @@ func TestExportReportsNonNFCAttributeValue(t *testing.T) {
 	c.Assert(diagnosticMessages(result), qt.Any(qt.Contains), "models.go")
 }
 
+func TestExportDetectsEscapedNonNFCCodePoint(t *testing.T) {
+	c := qt.New(t)
+
+	// The combining mark is written as a literal backslash escape, so the file
+	// holds only ASCII. Decoding has to unquote before checking, exactly as
+	// core/goschema does when it builds the schema; comparing the raw span
+	// would see plain ASCII and miss the loss.
+	dir := modelWithFunctionBody(c, `Cafe\u0301`)
+	out := filepath.Join(c.TempDir(), "schema.hcl")
+
+	result, err := goannotationexport.Export(exportOptions(dir, out, false))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(normalizationMessages(result), qt.Not(qt.HasLen), 0)
+}
+
+func TestExportNonNFCDiagnosticReportsTheSourceLine(t *testing.T) {
+	c := qt.New(t)
+
+	// modelWithFunctionBody puts the function annotation on line 3: line 1 is
+	// the package clause and line 2 is blank. annotationparse numbers lines from
+	// zero, so a diagnostic that forwards that number unchanged is off by one.
+	dir := modelWithFunctionBody(c, "Caf"+decomposedAccent)
+	out := filepath.Join(c.TempDir(), "schema.hcl")
+
+	result, err := goannotationexport.Export(exportOptions(dir, out, false))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(normalizationMessages(result), qt.Any(qt.Contains), "line 3:")
+}
+
 func TestExportNonNFCDiagnosticNeverCarriesTheValue(t *testing.T) {
 	c := qt.New(t)
 
