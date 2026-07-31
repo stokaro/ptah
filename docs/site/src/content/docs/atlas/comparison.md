@@ -3,6 +3,10 @@ title: Comparison
 description: Ptah native commands, Atlas-compatible commands, feature parity evidence, Pro analyzer coverage, and the tracked gap register.
 ---
 
+This page carries the per-area detail. For a one-line status per capability,
+start at the [Feature matrix](../feature-matrix/) and come back here for the
+area that matters to you.
+
 ## Product positioning
 
 Ptah is an independent MIT-licensed implementation. It does not use Atlas source
