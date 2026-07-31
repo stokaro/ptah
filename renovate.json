@@ -41,6 +41,17 @@
         "/^golang$/",
         "/^go$/"
       ]
+    },
+    {
+      "description": "The clickhouse-legacy integration service is pinned below 24.11 deliberately: CHECK GRANT catalog visibility arrived in 24.11, and TestWriterDropDatabaseRealm_RejectsLegacyServerLive proves the realm-drop guard fails closed without it. Matching on the current value freezes only that pin and leaves the current clickhouse service free to update.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "clickhouse/clickhouse-server"
+      ],
+      "matchCurrentValue": "24.10",
+      "enabled": false
     }
   ]
 }
