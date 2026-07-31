@@ -164,8 +164,10 @@ type User struct {
 
 	rendered, err := os.ReadFile(out)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(string(rendered), decomposedAccent), qt.IsFalse)
-	c.Assert(strings.Contains(string(rendered), composedAccent), qt.IsTrue)
+	// No credential here, so the idiomatic matchers are right; the boolean
+	// helpers elsewhere exist only to keep passwords out of failure output.
+	c.Assert(string(rendered), qt.Not(qt.Contains), decomposedAccent)
+	c.Assert(string(rendered), qt.Contains, composedAccent)
 }
 
 func TestExportAcceptsComposedAndASCIIValues(t *testing.T) {
