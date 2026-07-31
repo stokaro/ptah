@@ -215,17 +215,19 @@ Complete this for every documentation PR:
 4. Parity and conformance claims checked against current
    `stokaro/ptah-atlas-conformance` reports.
 5. `npm run check:links:selftest && npm run check:links &&
-   npm run check:redirects && npm run check:core-doc-links &&
-   npm run check:page-health && npm run check:exit-codes &&
-   npm run check:style:selftest && npm run check:style &&
+   npm run check:redirects:selftest && npm run check:redirects &&
+   npm run check:core-doc-links && npm run check:page-health &&
+   npm run check:exit-codes && npm run check:style:selftest &&
+   npm run check:style && npm run check:responsive:selftest &&
    npm run versions:selftest && npm run build && npm run check:responsive`
    all pass in `docs/site`. `check:responsive` needs the built site, so it runs
-   last.
+   last. Run every `:selftest` alongside its check: a check whose self-test is
+   failing is not reporting on your content.
 6. `docs/site/CONTENT_INVENTORY.md` updated for any added, moved, merged,
    split, or retired page.
 7. Redirects added for every moved URL; no content links through a redirect.
 8. Desktop and mobile visual pass for structural changes. `check:responsive`
-   covers horizontal overflow at 390px and 1280px; judgement about hierarchy,
+   covers horizontal overflow at 390px and 1280px; judgment about hierarchy,
    density, and orientation still needs a person looking at the page.
 9. Stale-term sweep: `rg` for old slugs, old command spellings, and retired
    terms across `*.md`.

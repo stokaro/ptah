@@ -5,7 +5,7 @@
 // it was enforced only by review, so a rule could be broken silently and stay
 // broken. This check covers the rules that are objective enough to automate:
 // American English, code-fence labels, banned filler, the admonition set, and
-// testify in samples. Rules that need editorial judgement (page taxonomy,
+// testify in samples. Rules that need editorial judgment (page taxonomy,
 // section templates, table design) remain a review responsibility.
 //
 // Usage:
@@ -42,6 +42,11 @@ const skipDirectories = new Set([
 // British spellings that docs/STYLE_GUIDE.md section 4 rules out. Each entry is
 // matched as a whole word, case-insensitively, with an optional suffix so that
 // "behaviours" and "organised" are caught alongside the stem.
+//
+// Every stem here must be one that no American word begins with, because the
+// suffix is open-ended. That rules out otherwise-tempting entries: "optimis"
+// would flag "optimistic", "specialis" would flag "specialist", and "finalis"
+// would flag "finalist".
 const britishSpellings = [
   ['behaviour', 'behavior'],
   ['colour', 'color'],
@@ -69,6 +74,34 @@ const britishSpellings = [
   ['fulfil ', 'fulfill '],
   ['whilst', 'while'],
   ['amongst', 'among'],
+  ['judgement', 'judgment'],
+  ['acknowledgement', 'acknowledgment'],
+  // Ptah publishes OCI artifacts, so this one is a live risk, not a curiosity.
+  ['artefact', 'artifact'],
+  ['programme', 'program'],
+  ['practise', 'practice'],
+  ['dependant', 'dependent'],
+  ['enquire', 'inquire'],
+  ['analogue', 'analog'],
+  ['sceptic', 'skeptic'],
+  ['offence', 'offense'],
+  ['pretence', 'pretense'],
+  ['learnt', 'learned'],
+  ['metre', 'meter'],
+  ['grey', 'gray'],
+  ['flavour', 'flavor'],
+  ['neighbour', 'neighbor'],
+  ['endeavour', 'endeavor'],
+  ['rigour', 'rigor'],
+  ['utilis', 'utiliz'],
+  ['customis', 'customiz'],
+  ['summaris', 'summariz'],
+  ['categoris', 'categoriz'],
+  ['standardis', 'standardiz'],
+  ['prioritis', 'prioritiz'],
+  ['visualis', 'visualiz'],
+  ['minimis', 'minimiz'],
+  ['maximis', 'maximiz'],
 ];
 
 // docs/STYLE_GUIDE.md section 4: no marketing adjectives.
@@ -303,6 +336,11 @@ function selftest() {
     '```text',
     'plain output',
     '```',
+    '',
+    // American words that begin with a British stem in the deny-list. Each one
+    // was a live false positive during review, so each stays asserted here.
+    'An optimistic specialist and a finalist otherwise exercise a raise, and',
+    'a concise promise likewise comprises expertise in an enterprise.',
   ].join('\n');
 
   for (const finding of analyze(clean)) {
