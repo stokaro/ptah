@@ -268,6 +268,10 @@ practical, live commands:
   lists (`: term`) come out as literal text. Build and read the page before
   trusting a syntax the docs do not already use.
 
+  A reference page describes a command's flags. Write them as a table or a
+  list from the start: prose that enumerates a dozen flags inline reads as a
+  wall no matter how accurate it is, and `check:style` rejects it.
+
 - After the suite passes, `rg` for stale links, retired command spellings, and
   unsupported claims. The checks verify structure, not whether a sentence is
   still true.

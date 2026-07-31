@@ -85,6 +85,10 @@ how to re-verify.
 - Working targets: sentences at or under roughly 25 words; paragraphs at or
   under 4 sentences.
 - No marketing adjectives. Never "simply", "easily", or "just".
+- A paragraph that enumerates more than a couple of flags, formats, or failure
+  modes wants a list or a table. `check:style` fails a paragraph over 900
+  rendered characters, measured on the text a reader sees rather than on the
+  markdown around it, so flag-dense prose is not penalized for its backticks.
 - Expand an abbreviation on first use per page (DDL, RLS, OCI, UDT).
 - "Ptah" is capitalized in prose; commands and file names are code-formatted
   (`ptah`, `ptah.sum`, `atlas.hcl`).
@@ -268,6 +272,7 @@ in this guide is a review responsibility.
 | Exit-code tables stay in lockstep | 9 | `check:exit-codes` |
 | Table cells under 350 characters | 8 | `check:style` |
 | Table rows match the header's column count | 8 | `check:style` |
+| Paragraphs under 900 rendered characters | 4 | `check:style` |
 | In-page and cross-page anchors resolve | 9 | `check:links` |
 | No page scrolls sideways at 390px or 1280px | 10 | `check:responsive` |
 | No table cell renders over 8 lines at 1280px | 8, 10 | `check:responsive` |
@@ -293,8 +298,9 @@ Prose rules never read code, and code rules never read prose. A column may be
 named `cancelled`, and this guide names `testify` in order to ban it; neither is
 a violation.
 
-Two rules guard table density, because one measurement cannot see both
-failures. `check:style` counts characters, which is fast and needs no browser.
+Three rules guard density. Two cover tables, because one measurement cannot see
+both failures; the third covers the prose between them, since an enumeration
+does not stop being unreadable by leaving the grid. `check:style` counts characters, which is fast and needs no browser.
 `check:responsive` measures rendered height, which is the only way to catch a
 short cell squeezed into a column that an unbreakable code token has made
 narrow. A page whose dense cells are the reference content can be named in the

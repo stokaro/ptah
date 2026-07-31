@@ -29,3 +29,20 @@
   --color-gray-900: oklch(0.18 0.012 250);
   --color-gray-950: oklch(0.13 0.01 250);
 }
+
+/*
+ * Keep a flag or identifier in a table cell on one line.
+ *
+ * Table columns size to their content, so a first column of code tokens
+ * collapses to the width of the longest breakable fragment and then breaks the
+ * tokens anyway: `--dry-run` renders as "--dry-" above "run", which reads as
+ * two different flags. Refusing the break makes the column size to the whole
+ * token instead.
+ *
+ * Wide content is still allowed to scroll inside the table's own container,
+ * which is what Starlight already does and what check-responsive.mjs enforces
+ * at the page level.
+ */
+.sl-markdown-content table :is(td, th) code {
+  white-space: nowrap;
+}

@@ -114,15 +114,18 @@ The supported attributes map to Ptah settings as follows:
 | `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
 
 `env.src` and `env.schema.src` accept either one string or a list of strings.
-The nested `schema.src` form matches Atlas project config syntax. Ptah currently
-uses these values as local schema-file defaults for `schema apply` and
-`schema diff`. `migrate diff` resolves the same defaults through its typed
-desired-state resolver, so they can contain local schema files or one directly
-connectable database URL. Plain local schema paths and relative `file://`
-schema URLs declared in `atlas.hcl` resolve relative to the directory
-containing that `atlas.hcl` file, not the process working directory. Explicit
-CLI `--to` and `--from` values keep CLI semantics and resolve relative to the
-process working directory unless they are absolute.
+The nested `schema.src` form matches Atlas project config syntax. Ptah
+currently uses these values as local schema-file defaults for `schema apply`
+and `schema diff`.
+
+`migrate diff` resolves the same defaults through its typed desired-state
+resolver, so they can contain local schema files or one directly connectable
+database URL. Plain local schema paths and relative `file://` schema URLs
+declared in `atlas.hcl` resolve relative to the directory containing that
+`atlas.hcl` file, not the process working directory.
+
+Explicit CLI `--to` and `--from` values keep CLI semantics and resolve
+relative to the process working directory unless they are absolute.
 
 `ptah-compat schema apply`, `ptah-compat schema diff`, and
 `ptah-compat migrate diff` also accept explicit `env://` references.
@@ -152,16 +155,20 @@ native Ptah feature.
 
 Ptah parses Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
 and `dbmate` migration format values so the project file can be evaluated
-without changing Atlas syntax. `ptah-compat migrate apply` executes all of them.
-The native `atlas` format is read from disk unchanged, preserving `atlas.sum`
-verification and down migrations. Every other format is read and converted in
-memory to Atlas single-file, up-only migrations, so applying it runs only the
-source tool's forward (up) SQL and never its rollback, undo, or metadata
-section. Unknown formats and, currently, Flyway repeatable migrations still fail
-before the target database is opened. An explicit `?format=` query on the
-effective directory URL, whether it comes from `migration.dir` or CLI `--dir`,
-takes precedence over the `migration.format` default, matching Atlas. An empty
-query value selects the native `atlas` format.
+without changing Atlas syntax. `ptah-compat migrate apply` executes all of
+them. The native `atlas` format is read from disk unchanged, preserving
+`atlas.sum` verification and down migrations.
+
+Every other format is read and converted in memory to Atlas single-file,
+up-only migrations, so applying it runs only the source tool's forward (up)
+SQL and never its rollback, undo, or metadata section. Unknown formats and,
+currently, Flyway repeatable migrations still fail before the target database
+is opened.
+
+An explicit `?format=` query on the effective directory URL, whether it comes
+from `migration.dir` or CLI `--dir`, takes precedence over the
+`migration.format` default, matching Atlas. An empty query value selects the
+native `atlas` format.
 
 ```bash
 # Apply a Goose directory directly, no conversion step required.
@@ -212,13 +219,17 @@ changeset detection and defaults to the current directory when omitted.
 The supported lint policy analyzer blocks map the Atlas `error` boolean to
 Ptah lint severity only where the analyzer has a matching Ptah rule family.
 `error = true` sets the mapped findings to error severity; `error = false`
-sets them to warning severity. The supported mappings are `destructive` to the
-`DS` family, `data_depend` to the `DD` family, `incompatible` to the `BC`
-family, `concurrent_index` to `PG101` and `PG103`, and `nestedtx` to `TX201`.
-Atlas `check` blocks are rejected for now because Atlas check IDs and Ptah rule
-IDs are not a stable one-to-one namespace. Analyzer `force` options, allow-list
-blocks such as `allow_table` / `allow_column`, custom `rule` blocks, and
-policy families without a matching Ptah lint engine fail explicitly.
+sets them to warning severity.
+
+The supported mappings are `destructive` to the `DS` family, `data_depend` to
+the `DD` family, `incompatible` to the `BC` family, `concurrent_index` to
+`PG101` and `PG103`, and `nestedtx` to `TX201`. Atlas `check` blocks are
+rejected for now because Atlas check IDs and Ptah rule IDs are not a stable
+one-to-one namespace.
+
+Analyzer `force` options, allow-list blocks such as `allow_table` /
+`allow_column`, custom `rule` blocks, and policy families without a matching
+Ptah lint engine fail explicitly.
 
 `lint.log` is an Atlas Go-template string that renders the `ptah-compat migrate
 lint` output. It is parsed into the same format IR as `format.migrate.lint`, so
@@ -325,11 +336,14 @@ Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being
 treated as absent. This includes an empty string, zero, `false`, or an empty
 list when the field accepts that type. Thus `atlas.hcl` wins over `ptah.yaml`,
-while `PTAH_*` environment variables and explicit CLI flags still win. After
-project sources are merged, a command applies its built-in default only when a
-field is absent. An explicitly present empty or zero value instead reaches the
-command's normal validation. Fields that do not accept empty values, including
-Atlas format templates, fail during parsing or command validation.
+while `PTAH_*` environment variables and explicit CLI flags still win.
+
+After project sources are merged, a command applies its built-in default only
+when a field is absent. An explicitly present empty or zero value instead
+reaches the command's normal validation. Fields that do not accept empty
+values, including Atlas format templates, fail during parsing or command
+validation.
+
 When a forwarded native implementation also consumes project configuration,
 the adapter passes this merged snapshot instead of reopening either project
 file. This currently applies to `migrate down`; other adapters map evaluated

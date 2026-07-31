@@ -124,11 +124,14 @@ Project config precedence is explicit CLI flags, environment variables,
 `atlas.hcl`, `ptah.yaml`, then built-in defaults. Project-file merging
 preserves source presence. For a supported field, an explicitly present value
 replaces the lower-precedence value instead of being treated as absent. This
-includes an empty string, zero, `false`, or an empty list when the field accepts
-that type. After project sources are merged, a command applies its built-in
-default only when a field is absent. An explicitly present empty or zero value
-instead reaches normal validation. Fields that do not accept empty values,
-including Atlas format templates, fail during parsing or command validation.
+includes an empty string, zero, `false`, or an empty list when the field
+accepts that type.
+
+After project sources are merged, a command applies its built-in default only
+when a field is absent. An explicitly present empty or zero value instead
+reaches normal validation. Fields that do not accept empty values, including
+Atlas format templates, fail during parsing or command validation.
+
 When a forwarded native implementation also consumes project configuration,
 the adapter passes this merged snapshot instead of reopening either project
 file. This currently applies to `migrate down`; other adapters map evaluated
@@ -141,15 +144,18 @@ resources inside it, and the configured exclusions subtract from that
 selection last, exactly like CLI `--exclude`. See
 [Scope the comparison with `--schema` and `--include`](../schema-commands/#scope-the-comparison-with---schema-and---include).
 
-Ptah accepts Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
-and `dbmate` values while evaluating `atlas.hcl`, and `ptah-compat migrate apply`
-executes all of them. The native `atlas` format is read from disk unchanged
-(preserving `atlas.sum` verification and down migrations); every other format is
-converted in memory to Atlas single-file, up-only migrations, so apply runs only
-the source tool's forward (up) SQL. Unknown formats and, currently, Flyway
-repeatable migrations still fail before the target database is opened. An
-explicit `?format=` query on the effective directory URL, whether declared by
-`migration.dir` or passed with CLI `--dir`, overrides this project default,
+Ptah accepts Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`,
+`liquibase`, and `dbmate` values while evaluating `atlas.hcl`, and
+`ptah-compat migrate apply` executes all of them.
+
+The native `atlas` format is read from disk unchanged (preserving `atlas.sum`
+verification and down migrations); every other format is converted in memory
+to Atlas single-file, up-only migrations, so apply runs only the source tool's
+forward (up) SQL. Unknown formats and, currently, Flyway repeatable migrations
+still fail before the target database is opened.
+
+An explicit `?format=` query on the effective directory URL, whether declared
+by `migration.dir` or passed with CLI `--dir`, overrides this project default,
 matching Atlas's URL precedence. An empty query value selects the native
 `atlas` format.
 
@@ -183,18 +189,21 @@ fail explicitly.
 When an `atlas.hcl` `migration` block is present, Ptah defaults
 `revision-format` to `atlas`, so migration commands use
 `atlas_schema_revisions` unless an explicit CLI flag overrides it. Relative
-`migration.dir` values declared in `atlas.hcl` resolve relative to the directory
-containing that `atlas.hcl` file. Explicit CLI `--dir` values keep CLI semantics
-and resolve relative to the process working directory unless they are absolute.
-Apply, down, status, lint, set, and native repair commands open the resolved
-directory through a rooted handle and capture an immutable snapshot before
-database work. Relative CLI traversal and symlink escapes are rejected;
-explicit absolute paths remain supported. Intentional project-relative paths
-such as `../shared-migrations` retain their config-relative meaning and are
-captured at the resolved location.
-Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when a
-command needs that configured value; an explicit CLI path flag still wins before
-URI validation.
+`migration.dir` values declared in `atlas.hcl` resolve relative to the
+directory containing that `atlas.hcl` file.
+
+Explicit CLI `--dir` values keep CLI semantics and resolve relative to the
+process working directory unless they are absolute. Apply, down, status, lint,
+set, and native repair commands open the resolved directory through a rooted
+handle and capture an immutable snapshot before database work. Relative CLI
+traversal and symlink escapes are rejected; explicit absolute paths remain
+supported.
+
+Intentional project-relative paths such as `../shared-migrations` retain their
+config-relative meaning and are captured at the resolved location. Non-local
+URI schemes in `migration.dir` and `schema.src` fail explicitly when a command
+needs that configured value; an explicit CLI path flag still wins before URI
+validation.
 
 ## Environment selection
 

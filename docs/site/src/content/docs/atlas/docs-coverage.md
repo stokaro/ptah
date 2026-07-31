@@ -153,7 +153,17 @@ Local schema files, migration directories, and `env://` references are inspected
 
 **Implementation status.** Partial.
 
-`ptah-compat schema apply` reads a live database, diffs it against local `file://` `.hcl`, `.yaml`, `.yml`, or `.sql` desired schema files, can take defaults from evaluated local `atlas.hcl` env expressions including `env.url`, `env.src`, `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff` policy, prints planned SQL, supports `--dry-run`, applies after interactive confirmation or explicit `--auto-approve`, supports Atlas transaction modes `file`, `all`, and `none` for the generated plan, supports `--exclude` and disabled `schema.mode` resource filters for the local-file comparison, can use PostgreSQL concurrent index creation when `--tx-mode none` is set, and supports `--edit` to open the planned SQL in `$VISUAL`/`$EDITOR` before approval so the edited SQL is what gets applied.
+`ptah-compat schema apply` reads a live database, diffs it against local
+`file://` `.hcl`, `.yaml`, `.yml`, or `.sql` desired schema files, prints
+planned SQL, and applies after interactive confirmation or explicit
+`--auto-approve`. It also:
+
+- can take defaults from evaluated local `atlas.hcl` env expressions including `env.url`, `env.src`, `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff` policy
+- supports `--dry-run`
+- supports Atlas transaction modes `file`, `all`, and `none` for the generated plan
+- supports `--exclude` and disabled `schema.mode` resource filters for the local-file comparison
+- can use PostgreSQL concurrent index creation when `--tx-mode none` is set
+- supports `--edit` to open the planned SQL in `$VISUAL`/`$EDITOR` before approval so the edited SQL is what gets applied
 
 `--plan file://<path>` executes a pre-approved local plan file saved by `schema plan`, and `--lock-timeout` bounds waiting for the session advisory lock that serializes concurrent applies against one target, with an explicit unlocked-with-note decision on dialects without advisory locks.
 
@@ -300,7 +310,18 @@ The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded 
 
 **Implementation status.** Partial. Native Ptah can generate migrations from schema differences.
 
-`ptah-compat migrate diff` now validates an existing `atlas.sum`, replays a local Atlas migration directory on a directly connectable dev database, compares it to local schema files, one directly connectable database URL, one local Atlas migration directory, or one `env://` reference, writes Atlas-style migration files, updates `atlas.sum` only after every file was written, reads `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and supported `diff` policy from `atlas.hcl` including `diff.concurrent_index.create` with `-- atlas:txmode none` file tagging and transactional/concurrent file splitting, supports the Atlas-hidden `--dry-run` flag to print generated SQL without writing a migration file or `atlas.sum`, supports `--lock-timeout` for Ptah's local migration-directory lock, supports Atlas-style `--format` templates with `sql` and `.MarshalSQL` for the generated migration SQL, supports `--schema` scoping for the resolved desired state plus the replayed dev database state, and supports `--edit` to open the generated migration in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized.
+`ptah-compat migrate diff` now validates an existing `atlas.sum`, replays a
+local Atlas migration directory on a directly connectable dev database, and
+writes Atlas-style migration files. It:
+
+- compares it to local schema files, one directly connectable database URL, one local Atlas migration directory, or one `env://` reference
+- updates `atlas.sum` only after every file was written
+- reads `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and supported `diff` policy from `atlas.hcl` including `diff.concurrent_index.create` with `-- atlas:txmode none` file tagging and transactional/concurrent file splitting
+- supports the Atlas-hidden `--dry-run` flag to print generated SQL without writing a migration file or `atlas.sum`
+- supports `--lock-timeout` for Ptah's local migration-directory lock
+- supports Atlas-style `--format` templates with `sql` and `.MarshalSQL` for the generated migration SQL
+- supports `--schema` scoping for the resolved desired state plus the replayed dev database state
+- supports `--edit` to open the generated migration in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized
 
 `--qualifier` applies Atlas's single-schema custom qualifier to every object in the generated statements on PostgreSQL, CockroachDB, YugabyteDB, MySQL, and MariaDB dev databases, failing explicitly before any file or checksum write for invalid values, unsupported dialects, multi-schema plans, and not-yet-qualifiable statement kinds. Docker dev databases remain incomplete.
 

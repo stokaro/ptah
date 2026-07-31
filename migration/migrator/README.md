@@ -68,19 +68,23 @@ DROP TABLE IF EXISTS users;
 
 ## Command Line Interface
 
-Migration directory commands use `--dir-format=auto` by default. Auto mode
-prefers Ptah paired files (`NNNNNNNNNN_description.up.sql` and
-`NNNNNNNNNN_description.down.sql`) when they are present, and otherwise accepts
-Atlas-style timestamp files such as `20220318104614_team_A.sql` or
+Migration directory commands use `--dir-format=auto` by default.
+
+Auto mode prefers Ptah paired files (`NNNNNNNNNN_description.up.sql` and
+`NNNNNNNNNN_description.down.sql`) when they are present, and otherwise
+accepts Atlas-style timestamp files such as `20220318104614_team_A.sql` or
 `20240112070806.sql`, plus numeric migration names produced by Atlas importers
-such as `1_initial.sql`, `2.sql`, `1_initial.up.sql`, `1_initial.down.sql`, and
-`1.my.sql`. Use
-`--dir-format=ptah` or `--dir-format=atlas` on `migrations up`, `migrations down`,
-`migrations status`, `migrations hash`, and `migrations validate` when detection should be
-explicit. Ordinary Atlas and imported single SQL files are forward migrations.
-Imported `.down.sql` files are paired with their matching `.up.sql` version for
-rollback. Atlas txtar files can also embed a `down.sql` section that Ptah
-executes during rollback:
+such as `1_initial.sql`, `2.sql`, `1_initial.up.sql`, `1_initial.down.sql`,
+and `1.my.sql`.
+
+Use `--dir-format=ptah` or `--dir-format=atlas` on `migrations up`,
+`migrations down`, `migrations status`, `migrations hash`, and `migrations
+validate` when detection should be explicit. Ordinary Atlas and imported
+single SQL files are forward migrations. Imported `.down.sql` files are paired
+with their matching `.up.sql` version for rollback.
+
+Atlas txtar files can also embed a `down.sql` section that Ptah executes
+during rollback:
 
 ```sql
 -- atlas:txtar
@@ -107,24 +111,29 @@ migrations. The template data object exposes `.Env`; CLI commands set it with
 `--atlas-env`, and programmatic callers can pass `WithAtlasTemplateData`.
 
 `--dir-format` controls only migration-file discovery. To continue a database
-that already uses Atlas's runtime history table, pass `--revision-format atlas`
-on the CLI or `WithRevisionTableFormat(RevisionTableFormatAtlas)` in Go. Atlas
-revision mode uses `atlas_schema_revisions` by default, stores string migration
-versions, reads the Atlas `applied`/`total` and `error` state fields, and writes
-the Atlas `hash` value from `atlas.sum` when it is available. Successful rows
-created by migration execution use the migration filename description, store
-empty `error` and `error_stmt` values, and identify Ptah as the operator. Ptah
-records a coherent timing interval for executed SQL: `executed_at` is the
+that already uses Atlas's runtime history table, pass `--revision-format
+atlas` on the CLI or `WithRevisionTableFormat(RevisionTableFormatAtlas)` in
+Go.
+
+Atlas revision mode uses `atlas_schema_revisions` by default, stores string
+migration versions, reads the Atlas `applied`/`total` and `error` state
+fields, and writes the Atlas `hash` value from `atlas.sum` when it is
+available. Successful rows created by migration execution use the migration
+filename description, store empty `error` and `error_stmt` values, and
+identify Ptah as the operator.
+
+Ptah records a coherent timing interval for executed SQL: `executed_at` is the
 migration lifecycle start and `execution_time` is the full elapsed duration in
 nanoseconds. Failed rows preserve their execution diagnostics. Metadata-only
 baseline, set, and force operations record their write timestamp with zero
-duration, or preserve existing timing metadata when updating a row. Atlas CE
-can read these values, but exact dynamic timing equality is not claimed: Atlas
-CE v1.2.0 can persist a near-final timestamp and write-order-dependent duration.
-On PostgreSQL-family databases, Ptah creates the Atlas-compatible
-`executed_at TIMESTAMPTZ` column. Custom
-`--migrations-schema` / `--migrations-table` values still override the metadata
-table location.
+duration, or preserve existing timing metadata when updating a row.
+
+Atlas CE can read these values, but exact dynamic timing equality is not
+claimed: Atlas CE v1.2.0 can persist a near-final timestamp and
+write-order-dependent duration. On PostgreSQL-family databases, Ptah creates
+the Atlas-compatible `executed_at TIMESTAMPTZ` column. Custom
+`--migrations-schema` / `--migrations-table` values still override the
+metadata table location.
 
 If an Atlas migration does not provide `down.sql`, `migrations down` returns a typed
 error explaining that Atlas dynamic down-plan synthesis is not implemented yet.
