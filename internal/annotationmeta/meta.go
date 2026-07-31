@@ -24,6 +24,10 @@ type Attribute struct {
 	Required    bool   `json:"required,omitempty"`
 	Boolean     bool   `json:"boolean,omitempty"`
 	AliasFor    string `json:"alias_for,omitempty"`
+	// Sensitive marks an attribute whose VALUE is a credential. Display
+	// surfaces must redact it; planning and destructive writes keep using the
+	// original bytes.
+	Sensitive bool `json:"sensitive,omitempty"`
 }
 
 // Directive describes one //ptah annotation directive.
@@ -155,6 +159,32 @@ func AttributeNames(directive string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// SensitiveAttributes returns the attribute names of directive whose values are
+// credentials, including alias spellings. Display surfaces use this to redact a
+// value without re-deriving which attributes are secret.
+func SensitiveAttributes(directive string) map[string]bool {
+	found, ok := Lookup(directive)
+	if !ok {
+		return nil
+	}
+	sensitive := make(map[string]bool)
+	for _, attribute := range found.Attributes {
+		if attribute.Sensitive {
+			sensitive[attribute.Name] = true
+		}
+	}
+	// An alias of a sensitive attribute is just as sensitive.
+	for _, attribute := range found.Attributes {
+		if attribute.AliasFor != "" && sensitive[attribute.AliasFor] {
+			sensitive[attribute.Name] = true
+		}
+	}
+	if len(sensitive) == 0 {
+		return nil
+	}
+	return sensitive
 }
 
 // BooleanAttributes returns the attributes accepted as bare booleans.
@@ -513,7 +543,7 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("name", "Role name.", valueString, false, false),
 			attr("login", "Creates the role with LOGIN.", valueBoolean, false, false),
-			attr("password", "Role password.", valueString, false, false),
+			sensitiveAttr("password", "Role password.", valueString, false, false),
 			attr("superuser", "Creates the role as SUPERUSER.", valueBoolean, false, false),
 			attr("createdb", "Allows database creation.", valueBoolean, false, false),
 			alias("create_db", "createdb", "Alias for createdb.", valueBoolean, false),
@@ -561,6 +591,13 @@ func attr(name, description, value string, required, boolean bool) Attribute {
 		Required:    required,
 		Boolean:     boolean,
 	}
+}
+
+// sensitiveAttr is attr for an attribute carrying a credential.
+func sensitiveAttr(name, description, value string, required, boolean bool) Attribute {
+	a := attr(name, description, value, required, boolean)
+	a.Sensitive = true
+	return a
 }
 
 func alias(name, aliasFor, description, value string, boolean bool) Attribute {

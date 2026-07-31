@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/stokaro/ptah/internal/annotationmeta"
@@ -507,7 +508,64 @@ func diffRange(start, count int) string {
 	return fmt.Sprintf("%d,%d", start, count)
 }
 
+// redactionMarker replaces a credential in display-only output. It matches the
+// convention already used for connection strings in dbschema.
+const redactionMarker = "***"
+
+// redactSensitiveValues masks the value of every sensitive attribute in a
+// source line, leaving the rest of the line byte-identical so the diff still
+// shows the file, directive, and the other attributes.
+//
+// The line is rescanned rather than reusing the ranges collected during
+// planning: those were computed against the comment text, whose offsets differ
+// from the raw source line by the leading indentation. Masking is done by
+// ValueRange offsets, not by matching the value, because a value may itself
+// contain a quote.
+func redactSensitiveValues(line string) string {
+	annotations := annotationparse.Scan(line)
+	if len(annotations) == 0 {
+		return line
+	}
+
+	type span struct{ start, end int }
+	var spans []span
+	for _, annotation := range annotations {
+		sensitive := annotationmeta.SensitiveAttributes(annotation.Directive)
+		if len(sensitive) == 0 {
+			continue
+		}
+		for _, attribute := range annotation.Attributes {
+			if !sensitive[strings.ToLower(attribute.Name)] {
+				continue
+			}
+			start, end := attribute.ValueRange.Start.Character, attribute.ValueRange.End.Character
+			if start < 0 || end > len(line) || start >= end {
+				continue
+			}
+			spans = append(spans, span{start: start, end: end})
+		}
+	}
+	if len(spans) == 0 {
+		return line
+	}
+	sort.Slice(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
+
+	var builder strings.Builder
+	cursor := 0
+	for _, s := range spans {
+		if s.start < cursor {
+			continue
+		}
+		builder.WriteString(line[cursor:s.start])
+		builder.WriteString(redactionMarker)
+		cursor = s.end
+	}
+	builder.WriteString(line[cursor:])
+	return builder.String()
+}
+
 func writeDiffLine(builder *strings.Builder, prefix byte, line string) {
+	line = redactSensitiveValues(line)
 	builder.WriteByte(prefix)
 	builder.WriteString(line)
 	if !strings.HasSuffix(line, "\n") {
