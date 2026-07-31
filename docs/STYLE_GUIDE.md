@@ -169,6 +169,10 @@ once on its concept page and link; do not re-define them per page.
 - Lists over about seven items get subheadings or a table.
 - A column whose cells are lists of code tokens squeezes its neighbors narrow.
   Two or three such columns usually want to be a bold-led list instead.
+- Do not stop code spans in cells from wrapping. A cell can hold a
+  ninety-character error string, and freezing it pushes the whole table past
+  its container, where the right-hand columns are cut off with no hint that
+  they exist.
 - Escape a literal pipe inside a cell as `\|`, including inside a code span.
   An unescaped one splits the cell, and the renderer discards whatever no
   longer fits the header's column count without warning anyone.
@@ -276,6 +280,7 @@ in this guide is a review responsibility.
 | In-page and cross-page anchors resolve | 9 | `check:links` |
 | No page scrolls sideways at 390px or 1280px | 10 | `check:responsive` |
 | No table cell renders over 8 lines at 1280px | 8, 10 | `check:responsive` |
+| No table is wider than its container at 1280px | 8, 10 | `check:responsive` |
 
 `check:style` governs every layer the guide covers — `docs/site`, `docs/*.md`,
 `examples/**`, `integration/*.md`, every package `README.md`, and `AGENTS.md` —
