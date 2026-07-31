@@ -139,16 +139,19 @@ Version lines: `MySQL80()` covers MySQL 8.0.19+ and 9.x; `MySQL8016()` covers
 8.0.16–8.0.18; `MySQLLegacy()` anything older. `MariaDB1011()` covers the
 supported MariaDB lines (10.6+/11.x); `MariaDBLegacy()` is the conservative
 floor `ForServerVersion` assigns to pre-10.2 servers. `Postgres17()` covers
-PostgreSQL 17+; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13
-(no `CREATE OR REPLACE TRIGGER`).
+PostgreSQL 17+; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
+`CREATE OR REPLACE TRIGGER`).
+
 `CockroachDB23()` and `YugabyteDB25()` are PostgreSQL-family presets for the
-common distributed-SQL subset; `SpannerPostgres()` is deliberately conservative
-because Spanner's PostgreSQL interface is not a drop-in PostgreSQL server.
+common distributed-SQL subset; `SpannerPostgres()` is deliberately
+conservative because Spanner's PostgreSQL interface is not a drop-in
+PostgreSQL server.
+
 `SQLServer2022()` covers Ptah's initial portable SQL Server/Azure SQL subset:
 schemas, tables, `IDENTITY`, enforced CHECK/UNIQUE/FK constraints, basic
-indexes, raw-SQL view/trigger rendering, and `XML` columns. Standalone sequence
-objects and drift-safe normalization for SQL Server-specific view, trigger, and
-index metadata are outside the initial SQL Server subset.
+indexes, raw-SQL view/trigger rendering, and `XML` columns. Standalone
+sequence objects and drift-safe normalization for SQL Server-specific view,
+trigger, and index metadata are outside the initial SQL Server subset.
 
 ### Composition
 

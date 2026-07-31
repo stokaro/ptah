@@ -86,18 +86,18 @@ Atlas CE binary rejects the `split`, `write`, and `hcl` template functions as
 non-community features, so these exports are an open Ptah extension that
 follows the documented Atlas behavior.
 
-`--exclude` accepts repeated or comma-separated
-Atlas-style glob patterns, including `[type=...]` selectors, and removes
-matching resources from HCL, SQL, JSON, and custom-template output. Field-level
-exclude selector support includes the Atlas-documented
-`*[type=extension].version` form, including schema-qualified globs such as
-`public.*[type=extension].version`. Other field-level selectors, and type
-selectors on non-final pattern segments, fail explicitly before any database
-is contacted.
-Schema-qualified function and enum filters remain limited by Ptah's current
-introspection model, which does not retain schema names for those resource types
-yet. `--include` is not part of the pinned Atlas CE inspect flag surface.
-Exporter blocks remain an explicit gap.
+`--exclude` accepts repeated or comma-separated Atlas-style glob patterns,
+including `[type=...]` selectors, and removes matching resources from HCL,
+SQL, JSON, and custom-template output. Field-level exclude selector support
+includes the Atlas-documented `*[type=extension].version` form, including
+schema-qualified globs such as `public.*[type=extension].version`.
+
+Other field-level selectors, and type selectors on non-final pattern segments,
+fail explicitly before any database is contacted. Schema-qualified function
+and enum filters remain limited by Ptah's current introspection model, which
+does not retain schema names for those resource types yet. `--include` is not
+part of the pinned Atlas CE inspect flag surface. Exporter blocks remain an
+explicit gap.
 
 ## Apply a desired schema
 
@@ -107,22 +107,28 @@ database URL whose live schema becomes the desired state, one migration
 directory (a `file://` directory containing `atlas.sum`) replayed on the
 required `--dev-url` dev database, or one `env://<attribute>` reference
 (`src`, `schema.src`, `url`, `dev`, `migration.dir`) resolved through the
-evaluated `atlas.hcl` env. All `--to` values must be one source kind, and
-unsupported schemes such as `atlas://` fail before the target database is
-contacted. With `--env`, Ptah can read `env.url`, `env.src`,
-`env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
-`format.schema.apply`, and supported `diff` policy from the selected
-`atlas.hcl` environment, including local variable defaults, locals, `getenv`,
-`file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`
-references. Explicit CLI flags still take precedence. Ptah reads the current
-database schema, diffs it against the desired local schema files, prints the
-planned SQL, and applies it after interactive confirmation. Use `--dry-run` to
-print the plan without applying it, or `--auto-approve` to skip the prompt
-explicitly. Use `--tx-mode=file` or `--tx-mode=all` to execute the generated
-plan in one transaction, or `--tx-mode=none` to execute statements without
-transaction wrapping. With `--edit`, the planned SQL opens in `$VISUAL` or
-`$EDITOR` before the plan is shown and approved, and the edited SQL is what
-gets applied.
+evaluated `atlas.hcl` env.
+
+All `--to` values must be one source kind, and unsupported schemes such as
+`atlas://` fail before the target database is contacted.
+
+With `--env`, Ptah can read `env.url`, `env.src`, `env.schema.src`, `env.dev`,
+`env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff`
+policy from the selected `atlas.hcl` environment, including local variable
+defaults, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, and
+`data.hcl_schema.<name>.url` references. Explicit CLI flags still take
+precedence.
+
+Ptah reads the current database schema, diffs it against the desired local
+schema files, prints the planned SQL, and applies it after interactive
+confirmation. Use `--dry-run` to print the plan without applying it, or
+`--auto-approve` to skip the prompt explicitly.
+
+Use `--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
+transaction, or `--tx-mode=none` to execute statements without transaction
+wrapping. With `--edit`, the planned SQL opens in `$VISUAL` or `$EDITOR`
+before the plan is shown and approved, and the edited SQL is what gets
+applied.
 
 For Atlas script compatibility, `schema apply` also accepts the hidden
 `--file/-f` alias for local HCL or SQL paths and maps it to the same
@@ -177,27 +183,33 @@ ptah-compat schema apply --env local --dry-run
 
 `--dev-url` must match the target database dialect. For migration-directory
 `--to` sources it names the dev database the directory is replayed on and is
-required. Before a non-dry-run apply touches the target, the generated plan is
-rehearsed on the dev database: Ptah resets the dev database, recreates the
-target's introspected current schema on it, and executes the exact ordered
-plan statements — including SQL edited through `--edit` — under the same
+required.
+
+Before a non-dry-run apply touches the target, the generated plan is rehearsed
+on the dev database: Ptah resets the dev database, recreates the target's
+introspected current schema on it, and executes the exact ordered plan
+statements — including SQL edited through `--edit` — under the same
 transaction mode as the target apply. A failed rehearsal refuses the apply and
-leaves the target unchanged. The dev database must not be the target itself
-or a database-URL `--to` desired state (it is reset destructively), must be
-directly connectable (no `docker://`), and must use the same schema scope as
-the target on scope-parameterized dialects such as SQL Server.
+leaves the target unchanged.
+
+The dev database must not be the target itself or a database-URL `--to`
+desired state (it is reset destructively), must be directly connectable (no
+`docker://`), and must use the same schema scope as the target on
+scope-parameterized dialects such as SQL Server.
 
 `--lock-timeout` bounds how long the apply waits for the session advisory lock
 (`ptah_schema_apply`) that serializes concurrent schema applies against one
 target database. The lock is acquired before target inspection and planning,
 held through simulation, confirmation, and execution, and released on every
-exit path including cancellation. An empty value waits indefinitely; an
-elapsed timeout fails the apply before the target is inspected. PostgreSQL
-(`pg_advisory_lock`), MySQL and MariaDB (`GET_LOCK`), and SQL Server
-(`sp_getapplock`) use real database locks. SQLite, ClickHouse, CockroachDB,
-YugabyteDB, and Spanner have no advisory-lock semantics: the apply proceeds
-without a lock, and an explicitly passed `--lock-timeout` prints a note on
-stderr.
+exit path including cancellation.
+
+An empty value waits indefinitely; an elapsed timeout fails the apply before
+the target is inspected. PostgreSQL (`pg_advisory_lock`), MySQL and MariaDB
+(`GET_LOCK`), and SQL Server (`sp_getapplock`) use real database locks.
+
+SQLite, ClickHouse, CockroachDB, YugabyteDB, and Spanner have no advisory-lock
+semantics: the apply proceeds without a lock, and an explicitly passed
+`--lock-timeout` prints a note on stderr.
 
 `--exclude` accepts repeated or comma-separated Atlas-style glob patterns,
 including `[type=...]` selectors. Ptah applies the filter to both the current
@@ -270,11 +282,14 @@ ptah-compat schema apply \
 ## Save and execute plan files
 
 `ptah-compat schema plan` is the open local replacement for Atlas's Pro
-registry-gated plan workflow. It computes the same declarative plan `schema
-apply` would generate — from the `--from` target database to the local `--to`
-schema files — and saves it as a local JSON plan file (`format_version` 1) that
-records the ordered SQL statements with per-statement safety severity, the
-dialect, and the SHA-256 fingerprints of the source and desired schema states.
+registry-gated plan workflow.
+
+It computes the same declarative plan `schema apply` would generate — from the
+`--from` target database to the local `--to` schema files — and saves it as a
+local JSON plan file (`format_version` 1) that records the ordered SQL
+statements with per-statement safety severity, the dialect, and the SHA-256
+fingerprints of the source and desired schema states.
+
 `schema apply --plan file://<path>` then executes exactly the reviewed
 statements after verifying the live database still matches the plan's source
 fingerprint; a drifted database refuses with a stale-plan error instead of
@@ -314,14 +329,16 @@ more local `--from`/`--to` schema file URLs, one directly connectable database
 URL whose live schema is introspected, one migration directory (a `file://`
 directory containing `atlas.sum`) replayed on the required `--dev-url` dev
 database, or one `env://<attribute>` reference (`src`, `schema.src`, `url`,
-`dev`, `migration.dir`) resolved through the evaluated `atlas.hcl` env. All
-URLs of one flag must be one source kind. The SQL dialect is pinned by
+`dev`, `migration.dir`) resolved through the evaluated `atlas.hcl` env.
+
+All URLs of one flag must be one source kind. The SQL dialect is pinned by
 `--dev-url` first, then by `--from` and `--to` database URLs; local schema
 files alone still require `--dev-url` for dialect selection. With `--env`,
 Ptah can read `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
-`format.schema.diff`, and supported `diff` policy from `atlas.hcl`. The
-current implementation does not execute Atlas's dev-database simulation; the
-dev URL selects the dialect and hosts migration-directory replays.
+`format.schema.diff`, and supported `diff` policy from `atlas.hcl`.
+
+The current implementation does not execute Atlas's dev-database simulation;
+the dev URL selects the dialect and hosts migration-directory replays.
 
 ```bash
 ptah-compat schema diff \
@@ -354,14 +371,19 @@ ptah-compat schema diff \
 Unsupported schemes — `atlas://` registry URLs, `docker://` as a desired
 state, and anything Ptah cannot connect to directly — fail during validation,
 before any database is contacted. A migration-directory source without
-`--dev-url` fails the same way. Non-Atlas-CE flags such as `--tx-mode` are rejected as unknown. `--exclude` and
-disabled `schema.mode` values filter both local `--from` and `--to` schema files
-before diffing, and `--schema`/`--include` positively scope both sides with the
-same selection semantics, composition order, and cross-scope dependency
-diagnostics as `schema apply` (see
-[Scope the comparison with `--schema` and `--include`](#scope-the-comparison-with---schema-and---include)). A diff whose change needs a dialect-specific rebuild plan — for
-example adding a column to a SQLite table — fails with an explicit error
-instead of emitting SQL the dialect cannot run in place.
+`--dev-url` fails the same way. Non-Atlas-CE flags such as `--tx-mode` are
+rejected as unknown.
+
+`--exclude` and disabled `schema.mode` values filter both local `--from` and
+`--to` schema files before diffing, and `--schema`/`--include` positively
+scope both sides with the same selection semantics, composition order, and
+cross-scope dependency diagnostics as `schema apply` (see [Scope the
+comparison with `--schema` and
+`--include`](#scope-the-comparison-with---schema-and---include)).
+
+A diff whose change needs a dialect-specific rebuild plan — for example adding
+a column to a SQLite table — fails with an explicit error instead of emitting
+SQL the dialect cannot run in place.
 
 ## Format schema files
 

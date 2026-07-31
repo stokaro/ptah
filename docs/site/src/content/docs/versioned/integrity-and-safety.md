@@ -232,29 +232,33 @@ remains the all-or-nothing per-run override rather than the only way past
 a single warning-grade finding.
 
 Know the limits of this gate: the policy file is not tamper-evident.
-`ptah.sum` hashes only the migration `*.sql` files, so
-`ptah migrations validate` and `up --verify-sum` still pass when
-`.ptah-lint.yaml` is added or edited out-of-band, and the apply prints no
-notice when the config suppresses a destructive finding — a one-line
-`disabled-rules: [DS]` dropped next to the migrations at deploy time
-disables this gate silently. Loosening the gate is a visible committed
-change only if your process makes it one: commit `.ptah-lint.yaml`, treat
-any edit to it as an edit to the gate in review, and restrict writes to
-the deployed migration directory, because the integrity file does not
-protect the policy the way it protects the SQL.
+
+`ptah.sum` hashes only the migration `*.sql` files, so `ptah migrations
+validate` and `up --verify-sum` still pass when `.ptah-lint.yaml` is added or
+edited out-of-band, and the apply prints no notice when the config suppresses
+a destructive finding — a one-line `disabled-rules: [DS]` dropped next to the
+migrations at deploy time disables this gate silently.
+
+Loosening the gate is a visible committed change only if your process makes it
+one: commit `.ptah-lint.yaml`, treat any edit to it as an edit to the gate in
+review, and restrict writes to the deployed migration directory, because the
+integrity file does not protect the policy the way it protects the SQL.
 
 Local migration commands capture the migration directory before database
 connection, checksum verification, provider registration, and destructive
 linting. `up`, `down`, `status`, `lint`, and `set` therefore use the same
 immutable SQL and metadata bytes throughout one invocation. Each command
-compares two captures and aborts only when the observed captures differ. This
-best-effort check cannot defeat coordinated writers or ABA changes that restore
-the original bytes before the next observation. Hostile writers require trusted
-immutable input, manifest or process controls, or filesystem-level snapshots.
-Relative CLI directories are rooted at the working directory and symlink
-escapes are rejected, while explicit absolute paths remain supported. A
-contained relative `atlas.hcl` migration directory remains bound to the project
-directory handle opened for config evaluation until capture completes;
+compares two captures and aborts only when the observed captures differ.
+
+This best-effort check cannot defeat coordinated writers or ABA changes that
+restore the original bytes before the next observation. Hostile writers
+require trusted immutable input, manifest or process controls, or
+filesystem-level snapshots. Relative CLI directories are rooted at the working
+directory and symlink escapes are rejected, while explicit absolute paths
+remain supported.
+
+A contained relative `atlas.hcl` migration directory remains bound to the
+project directory handle opened for config evaluation until capture completes;
 replacing the project pathname does not retarget it. Parent-relative project
 directories are external compatibility paths and do not inherit that root.
 

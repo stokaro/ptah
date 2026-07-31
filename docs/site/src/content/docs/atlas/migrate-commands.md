@@ -22,8 +22,8 @@ plus the flag translation rules are on the
 | `ptah-compat migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
 | `ptah-compat migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
 | `ptah-compat migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
-| `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL: existing clean rows through the target are preserved, missing rows are recorded as manually set, dirty rows retain diagnostics with the combined applied and manually-set type, and rows above the target are removed. |
-| `ptah-compat migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local files, a live database, a migration directory, or `env://`, writes Atlas-style migration files (split when concurrent index builds require `-- atlas:txmode none`), and updates `atlas.sum` atomically. |
+| `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL. |
+| `ptah-compat migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs them against the desired state, and writes Atlas-style migration files with `atlas.sum` updated atomically. |
 | `ptah-compat migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
 | `ptah-compat migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a ptah-format cumulative-schema checkpoint pair. |
 | `ptah-compat migrate test [paths]` | Forwards to `ptah migrations test` with Ptah-native YAML test cases. |
@@ -174,13 +174,16 @@ The apply path executes every Atlas OSS migration directory format selected by
 `migration.format` or the directory URL `?format=` parameter: `atlas`,
 `golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate`. The native
 `atlas` format is captured unchanged, preserving `atlas.sum` verification and
-down migrations. Every other format is captured first and then converted in
-memory to Atlas single-file, up-only migrations, so apply executes only the
-source tool's forward (up) SQL and never its down, rollback, undo, or metadata
-section. This reuses the same format-loading layer as
-`ptah-compat migrate import`, so apply and import agree on every format's
-semantics. An explicit `?format=` query on the effective directory URL, from
-either `migration.dir` or CLI `--dir`, overrides the `migration.format` project
+down migrations.
+
+Every other format is captured first and then converted in memory to Atlas
+single-file, up-only migrations, so apply executes only the source tool's
+forward (up) SQL and never its down, rollback, undo, or metadata section. This
+reuses the same format-loading layer as `ptah-compat migrate import`, so apply
+and import agree on every format's semantics.
+
+An explicit `?format=` query on the effective directory URL, from either
+`migration.dir` or CLI `--dir`, overrides the `migration.format` project
 default, matching Atlas; an empty query value selects the native `atlas`
 format.
 
@@ -237,39 +240,49 @@ the migration directory into it. It compares the replayed state to the
 snapshot, cleans the dev database again, and only then writes Atlas-style
 `.sql` migration files plus `atlas.sum` when changes exist. The final cleanup
 also runs after replay, introspection, comparison, or context-cancellation
-failures. Use a disposable dev database. Ptah only reads a database used as
-`--to`; it never cleans or mutates that database. Ptah rejects a desired
-database that identifies the same host, port, and database as `--dev-url`,
-even when credentials, connection options, scheme aliases, or an explicit
-default port differ. Repeated `--schema` values filter both sides of the
-comparison and the generated output. They do not narrow the
-[dev database realm](../../concepts/database-urls-and-dev-databases/) replayed
-and cleaned by Ptah.
+failures.
+
+Use a disposable dev database. Ptah only reads a database used as `--to`; it
+never cleans or mutates that database. Ptah rejects a desired database that
+identifies the same host, port, and database as `--dev-url`, even when
+credentials, connection options, scheme aliases, or an explicit default port
+differ. Repeated `--schema` values filter both sides of the comparison and the
+generated output.
+
+They do not narrow the [dev database
+realm](../../concepts/database-urls-and-dev-databases/) replayed and cleaned
+by Ptah.
 
 If `atlas.sum` already exists, Ptah validates it before replaying migrations
 and fails on checksum drift instead of silently rehashing edited files. Ptah
-holds the migration-directory lock while it captures and verifies one immutable
-directory snapshot, replays that exact snapshot, and publishes the result.
+holds the migration-directory lock while it captures and verifies one
+immutable directory snapshot, replays that exact snapshot, and publishes the
+result.
+
 It also holds an exclusive dev-database lock from desired-schema resolution
 through final cleanup. PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server
 use session advisory locks. SQLite, ClickHouse, and CockroachDB use an
 operating-system lock keyed by normalized database identity. The latter
 coordinates Ptah processes on one host; cross-host ClickHouse and CockroachDB
-replay is unsupported. A dialect without a safe locking mechanism fails before
-Ptah cleans the dev database.
-Generated migration files are staged before publication, and `atlas.sum` is
-atomically replaced last as the batch commit marker. An OS-backed lock prevents
-cooperating processes from planning against the same directory concurrently
-and is released by the operating system if a process exits unexpectedly.
+replay is unsupported.
+
+A dialect without a safe locking mechanism fails before Ptah cleans the dev
+database. Generated migration files are staged before publication, and
+`atlas.sum` is atomically replaced last as the batch commit marker. An
+OS-backed lock prevents cooperating processes from planning against the same
+directory concurrently and is released by the operating system if a process
+exits unexpectedly.
+
 The generated versions and checksum are derived from the captured snapshot.
 Ptah rejects a migration added after that capture instead of publishing above
 an unreplayed file. `atlas.sum` is updated only after every migration file of
-the run was written.
-A failed write rolls the generation back immediately. If the process exits
-between publishing the SQL files and publishing `atlas.sum`, the durable
-publication journal remains next to the migration directory; the next lock
-holder compares the checksum commit marker and either finalizes the committed
-batch or removes only the hard-linked files owned by the interrupted batch.
+the run was written. A failed write rolls the generation back immediately.
+
+If the process exits between publishing the SQL files and publishing
+`atlas.sum`, the durable publication journal remains next to the migration
+directory; the next lock holder compares the checksum commit marker and either
+finalizes the committed batch or removes only the hard-linked files owned by
+the interrupted batch.
 
 ```bash
 ptah-compat migrate diff add_users \
@@ -384,17 +397,22 @@ exist on the dev database.
 `--schema` accepts repeated or comma-separated schema names and narrows the
 replayed dev database state plus the resolved desired state before the diff is
 planned. With `diff.concurrent_index.create = true` in the selected
-`atlas.hcl` env, newly added indexes are planned as PostgreSQL
-`CREATE INDEX CONCURRENTLY` statements. Files carrying such statements start
-with the Atlas
-`-- atlas:txmode none` file directive, which both Atlas and Ptah honor by
-executing the file outside a transaction. Because those statements must not
-silently strip transaction safety from ordinary DDL, a mixed plan is split the
-same way Ptah's native generator splits it: a `<name>_transactional` file with
-the transactional statements followed by a `<name>_concurrent_indexes` file
-tagged `-- atlas:txmode none`; mixes that cannot be split automatically (for
-example enum value additions alongside table changes) are refused. Docker dev
-databases fail explicitly until their provisioning semantics are implemented.
+`atlas.hcl` env, newly added indexes are planned as PostgreSQL `CREATE INDEX
+CONCURRENTLY` statements.
+
+Files carrying such statements start with the Atlas `-- atlas:txmode none`
+file directive, which both Atlas and Ptah honor by executing the file outside
+a transaction.
+
+Because those statements must not silently strip transaction safety from
+ordinary DDL, a mixed plan is split the same way Ptah's native generator
+splits it: a `<name>_transactional` file with the transactional statements
+followed by a `<name>_concurrent_indexes` file tagged `-- atlas:txmode none`;
+mixes that cannot be split automatically (for example enum value additions
+alongside table changes) are refused.
+
+Docker dev databases fail explicitly until their provisioning semantics are
+implemented.
 
 ## Validate integrity
 
@@ -439,15 +457,18 @@ reporting. Docker `--dev-url` values remain an explicit gap; use a directly
 connectable database URL.
 
 With no `--format` and no project template, `ptah-compat migrate lint` prints
-Atlas's default migration-analysis text report: an `Analyzing changes …` header,
-a per-version block listing each analyzer group's diagnostics (with a suggested
-fix where the analyzer provides one), a `-- ok (…)` line per version, and a
-summary of version statuses, semantic schema changes, and diagnostics. The
-report is written to stdout even when findings fail, and error-severity findings
-still exit with code 1. The native `ptah migrations lint` output is unchanged.
-Custom output is selected by `--format`, by `format.migrate.lint`, or by Atlas's
-`lint { log = "…" }` template; an explicit CLI `--format` wins over a project
-template, and a selected `--env` `lint.log` overrides a global one.
+Atlas's default migration-analysis text report: an `Analyzing changes …`
+header, a per-version block listing each analyzer group's diagnostics (with a
+suggested fix where the analyzer provides one), a `-- ok (…)` line per
+version, and a summary of version statuses, semantic schema changes, and
+diagnostics.
+
+The report is written to stdout even when findings fail, and error-severity
+findings still exit with code 1. The native `ptah migrations lint` output is
+unchanged. Custom output is selected by `--format`, by `format.migrate.lint`,
+or by Atlas's `lint { log = "…" }` template; an explicit CLI `--format` wins
+over a project template, and a selected `--env` `lint.log` overrides a global
+one.
 
 The command captures the migration directory once before checking `atlas.sum`,
 selecting `--latest` versions, replaying migrations, and rendering reports.
@@ -472,34 +493,42 @@ For a code-by-code audit of the analyzer checks Atlas marks as Pro against
 Ptah's native lint rules, see
 [Comparison: Atlas Pro analyzer coverage](../comparison/#atlas-pro-analyzer-coverage).
 
-Atlas-compatible lint directives are enabled only under the
-`ptah-compat migrate lint` compatibility profile. A statement-local
-`-- atlas:nolint <selector>` suppresses the following statement. A first
-nonempty `-- atlas:nolint <selector>` header followed by a blank line applies
-to the whole file. A bare file header ignores the file completely, so it is
-absent from `.Files` and per-file analysis steps. Supported analyzer selectors
-are `destructive`, `data_depend`, `concurrent_index`, `incompatible`, and
-`nestedtx`; supported Atlas diagnostic aliases are `DS102`, `DS103`, and
-`MF103`. Native lint and migrate-up safety keep their native directive
-semantics unless the Atlas compatibility profile is selected explicitly.
+Atlas-compatible lint directives are enabled only under the `ptah-compat
+migrate lint` compatibility profile. A statement-local `-- atlas:nolint
+<selector>` suppresses the following statement. A first nonempty `--
+atlas:nolint <selector>` header followed by a blank line applies to the whole
+file.
+
+A bare file header ignores the file completely, so it is absent from `.Files`
+and per-file analysis steps. Supported analyzer selectors are `destructive`,
+`data_depend`, `concurrent_index`, `incompatible`, and `nestedtx`; supported
+Atlas diagnostic aliases are `DS102`, `DS103`, and `MF103`.
+
+Native lint and migrate-up safety keep their native directive semantics unless
+the Atlas compatibility profile is selected explicitly.
 
 ## Metadata commands and directory formats
 
-Atlas-compatible migration metadata commands default to Atlas directory format.
-`ptah-compat migrate hash`, `lint`, `new`, `set`, `status`, and `validate`
-register `--dir-format` with Atlas's default value `atlas`. The supported value
-is `atlas`; Atlas's external migration-tool formats (`golang-migrate`, `goose`,
-`flyway`, `liquibase`, and `dbmate`) fail explicitly on those commands until
-they are imported with `ptah-compat migrate import` or implemented natively.
-`ptah-compat migrate set [version]` moves Atlas revision history to the selected
-boundary without executing migration SQL. It preserves existing clean rows
-through the target, inserts missing rows as manually set, keeps dirty-row
+Atlas-compatible migration metadata commands default to Atlas directory
+format. `ptah-compat migrate hash`, `lint`, `new`, `set`, `status`, and
+`validate` register `--dir-format` with Atlas's default value `atlas`.
+
+The supported value is `atlas`; Atlas's external migration-tool formats
+(`golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate`) fail
+explicitly on those commands until they are imported with `ptah-compat migrate
+import` or implemented natively.
+
+`ptah-compat migrate set [version]` moves Atlas revision history to the
+selected boundary without executing migration SQL. It preserves existing clean
+rows through the target, inserts missing rows as manually set, keeps dirty-row
 diagnostics with the combined applied and manually-set type, and removes rows
-above the target. With `--env`, it reads `env.url`, `migration.dir`, and
+above the target.
+
+With `--env`, it reads `env.url`, `migration.dir`, and
 `migration.revisions_schema` from `atlas.hcl`; explicit `--url`, `--dir`, and
-`--revisions-schema` flags keep CLI precedence.
-`ptah-compat migrate status` also accepts `--revisions-schema` and runs against
-Atlas revision-table metadata.
+`--revisions-schema` flags keep CLI precedence. `ptah-compat migrate status`
+also accepts `--revisions-schema` and runs against Atlas revision-table
+metadata.
 
 A pre-apply check sequence for CI looks like:
 

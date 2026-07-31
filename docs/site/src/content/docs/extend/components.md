@@ -255,18 +255,20 @@ fmt.Println(sql)
 For unit tests or offline planning, you can build a `dbschema/types.DBSchema`
 value directly and pass it to `schemadiff`.
 
-Index names are table-scoped in some dialects. Use
-`diff.IndexAdditions()` and `diff.IndexRemovals()` when consuming index changes
-through a copied slice, or read the canonical `IndexesAdded` and
-`IndexesRemoved` `[]IndexRef` fields directly. Every reference includes its
-owning table. Planning rejects missing owners, unresolved additions, and
-same-name target indexes that conflict in the selected dialect's namespace.
-When a custom consumer starts from `goschema.Index` values, use
+Index names are table-scoped in some dialects. Use `diff.IndexAdditions()` and
+`diff.IndexRemovals()` when consuming index changes through a copied slice, or
+read the canonical `IndexesAdded` and `IndexesRemoved` `[]IndexRef` fields
+directly. Every reference includes its owning table.
+
+Planning rejects missing owners, unresolved additions, and same-name target
+indexes that conflict in the selected dialect's namespace. When a custom
+consumer starts from `goschema.Index` values, use
 `goschema.ResolveIndexTableNames` to resolve all owning tables in one indexed
-pass instead of scanning the table list for each index.
-MySQL and SQLite index matching applies ASCII case folding. MariaDB matching
-also applies Unicode lowercase equivalence. All three retain the declared
-spelling in `IndexRef` values and rendered SQL.
+pass instead of scanning the table list for each index. MySQL and SQLite index
+matching applies ASCII case folding.
+
+MariaDB matching also applies Unicode lowercase equivalence. All three retain
+the declared spelling in `IndexRef` values and rendered SQL.
 
 For a live SQL Server connection, `CompareWithDatabase` sends the finite set of
 candidate schema, table, column, and index names to SQL Server as one bound JSON
