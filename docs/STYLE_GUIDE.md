@@ -165,6 +165,9 @@ once on its concept page and link; do not re-define them per page.
 - Lists over about seven items get subheadings or a table.
 - A column whose cells are lists of code tokens squeezes its neighbors narrow.
   Two or three such columns usually want to be a bold-led list instead.
+- Escape a literal pipe inside a cell as `\|`, including inside a code span.
+  An unescaped one splits the cell, and the renderer discards whatever no
+  longer fits the header's column count without warning anyone.
 
 Two limits are enforced: a cell over 350 characters fails `check:style`, and a
 cell rendering over 8 lines at 1280px fails `check:responsive`. Both are well
@@ -264,6 +267,7 @@ in this guide is a review responsibility.
 | Site pages never link protected root docs | 9 | `check:core-doc-links` |
 | Exit-code tables stay in lockstep | 9 | `check:exit-codes` |
 | Table cells under 350 characters | 8 | `check:style` |
+| Table rows match the header's column count | 8 | `check:style` |
 | In-page and cross-page anchors resolve | 9 | `check:links` |
 | No page scrolls sideways at 390px or 1280px | 10 | `check:responsive` |
 | No table cell renders over 8 lines at 1280px | 8, 10 | `check:responsive` |

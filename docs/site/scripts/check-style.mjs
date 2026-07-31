@@ -185,6 +185,10 @@ function splitSource(source) {
   const lines = source.split('\n');
   const prose = [];
   const code = [];
+  // Tables are measured on the raw line: stripping inline code would hide the
+  // literal pipe that silently eats a column, and would undercount a cell whose
+  // content is mostly code tokens.
+  const text = [];
   const fenceErrors = [];
   let fence = null;
 
@@ -199,11 +203,13 @@ function splitSource(source) {
         fence = null;
         prose.push('');
         code.push('');
+        text.push('');
         continue;
       }
       // A fence of the other character, or a longer run, is content here.
       prose.push('');
       code.push(line);
+      text.push('');
       continue;
     }
 
@@ -214,18 +220,20 @@ function splitSource(source) {
       }
       prose.push('');
       code.push('');
+      text.push('');
       continue;
     }
 
     // Inline spans are code too, and for the same reason.
     prose.push(line.replace(/`[^`]*`/g, ''));
     code.push('');
+    text.push(line);
   }
 
   if (fence) {
     fenceErrors.push({ line: lines.length, message: 'fenced code block is never closed' });
   }
-  return { prose, code, fenceErrors };
+  return { prose, code, text, fenceErrors };
 }
 
 // splitCells splits a markdown table row on unescaped pipes. A cell may legally
@@ -239,15 +247,49 @@ function splitCells(row) {
 
 const isDelimiterRow = (cells) => cells.every((cell) => cell === '' || /^[-: ]+$/.test(cell));
 
-// tableViolations reports cells that have outgrown the table they sit in. Link
-// URLs are excluded from the measurement: an evidence link is one glance for a
-// reader however long its href is.
-function tableViolations(prose) {
+// tableViolations reports cells that have outgrown the table they sit in, and
+// rows whose column count does not match the header.
+//
+// The column-count rule exists because the failure is invisible: GFM inserts
+// empty cells for a short row and *silently discards* the excess from a long
+// one. One unescaped `|` inside a code span - `split | write` - split a cell in
+// two and threw the row's tracking links away, on a published page, with a
+// green build. Escape it as `\|`.
+//
+// Link URLs are excluded from the length measurement: an evidence link is one
+// glance for a reader however long its href is.
+function tableViolations(lines) {
   const findings = [];
-  for (const [index, line] of prose.entries()) {
-    if (!line.trimStart().startsWith('|')) continue;
+  let columns = null;
+  let inTable = false;
+  for (const [index, line] of lines.entries()) {
+    if (!line.trimStart().startsWith('|')) {
+      if (line.trim() === '') {
+        inTable = false;
+        columns = null;
+      }
+      continue;
+    }
     const cells = splitCells(line);
-    if (isDelimiterRow(cells)) continue;
+    if (isDelimiterRow(cells)) {
+      inTable = true;
+      continue;
+    }
+    if (!inTable) {
+      // The header row, which defines the column count for the rows below it.
+      columns = cells.length;
+      continue;
+    }
+    if (columns !== null && cells.length !== columns) {
+      findings.push({
+        line: index + 1,
+        message:
+          `table row has ${cells.length} cells but the header has ${columns}; ` +
+          (cells.length > columns
+            ? 'the extra cells are silently discarded when rendered — escape any literal pipe as \\|'
+            : 'the missing cells render empty'),
+      });
+    }
     for (const cell of cells) {
       const text = cell.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
       if (text.length > maxTableCellChars) {
@@ -268,7 +310,7 @@ function tableViolations(prose) {
 // instead of quietly passing every file forever.
 export function analyze(source) {
   const findings = [];
-  const { prose, code, fenceErrors } = splitSource(source);
+  const { prose, code, text, fenceErrors } = splitSource(source);
 
   for (const [index, line] of prose.entries()) {
     const lineNumber = index + 1;
@@ -311,7 +353,7 @@ export function analyze(source) {
     }
   }
 
-  findings.push(...tableViolations(prose));
+  findings.push(...tableViolations(text));
   findings.push(...fenceErrors);
   return findings.sort((a, b) => a.line - b.line);
 }
@@ -353,6 +395,12 @@ function selftest() {
     '| Area | Detail |',
     '| --- | --- |',
     `| Essay in a grid | ${'word '.repeat(80).trim()} |`,
+    '',
+    // An unescaped pipe inside a code span. GFM discards the extra cell, so the
+    // row loses its last column with no error anywhere.
+    '| Gap | Boundary | Tracking |',
+    '| --- | --- | --- |',
+    '| Exports | HCL/SQL `split | write` file exports | #510 |',
   ].join('\n');
 
   const expected = [
@@ -363,6 +411,7 @@ function selftest() {
     { line: 13, needle: 'no language label' },
     { line: 17, needle: 'no language label' },
     { line: 23, needle: 'over the 350 limit' },
+    { line: 27, needle: 'cells but the header has 3' },
   ];
 
   const findings = analyze(violating);
