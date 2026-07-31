@@ -219,19 +219,40 @@ practical, live commands:
   scripts/check-public-api-released.sh
   ```
 
-- For docs site changes, run:
+- For any documentation change, run the complete suite. These are the same
+  commands CI runs, so a local failure is a CI failure:
 
   ```bash
   cd docs/site
   npm ci
-  npm run build
+  npm run check:links:selftest
+  npm run check:links
+  npm run check:redirects:selftest
+  npm run check:redirects
+  npm run check:core-doc-links
+  npm run check:page-health
+  npm run check:exit-codes
+  npm run check:style:selftest
+  npm run check:style
   npm run versions:selftest
+  npm run build
+  # Renders every built page at 390px and 1280px and fails on horizontal
+  # overflow. Needs the built site, so it runs after the build. Requires
+  # Playwright's chromium (npx playwright install chromium); it skips with a
+  # message rather than failing when the browser is absent.
+  npm run check:responsive
   npm audit --audit-level=low
   ```
 
-- Run Markdown/link checks when the project has a checker available. If there is
-  no checker, at least run `rg` searches for stale links, old command names, and
-  unsupported claims.
+  `check:style` covers every layer the style guide governs — `docs/site`,
+  `docs/*.md`, `examples/**`, `integration/*.md`, and `README.md` — so run it
+  even when the change touches no site page. Section 13 of
+  `docs/STYLE_GUIDE.md` lists which rules these checks enforce; anything not in
+  that table is your responsibility to review by reading.
+
+- After the suite passes, `rg` for stale links, retired command spellings, and
+  unsupported claims. The checks verify structure, not whether a sentence is
+  still true.
 
 ## Self-Review
 

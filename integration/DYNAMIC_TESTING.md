@@ -13,7 +13,7 @@ The dynamic testing approach provides more realistic and comprehensive testing b
 
 ## Versioned Entity Structure
 
-```
+```text
 ptah/integration/fixtures/entities/
 ├── 000-initial/          # Basic entities (User, Product)
 │   ├── user.go
@@ -134,7 +134,7 @@ docker compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evo
 
 ## Benefits Over Static Migrations
 
-1. **Realistic Testing**: Tests actual ptah functionality instead of just applying pre-made SQL
+1. **Realistic Testing**: Tests actual ptah functionality instead of applying pre-made SQL
 2. **Maintainable**: Entity files are easier to understand and modify than SQL
 3. **Comprehensive**: Tests the full pipeline from entities to applied migrations
 4. **Flexible**: Easy to add new evolution scenarios by creating new version directories

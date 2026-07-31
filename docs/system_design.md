@@ -16,7 +16,7 @@ Ptah follows the **P.T.A.H.** philosophy:
 
 For a detailed visual representation of the system architecture, see the [Top-Level Architecture Diagram](diagrams/top_level_architecture.mmd).
 
-```
+```text
 Go Code (Annotations) ──┐
 YAML Schema Files ──────┤
                         ├─► Parsing Layer ──► Core Processing ──► Migration System ──► Database

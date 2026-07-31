@@ -75,7 +75,14 @@ jobs:
           npm run check:core-doc-links
           npm run check:page-health
           npm run check:exit-codes
+          npm run check:style:selftest
+          npm run check:style
+          npx playwright install --with-deps chromium
+          npm run check:responsive:selftest
           npm run build
+          # Needs the built site, so it runs after the build rather than with
+          # the other checks.
+          npm run check:responsive
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
           cp -r dist/. "$GITHUB_WORKSPACE/_site/edge/"
 
@@ -100,6 +107,8 @@ jobs:
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:core-doc-links
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:style:selftest
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:style
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
           )
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"

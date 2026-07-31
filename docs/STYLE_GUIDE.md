@@ -216,11 +216,45 @@ Complete this for every documentation PR:
 5. `npm run check:links:selftest && npm run check:links &&
    npm run check:redirects && npm run check:core-doc-links &&
    npm run check:page-health && npm run check:exit-codes &&
-   npm run versions:selftest && npm run build` all pass in `docs/site`.
+   npm run check:style:selftest && npm run check:style &&
+   npm run versions:selftest && npm run build && npm run check:responsive`
+   all pass in `docs/site`. `check:responsive` needs the built site, so it runs
+   last.
 6. `docs/site/CONTENT_INVENTORY.md` updated for any added, moved, merged,
    split, or retired page.
 7. Redirects added for every moved URL; no content links through a redirect.
-8. Desktop and mobile visual pass for structural changes.
+8. Desktop and mobile visual pass for structural changes. `check:responsive`
+   covers horizontal overflow at 390px and 1280px; judgement about hierarchy,
+   density, and orientation still needs a person looking at the page.
 9. Stale-term sweep: `rg` for old slugs, old command spellings, and retired
    terms across `*.md`.
 10. American English pass: spelling, active voice, sentence-case headings.
+    `check-style.mjs` covers the spelling deny-list; active voice and heading
+    case still need a human reading.
+
+## 13. What is machine-enforced
+
+These rules fail CI, so a PR cannot merge while breaking them. Everything else
+in this guide is a review responsibility.
+
+| Rule | Section | Check |
+| --- | --- | --- |
+| American English spelling | 4 | `check:style` |
+| No `simply` / `easily` / `just` | 4, 11 | `check:style` |
+| Fenced blocks carry a language label | 6 | `check:style` |
+| Admonitions limited to note/tip/caution/danger | 7 | `check:style` |
+| No `testify` in samples | 6 | `check:style` |
+| `title` and `description` frontmatter | 3 | `check:page-health` |
+| Page registered in the sidebar | 9 | `check:page-health` |
+| No `TODO`/`TBD`/`FIXME`/"coming soon" | 11 | `check:page-health` |
+| Site-internal links resolve | 9 | `check:links` |
+| Moved URLs keep a redirect | 9 | `check:redirects` |
+| Site pages never link protected root docs | 9 | `check:core-doc-links` |
+| Exit-code tables stay in lockstep | 9 | `check:exit-codes` |
+| No page scrolls sideways at 390px or 1280px | 10 | `check:responsive` |
+
+`check:style` governs every layer the guide covers — `docs/site`, `docs/*.md`,
+`examples/**`, `integration/*.md`, and `README.md` — not only the site. It skips
+this file, which necessarily contains the words it bans. Each rule has a
+self-test (`npm run check:style:selftest`) so a refactor cannot turn the check
+into a no-op that reports success forever.
