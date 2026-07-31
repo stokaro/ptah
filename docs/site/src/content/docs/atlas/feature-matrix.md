@@ -20,6 +20,7 @@ on [Comparison](../comparison/), the measured evidence is on
 | 🟡 | Partial. The difference column states what is missing |
 | ❌ | Not implemented |
 | ➖ | Does not apply to that product |
+| ❔ | Not established by the evidence this page uses |
 
 Each table has the same columns. **Ptah**, **CE**, and **Pro** carry one symbol
 each:
@@ -30,6 +31,14 @@ each:
 - **Pro** — capabilities Atlas documents as licensed on the
   [Atlas feature availability](https://atlasgo.io/features) page, covering both
   Atlas Pro and Atlas Cloud.
+
+Every Atlas cell has to come from an Atlas-side source: the command, usage, and
+flag inventory the conformance harness reads out of the pinned community
+binary, or a classification Atlas publishes. Where neither settles a question,
+the cell is ❔ rather than a guess. That is why the schema-object rows carry ❔
+in the Atlas columns: this page can show what Ptah emits for a domain or a
+trigger, but nothing it cites establishes what Atlas CE emits for the same
+object.
 
 :::caution
 A ✅ in the Ptah column means the capability works, not that it is
@@ -48,9 +57,10 @@ Across the 120 capabilities below:
 | Ptah supports it with a stated limitation | 43 |
 | Ptah does not implement it | 21 |
 | Ptah and Atlas CE both support it | 23 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 27 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 22 |
 | Ptah has it and neither Atlas edition does | 9 |
 | Atlas CE has it and Ptah does not, or only in part | 26 |
+| Atlas side not established by this page's evidence | 5 |
 
 The command surface is counted separately, because it is measured rather than
 assessed. The conformance harness inventories every command in the pinned Atlas
@@ -177,18 +187,18 @@ as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | No foreign keys, enforced CHECKs, views, matviews, functions or triggers; standalone enum types are rejected. Atlas lists it as Pro. |
 | CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | Preset drops concurrent indexes, sequences, XML, advisory locks, roles and RLS; views, functions and triggers are not emitted at all. |
-| Domains, composite types, and range types | 🟡 | ❌ | ✅ | PostgreSQL only - not CockroachDB, YugabyteDB or Spanner. Domain check/default are create-only; base-type changes drop and recreate. |
+| Domains, composite types, and range types | 🟡 | ❔ | ❔ | PostgreSQL only - not CockroachDB, YugabyteDB or Spanner. Domain check/default are create-only; base-type changes drop and recreate. |
 | Enum types | 🟡 | ✅ | ✅ | Postgres CREATE TYPE; MySQL inline ENUM; SQLite TEXT+CHECK; SQL Server NVARCHAR+CHECK; ClickHouse passthrough; Spanner skips enums. |
-| Extensions | 🟡 | ❌ | ✅ | PostgreSQL family only, with a default ignore list (plpgsql). SQLite, SQL Server and ClickHouse comment it out; MySQL/MariaDB emit nothing. |
-| Functions | 🟡 | ❌ | ✅ | Renders on PostgreSQL only; MySQL/MariaDB emit a not-supported comment and error on DROP; CockroachDB, YugabyteDB, Spanner omit silently. |
+| Extensions | 🟡 | ❔ | ❔ | PostgreSQL family only, with a default ignore list (plpgsql). SQLite, SQL Server and ClickHouse comment it out; MySQL/MariaDB emit nothing. |
+| Functions | 🟡 | ❔ | ❔ | Renders on PostgreSQL only; MySQL/MariaDB emit a not-supported comment and error on DROP; CockroachDB, YugabyteDB, Spanner omit silently. |
 | MySQL and MariaDB | 🟡 | ✅ | ✅ | Separate dialects with different capability sets; no PostgreSQL-only objects; implicit DDL commit blocks transactional rollback. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | Listed as Atlas Pro drivers. Ptah has no dialect, renderer or driver for any of them. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Only engine where views, functions, sequences, roles, RLS and domains are emitted; presets 12-13, 14-16, 17+ from the server banner. |
-| Roles, grants, and row-level security | 🟡 | ❌ | ✅ | Emitted on PostgreSQL only; CockroachDB, YugabyteDB and Spanner get none despite PostgreSQL-family capability flags for roles. |
+| Roles, grants, and row-level security | 🟡 | ❔ | ❔ | Emitted on PostgreSQL only; CockroachDB, YugabyteDB and Spanner get none despite PostgreSQL-family capability flags for roles. |
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Most conservative preset: no enums, foreign keys, sequences, RLS, XML or advisory locks. Coverage is offline; no live container. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | Portable T-SQL subset: no sequences, RLS, roles/grants or matviews, and automatic column removal is refused. Atlas lists it as Pro. |
 | SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Constraint changes and most column modifications report rebuild-required instead of generating a rebuild; PG-only objects rejected. |
-| Standalone sequences | 🟡 | ❌ | ✅ | Standalone CREATE SEQUENCE renders on PostgreSQL only; YugabyteDB carries the capability flag but the generator emits none. |
+| Standalone sequences | 🟡 | ❔ | ❔ | Standalone CREATE SEQUENCE renders on PostgreSQL only; YugabyteDB carries the capability flag but the generator emits none. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Atlas docs list both as Open drivers; Ptah's dialect normalizer has no TiDB or LibSQL entry, so the names do not resolve. |
 | Triggers | 🟡 | ❌ | ✅ | Render on PostgreSQL, MySQL/MariaDB, SQLite (row-level only) and SQL Server; ClickHouse, CockroachDB, YugabyteDB and Spanner do not. |
 | Views and materialized views | 🟡 | ❌ | ✅ | Views: PostgreSQL, MySQL/MariaDB, SQLite, SQL Server. Matviews: PostgreSQL only. CockroachDB, YugabyteDB, Spanner, ClickHouse: neither. |
