@@ -60,8 +60,6 @@ type MixedSyntaxPost struct {
 }
 
 // EMBEDDED FIELDS WITH SIMPLIFIED SYNTAX
-//
-//ptah:schema:embed
 type ModernTimestamps struct {
 	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null default_expr="CURRENT_TIMESTAMP"
 	CreatedAt string `db:"created_at"`

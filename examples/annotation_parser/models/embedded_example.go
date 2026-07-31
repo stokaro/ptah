@@ -8,8 +8,6 @@ import (
 // Example demonstrating embedded field functionality
 
 // Embedded types
-//
-//ptah:schema:embed
 type Timestamps struct {
 	//ptah:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="CURRENT_TIMESTAMP"
 	CreatedAt time.Time `db:"created_at"`
@@ -18,7 +16,6 @@ type Timestamps struct {
 	UpdatedAt time.Time `db:"updated_at"`
 }
 
-//ptah:schema:embed
 type AuditInfo struct {
 	//ptah:schema:field name="by" type="TEXT"
 	By string `db:"by"`
@@ -27,7 +24,6 @@ type AuditInfo struct {
 	Reason string `db:"reason"`
 }
 
-//ptah:schema:embed
 type Meta struct {
 	Author string
 	Source string
