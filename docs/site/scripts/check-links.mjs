@@ -49,6 +49,45 @@ function stripFencedCode(source) {
   return source.replace(/```[\s\S]*?```/g, '');
 }
 
+// Punctuation github-slugger drops. Starlight generates heading ids with that
+// package, so anchor validation has to match it character for character: `-`
+// and `_` survive, which is why `--schema` becomes `--schema` and not `schema`.
+const sluggerPunctuation = /[ -⁯⸀-⹿\\'!"#$%&()*+,./:;<=>?@[\]^`{|}~]/g;
+
+// headingText renders inline markdown down to the text a reader sees, because
+// that text - not the source - is what the id is built from.
+function headingText(markdown) {
+  return markdown
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\*\*([^*]*)\*\*/g, '$1')
+    .replace(/(?<!\w)[*_]([^*_]+)[*_](?!\w)/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .trim();
+}
+
+function slugify(text) {
+  return text.toLowerCase().trim().replace(sluggerPunctuation, '').replace(/ /g, '-');
+}
+
+// headingAnchors returns every id a page exposes, including the duplicate
+// suffixes github-slugger appends when two headings render the same text.
+function headingAnchors(source) {
+  const anchors = new Set();
+  const counts = new Map();
+  for (const line of stripFencedCode(source).split('\n')) {
+    const match = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if (!match) continue;
+    const base = slugify(headingText(match[2]));
+    if (!base) continue;
+    const seen = counts.get(base) ?? 0;
+    counts.set(base, seen + 1);
+    anchors.add(seen === 0 ? base : `${base}-${seen}`);
+  }
+  return anchors;
+}
+
 function extractLinks(file) {
   const source = stripFencedCode(readFileSync(file, 'utf8'));
   const links = [];
@@ -80,6 +119,11 @@ function targetPath(href) {
   return withoutHash.split('?', 1)[0];
 }
 
+function targetAnchor(href) {
+  const index = href.indexOf('#');
+  return index === -1 ? '' : decodeURIComponent(href.slice(index + 1));
+}
+
 function resolveRoute(sourceRoute, href) {
   const parts = sourceRoute.split('/').filter(Boolean);
   for (const segment of href.split('/')) {
@@ -94,9 +138,32 @@ function resolveRoute(sourceRoute, href) {
   return { escaped: false, route: normalizeRoute(`/${parts.join('/')}/`) };
 }
 
-function validateLink(root, routes, file, href, cwd) {
-  if (!href || href.startsWith('#') || externalSchemes.test(href)) {
+// anchorError reports an anchor that no heading on the target page produces.
+// A renamed heading silently breaks every link into it; nothing 404s, the
+// reader just lands at the top of a long page and has to hunt.
+function anchorError(anchorsByRoute, file, href, route, cwd) {
+  const anchor = targetAnchor(href);
+  if (!anchor) return null;
+  const anchors = anchorsByRoute.get(route);
+  // A route with no recorded headings is a page this checker does not parse
+  // (an .mdx built from components, say); do not invent failures for it.
+  if (!anchors || anchors.size === 0) return null;
+  if (anchors.has(anchor)) return null;
+  return (
+    `${toPosix(relative(cwd, file))}: ${href} points at #${anchor}, which no heading on ${route} produces`
+  );
+}
+
+function validateLink(root, routes, anchorsByRoute, file, href, cwd) {
+  if (!href || externalSchemes.test(href)) {
     return null;
+  }
+
+  const sourceRoute = routeFor(root, file);
+
+  // A bare #anchor stays on the page it was written on.
+  if (href.startsWith('#')) {
+    return anchorError(anchorsByRoute, file, href, sourceRoute, cwd);
   }
 
   const cleanHref = targetPath(href);
@@ -106,12 +173,11 @@ function validateLink(root, routes, file, href, cwd) {
     return `${toPosix(relative(cwd, file))}: ${href} is root-relative; use a docs-relative link so GitHub Pages keeps /ptah/<version>/ in the URL`;
   }
 
-  const sourceRoute = routeFor(root, file);
   const { escaped, route: resolved } = resolveRoute(sourceRoute, cleanHref);
   if (escaped) {
     return `${toPosix(relative(cwd, file))}: ${href} escapes the docs route root`;
   }
-  if (routes.has(resolved)) return null;
+  if (routes.has(resolved)) return anchorError(anchorsByRoute, file, href, resolved, cwd);
 
   return `${toPosix(relative(cwd, file))}: ${href} resolves to missing route ${resolved}`;
 }
@@ -119,16 +185,20 @@ function validateLink(root, routes, file, href, cwd) {
 function checkLinks(root, cwd) {
   const files = walk(root);
   const routes = new Set(files.map((file) => routeFor(root, file)));
+  const anchorsByRoute = new Map(
+    files.map((file) => [routeFor(root, file), headingAnchors(readFileSync(file, 'utf8'))]),
+  );
   const errors = [];
 
   for (const file of files) {
     for (const href of extractLinks(file)) {
-      const error = validateLink(root, routes, file, href, cwd);
+      const error = validateLink(root, routes, anchorsByRoute, file, href, cwd);
       if (error) errors.push(error);
     }
   }
 
-  return { errors, files, routes };
+  const anchors = [...anchorsByRoute.values()].reduce((sum, set) => sum + set.size, 0);
+  return { errors, files, routes, anchors };
 }
 
 function writeDoc(root, name, content) {
@@ -189,6 +259,54 @@ function selftest() {
 
     const fixed = checkLinks(root, tmp);
     assert(fixed.errors.length === 0, `expected fixed fixture links to pass, got ${fixed.errors.join('; ')}`);
+
+    // Anchors. The slugger has to agree with github-slugger, which Starlight
+    // uses: punctuation disappears, hyphens survive, and two headings that
+    // render the same text get a numeric suffix.
+    assert(slugify(headingText('Diff and plan policy')) === 'diff-and-plan-policy', 'plain heading');
+    assert(
+      slugify(headingText('Migration down / rollback')) === 'migration-down--rollback',
+      'a removed slash leaves both of its spaces behind, so the slug has two hyphens',
+    );
+    assert(
+      slugify(headingText('Scope the comparison with `--schema` and `--include`')) ===
+        'scope-the-comparison-with---schema-and---include',
+      'code spans vanish but their hyphens do not',
+    );
+    assert(
+      slugify(headingText('Schema diff, apply, formatting, and cleanup')) ===
+        'schema-diff-apply-formatting-and-cleanup',
+      'commas are dropped without leaving a hyphen',
+    );
+    const duplicates = headingAnchors('## Notes\n\n## Notes\n');
+    assert(duplicates.has('notes') && duplicates.has('notes-1'), 'repeated headings get suffixed ids');
+
+    writeDoc(
+      root,
+      'reference/anchors.md',
+      ['---', 'title: Anchors', '---', '## Real section', '', '### Nested `--flag` heading'].join('\n'),
+    );
+    writeDoc(
+      root,
+      'reference/links.md',
+      [
+        '---',
+        'title: Links',
+        '---',
+        '## Local target',
+        '[same page ok](#local-target)',
+        '[same page broken](#no-such-heading)',
+        '[cross page ok](../anchors/#real-section)',
+        '[cross page code ok](../anchors/#nested---flag-heading)',
+        '[cross page broken](../anchors/#renamed-section)',
+      ].join('\n'),
+    );
+    const anchored = checkLinks(root, tmp);
+    const anchorErrors = anchored.errors.filter((error) => error.includes('points at'));
+    assert(anchorErrors.length === 2, `expected 2 anchor errors, got ${anchored.errors.join('; ')}`);
+    assert(anchorErrors.some((error) => error.includes('#no-such-heading')), 'catches a same-page anchor');
+    assert(anchorErrors.some((error) => error.includes('#renamed-section')), 'catches a cross-page anchor');
+
     console.log('check-links.mjs --selftest: OK');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
@@ -207,7 +325,7 @@ function main() {
     return;
   }
 
-  const { errors, files, routes } = checkLinks(docsRoot, process.cwd());
+  const { errors, files, routes, anchors } = checkLinks(docsRoot, process.cwd());
 
   if (errors.length > 0) {
     console.error('Broken internal documentation links:');
@@ -218,7 +336,7 @@ function main() {
     return;
   }
 
-  console.log(`check-links.mjs: OK (${files.length} pages, ${routes.size} routes)`);
+  console.log(`check-links.mjs: OK (${files.length} pages, ${routes.size} routes, ${anchors} heading anchors)`);
 }
 
 main();

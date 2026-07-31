@@ -27,7 +27,7 @@ uses them internally.
 | Build parameterized SELECT queries | `core/query`, `core/renderer` | Fluent, dialect-aware SELECT/WHERE/ORDER BY/LIMIT with bound parameters. See [Query builder](../query-builder/). |
 | Parse Go schema annotations | `core/goschema` | Go source comments to Ptah's schema IR. |
 | Parse Atlas HCL schema files | `atlascompat` | Atlas-style HCL schema files to Ptah's schema IR through a stable compatibility wrapper. |
-| Parse YAML schema files | Native CLI and schema-file workflows | YAML schema parsing is currently an implementation detail, not a stable public package. Use the CLI or create a follow-up API proposal before embedding it. |
+| Parse YAML schema files | Native CLI and schema-file workflows | An implementation detail, not a stable package. Use the CLI, or open an API proposal before embedding it. |
 | Render SQL from schema IR | `core/renderer`, `atlascompat` | Ordered DDL statements for supported dialects. |
 | Introspect live databases | `dbschema`, `dbschema/types` | Database schema snapshots from live connections. |
 | Compare desired vs. live schemas | `migration/schemadiff`, `migration/schemadiff/types` | Structured schema diffs for planning and reporting. |
@@ -464,18 +464,52 @@ been inspected.
 
 ## Use cases
 
-Each row names the stable packages for a common embedding shape, the
+Each entry below names the stable packages for a common embedding shape, the
 end-to-end example above to start from, and what stays in the host tool.
 
-| Use case | Stable packages | Start from | The host tool keeps |
-| --- | --- | --- | --- |
-| Internal platform CLI | `core/goschema`, `dbschema`, `migration/schemadiff`, `migration/planner`, `migration/migrator`, `migration/safety` | [Inspect a live database and diff](#inspect-a-live-database-and-diff) | Approval, locking, and production rollout policy. |
-| Migration CI gate | `atlascompat`, `migration/migrator`, `migration/lint`, `migration/safety`, `migration/risk` | [Build a CI gate](#build-a-ci-gate) | Failure policy; add a dev database replay when live compatibility matters. |
-| Schema documentation generator | `core/goschema`, `atlascompat`, `dbschema/types`, `migration/schemadiff`, `core/platform/capability` | [Render SQL from Go annotations](#render-sql-from-go-annotations) | Output formatting; generate from the stable schema IR, not internal renderers. |
-| Atlas-compatible transition | `atlascompat`, `migration/migrator`, `core/renderer` | [Embed the migrator](#embed-the-migrator) | Parity expectations; use the conformance reports for measured compatibility. |
-| Dialect extension research | `core/platform/capability`, `core/ast`, `core/renderer`, `migration/planner`, `migration/safety` | [Use capabilities](#use-capabilities) | Unsupported-feature handling; create a design issue before relying on out-of-tree extension points. |
-| Application embedded migrations | `migration/migrator`, `dbschema` | [Embed the migrator](#embed-the-migrator) | Startup locking, approvals, observability, and rollback policy; avoid uncontrolled production startup migrations. |
-| Schema drift bot | `core/goschema`, `dbschema`, `migration/schemadiff`, `migration/planner`, `migration/safety` | [Inspect a live database and diff](#inspect-a-live-database-and-diff) | Review delivery; require human review for destructive changes. |
+**Internal platform CLI** — start from
+[Inspect a live database and diff](#inspect-a-live-database-and-diff).
+Stable packages: `core/goschema`, `dbschema`, `migration/schemadiff`,
+`migration/planner`, `migration/migrator`, `migration/safety`.
+The host tool keeps approval, locking, and production rollout policy.
+
+**Migration CI gate** — start from [Build a CI gate](#build-a-ci-gate).
+Stable packages: `atlascompat`, `migration/migrator`, `migration/lint`,
+`migration/safety`, `migration/risk`.
+The host tool keeps failure policy; add a dev database replay when live
+compatibility matters.
+
+**Schema documentation generator** — start from
+[Render SQL from Go annotations](#render-sql-from-go-annotations).
+Stable packages: `core/goschema`, `atlascompat`, `dbschema/types`,
+`migration/schemadiff`, `core/platform/capability`.
+The host tool keeps output formatting; generate from the stable schema IR, not
+internal renderers.
+
+**Atlas-compatible transition** — start from
+[Embed the migrator](#embed-the-migrator).
+Stable packages: `atlascompat`, `migration/migrator`, `core/renderer`.
+The host tool keeps parity expectations; use the conformance reports for
+measured compatibility.
+
+**Dialect extension research** — start from [Use capabilities](#use-capabilities).
+Stable packages: `core/platform/capability`, `core/ast`, `core/renderer`,
+`migration/planner`, `migration/safety`.
+The host tool keeps unsupported-feature handling; create a design issue before
+relying on out-of-tree extension points.
+
+**Application embedded migrations** — start from
+[Embed the migrator](#embed-the-migrator).
+Stable packages: `migration/migrator`, `dbschema`.
+The host tool keeps startup locking, approvals, observability, and rollback
+policy; avoid uncontrolled production startup migrations.
+
+**Schema drift bot** — start from
+[Inspect a live database and diff](#inspect-a-live-database-and-diff).
+Stable packages: `core/goschema`, `dbschema`, `migration/schemadiff`,
+`migration/planner`, `migration/safety`.
+The host tool keeps review delivery; require human review for destructive
+changes.
 
 ## Stability and boundaries
 
