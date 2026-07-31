@@ -63,7 +63,7 @@ jobs:
           - 3307:3306
 
       clickhouse:
-        image: clickhouse/clickhouse-server:24.12
+        image: clickhouse/clickhouse-server:26.7
         env:
           CLICKHOUSE_DB: ptah_test
           CLICKHOUSE_USER: ptah_user
@@ -79,6 +79,11 @@ jobs:
           - 9000:9000
 
       clickhouse-legacy:
+        # Pinned below 24.11 on purpose. CHECK GRANT catalog visibility arrived
+        # in 24.11, and TestWriterDropDatabaseRealm_RejectsLegacyServerLive
+        # proves the realm-drop guard fails closed without it. Bumping this tag
+        # deletes that coverage silently, so renovate.json disables updates for
+        # this pin.
         image: clickhouse/clickhouse-server:24.10
         env:
           CLICKHOUSE_DB: ptah_test
