@@ -32,6 +32,6 @@
     "tailwindcss": "4.3.3"
   },
   "devDependencies": {
-    "playwright": "^1.50.1"
+    "playwright": "^1.62.1"
   }
 }
