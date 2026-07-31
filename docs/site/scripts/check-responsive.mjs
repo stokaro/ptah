@@ -34,6 +34,28 @@ const viewports = [
 // reports overflow on pages that look correct.
 const overflowTolerance = 2;
 
+// The tallest a table cell may render at desktop width. Character count cannot
+// see this: a short cell in a column squeezed narrow by an unbreakable code
+// token in its neighbor renders just as tall as a long one, and that is the
+// shape readers actually complain about.
+//
+// Measured at desktop only. At 390px a wide table scrolls inside its own
+// container, so its columns keep their desktop widths and a mobile limit would
+// either duplicate this one or punish tables for being on a phone.
+const maxCellLines = 8;
+
+// Pages whose tables are lookup references, where an exhaustive cell is the
+// content rather than a mistake. Each entry states why.
+//
+// checkStaleAllowlist below fails when an allowlisted route stops having a
+// finding, so an entry cannot outlive the reason it was added.
+const denseTableAllowlist = new Map([
+  [
+    '/reference/exit-codes/',
+    'per-command cause lists are the reference content, and check-exit-codes.mjs pins these rows verbatim to docs/exit_codes.md',
+  ],
+]);
+
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -117,7 +139,7 @@ function startServer(distRoot, base) {
 // measure runs in the page. It reports the document's own horizontal overflow
 // plus the specific elements that stick out, so a failure names the culprit
 // instead of only the page.
-const measure = (tolerance) => {
+const measure = ({ tolerance, cellLineLimit }) => {
   const doc = document.documentElement;
   const viewportWidth = doc.clientWidth;
 
@@ -149,10 +171,24 @@ const measure = (tolerance) => {
       right: Math.round(rect.right),
     });
   }
+  // Rendered height in lines, not characters. A cell squeezed into a narrow
+  // column is exactly as unreadable as a cell holding an essay.
+  const tallCells = [];
+  for (const cell of document.querySelectorAll('main table tbody td')) {
+    const rect = cell.getBoundingClientRect();
+    if (rect.width === 0) continue;
+    const lineHeight = parseFloat(getComputedStyle(cell).lineHeight);
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) continue;
+    const lines = Math.round(rect.height / lineHeight);
+    if (lines <= cellLineLimit) continue;
+    tallCells.push({ lines, width: Math.round(rect.width), text: cell.textContent.trim().slice(0, 50) });
+  }
+
   return {
     scrollWidth: doc.scrollWidth,
     clientWidth: viewportWidth,
     offenders: offenders.slice(0, 5).map(({ tag, className, right }) => ({ tag, className, right })),
+    tallCells: tallCells.sort((a, b) => b.lines - a.lines).slice(0, 5),
   };
 };
 
@@ -240,11 +276,35 @@ async function main() {
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       await page.setContent('<main><div style="width:1200px">wide</div></main>');
-      const wide = await page.evaluate(measure, overflowTolerance);
+      const wide = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
       await page.setContent('<main><div style="width:100px">narrow</div></main>');
-      const narrow = await page.evaluate(measure, overflowTolerance);
+      const narrow = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
       if (wide.offenders.length === 0) failures.push('overflow detector did not fire on a 1200px element at 390px');
       if (narrow.offenders.length > 0) failures.push('overflow detector fired on a page that fits');
+
+      // The tall-cell rule, both ways. The fixture reproduces the shape that
+      // motivated it: a neighbor cell holding an unbreakable token squeezes a
+      // column narrow, and ordinary text in it stacks one word per line.
+      // table-layout:fixed is what makes the column widths obeyed; with auto
+      // layout the browser widens the column and the fixture proves nothing.
+      // The explicit line-height matters too: an unstyled page computes
+      // `normal`, which is not a number, and the rule skips cells it cannot
+      // measure in lines.
+      const row = (cell) =>
+        '<main><table style="table-layout:fixed;width:380px;line-height:20px">' +
+        `<tbody><tr>${cell}</tr></tbody></table></main>`;
+      await page.setContent(
+        row(`<td style="width:60px">${'word '.repeat(60)}</td><td style="width:320px">short</td>`),
+      );
+      const tall = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      await page.setContent(row('<td style="width:200px">a short cell</td><td>another</td>'));
+      const short = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      if (tall.tallCells.length === 0) {
+        failures.push(`tall-cell detector did not fire on a cell far over ${maxCellLines} lines`);
+      }
+      if (short.tallCells.length > 0) {
+        failures.push(`tall-cell detector fired on a one-line cell (${short.tallCells[0]?.lines} lines)`);
+      }
 
       const fixtureBase = '/ptah/edge';
       const distRoot = writeFixtureDist(fixtureBase);
@@ -288,7 +348,7 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    console.log('check-responsive.mjs --selftest: OK (overflow detector and unstyled-page guard both verified)');
+    console.log('check-responsive.mjs --selftest: OK (overflow, tall-cell, and unstyled-page guards verified)');
     return;
   }
 
@@ -317,6 +377,7 @@ async function main() {
     return;
   }
   const errors = [];
+  const routesWithTallCells = new Set();
 
   try {
     for (const viewport of viewports) {
@@ -335,7 +396,7 @@ async function main() {
           );
           continue;
         }
-        const result = await page.evaluate(measure, overflowTolerance);
+        const result = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
         if (result.scrollWidth > result.clientWidth + overflowTolerance) {
           errors.push(
             `${route} [${viewport.name} ${viewport.width}px]: page scrolls horizontally ` +
@@ -348,6 +409,17 @@ async function main() {
               `extends to ${offender.right}px, past the ${result.clientWidth}px viewport`,
           );
         }
+        if (viewport.name === 'desktop' && result.tallCells.length > 0) {
+          routesWithTallCells.add(route);
+          if (!denseTableAllowlist.has(route)) {
+            for (const cell of result.tallCells) {
+              errors.push(
+                `${route}: a table cell renders ${cell.lines} lines tall in a ${cell.width}px column, ` +
+                  `over the ${maxCellLines}-line limit — "${cell.text}"`,
+              );
+            }
+          }
+        }
       }
       await context.close();
     }
@@ -356,14 +428,34 @@ async function main() {
     server.close();
   }
 
+  // An allowlist entry that no longer suppresses anything is a claim about the
+  // documentation that stopped being true. Failing here is what stops the list
+  // from growing into a list of pages nobody checks.
+  for (const [route, reason] of denseTableAllowlist) {
+    if (!routes.includes(route)) {
+      errors.push(`dense-table allowlist names ${route}, which is not a built route; remove the entry`);
+      continue;
+    }
+    if (!routesWithTallCells.has(route)) {
+      errors.push(
+        `dense-table allowlist still exempts ${route} ("${reason}"), but no cell there exceeds ` +
+          `${maxCellLines} lines; remove the entry so the page is checked`,
+      );
+    }
+  }
+
   if (errors.length > 0) {
     console.error('Documentation responsive check failed:');
     for (const error of errors) console.error(`- ${error}`);
     console.error('\nWide content must scroll inside its own container, not the page.');
+    console.error('A cell taller than a short paragraph belongs in a section with a heading.');
     process.exitCode = 1;
     return;
   }
-  console.log(`check-responsive.mjs: OK (${routes.length} routes x ${viewports.length} viewports)`);
+  console.log(
+    `check-responsive.mjs: OK (${routes.length} routes x ${viewports.length} viewports, ` +
+      `cells within ${maxCellLines} lines)`,
+  );
 }
 
 await main();
