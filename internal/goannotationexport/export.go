@@ -191,7 +191,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	// Normalization loss is detected against the SOURCE, not the rendered HCL:
 	// once cty has composed a value, the original code points are gone and the
 	// round-trip below can only prove the composed form is self-stable.
-	normalization, err := normalizationDiagnostics(plan.snapshot.FS())
+	normalization, err := normalizationDiagnostics(plan.snapshot.FS(), rendered.Data)
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("scan annotations for normalization loss: %w", err)
 	}

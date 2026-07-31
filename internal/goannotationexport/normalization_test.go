@@ -140,6 +140,34 @@ func TestExportRefusesDestructiveCleanupOnNonNFCValue(t *testing.T) {
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
+// TestExportRenderedHCLLosesDecomposedBytes proves the loss the diagnostic
+// warns about is real, on an attribute that actually reaches the output: the
+// source bytes are decomposed and the rendered HCL holds the composed form.
+func TestExportRenderedHCLLosesDecomposedBytes(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	source := `package models
+
+//ptah:schema:table name="caf` + decomposedAccent + `_users"
+type User struct {
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0o600), qt.IsNil)
+	out := filepath.Join(c.TempDir(), "schema.hcl")
+
+	result, err := goannotationexport.Export(exportOptions(dir, out, false))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(normalizationMessages(result), qt.Not(qt.HasLen), 0)
+
+	rendered, err := os.ReadFile(out)
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Contains(string(rendered), decomposedAccent), qt.IsFalse)
+	c.Assert(strings.Contains(string(rendered), composedAccent), qt.IsTrue)
+}
+
 func TestExportAcceptsComposedAndASCIIValues(t *testing.T) {
 	tests := []struct {
 		name string

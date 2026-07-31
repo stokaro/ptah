@@ -1,6 +1,9 @@
 package goannotationexport
 
 import (
+	"bytes"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"path"
 	"sort"
@@ -26,7 +29,7 @@ import (
 //
 // Diagnostics identify the file, line, directive and attribute, and never carry
 // the value itself: an attribute may hold a credential.
-func normalizationDiagnostics(fsys fs.FS) ([]atlashclrender.Diagnostic, error) {
+func normalizationDiagnostics(fsys fs.FS, rendered []byte) ([]atlashclrender.Diagnostic, error) {
 	var diagnostics []atlashclrender.Diagnostic
 
 	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
@@ -40,7 +43,7 @@ func normalizationDiagnostics(fsys fs.FS) ([]atlashclrender.Diagnostic, error) {
 		if err != nil {
 			return err
 		}
-		diagnostics = append(diagnostics, fileNormalizationDiagnostics(name, string(data))...)
+		diagnostics = append(diagnostics, fileNormalizationDiagnostics(name, string(data), rendered)...)
 		return nil
 	})
 	if err != nil {
@@ -56,11 +59,25 @@ func normalizationDiagnostics(fsys fs.FS) ([]atlashclrender.Diagnostic, error) {
 	return diagnostics, nil
 }
 
-func fileNormalizationDiagnostics(name, source string) []atlashclrender.Diagnostic {
+func fileNormalizationDiagnostics(name, source string, rendered []byte) []atlashclrender.Diagnostic {
 	var diagnostics []atlashclrender.Diagnostic
 	lines := strings.Split(source, "\n")
 
+	// Only real Go comments can become schema intent. Scanning raw text would
+	// also match a "//ptah:" line inside a string literal, which goschema never
+	// parses and cleanup never removes - reporting one would refuse a cleanup
+	// that loses nothing. Mirrors annotationLineNumbers in goannotationcleanup.
+	commentLines, ok := annotationCommentLines(name, source)
+	if !ok {
+		// Unparseable Go: goschema could not have built a schema from it, so
+		// there is nothing this check could be protecting.
+		return nil
+	}
+
 	for _, annotation := range annotationparse.Scan(source) {
+		if !commentLines[annotation.Line+1] {
+			continue
+		}
 		if !annotation.Known {
 			// Unknown directives are never rendered, so they cannot lose bytes
 			// through the HCL.
@@ -80,6 +97,13 @@ func fileNormalizationDiagnostics(name, source string) []atlashclrender.Diagnost
 			if !ok || norm.NFC.IsNormalString(value) {
 				continue
 			}
+			// Being non-NFC is only a candidate signal. If the exact bytes
+			// survive into the output, nothing was lost and refusing cleanup
+			// would be a false positive: not every attribute is routed through
+			// cty as a string.
+			if bytes.Contains(rendered, []byte(value)) {
+				continue
+			}
 			diagnostics = append(diagnostics, atlashclrender.Diagnostic{
 				Severity: atlashclrender.SeverityWarning,
 				Path:     name,
@@ -90,6 +114,23 @@ func fileNormalizationDiagnostics(name, source string) []atlashclrender.Diagnost
 		}
 	}
 	return diagnostics
+}
+
+// annotationCommentLines returns the 1-based lines of source that are genuine
+// Go comments. The second result is false when the file does not parse.
+func annotationCommentLines(name, source string) (map[int]bool, bool) {
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, name, source, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		return nil, false
+	}
+	lines := make(map[int]bool)
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			lines[fileSet.PositionFor(comment.Pos(), false).Line] = true
+		}
+	}
+	return lines, true
 }
 
 // decodeAttributeValue returns the attribute's value as the renderer will see

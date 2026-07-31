@@ -516,34 +516,39 @@ const redactionMarker = "***"
 // source line, leaving the rest of the line byte-identical so the diff still
 // shows the file, directive, and the other attributes.
 //
-// The line is rescanned rather than reusing the ranges collected during
-// planning: those were computed against the comment text, whose offsets differ
-// from the raw source line by the leading indentation. Masking is done by
-// ValueRange offsets, not by matching the value, because a value may itself
-// contain a quote.
+// Matching is deliberately directive-INDEPENDENT. core/goschema builds a live
+// role from a bare "//ptah:schema:role" prefix, which accepts spellings the
+// directive recognizer rejects (a suffix, text before the "//", an exotic space
+// after it). Gating redaction on recognition would print the credential for
+// exactly those lines while Ptah still exported the role. A redactor has to be
+// the widest matcher in the system, so this masks any sensitive attribute name
+// on any line mentioning "ptah:". Over-masking is safe: the surface is
+// display-only, and planning and destructive writes use the original bytes.
+//
+// The line is rescanned rather than reusing ranges collected during planning:
+// those were computed against the comment text, whose offsets differ from the
+// raw source line by the leading indentation. Masking is done by ValueRange
+// offsets, not by matching the value, because a value may contain a quote.
 func redactSensitiveValues(line string) string {
-	annotations := annotationparse.Scan(line)
-	if len(annotations) == 0 {
+	if !strings.Contains(line, "ptah:") {
+		return line
+	}
+	sensitive := annotationmeta.AllSensitiveAttributes()
+	if len(sensitive) == 0 {
 		return line
 	}
 
 	type span struct{ start, end int }
 	var spans []span
-	for _, annotation := range annotations {
-		sensitive := annotationmeta.SensitiveAttributes(annotation.Directive)
-		if len(sensitive) == 0 {
+	for _, attribute := range annotationparse.ScanAttributes(line) {
+		if !sensitive[strings.ToLower(attribute.Name)] {
 			continue
 		}
-		for _, attribute := range annotation.Attributes {
-			if !sensitive[strings.ToLower(attribute.Name)] {
-				continue
-			}
-			start, end := attribute.ValueRange.Start.Character, attribute.ValueRange.End.Character
-			if start < 0 || end > len(line) || start >= end {
-				continue
-			}
-			spans = append(spans, span{start: start, end: end})
+		start, end := attribute.ValueRange.Start.Character, attribute.ValueRange.End.Character
+		if start < 0 || end > len(line) || start >= end {
+			continue
 		}
+		spans = append(spans, span{start: start, end: widenAmbiguousValue(line, start, end)})
 	}
 	if len(spans) == 0 {
 		return line
@@ -562,6 +567,24 @@ func redactSensitiveValues(line string) string {
 	}
 	builder.WriteString(line[cursor:])
 	return builder.String()
+}
+
+// widenAmbiguousValue extends a masked span to the end of the line when the
+// recognized value does not end at a token boundary.
+//
+// A password containing an unescaped quote, such as password="a"b", makes the
+// attribute regex stop at the inner quote, so masking only the recognized span
+// would print the remainder. The delimiters are ambiguous, so the safe reading
+// is that everything after it may still be the secret.
+func widenAmbiguousValue(line string, start, end int) int {
+	if end >= len(line) {
+		return end
+	}
+	switch line[end] {
+	case ' ', '\t', '\r', '\n':
+		return end
+	}
+	return end + len(strings.TrimRight(line[end:], "\r\n"))
 }
 
 func writeDiffLine(builder *strings.Builder, prefix byte, line string) {

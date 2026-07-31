@@ -187,6 +187,32 @@ func SensitiveAttributes(directive string) map[string]bool {
 	return sensitive
 }
 
+// AllSensitiveAttributes returns every attribute name marked Sensitive on any
+// directive, including alias spellings.
+//
+// Redaction uses this rather than SensitiveAttributes because a redactor must be
+// the WIDEST matcher in the system, not the narrowest. Directive resolution here
+// is stricter than the prefix match core/goschema uses to build a live role, so
+// gating on it would let a spelling Ptah still exports print its credential.
+func AllSensitiveAttributes() map[string]bool {
+	sensitive := make(map[string]bool)
+	for _, directive := range directives {
+		for _, attribute := range directive.Attributes {
+			if attribute.Sensitive {
+				sensitive[strings.ToLower(attribute.Name)] = true
+			}
+		}
+	}
+	for _, directive := range directives {
+		for _, attribute := range directive.Attributes {
+			if attribute.AliasFor != "" && sensitive[strings.ToLower(attribute.AliasFor)] {
+				sensitive[strings.ToLower(attribute.Name)] = true
+			}
+		}
+	}
+	return sensitive
+}
+
 // BooleanAttributes returns the attributes accepted as bare booleans.
 func BooleanAttributes() map[string]bool {
 	out := make(map[string]bool)

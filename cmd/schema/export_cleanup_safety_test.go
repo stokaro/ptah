@@ -71,9 +71,10 @@ func TestSchemaExportCleanupDiffRedactsRolePassword(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(secretLeaked(stdout, cliSecret), qt.IsFalse)
 	c.Assert(secretLeaked(stderr, cliSecret), qt.IsFalse)
-	c.Assert(stdout, qt.Contains, "password=***")
-	// The rest of the annotation stays readable.
-	c.Assert(stdout, qt.Contains, `name="app_user"`)
+	// cliSecret carries a raw quote, so the delimiters are ambiguous and the
+	// mask correctly runs to end of line. Asserting the exact line means a
+	// partial mask cannot pass, and the expectation holds no fixture bytes.
+	c.Assert(stdout, qt.Contains, `-//ptah:schema:role name="app_user" login="true" password=***`)
 }
 
 func TestSchemaExportRefusesCleanupOnNonNFCValue(t *testing.T) {
