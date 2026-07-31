@@ -230,7 +230,13 @@ async function main() {
       return;
     }
     const failures = [];
-    const browser = await chromium.launch();
+    let browser;
+    try {
+      browser = await chromium.launch();
+    } catch (error) {
+      unavailable(`chromium failed to launch (${error.message.split('\n')[0]})`);
+      return;
+    }
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       await page.setContent('<main><div style="width:1200px">wide</div></main>');
