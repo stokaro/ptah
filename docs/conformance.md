@@ -31,19 +31,57 @@ budgets stay green when the reports are current and no new gaps appear.
 
 ## Workflow Parity
 
-Workflow capabilities that do not add schema objects are recorded separately
-from the round-trip corpus:
-
-| Workflow | Native Ptah | Atlas-compatible Ptah surface | Atlas CE | Evidence |
-| --- | --- | --- | --- | --- |
-| Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` run YAML/Go-authored cases locally. | `ptah-compat migrate test` and `ptah-compat schema test` forward to the native runners with Atlas-shaped flags (`--dir`/`-u --url`, `--dev-url`, `--run`, project flags) and the native exit-code contract. | Cannot run either testing command; the framework is outside the open-source core. | Unit tests cover parsing, assertions, reporting, and CLI behavior, including the Atlas-compatible forwards; integration-tagged PostgreSQL tests exercise both live runners. This workflow is not counted as a schema-object round-trip fixture. |
-| Migration directory maintenance | `ptah migrations edit`, `rebase`, and `rm` mutate the directory and atomically rewrite the integrity file. | `ptah-compat migrate edit`, `rebase`, and `rm` forward to the native commands with Atlas-shaped `--dir`/`--dir-format` flags, `{name \| version}` positionals, and project flags; `migrate new --edit`, `migrate diff --edit`, and `schema apply --edit` open the operator's `$VISUAL`/`$EDITOR`. | Cannot run any of the three verbs; they abort with the community-version boundary. | Unit tests cover the forwards with hermetic editor scripts and assert `ptah migrations validate` passes on the mutated directory. Multi-version rebase and version ranges are rejected loudly (single-version forwarding only). |
-| Verified and reported rollback | `ptah migrations down --shadow-db` replays the rollback plan on a disposable shadow database before the target is touched. | `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); the forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), with the native `--revision-format ptah` pass-through as the escape hatch; the registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale. | `migrate down` does not exist in the community binary; the CE notice lists down migrations among excluded features. | Unit tests over live SQLite cover verification success and pre-target abort on both paths, report rendering (including partial-failure reports), the waiver rejections, a byte-identity regression pinning the default forward output to the native command's output, and revision-format regressions proving a bare `ptah-compat migrate down` reverts revisions written by `ptah-compat migrate apply` while an explicit ptah override leaves them untouched. |
-| Pre-approved declarative plans | Ptah plans and applies declarative schema changes through the same `internal/atlasschema` engine that powers `schema apply`. | `ptah-compat schema plan` saves the computed plan to a local JSON plan file with ordered statements, per-statement safety severity, and SHA-256 source/desired schema fingerprints; `ptah-compat schema apply --plan file://<path>` executes the saved statements only after the live database matches the plan's source fingerprint, refusing drifted targets. Registry planning flags (`--push`, `--pending`, `--repo`, `--auto-approve`) are recorded waivers and the plan registry sub-verbs stay CE boundary stubs. | `schema plan` aborts with the community-version boundary; the plan/approval flow is bound to the Atlas Pro registry. | Unit tests over live SQLite cover plan computation and save, the saved-file contract, plan execution with schema assertions, stale-plan refusal after target drift, dry-run, declined confirmation, dialect mismatch, malformed documents, waiver rejections, and both entry points. This workflow is not counted as a schema-object round-trip fixture. |
+Each workflow below states the native Ptah command, the Atlas-compatible
+surface, what Atlas CE does, and the evidence.
 
 These rows record product workflow parity, not full Atlas Pro compatibility.
 The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
 `.test.hcl` files are not ingested.
+
+### Declarative migration and schema tests
+
+**Native Ptah.** `ptah migrations test` and `ptah schema test` run YAML/Go-authored cases locally.
+
+**Atlas-compatible Ptah surface.** `ptah-compat migrate test` and `ptah-compat schema test` forward to the native runners with Atlas-shaped flags (`--dir`/`-u --url`, `--dev-url`, `--run`, project flags) and the native exit-code contract.
+
+**Atlas CE.** Cannot run either testing command; the framework is outside the open-source core.
+
+**Evidence.** Unit tests cover parsing, assertions, reporting, and CLI behavior, including the Atlas-compatible forwards; integration-tagged PostgreSQL tests exercise both live runners. This workflow is not counted as a schema-object round-trip fixture.
+
+
+### Migration directory maintenance
+
+**Native Ptah.** `ptah migrations edit`, `rebase`, and `rm` mutate the directory and atomically rewrite the integrity file.
+
+**Atlas-compatible Ptah surface.** `ptah-compat migrate edit`, `rebase`, and `rm` forward to the native commands with Atlas-shaped `--dir`/`--dir-format` flags, `{name | version}` positionals, and project flags; `migrate new --edit`, `migrate diff --edit`, and `schema apply --edit` open the operator's `$VISUAL`/`$EDITOR`.
+
+**Atlas CE.** Cannot run any of the three verbs; they abort with the community-version boundary.
+
+**Evidence.** Unit tests cover the forwards with hermetic editor scripts and assert `ptah migrations validate` passes on the mutated directory. Multi-version rebase and version ranges are rejected loudly (single-version forwarding only).
+
+
+### Verified and reported rollback
+
+**Native Ptah.** `ptah migrations down --shadow-db` replays the rollback plan on a disposable shadow database before the target is touched.
+
+**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); the forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), with the native `--revision-format ptah` pass-through as the escape hatch; the registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale.
+
+**Atlas CE.** `migrate down` does not exist in the community binary; the CE notice lists down migrations among excluded features.
+
+**Evidence.** Unit tests over live SQLite cover verification success and pre-target abort on both paths, report rendering (including partial-failure reports), the waiver rejections, a byte-identity regression pinning the default forward output to the native command's output, and revision-format regressions proving a bare `ptah-compat migrate down` reverts revisions written by `ptah-compat migrate apply` while an explicit ptah override leaves them untouched.
+
+
+### Pre-approved declarative plans
+
+**Native Ptah.** Ptah plans and applies declarative schema changes through the same `internal/atlasschema` engine that powers `schema apply`.
+
+**Atlas-compatible Ptah surface.** `ptah-compat schema plan` saves the computed plan to a local JSON plan file with ordered statements, per-statement safety severity, and SHA-256 source/desired schema fingerprints; `ptah-compat schema apply --plan file://<path>` executes the saved statements only after the live database matches the plan's source fingerprint, refusing drifted targets.
+
+Registry planning flags (`--push`, `--pending`, `--repo`, `--auto-approve`) are recorded waivers and the plan registry sub-verbs stay CE boundary stubs.
+
+**Atlas CE.** `schema plan` aborts with the community-version boundary; the plan/approval flow is bound to the Atlas Pro registry.
+
+**Evidence.** Unit tests over live SQLite cover plan computation and save, the saved-file contract, plan execution with schema assertions, stale-plan refusal after target drift, dry-run, declined confirmation, dialect mismatch, malformed documents, waiver rejections, and both entry points. This workflow is not counted as a schema-object round-trip fixture.
 
 ## Atlas Pro Analyzer Coverage
 

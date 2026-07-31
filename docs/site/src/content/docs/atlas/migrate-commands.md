@@ -534,13 +534,39 @@ Ptah-native migrations instead; see
 
 ## Format template fields
 
-| Command | Format data fields |
-| --- | --- |
-| `ptah-compat migrate apply --format` | `.Driver`, `.URL`, `.Dir`, `.Env`, `.Pending`, `.Applied`, `.Current`, `.Target`, `.Start`, `.End`, `.Error`, and JSON `.Message` for successful or no-op reports. `.Pending` and `.Applied` entries expose `.Name`, `.Version`, `.Description`; applied entries also expose `.Applied`, `.Skipped`, `.Checks`, and statement `.Error`. |
-| `ptah-compat migrate diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
-| `ptah-compat migrate lint --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Steps`, and `.Files`. Step entries expose `.Name`, `.Text`, `.Error`, and `.Result`; file entries expose `.Name`, `.Text`, `.Error`, and `.Findings`. |
-| `ptah-compat migrate status --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`. Available and pending migration file entries expose `.Name`, `.Version`, and `.Description`. Applied revision entries expose `.Version`, `.Description`, `.Type`, `.Applied`, `.Total`, `.ExecutedAt`, `.ExecutionTime`, `.Error`, `.ErrorStmt`, and `.OperatorVersion`. |
-| `ptah-compat migrate down --format` | `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`, `.End`, and `.Error`. |
+**`ptah-compat migrate apply --format`**
+
+- Top level: `.Driver`, `.URL`, `.Dir`, `.Env`, `.Pending`, `.Applied`,
+  `.Current`, `.Target`, `.Start`, `.End`, `.Error`, and JSON `.Message` for
+  successful or no-op reports.
+- Each `.Pending` and `.Applied` entry: `.Name`, `.Version`, `.Description`.
+  Applied entries also expose `.Applied`, `.Skipped`, `.Checks`, and statement
+  `.Error`.
+
+**`ptah-compat migrate diff --format`**
+
+- `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL.
+
+**`ptah-compat migrate lint --format`**
+
+- Top level: `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Steps`, and `.Files`.
+- Each step entry: `.Name`, `.Text`, `.Error`, and `.Result`.
+- Each file entry: `.Name`, `.Text`, `.Error`, and `.Findings`.
+
+**`ptah-compat migrate status --format`**
+
+- Top level: `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Available`, `.Applied`,
+  `.Pending`, `.Current`, `.Next`, and `.Status`.
+- Each available and pending migration file entry: `.Name`, `.Version`, and
+  `.Description`.
+- Each applied revision entry: `.Version`, `.Description`, `.Type`, `.Applied`,
+  `.Total`, `.ExecutedAt`, `.ExecutionTime`, `.Error`, `.ErrorStmt`, and
+  `.OperatorVersion`.
+
+**`ptah-compat migrate down --format`**
+
+- `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`,
+  `.End`, and `.Error`.
 
 The shared report shape and URL redaction rules are described on the
 [Atlas compatibility overview](../overview/#format-reports-and-redaction).

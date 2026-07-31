@@ -110,6 +110,20 @@ const bannedFiller = ['simply', 'easily', 'just'];
 // docs/STYLE_GUIDE.md section 7 fixes the admonition set.
 const allowedAdmonitions = new Set(['note', 'tip', 'caution', 'danger']);
 
+// docs/STYLE_GUIDE.md section 8: "a cell longer than about two rendered lines
+// means the row needs a section with a heading instead."
+//
+// This ceiling is deliberately well above two lines. It is not the style rule;
+// it is the point past which a cell has stopped being a cell. Documentation
+// once carried comparison cells of 500 to 3,000 characters, which rendered as
+// table rows over a hundred lines tall with a two-word neighbor cell floating
+// in the whitespace. Judging "dense but fine" against "should have been a
+// section" needs a reader; catching an essay in a grid does not.
+//
+// check-responsive.mjs enforces the sharper limit on rendered height, which is
+// what a narrow column actually does to a long cell.
+const maxTableCellChars = 350;
+
 function toPosix(value) {
   return value.split(sep).join('/');
 }
@@ -214,6 +228,41 @@ function splitSource(source) {
   return { prose, code, fenceErrors };
 }
 
+// splitCells splits a markdown table row on unescaped pipes. A cell may legally
+// contain `\|`, which is one character of content, not a column boundary.
+function splitCells(row) {
+  const cells = row.trim().split(/(?<!\\)\|/);
+  if (cells[0].trim() === '') cells.shift();
+  if (cells.length && cells[cells.length - 1].trim() === '') cells.pop();
+  return cells.map((cell) => cell.trim().replace(/\\\|/g, '|'));
+}
+
+const isDelimiterRow = (cells) => cells.every((cell) => cell === '' || /^[-: ]+$/.test(cell));
+
+// tableViolations reports cells that have outgrown the table they sit in. Link
+// URLs are excluded from the measurement: an evidence link is one glance for a
+// reader however long its href is.
+function tableViolations(prose) {
+  const findings = [];
+  for (const [index, line] of prose.entries()) {
+    if (!line.trimStart().startsWith('|')) continue;
+    const cells = splitCells(line);
+    if (isDelimiterRow(cells)) continue;
+    for (const cell of cells) {
+      const text = cell.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+      if (text.length > maxTableCellChars) {
+        findings.push({
+          line: index + 1,
+          message:
+            `table cell is ${text.length} characters, over the ${maxTableCellChars} limit; ` +
+            'give the row its own section with a heading (docs/STYLE_GUIDE.md section 8)',
+        });
+      }
+    }
+  }
+  return findings;
+}
+
 // analyze is the single implementation of every rule. checkFile and the
 // self-test both call it, so a rule that stops firing here fails the self-test
 // instead of quietly passing every file forever.
@@ -262,6 +311,7 @@ export function analyze(source) {
     }
   }
 
+  findings.push(...tableViolations(prose));
   findings.push(...fenceErrors);
   return findings.sort((a, b) => a.line - b.line);
 }
@@ -299,6 +349,10 @@ function selftest() {
     '~~~',
     'tilde fence, also unlabeled',
     '~~~',
+    '',
+    '| Area | Detail |',
+    '| --- | --- |',
+    `| Essay in a grid | ${'word '.repeat(80).trim()} |`,
   ].join('\n');
 
   const expected = [
@@ -308,6 +362,7 @@ function selftest() {
     { line: 10, needle: 'testify' },
     { line: 13, needle: 'no language label' },
     { line: 17, needle: 'no language label' },
+    { line: 23, needle: 'over the 350 limit' },
   ];
 
   const findings = analyze(violating);
@@ -341,6 +396,13 @@ function selftest() {
     // was a live false positive during review, so each stays asserted here.
     'An optimistic specialist and a finalist otherwise exercise a raise, and',
     'a concise promise likewise comprises expertise in an enterprise.',
+    '',
+    // A table whose cells are short, one of which contains an escaped pipe and
+    // a long link. Neither may be miscounted as an oversized cell.
+    '| Command | Meaning |',
+    '| --- | --- |',
+    '| `migrate rebase {name \\| version}` | Re-timestamp one migration. |',
+    `| Evidence | See [the report](https://example.com/${'p'.repeat(400)}). |`,
   ].join('\n');
 
   for (const finding of analyze(clean)) {

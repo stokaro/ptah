@@ -156,11 +156,20 @@ once on its concept page and link; do not re-define them per page.
 ## 8. Tables and lists
 
 - Tables are for comparison and lookup. A cell longer than about two rendered
-  lines means the row needs a section with a heading instead.
+  lines means the row needs a section with a heading instead. When a matrix
+  needs that much prose per row, keep the table as an index of short cells that
+  link to a section per row, and let the sections carry the detail.
 - Wide matrices split by axis (per command group, per dialect) rather than
   scrolling horizontally.
 - No table over five columns without an explicit review at mobile width.
 - Lists over about seven items get subheadings or a table.
+- A column whose cells are lists of code tokens squeezes its neighbors narrow.
+  Two or three such columns usually want to be a bold-led list instead.
+
+Two limits are enforced: a cell over 350 characters fails `check:style`, and a
+cell rendering over 8 lines at 1280px fails `check:responsive`. Both are well
+above the two-line guidance above. They mark where a cell has stopped being a
+cell, not where it stops being good.
 
 ## 9. Links and sources of truth
 
@@ -254,7 +263,10 @@ in this guide is a review responsibility.
 | Moved URLs keep a redirect | 9 | `check:redirects` |
 | Site pages never link protected root docs | 9 | `check:core-doc-links` |
 | Exit-code tables stay in lockstep | 9 | `check:exit-codes` |
+| Table cells under 350 characters | 8 | `check:style` |
+| In-page and cross-page anchors resolve | 9 | `check:links` |
 | No page scrolls sideways at 390px or 1280px | 10 | `check:responsive` |
+| No table cell renders over 8 lines at 1280px | 8, 10 | `check:responsive` |
 
 `check:style` governs every layer the guide covers — `docs/site`, `docs/*.md`,
 `examples/**`, `integration/*.md`, every package `README.md`, and `AGENTS.md` —
@@ -276,6 +288,18 @@ Two properties keep these checks honest:
 Prose rules never read code, and code rules never read prose. A column may be
 named `cancelled`, and this guide names `testify` in order to ban it; neither is
 a violation.
+
+Two rules guard table density, because one measurement cannot see both
+failures. `check:style` counts characters, which is fast and needs no browser.
+`check:responsive` measures rendered height, which is the only way to catch a
+short cell squeezed into a column that an unbreakable code token has made
+narrow. A page whose dense cells are the reference content can be named in the
+allowlist in `check-responsive.mjs`, with the reason; the check then fails if
+that page stops having dense cells, so an exemption cannot outlive its reason.
+
+Anchor links are checked against the ids Starlight generates, so renaming a
+heading fails the build instead of silently dropping every reader who follows
+a link into it at the top of the page.
 
 `check:responsive` needs a browser. Without one it skips locally with an install
 hint, and fails in CI — a green check that rendered nothing is worse than a red

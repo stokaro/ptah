@@ -257,6 +257,17 @@ practical, live commands:
   content, fix the rule and add the case to that check's `--selftest`, so the
   next agent inherits the decision instead of rediscovering it.
 
+  Two of those rules govern table density, and the fix is almost never to
+  shorten the sentence. A row that needs a paragraph wants the table to become
+  an index of short linked cells with a section per row underneath; see
+  `atlas/comparison` and `atlas/docs-coverage` for the shape. Anchors into
+  those sections are checked, so a later heading rename fails the build
+  instead of stranding readers at the top of a long page.
+
+  Markdown that this site does not render is a recurring trap: definition
+  lists (`: term`) come out as literal text. Build and read the page before
+  trusting a syntax the docs do not already use.
+
 - After the suite passes, `rg` for stale links, retired command spellings, and
   unsupported claims. The checks verify structure, not whether a sentence is
   still true.
