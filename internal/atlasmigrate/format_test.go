@@ -344,14 +344,13 @@ func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
 			got, err := atlasmigrate.ResolveApplySourceForFormat(os.DirFS(dir), dir, format)
 
 			c.Assert(err, qt.IsNil)
-			// The native Atlas format is read as-is; every other format is
-			// rebuilt as up-only Atlas migrations, so the down half of a
-			// golang-migrate pair never survives into what gets executed.
 			names := fsFileNames(c, got)
 			c.Assert(len(names) > 0, qt.IsTrue)
-			if tt.format == "golang-migrate" {
-				c.Assert(names, qt.Not(qt.Contains), "1_init.down.sql")
-			}
+			// Every format is rebuilt as up-only Atlas migrations, so a
+			// golang-migrate down file never survives into what gets executed.
+			// No other fixture writes that name, so the assertion is trivially
+			// true elsewhere and load-bearing for golang-migrate.
+			c.Assert(names, qt.Not(qt.Contains), "1_init.down.sql")
 			for _, name := range names {
 				c.Assert(readFSFile(c, got, name), qt.Not(qt.Equals), "")
 			}
