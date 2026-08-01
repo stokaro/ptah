@@ -38,9 +38,16 @@ Executes every Atlas OSS directory format selected by `migration.format` or a
 `?format=` directory URL query; non-`atlas` formats are converted in memory to
 up-only migrations.
 
+Honors the `-- atlas:checkpoint` file directive: a fresh database applies
+only the latest checkpoint plus post-checkpoint migrations, and a database
+that already applied pre-checkpoint history silently skips the checkpoint,
+matching measured Atlas behavior.
+
 **Fails before the target database is opened:** unknown formats, Flyway
 repeatable (`R__`) migrations, goose/dbmate files missing their up directive,
-and colliding versions.
+colliding versions, and a hashed directory that fails `atlas.sum`
+verification — the checksum-mismatch refusal is byte-identical to
+`ptah-compat migrate validate` and nothing is applied.
 
 **Rejected on this verb, matching Atlas OSS:** `--dir-format`, `--to-version`,
 and `--lock-name`.
@@ -190,9 +197,13 @@ checkpoint pair with `ptah.sum` refreshed.
 | `--dir-format=atlas` | A recorded waiver, rejected loudly. |
 
 Checkpoint output is ptah-format only, so this verb operates on ptah-format
-directories. Ptah marks checkpoints via the ptah file-name convention; Atlas's
-`-- atlas:checkpoint` directive has no reader support, so an Atlas-format
-checkpoint file would replay as an ordinary migration.
+directories: Ptah marks the checkpoints it writes via the ptah file-name
+convention and does not emit Atlas-format checkpoint files yet. The read side
+does honor Atlas's `-- atlas:checkpoint` directive: applying an externally
+produced Atlas checkpoint directory bootstraps a fresh database from the
+latest checkpoint and silently skips the checkpoint on a database that
+already applied the pre-checkpoint history, matching measured Atlas
+behavior.
 
 Atlas keeps `migrate checkpoint` in its Pro build, so this is a free Ptah
 capability rather than an Atlas CE stub.

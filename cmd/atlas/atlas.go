@@ -174,14 +174,14 @@ func newAtlasMigrateCommand() *cobra.Command {
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasargs.NativeString("dev-url", "", "URL of the dev database the directory is replayed into", "shadow-db"),
 				// Checkpoint output is ptah-format only: the checkpoint engine
-				// marks checkpoints with the `.checkpoint.` file-name pair plus
-				// ptah.sum, while Atlas marks them with an `-- atlas:checkpoint`
-				// file directive that Ptah's Atlas-format reader does not parse
-				// (and whose bootstrap semantics the migrator implements only
-				// for the ptah marker). Writing an Atlas-format checkpoint file
-				// would therefore produce a migration the engine replays as an
-				// ordinary migration — silently wrong — so any non-ptah value is
-				// a recorded waiver, rejected loudly (see
+				// marks the checkpoints it WRITES with the `.checkpoint.`
+				// file-name pair plus ptah.sum, while Atlas marks them with an
+				// `-- atlas:checkpoint` file directive. The READ side honors
+				// that directive (#954) — externally produced Atlas checkpoint
+				// directories bootstrap/skip correctly on apply — but the
+				// producing engine does not emit Atlas-format checkpoint files
+				// yet, so any non-ptah value stays a recorded waiver, rejected
+				// loudly (see
 				// docs/site/src/content/docs/reference/atlas-commands.md). No
 				// default is registered: the
 				// directory is read and written with the native ptah default

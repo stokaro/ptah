@@ -333,6 +333,13 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		if opts.verbose {
 			emit.Printf("%s verified: migrations directory is intact\n", result.SumFileName)
 		}
+	} else if err := verifyHashedMigrationIntegrity(migrationsFS, settings.dirFormat); err != nil {
+		// Integrity gate (#955): a hashed directory (ptah.sum or atlas.sum
+		// present) always verifies before anything is applied, so a tampered
+		// migration — including a tampered checkpoint — never executes. An
+		// unhashed directory keeps its ungated behavior; --verify-sum keeps
+		// its stricter contract that a missing sum file is itself an error.
+		return err
 	}
 
 	if opts.verbose {
@@ -519,6 +526,25 @@ func verifyMigrationIntegrity(
 		return nil, fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
 	}
 	return result, nil
+}
+
+// verifyHashedMigrationIntegrity is the always-on apply gate for hashed
+// migration directories: when the filesystem carries the format's integrity
+// file (ptah.sum or atlas.sum), it must verify before anything is applied. An
+// unhashed directory passes without verification. Drift reporting matches
+// `ptah migrations validate` on the same directory.
+func verifyHashedMigrationIntegrity(fsys fs.FS, format migrator.MigrationDirFormat) error {
+	result, hashed, err := migratesum.VerifyHashed(fsys, format)
+	if err != nil {
+		return fmt.Errorf("migration sum verification failed: %w", err)
+	}
+	if !hashed {
+		return nil
+	}
+	if !result.OK() {
+		return fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
+	}
+	return nil
 }
 
 func publishDeploymentReportIfNeeded(

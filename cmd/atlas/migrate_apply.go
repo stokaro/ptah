@@ -10,12 +10,14 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/migratevalidate"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlasmigratereport"
 	"github.com/stokaro/ptah/internal/atlasreport"
+	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -215,6 +217,15 @@ func runAtlasMigrateApply(
 		return fmt.Errorf("atlas migrate apply --dir: close migrations directory: %w", closeErr)
 	}
 
+	// Integrity gate (#955): a hashed directory must verify against atlas.sum
+	// before anything is read for execution, matching official Atlas, which
+	// refuses a tampered directory before applying a single migration. This
+	// runs before the database connection is even opened, so a tampered file
+	// (including a tampered checkpoint) can never execute.
+	if err := verifyAtlasApplyChecksum(cmd, migrationFS); err != nil {
+		return err
+	}
+
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.url)
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
@@ -284,6 +295,28 @@ func runAtlasMigrateApply(
 		return writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
+	return nil
+}
+
+// verifyAtlasApplyChecksum enforces the atlas.sum integrity gate on the
+// captured migration filesystem: a hashed directory that fails verification
+// refuses the whole apply with output byte-identical to `migrate validate`; an
+// unhashed directory (no atlas.sum, including directories converted from
+// other tool formats) is not gated, preserving prior behavior.
+func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS) error {
+	result, hashed, err := migratesum.VerifyHashed(fsys, migrator.MigrationDirFormatAtlas)
+	switch {
+	case errors.Is(err, migratesum.ErrSumFileMalformed):
+		// A malformed atlas.sum has no entry-level mismatch to point at; the
+		// validate surface reports it as a plain checksum mismatch.
+		return migratevalidate.FailAtlasChecksumMismatch(cmd, nil)
+	case err != nil:
+		return err
+	case !hashed:
+		return nil
+	case !result.OK():
+		return migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())
+	}
 	return nil
 }
 
