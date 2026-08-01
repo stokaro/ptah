@@ -13,6 +13,15 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
+// These tests build the ptah-compat binary at run time and exercise it as a
+// subprocess, which is the only way to assert real process exit codes.
+//
+// Caution when iterating on behavior these tests pin: the Go test cache keys on
+// this package's own inputs, so an edit under cmd/atlas does not invalidate a
+// cached PASS here even though it changes the binary being built. Run
+// `go test ./cmd/ptah-compat/... -count=1` after touching the command tree, or
+// a mutation you expect to fail will silently report a stale PASS.
+
 func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
@@ -180,6 +189,32 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(stdout.String(), qt.Equals, "You have a checksum error in your migration directory.\n"+
 			"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
 		c.Assert(stderr.String(), qt.Equals, "Error: checksum file not found\n")
+	})
+
+	c.Run("missing checksum file refuses apply", func(c *qt.C) {
+		// Measured Atlas CE v1.2.0 on a directory with no atlas.sum
+		// (stokaro/ptah#970): exit 1, the same output as validate above, and
+		// the target database is never created.
+		dir := atlasDirWithoutSum(c)
+		dbPath := filepath.Join(c.TempDir(), "unhashed.db")
+		run := newCompatProcess(binPath,
+			"migrate", "apply",
+			"--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir,
+		)
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "You have a checksum error in your migration directory.\n"+
+			"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+		c.Assert(stderr.String(), qt.Equals, "Error: checksum file not found\n")
+		_, statErr := os.Stat(dbPath)
+		c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 	})
 
 	c.Run("migrate set operation error", func(c *qt.C) {

@@ -46,7 +46,7 @@ func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
 			writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
 			writeFormatFile(c, dir, "1_init.down.sql", "DROP TABLE atlas_unchanged;\n")
 
-			gotFS, err := atlasmigrate.ResolveApplySource(
+			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
 				dir,
 				tt.configured,
@@ -132,7 +132,7 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 			dir := c.TempDir()
 			writeFormatFile(c, dir, tt.file, tt.source)
 
-			gotFS, err := atlasmigrate.ResolveApplySource(
+			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
 				dir,
 				tt.configured,
@@ -207,7 +207,7 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
 			dir := c.TempDir()
-			gotFS, err := atlasmigrate.ResolveApplySource(
+			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
 				dir,
 				tt.configured,
@@ -228,7 +228,7 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		writeFormatFile(c, dir, "V1__init.sql", "CREATE TABLE flyway_versioned (id int);\n")
 		writeFormatFile(c, dir, "R__views.sql", "CREATE VIEW v AS SELECT 1;\n")
 
-		gotFS, err := atlasmigrate.ResolveApplySource(os.DirFS(dir), dir, "flyway", nil)
+		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "flyway", nil)
 
 		c.Assert(err, qt.ErrorMatches, `Flyway repeatable migration R__views\.sql cannot be imported yet because Ptah does not execute Atlas R-suffixed migrations`)
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
@@ -236,7 +236,7 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 
 	c.Run("empty external directory", func(c *qt.C) {
 		dir := c.TempDir()
-		gotFS, err := atlasmigrate.ResolveApplySource(os.DirFS(dir), dir, "goose", nil)
+		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "goose", nil)
 
 		c.Assert(err, qt.ErrorMatches, `no importable migration files found in .* for format "goose"`)
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
@@ -247,7 +247,7 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		writeFormatFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE users (id int);\n")
 		writeFormatFile(c, dir, "2_seed.go", "package migrations\n")
 
-		gotFS, err := atlasmigrate.ResolveApplySource(os.DirFS(dir), dir, "goose", nil)
+		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "goose", nil)
 
 		c.Assert(err, qt.ErrorMatches, `Go-based Goose migration "2_seed\.go" is not supported \(SQL migrations only\)`)
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
@@ -258,11 +258,141 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		writeFormatFile(c, dir, "1_init.sql", "--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")
 		writeFormatFile(c, dir, "changelog.xml", "<databaseChangeLog></databaseChangeLog>\n")
 
-		gotFS, err := atlasmigrate.ResolveApplySource(os.DirFS(dir), dir, "liquibase", nil)
+		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "liquibase", nil)
 
 		c.Assert(err, qt.ErrorMatches, `liquibase XML/YAML/JSON changelogs are not yet supported .* found changelog\.xml`)
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
+}
+
+// applyDirFormatCases are the (configured, query) combinations the apply path
+// resolves, with the format each selects.
+func applyDirFormatCases() []struct {
+	name       string
+	configured string
+	query      url.Values
+	format     string
+} {
+	return []struct {
+		name       string
+		configured string
+		query      url.Values
+		format     string
+	}{
+		{name: "default", format: "atlas"},
+		{name: "configured Atlas", configured: "atlas", format: "atlas"},
+		{name: "empty URL format selects Atlas", configured: "goose", query: url.Values{"format": []string{""}}, format: "atlas"},
+		{name: "URL query overrides configured to Atlas", configured: "goose", query: url.Values{"format": []string{"atlas"}}, format: "atlas"},
+		{name: "configured goose", configured: "goose", format: "goose"},
+		{name: "configured flyway", configured: "flyway", format: "flyway"},
+		{name: "configured liquibase", configured: "liquibase", format: "liquibase"},
+		{name: "configured dbmate", configured: "dbmate", format: "dbmate"},
+		{name: "configured golang-migrate", configured: "golang-migrate", format: "golang-migrate"},
+		{name: "URL query overrides Atlas to goose", query: url.Values{"format": []string{"goose"}}, format: "goose"},
+	}
+}
+
+// TestResolveApplyDirFormat covers the single format resolution the apply path
+// makes (stokaro/ptah#970): the executed filesystem and the integrity gate both
+// consume this one value.
+func TestResolveApplyDirFormat(t *testing.T) {
+	c := qt.New(t)
+
+	for _, tt := range applyDirFormatCases() {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := atlasmigrate.ResolveApplyDirFormat(tt.configured, tt.query)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(got), qt.Equals, tt.format)
+			// The gate keys on this same value: only the native Atlas format
+			// reads a directory that can carry atlas.sum.
+			c.Assert(atlasmigrate.ReadsNativeAtlasDir(got), qt.Equals, tt.format == "atlas")
+		})
+	}
+
+	c.Run("unknown format reports the resolve error", func(c *qt.C) {
+		got, err := atlasmigrate.ResolveApplyDirFormat("sqitch", nil)
+
+		c.Assert(err, qt.ErrorMatches, `unknown Atlas migration directory format "sqitch".*`)
+		c.Assert(string(got), qt.Equals, "")
+	})
+}
+
+// TestResolveApplySourceForFormatReadsEachFormat pins what each resolved format
+// makes the apply migrator read.
+//
+// It does NOT prove the apply command wires one resolution into both the loader
+// and the integrity gate — a duplicated-but-agreeing computation is invisible
+// to any test, because the resolver is pure and both calls would take the same
+// inputs. Two other things carry that: verifyAtlasApplyChecksum takes an
+// already-resolved format rather than the raw --dir string and query, so it
+// cannot re-resolve without a visible signature change; and
+// TestCompatMigrateApply_ConvertedDirStaysUngated_KnownDivergence goes red if
+// the gate ever stops seeing the ?format= override (it would then verify
+// atlas.sum against a converted filesystem that has none and refuse).
+func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
+	c := qt.New(t)
+
+	for _, tt := range applyDirFormatCases() {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := c.TempDir()
+			writeSeamFixture(c, dir, tt.format)
+
+			format, err := atlasmigrate.ResolveApplyDirFormat(tt.configured, tt.query)
+			c.Assert(err, qt.IsNil)
+
+			got, err := atlasmigrate.ResolveApplySourceForFormat(os.DirFS(dir), dir, format)
+
+			c.Assert(err, qt.IsNil)
+			names := fsFileNames(c, got)
+			c.Assert(len(names) > 0, qt.IsTrue)
+			// Every format is rebuilt as up-only Atlas migrations, so a
+			// golang-migrate down file never survives into what gets executed.
+			// No other fixture writes that name, so the assertion is trivially
+			// true elsewhere and load-bearing for golang-migrate.
+			c.Assert(names, qt.Not(qt.Contains), "1_init.down.sql")
+			for _, name := range names {
+				c.Assert(readFSFile(c, got, name), qt.Not(qt.Equals), "")
+			}
+		})
+	}
+}
+
+// resolveApplySource performs the two-step resolution the apply command
+// performs: resolve the directory format once, then load the source for that
+// format. Tests go through it so they exercise the production wiring rather
+// than a convenience wrapper that production does not use.
+func resolveApplySource(
+	source fs.FS,
+	display string,
+	configured string,
+	query url.Values,
+) (fsnapshot.Snapshot, error) {
+	format, err := atlasmigrate.ResolveApplyDirFormat(configured, query)
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	return atlasmigrate.ResolveApplySourceForFormat(source, display, format)
+}
+
+// writeSeamFixture writes the minimal directory the named format can read.
+func writeSeamFixture(c *qt.C, dir, format string) {
+	c.Helper()
+	switch format {
+	case "goose":
+		writeFormatFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE seam (id int);\n")
+	case "dbmate":
+		writeFormatFile(c, dir, "1_init.sql", "-- migrate:up\nCREATE TABLE seam (id int);\n")
+	case "liquibase":
+		writeFormatFile(c, dir, "1_init.sql", "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE seam (id int);\n")
+	case "flyway":
+		writeFormatFile(c, dir, "V1__init.sql", "CREATE TABLE seam (id int);\n")
+	case "golang-migrate":
+		writeFormatFile(c, dir, "1_init.up.sql", "CREATE TABLE seam (id int);\n")
+		writeFormatFile(c, dir, "1_init.down.sql", "DROP TABLE seam;\n")
+	default:
+		writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE seam (id int);\n")
+	}
 }
 
 func writeFormatFile(c *qt.C, dir, name, content string) {

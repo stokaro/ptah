@@ -52,7 +52,7 @@ func TestPrepareApplyExecute_AppliesConvertedExternalFormatFS(t *testing.T) {
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyMigrationFile(c, migrationsDir, "1_widgets.sql",
 		"-- +goose Up\nCREATE TABLE goose_up (id INTEGER PRIMARY KEY);\n-- +goose Down\nCREATE TABLE goose_down (id INTEGER PRIMARY KEY);\n")
-	migrationFS, err := atlasmigrate.ResolveApplySource(
+	migrationFS, err := resolveApplySource(
 		os.DirFS(migrationsDir),
 		migrationsDir,
 		"goose",

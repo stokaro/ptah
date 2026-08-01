@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
+	"github.com/stokaro/ptah/internal/atlasmigrateimport"
 	"github.com/stokaro/ptah/internal/atlasmigratereport"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/migratesum"
@@ -195,16 +196,23 @@ func runAtlasMigrateApply(
 		return err
 	}
 
+	// Resolve the directory format once: the filesystem that gets executed and
+	// the format the integrity gate reasons about must be the same decision,
+	// not two computations that happen to agree (#970).
+	resolvedDirFormat, err := atlasmigrate.ResolveApplyDirFormat(opts.dirFormat, localDir.Query)
+	if err != nil {
+		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+
 	source, err := project.openLocal(localDir)
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	dir := source.Display()
-	migrationFS, err := atlasmigrate.ResolveApplySource(
+	migrationFS, err := atlasmigrate.ResolveApplySourceForFormat(
 		source.FS(),
 		dir,
-		opts.dirFormat,
-		localDir.Query,
+		resolvedDirFormat,
 	)
 	closeErr := source.Close()
 	if err != nil {
@@ -217,12 +225,14 @@ func runAtlasMigrateApply(
 		return fmt.Errorf("atlas migrate apply --dir: close migrations directory: %w", closeErr)
 	}
 
-	// Integrity gate (#955): a hashed directory must verify against atlas.sum
-	// before anything is read for execution, matching official Atlas, which
-	// refuses a tampered directory before applying a single migration. This
-	// runs before the database connection is even opened, so a tampered file
-	// (including a tampered checkpoint) can never execute.
-	if err := verifyAtlasApplyChecksum(cmd, migrationFS); err != nil {
+	// Integrity gate (#955, #970): a native Atlas directory must carry an
+	// atlas.sum and verify against it before anything is read for execution,
+	// matching official Atlas, which refuses both a tampered and an unhashed
+	// directory before applying a single migration. This runs before the
+	// database connection is even opened, so neither a tampered file
+	// (including a tampered checkpoint) nor an unhashed directory can execute
+	// or create the target database.
+	if err := verifyAtlasApplyChecksum(cmd, migrationFS, resolvedDirFormat); err != nil {
 		return err
 	}
 
@@ -299,11 +309,18 @@ func runAtlasMigrateApply(
 }
 
 // verifyAtlasApplyChecksum enforces the atlas.sum integrity gate on the
-// captured migration filesystem: a hashed directory that fails verification
-// refuses the whole apply with output byte-identical to `migrate validate`; an
-// unhashed directory (no atlas.sum, including directories converted from
-// other tool formats) is not gated, preserving prior behavior.
-func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS) error {
+// captured migration filesystem of a native Atlas directory: a missing
+// atlas.sum and a failed verification both refuse the whole apply, with output
+// byte-identical to `migrate validate` on the same directory.
+//
+// A directory read through ?format= is converted in memory and carries no
+// Atlas integrity file, so it is not gated here. That is a known divergence
+// from Atlas CE, which does gate converted directories; see
+// verifyAtlasApplyChecksum's callers' tests and stokaro/ptah#973.
+func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, format atlasmigrateimport.Format) error {
+	if !atlasmigrate.ReadsNativeAtlasDir(format) {
+		return nil
+	}
 	result, hashed, err := migratesum.VerifyHashed(fsys, migrator.MigrationDirFormatAtlas)
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMalformed):
@@ -313,11 +330,50 @@ func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS) error {
 	case err != nil:
 		return err
 	case !hashed:
-		return nil
+		return failUnhashedAtlasApplyDir(cmd, fsys)
 	case !result.OK():
 		return migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())
 	}
 	return nil
+}
+
+// failUnhashedAtlasApplyDir refuses a directory that carries no atlas.sum,
+// unless it holds no SQL file anywhere in its tree.
+//
+// The exemption exists because a directory with nothing to execute is not a
+// checksum error: Atlas CE v1.2.0 reports "No migration files to execute" and
+// exits 0 on an empty directory and on one holding only non-SQL files, so a CI
+// bootstrap that creates an empty migrations directory keeps working (#970).
+// The gate fires on the presence of a SQL file, not on parseable versioned
+// migrations — CE refuses an unhashed directory holding only `foo.sql`, and so
+// does this.
+//
+// The scan is recursive even though CE's is not. CE ignores subdirectories
+// entirely, so a migration one level down is nothing-to-execute for CE but is
+// executed by Ptah's registrar, which recurses. Keying the exemption on CE's
+// shallower view would let exactly the unhashed migrations this gate exists to
+// stop run unverified. The result is exit 1 where CE exits 0 for that layout —
+// the safe side of a pre-existing divergence in what the two tools consider a
+// migration (#976).
+func failUnhashedAtlasApplyDir(cmd *cobra.Command, fsys fs.FS) error {
+	var foundSQL bool
+	err := fs.WalkDir(fsys, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".sql") {
+			return nil
+		}
+		foundSQL = true
+		return fs.SkipAll
+	})
+	if err != nil {
+		return fmt.Errorf("scan migration directory for SQL files: %w", err)
+	}
+	if !foundSQL {
+		return nil
+	}
+	return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
 }
 
 func needsAtlasMigrateApplyConfig(cmd *cobra.Command) bool {

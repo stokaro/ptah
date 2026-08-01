@@ -12,31 +12,29 @@ import (
 	"github.com/stokaro/ptah/internal/migrationsnapshot"
 )
 
-// ResolveApplySource validates the requested migration directory format and
-// returns the immutable filesystem the Atlas apply migrator should read. The
-// native Atlas format preserves atlas.sum and down migrations. Every other
-// supported Atlas OSS format (golang-migrate, goose, flyway, liquibase, dbmate)
-// is converted in memory to Atlas single-file, up-only migrations, so applying
-// it executes only the source tool's up SQL and never its down or rollback
+// ResolveApplySourceForFormat returns the immutable filesystem the Atlas apply
+// migrator should read for an already-resolved directory format. The native
+// Atlas format preserves atlas.sum and down migrations. Every other supported
+// Atlas OSS format (golang-migrate, goose, flyway, liquibase, dbmate) is
+// converted in memory to Atlas single-file, up-only migrations, so applying it
+// executes only the source tool's up SQL and never its down or rollback
 // section.
 //
-// Unknown formats, unsupported URL query parameters, and formats Ptah cannot
-// execute yet (such as Flyway repeatable migrations) return an error.
-// ResolveApplySource never opens a pathname or database connection, so callers
-// can capture a rooted source and reject a bad format or malformed layout
-// before mutating the target database. The URL ?format= query value, when
-// present, overrides the configured project format; an empty query value
-// selects the native Atlas format.
-func ResolveApplySource(
+// Formats Ptah cannot execute yet (such as Flyway repeatable migrations) and
+// malformed layouts return an error. This never opens a pathname or database
+// connection, so callers can capture a rooted source and reject a bad layout
+// before mutating the target database.
+//
+// Callers resolve the format once with [ResolveApplyDirFormat] and pass the
+// same value to everything that branches on it — the apply-time checksum gate
+// keys on whether the directory is native Atlas — so the filesystem that gets
+// executed and the format the gate reasons about are one decision rather than
+// two computations that happen to agree (#970).
+func ResolveApplySourceForFormat(
 	source fs.FS,
 	display string,
-	configured string,
-	query url.Values,
+	format atlasmigrateimport.Format,
 ) (fsnapshot.Snapshot, error) {
-	format, err := resolveApplyDirFormat(configured, query)
-	if err != nil {
-		return fsnapshot.Snapshot{}, err
-	}
 	if source == nil {
 		return fsnapshot.Snapshot{}, fmt.Errorf("migration directory filesystem is required")
 	}
@@ -58,7 +56,18 @@ func ResolveApplySource(
 	return converted, nil
 }
 
-func resolveApplyDirFormat(configured string, query url.Values) (atlasmigrateimport.Format, error) {
+// ReadsNativeAtlasDir reports whether format selects a native Atlas directory
+// rather than an external-tool directory converted in memory. Only a native
+// Atlas directory is read as-is, keeping whatever atlas.sum it carries; every
+// other format is rebuilt as up-only Atlas migrations with no integrity file.
+func ReadsNativeAtlasDir(format atlasmigrateimport.Format) bool {
+	return format == atlasmigrateimport.FormatAtlas
+}
+
+// ResolveApplyDirFormat resolves the migration directory format an apply reads:
+// the ?format= URL query value when present (an empty value selects the native
+// Atlas format), otherwise the configured project format.
+func ResolveApplyDirFormat(configured string, query url.Values) (atlasmigrateimport.Format, error) {
 	queryFormat, found, err := applyDirURLFormat(query)
 	if err != nil {
 		return "", err
