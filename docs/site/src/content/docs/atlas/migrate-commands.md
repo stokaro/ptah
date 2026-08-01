@@ -124,6 +124,11 @@ Expected output ends with:
 Database is now at version: 0
 ```
 
+Ptah validates every selected down body before rollback starts. If one is
+missing, the command leaves both the schema and Atlas revision rows unchanged.
+Dry runs use the same dirty-state, checksum, checkpoint, and down-body
+validation path as real rollbacks, while suppressing schema and revision writes.
+
 Add `--dev-url` to reset a disposable dev database, replay the migration
 directory to the target's current version, and verify the rollback there before
 the target is touched:
@@ -169,6 +174,9 @@ mirrors Atlas's public apply-template fields: `Pending`, `Applied`, `Current`,
 `Target`, `Start`, `End`, `Driver`, `URL`, and `Dir`; `{{ json . }}` emits the
 same result as JSON with database credentials redacted. With `--env`, Ptah can
 read `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`.
+Dry-run plans read the stored Atlas revision rows and include only migrations
+that a real apply would select. They also run the same dirty-state, checksum,
+execution-order, and transaction-mode validations as a real apply.
 
 The apply path executes every Atlas OSS migration directory format selected by
 `migration.format` or the directory URL `?format=` parameter: `atlas`,
