@@ -8,7 +8,6 @@ package migrator
 // guard; only the SQL text distinguishes them.
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -68,7 +67,7 @@ func TestAtlasUnfilteredRevisionSQL_CarriesNullGuard(t *testing.T) {
 
 			c.Assert(tt.sql, qt.Contains, atlasMetadataNullGuard,
 				qt.Commentf("%s selects over every revision row and must NULL-guard the cast", tt.name))
-			c.Assert(strings.Contains(tt.sql, atlasMetadataRowPredicate), qt.IsFalse,
+			c.Assert(tt.sql, qt.Not(qt.Contains), atlasMetadataRowPredicate,
 				qt.Commentf("%s has no WHERE filter, which is why the cast guard is load-bearing", tt.name))
 		})
 	}
@@ -117,9 +116,9 @@ func TestPtahRevisionSQL_HasNoMetadataFilter(t *testing.T) {
 		"count revisions":    m.countRevisionsSQL(),
 		"applied revisions":  m.getAppliedRevisionsSQL(),
 	} {
-		c.Assert(strings.Contains(sql, atlasMetadataRowPredicate), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), atlasMetadataRowPredicate,
 			qt.Commentf("%s (ptah layout) must not carry the Atlas metadata filter", name))
-		c.Assert(strings.Contains(sql, atlasMetadataNullGuard), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), atlasMetadataNullGuard,
 			qt.Commentf("%s (ptah layout) must not carry the Atlas cast guard", name))
 	}
 }

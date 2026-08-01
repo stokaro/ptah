@@ -437,6 +437,15 @@ func (m *Migrator) atlasVersionNumberExpression() string {
 	return atlasVersionNumberExpressionFor(m.connectionDialect())
 }
 
+// atlasVersionNumberExpressionFor matches the raw dialect string rather than
+// routing through platform.NormalizeDialect. That is safe because
+// dbschema.ConnectToDatabase normalizes the dialect before the connection
+// exists and rejects anything NormalizeDialect does not recognize, so
+// conn.Info().Dialect is always one of the platform constants — and
+// platform.MySQL and platform.MariaDB are exactly the two strings matched here.
+// A non-canonical spelling therefore cannot reach this switch and silently take
+// the BIGINT branch. A zero-value Migrator (dialect "") takes the default
+// branch by design, which is what the generated-SQL guard tests rely on.
 func atlasVersionNumberExpressionFor(dialect string) string {
 	switch dialect {
 	case "mysql", "mariadb":

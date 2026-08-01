@@ -266,6 +266,35 @@ func TestMigrateUp_TxtarRetryAfterFixingDataSucceeds(t *testing.T) {
 	c.Assert(status.DirtyRevision, qt.IsNil)
 }
 
+// TestMigrateUp_TxtarFailingCheckUnderGlobalTxModeNone pins the check gate on
+// the GLOBAL `--tx-mode none` entry point. That path reaches the body through
+// applyUpMigrationForcedNoTransactionAt, while a per-file
+// `-- +ptah no_transaction` directive routes through applyUpMigrationObserved:
+// two distinct gates, so a test for one stays green when the other is deleted.
+func TestMigrateUp_TxtarFailingCheckUnderGlobalTxModeNone(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newSQLiteTxtarWedgeMigrator(t)
+	m = m.WithTransactionMode(migrator.MigrationTxModeNone)
+
+	// Apply migration 1 alone first, so there is a pre-failure revision state
+	// to compare against.
+	c.Assert(m.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{TargetVersion: 1}), qt.IsNil)
+	before := atlasRevisionTuples(t, conn)
+	c.Assert(before, qt.HasLen, 1)
+
+	err := m.MigrateUp(ctx)
+
+	c.Assert(err, qt.IsNotNil)
+	var checkErr *migrator.CheckFailedError
+	c.Assert(err, qt.ErrorAs, &checkErr, qt.Commentf("want CheckFailedError, got %v", err))
+	c.Assert(checkErr.Name, qt.Equals, "checks.sql#1")
+	c.Assert(checkErr.Version, qt.Equals, int64(2))
+	// The body never ran and the revision table is untouched.
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsFalse)
+	c.Assert(atlasRevisionTuples(t, conn), qt.DeepEquals, before)
+}
+
 // TestMigrateUp_FailingCheckOnNoTransactionPathWritesNoRevisionRow pins the same
 // no-bookkeeping contract on the non-transactional apply path.
 func TestMigrateUp_FailingCheckOnNoTransactionPathWritesNoRevisionRow(t *testing.T) {

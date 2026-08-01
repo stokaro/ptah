@@ -37,6 +37,20 @@ CREATE TABLE child (id INTEGER PRIMARY KEY);
 DROP TABLE child;
 `
 
+// failingNoTransactionDownTxtar opts the down body out of the migration
+// transaction, so a mid-body failure leaves the completed statements applied.
+const failingNoTransactionDownTxtar = `-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE child1 (id INTEGER PRIMARY KEY);
+CREATE TABLE child2 (id INTEGER PRIMARY KEY);
+
+-- down.sql --
+-- atlas:txmode none
+DROP TABLE child2;
+THIS IS A FAILING STATEMENT;
+`
+
 func newAtlasDownMigrator(t *testing.T, secondMigration string) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	t.Helper()
 	ctx := context.Background()
@@ -102,6 +116,44 @@ func TestMigrateDown_AtlasFormatFailedDownLeavesRevisionsByteIdentical(t *testin
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.CurrentVersion, qt.Equals, int64(2))
 	c.Assert(status.DirtyRevision, qt.IsNil)
+}
+
+// TestMigrateDown_AtlasFormatFailedNoTransactionDownLeavesPartialSchema covers
+// the non-transactional down path, where "the body is rolled back" does not
+// hold: `-- atlas:txmode none` runs the down outside a transaction, so the
+// statements that completed stay applied. The Atlas-shaped surface still
+// records nothing, which means a half-reverted schema is left behind a revision
+// row that reads as fully applied, with no dirty state and no repair hook. That
+// is Atlas's own behavior, and it is the reason the native surface keeps
+// recording (#957).
+func TestMigrateDown_AtlasFormatFailedNoTransactionDownLeavesPartialSchema(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newAtlasDownMigrator(t, failingNoTransactionDownTxtar)
+	before := atlasRevisionTuples(t, conn)
+	c.Assert(before, qt.HasLen, 2)
+
+	err := m.MigrateDownTo(ctx, 1)
+
+	c.Assert(err, qt.IsNotNil)
+	// The first down statement completed and was not rolled back.
+	c.Assert(sqliteTableExists(t, conn, "child2"), qt.IsFalse)
+	c.Assert(sqliteTableExists(t, conn, "child1"), qt.IsTrue)
+	// The revision row still claims the migration is fully applied.
+	c.Assert(atlasRevisionTuples(t, conn), qt.DeepEquals, before)
+	status, err := m.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(2))
+	c.Assert(status.DirtyRevision, qt.IsNil)
+}
+
+func sqliteTableExists(t *testing.T, conn *dbschema.DatabaseConnection, table string) bool {
+	t.Helper()
+	var count int
+	err := conn.QueryRow(
+		"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count == 1
 }
 
 // TestMigrateDown_AtlasFormatSuccessfulDownDeletesRow is the other direction:

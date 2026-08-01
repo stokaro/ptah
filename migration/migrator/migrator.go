@@ -1923,10 +1923,13 @@ func (m *Migrator) failMigrationWithDirtyState(
 // Native `ptah` deliberately keeps Ptah's richer bookkeeping. Recording a
 // failed down as dirty state is an advantage, not a divergence to apologize
 // for: it is what makes a half-finished rollback visible in `migrations
-// status`, and what `migrations repair` and resume act on. Atlas's row, by
-// contrast, still looks applied after a rollback that did not finish. A native
-// run that opts into `--revision-format atlas` is asking for the Atlas table's
-// semantics, so it follows the Atlas side of this split (#957).
+// status`, what blocks a later `migrations up` from stacking work on it, and
+// what `migrations repair --version` clears once the operator has fixed the
+// database. (Not `--resume-from`: resumeMigration replays migration.UpSQL, so
+// it is an up-direction tool regardless of which direction failed.) Atlas's
+// row, by contrast, still looks applied after a rollback that did not finish.
+// A native run that opts into `--revision-format atlas` is asking for the
+// Atlas table's semantics, so it follows the Atlas side of this split (#957).
 func (m *Migrator) reproducesAtlasDownBookkeeping() bool {
 	return m.revisionTableFormat.isAtlas()
 }

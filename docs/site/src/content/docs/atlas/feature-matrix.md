@@ -165,7 +165,7 @@ as open capabilities regardless.
 | Dynamic down planning (`migrate down --plan`) | ❌ | ❌ | ✅ | `--plan`, `--to-tag` and `--skip-checks` are recorded waivers that fail loudly; Ptah reverts only through pre-planned down files. |
 | Execution order (`--exec-order`) | ✅ | ✅ | ✅ | linear fails on a pending migration below the current version, linear-skip warns and leaves it pending, non-linear applies it. |
 | External `--dir-format` outside `migrate import` | ❌ | ✅ | ✅ | hash, lint, new, set, status and validate accept only `--dir-format`=atlas; other tool formats must first go through migrate import. |
-| Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Native `ptah migrations down` writes applied=0 plus the error, so status reports it dirty and `migrations repair` can act on it; compat matches Atlas, which records nothing. |
+| Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Native `ptah migrations down` marks the row failed with the error and completed-statement count, so status reports it dirty and `migrations repair` clears it; compat matches Atlas, which records none. |
 | Flyway repeatable (`R__`) migration import | 🟡 | ✅ | ✅ | Compat import aborts the entire directory on any R__ file; native import rewrites R__ as a one-time migration, losing re-run-on-change. |
 | Generate migrations from a schema diff | 🟡 | ✅ | ✅ | New versions are a Unix epoch in an empty dir and latest+1 otherwise, not the UTC YYYYMMDDHHMMSS stamp migrate new and Atlas dirs carry. |
 | migrate apply `--allow-dirty` semantics | 🟡 | ✅ | ✅ | Flag gates a dirty revision row, not a non-empty target: a pre-populated database applies without it, and the recovery re-insert fails with UNIQUE on atlas_schema_revisions (SQLite). |

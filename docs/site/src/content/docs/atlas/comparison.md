@@ -234,9 +234,9 @@ Docker dev databases remain a gap.
 
 ### Failed rollback state
 
-**Ptah.** Native `ptah migrations down` records a rollback that failed partway: the revision row is rewritten to `applied=0` with `error=<message>`, so `ptah migrations status` reports the dirty state and names the version, `ptah migrations repair` (including `--resume-from`) has a row to act on, and a later `ptah migrations up` refuses to stack work on the unfinished rollback.
+**Ptah.** Native `ptah migrations down` records a rollback that failed partway: the revision row is marked failed with `error=<message>` and `applied` set to the number of down statements that completed (`0` when the first one fails or the dialect rolled the body back), so `ptah migrations status` reports the dirty state and names the version, `ptah migrations repair --version <version>` has a row to act on, and a later `ptah migrations up` refuses to stack work on the unfinished rollback. (`repair --resume-from` is an up-direction tool and is not the recovery path for a failed down.)
 
-`ptah-compat migrate down` reproduces Atlas's bookkeeping instead, because a database the compat surface touched has to read the same way to Atlas: the revision row is left byte-identical, the body is rolled back, and both binaries then report the version as applied. The trade is explicit — drop-in fidelity on the Atlas surface, recoverable state on the native one. See [Roll back migrations](../../versioned/rollback/).
+`ptah-compat migrate down` reproduces Atlas's bookkeeping instead, because a database the compat surface touched has to read the same way to Atlas: the revision row is left byte-identical and both binaries then report the version as applied. On the default per-file transaction mode the body is rolled back with the transaction; a down marked `-- atlas:txmode none` leaves the statements that completed applied, so the schema can be half-reverted behind a row that reads as fully applied. The trade is explicit — drop-in fidelity on the Atlas surface, recoverable state on the native one. The split follows the revision table format, so native runs using `--revision-format atlas` follow the Atlas side too. See [Roll back migrations](../../versioned/rollback/).
 
 **Atlas OSS.** The pinned Atlas CE binary registers `migrate down` as a community-abort stub, so the capability is unreachable there.
 
