@@ -1541,11 +1541,13 @@ func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migr
 // pre-migration state, so running them before the pending-revision insert means
 // a failed check leaves the revision table byte-identical: the migration was
 // never started, rather than started and marked dirty. Recording the failure
-// instead would wedge the Atlas-compatible surface, which by design has neither
-// --skip-checks nor --allow-dirty (Atlas has no such flags on `migrate apply`):
-// after fixing the data that tripped the check, every later apply would abort
-// on the dirty row with no in-band way to clear it. Atlas itself writes no row
-// when its checks fail, and the retry simply works (#956).
+// instead would wedge the Atlas-compatible surface: `ptah-compat migrate apply`
+// registers no --skip-checks (Atlas has none either), and while it does
+// register --allow-dirty, that flag currently fails on the re-insert with a
+// UNIQUE violation on the revision table (#966, measured on both surfaces), so
+// after fixing the data that tripped the check every later apply aborted on the
+// dirty row with no working in-band recovery. Atlas itself writes no row when
+// its checks fail, and the retry simply works (#956).
 func (m *Migrator) runPreMigrationChecks(ctx context.Context, migration *Migration) error {
 	if err := m.runMigrationChecks(ctx, m.conn, migration); err != nil {
 		return fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)

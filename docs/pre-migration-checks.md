@@ -70,10 +70,16 @@ bookkeeping row is created, so a blocked migration is recorded as never
 started rather than as dirty: the revision table is left byte-identical, and
 `migrations status` keeps reporting the previous version with the blocked
 migration merely pending. Once the data the check guarded is corrected, the
-next run applies it with no bypass flag and no `migrations repair`. This
-matters most for `ptah-compat migrate apply`, which by design carries neither
-`--skip-checks` nor `--allow-dirty`, and it matches Atlas, which also records
-nothing when its own checks fail.
+next run applies it with no bypass flag and no `migrations repair`. It matches
+Atlas, which also records nothing when its own checks fail.
+
+This matters most on `ptah-compat migrate apply`, which registers no
+`--skip-checks` (neither does Atlas). It does register `--allow-dirty`, but
+that flag cannot currently clear a dirty row: the retry fails on the revision
+re-insert with a `UNIQUE constraint failed` error
+([`stokaro/ptah#966`](https://github.com/stokaro/ptah/issues/966)). A recorded
+check failure would therefore have left no working in-band recovery on that
+surface.
 
 ## Assertion result shape
 
