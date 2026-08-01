@@ -423,6 +423,58 @@ func TestSumFileNamesFlywayBaselineWithSubdirectories(t *testing.T) {
 	})
 }
 
+// TestSumFileNamesEmptyFileSetIsNotAnError pins the seam the apply-time gate
+// will be built on (#973 PR 3).
+//
+// A directory can hold files while covering none of them: golang-migrate with
+// only a down file, Flyway with only undo files, any format with only an
+// uppercase .SQL extension. Atlas CE exits 0 with "No migration files to
+// execute" on all of them and raises no checksum error, so the gate's exemption
+// predicate is "the per-format file set is empty" — which is only expressible
+// if an empty set comes back as an empty slice rather than an error. Every case
+// here is also in the oracle corpus, where CE recorded an atlas.sum holding
+// nothing but the empty-set directory hash.
+func TestSumFileNamesEmptyFileSetIsNotAnError(t *testing.T) {
+	c := qt.New(t)
+
+	// The sum over no files at all: sha256 of the empty input, base64-encoded.
+	const emptySetSum = "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n"
+
+	tests := []struct {
+		corpusCase string
+		format     atlasmigrateimport.Format
+	}{
+		{"golang-migrate/down-only", atlasmigrateimport.FormatGolangMigrate},
+		{"flyway/undo-only", atlasmigrateimport.FormatFlyway},
+		{"flyway/uppercase-extension", atlasmigrateimport.FormatFlyway},
+		{"goose/uppercase-extension", atlasmigrateimport.FormatGoose},
+		{"goose/no-sql", atlasmigrateimport.FormatGoose},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.corpusCase, func(c *qt.C) {
+			fsys := os.DirFS(filepath.Join(
+				"testdata", "ce-sums", filepath.FromSlash(tt.corpusCase),
+			))
+
+			names, err := atlasmigrateimport.SumFileNames(fsys, tt.format)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(names, qt.HasLen, 0)
+
+			// The directory is not empty on disk — only its file set is. Each
+			// corpus case holds its source file plus the recorded atlas.sum.
+			entries, err := fs.ReadDir(fsys, ".")
+			c.Assert(err, qt.IsNil)
+			c.Assert(entries, qt.HasLen, 2)
+
+			sum, err := migratesum.ComputeAtlasFiles(fsys, names)
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(sum.Bytes()), qt.Equals, emptySetSum)
+		})
+	}
+}
+
 func TestSumFileNamesRejectsBadInput(t *testing.T) {
 	c := qt.New(t)
 
