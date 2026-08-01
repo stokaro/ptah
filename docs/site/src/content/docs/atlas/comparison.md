@@ -79,7 +79,7 @@ index; the sections carry the detail.
 | [Migration directory maintenance](#migration-directory-maintenance) | Native, free | Absent | Pro only |
 | [Migration checkpoints](#migration-checkpoints) | Native, free | Absent | Pro only |
 | [Diff and plan policy](#diff-and-plan-policy) | Native `ptah.yaml` `diff` block | Equivalent policy | Not gated |
-| [Pre-migration checks](#pre-migration-checks) | Native, local half | Absent | Pro, account-bound |
+| [Pre-migration checks](#pre-migration-checks) | Both spellings, local half | Absent | Pro, account-bound |
 | [Testing framework](#testing-framework) | Native, free | Absent | Pro only |
 | [Declarative reference data](#declarative-reference-data) | Native, free | Absent | Pro only |
 | [Native migration import](#native-migration-import) | Native | Open | Not gated |
@@ -275,6 +275,8 @@ A fresh database bootstraps from the newest checkpoint and skips the squashed pr
 ### Pre-migration checks
 
 **Ptah.** A `-- +ptah check name=... assert="<sql predicate>" on_fail=abort` directive runs before a migration's statements; a falsy or erroring assertion aborts with a `CheckFailedError` and nothing applied. The check is a separate committed-state read that precedes the migration body (and any transaction); it is rejected under `--tx-mode all`.
+
+Atlas's own artifact is honored too: a `checks.sql` section in an `-- atlas:txtar` migration is enforced through the same engine as a pre-migration gate, rather than executed as plain SQL or discarded. A failed check records no revision row, so the retry after fixing the data needs no bypass flag — which matters on `ptah-compat migrate apply`, where Atlas parity means no `--skip-checks`.
 
 Multiple ordered checks per migration; `ptah migrations up --skip-checks` is an emergency bypass. This is the local, offline half of Atlas's pre-migration checks.
 

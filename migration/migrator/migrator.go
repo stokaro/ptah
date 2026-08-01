@@ -674,33 +674,11 @@ func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 	if m.conn.Writer().IsDryRun() {
-		// Dry-run skips Initialize, so the metadata table may not exist; only
-		// then is version 0 correct. An existing table is read for real so a
-		// dry run reports the database's actual version (#957).
-		exists, err := m.migrationsMetadataTableExists(ctx)
-		if err != nil {
-			return 0, err
-		}
-		if !exists {
-			return 0, nil
-		}
+		return 0, nil
 	}
 
 	// Query the current version
 	return m.scanCurrentVersion(ctx)
-}
-
-// migrationsMetadataTableExists reports whether the migrations metadata table
-// is present. Dry-run read paths use it to decide between reading live
-// metadata and reporting the empty state Initialize would have created.
-func (m *Migrator) migrationsMetadataTableExists(ctx context.Context) (bool, error) {
-	// Probing for the version column doubles as a table-existence check on
-	// every supported dialect: a missing table reports zero matching columns.
-	exists, err := m.migrationsColumnExists(ctx, "version")
-	if err != nil {
-		return false, fmt.Errorf("failed to inspect migrations metadata table: %w", err)
-	}
-	return exists, nil
 }
 
 // GetAppliedMigrations returns a list of applied migration versions
@@ -755,15 +733,7 @@ func queryMigrationRows[T any](
 		return nil, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 	if m.conn.Writer().IsDryRun() {
-		// Same contract as GetCurrentVersion: dry-run only reports an empty
-		// history when the metadata table genuinely does not exist (#957).
-		exists, err := m.migrationsMetadataTableExists(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if !exists {
-			return []T{}, nil
-		}
+		return []T{}, nil
 	}
 
 	return queryMigrationRowsFrom(ctx, m.conn, query, scan, queryErr, scanErr, iterErr)
@@ -1487,6 +1457,9 @@ func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migr
 	}()
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
+	if err := m.runPreMigrationChecks(ctx, migration); err != nil {
+		return err
+	}
 	if err := m.beginMigrationRevision(ctx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}
@@ -1494,6 +1467,26 @@ func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migr
 		return m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
 	}
 	return m.applyUpMigrationTransactional(ctx, migration, startedAt)
+}
+
+// runPreMigrationChecks evaluates a migration's pre-migration assertions before
+// any revision bookkeeping exists for it, and is the only place the up paths
+// run them.
+//
+// Ordering is load-bearing. Checks are read-only reads of committed
+// pre-migration state, so running them before the pending-revision insert means
+// a failed check leaves the revision table byte-identical: the migration was
+// never started, rather than started and marked dirty. Recording the failure
+// instead would wedge the Atlas-compatible surface, which by design has neither
+// --skip-checks nor --allow-dirty (Atlas has no such flags on `migrate apply`):
+// after fixing the data that tripped the check, every later apply would abort
+// on the dirty row with no in-band way to clear it. Atlas itself writes no row
+// when its checks fail, and the retry simply works (#956).
+func (m *Migrator) runPreMigrationChecks(ctx context.Context, migration *Migration) error {
+	if err := m.runMigrationChecks(ctx, m.conn, migration); err != nil {
+		return fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
+	}
+	return nil
 }
 
 func (m *Migrator) applyUpMigrationForcedNoTransactionObserved(ctx context.Context, migration *Migration) (err error) {
@@ -1516,6 +1509,9 @@ func (m *Migrator) applyUpMigrationForcedNoTransactionObserved(ctx context.Conte
 }
 
 func (m *Migrator) applyUpMigrationForcedNoTransactionAt(ctx context.Context, migration *Migration, startedAt time.Time) error {
+	if err := m.runPreMigrationChecks(ctx, migration); err != nil {
+		return err
+	}
 	if err := m.beginMigrationRevision(ctx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}
@@ -1584,23 +1580,11 @@ func (m *Migrator) recordAppliedMigrationOn(
 }
 
 func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration *Migration, startedAt time.Time) error {
-	// Pre-migration checks read committed state and run before the transaction
-	// opens. A check cannot execute inside the migration transaction (the schema
-	// executor exposes no query path), and running it on the pool while the tx
-	// already holds a connection would deadlock a single-connection pool. Running
-	// it first, on the pool, reads the correct pre-migration state and aborts with
-	// nothing applied before any statement or transaction runs.
-	if err := m.runMigrationChecks(ctx, m.conn, migration); err != nil {
-		return m.failMigrationWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.UpSQL,
-			fmt.Sprintf("pre-migration check failed for migration %d", migration.Version),
-		)
-	}
-
+	// Pre-migration checks already ran in runPreMigrationChecks, before this
+	// migration had any revision row: they read committed state on the pool, so
+	// they cannot execute inside this transaction (the schema executor exposes no
+	// query path) and must not run while the tx holds the only connection of a
+	// single-connection pool.
 	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
 		return m.failMigrationWithDirtyState(
@@ -1667,17 +1651,8 @@ func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration 
 	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts)); err != nil {
 		return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.UpSQL, "", MigrationTxModeNone)
 	}
-	if err := m.runMigrationChecks(ctx, m.conn, migration); err != nil {
-		return m.failMigrationWithDirtyStateWithMode(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.UpSQL,
-			fmt.Sprintf("pre-migration check failed for migration %d", migration.Version),
-			MigrationTxModeNone,
-		)
-	}
+	// Pre-migration checks already ran in runPreMigrationChecks, before this
+	// migration had any revision row.
 	if err := migration.Up(ctx, m.conn); err != nil {
 		return m.failMigrationWithDirtyStateWithMode(
 			ctx,

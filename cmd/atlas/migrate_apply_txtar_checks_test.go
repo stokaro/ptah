@@ -70,6 +70,52 @@ func TestMigrateApplyTxtarFailingChecksAbortBeforeBody(t *testing.T) {
 	c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 0)
 }
 
+// TestMigrateApplyTxtarRetryAfterFixingDataSucceeds is the recovery half of the
+// gate on the surface that needs it most: `ptah-compat migrate apply` has
+// neither --skip-checks nor --allow-dirty (Atlas has neither either), so a
+// failed check must leave no dirty revision row behind. Otherwise the next
+// apply would abort on that row and the drop-in workflow would be wedged with
+// no in-band way out.
+func TestMigrateApplyTxtarRetryAfterFixingDataSucceeds(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := writeTxtarChecksMigrationsDir(c, dir,
+		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")
+	dbPath := filepath.Join(dir, "apply.db")
+
+	_, err := executeAtlasProjectCommand(
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+	)
+	c.Assert(err, qt.IsNotNil)
+
+	// The operator fixes the data the check guarded.
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(context.Background(), "DELETE FROM users")
+	c.Assert(err, qt.IsNil)
+	dbschema.CloseAndWarn(conn)
+
+	// The retry needs no flags and no manual revision repair.
+	out, err := executeAtlasProjectCommand(
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("retry output:\n%s", out))
+	c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
+
+	status, err := executeAtlasProjectCommand(
+		"migrate", "status",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("status output:\n%s", status))
+	c.Assert(status, qt.Contains, "Current Version: 20260801000002")
+}
+
 func TestMigrateApplyTxtarPassingChecksApply(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

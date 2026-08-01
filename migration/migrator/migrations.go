@@ -398,6 +398,10 @@ func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
 // return a single truthy scalar before the migration body runs, matching
 // Atlas's enforcement of the section as a pre-migration gate. Checks are named
 // checks.sql#N by position so a failure names the exact assertion.
+//
+// N counts only non-empty statements, so comment-only spans and stray
+// separators (`;;`) do not consume a number: the third assertion a reader can
+// see is always checks.sql#3, even when blank statements sit between them.
 func parseAtlasTxtarChecks(checksSQL string) []Check {
 	statements := SplitSQLStatements(checksSQL)
 	checks := make([]Check, 0, len(statements))

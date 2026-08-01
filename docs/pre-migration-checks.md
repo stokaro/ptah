@@ -53,8 +53,7 @@ exactly the pre-migration state the migration is about to change.
 
 - **Default (per-file transaction) and `no_transaction` migrations**: the check
   runs, then the migration body runs. A failing or erroring assertion aborts
-  before any statement or transaction, so nothing is applied, and the failure
-  lands in the normal dirty-state handling.
+  before any statement or transaction, so nothing is applied.
 - **`--tx-mode all`**: pre-migration checks are **not supported** and are
   rejected before anything is applied. Under one shared transaction a check
   reading committed state cannot see earlier batched migrations' uncommitted
@@ -65,6 +64,28 @@ Checks are evaluated for the **up** direction only (they guard forward,
 typically destructive, migrations); a `-- +ptah check` in a down migration is
 ignored. A failing check produces a `CheckFailedError` that names the migration
 version and check, and `ptah migrations up` exits non-zero.
+
+A failed check writes **no revision row**. Checks run before the migration's
+bookkeeping row is created, so a blocked migration is recorded as never
+started rather than as dirty: the revision table is left byte-identical, and
+`migrations status` keeps reporting the previous version with the blocked
+migration merely pending. Once the data the check guarded is corrected, the
+next run applies it with no bypass flag and no `migrations repair`. This
+matters most for `ptah-compat migrate apply`, which by design carries neither
+`--skip-checks` nor `--allow-dirty`, and it matches Atlas, which also records
+nothing when its own checks fail.
+
+## Assertion result shape
+
+The `assert` predicate is contracted to return one row with one column.
+
+- **More than one column** fails the check closed: the result cannot be
+  interpreted, and a check that cannot be evaluated blocks the migration
+  rather than passing it.
+- **More than one row** is judged on the first row returned. Order is only
+  defined if the predicate orders it, so prefer an aggregate
+  (`SELECT count(*) = 0 FROM ...`) or an `EXISTS` form over a bare multi-row
+  `SELECT`.
 
 Because the check is a separate read that precedes the body, it is not atomic
 with it: for a single migrator (the normal case) nothing else writes in between,
@@ -98,6 +119,10 @@ up-direction only, the `--tx-mode all` refusal, and the `--skip-checks`
 bypass on native `ptah migrations up`. The compat `ptah-compat migrate apply`
 has no `--skip-checks` flag (parity with Atlas), so checks always enforce
 there.
+
+The `#N` suffix counts only non-empty statements, so comment-only spans and
+stray separators (`;;`) do not consume a number: the third assertion you can
+read in the section is always `checks.sql#3`.
 
 ## Bypassing checks
 

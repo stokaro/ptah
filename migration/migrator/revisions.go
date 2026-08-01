@@ -402,15 +402,37 @@ func (m *Migrator) updateAtlasRevisionTypeSQL() string {
 // or rewrites them (#957).
 const atlasMetadataRowPredicate = "version NOT LIKE '.%'"
 
+// atlasMetadataVersionNullGuard maps a dot-prefixed metadata version to NULL so
+// it can be cast to a number safely. See [Migrator.atlasVersionNumberExpression]
+// for why this, and not the predicate above, is what protects the statements
+// that select over every revision row.
+const atlasMetadataVersionNullGuard = `CASE WHEN version LIKE '.%' THEN NULL ELSE version END`
+
+// atlasVersionNumberExpression renders the numeric form of the version column.
+//
+// The CASE arm turns dot-prefixed metadata rows into NULL before the cast, and
+// it is the ONLY protection for the three statements that have no
+// [atlasMetadataRowPredicate] filter of their own: getVersionSQL (MAX over
+// every row), countRevisionsAboveSQL, and deleteRevisionsAboveSQL. Without it,
+// a strict dialect fails those statements outright — PostgreSQL reports
+// `invalid input syntax for type bigint: ".atlas_cloud_identifier"` — so
+// GetCurrentVersion and SetAtlasRevision would error on any database Atlas Pro
+// has run `migrate down` against. SQLite's lenient CAST silently yields 0
+// instead, which is why no SQLite-only test can observe the difference and the
+// guard is pinned by asserting the generated SQL (#957).
 func (m *Migrator) atlasVersionNumberExpression() string {
-	// The CASE arm turns dot-prefixed metadata rows into NULL before the cast,
-	// so strict dialects never cast a non-numeric pseudo-version, MAX ignores
-	// the row, and `expression > ?` comparisons exclude it.
-	switch m.conn.Info().Dialect {
+	// connectionDialect keeps this usable on a zero-value Migrator, so the
+	// generated-SQL guard tests can assert every dialect branch without a live
+	// database.
+	return atlasVersionNumberExpressionFor(m.connectionDialect())
+}
+
+func atlasVersionNumberExpressionFor(dialect string) string {
+	switch dialect {
 	case "mysql", "mariadb":
-		return "CAST(CASE WHEN version LIKE '.%' THEN NULL ELSE version END AS SIGNED)"
+		return "CAST(" + atlasMetadataVersionNullGuard + " AS SIGNED)"
 	default:
-		return "CAST(CASE WHEN version LIKE '.%' THEN NULL ELSE version END AS BIGINT)"
+		return "CAST(" + atlasMetadataVersionNullGuard + " AS BIGINT)"
 	}
 }
 

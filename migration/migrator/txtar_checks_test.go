@@ -176,6 +176,126 @@ func TestMigrateUp_TxtarTxModeAllWithSkipChecksProceeds(t *testing.T) {
 	c.Assert(usersHasEmailColumn(t, conn), qt.IsTrue)
 }
 
+// newSQLiteTxtarWedgeMigrator builds the measured wedge scenario: migration 1
+// applies and seeds a row, migration 2 is a txtar migration whose checks.sql
+// asserts users is empty and therefore fails.
+func newSQLiteTxtarWedgeMigrator(t *testing.T) (*dbschema.DatabaseConnection, *migrator.Migrator) {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "wedge.db"))
+	qt.Assert(t, err, qt.IsNil)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	m, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql": &fstest.MapFile{Data: []byte(
+				"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")},
+			"2_add_users_email.sql": &fstest.MapFile{Data: []byte(txtarCheckedAddEmail)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	qt.Assert(t, err, qt.IsNil)
+	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	qt.Assert(t, m.Initialize(ctx), qt.IsNil)
+	return conn, m
+}
+
+func revisionVersions(t *testing.T, conn *dbschema.DatabaseConnection) []string {
+	t.Helper()
+	rows, err := conn.Query("SELECT version FROM atlas_schema_revisions ORDER BY version")
+	qt.Assert(t, err, qt.IsNil)
+	defer func() { _ = rows.Close() }()
+	var versions []string
+	for rows.Next() {
+		var version string
+		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		versions = append(versions, version)
+	}
+	qt.Assert(t, rows.Err(), qt.IsNil)
+	return versions
+}
+
+// TestMigrateUp_TxtarFailingCheckWritesNoRevisionRow pins the recovery contract
+// behind the check gate: because checks run before any bookkeeping write, a
+// failed check leaves the revision table exactly as it was. Recording the
+// failure instead would strand the Atlas-compatible surface, which has neither
+// --skip-checks nor --allow-dirty to clear the row (#956).
+func TestMigrateUp_TxtarFailingCheckWritesNoRevisionRow(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newSQLiteTxtarWedgeMigrator(t)
+
+	err := m.MigrateUp(ctx)
+
+	c.Assert(err, qt.IsNotNil)
+	var checkErr *migrator.CheckFailedError
+	c.Assert(err, qt.ErrorAs, &checkErr, qt.Commentf("want CheckFailedError, got %v", err))
+	// Only migration 1's row exists: migration 2 was never started.
+	c.Assert(revisionVersions(t, conn), qt.DeepEquals, []string{"1"})
+
+	// Status still reports the pre-failure version, with migration 2 merely
+	// pending rather than dirty.
+	status, err := m.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(status.PendingMigrations, qt.DeepEquals, []int64{2})
+	c.Assert(status.DirtyRevision, qt.IsNil)
+}
+
+// TestMigrateUp_TxtarRetryAfterFixingDataSucceeds is the other direction: once
+// the operator fixes the data the check guarded, the very next apply works with
+// no flags and no manual revision repair.
+func TestMigrateUp_TxtarRetryAfterFixingDataSucceeds(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newSQLiteTxtarWedgeMigrator(t)
+	c.Assert(m.MigrateUp(ctx), qt.IsNotNil)
+
+	_, err := conn.Exec("DELETE FROM users") // the precondition now holds
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(m.MigrateUp(ctx), qt.IsNil)
+
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsTrue)
+	c.Assert(revisionVersions(t, conn), qt.DeepEquals, []string{"1", "2"})
+	status, err := m.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(2))
+	c.Assert(status.PendingMigrations, qt.HasLen, 0)
+	c.Assert(status.DirtyRevision, qt.IsNil)
+}
+
+// TestMigrateUp_FailingCheckOnNoTransactionPathWritesNoRevisionRow pins the same
+// no-bookkeeping contract on the non-transactional apply path.
+func TestMigrateUp_FailingCheckOnNoTransactionPathWritesNoRevisionRow(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "wedge-notx.db"))
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	m, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql": &fstest.MapFile{Data: []byte(
+				"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")},
+			"2_add_users_email.sql": &fstest.MapFile{Data: []byte(
+				"-- atlas:txtar\n\n-- checks.sql --\nSELECT NOT EXISTS (SELECT * FROM users);\n\n" +
+					"-- migration.sql --\n-- +ptah no_transaction\nALTER TABLE users ADD COLUMN email TEXT;\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(m.Initialize(ctx), qt.IsNil)
+
+	c.Assert(m.MigrateUp(ctx), qt.IsNotNil)
+
+	c.Assert(revisionVersions(t, conn), qt.DeepEquals, []string{"1"})
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsFalse)
+}
+
 func TestNewFSMigrator_TxtarDuplicateChecksSectionFails(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
