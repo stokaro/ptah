@@ -72,6 +72,45 @@ func (d *OpenedDirectory) ReplaceFile(oldName, newName string) error {
 	return fsdurable.ReplaceFileAt(d.root, oldName, newName)
 }
 
+// PublishFile durably replaces newName with the staged regular file identified
+// by expectedInfo from os.Stat or os.File.Stat. The final mode is applied before
+// rename. Both names must identify direct children. An error wrapping
+// fsdurable.ErrReplacementCommitted means the rename succeeded.
+func (d *OpenedDirectory) PublishFile(
+	oldName, newName string,
+	expectedInfo fs.FileInfo,
+	finalMode fs.FileMode,
+) error {
+	return fsdurable.PublishFileAt(d.root, oldName, newName, expectedInfo, finalMode)
+}
+
+// FinalizeFile applies finalMode to a staged regular file with the supplied
+// identity from os.Stat or os.File.Stat and durably preserves it without
+// renaming it. Name must identify a direct child.
+func (d *OpenedDirectory) FinalizeFile(
+	name string,
+	expectedInfo fs.FileInfo,
+	finalMode fs.FileMode,
+) error {
+	return fsdurable.FinalizeFileAt(d.root, name, expectedInfo, finalMode)
+}
+
+// Revalidate verifies that Path still identifies this opened directory.
+func (d *OpenedDirectory) Revalidate() error {
+	openedInfo, openedErr := d.root.Stat(".")
+	pathInfo, pathErr := os.Stat(d.path)
+	if err := errors.Join(openedErr, pathErr); err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrDirectoryChanged, d.path, err)
+	}
+	if !openedInfo.IsDir() ||
+		!pathInfo.IsDir() ||
+		!os.SameFile(d.info, openedInfo) ||
+		!os.SameFile(openedInfo, pathInfo) {
+		return fmt.Errorf("%w: %s", ErrDirectoryChanged, d.path)
+	}
+	return nil
+}
+
 // Sync flushes rooted directory-entry changes where the platform supports it.
 // Call it after ReplaceFile and Remove before reporting a durable transaction.
 func (d *OpenedDirectory) Sync() error {
