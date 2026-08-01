@@ -51,16 +51,25 @@ func TestValidateIncludeSelectors_HappyPath(t *testing.T) {
 		// schema-wildcard spelling of a qualified name stays valid.
 		{name: "wildcard schema qualifier", values: []string{"*.users"}},
 		{name: "qualified type selector", values: []string{"public.users[type=table]"}},
-		// A dotted identifier is quoted in the qualified candidate
+		// Capability: a dotted identifier is quoted in the qualified candidate
 		// (`main."my.table"`), so the selector that matches it carries two dot
 		// characters but only one separator. Counting characters rejected it
 		// and made the qualified spelling of a dotted table inexpressible.
+		// These two spellings really do select such a table.
 		{name: "qualified dotted identifier", values: []string{`main."my.table"`}},
 		{name: "wildcard schema dotted identifier", values: []string{`*."my.table"`}},
+		// Permissiveness only: tableref.Canonical emits double quotes and
+		// never these forms, and path.Match reads `[my.table]` as a character
+		// class rather than a quoted identifier, so neither spelling can
+		// actually select a table named "my.table". They are here to pin that
+		// the scanner treats backtick and bracket runs as identifier quoting
+		// and does not count the dot inside them.
 		{name: "backtick dotted identifier", values: []string{"main.`my.table`"}},
 		{name: "bracket dotted identifier", values: []string{"main.[my.table]"}},
 		// path.Match reads "\." as a literal dot, so this selects the single
-		// bare name "a.b.c" rather than reaching child depth.
+		// bare name "a.b.c" rather than reaching child depth. It is also the
+		// documented workaround for the bare `a.b.c` spelling, which stays
+		// refused as ambiguous with schema.table.column.
 		{name: "escaped dots", values: []string{`a\.b\.c`}},
 	}
 
@@ -150,11 +159,24 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 			wantErr: `unsupported Atlas include selector "main\.t1\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
 		},
 		// Quoting an identifier does not buy extra depth: the separators
-		// outside the quotes still count.
+		// outside the quotes still count. One case per quoting form, so each
+		// arm of the scanner's close-delimiter mapping is pinned — a bracket
+		// run that never terminates would swallow the trailing separator and
+		// wrongly accept.
 		{
 			name:    "child depth past a quoted identifier",
 			values:  []string{`main."my.table".id`},
 			wantErr: `unsupported Atlas include selector "main\.\\"my\.table\\"\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
+		},
+		{
+			name:    "child depth past a bracketed identifier",
+			values:  []string{"main.[ab].id"},
+			wantErr: `unsupported Atlas include selector "main\.\[ab\]\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
+		},
+		{
+			name:    "child depth past a backticked identifier",
+			values:  []string{"main.`ab`.id"},
+			wantErr: "unsupported Atlas include selector \"main\\.`ab`\\.id\": selectors name top-level resources as \"name\" or \"schema\\.name\", and a deeper pattern names a child resource that rides along with its parent",
 		},
 	}
 

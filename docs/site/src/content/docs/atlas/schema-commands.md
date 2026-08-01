@@ -117,9 +117,12 @@ ptah-compat schema inspect --url "postgres://localhost/app" \
 Child resources — columns, indexes, constraints, triggers, policies, grants —
 ride along with their parent and cannot be selected on their own, in either
 the `[type=column]` or the literal-dot `table.column` spelling; both fail
-before any database is contacted. Glob metacharacters still match a dot, so
-`table*column` is not caught by that check and selects nothing instead
-([`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979)). A selection
+before any database is contacted. Glob metacharacters — `*`, `?`, and
+character classes — still match a dot, so `table*column` and `table[.]column`
+are not caught by that check and select nothing instead
+([`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979)). An
+identifier that itself contains a dot is selected as `main."my.table"` or
+`a\.b\.c`; the bare `a.b.c` spelling is refused as ambiguous. A selection
 that keeps an object whose dependency it dropped is refused rather than
 rendered, so inspected output never references an object it omits:
 
@@ -284,16 +287,57 @@ see, on `schema apply` and `schema diff` alike:
   cannot project a partial parent faithfully. The literal-dot spelling of the
   same thing is rejected too: a selector names a resource as `name` or
   `schema.name`, so a pattern with a deeper path such as `main.users.email`
-  or `main.users.*` fails instead of silently selecting nothing. Depth counts
-  separators outside quotes, so a quoted identifier that contains a dot —
-  `main."my.table"` — stays a valid depth-one selector.
+  or `main.users.*` fails instead of silently selecting nothing.
 
-  That rejection covers the literal-dot spelling only. Glob metacharacters
-  match a dot like any other character, so `main.users*email` and
-  `main.users?email` still reach past a top-level resource and still report a
-  synced schema rather than failing. Closing the whole class needs a check on
-  the selection's outcome instead of its shape, tracked in
-  [`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979).
+#### Selecting an identifier that contains a dot
+
+Selector depth counts separators **outside quotes**, so a quoted identifier
+holding a dot stays a valid depth-one selector:
+
+```bash
+ptah-compat schema diff … --include 'main."my.table"'   # qualified
+ptah-compat schema diff … --include '*."my.table"'      # any schema
+```
+
+The **bare** spelling of a dotted name is refused, because `a.b.c` cannot be
+told apart from the `schema.table.column` form the depth rule exists to
+reject:
+
+```text
+$ ptah-compat schema diff … --include 'a.b.c'
+error: unsupported Atlas include selector "a.b.c": selectors name top-level
+resources as "name" or "schema.name", and a deeper pattern names a child
+resource that rides along with its parent
+```
+
+Spell it one of two unambiguous ways instead — escape the dots, or quote the
+identifier:
+
+```bash
+ptah-compat schema diff … --include 'a\.b\.c'
+ptah-compat schema diff … --include 'main."a.b.c"'
+```
+
+This is a deliberate trade of one ambiguous spelling for two exact ones.
+Removing the need for it requires checking the selection's outcome rather than
+its shape, tracked in
+[`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979).
+
+#### What the depth check does not catch
+
+It covers the literal-dot spelling only. Every glob metacharacter that can
+stand for a dot escapes it — `*`, `?`, and a character class — so all three of
+these reach past a top-level resource and report a synced schema instead of
+failing:
+
+```bash
+ptah-compat schema diff … --include 'main.users*email'
+ptah-compat schema diff … --include 'main.users?email'
+ptah-compat schema diff … --include 'main.users[.]email'
+```
+
+Closing the whole class needs the outcome-based check in
+[`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979).
 - `--exclude` and disabled `schema.mode` values subtract from the positive
   selection afterward. The composition order is fixed: schema universe first,
   include selection inside it, exclusion last.

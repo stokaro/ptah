@@ -116,10 +116,11 @@ var includeChildTypes = map[string]struct{}{
 // characters rejected the selector that matches it.
 //
 // The rule closes the literal-separator spelling only. Because path.Match
-// treats "." as an ordinary character, `main.users*email` and
-// `main.users?email` still reach past a top-level resource and still select
-// nothing; see stokaro/ptah#979 for the outcome-based check that would cover
-// the whole class.
+// treats "." as an ordinary character, every metacharacter that can stand for
+// it escapes the check: `main.users*email`, `main.users?email`, and the
+// character class `main.users[.]email` all reach past a top-level resource and
+// still select nothing. See stokaro/ptah#979 for the outcome-based check that
+// would cover the whole class.
 const includeSelectorMaxDots = 1
 
 // ValidateIncludeSelectors parses Atlas-style --include selectors and rejects
@@ -186,9 +187,17 @@ func validateIncludeSelectorDepth(raw, glob string) error {
 // path.Match reads as an escape for the following character, so `a\.b\.c`
 // matches the single bare name "a.b.c" and stays a depth-one selector.
 //
-// An unterminated quote leaves the remainder uncounted. That is the permissive
-// direction on purpose: this check must never reject a selector that could
-// have matched something.
+// An unterminated quote leaves the remainder uncounted, which is the
+// permissive direction for that input.
+//
+// The check is not conservative in general, though. The selection also offers
+// the bare name as a candidate, and a bare name is never quoted, so a table
+// literally named "a.b.c" is matched by the selector `a.b.c` — which this rule
+// refuses, because that spelling is indistinguishable from the
+// schema.table.column form it exists to reject. That ambiguity is why the
+// refusal is deliberate rather than a bug, and why the disambiguated spellings
+// `a\.b\.c` and `main."a.b.c"` are supported and documented. Resolving it
+// without an escape needs the outcome-based check in stokaro/ptah#979.
 func unquotedDots(glob string) int {
 	dots := 0
 	var closeQuote byte
