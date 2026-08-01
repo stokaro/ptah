@@ -104,8 +104,8 @@
   "ptah": "partial",
   "atlas_oss": "yes",
   "atlas_pro": "yes",
-  "note": "Only file, fileset, format, getenv, jsonencode evaluate; variable type, sensitive, validation and env for_each are rejected.",
-  "evidence": "config/projectconfig/atlas.go:126-133 (five-function eval context), :930 and :953 (variable attribute allowlist default/description), :402 (for_each hits the env attribute default). Repro: `dev = urlsetpath(\"sqlite://file.db\",\"x\")` -> `error: unsupported atlas.hcl construct \"dev\" at atlas.hcl:2`; upper, lower, join, split, concat, trimspace, coalesce, toupper, abspath, urlescape, urlqueryset, print all fail the same way, while file, fileset, format, getenv, jsonencode evaluate"
+  "note": "Only file, fileset, format, getenv, jsonencode evaluate; variable type (string, number, bool, list(string)) and sensitive are honored; validation and env for_each are rejected.",
+  "evidence": "config/projectconfig/atlas.go:126-133 (five-function eval context), parseVariableBlock/convertAtlasVariableOverride (type constraints with typed --var conversion, sensitive redaction, validation rejected), :402 (for_each hits the env attribute default). Repro: `dev = urlsetpath(\"sqlite://file.db\",\"x\")` -> `error: unsupported atlas.hcl construct \"dev\" at atlas.hcl:2`; upper, lower, join, split, concat, trimspace, coalesce, toupper, abspath, urlescape, urlqueryset, print all fail the same way, while file, fileset, format, getenv, jsonencode evaluate; `variable \"schema_file\" { type = string }` + `--var schema_file=schema.sql` inspects on both binaries"
  },
  {
   "area": "Project config",
@@ -365,8 +365,8 @@
   "ptah": "no",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "migrate checkpoint `--dir-format`=atlas is a recorded waiver; Ptah writes only the ptah two-file checkpoint convention.",
-  "evidence": "ptah-compat migrate checkpoint --dir-format atlas --dir file://m --dev-url sqlite://d.db. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration checkpoints' is listed Starter ✗ / Pro ✓ (links /versioned/checkpoint), grounding oss=no and pro=yes for the checkpoint capability this waiver tracks"
+  "note": "Writing stays a waiver (`--dir-format`=atlas); reading Atlas `-- atlas:checkpoint` dirs works: fresh databases bootstrap from the latest checkpoint, pre-checkpoint databases skip it silently.",
+  "evidence": "ptah-compat migrate checkpoint --dir-format atlas --dir file://m --dev-url sqlite://d.db. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration checkpoints' is listed Starter ✗ / Pro ✓ (links /versioned/checkpoint), grounding oss=no and pro=yes for the checkpoint capability this waiver tracks. Reading verified 2026-08-01 with e2e tests against the trial-measured fixtures: fresh-db bootstrap wrote the single type=2 revision row matching the Atlas control dump; pre-checkpoint db printed 'No migration files to execute' (stokaro/ptah#954, PR #962)"
  },
  {
   "area": "Declarative / direct schema workflow",
@@ -527,8 +527,8 @@
   "ptah": "partial",
   "atlas_oss": "yes",
   "atlas_pro": "yes",
-  "note": "Also runs goose/flyway/liquibase/dbmate dirs via ?format=; `--dry-run` ignores the revision table and re-plans already-applied files.",
-  "evidence": "Executed: after a full apply, `ptah-compat migrate status` reports \"Pending Migrations: 0\" while `ptah-compat migrate apply --dry-run` reports \"Migrating to version 20240102000000 from 2 pending migrations. Would have applied 2 migrations.\" Same on native `ptah migrations up --dry-run`. Code: migration/migrator/migrator.go:660 (GetCurrentVersion returns 0 under dry-run) and :719 (queryMigrationRows returns empty). External formats verified: `migrate apply --dir \"file://src2?format=goose\"` applied to version 2."
+  "note": "Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format table creation remains #950; Ptah-format is covered.",
+  "evidence": "Dry-run tests cover native and compat CLIs, dirty/checksum/tx-mode validation, exact legacy and rejected partial SQLite layouts, seven live database targets, PostgreSQL multi-schema search_path and explicit schemas, plus deterministic Spanner SQL. External directory formats remain verified by apply fixtures."
  },
  {
   "area": "Versioned migrations — execution",
@@ -536,8 +536,8 @@
   "ptah": "partial",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "Ptah reverts via pre-planned down files; `--to-tag`/`--skip-checks`/`--plan` fail loudly as waivers. In pinned CE, `migrate down` is a registered community-abort stub, not a working verb.",
-  "evidence": "cli-surface.md CE inventory (37 commands, no `migrate down`); atlas/conformance.md workflow parity: 'migrate down does not exist in the community binary; the CE notice lists down migrations among excluded features'; /tmp/v1-compat migrate down waiver errors reproduced. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): bare `atlas migrate down` -> exit 1 \"Abort: 'atlas migrate down' is not supported by the community version.\"; with --url/--dir it fails earlier on unknown flag because the stub registers no flags. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `migrate down` works locally, deletes reverted revision rows (incl. Ptah-written), and inserts a `.atlas_cloud_identifier` metadata row that aborts Ptah reads - stokaro/ptah#957 (trial-study observations, scenario, migrate-down-revisions) Fixed 2026-08-01 (stokaro/ptah#957): Ptah revision readers now treat dot-prefixed versions as metadata - skipped in version/status/pending math, never rewritten or deleted - and dry-run down reads the live revision table instead of reporting version 0"
+  "note": "Ptah validates all selected down bodies before changing state. Dry-run reports distinguish preflight rejection from attempted rollback. Registry flags remain waivers.",
+  "evidence": "internal/atlasmigrate/down_test.go covers missing-down preservation, dry-run validation, and dirty preflight; cmd/atlas/migrate_down_format_test.go proves preflight failures render no reverted files. CE v1.2.0 logged out aborts as unsupported. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `migrate down` works locally, deletes reverted revision rows (including Ptah-written rows), and inserts `.atlas_cloud_identifier`, which Ptah cannot yet read (#957; trial-study scenario migrate-down-revisions). Fixed 2026-08-01 (stokaro/ptah#957): Ptah revision readers now treat dot-prefixed versions as metadata - skipped in version/status/pending math, never rewritten or deleted - and dry-run down reads the live revision table instead of reporting version 0"
  },
  {
   "area": "Versioned migrations — execution",
@@ -663,7 +663,7 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "`-- +ptah check` and Atlas txtar checks.sql both enforce. `--tx-mode` all directs users to per-file mode; native `--skip-checks` remains an emergency bypass. CE leaves checks unenforced.",
-  "evidence": "Executed: a migration carrying `-- +ptah check name=\"users_empty\" assert=\"SELECT count(*) = 0 FROM users\" on_fail=abort` aborts with \"pre-migration check users_empty ... was not satisfied\" and nothing applied; with `--tx-mode all` it fails \"...cannot run with tx-mode all; use the default per-file transaction mode or --skip-checks\", but `ptah-compat migrate apply --skip-checks` -> \"unknown flag: --skip-checks\" (the flag exists only on native `ptah migrations up`, cmd/migrateup/migrateup.go:150). Measured 2026-08-01, CE v1.2.0 logged out (scratch env): an `-- atlas:txtar` migration whose checks.sql held a failing assertion applied anyway, exit 0 - CE executes the section as plain SQL without assertion semantics. Atlas pricing page (atlasgo.io/pricing, retrieved 2026-08-01) lists 'Pre-migration safety checks' under Pro, not Starter. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: the licensed build ENFORCES txtar checks.sql (failing assertion aborts before any body statement, exit 1) and registers no `migrate apply --skip-checks` - the flag lives on `migrate down` (trial-study observations, scenario, txtar-checks-enforcement, verbs-and-flags) Updated 2026-08-01 (stokaro/ptah#956): txtar checks.sql sections now run through the same pre-migration check engine on both binaries; a failing assertion aborts before any body statement (migration/migrator/migrations.go parseAtlasTxtarChecks) A failed check records NO revision row (checks run before the pending-revision insert), so the retry after fixing the data succeeds with no bypass flag — required because ptah-compat migrate apply has neither --skip-checks nor --allow-dirty, matching Atlas, which also writes nothing when its checks fail (stokaro/ptah#964 review)."
+  "evidence": "TestMigrateApplyDryRunTxModeAllDiagnosticDoesNotSuggestUnsupportedFlag proves compat dry-run rejects checked files without suggesting its unsupported `--skip-checks`; cmd/migrateup registers that flag only on native `ptah migrations up`. Measured 2026-08-01: CE v1.2.0 applies failing checks.sql unenforced; Atlas v1.2.4-e282f76-canary licensed trial enforces it before the body and exposes `--skip-checks` on down, not apply (trial-study scenarios txtar-checks-enforcement and verbs-and-flags). Updated 2026-08-01 (stokaro/ptah#956): txtar checks.sql sections now run through the same pre-migration check engine on both binaries; a failing assertion aborts before any body statement (migration/migrator/migrations.go parseAtlasTxtarChecks) A failed check records NO revision row (checks run before the pending-revision insert), so the retry after fixing the data succeeds with no bypass flag — required because ptah-compat migrate apply has neither --skip-checks nor --allow-dirty, matching Atlas, which also writes nothing when its checks fail (stokaro/ptah#964 review)."
  },
  {
   "area": "Versioned migrations — runtime policy",
