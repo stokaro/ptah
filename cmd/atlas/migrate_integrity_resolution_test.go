@@ -101,6 +101,23 @@ func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
 		c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, golangMigrateCoveredSet)
 	})
 
+	// An atlas query over a converted project format is the case that forwards
+	// to the native command with a value it would refuse, so the neutralized
+	// --dir-format has to reach it.
+	//
+	//	$ atlas migrate hash --env local --dir 'file://migrations?format=atlas'
+	//	  -> 1_init.sql U1__undo.sql V1__x.sql   (atlas, with migration.format = flyway)
+	c.Run("atlas query overrides a converted project format", func(c *qt.C) {
+		configPath, migrationsDir := writeIntegrityProject(c, "flyway")
+
+		stdout, stderr, err := runCompatExit(
+			"migrate", "hash", "--config", "file://"+configPath, "--env", "local",
+			"--dir", "file://"+migrationsDir+"?format=atlas")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
+		c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, sqlSuffixCoveredSet)
+	})
+
 	c.Run("project format applies when no spelling is given", func(c *qt.C) {
 		configPath, migrationsDir := writeIntegrityProject(c, "golang-migrate")
 
@@ -137,6 +154,16 @@ func TestCompatMigrateIntegrityEnvironment_HappyPath(t *testing.T) {
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
 		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, golangMigrateCoveredSet)
+	})
+
+	c.Run("an atlas query overrides PTAH_DIR_FORMAT", func(c *qt.C) {
+		dir := writeIntegrityFixture(c)
+		c.Setenv("PTAH_DIR_FORMAT", "goose")
+
+		stdout, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=atlas")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
+		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 
 	c.Run("PTAH_DIR carries an atlas query", func(c *qt.C) {

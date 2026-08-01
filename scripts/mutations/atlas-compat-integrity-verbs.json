@@ -1,5 +1,7 @@
 {
-  "packages": ["./cmd/atlas/"],
+  "packages": [
+    "./cmd/atlas/"
+  ],
   "mutations": [
     {
       "name": "the query no longer wins over the flag",
@@ -11,7 +13,7 @@
       "name": "the flag is ignored, only the query selects a layout",
       "file": "cmd/atlas/migrate_integrity.go",
       "old": "\tformat, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)",
-      "new": "\tformat, err := atlasmigrate.ResolveApplyDirFormat(\"\", localDir.Query)"
+      "new": "\tformat, err := atlasmigrate.ResolveApplyDirFormat(\"\", localDir.Query)\n\t_ = configured"
     },
     {
       "name": "an empty query value falls back to the flag",
@@ -28,8 +30,8 @@
     {
       "name": "atlas.hcl and PTAH_* layers are dropped from the resolution",
       "file": "cmd/atlas/migrate_integrity.go",
-      "old": "\tmapped, err := atlasargs.Map(\"migrate\", verb.use, atlasMigrateSourceFlags(verb.flags), project.args)",
-      "new": "\tmapped := args\n\tvar err error\n\t_ = err"
+      "old": "\tmapped, err := atlasargs.Map(\"migrate\", verb.use, atlasMigrateSourceFlags(verb.flags), project.args)\n\tif err != nil {\n\t\treturn atlasMigrateSource{}, err\n\t}",
+      "new": "\tmapped := args"
     },
     {
       "name": "the raw --dir keeps its rejecting mapper, so ?format= never resolves",
@@ -71,19 +73,19 @@
       "name": "the rewrite never appends a missing --dir",
       "file": "cmd/atlas/migrate_integrity.go",
       "old": "\tif !dirSeen {\n\t\tout = append(out, \"--dir=\"+dir)\n\t}",
-      "new": ""
+      "new": "\tif !dirSeen {\n\t\t_ = dir\n\t}"
     },
     {
       "name": "the rewrite never appends a missing --dir-format",
       "file": "cmd/atlas/migrate_integrity.go",
       "old": "\tif !formatSeen {\n\t\tout = append(out, \"--dir-format=\"+dirFormat)\n\t}",
-      "new": ""
+      "new": "\tif !formatSeen {\n\t\t_ = dirFormat\n\t}"
     },
     {
       "name": "the rewrite drops the value token of the flag it replaced",
       "file": "cmd/atlas/migrate_integrity.go",
       "old": "\t\ti++\n\t\tif !rewritten {\n\t\t\tout = append(out, args[i])\n\t\t}",
-      "new": "\t\ti++\n\t\tout = append(out, args[i])"
+      "new": "\t\ti++\n\t\t_ = rewritten\n\t\tout = append(out, args[i])"
     },
     {
       "name": "unknown flags and stray positionals are silently ignored",
@@ -143,7 +145,7 @@
       "name": "validate reports a malformed sum as a usage error",
       "file": "cmd/atlas/migrate_validate.go",
       "old": "\tcase errors.Is(err, migratesum.ErrSumFileMalformed):\n\t\t// A malformed atlas.sum has no entry-level mismatch to point at.\n\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, nil)",
-      "new": "\tcase false:\n\t\treturn nil"
+      "new": "\tcase errors.Is(err, migratesum.ErrSumFileMalformed):\n\t\treturn cmdutil.Fail(cmd, err)"
     },
     {
       "name": "validate drops the mismatch line from the refusal",
