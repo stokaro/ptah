@@ -53,8 +53,7 @@ exactly the pre-migration state the migration is about to change.
 
 - **Default (per-file transaction) and `no_transaction` migrations**: the check
   runs, then the migration body runs. A failing or erroring assertion aborts
-  before any statement or transaction, so nothing is applied, and the failure
-  lands in the normal dirty-state handling.
+  before any statement or transaction, so nothing is applied.
 - **`--tx-mode all`**: pre-migration checks are **not supported** and are
   rejected before anything is applied. Under one shared transaction a check
   reading committed state cannot see earlier batched migrations' uncommitted
@@ -66,6 +65,34 @@ typically destructive, migrations); a `-- +ptah check` in a down migration is
 ignored. A failing check produces a `CheckFailedError` that names the migration
 version and check, and `ptah migrations up` exits non-zero.
 
+A failed check writes **no revision row**. Checks run before the migration's
+bookkeeping row is created, so a blocked migration is recorded as never
+started rather than as dirty: the revision table is left byte-identical, and
+`migrations status` keeps reporting the previous version with the blocked
+migration merely pending. Once the data the check guarded is corrected, the
+next run applies it with no bypass flag and no `migrations repair`. It matches
+Atlas, which also records nothing when its own checks fail.
+
+This matters most on `ptah-compat migrate apply`, which registers no
+`--skip-checks` (neither does Atlas). It does register `--allow-dirty`, but
+that flag cannot currently clear a dirty row: the retry fails on the revision
+re-insert with a `UNIQUE constraint failed` error
+([`stokaro/ptah#966`](https://github.com/stokaro/ptah/issues/966)). A recorded
+check failure would therefore have left no working in-band recovery on that
+surface.
+
+## Assertion result shape
+
+The `assert` predicate is contracted to return one row with one column.
+
+- **More than one column** fails the check closed: the result cannot be
+  interpreted, and a check that cannot be evaluated blocks the migration
+  rather than passing it.
+- **More than one row** is judged on the first row returned. Order is only
+  defined if the predicate orders it, so prefer an aggregate
+  (`SELECT count(*) = 0 FROM ...`) or an `EXISTS` form over a bare multi-row
+  `SELECT`.
+
 Because the check is a separate read that precedes the body, it is not atomic
 with it: for a single migrator (the normal case) nothing else writes in between,
 but a concurrent session committing between the check and the body is not
@@ -73,12 +100,43 @@ re-validated. Keep checks as guards against pre-existing state, not as
 serialization primitives, and keep each `assert` cheap — it runs bounded only by
 the caller's context, not the migration's `statement_timeout`.
 
+## Atlas txtar `checks.sql` sections
+
+An Atlas txtar migration can carry a `checks.sql` section. Ptah enforces it
+through the same machinery as `-- +ptah check`, matching the licensed Atlas
+build's semantics (measured against Atlas CLI v1.2.4): each statement in the
+section is an assertion that must return a single truthy scalar, evaluated in
+section order before any `migration.sql` statement runs. A failing assertion
+aborts the migration with nothing applied; the error names the migration and
+the failing statement's position (`checks.sql#1`, `checks.sql#2`, ...).
+
+```sql
+-- atlas:txtar
+
+-- checks.sql --
+SELECT NOT EXISTS (SELECT * FROM users);
+
+-- migration.sql --
+ALTER TABLE users ADD COLUMN email TEXT;
+```
+
+Txtar checks follow every rule on this page: truthiness interpretation,
+up-direction only, the `--tx-mode all` refusal, and the `--skip-checks`
+bypass on native `ptah migrations up`. The compat `ptah-compat migrate apply`
+has no `--skip-checks` flag (parity with Atlas), so checks always enforce
+there.
+
+The `#N` suffix counts only non-empty statements, so comment-only spans and
+stray separators (`;;`) do not consume a number: the third assertion you can
+read in the section is always `checks.sql#3`.
+
 ## Bypassing checks
 
 Checks are an additive, finer-grained safety gate that composes with the coarse
 `--check-destructive` / `--allow-destructive` gate. For an emergency override,
-`ptah migrations up --skip-checks` skips all pre-migration checks, mirroring the
-`--allow-destructive` bypass. Use it only after review.
+`ptah migrations up --skip-checks` skips all pre-migration checks — both
+`-- +ptah check` directives and Atlas txtar `checks.sql` assertions — mirroring
+the `--allow-destructive` bypass. Use it only after review.
 
 ## Integrity
 

@@ -133,6 +133,9 @@ type sqlMigrationFile struct {
 	sql           string
 	timeouts      MigrationTimeouts
 	noTransaction bool
+	// checks are Atlas txtar checks.sql assertions that gate the migration
+	// body, enforced through the same machinery as `-- +ptah check`.
+	checks []Check
 }
 
 type atlasSQLMigrationFile struct {
@@ -144,6 +147,7 @@ type atlasSQLMigrationFile struct {
 type atlasTxtarSQL struct {
 	migrationSQL string
 	downSQL      string
+	checksSQL    string
 	hasDown      bool
 }
 
@@ -164,6 +168,7 @@ const (
 	atlasTxtarDirective        = "-- atlas:txtar"
 	atlasTxtarMigrationSection = "migration.sql"
 	atlasTxtarDownSection      = "down.sql"
+	atlasTxtarChecksSection    = "checks.sql"
 )
 
 // AtlasDownNotImplementedError reports an Atlas migration that lacks an
@@ -309,6 +314,7 @@ func atlasSQLMigrationFileFromSQL(filename, sql string, hooks statementExecution
 	if err != nil {
 		return atlasSQLMigrationFile{}, true, err
 	}
+	up.checks = parseAtlasTxtarChecks(parsed.checksSQL)
 	atlasMigrationFile := atlasSQLMigrationFile{up: up}
 	if parsed.hasDown {
 		down, err := migrationFuncFromSQLStringWithMetadata(filename+"#"+atlasTxtarDownSection, parsed.downSQL, hooks)
@@ -382,15 +388,44 @@ func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
 	if migrationSection == nil {
 		return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: missing migration.sql section", filename)
 	}
-	downSection := sections[atlasTxtarDownSection]
-	if downSection == nil {
-		return atlasTxtarSQL{migrationSQL: migrationSection.String()}, true, nil
+	parsed := atlasTxtarSQL{migrationSQL: migrationSection.String()}
+	if checksSection := sections[atlasTxtarChecksSection]; checksSection != nil {
+		parsed.checksSQL = checksSection.String()
 	}
-	return atlasTxtarSQL{
-		migrationSQL: migrationSection.String(),
-		downSQL:      downSection.String(),
-		hasDown:      true,
-	}, true, nil
+	if downSection := sections[atlasTxtarDownSection]; downSection != nil {
+		parsed.downSQL = downSection.String()
+		parsed.hasDown = true
+	}
+	return parsed, true, nil
+}
+
+// parseAtlasTxtarChecks maps a txtar checks.sql section onto Ptah's
+// pre-migration check machinery: each statement is an assertion that must
+// return a single truthy scalar before the migration body runs, matching
+// Atlas's enforcement of the section as a pre-migration gate. Checks are named
+// checks.sql#N by position so a failure names the exact assertion.
+//
+// N counts only non-empty statements, so comment-only spans and stray
+// separators (`;;`) do not consume a number: the third assertion a reader can
+// see is always checks.sql#3, even when blank statements sit between them.
+func parseAtlasTxtarChecks(checksSQL string) []Check {
+	statements := SplitSQLStatements(checksSQL)
+	checks := make([]Check, 0, len(statements))
+	for _, stmt := range statements {
+		// Match parseCheckArgs: drop trailing terminators and whitespace so
+		// drivers that reject a trailing ';' on a prepared query accept the
+		// predicate.
+		stmt = strings.TrimRight(strings.TrimSpace(stmt), "; \t")
+		if stmt == "" {
+			continue
+		}
+		checks = append(checks, Check{
+			Name:   fmt.Sprintf("%s#%d", atlasTxtarChecksSection, len(checks)+1),
+			Assert: stmt,
+			OnFail: OnFailAbort,
+		})
+	}
+	return checks
 }
 
 func hasAtlasTxtarDirective(sql string) bool {
@@ -417,7 +452,7 @@ func parseAtlasTxtarSectionMarker(line string) (string, bool) {
 }
 
 func isAtlasTxtarSQLSection(section string) bool {
-	return section == atlasTxtarMigrationSection || section == atlasTxtarDownSection
+	return section == atlasTxtarMigrationSection || section == atlasTxtarDownSection || section == atlasTxtarChecksSection
 }
 
 func looksAtlasTxtarFileSection(section string) bool {
@@ -456,6 +491,10 @@ type Migration struct {
 	// per-migration transaction. Execution uses the direction-specific fields.
 	NoTransaction                bool
 	directionalNoTransactionMode bool
+	// atlasChecks are pre-migration assertions parsed from an Atlas txtar
+	// checks.sql section. They run through the same enforcement machinery as
+	// `-- +ptah check` directives, before any checks declared in UpSQL.
+	atlasChecks []Check
 	// IsCheckpoint marks a checkpoint migration whose up body is the full
 	// cumulative schema at its version. On a fresh database the migrator
 	// bootstraps from the newest checkpoint and records all lower versions as

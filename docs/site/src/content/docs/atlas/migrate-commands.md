@@ -37,8 +37,11 @@ explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/
 
 ## Worked example: an Atlas-format directory
 
-Atlas-style migration files can include `migration.sql` and `down.sql` sections
-inside txtar archives. Ptah executes those known sections and ignores unrelated
+Atlas-style migration files can include `migration.sql`, `down.sql`, and
+`checks.sql` sections inside txtar archives. Ptah executes `migration.sql` on
+apply and `down.sql` on rollback, enforces `checks.sql` as a pre-migration
+gate (each statement must return a truthy scalar or the apply aborts before
+any body statement, matching the licensed Atlas build), and ignores unrelated
 embedded files.
 
 Create an Atlas-style migration:
