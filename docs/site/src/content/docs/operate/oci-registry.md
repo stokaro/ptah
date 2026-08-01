@@ -106,8 +106,8 @@ run:
 - `.ptah-lint.yaml`.
 
 Unrelated files are excluded. `--dir-format` accepts `auto`, `ptah`, or `atlas`.
-With `--verify-sum`, a missing or mismatched integrity file fails before the
-registry upload.
+A mismatched integrity file always fails before the registry upload;
+`--verify-sum` additionally makes a missing integrity file an error.
 
 The command prints the manifest digest. Promote that exact artifact by digest:
 

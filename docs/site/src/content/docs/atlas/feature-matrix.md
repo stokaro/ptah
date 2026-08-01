@@ -157,7 +157,7 @@ as open capabilities regardless.
 | Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format table creation remains #950; Ptah-format is covered. |
 | Atlas SQL template migrations (`--atlas-env`) | ✅ | ❔ | ❔ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. Flag on 10 migrations verbs. |
 | Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❔ | ✅ | Atlas-format .sql files with `-- atlas:txtar` execute migration.sql and down.sql sections; checks.sql is discarded, not enforced (stokaro/ptah#956); other embedded files are ignored. |
-| Atlas-format checkpoint output | ❌ | ❌ | ✅ | migrate checkpoint `--dir-format`=atlas is a recorded waiver; Ptah writes only the ptah two-file checkpoint convention. |
+| Atlas-format checkpoint output | ❌ | ❌ | ✅ | Writing stays a waiver (`--dir-format`=atlas); reading Atlas `-- atlas:checkpoint` dirs works: fresh databases bootstrap from the latest checkpoint, pre-checkpoint databases skip it silently. |
 | Baseline an existing database | ✅ | ✅ | ✅ | Ptah adds a standalone baseline verb with `--shadow-db` verification and `--dry-run`; CE exposes baselining as migrate apply `--baseline`. |
 | Create an empty migration file | ✅ | ✅ | ✅ | Native create writes an up/down pair; compat new writes one Atlas .sql skeleton, refreshes `atlas.sum`, `--edit` opens $VISUAL or $EDITOR. |
 | Directory integrity file: hash and validate | ✅ | ✅ | ✅ | hash writes `ptah.sum`, or `atlas.sum` for atlas-format directories; validate checks it and with `--dev-url` cleans and replays the dir. |

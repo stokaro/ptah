@@ -55,7 +55,7 @@ With `--dry-run`, `ptah schema apply` prints the planned SQL under a `Planned sc
 | Where it fits | Shared and production databases, teams, CI gates | Prototypes, local development, single-owner databases |
 | Main commands | `ptah migrations ...` | `ptah schema drift`, `ptah schema apply` |
 
-The versioned workflow costs you a migration directory to maintain and the discipline of hashing and reviewing it. In exchange, changes are auditable, rollback is a committed file rather than an improvisation, and CI can verify integrity with `--verify-sum` before anything touches a database. The direct workflow removes the file overhead and iterates fastest, but the apply-time approval is its only gate, and there is no history to replay or audit.
+The versioned workflow costs you a migration directory to maintain and the discipline of hashing and reviewing it. In exchange, changes are auditable, rollback is a committed file rather than an improvisation, and hashed directories verify integrity before anything touches a database, and `--verify-sum` additionally requires the sum file to exist. The direct workflow removes the file overhead and iterates fastest, but the apply-time approval is its only gate, and there is no history to replay or audit.
 
 A common hybrid uses both: iterate with `ptah schema apply` against a disposable local database, then run `ptah migrations generate` against a database at the released state so the reviewed migration file — not the ad-hoc changes — is what reaches shared environments. In either model, `ptah schema drift` works as a pipeline guard that fails when a database no longer matches the desired schema.
 

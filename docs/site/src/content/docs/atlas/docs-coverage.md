@@ -407,7 +407,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Implementation status.** Implemented natively and free. `ptah migrations checkpoint` squashes a directory's history into a cumulative-schema checkpoint that fresh databases bootstrap from, and `ptah-compat migrate checkpoint` forwards to it on the Atlas-compatible surface — a workflow Atlas keeps in its Pro build.
 
-Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver rejected loudly, because Atlas's `-- atlas:checkpoint` directive has no reader support in Ptah's engine and an Atlas-format checkpoint file would replay as an ordinary migration.
+Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver rejected loudly, because the checkpoint engine does not emit Atlas-format checkpoint files yet. The read side honors Atlas's `-- atlas:checkpoint` directive: externally produced Atlas checkpoint directories bootstrap fresh databases from the latest checkpoint and are silently skipped on databases that already applied pre-checkpoint history, matching measured Atlas behavior.
 
 **Conformance status.** Measured by native command and Atlas-compatibility tests, not as a community-version unsupported boundary.
 

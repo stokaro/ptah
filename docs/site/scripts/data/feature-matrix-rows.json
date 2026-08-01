@@ -365,8 +365,8 @@
   "ptah": "no",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "migrate checkpoint `--dir-format`=atlas is a recorded waiver; Ptah writes only the ptah two-file checkpoint convention.",
-  "evidence": "ptah-compat migrate checkpoint --dir-format atlas --dir file://m --dev-url sqlite://d.db. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration checkpoints' is listed Starter ✗ / Pro ✓ (links /versioned/checkpoint), grounding oss=no and pro=yes for the checkpoint capability this waiver tracks"
+  "note": "Writing stays a waiver (`--dir-format`=atlas); reading Atlas `-- atlas:checkpoint` dirs works: fresh databases bootstrap from the latest checkpoint, pre-checkpoint databases skip it silently.",
+  "evidence": "ptah-compat migrate checkpoint --dir-format atlas --dir file://m --dev-url sqlite://d.db. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration checkpoints' is listed Starter ✗ / Pro ✓ (links /versioned/checkpoint), grounding oss=no and pro=yes for the checkpoint capability this waiver tracks. Reading verified 2026-08-01 with e2e tests against the trial-measured fixtures: fresh-db bootstrap wrote the single type=2 revision row matching the Atlas control dump; pre-checkpoint db printed 'No migration files to execute' (stokaro/ptah#954, PR #962)"
  },
  {
   "area": "Declarative / direct schema workflow",

@@ -32,7 +32,9 @@ ptah.sum
   before they are applied.
 - **A checkpoint** is a special pair carrying a `.checkpoint` marker that
   fresh databases bootstrap from instead of replaying all of history — see
-  [Checkpoints](../../versioned/checkpoints/).
+  [Checkpoints](../../versioned/checkpoints/). Atlas-format directories mark
+  checkpoints with a first-line `-- atlas:checkpoint` file directive instead,
+  which Ptah honors with the same bootstrap-or-skip semantics.
 
 Applied versions are recorded in a **revision table** in the target database
 (`schema_migrations` by default). Pending work is the set of directory

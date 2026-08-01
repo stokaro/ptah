@@ -71,8 +71,12 @@ type MigrationFile struct {
 	// IsCheckpoint marks a checkpoint migration whose up body is the full
 	// cumulative schema at its version. A fresh database bootstraps from the
 	// newest checkpoint instead of replaying pre-checkpoint history; an
-	// already-migrated database ignores it. The marker is spelled
-	// NNNNNNNNNN_description.checkpoint.(up|down).sql.
+	// already-migrated database ignores it. The Ptah marker is spelled
+	// NNNNNNNNNN_description.checkpoint.(up|down).sql and is recognized here
+	// at name-parse time. Atlas-format checkpoints instead carry a first-line
+	// `-- atlas:checkpoint` file directive, which name parsing cannot see;
+	// FSMigrationProvider detects it from file content when loading, so this
+	// field stays false for Atlas files parsed by name alone.
 	IsCheckpoint bool
 }
 
