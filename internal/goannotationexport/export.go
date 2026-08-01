@@ -26,10 +26,13 @@ var (
 	// ErrNoAnnotations reports that the source set has no annotations to export.
 	// Refusing the export protects an existing HCL schema from empty replacement.
 	ErrNoAnnotations = errors.New("no Ptah Go annotations found to export")
+	// ErrNoRemovableAnnotations reports that cleanup found no annotation edits it
+	// can apply safely.
+	ErrNoRemovableAnnotations = errors.New("no removable Ptah Go annotations found for cleanup")
 	// ErrNoExportableSchema reports that parsed annotations did not produce any
 	// HCL schema object. Refusing the export protects an existing HCL schema from
 	// header-only replacement.
-	ErrNoExportableSchema = errors.New("Go annotations produced no exportable HCL schema objects")
+	ErrNoExportableSchema = errors.New("go annotations produced no exportable HCL schema objects")
 	// ErrLossyCleanup reports that destructive cleanup would discard schema intent.
 	ErrLossyCleanup = errors.New("refuse to clean Go annotations after a lossy HCL export")
 	// ErrInvalidHCL reports that generated HCL is not parseable and stable.
@@ -178,7 +181,7 @@ func prepareExport(opts Options) (exportPlan, error) {
 		cleanupResults = cleanupPlan.DiffResults()
 	}
 	if opts.Cleanup && len(cleanupResults) == 0 {
-		return exportPlan{}, ErrNoAnnotations
+		return exportPlan{}, ErrNoRemovableAnnotations
 	}
 
 	return exportPlan{

@@ -146,7 +146,7 @@ if "$ptah_bin" schema export \
 	printf 'repeated destructive cleanup unexpectedly succeeded\n' >&2
 	exit 1
 fi
-grep -Fq 'no Ptah Go annotations found to export' "$workspace/repeat.err"
+grep -Fq 'no removable Ptah Go annotations found for cleanup' "$workspace/repeat.err"
 cmp "$workspace/cleanup.before-repeat.hcl" "$workspace/cleanup.hcl"
 cmp "$workspace/models.before-repeat.go" "$cleanup_root/models.go"
 

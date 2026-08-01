@@ -302,7 +302,7 @@ func TestExport_FailurePath_RepeatCleanupPreservesExistingOutput(t *testing.T) {
 		Cleanup:    true,
 	})
 
-	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoAnnotations)
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoRemovableAnnotations)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
 	assertFileBytes(c, source, sourceData)
 	assertFileBytes(c, output, outputData)
@@ -380,6 +380,32 @@ type Roles struct{}
 	c.Assert(parsed.Roles, qt.DeepEquals, []goschema.Role{
 		{StructName: "", Name: "app", Login: true, Inherit: true},
 	})
+}
+
+func TestExport_FailurePath_NonRemovableAnnotationRefusesCleanup(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+/* business documentation */ //ptah:schema:role name="app" login="true"
+type Roles struct{}
+`)
+	outputData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoRemovableAnnotations)
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
 }
 
 func TestExport_FailurePath_FieldOnlySchemaPreservesExistingOutput(t *testing.T) {

@@ -351,7 +351,7 @@ func TestSchemaExportCommand_FailurePath_RepeatCleanupPreservesExistingOutput(t 
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoAnnotations)
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoRemovableAnnotations)
 	modelAfter, err := os.ReadFile(modelPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(modelAfter, qt.DeepEquals, modelData)
