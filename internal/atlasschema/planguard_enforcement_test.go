@@ -103,6 +103,25 @@ func TestEphemeralSQLiteDevStillRunsOrdinaryDDL(t *testing.T) {
 	})
 }
 
+// TestUntrustedSQLSessionRejectsNilCallback pins the guard its sibling
+// WithSession already has. The wrapper passes its own closure down, so
+// WithSession's nil check never sees the caller's callback and a nil would be
+// dereferenced instead of reported.
+func TestUntrustedSQLSessionRejectsNilCallback(t *testing.T) {
+	c := qt.New(t)
+	devURL, cleanup, err := atlasschema.NewEphemeralSQLiteDev()
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(cleanup)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	err = conn.WithUntrustedSQLSession(ctx, nil)
+
+	c.Assert(err, qt.ErrorMatches, `database session callback is nil`)
+}
+
 // TestUntrustedSQLSessionRestrictsBeforeTheCallback pins that the session
 // arrives already restricted: the callback never gets a window in which the
 // escape would work.

@@ -377,13 +377,18 @@ var dynamicExecutorKeywords = []string{"EXECUTE", "EXEC", "PREPARE", "SP_EXECUTE
 // followsDynamicExecutor reports whether the string at index i is an argument
 // of a dynamic executor, walking back over `(` and `||` so that
 // `EXECUTE ('DROP ' || 'TABLE t')` is still recognized as code.
+//
+// The lexer emits `||` as two separate `|` operator tokens, so the walk-back
+// has to accept the single-character form; matching only "||" made this whole
+// branch dead code and let concatenated executor arguments through unscanned.
 func followsDynamicExecutor(tokens []lexer.Token, i int) bool {
 	for j := i - 1; j >= 0; j-- {
 		token := tokens[j]
 		switch {
 		case token.Type == lexer.TokenString:
 			continue
-		case token.MatchOperatorValue("(") || token.MatchOperatorValue("||"):
+		case token.MatchOperatorValue("(") || token.MatchOperatorValue("||") ||
+			token.MatchOperatorValue("|"):
 			continue
 		case token.Type == lexer.TokenIdentifier:
 			return slices.Contains(dynamicExecutorKeywords, strings.ToUpper(token.Value))

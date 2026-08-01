@@ -195,7 +195,7 @@ type DatabaseConnection struct {
 	pinned    bool
 	// session is the pinned physical session set by WithSession. Connection
 	// state that only applies per physical connection — see
-	// RestrictSQLiteSession — needs it.
+	// WithUntrustedSQLSession — needs it.
 	session *sql.Conn
 }
 
@@ -376,6 +376,11 @@ func (dc *DatabaseConnection) WithUntrustedSQLSession(
 ) error {
 	if dc == nil {
 		return fmt.Errorf("untrusted SQL session requires an open database connection")
+	}
+	// WithSession's own nil check never sees the caller's callback, because
+	// the one handed to it below is this method's closure.
+	if use == nil {
+		return fmt.Errorf("database session callback is nil")
 	}
 	return dc.WithSession(ctx, func(session *DatabaseConnection) error {
 		if err := session.restrictUntrustedSQL(ctx); err != nil {

@@ -227,6 +227,24 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 			construct: "ATTACH",
 		},
 		{
+			// The lexer splits `||` into two `|` tokens, so the walk-back has
+			// to accept the single-character form; matching only "||" left
+			// every concatenated executor argument unscanned.
+			name:      "dynamic_execute_of_concatenated_string",
+			statement: `EXECUTE ('PERFORM ' || 'pg_read_file(''/etc/passwd'')')`,
+			construct: "pg_read_file",
+		},
+		{
+			name:      "dynamic_execute_concatenated_without_parens",
+			statement: `EXECUTE 'PERFORM ' || 'pg_read_file(''/etc/passwd'')'`,
+			construct: "pg_read_file",
+		},
+		{
+			name:      "dynamic_execute_concatenated_in_routine_body",
+			statement: "CREATE FUNCTION f() RETURNS void AS $$ BEGIN EXECUTE 'SELECT ' || 'lo_export(loid, ''/tmp/out.bin'')'; END $$ LANGUAGE plpgsql",
+			construct: "lo_export",
+		},
+		{
 			name:      "sqlserver_bulk_insert",
 			statement: `BULK INSERT users FROM 'c:\payload.csv'`,
 			dialect:   "sqlserver",
@@ -480,6 +498,25 @@ func TestCheckPlanStatementsSandboxableAllowsOrdinaryDDL(t *testing.T) {
 			name:      "postgres_do_block_plain_ddl",
 			statement: "DO $$ BEGIN CREATE INDEX idx_users_email ON users (email); END $$",
 		},
+		{
+			// Concatenation that is not feeding a dynamic executor stays data.
+			// Accepting the single `|` token in the walk-back must not turn
+			// every concatenated literal into scanned code.
+			name:      "concatenated_default_value",
+			statement: `ALTER TABLE t ADD COLUMN note text DEFAULT 'x' || 'y'`,
+		},
+		{
+			name:      "concatenated_select_literal_mentioning_do",
+			statement: `SELECT 'Do not ' || 'delete rows'`,
+		},
+		{
+			name:      "concatenated_select_literal_mentioning_attach",
+			statement: `SELECT 'ATT' || 'ACH DATABASE'`,
+		},
+		{
+			name:      "concatenated_insert_value_mentioning_attach",
+			statement: `INSERT INTO docs (body) VALUES ('ATTACH the receipt here')`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -489,6 +526,41 @@ func TestCheckPlanStatementsSandboxableAllowsOrdinaryDDL(t *testing.T) {
 			err := atlasschema.CheckPlanStatementsSandboxable([]string{tt.statement}, tt.dialect)
 
 			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// TestCheckPlanStatementsSandboxableCannotSeeSplitKeywords documents the
+// limitation the lint's own doc comment claims, with the evidence attached.
+// Scanning happens per string fragment, so a construct whose KEYWORD is split
+// across a concatenation is invisible — `'ATT' || 'ACH DATABASE ...'` never
+// contains the token ATTACH anywhere. This is why the dev database gets
+// engine-level restrictions and the docs refuse to call the lint a boundary;
+// if a future change makes these detectable, that is an improvement, not a
+// regression, and this test should be updated rather than trusted.
+func TestCheckPlanStatementsSandboxableCannotSeeSplitKeywords(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{
+			name:      "attach_keyword_split_across_concatenation",
+			statement: `EXECUTE 'ATT' || 'ACH DATABASE ''/tmp/x.db'' AS v'`,
+		},
+		{
+			name:      "copy_program_split_across_concatenation",
+			statement: `EXECUTE 'COPY t FROM ' || 'PROGRAM ''curl evil'''`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := atlasschema.CheckPlanStatementsSandboxable([]string{tt.statement}, "postgres")
+
+			c.Assert(err, qt.IsNil, qt.Commentf(
+				"documented limitation: a lexical scan cannot reassemble a keyword split across literals"))
 		})
 	}
 }

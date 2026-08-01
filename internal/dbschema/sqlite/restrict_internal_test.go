@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -73,6 +74,17 @@ func TestRestrictSessionRequiresASession(t *testing.T) {
 		`sqlite session restriction requires a pinned session`)
 }
 
+// TestVerifyRestrictionDefaultsToTheAttachProbe pins what the seam is bound
+// to. Without this, rebinding verifyRestriction to a no-op would satisfy every
+// other test: they prove RestrictSession consults *a* hook, not that the hook
+// is the ATTACH probe that makes the restriction real.
+func TestVerifyRestrictionDefaultsToTheAttachProbe(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(reflect.ValueOf(verifyRestriction).Pointer(), qt.Equals,
+		reflect.ValueOf(verifyAttachRefused).Pointer())
+}
+
 // TestRestrictSessionConsultsTheVerification pins that applying the limit is
 // not the whole job: RestrictSession must confirm the restriction took effect
 // and propagate a failed confirmation. On a session where the limit did work,
@@ -89,5 +101,5 @@ func TestRestrictSessionConsultsTheVerification(t *testing.T) {
 
 	err := RestrictSession(context.Background(), session)
 
-	c.Assert(errors.Is(err, sentinel), qt.IsTrue, qt.Commentf("err=%v", err))
+	c.Assert(err, qt.ErrorIs, sentinel)
 }

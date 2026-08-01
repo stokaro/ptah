@@ -124,15 +124,16 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLintUnderEveryTxMode(t *testing.T) 
 
 // TestRehearsalCoreLintsStatementsTheEngineWouldAccept pins the lint call site
 // inside the shared core, which is what gates the apply-path simulation as
-// well as plan files. It uses a construct the SQLite engine happily executes
-// but the lint refuses, so only the lint can produce this outcome.
+// well as plan files. It uses a construct the SQLite engine accepts — the
+// pragma points at a directory that exists, which the engine requires — but
+// the lint refuses, so only the lint can produce this outcome.
 func TestRehearsalCoreLintsStatementsTheEngineWouldAccept(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
 
 	err := rehearseStatementsOnDev(context.Background(), devConn, nil, migrator.MigrationTxModeNone,
-		[]string{`PRAGMA temp_store_directory = '/tmp/evil'`})
+		[]string{fmt.Sprintf("PRAGMA temp_store_directory = '%s'", dir)})
 
 	c.Assert(IsPlanEscape(err), qt.IsTrue, qt.Commentf("err=%v", err))
 	c.Assert(err, qt.ErrorMatches, `.*statement 1 uses PRAGMA temp_store_directory.*`)
