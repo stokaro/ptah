@@ -606,11 +606,11 @@ The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded 
 
 **Type.** Product behavior
 
-**Current boundary.** `ptah-compat schema plan` computes the declarative migration from the `--from` target database to local `--to` schema files and saves it as a local JSON plan file with ordered statements, per-statement safety severity, dialect, exclude patterns, and SHA-256 source/desired fingerprints (`--save`/`--output`/`--name`/`--dry-run`, `--env` project defaults).
+**Current boundary.** `ptah-compat schema plan` computes the declarative migration from the `--from` target database to local `--to` schema files and saves it as a local plan file (`--save`/`--output`/`--name`/`--dry-run`, `--env` project defaults; `--auto-approve` accepted for CLI compatibility). The default format is the Atlas `.plan.hcl` shape, readable by Atlas's plan reader; an `--output` path ending in `.json` writes the native JSON plan with ordered statements, per-statement safety severity, dialect, exclude patterns, and SHA-256 source/desired fingerprints.
 
-`ptah-compat schema apply --plan file://<path>` executes exactly the saved statements after verifying the source fingerprint against the live database, refusing drifted targets loudly.
+`ptah-compat schema apply --plan file://<path>` reads both formats, including `.plan.hcl` files written by the licensed Atlas binary. JSON plans execute after verifying the source fingerprint against the live database, refusing drifted targets loudly. Atlas-format plans require `--to` like the official binary and are verified by replaying the plan on a dev database (an ephemeral SQLite one when the target is SQLite) and comparing the reached state with the desired state; every `--plan` apply with a desired state re-verifies the end state on the target afterward.
 
-The registry-bound `--push`, `--pending`, `--repo`, and `--auto-approve` plan flags are recorded waivers; the plan registry sub-verbs stay Atlas CE boundary stubs; `--edit`, `--skip-lint`, `--format`, `--name-format`, and `--directive` fail explicitly until implemented.
+The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded waivers; the plan registry sub-verbs stay Atlas CE boundary stubs; `--edit`, `--skip-lint`, `--format`, `--name-format`, and `--directive` fail explicitly until implemented.
 
 **Tracking.** [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758)
 
@@ -634,7 +634,7 @@ The registry-bound `--push`, `--pending`, `--repo`, and `--auto-approve` plan fl
 
 `migrate down --dev-url` now verifies the rollback plan on the dev database before the target is touched, and `migrate down --format` renders an Atlas Go-template down report; `migrate down --to-tag`, `--skip-checks`, and `--plan` are recorded registry-bound waivers that fail loudly with their rationale.
 
-`schema apply --edit`, `migrate diff --edit`, and `migrate new --edit` now open the operator's `$VISUAL`/`$EDITOR`. `schema apply --plan file://<path>` executes a pre-approved local plan file saved by `schema plan` after verifying the target's schema fingerprint; registry `atlas://` plan URLs are rejected.
+`schema apply --edit`, `migrate diff --edit`, and `migrate new --edit` now open the operator's `$VISUAL`/`$EDITOR`. `schema apply --plan file://<path>` executes a pre-approved local plan file — the Atlas `.plan.hcl` format or the native JSON plan — after verifying it against the target (fingerprint check, dev-database replay against `--to`, and post-apply end-state verification, per format); registry `atlas://` plan URLs are rejected.
 
 `ptah-compat schema inspect --exclude` now filters inspection output with Atlas-style resource globs and type selectors, including the documented `*[type=extension].version` field selector with schema-qualified globs; other field selectors and type selectors on non-final pattern segments fail explicitly.
 

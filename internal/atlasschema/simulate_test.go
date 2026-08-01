@@ -120,7 +120,7 @@ func TestSimulateOnDev_FailedSimulationLeavesTargetUnchanged(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &simulationErr)
 	c.Assert(simulationErr.Stage, qt.Equals, "plan")
 	c.Assert(atlasschema.IsSimulationFailure(err), qt.IsTrue)
-	c.Assert(err, qt.ErrorMatches, `(?s)dev database simulation failed during plan: .*sim_existing.*; the target database was left unchanged`)
+	c.Assert(err, qt.ErrorMatches, `(?s)dev database simulation failed during plan: .*sim_existing.*; the plan was not applied to the target database`)
 	// The failed rehearsal must not have touched the target.
 	c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
 	c.Assert(sqliteTableExists(c, dbPath, "sim_added"), qt.IsFalse)

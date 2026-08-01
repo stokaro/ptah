@@ -347,11 +347,51 @@ filters. Repeated values union deterministically, `--exclude` plus disabled
 `schema.mode` values subtract afterward, cross-scope dependencies refuse the
 plan with explicit diagnostics, and an empty selection reports a synced schema.
 
-**`--plan file://<path>`** executes a pre-approved local plan file saved by
-`schema plan`, after verifying the database still matches the plan's source
-fingerprint. A drifted target refuses with a stale-plan error, registry
-`atlas://` plan URLs are rejected, and `--plan` cannot be combined with `--to`,
-`--file`, `--dev-url`, `--exclude`, `--schema`, `--include`, or `--edit`.
+**`--plan file://<path>`** executes a pre-approved local plan file instead of
+re-planning. Both plan formats are accepted, detected by content: the Atlas
+`.plan.hcl` shape and Ptah's native format_version-1 `.plan.json`.
+
+- A JSON plan is verified against its recorded source fingerprint — a drifted
+  target refuses with a stale-plan error — and may run without `--to`.
+- An Atlas-format plan requires `--to`, matching the official binary: its
+  hashes are Atlas-computed with no local recipe, so the plan is replayed on
+  a dev database from the target's current schema, and the reached state must
+  equal the `--to` desired state before the target is touched. SQLite targets
+  get a throwaway dev database automatically; every other dialect requires
+  `--dev-url`.
+- Before replaying, statements matching a deny-list of known escape
+  constructs are refused by name before anything executes. The lint covers
+  SQLite (`ATTACH`/`DETACH`, `VACUUM INTO`, storage-directory pragmas,
+  `load_extension`), PostgreSQL (`DO` blocks, routine bodies and dynamic SQL
+  calling file-access or `dblink` functions, `COPY ... PROGRAM` or `COPY` with
+  a file path, `postgres_fdw`, `file_fdw`), MySQL/MariaDB
+  (`LOAD DATA INFILE`, `INTO OUTFILE`/`DUMPFILE`, `LOAD_FILE`,
+  `ENGINE=FEDERATED`, `CREATE SERVER`, `INSTALL PLUGIN`/`COMPONENT`,
+  `DATA`/`INDEX DIRECTORY`), SQL Server (`xp_cmdshell`, `xp_dirtree`,
+  `OPENROWSET`, `OPENDATASOURCE`, `BULK INSERT`, `sp_addlinkedserver`), and
+  ClickHouse (`URL`, `File`, `S3`, `HDFS`, `MySQL`, `PostgreSQL` table
+  engines).
+- **The lint is best-effort, not exhaustive, and it is not a sandbox.** String
+  concatenation alone defeats any scanner, so a `--dev-url` must point at a
+  database you are willing to have a foreign plan file execute arbitrary SQL
+  against.
+- **Real enforcement exists only on SQLite dev databases** — the ephemeral one
+  Ptah creates for SQLite targets, and an operator-supplied SQLite
+  `--dev-url`, since the restriction keys on the dev dialect. Their sessions
+  refuse `ATTACH`, `DETACH`, and `VACUUM INTO` at the engine level and cannot
+  load extensions; Ptah verifies the restriction is in force before rehearsing
+  and refuses to rehearse if it is not. Storage-directory pragmas and
+  `writable_schema` are not covered, so the converges-to-`--to` verdict is a
+  good-faith check rather than an adversarial one. See
+  [Save and execute plan files](../../atlas/schema-commands/#where-enforcement-is-real).
+- The replay also runs under `--dry-run`, so a plan can be verified without
+  committing to apply it.
+- Whenever a desired state is available, the end state is verified again on
+  the target after the apply and a mismatch fails loudly; the verification is
+  always on, like Atlas's.
+- Registry `atlas://` plan URLs are rejected. `--plan` cannot be combined
+  with `--file`, `--exclude`, `--schema`, `--include`, or `--edit`, and
+  `--dev-url` combines with `--plan` only together with `--to`.
 
 **`--lock-timeout`** bounds waiting for the session advisory lock that
 serializes concurrent schema applies against one target. The lock is acquired
@@ -373,25 +413,36 @@ Native twin: [`ptah schema apply`](../native-commands/).
 ### `ptah-compat schema plan`
 
 Computes the declarative migration from the `--from` target database to local
-`--to` schema files and saves it as a fingerprinted local plan file.
+`--to` schema files and saves it as a local plan file. The default format is
+the Atlas `.plan.hcl` shape — one `plan` block with `from`/`to` fingerprints
+and the migration SQL — so the saved file is readable by Atlas's plan reader;
+an `--output` path ending in `.json` writes the native fingerprinted JSON
+plan (format version 1) instead. Without `--save`/`--output`/`--dry-run`, the
+plan document prints to stdout.
 
 **Flags**
 
 | Flag | Behavior |
 | --- | --- |
-| `--save` | Writes `<name>.plan.json`, using a deterministic fingerprint-derived default name or `--name`. |
-| `--output <path>` | Chooses the location. |
+| `--save` | Writes `<name>.plan.hcl`, using an Atlas-style UTC timestamp default name or `--name`. Refuses to overwrite an existing default-named file, since the timestamp has one-second granularity. |
+| `--output <path>`/`-o` | Chooses the location, and a `.json` path selects the native JSON plan format. The plan name recorded inside a JSON plan stays fingerprint-derived unless `--name` is given. |
 | `--dry-run` | Prints the plan document without saving. |
+| `--auto-approve` | Accepted for Atlas CLI compatibility; a locally saved plan file is approved by operator review, so there is no prompt to skip. |
 | `--env` | Reads `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported `diff` policy from `atlas.hcl`. |
 
 The JSON plan records the ordered SQL statements with per-statement safety
 severity, the dialect, the exclude patterns, and SHA-256 fingerprints of the
-source and desired schema states.
+source and desired schema states. The `.plan.hcl` shape carries only the
+name, the fingerprints, and the migration SQL; Ptah writes its own sha256
+fingerprints there (the official binary parses the file but verifies its own
+base64 hashes, which have no local recipe), re-derives statement severity at
+read time, and refuses to save a plan computed with `--exclude` as
+`.plan.hcl` because the shape cannot record the patterns.
 
 **Not implemented**
 
-- Registry-bound `--push`, `--pending`, `--repo`, and `--auto-approve` are
-  recorded waivers that fail loudly.
+- Registry-bound `--push`, `--pending`, and `--repo` are recorded waivers
+  that fail loudly.
 - `--edit`, `--skip-lint`, `--format`, `--name-format`, `--directive`,
   `--schema`, `--include`, and `--lock-timeout` fail explicitly until
   implemented.

@@ -157,7 +157,7 @@ func TestSchemaApplyDevSimulationFailureLeavesTargetUnchanged(t *testing.T) {
 
 	// The edited SQL is rehearsed exactly as it would be applied; the failed
 	// simulation refuses the apply and the target database stays unchanged.
-	c.Assert(err, qt.ErrorMatches, `(?s)dev database simulation failed during plan: .*sim_fail_users.*; the target database was left unchanged`)
+	c.Assert(err, qt.ErrorMatches, `(?s)dev database simulation failed during plan: .*sim_fail_users.*; the plan was not applied to the target database`)
 	c.Assert(out.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(sqliteTableCount(c, dbPath, "sim_fail_users"), qt.Equals, 0)
 }

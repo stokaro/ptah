@@ -103,7 +103,7 @@ are triaged in the comparison gap register rather than measured here.
 
 **Native Ptah.** Ptah plans and applies declarative schema changes through the same engine that powers `schema apply`
 
-**Atlas-compatible Ptah surface.** `ptah-compat schema plan` saves the computed plan to a fingerprinted local JSON plan file; `ptah-compat schema apply --plan file://<path>` executes the saved statements only after the live database matches the plan's source fingerprint, refusing drifted targets; registry planning flags are recorded waivers and the plan registry sub-verbs stay CE boundary stubs
+**Atlas-compatible Ptah surface.** `ptah-compat schema plan` saves the computed plan in the Atlas `.plan.hcl` format by default (a `.json` output path keeps the native fingerprinted JSON plan); `ptah-compat schema apply --plan file://<path>` reads both formats, Atlas-authored files included — JSON plans execute only after the live database matches the plan's source fingerprint, Atlas-format plans require `--to` and are verified by dev-database replay plus the always-on post-apply end-state check; registry planning flags are recorded waivers and the plan registry sub-verbs stay CE boundary stubs
 
 **Atlas CE.** `schema plan` aborts with the community-version boundary; the plan/approval flow is bound to the Atlas Pro registry
 
