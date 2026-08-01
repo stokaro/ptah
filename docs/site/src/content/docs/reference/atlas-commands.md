@@ -359,11 +359,19 @@ re-planning. Both plan formats are accepted, detected by content: the Atlas
   equal the `--to` desired state before the target is touched. SQLite targets
   get a throwaway dev database automatically; every other dialect requires
   `--dev-url`.
-- The replay only sandboxes statements that cannot leave the dev database, so
-  a plan containing one that can — `ATTACH`/`DETACH`, `VACUUM INTO`,
-  `LOAD DATA INFILE`, `INTO OUTFILE`/`DUMPFILE`, `COPY ... PROGRAM` or `COPY`
-  with a file path, `dblink`, `postgres_fdw`, `file_fdw`, or the
-  file-access functions — is refused by name before anything executes.
+- Before replaying, statements matching a deny-list of known escape
+  constructs are refused by name before anything executes: `ATTACH`/`DETACH`,
+  `VACUUM INTO`, `PRAGMA temp_store_directory`, `DO` blocks, routine bodies
+  calling file-access or `dblink` functions, `LOAD DATA INFILE`,
+  `INTO OUTFILE`/`DUMPFILE`, `LOAD_FILE`, `ENGINE=FEDERATED`,
+  `CREATE SERVER`, `INSTALL PLUGIN`/`COMPONENT`, `DATA`/`INDEX DIRECTORY`,
+  `COPY ... PROGRAM` or `COPY` with a file path, `dblink`, `postgres_fdw`,
+  and `file_fdw`.
+- **The deny-list is best-effort, not exhaustive, and the replay is not a
+  sandbox.** A `--dev-url` must point at a database you are willing to have a
+  foreign plan file execute arbitrary SQL against; only the ephemeral SQLite
+  dev database Ptah creates for SQLite targets (a throwaway file in a private
+  temp directory) carries no such exposure.
 - The replay also runs under `--dry-run`, so a plan can be verified without
   committing to apply it.
 - Whenever a desired state is available, the end state is verified again on

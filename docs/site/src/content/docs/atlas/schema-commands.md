@@ -316,16 +316,38 @@ content — including `.plan.hcl` files written by the licensed Atlas binary:
   check too — but the replay runs either way, because the fingerprint shape
   is public and must never be able to switch a verification off.
 
-The replay is a sandbox only for statements that cannot reach out of the dev
-database. A plan containing one that can — `ATTACH`/`DETACH`, `VACUUM INTO`,
-`LOAD DATA INFILE`, `SELECT ... INTO OUTFILE`/`DUMPFILE`, `COPY ... PROGRAM`
-or `COPY` with a file path, `dblink`, `postgres_fdw`, `file_fdw`, or the
-server-side file-access functions — is refused by name before anything runs
-anywhere:
+### The replay is not a sandbox
+
+Before replaying, Ptah refuses statements that match a **deny-list of known
+escape constructs** — `ATTACH`/`DETACH`, `VACUUM INTO`,
+`PRAGMA temp_store_directory`, `DO` blocks, routine bodies calling
+file-access or `dblink` functions, `LOAD DATA INFILE`,
+`SELECT ... INTO OUTFILE`/`DUMPFILE`, `LOAD_FILE`, `ENGINE=FEDERATED`,
+`CREATE SERVER`, `INSTALL PLUGIN`/`COMPONENT`, `DATA`/`INDEX DIRECTORY`,
+`COPY ... PROGRAM` or `COPY` with a file path, `dblink`, `postgres_fdw`, and
+`file_fdw`:
 
 ```text
-error: pre-planned migration cannot be verified on a dev database: statement 1 uses ATTACH, which attaches another SQLite database file to the session, so the statement can write to databases other than the dev database. Replaying it would not be a sandboxed rehearsal ...
+error: pre-planned migration cannot be verified on a dev database: statement 1 uses ATTACH, which attaches another SQLite database file to the session ...
 ```
+
+**That list is best-effort and not exhaustive, and the replay is not a
+sandbox.** SQL dialects offer many ways to address something other than the
+connected database — server-side language extensions, foreign-data wrappers,
+storage-engine options, loadable modules, and engine-specific pragmas and
+functions — and new ones arrive with new engine versions. Treat the deny-list
+as a tripwire for honest mistakes and known tricks, not as a security
+boundary against a hostile plan author.
+
+The practical rule: **a `--dev-url` must point at a database you are willing
+to have a foreign plan file execute arbitrary SQL against.** Use a disposable
+dev database, not one that shares a server, credentials, or filesystem with
+anything you care about.
+
+The one path with no such exposure is the ephemeral SQLite dev database Ptah
+creates for SQLite targets: a throwaway file in a private temporary
+directory, removed when the command exits, with no operator-supplied
+credentials involved.
 
 The verification also runs under `--dry-run`, so a plan received from someone
 else can be checked without committing to apply it.

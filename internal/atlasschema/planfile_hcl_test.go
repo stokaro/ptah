@@ -374,6 +374,14 @@ func TestMarshalPlanFileHCLRefusesUnrepresentableMigrationContent(t *testing.T) 
 			sql:  "CREATE TABLE t (\n  \n  id integer\n)",
 			want: `plan migration contains a whitespace-only line.*leave the line empty or write the native JSON plan format instead`,
 		},
+		{
+			// A NUL byte is valid UTF-8, but the HCL reader truncates the
+			// heredoc line at it, so a write/read round trip would silently
+			// yield different — still parseable — SQL.
+			name: "nul_byte",
+			sql:  "CREATE TABLE t (name text DEFAULT 'a\x00b')",
+			want: `plan migration contains a NUL byte.*remove it or write the native JSON plan format instead`,
+		},
 	}
 
 	for _, tt := range tests {

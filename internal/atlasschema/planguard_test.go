@@ -12,6 +12,7 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 	tests := []struct {
 		name      string
 		statement string
+		dialect   string
 		construct string
 	}{
 		{
@@ -33,6 +34,66 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 			name:      "sqlite_vacuum_into",
 			statement: `VACUUM INTO '/tmp/copy.db'`,
 			construct: "VACUUM INTO",
+		},
+		{
+			name:      "sqlite_pragma_temp_store_directory",
+			statement: `PRAGMA temp_store_directory = '/tmp/evil'`,
+			construct: "PRAGMA temp_store_directory",
+		},
+		{
+			name:      "postgres_do_block_calling_dblink",
+			statement: "DO $$ BEGIN PERFORM dblink_exec('dbname=target', 'DROP TABLE users'); END $$",
+			construct: "DO",
+		},
+		{
+			name:      "postgres_function_body_reading_files",
+			statement: "CREATE FUNCTION pwn() RETURNS text AS $$ BEGIN RETURN pg_read_file('/etc/passwd'); END $$ LANGUAGE plpgsql",
+			construct: "pg_read_file",
+		},
+		{
+			name:      "postgres_function_body_in_plain_string",
+			statement: `CREATE FUNCTION pwn() RETURNS text AS 'SELECT pg_read_file(''/etc/passwd'')' LANGUAGE sql`,
+			construct: "pg_read_file",
+		},
+		{
+			name:      "postgres_function_body_with_tagged_dollar_quote",
+			statement: "CREATE OR REPLACE FUNCTION pwn() RETURNS void AS $body$ BEGIN PERFORM dblink('dbname=target', 'SELECT 1'); END $body$ LANGUAGE plpgsql",
+			construct: "dblink",
+		},
+		{
+			name:      "mysql_federated_engine",
+			statement: "CREATE TABLE remote_users (id integer) ENGINE=FEDERATED CONNECTION='mysql://user@evil/db/users'",
+			construct: "ENGINE=FEDERATED",
+		},
+		{
+			name:      "mysql_create_server",
+			statement: `CREATE SERVER evil FOREIGN DATA WRAPPER mysql OPTIONS (HOST 'evil.example', DATABASE 'x')`,
+			construct: "CREATE SERVER",
+		},
+		{
+			name:      "mysql_load_file_function",
+			statement: `INSERT INTO t (blob_col) VALUES (LOAD_FILE('/etc/passwd'))`,
+			construct: "LOAD_FILE",
+		},
+		{
+			name:      "mysql_install_plugin",
+			statement: `INSTALL PLUGIN evil SONAME 'evil.so'`,
+			construct: "INSTALL PLUGIN",
+		},
+		{
+			name:      "mysql_install_component",
+			statement: `INSTALL COMPONENT 'file://component_evil'`,
+			construct: "INSTALL COMPONENT",
+		},
+		{
+			name:      "mysql_data_directory",
+			statement: `CREATE TABLE t (id integer) DATA DIRECTORY = '/var/evil'`,
+			construct: "DATA DIRECTORY",
+		},
+		{
+			name:      "mysql_index_directory",
+			statement: `CREATE TABLE t (id integer) INDEX DIRECTORY = '/var/evil'`,
+			construct: "INDEX DIRECTORY",
 		},
 		{
 			name:      "mysql_load_data_local_infile",
@@ -85,6 +146,11 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 			construct: "pg_read_file",
 		},
 		{
+			name:      "postgres_qualified_pg_read_file",
+			statement: `SELECT pg_catalog.pg_read_file('/etc/passwd')`,
+			construct: "pg_read_file",
+		},
+		{
 			name:      "postgres_lo_export",
 			statement: `SELECT lo_export(loid, '/tmp/out.bin') FROM t`,
 			construct: "lo_export",
@@ -98,7 +164,7 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 			err := atlasschema.CheckPlanStatementsSandboxable([]string{
 				`CREATE TABLE ok (id integer)`,
 				tt.statement,
-			})
+			}, tt.dialect)
 
 			// The refusal names the offending statement position and the
 			// construct, and it must be recognizable as an escape refusal.
@@ -106,7 +172,7 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 			c.Assert(atlasschema.IsPlanEscape(err), qt.IsTrue)
 			c.Assert(err, qt.ErrorMatches,
 				`pre-planned migration cannot be verified on a dev database: statement 2 uses `+tt.construct+`, which .*`)
-			c.Assert(err, qt.ErrorMatches, `(?s).*Replaying it would not be a sandboxed rehearsal.*`)
+			c.Assert(err, qt.ErrorMatches, `(?s).*Replaying it would not stay inside the dev database.*`)
 		})
 	}
 }
@@ -115,6 +181,7 @@ func TestCheckPlanStatementsSandboxableAllowsOrdinaryDDL(t *testing.T) {
 	tests := []struct {
 		name      string
 		statement string
+		dialect   string
 	}{
 		{
 			name:      "table_named_attachment",
@@ -131,6 +198,61 @@ func TestCheckPlanStatementsSandboxableAllowsOrdinaryDDL(t *testing.T) {
 		{
 			name:      "quoted_column_named_infile",
 			statement: `ALTER TABLE reports ADD COLUMN "infile" text`,
+		},
+		{
+			// Bare, unquoted names that merely collide with the keywords:
+			// INTO OUTFILE is the escape, the word alone is not.
+			name:      "bare_column_named_outfile",
+			statement: `ALTER TABLE reports ADD COLUMN outfile text`,
+		},
+		{
+			name:      "bare_column_named_dumpfile",
+			statement: `ALTER TABLE reports ADD COLUMN dumpfile text`,
+		},
+		{
+			name:      "bare_column_named_infile",
+			statement: `ALTER TABLE reports ADD COLUMN infile text`,
+		},
+		{
+			// The table name is followed by `(`, which is a DDL name
+			// position, not a dblink call site.
+			name:      "table_named_dblink_events",
+			statement: `CREATE TABLE dblink_events (id integer NOT NULL PRIMARY KEY, note text)`,
+		},
+		{
+			name:      "table_named_dblink_events_if_not_exists",
+			statement: `CREATE TABLE IF NOT EXISTS dblink_events (id integer)`,
+		},
+		{
+			name:      "insert_into_table_named_dblink_events",
+			statement: `INSERT INTO dblink_events (id) VALUES (1)`,
+		},
+		{
+			name:      "column_named_dblink_url",
+			statement: `ALTER TABLE services ADD COLUMN dblink_url text`,
+		},
+		{
+			name:      "index_named_lo_import",
+			statement: `CREATE INDEX lo_import ON objects (name)`,
+		},
+		{
+			name:      "index_named_pg_read_file",
+			statement: `CREATE INDEX pg_read_file ON objects (name)`,
+		},
+		{
+			name:      "bracket_quoted_outfile_column",
+			statement: `ALTER TABLE reports ADD COLUMN [outfile] nvarchar(100)`,
+			dialect:   "sqlserver",
+		},
+		{
+			name:      "bracket_quoted_dblink_table",
+			statement: `CREATE TABLE [dblink] (id int)`,
+			dialect:   "sqlserver",
+		},
+		{
+			name:      "bracket_quoted_identifier_containing_semicolon_and_attach",
+			statement: `CREATE TABLE [a;ATTACH] (id int)`,
+			dialect:   "sqlserver",
 		},
 		{
 			name:      "string_literal_containing_attach",
@@ -157,8 +279,20 @@ func TestCheckPlanStatementsSandboxableAllowsOrdinaryDDL(t *testing.T) {
 			statement: `CREATE TABLE jobs (program text NOT NULL)`,
 		},
 		{
+			name:      "column_named_directory",
+			statement: `CREATE TABLE data (directory text NOT NULL)`,
+		},
+		{
 			name:      "vacuum_without_into",
 			statement: `VACUUM`,
+		},
+		{
+			name:      "pragma_foreign_keys",
+			statement: `PRAGMA foreign_keys = ON`,
+		},
+		{
+			name:      "plain_function_without_escapes",
+			statement: "CREATE FUNCTION bump() RETURNS integer AS $$ BEGIN RETURN 1; END $$ LANGUAGE plpgsql",
 		},
 	}
 
@@ -166,7 +300,9 @@ func TestCheckPlanStatementsSandboxableAllowsOrdinaryDDL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(atlasschema.CheckPlanStatementsSandboxable([]string{tt.statement}), qt.IsNil)
+			err := atlasschema.CheckPlanStatementsSandboxable([]string{tt.statement}, tt.dialect)
+
+			c.Assert(err, qt.IsNil)
 		})
 	}
 }
@@ -180,7 +316,20 @@ func TestCheckPlanStatementsSandboxableScansBothStringEscapeDialects(t *testing.
 	// smuggle an escape past the guard.
 	statement := `INSERT INTO t VALUES ('\'); ATTACH DATABASE '/tmp/x.db' AS y; --')`
 
-	err := atlasschema.CheckPlanStatementsSandboxable([]string{statement})
+	err := atlasschema.CheckPlanStatementsSandboxable([]string{statement}, "mysql")
+
+	c.Assert(atlasschema.IsPlanEscape(err), qt.IsTrue, qt.Commentf("err=%v", err))
+}
+
+func TestCheckPlanStatementsSandboxableScansNestedRoutineBodies(t *testing.T) {
+	c := qt.New(t)
+
+	// A routine body that builds another routine still gets scanned.
+	statement := "CREATE FUNCTION outer_fn() RETURNS void AS $outer$ BEGIN " +
+		"EXECUTE 'CREATE FUNCTION inner_fn() RETURNS text AS $inner$ BEGIN RETURN pg_read_file(''/etc/passwd''); END $inner$ LANGUAGE plpgsql'; " +
+		"END $outer$ LANGUAGE plpgsql"
+
+	err := atlasschema.CheckPlanStatementsSandboxable([]string{statement}, "postgres")
 
 	c.Assert(atlasschema.IsPlanEscape(err), qt.IsTrue, qt.Commentf("err=%v", err))
 }
@@ -188,6 +337,6 @@ func TestCheckPlanStatementsSandboxableScansBothStringEscapeDialects(t *testing.
 func TestCheckPlanStatementsSandboxableAcceptsEmptyInput(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(atlasschema.CheckPlanStatementsSandboxable(nil), qt.IsNil)
-	c.Assert(atlasschema.CheckPlanStatementsSandboxable([]string{"", "   "}), qt.IsNil)
+	c.Assert(atlasschema.CheckPlanStatementsSandboxable(nil, "sqlite"), qt.IsNil)
+	c.Assert(atlasschema.CheckPlanStatementsSandboxable([]string{"", "   "}, "sqlite"), qt.IsNil)
 }

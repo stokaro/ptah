@@ -347,6 +347,14 @@ func validateHCLHeredocLine(line string) error {
 			"plan migration contains a carriage return, which an Atlas .plan.hcl heredoc cannot carry back verbatim; " +
 				"normalize the statement to LF line endings or write the native JSON plan format instead")
 	}
+	// A NUL byte is valid UTF-8 but truncates the heredoc line on the way
+	// back in, so a write/read round trip would yield different, still
+	// parseable SQL with no error at all.
+	if strings.ContainsRune(line, 0) {
+		return errors.New(
+			"plan migration contains a NUL byte, which an Atlas .plan.hcl heredoc cannot carry back verbatim; " +
+				"remove it or write the native JSON plan format instead")
+	}
 	// HCL excludes whitespace-only lines from `<<-` indent stripping and
 	// leaves them untouched, so the two spaces the writer adds would come
 	// back as part of the statement.

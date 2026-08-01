@@ -96,10 +96,11 @@ func RehearsePlanStatements(
 	if devURL == "" {
 		return errors.New("plan rehearsal requires a dev database URL")
 	}
-	// The dev database is only a sandbox for statements that cannot reach out
-	// of it. This gate runs before anything is executed anywhere, including
-	// before the target is inspected.
-	if err := CheckPlanStatementsSandboxable(statements); err != nil {
+	// Known escape constructs are refused before anything is executed
+	// anywhere, including before the target is inspected. This is a
+	// best-effort deny-list rather than a sandbox: see CheckPlanStatements-
+	// Sandboxable for what a dev database is still exposed to.
+	if err := CheckPlanStatementsSandboxable(statements, conn.Info().Dialect); err != nil {
 		return err
 	}
 

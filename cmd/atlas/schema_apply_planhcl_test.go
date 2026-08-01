@@ -216,7 +216,7 @@ func TestSchemaApplyAtlasPlanFileRefusesDevDatabaseEscape(t *testing.T) {
 	// target, and not on the third database the plan tried to reach.
 	c.Assert(err, qt.ErrorMatches,
 		`pre-planned migration cannot be verified on a dev database: statement 1 uses ATTACH, which attaches another SQLite database file.*`)
-	c.Assert(err, qt.ErrorMatches, `(?s).*Replaying it would not be a sandboxed rehearsal.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*Replaying it would not stay inside the dev database.*`)
 	c.Assert(out, qt.Contains, "cannot be verified on a dev database")
 	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
@@ -270,6 +270,57 @@ func TestSchemaApplyAtlasPlanFileDryRunPrintsWithoutApplying(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "CREATE TABLE `posts`")
+	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+}
+
+// TestSchemaApplyAtlasPlanFileDryRunRefusesDevDatabaseEscape pins that
+// --dry-run performs the verification rather than printing and returning.
+// Without it, restoring an early `if opts.dryRun { return nil }` in front of
+// the rehearsal would leave the whole suite green while a dry run silently
+// stopped checking anything. This case exits through the escape guard.
+func TestSchemaApplyAtlasPlanFileDryRunRefusesDevDatabaseEscape(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "dryrun-escape.db")
+	victimPath := filepath.Join(dir, "dryrun-victim.db")
+	planPath := filepath.Join(dir, "dryrun-escape.plan.hcl")
+	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
+	writeAtlasPlanFile(c, planPath,
+		"ATTACH DATABASE '"+victimPath+"' AS victim;\nCREATE TABLE victim.pwned (id integer);")
+
+	_, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
+		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`pre-planned migration cannot be verified on a dev database: statement 1 uses ATTACH.*`)
+	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
+}
+
+// TestSchemaApplyAtlasPlanFileDryRunRefusesNonConvergingPlan is the second
+// half of the same pin, exiting through the desired-state comparison instead
+// of the escape guard: a dry run must report that the plan does not reach the
+// --to state, which is the whole point of test-driving a foreign plan.
+func TestSchemaApplyAtlasPlanFileDryRunRefusesNonConvergingPlan(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "dryrun-nonconverging.db")
+	planPath := filepath.Join(dir, "dryrun-nonconverging.plan.hcl")
+	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	writeAtlasPlanFile(c, planPath, "CREATE TABLE unrelated (id integer NOT NULL PRIMARY KEY);")
+
+	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
+		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state.*`)
+	c.Assert(atlasschema.IsPlanDesiredStateFailure(err), qt.IsTrue, qt.Commentf("%s", out))
+	// A dry run still applies nothing to the target.
+	c.Assert(sqliteTableCount(c, dbPath, "unrelated"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 }
 
