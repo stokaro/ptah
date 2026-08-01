@@ -88,8 +88,9 @@ of being silently dropped from the generated Ptah IR.
 ## Ptah Go-annotation parity extensions
 
 Ptah accepts the Atlas-compatible subset above and a small set of explicitly
-documented extensions. The extensions make Go annotation export lossless; they
-are Ptah syntax and should not be assumed to work in the Atlas CLI.
+documented extensions. The extensions preserve Go annotation semantics that
+the compatible shape cannot represent; they are Ptah syntax and should not be
+assumed to work in the Atlas CLI.
 
 ```hcl
 schema "app" {}
@@ -155,6 +156,18 @@ The `data.file` path is relative to the HCL file. Go annotation export rebases
 paths that were relative to a Go source file so the same data file is loaded
 after migration. Role passwords remain string literals in the exported HCL;
 treat those files as sensitive.
+
+Function, view, materialized-view, and trigger bodies remain raw SQL strings.
+Go annotation export emits them as opaque HCL text and reports a warning for
+each body because Ptah does not structurally parse dialect-specific SQL
+sub-languages. A separate diagnostic reports Unicode normalization that changes
+source bytes. These warnings block `--cleanup-go-annotations`, so destructive
+cleanup cannot discard the only source while structural completeness remains
+unproven. Export without cleanup, review the emitted bodies, remove all Ptah
+schema annotations manually in one change, and switch the project to the HCL
+source. Do not rerun export after manual removal starts; an export with no
+annotations or no exportable HCL object fails without replacing an existing HCL
+file.
 
 ## Minimal Example
 

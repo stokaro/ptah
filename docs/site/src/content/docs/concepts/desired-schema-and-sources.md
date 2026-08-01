@@ -37,11 +37,11 @@ a database — the merge rules live on
 - **The desired schema is the review surface.** Changing a database starts
   with changing a source file that lives in version control, whichever
   workflow applies the change.
-- **Sources are interchangeable.** `ptah schema export` converts between
-  representations, so starting with Go annotations does not lock you in, and
-  a brownfield database can be introspected into sources at any time. Every
-  valid Go annotation semantic has a lossless HCL representation; HCL may
-  additionally express schema semantics that have no Go annotation spelling.
+- **Sources converge on one IR.** `ptah schema export` converts Go annotations
+  to HCL, and a brownfield database can be introspected into source at any time.
+  Every valid Go annotation semantic has an HCL representation. Export reports
+  opaque SQL bodies and byte-level normalization before destructive cleanup;
+  HCL may additionally express semantics with no Go annotation spelling.
 - **Declaring is not supporting.** What a concrete target accepts is decided
   later, by capability-aware planning — see
   [Dialects and capabilities](../dialects-and-capabilities/).

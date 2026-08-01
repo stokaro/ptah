@@ -157,8 +157,12 @@ func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(stdout.String(), qt.Not(qt.Contains), "export warning(s) reported")
-	c.Assert(stderr.String(), qt.Equals, "")
+	c.Assert(stdout.String(), qt.Contains, "4 export warning(s) reported")
+	c.Assert(stderr.String(), qt.Equals, `warning: functions.get_fixture_tenant_id: raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete
+warning: materialized_views.user_stats: raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete
+warning: triggers["users"]["users_set_updated_at"]: raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete
+warning: views.active_users: raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete
+`)
 
 	content, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
@@ -343,6 +347,34 @@ func TestSchemaExportCommand_FailurePath_RepeatCleanupPreservesExistingOutput(t 
 		"--root-dir", dir,
 		"--out", outPath,
 		"--cleanup-go-annotations",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoRemovableAnnotations)
+	modelAfter, err := os.ReadFile(modelPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(modelAfter, qt.DeepEquals, modelData)
+	outAfter, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(outAfter, qt.DeepEquals, outData)
+}
+
+func TestSchemaExportCommand_FailurePath_NoAnnotationsPreservesExistingOutput(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "model.go")
+	outPath := filepath.Join(dir, "schema.hcl")
+	modelData := []byte("package models\n\ntype User struct{}\n")
+	outData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(modelPath, modelData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(outPath, outData, 0o600), qt.IsNil)
+
+	cmd := schema.NewSchemaCommand()
+	cmd.SetArgs([]string{
+		"export",
+		"--root-dir", dir,
+		"--out", outPath,
 	})
 
 	err := cmd.Execute()

@@ -147,8 +147,12 @@ ptah schema export \
 
 Ptah parses the generated HCL and verifies that its canonical re-render is
 stable before it writes `schema.hcl`. Every valid Go annotation semantic has an
-HCL representation, so the export is expected to have no diagnostics. Review
-any unexpected diagnostic before cleanup.
+HCL representation. Function, view, materialized-view, and trigger bodies are
+emitted as opaque HCL strings, and Ptah reports a warning for each because it
+does not structurally parse those dialect-specific SQL sub-languages. Review
+every warning before treating the export as semantically complete. A separate
+diagnostic reports any source string whose bytes change during Unicode NFC
+normalization.
 
 One export captures the complete selected Go source set and uses that immutable
 view for both HCL parsing and cleanup planning. Ptah rechecks source membership,
@@ -176,12 +180,18 @@ the same command without `--cleanup-diff` to apply the prevalidated cleanup
 plan.
 
 :::caution[Cleanup is a one-time migration]
-Cleanup fails before HCL publication if the export reports diagnostics, the
-output uses a `.go` path or aliases a protected source, or no removable
-annotations remain. Ptah revalidates the Go source set before HCL publication
-and again before cleanup. If a source changes between those steps, the HCL file
-remains published but cleanup leaves every Go file unchanged and returns an
-error.
+Cleanup fails before HCL publication when the export reports any diagnostic,
+including the expected warning for each opaque SQL body. It also fails when the
+output uses a `.go` path, aliases a protected source, or no removable
+annotations remain. Export without cleanup, review the emitted bodies in
+`schema.hcl`, then remove all Ptah schema annotations manually in one reviewed
+change and switch the project to the HCL source. Do not rerun export after
+manual removal starts. An export with no annotations fails and preserves the
+existing HCL file. Annotations that produce no exportable HCL object fail with
+the same preservation guarantee. Ptah revalidates the Go source set before HCL
+publication and again before cleanup. If a source changes between those steps,
+the HCL file remains published but cleanup leaves every Go file unchanged and
+returns an error.
 
 If a later source fails during a multi-file cleanup, Ptah rolls back earlier
 replacements only while they still match the exact cleaned file it committed.

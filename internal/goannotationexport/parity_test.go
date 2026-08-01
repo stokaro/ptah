@@ -31,7 +31,28 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.Diagnostics, qt.HasLen, 0)
+	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     "functions.app.lookup_user",
+			Message:  "raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete",
+		},
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     "materialized_views.app.user_stats",
+			Message:  "raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete",
+		},
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     `triggers["app.users"]["users_touch"]`,
+			Message:  "raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete",
+		},
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     "views.app.active_users",
+			Message:  "raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete",
+		},
+	})
 	hclData, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
 	hclText := string(hclData)
