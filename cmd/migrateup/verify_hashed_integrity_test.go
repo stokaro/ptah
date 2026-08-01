@@ -18,8 +18,9 @@ import (
 // Atlas checkpoint semantics from stokaro/ptah#954 on the native
 // `ptah migrations up` surface: a hashed directory (ptah.sum or atlas.sum)
 // always verifies before anything executes, an unhashed directory keeps its
-// ungated behavior, and Atlas-format checkpoint directories bootstrap or skip
-// exactly like measured Atlas.
+// ungated behavior unless --verify-sum is passed (stokaro/ptah#970), and
+// Atlas-format checkpoint directories bootstrap or skip exactly like measured
+// Atlas.
 
 // nativeAtlasPreCheckpointFiles is the pre-checkpoint half of the measured
 // Atlas fixture layout from stokaro/ptah#954.
@@ -158,6 +159,45 @@ func TestMigrateUp_UnhashedDirStaysUngated(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
+}
+
+// TestMigrateUp_UnhashedAtlasDirStaysUngatedUnlessVerifySum pins the
+// deliberate surface split from stokaro/ptah#970. On the very directory shape
+// that `ptah-compat migrate apply` now refuses — Atlas-format, no atlas.sum —
+// native `ptah migrations up` stays permissive, because the native contract is
+// Ptah's own and `--verify-sum` is the native way to say "a missing sum file
+// is an error". The flag keeps that distinct meaning: it is the only thing on
+// this surface that turns a never-hashed directory into a failure.
+func TestMigrateUp_UnhashedAtlasDirStaysUngatedUnlessVerifySum(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	for name, content := range nativeAtlasPreCheckpointFiles() {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+	}
+
+	c.Run("default applies", func(c *qt.C) {
+		dbPath := filepath.Join(c.TempDir(), "unhashed-atlas.db")
+
+		out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--dir-format", "atlas")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(out, qt.Contains, "Migrations completed successfully!")
+	})
+
+	c.Run("verify-sum refuses before connecting", func(c *qt.C) {
+		dbPath := filepath.Join(c.TempDir(), "verify-sum.db")
+
+		out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--dir-format", "atlas", "--verify-sum")
+
+		c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+		// The native surface keeps its own wording and remediation; it does not
+		// borrow Atlas's "checksum file not found".
+		c.Assert(err.Error(), qt.Contains, "migration sum verification failed")
+		c.Assert(err.Error(), qt.Contains, "atlas.sum not found")
+		c.Assert(err.Error(), qt.Not(qt.Contains), "checksum file not found")
+		_, statErr := os.Stat(dbPath)
+		c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+	})
 }
 
 func TestMigrateUp_ValidHashedPtahDirApplies(t *testing.T) {

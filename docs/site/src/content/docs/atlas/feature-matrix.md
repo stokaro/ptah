@@ -160,7 +160,7 @@ as open capabilities regardless.
 | Atlas-format checkpoint output | ❌ | ❌ | ✅ | Writing stays a waiver (`--dir-format`=atlas); reading Atlas `-- atlas:checkpoint` dirs works: fresh databases bootstrap from the latest checkpoint, pre-checkpoint databases skip it silently. |
 | Baseline an existing database | ✅ | ✅ | ✅ | Ptah adds a standalone baseline verb with `--shadow-db` verification and `--dry-run`; CE exposes baselining as migrate apply `--baseline`. |
 | Create an empty migration file | ✅ | ✅ | ✅ | Native create writes an up/down pair; compat new writes one Atlas .sql skeleton, refreshes `atlas.sum`, `--edit` opens $VISUAL or $EDITOR. |
-| Directory integrity file: hash and validate | ✅ | ✅ | ✅ | hash writes `ptah.sum`, or `atlas.sum` for atlas-format directories; validate checks it and with `--dev-url` cleans and replays the dir. |
+| Directory integrity file: hash, validate, and apply-time gate | ✅ | ✅ | ✅ | hash writes `ptah.sum` or `atlas.sum`; validate checks it. Compat apply refuses a stale or missing `atlas.sum` like Atlas, but not via `?format=` (#973); native up gates hashed dirs only. |
 | Directory maintenance: edit, rebase, rm | ✅ | ❌ | ✅ | Each rewrites `ptah.sum`/`atlas.sum` and refuses a migration applied in `--db-url` unless `--force`; CE aborts all three as non-community verbs. |
 | Dynamic down planning (`migrate down --plan`) | ❌ | ❌ | ✅ | `--plan`, `--to-tag` and `--skip-checks` are recorded waivers that fail loudly; Ptah reverts only through pre-planned down files. |
 | Execution order (`--exec-order`) | ✅ | ✅ | ✅ | linear fails on a pending migration below the current version, linear-skip warns and leaves it pending, non-linear applies it. |

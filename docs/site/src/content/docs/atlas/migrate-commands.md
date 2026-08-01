@@ -15,7 +15,7 @@ plus the flag translation rules are on the
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah-compat migrate apply` | Atlas-format apply path equivalent to `ptah migrations up`; executes every Atlas OSS directory format. |
+| `ptah-compat migrate apply` | Atlas-format apply path equivalent to `ptah migrations up`; executes every Atlas OSS directory format and refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and Atlas revision bookkeeping by default; `--dev-url` verifies the rollback plan first. |
 | `ptah-compat migrate status` | Atlas-format migration status with Atlas revision-table metadata. |
 | `ptah-compat migrate hash` | Forwards to `ptah migrations hash`; writes `atlas.sum` by default. |
@@ -164,10 +164,27 @@ positional `amount` applies only the first N pending migrations. Use
 `--baseline` to mark earlier migration files as applied without executing their
 SQL bodies before applying the remaining pending migrations.
 
-A hashed directory verifies against `atlas.sum` before anything executes: on
-a checksum mismatch the apply refuses with the same output as
-`ptah-compat migrate validate` and no migration runs, matching official
-Atlas. Migrations whose first line is the `-- atlas:checkpoint` directive get
+The directory's integrity is checked before anything executes, matching
+official Atlas:
+
+- An Atlas directory whose `atlas.sum` does not verify is refused with
+  `Error: checksum mismatch`.
+- An Atlas directory that carries no `atlas.sum` at all is refused with
+  `Error: checksum file not found`; run `ptah-compat migrate hash` once and
+  commit the file. A directory holding no `.sql` file anywhere in its tree is
+  not a checksum error — it reports `No migration files to execute` and exits
+  `0`, matching Atlas. The scan is recursive because Ptah executes migrations in
+  subdirectories, which Atlas ignores
+  ([#976](https://github.com/stokaro/ptah/issues/976)).
+- Directories read through `?format=` (goose, flyway, liquibase, dbmate,
+  golang-migrate) are converted in memory, carry no Atlas integrity file, and
+  are **not** gated. Atlas CE does gate them; this is a known divergence
+  tracked in [#973](https://github.com/stokaro/ptah/issues/973).
+
+Both refusals exit `1` with output identical to `ptah-compat migrate validate`
+on that directory, no migration runs, and the target database is never created.
+
+Migrations whose first line is the `-- atlas:checkpoint` directive get
 measured Atlas checkpoint semantics — a fresh database applies only the
 latest checkpoint plus later migrations, and a database that already applied
 pre-checkpoint history skips the checkpoint silently.
