@@ -553,6 +553,45 @@ put B2__b.sql "$SQL_SECOND"
 put V3__c.sql "$SQL_PLAIN"
 seal flyway
 
+# Operand boundaries. Each layout discriminates which operands one comparison
+# uses, or how it breaks a tie; without them the choice is arbitrary and a
+# plausible edit passes every other test.
+
+# Supersede compares TOKENS: name "B5__base.sql" outranks "9" while token "5"
+# does not, so a name-based supersede would install B5 here.
+new_case flyway/supersede-compares-tokens
+put B5__base.sql "$SQL_PLAIN"
+put 1dir/B9__base.sql "$SQL_SECOND"
+seal flyway
+
+# The backward reach squashes an EXACTLY equal path: the baseline's token is
+# literally "V1.sql" and the survivor is named "V1.sql". A strict < would spare it.
+new_case flyway/backward-reach-is-inclusive
+put V1.sql "$SQL_PLAIN"
+put sub/BV1.sql.sql "$SQL_SECOND"
+seal flyway
+
+# The backward reach belongs to INSTALLATION, not to encountering a baseline:
+# zz/B1 is skipped, and must not reach back over a survivor the FORWARD test
+# admitted despite its path sorting below "1".
+new_case flyway/skipped-baseline-does-not-reach
+put 0a/B5__base.sql "$SQL_PLAIN"
+put 0b/V9__x.sql "$SQL_SECOND"
+put zz/B1__base.sql "$SQL_PLAIN"
+seal flyway
+
+# Ties resolve oppositely, which is why supersede and the forward squash cannot
+# be collapsed into one comparison even though their operand types match.
+new_case flyway/tie-equal-baseline-wins
+put B2__a.sql "$SQL_PLAIN"
+put zdir/B2__b.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/tie-equal-file-loses
+put B2__base.sql "$SQL_PLAIN"
+put zdir/V2__same.sql "$SQL_SECOND"
+seal flyway
+
 # A directory named B3 and a file named B3.sql: sorting the paths puts B3.sql
 # first ('.' below '/'), while a walk descends B3 first. The two orders select
 # different files, so this is the case that proves selection follows the WALK.

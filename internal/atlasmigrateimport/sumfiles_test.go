@@ -19,7 +19,7 @@ import (
 // corpus test walks the tree, so a corpus that failed to load would otherwise
 // pass vacuously; asserting the count makes an empty or partial walk fail.
 // Adding a shape is expected to change this number.
-const ceSumCorpusCases = 83
+const ceSumCorpusCases = 88
 
 const sqlBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
 
@@ -536,6 +536,86 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.DeepEquals, []string{"B99999999999999999999__base.sql"})
+	})
+}
+
+// TestSumFileNamesFlywayComparisonOperands pins WHICH operands each comparison
+// uses, and how each breaks a tie.
+//
+// The three comparisons are easy to collapse into one another by inspection —
+// two of them even share operand types — and every earlier round of this work
+// got caught by exactly that. These layouts are the ones where a plausible
+// substitution changes the answer, so they are what stops a future reader from
+// merging them.
+func TestSumFileNamesFlywayComparisonOperands(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("supersede compares version tokens, not names", func(c *qt.C) {
+		// 1dir/B9 installs first. The name "B5__base.sql" sorts above "9"
+		// (0x42 > 0x39) while the token "5" does not, so a name-based
+		// supersede would replace B9 with B5 here.
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("B5__base.sql", "1dir/B9__base.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"1dir/B9__base.sql"})
+	})
+
+	c.Run("the backward reach squashes an exactly equal path", func(c *qt.C) {
+		// Contrived but reachable: the baseline's version token is literally
+		// "V1.sql", and a survivor is named "V1.sql". Nothing else in the
+		// corpus or the fuzz distinguishes <= from <, so without this the
+		// operator is an arbitrary choice.
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("V1.sql", "sub/BV1.sql.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"sub/BV1.sql.sql"})
+	})
+
+	c.Run("a skipped baseline does not reach backwards", func(c *qt.C) {
+		// zz/B1 loses the supersede test against the installed B5 and is
+		// dropped. It must not reach back on the way out.
+		//
+		// This is NOT equivalent to the installed-baseline rule by
+		// transitivity, though it looks it: transitivity would only cover
+		// survivors admitted by the BACKWARD test, whose paths already outrank
+		// the installed token. 0b/V9__x.sql was admitted by the FORWARD test
+		// instead — its version (9) beat the token (5) even though its path
+		// ("0b/...") sorts below both "5" and the skipped "1". So a skipped
+		// baseline that reached backwards would squash it, and no other rule
+		// would notice.
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("0a/B5__base.sql", "0b/V9__x.sql", "zz/B1__base.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"0a/B5__base.sql", "0b/V9__x.sql"})
+	})
+
+	c.Run("ties resolve oppositely for a baseline and a file", func(c *qt.C) {
+		// An equal-version baseline WINS its comparison and replaces the
+		// incumbent; an equal-version file LOSES its comparison and is
+		// squashed. Same operand types, opposite tie-breaks — which is why
+		// three comparisons is the minimum, not an over-fit.
+		baselineWins, err := atlasmigrateimport.SumFileNames(
+			sourceFS("B2__a.sql", "zdir/B2__b.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+		c.Assert(err, qt.IsNil)
+		c.Assert(baselineWins, qt.DeepEquals, []string{"zdir/B2__b.sql"})
+
+		fileLoses, err := atlasmigrateimport.SumFileNames(
+			sourceFS("B2__base.sql", "zdir/V2__same.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+		c.Assert(err, qt.IsNil)
+		c.Assert(fileLoses, qt.DeepEquals, []string{"B2__base.sql"})
 	})
 }
 
