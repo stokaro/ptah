@@ -326,6 +326,28 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `unsupported Atlas exclude selector .*final pattern segment only`)
 	})
 
+	c.Run("invalid include selector before any connection", func(c *qt.C) {
+		// The unreachable URL proves selector validation runs pre-connect:
+		// reaching the database would produce a connection error instead.
+		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+			URL:     "postgres://127.0.0.1:1/unreachable",
+			Include: []string{"*[type=column]"},
+		})
+
+		c.Assert(err, qt.ErrorMatches,
+			`unsupported Atlas include selector "\*\[type=column\]": column resources ride along with their parent and cannot be included on their own`)
+	})
+
+	c.Run("child-depth include selector before any connection", func(c *qt.C) {
+		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+			URL:     "postgres://127.0.0.1:1/unreachable",
+			Include: []string{"public.users.email"},
+		})
+
+		c.Assert(err, qt.ErrorMatches,
+			`unsupported Atlas include selector "public\.users\.email": selectors name top-level resources as "name" or "schema\.name".*`)
+	})
+
 	c.Run("invalid format before source resolution", func(c *qt.C) {
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:    "sqlite://ignored.db",

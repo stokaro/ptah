@@ -135,9 +135,41 @@ existing-directory destinations.
 
 Non-database sources require `--dev-url` and are evaluated Atlas-style on the dev database (reset, materialize, introspect); a missing dev database fails with Atlas's `--dev-url cannot be empty` message.
 
-The OSS `--exclude` flag filters inspected resources with Atlas-style globs and type selectors, including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs. Other field-level exclude selectors and type selectors on non-final pattern segments fail explicitly; include filtering and exporter blocks remain gaps.
+The OSS `--exclude` flag filters inspected resources with Atlas-style globs and type selectors, including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs. Other field-level exclude selectors and type selectors on non-final pattern segments fail explicitly; exporter blocks remain a gap.
 
 The pinned Atlas CE binary rejects `split`, `write`, and `hcl` template functions as non-community features, so Ptah's split-write exports are an open extension beyond the pinned CE binary.
+
+#### `schema inspect --include`
+
+`ptah-compat schema inspect --include` positively selects the top-level
+resources inspection keeps, through the same engine as `schema apply` and
+`schema diff`: schema universe, then include selection, then exclusion.
+
+Atlas CE v1.2.0 does not register the flag at all — `atlas schema inspect -u
+sqlite://app.db --include users` exits 1 with `Error: unknown flag:
+--include`. The licensed Atlas v1.2.4 build registers it, and Ptah's behavior
+diverges from it in two measured ways, both deliberate:
+
+| Input | Licensed Atlas v1.2.4 | Ptah |
+| --- | --- | --- |
+| `--include 't1'` | `t1` with its columns, plus `schema "main"` | same selection |
+| `--include '*.t1'` | pattern is read at child depth: `t1` rendered without its columns and `t2` rendered as an empty shell, exit 0 | `*.t1` is the wildcard spelling of the qualified name `main.t1`, so `t1` is rendered whole and `t2` is dropped |
+| `--include 'main.t1.*'` | `Error: too many parts in pattern: ["main" "main" "t1" "*"]`, exit 1 | rejected before any database is contacted: child resources ride along with their parent and cannot be selected on their own |
+
+Ptah has no child-level include selection in either spelling, so it keeps
+whole objects instead of emitting partial ones. It also refuses a selection
+that drops a dependency of a selected object, where the licensed build renders
+the reference anyway — its `*.t1` output keeps `primary_key { columns =
+[column.id] }` on a table whose `id` column the same output omits. The
+Atlas-side rows are the recorded trial transcripts; the trial account has since
+been suspended, so behavior beyond those inputs is not established here.
+
+There is no `atlas.hcl` spelling of this selector. Atlas documents `exclude`
+but no `include` attribute on the `env` block; CE accepts `include = [...]`
+there only because it accepts any unknown env attribute — a run with
+`not_a_real = [...]` is likewise accepted and prints the full schema. Ptah
+rejects unknown `atlas.hcl` constructs instead of ignoring them, so
+`env.include` fails explicitly.
 
 **Atlas OSS.** `atlas schema inspect` is documented as an open CLI feature for inspecting a database schema with HCL, SQL, JSON, template output forms, split/write file exports, and resource exclusion filters. The pinned Atlas CE flag surface does not register `schema inspect --include`.
 
@@ -638,7 +670,9 @@ The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded w
 
 `ptah-compat schema inspect --exclude` now filters inspection output with Atlas-style resource globs and type selectors, including the documented `*[type=extension].version` field selector with schema-qualified globs; other field selectors and type selectors on non-final pattern segments fail explicitly.
 
-The pinned Atlas CE flag surface does not register `schema inspect --include`, `schema diff --web`, `migrate apply --to-version`, or `migrate apply --lock-name`, so Ptah rejects those flags as unknown.
+`ptah-compat schema inspect --include` positively selects which top-level resources inspection keeps, through the same engine as `schema apply` and `schema diff`. The pinned Atlas CE binary rejects the flag with `unknown flag: --include`, so this is a Pro-surface spelling Ptah implements openly; the two measured divergences from the licensed build are tabulated under [Schema inspection](#schema-inspect---include).
+
+The pinned Atlas CE flag surface does not register `schema diff --web`, `migrate apply --to-version`, or `migrate apply --lock-name`, so Ptah rejects those flags as unknown.
 
 `ptah-compat schema apply --to` and `ptah-compat schema diff --from/--to` accept local schema files, one database URL, one migration directory replayed on the required `--dev-url` dev database, or one `env://` reference resolved through the evaluated `atlas.hcl` env; source kinds cannot be mixed within a flag, and unsupported schemes such as `atlas://` fail before the target database is contacted.
 

@@ -335,11 +335,11 @@
  {
   "area": "Schema inspection filters",
   "feature": "`schema inspect --include` filtering",
-  "ptah": "no",
+  "ptah": "yes",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "Flag absent from the pinned Atlas CE v1.2.0 inspect flags; Ptah rejects it as unknown. The licensed build registers it and it filters on SQLite.",
-  "evidence": "conformance cli-surface.md line 47 lists Atlas CE `schema inspect` flags as --config --dev-url --env --exclude --format --schema --url --var, with no --include; built ptah-compat `schema inspect -u sqlite://t.db --include users` exits 1 with \"error: unknown flag: --include\". Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `atlas schema inspect --include` registered and functional on sqlite (trial-study observations, scenario, verbs-and-flags)"
+  "note": "Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. Child-depth patterns fail closed instead of emitting partial objects.",
+  "evidence": "conformance cli-surface.md line 47 lists Atlas CE `schema inspect` flags as --config --dev-url --env --exclude --format --schema --url --var, with no --include; pinned Atlas CE v1.2.0 `schema inspect -u sqlite://app.db --include users` exits 1 with \"Error: unknown flag: --include\". Built ptah-compat after this change: `schema inspect -u sqlite://app.db --include t1` renders t1 with its columns and drops t2; `--include main.t1.*` exits 1 before connecting; `--include t2` refuses the projection because t2's foreign key targets unselected t1. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `--include t1` matches Ptah, `--include '*.t1'` is read at child depth and renders t1 without columns plus an empty t2 shell, `--include 'main.t1.*'` exits 1 with \"too many parts in pattern\" (trial-study observations, scenario, verbs-and-flags)"
  },
  {
   "area": "Migration directory formats",
@@ -473,8 +473,8 @@
   "ptah": "yes",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "CE registers `--include` on apply/diff but aborts it as non-community; pinned CE inspect has no `--include`. Ptah selects with union semantics and cross-scope dependency diagnostics.",
-  "evidence": "cli-surface.md lines 43,45 (--include registered on CE apply/diff); atlas/comparison.md: 'Atlas CE aborts --include as a non-community feature'; schema-scope-workflow probe in gaps.md"
+  "note": "CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics.",
+  "evidence": "cli-surface.md lines 43,45 (--include registered on CE apply/diff); atlas/comparison.md: 'Atlas CE aborts --include as a non-community feature'; schema-scope-workflow probe in gaps.md; pinned CE v1.2.0 `schema diff --include users` exits 1 with \"Abort: 'atlas schema diff --include' is not supported by the community version\", and `schema inspect --include users` exits 1 with \"Error: unknown flag: --include\""
  },
  {
   "area": "Declarative / direct schema workflow",

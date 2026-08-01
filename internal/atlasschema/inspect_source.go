@@ -34,6 +34,9 @@ type InspectSourceOptions struct {
 	DevURL string
 	// Schemas restricts inspection to the named schema scopes.
 	Schemas []string
+	// Include positively selects the top-level resources inspection keeps,
+	// with Atlas-style selectors. Empty keeps every inspected resource.
+	Include []string
 	// Exclude filters inspected resources with Atlas-style selectors.
 	Exclude []string
 	// Format is the Atlas --format value or Go template.
@@ -62,6 +65,11 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 	if err := atlasfilter.ValidateExcludeSelectors(opts.Exclude); err != nil {
 		return "", err
 	}
+	// Malformed or unsupported --include selectors fail before any database is
+	// contacted and before the dev database is reset.
+	if err := atlasfilter.ValidateIncludeSelectors(opts.Include); err != nil {
+		return "", err
+	}
 	set, err := atlassource.ClassifySet("--url", []string{opts.URL}, opts.ProjectEnv)
 	if err != nil {
 		return "", err
@@ -70,6 +78,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 	inspectOpts := InspectOptions{
 		DevURL:      opts.DevURL,
 		Schemas:     opts.Schemas,
+		Include:     opts.Include,
 		Exclude:     opts.Exclude,
 		Format:      opts.Format,
 		Diagnostics: opts.Diagnostics,

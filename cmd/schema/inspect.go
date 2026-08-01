@@ -19,6 +19,7 @@ const (
 	inspectSchemaFileFlag    = "schema-file"
 	inspectMigrationsDirFlag = "migrations-dir"
 	inspectDevURLFlag        = "dev-url"
+	inspectIncludeFlag       = "include"
 	inspectExcludeFlag       = "exclude"
 	inspectFormatFlag        = "format"
 	inspectOutDirFlag        = "out-dir"
@@ -31,6 +32,7 @@ type schemaInspectOptions struct {
 	migrationsDir  string
 	devURL         string
 	schemas        string
+	include        []string
 	exclude        []string
 	format         string
 	outDir         string
@@ -57,9 +59,19 @@ the output is normalized by a real database of the target dialect.
 
 The default output is HCL; --format selects hcl, sql, or json. With --out-dir
 the inspected schema is exported as files instead of one stream: one file per
-object by default, or grouped with --split schema|type. --schemas restricts
-inspection to the named schema scopes and --exclude filters resources with
-Atlas-style selectors.`,
+object by default, or grouped with --split schema|type.
+
+--schemas, --include, and --exclude select what is inspected, in that order:
+--schemas names the schema universe, --include picks top-level resources
+inside it with Atlas-style selectors, and --exclude subtracts from the result.
+Child resources ride along with their parent and cannot be selected on their
+own: the [type=column] and literal-dot table.column spellings both fail before
+the database is contacted, while glob metacharacters (*, ?, and character
+classes) match a dot and escape that check. An identifier holding a dot is
+selected as main."my.table" or a\.b\.c; the bare a.b.c spelling is refused as
+ambiguous. A selection that keeps an object whose dependency it dropped is
+refused rather than rendered, so inspected output never references an object
+it omitted.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaInspect(cmd, opts)
@@ -71,6 +83,7 @@ Atlas-style selectors.`,
 	flags.StringVar(&opts.migrationsDir, inspectMigrationsDirFlag, "", "Atlas-format migration directory to inspect; requires --dev-url")
 	flags.StringVar(&opts.devURL, inspectDevURLFlag, "", "Dev database URL used to evaluate non-database inspection sources; it is reset destructively")
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+	flags.StringArrayVar(&opts.include, inspectIncludeFlag, nil, "Schema objects to include in inspection (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, inspectExcludeFlag, nil, "Schema objects to exclude from inspection (Atlas-style selectors)")
 	flags.StringVar(&opts.format, inspectFormatFlag, "hcl", "Output format: hcl, sql, or json")
 	flags.StringVar(&opts.outDir, inspectOutDirFlag, "", "Directory the inspected schema is exported into as files (hcl and sql formats only)")
@@ -126,6 +139,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		URL:            sourceURL,
 		DevURL:         opts.devURL,
 		Schemas:        dbcli.ParseSchemas(opts.schemas),
+		Include:        opts.include,
 		Exclude:        opts.exclude,
 		Format:         format,
 		Diagnostics:    cmd.ErrOrStderr(),
