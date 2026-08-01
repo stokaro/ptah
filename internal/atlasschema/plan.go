@@ -185,14 +185,21 @@ func MarshalPlanFile(plan PlanFile) ([]byte, error) {
 	return append(document, '\n'), nil
 }
 
-// ReadPlanFile loads and validates a local plan document. Unknown fields are
-// rejected so a hand-edited or truncated plan fails loudly instead of being
-// partially honored.
+// ReadPlanFile loads and validates a local JSON plan document. Unknown fields
+// are rejected so a hand-edited or truncated plan fails loudly instead of
+// being partially honored. The Atlas-compatible command tree reads both
+// supported encodings through [ReadPlanDocument] instead.
 func ReadPlanFile(path string) (PlanFile, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return PlanFile{}, fmt.Errorf("read plan file: %w", err)
 	}
+	return decodePlanJSON(contents, path)
+}
+
+// decodePlanJSON parses and validates the native format_version-1 JSON plan
+// document.
+func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 	decoder := json.NewDecoder(bytes.NewReader(contents))
 	decoder.DisallowUnknownFields()
 	var plan PlanFile
@@ -213,7 +220,9 @@ func VerifyPlanTarget(conn *dbschema.DatabaseConnection, plan PlanFile) error {
 	if conn == nil {
 		return errors.New("plan verification requires database connection")
 	}
-	if !planDialectsCompatible(plan.Dialect, conn.Info().Dialect) {
+	// Atlas-format plan files carry no dialect field; for those the rehearsal
+	// and desired-state verification pin the semantics instead.
+	if plan.Dialect != "" && !planDialectsCompatible(plan.Dialect, conn.Info().Dialect) {
 		return fmt.Errorf("plan file targets dialect %q, but the --url database dialect is %q",
 			plan.Dialect, conn.Info().Dialect)
 	}

@@ -167,19 +167,14 @@ func TestSchemaApplyPlanFileRejectsCombinedPlanningFlags(t *testing.T) {
 		want string
 	}{
 		{
-			name: "to",
-			args: []string{"--to", "file://" + schemaPath},
-			want: `atlas schema apply --plan cannot be combined with --to: the plan file already fixes the desired state`,
-		},
-		{
 			name: "file",
 			args: []string{"-f", schemaPath},
-			want: `atlas schema apply --plan cannot be combined with --file: the plan file already fixes the desired state`,
+			want: `atlas schema apply --plan cannot be combined with --file: the plan file already fixes the desired state; name the verification desired state with --to`,
 		},
 		{
-			name: "dev_url",
+			name: "dev_url_without_to",
 			args: []string{"--dev-url", "sqlite://dev.db"},
-			want: `atlas schema apply --plan cannot be combined with --dev-url: the plan is already computed; there is nothing to re-plan on a dev database`,
+			want: `atlas schema apply --plan with --dev-url requires --to: the rehearsal verifies the plan against the desired schema state`,
 		},
 		{
 			name: "exclude",

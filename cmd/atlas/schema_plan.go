@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -35,16 +36,24 @@ func newAtlasSchemaPlanCommand() *cobra.Command {
 
 Atlas gates schema plan behind the Atlas Pro registry approval flow. Ptah
 implements the open local replacement: the plan is computed from the --from
-target database to the local --to schema files and saved as a fingerprinted
-local plan file (JSON, format version 1).
+target database to the local --to schema files and saved as a local plan
+file. The default format is the Atlas ` + "`.plan.hcl`" + ` shape (one plan block with
+from/to fingerprints and the migration SQL), so the saved file is readable by
+Atlas's own plan reader; an --output path ending in .json writes Ptah's
+native fingerprinted JSON plan (format version 1) instead. The from/to
+values in a ` + "`.plan.hcl`" + ` are Ptah's sha256 fingerprints — the official Atlas
+binary parses the file but verifies its own hashes, which have no local
+recipe.
 ` + "`atlas schema apply --plan file://<path>`" + ` executes the saved plan after
-verifying the database still matches the plan's source fingerprint, so a
-reviewed plan is exactly what runs. Pass --save or --output <path> to write
-the plan file, or --dry-run to print the plan document without saving it.
-When --env is set, the selected atlas.hcl env can provide url (the --from
+verifying it against the live database, so a reviewed plan is exactly what
+runs. Pass --save or --output <path> to write the plan file; without either,
+the plan document prints to stdout (--dry-run does the same explicitly).
+--auto-approve is accepted for Atlas CLI compatibility: a locally saved plan
+file is approved by operator review, so there is no prompt to skip. When
+--env is set, the selected atlas.hcl env can provide url (the --from
 target), schema.src, dev, exclude, schema.mode, and supported diff policy
-values. Registry-bound planning (--push, --pending, --repo, plan approval)
-and the plan registry sub-verbs remain Atlas CE boundary stubs.`,
+values. Registry-bound planning (--push, --pending, --repo) and the plan
+registry sub-verbs remain Atlas CE boundary stubs.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaPlan(cmd, opts)
 		},
@@ -56,13 +65,15 @@ and the plan registry sub-verbs remain Atlas CE boundary stubs.`,
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from planning")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to plan when database URLs are used")
 	flags.StringVar(&opts.name, "name", "", "Plan name recorded in the plan file")
-	flags.StringVarP(&opts.output, "output", "o", "", "Plan file output path (default <name>"+atlasschema.PlanFileSuffix+")")
+	flags.StringVarP(&opts.output, "output", "o", "", "Plan file output path (default <name>"+atlasschema.PlanFileSuffixHCL+"; a .json path writes the native JSON plan format)")
 	flags.BoolVar(&opts.save, "save", false, "Save the plan to a local plan file")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the plan file document without saving it")
+	// Accepted for Atlas CLI compatibility: a locally saved plan file is
+	// approved by operator review, so there is no approval prompt to skip.
+	flags.Bool("auto-approve", false, "Approve the plan without asking for confirmation")
 	// The remaining Atlas Pro plan flags are declared for CLI-surface parity
 	// and rejected loudly in validateAtlasSchemaPlanOptions: their behavior is
 	// either bound to the Atlas Registry or not implemented yet.
-	flags.Bool("auto-approve", false, "Approve the plan without asking for confirmation")
 	flags.Bool("push", false, "Push the plan to the Atlas Registry")
 	flags.Bool("pending", false, "Push the plan in a pending state")
 	flags.String("repo", "", "URL to the schema repository")
@@ -156,11 +167,20 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
 		return nil
 	}
-	document, err := atlasschema.MarshalPlanFile(plan)
+	outputPath := strings.TrimSpace(opts.output)
+	format := atlasSchemaPlanFormat(outputPath)
+	// The Atlas plan format names plans with a UTC timestamp; keep the
+	// deterministic fingerprint-derived default for the native JSON format.
+	if format == atlasschema.PlanFormatHCL && strings.TrimSpace(opts.name) == "" {
+		plan.Name = atlasschema.TimestampPlanName(time.Now())
+	}
+	document, err := atlasschema.MarshalPlanFileAs(plan, format)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if opts.dryRun {
+	// Without a save destination the plan document prints to stdout, like
+	// Atlas printing the computed plan; --dry-run does the same explicitly.
+	if opts.dryRun || (!opts.save && outputPath == "") {
 		if _, err := cmd.OutOrStdout().Write(document); err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("write plan preview: %w", err))
 		}
@@ -168,15 +188,25 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	}
 
 	printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
-	path := strings.TrimSpace(opts.output)
+	path := outputPath
 	if path == "" {
-		path = plan.Name + atlasschema.PlanFileSuffix
+		path = plan.Name + atlasschema.PlanFileSuffixFor(format)
 	}
 	if err := os.WriteFile(path, document, 0o644); err != nil { //nolint:gosec // plan files are meant to be reviewed and shared, 0644 like migration files
 		return cmdutil.Fail(cmd, fmt.Errorf("write plan file: %w", err))
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Plan saved to file://%s\n", path)
 	return nil
+}
+
+// atlasSchemaPlanFormat selects the plan-file encoding from the output path:
+// the Atlas-compatible tree defaults to the Atlas `.plan.hcl` format, and an
+// explicit .json output path keeps the native JSON plan format reachable.
+func atlasSchemaPlanFormat(outputPath string) atlasschema.PlanFormat {
+	if strings.HasSuffix(strings.ToLower(outputPath), ".json") {
+		return atlasschema.PlanFormatJSON
+	}
+	return atlasschema.PlanFormatHCL
 }
 
 func needsAtlasSchemaPlanConfig(cmd *cobra.Command) bool {
@@ -201,10 +231,6 @@ func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOpti
 	}
 	if err := ensureLocalSchemaURLs("--to", opts.toURLs); err != nil {
 		return err
-	}
-	if !opts.save && strings.TrimSpace(opts.output) == "" && !opts.dryRun {
-		return fmt.Errorf("atlas schema plan pushes unsaved plans to the Atlas Registry, which Ptah does not use; " +
-			"pass --save or --output <path> to write a local plan file, or --dry-run to preview the plan document")
 	}
 	if strings.ContainsAny(opts.name, `/\`) {
 		return fmt.Errorf("--name must not contain path separators; use --output to choose the plan file location")
@@ -232,7 +258,6 @@ func rejectUnimplementedAtlasSchemaPlanFlags(cmd *cobra.Command, opts atlasSchem
 		{"push", "plan push targets the Atlas Registry (Atlas Cloud); Ptah's local plan workflow saves plan files with --save or --output instead"},
 		{"pending", "pending plans are an Atlas Registry approval state; a locally saved plan file is approved by operator review"},
 		{"repo", "schema repositories exist only in the Atlas Registry (Atlas Cloud); Ptah plans are local files"},
-		{"auto-approve", "plan approval is an Atlas Registry state; a locally saved plan file is approved by operator review, so there is no approval prompt to skip"},
 		{"edit", "Ptah does not implement editing the plan before saving yet; review the saved plan file instead"},
 		{"skip-lint", "Ptah does not lint declarative plans yet, so there is no lint step to skip"},
 		{"format", "Ptah does not implement --format for schema plan yet"},

@@ -15,6 +15,8 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/editor"
 	"github.com/stokaro/ptah/config/projectconfig"
+	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasreport"
@@ -64,9 +66,18 @@ selected atlas.hcl env can provide url, schema.src, dev, exclude, schema.mode,
 format.schema.apply, and supported diff policy values. With --edit the planned
 SQL opens in $VISUAL or $EDITOR before the plan is shown and approved, and the
 edited SQL is what gets applied. With --plan file://<path>, a pre-approved
-local plan file saved by ` + "`atlas schema plan`" + ` is executed instead of
-re-planning, after verifying the database still matches the plan's source
-fingerprint; registry plan URLs are not supported. A session advisory lock
+local plan file is executed instead of re-planning; both the Atlas
+` + "`.plan.hcl`" + ` format and Ptah's native ` + "`.plan.json`" + ` format are accepted, detected
+by content. A JSON plan is verified against its recorded source fingerprint
+(a drifted target refuses as stale) and may run without --to. An Atlas-format
+plan requires --to, exactly like the official binary: its hashes are
+Atlas-computed and Ptah cannot recompute them, so the plan is verified
+semantically instead — the plan is replayed on a dev database (--dev-url, or
+an ephemeral SQLite dev database for SQLite targets) starting from the
+target's current schema, and the reached state must equal the --to desired
+state before the target is touched. After every --plan apply with a desired
+state available, the end state is verified again on the target and a mismatch
+fails loudly; registry plan URLs are not supported. A session advisory lock
 serializes concurrent applies against one target on PostgreSQL, MySQL,
 MariaDB, and SQL Server; --lock-timeout bounds how long acquisition waits
 (empty waits indefinitely), and dialects without advisory locks proceed
@@ -96,7 +107,7 @@ synced schema.`,
 	flags.StringVar(&opts.txMode, "tx-mode", "", "Transaction mode: all, file, or none")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to apply when database URLs are used")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in apply")
-	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffix+")")
+	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffixHCL+" or file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
@@ -303,10 +314,15 @@ func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
 	return !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName)
 }
 
-// runAtlasSchemaApplyPlanFile executes a pre-approved local plan file saved by
-// `atlas schema plan` instead of re-planning. The plan's source fingerprint is
-// verified against the live database first: a drifted target refuses to
-// execute, which is the entire value of a pre-approved plan.
+// runAtlasSchemaApplyPlanFile executes a pre-approved local plan file instead
+// of re-planning. A native JSON plan is verified against its recorded source
+// fingerprint: a drifted target refuses to execute, which is the entire value
+// of a pre-approved plan. An Atlas-format `.plan.hcl` plan carries hashes
+// Ptah cannot recompute, so it is verified semantically against the required
+// --to desired state instead: the plan is rehearsed on a dev database from
+// the target's current schema and must reach exactly the desired state.
+// Whenever a desired state is available, the end state is verified again on
+// the target after the apply.
 func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	if opts.formatOutput && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
@@ -331,9 +347,20 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	plan, err := atlasschema.ReadPlanFile(path)
+	plan, planFormat, err := atlasschema.ReadPlanDocument(path)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	// Atlas requires the desired state to verify a plan file; the Atlas plan
+	// format has nothing else to verify against, so the compat tree mirrors
+	// the official binary's contract and error for it.
+	if planFormat == atlasschema.PlanFormatHCL && len(opts.toURLs) == 0 {
+		return cmdutil.Fail(cmd, fmt.Errorf("the flag %q is required to verify the provided plan", "to"))
+	}
+	if len(opts.toURLs) > 0 {
+		if err := ensureLocalSchemaURLs("--to", opts.toURLs); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
@@ -344,7 +371,15 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	// The fingerprint verification is the serialized target inspection of the
+	var desired *goschema.Database
+	if len(opts.toURLs) > 0 {
+		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{Dialect: conn.Info().Dialect})
+		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+		}
+	}
+
+	// The plan verification is the serialized target inspection of the
 	// pre-approved plan path, so the lock is held before it and released on
 	// every exit path.
 	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, lockTimeout)
@@ -354,8 +389,14 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
 	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
 
-	if err := atlasschema.VerifyPlanTarget(conn, plan); err != nil {
-		return cmdutil.Fail(cmd, err)
+	// A JSON plan always carries a fingerprint contract; an Atlas-format plan
+	// only when Ptah wrote it (round-trip). Foreign Atlas hashes cannot be
+	// recomputed locally, so those plans rely on the rehearsal gate alone.
+	nativeFingerprint := atlasschema.IsNativeFingerprint(plan.FromFingerprint)
+	if planFormat == atlasschema.PlanFormatJSON || nativeFingerprint {
+		if err := atlasschema.VerifyPlanTarget(conn, plan); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 
 	statements := plan.StatementSQL()
@@ -375,6 +416,17 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if err := rehearseAtlasSchemaApplyPlan(cmd, conn, opts, rehearsePlanParams{
+		format:            planFormat,
+		nativeFingerprint: nativeFingerprint,
+		statements:        statements,
+		desired:           desired,
+		exclude:           plan.Exclude,
+		txMode:            txMode,
+	}); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
 	ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -387,6 +439,13 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, plan.SQL()); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
 	}
+	// The semantic end-state verification mirrors Atlas: always on whenever a
+	// desired state is available, with no flag to disable it.
+	if desired != nil {
+		if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan.Exclude); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	if opts.formatOutput {
 		return nil
 	}
@@ -394,9 +453,74 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	return nil
 }
 
+// rehearsePlanParams carries the plan-file rehearsal inputs derived from the
+// loaded plan document.
+type rehearsePlanParams struct {
+	format            atlasschema.PlanFormat
+	nativeFingerprint bool
+	statements        []string
+	desired           *goschema.Database
+	exclude           []string
+	txMode            migrator.MigrationTxMode
+}
+
+// rehearseAtlasSchemaApplyPlan runs the pre-apply semantic verification of a
+// plan file when it applies. Atlas-format plans are always rehearsed — for
+// foreign Atlas hashes the rehearsal is the only from-state gate, so a
+// missing dev database is an error there; a Ptah-written `.plan.hcl` with a
+// verified native fingerprint skips the rehearsal when no dev database is
+// available. JSON plans rehearse only when a dev database was requested
+// explicitly. SQLite targets never need an operator-provided dev database: an
+// ephemeral one is created on the fly.
+func rehearseAtlasSchemaApplyPlan(
+	cmd *cobra.Command,
+	conn *dbschema.DatabaseConnection,
+	opts atlasSchemaApplyOptions,
+	params rehearsePlanParams,
+) error {
+	if params.desired == nil {
+		return nil
+	}
+	devURL := strings.TrimSpace(opts.devURL)
+	if devURL == "" && params.format != atlasschema.PlanFormatHCL {
+		return nil
+	}
+	if devURL == "" {
+		switch {
+		case platform.NormalizeDialect(conn.Info().Dialect) == platform.SQLite:
+			ephemeralURL, cleanup, err := atlasschema.NewEphemeralSQLiteDev()
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			devURL = ephemeralURL
+		case params.nativeFingerprint:
+			// The verified source fingerprint plus the post-apply end-state
+			// check still hold; only the pre-apply replay is skipped.
+			return nil
+		default:
+			return fmt.Errorf(
+				"verifying an Atlas plan file requires a dev database: the plan's from/to hashes are Atlas-computed "+
+					"and Ptah cannot recompute them, so the plan is verified by replaying it on a dev database and "+
+					"comparing the reached state with --to; pass --dev-url with a %s dev database URL",
+				conn.Info().Dialect)
+		}
+	}
+	return atlasschema.RehearsePlanStatements(cmd.Context(), conn, params.statements, params.desired, atlasschema.PlanRehearsalOptions{
+		DevURL:      devURL,
+		TargetURL:   opts.url,
+		DesiredURLs: opts.toURLs,
+		Exclude:     params.exclude,
+		TxMode:      params.txMode,
+	})
+}
+
 // validateAtlasSchemaApplyPlanOptions rejects flags that would recompute or
-// reshape the pre-approved plan: the plan file already fixes the desired
-// state, the exclude patterns, and the exact SQL that was reviewed.
+// reshape the pre-approved plan: the plan file already fixes the exclude
+// patterns, the planned schema objects, and the exact SQL that was reviewed.
+// --to and --dev-url combine with --plan the way the official binary
+// combines them: --to names the desired state the plan is verified against
+// and --dev-url hosts the pre-apply rehearsal.
 func validateAtlasSchemaApplyPlanOptions(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	if strings.TrimSpace(opts.url) == "" {
 		return fmt.Errorf("--url is required")
@@ -405,9 +529,7 @@ func validateAtlasSchemaApplyPlanOptions(cmd *cobra.Command, opts atlasSchemaApp
 		flag   string
 		reason string
 	}{
-		{"to", "the plan file already fixes the desired state"},
-		{atlasFileFlagName, "the plan file already fixes the desired state"},
-		{"dev-url", "the plan is already computed; there is nothing to re-plan on a dev database"},
+		{atlasFileFlagName, "the plan file already fixes the desired state; name the verification desired state with --to"},
 		{"exclude", "the plan file records the exclude patterns it was computed with"},
 		{"edit", "a pre-approved plan must execute exactly as reviewed; recompute the plan with `schema plan` instead"},
 		{atlasSchemaFlagName, "the plan file already fixes the planned schema objects"},
@@ -417,6 +539,9 @@ func validateAtlasSchemaApplyPlanOptions(cmd *cobra.Command, opts atlasSchemaApp
 		if cmd.Flags().Changed(conflict.flag) {
 			return fmt.Errorf("atlas schema apply --plan cannot be combined with --%s: %s", conflict.flag, conflict.reason)
 		}
+	}
+	if cmd.Flags().Changed("dev-url") && len(opts.toURLs) == 0 {
+		return fmt.Errorf("atlas schema apply --plan with --dev-url requires --to: the rehearsal verifies the plan against the desired schema state")
 	}
 	return nil
 }

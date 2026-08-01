@@ -282,44 +282,77 @@ ptah-compat schema apply \
 ## Save and execute plan files
 
 `ptah-compat schema plan` is the open local replacement for Atlas's Pro
-registry-gated plan workflow.
+registry-gated plan workflow, and it speaks Atlas's plan-file format.
 
 It computes the same declarative plan `schema apply` would generate — from the
 `--from` target database to the local `--to` schema files — and saves it as a
-local JSON plan file (`format_version` 1) that records the ordered SQL
-statements with per-statement safety severity, the dialect, and the SHA-256
-fingerprints of the source and desired schema states.
+local plan file. The default format is the Atlas `.plan.hcl` shape: one
+`plan "<name>"` block with `from`/`to` fingerprints and the migration SQL in a
+heredoc, named with an Atlas-style UTC timestamp. The written file parses in
+Atlas's own plan reader; the `from`/`to` values are Ptah's sha256
+fingerprints, which the official binary parses but cannot verify against its
+own base64 hashes (those have no local recipe — in either direction). An
+`--output` path ending in `.json` writes the native JSON plan
+(`format_version` 1) instead, which additionally records per-statement safety
+severity, the dialect, and exclude patterns. Without
+`--save`/`--output`/`--dry-run`, the plan document prints to stdout, and
+`--auto-approve` is accepted for CLI compatibility.
 
-`schema apply --plan file://<path>` then executes exactly the reviewed
-statements after verifying the live database still matches the plan's source
-fingerprint; a drifted database refuses with a stale-plan error instead of
-running reviewed SQL against unreviewed state.
+`schema apply --plan file://<path>` accepts both formats, detected by
+content — including `.plan.hcl` files written by the licensed Atlas binary:
+
+- A **JSON plan** executes after verifying the live database still matches
+  the plan's recorded source fingerprint; a drifted database refuses with a
+  stale-plan error instead of running reviewed SQL against unreviewed state.
+  `--to` is optional.
+- An **Atlas-format plan** requires `--to`, exactly like the official binary
+  (`the flag "to" is required to verify the provided plan`). Its hashes are
+  re-verified with Ptah's own machinery: the plan is replayed on a dev
+  database (`--dev-url`, or an ephemeral SQLite dev database for SQLite
+  targets) starting from the target's current schema, and the reached state
+  must equal the `--to` desired state under Ptah's schema diff before the
+  target is touched. A Ptah-written `.plan.hcl` keeps native sha256
+  fingerprints, so it gets the stale-plan check too.
+
+After every `--plan` apply with a desired state available, the end state is
+verified again on the target — the semantic end-state verification Atlas
+performs — and a mismatch fails loudly. There is no flag to disable it.
 
 ```bash
-# Compute and save the plan for review (or --save for ./<name>.plan.json).
+# Compute and save the plan for review (or --save for ./<timestamp>.plan.hcl).
 ptah-compat schema plan \
   --from "$DATABASE_URL" \
   --to file://schema.sql \
-  --output add-orders.plan.json
+  --output add-orders.plan.hcl
 
 # Later, execute exactly the reviewed plan; drift refuses loudly.
 ptah-compat schema apply \
   --url "$DATABASE_URL" \
-  --plan file://add-orders.plan.json \
+  --to file://schema.sql \
+  --plan file://add-orders.plan.hcl \
   --auto-approve
 ```
 
 Expected output of the plan step ends with:
 
 ```text
-Plan saved to file://add-orders.plan.json
+Plan saved to file://add-orders.plan.hcl
 ```
 
-If the target database changed after the plan was saved, apply refuses with a
-stale-plan error naming both fingerprints:
+If the target database changed after the plan was saved, apply refuses before
+touching the target. For a plan with native fingerprints the stale-plan error
+names both fingerprints:
 
 ```text
 error: pre-planned migration is stale: the target database schema does not match the plan's source fingerprint (plan sha256:..., database sha256:...); the database changed since the plan was computed, so re-run `schema plan` against the current database and review the fresh plan
+```
+
+For an Atlas-authored plan the drift surfaces semantically, with the target
+left unchanged:
+
+```text
+error: pre-planned migration does not converge to the desired state: replaying the plan on the dev database, starting from the target's current schema, left the following schema drift against --to (the target database was left unchanged):
+...
 ```
 
 ## Diff schema files

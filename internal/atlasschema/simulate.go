@@ -13,6 +13,7 @@ import (
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
+	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
@@ -87,44 +88,76 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 		return errors.New("schema apply simulation requires database connection")
 	}
 
-	targetInfo := p.conn.Info()
-	if err := atlasurl.ValidateDialectMatch(devURL, targetInfo.Dialect); err != nil {
+	devConn, err := connectSimulationDev(ctx, devURL, p.conn.Info(), opts.TargetURL, opts.DesiredURLs)
+	if err != nil {
 		return err
 	}
+	defer dbschema.CloseAndWarn(devConn)
+
+	return rehearseStatementsOnDev(ctx, devConn, p.current, p.txMode, statements)
+}
+
+// connectSimulationDev validates the dev database URL against the target and
+// opens the dev connection used to rehearse a plan. The caller owns closing
+// the returned connection.
+func connectSimulationDev(
+	ctx context.Context,
+	devURL string,
+	targetInfo dbschematypes.DBInfo,
+	targetURL string,
+	desiredURLs []string,
+) (*dbschema.DatabaseConnection, error) {
+	if err := atlasurl.ValidateDialectMatch(devURL, targetInfo.Dialect); err != nil {
+		return nil, err
+	}
 	if isDockerSimulationURL(devURL) {
-		return errors.New("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema apply simulation")
+		return nil, errors.New("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema apply simulation")
 	}
-	if devURL == strings.TrimSpace(opts.TargetURL) {
-		return errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
+	if devURL == strings.TrimSpace(targetURL) {
+		return nil, errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
 	}
-	for _, desired := range opts.DesiredURLs {
+	for _, desired := range desiredURLs {
 		if devURL == strings.TrimSpace(desired) {
-			return fmt.Errorf("--dev-url must not point at the --to desired-state database %q: the dev database is reset destructively before the plan is rehearsed on it", desired)
+			return nil, fmt.Errorf("--dev-url must not point at the --to desired-state database %q: the dev database is reset destructively before the plan is rehearsed on it", desired)
 		}
 	}
 
 	devConn, err := dbschema.ConnectToDatabase(ctx, devURL)
 	if err != nil {
-		return fmt.Errorf("connect to --dev-url: %w", err)
+		return nil, fmt.Errorf("connect to --dev-url: %w", err)
 	}
-	defer dbschema.CloseAndWarn(devConn)
 
 	devInfo := devConn.Info()
 	if platform.NormalizeDialect(devInfo.Dialect) != platform.NormalizeDialect(targetInfo.Dialect) {
-		return fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", devInfo.Dialect, targetInfo.Dialect)
+		dbschema.CloseAndWarn(devConn)
+		return nil, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", devInfo.Dialect, targetInfo.Dialect)
 	}
 	if err := checkSimulationSchemaScope(devInfo, targetInfo); err != nil {
-		return err
+		dbschema.CloseAndWarn(devConn)
+		return nil, err
 	}
+	return devConn, nil
+}
 
+// rehearseStatementsOnDev resets the dev database, recreates the target's
+// introspected current schema on it, and executes the ordered statements
+// under txMode — the shared rehearsal core of the pre-apply simulation and
+// the plan-file desired-state verification.
+func rehearseStatementsOnDev(
+	ctx context.Context,
+	devConn *dbschema.DatabaseConnection,
+	current *dbschematypes.DBSchema,
+	txMode migrator.MigrationTxMode,
+	statements []string,
+) error {
 	devConn.SchemaWriter().SetDryRun(false)
 	if err := devConn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
-	if err := recreateCurrentSchema(ctx, devConn, p.current); err != nil {
+	if err := recreateCurrentSchema(ctx, devConn, current); err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
-	if err := applyStatements(ctx, devConn, p.txMode, statements); err != nil {
+	if err := applyStatements(ctx, devConn, txMode, statements); err != nil {
 		return &SimulationError{Stage: "plan", Err: err}
 	}
 	return nil
