@@ -49,13 +49,13 @@ row for a migration decision.
 :::
 ## At a glance
 
-Across the 135 capabilities below:
+Across the 132 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 66 |
+| Ptah supports it fully | 65 |
 | Ptah supports it with a stated limitation | 44 |
-| Ptah does not implement it | 25 |
+| Ptah does not implement it | 23 |
 | Ptah and Atlas CE both support it | 25 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 27 |
 | Ptah has it and neither Atlas edition does | 8 |
@@ -64,8 +64,8 @@ Across the 135 capabilities below:
 
 Every 🟡 on this page names the specific limitation, and each one was
 reproduced against a binary built from this repository. Where the limitation is
-work that has not been done, it is tracked: see
-[issues #926 to #942](https://github.com/stokaro/ptah/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement%2Cbug+created%3A%3E2026-07-30).
+work that has not been done, it is tracked in
+[#926 to #942](https://github.com/stokaro/ptah/issues/926) and [#944](https://github.com/stokaro/ptah/issues/944).
 
 The command surface is counted separately, because it is measured rather than
 assessed. The conformance harness inventories every command in the pinned Atlas
@@ -117,7 +117,6 @@ as open capabilities regardless.
 | Inspect non-database sources via --dev-url | ✅ | ✅ | ✅ | Schema file, `atlas.sum` migration dir, or env:// is materialized on a reset dev DB then introspected; without `--dev-url` it fails. |
 | Inspect split/write file exports | ✅ | ❌ | ✅ | `{{ hcl . \| split \| write "dir" }}` writes object/schema/type trees; pinned Atlas CE rejects split, write, hcl as non-community. |
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes a format_version-1 JSON plan with sha256 fingerprints; `apply --plan` refuses a drifted target as stale. |
-| Plan registry sub-verbs and schema push | ❌ | ❌ | ✅ | approve, lint, list, new, pull, push, rm, test, validate and `schema push` are boundary stubs printing the CE abort text. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |
 | schema clean | 🟡 | ✅ | ✅ | Plan and --dry-run list tables (plus PostgreSQL enums/sequences, SQL Server FKs), but the apply drops views too via DropAllTables. |
 | schema diff between two schema states | 🟡 | ✅ | ✅ | SQLite refuses any change needing a table rebuild: column modify, NOT NULL change, constraint add/remove, enum CHECK change. Same on apply. |
@@ -179,7 +178,6 @@ as open capabilities regardless.
 | Embeddable test runner (Go package) | ✅ | ❔ | ❔ | migration/dbtest exports RunMigrationTest and RunSchemaTest. Nothing cited establishes an Atlas Go test-runner package. |
 | Exit-code contract for CI gates | ✅ | ✅ | ➖ | Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2. |
 | Migration test framework (`ptah migrations test`) | ✅ | ❌ | ✅ | Declarative YAML cases: migrate_to, apply_schema, seed, exec, assert. Fresh ephemeral SQLite per case unless `--db-url` is set. |
-| Registry plan testing (`schema plan test`) | ❌ | ❌ | ✅ | `ptah-compat schema plan` test stays an Atlas CE unsupported boundary stub: `--help` exits 0, direct execution aborts and exits 1. |
 | Schema test framework (`ptah schema test`) | ✅ | ❌ | ✅ | Desired schema from Go annotations converges before steps; migrate_to is rejected. Atlas CE v1.2.0 registers no schema test verb. |
 
 ## Configuration and dev databases
@@ -240,7 +238,6 @@ as open capabilities regardless.
 | Digest pinning and write-once version tags | ✅ | ➖ | ❔ | Pushing to an @sha256 reference is refused; --version is write-once and a conflict exits 2. The reference tag, --tag values and latest all move. |
 | Environment-scoped SQL seed runner | ✅ | ❌ | ❌ | NNN_desc.env.sql files recorded in schema_seeds with protected-env gates. No seed verb in the CE inventory or the cited Pro list. |
 | Migration directories in an OCI registry | ✅ | ❌ | ✅ | `migrations push/pull`, plus `up`, `status`, `down` and `lint` reading `oci://` directly as the directory flag. No local checkout needed. |
-| OCI desired-schema artifacts | ✅ | ❌ | 🟡 | Canonical schema.hcl push/pull; compare, drift and plan read `--schema-file` oci://. `atlas schema push` is a CE unsupported boundary stub. |
 | oci:// as a --schema-file desired-state source | 🟡 | ❌ | ✅ | Accepted by schema render/compare/drift/plan/apply and migrations plan/generate. schema inspect rejects it, and only three of those expose --plain-http. |
 | oci:// in the Atlas-compatible ptah-compat binary | ❌ | ❌ | ➖ | By design: compat mirrors the Atlas surface, which has no oci:// scheme. migration.dir takes file:// only; the OCI workflow lives in the native ptah binary. |
 | Referrer attachments: lint, plan, deployment reports | 🟡 | ❌ | ❔ | lint --attach, migrations plan --attach and up attach reports to an exact digest. `oci referrers` lists descriptors only; no flag downloads the payload. |

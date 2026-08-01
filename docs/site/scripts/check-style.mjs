@@ -363,6 +363,65 @@ function paragraphViolations(lines) {
   return findings;
 }
 
+// The symbols a status matrix uses. A contradiction is only meaningful between
+// cells drawn from a fixed vocabulary; prose cells legitimately differ.
+const STATUS_SYMBOLS = new Set(['✅', '🟡', '❌', '➖', '❔']);
+
+const NAME_STOPWORDS = new Set(
+  'a an the and or of to in on for with is are it its as by from not no only that this all each per via'.split(' '),
+);
+
+function nameTokens(cell) {
+  const text = cell.replace(/`([^`]*)`/g, '$1').toLowerCase();
+  return new Set(
+    (text.match(/[a-z0-9][a-z0-9_.-]*/g) ?? []).filter((w) => w.length > 2 && !NAME_STOPWORDS.has(w)),
+  );
+}
+
+function overlap(a, b) {
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const token of a) if (b.has(token)) shared += 1;
+  return shared / (a.size + b.size - shared);
+}
+
+// contradictionViolations reports two rows that name the same capability and
+// then disagree about it.
+//
+// A comparison page is assembled from many rows, and a merge can leave the row
+// it was meant to supersede in place. When that happens the page states two
+// different verdicts for one capability, which is worse than redundancy: a
+// reader cannot tell which is current. Requiring BOTH a high name overlap and a
+// differing status keeps this off legitimately-similar rows - `migrations test`
+// and `schema test` are different commands that share most of their words.
+function contradictionViolations(lines) {
+  const rows = [];
+  for (const [index, line] of lines.entries()) {
+    if (!line.trimStart().startsWith('|')) continue;
+    const cells = splitCells(line);
+    if (isDelimiterRow(cells) || cells.length < 3) continue;
+    const statuses = cells.slice(1).filter((cell) => STATUS_SYMBOLS.has(cell));
+    if (statuses.length < 2) continue;
+    rows.push({ line: index + 1, name: cells[0], tokens: nameTokens(cells[0]), statuses });
+  }
+
+  const findings = [];
+  for (let i = 0; i < rows.length; i += 1) {
+    for (let j = i + 1; j < rows.length; j += 1) {
+      if (overlap(rows[i].tokens, rows[j].tokens) < 0.6) continue;
+      if (rows[i].statuses.join('') === rows[j].statuses.join('')) continue;
+      findings.push({
+        line: rows[j].line,
+        message:
+          `row "${rows[j].name}" states ${rows[j].statuses.join('')} while ` +
+          `"${rows[i].name}" on line ${rows[i].line} states ${rows[i].statuses.join('')}; ` +
+          'the two name the same capability and disagree — supersede one of them',
+      });
+    }
+  }
+  return findings;
+}
+
 // analyze is the single implementation of every rule. checkFile and the
 // self-test both call it, so a rule that stops firing here fails the self-test
 // instead of quietly passing every file forever.
@@ -413,6 +472,7 @@ export function analyze(source) {
 
   findings.push(...tableViolations(text));
   findings.push(...paragraphViolations(text));
+  findings.push(...contradictionViolations(text));
   findings.push(...fenceErrors);
   return findings.sort((a, b) => a.line - b.line);
 }
@@ -461,6 +521,13 @@ function selftest() {
     '| --- | --- | --- |',
     '| Exports | HCL/SQL `split | write` file exports | #510 |',
     '',
+    // Two rows naming one capability and disagreeing about it. A merge that
+    // fails to supersede the old row leaves exactly this shape.
+    '| Capability | Ptah | CE |',
+    '| --- | --- | --- |',
+    '| OCI desired-schema artifacts | ✅ | ❌ |',
+    '| Desired-schema artifacts over OCI | ✅ | 🟡 |',
+    '',
     `A wall of prose. ${'Every flag is described inline rather than in a list. '.repeat(20)}`,
   ].join('\n');
 
@@ -473,7 +540,8 @@ function selftest() {
     { line: 17, needle: 'no language label' },
     { line: 23, needle: 'over the 350 limit' },
     { line: 27, needle: 'cells but the header has 3' },
-    { line: 29, needle: 'over the 900 limit' },
+    { line: 34, needle: 'over the 900 limit' },
+    { line: 32, needle: 'name the same capability and disagree' },
   ];
 
   const findings = analyze(violating);
@@ -502,6 +570,14 @@ function selftest() {
     '```text',
     'plain output',
     '```',
+    '',
+    // Near-identical names carrying the SAME verdict. The rule targets
+    // contradictions, so this pair must stay silent; without it, deleting the
+    // same-status guard would go unnoticed.
+    '| Capability | Ptah | CE |',
+    '| --- | --- | --- |',
+    '| OCI migration artifacts | ✅ | ❌ |',
+    '| OCI migration artifacts and tags | ✅ | ❌ |',
     '',
     // A numbered list and an indented list continuation. Both were measured as
     // one giant paragraph by the first version of the length rule, which would
