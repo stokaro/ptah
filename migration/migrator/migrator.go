@@ -220,6 +220,7 @@ func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
 	tmp.initialized = false
+	tmp.initializedDryRun = false
 	tmp.metadataAvailable = false
 	tmp.legacyRevisionTable = false
 	return &tmp
@@ -234,6 +235,7 @@ func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator
 		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
 	tmp.initialized = false
+	tmp.initializedDryRun = false
 	tmp.metadataAvailable = false
 	tmp.legacyRevisionTable = false
 	return &tmp

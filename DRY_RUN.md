@@ -176,12 +176,25 @@ observability flags control it:
   stdout as one JSON object per line, so `ptah migrations up --dry-run
   --log-format json | jq` is parseable.
 
-The Atlas-compatible binary (`ptah-compat`) deliberately differs: it writes
-**nothing** to stderr for a successful dry run, because the Atlas CE binary it
-mirrors writes nothing either, and because `--format` consumers routinely fold
+The Atlas-compatible binary (`ptah-compat`) deliberately differs: it drops the
+narration entirely rather than exposing a flag for it, because the Atlas CE
+binary it mirrors prints none, and because `--format` consumers routinely fold
 stderr into stdout (`2>&1 | jq`), where one stray log line stops the output from
-being a single JSON document. Failures are still reported there — the command's
-`Error: …` diagnostic goes to stderr and the process exits `1`. See
+being a single JSON document.
+
+Quiet is not silent. Two things still reach `ptah-compat`'s stderr, neither of
+which appears on a clean run:
+
+- **Command failures** — the `Error: …` diagnostic, with exit status `1`.
+- **Warn-level diagnostics that exist on no other channel** — a circular
+  foreign-key or function ordering, a dev or shadow database that would not
+  close, an unrecognized embedding mode. None of these are returned as errors,
+  so dropping them would let a real apply report success while quietly
+  degrading.
+
+One exception: `ptah-compat migrate down` without `--format` forwards to the
+native rollback command and inherits its run log on stderr. See
+[stokaro/ptah#969](https://github.com/stokaro/ptah/issues/969) and
 [stokaro/ptah#967](https://github.com/stokaro/ptah/issues/967).
 
 ### Safety Features

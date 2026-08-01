@@ -183,40 +183,52 @@ func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
 	migrationsDir := dryRunQuietDir(c)
-	dbPath := filepath.Join(c.TempDir(), "pin.db")
-	applyForReal(c, binPath, dbPath, migrationsDir)
+
+	// The apply cases need a target with pending work and the down case needs
+	// one with a revision to roll back. Sharing a database between them would
+	// leave the apply dry runs with nothing pending, so the writers would never
+	// be entered and the pin would hold vacuously.
+	applyDB := filepath.Join(c.TempDir(), "pin-apply.db")
+	downDB := filepath.Join(c.TempDir(), "pin-down.db")
+	applyForReal(c, binPath, downDB, migrationsDir)
 
 	tests := []struct {
 		name string
 		args []string
+		// wantPlanned proves the run actually reached the writers, so the
+		// narration assertions below can never pass on an empty plan.
+		wantPlanned string
 	}{
 		{
 			name: "apply default format",
 			args: []string{
 				"migrate", "apply",
-				"--url", "sqlite://" + dbPath,
+				"--url", "sqlite://" + applyDB,
 				"--dir", "file://" + migrationsDir,
 				"--dry-run",
 			},
+			wantPlanned: "Would have applied 1 migrations.",
 		},
 		{
 			name: "apply go template",
 			args: []string{
 				"migrate", "apply",
-				"--url", "sqlite://" + dbPath,
+				"--url", "sqlite://" + applyDB,
 				"--dir", "file://" + migrationsDir,
 				"--dry-run", "--format", "{{ json . }}",
 			},
+			wantPlanned: `"Target":"1"`,
 		},
 		{
 			name: "down go template",
 			args: []string{
 				"migrate", "down",
-				"--url", "sqlite://" + dbPath,
+				"--url", "sqlite://" + downDB,
 				"--dir", "file://" + migrationsDir,
 				"--to-version", "0",
 				"--dry-run", "--format", "{{ json . }}",
 			},
+			wantPlanned: `"Planned":[{"Name":"1_init.sql"`,
 		},
 	}
 
@@ -227,8 +239,61 @@ func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 			combined, err := run.CombinedOutput()
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", combined))
+			c.Assert(string(combined), qt.Contains, tt.wantPlanned)
 			c.Assert(string(combined), qt.Not(qt.Contains), "[DRY RUN]")
 			c.Assert(string(combined), qt.Not(qt.Contains), "level=INFO")
+		})
+	}
+}
+
+// TestCompatBinaryKeepsLogOnlyDiagnostics is the other half of the quiet
+// contract: narration is dropped, but a Warn-level diagnostic that exists on no
+// other channel still gets through. A circular foreign-key graph is reordered
+// and reported only through this record — it is never returned as an error — so
+// dropping it would let an apply report success while quietly emitting DDL that
+// depends on creation order.
+func TestCompatBinaryKeepsLogOnlyDiagnostics(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildCompatBinary(c)
+	dir := c.TempDir()
+	schemaPath := filepath.Join(dir, "circular.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(
+		"CREATE TABLE authors (\n"+
+			"  id INTEGER PRIMARY KEY,\n"+
+			"  favorite_book_id INTEGER REFERENCES books(id)\n"+
+			");\n"+
+			"CREATE TABLE books (\n"+
+			"  id INTEGER PRIMARY KEY,\n"+
+			"  author_id INTEGER REFERENCES authors(id)\n"+
+			");\n"), 0o600), qt.IsNil)
+
+	tests := []struct {
+		name string
+		mode string
+	}{
+		{name: "dry run", mode: "--dry-run"},
+		{name: "real apply", mode: "--auto-approve"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			runDir := c.TempDir()
+			run := newCompatProcess(binPath,
+				"schema", "apply",
+				"--url", "sqlite://"+filepath.Join(runDir, "target.db"),
+				"--to", "file://"+schemaPath,
+				"--dev-url", "sqlite://"+filepath.Join(runDir, "dev.db"),
+				tt.mode,
+			)
+			var stdout, stderr bytes.Buffer
+			run.Stdout = &stdout
+			run.Stderr = &stderr
+
+			err := run.Run()
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", stderr.String()))
+			c.Assert(stderr.String(), qt.Contains, "level=WARN")
+			c.Assert(stderr.String(), qt.Contains, "Circular dependency detected in foreign key relationships")
 		})
 	}
 }
