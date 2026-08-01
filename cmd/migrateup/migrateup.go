@@ -136,7 +136,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Local directory or oci:// reference containing migration files (required)")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what migrations would be applied without actually running them")
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output")
-	flags.BoolVar(&opts.verifySum, verifySumFlag, false, "Verify the migrations directory against its committed ptah.sum before applying; abort on drift")
+	flags.BoolVar(&opts.verifySum, verifySumFlag, false, "Require a sum file: a missing ptah.sum or atlas.sum is an error (hashed directories always verify before applying)")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")

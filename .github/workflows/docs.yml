@@ -78,6 +78,7 @@ jobs:
           set -euo pipefail
           node docs/site/scripts/check-style.mjs --selftest
           node docs/site/scripts/check-style.mjs
+          node docs/site/scripts/build-feature-matrix.mjs --check
 
   build:
     name: Build versioned site

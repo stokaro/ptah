@@ -114,6 +114,14 @@ func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
 			name: "directive with CRLF line ending",
 			sql:  "-- atlas:checkpoint\r\nCREATE TABLE users (id INTEGER PRIMARY KEY);\r\n",
 		},
+		{
+			// Deliberate tolerance, matching the txtar matcher: leading
+			// whitespace before the directive still marks a checkpoint. The
+			// Atlas-emitted shape is column 0; hand-indented copies in hashed
+			// directories trip the sum gate before this matters.
+			name: "directive with leading whitespace",
+			sql:  "  -- atlas:checkpoint\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+		},
 	}
 
 	for _, test := range tests {

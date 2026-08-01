@@ -132,6 +132,16 @@ func TestVerifyHashed_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "both ptah.sum and atlas.sum exist.*")
 	})
 
+	c.Run("both sum files in auto mode are ambiguous, atlas-hashed side", func(c *qt.C) {
+		dir := writeHashedAtlasDir(c)
+		c.Assert(os.WriteFile(filepath.Join(dir, migratesum.FileName), []byte("h1:bogus=\n"), 0o600), qt.IsNil)
+
+		_, hashed, err := migratesum.VerifyHashed(os.DirFS(dir), migrator.MigrationDirFormatAuto)
+
+		c.Assert(hashed, qt.IsTrue)
+		c.Assert(err, qt.ErrorMatches, "both ptah.sum and atlas.sum exist.*")
+	})
+
 	c.Run("malformed sum file is an error", func(c *qt.C) {
 		dir := writeUnhashedAtlasDir(c)
 		c.Assert(os.WriteFile(filepath.Join(dir, migratesum.AtlasFileName), []byte("not a sum file"), 0o600), qt.IsNil)
