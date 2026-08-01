@@ -135,6 +135,54 @@ func TestSchemaDiffIncludeCrossScopeDependencyFails(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "add the missing objects to the selection or exclude the dependent objects")
 }
 
+// TestSchemaDiffIncludeSelectsQuotedDottedIdentifier guards the qualified
+// spelling of an identifier that itself contains a dot. Ptah quotes such a
+// part when it builds the schema-qualified candidate, so the selector that
+// matches `main."dotted.table"` carries two dot characters but only one
+// separator. A depth check that counted characters made this selector — and
+// therefore the qualified spelling of every dotted identifier — inexpressible.
+func TestSchemaDiffIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		pattern string
+	}{
+		{name: "schema qualified", pattern: `main."dotted.table"`},
+		{name: "wildcard schema", pattern: `*."dotted.table"`},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dir := t.TempDir()
+			fromPath := filepath.Join(dir, "from.sql")
+			toPath := filepath.Join(dir, "to.sql")
+			devPath := filepath.Join(dir, "dev.db")
+			c.Assert(os.WriteFile(fromPath, []byte(""), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(toPath, []byte(
+				"CREATE TABLE \"dotted.table\" (id INTEGER PRIMARY KEY);\nCREATE TABLE scope_archive (id INTEGER PRIMARY KEY);\n",
+			), 0o600), qt.IsNil)
+			cmd := atlas.NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs([]string{
+				"schema", "diff",
+				"--from", "file://" + fromPath,
+				"--to", "file://" + toPath,
+				"--dev-url", "sqlite://" + devPath,
+				"--include", test.pattern,
+			})
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+			c.Assert(out.String(), qt.Contains, `"dotted.table"`)
+			c.Assert(out.String(), qt.Not(qt.Contains), "scope_archive")
+		})
+	}
+}
+
 func TestSchemaDiffIncludeMalformedSelectorFailsBeforeDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeScopeSchemaFiles(t)

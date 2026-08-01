@@ -65,9 +65,11 @@ object by default, or grouped with --split schema|type.
 --schemas names the schema universe, --include picks top-level resources
 inside it with Atlas-style selectors, and --exclude subtracts from the result.
 Child resources ride along with their parent and cannot be selected on their
-own. A selection that keeps an object whose dependency it dropped is refused
-rather than rendered, so inspected output never references an object it
-omitted.`,
+own: the [type=column] and literal-dot table.column spellings both fail before
+the database is contacted, while glob metacharacters match a dot and escape
+that check. A selection that keeps an object whose dependency it dropped is
+refused rather than rendered, so inspected output never references an object
+it omitted.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaInspect(cmd, opts)

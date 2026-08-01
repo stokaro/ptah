@@ -124,6 +124,38 @@ func TestSchemaInspectIncludeAcceptsQualifiedNames(t *testing.T) {
 	}
 }
 
+func TestSchemaInspectIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
+	c := qt.New(t)
+
+	// The qualified candidate for a dotted identifier quotes the dotted part
+	// (`main."dotted.table"`), so the selector matching it holds two dot
+	// characters and one separator. Depth is measured on separators outside
+	// quotes for exactly this reason.
+	tests := []struct {
+		name    string
+		pattern string
+	}{
+		{name: "schema qualified", pattern: `main."dotted.table"`},
+		{name: "wildcard schema", pattern: `*."dotted.table"`},
+		{name: "bare name", pattern: `dotted.table`},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := seedSQLiteDB(t,
+				"CREATE TABLE \"dotted.table\" (id INTEGER PRIMARY KEY, email TEXT);\n"+
+					"CREATE TABLE inspect_archive (id INTEGER PRIMARY KEY);")
+
+			stdout, stderr, err := runCompatInspect("--url", "sqlite://"+dbPath, "--include", test.pattern)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+			c.Assert(stdout, qt.Contains, `table "dotted.table"`)
+			c.Assert(stdout, qt.Contains, `column "email"`)
+			c.Assert(stdout, qt.Not(qt.Contains), `table "inspect_archive"`)
+		})
+	}
+}
+
 func TestSchemaInspectIncludeComposesWithExclude(t *testing.T) {
 	c := qt.New(t)
 	dbPath := seedSQLiteDB(t, inspectIncludeDDL)

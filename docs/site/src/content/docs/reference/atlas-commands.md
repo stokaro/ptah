@@ -308,9 +308,12 @@ non-community template functions, so these exports are an open Ptah extension.
   `*[type=extension].version` field selector with schema-qualified globs.
 - Child resources (columns, indexes, constraints, triggers, policies, grants)
   cannot be included on their own, in either the `[type=column]` or the
-  `table.column` spelling; both fail before any database is contacted. A
-  selection that drops a dependency of a selected object is refused rather
-  than rendered.
+  literal-dot `table.column` spelling; both fail before any database is
+  contacted. Depth counts separators outside quotes, so `main."my.table"`
+  remains valid. Glob metacharacters match a dot, so `table*column` is not
+  caught by the depth check and selects nothing
+  ([#979](https://github.com/stokaro/ptah/issues/979)). A selection that drops
+  a dependency of a selected object is refused rather than rendered.
 - Other field-level exclude selectors and type selectors on non-final pattern
   segments fail explicitly; exporter blocks remain an explicit gap.
 

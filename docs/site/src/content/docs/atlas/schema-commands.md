@@ -116,10 +116,12 @@ ptah-compat schema inspect --url "postgres://localhost/app" \
 
 Child resources — columns, indexes, constraints, triggers, policies, grants —
 ride along with their parent and cannot be selected on their own, in either
-the `[type=column]` or the `table.column` spelling; both fail before any
-database is contacted. A selection that keeps an object whose dependency it
-dropped is refused rather than rendered, so inspected output never references
-an object it omits:
+the `[type=column]` or the literal-dot `table.column` spelling; both fail
+before any database is contacted. Glob metacharacters still match a dot, so
+`table*column` is not caught by that check and selects nothing instead
+([`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979)). A selection
+that keeps an object whose dependency it dropped is refused rather than
+rendered, so inspected output never references an object it omits:
 
 ```text
 error: the --schema/--include selection drops objects that selected objects depend on:
@@ -279,10 +281,19 @@ see, on `schema apply` and `schema diff` alike:
   tables, roles named by kept grants, owning schemas) are retained.
   Child-resource selectors such as `[type=column]` or `[type=index]`, field
   selectors, and unknown resource types are rejected loudly because Ptah
-  cannot project a partial parent faithfully. The positional spelling of the
+  cannot project a partial parent faithfully. The literal-dot spelling of the
   same thing is rejected too: a selector names a resource as `name` or
   `schema.name`, so a pattern with a deeper path such as `main.users.email`
-  or `main.users.*` fails instead of silently selecting nothing.
+  or `main.users.*` fails instead of silently selecting nothing. Depth counts
+  separators outside quotes, so a quoted identifier that contains a dot —
+  `main."my.table"` — stays a valid depth-one selector.
+
+  That rejection covers the literal-dot spelling only. Glob metacharacters
+  match a dot like any other character, so `main.users*email` and
+  `main.users?email` still reach past a top-level resource and still report a
+  synced schema rather than failing. Closing the whole class needs a check on
+  the selection's outcome instead of its shape, tracked in
+  [`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979).
 - `--exclude` and disabled `schema.mode` values subtract from the positive
   selection afterward. The composition order is fixed: schema universe first,
   include selection inside it, exclusion last.

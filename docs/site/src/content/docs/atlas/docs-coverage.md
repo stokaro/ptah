@@ -138,7 +138,9 @@ the index; the sections carry the detail.
 
 `ptah-compat schema inspect` now emits Atlas-shaped output without Ptah status banners: HCL by default, SQL with `--format sql` or `--format '{{ sql . }}'`, JSON with `--format json` or `--format '{{ json . }}'`, custom templates using the supported inspect helpers, HCL/SQL split-write file exports with the documented Atlas split strategies (per object by default, `split "schema"`, `split "type"`, optional file-extension argument), and OSS `--exclude` resource filters including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs.
 
-Local schema files, migration directories, and `env://` references are inspected through required `--dev-url` dev-database evaluation (reset, materialize, introspect). Other field-level exclude selectors fail explicitly; exporter blocks remain tracked gaps. The pinned Atlas CE flag surface does not register `schema inspect --include`, so Ptah rejects it as unknown.
+Local schema files, migration directories, and `env://` references are inspected through required `--dev-url` dev-database evaluation (reset, materialize, introspect). Other field-level exclude selectors fail explicitly; exporter blocks remain tracked gaps.
+
+`ptah-compat schema inspect --include` positively selects which top-level resources the output keeps, through the same selector engine as `schema apply` and `schema diff`: `--schema` names the schema universe, `--include` picks resources inside it, `--exclude` subtracts. The pinned Atlas CE binary does not register the flag on this command and rejects it as an unknown flag, so this is a Pro-surface spelling Ptah implements openly rather than a CE parity target.
 
 **Conformance status.** Partially measured by live SQLite HCL/SQL/JSON/custom-template/split-write/exclude/compat probes and CLI flag probes.
 

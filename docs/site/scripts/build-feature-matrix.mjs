@@ -141,10 +141,12 @@ function summary(rows) {
     'The command surface is counted separately, because it is measured rather than',
     'assessed. The conformance harness inventories every command in the pinned Atlas',
     'CE binary and compares it with the `ptah-compat` surface: 19 of the 37',
-    'inventoried commands are open parity targets, and every one of them matches on',
-    'help usage and flags — 107 observations, no gap. The remaining 18 are registry,',
-    'Cloud, or Pro verbs that are not drop-in targets. Ptah implements seven of them',
-    'as open capabilities regardless.',
+    'inventoried commands are open parity targets, and they match on help usage and',
+    'flags across 107 observations with one gap — `schema inspect --include`, a',
+    'Pro-surface flag the pinned CE binary does not register and Ptah implements',
+    'openly ([#951](https://github.com/stokaro/ptah/issues/951)). The remaining 18',
+    'are registry, Cloud, or Pro verbs that are not drop-in targets. Ptah implements',
+    'seven of them as open capabilities regardless.',
     '',
   ].join('\n');
 }

@@ -118,7 +118,10 @@ ptah schema inspect --db-url "sqlite://$PWD/app.db" --include users
 
 Child resources — columns, indexes, constraints, triggers, policies, grants —
 ride along with their parent and cannot be selected on their own; a selector
-that names one fails before the database is contacted. A selection that keeps
+that names one with `[type=column]` or with a literal dot (`users.email`)
+fails before the database is contacted. Glob metacharacters match a dot too,
+so `users*email` escapes that check and selects nothing instead
+([#979](https://github.com/stokaro/ptah/issues/979)). A selection that keeps
 an object whose dependency it dropped is refused rather than rendered, so the
 output never references an object it omits.
 

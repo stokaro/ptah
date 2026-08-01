@@ -51,6 +51,17 @@ func TestValidateIncludeSelectors_HappyPath(t *testing.T) {
 		// schema-wildcard spelling of a qualified name stays valid.
 		{name: "wildcard schema qualifier", values: []string{"*.users"}},
 		{name: "qualified type selector", values: []string{"public.users[type=table]"}},
+		// A dotted identifier is quoted in the qualified candidate
+		// (`main."my.table"`), so the selector that matches it carries two dot
+		// characters but only one separator. Counting characters rejected it
+		// and made the qualified spelling of a dotted table inexpressible.
+		{name: "qualified dotted identifier", values: []string{`main."my.table"`}},
+		{name: "wildcard schema dotted identifier", values: []string{`*."my.table"`}},
+		{name: "backtick dotted identifier", values: []string{"main.`my.table`"}},
+		{name: "bracket dotted identifier", values: []string{"main.[my.table]"}},
+		// path.Match reads "\." as a literal dot, so this selects the single
+		// bare name "a.b.c" rather than reaching child depth.
+		{name: "escaped dots", values: []string{`a\.b\.c`}},
 	}
 
 	for _, test := range tests {
@@ -138,6 +149,13 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 			values:  []string{"users,main.t1.id"},
 			wantErr: `unsupported Atlas include selector "main\.t1\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
 		},
+		// Quoting an identifier does not buy extra depth: the separators
+		// outside the quotes still count.
+		{
+			name:    "child depth past a quoted identifier",
+			values:  []string{`main."my.table".id`},
+			wantErr: `unsupported Atlas include selector "main\.\\"my\.table\\"\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
+		},
 	}
 
 	for _, test := range tests {
@@ -149,8 +167,10 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 
 // TestIncludeSelectorDepthRuleIsIncludeOnly pins that the child-depth
 // rejection is scoped to --include. Exclusion legitimately reaches child
-// resources, and its "table.child" and "schema.table.child" spellings must
-// keep parsing.
+// resources, so its "table.child" and "schema.table.child" spellings must keep
+// parsing. This asserts parsing only: whether a given exclude spelling then
+// matches is a separate, pre-existing question — "table.child" matches on the
+// default schema while "schema.table.child" does not.
 func TestIncludeSelectorDepthRuleIsIncludeOnly(t *testing.T) {
 	c := qt.New(t)
 
