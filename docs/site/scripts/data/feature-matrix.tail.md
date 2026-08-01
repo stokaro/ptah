@@ -17,16 +17,31 @@ every cell — is version-controlled at
 `docs/site/scripts/data/feature-matrix-rows.json`, so a row can be re-verified
 or disputed without archaeology.
 
-Two sources carry most of the weight:
+Four sources carry most of the weight:
 
 - [`cli-surface.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/cli-surface.md)
   inventories every command in Atlas CE v1.2.0 and classifies it as an OSS
   parity target or out of scope, with the reason recorded per command.
+- [`ce-gating.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/ce-gating.md)
+  goes further than the inventory: it runs the pinned CE binary logged out
+  through the capability set this page asserts about the CE column and records
+  the observed class per scenario — works, community-abort stub, absent verb,
+  unknown flag, or silently unenforced. A version bump that changes Atlas's
+  gating turns that gate red.
 - [`gaps.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps.md),
   [`gaps-live.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-live.md),
   and [`gaps-diff.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md)
   record measured outcomes over Atlas fixtures, live databases, and Atlas CE
   differential checks.
+- [`docs-surface.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/docs-surface.md)
+  indexes the full atlasgo.io documentation universe — 351 pages from the
+  site's own sitemap — into a triage registry, so parity is built against the
+  whole documented Atlas surface rather than a hand-picked subset. The registry
+  starts mostly untriaged and its budget ratchets down as pages are worked
+  through
+  ([campaign](https://github.com/stokaro/ptah-atlas-conformance/issues/239)); a
+  weekly job re-fetches the sitemap so new or renamed Atlas docs pages surface
+  as red rather than silently missing from this page.
 
 ## What this page does not claim
 
