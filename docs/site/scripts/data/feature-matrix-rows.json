@@ -1256,7 +1256,7 @@
   "ptah": "yes",
   "atlas_oss": "na",
   "atlas_pro": "na",
-  "note": "schema export `--to` hcl writes an HCL schema from Go annotations; `--cleanup-go-annotations` removes the annotations after a lossless export, with `--cleanup-dry-run`/`--cleanup-diff` previews.",
+  "note": "Writes HCL from Go annotations; cleanup requires zero diagnostics. Function, view, materialized-view, and trigger bodies are emitted as opaque HCL text, reported, and block cleanup.",
   "evidence": "/tmp/c-ptah schema export --to hcl --root-dir . --out schema.hcl produced a table \"products\" HCL file, exit 0; export --help shows the three cleanup flags. Atlas has no //ptah annotation set for the concept to apply to (matrix's own ➖ rationale)."
  },
  {
