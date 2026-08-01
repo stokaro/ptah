@@ -76,6 +76,7 @@ index; the sections carry the detail.
 | [Schema inspection](#schema-inspection) | Native plus Atlas-compatible | Open | Pro drivers and filters |
 | [Schema diff, apply, formatting, and cleanup](#schema-diff-apply-formatting-and-cleanup) | Native plus Atlas-compatible | Open | Registry plans and approvals |
 | [Versioned migrations](#versioned-migrations) | Native plus Atlas-compatible | Open | Registry and deployment reporting |
+| [Failed rollback state](#failed-rollback-state) | Recorded and recoverable | Absent verb | Not recorded |
 | [Migration directory maintenance](#migration-directory-maintenance) | Native, free | Absent | Pro only |
 | [Migration checkpoints](#migration-checkpoints) | Native, free | Absent | Pro only |
 | [Diff and plan policy](#diff-and-plan-policy) | Native `ptah.yaml` `diff` block | Equivalent policy | Not gated |
@@ -229,6 +230,19 @@ Docker dev databases remain a gap.
 **Atlas Commercial / Cloud.** Atlas Registry and deployment reporting add remote migration-directory storage, tagging, history, and environment promotion workflows. Pro adds approval workflows for protected down plans.
 
 **Evidence.** [Atlas feature availability](https://atlasgo.io/features), [Atlas migration apply](https://atlasgo.io/versioned/apply), [Atlas down migrations](https://atlasgo.io/versioned/down), [Import from other migration tools](https://atlasgo.io/versioned/import), [Atlas Cloud deployment docs](https://atlasgo.io/cloud/deployment), [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742), [`stokaro/ptah#842`](https://github.com/stokaro/ptah/issues/842).
+
+
+### Failed rollback state
+
+**Ptah.** Native `ptah migrations down` records a rollback that failed partway: the revision row is rewritten to `applied=0` with `error=<message>`, so `ptah migrations status` reports the dirty state and names the version, `ptah migrations repair` (including `--resume-from`) has a row to act on, and a later `ptah migrations up` refuses to stack work on the unfinished rollback.
+
+`ptah-compat migrate down` reproduces Atlas's bookkeeping instead, because a database the compat surface touched has to read the same way to Atlas: the revision row is left byte-identical, the body is rolled back, and both binaries then report the version as applied. The trade is explicit — drop-in fidelity on the Atlas surface, recoverable state on the native one. See [Roll back migrations](../../versioned/rollback/).
+
+**Atlas OSS.** The pinned Atlas CE binary registers `migrate down` as a community-abort stub, so the capability is unreachable there.
+
+**Atlas Commercial / Cloud.** The licensed build runs the verb and records nothing when a down fails. Measured with Atlas CLI `v1.2.4-e282f76-canary` (licensed, local SQLite, 2026-08-01): after a down whose second statement fails, the body is rolled back and the revision row still reads `applied=2, total=2, error=''`, `atlas migrate status` reports the version applied, and a retry after repairing the down file succeeds and deletes the row.
+
+**Evidence.** [Atlas down migrations](https://atlasgo.io/versioned/down), [`stokaro/ptah#957`](https://github.com/stokaro/ptah/issues/957)
 
 
 ### Migration directory maintenance

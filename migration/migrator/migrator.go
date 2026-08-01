@@ -199,7 +199,7 @@ func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration) error {
 		return err
 	}
 	if len(checks) > 0 {
-		return fmt.Errorf("migration %d declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode or --skip-checks", migration.Version)
+		return fmt.Errorf("migration %d declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode", migration.Version)
 	}
 	return nil
 }
@@ -1692,8 +1692,13 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	}()
 
 	m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
-	if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+	// The Atlas-shaped surface records nothing before the down body: Atlas marks
+	// a reverted migration only by deleting its row on success. See
+	// reproducesAtlasDownBookkeeping.
+	if !m.reproducesAtlasDownBookkeeping() {
+		if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+		}
 	}
 	if migration.downUnavailable {
 		return m.rollbackMigrationWithoutRegisteredDown(ctx, migration, startedAt, deleteSQL)
@@ -1738,7 +1743,7 @@ func (m *Migrator) rollbackMigrationWithoutRegisteredDown(
 	deleteSQL string,
 ) error {
 	if err := migration.Down(ctx, m.conn); err != nil {
-		return m.failMigrationWithDirtyState(
+		return m.failRollbackWithDirtyState(
 			ctx,
 			migration,
 			startedAt,
@@ -1762,7 +1767,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 ) error {
 	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
-		return m.failMigrationWithDirtyState(
+		return m.failRollbackWithDirtyState(
 			ctx,
 			migration,
 			startedAt,
@@ -1776,7 +1781,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts))
 	if err != nil {
 		_ = tx.Rollback()
-		return m.failMigrationWithDirtyState(
+		return m.failRollbackWithDirtyState(
 			ctx,
 			migration,
 			startedAt,
@@ -1789,7 +1794,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 	if err := migration.Down(ctx, txConn); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		_ = tx.Rollback()
-		return m.failMigrationWithDirtyState(
+		return m.failRollbackWithDirtyState(
 			ctx,
 			migration,
 			startedAt,
@@ -1801,7 +1806,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
 		_ = tx.Rollback()
-		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
+		return m.failRollbackWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
 	}
 
 	if err := txConn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
@@ -1810,7 +1815,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 	}
 
 	if err := tx.Commit(); err != nil {
-		return m.failMigrationWithDirtyState(
+		return m.failRollbackWithDirtyState(
 			ctx,
 			migration,
 			startedAt,
@@ -1831,10 +1836,10 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 	deleteSQL string,
 ) error {
 	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts)); err != nil {
-		return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.DownSQL, "", MigrationTxModeNone)
+		return m.failRollbackWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.DownSQL, "", MigrationTxModeNone)
 	}
 	if err := migration.Down(ctx, m.conn); err != nil {
-		return m.failMigrationWithDirtyStateWithMode(
+		return m.failRollbackWithDirtyStateWithMode(
 			ctx,
 			migration,
 			startedAt,
@@ -1860,6 +1865,64 @@ func (m *Migrator) failMigrationWithDirtyState(
 	prefix string,
 ) error {
 	return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, failure, sqlText, prefix, MigrationTxModeFile)
+}
+
+// reproducesAtlasDownBookkeeping reports whether this migrator must leave
+// behind what Atlas leaves behind after a rollback, instead of Ptah's own
+// dirty-state bookkeeping.
+//
+// The split is by surface, not by preference. `ptah-compat` is the Atlas-shaped
+// drop-in and always writes Atlas-format revisions, so it has to reproduce
+// Atlas's bookkeeping exactly. Measured against Atlas CLI v1.2.4 (licensed,
+// local SQLite): a failed `migrate down` leaves the revision row
+// byte-identical — no pre-rewrite, no recorded error, `applied`/`total` and
+// `execution_time` unchanged — the body is rolled back, and `atlas migrate
+// status` still reports the version applied; a successful down deletes the row;
+// a repaired retry then succeeds with no flags. Diverging here would make
+// `atlas migrate status` and `ptah-compat migrate status` disagree about the
+// same database, which is the whole point of the compat surface.
+//
+// Native `ptah` deliberately keeps Ptah's richer bookkeeping. Recording a
+// failed down as dirty state is an advantage, not a divergence to apologize
+// for: it is what makes a half-finished rollback visible in `migrations
+// status`, and what `migrations repair` and resume act on. Atlas's row, by
+// contrast, still looks applied after a rollback that did not finish. A native
+// run that opts into `--revision-format atlas` is asking for the Atlas table's
+// semantics, so it follows the Atlas side of this split (#957).
+func (m *Migrator) reproducesAtlasDownBookkeeping() bool {
+	return m.revisionTableFormat.isAtlas()
+}
+
+// failRollbackWithDirtyState records a failed rollback the way the active
+// surface requires: Ptah's dirty state natively, nothing at all on the
+// Atlas-shaped surface. The returned error is identical either way.
+func (m *Migrator) failRollbackWithDirtyState(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	failure error,
+	sqlText string,
+	prefix string,
+) error {
+	return m.failRollbackWithDirtyStateWithMode(ctx, migration, startedAt, failure, sqlText, prefix, MigrationTxModeFile)
+}
+
+func (m *Migrator) failRollbackWithDirtyStateWithMode(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	failure error,
+	sqlText string,
+	prefix string,
+	txMode MigrationTxMode,
+) error {
+	if m.reproducesAtlasDownBookkeeping() {
+		if prefix == "" {
+			return failure
+		}
+		return fmt.Errorf("%s: %w", prefix, failure)
+	}
+	return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, failure, sqlText, prefix, txMode)
 }
 
 func (m *Migrator) failMigrationWithDirtyStateWithMode(

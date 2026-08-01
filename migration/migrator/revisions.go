@@ -847,15 +847,10 @@ func (m *Migrator) beginRollbackRevision(
 // executed_at=now, error cleared) before the down body runs; a failed down then
 // records the error into the same row via failAtlasMigrationRevision.
 //
-// Known divergence from Atlas, measured 2026-08-01 against Atlas CLI
-// v1.2.4-e282f76-canary (#957): Atlas deletes the revision row only on a
-// successful down and never rewrites it beforehand. After a failed Ptah down
-// leaves a row with applied=0, total=0, error=<message>, `atlas migrate status`
-// still reports that version as executed/OK (it does not filter on error),
-// while Ptah reports it pending/dirty. Matching Atlas here is not a cheap
-// change: the in-place rewrite is Ptah's dirty-state bookkeeping, shared with
-// the native layout, and drives crash recovery (failIfDirty, repair, resume).
-// The behavior is kept and documented instead.
+// This runs only on the native surface. The Atlas-shaped surface skips it
+// entirely — see [Migrator.reproducesAtlasDownBookkeeping] for the measured
+// Atlas semantics it reproduces instead, and for why recording the failure is
+// the better behavior everywhere Atlas fidelity is not the requirement (#957).
 func (m *Migrator) beginAtlasRollbackRevision(
 	ctx context.Context,
 	migration *Migration,

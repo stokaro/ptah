@@ -541,6 +541,15 @@
  },
  {
   "area": "Versioned migrations — execution",
+  "feature": "Failed rollback state is recorded and recoverable",
+  "ptah": "yes",
+  "atlas_oss": "no",
+  "atlas_pro": "no",
+  "note": "Native `ptah migrations down` writes applied=0 plus the error, so status reports it dirty and `migrations repair` can act on it; compat matches Atlas, which records nothing.",
+  "evidence": "Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed build, local sqlite: a down whose second statement fails rolls the body back and leaves the revision row at applied=2, total=2, error='' - `atlas migrate status` still reports the version applied - and a repaired retry succeeds and deletes the row. In the pinned CE binary `migrate down` is a registered community-abort stub, so the capability is unreachable there. Ptah splits by surface: migration/migrator reproducesAtlasDownBookkeeping keeps Atlas semantics for Atlas-format revisions (always the case on ptah-compat) and keeps Ptah's dirty-state bookkeeping natively; both directions are pinned by migration/migrator/atlas_down_bookkeeping_test.go, including the ptah-format regression guard and the repair path (stokaro/ptah#957)"
+ },
+ {
+  "area": "Versioned migrations — execution",
   "feature": "Migration status report",
   "ptah": "yes",
   "atlas_oss": "yes",
@@ -653,7 +662,7 @@
   "ptah": "partial",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "`-- +ptah check` and txtar checks.sql both enforce; `--tx-mode` all refuses checked files and names `--skip-checks`, which compat apply lacks. CE applies a failing checks.sql unenforced.",
+  "note": "`-- +ptah check` and Atlas txtar checks.sql both enforce. `--tx-mode` all directs users to per-file mode; native `--skip-checks` remains an emergency bypass. CE leaves checks unenforced.",
   "evidence": "Executed: a migration carrying `-- +ptah check name=\"users_empty\" assert=\"SELECT count(*) = 0 FROM users\" on_fail=abort` aborts with \"pre-migration check users_empty ... was not satisfied\" and nothing applied; with `--tx-mode all` it fails \"...cannot run with tx-mode all; use the default per-file transaction mode or --skip-checks\", but `ptah-compat migrate apply --skip-checks` -> \"unknown flag: --skip-checks\" (the flag exists only on native `ptah migrations up`, cmd/migrateup/migrateup.go:150). Measured 2026-08-01, CE v1.2.0 logged out (scratch env): an `-- atlas:txtar` migration whose checks.sql held a failing assertion applied anyway, exit 0 - CE executes the section as plain SQL without assertion semantics. Atlas pricing page (atlasgo.io/pricing, retrieved 2026-08-01) lists 'Pre-migration safety checks' under Pro, not Starter. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: the licensed build ENFORCES txtar checks.sql (failing assertion aborts before any body statement, exit 1) and registers no `migrate apply --skip-checks` - the flag lives on `migrate down` (trial-study observations, scenario, txtar-checks-enforcement, verbs-and-flags) Updated 2026-08-01 (stokaro/ptah#956): txtar checks.sql sections now run through the same pre-migration check engine on both binaries; a failing assertion aborts before any body statement (migration/migrator/migrations.go parseAtlasTxtarChecks) A failed check records NO revision row (checks run before the pending-revision insert), so the retry after fixing the data succeeds with no bypass flag — required because ptah-compat migrate apply has neither --skip-checks nor --allow-dirty, matching Atlas, which also writes nothing when its checks fail (stokaro/ptah#964 review)."
  },
  {

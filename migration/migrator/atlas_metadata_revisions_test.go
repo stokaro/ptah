@@ -20,7 +20,7 @@ import (
 const dotRowVersion = ".atlas_cloud_identifier"
 
 // insertAtlasMetadataDotRow inserts the measured Atlas Pro metadata row shape:
-// description carries a UUID, applied=0, total=0, hash=”, error/error_stmt and
+// description carries a UUID, applied=0, total=0, an empty hash, error/error_stmt and
 // partial_hashes are NULL.
 func insertAtlasMetadataDotRow(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
@@ -34,7 +34,8 @@ VALUES (?, '472fecf4-5a9c-431f-8ff1-8e1facd1d50b', 2, 0, 0, '2026-08-01 12:04:21
 }
 
 // dotRowLiteral returns the metadata row as one sqlite quote()-rendered tuple,
-// so survival comparisons are byte-precise, including NULL vs ” distinctions.
+// so survival comparisons are byte-precise, including NULL versus empty-string
+// distinctions.
 func dotRowLiteral(t *testing.T, conn *dbschema.DatabaseConnection) string {
 	t.Helper()
 	var literal string

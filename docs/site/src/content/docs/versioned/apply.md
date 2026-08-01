@@ -207,7 +207,16 @@ Both gates are covered in depth in
 
 **A migration failed partway.** The revision table records a dirty state and
 every later run refuses to continue until it is repaired — see
-[Maintain migration history](../maintain-history/).
+[Maintain migration history](../maintain-history/). A failed *rollback* records
+that state on the native surface only; `ptah-compat migrate down` reproduces
+Atlas's bookkeeping and leaves the row untouched, which
+[Roll back migrations](../rollback/) states in full.
+
+**A pre-migration check blocked the migration.** Nothing is applied and no
+revision row is written, so the run is recorded as never started. Fix the data
+the check guarded and re-run; no repair step and no bypass flag is involved.
+`ptah migrations up --skip-checks` exists as an emergency override, and the
+Atlas-compatible `ptah-compat migrate apply` has no such flag, matching Atlas.
 
 ## Next steps
 

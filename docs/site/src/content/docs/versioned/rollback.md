@@ -130,10 +130,43 @@ so a rollback target between the checkpoint and the squashed history fails
 with a clear error. Roll back to the checkpoint boundary or to `0`, or
 restore from a backup.
 
+## What a failed rollback leaves behind
+
+The two surfaces answer "my down failed, what state am I in?" differently, and
+the difference is deliberate.
+
+**Native `ptah migrations down` records the failure.** The revision row for the
+failing version is rewritten to `applied=0` with `error=<message>`, so:
+
+- `ptah migrations status` reports `Status: ❌ Dirty migration state detected`
+  and names the version.
+- `ptah migrations repair` and its `--resume-from` option have a row to act on.
+- A later `ptah migrations up` refuses to run over the unfinished rollback
+  instead of stacking new work on unknown state.
+
+**`ptah-compat migrate down` reproduces Atlas's bookkeeping.** The revision row
+is left byte-identical — no error recorded, `applied` and `total` unchanged —
+and the body is rolled back. Both `atlas migrate status` and `ptah-compat
+migrate status` then report the version as applied, and a retry after fixing
+the down file needs no flags and no repair step. Measured against Atlas CLI
+`v1.2.4-e282f76-canary` (licensed build, 2026-08-01): after a down whose second
+statement fails, its revision row still reads `applied=2, total=2, error=''`.
+
+That fidelity is the point of the compat surface: a database it touched must
+read the same way to Atlas. It also means the failure is not visible in the
+revision table, so recovery relies on the operator noticing the non-zero exit.
+
+:::tip
+If your team is not bound to the Atlas surface, prefer native
+`ptah migrations down`: the recorded failure is what makes an interrupted
+rollback visible later and gives `ptah migrations repair` something to work
+from.
+:::
+
 ## Failure modes
 
-- **The down SQL itself fails.** The command exits `2` and the failing
-  version's revision row is marked dirty:
+- **The down SQL itself fails.** The command exits `2` and, on the native
+  surface, the failing version's revision row is marked dirty:
 
   ```text
   error: error running down migrations: failed to revert migration 2: failed to execute migration SQL: sqlite: SQL execution failed: SQL logic error: no such table: not_there (1)
