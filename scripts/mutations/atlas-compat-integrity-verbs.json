@@ -1,0 +1,193 @@
+{
+  "packages": [
+    "./cmd/atlas/"
+  ],
+  "mutations": [
+    {
+      "name": "the query no longer wins over the flag",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tformat, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)",
+      "new": "\tif configured == \"\" {\n\t\tconfigured = atlasDirFormatDefault\n\t}\n\tformat, err := atlasmigrate.ResolveApplyDirFormat(configured, nil)"
+    },
+    {
+      "name": "the flag is ignored, only the query selects a layout",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tformat, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)",
+      "new": "\tformat, err := atlasmigrate.ResolveApplyDirFormat(\"\", localDir.Query)\n\t_ = configured"
+    },
+    {
+      "name": "an empty query value falls back to the flag",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tformat, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)",
+      "new": "\tif localDir.Query.Get(\"format\") == \"\" {\n\t\tlocalDir.Query.Del(\"format\")\n\t}\n\tformat, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)"
+    },
+    {
+      "name": "the resolved layout is discarded and everything reads as atlas",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tdevURL, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, \"dev-url\"))",
+      "new": "\tformat = atlasmigrateimport.FormatAtlas\n\tdevURL, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, \"dev-url\"))"
+    },
+    {
+      "name": "atlas.hcl and PTAH_* layers are dropped from the resolution",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tmapped, err := atlasargs.Map(\"migrate\", verb.use, atlasMigrateSourceFlags(verb.flags), project.args)\n\tif err != nil {\n\t\treturn atlasMigrateSource{}, err\n\t}",
+      "new": "\tmapped := args"
+    },
+    {
+      "name": "the raw --dir keeps its rejecting mapper, so ?format= never resolves",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\tif out[i].Name == \"dir\" || out[i].Name == \"dir-format\" {",
+      "new": "\t\tif out[i].Name == \"dir-format\" {"
+    },
+    {
+      "name": "the raw --dir-format keeps its rejecting mapper",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\tif out[i].Name == \"dir\" || out[i].Name == \"dir-format\" {",
+      "new": "\t\tif out[i].Name == \"dir\" {"
+    },
+    {
+      "name": "an omitted --dir does not fall back to the native default",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\trawDir = atlasNativeFlagDefault(verb, \"dir\")",
+      "new": "\t\trawDir = \"\""
+    },
+    {
+      "name": "the forwarded arguments are not rewritten for an atlas query",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\tsource.forwardArgs = rewriteAtlasMigrateSourceArgs(verb, args, atlasDirWithoutQuery(rawDir), string(format))",
+      "new": "\t\tsource.forwardArgs = args"
+    },
+    {
+      "name": "the rewrite keeps the ?format= query on --dir",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tbefore, _, _ := strings.Cut(raw, \"?\")\n\treturn before",
+      "new": "\treturn raw"
+    },
+    {
+      "name": "the rewrite leaves a disagreeing --dir-format in place",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\tcase \"dir-format\":\n\t\t\tformatSeen = true\n\t\t\tout = append(out, \"--dir-format=\"+dirFormat)",
+      "new": "\t\tcase \"dir-format\":\n\t\t\tformatSeen = true\n\t\t\trewritten = false\n\t\t\tout = append(out, arg)"
+    },
+    {
+      "name": "the rewrite never appends a missing --dir",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tif !dirSeen {\n\t\tout = append(out, \"--dir=\"+dir)\n\t}",
+      "new": "\tif !dirSeen {\n\t\t_ = dir\n\t}"
+    },
+    {
+      "name": "the rewrite never appends a missing --dir-format",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tif !formatSeen {\n\t\tout = append(out, \"--dir-format=\"+dirFormat)\n\t}",
+      "new": "\tif !formatSeen {\n\t\t_ = dirFormat\n\t}"
+    },
+    {
+      "name": "the rewrite drops the value token of the flag it replaced",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\ti++\n\t\tif !rewritten {\n\t\t\tout = append(out, args[i])\n\t\t}",
+      "new": "\t\ti++\n\t\t_ = rewritten\n\t\tout = append(out, args[i])"
+    },
+    {
+      "name": "unknown flags and stray positionals are silently ignored",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tif err := checkAtlasMigrateSourceArgs(cmd, verb, project.args); err != nil {\n\t\treturn atlasMigrateSource{}, err\n\t}",
+      "new": ""
+    },
+    {
+      "name": "a converted layout is forwarded to the native command anyway",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\tif atlasmigrate.ReadsNativeAtlasDir(source.format) {\n\t\t\treturn forward(cmd, source.forwardArgs)\n\t\t}\n\t\treturn run(cmd, source)",
+      "new": "\t\treturn forward(cmd, source.forwardArgs)"
+    },
+    {
+      "name": "hash covers the atlas glob instead of the per-layout file set",
+      "file": "cmd/atlas/migrate_hash.go",
+      "old": "\tsum, err := migratesum.ComputeAtlasFiles(fsys, names)",
+      "new": "\tsum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)\n\t_ = names"
+    },
+    {
+      "name": "hash writes ptah.sum instead of atlas.sum",
+      "file": "cmd/atlas/migrate_hash.go",
+      "old": "\tif err := migratesum.WritePrecomputedWithFormat(source.dir, migrator.MigrationDirFormatAtlas, sum); err != nil {",
+      "new": "\tif err := migratesum.WritePrecomputedWithFormat(source.dir, migrator.MigrationDirFormatPtah, sum); err != nil {"
+    },
+    {
+      "name": "hash does not stat the directory first",
+      "file": "cmd/atlas/migrate_hash.go",
+      "old": "\tif err := cmdutil.StatDir(source.dir); err != nil {\n\t\treturn cmdutil.Fail(cmd, err)\n\t}",
+      "new": ""
+    },
+    {
+      "name": "hash reports the covered name count instead of the entry count",
+      "file": "cmd/atlas/migrate_hash.go",
+      "old": "\tfmt.Fprintf(out, \"%d migration file(s) hashed\\n\", len(sum.Entries))",
+      "new": "\tfmt.Fprintf(out, \"%d migration file(s) hashed\\n\", len(names)+1)"
+    },
+    {
+      "name": "validate verifies the atlas glob instead of the per-layout file set",
+      "file": "cmd/atlas/migrate_validate.go",
+      "old": "\tresult, hashed, err := migratesum.VerifyAtlasFilesHashed(fsys, names)",
+      "new": "\tresult, hashed, err := migratesum.VerifyHashed(fsys, migrator.MigrationDirFormatAtlas)\n\t_ = names"
+    },
+    {
+      "name": "validate accepts an unhashed converted directory",
+      "file": "cmd/atlas/migrate_validate.go",
+      "old": "\tcase !hashed:\n\t\treturn migratevalidate.FailAtlasChecksumFileNotFound(cmd)",
+      "new": "\tcase !hashed:\n\t\treturn nil"
+    },
+    {
+      "name": "validate accepts a tampered converted directory",
+      "file": "cmd/atlas/migrate_validate.go",
+      "old": "\tcase !result.OK():\n\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())",
+      "new": "\tcase !result.OK():\n\t\treturn nil"
+    },
+    {
+      "name": "validate reports a malformed sum as a usage error",
+      "file": "cmd/atlas/migrate_validate.go",
+      "old": "\tcase errors.Is(err, migratesum.ErrSumFileMalformed):\n\t\t// A malformed atlas.sum has no entry-level mismatch to point at.\n\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, nil)",
+      "new": "\tcase errors.Is(err, migratesum.ErrSumFileMalformed):\n\t\treturn cmdutil.Fail(cmd, err)"
+    },
+    {
+      "name": "validate drops the mismatch line from the refusal",
+      "file": "cmd/atlas/migrate_validate.go",
+      "old": "\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())",
+      "new": "\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, nil)"
+    },
+    {
+      "name": "validate ignores --dev-url on a converted directory",
+      "file": "cmd/atlas/migrate_validate.go",
+      "old": "\tif source.devURL == \"\" {\n\t\treturn nil\n\t}\n\treturn replayAtlasMigrateSource(cmd, source, fsys)",
+      "new": "\treturn nil"
+    },
+    {
+      "name": "validate replays before checking integrity",
+      "file": "cmd/atlas/migrate_validate.go",
+      "old": "\tresult, hashed, err := migratesum.VerifyAtlasFilesHashed(fsys, names)",
+      "new": "\tif source.devURL != \"\" {\n\t\tif replayErr := replayAtlasMigrateSource(cmd, source, fsys); replayErr != nil {\n\t\t\treturn replayErr\n\t\t}\n\t}\n\tresult, hashed, err := migratesum.VerifyAtlasFilesHashed(fsys, names)"
+    },
+    {
+      "name": "validate does not stat the directory first",
+      "file": "cmd/atlas/migrate_validate.go",
+      "old": "\tif err := cmdutil.StatDir(source.dir); err != nil {\n\t\treturn cmdutil.Fail(cmd, err)\n\t}",
+      "new": ""
+    },
+    {
+      "name": "the rewrite drops the -- argument terminator",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\t\ttail = args[i:]",
+      "new": "\t\t\ttail = args[i+1:]"
+    },
+    {
+      "name": "--help no longer short-circuits before resolution",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\tif atlasArgsHaveHelp(args) {\n\t\t\treturn forward(cmd, args)\n\t\t}\n",
+      "new": ""
+    },
+    {
+      "name": "a semicolon query is parsed instead of refused",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tlocalDir, err := atlasargs.ParseLocalDir(rawDir)",
+      "new": "\tlocalDir, err := atlasargs.ParseLocalDir(strings.ReplaceAll(rawDir, \";\", \"&\"))"
+    }
+  ]
+}

@@ -76,8 +76,8 @@ Across the 153 capabilities below:
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 81 |
-| Ptah supports it with a stated limitation | 47 |
-| Ptah does not implement it | 25 |
+| Ptah supports it with a stated limitation | 48 |
+| Ptah does not implement it | 24 |
 | Ptah and Atlas CE both support it | 24 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 32 |
 | Ptah has it and neither Atlas edition does | 14 |
@@ -166,7 +166,7 @@ seven of them as open capabilities regardless.
 | Directory maintenance: edit, rebase, rm | ✅ | ❌ | ✅ | Each rewrites `ptah.sum`/`atlas.sum` and refuses a migration applied in `--db-url` unless `--force`; CE aborts all three as non-community verbs. |
 | Dynamic down planning (`migrate down --plan`) | ❌ | ❌ | ✅ | `--plan`, `--to-tag` and `--skip-checks` are recorded waivers that fail loudly; Ptah reverts only through pre-planned down files. |
 | Execution order (`--exec-order`) | ✅ | ✅ | ✅ | linear fails on a pending migration below the current version, linear-skip warns and leaves it pending, non-linear applies it. |
-| External `--dir-format` outside `migrate import` | ❌ | ✅ | ✅ | hash, lint, new, set, status and validate accept only `--dir-format`=atlas; other tool formats must first go through migrate import. |
+| External `--dir-format` outside `migrate import` | 🟡 | ✅ | ✅ | hash and validate read every Atlas source layout, under both `?format=` and `--dir-format`; lint, new, set and status still take only atlas and need migrate import first. |
 | Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Native `ptah migrations down` marks the row failed with the error and completed-statement count, so status reports it dirty and `migrations repair` clears it; compat matches Atlas, which records none. |
 | Flyway repeatable (`R__`) migration import | 🟡 | ✅ | ✅ | Compat import aborts the entire directory on any R__ file; native import rewrites R__ as a one-time migration, losing re-run-on-change. |
 | Generate migrations from a schema diff | 🟡 | ✅ | ✅ | New versions are a Unix epoch in an empty dir and latest+1 otherwise, not the UTC YYYYMMDDHHMMSS stamp migrate new and Atlas dirs carry. |
