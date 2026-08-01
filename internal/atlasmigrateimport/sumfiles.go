@@ -1,8 +1,10 @@
 package atlasmigrateimport
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,21 +20,22 @@ import (
 // refusing a directory Atlas CE hashed and applies.
 //
 // The rules below were measured against Atlas CE v1.2.0; the corpus in
-// testdata/ce-sums holds the oracle's own atlas.sum for 44 directory shapes and
+// testdata/ce-sums holds the oracle's own atlas.sum for 60 directory shapes and
 // TestSumFileNamesMatchesAtlasCE reproduces every one of them byte for byte.
 //
-// Only top-level files are ever covered, for every format: Atlas does not
-// descend into subdirectories.
+// Formats differ in which files count and how deep Atlas looks:
 //
-// Formats differ only in which top-level files count:
+//   - atlas, goose, dbmate, liquibase: every top-level *.sql file, ordered by
+//     name. File names carry no meaning to the hasher, so a non-versioned
+//     foo.sql counts while a sibling .go or .xml file does not.
+//   - golang-migrate: every top-level *.up.sql file, ordered by name. The down
+//     file of a pair is not covered, so editing it is invisible to the
+//     integrity check — matching Atlas CE, which never reads it.
+//   - flyway: the whole tree, and not in name order. See flywaySumFileNames.
 //
-//   - atlas, goose, dbmate, liquibase: every *.sql file, ordered by name. File
-//     names carry no meaning to the hasher, so a non-versioned foo.sql counts
-//     while a sibling .go or .xml file does not.
-//   - golang-migrate: every *.up.sql file, ordered by name. The down file of a
-//     pair is not covered, so editing it is invisible to the integrity check —
-//     matching Atlas CE, which never reads it.
-//   - flyway: see flywaySumFileNames.
+// Flyway is the sole format Atlas CE recurses into. Every other format sees
+// only the top level, so a migration one directory down is not covered by the
+// integrity file at all.
 //
 // The .sql suffix match is case-sensitive: Atlas CE covers no file named
 // 1_init.SQL, and neither does this.
@@ -44,6 +47,33 @@ func SumFileNames(fsys fs.FS, format Format) ([]string, error) {
 		return nil, err
 	}
 
+	switch format {
+	case FormatFlyway:
+		names, err := treeNames(fsys)
+		if err != nil {
+			return nil, err
+		}
+		return flywaySumFileNames(names)
+	case FormatGolangMigrate:
+		names, err := topLevelNames(fsys)
+		if err != nil {
+			return nil, err
+		}
+		return filterSuffix(names, ".up.sql"), nil
+	case FormatAtlas, FormatGoose, FormatDBMate, FormatLiquibase:
+		names, err := topLevelNames(fsys)
+		if err != nil {
+			return nil, err
+		}
+		return filterSuffix(names, ".sql"), nil
+	default:
+		// validateExternalFormat already rejected everything else; this keeps
+		// a newly added Format from silently hashing as if it were Atlas.
+		return nil, fmt.Errorf("unknown migration import format %q", format)
+	}
+}
+
+func topLevelNames(fsys fs.FS) ([]string, error) {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil, fmt.Errorf("read migration directory: %w", err)
@@ -58,19 +88,26 @@ func SumFileNames(fsys fs.FS, format Format) ([]string, error) {
 	// fs.ReadDir is documented to sort, but the order decides the sum, so it is
 	// established here rather than assumed of every filesystem implementation.
 	slices.Sort(names)
+	return names, nil
+}
 
-	switch format {
-	case FormatFlyway:
-		return flywaySumFileNames(names), nil
-	case FormatGolangMigrate:
-		return filterSuffix(names, ".up.sql"), nil
-	case FormatAtlas, FormatGoose, FormatDBMate, FormatLiquibase:
-		return filterSuffix(names, ".sql"), nil
-	default:
-		// validateExternalFormat already rejected everything else; this keeps
-		// a newly added Format from silently hashing as if it were Atlas.
-		return nil, fmt.Errorf("unknown migration import format %q", format)
+func treeNames(fsys fs.FS) ([]string, error) {
+	var names []string
+	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		names = append(names, name)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk migration directory: %w", err)
 	}
+	slices.Sort(names)
+	return names, nil
 }
 
 func filterSuffix(names []string, suffix string) []string {
@@ -127,7 +164,13 @@ type flywaySumFile struct {
 // A version token that does not parse as numbers (V__x.sql, Vx__y.sql) is
 // covered, sorts before every parseable version, and is exempt from the
 // baseline cut whenever it compares greater as a string.
-func flywaySumFileNames(names []string) []string {
+//
+// Flyway is also the one format Atlas CE recurses into: a nested file is
+// covered under its slash-separated path and ordered by version alongside the
+// top-level ones, so zzz/V1__nested.sql precedes V9__top.sql. Combining a
+// baseline with subdirectories is refused — see
+// ErrFlywayBaselineWithSubdirectories.
+func flywaySumFileNames(names []string) ([]string, error) {
 	var versioned, repeatable []flywaySumFile
 	for _, name := range names {
 		file, ok := parseFlywaySumFile(name)
@@ -154,6 +197,10 @@ func flywaySumFileNames(names []string) []string {
 		}
 	}
 
+	if err := checkFlywayBaselineDepth(versioned, repeatable, baseline); err != nil {
+		return nil, err
+	}
+
 	out := make([]string, 0, len(versioned)+len(repeatable))
 	kept := make([]flywaySumFile, 0, len(versioned))
 	for i, file := range versioned {
@@ -178,11 +225,49 @@ func flywaySumFileNames(names []string) []string {
 	for _, file := range repeatable {
 		out = append(out, file.name)
 	}
-	return out
+	return out, nil
+}
+
+// ErrFlywayBaselineWithSubdirectories reports a Flyway layout whose checksum
+// this package declines to compute.
+//
+// Measured against Atlas CE v1.2.0, the baseline cut behaves differently
+// depending on where the baseline and the files it would squash sit in the
+// tree, and four probes produced no model that explains all of them: a
+// top-level B2 squashes a nested V1, a nested B2 squashes a sibling V1, a
+// nested B9 squashes neither of two top-level files, and a nested B5 alongside
+// a top-level B2 squashes both a top-level B2 and a top-level V1.
+//
+// Guessing between those would mean fitting a rule to four points and emitting
+// a checksum that may silently disagree with the oracle's — the failure this
+// package exists to prevent. Refusing is loud, cannot mis-verify, and affects
+// only directories that combine a baseline with subdirectories; every other
+// Flyway layout, nested or not, is computed normally.
+var ErrFlywayBaselineWithSubdirectories = errors.New(
+	"flyway baseline combined with migrations in subdirectories is not supported",
+)
+
+func checkFlywayBaselineDepth(versioned, repeatable []flywaySumFile, baseline int) error {
+	if baseline < 0 {
+		return nil
+	}
+	for _, file := range slices.Concat(versioned, repeatable) {
+		if strings.Contains(file.name, "/") {
+			return fmt.Errorf(
+				"%w: baseline %s with %s",
+				ErrFlywayBaselineWithSubdirectories,
+				versioned[baseline].name,
+				file.name,
+			)
+		}
+	}
+	return nil
 }
 
 // parseFlywaySumFile splits a Flyway file name into its prefix and version
-// token.
+// token. A nested file keeps its full slash path as the name while the prefix
+// and version come from the base name, matching how Atlas CE covers
+// sub/V2__nested.sql.
 //
 // The only requirements Atlas CE imposes are a .sql suffix and a leading V, B,
 // R or U. Neither the "__" separator nor a description nor a parseable version
@@ -195,7 +280,7 @@ func flywaySumFileNames(names []string) []string {
 // covers V1__a.sql and ignores v1__a.sql, so reusing that (?i) pattern would
 // cover a file the oracle does not.
 func parseFlywaySumFile(name string) (flywaySumFile, bool) {
-	base, ok := strings.CutSuffix(name, ".sql")
+	base, ok := strings.CutSuffix(path.Base(name), ".sql")
 	if !ok || base == "" {
 		return flywaySumFile{}, false
 	}

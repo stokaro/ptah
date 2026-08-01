@@ -377,4 +377,53 @@ put video.sql "$SQL_PLAIN"
 put V1__ok.sql "$SQL_SECOND"
 seal flyway
 
+new_case flyway/negative-version
+put V-1__a.sql "$SQL_PLAIN"
+put V2__b.sql "$SQL_SECOND"
+seal flyway
+
+# Flyway is the one format Atlas CE recurses into. Nested files are covered
+# under their slash path and ordered by version alongside the top-level ones.
+new_case flyway/subdirectory
+put V1__top.sql "$SQL_PLAIN"
+put sub/V2__nested.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/deep-subdirectory
+put V1__top.sql "$SQL_PLAIN"
+put a/V2__mid.sql "$SQL_SECOND"
+put a/b/V3__deep.sql "$SQL_PLAIN"
+seal flyway
+
+new_case flyway/subdirectory-version-order
+put V9__top.sql "$SQL_PLAIN"
+put zzz/V1__nested.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/subdirectory-repeatable
+put V1__one.sql "$SQL_PLAIN"
+put sub/R__view.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/subdirectory-undo
+put V1__one.sql "$SQL_PLAIN"
+put sub/U1__one.sql "$SQL_DOWN"
+seal flyway
+
+# Controls proving the other formats do NOT recurse.
+new_case dbmate/subdirectory
+put 1_top.sql "$SQL_DBMATE"
+put sub/2_nested.sql "$SQL_DBMATE"
+seal dbmate
+
+new_case liquibase/subdirectory
+put 1_top.sql "$SQL_LIQUIBASE"
+put sub/2_nested.sql "$SQL_LIQUIBASE"
+seal liquibase
+
+new_case golang-migrate/subdirectory
+put 1_top.up.sql "$SQL_PLAIN"
+put sub/2_nested.up.sql "$SQL_SECOND"
+seal golang-migrate
+
 echo "done"

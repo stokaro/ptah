@@ -19,7 +19,7 @@ import (
 // corpus test walks the tree, so a corpus that failed to load would otherwise
 // pass vacuously; asserting the count makes an empty or partial walk fail.
 // Adding a shape is expected to change this number.
-const ceSumCorpusCases = 51
+const ceSumCorpusCases = 60
 
 const sqlBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
 
@@ -118,10 +118,55 @@ func TestSumFileNamesPerFormat(t *testing.T) {
 		files:  []string{"1_init.SQL"},
 		want:   []string{},
 	}, {
-		name:   "subdirectories are never covered",
+		name:   "goose does not recurse",
 		format: atlasmigrateimport.FormatGoose,
 		files:  []string{"1_init.sql", "sub/2_nested.sql"},
 		want:   []string{"1_init.sql"},
+	}, {
+		name:   "dbmate does not recurse",
+		format: atlasmigrateimport.FormatDBMate,
+		files:  []string{"1_init.sql", "sub/2_nested.sql"},
+		want:   []string{"1_init.sql"},
+	}, {
+		name:   "liquibase does not recurse",
+		format: atlasmigrateimport.FormatLiquibase,
+		files:  []string{"1_init.sql", "sub/2_nested.sql"},
+		want:   []string{"1_init.sql"},
+	}, {
+		name:   "golang-migrate does not recurse",
+		format: atlasmigrateimport.FormatGolangMigrate,
+		files:  []string{"1_top.up.sql", "sub/2_nested.up.sql"},
+		want:   []string{"1_top.up.sql"},
+	}, {
+		name:   "atlas does not recurse",
+		format: atlasmigrateimport.FormatAtlas,
+		files:  []string{"1_top.sql", "sub/2_nested.sql"},
+		want:   []string{"1_top.sql"},
+	}, {
+		name:   "flyway alone recurses, covering the slash path",
+		format: atlasmigrateimport.FormatFlyway,
+		files:  []string{"V1__top.sql", "sub/V2__nested.sql", "a/b/V3__deep.sql"},
+		want:   []string{"V1__top.sql", "sub/V2__nested.sql", "a/b/V3__deep.sql"},
+	}, {
+		name:   "flyway orders nested files by version, not by path",
+		format: atlasmigrateimport.FormatFlyway,
+		files:  []string{"V9__top.sql", "zzz/V1__nested.sql"},
+		want:   []string{"zzz/V1__nested.sql", "V9__top.sql"},
+	}, {
+		name:   "flyway drops a nested undo file",
+		format: atlasmigrateimport.FormatFlyway,
+		files:  []string{"V1__one.sql", "sub/U1__one.sql"},
+		want:   []string{"V1__one.sql"},
+	}, {
+		name:   "flyway keeps a nested repeatable last",
+		format: atlasmigrateimport.FormatFlyway,
+		files:  []string{"V1__one.sql", "sub/R__view.sql"},
+		want:   []string{"V1__one.sql", "sub/R__view.sql"},
+	}, {
+		name:   "a bare .sql name is not a flyway file",
+		format: atlasmigrateimport.FormatFlyway,
+		files:  []string{".sql", "V1__ok.sql"},
+		want:   []string{"V1__ok.sql"},
 	}, {
 		name:   "flyway drops undo files",
 		format: atlasmigrateimport.FormatFlyway,
@@ -293,6 +338,75 @@ func TestSumFileNamesFlywayBaselineCutComparesVersionsAsStrings(t *testing.T) {
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.DeepEquals, []string{"B2__base.sql", "V2.5__b.sql"})
+	})
+}
+
+// TestSumFileNamesFlywayBaselineWithSubdirectories pins the one layout this
+// package declines to answer for. Atlas CE's baseline cut behaves differently
+// depending on where the baseline sits relative to the files it would squash,
+// and the measured cases admit no single rule, so a computed sum could silently
+// disagree with the oracle. Refusing is loud and cannot mis-verify.
+func TestSumFileNamesFlywayBaselineWithSubdirectories(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("baseline plus a nested migration is refused", func(c *qt.C) {
+		_, err := atlasmigrateimport.SumFileNames(
+			sourceFS("B2__base.sql", "sub/V3__three.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineWithSubdirectories)
+		c.Assert(err, qt.ErrorMatches, ".*baseline B2__base.sql with sub/V3__three.sql")
+	})
+
+	c.Run("a nested baseline is refused too", func(c *qt.C) {
+		_, err := atlasmigrateimport.SumFileNames(
+			sourceFS("V1__one.sql", "sub/B2__base.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineWithSubdirectories)
+	})
+
+	c.Run("a nested repeatable alongside a baseline is refused", func(c *qt.C) {
+		_, err := atlasmigrateimport.SumFileNames(
+			sourceFS("B2__base.sql", "V3__three.sql", "sub/R__view.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineWithSubdirectories)
+	})
+
+	c.Run("subdirectories without a baseline are computed normally", func(c *qt.C) {
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("V1__top.sql", "sub/V2__nested.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"V1__top.sql", "sub/V2__nested.sql"})
+	})
+
+	c.Run("a baseline without subdirectories is computed normally", func(c *qt.C) {
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("B2__base.sql", "V1__one.sql", "V3__three.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"B2__base.sql", "V3__three.sql"})
+	})
+
+	c.Run("a nested undo file does not trigger the refusal", func(c *qt.C) {
+		// Undo files are dropped before the check, so they cannot make an
+		// otherwise answerable directory unanswerable.
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("B2__base.sql", "V3__three.sql", "sub/U1__one.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"B2__base.sql", "V3__three.sql"})
 	})
 }
 
