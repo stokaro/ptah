@@ -48,6 +48,29 @@ type Runtime struct {
 	once     sync.Once
 }
 
+// SilenceDefaultLogger installs a discarding default slog logger.
+//
+// Library code narrates through the package-level slog functions — the dialect
+// writers' dry-run statement narration, connection-close warnings, annotation
+// diagnostics — which resolve to slog.Default() and therefore reach stderr even
+// when the caller never wired observability. The Atlas-compatible binary must
+// not write those records: the pinned Atlas CE binary emits nothing on stderr
+// for the same commands, and `--format` consumers redirect stderr into stdout
+// (`2>&1 | jq`), where a single extra line breaks JSON parsing. See
+// stokaro/ptah#967.
+//
+// Failures are unaffected: the Atlas-compatible commands report them through
+// the command's own error stream, never through slog.
+//
+// Call this once, before any command runs. It deliberately does not take
+// globalStateMu: Start holds that lock for the duration of a command and
+// restores whatever default was installed beforehand, so a command that starts
+// its own observability runtime still nests correctly on top of the silenced
+// default.
+func SilenceDefaultLogger() {
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+}
+
 // Start initializes command logging, tracing, and metrics.
 func Start(ctx context.Context, opts Options) (*Runtime, error) {
 	logLevel, err := parseLogLevel(opts.LogLevel)

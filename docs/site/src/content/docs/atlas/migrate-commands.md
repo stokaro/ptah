@@ -186,6 +186,23 @@ Dry-run plans read the stored Atlas revision rows and include only migrations
 that a real apply would select. They also run the same dirty-state, checksum,
 execution-order, and transaction-mode validations as a real apply.
 
+A successful `ptah-compat` run writes nothing to stderr, matching Atlas CE:
+there is no progress narration on the Atlas-compatible surface, in a dry run or
+otherwise, so `--format` output survives the usual CI idiom of folding both
+streams together.
+
+```bash
+ptah-compat migrate apply --url "$DATABASE_URL" --dir file://migrations \
+  --dry-run --format '{{ json . }}' 2>&1 | jq
+```
+
+Failures are still reported: a dry run that cannot proceed prints its
+`Error: …` diagnostic to stderr and exits `1`. The equivalent native command,
+`ptah migrations up --dry-run`, does narrate each statement it would execute
+through its run log; that narration is selected by the native `--log-level` and
+`--log-format` flags, which the Atlas surface does not expose. See
+[Apply migrations](../../versioned/apply/).
+
 The apply path executes every Atlas OSS migration directory format selected by
 `migration.format` or the directory URL `?format=` parameter: `atlas`,
 `golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate`. The native
