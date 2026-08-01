@@ -154,7 +154,7 @@ as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Also runs goose/flyway/liquibase/dbmate dirs via ?format=; `--dry-run` ignores the revision table and re-plans already-applied files. |
+| Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format table creation remains #950; Ptah-format is covered. |
 | Atlas SQL template migrations (`--atlas-env`) | ✅ | ❔ | ❔ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. Flag on 10 migrations verbs. |
 | Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❔ | ✅ | Atlas-format .sql files with `-- atlas:txtar` execute migration.sql and down.sql sections; checks.sql is discarded, not enforced (stokaro/ptah#956); other embedded files are ignored. |
 | Atlas-format checkpoint output | ❌ | ❌ | ✅ | migrate checkpoint `--dir-format`=atlas is a recorded waiver; Ptah writes only the ptah two-file checkpoint convention. |
@@ -179,7 +179,7 @@ as open capabilities regardless.
 | Prometheus metrics endpoint (`--metrics-addr`) | ✅ | ❌ | ❌ | migrations up, down, and status serve a Prometheus /metrics endpoint at the given address for the run. |
 | Repair dirty or partial revision state | ✅ | ❌ | ❌ | `ptah migrations repair` `--resume-from` finishes remaining statements. No repair verb in the pinned CE inventory or reviewed Atlas evidence. |
 | Revision table format and placement | ✅ | ✅ | ✅ | `--revision-format` ptah\|atlas plus `--migrations-table` and `--migrations-schema`; the compat path defaults to Atlas rows. |
-| Roll back applied migrations (down) | 🟡 | ❌ | ✅ | Ptah reverts via pre-planned down files; `--to-tag`/`--skip-checks`/`--plan` fail loudly as waivers. In pinned CE, `migrate down` is a registered community-abort stub, not a working verb. |
+| Roll back applied migrations (down) | 🟡 | ❌ | ✅ | Ptah validates all selected down bodies before changing state. Dry-run reports distinguish preflight rejection from attempted rollback. Registry flags remain waivers. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❌ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |
 | Transaction modes (`--tx-mode` file/all/none) | ✅ | ✅ | ✅ | all is limited to transactional-DDL dialects and rejects no_transaction files, per-file timeouts, and pre-migration checks. |
@@ -200,7 +200,7 @@ as open capabilities regardless.
 | Inline nolint suppression | 🟡 | ✅ | ✅ | Analyzer-name selectors suppress, but only codes DS102/DS103/MF103 map; atlas:nolint PG101 and unknown selectors are silently ignored. |
 | Native migration lint rule set | ✅ | 🟡 | ✅ | 42 codes across 9 families, gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
 | Per-rule severity policy | 🟡 | ❔ | 🟡 | Severity vocabulary is warning\|error only (info errors out). Measured licensed build is no richer: analyzer and rule blocks reject a `severity` attribute; only boolean error toggles exist. |
-| Pre-migration assertion checks | 🟡 | ❌ | ✅ | Only the `-- +ptah check` spelling; `--tx-mode` all refuses checked files, and that error names `--skip-checks`, which compat apply lacks. CE applies a failing checks.sql unenforced. |
+| Pre-migration assertion checks | 🟡 | ❌ | ✅ | Only the `-- +ptah check` spelling. `--tx-mode` all directs users to per-file mode; native `--skip-checks` remains an emergency bypass. CE leaves checks unenforced. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❔ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |

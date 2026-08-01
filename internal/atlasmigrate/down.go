@@ -88,11 +88,7 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 		WithMigrationLockTimeout(opts.MigrationLockTimeout).
 		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	// Unlike PrepareApply, the writer's dry-run mode is enabled only after the
-	// revision state is read: the migrator short-circuits reads to empty
-	// results under writer dry-run, and a down plan is meaningless without the
-	// real applied set. Execute skips the rollback under DryRun, and the
-	// writer's dry-run mode then guards any residual write path.
+	conn.SchemaWriter().SetDryRun(opts.DryRun)
 	status, err := mig.GetMigrationStatus(ctx)
 	if err != nil {
 		return DownPlan{}, fmt.Errorf("error getting migration status: %w", err)
@@ -101,8 +97,6 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	if err != nil {
 		return DownPlan{}, fmt.Errorf("error getting applied migrations: %w", err)
 	}
-	conn.SchemaWriter().SetDryRun(opts.DryRun)
-
 	return DownPlan{
 		Status:          status,
 		Migrations:      mig.MigrationProvider().Migrations(),
@@ -135,20 +129,25 @@ func (p DownPlan) Execute(ctx context.Context) (DownResult, error) {
 		DryRun:          p.DryRun,
 		StartedAt:       p.StartedAt,
 	}
-	if p.Noop() || p.DryRun {
-		result.EndedAt = time.Now()
-		return result, nil
-	}
-
-	err := p.mig.MigrateDownTo(ctx, p.opts.TargetVersion)
+	executionStarted := false
+	err := p.mig.MigrateDownToWithPreflight(ctx, p.opts.TargetVersion, func(_ context.Context, plan migrator.MigrationPlan) error {
+		executionStarted = len(plan.Versions) > 0
+		return nil
+	})
 	result.EndedAt = time.Now()
-	result.Reverted = true
 	if err != nil {
 		result.DownError = err
 		result.ErrorText = err.Error()
-		result.RevertedVersions = p.revertedVersionsAfterError(ctx)
+		result.Reverted = executionStarted && !p.DryRun
+		if result.Reverted {
+			result.RevertedVersions = p.revertedVersionsAfterError(ctx)
+		}
 		return result, fmt.Errorf("error rolling back migrations: %w", err)
 	}
+	if p.DryRun || !executionStarted {
+		return result, nil
+	}
+	result.Reverted = true
 	result.RevertedVersions = p.PlannedVersions
 
 	finalStatus, err := p.mig.GetMigrationStatus(ctx)
