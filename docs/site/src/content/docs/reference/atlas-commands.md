@@ -47,9 +47,14 @@ matching measured Atlas behavior.
 repeatable (`R__`) migrations, goose/dbmate files missing their up directive,
 colliding versions, an Atlas directory that fails `atlas.sum` verification, and
 an Atlas directory that carries no `atlas.sum` at all while holding at least one
-`.sql` file — both checksum refusals are byte-identical to
+`.sql` file anywhere in its tree — both checksum refusals are byte-identical to
 `ptah-compat migrate validate` and nothing is applied. A directory with no
-`.sql` file reports `No migration files to execute` and exits `0`.
+`.sql` file anywhere reports `No migration files to execute` and exits `0`.
+
+The scan is recursive because Ptah's registrar executes migrations in
+subdirectories. Atlas CE ignores subdirectories, so for that layout CE reports
+nothing to execute while Ptah refuses an unhashed directory rather than running
+migrations it has not verified — see [#976](https://github.com/stokaro/ptah/issues/976).
 
 Directories in an external tool's format are converted in memory, carry no Atlas
 integrity file, and are not checksum-gated. Atlas CE gates them; the divergence

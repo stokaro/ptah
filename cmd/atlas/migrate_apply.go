@@ -338,20 +338,39 @@ func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, format atlasmigrat
 }
 
 // failUnhashedAtlasApplyDir refuses a directory that carries no atlas.sum,
-// unless it holds no SQL file at all.
+// unless it holds no SQL file anywhere in its tree.
 //
-// Measured against Atlas CE v1.2.0: the checksum gate fires on the presence of
-// any *.sql file, not on parseable versioned migrations — an unhashed directory
-// holding only `foo.sql` is refused, while an empty directory and one holding
-// only non-SQL files (a README, a .gitkeep) report "No migration files to
-// execute" and exit 0. A CI bootstrap that creates an empty migrations
-// directory must keep working (#970).
+// The exemption exists because a directory with nothing to execute is not a
+// checksum error: Atlas CE v1.2.0 reports "No migration files to execute" and
+// exits 0 on an empty directory and on one holding only non-SQL files, so a CI
+// bootstrap that creates an empty migrations directory keeps working (#970).
+// The gate fires on the presence of a SQL file, not on parseable versioned
+// migrations — CE refuses an unhashed directory holding only `foo.sql`, and so
+// does this.
+//
+// The scan is recursive even though CE's is not. CE ignores subdirectories
+// entirely, so a migration one level down is nothing-to-execute for CE but is
+// executed by Ptah's registrar, which recurses. Keying the exemption on CE's
+// shallower view would let exactly the unhashed migrations this gate exists to
+// stop run unverified. The result is exit 1 where CE exits 0 for that layout —
+// the safe side of a pre-existing divergence in what the two tools consider a
+// migration (#976).
 func failUnhashedAtlasApplyDir(cmd *cobra.Command, fsys fs.FS) error {
-	sqlFiles, err := fs.Glob(fsys, "*.sql")
+	var foundSQL bool
+	err := fs.WalkDir(fsys, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".sql") {
+			return nil
+		}
+		foundSQL = true
+		return fs.SkipAll
+	})
 	if err != nil {
 		return fmt.Errorf("scan migration directory for SQL files: %w", err)
 	}
-	if len(sqlFiles) == 0 {
+	if !foundSQL {
 		return nil
 	}
 	return migratevalidate.FailAtlasChecksumFileNotFound(cmd)

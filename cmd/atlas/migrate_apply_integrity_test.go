@@ -394,6 +394,53 @@ func TestCompatMigrateApply_UnhashedDirWithNonVersionedSQLRefuses(t *testing.T) 
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
+// TestCompatMigrateApply_UnhashedDirWithNestedSQLRefuses pins that the no-SQL
+// exemption scans the whole tree, not just the top level. Ptah's registrar
+// recurses into subdirectories, so a migration one level down executes here
+// even though Atlas CE — which ignores subdirectories — reports "No migration
+// files to execute" and exits 0. A top-level-only scan would therefore let an
+// unhashed migration run unverified, which is the failure this gate exists to
+// prevent. Refusing is the safe side of that pre-existing divergence (#976).
+func TestCompatMigrateApply_UnhashedDirWithNestedSQLRefuses(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+	}{
+		{
+			name:  "migration in a subdirectory",
+			files: map[string]string{"sub/20260801100335_init.sql": "CREATE TABLE nested (id INTEGER PRIMARY KEY);\n"},
+		},
+		{
+			name: "subdirectory migration beside a top-level non-SQL file",
+			files: map[string]string{
+				"README.md":                   "migrations live here\n",
+				"sub/20260801100335_init.sql": "CREATE TABLE nested (id INTEGER PRIMARY KEY);\n",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			tempDir := c.TempDir()
+			dir := filepath.Join(tempDir, "m_nested")
+			for name, content := range tt.files {
+				path := filepath.Join(dir, filepath.FromSlash(name))
+				c.Assert(os.MkdirAll(filepath.Dir(path), 0o755), qt.IsNil)
+				c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
+			}
+			dbPath := filepath.Join(tempDir, "nested.db")
+
+			_, stderr, err := compatApply(dir, dbPath)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(stderr, qt.Equals, "Error: checksum file not found\n")
+			_, statErr := os.Stat(dbPath)
+			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+		})
+	}
+}
+
 func TestCompatMigrateApply_ValidHashedDirApplies(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()

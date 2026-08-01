@@ -114,9 +114,16 @@ Error: checksum file not found
 
 Nothing executes and the target is never opened, exactly as with a checksum
 mismatch. Run `ptah-compat migrate hash` once and commit the `atlas.sum` it
-writes. A directory that holds no `.sql` file at all — a freshly created or
-`.gitkeep`-only migrations directory — is not a checksum error: it reports
-`No migration files to execute` and exits `0`, matching Atlas.
+writes. A directory that holds no `.sql` file anywhere in its tree — a freshly
+created or `.gitkeep`-only migrations directory — is not a checksum error: it
+reports `No migration files to execute` and exits `0`, matching Atlas.
+
+That scan is recursive, because Ptah executes migrations in subdirectories.
+Atlas CE does not read subdirectories at all, so a directory whose only
+migration sits one level down is "nothing to execute" for Atlas while Ptah
+would run it — Ptah refuses it when unhashed rather than executing an unverified
+migration, which is exit `1` where Atlas exits `0`
+([#976](https://github.com/stokaro/ptah/issues/976)).
 
 :::caution[Known gap]
 Directories read through `?format=goose` and the other external-tool formats

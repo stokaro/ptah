@@ -12,40 +12,24 @@ import (
 	"github.com/stokaro/ptah/internal/migrationsnapshot"
 )
 
-// ResolveApplySource validates the requested migration directory format and
-// returns the immutable filesystem the Atlas apply migrator should read. The
-// native Atlas format preserves atlas.sum and down migrations. Every other
-// supported Atlas OSS format (golang-migrate, goose, flyway, liquibase, dbmate)
-// is converted in memory to Atlas single-file, up-only migrations, so applying
-// it executes only the source tool's up SQL and never its down or rollback
+// ResolveApplySourceForFormat returns the immutable filesystem the Atlas apply
+// migrator should read for an already-resolved directory format. The native
+// Atlas format preserves atlas.sum and down migrations. Every other supported
+// Atlas OSS format (golang-migrate, goose, flyway, liquibase, dbmate) is
+// converted in memory to Atlas single-file, up-only migrations, so applying it
+// executes only the source tool's up SQL and never its down or rollback
 // section.
 //
-// Unknown formats, unsupported URL query parameters, and formats Ptah cannot
-// execute yet (such as Flyway repeatable migrations) return an error.
-// ResolveApplySource never opens a pathname or database connection, so callers
-// can capture a rooted source and reject a bad format or malformed layout
-// before mutating the target database. The URL ?format= query value, when
-// present, overrides the configured project format; an empty query value
-// selects the native Atlas format.
-func ResolveApplySource(
-	source fs.FS,
-	display string,
-	configured string,
-	query url.Values,
-) (fsnapshot.Snapshot, error) {
-	format, err := ResolveApplyDirFormat(configured, query)
-	if err != nil {
-		return fsnapshot.Snapshot{}, err
-	}
-	return ResolveApplySourceForFormat(source, display, format)
-}
-
-// ResolveApplySourceForFormat is [ResolveApplySource] on an already-resolved
-// format. Callers that must also branch on the format — the apply-time
-// checksum gate keys on whether the directory is native Atlas — resolve it once
-// with [ResolveApplyDirFormat] and pass the same value here, so the filesystem
-// that gets executed and the format the gate reasons about are the same
-// decision rather than two computations that happen to agree (#970).
+// Formats Ptah cannot execute yet (such as Flyway repeatable migrations) and
+// malformed layouts return an error. This never opens a pathname or database
+// connection, so callers can capture a rooted source and reject a bad layout
+// before mutating the target database.
+//
+// Callers resolve the format once with [ResolveApplyDirFormat] and pass the
+// same value to everything that branches on it — the apply-time checksum gate
+// keys on whether the directory is native Atlas — so the filesystem that gets
+// executed and the format the gate reasons about are one decision rather than
+// two computations that happen to agree (#970).
 func ResolveApplySourceForFormat(
 	source fs.FS,
 	display string,
