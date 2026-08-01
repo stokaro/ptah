@@ -92,11 +92,15 @@ type Migrator struct {
 	migrationLockName    string
 	migrationLockTimeout time.Duration
 	initialized          bool
-	logger               *slog.Logger
-	observer             Observer
-	skipChecks           bool
-	metadataAvailable    bool
-	legacyRevisionTable  bool
+	// initializedDryRun records the writer's dry-run mode at the time
+	// initialized was set, so the memoized state is never reused across a
+	// mode change.
+	initializedDryRun   bool
+	logger              *slog.Logger
+	observer            Observer
+	skipChecks          bool
+	metadataAvailable   bool
+	legacyRevisionTable bool
 }
 
 // NewFSMigrator creates a new migrator that loads migrations from a filesystem.
@@ -231,6 +235,7 @@ func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
 	tmp.initialized = false
+	tmp.initializedDryRun = false
 	tmp.metadataAvailable = false
 	tmp.legacyRevisionTable = false
 	return &tmp
@@ -245,6 +250,7 @@ func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator
 		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
 	tmp.initialized = false
+	tmp.initializedDryRun = false
 	tmp.metadataAvailable = false
 	tmp.legacyRevisionTable = false
 	return &tmp
@@ -401,12 +407,18 @@ func (m *Migrator) deleteMigrationSQL() string {
 
 // Initialize creates the migrations table if it doesn't exist
 func (m *Migrator) Initialize(ctx context.Context) error {
-	// Skip if already initialized
-	if m.initialized {
+	dryRun := m.conn.Writer().IsDryRun()
+
+	// Skip if already initialized. The memoized result is only valid for the
+	// dry-run mode it was computed under: a real Initialize records that the
+	// metadata now exists, while a dry-run Initialize only records what the
+	// metadata looks like, so a writer that later leaves dry-run mode must
+	// still get its table created.
+	if m.initialized && m.initializedDryRun == dryRun {
 		return nil
 	}
 
-	if m.conn.Writer().IsDryRun() {
+	if dryRun {
 		return m.initializeDryRun(ctx)
 	}
 
@@ -435,33 +447,52 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 
 	// Mark as initialized
 	m.initialized = true
+	m.initializedDryRun = false
 	m.metadataAvailable = true
 	m.legacyRevisionTable = false
 	return nil
 }
 
+// initializeDryRun records what a real Initialize would find without writing
+// anything. Like the real path it memoizes its result: every read entry point
+// calls Initialize, so without memoization a single dry run re-inspects the
+// metadata table — and repeats the "[DRY RUN] Would initialize" narration —
+// once per read (stokaro/ptah#967).
 func (m *Migrator) initializeDryRun(ctx context.Context) error {
-	exists, err := m.migrationsTableExists(ctx)
+	available, legacy, err := m.inspectDryRunMetadata(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to inspect migrations table: %w", err)
+		return err
 	}
-	if !exists {
-		m.metadataAvailable = false
-		m.legacyRevisionTable = false
+	if !available {
 		m.logger.Info("[DRY RUN] Would initialize migrations metadata", "table", m.qualifiedMigrationsTable())
-		return nil
 	}
 
-	m.metadataAvailable = true
-	if m.revisionTableFormat.isAtlas() {
-		return nil
-	}
-	legacy, err := m.migrationsTableUsesLegacyRevisionLayout(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to inspect migrations table layout: %w", err)
-	}
+	m.metadataAvailable = available
 	m.legacyRevisionTable = legacy
+	m.initialized = true
+	m.initializedDryRun = true
 	return nil
+}
+
+// inspectDryRunMetadata reports whether the revision metadata a dry run would
+// read is present, and whether it still uses the legacy Ptah layout.
+func (m *Migrator) inspectDryRunMetadata(ctx context.Context) (available, legacy bool, err error) {
+	exists, err := m.migrationsTableExists(ctx)
+	if err != nil {
+		return false, false, fmt.Errorf("failed to inspect migrations table: %w", err)
+	}
+	if !exists {
+		return false, false, nil
+	}
+	if m.revisionTableFormat.isAtlas() {
+		return true, false, nil
+	}
+
+	legacy, err = m.migrationsTableUsesLegacyRevisionLayout(ctx)
+	if err != nil {
+		return false, false, fmt.Errorf("failed to inspect migrations table layout: %w", err)
+	}
+	return true, legacy, nil
 }
 
 func (m *Migrator) ensureMigrationsRevisionColumns(ctx context.Context) error {

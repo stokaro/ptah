@@ -48,6 +48,43 @@ type Runtime struct {
 	once     sync.Once
 }
 
+// QuietDefaultLogger installs a default slog logger that drops narration and
+// keeps diagnostics.
+//
+// Library code logs through the package-level slog functions, which resolve to
+// slog.Default() and therefore reach stderr even when the caller never wired
+// observability. Those calls split cleanly by level, and the threshold sits on
+// the seam:
+//
+//   - Info and below is narration — the dialect writers' "[DRY RUN] Would ..."
+//     statement records, the Postgres enum-creation notices. Atlas CE never
+//     prints any of it, and `--format` consumers redirect stderr into stdout
+//     (`2>&1 | jq`), where one extra line stops the output from being a single
+//     JSON document. This is what broke stokaro/ptah#967, and it is dropped.
+//   - Warn and above is a diagnostic that exists nowhere else: circular
+//     foreign-key and function ordering, a dev or shadow database that would
+//     not close, an unrecognized embedding mode that silently inlines. None of
+//     them are returned as errors, so dropping them would let a real apply
+//     report success while quietly degrading. These are kept.
+//
+// Atlas parity survives the split because a clean run emits nothing at either
+// level: the diagnostics only appear when something is genuinely wrong, and a
+// user who sees one is better served than by byte-parity with CE.
+//
+// Command failures are unaffected either way: the Atlas-compatible commands
+// report them through the command's own error stream, never through slog.
+//
+// Call this once, before any command runs. It deliberately does not take
+// globalStateMu: Start holds that lock for the duration of a command and
+// restores whatever default was installed beforehand, so a command that starts
+// its own observability runtime still nests correctly on top of the quiet
+// default.
+func QuietDefaultLogger() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	})))
+}
+
 // Start initializes command logging, tracing, and metrics.
 func Start(ctx context.Context, opts Options) (*Runtime, error) {
 	logLevel, err := parseLogLevel(opts.LogLevel)

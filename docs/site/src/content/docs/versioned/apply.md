@@ -24,17 +24,30 @@ ptah migrations up \
   --dry-run
 ```
 
-Expected output includes:
+Expected output on stdout:
 
 ```text
 === DRY RUN MODE ===
 No actual changes will be made to the database
 
-[DRY RUN] Would execute SQL ... sql="CREATE TABLE \"users\" ..."
-
 ✅ Dry run completed successfully!
 Would have applied 1 migrations
 ```
+
+The statement-by-statement narration is a log record, not report output, so it
+goes to the log stream — stderr by default:
+
+```text
+level=INFO msg="[DRY RUN] Would begin transaction"
+level=INFO msg="[DRY RUN] Would execute SQL" sql="CREATE TABLE \"users\" ..."
+level=INFO msg="[DRY RUN] Would commit transaction"
+```
+
+Both `--log-level` and `--log-format` apply to it: `--log-level warn` drops the
+narration and leaves only the stdout report, and `--log-format json` moves every
+record — report lines included — onto stdout as one JSON object per line, which
+keeps `ptah migrations up ... | jq` parseable. See
+[Execution controls](#execution-controls).
 
 :::note
 The dry run reads an existing revision table and walks only migrations pending
@@ -42,6 +55,13 @@ on this target. On a fresh target, it treats the absent revision table as empty
 without creating it. A legacy three-column Ptah revision table is read without
 upgrading its layout. A partially upgraded table is rejected with a missing
 column diagnostic and is not modified.
+:::
+
+:::caution
+This narration is native-only. `ptah-compat migrate apply --dry-run` stays quiet
+on stderr to match Atlas CE, so `ptah-compat ... --format '{{ json . }}' 2>&1 | jq`
+always sees exactly one JSON document. See
+[Atlas migrate commands](../../atlas/migrate-commands/).
 :::
 
 ## Apply with integrity verification
@@ -147,6 +167,11 @@ people and pipelines share a directory:
 - **Timeouts and locks**: `--statement-timeout`, `--lock-timeout`, and
   `--migration-lock-timeout` bound long DDL and the session-level advisory
   lock that keeps two migrators from racing.
+- **Run logging** (`--log-level`, `--log-format`): `--log-level`
+  debug\|info\|warn\|error selects how much of the run is narrated —
+  `warn` silences the per-statement dry-run narration — and `--log-format`
+  text\|json selects the encoding. `json` moves every record, the stdout
+  report included, onto stdout as one JSON object per line.
 
 See [Configuration](../../reference/configuration/) for the `ptah.yaml`
 equivalents of every control.

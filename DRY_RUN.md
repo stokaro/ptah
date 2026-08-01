@@ -127,7 +127,10 @@ go run . seed --db-dsn postgres://user:pass@localhost/db --dry-run
 
 ### Dry Run Output Format
 
-When dry run mode is enabled, all operations are prefixed with `[DRY RUN]`:
+When dry run mode is enabled, all operations are prefixed with `[DRY RUN]`. The
+example below shows both output streams interleaved, as a terminal would render
+them; see [Where Dry Run Output Goes](#where-dry-run-output-goes) for which line
+lands on which stream.
 
 ```
 [DRY RUN] Would write schema from ./models to database postgres://user:***@localhost/db
@@ -152,6 +155,47 @@ Creating table 2/2...
 [DRY RUN] Would commit transaction
 ✅ [DRY RUN] Schema operations completed successfully!
 ```
+
+### Where Dry Run Output Goes
+
+Dry run produces two different kinds of output, on two different streams:
+
+1. **The command report** — the `=== DRY RUN MODE ===` banner, the summary
+   counts, and the closing `Would have applied N migrations` line — is written
+   to **stdout** by the command itself.
+2. **The per-statement narration** — the `[DRY RUN] Would begin transaction`,
+   `[DRY RUN] Would execute SQL`, and `[DRY RUN] Would commit transaction`
+   records emitted by the dialect writers — is a **log record**, not report
+   output. It goes to the command's log stream, which is stderr by default.
+
+Because the narration is a log record, the native commands' existing
+observability flags control it:
+
+- `--log-level warn` (or `error`) drops it, leaving only the stdout report.
+- `--log-format json` moves the whole run log — report lines included — onto
+  stdout as one JSON object per line, so `ptah migrations up --dry-run
+  --log-format json | jq` is parseable.
+
+The Atlas-compatible binary (`ptah-compat`) deliberately differs: it drops the
+narration entirely rather than exposing a flag for it, because the Atlas CE
+binary it mirrors prints none, and because `--format` consumers routinely fold
+stderr into stdout (`2>&1 | jq`), where one stray log line stops the output from
+being a single JSON document.
+
+Quiet is not silent. Two things still reach `ptah-compat`'s stderr, neither of
+which appears on a clean run:
+
+- **Command failures** — the `Error: …` diagnostic, with exit status `1`.
+- **Warn-level diagnostics that exist on no other channel** — a circular
+  foreign-key or function ordering, a dev or shadow database that would not
+  close, an unrecognized embedding mode. None of these are returned as errors,
+  so dropping them would let a real apply report success while quietly
+  degrading.
+
+One exception: `ptah-compat migrate down` without `--format` forwards to the
+native rollback command and inherits its run log on stderr. See
+[stokaro/ptah#969](https://github.com/stokaro/ptah/issues/969) and
+[stokaro/ptah#967](https://github.com/stokaro/ptah/issues/967).
 
 ### Safety Features
 

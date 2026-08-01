@@ -189,6 +189,36 @@ Dry-run plans read the stored Atlas revision rows and include only migrations
 that a real apply would select. They also run the same dirty-state, checksum,
 execution-order, and transaction-mode validations as a real apply.
 
+A successful `ptah-compat migrate apply` writes nothing to stderr, matching
+Atlas CE: there is no progress narration, in a dry run or otherwise, so
+`--format` output survives the usual CI idiom of folding both streams together.
+
+```bash
+ptah-compat migrate apply --url "$DATABASE_URL" --dir file://migrations \
+  --dry-run --format '{{ json . }}' 2>&1 | jq
+```
+
+Two things still reach stderr, by design. A command that fails prints its
+`Error: …` diagnostic there and exits `1`. And a Warn-level diagnostic that
+exists on no other channel — a circular foreign-key or function ordering, a dev
+database that would not close — is still reported, because dropping it would let
+an apply claim success while quietly degrading. Neither appears on a clean run.
+
+:::caution
+`ptah-compat migrate down` is the exception. Without `--format` it forwards to
+the native `ptah migrations down`, which starts its own run log and writes it to
+stderr — eight lines on a successful dry run, four on a successful rollback.
+The Atlas surface exposes no `--log-level` to quiet it. Use `--format` when you
+need a clean stderr from `migrate down`; that path renders the report directly
+and stays quiet. Tracked in
+[`stokaro/ptah#969`](https://github.com/stokaro/ptah/issues/969).
+:::
+
+The equivalent native command, `ptah migrations up --dry-run`, does narrate each
+statement it would execute through its run log; that narration is selected by
+the native `--log-level` and `--log-format` flags, which the Atlas surface does
+not expose. See [Apply migrations](../../versioned/apply/).
+
 The apply path executes every Atlas OSS migration directory format selected by
 `migration.format` or the directory URL `?format=` parameter: `atlas`,
 `golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate`. The native
