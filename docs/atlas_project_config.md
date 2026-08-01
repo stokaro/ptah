@@ -307,9 +307,21 @@ Atlas-compatible commands under `ptah-compat schema ...` and
   repeated values for the same variable become a string list, matching Atlas's
   local project-variable behavior.
 
-Variable overrides are strings. A `variable` block without a `default` is valid
-when the invocation provides a matching `--var name=value`. Variable `type` and
-`sensitive` attributes are not accepted until Ptah implements their semantics.
+A `variable` block without a `default` is valid when the invocation provides a
+matching `--var name=value`. Variable blocks accept the `type` constraints
+`string`, `number`, `bool`, and `list(string)` — the attribute the official
+Atlas binary requires:
+
+- `--var` overrides convert to the declared type: `--var latest=3` becomes a
+  number and `--var concurrent=true` becomes a bool. Repeated
+  `--var name=value` flags build a `list(string)` value.
+- A `default` that does not convert to the declared type, an override of the
+  wrong shape, and any other type constraint (for example `object(...)`,
+  `map(...)`, or `tuple(...)`) fail with named errors.
+- `sensitive = true` is accepted; error messages print `(sensitive value)`
+  instead of a sensitive variable's value.
+- `validation` blocks are not accepted until Ptah implements their semantics.
+
 Unsupported dynamic data sources such as SQL data sources, registry-backed
 sources, and Cloud-specific sources still fail explicitly.
 

@@ -104,8 +104,8 @@
   "ptah": "partial",
   "atlas_oss": "yes",
   "atlas_pro": "yes",
-  "note": "Only file, fileset, format, getenv, jsonencode evaluate; variable type, sensitive, validation and env for_each are rejected.",
-  "evidence": "config/projectconfig/atlas.go:126-133 (five-function eval context), :930 and :953 (variable attribute allowlist default/description), :402 (for_each hits the env attribute default). Repro: `dev = urlsetpath(\"sqlite://file.db\",\"x\")` -> `error: unsupported atlas.hcl construct \"dev\" at atlas.hcl:2`; upper, lower, join, split, concat, trimspace, coalesce, toupper, abspath, urlescape, urlqueryset, print all fail the same way, while file, fileset, format, getenv, jsonencode evaluate"
+  "note": "Only file, fileset, format, getenv, jsonencode evaluate; variable type (string, number, bool, list(string)) and sensitive are honored; validation and env for_each are rejected.",
+  "evidence": "config/projectconfig/atlas.go:126-133 (five-function eval context), parseVariableBlock/convertAtlasVariableOverride (type constraints with typed --var conversion, sensitive redaction, validation rejected), :402 (for_each hits the env attribute default). Repro: `dev = urlsetpath(\"sqlite://file.db\",\"x\")` -> `error: unsupported atlas.hcl construct \"dev\" at atlas.hcl:2`; upper, lower, join, split, concat, trimspace, coalesce, toupper, abspath, urlescape, urlqueryset, print all fail the same way, while file, fileset, format, getenv, jsonencode evaluate; `variable \"schema_file\" { type = string }` + `--var schema_file=schema.sql` inspects on both binaries"
  },
  {
   "area": "Project config",

@@ -285,8 +285,16 @@ ptah-compat migrate hash --env local --var dir=migrations
 `--config` and `-c` select a local project config path. `file://` config URLs
 are accepted; other URL schemes fail explicitly. `--var name=value` can be
 repeated. Repeating the same variable name produces a string list for supported
-Atlas HCL expressions. Variable overrides are strings; Atlas variable `type`
-and `sensitive` attributes remain unsupported and fail explicitly.
+Atlas HCL expressions.
+
+Variable blocks accept the `type` constraints `string`, `number`, `bool`, and
+`list(string)` — the attribute the official Atlas binary requires — so one
+`atlas.hcl` with typed variables works with both binaries. `--var` overrides
+convert to the declared type, and repeated `--var` flags fill a `list(string)`
+variable. Overrides of the wrong shape, defaults that do not match the declared
+type, and other type constraints such as `object(...)` fail with named errors.
+`sensitive = true` is accepted and keeps the variable's value out of error
+messages. `validation` blocks remain unsupported and fail explicitly.
 
 If an `atlas.hcl` file has exactly one `env` block, named or unnamed, Ptah can
 use it as the default. Atlas-compatible `migrate apply` does not need to select

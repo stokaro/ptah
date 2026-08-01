@@ -227,7 +227,7 @@ as open capabilities regardless.
 | Native project config (ptah.yaml) | ✅ | ➖ | ➖ | Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. Unknown keys fail. |
 | PTAH_* environment-variable flag equivalents | ✅ | ❔ | ❔ | Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) that substitutes for the flag. |
 | Remote and template directory sources | ❌ | ✅ | ✅ | An atlas.hcl data-source question, not a registry one: ptah-compat migration.dir takes file:// only. Native oci:// distribution is a separate ptah path. |
-| Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | Only file, fileset, format, getenv, jsonencode evaluate; variable type, sensitive, validation and env for_each are rejected. |
+| Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | Only file, fileset, format, getenv, jsonencode evaluate; variable type (string, number, bool, list(string)) and sensitive are honored; validation and env for_each are rejected. |
 
 ## Databases and schema objects
 

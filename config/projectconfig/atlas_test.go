@@ -724,6 +724,276 @@ func TestParseAtlasProjectConfigRejectsMalformedVariableOverride(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `atlas variable overrides must use name=value, got "schema"`)
 }
 
+// typedVariableConsumerHCL routes each typed variable into a config field that
+// demands the declared cty type: lint.latest requires a number,
+// diff.concurrent_index.create requires a bool, and src accepts a string list.
+// A string that merely looked converted would fail those attribute parsers.
+const typedVariableConsumerHCL = `env "local" {
+  src     = var.sources
+  exclude = ["${var.stem}_*"]
+  lint {
+    latest = var.latest
+  }
+  diff {
+    concurrent_index {
+      create = var.concurrent
+    }
+  }
+}
+`
+
+func assertTypedVariableConfig(c *qt.C, cfg projectconfig.Config) {
+	c.Helper()
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://a.hcl", "file://b.hcl"})
+	c.Assert(cfg.Exclude, qt.DeepEquals, []string{"app_*"})
+	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
+	c.Assert(*cfg.Lint.Latest, qt.Equals, 3)
+	c.Assert(cfg.Diff.ConcurrentIndex.Create.Set, qt.IsTrue)
+	c.Assert(cfg.Diff.ConcurrentIndex.Create.Value, qt.IsTrue)
+}
+
+func TestParseAtlasProjectConfigTypedVariableDefaults(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "stem" {
+  type    = string
+  default = "app"
+}
+
+variable "latest" {
+  type    = number
+  default = 3
+}
+
+variable "concurrent" {
+  type    = bool
+  default = true
+}
+
+variable "sources" {
+  type    = list(string)
+  default = ["file://a.hcl", "file://b.hcl"]
+}
+
+` + typedVariableConsumerHCL)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	assertTypedVariableConfig(c, cfg)
+}
+
+func TestParseAtlasProjectConfigTypedVariableConvertsCompatibleDefault(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "latest" {
+  type    = number
+  default = "3"
+}
+
+env "local" {
+  lint {
+    latest = var.latest
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
+	c.Assert(*cfg.Lint.Latest, qt.Equals, 3)
+}
+
+func TestParseAtlasProjectConfigTypedVariableOverridesConvert(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "stem" {
+  type = string
+}
+
+variable "latest" {
+  type = number
+}
+
+variable "concurrent" {
+  type = bool
+}
+
+variable "sources" {
+  type = list(string)
+}
+
+` + typedVariableConsumerHCL)
+
+	cfg, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+		Vars: []string{
+			"stem=app",
+			"latest=3",
+			"concurrent=true",
+			"sources=file://a.hcl",
+			"sources=file://b.hcl",
+		},
+	})
+
+	c.Assert(err, qt.IsNil)
+	assertTypedVariableConfig(c, cfg)
+}
+
+func TestParseAtlasProjectConfigTypedListVariableSingleOverride(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "sources" {
+  type = list(string)
+}
+
+env "local" {
+  src = var.sources
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+		Vars:    []string{"sources=file://only.hcl"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://only.hcl"})
+}
+
+func TestParseAtlasProjectConfigTypedVariableOverrideWrongShape(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		vars []string
+		err  string
+	}{
+		{
+			name: "number rejects non-numeric override",
+			raw: `variable "latest" {
+  type = number
+}
+`,
+			vars: []string{"latest=abc"},
+			err:  `atlas\.hcl variable "latest" expects number, got --var value "abc"`,
+		},
+		{
+			name: "bool rejects non-bool override",
+			raw: `variable "concurrent" {
+  type = bool
+}
+`,
+			vars: []string{"concurrent=maybe"},
+			err:  `atlas\.hcl variable "concurrent" expects bool, got --var value "maybe"`,
+		},
+		{
+			name: "string rejects repeated overrides",
+			raw: `variable "url" {
+  type = string
+}
+`,
+			vars: []string{"url=sqlite://a.db", "url=sqlite://b.db"},
+			err:  `atlas\.hcl variable "url" expects string, got 2 --var values`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := projectconfig.ParseAtlasWithOptions([]byte(tt.raw), "atlas.hcl", projectconfig.AtlasLoadOptions{
+				Vars: tt.vars,
+			})
+
+			c.Assert(err, qt.ErrorMatches, tt.err)
+		})
+	}
+}
+
+func TestParseAtlasProjectConfigSensitiveVariableEvaluates(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "url" {
+  type      = string
+  sensitive = true
+  default   = "sqlite://secret.db"
+}
+
+env "local" {
+  url = var.url
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://secret.db")
+}
+
+func TestParseAtlasProjectConfigSensitiveVariableRedactsOverrideError(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "token" {
+  type      = number
+  sensitive = true
+}
+
+env "local" {
+  lint {
+    latest = var.token
+  }
+}
+`)
+
+	_, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+		Vars:    []string{"token=hunter2-secret"},
+	})
+
+	c.Assert(err, qt.ErrorMatches, `atlas\.hcl variable "token" expects number, got --var value \(sensitive value\)`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "hunter2-secret")
+}
+
+// TestParseAtlasProjectConfigTypedVariableWithoutDefaultRequiresVar pins the
+// native-binary path: the native ptah CLI has no --var flag, so a typed
+// variable without a default must fail with the existing named error.
+func TestParseAtlasProjectConfigTypedVariableWithoutDefaultRequiresVar(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "schema_file" {
+  type        = string
+  description = "Path to the SQL schema file used as the desired state"
+}
+
+env "dev" {
+  src = "file://${var.schema_file}"
+  dev = "sqlite://dev?mode=memory"
+}
+`)
+
+	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "dev")
+
+	c.Assert(err, qt.ErrorMatches, `atlas\.hcl variable "schema_file" requires a default or --var schema_file=value`)
+}
+
+// TestLoadAtlasProjectConfigTypedVariableDefault pins the other half of the
+// native-binary path: loading atlas.hcl without variable overrides must
+// evaluate a typed variable through its default.
+func TestLoadAtlasProjectConfigTypedVariableDefault(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	atlasPath := filepath.Join(dir, "atlas.hcl")
+	c.Assert(os.WriteFile(atlasPath, []byte(`variable "schema_file" {
+  type    = string
+  default = "schema.sql"
+}
+
+env "dev" {
+  src = "file://${var.schema_file}"
+  dev = "sqlite://dev?mode=memory"
+}
+`), 0o600), qt.IsNil)
+
+	cfg, err := projectconfig.LoadAtlasFile(atlasPath, "dev")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema.sql"})
+}
+
 func TestLoadAtlasProjectConfigEvaluatesFileFunction(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -1114,22 +1384,67 @@ env "local" {
 			err: `atlas\.hcl variable "url" requires a default or --var url=value`,
 		},
 		{
-			name: "variable type is unsupported",
-			raw: `variable "url" {
-  type    = string
-  default = "sqlite://typed.db"
+			name: "variable object type is unsupported",
+			raw: `variable "conn" {
+  type = object({ url = string })
 }
 `,
-			err: `unsupported atlas\.hcl construct "type" at atlas\.hcl:2`,
+			err: `atlas\.hcl variable "conn" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, and list\(string\)`,
 		},
 		{
-			name: "variable sensitive is unsupported",
+			name: "variable map type is unsupported",
+			raw: `variable "labels" {
+  type = map(string)
+}
+`,
+			err: `atlas\.hcl variable "labels" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, and list\(string\)`,
+		},
+		{
+			name: "variable tuple type is unsupported",
+			raw: `variable "pair" {
+  type = tuple([string, number])
+}
+`,
+			err: `atlas\.hcl variable "pair" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, and list\(string\)`,
+		},
+		{
+			name: "variable list of number type is unsupported",
+			raw: `variable "ports" {
+  type = list(number)
+}
+`,
+			err: `atlas\.hcl variable "ports" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, and list\(string\)`,
+		},
+		{
+			name: "variable default does not match type",
+			raw: `variable "latest" {
+  type    = number
+  default = ["nope"]
+}
+`,
+			err: `atlas\.hcl variable "latest" default does not match type number at atlas\.hcl:3`,
+		},
+		{
+			name: "variable sensitive requires a bool",
 			raw: `variable "url" {
-  sensitive = true
+  sensitive = "yes"
   default   = "sqlite://typed.db"
 }
 `,
 			err: `unsupported atlas\.hcl construct "sensitive" at atlas\.hcl:2`,
+		},
+		{
+			name: "variable validation block is unsupported",
+			raw: `variable "url" {
+  type    = string
+  default = "sqlite://typed.db"
+  validation {
+    condition     = true
+    error_message = "unreachable"
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "validation" at atlas\.hcl:4`,
 		},
 		{
 			name: "duplicate local",
