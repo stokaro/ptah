@@ -15,6 +15,9 @@ import (
 var (
 	// ErrOutsideRoot reports that a path escapes its configured filesystem root.
 	ErrOutsideRoot = errors.New("outside allowed root")
+	// ErrDirectoryChanged reports that an opened directory's lexical path no
+	// longer identifies the filesystem object selected when it was opened.
+	ErrDirectoryChanged = errors.New("opened directory path changed")
 )
 
 // OpenedDirectory is a directory handle anchored to the filesystem object
@@ -23,6 +26,7 @@ var (
 type OpenedDirectory struct {
 	root *os.Root
 	path string
+	info fs.FileInfo
 }
 
 type rootedPath struct {
@@ -57,7 +61,7 @@ func (d *OpenedDirectory) OpenDirectory(path string) (*OpenedDirectory, error) {
 		}
 		return nil, err
 	}
-	return &OpenedDirectory{root: opened, path: target.display}, nil
+	return newOpenedDirectory(opened, target.display)
 }
 
 // Stat returns information about name through the rooted handle.
@@ -135,7 +139,7 @@ func OpenCurrentDirectory() (*OpenedDirectory, error) {
 			closeErr,
 		)
 	}
-	return &OpenedDirectory{root: root, path: filepath.Clean(cwd)}, nil
+	return newOpenedDirectory(root, filepath.Clean(cwd))
 }
 
 // OpenDirectoryWithinRoot binds allowedRoot first, then opens path only through
@@ -195,7 +199,21 @@ func OpenDirectory(path string) (*OpenedDirectory, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &OpenedDirectory{root: root, path: absolute}, nil
+	return newOpenedDirectory(root, absolute)
+}
+
+func newOpenedDirectory(root *os.Root, path string) (*OpenedDirectory, error) {
+	info, err := root.Stat(".")
+	if err != nil {
+		return nil, errors.Join(err, root.Close())
+	}
+	if !info.IsDir() {
+		return nil, errors.Join(
+			fmt.Errorf("opened path is not a directory: %s", path),
+			root.Close(),
+		)
+	}
+	return &OpenedDirectory{root: root, path: path, info: info}, nil
 }
 
 func rootedRelativePath(path, root string) (rootedPath, error) {
