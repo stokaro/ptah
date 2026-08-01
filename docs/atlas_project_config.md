@@ -8,8 +8,8 @@ invocations in this document run the separate `ptah-compat` drop-in binary.
 
 ## Supported subset
 
-Ptah accepts top-level `variable`, `locals`, `data "hcl_schema"`, `env`,
-`lint`, and `diff` blocks. `env` blocks may have either one label or no label:
+Ptah accepts top-level `variable`, `locals`, `data "hcl_schema"`,
+`data "external_schema"`, `env`, `lint`, and `diff` blocks. `env` blocks may have either one label or no label:
 
 ```hcl
 lint {
@@ -149,9 +149,12 @@ surface. It supplies an explicit external-program argument list and SQL, HCL,
 or YAML stdout to `ptah schema render`, `ptah schema compare`,
 `ptah schema drift`, `ptah migrations plan`, and
 `ptah migrations generate`; executing that config-sourced program requires
-`--allow-external-schema`. Atlas HCL `data.external_schema` evaluation remains
-outside the supported `atlas.hcl` subset and must not be inferred from the
-native Ptah feature.
+`--allow-external-schema`. Atlas HCL `data "external_schema"` is part of the
+supported subset: a block declares `program` (argv, no shell) plus the Ptah
+extensions `format`, `working_dir`, and `env`, and its `.url` value is
+consumed when an env `src` selects it. Execution stays gated: native commands
+require `--allow-external-schema`, and `ptah-compat` requires
+`PTAH_ALLOW_EXTERNAL_SCHEMA=1` because the compat flag surface mirrors Atlas.
 
 Ptah parses Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
 and `dbmate` migration format values so the project file can be evaluated
@@ -307,8 +310,8 @@ Atlas-compatible commands under `ptah-compat schema ...` and
 Variable overrides are strings. A `variable` block without a `default` is valid
 when the invocation provides a matching `--var name=value`. Variable `type` and
 `sensitive` attributes are not accepted until Ptah implements their semantics.
-Unsupported dynamic data sources such as external schemas, SQL data sources,
-registry-backed sources, and Cloud-specific sources still fail explicitly.
+Unsupported dynamic data sources such as SQL data sources, registry-backed
+sources, and Cloud-specific sources still fail explicitly.
 
 ## Env selection
 

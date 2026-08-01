@@ -73,13 +73,13 @@ Across the 152 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 78 |
+| Ptah supports it fully | 79 |
 | Ptah supports it with a stated limitation | 47 |
-| Ptah does not implement it | 27 |
+| Ptah does not implement it | 26 |
 | Ptah and Atlas CE both support it | 24 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 28 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 29 |
 | Ptah has it and neither Atlas edition does | 8 |
-| Atlas CE has it and Ptah does not, or only in part | 25 |
+| Atlas CE has it and Ptah does not, or only in part | 24 |
 | An Atlas column is ❔ — not established by this page's evidence | 33 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -101,7 +101,7 @@ as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | Annotated Go models from a live database | ✅ | ❌ | ❌ | Writes Ptah annotation source from introspection, with optional db/json tags. No Go-model generator in the CE inventory or Pro list. |
 | Atlas CE inspect HCL parses back into Ptah | ✅ | ✅ | ✅ | 30 atlas-differential observations parse Atlas CE 1.2.0 `schema inspect` HCL on Postgres/MySQL/SQLite with zero schema-fact mismatches. |
-| Atlas HCL data "external_schema" | ❌ | ✅ | ✅ | Ptah's `data` block is an unlabeled seed-row declaration; every labeled Atlas data source fails with `data block does not accept labels`. |
+| Atlas HCL data "external_schema" | ✅ | ❌ | ✅ | Ptah evaluates the data source and runs the program, gated behind `--allow-external-schema`/`PTAH_ALLOW_EXTERNAL_SCHEMA`. Community Atlas rejects `data.external_schema`. |
 | Composite multi-source desired schema | ✅ | ❌ | ✅ | Repeatable `--root-dir`/`--schema-file` merge into one schema; conflicts error. Repo docs cite composite_schema as an Atlas Pro data source. |
 | Desired-schema artifacts in an OCI registry | ✅ | ❌ | ✅ | `ptah schema push/pull` publish and fetch canonical HCL resolved from Go, YAML, HCL or SQL sources. Verified round trip against registry:2. |
 | Directory of .hcl files as one schema source | ❌ | ❔ | ❔ | `--schema-file dir` and `--to file://dir` are refused (schema file is a directory); globs are not expanded. Multi-file needs one flag per file. |
@@ -219,7 +219,7 @@ as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Rejects atlas, script, exporter, deployment; env for_each and schemas; migration baseline, skip_report, repo; data blocks but hcl_schema. |
+| Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Rejects atlas, script, exporter, deployment; env for_each and schemas; migration baseline, skip_report, repo; data blocks but hcl_schema and external_schema. |
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl only: no `--var` flag, and `--config` takes ptah.yaml, so a variable without a default cannot be resolved. |
 | data "hcl_schema" reference | 🟡 | ✅ | ✅ | Takes path or paths and exports .url; the Atlas vars input, absolute paths, and any non-file:// value are rejected. |
 | Docker dev databases (`docker://` `--dev-url`) | ❌ | ✅ | ✅ | migrate diff, lint and validate refuse docker:// and require a directly connectable dev database URL. |

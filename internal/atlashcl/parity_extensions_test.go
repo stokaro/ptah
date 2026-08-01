@@ -193,6 +193,42 @@ data "users" {
 			match: `.*data block does not accept labels.*`,
 		},
 		{
+			name: "external_schema data source in a schema file",
+			hcl: `
+data "external_schema" "app" {
+  program = ["./gen.sh"]
+}
+`,
+			match: `.*data "external_schema" is an atlas\.hcl project-config data source, not a schema declaration; declare it in atlas\.hcl, where Ptah supports it.*`,
+		},
+		{
+			name: "composite_schema data source in a schema file",
+			hcl: `
+data "composite_schema" "app" {
+  schema "public" {}
+}
+`,
+			match: `.*data "composite_schema" is an atlas\.hcl project-config data source, not a schema declaration.*`,
+		},
+		{
+			name: "remote_dir data source in a schema file",
+			hcl: `
+data "remote_dir" "migrations" {
+  name = "app"
+}
+`,
+			match: `.*data "remote_dir" is an atlas\.hcl project-config data source, not a schema declaration.*`,
+		},
+		{
+			name: "hcl_schema data source in a schema file",
+			hcl: `
+data "hcl_schema" "app" {
+  path = "schema.hcl"
+}
+`,
+			match: `.*data "hcl_schema" is an atlas\.hcl project-config data source, not a schema declaration.*`,
+		},
+		{
 			name: "managed data keys type",
 			hcl: `
 data {

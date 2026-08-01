@@ -123,6 +123,13 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
 		}
 	}
+	// Schema plan resolves local schema files only (LocalFilesOnly), so an env
+	// whose desired state is an external schema program cannot feed it yet.
+	if loaded && !cmd.Flags().Changed("to") && atlasExternalSchemaConfigured(projectCfg) {
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"atlas schema plan does not support atlas.hcl data.external_schema desired state yet; pass --to explicitly",
+		))
+	}
 	if err := validateAtlasSchemaPlanOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

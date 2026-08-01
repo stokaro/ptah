@@ -18,7 +18,8 @@ const (
 	// EnvFlagName selects an env block from project config.
 	EnvFlagName = "env"
 	// AllowExternalSchemaFlagName explicitly permits executing the
-	// external_schema program loaded from ptah.yaml.
+	// external_schema program loaded from ptah.yaml or from an atlas.hcl
+	// data.external_schema source.
 	AllowExternalSchemaFlagName = "allow-external-schema"
 	// AtlasProjectConfigFlagName passes an Atlas project config path through
 	// internal command adapters without exposing Atlas flags on native commands.
@@ -52,13 +53,14 @@ func RegisterEnvFlag(flags *pflag.FlagSet, target *string) {
 }
 
 // RegisterExternalSchemaOptInFlag registers the safety gate for executing an
-// external_schema program loaded from ptah.yaml. An explicit --schema-cmd does
-// not require this flag because supplying the command is already an opt-in.
+// external_schema program loaded from ptah.yaml or atlas.hcl. An explicit
+// --schema-cmd does not require this flag because supplying the command is
+// already an opt-in.
 func RegisterExternalSchemaOptInFlag(flags *pflag.FlagSet) {
 	flags.Bool(
 		AllowExternalSchemaFlagName,
 		false,
-		"Allow executing the external_schema program configured in ptah.yaml",
+		"Allow executing the external_schema program configured in ptah.yaml or atlas.hcl",
 	)
 }
 
@@ -144,8 +146,9 @@ func JoinSchemasValue(value projectconfig.Value[[]string]) projectconfig.Value[s
 
 // ResolveExternalSchemaCommands resolves the external-command schema source for
 // a command, preferring an explicit --schema-cmd. A ptah.yaml external_schema
-// block requires --allow-external-schema because the conventional config file
-// is auto-discovered and executing repository-controlled code must be explicit.
+// block or an atlas.hcl data.external_schema source requires
+// --allow-external-schema because the conventional config files are
+// auto-discovered and executing repository-controlled code must be explicit.
 func ResolveExternalSchemaCommands(
 	cmd *cobra.Command,
 	schemaCmd string,
@@ -167,7 +170,8 @@ func ResolveExternalSchemaCommands(
 	}
 	if !allowed {
 		return nil, fmt.Errorf(
-			"ptah.yaml external_schema is disabled by default; pass --%s to execute it",
+			"%s is disabled by default; pass --%s to execute it",
+			externalSchemaSourceLabel(cfg.ExternalSchema.Origin),
 			AllowExternalSchemaFlagName,
 		)
 	}
@@ -177,6 +181,16 @@ func ResolveExternalSchemaCommands(
 		cfg.ExternalSchema.WorkingDir,
 		cfg.ExternalSchema.Env,
 	)
+}
+
+// externalSchemaSourceLabel names the config construct that supplied the
+// external schema program, so the safety-gate error points the user at the
+// file they need to review before opting in.
+func externalSchemaSourceLabel(origin string) string {
+	if origin == projectconfig.AtlasFileName {
+		return "atlas.hcl data.external_schema"
+	}
+	return "ptah.yaml external_schema"
 }
 
 func externalSchemaCommandsFromCLI(commandLine, format string) []schemasource.Command {

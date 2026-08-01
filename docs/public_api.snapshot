@@ -305,6 +305,11 @@ type ExternalSchemaConfig struct {
     WorkingDir string
     // Env holds extra "KEY=VALUE" entries passed to the program.
     Env []string
+    // Origin names the config file that supplied Program: PtahFileName for a
+    // ptah.yaml external_schema block or AtlasFileName for an atlas.hcl
+    // data.external_schema source. Safety-gate errors use it to point the user
+    // at the file that configured the program.
+    Origin string
 }
     ExternalSchemaConfig configures an external program whose standard output is
     the desired schema. It is Ptah's open equivalent of Atlas's external_schema
