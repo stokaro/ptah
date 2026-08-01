@@ -116,6 +116,16 @@ func TimestampPlanName(now time.Time) string {
 // plan-level destructive marker, and the statement list are re-derived from
 // the migration SQL, because the Atlas format does not record them; the
 // dialect and format_version fields stay empty for the same reason.
+//
+// The derived severity and Destructive values are ADVISORY, not authoritative.
+// The Atlas format records no dialect, and reading happens before any database
+// connection exists, so the split here is dialect-blind and can differ — in
+// statement count, for MySQL-family backslash SQL — from the dialect-aware
+// split the apply path executes. Nothing on the compat apply path consumes
+// them, deliberately. Any future gate that acts on severity (an approval
+// prompt, a destructive-change refusal) must recompute it from the
+// dialect-aware statement list that [ApplyStatements] runs, never from these
+// fields.
 func decodePlanHCL(contents []byte, path string) (PlanFile, error) {
 	file, diags := hclsyntax.ParseConfig(contents, path, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
