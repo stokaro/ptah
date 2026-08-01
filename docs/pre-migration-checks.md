@@ -25,12 +25,13 @@ Keys:
 
 | Key | Required | Meaning |
 | --- | --- | --- |
-| `assert` | yes | A single SQL predicate that must evaluate to a truthy scalar. |
+| `assert` | yes | One top-level `SELECT` that returns exactly one column and one row containing a truthy scalar. |
 | `name` | no | A label for the check, shown in error output. |
 | `on_fail` | no | What to do when the assertion is not satisfied. Only `abort` is supported; it is the default. |
 
-- `assert` is a single statement returning one scalar. A boolean result uses its
-  value; a number passes when non-zero; a text/`bytea` result accepts the common
+- `assert` is a single top-level `SELECT` returning exactly one column and one
+  row. A boolean result uses its value; a number passes when non-zero; a
+  text/`bytea` result accepts the common
   truthy spellings (`t`/`true`/`1`/`y`/`yes`, case-insensitive) and otherwise
   parses as a number. A `NULL` or unrecognized result **fails** the check — a
   precondition that cannot be shown to hold blocks the migration.
@@ -62,8 +63,10 @@ exactly the pre-migration state the migration is about to change.
 
 Checks are evaluated for the **up** direction only (they guard forward,
 typically destructive, migrations); a `-- +ptah check` in a down migration is
-ignored. A failing check produces a `CheckFailedError` that names the migration
-version and check, and `ptah migrations up` exits non-zero.
+ignored. A failing assertion produces a `CheckFailedError` that names the
+migration version and assertion. An Atlas `oneof` file in which every assertion
+is falsy produces a `CheckGroupFailedError` that names the file and assertion
+count. In both cases, `ptah migrations up` exits non-zero.
 
 A failed check writes **no revision row**. Checks run before the migration's
 bookkeeping row is created, so a blocked migration is recorded as never
@@ -88,33 +91,55 @@ The `assert` predicate is contracted to return one row with one column.
 - **More than one column** fails the check closed: the result cannot be
   interpreted, and a check that cannot be evaluated blocks the migration
   rather than passing it.
-- **More than one row** is judged on the first row returned. Order is only
-  defined if the predicate orders it, so prefer an aggregate
-  (`SELECT count(*) = 0 FROM ...`) or an `EXISTS` form over a bare multi-row
-  `SELECT`.
+- **More than one row** fails the check closed. Use an aggregate
+  (`SELECT count(*) = 0 FROM ...`) or an `EXISTS` form when the underlying query
+  can match multiple rows.
 
-Because the check is a separate read that precedes the body, it is not atomic
-with it: for a single migrator (the normal case) nothing else writes in between,
-but a concurrent session committing between the check and the body is not
-re-validated. Keep checks as guards against pre-existing state, not as
-serialization primitives, and keep each `assert` cheap — it runs bounded only by
-the caller's context, not the migration's `statement_timeout`.
+Checks use a dedicated physical session that Ptah discards afterward (in-memory
+SQLite retains its sole connection after rollback because that connection owns
+the database lifetime). On transaction-capable drivers they execute in a
+transaction that is always rolled back; ClickHouse executes directly on the
+disposable session because its driver does not implement transactions. Each
+assertion must be a top-level `SELECT` returning exactly one column and one row.
+PostgreSQL-family and MySQL-family drivers additionally enforce database-level
+read-only mode. SQL Server assertions cannot use `NEXT VALUE FOR`, whose
+sequence advance survives rollback.
 
-## Atlas txtar `checks.sql` sections
+The check still precedes the migration body and is not atomic with it: a
+concurrent session can commit between the check and the body. Keep checks as
+guards against pre-existing state, not as serialization primitives. Keep each
+`assert` cheap because it is bounded only by the caller's context, not the
+migration's `statement_timeout`.
 
-An Atlas txtar migration can carry a `checks.sql` section. Ptah enforces it
-through the same machinery as `-- +ptah check`, matching the licensed Atlas
-build's semantics (measured against Atlas CLI v1.2.4): each statement in the
-section is an assertion that must return a single truthy scalar, evaluated in
-section order before any `migration.sql` statement runs. A failing assertion
-aborts the migration with nothing applied; the error names the migration and
-the failing statement's position (`checks.sql#1`, `checks.sql#2`, ...).
+## Atlas txtar check files
+
+An Atlas txtar migration can carry the default `checks.sql` section and ordered
+named sections under `checks/*.sql`. Ptah enforces every check file through the
+same machinery as `-- +ptah check`, matching the licensed Atlas build's
+enforcement point (measured against Atlas CLI v1.2.4). Each statement is a
+top-level `SELECT` that must return exactly one column and one row containing a
+truthy scalar. Statements are split using the target database dialect and files
+run in archive order before any `migration.sql` statement.
+
+Every assertion in a check file must pass by default. A file-level
+`-- atlas:assert oneof` directive changes that file so at least one assertion
+must pass. Query errors and invalid result shapes still fail closed inside a
+`oneof` group; this directive does not turn invalid SQL into a passing check.
+An empty `oneof` file also fails because none of its zero assertions passed.
+A failure names the embedded file and assertion position, such as
+`checks/users.sql#2`. A `oneof` group where every assertion is falsy names the
+group itself.
 
 ```sql
 -- atlas:txtar
 
 -- checks.sql --
 SELECT NOT EXISTS (SELECT * FROM users);
+
+-- checks/roles.sql --
+-- atlas:assert oneof
+SELECT NOT EXISTS (SELECT * FROM roles);
+SELECT NOT EXISTS (SELECT * FROM user_roles);
 
 -- migration.sql --
 ALTER TABLE users ADD COLUMN email TEXT;
@@ -128,15 +153,28 @@ there.
 
 The `#N` suffix counts only non-empty statements, so comment-only spans and
 stray separators (`;;`) do not consume a number: the third assertion you can
-read in the section is always `checks.sql#3`.
+read in `checks/users.sql` is always `checks/users.sql#3`.
+
+Ptah preserves each assertion's SQL text when executing it. Dialect-aware
+lexing recognizes PostgreSQL `E'...'` escape strings, MySQL/MariaDB's required
+whitespace after a `--` comment marker, and MySQL/MariaDB executable comments
+and optimizer hints. These constructs therefore cannot hide a later assertion
+or be stripped into a query with different semantics.
+
+Before execution, Ptah expands executable-comment bodies into an effective SQL
+form and applies version guards against the connected server version. A numeric
+prefix is a version guard only when it contains at least five digits; shorter
+prefixes remain part of the executable SQL body. The effective form must still
+contain exactly one top-level `SELECT`, so an internal statement delimiter or a
+non-`SELECT` body fails closed before the query runs.
 
 ## Bypassing checks
 
 Checks are an additive, finer-grained safety gate that composes with the coarse
 `--check-destructive` / `--allow-destructive` gate. For an emergency override,
 `ptah migrations up --skip-checks` skips all pre-migration checks — both
-`-- +ptah check` directives and Atlas txtar `checks.sql` assertions — mirroring
-the `--allow-destructive` bypass. Use it only after review.
+`-- +ptah check` directives and all Atlas txtar check files — mirroring the
+`--allow-destructive` bypass. Use it only after review.
 
 ## Integrity
 

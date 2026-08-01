@@ -28,10 +28,11 @@ func stripComments(sql, dialect string) string {
 		return sql
 	}
 
-	lexr := lexer.NewLexerWithOptions(sql, lexer.Options{
-		BracketIdentifiers:  dialect == platform.SQLServer,
-		DisableHashComments: dialect == platform.SQLServer,
-	})
+	options := lexer.Options{}
+	if dialect != "" {
+		options = dialectLexerOptions(dialect)
+	}
+	lexr := lexer.NewLexerWithOptions(sql, options)
 	var result strings.Builder
 
 	for {
@@ -77,6 +78,26 @@ func dialectUsesBackslashEscapes(dialect string) bool {
 	}
 }
 
+func dialectLexerOptions(dialect string) lexer.Options {
+	options := lexer.Options{
+		StandardStrings:     true,
+		BackslashEscapes:    dialectUsesBackslashEscapes(dialect),
+		BracketIdentifiers:  dialect == platform.SQLServer,
+		DisableHashComments: dialect == platform.SQLServer,
+	}
+	switch dialect {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		options.PostgreSQLEscapeStrings = true
+	case platform.MySQL:
+		options.RequireWhitespaceAfterDashDash = true
+		options.ExecutableComments = lexer.ExecutableCommentsMySQL
+	case platform.MariaDB:
+		options.RequireWhitespaceAfterDashDash = true
+		options.ExecutableComments = lexer.ExecutableCommentsMariaDB
+	}
+	return options
+}
+
 func splitSQLStatements(sql string, dialect string) []string {
 	if strings.TrimSpace(sql) == "" {
 		return []string{}
@@ -87,12 +108,8 @@ func splitSQLStatements(sql string, dialect string) []string {
 	// cannot leak out and be mis-split into an extra statement. Backslash
 	// escapes are only honored for the dialects that actually process them;
 	// the no-dialect path stays PostgreSQL-safe (backslash is literal).
-	lexr := lexer.NewLexerWithOptions(sql, lexer.Options{
-		StandardStrings:     true,
-		BackslashEscapes:    dialectUsesBackslashEscapes(dialect),
-		BracketIdentifiers:  dialect == platform.SQLServer,
-		DisableHashComments: dialect == platform.SQLServer,
-	})
+	options := dialectLexerOptions(dialect)
+	lexr := lexer.NewLexerWithOptions(sql, options)
 	var statements []string
 	var currentStatement strings.Builder
 	state := statementSplitState{dialect: dialect}

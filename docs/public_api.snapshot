@@ -4970,6 +4970,7 @@ func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.D
 func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, ...) ([]map[string]any, error)
 type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
+type IsolatedQueryer interface{ ... }
 
 ### github.com/stokaro/ptah/dbschema.DatabaseConnection
 
@@ -4994,9 +4995,23 @@ func (dc *DatabaseConnection) Reader() types.SchemaReader
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
+func (dc *DatabaseConnection) WithIsolatedQuerySession(ctx context.Context, opts *sql.TxOptions, use func(IsolatedQueryer) error) (resultErr error)
 func (dc *DatabaseConnection) WithSession(ctx context.Context, use func(*DatabaseConnection) error) (resultErr error)
 func (dc *DatabaseConnection) WithUntrustedSQLSession(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) Writer() types.SchemaExecutor
+
+### github.com/stokaro/ptah/dbschema.IsolatedQueryer
+
+package dbschema // import "github.com/stokaro/ptah/dbschema"
+
+type IsolatedQueryer interface {
+    QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+    IsolatedQueryer is the query-only surface exposed inside an isolated
+    physical database session. It deliberately omits transaction control
+    and schema writers so the callback cannot commit or acquire an auxiliary
+    connection through Ptah.
+
 
 ## github.com/stokaro/ptah/dbschema/types
 
@@ -6616,8 +6631,9 @@ type AtlasRevisionType uint
 type AtlasTemplateData struct{ ... }
 type BaselineOptions struct{ ... }
 type Check struct{ ... }
-    func ParseChecks(sql string) ([]Check, error)
+    func ParseChecks(source, dialect string) ([]Check, error)
 type CheckFailedError struct{ ... }
+type CheckGroupFailedError struct{ ... }
 type CheckpointRollbackError struct{ ... }
 type ChecksumMismatchError struct{ ... }
 type DirtyMigrationError struct{ ... }
@@ -6786,7 +6802,7 @@ type Check struct {
     before the migration body runs; Name labels the check in error output;
     OnFail selects the failure behavior.
 
-func ParseChecks(sql string) ([]Check, error)
+func ParseChecks(source, dialect string) ([]Check, error)
 
 ### github.com/stokaro/ptah/migration/migrator.CheckFailedError
 
@@ -6807,6 +6823,23 @@ type CheckFailedError struct {
 
 func (e *CheckFailedError) Error() string
 func (e *CheckFailedError) Unwrap() error
+
+### github.com/stokaro/ptah/migration/migrator.CheckGroupFailedError
+
+package migrator // import "github.com/stokaro/ptah/migration/migrator"
+
+type CheckGroupFailedError struct {
+    Version    int64
+    Name       string
+    Assertions int
+}
+    CheckGroupFailedError reports an Atlas oneof check file in which no
+    assertion returned a truthy result, including an empty group. Individual
+    assertion execution errors and invalid result shapes remain CheckFailedError
+    values because they identify the exact SQL statement that made the group
+    unsafe to accept.
+
+func (e *CheckGroupFailedError) Error() string
 
 ### github.com/stokaro/ptah/migration/migrator.CheckpointRollbackError
 

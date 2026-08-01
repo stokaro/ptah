@@ -98,12 +98,29 @@ DELETE FROM users WHERE id = 1;
 
 For Atlas txtar migrations, Ptah executes only the `migration.sql` section for
 `migrations up` and only the `down.sql` section for `migrations down`. A
-`checks.sql` section is a pre-migration gate, matching Atlas Pro semantics:
+`checks.sql` and `checks/*.sql` sections are pre-migration gates, matching
+Atlas Pro semantics:
 
-- Each statement is an assertion that must return a single truthy scalar.
+- Each statement must be a top-level `SELECT` that returns exactly one column
+  and one row containing a truthy scalar.
+- Assertions run on a dedicated physical session that Ptah discards afterward.
+  Transaction-capable drivers always roll back; ClickHouse uses the disposable
+  session directly because its driver does not implement transactions.
+  PostgreSQL-family and MySQL-family drivers also request database-enforced
+  read-only mode.
 - A failing assertion aborts the migration before any `migration.sql`
   statement runs, through the same machinery as `-- +ptah check` directives
   (see `docs/pre-migration-checks.md`).
+- Assertions in one check file use all-of semantics by default. A file-level
+  `-- atlas:assert oneof` directive requires at least one assertion in that
+  file to pass; an empty `oneof` file fails closed.
+- Assertion SQL is preserved through execution. Dialect-aware splitting handles
+  PostgreSQL `E'...'` strings and MySQL/MariaDB comment boundaries and active
+  block comments without changing query semantics. Numeric prefixes shorter
+  than five digits remain executable SQL rather than version guards.
+- Executable-comment bodies are expanded for validation, and version guards use
+  the connected server version. The effective SQL must remain one top-level
+  `SELECT`; hidden delimiters and non-`SELECT` effective bodies fail closed.
 - `--skip-checks` on `migrations up` bypasses txtar checks too, and
   `--tx-mode all` refuses checked files exactly as it refuses
   `-- +ptah check` files.
@@ -315,7 +332,7 @@ pending and out of order.
 - **`WithStatementInterceptor(interceptor)`**: Lets an external executor take over selected statements
 - **`WithStatementValidator(validator)`**: Validates every statement before the migration executes its first statement
 - **`WithStatementObserver(observer)`**: Reports each statement after successful execution without replacing the execution path
-- **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout or Atlas's `atlas_schema_revisions` layout
+- **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout and bookkeeping semantics or Atlas's `atlas_schema_revisions` layout and Atlas-compatible bookkeeping semantics
 - **`Baseline(ctx, version)` / `BaselineWithOptions(ctx, opts)`**: Records provider migrations without executing their SQL bodies; Atlas metadata records only the exact baseline revision
 - **`SetAtlasRevision(ctx, version)`**: Moves Atlas metadata to an exact version and returns version-and-description `AtlasRevisionChange` entries in an `AtlasRevisionSetResult`; it preserves clean rows through the target, adds missing manually-set rows, converts dirty rows to the combined applied and manually-set type without discarding diagnostics, and removes rows above it
 - **`GetMigrationStatusSnapshot(ctx)`**: Returns migration status and the exact revision rows used to derive it from one metadata query

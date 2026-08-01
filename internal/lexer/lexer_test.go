@@ -835,6 +835,15 @@ func TestScanStringStandard(t *testing.T) {
 			want:  []string{`'a\'b'`},
 		},
 		{
+			name: "postgres escape string enables backslash escapes locally",
+			opts: lexer.Options{
+				StandardStrings:         true,
+				PostgreSQLEscapeStrings: true,
+			},
+			input: `SELECT E'it\'s; safe' FROM t`,
+			want:  []string{`E'it\'s; safe'`},
+		},
+		{
 			name:  "mysql doubled backslash then doubled quote is one literal",
 			opts:  lexer.Options{StandardStrings: true, BackslashEscapes: true},
 			input: `SELECT '\\''' FROM t`,
@@ -847,6 +856,56 @@ func TestScanStringStandard(t *testing.T) {
 			c := qt.New(t)
 			got := stringTokenValues(lexer.NewLexerWithOptions(tt.input, tt.opts))
 			c.Assert(got, qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+func TestLexer_NextToken_MySQLDashDashRequiresWhitespace(t *testing.T) {
+	c := qt.New(t)
+	l := lexer.NewLexerWithOptions("--1", lexer.Options{RequireWhitespaceAfterDashDash: true})
+
+	c.Assert(l.NextToken(), qt.DeepEquals, lexer.Token{Type: lexer.TokenOperator, Value: "-", Start: 0, End: 1})
+	c.Assert(l.NextToken(), qt.DeepEquals, lexer.Token{Type: lexer.TokenOperator, Value: "-", Start: 1, End: 2})
+	c.Assert(l.NextToken(), qt.DeepEquals, lexer.Token{Type: lexer.TokenIdentifier, Value: "1", Start: 2, End: 3})
+	c.Assert(l.NextToken().Type, qt.Equals, lexer.TokenEOF)
+}
+
+func TestLexer_NextToken_MySQLDashDashWithWhitespaceIsComment(t *testing.T) {
+	c := qt.New(t)
+	l := lexer.NewLexerWithOptions("-- comment", lexer.Options{RequireWhitespaceAfterDashDash: true})
+
+	c.Assert(l.NextToken(), qt.DeepEquals, lexer.Token{Type: lexer.TokenComment, Value: "-- comment", Start: 0, End: 10})
+	c.Assert(l.NextToken().Type, qt.Equals, lexer.TokenEOF)
+}
+
+func TestLexer_NextToken_ExecutableCommentStyles(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name  string
+		style lexer.ExecutableCommentStyle
+		input string
+		want  lexer.TokenType
+	}{
+		{name: "MySQL executable comment", style: lexer.ExecutableCommentsMySQL, input: "/*! + 1 */", want: lexer.TokenUnknown},
+		{name: "MySQL versioned executable comment", style: lexer.ExecutableCommentsMySQL, input: "/*!80000 + 1 */", want: lexer.TokenUnknown},
+		{name: "MySQL short malformed guard stays semantic", style: lexer.ExecutableCommentsMySQL, input: "/*!1234 + 1 */", want: lexer.TokenUnknown},
+		{name: "MySQL ignores MariaDB executable comment", style: lexer.ExecutableCommentsMySQL, input: "/*M! + 1 */", want: lexer.TokenComment},
+		{name: "MySQL optimizer hint remains a comment token", style: lexer.ExecutableCommentsMySQL, input: "/*+ MAX_EXECUTION_TIME(10) */", want: lexer.TokenComment},
+		{name: "MariaDB executable comment", style: lexer.ExecutableCommentsMariaDB, input: "/*M! + 1 */", want: lexer.TokenUnknown},
+		{name: "MariaDB short native guard stays semantic", style: lexer.ExecutableCommentsMariaDB, input: "/*M!1234 + 1 */", want: lexer.TokenUnknown},
+		{name: "MariaDB unversioned MySQL comment", style: lexer.ExecutableCommentsMariaDB, input: "/*! + 1 */", want: lexer.TokenUnknown},
+		{name: "MariaDB short MySQL guard stays semantic", style: lexer.ExecutableCommentsMariaDB, input: "/*!1234 + 1 */", want: lexer.TokenUnknown},
+		{name: "MariaDB pre-50700 MySQL comment", style: lexer.ExecutableCommentsMariaDB, input: "/*!50699 + 1 */", want: lexer.TokenUnknown},
+		{name: "MariaDB ignores 50700 MySQL comment", style: lexer.ExecutableCommentsMariaDB, input: "/*!50700 + 1 */", want: lexer.TokenComment},
+		{name: "MariaDB ignores 99999 MySQL comment", style: lexer.ExecutableCommentsMariaDB, input: "/*!99999 + 1 */", want: lexer.TokenComment},
+		{name: "MariaDB post-99999 MySQL comment", style: lexer.ExecutableCommentsMariaDB, input: "/*!100000 + 1 */", want: lexer.TokenUnknown},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			l := lexer.NewLexerWithOptions(test.input, lexer.Options{ExecutableComments: test.style})
+			c.Assert(l.NextToken().Type, qt.Equals, test.want)
+			c.Assert(l.NextToken().Type, qt.Equals, lexer.TokenEOF)
 		})
 	}
 }

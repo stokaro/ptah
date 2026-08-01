@@ -58,6 +58,19 @@ func splitSQLStatementsForDialect(sql, dialect string) []string {
 	return filtered
 }
 
+func splitSQLStatementsPreservingCommentsForDialect(sql, dialect string) []string {
+	statements := sqlutil.SplitSQLStatementsForDialect(sql, dialect)
+	filtered := statements[:0]
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		withoutComments := strings.TrimSpace(sqlutil.StripCommentsForDialect(stmt, dialect))
+		if stmt != "" && withoutComments != "" {
+			filtered = append(filtered, stmt)
+		}
+	}
+	return filtered
+}
+
 // StatementInterceptor lets an external executor take over individual
 // migration statements — for example, routing ALTER TABLE statements through
 // an online-DDL tool (gh-ost, pt-online-schema-change) instead of executing
@@ -133,9 +146,9 @@ type sqlMigrationFile struct {
 	sql           string
 	timeouts      MigrationTimeouts
 	noTransaction bool
-	// checks are Atlas txtar checks.sql assertions that gate the migration
-	// body, enforced through the same machinery as `-- +ptah check`.
-	checks []Check
+	// checkFiles are the raw Atlas txtar checks.sql and checks/*.sql sections.
+	// They remain unsplit until execution, when the target dialect is known.
+	checkFiles []atlasTxtarCheckFile
 }
 
 type atlasSQLMigrationFile struct {
@@ -147,8 +160,13 @@ type atlasSQLMigrationFile struct {
 type atlasTxtarSQL struct {
 	migrationSQL string
 	downSQL      string
-	checksSQL    string
+	checkFiles   []atlasTxtarCheckFile
 	hasDown      bool
+}
+
+type atlasTxtarCheckFile struct {
+	name string
+	sql  string
 }
 
 func (f sqlMigrationFile) executionMode() migrationExecutionMode {
@@ -314,7 +332,7 @@ func atlasSQLMigrationFileFromSQL(filename, sql string, hooks statementExecution
 	if err != nil {
 		return atlasSQLMigrationFile{}, true, err
 	}
-	up.checks = parseAtlasTxtarChecks(parsed.checksSQL)
+	up.checkFiles = parsed.checkFiles
 	atlasMigrationFile := atlasSQLMigrationFile{up: up}
 	if parsed.hasDown {
 		down, err := migrationFuncFromSQLStringWithMetadata(filename+"#"+atlasTxtarDownSection, parsed.downSQL, hooks)
@@ -353,34 +371,38 @@ func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
 	}
 
 	sections := make(map[string]*strings.Builder)
+	var checkSectionNames []string
 	var currentSection string
 	sawSection := false
 	for _, line := range strings.SplitAfter(sql, "\n") {
 		section, isMarker := parseAtlasTxtarSectionMarker(line)
-		if isMarker {
-			if isAtlasTxtarSQLSection(section) {
-				if _, exists := sections[section]; exists {
-					return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: duplicate %s section", filename, section)
+		if !isMarker {
+			if !sawSection {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+					continue
 				}
-				sections[section] = &strings.Builder{}
-				currentSection = section
-			} else {
-				currentSection = ""
+				return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: SQL appears before the first txtar section", filename)
 			}
-			sawSection = true
+
+			if builder := sections[currentSection]; builder != nil {
+				builder.WriteString(line)
+			}
 			continue
 		}
 
-		if !sawSection {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "--") {
-				continue
-			}
-			return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: SQL appears before the first txtar section", filename)
+		sawSection = true
+		currentSection = ""
+		if !isAtlasTxtarSQLSection(section) && !isAtlasTxtarCheckSection(section) {
+			continue
 		}
-
-		if builder := sections[currentSection]; builder != nil {
-			builder.WriteString(line)
+		if _, exists := sections[section]; exists {
+			return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: duplicate %s section", filename, section)
+		}
+		sections[section] = &strings.Builder{}
+		currentSection = section
+		if isAtlasTxtarCheckSection(section) {
+			checkSectionNames = append(checkSectionNames, section)
 		}
 	}
 
@@ -389,8 +411,11 @@ func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
 		return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: missing migration.sql section", filename)
 	}
 	parsed := atlasTxtarSQL{migrationSQL: migrationSection.String()}
-	if checksSection := sections[atlasTxtarChecksSection]; checksSection != nil {
-		parsed.checksSQL = checksSection.String()
+	for _, section := range checkSectionNames {
+		parsed.checkFiles = append(parsed.checkFiles, atlasTxtarCheckFile{
+			name: section,
+			sql:  sections[section].String(),
+		})
 	}
 	if downSection := sections[atlasTxtarDownSection]; downSection != nil {
 		parsed.downSQL = downSection.String()
@@ -399,17 +424,15 @@ func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
 	return parsed, true, nil
 }
 
-// parseAtlasTxtarChecks maps a txtar checks.sql section onto Ptah's
-// pre-migration check machinery: each statement is an assertion that must
-// return a single truthy scalar before the migration body runs, matching
-// Atlas's enforcement of the section as a pre-migration gate. Checks are named
-// checks.sql#N by position so a failure names the exact assertion.
+// parseAtlasTxtarChecks maps one txtar check file onto Ptah's pre-migration
+// check machinery. Each statement is named file#N by position so a failure
+// identifies both the embedded file and assertion.
 //
 // N counts only non-empty statements, so comment-only spans and stray
 // separators (`;;`) do not consume a number: the third assertion a reader can
-// see is always checks.sql#3, even when blank statements sit between them.
-func parseAtlasTxtarChecks(checksSQL string) []Check {
-	statements := SplitSQLStatements(checksSQL)
+// see is always file#3, even when blank statements sit between them.
+func parseAtlasTxtarChecks(filename, checksSQL, dialect string) []Check {
+	statements := splitSQLStatementsPreservingCommentsForDialect(checksSQL, dialect)
 	checks := make([]Check, 0, len(statements))
 	for _, stmt := range statements {
 		// Match parseCheckArgs: drop trailing terminators and whitespace so
@@ -420,7 +443,7 @@ func parseAtlasTxtarChecks(checksSQL string) []Check {
 			continue
 		}
 		checks = append(checks, Check{
-			Name:   fmt.Sprintf("%s#%d", atlasTxtarChecksSection, len(checks)+1),
+			Name:   fmt.Sprintf("%s#%d", filename, len(checks)+1),
 			Assert: stmt,
 			OnFail: OnFailAbort,
 		})
@@ -452,7 +475,15 @@ func parseAtlasTxtarSectionMarker(line string) (string, bool) {
 }
 
 func isAtlasTxtarSQLSection(section string) bool {
-	return section == atlasTxtarMigrationSection || section == atlasTxtarDownSection || section == atlasTxtarChecksSection
+	return section == atlasTxtarMigrationSection || section == atlasTxtarDownSection
+}
+
+func isAtlasTxtarCheckSection(section string) bool {
+	if section == atlasTxtarChecksSection {
+		return true
+	}
+	name, ok := strings.CutPrefix(section, "checks/")
+	return ok && name != "" && strings.HasSuffix(name, ".sql")
 }
 
 func looksAtlasTxtarFileSection(section string) bool {
@@ -491,10 +522,10 @@ type Migration struct {
 	// per-migration transaction. Execution uses the direction-specific fields.
 	NoTransaction                bool
 	directionalNoTransactionMode bool
-	// atlasChecks are pre-migration assertions parsed from an Atlas txtar
-	// checks.sql section. They run through the same enforcement machinery as
-	// `-- +ptah check` directives, before any checks declared in UpSQL.
-	atlasChecks []Check
+	// atlasCheckFiles are raw Atlas txtar checks.sql and checks/*.sql sections.
+	// They are parsed with the live connection dialect before `-- +ptah check`
+	// directives in UpSQL, preventing dialect-blind boundary decisions.
+	atlasCheckFiles []atlasTxtarCheckFile
 	// IsCheckpoint marks a checkpoint migration whose up body is the full
 	// cumulative schema at its version. On a fresh database the migrator
 	// bootstraps from the newest checkpoint and records all lower versions as

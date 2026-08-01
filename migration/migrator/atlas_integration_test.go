@@ -99,6 +99,89 @@ func TestAtlasRevisionMetadata_MySQLIntegration(t *testing.T) {
 	runAtlasRevisionMetadataIntegration(t, mysqlAtlasTestURL(t))
 }
 
+func TestAtlasDotMetadata_PostgresIntegration(t *testing.T) {
+	runAtlasDotMetadataIntegration(t, postgresTestURL(t))
+}
+
+func TestAtlasDotMetadata_MySQLIntegration(t *testing.T) {
+	runAtlasDotMetadataIntegration(t, mysqlAtlasTestURL(t))
+}
+
+func TestAtlasTxtarChecks_PostgresIntegration(t *testing.T) {
+	runAtlasTxtarChecksIntegration(t, postgresTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestAtlasTxtarChecks_PostgresSessionLockReleasedIntegration(t *testing.T) {
+	runAtlasTxtarChecksPostgresSessionLockIntegration(t, postgresTestURL(t))
+}
+
+func TestAtlasTxtarChecks_PostgresEscapeStringIntegration(t *testing.T) {
+	runAtlasTxtarChecksPostgresEscapeStringIntegration(t, postgresTestURL(t))
+}
+
+func TestAtlasTxtarChecks_MySQLIntegration(t *testing.T) {
+	runAtlasTxtarChecksIntegration(t, mysqlAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestAtlasTxtarChecks_MySQLSessionLockReleasedIntegration(t *testing.T) {
+	runAtlasTxtarChecksMySQLSessionLockIntegration(t, mysqlAtlasTestURL(t))
+}
+
+func TestAtlasTxtarChecks_MySQLCommentSemanticsIntegration(t *testing.T) {
+	runAtlasTxtarChecksMySQLCommentSemanticsIntegration(
+		t,
+		mysqlAtlasTestURL(t),
+		"/*M! SELECT 0 */ SELECT 1",
+	)
+}
+
+func TestAtlasTxtarChecks_MySQLExecutableCommentEscapeIntegration(t *testing.T) {
+	runAtlasTxtarChecksMySQLExecutableCommentEscapeIntegration(
+		t,
+		mysqlAtlasTestURL(t)+"?multiStatements=true",
+	)
+}
+
+func TestAtlasTxtarChecks_MySQLShortNumericPrefixRejectsNonSelectIntegration(t *testing.T) {
+	runAtlasTxtarChecksShortNumericPrefixRejectsNonSelectIntegration(t, mysqlAtlasTestURL(t))
+}
+
+func TestAtlasTxtarChecks_MariaDBIntegration(t *testing.T) {
+	runAtlasTxtarChecksIntegration(t, mariaDBAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestAtlasTxtarChecks_MariaDBCommentSemanticsIntegration(t *testing.T) {
+	runAtlasTxtarChecksMySQLCommentSemanticsIntegration(
+		t,
+		mariaDBAtlasTestURL(t),
+		"/*!50700 SELECT 0 */ SELECT 1",
+	)
+}
+
+func TestAtlasTxtarChecks_MariaDBShortNumericPrefixRejectsNonSelectIntegration(t *testing.T) {
+	runAtlasTxtarChecksShortNumericPrefixRejectsNonSelectIntegration(t, mariaDBAtlasTestURL(t))
+}
+
+func TestAtlasTxtarChecks_ClickHouseIntegration(t *testing.T) {
+	runAtlasTxtarChecksIntegration(t, clickHouseAtlasTestURL(t), migrator.RevisionTableFormatPtah)
+}
+
+func TestAtlasTxtarChecks_SQLServerIntegration(t *testing.T) {
+	runAtlasTxtarChecksIntegration(t, sqlServerAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestAtlasTxtarChecks_SQLServerSequenceDoesNotAdvanceIntegration(t *testing.T) {
+	runAtlasTxtarChecksSQLServerSequenceIntegration(t, sqlServerAtlasTestURL(t))
+}
+
+func TestAtlasTxtarChecks_CockroachDBIntegration(t *testing.T) {
+	runAtlasTxtarChecksIntegration(t, cockroachDBAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestAtlasTxtarChecks_YugabyteDBIntegration(t *testing.T) {
+	runAtlasTxtarChecksIntegration(t, yugabyteDBAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
 func TestAtlasRevisionMetadata_MariaDBIntegration(t *testing.T) {
 	runAtlasRevisionMetadataIntegration(t, mariaDBAtlasTestURL(t))
 }
@@ -856,6 +939,503 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 			OperatorVersion:   "Ptah",
 		},
 	})
+}
+
+func runAtlasDotMetadataIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+
+	fsys := fstest.MapFS{
+		"1_create_accounts.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+		"2_create_users.sql":    &fstest.MapFile{Data: []byte("SELECT 2;\n")},
+	}
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{Amount: 1}), qt.IsNil)
+
+	insertMetadata := sqlutil.Rebind(conn.Info().Dialect, `INSERT INTO atlas_schema_revisions
+(version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?)`)
+	_, err = conn.ExecContext(
+		ctx,
+		insertMetadata,
+		".atlas_cloud_identifier",
+		"metadata-id",
+		2,
+		0,
+		0,
+		time.Now(),
+		int64(0),
+		"",
+		"Atlas CLI v1.2.4",
+	)
+	c.Assert(err, qt.IsNil)
+
+	current, err := mig.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(current, qt.Equals, int64(1))
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(status.PendingMigrations, qt.DeepEquals, []int64{2})
+
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+	current, err = mig.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(current, qt.Equals, int64(2))
+
+	result, err := mig.SetAtlasRevision(ctx, 1)
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue819RevisionVersions(result.Removed), qt.DeepEquals, []int64{2})
+	current, err = mig.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(current, qt.Equals, int64(1))
+
+	var (
+		description    string
+		revisionType   int
+		applied        int
+		total          int
+		errorValue     sql.NullString
+		errorStatement sql.NullString
+		hash           string
+		partialHashes  sql.NullString
+		operator       string
+	)
+	err = conn.QueryRowContext(
+		ctx,
+		`SELECT description, type, applied, total, error, error_stmt, hash, partial_hashes, operator_version
+FROM atlas_schema_revisions WHERE version = '.atlas_cloud_identifier'`,
+	).Scan(
+		&description,
+		&revisionType,
+		&applied,
+		&total,
+		&errorValue,
+		&errorStatement,
+		&hash,
+		&partialHashes,
+		&operator,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(description, qt.Equals, "metadata-id")
+	c.Assert(revisionType, qt.Equals, 2)
+	c.Assert(applied, qt.Equals, 0)
+	c.Assert(total, qt.Equals, 0)
+	c.Assert(errorValue.Valid, qt.IsFalse)
+	c.Assert(errorStatement.Valid, qt.IsFalse)
+	c.Assert(hash, qt.Equals, "")
+	c.Assert(partialHashes.Valid, qt.IsFalse)
+	c.Assert(operator, qt.Equals, "Atlas CLI v1.2.4")
+}
+
+func runAtlasTxtarChecksIntegration(t *testing.T, dbURL string, revisionFormat migrator.RevisionTableFormat) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_checked.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/base.sql --
+SELECT 1;
+
+-- checks/alternatives.sql --
+-- atlas:assert oneof
+SELECT 0;
+SELECT 1;
+
+-- migration.sql --
+SELECT 1;
+`)},
+			"2_invalid_cardinality.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/cardinality.sql --
+SELECT 1 UNION ALL SELECT 1;
+
+-- migration.sql --
+SELECT * FROM ptah_check_body_must_not_run;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(revisionFormat)
+
+	c.Assert(mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{TargetVersion: 1}), qt.IsNil)
+	current, err := mig.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(current, qt.Equals, int64(1))
+
+	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, `.*check assertion must return exactly one row, got more than 1.*`)
+	current, err = mig.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(current, qt.Equals, int64(1))
+}
+
+func runAtlasTxtarChecksPostgresSessionLockIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+	const lockID = int64(964227)
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_session_lock.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/session.sql --
+SELECT pg_try_advisory_lock(964227);
+
+-- migration.sql --
+SELECT 1;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	var acquired bool
+	err = conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", lockID).Scan(&acquired)
+	c.Assert(err, qt.IsNil)
+	c.Assert(acquired, qt.IsTrue)
+	var released bool
+	err = conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", lockID).Scan(&released)
+	c.Assert(err, qt.IsNil)
+	c.Assert(released, qt.IsTrue)
+}
+
+func runAtlasTxtarChecksPostgresEscapeStringIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_escape_string.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/escape.sql --
+SELECT E'it\'s; one literal' = E'it\'s; one literal';
+
+-- migration.sql --
+SELECT 1;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+}
+
+func runAtlasTxtarChecksMySQLCommentSemanticsIntegration(
+	t *testing.T,
+	dbURL string,
+	ignoredCommentAssertion string,
+) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_whole_executable_comment.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/executable.sql --
+/*! SELECT 1 */;
+
+-- migration.sql --
+SELECT 1;
+`)},
+			"2_ignored_dialect_comment.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/ignored.sql --
+` + ignoredCommentAssertion + `;
+
+-- migration.sql --
+SELECT 1;
+`)},
+			"3_future_version_guard.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/future.sql --
+/*!99999 DELETE FROM users */ SELECT 1;
+
+-- migration.sql --
+SELECT 1;
+`)},
+			"4_executable_expression.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/executable.sql --
+SELECT 0 /*! + 1 */;
+
+-- migration.sql --
+SELECT 1;
+`)},
+			"5_short_numeric_prefix.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/numeric.sql --
+SELECT /*!1234 + 1 */ = 1235;
+
+-- migration.sql --
+SELECT 1;
+`)},
+			"6_dash_dash_arithmetic.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/arithmetic.sql --
+SELECT -1--1;
+
+-- migration.sql --
+SELECT 1;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+
+	c.Assert(mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{TargetVersion: 5}), qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, `.*checks/arithmetic.sql#1.*was not satisfied.*`)
+	current, err := mig.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(current, qt.Equals, int64(5))
+}
+
+func runAtlasTxtarChecksMySQLExecutableCommentEscapeIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+	_, err = conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_check_comment_escape")
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, dropErr := conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_check_comment_escape")
+		c.Check(dropErr, qt.IsNil)
+	}()
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_hidden_statements.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/escape.sql --
+/*! SELECT 1; COMMIT; CREATE TABLE ptah_check_comment_escape (id INT) */;
+
+-- migration.sql --
+SELECT 1;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(
+		mig.MigrateUp(ctx),
+		qt.ErrorMatches,
+		`.*check assertion must be one read-only SELECT statement, got 3 statements.*`,
+	)
+
+	var created int
+	err = conn.QueryRowContext(
+		ctx,
+		"SELECT count(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'ptah_check_comment_escape'",
+	).Scan(&created)
+	c.Assert(err, qt.IsNil)
+	c.Assert(created, qt.Equals, 0)
+}
+
+func runAtlasTxtarChecksShortNumericPrefixRejectsNonSelectIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+	_, err = conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_check_numeric_body")
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, dropErr := conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_check_numeric_body")
+		c.Check(dropErr, qt.IsNil)
+	}()
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_numeric_body.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/numeric.sql --
+/*!1234 SELECT 1 */;
+
+-- migration.sql --
+CREATE TABLE ptah_check_numeric_body (id INT);
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(
+		mig.MigrateUp(ctx),
+		qt.ErrorMatches,
+		`.*check assertion must be a read-only SELECT statement.*`,
+	)
+
+	var created int
+	err = conn.QueryRowContext(
+		ctx,
+		"SELECT count(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'ptah_check_numeric_body'",
+	).Scan(&created)
+	c.Assert(err, qt.IsNil)
+	c.Assert(created, qt.Equals, 0)
+}
+
+func runAtlasTxtarChecksMySQLSessionLockIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+	const lockName = "ptah_check_lock_964227"
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_session_lock.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/session.sql --
+SELECT GET_LOCK('ptah_check_lock_964227', 0);
+
+-- migration.sql --
+SELECT 1;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	var free int
+	err = conn.QueryRowContext(ctx, "SELECT IS_FREE_LOCK(?)", lockName).Scan(&free)
+	c.Assert(err, qt.IsNil)
+	c.Assert(free, qt.Equals, 1)
+}
+
+func runAtlasTxtarChecksSQLServerSequenceIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+	_, err = conn.ExecContext(ctx, "DROP SEQUENCE IF EXISTS dbo.ptah_check_sequence")
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, dropErr := conn.ExecContext(ctx, "DROP SEQUENCE IF EXISTS dbo.ptah_check_sequence")
+		c.Check(dropErr, qt.IsNil)
+	}()
+	_, err = conn.ExecContext(ctx, "CREATE SEQUENCE dbo.ptah_check_sequence AS BIGINT START WITH 41 INCREMENT BY 1")
+	c.Assert(err, qt.IsNil)
+
+	var before any
+	err = conn.QueryRowContext(
+		ctx,
+		"SELECT current_value FROM sys.sequences WHERE name = 'ptah_check_sequence'",
+	).Scan(&before)
+	c.Assert(err, qt.IsNil)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_checked.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks.sql --
+SELECT NEXT VALUE FOR dbo.ptah_check_sequence;
+
+-- migration.sql --
+SELECT 1;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*must not advance a SQL Server sequence with NEXT VALUE FOR.*`)
+
+	var after any
+	err = conn.QueryRowContext(
+		ctx,
+		"SELECT current_value FROM sys.sequences WHERE name = 'ptah_check_sequence'",
+	).Scan(&after)
+	c.Assert(err, qt.IsNil)
+	c.Assert(after, qt.DeepEquals, before)
+
+	current, err := mig.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(current, qt.Equals, int64(0))
 }
 
 type issue819Revision struct {

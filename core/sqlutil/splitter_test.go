@@ -187,6 +187,12 @@ func TestSplitSQLStatementsForDialect_StringEscaping(t *testing.T) {
 			expected: []string{`INSERT INTO t (n) VALUES ('O''Brien')`, "SELECT 1"},
 		},
 		{
+			name:     "postgres escape string keeps semicolon inside literal",
+			dialect:  "postgres",
+			input:    `SELECT E'it\'s; safe'; SELECT 2;`,
+			expected: []string{`SELECT E'it\'s; safe'`, "SELECT 2"},
+		},
+		{
 			// MySQL encoding of the same attack value \'; DROP ... -- is a
 			// doubled backslash then a doubled quote; the embedded semicolons
 			// stay inside the single literal.
@@ -219,6 +225,45 @@ func TestSplitSQLStatementsForDialect_StringEscaping(t *testing.T) {
 			c.Assert(result, qt.DeepEquals, tt.expected)
 		})
 	}
+}
+
+func TestStripCommentsForDialect_MySQLPreservesSemanticSyntax(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("dash dash without whitespace is arithmetic", func(c *qt.C) {
+		got := sqlutil.StripCommentsForDialect("SELECT -1--1", "mysql")
+		c.Assert(got, qt.Equals, "SELECT -1--1")
+	})
+
+	c.Run("executable comment", func(c *qt.C) {
+		got := sqlutil.StripCommentsForDialect("SELECT 0 /*! + 1 */", "mysql")
+		c.Assert(got, qt.Equals, "SELECT 0 /*! + 1 */")
+	})
+
+	c.Run("MariaDB executable comment", func(c *qt.C) {
+		got := sqlutil.StripCommentsForDialect("SELECT 0 /*M! + 1 */", "mariadb")
+		c.Assert(got, qt.Equals, "SELECT 0 /*M! + 1 */")
+	})
+
+	c.Run("MySQL removes MariaDB executable comment", func(c *qt.C) {
+		got := sqlutil.StripCommentsForDialect("/*M! SELECT 0 */ SELECT 1", "mysql")
+		c.Assert(got, qt.Equals, " SELECT 1")
+	})
+
+	c.Run("MariaDB removes ignored MySQL 50700 comment", func(c *qt.C) {
+		got := sqlutil.StripCommentsForDialect("/*!50700 SELECT 0 */ SELECT 1", "mariadb")
+		c.Assert(got, qt.Equals, " SELECT 1")
+	})
+
+	c.Run("optimizer hint remains non-executable comment syntax", func(c *qt.C) {
+		got := sqlutil.StripCommentsForDialect("SELECT /*+ MAX_EXECUTION_TIME(10) */ 1", "mysql")
+		c.Assert(got, qt.Equals, "SELECT  1")
+	})
+
+	c.Run("ordinary comments are removed", func(c *qt.C) {
+		got := sqlutil.StripCommentsForDialect("SELECT 1 -- comment\n", "mysql")
+		c.Assert(got, qt.Equals, "SELECT 1 \n")
+	})
 }
 
 func TestSplitSQLStatements_PostgreSQLDollarQuoted(t *testing.T) {

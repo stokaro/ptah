@@ -151,27 +151,43 @@ func (m *Migrator) WithObserver(observer Observer) *Migrator {
 	return &tmp
 }
 
-// WithSkipChecks controls whether pre-migration `-- +ptah check` assertions are
-// evaluated before applying up migrations. The default (false) enforces checks;
-// pass true as an explicit emergency bypass, mirroring --allow-destructive.
+// WithSkipChecks controls whether pre-migration `-- +ptah check` assertions and
+// Atlas txtar checks.sql and checks/*.sql sections are evaluated before
+// applying up migrations. The default (false) enforces checks; pass true as an
+// explicit emergency bypass, mirroring --allow-destructive.
 func (m *Migrator) WithSkipChecks(skip bool) *Migrator {
 	tmp := *m
 	tmp.skipChecks = skip
 	return &tmp
 }
 
-// migrationChecks collects a migration's pre-migration checks: Atlas txtar
-// checks.sql assertions first (in section order), then `-- +ptah check`
-// directives parsed from the up SQL.
-func migrationChecks(migration *Migration) ([]Check, error) {
-	parsed, err := ParseChecks(migration.UpSQL)
+// migrationCheckGroups collects a migration's pre-migration checks: Atlas
+// txtar check files first (in archive order), then `-- +ptah check` directives
+// parsed from the up SQL.
+func (m *Migrator) migrationCheckGroups(migration *Migration) ([]checkGroup, error) {
+	dialect := m.connectionDialect()
+	groups := make([]checkGroup, 0, len(migration.atlasCheckFiles)+1)
+	for _, file := range migration.atlasCheckFiles {
+		mode := atlasCheckFileMode(file.sql, dialect)
+		checks := parseAtlasTxtarChecks(file.name, file.sql, dialect)
+		if len(checks) == 0 && mode != checkGroupOneOf {
+			continue
+		}
+		groups = append(groups, checkGroup{
+			name:   file.name,
+			checks: checks,
+			mode:   mode,
+		})
+	}
+
+	parsed, err := ParseChecks(migration.UpSQL, dialect)
 	if err != nil {
 		return nil, fmt.Errorf("migration %d has invalid pre-migration check directives: %w", migration.Version, err)
 	}
-	if len(migration.atlasChecks) == 0 {
-		return parsed, nil
+	if len(parsed) > 0 {
+		groups = append(groups, checkGroup{checks: parsed, mode: checkGroupAll})
 	}
-	return append(slices.Clone(migration.atlasChecks), parsed...), nil
+	return groups, nil
 }
 
 // runMigrationChecks evaluates the pre-migration assertion checks embedded in a
@@ -183,11 +199,12 @@ func (m *Migrator) runMigrationChecks(ctx context.Context, conn *dbschema.Databa
 	if m.skipChecks {
 		return nil
 	}
-	checks, err := migrationChecks(migration)
+	groups, err := m.migrationCheckGroups(migration)
 	if err != nil {
 		return err
 	}
-	return runChecks(ctx, conn, migration.Version, checks)
+	info := conn.Info()
+	return runCheckGroups(ctx, conn, info.Dialect, info.Version, migration.Version, groups)
 }
 
 // rejectChecksUnderTxModeAll refuses a migration that declares pre-migration
@@ -200,11 +217,11 @@ func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration) error {
 	if m.skipChecks {
 		return nil
 	}
-	checks, err := migrationChecks(migration)
+	groups, err := m.migrationCheckGroups(migration)
 	if err != nil {
 		return err
 	}
-	if len(checks) > 0 {
+	if len(groups) > 0 {
 		return fmt.Errorf("migration %d declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode", migration.Version)
 	}
 	return nil
@@ -241,8 +258,10 @@ func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	return &tmp
 }
 
-// WithRevisionTableFormat sets the database table layout used for migration
-// revision metadata.
+// WithRevisionTableFormat sets the database table layout and the compatibility
+// bookkeeping semantics used for migration revisions. Atlas format reproduces
+// Atlas's revision-row lifecycle, including down-failure behavior; Ptah format
+// keeps Ptah's richer dirty-state bookkeeping.
 func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator {
 	tmp := *m
 	tmp.revisionTableFormat = format
