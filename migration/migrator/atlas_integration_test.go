@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -112,6 +113,233 @@ func TestAtlasRevisionMetadata_CockroachDBIntegration(t *testing.T) {
 
 func TestAtlasRevisionMetadata_YugabyteDBIntegration(t *testing.T) {
 	runAtlasRevisionMetadataIntegration(t, yugabyteDBAtlasTestURL(t))
+}
+
+func TestDryRunRevisionState_PostgresIntegration(t *testing.T) {
+	runDryRunRevisionStateIntegration(t, postgresTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestDryRunRevisionState_PostgresIntegration_SearchPath(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	rawURL := postgresTestURL(t)
+	admin, err := dbschema.ConnectToDatabase(ctx, rawURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(admin)
+	_, _ = admin.ExecContext(ctx, "DROP SCHEMA IF EXISTS ptah_issue_937_search_path CASCADE")
+	_, err = admin.ExecContext(ctx, "CREATE SCHEMA ptah_issue_937_search_path")
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS ptah_issue_937_search_path CASCADE")
+	}()
+
+	parsed, err := url.Parse(rawURL)
+	c.Assert(err, qt.IsNil)
+	query := parsed.Query()
+	query.Set("search_path", "ptah_issue_937_search_path")
+	parsed.RawQuery = query.Encode()
+	conn, err := dbschema.ConnectToDatabase(ctx, parsed.String())
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	fsys := fstest.MapFS{
+		"1_probe.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+	}
+	writer, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	writer = writer.WithRevisionTableFormat(migrator.RevisionTableFormatPtah)
+	c.Assert(writer.MigrateUp(ctx), qt.IsNil)
+	conn.SchemaWriter().SetDryRun(true)
+	reader, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	reader = reader.WithRevisionTableFormat(migrator.RevisionTableFormatPtah)
+
+	status, err := reader.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int64{1})
+	c.Assert(status.PendingMigrations, qt.HasLen, 0)
+}
+
+func TestDryRunRevisionState_PostgresIntegration_SearchPathIgnoresFallbackMetadata(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	rawURL := postgresTestURL(t)
+	admin, err := dbschema.ConnectToDatabase(ctx, rawURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(admin)
+	_, _ = admin.ExecContext(ctx, "DROP SCHEMA IF EXISTS ptah_issue_937_current CASCADE")
+	_, _ = admin.ExecContext(ctx, "DROP SCHEMA IF EXISTS ptah_issue_937_fallback CASCADE")
+	_, err = admin.ExecContext(ctx, "CREATE SCHEMA ptah_issue_937_current")
+	c.Assert(err, qt.IsNil)
+	_, err = admin.ExecContext(ctx, "CREATE SCHEMA ptah_issue_937_fallback")
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS ptah_issue_937_current CASCADE")
+		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS ptah_issue_937_fallback CASCADE")
+	}()
+
+	parsedFallback, err := url.Parse(rawURL)
+	c.Assert(err, qt.IsNil)
+	fallbackQuery := parsedFallback.Query()
+	fallbackQuery.Set("search_path", "ptah_issue_937_fallback")
+	parsedFallback.RawQuery = fallbackQuery.Encode()
+	fallbackConn, err := dbschema.ConnectToDatabase(ctx, parsedFallback.String())
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(fallbackConn)
+	fSys := fstest.MapFS{
+		"1_probe.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+	}
+	fallbackWriter, err := migrator.NewFSMigrator(
+		fallbackConn,
+		fSys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	fallbackWriter = fallbackWriter.WithRevisionTableFormat(migrator.RevisionTableFormatPtah)
+	c.Assert(fallbackWriter.MigrateUp(ctx), qt.IsNil)
+
+	parsedCurrent, err := url.Parse(rawURL)
+	c.Assert(err, qt.IsNil)
+	currentQuery := parsedCurrent.Query()
+	currentQuery.Set("search_path", "ptah_issue_937_current,ptah_issue_937_fallback")
+	parsedCurrent.RawQuery = currentQuery.Encode()
+	currentConn, err := dbschema.ConnectToDatabase(ctx, parsedCurrent.String())
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(currentConn)
+	currentConn.SchemaWriter().SetDryRun(true)
+	reader, err := migrator.NewFSMigrator(
+		currentConn,
+		fSys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	reader = reader.WithRevisionTableFormat(migrator.RevisionTableFormatPtah)
+
+	status, err := reader.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(0))
+	c.Assert(status.AppliedMigrations, qt.HasLen, 0)
+	c.Assert(status.PendingMigrations, qt.DeepEquals, []int64{1})
+}
+
+func TestDryRunRevisionState_PostgresIntegration_ExplicitSchema(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, postgresTestURL(t))
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, _ = conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS ptah_issue_937_explicit CASCADE")
+	_, err = conn.ExecContext(ctx, "CREATE SCHEMA ptah_issue_937_explicit")
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		conn.SchemaWriter().SetDryRun(false)
+		_, _ = conn.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS ptah_issue_937_explicit CASCADE")
+	}()
+	fsys := fstest.MapFS{
+		"1_probe.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+	}
+	writer, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	writer = writer.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
+		WithMigrationsTable("ptah_issue_937_explicit", "atlas_schema_revisions")
+	c.Assert(writer.MigrateUp(ctx), qt.IsNil)
+	conn.SchemaWriter().SetDryRun(true)
+	reader, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	reader = reader.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
+		WithMigrationsTable("ptah_issue_937_explicit", "atlas_schema_revisions")
+
+	status, err := reader.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int64{1})
+	c.Assert(status.PendingMigrations, qt.HasLen, 0)
+}
+
+func TestDryRunRevisionState_MySQLIntegration(t *testing.T) {
+	runDryRunRevisionStateIntegration(t, mysqlAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestDryRunRevisionState_MariaDBIntegration(t *testing.T) {
+	runDryRunRevisionStateIntegration(t, mariaDBAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestDryRunRevisionState_SQLServerIntegration(t *testing.T) {
+	runDryRunRevisionStateIntegration(t, sqlServerAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestDryRunRevisionState_CockroachDBIntegration(t *testing.T) {
+	runDryRunRevisionStateIntegration(t, cockroachDBAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestDryRunRevisionState_YugabyteDBIntegration(t *testing.T) {
+	runDryRunRevisionStateIntegration(t, yugabyteDBAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+}
+
+func TestDryRunRevisionState_ClickHouseIntegration(t *testing.T) {
+	runDryRunRevisionStateIntegration(t, clickHouseAtlasTestURL(t), migrator.RevisionTableFormatPtah)
+}
+
+func runDryRunRevisionStateIntegration(
+	t *testing.T,
+	dbURL string,
+	revisionFormat migrator.RevisionTableFormat,
+) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := t.Context()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	cleanupIssue937(t, conn)
+	defer cleanupIssue937(t, conn)
+
+	fsys := fstest.MapFS{
+		"1_probe.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+	}
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(revisionFormat).
+		WithMigrationsTable("", "ptah_issue_937_revisions")
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	conn.SchemaWriter().SetDryRun(true)
+	dryRunMigrator, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	dryRunMigrator = dryRunMigrator.WithRevisionTableFormat(revisionFormat).
+		WithMigrationsTable("", "ptah_issue_937_revisions")
+	status, err := dryRunMigrator.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int64{1})
+	c.Assert(status.PendingMigrations, qt.HasLen, 0)
+
+	conn.SchemaWriter().SetDryRun(false)
 }
 
 func TestAtlasSetSerializable_PostgresConcurrentInsertIntegration(t *testing.T) {
@@ -868,6 +1096,13 @@ func cleanupIssue819(t *testing.T, conn *dbschema.DatabaseConnection) {
 
 	_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS atlas_schema_revisions")
 	_, _ = conn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS ptah_issue_819_pause_delete()")
+}
+
+func cleanupIssue937(t *testing.T, conn *dbschema.DatabaseConnection) {
+	t.Helper()
+
+	conn.SchemaWriter().SetDryRun(false)
+	_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS ptah_issue_937_revisions")
 }
 
 func createLegacyIssue273MetadataTable(t *testing.T, conn *dbschema.DatabaseConnection) {

@@ -2,6 +2,7 @@ package atlas_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/atlas"
 	"github.com/stokaro/ptah/cmd/migratedown"
+	"github.com/stokaro/ptah/dbschema"
 )
 
 // writeMigrateDownFixture fills migrationsDir with two Atlas-format
@@ -52,6 +54,10 @@ type migrateDownJSONReport struct {
 		Name    string   `json:"Name"`
 		Version string   `json:"Version"`
 		Applied []string `json:"Applied"`
+		Error   *struct {
+			Stmt string `json:"Stmt"`
+			Text string `json:"Text"`
+		} `json:"Error"`
 	} `json:"Reverted"`
 	Current string `json:"Current"`
 	Target  string `json:"Target"`
@@ -127,6 +133,85 @@ func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T
 	c.Assert(out.String(), qt.Equals, "2|0|2|")
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+}
+
+func TestCompatCommand_MigrateDownFormatDirtyPreflightHasNoRevertedFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-dirty.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(context.Background(), `UPDATE atlas_schema_revisions
+SET applied = 0, total = 1, error = 'broken'
+WHERE version = '2'`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(conn.Close(), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--dry-run",
+		"--format", "{{ json . }}",
+	})
+
+	err = cmd.Execute()
+	c.Assert(err, qt.ErrorMatches, `error rolling back migrations: migration 2 is dirty:.*`)
+	var report migrateDownJSONReport
+	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	c.Assert(report.Planned, qt.HasLen, 1)
+	c.Assert(report.Planned[0].Version, qt.Equals, "1")
+	c.Assert(report.Reverted, qt.HasLen, 0)
+	c.Assert(report.Error, qt.Contains, "migration 2 is dirty")
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+}
+
+func TestCompatCommand_MigrateDownFormatReportsFirstRollbackFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-first-failure.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	c.Assert(
+		os.WriteFile(
+			filepath.Join(migrationsDir, "2_add_audit.down.sql"),
+			[]byte("DROP TABLE no_such_table;\n"),
+			0o600,
+		),
+		qt.IsNil,
+	)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetIn(strings.NewReader("YES\n"))
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*no_such_table.*`)
+	var report migrateDownJSONReport
+	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	c.Assert(report.Reverted, qt.HasLen, 1)
+	c.Assert(report.Reverted[0].Version, qt.Equals, "2")
+	c.Assert(report.Reverted[0].Applied, qt.HasLen, 0)
+	c.Assert(report.Reverted[0].Error, qt.IsNotNil)
+	c.Assert(report.Reverted[0].Error.Stmt, qt.Equals, "DROP TABLE no_such_table")
+	c.Assert(report.Reverted[0].Error.Text, qt.Contains, "no such table")
 }
 
 func TestCompatCommand_MigrateDownFormatFromEnvValue(t *testing.T) {
