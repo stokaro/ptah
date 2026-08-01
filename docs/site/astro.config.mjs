@@ -145,6 +145,7 @@ export default defineConfig({
           label: 'Atlas compatibility',
           items: [
             { slug: 'atlas/overview' },
+            { slug: 'atlas/feature-matrix' },
             { slug: 'atlas/migrate-commands' },
             { slug: 'atlas/schema-commands' },
             { slug: 'atlas/project-config' },
