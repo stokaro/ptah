@@ -16,7 +16,12 @@ import (
 func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c := qt.New(t)
 	root := filepath.Join("testdata", "parity")
-	output := filepath.Join(t.TempDir(), "schema.hcl")
+	outputDir, err := os.MkdirTemp(filepath.Dir(root), ".parity-export-*")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(os.RemoveAll(outputDir), qt.IsNil)
+	})
+	output := filepath.Join(outputDir, "schema.hcl")
 	before, err := goschema.ParseDir(root)
 	c.Assert(err, qt.IsNil)
 

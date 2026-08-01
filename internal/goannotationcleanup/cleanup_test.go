@@ -57,7 +57,7 @@ type User struct {
 	c.Assert(string(content), qt.Not(qt.Contains), "ptah:embedded")
 	info, err := os.Stat(path)
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))
+	assertFileMode(c, info.Mode(), 0o644)
 
 	plan, err = planDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -83,6 +83,33 @@ func TestCleanDirPreservesUnrelatedFormattingByteForByte(t *testing.T) {
 	content, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, expected)
+}
+
+func TestCleanDir_HappyPath_PreservesReadOnlyMode(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.go")
+	original := []byte(
+		"package models\n\n//ptah:schema:table name=\"users\"\ntype User struct{}\n",
+	)
+	expected := []byte("package models\n\ntype User struct{}\n")
+	c.Assert(os.WriteFile(path, original, 0o600), qt.IsNil)
+	c.Assert(os.Chmod(path, 0o400), qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(os.Chmod(path, 0o600), qt.IsNil)
+	})
+	plan, err := planDir(dir)
+	c.Assert(err, qt.IsNil)
+
+	err = plan.Apply()
+
+	c.Assert(err, qt.IsNil)
+	content, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(content, qt.DeepEquals, expected)
+	info, err := os.Stat(path)
+	c.Assert(err, qt.IsNil)
+	assertFileMode(c, info.Mode(), 0o400)
 }
 
 func TestCleanDirDiffReportsDuplicateRemovedLinesByPosition(t *testing.T) {
@@ -230,10 +257,10 @@ func TestCleanDir_FailurePath_InvalidGoSourceIsNotModified(t *testing.T) {
 	c.Assert(string(invalidContent), qt.Equals, invalidOriginal)
 	validInfo, err := os.Stat(validPath)
 	c.Assert(err, qt.IsNil)
-	c.Assert(validInfo.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+	assertFileMode(c, validInfo.Mode(), 0o640)
 	invalidInfo, err := os.Stat(invalidPath)
 	c.Assert(err, qt.IsNil)
-	c.Assert(invalidInfo.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+	assertFileMode(c, invalidInfo.Mode(), 0o640)
 }
 
 func TestPlanApply_FailurePath_PrevalidatesEverySourceBeforeWriting(t *testing.T) {
@@ -297,7 +324,7 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(string(content), qt.Equals, original)
 	info, err := os.Stat(path)
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+	assertFileMode(c, info.Mode(), 0o640)
 
 	diffPlan, err := planDir(dir)
 
@@ -314,7 +341,7 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(string(content), qt.Equals, original)
 	info, err = os.Stat(path)
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+	assertFileMode(c, info.Mode(), 0o640)
 
 	writePlan, err := planDir(dir)
 
@@ -331,7 +358,7 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(string(content), qt.Equals, expected)
 	info, err = os.Stat(path)
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+	assertFileMode(c, info.Mode(), 0o640)
 
 	idempotentDryRunPlan, err := planDir(dir)
 	c.Assert(err, qt.IsNil)

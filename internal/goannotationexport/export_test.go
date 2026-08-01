@@ -47,7 +47,7 @@ func TestExport_HappyPath_WritesValidatedHCLAndCleansAnnotations(t *testing.T) {
 	c.Assert(parsed.Fields, qt.HasLen, 1)
 	info, err := os.Stat(output)
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+	assertFileMode(c, info.Mode(), 0o640)
 }
 
 func TestExport_HappyPath_UsesOneSourcePolicyForParsingAndCleanup(t *testing.T) {
@@ -116,7 +116,7 @@ func TestExport_HappyPath_TightensPermissionsForRolePasswords(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	info, err := os.Stat(output)
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o600))
+	assertFileMode(c, info.Mode(), 0o600)
 	content, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Contains, `password = "SCRAM-SHA-256$fixture"`)
