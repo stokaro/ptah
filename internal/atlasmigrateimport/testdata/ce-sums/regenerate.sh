@@ -502,6 +502,14 @@ put V3__b.sql "$SQL_SECOND"
 put sub/B5__c.sql "$SQL_PLAIN"
 seal flyway
 
+# A directory named B3 and a file named B3.sql: sorting the paths puts B3.sql
+# first ('.' below '/'), while a walk descends B3 first. The two orders select
+# different files, so this is the case that proves selection follows the WALK.
+new_case flyway/walk-order-vs-path-sort
+put B3/V2__a.sql "$SQL_PLAIN"
+put B3.sql "$SQL_SECOND"
+seal flyway
+
 new_case flyway/baseline-ordinary-project
 put B1__baseline.sql "$SQL_PLAIN"
 put V2__init.sql "$SQL_SECOND"

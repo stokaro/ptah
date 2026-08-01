@@ -19,7 +19,7 @@ import (
 // corpus test walks the tree, so a corpus that failed to load would otherwise
 // pass vacuously; asserting the count makes an empty or partial walk fail.
 // Adding a shape is expected to change this number.
-const ceSumCorpusCases = 74
+const ceSumCorpusCases = 75
 
 const sqlBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
 
@@ -385,6 +385,13 @@ func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
 		files: []string{"B1__baseline.sql", "V2__init.sql", "views/V3__view.sql"},
 		want:  []string{"B1__baseline.sql", "V2__init.sql", "views/V3__view.sql"},
 	}, {
+		// Sorting the paths puts "B3.sql" before "B3/V2__a.sql" ('.' sorts
+		// below '/'), which would squash V2. A walk descends B3 first, so V2 is
+		// visited before the baseline exists and survives. Measured.
+		name:  "selection follows the walk, not a sort of the paths",
+		files: []string{"B3/V2__a.sql", "B3.sql"},
+		want:  []string{"B3.sql", "B3/V2__a.sql"},
+	}, {
 		name:  "the squash test compares versions as strings even across directories",
 		files: []string{"B2__a.sql", "V4__b.sql", "V10__d.sql", "sub/B9__c.sql"},
 		want:  []string{"sub/B9__c.sql", "V4__b.sql"},
@@ -401,6 +408,56 @@ func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+// TestSumFileNamesFlywayNonNumericBaselineIsRefused pins the one layout whose
+// checksum this package declines to compute. A baseline whose version token is
+// non-numeric, reached after another migration was already visited, squashes
+// files the walk had accepted — behavior no candidate model reproduces. A
+// Flyway baseline is a version number, so no ordinary project reaches this.
+func TestSumFileNamesFlywayNonNumericBaselineIsRefused(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("a non-numeric baseline reached mid-walk is refused", func(c *qt.C) {
+		_, err := atlasmigrateimport.SumFileNames(
+			sourceFS("V1__a.sql", "sub/Bx__base.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineVersionNotNumeric)
+		c.Assert(err, qt.ErrorMatches, ".*sub/Bx__base.sql")
+	})
+
+	c.Run("a dotted non-numeric baseline is refused too", func(c *qt.C) {
+		_, err := atlasmigrateimport.SumFileNames(
+			sourceFS("a/b/V1.0.0__a.sql", "sub/Bx.5__base.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineVersionNotNumeric)
+	})
+
+	c.Run("a non-numeric baseline visited first is computed normally", func(c *qt.C) {
+		// Nothing had been accepted yet, so there is nothing to squash
+		// retroactively and the walk-order model still holds.
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("Bx__y.sql", "V1__a.sql", "V2__b.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"Bx__y.sql"})
+	})
+
+	c.Run("a numeric baseline reached mid-walk is computed normally", func(c *qt.C) {
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("V1__a.sql", "sub/B9__base.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"sub/B9__base.sql", "V1__a.sql"})
+	})
 }
 
 // TestSumFileNamesFlywayVersionComponents pins the version scoring and
