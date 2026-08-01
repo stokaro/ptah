@@ -105,6 +105,26 @@ Taking the session and the restrictions in one step is deliberate: the
 restrictions are properties of the physical session, so applying them
 separately would silently protect nothing.
 
+`dbschema.DatabaseConnection.WithIsolatedQuerySession` exposes a query-only
+`dbschema.IsolatedQueryer` on one physical session. Transaction-capable drivers
+always roll the transaction back; ClickHouse runs directly on the disposable
+session because its driver does not implement transactions. Ptah discards the
+physical session afterward, except for in-memory SQLite, whose only connection
+owns the database lifetime and is returned to the pool after rollback. The
+callback cannot control transactions or reach Ptah schema writers. Callers
+remain responsible for restricting SQL to read-only queries.
+
+`migration/migrator.CheckFailedError` identifies one failed or invalid
+pre-migration assertion. `CheckGroupFailedError` identifies an Atlas `oneof`
+check file in which no assertion returned a truthy result, including an empty
+group. Callers can distinguish a group-level precondition failure from an
+assertion execution or result-shape failure with `errors.As`.
+
+`migration/migrator.ParseChecks` requires the target dialect together with the
+SQL source. This intentional pre-v1 signature change prevents fail-open parsing
+when PostgreSQL escape strings or MySQL/MariaDB comment rules determine whether
+a later check directive is SQL code or literal/comment content.
+
 `migration/generator.PlanMigration` performs loading, diff planning, safety
 checks, and optional shadow verification without publishing files. Its
 `MigrationPlan.WriteFiles` method publishes the validated artifacts once. The

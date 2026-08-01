@@ -43,6 +43,40 @@ SELECT NOT EXISTS (SELECT * FROM users);
 ALTER TABLE users ADD COLUMN email TEXT;
 `
 
+const txtarNamedOneOfAddEmail = `-- atlas:txtar
+
+-- checks/users.sql --
+SELECT 1;
+
+-- checks/roles.sql --
+-- atlas:assert oneof
+SELECT 0;
+SELECT 1;
+
+-- migration.sql --
+ALTER TABLE users ADD COLUMN email TEXT;
+`
+
+const txtarNamedOneOfFailure = `-- atlas:txtar
+
+-- checks/roles.sql --
+-- atlas:assert oneof
+SELECT 0;
+SELECT 0;
+
+-- migration.sql --
+ALTER TABLE users ADD COLUMN email TEXT;
+`
+
+const txtarEmptyOneOf = `-- atlas:txtar
+
+-- checks/empty.sql --
+-- atlas:assert oneof
+
+-- migration.sql --
+ALTER TABLE users ADD COLUMN email TEXT;
+`
+
 func newSQLiteTxtarMigrator(t *testing.T, seededRows int, migrationSQL string) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	t.Helper()
 	ctx := context.Background()
@@ -90,7 +124,11 @@ func TestMigrateUp_TxtarFailingCheckAbortsBeforeBody(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &checkErr, qt.Commentf("want CheckFailedError, got %v", err))
 	c.Assert(checkErr.Version, qt.Equals, int64(1))
 	c.Assert(checkErr.Name, qt.Equals, "checks.sql#1")
-	c.Assert(checkErr.Assert, qt.Equals, "SELECT NOT EXISTS (SELECT * FROM users)")
+	c.Assert(
+		checkErr.Assert,
+		qt.Equals,
+		"-- The assertion below must evaluate to true for migration.sql to run.\nSELECT NOT EXISTS (SELECT * FROM users)",
+	)
 	// The error names the migration and the failing check.
 	c.Assert(err.Error(), qt.Contains, "pre-migration check checks.sql#1 for migration 1 was not satisfied")
 	// Nothing from migration.sql was applied.
@@ -140,6 +178,124 @@ func TestMigrateUp_TxtarMultipleChecksPassApplies(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(usersHasEmailColumn(t, conn), qt.IsTrue)
+}
+
+func TestMigrateUp_TxtarNamedCheckFilesRunInArchiveOrder(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteTxtarMigrator(t, 0, `-- atlas:txtar
+
+-- checks/users.sql --
+SELECT 0;
+
+-- checks/roles.sql --
+SELECT NULL;
+
+-- migration.sql --
+ALTER TABLE users ADD COLUMN email TEXT;
+`)
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.IsNotNil)
+	var checkErr *migrator.CheckFailedError
+	c.Assert(err, qt.ErrorAs, &checkErr)
+	c.Assert(checkErr.Name, qt.Equals, "checks/users.sql#1")
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsFalse)
+}
+
+func TestMigrateUp_TxtarNamedOneOfGroupPasses(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteTxtarMigrator(t, 0, txtarNamedOneOfAddEmail)
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsTrue)
+}
+
+func TestMigrateUp_TxtarNamedOneOfGroupFailsWhenAllAssertionsFail(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteTxtarMigrator(t, 0, txtarNamedOneOfFailure)
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.IsNotNil)
+	var checkErr *migrator.CheckGroupFailedError
+	c.Assert(err, qt.ErrorAs, &checkErr)
+	c.Assert(checkErr.Name, qt.Equals, "checks/roles.sql")
+	c.Assert(checkErr.Version, qt.Equals, int64(1))
+	c.Assert(checkErr.Assertions, qt.Equals, 2)
+	c.Assert(err.Error(), qt.Equals, "pre-migration check failed for migration 1: pre-migration check group checks/roles.sql for migration 1 was not satisfied: none of 2 assertions passed")
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsFalse)
+}
+
+func TestMigrateUp_TxtarEmptyOneOfGroupFailsClosed(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteTxtarMigrator(t, 0, txtarEmptyOneOf)
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.IsNotNil)
+	var checkErr *migrator.CheckGroupFailedError
+	c.Assert(err, qt.ErrorAs, &checkErr)
+	c.Assert(checkErr.Name, qt.Equals, "checks/empty.sql")
+	c.Assert(checkErr.Assertions, qt.Equals, 0)
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsFalse)
+}
+
+func TestMigrateUp_TxtarEmptyOneOfGroupRejectedUnderTxModeAll(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteTxtarMigrator(t, 0, txtarEmptyOneOf)
+
+	err := m.WithTransactionMode(migrator.MigrationTxModeAll).MigrateUp(context.Background())
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`migration 1 declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode`,
+	)
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsFalse)
+}
+
+func TestMigrateUp_TxtarNamedOneOfGroupFailsClosedOnInvalidLaterAssertion(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteTxtarMigrator(t, 0, `-- atlas:txtar
+
+-- checks/roles.sql --
+-- atlas:assert oneof
+SELECT 1;
+SELECT 1 UNION ALL SELECT 1;
+
+-- migration.sql --
+ALTER TABLE users ADD COLUMN email TEXT;
+`)
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.ErrorMatches, `.*check assertion must return exactly one row, got more than 1.*`)
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsFalse)
+}
+
+func TestMigrateUp_TxtarLintAssertionDirectiveKeepsAllOfSemantics(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteTxtarMigrator(t, 0, `-- atlas:txtar
+
+-- checks/destructive.sql --
+-- atlas:assert DS102
+SELECT 0;
+SELECT 1;
+
+-- migration.sql --
+ALTER TABLE users ADD COLUMN email TEXT;
+`)
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.IsNotNil)
+	var checkErr *migrator.CheckFailedError
+	c.Assert(err, qt.ErrorAs, &checkErr)
+	c.Assert(checkErr.Name, qt.Equals, "checks/destructive.sql#1")
+	c.Assert(usersHasEmailColumn(t, conn), qt.IsFalse)
 }
 
 func TestMigrateUp_TxtarSkipChecksBypassesFailingCheck(t *testing.T) {
@@ -351,4 +507,31 @@ SELECT 1;
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 	)
 	c.Assert(err, qt.ErrorMatches, `.*duplicate checks.sql section.*`)
+}
+
+func TestNewFSMigrator_TxtarDuplicateNamedChecksSectionFails(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "dup-named-checks.db"))
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	_, err = migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_add_users_email.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/users.sql --
+SELECT 1;
+
+-- checks/users.sql --
+SELECT 2;
+
+-- migration.sql --
+SELECT 3;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.ErrorMatches, `.*duplicate checks/users.sql section.*`)
 }

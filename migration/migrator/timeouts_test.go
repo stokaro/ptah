@@ -193,7 +193,7 @@ func TestParseMigrationTimeoutDirectives_ToleratesEveryDirectiveFamily(t *testin
 			name: "pre-migration check",
 			line: `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort`,
 			recognize: func(c *qt.C, sql string) {
-				checks, err := ParseChecks(sql)
+				checks, err := ParseChecks(sql, "")
 				c.Assert(err, qt.IsNil)
 				c.Assert(checks, qt.HasLen, 1)
 				c.Assert(checks[0].Name, qt.Equals, "users_empty")
