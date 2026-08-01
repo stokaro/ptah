@@ -36,10 +36,7 @@ func restrictedEphemeralDev(c *qt.C, use func(*dbschema.DatabaseConnection)) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-	c.Assert(conn.WithSession(ctx, func(session *dbschema.DatabaseConnection) error {
-		if err := session.RestrictSQLiteSession(ctx); err != nil {
-			return err
-		}
+	c.Assert(conn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
 		use(session)
 		return nil
 	}), qt.IsNil)
@@ -106,7 +103,10 @@ func TestEphemeralSQLiteDevStillRunsOrdinaryDDL(t *testing.T) {
 	})
 }
 
-func TestRestrictSQLiteSessionRequiresPinnedSession(t *testing.T) {
+// TestUntrustedSQLSessionRestrictsBeforeTheCallback pins that the session
+// arrives already restricted: the callback never gets a window in which the
+// escape would work.
+func TestUntrustedSQLSessionRestrictsBeforeTheCallback(t *testing.T) {
 	c := qt.New(t)
 	devURL, cleanup, err := atlasschema.NewEphemeralSQLiteDev()
 	c.Assert(err, qt.IsNil)
@@ -116,12 +116,14 @@ func TestRestrictSQLiteSessionRequiresPinnedSession(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	// Without a pinned session the restriction would apply to one pooled
-	// connection while the rehearsal ran on another, so it refuses instead of
-	// silently protecting nothing.
-	err = conn.RestrictSQLiteSession(ctx)
-
-	c.Assert(err, qt.ErrorMatches, `sqlite session restriction requires a pinned session; call it inside WithSession`)
+	c.Assert(conn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
+		// First statement of the callback, before anything else touches the
+		// session.
+		_, execErr := session.ExecContext(ctx, `ATTACH DATABASE ':memory:' AS probe`)
+		c.Assert(execErr, qt.IsNotNil)
+		c.Assert(execErr.Error(), qt.Contains, "too many attached databases")
+		return nil
+	}), qt.IsNil)
 }
 
 // sqliteHasTable reports whether a SQLite database file contains a table.

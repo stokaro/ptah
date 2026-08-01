@@ -157,22 +157,23 @@ func rehearseStatementsOnDev(
 	txMode migrator.MigrationTxMode,
 	statements []string,
 ) error {
-	if err := CheckPlanStatementsSandboxable(statements, devConn.Info().Dialect); err != nil {
+	if err := checkPlanStatements(statements, devConn.Info().Dialect); err != nil {
 		return err
 	}
-	// A SQLite dev database gets real engine-level restrictions for the whole
-	// rehearsal, which is what actually contains the ephemeral dev database
-	// Ptah creates itself. The lint above is only a lint.
-	if platform.NormalizeDialect(devConn.Info().Dialect) == platform.SQLite {
-		return devConn.WithSession(ctx, func(session *dbschema.DatabaseConnection) error {
-			if err := session.RestrictSQLiteSession(ctx); err != nil {
-				return fmt.Errorf("restrict dev database session: %w", err)
-			}
-			return rehearseOnPreparedDev(ctx, session, current, txMode, statements)
-		})
-	}
-	return rehearseOnPreparedDev(ctx, devConn, current, txMode, statements)
+	// The dev database executes these statements for real, and they came from
+	// outside the operator's project, so the session carries every engine-level
+	// restriction its dialect supports. Taking the session through
+	// WithUntrustedSQLSession is what makes an unrestricted rehearsal
+	// impossible to write; the lint above is only a lint.
+	return devConn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
+		return rehearseOnPreparedDev(ctx, session, current, txMode, statements)
+	})
 }
+
+// checkPlanStatements is the escape lint as used by the rehearsal core. It is
+// a variable so a test can neutralize the lint and prove that the engine-level
+// restrictions — not the lint — are what stop an escape.
+var checkPlanStatements = CheckPlanStatementsSandboxable
 
 func rehearseOnPreparedDev(
 	ctx context.Context,

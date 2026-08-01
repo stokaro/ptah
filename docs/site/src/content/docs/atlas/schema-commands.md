@@ -327,16 +327,21 @@ content — including `.plan.hcl` files written by the licensed Atlas binary:
 
 Before replaying, Ptah refuses statements that match a **deny-list of known
 escape constructs** — `ATTACH`/`DETACH`, `VACUUM INTO`,
-`PRAGMA temp_store_directory`, `DO` blocks, routine bodies calling
-file-access or `dblink` functions, `LOAD DATA INFILE`,
+storage-directory pragmas, `load_extension`, routine bodies and dynamic SQL
+calling file-access or `dblink` functions, `LOAD DATA INFILE`,
 `SELECT ... INTO OUTFILE`/`DUMPFILE`, `LOAD_FILE`, `ENGINE=FEDERATED`,
 `CREATE SERVER`, `INSTALL PLUGIN`/`COMPONENT`, `DATA`/`INDEX DIRECTORY`,
-`COPY ... PROGRAM` or `COPY` with a file path, `dblink`, `postgres_fdw`, and
-`file_fdw`:
+`COPY ... PROGRAM` or `COPY` with a file path, `dblink`, `postgres_fdw`,
+`file_fdw`, the SQL Server `xp_`/`sp_addlinkedserver`/`OPENROWSET` family, and
+ClickHouse's remote table engines:
 
 ```text
-error: pre-planned migration cannot be verified on a dev database: statement 1 uses ATTACH, which attaches another SQLite database file to the session ...
+error: pre-planned migration was refused before it reached the dev database: statement 1 uses ATTACH, which attaches another SQLite database file to the session ...
 ```
+
+An anonymous `DO` block is not itself refused — it is the standard PostgreSQL
+idiom for idempotent DDL, and a foreign plan is full of them — but what its
+body does is scanned like any other statement.
 
 **That list is best-effort and not exhaustive, and the replay is not a
 sandbox.** SQL dialects offer many ways to address something other than the
@@ -366,14 +371,24 @@ any plan SQL runs:
   database copy to an arbitrary path.
 - Native extensions cannot be loaded.
 
+What the engine does **not** stop, and the lint therefore still has to: the
+storage-directory pragmas (`temp_store_directory`, `data_store_directory` —
+the first is process-global in SQLite) and `PRAGMA writable_schema`. The last
+one has a consequence worth stating: a plan that sets `writable_schema` could
+edit the dev database's catalog directly, so the "converges to `--to`" verdict
+is not tamper-proof against the very document being verified. The verdict is a
+good-faith check, not an adversarial one.
+
 Ptah verifies the restriction is in force before rehearsing, and refuses to
 rehearse if it is not, so this cannot fail silently. These are engine
 refusals: they hold for statements the lint never recognized, including ones
 built by string concatenation at run time.
 
-For an operator-supplied `--dev-url`, none of the above applies: that database
-executes the plan's SQL for real, with whatever credentials and network reach
-you gave it.
+The restriction keys on the **dev** database's dialect, not on who supplied
+it, so an operator-supplied SQLite `--dev-url` gets exactly the same engine
+refusals. For any dialect other than SQLite, none of the above applies: that
+database executes the plan's SQL for real, with whatever credentials and
+network reach you gave it.
 
 The verification also runs under `--dry-run`, so a plan received from someone
 else can be checked without committing to apply it.

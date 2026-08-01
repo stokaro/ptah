@@ -91,10 +91,10 @@ type escapeRule struct {
 //
 // The security model is therefore split by who chose the database:
 //
-//   - Ephemeral SQLite dev databases, which Ptah creates itself and the
-//     operator never opts into, get REAL engine-level enforcement — see
-//     [RestrictEphemeralSQLiteDev]. That is what makes the ephemeral path
-//     safe, not this list.
+//   - SQLite dev databases get REAL engine-level enforcement, applied by
+//     dbschema.DatabaseConnection.WithUntrustedSQLSession, which is how every
+//     rehearsal takes its session. That is what makes the ephemeral dev
+//     database safe, not this list.
 //   - Operator-supplied --dev-url databases get this lint, and nothing more.
 //     The operator chose that database; the docs state plainly that it must be
 //     one they are willing to have a foreign plan file execute arbitrary SQL
@@ -134,11 +134,6 @@ var escapeRules = []escapeRule{
 		construct: "load_extension",
 		reach:     "loads a native extension module from the host filesystem",
 		match:     calledFunction("LOAD_EXTENSION"),
-	},
-	{
-		construct: "DO",
-		reach:     "executes an anonymous server-side code block, which can call out to anything the database server can reach",
-		match:     statementStartsWith("DO"),
 	},
 	{
 		construct: "LOAD DATA INFILE",
@@ -286,7 +281,7 @@ var escapeRules = []escapeRule{
 //
 // It is a best-effort lint, NOT a containment boundary — see [escapeRules].
 // Real enforcement exists only on the ephemeral SQLite dev database Ptah
-// creates itself (see [RestrictEphemeralSQLiteDev]); an operator-supplied
+// creates itself (see dbschema.DatabaseConnection.WithUntrustedSQLSession); an operator-supplied
 // --dev-url executes plan SQL for real and must be a database the operator is
 // willing to expose to a foreign plan file.
 //
@@ -369,7 +364,15 @@ func codeBearingStrings(ctx scanContext) []string {
 }
 
 // dynamicExecutorKeywords introduce a string that the database will execute.
-var dynamicExecutorKeywords = []string{"EXECUTE", "EXEC", "PREPARE", "SP_EXECUTESQL", "PERFORM"}
+//
+// DO is here rather than in the rules: an anonymous block is not itself an
+// escape, it is the standard PostgreSQL idiom for idempotent DDL
+// (`DO $$ BEGIN IF NOT EXISTS (...) THEN CREATE TYPE ...; END IF; END $$`),
+// and a foreign Atlas-authored PostgreSQL plan is full of them. Refusing the
+// block wholesale broke exactly the interop this reader exists for, while
+// scanning its body — which the dollar-quoted and single-quoted forms both go
+// through — still catches what the block would actually do.
+var dynamicExecutorKeywords = []string{"EXECUTE", "EXEC", "PREPARE", "SP_EXECUTESQL", "PERFORM", "DO"}
 
 // followsDynamicExecutor reports whether the string at index i is an argument
 // of a dynamic executor, walking back over `(` and `||` so that

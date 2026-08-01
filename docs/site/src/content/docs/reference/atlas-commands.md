@@ -375,11 +375,14 @@ re-planning. Both plan formats are accepted, detected by content: the Atlas
   concatenation alone defeats any scanner, so a `--dev-url` must point at a
   database you are willing to have a foreign plan file execute arbitrary SQL
   against.
-- **Real enforcement exists only on the ephemeral SQLite dev database** Ptah
-  creates for SQLite targets: a throwaway file in a private temp directory
-  whose session refuses `ATTACH`, `DETACH`, and `VACUUM INTO` at the engine
-  level and cannot load extensions. Ptah verifies the restriction is in force
-  before rehearsing and refuses to rehearse if it is not. See
+- **Real enforcement exists only on SQLite dev databases** — the ephemeral one
+  Ptah creates for SQLite targets, and an operator-supplied SQLite
+  `--dev-url`, since the restriction keys on the dev dialect. Their sessions
+  refuse `ATTACH`, `DETACH`, and `VACUUM INTO` at the engine level and cannot
+  load extensions; Ptah verifies the restriction is in force before rehearsing
+  and refuses to rehearse if it is not. Storage-directory pragmas and
+  `writable_schema` are not covered, so the converges-to-`--to` verdict is a
+  good-faith check rather than an adversarial one. See
   [Save and execute plan files](../../atlas/schema-commands/#where-enforcement-is-real).
 - The replay also runs under `--dry-run`, so a plan can be verified without
   committing to apply it.

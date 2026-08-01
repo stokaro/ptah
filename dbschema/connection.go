@@ -351,26 +351,49 @@ func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, arg
 	return dc.sqlRunner().ExecContext(ctx, query, args...)
 }
 
-// RestrictSQLiteSession applies engine-level restrictions to a SQLite session
-// pinned by [DatabaseConnection.WithSession]: ATTACH, DETACH, and VACUUM INTO
-// are refused by the engine itself, so SQL executed on the session cannot
-// reach another database file or write to an arbitrary filesystem path.
+// WithUntrustedSQLSession pins a session that will execute SQL the caller does
+// not trust, applying and verifying every engine-level restriction the dialect
+// supports before the callback runs.
 //
-// It is meant for throwaway databases that execute untrusted SQL — a dev
-// database a plan file is rehearsed on. The restriction is a property of the
-// physical connection, so it applies only to a pinned session and returns an
-// error otherwise; it also verifies that the restriction took effect rather
-// than assuming it, so a silent failure is impossible. Non-SQLite dialects
-// have no equivalent and return an error.
-func (dc *DatabaseConnection) RestrictSQLiteSession(ctx context.Context) error {
+// Use it instead of [DatabaseConnection.WithSession] whenever the statements
+// come from somewhere outside the operator's own project — a plan file
+// received from another tool, for example. Because the restrictions are
+// properties of the physical connection, applying them anywhere other than the
+// pinned session would silently protect nothing; taking the session and the
+// restrictions in one step is what makes that mistake unrepresentable.
+//
+// What the restrictions buy depends on the dialect. On SQLite the engine
+// refuses ATTACH, DETACH, and VACUUM INTO, so the callback's SQL cannot reach
+// another database file or write a database copy to an arbitrary path, and
+// native extensions cannot be loaded; the restriction is verified to be in
+// force before the callback runs. Storage-directory pragmas are not covered.
+// Other dialects have no equivalent session-level control, so the callback
+// runs unrestricted — on those, only the caller's own review of the SQL and
+// the disposability of the database stand between it and the statements.
+func (dc *DatabaseConnection) WithUntrustedSQLSession(
+	ctx context.Context,
+	use func(*DatabaseConnection) error,
+) error {
 	if dc == nil {
-		return fmt.Errorf("sqlite session restriction requires an open database connection")
+		return fmt.Errorf("untrusted SQL session requires an open database connection")
+	}
+	return dc.WithSession(ctx, func(session *DatabaseConnection) error {
+		if err := session.restrictUntrustedSQL(ctx); err != nil {
+			return err
+		}
+		return use(session)
+	})
+}
+
+// restrictUntrustedSQL applies the engine-level restrictions available for the
+// pinned session's dialect. Dialects without such controls are a no-op, which
+// WithUntrustedSQLSession documents.
+func (dc *DatabaseConnection) restrictUntrustedSQL(ctx context.Context) error {
+	if !dc.pinned || dc.session == nil {
+		return fmt.Errorf("untrusted SQL restrictions require a pinned session")
 	}
 	if platform.NormalizeDialect(dc.info.Dialect) != platform.SQLite {
-		return fmt.Errorf("sqlite session restriction does not apply to dialect %q", dc.info.Dialect)
-	}
-	if !dc.pinned || dc.session == nil {
-		return fmt.Errorf("sqlite session restriction requires a pinned session; call it inside WithSession")
+		return nil
 	}
 	return sqlite.RestrictSession(ctx, dc.session)
 }
