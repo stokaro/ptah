@@ -182,6 +182,32 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "Error: checksum file not found\n")
 	})
 
+	c.Run("missing checksum file refuses apply", func(c *qt.C) {
+		// Measured Atlas CE v1.2.0 on a directory with no atlas.sum
+		// (stokaro/ptah#970): exit 1, the same output as validate above, and
+		// the target database is never created.
+		dir := atlasDirWithoutSum(c)
+		dbPath := filepath.Join(c.TempDir(), "unhashed.db")
+		run := newCompatProcess(binPath,
+			"migrate", "apply",
+			"--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir,
+		)
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "You have a checksum error in your migration directory.\n"+
+			"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+		c.Assert(stderr.String(), qt.Equals, "Error: checksum file not found\n")
+		_, statErr := os.Stat(dbPath)
+		c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+	})
+
 	c.Run("migrate set operation error", func(c *qt.C) {
 		dir := cleanAtlasDir(c)
 		run := newCompatProcess(

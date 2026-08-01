@@ -91,8 +91,10 @@ Database is now at version: 1785255952
 A hashed directory (one that carries `ptah.sum` or `atlas.sum`) is always
 verified before anything runs, and the apply aborts on drift — the same check
 `ptah migrations validate` performs. A directory without a sum file is not
-gated. `--verify-sum` additionally makes a missing sum file itself an error,
-so set it for shared environments where the directory must be hashed; see
+gated on this native surface. `--verify-sum` additionally makes a missing sum
+file itself an error, so set it for shared environments where the directory
+must be hashed. `ptah-compat migrate apply` refuses a never-hashed Atlas
+directory outright, because Atlas does; see
 [Integrity and safety](../integrity-and-safety/).
 
 Applied versions land in the revision table. Rerunning the same command is a

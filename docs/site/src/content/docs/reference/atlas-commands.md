@@ -45,9 +45,11 @@ matching measured Atlas behavior.
 
 **Fails before the target database is opened:** unknown formats, Flyway
 repeatable (`R__`) migrations, goose/dbmate files missing their up directive,
-colliding versions, and a hashed directory that fails `atlas.sum`
-verification — the checksum-mismatch refusal is byte-identical to
-`ptah-compat migrate validate` and nothing is applied.
+colliding versions, an Atlas directory that fails `atlas.sum` verification, and
+an Atlas directory that carries no `atlas.sum` at all — both checksum refusals
+are byte-identical to `ptah-compat migrate validate` and nothing is applied.
+Directories in an external tool's format are converted in memory and carry no
+Atlas integrity file, so they are not checksum-gated.
 
 **Rejected on this verb, matching Atlas OSS:** `--dir-format`, `--to-version`,
 and `--lock-name`.

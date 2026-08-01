@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -217,12 +218,14 @@ func runAtlasMigrateApply(
 		return fmt.Errorf("atlas migrate apply --dir: close migrations directory: %w", closeErr)
 	}
 
-	// Integrity gate (#955): a hashed directory must verify against atlas.sum
-	// before anything is read for execution, matching official Atlas, which
-	// refuses a tampered directory before applying a single migration. This
-	// runs before the database connection is even opened, so a tampered file
-	// (including a tampered checkpoint) can never execute.
-	if err := verifyAtlasApplyChecksum(cmd, migrationFS); err != nil {
+	// Integrity gate (#955, #970): a native Atlas directory must carry an
+	// atlas.sum and verify against it before anything is read for execution,
+	// matching official Atlas, which refuses both a tampered and an unhashed
+	// directory before applying a single migration. This runs before the
+	// database connection is even opened, so neither a tampered file
+	// (including a tampered checkpoint) nor an unhashed directory can execute
+	// or create the target database.
+	if err := verifyAtlasApplyChecksum(cmd, migrationFS, opts.dirFormat, localDir.Query); err != nil {
 		return err
 	}
 
@@ -299,11 +302,19 @@ func runAtlasMigrateApply(
 }
 
 // verifyAtlasApplyChecksum enforces the atlas.sum integrity gate on the
-// captured migration filesystem: a hashed directory that fails verification
-// refuses the whole apply with output byte-identical to `migrate validate`; an
-// unhashed directory (no atlas.sum, including directories converted from
-// other tool formats) is not gated, preserving prior behavior.
-func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS) error {
+// captured migration filesystem of a native Atlas directory: a missing
+// atlas.sum and a failed verification both refuse the whole apply, with output
+// byte-identical to `migrate validate` on the same directory. A converted
+// external-tool directory (goose, flyway, liquibase, dbmate, golang-migrate)
+// carries no Atlas integrity file by construction and stays ungated.
+func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, dirFormat string, query url.Values) error {
+	nativeAtlasDir, err := atlasmigrate.ApplyReadsNativeAtlasDir(dirFormat, query)
+	if err != nil {
+		return err
+	}
+	if !nativeAtlasDir {
+		return nil
+	}
 	result, hashed, err := migratesum.VerifyHashed(fsys, migrator.MigrationDirFormatAtlas)
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMalformed):
@@ -313,7 +324,9 @@ func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS) error {
 	case err != nil:
 		return err
 	case !hashed:
-		return nil
+		// Never hashed: Atlas CE refuses with "checksum file not found"
+		// instead of applying (#970).
+		return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
 	case !result.OK():
 		return migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())
 	}

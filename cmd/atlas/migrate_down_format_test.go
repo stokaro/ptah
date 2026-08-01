@@ -29,6 +29,9 @@ func writeMigrateDownFixture(c *qt.C, migrationsDir, dbPath string) {
 	write("1_init.down.sql", "DROP TABLE down_fmt_users;")
 	write("2_add_audit.sql", "CREATE TABLE down_fmt_audit (id INTEGER PRIMARY KEY);")
 	write("2_add_audit.down.sql", "DROP TABLE down_fmt_audit;")
+	// The apply below verifies atlas.sum first (stokaro/ptah#970), so the
+	// fixture directory must be hashed like a real Atlas directory.
+	writeAtlasApplyProjectSum(c, migrationsDir)
 
 	apply := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer

@@ -65,16 +65,58 @@ migration directory does not match ptah.sum:
   changed: 0000000002_add_posts.up.sql
 ```
 
-A directory without a sum file is not gated; `--verify-sum` additionally
-makes a missing sum file itself an error. `ptah-compat migrate apply`
-enforces the same gate on `atlas.sum` directories with Atlas's own checksum
-output, matching official Atlas behavior.
+`ptah-compat migrate apply` enforces the same gate on `atlas.sum` directories
+with Atlas's own checksum output, matching official Atlas behavior.
 
 Recovery is a decision, not a command: if the change is intentional, review
 it and re-run `ptah migrations hash`; if it is not, restore the file from
 version control. Use `git diff` on the migration directory to tell the two
 apart. Run `validate` in CI and hash every shared directory so drift is
 caught at review time, not at deploy time.
+
+## A directory that was never hashed
+
+Drift is one question; "there is no sum file at all" is a different one, and
+the two surfaces answer it differently on purpose.
+
+**Native `ptah migrations up` applies an unhashed directory.** Hashing is
+opt-in on this surface: a directory with no `ptah.sum` or `atlas.sum` has
+never claimed integrity, so demanding one would break every project that has
+not adopted `ptah migrations hash` yet. Turn the missing file into an error
+where that matters — in CI, and on deploys of directories you do hash — with
+`--verify-sum` (exit `2`):
+
+```bash
+ptah migrations up \
+  --db-url "sqlite://app.db" \
+  --migrations-dir ./migrations \
+  --verify-sum
+```
+
+```text
+error: migration sum verification failed: ptah.sum not found; run `ptah migrations hash` to create it
+```
+
+That flag is the only thing on the native surface that rejects a never-hashed
+directory; a hashed one is always verified with or without it.
+
+**`ptah-compat migrate apply` refuses an unhashed directory.** Atlas treats a
+missing `atlas.sum` as a checksum error, so the compatibility surface does
+too — measured against Atlas CE v1.2.0, which exits `1` and never creates the
+target database:
+
+```text
+You have a checksum error in your migration directory.
+Please check your migration files and run 'atlas migrate hash' to re-hash the contents
+
+Error: checksum file not found
+```
+
+Nothing executes and the target is never opened, exactly as with a checksum
+mismatch. Run `ptah-compat migrate hash` once and commit the `atlas.sum` it
+writes. Directories read through `?format=goose` and the other external-tool
+formats are exempt: they carry no Atlas integrity file by construction, and
+Atlas does not gate them either.
 
 ## Replay on a dev database
 

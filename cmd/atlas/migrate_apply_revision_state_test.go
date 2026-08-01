@@ -26,6 +26,9 @@ func TestMigrateApplyDryRunTxModeAllDiagnosticDoesNotSuggestUnsupportedFlag(t *t
 		[]byte("-- +ptah check name=\"users_empty\" assert=\"SELECT count(*) = 0 FROM users\" on_fail=abort\nDROP TABLE users;\n"),
 		0o600,
 	), qt.IsNil)
+	// Apply verifies atlas.sum before planning (stokaro/ptah#970); the
+	// diagnostic under test comes from planning, so the fixture is hashed.
+	writeAtlasApplyProjectSum(c, migrationsDir)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var output bytes.Buffer

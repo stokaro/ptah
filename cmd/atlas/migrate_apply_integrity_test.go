@@ -13,11 +13,12 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 )
 
-// These tests pin the measured Atlas semantics from stokaro/ptah#954 and
-// stokaro/ptah#955 on the ptah-compat surface: the `-- atlas:checkpoint`
-// directive (fresh database bootstraps from the checkpoint, pre-checkpoint
-// database skips it silently) and the apply-time atlas.sum integrity gate
-// (a tampered hashed directory refuses before executing anything, with output
+// These tests pin the measured Atlas semantics from stokaro/ptah#954,
+// stokaro/ptah#955, and stokaro/ptah#970 on the ptah-compat surface: the
+// `-- atlas:checkpoint` directive (fresh database bootstraps from the
+// checkpoint, pre-checkpoint database skips it silently) and the apply-time
+// atlas.sum integrity gate (a tampered hashed directory and a directory with
+// no atlas.sum both refuse before executing anything, with output
 // byte-identical to `migrate validate`).
 
 const compatCheckpointVersion = "20260801100335"
@@ -196,20 +197,134 @@ func TestCompatMigrateApply_TamperedDirMatchesValidateOutput(t *testing.T) {
 	c.Assert(applyErr.Error(), qt.Equals, validateErr.Error())
 }
 
-func TestCompatMigrateApply_UnhashedDirStaysUngated(t *testing.T) {
+// writeCompatUnhashedDir writes a directory that was never hashed: one Atlas
+// migration and no atlas.sum.
+func writeCompatUnhashedDir(c *qt.C, dir string) {
+	c.Helper()
+	writeAtlasApplyProjectMigration(c, dir, "1_create_widgets.sql",
+		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
+}
+
+func TestCompatMigrateApply_UnhashedDirRefusesBeforeExecution(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_unhashed")
-	// No atlas.sum: the directory was never hashed, so the integrity gate does
-	// not apply and the directory applies exactly as before.
-	writeAtlasApplyProjectMigration(c, dir, "1_create_widgets.sql",
-		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
+	writeCompatUnhashedDir(c, dir)
 	dbPath := filepath.Join(tempDir, "unhashed.db")
 
-	stdout, _, err := compatApply(dir, dbPath)
+	stdout, stderr, err := compatApply(dir, dbPath)
 
-	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+	// Measured Atlas CE v1.2.0 on a directory with no atlas.sum
+	// (stokaro/ptah#970): exit 1, the checksum guidance block without an
+	// L<line> pointer, and "checksum file not found" on stderr.
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals, "checksum file not found")
+	c.Assert(stdout, qt.Equals, "You have a checksum error in your migration directory.\n"+
+		"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+	c.Assert(stderr, qt.Equals, "Error: checksum file not found\n")
+
+	// The gate ran before the target was touched: Atlas never creates the
+	// database, so neither does Ptah.
+	_, statErr := os.Stat(dbPath)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
+func TestCompatMigrateApply_UnhashedDirRefusesDryRun(t *testing.T) {
+	c := qt.New(t)
+	tempDir := c.TempDir()
+	dir := filepath.Join(tempDir, "m_unhashed")
+	writeCompatUnhashedDir(c, dir)
+	dbPath := filepath.Join(tempDir, "unhashed-dry-run.db")
+
+	// The gate precedes the dry-run branch, so a dry run is refused too and
+	// still never opens the target.
+	_, stderr, err := runCompat(
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+dir,
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Equals, "Error: checksum file not found\n")
+	_, statErr := os.Stat(dbPath)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
+func TestCompatMigrateApply_UnhashedDirMatchesValidateOutput(t *testing.T) {
+	c := qt.New(t)
+	tempDir := c.TempDir()
+	dir := filepath.Join(tempDir, "m_unhashed")
+	writeCompatUnhashedDir(c, dir)
+
+	applyOut, applyErrOut, applyErr := compatApply(dir, filepath.Join(tempDir, "unhashed.db"))
+	validateOut, validateErrOut, validateErr := runCompat("migrate", "validate", "--dir", "file://"+dir)
+
+	// The missing-sum refusal shares one code path with validate, so apply is
+	// byte-identical to `migrate validate` on the same directory — the same
+	// property #962 established for the mismatch case.
+	c.Assert(applyErr, qt.IsNotNil)
+	c.Assert(validateErr, qt.IsNotNil)
+	c.Assert(applyOut, qt.Equals, validateOut)
+	c.Assert(applyErrOut, qt.Equals, validateErrOut)
+	c.Assert(applyErr.Error(), qt.Equals, validateErr.Error())
+}
+
+// TestCompatMigrateApply_UnhashedConvertedDirStaysUngated pins the exception:
+// an external-tool directory carries no atlas.sum by construction, so gating it
+// would make every goose, flyway, liquibase, dbmate, and golang-migrate
+// directory unappliable. Atlas does not gate them either.
+func TestCompatMigrateApply_UnhashedConvertedDirStaysUngated(t *testing.T) {
+	formats := []struct {
+		name string
+		file string
+		body string
+	}{
+		{
+			name: "goose",
+			file: "1_init.sql",
+			body: "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE widgets;\n",
+		},
+		{
+			name: "dbmate",
+			file: "1_init.sql",
+			body: "-- migrate:up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- migrate:down\nDROP TABLE widgets;\n",
+		},
+		{
+			name: "liquibase",
+			file: "1_init.sql",
+			body: "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n--rollback DROP TABLE widgets;\n",
+		},
+		{
+			name: "flyway",
+			file: "V1__init.sql",
+			body: "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
+		},
+		{
+			name: "golang-migrate",
+			file: "1_init.up.sql",
+			body: "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
+		},
+	}
+
+	for _, format := range formats {
+		t.Run(format.name, func(t *testing.T) {
+			c := qt.New(t)
+			tempDir := c.TempDir()
+			dir := filepath.Join(tempDir, "m_"+format.name)
+			writeAtlasApplyProjectMigration(c, dir, format.file, format.body)
+			dbPath := filepath.Join(tempDir, "converted.db")
+
+			stdout, stderr, err := runCompat(
+				"migrate", "apply",
+				"--url", "sqlite://"+dbPath,
+				"--dir", "file://"+dir+"?format="+format.name,
+			)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+		})
+	}
 }
 
 func TestCompatMigrateApply_ValidHashedDirApplies(t *testing.T) {

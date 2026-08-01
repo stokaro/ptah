@@ -124,4 +124,10 @@ the first mismatched `atlas.sum` line, file, and reason. The native
 malformed or missing sum files are usage failures with exit `2`, while valid
 integrity drift exits `1` with Ptah's native drift report.
 
+`migrate apply` refuses the same two directory states with the same exit code
+and the same output, before it opens the target database: a mismatched
+`atlas.sum` and a missing one. Native `ptah migrations up` verifies a hashed
+directory the same way (exit `2` with Ptah's drift report) but applies a
+never-hashed directory unless `--verify-sum` is passed.
+
 This page is checked against the repository exit-code contract during docs CI.

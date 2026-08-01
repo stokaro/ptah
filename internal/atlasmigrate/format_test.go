@@ -265,6 +265,47 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 	})
 }
 
+// TestApplyReadsNativeAtlasDir covers the predicate the apply-time checksum
+// gate keys on (stokaro/ptah#970): only a native Atlas directory carries
+// atlas.sum, so only it is gated.
+func TestApplyReadsNativeAtlasDir(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name       string
+		configured string
+		query      url.Values
+		want       bool
+	}{
+		{name: "default", want: true},
+		{name: "configured Atlas", configured: "atlas", want: true},
+		{name: "empty URL format selects Atlas", configured: "goose", query: url.Values{"format": []string{""}}, want: true},
+		{name: "URL query overrides configured to Atlas", configured: "goose", query: url.Values{"format": []string{"atlas"}}, want: true},
+		{name: "configured goose", configured: "goose"},
+		{name: "configured flyway", configured: "flyway"},
+		{name: "configured liquibase", configured: "liquibase"},
+		{name: "configured dbmate", configured: "dbmate"},
+		{name: "configured golang-migrate", configured: "golang-migrate"},
+		{name: "URL query overrides Atlas to goose", query: url.Values{"format": []string{"goose"}}},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := atlasmigrate.ApplyReadsNativeAtlasDir(tt.configured, tt.query)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, tt.want)
+		})
+	}
+
+	c.Run("unknown format reports the resolve error", func(c *qt.C) {
+		got, err := atlasmigrate.ApplyReadsNativeAtlasDir("sqitch", nil)
+
+		c.Assert(err, qt.ErrorMatches, `unknown Atlas migration directory format "sqitch".*`)
+		c.Assert(got, qt.IsFalse)
+	})
+}
+
 func writeFormatFile(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)

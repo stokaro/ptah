@@ -58,6 +58,22 @@ func ResolveApplySource(
 	return converted, nil
 }
 
+// ApplyReadsNativeAtlasDir reports whether an apply of configured/query reads a
+// native Atlas directory rather than an external-tool directory converted in
+// memory. It resolves the format exactly the way [ResolveApplySource] does, so
+// the two can never disagree about what a given --dir selects.
+//
+// Only a native Atlas directory carries atlas.sum: every converted format is
+// rebuilt as up-only Atlas migrations with no integrity file, so the apply-time
+// checksum gate applies to the native format alone (#970).
+func ApplyReadsNativeAtlasDir(configured string, query url.Values) (bool, error) {
+	format, err := resolveApplyDirFormat(configured, query)
+	if err != nil {
+		return false, err
+	}
+	return format == atlasmigrateimport.FormatAtlas, nil
+}
+
 func resolveApplyDirFormat(configured string, query url.Values) (atlasmigrateimport.Format, error) {
 	queryFormat, found, err := applyDirURLFormat(query)
 	if err != nil {

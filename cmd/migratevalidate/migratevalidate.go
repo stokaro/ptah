@@ -49,6 +49,15 @@ func FailAtlasChecksumMismatch(cmd *cobra.Command, mismatch *migratesum.Mismatch
 	return failAtlasChecksum(cmd, mismatch, errAtlasChecksumMismatch)
 }
 
+// FailAtlasChecksumFileNotFound writes the Atlas CE checksum guidance for a
+// directory that carries no integrity file and returns the exit-1 "checksum
+// file not found" error. Apply-time integrity gates use it so refusing an
+// unhashed directory is byte-identical to `migrate validate` on the same
+// directory (#970).
+func FailAtlasChecksumFileNotFound(cmd *cobra.Command) error {
+	return failAtlasChecksum(cmd, nil, errAtlasChecksumFileNotFound)
+}
+
 type validateRunner func(*cobra.Command, string, string, string) error
 
 func newMigrateValidateCommand(run validateRunner) *cobra.Command {
@@ -101,15 +110,16 @@ func runAtlasValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) er
 	result, err := validate(cmd.Context(), dir, dirFormatValue, devURL)
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMissing):
-		return failAtlasChecksum(cmd, nil, errAtlasChecksumFileNotFound)
+		return FailAtlasChecksumFileNotFound(cmd)
 	case errors.Is(err, migratesum.ErrSumFileMalformed):
-		return failAtlasChecksum(cmd, nil, errAtlasChecksumMismatch)
+		// A malformed sum file has no entry-level mismatch to point at.
+		return FailAtlasChecksumMismatch(cmd, nil)
 	case err != nil:
 		return cmdutil.Fail(cmd, err)
 	}
 
 	if !result.Integrity.OK() {
-		return failAtlasChecksum(cmd, result.Integrity.FirstMismatch(), errAtlasChecksumMismatch)
+		return FailAtlasChecksumMismatch(cmd, result.Integrity.FirstMismatch())
 	}
 
 	return nil

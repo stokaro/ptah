@@ -1630,7 +1630,15 @@ func TestCompatCommand_MigrateLintFormatRendersReplayFailure(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "lint-replay-failure.db")
-	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key); SELECT * FROM missing_table;")
+	// Deliberately unhashed: `migrate lint` reads the directory without the
+	// apply-time integrity gate, and an unhashed directory keeps the two-step
+	// report this test pins (a hashed one adds its own checksum step, which
+	// TestCompatCommand_MigrateLintFormatReportsInvalidAtlasSum covers).
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "20260723120000_init.sql"),
+		[]byte("CREATE TABLE users (id integer primary key); SELECT * FROM missing_table;\n"),
+		0o600,
+	), qt.IsNil)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -3863,6 +3871,9 @@ func TestCompatCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing
 	dbPath := filepath.Join(dir, "down-relative.db")
 	writeAtlasApplyMigration(c, migrationsDir, "1_down_relative.sql", "CREATE TABLE down_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_down_relative.down.sql"), []byte("DROP TABLE down_relative_users;\n"), 0o600), qt.IsNil)
+	// The down file joined the directory after the last hash, so re-hash it:
+	// the compat apply below verifies atlas.sum before executing anything.
+	hashAtlasApplyDir(c, migrationsDir)
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
@@ -4291,10 +4302,24 @@ func atlasSchemaInspectJSONColumnByName(
 	return atlasSchemaInspectJSONColumnResult{}
 }
 
+// writeAtlasApplyMigration writes one Atlas migration into dir and refreshes
+// atlas.sum, leaving the directory hashed the way `atlas migrate new` and
+// `atlas migrate hash` leave it. Since stokaro/ptah#970 the compat apply path
+// refuses an unhashed Atlas directory, so an apply fixture must carry a valid
+// integrity file; tests that deliberately exercise an unhashed directory write
+// their files directly instead.
 func writeAtlasApplyMigration(c *qt.C, dir, name, sql string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql+"\n"), 0o600), qt.IsNil)
+	hashAtlasApplyDir(c, dir)
+}
+
+// hashAtlasApplyDir (re)writes atlas.sum over dir's current contents.
+func hashAtlasApplyDir(c *qt.C, dir string) {
+	c.Helper()
+	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
 }
 
 func sqliteAtlasAppliedVersions(c *qt.C, dbPath string) []string {

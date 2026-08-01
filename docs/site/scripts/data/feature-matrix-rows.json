@@ -559,12 +559,12 @@
  },
  {
   "area": "Versioned migrations — directory",
-  "feature": "Directory integrity file: hash and validate",
+  "feature": "Directory integrity file: hash, validate, and apply-time gate",
   "ptah": "yes",
   "atlas_oss": "yes",
   "atlas_pro": "yes",
-  "note": "hash writes `ptah.sum`, or `atlas.sum` for atlas-format directories; validate checks it and with `--dev-url` cleans and replays the dir.",
-  "evidence": "/tmp/ptah migrations hash/validate --help; verified create→hash→validate (exit 0) then tampered file→validate exit 1; ptah migrations hash --dir-format atlas wrote atlas.sum"
+  "note": "hash writes `ptah.sum` or `atlas.sum`; validate checks it. Compat apply refuses a stale or missing `atlas.sum` like Atlas; native up gates hashed dirs only, unless `--verify-sum`.",
+  "evidence": "/tmp/ptah migrations hash/validate --help; verified create→hash→validate (exit 0) then tampered file→validate exit 1; ptah migrations hash --dir-format atlas wrote atlas.sum. Apply-time gate: a tampered hashed directory refuses on both surfaces before executing anything (stokaro/ptah#955, PR #962). Missing sum file measured 2026-08-01 against Atlas CE v1.2.0 (stokaro/ptah#970): on a directory with no atlas.sum, Atlas exits 1 with `Error: checksum file not found` and never creates the target database; ptah-compat migrate apply now matches that output byte for byte (same code path as ptah-compat migrate validate), while native `ptah migrations up` deliberately stays permissive on a never-hashed directory and reports `migration sum verification failed: ptah.sum not found` only under --verify-sum (exit 2). Converted goose/flyway/liquibase/dbmate/golang-migrate directories carry no atlas.sum by construction and stay ungated on both surfaces."
  },
  {
   "area": "Versioned migrations — safety",
