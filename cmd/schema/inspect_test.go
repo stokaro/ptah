@@ -109,6 +109,63 @@ func TestSchemaInspectRejectsNonMigrationDirectory(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `--migrations-dir .* is not recognized as a migration directory .*`, qt.Commentf("%s", out))
 }
 
+// nativeInspectIncludeDDL gives the include tests a selectable table, a
+// dependent table, and an unrelated table.
+const nativeInspectIncludeDDL = `CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);
+CREATE TABLE posts (id INTEGER PRIMARY KEY, author_id INTEGER REFERENCES users(id));
+CREATE TABLE archive (id INTEGER PRIMARY KEY);`
+
+func TestSchemaInspectIncludeSelectsResources(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "live.db")
+	seedSQLite(c, dbPath, nativeInspectIncludeDDL)
+
+	out, err := runSchema("", "inspect",
+		"--db-url", "sqlite://"+dbPath,
+		"--include", "users",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, `table "users"`)
+	c.Assert(out, qt.Contains, `column "email"`)
+	c.Assert(out, qt.Not(qt.Contains), `table "archive"`)
+}
+
+func TestSchemaInspectIncludeRejectsChildSelectors(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		pattern string
+		wantErr string
+	}{
+		{
+			name:    "type selector spelling",
+			pattern: "*[type=column]",
+			wantErr: `unsupported Atlas include selector .*column resources ride along with their parent.*`,
+		},
+		{
+			name:    "positional spelling",
+			pattern: "main.users.email",
+			wantErr: `unsupported Atlas include selector .*a deeper pattern names a child resource.*`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			// The URL points at a closed port: reaching it would fail with a
+			// connection error instead of the selector error asserted below.
+			out, err := runSchema("", "inspect",
+				"--db-url", "postgres://127.0.0.1:1/unreachable",
+				"--include", test.pattern,
+			)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr, qt.Commentf("%s", out))
+		})
+	}
+}
+
 // TestSchemaInspectMatchesAtlasSchemaInspect proves the native verb and its
 // Atlas twin produce identical machine output from the same live database:
 // both wrap atlasschema.InspectSource.
@@ -132,4 +189,37 @@ func TestSchemaInspectMatchesAtlasSchemaInspect(t *testing.T) {
 	c.Assert(atlasCmd.Execute(), qt.IsNil, qt.Commentf("%s", atlasOut.String()))
 
 	c.Assert(nativeOut, qt.Equals, atlasOut.String())
+}
+
+// TestSchemaInspectIncludeMatchesAtlasSchemaInspect pins that the two surfaces
+// resolve the same include selection to the same bytes, so the compat spelling
+// is not a second implementation of the selector engine.
+func TestSchemaInspectIncludeMatchesAtlasSchemaInspect(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "live.db")
+	seedSQLite(c, dbPath, nativeInspectIncludeDDL)
+
+	nativeOut, err := runSchema("", "inspect",
+		"--db-url", "sqlite://"+dbPath,
+		"--include", "users",
+		"--format", "hcl",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
+
+	atlasCmd := atlas.NewCompatCommand("atlas")
+	var atlasOut bytes.Buffer
+	atlasCmd.SetOut(&atlasOut)
+	atlasCmd.SetErr(&atlasOut)
+	atlasCmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + dbPath,
+		"--include", "users",
+		"--format", "hcl",
+	})
+	c.Assert(atlasCmd.Execute(), qt.IsNil, qt.Commentf("%s", atlasOut.String()))
+
+	c.Assert(nativeOut, qt.Equals, atlasOut.String())
+	c.Assert(nativeOut, qt.Contains, `table "users"`)
+	c.Assert(nativeOut, qt.Not(qt.Contains), `table "archive"`)
 }

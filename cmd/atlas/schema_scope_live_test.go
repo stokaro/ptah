@@ -175,3 +175,80 @@ func TestSchemaDiffSchemaScopeLivePostgres(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "email")
 	c.Assert(out.String(), qt.Not(qt.Contains), auditSchema)
 }
+
+// createScopeInspectSchema provisions one uniquely named schema holding the
+// PostgreSQL-only object kinds the include projection has to reason about: an
+// enum used by a kept column, a SERIAL-owned sequence, an independent table,
+// and a dependent table joined by a foreign key.
+func createScopeInspectSchema(t *testing.T, dbURL string) string {
+	t.Helper()
+	c := qt.New(t)
+	name := fmt.Sprintf("ptah_inspect_inc_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, _ = conn.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+name+" CASCADE")
+		dbschema.CloseAndWarn(conn)
+	})
+	for _, statement := range []string{
+		"CREATE SCHEMA " + name,
+		"CREATE TYPE " + name + ".user_state AS ENUM ('on', 'off')",
+		"CREATE TABLE " + name + ".users (id SERIAL PRIMARY KEY, state " + name + ".user_state)",
+		"CREATE TABLE " + name + ".posts (id SERIAL PRIMARY KEY, author_id INTEGER REFERENCES " + name + ".users(id))",
+		"CREATE TABLE " + name + ".archive (id SERIAL PRIMARY KEY)",
+	} {
+		_, err := conn.ExecContext(context.Background(), statement)
+		c.Assert(err, qt.IsNil)
+	}
+	return name
+}
+
+func TestSchemaInspectIncludeLivePostgres(t *testing.T) {
+	c := qt.New(t)
+	dbURL := livePostgresURLForScope(t)
+	schemaName := createScopeInspectSchema(t, dbURL)
+
+	c.Run("qualified selection keeps the table and the type it uses", func(c *qt.C) {
+		stdout, stderr, err := runCompatInspect(
+			"--url", dbURL, "--schema", schemaName, "--include", schemaName+".users")
+
+		// The enum the kept column uses rides along; the unrelated table and
+		// the dependent table do not.
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+		c.Assert(stdout, qt.Contains, `table "users"`)
+		c.Assert(stdout, qt.Contains, "user_state")
+		c.Assert(stdout, qt.Not(qt.Contains), `table "archive"`)
+		c.Assert(stdout, qt.Not(qt.Contains), `table "posts"`)
+	})
+
+	c.Run("bare name matches inside the schema universe", func(c *qt.C) {
+		stdout, stderr, err := runCompatInspect(
+			"--url", dbURL, "--schema", schemaName, "--include", "users")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+		c.Assert(stdout, qt.Contains, `table "users"`)
+		c.Assert(stdout, qt.Not(qt.Contains), `table "archive"`)
+	})
+
+	c.Run("selection dropping a foreign key target is refused", func(c *qt.C) {
+		stdout, _, err := runCompatInspect(
+			"--url", dbURL, "--schema", schemaName, "--include", "posts")
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(err.Error(), qt.Contains, "via a foreign key")
+		c.Assert(err.Error(), qt.Contains, schemaName+".users")
+		// The refusal replaces the render: no schema output was produced.
+		c.Assert(stdout, qt.Equals, "")
+	})
+
+	c.Run("matching everything keeps every table in the schema universe", func(c *qt.C) {
+		stdout, stderr, err := runCompatInspect(
+			"--url", dbURL, "--schema", schemaName, "--include", "*")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+		c.Assert(stdout, qt.Contains, `table "users"`)
+		c.Assert(stdout, qt.Contains, `table "posts"`)
+		c.Assert(stdout, qt.Contains, `table "archive"`)
+		c.Assert(stdout, qt.Contains, "user_state")
+	})
+}

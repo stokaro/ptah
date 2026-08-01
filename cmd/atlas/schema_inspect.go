@@ -17,6 +17,7 @@ type atlasSchemaInspectOptions struct {
 	url     string
 	devURL  string
 	schemas []string
+	include []string
 	exclude []string
 	format  string
 }
@@ -45,7 +46,18 @@ and ` + "`split \"type\"`" + ` with an optional file extension — through
 ` + "`{{ sql . | split | write \"dir\" }}`" + `. The OSS --exclude filter
 supports resource selectors plus the documented ` + "`[type=extension].version`" + `
 field selector; unsupported selector forms fail before any database is
-contacted.`,
+contacted.
+
+--include positively selects which top-level resources the inspected output
+keeps, using the same selectors as ` + "`schema apply`" + ` and
+` + "`schema diff`" + `: --schema names the schema universe, --include picks
+resources inside it, and --exclude subtracts from the result. Child resources
+(columns, indexes, constraints, triggers, policies, grants) ride along with
+their parent and cannot be selected on their own, in either the
+` + "`[type=column]`" + ` or the ` + "`table.column`" + ` spelling. A selection
+that keeps an object whose dependency it dropped is refused rather than
+rendered, so inspected output never references an object it omitted. The flag
+is absent from Atlas CE, which rejects it as an unknown flag on this command.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaInspect(cmd, opts)
 		},
@@ -54,6 +66,7 @@ contacted.`,
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL, schema file, migration directory, or env:// reference to inspect")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to evaluate non-database inspection sources")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schema to inspect")
+	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
 	flags.StringVar(&opts.format, "format", "", "Output format or Go template: hcl, sql, json, or custom template")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
@@ -106,6 +119,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		URL:            opts.url,
 		DevURL:         opts.devURL,
 		Schemas:        opts.schemas,
+		Include:        opts.include,
 		Exclude:        opts.exclude,
 		Format:         opts.format,
 		Diagnostics:    cmd.ErrOrStderr(),

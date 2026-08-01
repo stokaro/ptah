@@ -95,9 +95,43 @@ schema-qualified globs such as `public.*[type=extension].version`.
 Other field-level selectors, and type selectors on non-final pattern segments,
 fail explicitly before any database is contacted. Schema-qualified function
 and enum filters remain limited by Ptah's current introspection model, which
-does not retain schema names for those resource types yet. `--include` is not
-part of the pinned Atlas CE inspect flag surface. Exporter blocks remain an
-explicit gap.
+does not retain schema names for those resource types yet. Exporter blocks
+remain an explicit gap.
+
+### Select what is inspected with `--include`
+
+`--include` positively selects which top-level resources survive inspection,
+with the same selector engine as [`schema apply` and `schema
+diff`](#scope-the-comparison-with---schema-and---include): `--schema` names
+the schema universe, `--include` picks resources inside it, and `--exclude`
+subtracts from the result. Repeated and comma-separated values union.
+Selectors that match nothing render no objects; an empty value carries no
+selection, so inspection stays unfiltered.
+
+```bash
+ptah-compat schema inspect --url "sqlite://app.db" --include users
+ptah-compat schema inspect --url "postgres://localhost/app" \
+  --schema public --include 'app_*' --exclude app_scratch
+```
+
+Child resources — columns, indexes, constraints, triggers, policies, grants —
+ride along with their parent and cannot be selected on their own, in either
+the `[type=column]` or the `table.column` spelling; both fail before any
+database is contacted. A selection that keeps an object whose dependency it
+dropped is refused rather than rendered, so inspected output never references
+an object it omits:
+
+```text
+error: the --schema/--include selection drops objects that selected objects depend on:
+  - table "main.posts" depends on table "main.users" via a foreign key, but "main.users" is not selected
+add the missing objects to the selection or exclude the dependent objects
+```
+
+The flag is not part of the pinned Atlas CE inspect surface: CE v1.2.0 rejects
+`schema inspect --include` with `Error: unknown flag: --include`. It is
+registered on the licensed Atlas build, where its behavior differs from
+Ptah's in two measured ways, both documented in
+[the comparison](../comparison/#schema-inspect---include).
 
 ## Apply a desired schema
 
@@ -245,7 +279,10 @@ see, on `schema apply` and `schema diff` alike:
   tables, roles named by kept grants, owning schemas) are retained.
   Child-resource selectors such as `[type=column]` or `[type=index]`, field
   selectors, and unknown resource types are rejected loudly because Ptah
-  cannot project a partial parent faithfully.
+  cannot project a partial parent faithfully. The positional spelling of the
+  same thing is rejected too: a selector names a resource as `name` or
+  `schema.name`, so a pattern with a deeper path such as `main.users.email`
+  or `main.users.*` fails instead of silently selecting nothing.
 - `--exclude` and disabled `schema.mode` values subtract from the positive
   selection afterward. The composition order is fixed: schema universe first,
   include selection inside it, exclusion last.

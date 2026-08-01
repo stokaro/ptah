@@ -106,9 +106,21 @@ table "users" {
 }
 ```
 
-`--format sql` and `--format json` select SQL and JSON output, `--schemas`
-narrows inspection to selected database schemas, and `--exclude` filters
-resources with Atlas-style glob patterns.
+`--format sql` and `--format json` select SQL and JSON output. `--schemas`,
+`--include`, and `--exclude` select what is inspected, in that order:
+`--schemas` names the database schemas, `--include` picks top-level resources
+inside them with Atlas-style glob patterns, and `--exclude` subtracts from the
+result.
+
+```bash
+ptah schema inspect --db-url "sqlite://$PWD/app.db" --include users
+```
+
+Child resources — columns, indexes, constraints, triggers, policies, grants —
+ride along with their parent and cannot be selected on their own; a selector
+that names one fails before the database is contacted. A selection that keeps
+an object whose dependency it dropped is refused rather than rendered, so the
+output never references an object it omits.
 
 The source does not have to be a live database: `--schema-file` inspects a
 local `.hcl`, `.yaml`, `.yml`, or `.sql` schema file, and `--migrations-dir`

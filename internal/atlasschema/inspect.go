@@ -17,8 +17,13 @@ import (
 
 // InspectOptions configures Atlas-compatible schema inspection.
 type InspectOptions struct {
-	DevURL      string
-	Schemas     []string
+	DevURL  string
+	Schemas []string
+	// Include positively selects the top-level resources inspection keeps,
+	// with the same Atlas-style selectors [atlasfilter.Scope] applies to
+	// schema apply and diff. Empty keeps every inspected resource, and the
+	// exclusion-only path is then byte-for-byte unchanged.
+	Include     []string
 	Exclude     []string
 	Format      string
 	Diagnostics io.Writer
@@ -70,7 +75,7 @@ func renderInspectSchema(
 	if err != nil {
 		return "", err
 	}
-	schema, err = atlasfilter.ExcludeDatabase(schema, opts.Exclude)
+	schema, err = scopeInspectSchema(schema, info, opts)
 	if err != nil {
 		return "", err
 	}
@@ -88,6 +93,25 @@ func renderInspectSchema(
 		return "", err
 	}
 	return output.Text, nil
+}
+
+// scopeInspectSchema applies the inspection selection to the introspected
+// schema. --schema is honored upstream, when the schema is read, so only
+// --include and --exclude reach the projection here: with --include the full
+// positive projection runs (include selection, exclude subtraction, then
+// cross-scope dependency validation, so inspection never renders a reference
+// to an object it dropped), and without it the established exclusion-only path
+// is kept unchanged.
+func scopeInspectSchema(
+	schema *dbschematypes.DBSchema,
+	info dbschematypes.DBInfo,
+	opts InspectOptions,
+) (*dbschematypes.DBSchema, error) {
+	return atlasfilter.ScopeDatabase(schema, atlasfilter.Scope{
+		Include:       opts.Include,
+		Exclude:       opts.Exclude,
+		DefaultSchema: info.Schema,
+	})
 }
 
 // applyInspectFileExports hands the rendered output plan to the shared

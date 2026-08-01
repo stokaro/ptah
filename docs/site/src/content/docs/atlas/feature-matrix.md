@@ -75,11 +75,11 @@ Across the 153 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 80 |
+| Ptah supports it fully | 81 |
 | Ptah supports it with a stated limitation | 47 |
-| Ptah does not implement it | 26 |
+| Ptah does not implement it | 25 |
 | Ptah and Atlas CE both support it | 24 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 31 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 32 |
 | Ptah has it and neither Atlas edition does | 14 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
 | An Atlas column is ❔ — not established by this page's evidence | 23 |
@@ -128,9 +128,9 @@ as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | `--dry-run`, `--auto-approve`, and `--edit` | ✅ | ✅ | ✅ | All three registered and functional; `--edit` opens $VISUAL/$EDITOR and the edited SQL is what gets planned, rehearsed, and applied. |
 | `--exclude` glob and type selectors | 🟡 | ✅ | ✅ | Resource globs plus one final-segment [type=...]; schema-qualified globs never match default-schema tables, functions or enums. |
-| `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community; pinned CE inspect has no `--include`. Ptah selects with union semantics and cross-scope dependency diagnostics. |
+| `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics. |
 | `--schema` / -s scoping of both sides | ✅ | ✅ | ✅ | Names define the schema universe for apply and diff; repeated and comma-separated values union deterministically. |
-| `schema inspect --include` filtering | ❌ | ❌ | ✅ | Flag absent from the pinned Atlas CE v1.2.0 inspect flags; Ptah rejects it as unknown. The licensed build registers it and it filters on SQLite. |
+| `schema inspect --include` filtering | ✅ | ❌ | ✅ | Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. Child-depth patterns fail closed instead of emitting partial objects. |
 | Apply advisory lock and `--lock-timeout` | ✅ | ✅ | ✅ | Real locks on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server; SQLite, ClickHouse, CockroachDB, Spanner run unlocked with a note. |
 | Desired-state sources for `--to` and `--from` | 🟡 | ✅ | ✅ | Files, one DB URL, one atlas.sum dir, or env://. A plain file:// schema directory without atlas.sum is rejected; atlas:// fails early. |
 | Dev-database rehearsal before apply | ✅ | ✅ | ✅ | Dev DB reset, target schema recreated, exact plan rehearsed; dev==target and failed rehearsal abort. docker:// dev URLs have their own row. |

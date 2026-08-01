@@ -298,12 +298,26 @@ non-community template functions, so these exports are an open Ptah extension.
 **Filtering**
 
 - `--schema`/`-s` narrows inspection when supported by the database reader.
+- `--include` positively selects the top-level resources that survive, with
+  Atlas-style globs and `[type=...]` selectors. Repeated and comma-separated
+  values union. Composition order is `--schema`, then `--include`, then
+  `--exclude`. A selection that matches nothing renders no objects; an empty
+  value carries no selection and leaves inspection unfiltered.
 - The OSS `--exclude` flag filters inspected resources with Atlas-style globs
   and `[type=...]` selectors, including the Atlas-documented
   `*[type=extension].version` field selector with schema-qualified globs.
+- Child resources (columns, indexes, constraints, triggers, policies, grants)
+  cannot be included on their own, in either the `[type=column]` or the
+  `table.column` spelling; both fail before any database is contacted. A
+  selection that drops a dependency of a selected object is refused rather
+  than rendered.
 - Other field-level exclude selectors and type selectors on non-final pattern
-  segments fail explicitly; include filtering and exporter blocks remain
-  explicit gaps.
+  segments fail explicitly; exporter blocks remain an explicit gap.
+
+The pinned Atlas CE binary rejects `schema inspect --include` with
+`unknown flag: --include`; the licensed build registers it. The measured
+behavioral differences are tabulated in
+[the Atlas comparison](../../atlas/comparison/#schema-inspect---include).
 
 Native twin: [`ptah schema inspect`](../native-commands/).
 

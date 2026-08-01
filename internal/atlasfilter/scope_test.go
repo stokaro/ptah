@@ -47,6 +47,10 @@ func TestValidateIncludeSelectors_HappyPath(t *testing.T) {
 		{name: "type selector", values: []string{"users[type=table]"}},
 		{name: "type union", values: []string{"*[type=view|materialized_view]"}},
 		{name: "blank entries", values: []string{" ", ","}},
+		// One separator is the deepest a top-level selector reaches, so the
+		// schema-wildcard spelling of a qualified name stays valid.
+		{name: "wildcard schema qualifier", values: []string{"*.users"}},
+		{name: "qualified type selector", values: []string{"public.users[type=table]"}},
 	}
 
 	for _, test := range tests {
@@ -109,11 +113,60 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 			values:  []string{"*[type=]"},
 			wantErr: `empty Atlas include type selector "type="`,
 		},
+		// Child depth is the positional spelling of the [type=column] form
+		// above: the selection matches "name" and "schema.name" only, so a
+		// deeper pattern can never match and is rejected instead of silently
+		// selecting nothing. Licensed Atlas v1.2.4 also refuses this input
+		// ("too many parts in pattern").
+		{
+			name:    "child depth",
+			values:  []string{"main.t1.id"},
+			wantErr: `unsupported Atlas include selector "main\.t1\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
+		},
+		{
+			name:    "child depth wildcard",
+			values:  []string{"main.t1.*"},
+			wantErr: `unsupported Atlas include selector "main\.t1\.\*": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
+		},
+		{
+			name:    "child depth with type selector",
+			values:  []string{"main.t1.*[type=table]"},
+			wantErr: `unsupported Atlas include selector "main\.t1\.\*\[type=table\]": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
+		},
+		{
+			name:    "child depth in comma separated list",
+			values:  []string{"users,main.t1.id"},
+			wantErr: `unsupported Atlas include selector "main\.t1\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
+		},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			c.Assert(atlasfilter.ValidateIncludeSelectors(test.values), qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// TestIncludeSelectorDepthRuleIsIncludeOnly pins that the child-depth
+// rejection is scoped to --include. Exclusion legitimately reaches child
+// resources, and its "table.child" and "schema.table.child" spellings must
+// keep parsing.
+func TestIncludeSelectorDepthRuleIsIncludeOnly(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		values []string
+	}{
+		{name: "table child", values: []string{"users.email"}},
+		{name: "qualified table child", values: []string{"public.users.email"}},
+		{name: "qualified table child wildcard", values: []string{"public.users.*"}},
+		{name: "qualified child with type selector", values: []string{"public.users.*[type=column]"}},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(atlasfilter.ValidateExcludeSelectors(test.values), qt.IsNil)
 		})
 	}
 }

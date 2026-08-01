@@ -198,10 +198,13 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		forbidden []string
 	}{
 		{
-			name:      "schema_inspect",
-			path:      []string{"schema", "inspect"},
-			flags:     []string{"--url", "--dev-url", "--env", "--schema", "--exclude", "--format"},
-			forbidden: []string{"--include"},
+			name: "schema_inspect",
+			path: []string{"schema", "inspect"},
+			// --include is a Pro-surface flag the pinned Atlas CE binary does
+			// not register on inspect; compat implements it so Pro pipelines
+			// port. --output, --web, and --export stay unregistered.
+			flags:     []string{"--url", "--dev-url", "--env", "--schema", "--exclude", "--format", "--include"},
+			forbidden: []string{"--output", "--web", "--export"},
 		},
 		{
 			name:  "schema_apply",
@@ -1275,17 +1278,26 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 	c.Assert(out.String(), qt.Equals, "{}")
 }
 
-func TestCompatCommand_SchemaInspectRejectsIncludeAsUnknownFlag(t *testing.T) {
+// TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags pins the inspect
+// flags the licensed Atlas build registers that compat deliberately does not:
+// --output, --web, and --export are separate items of stokaro/ptah#951.
+// --include is registered and covered by schema_inspect_include_test.go.
+func TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags(t *testing.T) {
 	c := qt.New(t)
-	cmd := NewCompatCommand("atlas")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://inspect.db", "--include", "users"})
 
-	err := cmd.Execute()
+	for _, flag := range []string{"--output", "--web", "--export"} {
+		c.Run(flag, func(c *qt.C) {
+			cmd := NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://inspect.db", flag, "x"})
 
-	c.Assert(err, qt.ErrorMatches, "unknown flag: --include")
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, "unknown flag: "+flag)
+		})
+	}
 }
 
 func TestCompatCommand_ForwardsParentedNativeCommand(t *testing.T) {

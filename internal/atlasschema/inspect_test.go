@@ -57,6 +57,64 @@ func TestInspect_ExcludeFilter(t *testing.T) {
 	c.Assert(rendered, qt.Not(qt.Contains), `posts_user_fk`)
 }
 
+func TestInspect_IncludeSelection(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("selects the named table and its children", func(c *qt.C) {
+		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-include.db"))
+		defer dbschema.CloseAndWarn(conn)
+		createInspectSchema(c, conn)
+
+		rendered, err := atlasschema.Inspect(conn, atlasschema.InspectOptions{
+			Format:  "hcl",
+			Include: []string{"users"},
+		})
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(rendered, qt.Contains, `table "users"`)
+		c.Assert(rendered, qt.Contains, `column "email"`)
+		c.Assert(rendered, qt.Contains, `users_email_key`)
+		c.Assert(rendered, qt.Not(qt.Contains), `table "posts"`)
+	})
+
+	c.Run("refuses a selection that drops a dependency", func(c *qt.C) {
+		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-include-dep.db"))
+		defer dbschema.CloseAndWarn(conn)
+		createInspectSchema(c, conn)
+
+		rendered, err := atlasschema.Inspect(conn, atlasschema.InspectOptions{
+			Format:  "hcl",
+			Include: []string{"posts"},
+		})
+
+		c.Assert(err, qt.ErrorMatches, `(?s)the --schema/--include selection drops objects.*`)
+		c.Assert(rendered, qt.Equals, "")
+	})
+
+	c.Run("exclusion-only inspection is unchanged", func(c *qt.C) {
+		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-include-none.db"))
+		defer dbschema.CloseAndWarn(conn)
+		createInspectSchema(c, conn)
+
+		withoutInclude, err := atlasschema.Inspect(conn, atlasschema.InspectOptions{
+			Format:  "hcl",
+			Exclude: []string{"posts"},
+		})
+		c.Assert(err, qt.IsNil)
+
+		withEmptyInclude, err := atlasschema.Inspect(conn, atlasschema.InspectOptions{
+			Format:  "hcl",
+			Exclude: []string{"posts"},
+			Include: []string{"", " "},
+		})
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(withEmptyInclude, qt.Equals, withoutInclude)
+		c.Assert(withoutInclude, qt.Contains, `table "users"`)
+		c.Assert(withoutInclude, qt.Not(qt.Contains), `table "posts"`)
+	})
+}
+
 func TestInspect_FailurePath(t *testing.T) {
 	c := qt.New(t)
 

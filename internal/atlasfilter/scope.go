@@ -101,10 +101,20 @@ var includeChildTypes = map[string]struct{}{
 	"grant":       {},
 }
 
+// includeSelectorMaxDots bounds how deep an --include selector may reach. The
+// selection matches top-level resources by their bare name and by their
+// effective-schema-qualified name, so a selector carries at most one "."
+// separator. A literal separator in a glob can only ever be matched by a
+// literal separator in the candidate name, so a deeper selector cannot match
+// anything: it is the positional spelling of the child-resource selection
+// [validateIncludeSelectorTypes] already rejects, and it is rejected the same
+// way instead of silently projecting an empty selection.
+const includeSelectorMaxDots = 1
+
 // ValidateIncludeSelectors parses Atlas-style --include selectors and rejects
 // forms Ptah cannot honor: malformed globs, field selectors, child resource
-// types, and unknown resource types. Commands run it before any database
-// work.
+// types, child-depth patterns, and unknown resource types. Commands run it
+// before any database work.
 func ValidateIncludeSelectors(values []string) error {
 	_, err := parseIncludeSelectors(values)
 	return err
@@ -138,7 +148,21 @@ func parseIncludeSelector(value string) (resourcePattern, error) {
 	if err := validateIncludeSelectorTypes(raw, pattern.types); err != nil {
 		return resourcePattern{}, err
 	}
+	if err := validateIncludeSelectorDepth(raw, pattern.glob); err != nil {
+		return resourcePattern{}, err
+	}
 	return pattern, nil
+}
+
+// validateIncludeSelectorDepth rejects include selectors that reach past the
+// "schema.name" qualification of a top-level resource.
+func validateIncludeSelectorDepth(raw, glob string) error {
+	if strings.Count(glob, ".") <= includeSelectorMaxDots {
+		return nil
+	}
+	return fmt.Errorf(
+		"unsupported Atlas include selector %q: selectors name top-level resources as \"name\" or \"schema.name\", and a deeper pattern names a child resource that rides along with its parent",
+		raw)
 }
 
 func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
