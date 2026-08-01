@@ -84,6 +84,48 @@ func Verify(fsys fs.FS) (*Result, error) {
 	return VerifyWithFormat(fsys, migrator.MigrationDirFormatAuto)
 }
 
+// VerifyHashed verifies fsys against its integrity file when one exists.
+// hashed=false (with a nil Result and nil error) means the directory carries
+// no integrity file for the requested format, so callers can enforce
+// apply-time verification on hashed directories while leaving unhashed
+// directories ungated. When a sum file exists, the result and error are
+// exactly those of [VerifyWithFormat].
+func VerifyHashed(fsys fs.FS, format migrator.MigrationDirFormat) (result *Result, hashed bool, err error) {
+	normalized, err := migrator.ParseMigrationDirFormat(string(format))
+	if err != nil {
+		return nil, false, err
+	}
+
+	hashed, err = hasSumFile(fsys, normalized)
+	if err != nil {
+		return nil, false, err
+	}
+	if !hashed {
+		return nil, false, nil
+	}
+
+	result, err = VerifyWithFormat(fsys, normalized)
+	return result, true, err
+}
+
+func hasSumFile(fsys fs.FS, format migrator.MigrationDirFormat) (bool, error) {
+	names := []string{FileName, AtlasFileName}
+	if format != migrator.MigrationDirFormatAuto {
+		name, err := FileNameForFormat(format)
+		if err != nil {
+			return false, err
+		}
+		names = []string{name}
+	}
+	for _, name := range names {
+		present, err := hasFile(fsys, name)
+		if err != nil || present {
+			return present, err
+		}
+	}
+	return false, nil
+}
+
 // VerifyWithFormat recomputes the sum of fsys using the selected migration
 // directory format and compares it against the selected integrity file.
 func VerifyWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*Result, error) {

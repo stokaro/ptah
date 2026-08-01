@@ -55,7 +55,9 @@ migration directory does not match ptah.sum:
   changed: 0000000002_add_posts.up.sql
 ```
 
-The same drift blocks an apply when `--verify-sum` is set (exit `2`):
+The same drift blocks `ptah migrations up` on any hashed directory — the
+apply verifies `ptah.sum` or `atlas.sum` before executing anything, so a
+tampered migration never runs (exit `2`):
 
 ```text
 error: migration sum verification failed:
@@ -63,10 +65,15 @@ migration directory does not match ptah.sum:
   changed: 0000000002_add_posts.up.sql
 ```
 
+A directory without a sum file is not gated; `--verify-sum` additionally
+makes a missing sum file itself an error. `ptah-compat migrate apply`
+enforces the same gate on `atlas.sum` directories with Atlas's own checksum
+output, matching official Atlas behavior.
+
 Recovery is a decision, not a command: if the change is intentional, review
 it and re-run `ptah migrations hash`; if it is not, restore the file from
 version control. Use `git diff` on the migration directory to tell the two
-apart. Run `validate` in CI and `up --verify-sum` everywhere so drift is
+apart. Run `validate` in CI and hash every shared directory so drift is
 caught at review time, not at deploy time.
 
 ## Replay on a dev database

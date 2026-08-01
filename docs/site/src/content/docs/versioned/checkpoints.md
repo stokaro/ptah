@@ -133,3 +133,11 @@ to the shadow database, and the optional positional name to the checkpoint
 description. Checkpoint output is Ptah-format only today, so this verb operates
 on Ptah-format directories; Atlas-format checkpoint output is a tracked
 follow-up.
+
+Reading Atlas-format checkpoints works today: a migration whose first line is
+the `-- atlas:checkpoint` file directive (as written by Atlas's own
+`migrate checkpoint`) gets the same semantics from both
+`ptah-compat migrate apply` and `ptah migrations up` — a fresh database
+bootstraps from the latest checkpoint, and a database that already applied
+pre-checkpoint history skips the checkpoint silently, matching measured Atlas
+behavior.

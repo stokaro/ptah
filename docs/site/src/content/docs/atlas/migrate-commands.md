@@ -161,6 +161,14 @@ positional `amount` applies only the first N pending migrations. Use
 `--baseline` to mark earlier migration files as applied without executing their
 SQL bodies before applying the remaining pending migrations.
 
+A hashed directory verifies against `atlas.sum` before anything executes: on
+a checksum mismatch the apply refuses with the same output as
+`ptah-compat migrate validate` and no migration runs, matching official
+Atlas. Migrations whose first line is the `-- atlas:checkpoint` directive get
+measured Atlas checkpoint semantics — a fresh database applies only the
+latest checkpoint plus later migrations, and a database that already applied
+pre-checkpoint history skips the checkpoint silently.
+
 ```bash
 ptah-compat migrate apply 2 \
   --url "$DATABASE_URL" \

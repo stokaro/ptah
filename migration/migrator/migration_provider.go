@@ -312,8 +312,24 @@ func (p *FSMigrationProvider) loadAtlasFile(parts *atlasParts, migrationFile Mig
 }
 
 func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile MigrationFile) error {
+	sql, err := readSQLMigrationFile(p.fsys, migrationFile.Path, p.atlasTemplateData)
+	if err != nil {
+		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
+	}
+
+	// Atlas marks checkpoints with a first-line `-- atlas:checkpoint` file
+	// directive rather than Ptah's `.checkpoint.` file-name marker. Detect it
+	// here — before the migration body is wired up — so the migrator applies
+	// the same bootstrap-or-skip semantics to externally produced Atlas
+	// checkpoint directories.
+	isCheckpoint, err := atlasCheckpointFromSQL(migrationFile.Path, sql)
+	if err != nil {
+		return err
+	}
+	parts.migration.IsCheckpoint = isCheckpoint
+
 	if isAtlasDirectionalMigrationFile(migrationFile) {
-		up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.hooks, p.atlasTemplateData)
+		up, err := migrationFuncFromSQLContentWithMetadata(migrationFile.Path, sql, p.hooks)
 		if err != nil {
 			return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
 		}
@@ -321,7 +337,7 @@ func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile Migra
 		return nil
 	}
 
-	atlasFile, err := atlasSQLMigrationFileFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.hooks, p.atlasTemplateData)
+	atlasFile, err := atlasSQLMigrationFileFromSQLContentWithMetadata(migrationFile.Path, sql, p.hooks)
 	if err != nil {
 		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
 	}

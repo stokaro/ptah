@@ -40,6 +40,15 @@ func NewAtlasMigrateValidateCommand() *cobra.Command {
 	return newMigrateValidateCommand(runAtlasValidate)
 }
 
+// FailAtlasChecksumMismatch writes the Atlas CE checksum-mismatch guidance for
+// mismatch (nil for a malformed sum file, which has no entry-level mismatch)
+// and returns the exit-1 "checksum mismatch" error. Apply-time integrity gates
+// use it so refusing a tampered directory is byte-identical to
+// `migrate validate` on the same directory.
+func FailAtlasChecksumMismatch(cmd *cobra.Command, mismatch *migratesum.Mismatch) error {
+	return failAtlasChecksum(cmd, mismatch, errAtlasChecksumMismatch)
+}
+
 type validateRunner func(*cobra.Command, string, string, string) error
 
 func newMigrateValidateCommand(run validateRunner) *cobra.Command {
