@@ -88,6 +88,23 @@ func TestMigrateUpLimitDryRunReportsLimitedCount(t *testing.T) {
 	c.Assert(count, qt.Equals, 0)
 }
 
+func TestMigrateUpDryRunUsesStoredRevisionState(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeUpMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "stored-state.db")
+
+	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--limit", "1")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(1))
+
+	out, err = runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--dry-run")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "Current version: 1")
+	c.Assert(out, qt.Contains, "Pending migrations: 1")
+	c.Assert(out, qt.Contains, "Would have applied 1 migrations")
+	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(1))
+}
+
 // insertOrphanDirtyRevision records a failed revision row for a version that
 // no migration file provides, modeling a crashed migration whose file was
 // later rebased or removed: the dirty guard trips on it, but no pending work

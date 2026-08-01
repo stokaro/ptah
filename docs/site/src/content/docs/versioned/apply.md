@@ -37,9 +37,11 @@ Would have applied 1 migrations
 ```
 
 :::note
-The dry run simulates an uninitialized revision table: it walks every
-migration in the directory, not only the ones pending on this target. Use
-`ptah migrations status` to see what a real run would apply.
+The dry run reads an existing revision table and walks only migrations pending
+on this target. On a fresh target, it treats the absent revision table as empty
+without creating it. A legacy three-column Ptah revision table is read without
+upgrading its layout. A partially upgraded table is rejected with a missing
+column diagnostic and is not modified.
 :::
 
 ## Apply with integrity verification

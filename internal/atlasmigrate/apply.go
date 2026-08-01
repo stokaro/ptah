@@ -40,8 +40,9 @@ type ApplyPlan struct {
 	DryRun           bool
 	StartedAt        time.Time
 
-	mig  *migrator.Migrator
-	opts ApplyOptions
+	mig                    *migrator.Migrator
+	opts                   ApplyOptions
+	assumedAppliedVersions []int64
 }
 
 // ApplyResult contains execution metadata needed by CLI output and Atlas
@@ -102,14 +103,15 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 	}
 
 	return ApplyPlan{
-		Status:           status,
-		Migrations:       mig.MigrationProvider().Migrations(),
-		SelectedVersions: selectedApplyVersions(pending, opts.Amount),
-		CurrentVersion:   plannedCurrentVersion,
-		DryRun:           opts.DryRun,
-		StartedAt:        startedAt,
-		mig:              mig,
-		opts:             opts,
+		Status:                 status,
+		Migrations:             mig.MigrationProvider().Migrations(),
+		SelectedVersions:       selectedApplyVersions(pending, opts.Amount),
+		CurrentVersion:         plannedCurrentVersion,
+		DryRun:                 opts.DryRun,
+		StartedAt:              startedAt,
+		mig:                    mig,
+		opts:                   opts,
+		assumedAppliedVersions: assumedAppliedVersions,
 	}, nil
 }
 
@@ -130,21 +132,25 @@ func (p ApplyPlan) Execute(ctx context.Context) (ApplyResult, error) {
 		DryRun:           p.DryRun,
 		StartedAt:        p.StartedAt,
 	}
-	if p.Noop() || p.opts.DryRun {
-		result.EndedAt = time.Now()
-		return result, nil
-	}
-
+	executionStarted := false
 	err := p.mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{
-		Amount:     p.opts.Amount,
-		AllowDirty: p.opts.AllowDirty,
+		Amount:                 p.opts.Amount,
+		AllowDirty:             p.opts.AllowDirty,
+		AssumedAppliedVersions: p.assumedAppliedVersions,
+		Preflight: func(_ context.Context, plan migrator.MigrationPlan) error {
+			executionStarted = len(plan.Versions) > 0
+			return nil
+		},
 	})
 	result.EndedAt = time.Now()
 	if err != nil {
-		result.Applied = true
+		result.Applied = executionStarted && !p.DryRun
 		result.ApplyError = err
 		result.ErrorText = err.Error()
 		return result, fmt.Errorf("error applying migrations: %w", err)
+	}
+	if p.DryRun || !executionStarted {
+		return result, nil
 	}
 
 	finalStatus, err := p.mig.GetMigrationStatus(ctx)

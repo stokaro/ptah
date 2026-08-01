@@ -176,6 +176,166 @@ func TestPrepareApplyExecute_DryRunBaselinePlansRemaining(t *testing.T) {
 	c.Assert(sqliteTableExists(c, conn, "dry_baseline_three"), qt.IsFalse)
 }
 
+func TestPrepareApplyExecute_DryRunUsesStoredRevisionState(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_one.sql", "CREATE TABLE dry_state_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "2_two.sql", "CREATE TABLE dry_state_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "3_three.sql", "CREATE TABLE dry_state_three (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "dry-state.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	applyPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+		Amount:    2,
+	})
+	c.Assert(err, qt.IsNil)
+	_, err = applyPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+
+	dryRunPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		DryRun:    true,
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(dryRunPlan.CurrentVersion, qt.Equals, int64(2))
+	c.Assert(dryRunPlan.Status.AppliedMigrations, qt.DeepEquals, []int64{1, 2})
+	c.Assert(dryRunPlan.Status.PendingMigrations, qt.DeepEquals, []int64{3})
+	c.Assert(dryRunPlan.SelectedVersions, qt.DeepEquals, []int64{3})
+
+	result, err := dryRunPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Applied, qt.IsFalse)
+	c.Assert(sqliteAtlasRevisionVersions(c, conn), qt.DeepEquals, []string{"1", "2"})
+	c.Assert(sqliteTableExists(c, conn, "dry_state_three"), qt.IsFalse)
+}
+
+func TestPrepareApplyExecute_DryRunRejectsDirtyRevision(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_users.sql", "CREATE TABLE dry_dirty_users (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "dry-dirty.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	applyPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+	_, err = applyPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `UPDATE atlas_schema_revisions
+SET applied = 0, total = 1, error = 'broken'
+WHERE version = '1'`)
+	c.Assert(err, qt.IsNil)
+
+	dryRunPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		DryRun:    true,
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+
+	result, err := dryRunPlan.Execute(ctx)
+	c.Assert(err, qt.ErrorMatches, `error applying migrations: migration 1 is dirty:.*`)
+	c.Assert(result.Applied, qt.IsFalse)
+	c.Assert(result.ApplyError, qt.IsNotNil)
+	c.Assert(sqliteAtlasRevisionVersions(c, conn), qt.DeepEquals, []string{"1"})
+	c.Assert(sqliteTableExists(c, conn, "dry_dirty_users"), qt.IsTrue)
+}
+
+func TestPrepareApplyExecute_DirtyPreflightIsNotReportedAsApplyAttempt(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_users.sql", "CREATE TABLE dirty_apply_users (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "dirty-apply.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	applyPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+	_, err = applyPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `UPDATE atlas_schema_revisions
+SET applied = 0, total = 1, error = 'broken'
+WHERE version = '1'`)
+	c.Assert(err, qt.IsNil)
+
+	retryPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+
+	result, err := retryPlan.Execute(ctx)
+	c.Assert(err, qt.ErrorMatches, `error applying migrations: migration 1 is dirty:.*`)
+	c.Assert(result.Applied, qt.IsFalse)
+	var dirty *migrator.DirtyMigrationError
+	c.Assert(result.ApplyError, qt.ErrorAs, &dirty)
+	c.Assert(sqliteAtlasRevisionVersions(c, conn), qt.DeepEquals, []string{"1"})
+	c.Assert(sqliteTableExists(c, conn, "dirty_apply_users"), qt.IsTrue)
+}
+
+func TestPrepareApplyExecute_DryRunRejectsChecksumMismatch(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_users.sql", "CREATE TABLE dry_checksum_users (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "dry-checksum.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	applyPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+	_, err = applyPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `UPDATE atlas_schema_revisions SET hash = 'deadbeef' WHERE version = '1'`)
+	c.Assert(err, qt.IsNil)
+
+	dryRunPlan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		DryRun:    true,
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+
+	result, err := dryRunPlan.Execute(ctx)
+	c.Assert(err, qt.ErrorMatches, `error applying migrations: migration 1 checksum mismatch:.*`)
+	c.Assert(result.Applied, qt.IsFalse)
+	c.Assert(result.ApplyError, qt.IsNotNil)
+	c.Assert(sqliteAtlasRevisionVersions(c, conn), qt.DeepEquals, []string{"1"})
+	c.Assert(sqliteTableExists(c, conn, "dry_checksum_users"), qt.IsTrue)
+}
+
 func TestPrepareApplyExecute_NoopReturnsResult(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()

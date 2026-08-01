@@ -28,14 +28,16 @@ each:
 - **Ptah** — the native `ptah` binary plus the separate `ptah-compat` drop-in.
 - **CE** — the pinned Atlas community binary, version 1.2.0, which the
   conformance harness runs against.
-- **Pro** — capabilities Atlas documents as licensed on the
-  [Atlas feature availability](https://atlasgo.io/features) page, covering both
-  Atlas Pro and Atlas Cloud.
+- **Pro** — capabilities in Atlas's licensed builds, established either by the
+  [Atlas feature availability](https://atlasgo.io/features) page and
+  [pricing page](https://atlasgo.io/pricing), or by direct measurement of a
+  licensed Atlas build run locally against disposable SQLite databases.
 
 Every Atlas cell has to come from an Atlas-side source: the command, usage, and
 flag inventory the conformance harness reads out of the pinned community
-binary, or a classification Atlas publishes. Where neither settles a question,
-the cell is ❔ rather than a guess.
+binary, measured behavior of an Atlas binary, or a classification Atlas
+publishes. Measurement outranks published classification when they disagree.
+Where nothing settles a question, the cell is ❔ rather than a guess.
 
 ## Atlas plans are not the CE column
 

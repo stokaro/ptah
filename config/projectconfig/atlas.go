@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
+	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
 	"github.com/zclconf/go-cty/cty/function/stdlib"
 )
@@ -880,14 +881,11 @@ func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 		if _, ok := vars[name]; ok {
 			return fmt.Errorf("duplicate atlas.hcl variable %q at %s:%d", name, block.TypeRange.Filename, block.TypeRange.Start.Line)
 		}
-		if value, ok := p.varOverride[name]; ok {
-			if err := p.validateVariableBlock(block); err != nil {
-				return err
-			}
-			vars[name] = value
-			continue
+		variable, err := p.parseVariableBlock(block)
+		if err != nil {
+			return err
 		}
-		value, err := p.variableDefault(block)
+		value, err := p.variableValue(variable)
 		if err != nil {
 			return err
 		}
@@ -936,44 +934,205 @@ func appendAtlasVarValue(existing cty.Value, value cty.Value) cty.Value {
 	return cty.ListVal([]cty.Value{existing, value})
 }
 
-func (p atlasParser) validateVariableBlock(block *hclsyntax.Block) error {
-	for attrName, attr := range block.Body.Attributes {
-		switch attrName {
-		case "default", "description":
-		default:
-			return unsupportedAttr(attrName, attr)
-		}
-	}
-	if len(block.Body.Blocks) > 0 {
-		return unsupportedBlock(block.Body.Blocks[0])
-	}
-	return nil
+// atlasVariable is one parsed atlas.hcl variable block.
+type atlasVariable struct {
+	name       string
+	typ        cty.Type // cty.NilType when the block declares no type
+	sensitive  bool
+	defValue   cty.Value
+	hasDefault bool
 }
 
-func (p atlasParser) variableDefault(block *hclsyntax.Block) (cty.Value, error) {
-	var value cty.Value
-	hasDefault := false
+// typed reports whether the variable block declared a type constraint.
+func (v atlasVariable) typed() bool {
+	return v.typ != cty.NilType
+}
+
+// atlasSupportedVariableTypes names the variable type constraints Ptah
+// implements, for error messages. Anything else fails loudly so a config never
+// silently drops a constraint the official Atlas binary enforces.
+const atlasSupportedVariableTypes = "string, number, bool, and list(string)"
+
+func (p atlasParser) parseVariableBlock(block *hclsyntax.Block) (atlasVariable, error) {
+	variable := atlasVariable{name: block.Labels[0]}
 	for attrName, attr := range block.Body.Attributes {
 		switch attrName {
-		case "default":
-			var diags hcl.Diagnostics
-			value, diags = attr.Expr.Value(p.ctx)
-			if diags.HasErrors() {
-				return cty.NilVal, unsupportedAttr(attrName, attr)
-			}
-			hasDefault = true
-		case "description":
+		case "default", "description", "sensitive", "type":
 		default:
-			return cty.NilVal, unsupportedAttr(attrName, attr)
+			return atlasVariable{}, unsupportedAttr(attrName, attr)
 		}
 	}
 	if len(block.Body.Blocks) > 0 {
-		return cty.NilVal, unsupportedBlock(block.Body.Blocks[0])
+		// validation blocks land here: their semantics are not implemented, so
+		// they fail loudly instead of being silently dropped.
+		return atlasVariable{}, unsupportedBlock(block.Body.Blocks[0])
 	}
-	if !hasDefault {
-		return cty.NilVal, fmt.Errorf("atlas.hcl variable %q requires a default or --var %s=value", block.Labels[0], block.Labels[0])
+	if attr, ok := block.Body.Attributes["type"]; ok {
+		typ, err := atlasVariableTypeAttr(variable.name, attr)
+		if err != nil {
+			return atlasVariable{}, err
+		}
+		variable.typ = typ
 	}
-	return value, nil
+	if attr, ok := block.Body.Attributes["sensitive"]; ok {
+		sensitive, err := p.boolAttr("sensitive", attr)
+		if err != nil {
+			return atlasVariable{}, err
+		}
+		variable.sensitive = sensitive
+	}
+	attr, ok := block.Body.Attributes["default"]
+	if !ok {
+		return variable, nil
+	}
+	if _, overridden := p.varOverride[variable.name]; overridden {
+		// An override replaces the default, so the default expression stays
+		// unevaluated: a default that only resolves in another environment
+		// (for example file() on a machine-specific path) must not fail an
+		// invocation that supplies the value. variableValue checks the
+		// override before hasDefault, so the unset default is never read.
+		return variable, nil
+	}
+	value, diags := attr.Expr.Value(p.ctx)
+	if diags.HasErrors() {
+		return atlasVariable{}, unsupportedAttr("default", attr)
+	}
+	if variable.typed() {
+		converted, err := convert.Convert(value, variable.typ)
+		if err != nil {
+			// The default value stays out of the message: for sensitive
+			// variables it must not leak, and the file location already
+			// pinpoints it for everyone else.
+			return atlasVariable{}, fmt.Errorf(
+				"atlas.hcl variable %q default does not match type %s at %s:%d",
+				variable.name,
+				atlasVariableTypeName(variable.typ),
+				attr.NameRange.Filename,
+				attr.NameRange.Start.Line,
+			)
+		}
+		value = converted
+	}
+	variable.defValue = value
+	variable.hasDefault = true
+	return variable, nil
+}
+
+func (p atlasParser) variableValue(variable atlasVariable) (cty.Value, error) {
+	if value, ok := p.varOverride[variable.name]; ok {
+		return convertAtlasVariableOverride(variable, value)
+	}
+	if !variable.hasDefault {
+		return cty.NilVal, fmt.Errorf("atlas.hcl variable %q requires a default or --var %s=value", variable.name, variable.name)
+	}
+	return variable.defValue, nil
+}
+
+// convertAtlasVariableOverride converts a --var override (a string, or a list
+// of strings when the flag was repeated) to the variable's declared type.
+// Overrides for untyped variables keep their raw shape.
+func convertAtlasVariableOverride(variable atlasVariable, value cty.Value) (cty.Value, error) {
+	if !variable.typed() {
+		return value, nil
+	}
+	if variable.typ.IsListType() {
+		if value.Type().IsListType() {
+			return value, nil
+		}
+		// One --var occurrence for a list(string) variable is a one-element
+		// list, consistent with N occurrences producing an N-element list.
+		return cty.ListVal([]cty.Value{value}), nil
+	}
+	if value.Type().IsListType() {
+		return cty.NilVal, fmt.Errorf(
+			"atlas.hcl variable %q expects %s, got %d --var values",
+			variable.name,
+			atlasVariableTypeName(variable.typ),
+			value.LengthInt(),
+		)
+	}
+	converted, err := convert.Convert(value, variable.typ)
+	if err != nil {
+		return cty.NilVal, fmt.Errorf(
+			"atlas.hcl variable %q expects %s, got --var value %s",
+			variable.name,
+			atlasVariableTypeName(variable.typ),
+			redactedAtlasVariableValue(variable, value),
+		)
+	}
+	return converted, nil
+}
+
+// redactedAtlasVariableValue renders an override value for an error message.
+// Sensitive variables never leak their raw value into error text.
+func redactedAtlasVariableValue(variable atlasVariable, value cty.Value) string {
+	if variable.sensitive {
+		return "(sensitive value)"
+	}
+	return fmt.Sprintf("%q", value.AsString())
+}
+
+func atlasVariableTypeAttr(name string, attr *hclsyntax.Attribute) (cty.Type, error) {
+	if typ, ok := atlasVariableType(attr.Expr); ok {
+		return typ, nil
+	}
+	return cty.NilType, fmt.Errorf(
+		"atlas.hcl variable %q type at %s:%d is not supported: supported types are %s",
+		name,
+		attr.NameRange.Filename,
+		attr.NameRange.Start.Line,
+		atlasSupportedVariableTypes,
+	)
+}
+
+// atlasVariableType maps the accepted atlas.hcl type expressions to cty types.
+// Exotic constraints (object, tuple, map, set, ...) report not-ok so the
+// caller rejects them with an error naming the supported set.
+func atlasVariableType(expr hclsyntax.Expression) (cty.Type, bool) {
+	switch expr := expr.(type) {
+	case *hclsyntax.ScopeTraversalExpr:
+		switch atlasTypeKeyword(expr) {
+		case "string":
+			return cty.String, true
+		case "number":
+			return cty.Number, true
+		case "bool":
+			return cty.Bool, true
+		}
+	case *hclsyntax.FunctionCallExpr:
+		if expr.Name == "list" && len(expr.Args) == 1 {
+			if arg, ok := expr.Args[0].(*hclsyntax.ScopeTraversalExpr); ok && atlasTypeKeyword(arg) == "string" {
+				return cty.List(cty.String), true
+			}
+		}
+	}
+	return cty.NilType, false
+}
+
+func atlasTypeKeyword(expr *hclsyntax.ScopeTraversalExpr) string {
+	if len(expr.Traversal) != 1 {
+		return ""
+	}
+	root, ok := expr.Traversal[0].(hcl.TraverseRoot)
+	if !ok {
+		return ""
+	}
+	return root.Name
+}
+
+func atlasVariableTypeName(typ cty.Type) string {
+	switch {
+	case typ == cty.String:
+		return "string"
+	case typ == cty.Number:
+		return "number"
+	case typ == cty.Bool:
+		return "bool"
+	case typ.IsListType():
+		return "list(string)"
+	default:
+		return typ.FriendlyName()
+	}
 }
 
 func (p atlasParser) configureLocals(blocks []*hclsyntax.Block) error {
