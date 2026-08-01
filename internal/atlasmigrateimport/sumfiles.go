@@ -20,7 +20,7 @@ import (
 // refusing a directory Atlas CE hashed and applies.
 //
 // The rules below were measured against Atlas CE v1.2.0; the corpus in
-// testdata/ce-sums holds the oracle's own atlas.sum for 60 directory shapes and
+// testdata/ce-sums holds the oracle's own atlas.sum for 61 directory shapes and
 // TestSumFileNamesMatchesAtlasCE reproduces every one of them byte for byte.
 //
 // Formats differ in which files count and how deep Atlas looks:

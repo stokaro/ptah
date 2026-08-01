@@ -19,7 +19,7 @@ import (
 // corpus test walks the tree, so a corpus that failed to load would otherwise
 // pass vacuously; asserting the count makes an empty or partial walk fail.
 // Adding a shape is expected to change this number.
-const ceSumCorpusCases = 60
+const ceSumCorpusCases = 61
 
 const sqlBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
 
@@ -392,6 +392,19 @@ func TestSumFileNamesFlywayBaselineWithSubdirectories(t *testing.T) {
 			sourceFS("B2__base.sql", "V1__one.sql", "V3__three.sql"),
 			atlasmigrateimport.FormatFlyway,
 		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"B2__base.sql", "V3__three.sql"})
+	})
+
+	c.Run("a nested non-migration file does not trigger the refusal", func(c *qt.C) {
+		// The refusal keys on covered files, not on the directory containing
+		// anything nested at all, so an unrelated file cannot make a
+		// baseline directory unanswerable.
+		fsys := sourceFS("B2__base.sql", "V3__three.sql")
+		fsys["sub/notes.txt"] = &fstest.MapFile{Data: []byte("scratch\n")}
+
+		got, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatFlyway)
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.DeepEquals, []string{"B2__base.sql", "V3__three.sql"})

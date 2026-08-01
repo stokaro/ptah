@@ -97,6 +97,11 @@ put 1_init.sql "$SQL_PLAIN"
 put 2_more.sql "$SQL_SECOND"
 seal atlas
 
+new_case atlas/subdirectory
+put 1_top.sql "$SQL_PLAIN"
+put sub/2_nested.sql "$SQL_SECOND"
+seal atlas
+
 # --- goose ----------------------------------------------------------------
 new_case goose/basic
 put 1_init.sql "$SQL_GOOSE"
