@@ -77,7 +77,7 @@ the index; the sections carry the detail.
 | [Manual migrations and troubleshooting](#manual-migrations-and-troubleshooting) | Documented |
 | [Drift detection](#drift-detection) | Native |
 | [Checkpoints](#checkpoints) | Native |
-| [Pre-migration checks and policy workflows](#pre-migration-checks-and-policy-workflows) | Out of scope |
+| [Pre-migration checks and policy workflows](#pre-migration-checks-and-policy-workflows) | Partial |
 | [Testing framework](#testing-framework) | Native |
 | [Declarative reference data](#declarative-reference-data) | Native |
 | [Supported databases](#supported-databases) | Partial |
@@ -420,11 +420,11 @@ Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver
 
 **Ptah documentation.** [CI](../../testing/ci/), [Comparison](../comparison/)
 
-**Implementation status.** Out of scope for Atlas Pro policy parity. Ptah has native lint/safety gates, not Atlas Pro checks.
+**Implementation status.** Partial. The local assertion half is implemented in both spellings: the native `-- +ptah check` directive and the Atlas txtar `checks.sql` section, which is enforced as a pre-migration gate rather than executed as plain SQL. The Atlas Cloud approval-policy half stays out of scope.
 
-**Conformance status.** Not measured as Atlas Pro behavior.
+**Conformance status.** Measured against a licensed Atlas build (v1.2.4): a failing `checks.sql` assertion aborts the apply before any body statement on both binaries, and no revision row is recorded.
 
-**Follow-up.** No Atlas OSS issue unless an Open check surface is identified.
+**Follow-up.** [`stokaro/ptah#956`](https://github.com/stokaro/ptah/issues/956) closed the txtar `checks.sql` gap; no Atlas OSS issue unless a further Open check surface is identified.
 
 
 ### Testing framework

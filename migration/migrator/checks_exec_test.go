@@ -65,6 +65,85 @@ func TestMigrateUp_FailingCheckAbortsWithNothingApplied(t *testing.T) {
 	c.Assert(usersTableExists(t, conn), qt.IsTrue)
 }
 
+// TestMigrateUp_FailingCheckWritesNoRevisionRow pins that the no-bookkeeping
+// contract is a property of the check engine, not of the txtar mapping: a
+// failed `-- +ptah check` also leaves the revision table untouched, so the
+// retry after fixing the data needs neither --allow-dirty nor a repair.
+func TestMigrateUp_FailingCheckWritesNoRevisionRow(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newSQLiteCheckMigrator(t, 1) // one row -> check fails
+
+	c.Assert(m.MigrateUp(ctx), qt.IsNotNil)
+
+	var rows int
+	c.Assert(conn.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, 0, qt.Commentf("a failed check must not record a dirty migration row"))
+
+	status, err := m.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(0))
+	c.Assert(status.DirtyRevision, qt.IsNil)
+
+	// Retry after fixing the data succeeds without any bypass flag.
+	_, err = conn.Exec("DELETE FROM users")
+	c.Assert(err, qt.IsNil)
+	c.Assert(m.MigrateUp(ctx), qt.IsNil)
+	c.Assert(usersTableExists(t, conn), qt.IsFalse)
+}
+
+// TestMigrateUp_MultiColumnCheckResultFailsClosed pins that an assertion
+// returning more than one column fails the migration rather than being
+// interpreted: Scan rejects the extra column, and a check that cannot be
+// evaluated must block, never pass.
+func TestMigrateUp_MultiColumnCheckResultFailsClosed(t *testing.T) {
+	c := qt.New(t)
+	up := `-- +ptah check name="two_columns" assert="SELECT 1, 1"` + "\nDROP TABLE users;\n"
+	conn, m := newSQLiteCheckMigratorWithSQL(t, 0, up)
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.IsNotNil)
+	var checkErr *migrator.CheckFailedError
+	c.Assert(err, qt.ErrorAs, &checkErr, qt.Commentf("want CheckFailedError, got %v", err))
+	c.Assert(checkErr.Err, qt.IsNotNil, qt.Commentf("multi-column result must surface the scan error"))
+	c.Assert(checkErr.Error(), qt.Contains, "could not run")
+	c.Assert(usersTableExists(t, conn), qt.IsTrue) // nothing applied
+}
+
+// multiRowCheckSQL builds a migration guarded by a check whose predicate
+// returns two rows, so the engine's first-row reading is what decides.
+func multiRowCheckSQL(assert string) string {
+	return `-- +ptah check name="multi_row" assert="` + assert + `"` + "\nDROP TABLE users;\n"
+}
+
+// TestMigrateUp_MultiRowCheckFalsyFirstRowBlocks documents the deliberate
+// reading of a multi-row assertion: the predicate is contracted to return a
+// single scalar, and the engine judges the first row rather than erroring. This
+// direction is what keeps a multi-row predicate from passing by accident.
+func TestMigrateUp_MultiRowCheckFalsyFirstRowBlocks(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteCheckMigratorWithSQL(t, 0, multiRowCheckSQL("SELECT 0 UNION ALL SELECT 1"))
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(usersTableExists(t, conn), qt.IsTrue) // nothing applied
+}
+
+// TestMigrateUp_MultiRowCheckTruthyFirstRowPasses is the same contract in the
+// passing direction: a truthy first row admits the migration even though a
+// later row is falsy.
+func TestMigrateUp_MultiRowCheckTruthyFirstRowPasses(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteCheckMigratorWithSQL(t, 0, multiRowCheckSQL("SELECT 1 UNION ALL SELECT 0"))
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(usersTableExists(t, conn), qt.IsFalse)
+}
+
 func TestMigrateUp_PassingCheckProceeds(t *testing.T) {
 	c := qt.New(t)
 	conn, m := newSQLiteCheckMigrator(t, 0) // empty users -> check passes
