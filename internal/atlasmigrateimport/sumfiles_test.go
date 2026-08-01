@@ -19,7 +19,7 @@ import (
 // corpus test walks the tree, so a corpus that failed to load would otherwise
 // pass vacuously; asserting the count makes an empty or partial walk fail.
 // Adding a shape is expected to change this number.
-const ceSumCorpusCases = 61
+const ceSumCorpusCases = 74
 
 const sqlBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
 
@@ -341,85 +341,170 @@ func TestSumFileNamesFlywayBaselineCutComparesVersionsAsStrings(t *testing.T) {
 	})
 }
 
-// TestSumFileNamesFlywayBaselineWithSubdirectories pins the one layout this
-// package declines to answer for. Atlas CE's baseline cut behaves differently
-// depending on where the baseline sits relative to the files it would squash,
-// and the measured cases admit no single rule, so a computed sum could silently
-// disagree with the oracle. Refusing is loud and cannot mis-verify.
-func TestSumFileNamesFlywayBaselineWithSubdirectories(t *testing.T) {
+// TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine pins the rule that
+// replaced an earlier refusal.
+//
+// The baseline cut looked unfittable while it was read as a filter over a set:
+// a top-level B2 squashes a nested V1, yet a nested B9 squashes neither of two
+// top-level files. It resolves once selection is read as a state machine over
+// the walk — a file is squashed only by a baseline already in force when that
+// file is VISITED, and is never reconsidered afterwards. At the top level
+// baselines always sort before versioned files (B < V), so only a subdirectory
+// can reveal the difference.
+//
+// Every expectation below was measured against the pinned oracle.
+func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("baseline plus a nested migration is refused", func(c *qt.C) {
-		_, err := atlasmigrateimport.SumFileNames(
-			sourceFS("B2__base.sql", "sub/V3__three.sql"),
-			atlasmigrateimport.FormatFlyway,
-		)
+	tests := []struct {
+		name  string
+		files []string
+		want  []string
+	}{{
+		name:  "a baseline squashes a nested file visited after it",
+		files: []string{"B2__base.sql", "V3__three.sql", "sub/V1__one.sql"},
+		want:  []string{"B2__base.sql", "V3__three.sql"},
+	}, {
+		name:  "a nested baseline squashes nothing visited before it",
+		files: []string{"V1__one.sql", "V2__two.sql", "sub/B9__base.sql"},
+		want:  []string{"sub/B9__base.sql", "V1__one.sql", "V2__two.sql"},
+	}, {
+		name:  "a nested baseline squashes its own siblings",
+		files: []string{"sub/V1__one.sql", "sub/B2__base.sql", "sub/V3__three.sql"},
+		want:  []string{"sub/B2__base.sql", "sub/V3__three.sql"},
+	}, {
+		name:  "a superseding baseline does not re-squash an earlier survivor",
+		files: []string{"B2__a.sql", "V3__b.sql", "sub/B5__c.sql"},
+		want:  []string{"sub/B5__c.sql", "V3__b.sql"},
+	}, {
+		name:  "a superseded baseline vanishes from the sum",
+		files: []string{"B2__top.sql", "V1__one.sql", "V7__seven.sql", "sub/B5__nested.sql"},
+		want:  []string{"sub/B5__nested.sql", "V7__seven.sql"},
+	}, {
+		name:  "an ordinary project with a baseline and a subfolder",
+		files: []string{"B1__baseline.sql", "V2__init.sql", "views/V3__view.sql"},
+		want:  []string{"B1__baseline.sql", "V2__init.sql", "views/V3__view.sql"},
+	}, {
+		name:  "the squash test compares versions as strings even across directories",
+		files: []string{"B2__a.sql", "V4__b.sql", "V10__d.sql", "sub/B9__c.sql"},
+		want:  []string{"sub/B9__c.sql", "V4__b.sql"},
+	}}
 
-		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineWithSubdirectories)
-		c.Assert(err, qt.ErrorMatches, ".*baseline B2__base.sql with sub/V3__three.sql")
-	})
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := atlasmigrateimport.SumFileNames(
+				sourceFS(tt.files...),
+				atlasmigrateimport.FormatFlyway,
+			)
 
-	c.Run("a nested baseline is refused too", func(c *qt.C) {
-		_, err := atlasmigrateimport.SumFileNames(
-			sourceFS("V1__one.sql", "sub/B2__base.sql"),
-			atlasmigrateimport.FormatFlyway,
-		)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, tt.want)
+		})
+	}
+}
 
-		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineWithSubdirectories)
-	})
+// TestSumFileNamesFlywayVersionComponents pins the version scoring and
+// comparison, the axis a corpus of one-integer versions could never test.
+//
+// Each case is a pair or triple whose oracle order is decided purely by the
+// comparator, measured against the pinned binary.
+func TestSumFileNamesFlywayVersionComponents(t *testing.T) {
+	c := qt.New(t)
 
-	c.Run("a nested repeatable alongside a baseline is refused", func(c *qt.C) {
-		_, err := atlasmigrateimport.SumFileNames(
-			sourceFS("B2__base.sql", "V3__three.sql", "sub/R__view.sql"),
-			atlasmigrateimport.FormatFlyway,
-		)
+	tests := []struct {
+		name  string
+		files []string
+		want  []string
+	}{{
+		name:  "a shorter version ranks before its zero-extended form",
+		files: []string{"V1.0__seed.sql", "V1__seed.sql"},
+		want:  []string{"V1__seed.sql", "V1.0__seed.sql"},
+	}, {
+		name:  "two trailing zero components rank after none",
+		files: []string{"V2.0.0__a.sql", "V2__b.sql"},
+		want:  []string{"V2__b.sql", "V2.0.0__a.sql"},
+	}, {
+		name:  "a trailing separator adds an empty component",
+		files: []string{"V1.__a.sql", "V1__b.sql"},
+		want:  []string{"V1__b.sql", "V1.__a.sql"},
+	}, {
+		name:  "a leading separator adds a leading zero component",
+		files: []string{"V.1__a.sql", "V0.5__b.sql"},
+		want:  []string{"V.1__a.sql", "V0.5__b.sql"},
+	}, {
+		name:  "a non-numeric component scores zero without poisoning its siblings",
+		files: []string{"Vx.5__a.sql", "V0.3__b.sql"},
+		want:  []string{"V0.3__b.sql", "Vx.5__a.sql"},
+	}, {
+		name:  "a non-numeric component ties with an explicit zero",
+		files: []string{"V1.x__a.sql", "V1.0__b.sql", "V1.5__c.sql"},
+		want:  []string{"V1.0__b.sql", "V1.x__a.sql", "V1.5__c.sql"},
+	}, {
+		name:  "negative components are kept and ordered",
+		files: []string{"V-5__a.sql", "V-1__b.sql"},
+		want:  []string{"V-5__a.sql", "V-1__b.sql"},
+	}, {
+		name:  "an overflowing component clamps rather than being rejected",
+		files: []string{"V20240101120000000000__a.sql", "V2__b.sql"},
+		want:  []string{"V2__b.sql", "V20240101120000000000__a.sql"},
+	}, {
+		// Both score {1, 5}, so the tie falls through to walk order, where
+		// "V1.5__b.sql" wins on '.' sorting below '_'. Measured, not assumed:
+		// the first draft of this case asserted the opposite and the oracle
+		// settled it.
+		name:  "underscore and dot separators are interchangeable",
+		files: []string{"V1_5__a.sql", "V1.5__b.sql", "V2__c.sql"},
+		want:  []string{"V1.5__b.sql", "V1_5__a.sql", "V2__c.sql"},
+	}}
 
-		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineWithSubdirectories)
-	})
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := atlasmigrateimport.SumFileNames(
+				sourceFS(tt.files...),
+				atlasmigrateimport.FormatFlyway,
+			)
 
-	c.Run("subdirectories without a baseline are computed normally", func(c *qt.C) {
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+// TestSumFileNamesFlywaySkipsHiddenDirectories pins that Atlas CE does not
+// descend into dot-directories. Covering .archive/V1__old.sql would make Ptah
+// refuse a directory the oracle still considers clean, which is worse than a
+// plain false refusal: the offending file is one a user deliberately archived.
+func TestSumFileNamesFlywaySkipsHiddenDirectories(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("a hidden directory is not covered", func(c *qt.C) {
 		got, err := atlasmigrateimport.SumFileNames(
-			sourceFS("V1__top.sql", "sub/V2__nested.sql"),
+			sourceFS(".archive/V1__old.sql", "V2__new.sql"),
 			atlasmigrateimport.FormatFlyway,
 		)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(got, qt.DeepEquals, []string{"V1__top.sql", "sub/V2__nested.sql"})
+		c.Assert(got, qt.DeepEquals, []string{"V2__new.sql"})
 	})
 
-	c.Run("a baseline without subdirectories is computed normally", func(c *qt.C) {
+	c.Run("a hidden directory nested deeper is not covered either", func(c *qt.C) {
 		got, err := atlasmigrateimport.SumFileNames(
-			sourceFS("B2__base.sql", "V1__one.sql", "V3__three.sql"),
+			sourceFS("sub/.old/V1__old.sql", "sub/V2__new.sql"),
 			atlasmigrateimport.FormatFlyway,
 		)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(got, qt.DeepEquals, []string{"B2__base.sql", "V3__three.sql"})
+		c.Assert(got, qt.DeepEquals, []string{"sub/V2__new.sql"})
 	})
 
-	c.Run("a nested non-migration file does not trigger the refusal", func(c *qt.C) {
-		// The refusal keys on covered files, not on the directory containing
-		// anything nested at all, so an unrelated file cannot make a
-		// baseline directory unanswerable.
-		fsys := sourceFS("B2__base.sql", "V3__three.sql")
-		fsys["sub/notes.txt"] = &fstest.MapFile{Data: []byte("scratch\n")}
-
-		got, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatFlyway)
-
-		c.Assert(err, qt.IsNil)
-		c.Assert(got, qt.DeepEquals, []string{"B2__base.sql", "V3__three.sql"})
-	})
-
-	c.Run("a nested undo file does not trigger the refusal", func(c *qt.C) {
-		// Undo files are dropped before the check, so they cannot make an
-		// otherwise answerable directory unanswerable.
+	c.Run("an ordinary directory is still covered", func(c *qt.C) {
 		got, err := atlasmigrateimport.SumFileNames(
-			sourceFS("B2__base.sql", "V3__three.sql", "sub/U1__one.sql"),
+			sourceFS("archive/V1__old.sql", "V2__new.sql"),
 			atlasmigrateimport.FormatFlyway,
 		)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(got, qt.DeepEquals, []string{"B2__base.sql", "V3__three.sql"})
+		c.Assert(got, qt.DeepEquals, []string{"archive/V1__old.sql", "V2__new.sql"})
 	})
 }
 
@@ -460,7 +545,8 @@ func TestSumFileNamesEmptyFileSetIsNotAnError(t *testing.T) {
 			names, err := atlasmigrateimport.SumFileNames(fsys, tt.format)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(names, qt.HasLen, 0)
+			// HasLen 0 would accept nil; the contract is an empty slice.
+			c.Assert(names, qt.DeepEquals, []string{})
 
 			// The directory is not empty on disk — only its file set is. Each
 			// corpus case holds its source file plus the recorded atlas.sum.

@@ -1,6 +1,7 @@
 package atlasmigrateimport
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,9 +20,11 @@ import (
 // produces a sum Atlas CE never would — which on a verification path means
 // refusing a directory Atlas CE hashed and applies.
 //
-// The rules below were measured against Atlas CE v1.2.0; the corpus in
-// testdata/ce-sums holds the oracle's own atlas.sum for 61 directory shapes and
-// TestSumFileNamesMatchesAtlasCE reproduces every one of them byte for byte.
+// Every rule here was derived from measurement against the pinned Atlas CE
+// v1.2.0 binary, never from reading its source. The corpus in testdata/ce-sums
+// holds the oracle's own atlas.sum for each captured shape, and
+// TestSumFileNamesDifferentialFuzz compares against the live oracle over
+// randomly generated directories.
 //
 // Formats differ in which files count and how deep Atlas looks:
 //
@@ -49,7 +52,12 @@ func SumFileNames(fsys fs.FS, format Format) ([]string, error) {
 
 	switch format {
 	case FormatFlyway:
-		names, err := treeNames(fsys)
+		// Flyway selection is a walk-order state machine, so names must arrive
+		// in visit order rather than sorted by path. Hidden directories are
+		// pruned: Atlas CE does not descend into them, so covering
+		// .archive/V1__old.sql would make Ptah refuse a directory the oracle
+		// still considers clean.
+		names, err := treeNames(fsys, skipHiddenDir)
 		if err != nil {
 			return nil, err
 		}
@@ -91,13 +99,26 @@ func topLevelNames(fsys fs.FS) ([]string, error) {
 	return names, nil
 }
 
-func treeNames(fsys fs.FS) ([]string, error) {
+func skipHiddenDir(base string) bool {
+	return strings.HasPrefix(base, ".")
+}
+
+// treeNames returns every file in fsys in lexical walk order — the order
+// fs.WalkDir visits them, which interleaves a subdirectory's contents at the
+// position of the subdirectory itself. The result is deliberately NOT sorted by
+// path: sorting would place "sub.sql" before "sub/V1__x.sql" ('.' sorts below
+// '/') while a walk visits the directory first, and Flyway selection depends on
+// visit order. skipDir, when non-nil, prunes a directory by its base name.
+func treeNames(fsys fs.FS, skipDir func(base string) bool) ([]string, error) {
 	var names []string
 	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
+			if name != "." && skipDir != nil && skipDir(path.Base(name)) {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		names = append(names, name)
@@ -106,7 +127,6 @@ func treeNames(fsys fs.FS) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("walk migration directory: %w", err)
 	}
-	slices.Sort(names)
 	return names, nil
 }
 
@@ -131,8 +151,8 @@ const (
 )
 
 // flywaySumFile is one parsed Flyway file name. version is the raw token
-// between the prefix and the "__" separator; components is that token parsed
-// into numbers, or nil when it does not parse.
+// between the prefix and the "__" separator; components is that token scored
+// into numbers for ordering.
 type flywaySumFile struct {
 	name       string
 	kind       flywaySumFileKind
@@ -142,84 +162,74 @@ type flywaySumFile struct {
 
 // flywaySumFileNames selects and orders the Flyway files an atlas.sum covers.
 //
-// Measured against Atlas CE v1.2.0:
+// Selection is a state machine over the walk, not a filter over a set — that
+// distinction is the whole difficulty, and it is invisible unless
+// subdirectories are involved. At the top level Atlas visits names in order, so
+// baselines (B) always precede versioned files (V); only a subdirectory can put
+// a baseline after a file it would otherwise have squashed.
+//
+// Walking in visit order, carrying the baseline in force at each step:
 //
 //   - Undo (U) files are never covered. Repeatable (R) files are, and come
-//     after every versioned file, ordered by name.
-//   - A baseline (B) file squashes history. The baseline is the B file with the
-//     highest version, and it is emitted FIRST — not in version order. That is
-//     only observable when an unparseable version is present, because otherwise
-//     everything that outranks the baseline also sorts after it.
-//   - Every other file at or below the baseline version is dropped, including
-//     lower baselines.
-//   - Surviving files are ordered by version compared NUMERICALLY, component by
-//     component, so V1 < V1.5 < V2 < V10.
+//     after every versioned file.
+//   - A baseline (B) supersedes the one in force when its version is greater or
+//     equal, which is why the LAST of two equal-versioned baselines wins and a
+//     superseded baseline vanishes from the sum entirely.
+//   - A versioned file is squashed when a baseline is already in force and its
+//     version is not greater. A file visited BEFORE any baseline survives and
+//     is never reconsidered when a later baseline appears — so B2, V3, sub/B5
+//     keeps V3 even though "3" <= "5".
+//   - The surviving baseline is emitted FIRST, ahead of version order.
 //
-// The two comparisons genuinely differ, which is the trap this function exists
-// to encode: the baseline cut compares version tokens as STRINGS, so a baseline
-// at V2 drops V10 ("10" < "2") even though V10 sorts after V2 in the output.
-// Implementing the cut numerically would keep a file Atlas CE dropped and
-// produce a sum that never verifies against the oracle's.
-//
-// A version token that does not parse as numbers (V__x.sql, Vx__y.sql) is
-// covered, sorts before every parseable version, and is exempt from the
-// baseline cut whenever it compares greater as a string.
-//
-// Flyway is also the one format Atlas CE recurses into: a nested file is
-// covered under its slash-separated path and ordered by version alongside the
-// top-level ones, so zzz/V1__nested.sql precedes V9__top.sql. Combining a
-// baseline with subdirectories is refused — see
-// ErrFlywayBaselineWithSubdirectories.
+// The two comparisons genuinely differ, which is the trap to remember: the
+// squash test compares version tokens as STRINGS, so a baseline at V2 squashes
+// V10 ("10" < "2") even though V10 sorts after V2 in the output, which is
+// ordered numerically.
 func flywaySumFileNames(names []string) ([]string, error) {
-	var versioned, repeatable []flywaySumFile
+	var survivors, repeatable []flywaySumFile
+	var baseline *flywaySumFile
+	visited := 0
+
 	for _, name := range names {
 		file, ok := parseFlywaySumFile(name)
 		if !ok {
 			continue
 		}
+		if file.kind == flywaySumBaseline && visited > 0 &&
+			flywayVersionIsUnbounded(file.version) {
+			return nil, fmt.Errorf("%w: %s", ErrFlywayBaselineVersionNotNumeric, file.name)
+		}
+		visited++
 		switch file.kind {
 		case flywaySumUndo:
 			continue
 		case flywaySumRepeatable:
 			repeatable = append(repeatable, file)
-		case flywaySumVersioned, flywaySumBaseline:
-			versioned = append(versioned, file)
+		case flywaySumBaseline:
+			// A baseline is never squashed by the one in force: it either
+			// replaces it or is dropped as superseded history.
+			if baseline == nil || file.version >= baseline.version {
+				baseline = &file
+			}
+		case flywaySumVersioned:
+			if baseline != nil && file.version <= baseline.version {
+				continue
+			}
+			survivors = append(survivors, file)
 		}
 	}
 
-	// The highest baseline wins; a tie goes to the last name, so two baselines
-	// recorded at the same version resolve the way Atlas CE resolves them.
-	baseline := -1
-	for i, file := range versioned {
-		if file.kind == flywaySumBaseline &&
-			(baseline < 0 || file.version >= versioned[baseline].version) {
-			baseline = i
-		}
+	out := make([]string, 0, len(survivors)+len(repeatable)+1)
+	if baseline != nil {
+		out = append(out, baseline.name)
 	}
 
-	if err := checkFlywayBaselineDepth(versioned, repeatable, baseline); err != nil {
-		return nil, err
-	}
-
-	out := make([]string, 0, len(versioned)+len(repeatable))
-	kept := make([]flywaySumFile, 0, len(versioned))
-	for i, file := range versioned {
-		switch {
-		case i == baseline:
-			out = append(out, file.name)
-		case baseline >= 0 && file.version <= versioned[baseline].version:
-			// Squashed by the baseline. Compared as strings, deliberately.
-		default:
-			kept = append(kept, file)
-		}
-	}
-
-	// kept is still in name order, so a stable sort leaves files whose versions
-	// compare equal — including every unparseable one — ordered by name.
-	slices.SortStableFunc(kept, func(a, b flywaySumFile) int {
+	// survivors is still in walk order, so a stable sort leaves files whose
+	// versions compare equal ordered the way Atlas visited them.
+	slices.SortStableFunc(survivors, func(a, b flywaySumFile) int {
 		return compareFlywaySumVersions(a.components, b.components)
 	})
-	for _, file := range kept {
+	for _, file := range survivors {
 		out = append(out, file.name)
 	}
 	for _, file := range repeatable {
@@ -228,41 +238,24 @@ func flywaySumFileNames(names []string) ([]string, error) {
 	return out, nil
 }
 
-// ErrFlywayBaselineWithSubdirectories reports a Flyway layout whose checksum
-// this package declines to compute.
+// ErrFlywayBaselineVersionNotNumeric reports the one Flyway layout whose
+// checksum this package declines to compute: a baseline whose version token has
+// a non-numeric component (Bx__base.sql, Bx.5__base.sql) reached after some
+// other covered file was already visited.
 //
-// Measured against Atlas CE v1.2.0, the baseline cut behaves differently
-// depending on where the baseline and the files it would squash sit in the
-// tree, and four probes produced no model that explains all of them: a
-// top-level B2 squashes a nested V1, a nested B2 squashes a sibling V1, a
-// nested B9 squashes neither of two top-level files, and a nested B5 alongside
-// a top-level B2 squashes both a top-level B2 and a top-level V1.
+// Everywhere else the selection is a visit-order state machine, validated
+// against the oracle over thousands of randomized shapes. That model holds for
+// every baseline with a numeric version, at any depth. A non-numeric baseline
+// reached mid-walk instead squashes files the walk had already accepted, and no
+// model tried so far reproduces it: treating such a baseline as unbounded fixes
+// those shapes and breaks others.
 //
-// Guessing between those would mean fitting a rule to four points and emitting
-// a checksum that may silently disagree with the oracle's — the failure this
-// package exists to prevent. Refusing is loud, cannot mis-verify, and affects
-// only directories that combine a baseline with subdirectories; every other
-// Flyway layout, nested or not, is computed normally.
-var ErrFlywayBaselineWithSubdirectories = errors.New(
-	"flyway baseline combined with migrations in subdirectories is not supported",
+// Refusing is scoped to a token no ordinary project writes — a Flyway baseline
+// is a version number — and it cannot mis-verify. An ordinary baseline layout,
+// including one with subdirectories, is computed normally.
+var ErrFlywayBaselineVersionNotNumeric = errors.New(
+	"flyway baseline version is not numeric and follows another migration",
 )
-
-func checkFlywayBaselineDepth(versioned, repeatable []flywaySumFile, baseline int) error {
-	if baseline < 0 {
-		return nil
-	}
-	for _, file := range slices.Concat(versioned, repeatable) {
-		if strings.Contains(file.name, "/") {
-			return fmt.Errorf(
-				"%w: baseline %s with %s",
-				ErrFlywayBaselineWithSubdirectories,
-				versioned[baseline].name,
-				file.name,
-			)
-		}
-	}
-	return nil
-}
 
 // parseFlywaySumFile splits a Flyway file name into its prefix and version
 // token. A nested file keeps its full slash path as the name while the prefix
@@ -270,11 +263,11 @@ func checkFlywayBaselineDepth(versioned, repeatable []flywaySumFile, baseline in
 // sub/V2__nested.sql.
 //
 // The only requirements Atlas CE imposes are a .sql suffix and a leading V, B,
-// R or U. Neither the "__" separator nor a description nor a parseable version
-// is needed, so V1.sql, V1__.sql and V.sql are all covered — and so is any
+// R or U. Neither the "__" separator nor a description nor a numeric version is
+// needed, so V1.sql, V1__.sql and V.sql are all covered — and so is any
 // ordinary word with that initial: Video.sql is a versioned migration, and
-// Backup.sql is a BASELINE, which squashes every versioned migration beneath
-// it. Requiring a separator here would drop files the oracle covers.
+// Backup.sql is a BASELINE, which squashes every versioned migration visited
+// after it. Requiring a separator here would drop files the oracle covers.
 //
 // The match is case-sensitive, unlike the importer's flywayFileRe: Atlas CE
 // covers V1__a.sql and ignores v1__a.sql, so reusing that (?i) pattern would
@@ -314,43 +307,58 @@ func parseFlywaySumFile(name string) (flywaySumFile, bool) {
 	}, true
 }
 
-// parseFlywaySumVersion parses a Flyway version token into numeric components,
-// splitting on Flyway's interchangeable '.' and '_' separators. It returns nil
-// for a token that is empty or holds any non-numeric component, which orders
-// that file before every parseable version.
+// parseFlywaySumVersion scores a Flyway version token into ordering components,
+// splitting on Flyway's interchangeable '.' and '_' separators.
+//
+// Empty components are kept rather than dropped, so "1." scores as {1, 0} and
+// ranks after "1" — the component COUNT is significant, which is why a token is
+// never zero-extended when compared (see compareFlywaySumVersions).
+//
+// Every component is scored by what strconv.Atoi returns, and its error is
+// deliberately ignored because the returned value is already the right answer
+// in each case the oracle exhibits: the exact value when the part is numeric,
+// zero when it is not (so "x" ranks as 0 without poisoning its siblings), and
+// the clamped MaxInt/MinInt on ErrRange (so a 20-digit timestamp ranks above
+// every ordinary version instead of being rejected). Negative parts are kept
+// and ordered, so V-5 precedes V-1.
 func parseFlywaySumVersion(version string) []int {
-	parts := strings.FieldsFunc(version, func(r rune) bool { return r == '.' || r == '_' })
-	if len(parts) == 0 {
-		return nil
-	}
-	components := make([]int, 0, len(parts))
-	for _, part := range parts {
-		value, err := strconv.Atoi(part)
-		if err != nil || value < 0 {
-			return nil
-		}
-		components = append(components, value)
+	parts := strings.Split(strings.ReplaceAll(version, "_", "."), ".")
+	components := make([]int, len(parts))
+	for i, part := range parts {
+		value, _ := strconv.Atoi(part)
+		components[i] = value
 	}
 	return components
 }
 
-// compareFlywaySumVersions orders version components numerically, treating a
-// missing trailing component as zero so V1 sorts before V1.5.
-func compareFlywaySumVersions(a, b []int) int {
-	for i := range max(len(a), len(b)) {
-		var x, y int
-		if i < len(a) {
-			x = a[i]
-		}
-		if i < len(b) {
-			y = b[i]
-		}
-		if x != y {
-			if x < y {
-				return -1
-			}
-			return 1
+// flywayVersionIsUnbounded reports whether any component of a version token
+// fails to parse as a number outright, as in Bx__base.sql or Bx.5__base.sql.
+//
+// A baseline with such a token squashes every versioned file in the directory,
+// including files the walk had already accepted, which is the single behavior
+// visit order alone does not explain. A numeric baseline — including one that
+// overflows, which clamps rather than failing — squashes only what is visited
+// after it. Both halves are measured; a value that merely overflows is
+// deliberately NOT unbounded, since ErrRange still yields an ordering.
+func flywayVersionIsUnbounded(version string) bool {
+	for part := range strings.SplitSeq(strings.ReplaceAll(version, "_", "."), ".") {
+		if _, err := strconv.Atoi(part); errors.Is(err, strconv.ErrSyntax) {
+			return true
 		}
 	}
-	return 0
+	return false
+}
+
+// compareFlywaySumVersions orders version components numerically. A shorter
+// component list that is a prefix of a longer one ranks FIRST: V1 precedes
+// V1.0, and V2 precedes V2.0.0. Zero-extending the shorter list instead would
+// make those pairs compare equal and fall through to a name tiebreak, which
+// reverses the oracle's order on entirely ordinary file names.
+func compareFlywaySumVersions(a, b []int) int {
+	for i := range min(len(a), len(b)) {
+		if a[i] != b[i] {
+			return cmp.Compare(a[i], b[i])
+		}
+	}
+	return cmp.Compare(len(a), len(b))
 }

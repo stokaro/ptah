@@ -431,4 +431,81 @@ put 1_top.up.sql "$SQL_PLAIN"
 put sub/2_nested.up.sql "$SQL_SECOND"
 seal golang-migrate
 
+# --- version-token axis --------------------------------------------------
+# A curated corpus of single-integer versions cannot separate the candidate
+# comparators. These pairs differ only in trailing zero components or in how a
+# token parses, which is exactly where a zero-extending comparator inverts the
+# oracle's order.
+new_case flyway/version-trailing-zero
+put V1__seed.sql "$SQL_PLAIN"
+put V1.0__seed.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/version-two-trailing-zeros
+put V2__b.sql "$SQL_PLAIN"
+put V2.0.0__a.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/version-trailing-separator
+put V1__b.sql "$SQL_PLAIN"
+put V1.__a.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/version-leading-separator
+put V.1__a.sql "$SQL_PLAIN"
+put V0.5__b.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/version-non-numeric-component
+put Vx.5__a.sql "$SQL_PLAIN"
+put V0.3__b.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/version-non-numeric-ties-zero
+put V1.x__a.sql "$SQL_PLAIN"
+put V1.0__b.sql "$SQL_SECOND"
+put V1.5__c.sql "$SQL_PLAIN"
+seal flyway
+
+new_case flyway/version-negative
+put V-5__a.sql "$SQL_PLAIN"
+put V-1__b.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/version-overflow
+put V20240101120000000000__a.sql "$SQL_PLAIN"
+put V2__b.sql "$SQL_SECOND"
+seal flyway
+
+# --- hidden directories --------------------------------------------------
+new_case flyway/hidden-subdirectory
+put .archive/V1__old.sql "$SQL_PLAIN"
+put V2__new.sql "$SQL_SECOND"
+seal flyway
+
+# --- baseline reach across the walk --------------------------------------
+new_case flyway/baseline-squashes-nested-after
+put B2__base.sql "$SQL_PLAIN"
+put V3__three.sql "$SQL_SECOND"
+put sub/V1__one.sql "$SQL_PLAIN"
+seal flyway
+
+new_case flyway/baseline-nested-spares-earlier
+put V1__one.sql "$SQL_PLAIN"
+put V2__two.sql "$SQL_SECOND"
+put sub/B9__base.sql "$SQL_PLAIN"
+seal flyway
+
+new_case flyway/baseline-superseded-spares-survivor
+put B2__a.sql "$SQL_PLAIN"
+put V3__b.sql "$SQL_SECOND"
+put sub/B5__c.sql "$SQL_PLAIN"
+seal flyway
+
+new_case flyway/baseline-ordinary-project
+put B1__baseline.sql "$SQL_PLAIN"
+put V2__init.sql "$SQL_SECOND"
+put views/V3__view.sql "$SQL_PLAIN"
+seal flyway
+
 echo "done"
