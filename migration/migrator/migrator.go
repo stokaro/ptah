@@ -154,17 +154,32 @@ func (m *Migrator) WithSkipChecks(skip bool) *Migrator {
 	return &tmp
 }
 
+// migrationChecks collects a migration's pre-migration checks: Atlas txtar
+// checks.sql assertions first (in section order), then `-- +ptah check`
+// directives parsed from the up SQL.
+func migrationChecks(migration *Migration) ([]Check, error) {
+	parsed, err := ParseChecks(migration.UpSQL)
+	if err != nil {
+		return nil, fmt.Errorf("migration %d has invalid pre-migration check directives: %w", migration.Version, err)
+	}
+	if len(migration.atlasChecks) == 0 {
+		return parsed, nil
+	}
+	return append(slices.Clone(migration.atlasChecks), parsed...), nil
+}
+
 // runMigrationChecks evaluates the pre-migration assertion checks embedded in a
-// migration's up SQL against conn, before any body statement runs. It is a no-op
-// when checks are skipped. A malformed check directive or an unsatisfied
-// assertion returns an error so the caller aborts with nothing applied.
+// migration's up SQL (`-- +ptah check` directives and Atlas txtar checks.sql
+// sections) against conn, before any body statement runs. It is a no-op when
+// checks are skipped. A malformed check directive or an unsatisfied assertion
+// returns an error so the caller aborts with nothing applied.
 func (m *Migrator) runMigrationChecks(ctx context.Context, conn *dbschema.DatabaseConnection, migration *Migration) error {
 	if m.skipChecks {
 		return nil
 	}
-	checks, err := ParseChecks(migration.UpSQL)
+	checks, err := migrationChecks(migration)
 	if err != nil {
-		return fmt.Errorf("migration %d has invalid pre-migration check directives: %w", migration.Version, err)
+		return err
 	}
 	return runChecks(ctx, conn, migration.Version, checks)
 }
@@ -179,9 +194,9 @@ func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration) error {
 	if m.skipChecks {
 		return nil
 	}
-	checks, err := ParseChecks(migration.UpSQL)
+	checks, err := migrationChecks(migration)
 	if err != nil {
-		return fmt.Errorf("migration %d has invalid pre-migration check directives: %w", migration.Version, err)
+		return err
 	}
 	if len(checks) > 0 {
 		return fmt.Errorf("migration %d declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode or --skip-checks", migration.Version)
@@ -359,8 +374,9 @@ func (m *Migrator) getVersionSQL() string {
 func (m *Migrator) getAppliedMigrationsSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		return fmt.Sprintf(
-			"SELECT version FROM %s WHERE applied = total AND COALESCE(error, '') = '' ORDER BY %s",
+			"SELECT version FROM %s WHERE applied = total AND COALESCE(error, '') = '' AND %s ORDER BY %s",
 			m.qualifiedMigrationsTable(),
+			atlasMetadataRowPredicate,
 			m.atlasVersionNumberExpression(),
 		)
 	}
@@ -658,11 +674,33 @@ func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 	if m.conn.Writer().IsDryRun() {
-		return 0, nil
+		// Dry-run skips Initialize, so the metadata table may not exist; only
+		// then is version 0 correct. An existing table is read for real so a
+		// dry run reports the database's actual version (#957).
+		exists, err := m.migrationsMetadataTableExists(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if !exists {
+			return 0, nil
+		}
 	}
 
 	// Query the current version
 	return m.scanCurrentVersion(ctx)
+}
+
+// migrationsMetadataTableExists reports whether the migrations metadata table
+// is present. Dry-run read paths use it to decide between reading live
+// metadata and reporting the empty state Initialize would have created.
+func (m *Migrator) migrationsMetadataTableExists(ctx context.Context) (bool, error) {
+	// Probing for the version column doubles as a table-existence check on
+	// every supported dialect: a missing table reports zero matching columns.
+	exists, err := m.migrationsColumnExists(ctx, "version")
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect migrations metadata table: %w", err)
+	}
+	return exists, nil
 }
 
 // GetAppliedMigrations returns a list of applied migration versions
@@ -717,7 +755,15 @@ func queryMigrationRows[T any](
 		return nil, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 	if m.conn.Writer().IsDryRun() {
-		return []T{}, nil
+		// Same contract as GetCurrentVersion: dry-run only reports an empty
+		// history when the metadata table genuinely does not exist (#957).
+		exists, err := m.migrationsMetadataTableExists(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return []T{}, nil
+		}
 	}
 
 	return queryMigrationRowsFrom(ctx, m.conn, query, scan, queryErr, scanErr, iterErr)

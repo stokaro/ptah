@@ -97,11 +97,22 @@ DELETE FROM users WHERE id = 1;
 ```
 
 For Atlas txtar migrations, Ptah executes only the `migration.sql` section for
-`migrations up` and only the `down.sql` section for `migrations down`. Other embedded
-txtar files, such as `schema.sql`, are ignored by the migrator; ordinary SQL
-comments that look like `-- keep this comment --` remain comments, not txtar
-section boundaries. Ptah's txtar support is intentionally limited to Atlas SQL
-migration containers and is not a general-purpose txtar parser.
+`migrations up` and only the `down.sql` section for `migrations down`. A
+`checks.sql` section is a pre-migration gate, matching Atlas Pro semantics:
+
+- Each statement is an assertion that must return a single truthy scalar.
+- A failing assertion aborts the migration before any `migration.sql`
+  statement runs, through the same machinery as `-- +ptah check` directives
+  (see `docs/pre-migration-checks.md`).
+- `--skip-checks` on `migrations up` bypasses txtar checks too, and
+  `--tx-mode all` refuses checked files exactly as it refuses
+  `-- +ptah check` files.
+
+Other embedded txtar files, such as `schema.sql`, are ignored by the migrator;
+ordinary SQL comments that look like `-- keep this comment --` remain
+comments, not txtar section boundaries. Ptah's txtar support is intentionally
+limited to Atlas SQL migration containers and is not a general-purpose txtar
+parser.
 
 Atlas-format SQL template migrations are rendered with Go `text/template`
 before execution and linting. Root versioned files such as `1.sql` and `2.sql`
@@ -120,7 +131,10 @@ migration versions, reads the Atlas `applied`/`total` and `error` state
 fields, and writes the Atlas `hash` value from `atlas.sum` when it is
 available. Successful rows created by migration execution use the migration
 filename description, store empty `error` and `error_stmt` values, and
-identify Ptah as the operator.
+identify Ptah as the operator. Dot-prefixed versions — such as the
+`.atlas_cloud_identifier` row Atlas Pro's `migrate down` writes even in local
+mode — are metadata, not migrations: Ptah skips them in version, status, and
+pending calculations and never rewrites or deletes them.
 
 Ptah records a coherent timing interval for executed SQL: `executed_at` is the
 migration lifecycle start and `execution_time` is the full elapsed duration in

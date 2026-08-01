@@ -156,7 +156,7 @@ as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Also runs goose/flyway/liquibase/dbmate dirs via ?format=; `--dry-run` ignores the revision table and re-plans already-applied files. |
 | Atlas SQL template migrations (`--atlas-env`) | ✅ | ❔ | ❔ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. Flag on 10 migrations verbs. |
-| Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❔ | ✅ | Atlas-format .sql files with `-- atlas:txtar` execute migration.sql and down.sql sections; checks.sql is discarded, not enforced (stokaro/ptah#956); other embedded files are ignored. |
+| Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❔ | ✅ | `-- atlas:txtar` files execute migration.sql and down.sql sections and enforce checks.sql as a pre-migration gate (aborts before the body, Pro parity); other embedded files are ignored. |
 | Atlas-format checkpoint output | ❌ | ❌ | ✅ | migrate checkpoint `--dir-format`=atlas is a recorded waiver; Ptah writes only the ptah two-file checkpoint convention. |
 | Baseline an existing database | ✅ | ✅ | ✅ | Ptah adds a standalone baseline verb with `--shadow-db` verification and `--dry-run`; CE exposes baselining as migrate apply `--baseline`. |
 | Create an empty migration file | ✅ | ✅ | ✅ | Native create writes an up/down pair; compat new writes one Atlas .sql skeleton, refreshes `atlas.sum`, `--edit` opens $VISUAL or $EDITOR. |
@@ -200,7 +200,7 @@ as open capabilities regardless.
 | Inline nolint suppression | 🟡 | ✅ | ✅ | Analyzer-name selectors suppress, but only codes DS102/DS103/MF103 map; atlas:nolint PG101 and unknown selectors are silently ignored. |
 | Native migration lint rule set | ✅ | 🟡 | ✅ | 42 codes across 9 families, gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
 | Per-rule severity policy | 🟡 | ❔ | 🟡 | Severity vocabulary is warning\|error only (info errors out). Measured licensed build is no richer: analyzer and rule blocks reject a `severity` attribute; only boolean error toggles exist. |
-| Pre-migration assertion checks | 🟡 | ❌ | ✅ | Only the `-- +ptah check` spelling; `--tx-mode` all refuses checked files, and that error names `--skip-checks`, which compat apply lacks. CE applies a failing checks.sql unenforced. |
+| Pre-migration assertion checks | 🟡 | ❌ | ✅ | `-- +ptah check` and txtar checks.sql both enforce; `--tx-mode` all refuses checked files and names `--skip-checks`, which compat apply lacks. CE applies a failing checks.sql unenforced. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❔ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |

@@ -190,14 +190,14 @@ func (m *Migrator) getDirtyRevisionSQL() string {
 		if m.isSQLServer() {
 			return fmt.Sprintf(`SELECT TOP (1) version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
-WHERE applied <> total OR COALESCE(error, '') <> ''
-ORDER BY %s`, m.qualifiedMigrationsTable(), m.atlasVersionNumberExpression())
+WHERE (applied <> total OR COALESCE(error, '') <> '') AND %s
+ORDER BY %s`, m.qualifiedMigrationsTable(), atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
 		}
 		return fmt.Sprintf(`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
-WHERE applied <> total OR COALESCE(error, '') <> ''
+WHERE (applied <> total OR COALESCE(error, '') <> '') AND %s
 ORDER BY %s
-LIMIT 1`, m.qualifiedMigrationsTable(), m.atlasVersionNumberExpression())
+LIMIT 1`, m.qualifiedMigrationsTable(), atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
 	}
 	if m.isSQLServer() {
 		return fmt.Sprintf(`SELECT TOP (1) version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
@@ -228,9 +228,10 @@ func (m *Migrator) getAppliedRevisionsSQL() string {
 		return fmt.Sprintf(
 			`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
-WHERE applied = total AND COALESCE(error, '') = ''
+WHERE applied = total AND COALESCE(error, '') = '' AND %s
 ORDER BY %s`,
 			m.qualifiedMigrationsTable(),
+			atlasMetadataRowPredicate,
 			m.atlasVersionNumberExpression(),
 		)
 	}
@@ -245,8 +246,10 @@ func (m *Migrator) getRevisionsSQL() string {
 		return fmt.Sprintf(
 			`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
+WHERE %s
 ORDER BY %s`,
 			m.qualifiedMigrationsTable(),
+			atlasMetadataRowPredicate,
 			m.atlasVersionNumberExpression(),
 		)
 	}
@@ -264,8 +267,10 @@ func (m *Migrator) getRevisionsForUpdateSQL() string {
 			return fmt.Sprintf(
 				`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s WITH (UPDLOCK, HOLDLOCK)
+WHERE %s
 ORDER BY %s`,
 				m.qualifiedMigrationsTable(),
+				atlasMetadataRowPredicate,
 				m.atlasVersionNumberExpression(),
 			)
 		}
@@ -364,6 +369,9 @@ SETTINGS mutations_sync = 1`, m.qualifiedMigrationsTable())
 }
 
 func (m *Migrator) countRevisionsSQL() string {
+	if m.revisionTableFormat.isAtlas() {
+		return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s`, m.qualifiedMigrationsTable(), atlasMetadataRowPredicate)
+	}
 	return fmt.Sprintf(`SELECT COUNT(*) FROM %s`, m.qualifiedMigrationsTable())
 }
 
@@ -386,12 +394,23 @@ func (m *Migrator) updateAtlasRevisionTypeSQL() string {
 	return fmt.Sprintf(`UPDATE %s SET type = ? WHERE version = ?`, m.qualifiedMigrationsTable())
 }
 
+// atlasMetadataRowPredicate excludes Atlas metadata revision rows from a query.
+// Atlas Pro writes dot-prefixed pseudo-versions (for example
+// `.atlas_cloud_identifier`, inserted by `migrate down` even in local mode)
+// into the revision table. Those rows are bookkeeping, not migrations: version
+// math, status, and pending calculations skip them, and no write path deletes
+// or rewrites them (#957).
+const atlasMetadataRowPredicate = "version NOT LIKE '.%'"
+
 func (m *Migrator) atlasVersionNumberExpression() string {
+	// The CASE arm turns dot-prefixed metadata rows into NULL before the cast,
+	// so strict dialects never cast a non-numeric pseudo-version, MAX ignores
+	// the row, and `expression > ?` comparisons exclude it.
 	switch m.conn.Info().Dialect {
 	case "mysql", "mariadb":
-		return "CAST(version AS SIGNED)"
+		return "CAST(CASE WHEN version LIKE '.%' THEN NULL ELSE version END AS SIGNED)"
 	default:
-		return "CAST(version AS BIGINT)"
+		return "CAST(CASE WHEN version LIKE '.%' THEN NULL ELSE version END AS BIGINT)"
 	}
 }
 
@@ -802,6 +821,19 @@ func (m *Migrator) beginRollbackRevision(
 	)
 }
 
+// beginAtlasRollbackRevision rewrites the revision row in place (applied=0,
+// executed_at=now, error cleared) before the down body runs; a failed down then
+// records the error into the same row via failAtlasMigrationRevision.
+//
+// Known divergence from Atlas, measured 2026-08-01 against Atlas CLI
+// v1.2.4-e282f76-canary (#957): Atlas deletes the revision row only on a
+// successful down and never rewrites it beforehand. After a failed Ptah down
+// leaves a row with applied=0, total=0, error=<message>, `atlas migrate status`
+// still reports that version as executed/OK (it does not filter on error),
+// while Ptah reports it pending/dirty. Matching Atlas here is not a cheap
+// change: the in-place rewrite is Ptah's dirty-state bookkeeping, shared with
+// the native layout, and drives crash recovery (failIfDirty, repair, resume).
+// The behavior is kept and documented instead.
 func (m *Migrator) beginAtlasRollbackRevision(
 	ctx context.Context,
 	migration *Migration,

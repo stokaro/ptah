@@ -199,6 +199,7 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 				return up.fn(ctx, conn, migration.upExecutionMode())
 			}
 			migration.UpSQL = up.sql
+			migration.atlasChecks = up.checks
 			migration.UpTimeouts = up.timeouts
 			migration.UpNoTransaction = up.noTransaction
 			migration.NoTransaction = migration.UpNoTransaction || migration.DownNoTransaction
@@ -350,6 +351,7 @@ func setAtlasUp(parts *atlasParts, up sqlMigrationFile) {
 		return up.fn(ctx, conn, migration.upExecutionMode())
 	}
 	migration.UpSQL = up.sql
+	migration.atlasChecks = up.checks
 	migration.UpTimeouts = up.timeouts
 	migration.UpNoTransaction = up.noTransaction
 	migration.NoTransaction = migration.UpNoTransaction || migration.DownNoTransaction

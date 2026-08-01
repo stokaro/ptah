@@ -73,12 +73,39 @@ re-validated. Keep checks as guards against pre-existing state, not as
 serialization primitives, and keep each `assert` cheap — it runs bounded only by
 the caller's context, not the migration's `statement_timeout`.
 
+## Atlas txtar `checks.sql` sections
+
+An Atlas txtar migration can carry a `checks.sql` section. Ptah enforces it
+through the same machinery as `-- +ptah check`, matching the licensed Atlas
+build's semantics (measured against Atlas CLI v1.2.4): each statement in the
+section is an assertion that must return a single truthy scalar, evaluated in
+section order before any `migration.sql` statement runs. A failing assertion
+aborts the migration with nothing applied; the error names the migration and
+the failing statement's position (`checks.sql#1`, `checks.sql#2`, ...).
+
+```sql
+-- atlas:txtar
+
+-- checks.sql --
+SELECT NOT EXISTS (SELECT * FROM users);
+
+-- migration.sql --
+ALTER TABLE users ADD COLUMN email TEXT;
+```
+
+Txtar checks follow every rule on this page: truthiness interpretation,
+up-direction only, the `--tx-mode all` refusal, and the `--skip-checks`
+bypass on native `ptah migrations up`. The compat `ptah-compat migrate apply`
+has no `--skip-checks` flag (parity with Atlas), so checks always enforce
+there.
+
 ## Bypassing checks
 
 Checks are an additive, finer-grained safety gate that composes with the coarse
 `--check-destructive` / `--allow-destructive` gate. For an emergency override,
-`ptah migrations up --skip-checks` skips all pre-migration checks, mirroring the
-`--allow-destructive` bypass. Use it only after review.
+`ptah migrations up --skip-checks` skips all pre-migration checks — both
+`-- +ptah check` directives and Atlas txtar `checks.sql` assertions — mirroring
+the `--allow-destructive` bypass. Use it only after review.
 
 ## Integrity
 
