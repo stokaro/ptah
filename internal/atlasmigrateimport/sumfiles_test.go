@@ -19,7 +19,7 @@ import (
 // corpus test walks the tree, so a corpus that failed to load would otherwise
 // pass vacuously; asserting the count makes an empty or partial walk fail.
 // Adding a shape is expected to change this number.
-const ceSumCorpusCases = 75
+const ceSumCorpusCases = 83
 
 const sqlBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
 
@@ -373,7 +373,10 @@ func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
 		files: []string{"sub/V1__one.sql", "sub/B2__base.sql", "sub/V3__three.sql"},
 		want:  []string{"sub/B2__base.sql", "sub/V3__three.sql"},
 	}, {
-		name:  "a superseding baseline does not re-squash an earlier survivor",
+		// V3__b.sql survives because its PATH ("V3__b.sql", 0x56) sorts above
+		// the new baseline's token ("5", 0x35) — not because survivors are
+		// immune. See TestSumFileNamesFlywayBaselineReachesBackwards.
+		name:  "a superseding baseline spares a survivor whose path outranks its token",
 		files: []string{"B2__a.sql", "V3__b.sql", "sub/B5__c.sql"},
 		want:  []string{"sub/B5__c.sql", "V3__b.sql"},
 	}, {
@@ -410,53 +413,129 @@ func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
 	}
 }
 
-// TestSumFileNamesFlywayNonNumericBaselineIsRefused pins the one layout whose
-// checksum this package declines to compute. A baseline whose version token is
-// non-numeric, reached after another migration was already visited, squashes
-// files the walk had accepted — behavior no candidate model reproduces. A
-// Flyway baseline is a version number, so no ordinary project reaches this.
-func TestSumFileNamesFlywayNonNumericBaselineIsRefused(t *testing.T) {
+// TestSumFileNamesFlywayBaselineReachesBackwards is a boundary sweep, kept as a
+// test because it establishes the rule from observation alone.
+//
+// A baseline taking force drops files the walk had ALREADY accepted. The test
+// is not a version comparison: it compares each survivor's full
+// slash-separated path against the baseline's version token, as strings.
+//
+// The layout is held at <X>dir/V9__old.sql + B5__base.sql and only the
+// directory's first byte varies. The nested file's version (9) outranks the
+// baseline's (5) in every row, so every version-number model predicts one
+// answer for all of them. The oracle instead cuts exactly at the token's first
+// byte, which is what rules those models out and what nobody should later
+// "simplify" into a numeric comparison.
+func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("a non-numeric baseline reached mid-walk is refused", func(c *qt.C) {
-		_, err := atlasmigrateimport.SumFileNames(
+	c.Run("sweep: the directory name decides, at the token boundary", func(c *qt.C) {
+		// '5' is 0x35. Directories sorting below it lose their file.
+		squashed := []string{"0dir", "1dir", "4dir"}
+		kept := []string{"5dir", "6dir", "9dir", "Adir", "Vdir", "sdir", "zdir"}
+
+		for _, dir := range squashed {
+			got, err := atlasmigrateimport.SumFileNames(
+				sourceFS(dir+"/V9__old.sql", "B5__base.sql"),
+				atlasmigrateimport.FormatFlyway,
+			)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, []string{"B5__base.sql"},
+				qt.Commentf("%s should be squashed by B5", dir))
+		}
+		for _, dir := range kept {
+			got, err := atlasmigrateimport.SumFileNames(
+				sourceFS(dir+"/V9__old.sql", "B5__base.sql"),
+				atlasmigrateimport.FormatFlyway,
+			)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, []string{"B5__base.sql", dir + "/V9__old.sql"},
+				qt.Commentf("%s should survive B5", dir))
+		}
+	})
+
+	c.Run("converse sweep: the token decides, for a fixed directory", func(c *qt.C) {
+		// "5d" and "5e" are the same version number and land on opposite
+		// sides, which is what rules out every numeric interpretation.
+		kept := []string{"1", "4", "5", "50", "5d"}
+		squashed := []string{"5e", "6", "8"}
+
+		for _, token := range kept {
+			got, err := atlasmigrateimport.SumFileNames(
+				sourceFS("5dir/V9__old.sql", "B"+token+"__base.sql"),
+				atlasmigrateimport.FormatFlyway,
+			)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals,
+				[]string{"B" + token + "__base.sql", "5dir/V9__old.sql"},
+				qt.Commentf("token %s should spare 5dir", token))
+		}
+		for _, token := range squashed {
+			got, err := atlasmigrateimport.SumFileNames(
+				sourceFS("5dir/V9__old.sql", "B"+token+"__base.sql"),
+				atlasmigrateimport.FormatFlyway,
+			)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, []string{"B" + token + "__base.sql"},
+				qt.Commentf("token %s should squash 5dir", token))
+		}
+	})
+
+	c.Run("the forward squash still compares version tokens, not paths", func(c *qt.C) {
+		// zdir sorts after B5, so V1 is reached with the baseline in force.
+		// Its version (1) loses to the token (5) even though its path (zdir/)
+		// would win. The two directions genuinely use different comparisons.
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("B5__base.sql", "zdir/V1__old.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"B5__base.sql"})
+	})
+
+	c.Run("repeatables are exempt from the backwards reach", func(c *qt.C) {
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("0dir/R__x.sql", "B5__base.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"B5__base.sql", "0dir/R__x.sql"})
+	})
+
+	c.Run("a superseding baseline reaches backwards again", func(c *qt.C) {
+		got, err := atlasmigrateimport.SumFileNames(
+			sourceFS("0dir/V9__a.sql", "3dir/V9__b.sql", "B2__base.sql", "zdir/B4__later.sql"),
+			atlasmigrateimport.FormatFlyway,
+		)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"zdir/B4__later.sql"})
+	})
+
+	c.Run("a non-numeric token is the same rule, not a special case", func(c *qt.C) {
+		// "x" is 0x78, above nearly every path's first byte, so Bx reaches
+		// back over essentially everything. This is what used to be refused.
+		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("V1__a.sql", "sub/Bx__base.sql"),
 			atlasmigrateimport.FormatFlyway,
 		)
 
-		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineVersionNotNumeric)
-		c.Assert(err, qt.ErrorMatches, ".*sub/Bx__base.sql")
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, []string{"sub/Bx__base.sql"})
 	})
 
-	c.Run("a dotted non-numeric baseline is refused too", func(c *qt.C) {
-		_, err := atlasmigrateimport.SumFileNames(
-			sourceFS("a/b/V1.0.0__a.sql", "sub/Bx.5__base.sql"),
-			atlasmigrateimport.FormatFlyway,
-		)
-
-		c.Assert(err, qt.ErrorIs, atlasmigrateimport.ErrFlywayBaselineVersionNotNumeric)
-	})
-
-	c.Run("a non-numeric baseline visited first is computed normally", func(c *qt.C) {
-		// Nothing had been accepted yet, so there is nothing to squash
-		// retroactively and the walk-order model still holds.
+	c.Run("a huge numeric token reaches back just as far", func(c *qt.C) {
+		// Numeric, so no refusal keyed on non-numeric tokens could have
+		// covered this one.
 		got, err := atlasmigrateimport.SumFileNames(
-			sourceFS("Bx__y.sql", "V1__a.sql", "V2__b.sql"),
+			sourceFS("0archive/V5__old.sql", "B99999999999999999999__base.sql"),
 			atlasmigrateimport.FormatFlyway,
 		)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(got, qt.DeepEquals, []string{"Bx__y.sql"})
-	})
-
-	c.Run("a numeric baseline reached mid-walk is computed normally", func(c *qt.C) {
-		got, err := atlasmigrateimport.SumFileNames(
-			sourceFS("V1__a.sql", "sub/B9__base.sql"),
-			atlasmigrateimport.FormatFlyway,
-		)
-
-		c.Assert(err, qt.IsNil)
-		c.Assert(got, qt.DeepEquals, []string{"sub/B9__base.sql", "V1__a.sql"})
+		c.Assert(got, qt.DeepEquals, []string{"B99999999999999999999__base.sql"})
 	})
 }
 

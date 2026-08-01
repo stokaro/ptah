@@ -1,12 +1,10 @@
 package atlasmigrateimport_test
 
 import (
-	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -89,16 +87,6 @@ func checkFlywayLayout(c *qt.C, oracle string, layout []string) {
 	fsys := os.DirFS(dir)
 	names, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatFlyway)
 
-	// The contract is never-silently-wrong, not always-answer: a refusal is an
-	// acceptable outcome, a mismatched sum is not. The refusal is narrow enough
-	// to state as an invariant, so assert it only fires on the layout class it
-	// names rather than letting it absorb real divergences.
-	if errors.Is(err, atlasmigrateimport.ErrFlywayBaselineVersionNotNumeric) {
-		c.Assert(layoutHasNonNumericBaseline(layout), qt.IsTrue,
-			qt.Commentf("refused a layout with no non-numeric baseline: PTAH_ATLAS_FUZZ_LAYOUT=%s",
-				strings.Join(layout, ",")))
-		return
-	}
 	c.Assert(err, qt.IsNil)
 
 	sum, err := migratesum.ComputeAtlasFiles(fsys, names)
@@ -106,27 +94,6 @@ func checkFlywayLayout(c *qt.C, oracle string, layout []string) {
 
 	c.Assert(string(sum.Bytes()), qt.Equals, want,
 		qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
-}
-
-// layoutHasNonNumericBaseline reports whether any covered baseline in layout
-// carries a version token that is not purely numeric.
-func layoutHasNonNumericBaseline(layout []string) bool {
-	for _, name := range layout {
-		base := path.Base(name)
-		if !strings.HasPrefix(base, "B") || !strings.HasSuffix(base, ".sql") {
-			continue
-		}
-		version := strings.TrimSuffix(base, ".sql")[1:]
-		if before, _, found := strings.Cut(version, "__"); found {
-			version = before
-		}
-		for part := range strings.SplitSeq(strings.ReplaceAll(version, "_", "."), ".") {
-			if _, err := strconv.Atoi(part); errors.Is(err, strconv.ErrSyntax) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // TestSumFileNamesDifferentialFuzzRealisticFlyway restricts generation to what
@@ -169,7 +136,10 @@ func TestSumFileNamesDifferentialFuzzRealisticFlyway(t *testing.T) {
 func randomRealisticFlywayLayout(rng *rand.Rand) []string {
 	dirs := []string{""}
 	for range rng.IntN(3) {
-		dirs = append(dirs, [...]string{"sub", "views", "seed", "a/b"}[rng.IntN(4)])
+		dirs = append(dirs, [...]string{
+			"sub", "views", "seed", "a/b",
+			"0archive", "1old", "2tmp", "9z", "Archive", "Legacy", "V2", "a/0b",
+		}[rng.IntN(12)])
 	}
 
 	count := 1 + rng.IntN(8)
@@ -315,7 +285,14 @@ func writeLayout(c *qt.C, dir string, layout []string) {
 func randomFlywayLayout(rng *rand.Rand) []string {
 	dirs := []string{""}
 	for range rng.IntN(3) {
-		dirs = append(dirs, [...]string{"sub", "views", "a/b", ".archive", ".hidden/deep"}[rng.IntN(5)])
+		// The pool deliberately spans digits, uppercase, lowercase and
+		// punctuation: the backwards reach compares a PATH against a version
+		// token, so a pool of only lowercase names cannot exercise it.
+		dirs = append(dirs, [...]string{
+			"sub", "views", "a/b", ".archive", ".hidden/deep",
+			"0archive", "1old", "2tmp", "9z", "Archive", "Legacy",
+			"B3", "V", "a/0b", "-dash", "_under",
+		}[rng.IntN(16)])
 	}
 
 	count := 1 + rng.IntN(7)

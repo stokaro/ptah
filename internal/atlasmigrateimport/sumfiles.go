@@ -2,7 +2,6 @@ package atlasmigrateimport
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -61,7 +60,7 @@ func SumFileNames(fsys fs.FS, format Format) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		return flywaySumFileNames(names)
+		return flywaySumFileNames(names), nil
 	case FormatGolangMigrate:
 		names, err := topLevelNames(fsys)
 		if err != nil {
@@ -175,31 +174,33 @@ type flywaySumFile struct {
 //   - A baseline (B) supersedes the one in force when its version is greater or
 //     equal, which is why the LAST of two equal-versioned baselines wins and a
 //     superseded baseline vanishes from the sum entirely.
-//   - A versioned file is squashed when a baseline is already in force and its
-//     version is not greater. A file visited BEFORE any baseline survives and
-//     is never reconsidered when a later baseline appears — so B2, V3, sub/B5
-//     keeps V3 even though "3" <= "5".
+//   - A versioned file reached while a baseline is in force is squashed when
+//     its own version token is not greater than the baseline's.
+//   - Taking force also reaches BACKWARDS: everything already accepted is
+//     dropped unless it survives a second, different test.
 //   - The surviving baseline is emitted FIRST, ahead of version order.
 //
-// The two comparisons genuinely differ, which is the trap to remember: the
-// squash test compares version tokens as STRINGS, so a baseline at V2 squashes
-// V10 ("10" < "2") even though V10 sorts after V2 in the output, which is
-// ordered numerically.
-func flywaySumFileNames(names []string) ([]string, error) {
+// Three separate comparisons are involved, and conflating any two of them
+// produces wrong sums on ordinary directories:
+//
+//  1. Squashing a file reached AFTER the baseline compares the two version
+//     TOKENS as strings, so a baseline at V2 squashes V10 ("10" < "2").
+//  2. Squashing a file accepted BEFORE the baseline compares that file's full
+//     slash-separated PATH against the baseline's version token, also as
+//     strings. So B5__base.sql drops 4dir/V9__old.sql and keeps
+//     6dir/V9__old.sql, even though both versions outrank the baseline — the
+//     cut lands on the directory's first byte. Repeatables are exempt.
+//  3. Output order compares version components NUMERICALLY, so V2 precedes
+//     V10 — the reverse of (1).
+func flywaySumFileNames(names []string) []string {
 	var survivors, repeatable []flywaySumFile
 	var baseline *flywaySumFile
-	visited := 0
 
 	for _, name := range names {
 		file, ok := parseFlywaySumFile(name)
 		if !ok {
 			continue
 		}
-		if file.kind == flywaySumBaseline && visited > 0 &&
-			flywayVersionIsUnbounded(file.version) {
-			return nil, fmt.Errorf("%w: %s", ErrFlywayBaselineVersionNotNumeric, file.name)
-		}
-		visited++
 		switch file.kind {
 		case flywaySumUndo:
 			continue
@@ -210,6 +211,14 @@ func flywaySumFileNames(names []string) ([]string, error) {
 			// replaces it or is dropped as superseded history.
 			if baseline == nil || file.version >= baseline.version {
 				baseline = &file
+				// Taking force also reaches BACKWARDS over everything already
+				// accepted, and that test compares each survivor's full
+				// slash-separated PATH against the new baseline's version
+				// token. See the sweeps in
+				// TestSumFileNamesFlywayBaselineReachesBackwards.
+				survivors = slices.DeleteFunc(survivors, func(survivor flywaySumFile) bool {
+					return survivor.name <= file.version
+				})
 			}
 		case flywaySumVersioned:
 			if baseline != nil && file.version <= baseline.version {
@@ -235,27 +244,8 @@ func flywaySumFileNames(names []string) ([]string, error) {
 	for _, file := range repeatable {
 		out = append(out, file.name)
 	}
-	return out, nil
+	return out
 }
-
-// ErrFlywayBaselineVersionNotNumeric reports the one Flyway layout whose
-// checksum this package declines to compute: a baseline whose version token has
-// a non-numeric component (Bx__base.sql, Bx.5__base.sql) reached after some
-// other covered file was already visited.
-//
-// Everywhere else the selection is a visit-order state machine, validated
-// against the oracle over thousands of randomized shapes. That model holds for
-// every baseline with a numeric version, at any depth. A non-numeric baseline
-// reached mid-walk instead squashes files the walk had already accepted, and no
-// model tried so far reproduces it: treating such a baseline as unbounded fixes
-// those shapes and breaks others.
-//
-// Refusing is scoped to a token no ordinary project writes — a Flyway baseline
-// is a version number — and it cannot mis-verify. An ordinary baseline layout,
-// including one with subdirectories, is computed normally.
-var ErrFlywayBaselineVersionNotNumeric = errors.New(
-	"flyway baseline version is not numeric and follows another migration",
-)
 
 // parseFlywaySumFile splits a Flyway file name into its prefix and version
 // token. A nested file keeps its full slash path as the name while the prefix
@@ -329,24 +319,6 @@ func parseFlywaySumVersion(version string) []int {
 		components[i] = value
 	}
 	return components
-}
-
-// flywayVersionIsUnbounded reports whether any component of a version token
-// fails to parse as a number outright, as in Bx__base.sql or Bx.5__base.sql.
-//
-// A baseline with such a token squashes every versioned file in the directory,
-// including files the walk had already accepted, which is the single behavior
-// visit order alone does not explain. A numeric baseline — including one that
-// overflows, which clamps rather than failing — squashes only what is visited
-// after it. Both halves are measured; a value that merely overflows is
-// deliberately NOT unbounded, since ErrRange still yields an ordering.
-func flywayVersionIsUnbounded(version string) bool {
-	for part := range strings.SplitSeq(strings.ReplaceAll(version, "_", "."), ".") {
-		if _, err := strconv.Atoi(part); errors.Is(err, strconv.ErrSyntax) {
-			return true
-		}
-	}
-	return false
 }
 
 // compareFlywaySumVersions orders version components numerically. A shorter

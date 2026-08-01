@@ -502,6 +502,57 @@ put V3__b.sql "$SQL_SECOND"
 put sub/B5__c.sql "$SQL_PLAIN"
 seal flyway
 
+# The backwards reach: a baseline drops files already accepted, comparing each
+# survivor's full PATH against the baseline's version token as strings. The
+# nested file outranks the baseline numerically in every one of these, so a
+# numeric reading predicts the same answer for all of them and is wrong.
+new_case flyway/backwards-reach-squashed
+put 4dir/V9__old.sql "$SQL_PLAIN"
+put B5__base.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/backwards-reach-kept
+put 6dir/V9__old.sql "$SQL_PLAIN"
+put B5__base.sql "$SQL_SECOND"
+seal flyway
+
+# "5d" and "5e" are the same version number on opposite sides of the boundary.
+new_case flyway/backwards-reach-token-spares
+put 5dir/V9__old.sql "$SQL_PLAIN"
+put B5d__base.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/backwards-reach-token-squashes
+put 5dir/V9__old.sql "$SQL_PLAIN"
+put B5e__base.sql "$SQL_SECOND"
+seal flyway
+
+new_case flyway/backwards-reach-spares-repeatable
+put 0dir/R__x.sql "$SQL_PLAIN"
+put B5__base.sql "$SQL_SECOND"
+seal flyway
+
+# Numeric token, so no rule keyed on non-numeric tokens could cover it.
+new_case flyway/backwards-reach-huge-token
+put 0archive/V5__old.sql "$SQL_PLAIN"
+put B99999999999999999999__base.sql "$SQL_SECOND"
+seal flyway
+
+# Reached AFTER the baseline, so the forward test applies: version token, not
+# path. zdir/ would win a path comparison and still loses.
+new_case flyway/forward-squash-uses-token
+put B5__base.sql "$SQL_PLAIN"
+put zdir/V1__old.sql "$SQL_SECOND"
+seal flyway
+
+# Supersede compares tokens as strings: "2" >= "10", so B2 replaces B10. Under
+# a numeric reading B10 would stay and swallow V3.
+new_case flyway/baseline-supersede-string-order
+put B10__a.sql "$SQL_PLAIN"
+put B2__b.sql "$SQL_SECOND"
+put V3__c.sql "$SQL_PLAIN"
+seal flyway
+
 # A directory named B3 and a file named B3.sql: sorting the paths puts B3.sql
 # first ('.' below '/'), while a walk descends B3 first. The two orders select
 # different files, so this is the case that proves selection follows the WALK.
