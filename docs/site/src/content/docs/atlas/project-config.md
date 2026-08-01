@@ -293,8 +293,11 @@ Variable blocks accept the `type` constraints `string`, `number`, `bool`, and
 convert to the declared type, and repeated `--var` flags fill a `list(string)`
 variable. Overrides of the wrong shape, defaults that do not match the declared
 type, and other type constraints such as `object(...)` fail with named errors.
-`sensitive = true` is accepted and keeps the variable's value out of error
-messages. `validation` blocks remain unsupported and fail explicitly.
+`sensitive = true` is accepted; parse-time conversion errors print
+`(sensitive value)` instead of the variable's value, though a sensitive value
+interpolated into a URL or path can still appear in downstream errors that
+print that URL or path. `validation` blocks remain unsupported and fail
+explicitly.
 
 If an `atlas.hcl` file has exactly one `env` block, named or unnamed, Ptah can
 use it as the default. Atlas-compatible `migrate apply` does not need to select

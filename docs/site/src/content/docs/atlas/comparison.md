@@ -406,7 +406,7 @@ Native lint and plan commands can attach canonical reports to exact migration or
 
 **Ptah.** Ptah parses strict HCL schema and Atlas project config subsets.
 
-Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff` policy, and supported lint analyzer severity policy feed Atlas-compatible commands, including local variable defaults, repeated string/list `--var name=value` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `data.hcl_schema.<name>.url`, `data.external_schema.<name>.url` (gated behind `--allow-external-schema` / `PTAH_ALLOW_EXTERNAL_SCHEMA`), and `lint.latest` / `lint.git` changeset defaults for migration linting.
+Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff` policy, and supported lint analyzer severity policy feed Atlas-compatible commands, including local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`), repeated string/list `--var name=value` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `data.hcl_schema.<name>.url`, `data.external_schema.<name>.url` (gated behind `--allow-external-schema` / `PTAH_ALLOW_EXTERNAL_SCHEMA`), and `lint.latest` / `lint.git` changeset defaults for migration linting.
 
 Ptah also composes a desired-schema schema from multiple sources — several Go roots, or a mix of Go annotations, YAML, HCL, and SQL — via repeatable `--root-dir` and `--schema-file` flags on `ptah schema render`, `ptah schema compare`, `ptah migrations plan`, and `ptah migrations generate`, an open, local, no-account counterpart to Atlas's Pro `composite_schema` data source.
 
@@ -530,7 +530,7 @@ Each area below states the current status and links the evidence behind it.
 
 **Ptah status.** Strict supported subset.
 
-Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff` policy, and supported lint analyzer severity policy can feed `ptah-compat ... --env` commands, including local variable defaults, repeated string/list `--var name=value` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`.
+Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff` policy, and supported lint analyzer severity policy can feed `ptah-compat ... --env` commands, including local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`), repeated string/list `--var name=value` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`.
 
 Unsupported constructs fail explicitly instead of being ignored.
 

@@ -694,6 +694,49 @@ env "local" {
 	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://tenant.hcl"})
 }
 
+// TestParseAtlasProjectConfigOverrideSkipsDefaultEvaluation pins the lazy
+// default: a default expression that cannot evaluate in this environment (for
+// example file() on a machine-specific path) must not fail an invocation that
+// overrides the variable.
+func TestParseAtlasProjectConfigOverrideSkipsDefaultEvaluation(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "schema" {
+  default = file("missing.txt")
+}
+
+env "local" {
+  src = var.schema
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+		Vars:    []string{"schema=file://override.hcl"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://override.hcl"})
+}
+
+// TestParseAtlasProjectConfigErroringDefaultWithoutOverrideFails is the other
+// direction of the lazy default: without an override the erroring default
+// still fails loudly.
+func TestParseAtlasProjectConfigErroringDefaultWithoutOverrideFails(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "schema" {
+  default = file("missing.txt")
+}
+
+env "local" {
+  src = var.schema
+}
+`)
+
+	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "default" at atlas\.hcl:2`)
+}
+
 func TestParseAtlasProjectConfigRepeatedVariableOverrideBecomesList(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`variable "schema" {}
@@ -840,12 +883,16 @@ variable "sources" {
 
 func TestParseAtlasProjectConfigTypedListVariableSingleOverride(t *testing.T) {
 	c := qt.New(t)
+	// url = jsonencode(var.sources) is shape-revealing: src accepts a bare
+	// string as well as a list, so only the JSON rendering proves the single
+	// override became a one-element list rather than staying a scalar.
 	raw := []byte(`variable "sources" {
   type = list(string)
 }
 
 env "local" {
   src = var.sources
+  url = jsonencode(var.sources)
 }
 `)
 
@@ -856,8 +903,14 @@ env "local" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://only.hcl"})
+	c.Assert(cfg.DatabaseURL, qt.Equals, `["file://only.hcl"]`)
 }
 
+// TestParseAtlasProjectConfigTypedVariableOverrideWrongShape covers the
+// override shape boundary, including the rejecting side of cty's
+// bool-conversion asymmetry: "True" and "yes" are wrong-shape errors while
+// "1" converts (pinned by
+// TestParseAtlasProjectConfigBoolOverrideNumericString below).
 func TestParseAtlasProjectConfigTypedVariableOverrideWrongShape(t *testing.T) {
 	tests := []struct {
 		name string
@@ -884,6 +937,15 @@ func TestParseAtlasProjectConfigTypedVariableOverrideWrongShape(t *testing.T) {
 			err:  `atlas\.hcl variable "concurrent" expects bool, got --var value "maybe"`,
 		},
 		{
+			name: "bool rejects capitalized True override",
+			raw: `variable "concurrent" {
+  type = bool
+}
+`,
+			vars: []string{"concurrent=True"},
+			err:  `atlas\.hcl variable "concurrent" expects bool, got --var value "True"`,
+		},
+		{
 			name: "string rejects repeated overrides",
 			raw: `variable "url" {
   type = string
@@ -905,6 +967,35 @@ func TestParseAtlasProjectConfigTypedVariableOverrideWrongShape(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, tt.err)
 		})
 	}
+}
+
+// TestParseAtlasProjectConfigBoolOverrideNumericString pins the accepted side
+// of cty's bool-conversion asymmetry: "1" converts to true. Routing the value
+// into diff.concurrent_index.create, which demands a real cty bool, proves
+// the conversion happened rather than a string passing through.
+func TestParseAtlasProjectConfigBoolOverrideNumericString(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "concurrent" {
+  type = bool
+}
+
+env "local" {
+  diff {
+    concurrent_index {
+      create = var.concurrent
+    }
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+		Vars:    []string{"concurrent=1"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Diff.ConcurrentIndex.Create.Set, qt.IsTrue)
+	c.Assert(cfg.Diff.ConcurrentIndex.Create.Value, qt.IsTrue)
 }
 
 func TestParseAtlasProjectConfigSensitiveVariableEvaluates(t *testing.T) {

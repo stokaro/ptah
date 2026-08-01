@@ -985,6 +985,14 @@ func (p atlasParser) parseVariableBlock(block *hclsyntax.Block) (atlasVariable, 
 	if !ok {
 		return variable, nil
 	}
+	if _, overridden := p.varOverride[variable.name]; overridden {
+		// An override replaces the default, so the default expression stays
+		// unevaluated: a default that only resolves in another environment
+		// (for example file() on a machine-specific path) must not fail an
+		// invocation that supplies the value. variableValue checks the
+		// override before hasDefault, so the unset default is never read.
+		return variable, nil
+	}
 	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() {
 		return atlasVariable{}, unsupportedAttr("default", attr)

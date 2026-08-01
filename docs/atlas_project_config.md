@@ -313,13 +313,17 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
 Atlas binary requires:
 
 - `--var` overrides convert to the declared type: `--var latest=3` becomes a
-  number and `--var concurrent=true` becomes a bool. Repeated
-  `--var name=value` flags build a `list(string)` value.
+  number and `--var concurrent=true` becomes a bool. Bool conversion follows
+  cty's rules: `1` and `0` convert, while `True` and `yes` fail with the
+  wrong-shape error. Repeated `--var name=value` flags build a `list(string)`
+  value.
 - A `default` that does not convert to the declared type, an override of the
   wrong shape, and any other type constraint (for example `object(...)`,
   `map(...)`, or `tuple(...)`) fail with named errors.
-- `sensitive = true` is accepted; error messages print `(sensitive value)`
-  instead of a sensitive variable's value.
+- `sensitive = true` is accepted. Parse-time conversion errors print
+  `(sensitive value)` instead of the variable's value; a sensitive value
+  interpolated into a URL or path can still appear in downstream errors that
+  print that URL or path.
 - `validation` blocks are not accepted until Ptah implements their semantics.
 
 Unsupported dynamic data sources such as SQL data sources, registry-backed
