@@ -583,6 +583,53 @@ func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
 	}
 }
 
+// TestCompatMigrateIntegrityRepeatedDir_HappyPath covers a repeated --dir. Both
+// tools take the last one, so the layout is whatever that one names.
+//
+// The FailurePath twin is the case the resolution deliberately does not chase:
+// a query on a --dir that is later overridden. Only the authoritative --dir is
+// parsed for a layout, so an earlier one keeps a query the forwarding mapper
+// refuses, where Atlas CE ignores the overridden value entirely.
+func TestCompatMigrateIntegrityRepeatedDir_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("the last --dir names the directory and the layout", func(c *qt.C) {
+		first := writeIntegrityFixture(c)
+		last := writeIntegrityFixture(c)
+
+		stdout, _, err := runCompatExit("migrate", "hash",
+			"--dir", "file://"+first,
+			"--dir", "file://"+last+"?format=golang-migrate")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
+		c.Assert(sumEntryNames(c, last), qt.DeepEquals, golangMigrateCoveredSet)
+		_, statErr := os.Stat(filepath.Join(first, migratesum.AtlasFileName))
+		c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+	})
+}
+
+// TestCompatMigrateIntegrityRepeatedDir_FailurePath pins the overridden-query
+// refusal described above.
+//
+//	$ atlas migrate hash --dir 'file://a?format=goose' --dir file://b   exit=0
+//
+// Ptah refuses instead. It is the same class as the other query refusals in
+// stokaro/ptah#990: loud, unable to produce a wrong sum, and not worth a second
+// notion of "which --dir counts" inside the resolver.
+func TestCompatMigrateIntegrityRepeatedDir_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	first := writeIntegrityFixture(c)
+	last := writeIntegrityFixture(c)
+
+	_, _, err := runCompatExit("migrate", "hash",
+		"--dir", "file://"+first+"?format=goose",
+		"--dir", "file://"+last)
+
+	c.Assert(err, qt.ErrorMatches,
+		"atlas migrate hash --dir: migration directory URL query parameters are not supported for this command")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+}
+
 // TestCompatMigrateIntegrity_FailurePathEmptyDirFormat pins the one
 // --dir-format value Atlas CE accepts and Ptah still refuses. CE treats an
 // empty value as the atlas layout and exits 0. Ptah rejects it on all nine

@@ -25,8 +25,6 @@ type atlasMigrateIntegrityRunner func(*cobra.Command, atlasMigrateSource) error
 // atlasMigrateSource is the migration directory an integrity verb reads,
 // resolved once from both spellings Atlas accepts for the source layout.
 type atlasMigrateSource struct {
-	// verb is the Atlas verb name, for diagnostics.
-	verb string
 	// dir is the local directory path, the same value the forwarded native
 	// command receives for a native Atlas directory.
 	dir string
@@ -138,7 +136,6 @@ func resolveAtlasMigrateSource(
 
 	devURL, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dev-url"))
 	source := atlasMigrateSource{
-		verb:        verb.use,
 		dir:         localDir.Path,
 		format:      format,
 		devURL:      devURL,
