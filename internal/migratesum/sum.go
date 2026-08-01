@@ -222,6 +222,25 @@ func computeAtlas(fsys fs.FS) (*SumFile, error) {
 		return nil, err
 	}
 	sort.Strings(names)
+	return ComputeAtlasFiles(fsys, names)
+}
+
+// ComputeAtlasFiles builds the Atlas-format sum over exactly names, hashed in
+// the order given.
+//
+// Atlas chains each file's name and contents into one running hash, so the
+// caller decides both the membership and the order of the result. A migration
+// directory written by another tool and read through Atlas's ?format= covers a
+// different set of source files, and Flyway orders them other than by name, so
+// the file set is resolved by the caller (see
+// atlasmigrateimport.SumFileNames) rather than rediscovered here.
+//
+// A file carrying an "atlas:sum ignore" directive contributes its name to the
+// running hash but neither its contents nor an entry, matching Atlas.
+func ComputeAtlasFiles(fsys fs.FS, names []string) (*SumFile, error) {
+	if err := checkDuplicateNames(names); err != nil {
+		return nil, err
+	}
 
 	entries := make([]Entry, 0, len(names))
 	h := sha256.New()
@@ -239,6 +258,21 @@ func computeAtlas(fsys fs.FS) (*SumFile, error) {
 	}
 
 	return &SumFile{DirHash: atlasDirHash(entries), Entries: entries}, nil
+}
+
+// checkDuplicateNames rejects a repeated file name. Parse refuses a sum file
+// holding duplicate entries, so computing one would produce a sum that can
+// never verify against itself — a silent, permanent failure worth catching
+// where it originates.
+func checkDuplicateNames(names []string) error {
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			return fmt.Errorf("duplicate migration file name %q", name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
 }
 
 func atlasSumIgnored(data []byte) bool {
