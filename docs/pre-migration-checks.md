@@ -58,7 +58,7 @@ exactly the pre-migration state the migration is about to change.
   rejected before anything is applied. Under one shared transaction a check
   reading committed state cannot see earlier batched migrations' uncommitted
   changes, so it would silently evaluate a precondition against stale state. Run
-  such migrations with the default per-file mode, or pass `--skip-checks`.
+  such migrations with the default per-file mode.
 
 Checks are evaluated for the **up** direction only (they guard forward,
 typically destructive, migrations); a `-- +ptah check` in a down migration is

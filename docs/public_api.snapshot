@@ -6606,6 +6606,7 @@ func SplitSQLStatements(sql string) []string
 func SplitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql string) []string
 func ValidateMigrationFileName(filename string) bool
 func ValidateMigrationPairs(pairs map[int64]MigrationPair) []int64
+type AtlasCheckpointTxtarConflictError struct{ ... }
 type AtlasDownNotImplementedError struct{ ... }
 type AtlasRevisionChange struct{ ... }
 type AtlasRevisionSetResult struct{ ... }
@@ -6683,6 +6684,22 @@ type StatementObservationError struct{ ... }
 type StatementObserver interface{ ... }
 type StatementObserverFunc func(context.Context, StatementEvent) error
 type StatementValidator interface{ ... }
+
+### github.com/stokaro/ptah/migration/migrator.AtlasCheckpointTxtarConflictError
+
+package migrator // import "github.com/stokaro/ptah/migration/migrator"
+
+type AtlasCheckpointTxtarConflictError struct {
+    // Path is the migration file that declares both directives.
+    Path string
+}
+    AtlasCheckpointTxtarConflictError reports a migration file whose leading
+    directive block declares both `-- atlas:checkpoint` and `-- atlas:txtar`.
+    Measured Atlas checkpoints are plain single-statement-stream SQL files,
+    so the combination has no measured semantics to mirror; executing either
+    interpretation could silently run the wrong SQL, so the file is rejected.
+
+func (e *AtlasCheckpointTxtarConflictError) Error() string
 
 ### github.com/stokaro/ptah/migration/migrator.AtlasDownNotImplementedError
 
@@ -6923,7 +6940,10 @@ type Migration struct {
     // cumulative schema at its version. On a fresh database the migrator
     // bootstraps from the newest checkpoint and records all lower versions as
     // applied instead of replaying them; an already-migrated database ignores
-    // the checkpoint and applies history normally.
+    // the checkpoint and applies history normally. Ptah-format directories
+    // mark checkpoints with the `.checkpoint.` file-name pair; Atlas-format
+    // directories mark them with a first-line `-- atlas:checkpoint` file
+    // directive.
     IsCheckpoint bool
     // Has unexported fields.
 }
@@ -6985,8 +7005,12 @@ type MigrationFile struct {
     // IsCheckpoint marks a checkpoint migration whose up body is the full
     // cumulative schema at its version. A fresh database bootstraps from the
     // newest checkpoint instead of replaying pre-checkpoint history; an
-    // already-migrated database ignores it. The marker is spelled
-    // NNNNNNNNNN_description.checkpoint.(up|down).sql.
+    // already-migrated database ignores it. The Ptah marker is spelled
+    // NNNNNNNNNN_description.checkpoint.(up|down).sql and is recognized here
+    // at name-parse time. Atlas-format checkpoints instead carry a first-line
+    // `-- atlas:checkpoint` file directive, which name parsing cannot see;
+    // FSMigrationProvider detects it from file content when loading, so this
+    // field stays false for Atlas files parsed by name alone.
     IsCheckpoint bool
     // Has unexported fields.
 }

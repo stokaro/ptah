@@ -127,6 +127,11 @@ Expected output ends with:
 Database is now at version: 0
 ```
 
+Ptah validates every selected down body before rollback starts. If one is
+missing, the command leaves both the schema and Atlas revision rows unchanged.
+Dry runs use the same dirty-state, checksum, checkpoint, and down-body
+validation path as real rollbacks, while suppressing schema and revision writes.
+
 Add `--dev-url` to reset a disposable dev database, replay the migration
 directory to the target's current version, and verify the rollback there before
 the target is touched:
@@ -159,6 +164,14 @@ positional `amount` applies only the first N pending migrations. Use
 `--baseline` to mark earlier migration files as applied without executing their
 SQL bodies before applying the remaining pending migrations.
 
+A hashed directory verifies against `atlas.sum` before anything executes: on
+a checksum mismatch the apply refuses with the same output as
+`ptah-compat migrate validate` and no migration runs, matching official
+Atlas. Migrations whose first line is the `-- atlas:checkpoint` directive get
+measured Atlas checkpoint semantics — a fresh database applies only the
+latest checkpoint plus later migrations, and a database that already applied
+pre-checkpoint history skips the checkpoint silently.
+
 ```bash
 ptah-compat migrate apply 2 \
   --url "$DATABASE_URL" \
@@ -172,6 +185,9 @@ mirrors Atlas's public apply-template fields: `Pending`, `Applied`, `Current`,
 `Target`, `Start`, `End`, `Driver`, `URL`, and `Dir`; `{{ json . }}` emits the
 same result as JSON with database credentials redacted. With `--env`, Ptah can
 read `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`.
+Dry-run plans read the stored Atlas revision rows and include only migrations
+that a real apply would select. They also run the same dirty-state, checksum,
+execution-order, and transaction-mode validations as a real apply.
 
 The apply path executes every Atlas OSS migration directory format selected by
 `migration.format` or the directory URL `?format=` parameter: `atlas`,

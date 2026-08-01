@@ -95,6 +95,8 @@ type Migrator struct {
 	logger               *slog.Logger
 	observer             Observer
 	skipChecks           bool
+	metadataAvailable    bool
+	legacyRevisionTable  bool
 }
 
 // NewFSMigrator creates a new migrator that loads migrations from a filesystem.
@@ -229,6 +231,8 @@ func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
 	tmp.initialized = false
+	tmp.metadataAvailable = false
+	tmp.legacyRevisionTable = false
 	return &tmp
 }
 
@@ -241,6 +245,8 @@ func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator
 		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
 	tmp.initialized = false
+	tmp.metadataAvailable = false
+	tmp.legacyRevisionTable = false
 	return &tmp
 }
 
@@ -368,6 +374,9 @@ func (m *Migrator) getVersionSQL() string {
 			m.qualifiedMigrationsTable(),
 		)
 	}
+	if m.legacyRevisionTable {
+		return fmt.Sprintf("SELECT COALESCE(MAX(version), 0) FROM %s", m.qualifiedMigrationsTable())
+	}
 	return fmt.Sprintf("SELECT COALESCE(MAX(version), 0) FROM %s WHERE state = 'applied'", m.qualifiedMigrationsTable())
 }
 
@@ -379,6 +388,9 @@ func (m *Migrator) getAppliedMigrationsSQL() string {
 			atlasMetadataRowPredicate,
 			m.atlasVersionNumberExpression(),
 		)
+	}
+	if m.legacyRevisionTable {
+		return fmt.Sprintf("SELECT version FROM %s ORDER BY version", m.qualifiedMigrationsTable())
 	}
 	return fmt.Sprintf("SELECT version FROM %s WHERE state = 'applied' ORDER BY version", m.qualifiedMigrationsTable())
 }
@@ -395,8 +407,7 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	}
 
 	if m.conn.Writer().IsDryRun() {
-		m.logger.Info("[DRY RUN] Would initialize migrations metadata", "table", m.qualifiedMigrationsTable())
-		return nil
+		return m.initializeDryRun(ctx)
 	}
 
 	if schemaSQL := m.migrationsSchemaStatement(); schemaSQL != "" {
@@ -424,6 +435,32 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 
 	// Mark as initialized
 	m.initialized = true
+	m.metadataAvailable = true
+	m.legacyRevisionTable = false
+	return nil
+}
+
+func (m *Migrator) initializeDryRun(ctx context.Context) error {
+	exists, err := m.migrationsTableExists(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to inspect migrations table: %w", err)
+	}
+	if !exists {
+		m.metadataAvailable = false
+		m.legacyRevisionTable = false
+		m.logger.Info("[DRY RUN] Would initialize migrations metadata", "table", m.qualifiedMigrationsTable())
+		return nil
+	}
+
+	m.metadataAvailable = true
+	if m.revisionTableFormat.isAtlas() {
+		return nil
+	}
+	legacy, err := m.migrationsTableUsesLegacyRevisionLayout(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to inspect migrations table layout: %w", err)
+	}
+	m.legacyRevisionTable = legacy
 	return nil
 }
 
@@ -491,12 +528,22 @@ func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (boo
 	case platform.SQLite:
 		return m.sqliteMigrationsColumnExists(ctx, name)
 	}
-	query := sqlutil.Rebind(m.conn.Info().Dialect, `
+	query := `
 SELECT COUNT(*)
 FROM information_schema.columns
-WHERE table_schema = ? AND table_name = ? AND column_name = ?`)
+WHERE table_schema = ? AND table_name = ? AND column_name = ?`
+	schema := m.metadataSchemaName()
+	if m.isPostgresFamily() {
+		query = `
+SELECT COUNT(*)
+FROM information_schema.columns
+WHERE table_schema = COALESCE(NULLIF(?, ''), current_schema())
+  AND table_name = ? AND column_name = ?`
+		schema = m.metadataTableSchemaName()
+	}
+	query = sqlutil.Rebind(m.conn.Info().Dialect, query)
 	var count int
-	if err := m.conn.QueryRowContext(ctx, query, m.metadataSchemaName(), m.migrationsTableName(), name).Scan(&count); err != nil {
+	if err := m.conn.QueryRowContext(ctx, query, schema, m.migrationsTableName(), name).Scan(&count); err != nil {
 		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
 	}
 	return count > 0, nil
@@ -567,7 +614,10 @@ func (m *Migrator) ensurePostgresMigrationsVersionColumn(ctx context.Context) er
 		sqlutil.Rebind(m.conn.Info().Dialect, `
 SELECT data_type
 FROM information_schema.columns
-WHERE table_schema = ? AND table_name = ? AND column_name = 'version'`),
+WHERE table_schema = COALESCE(NULLIF(?, ''), current_schema())
+  AND table_name = ? AND column_name = 'version'`),
+		m.metadataTableSchemaName(),
+		m.migrationsTableName(),
 	)
 	if err != nil {
 		return err
@@ -592,6 +642,8 @@ func (m *Migrator) ensureMySQLMigrationsVersionColumn(ctx context.Context) error
 		`SELECT data_type
 FROM information_schema.columns
 WHERE table_schema = ? AND table_name = ? AND column_name = 'version'`,
+		m.metadataSchemaName(),
+		m.migrationsTableName(),
 	)
 	if err != nil {
 		return err
@@ -610,13 +662,22 @@ WHERE table_schema = ? AND table_name = ? AND column_name = 'version'`,
 	return nil
 }
 
-func (m *Migrator) migrationsVersionColumnType(ctx context.Context, query string) (string, error) {
+func (m *Migrator) migrationsVersionColumnType(ctx context.Context, query string, args ...any) (string, error) {
 	var dataType string
-	err := m.conn.QueryRowContext(ctx, query, m.metadataSchemaName(), m.migrationsTableName()).Scan(&dataType)
+	err := m.conn.QueryRowContext(ctx, query, args...).Scan(&dataType)
 	if err != nil {
 		return "", fmt.Errorf("failed to inspect migrations version column: %w", err)
 	}
 	return strings.ToLower(dataType), nil
+}
+
+func (m *Migrator) isPostgresFamily() bool {
+	switch platform.NormalizeDialect(m.connectionDialect()) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *Migrator) metadataSchemaName() string {
@@ -630,7 +691,7 @@ func metadataInformationSchemaName(dialect, connectionSchema, configuredSchema s
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
 		return "public"
-	case platform.MySQL, platform.MariaDB:
+	case platform.Spanner, platform.MySQL, platform.MariaDB:
 		return strings.TrimSpace(connectionSchema)
 	}
 	return ""
@@ -673,7 +734,7 @@ func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error) {
 	if err := m.Initialize(ctx); err != nil {
 		return 0, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
-	if m.conn.Writer().IsDryRun() {
+	if !m.metadataAvailable {
 		return 0, nil
 	}
 
@@ -686,7 +747,7 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
 	return queryMigrationRows(
 		ctx,
 		m,
-		m.getAppliedMigrationsSQL(),
+		m.getAppliedMigrationsSQL,
 		m.scanAppliedVersion,
 		"failed to query applied migrations",
 		"failed to scan migration version",
@@ -699,7 +760,7 @@ func (m *Migrator) GetAppliedRevisions(ctx context.Context) ([]MigrationRevision
 	return queryMigrationRows(
 		ctx,
 		m,
-		m.getAppliedRevisionsSQL(),
+		m.getAppliedRevisionsSQL,
 		m.scanRevisionRow,
 		"failed to query applied migration revisions",
 		"failed to scan migration revision",
@@ -712,7 +773,7 @@ func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error
 	return queryMigrationRows(
 		ctx,
 		m,
-		m.getRevisionsSQL(),
+		m.getRevisionsSQL,
 		m.scanRevisionRow,
 		"failed to query migration revisions",
 		"failed to scan migration revision",
@@ -723,7 +784,7 @@ func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error
 func queryMigrationRows[T any](
 	ctx context.Context,
 	m *Migrator,
-	query string,
+	query func() string,
 	scan func(rowScanner) (T, error),
 	queryErr string,
 	scanErr string,
@@ -732,11 +793,11 @@ func queryMigrationRows[T any](
 	if err := m.Initialize(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
-	if m.conn.Writer().IsDryRun() {
+	if !m.metadataAvailable {
 		return []T{}, nil
 	}
 
-	return queryMigrationRowsFrom(ctx, m.conn, query, scan, queryErr, scanErr, iterErr)
+	return queryMigrationRowsFrom(ctx, m.conn, query(), scan, queryErr, scanErr, iterErr)
 }
 
 type migrationRowsQueryer interface {
@@ -1174,6 +1235,9 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 	}
 	migrationsToRollback, err := migrationsToRollback(migrationMap, appliedMigrations, targetVersion)
 	if err != nil {
+		return err
+	}
+	if err := validateDownMigrations(migrationsToRollback); err != nil {
 		return err
 	}
 	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
@@ -1700,9 +1764,6 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
 		}
 	}
-	if migration.downUnavailable {
-		return m.rollbackMigrationWithoutRegisteredDown(ctx, migration, startedAt, deleteSQL)
-	}
 	if migration.downExecutionMode() == migrationExecutionNoTransaction {
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
 	}
@@ -1734,29 +1795,6 @@ func (m *Migrator) migrationMetricAttributes(direction MigrationDirection, migra
 		attr("migration.direction", string(direction)),
 		attr("migration.version", migration.Version),
 	}
-}
-
-func (m *Migrator) rollbackMigrationWithoutRegisteredDown(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	deleteSQL string,
-) error {
-	if err := migration.Down(ctx, m.conn); err != nil {
-		return m.failRollbackWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.DownSQL,
-			fmt.Sprintf("failed to revert migration %d", migration.Version),
-		)
-	}
-	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
-		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
-	}
-	m.logger.Info("Rolled back migration", "version", migration.Version, "description", migration.Description)
-	return nil
 }
 
 func (m *Migrator) rollbackMigrationTransactional(
@@ -2136,4 +2174,16 @@ func migrationsToRollback(migrationsByVersion map[int64]*Migration, applied []in
 		rollbackMigrations = append(rollbackMigrations, migration)
 	}
 	return rollbackMigrations, nil
+}
+
+func validateDownMigrations(migrations []*Migration) error {
+	for _, migration := range migrations {
+		if migration.downUnavailable {
+			return &AtlasDownNotImplementedError{
+				Version:     migration.Version,
+				Description: migration.Description,
+			}
+		}
+	}
+	return nil
 }

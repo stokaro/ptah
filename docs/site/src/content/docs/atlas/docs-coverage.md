@@ -233,9 +233,9 @@ The native OCI source is available to `schema compare` and `drift` through `--sc
 
 **Implementation status.** Partial.
 
-Ptah reads a documented subset into project config IR, including local env settings, `schema.src`, `schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff.skip.drop_table` and `diff.concurrent_index.create` policy, supported migration-lint analyzer severity policy for `destructive`, `concurrent_index`, `data_depend`, `incompatible`, and `nestedtx`, local variable defaults, string/list variable overrides through repeated `--var name=value`, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `data.hcl_schema.<name>.url`, and migration-lint changeset selectors such as `lint.latest` and `lint.git`, and rejects unsupported constructs.
+Ptah reads a documented subset into project config IR, including local env settings, `schema.src`, `schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff.skip.drop_table` and `diff.concurrent_index.create` policy, supported migration-lint analyzer severity policy for `destructive`, `concurrent_index`, `data_depend`, `incompatible`, and `nestedtx`, local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`) with `sensitive` support, string/list variable overrides through repeated `--var name=value` with conversion to the declared type, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `data.hcl_schema.<name>.url`, and migration-lint changeset selectors such as `lint.latest` and `lint.git`, and rejects unsupported constructs.
 
-Cloud, registry, data sources beyond the local subset, typed or sensitive variables, Atlas check-level lint policy, custom lint rules, unsupported lint analyzer options, unsupported format blocks, unsupported diff policy fields, and remote directory behavior are not implemented.
+Cloud, registry, data sources beyond the local subset, variable `validation` blocks, other variable type constraints such as `object(...)`, Atlas check-level lint policy, custom lint rules, unsupported lint analyzer options, unsupported format blocks, unsupported diff policy fields, and remote directory behavior are not implemented.
 
 **Conformance status.** Partially measured with parser, direct command, compatibility-wrapper, and live SQLite command tests for the supported local subset.
 
@@ -407,7 +407,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Implementation status.** Implemented natively and free. `ptah migrations checkpoint` squashes a directory's history into a cumulative-schema checkpoint that fresh databases bootstrap from, and `ptah-compat migrate checkpoint` forwards to it on the Atlas-compatible surface — a workflow Atlas keeps in its Pro build.
 
-Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver rejected loudly, because Atlas's `-- atlas:checkpoint` directive has no reader support in Ptah's engine and an Atlas-format checkpoint file would replay as an ordinary migration.
+Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver rejected loudly, because the checkpoint engine does not emit Atlas-format checkpoint files yet. The read side honors Atlas's `-- atlas:checkpoint` directive: externally produced Atlas checkpoint directories bootstrap fresh databases from the latest checkpoint and are silently skipped on databases that already applied pre-checkpoint history, matching measured Atlas behavior.
 
 **Conformance status.** Measured by native command and Atlas-compatibility tests, not as a community-version unsupported boundary.
 

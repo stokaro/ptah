@@ -37,9 +37,11 @@ Would have applied 1 migrations
 ```
 
 :::note
-The dry run simulates an uninitialized revision table: it walks every
-migration in the directory, not only the ones pending on this target. Use
-`ptah migrations status` to see what a real run would apply.
+The dry run reads an existing revision table and walks only migrations pending
+on this target. On a fresh target, it treats the absent revision table as empty
+without creating it. A legacy three-column Ptah revision table is read without
+upgrading its layout. A partially upgraded table is rejected with a missing
+column diagnostic and is not modified.
 :::
 
 ## Apply with integrity verification
@@ -66,8 +68,11 @@ Pending migrations: 1
 Database is now at version: 1785255952
 ```
 
-`--verify-sum` checks the directory against its committed `ptah.sum` before
-anything runs and aborts on drift. Always set it for shared environments; see
+A hashed directory (one that carries `ptah.sum` or `atlas.sum`) is always
+verified before anything runs, and the apply aborts on drift — the same check
+`ptah migrations validate` performs. A directory without a sum file is not
+gated. `--verify-sum` additionally makes a missing sum file itself an error,
+so set it for shared environments where the directory must be hashed; see
 [Integrity and safety](../integrity-and-safety/).
 
 Applied versions land in the revision table. Rerunning the same command is a

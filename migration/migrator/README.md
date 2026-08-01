@@ -151,9 +151,11 @@ metadata table location.
 
 If an Atlas migration does not provide `down.sql`, `migrations down` returns a typed
 error explaining that Atlas dynamic down-plan synthesis is not implemented yet.
-This is distinct from transaction rollback on a failed migration: transaction
-rollback undoes an in-progress failure, Ptah paired `.down.sql` files and Atlas
-txtar `down.sql` sections revert already-applied migrations, and Atlas dynamic
+The migrator validates the complete rollback selection before execution, so a
+missing down body leaves schema and revision state unchanged. This is distinct
+from transaction rollback on a failed migration: transaction rollback undoes
+an in-progress failure, Ptah paired `.down.sql` files and Atlas txtar
+`down.sql` sections revert already-applied migrations, and Atlas dynamic
 `migrate down` would synthesize a downgrade plan from database/dev state.
 
 `-- +ptah` directives inside `migration.sql` and `down.sql` are parsed per
@@ -173,6 +175,16 @@ With dry run:
 ```bash
 go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dry-run
 ```
+
+Dry-run reads existing revision metadata and selects only pending migrations.
+When the metadata table is absent, it models an empty revision history without
+creating the table. It reads the legacy three-column Ptah revision layout
+without adding the newer state and checksum columns. A table containing only a
+subset of the current revision columns fails with an explicit layout diagnostic
+and remains unchanged. For the current revision layout, dry-run still enforces
+dirty-state and checksum validation. It enforces execution-order,
+transaction-mode, checkpoint, and down-body validation for both current and
+legacy revision layouts.
 
 Allow applying a migration whose version is below the current high-water mark:
 ```bash

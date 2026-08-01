@@ -218,9 +218,9 @@ func (m *Migrator) getRevisionSQL() string {
 FROM %s
 WHERE version = ?`, m.qualifiedMigrationsTable())
 	}
-	return fmt.Sprintf(`SELECT version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
+	return fmt.Sprintf(`SELECT %s
 FROM %s
-WHERE version = ?`, m.qualifiedMigrationsTable())
+WHERE version = ?`, m.ptahRevisionProjection(), m.qualifiedMigrationsTable())
 }
 
 func (m *Migrator) getAppliedRevisionsSQL() string {
@@ -235,10 +235,13 @@ ORDER BY %s`,
 			m.atlasVersionNumberExpression(),
 		)
 	}
-	return fmt.Sprintf(`SELECT version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
+	where := "WHERE state = 'applied'\n"
+	if m.legacyRevisionTable {
+		where = ""
+	}
+	return fmt.Sprintf(`SELECT %s
 FROM %s
-WHERE state = 'applied'
-ORDER BY version`, m.qualifiedMigrationsTable())
+%sORDER BY version`, m.ptahRevisionProjection(), m.qualifiedMigrationsTable(), where)
 }
 
 func (m *Migrator) getRevisionsSQL() string {
@@ -253,9 +256,16 @@ ORDER BY %s`,
 			m.atlasVersionNumberExpression(),
 		)
 	}
-	return fmt.Sprintf(`SELECT version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
+	return fmt.Sprintf(`SELECT %s
 FROM %s
-ORDER BY version`, m.qualifiedMigrationsTable())
+ORDER BY version`, m.ptahRevisionProjection(), m.qualifiedMigrationsTable())
+}
+
+func (m *Migrator) ptahRevisionProjection() string {
+	if m.legacyRevisionTable {
+		return "version, description, 'applied', 1, 1, '', '', 0, '', applied_at"
+	}
+	return "version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at"
 }
 
 func (m *Migrator) getRevisionsForUpdateSQL() string {
@@ -691,7 +701,7 @@ func parseRevisionAppliedAtString(value string) (time.Time, error) {
 }
 
 func (m *Migrator) failIfDirty(ctx context.Context) error {
-	if m.conn.Writer().IsDryRun() {
+	if !m.metadataAvailable || m.legacyRevisionTable {
 		return nil
 	}
 	revision, err := m.dirtyRevision(ctx)
@@ -929,7 +939,7 @@ func (m *Migrator) failAtlasMigrationRevision(
 }
 
 func (m *Migrator) verifyAppliedMigrationChecksums(ctx context.Context, migrations []*Migration) error {
-	if m.conn.Writer().IsDryRun() {
+	if !m.metadataAvailable || m.legacyRevisionTable {
 		return nil
 	}
 	for _, migration := range migrations {

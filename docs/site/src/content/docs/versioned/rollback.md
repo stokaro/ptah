@@ -57,6 +57,14 @@ Applied Migrations: 1
 Pending Migrations: 1
 ```
 
+Before rollback starts, Ptah verifies that every selected migration has a down
+body. A missing down body aborts before Ptah changes either the schema or the
+revision table.
+
+Dry run follows the same dirty-state, checksum, checkpoint, and down-body
+validation path as execution. It reports no migration as reverted when a
+preflight check fails before rollback starts.
+
 ## Verify the plan on a shadow database first
 
 Add `--shadow-db` to replay and verify the rollback plan on a disposable

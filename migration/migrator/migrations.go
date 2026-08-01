@@ -255,7 +255,16 @@ func migrationFuncFromSQLFilenameWithMetadata(
 	if err != nil {
 		return sqlMigrationFile{}, err
 	}
+	return migrationFuncFromSQLContentWithMetadata(filename, sql, hooks)
+}
 
+// migrationFuncFromSQLContentWithMetadata builds the up half of a migration
+// from already-read (and template-rendered) file content: a txtar archive
+// contributes its migration.sql section, any other content is executed as-is.
+func migrationFuncFromSQLContentWithMetadata(
+	filename, sql string,
+	hooks statementExecutionHooks,
+) (sqlMigrationFile, error) {
 	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, sql, hooks)
 	if err != nil {
 		return sqlMigrationFile{}, err
@@ -267,17 +276,14 @@ func migrationFuncFromSQLFilenameWithMetadata(
 	return migrationFuncFromSQLStringWithMetadata(filename, sql, hooks)
 }
 
-func atlasSQLMigrationFileFromSQLFilenameWithMetadata(
-	filename string,
-	fsys fs.FS,
+// atlasSQLMigrationFileFromSQLContentWithMetadata builds both halves of an
+// Atlas migration from already-read (and template-rendered) file content: a
+// txtar archive contributes its migration.sql and optional down.sql sections,
+// any other content becomes an up-only migration.
+func atlasSQLMigrationFileFromSQLContentWithMetadata(
+	filename, sql string,
 	hooks statementExecutionHooks,
-	atlasTemplateData any,
 ) (atlasSQLMigrationFile, error) {
-	sql, err := readSQLMigrationFile(fsys, filename, atlasTemplateData)
-	if err != nil {
-		return atlasSQLMigrationFile{}, err
-	}
-
 	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, sql, hooks)
 	if err != nil {
 		return atlasSQLMigrationFile{}, err
@@ -493,7 +499,10 @@ type Migration struct {
 	// cumulative schema at its version. On a fresh database the migrator
 	// bootstraps from the newest checkpoint and records all lower versions as
 	// applied instead of replaying them; an already-migrated database ignores
-	// the checkpoint and applies history normally.
+	// the checkpoint and applies history normally. Ptah-format directories
+	// mark checkpoints with the `.checkpoint.` file-name pair; Atlas-format
+	// directories mark them with a first-line `-- atlas:checkpoint` file
+	// directive.
 	IsCheckpoint bool
 }
 
