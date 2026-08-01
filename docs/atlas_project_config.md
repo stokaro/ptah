@@ -434,6 +434,13 @@ unsupported atlas.hcl construct "src" at atlas.hcl:2
 This hard-fail policy prevents partially interpreted Atlas project configs from
 silently changing migration behavior.
 
+Structural validation covers every `env` block, including environments that
+are not selected for the current command. An unsupported attribute, nested
+block, label, or duplicate therefore fails even when it appears in another
+environment. Expressions are evaluated only in the selected environment, so
+an unselected environment may still refer to variables, files, or environment
+values that are unavailable in the current invocation.
+
 Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
 a command needs that configured value. An explicit CLI path flag still wins over
 the matching `atlas.hcl` value before URI validation.

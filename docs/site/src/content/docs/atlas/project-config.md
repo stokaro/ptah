@@ -309,3 +309,10 @@ unsupported environment layouts fail instead of guessing.
 Ptah intentionally rejects unsupported project config constructs. This prevents
 a dangerous half-configured state where a user believes an Atlas setting is in
 effect but Ptah silently ignored it.
+
+Structural validation covers every `env` block, including environments that
+are not selected for the current command. An unsupported attribute, nested
+block, label, or duplicate therefore fails even when it appears in another
+environment. Expressions are evaluated only in the selected environment, so
+an unselected environment may still refer to variables, files, or environment
+values that are unavailable in the current invocation.

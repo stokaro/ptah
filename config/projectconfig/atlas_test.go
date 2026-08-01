@@ -1230,6 +1230,94 @@ env "prod" {
 	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "url" at atlas\.hcl:5`)
 }
 
+func TestParseAtlasProjectConfigRejectsUnsupportedConstructsInUnselectedEnv(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{
+			name: "environment attribute",
+			raw: `env "dev" {
+  url = "sqlite://dev.db"
+}
+env "prod" {
+  url     = missing.value
+  project = "production"
+}
+`,
+			wantErr: `unsupported atlas\.hcl construct "project" at atlas\.hcl:6`,
+		},
+		{
+			name: "environment block",
+			raw: `env "dev" {
+  url = "sqlite://dev.db"
+}
+env "prod" {
+  url = missing.value
+  cloud {}
+}
+`,
+			wantErr: `unsupported atlas\.hcl construct "cloud" at atlas\.hcl:6`,
+		},
+		{
+			name: "nested migration attribute",
+			raw: `env "dev" {
+  url = "sqlite://dev.db"
+}
+env "prod" {
+  url = missing.value
+  migration {
+    dir        = "file://migrations"
+    remote_dir = "atlas://team/project"
+  }
+}
+`,
+			wantErr: `unsupported atlas\.hcl construct "remote_dir" at atlas\.hcl:8`,
+		},
+		{
+			name: "labeled nested block",
+			raw: `env "dev" {
+  url = "sqlite://dev.db"
+}
+env "prod" {
+  url = missing.value
+  migration "remote" {
+    dir = "file://migrations"
+  }
+}
+`,
+			wantErr: `unsupported atlas\.hcl construct "migration" at atlas\.hcl:6`,
+		},
+		{
+			name: "duplicate nested block",
+			raw: `env "dev" {
+  url = "sqlite://dev.db"
+}
+env "prod" {
+  url = missing.value
+  migration {
+    dir = "file://migrations"
+  }
+  migration {
+    dir = "file://other"
+  }
+}
+`,
+			wantErr: `unsupported atlas\.hcl construct "migration" at atlas\.hcl:9`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "dev")
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
 func TestLoadAtlasProjectConfigEmptyEnvURLOverridesPtahFallback(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

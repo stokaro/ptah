@@ -159,6 +159,9 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 	if err != nil {
 		return Config{}, err
 	}
+	if err := validateAtlasEnvStructures(blocks.envs); err != nil {
+		return Config{}, err
+	}
 
 	if err := p.configureEvalContext(blocks.variables, blocks.locals, blocks.data); err != nil {
 		return Config{}, err
