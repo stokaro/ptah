@@ -12,7 +12,9 @@ if [[ ! -x "$ptah_bin" ]]; then
 fi
 
 fixture_root="$repo_root/internal/goannotationexport/testdata/parity"
+cleanup_fixture_root="$repo_root/internal/goannotationexport/testdata/cleanup"
 export_root="$workspace/export-models"
+refusal_root="$workspace/refusal-models"
 cleanup_root="$workspace/cleanup-models"
 schema_file="$workspace/schema.hcl"
 
@@ -54,7 +56,52 @@ for statement in "${required_sql[@]}"; do
 	fi
 done
 
-cp -R "$fixture_root" "$cleanup_root"
+cp -R "$fixture_root" "$refusal_root"
+cp "$refusal_root/models.go" "$workspace/models.before-refusal.go"
+printf 'previous schema\n' >"$workspace/refusal.hcl"
+cp "$workspace/refusal.hcl" "$workspace/refusal.before.hcl"
+if "$ptah_bin" schema export \
+	--from go \
+	--to hcl \
+	--root-dir "$refusal_root" \
+	--out "$workspace/refusal.hcl" \
+	--cleanup-go-annotations \
+	--cleanup-diff \
+	>"$workspace/refusal.diff" \
+	2>"$workspace/refusal.diff.err"; then
+	printf 'cleanup diff unexpectedly accepted opaque SQL bodies\n' >&2
+	exit 1
+fi
+grep -Fq 'refuse to clean Go annotations after a lossy HCL export' "$workspace/refusal.diff.err"
+
+opaque_paths=(
+	'functions.app.lookup_user'
+	'materialized_views.app.user_stats'
+	'triggers["app.users"]["users_touch"]'
+	'views.app.active_users'
+)
+for path in "${opaque_paths[@]}"; do
+	grep -Fq -- "- $path: raw SQL body is emitted as opaque HCL text" "$workspace/refusal.diff.err"
+done
+cmp "$workspace/models.before-refusal.go" "$refusal_root/models.go"
+cmp "$workspace/refusal.before.hcl" "$workspace/refusal.hcl"
+
+if "$ptah_bin" schema export \
+	--from go \
+	--to hcl \
+	--root-dir "$refusal_root" \
+	--out "$workspace/refusal.hcl" \
+	--cleanup-go-annotations \
+	>"$workspace/refusal.out" \
+	2>"$workspace/refusal.err"; then
+	printf 'destructive cleanup unexpectedly accepted opaque SQL bodies\n' >&2
+	exit 1
+fi
+grep -Fq 'refuse to clean Go annotations after a lossy HCL export' "$workspace/refusal.err"
+cmp "$workspace/models.before-refusal.go" "$refusal_root/models.go"
+cmp "$workspace/refusal.before.hcl" "$workspace/refusal.hcl"
+
+cp -R "$cleanup_fixture_root" "$cleanup_root"
 cp "$cleanup_root/models.go" "$workspace/models.before.go"
 "$ptah_bin" schema export \
 	--from go \
@@ -80,10 +127,11 @@ if grep -Rq --include='*.go' '//ptah:' "$cleanup_root"; then
 	printf 'destructive cleanup left Ptah annotations in Go source\n' >&2
 	exit 1
 fi
-grep -Fq 'package parity' "$cleanup_root/models.go"
+grep -Fq 'package cleanup' "$cleanup_root/models.go"
+grep -Fq '// User is the application user.' "$cleanup_root/models.go"
 grep -Fq 'type User struct {' "$cleanup_root/models.go"
 grep -Fq 'Email string' "$cleanup_root/models.go"
-grep -Fq 'type UserData struct{}' "$cleanup_root/models.go"
+grep -Fq 'type Audit struct {' "$cleanup_root/models.go"
 
 cp "$workspace/cleanup.hcl" "$workspace/cleanup.before-repeat.hcl"
 cp "$cleanup_root/models.go" "$workspace/models.before-repeat.go"
@@ -98,7 +146,7 @@ if "$ptah_bin" schema export \
 	printf 'repeated destructive cleanup unexpectedly succeeded\n' >&2
 	exit 1
 fi
-grep -Fq 'no Ptah Go annotations found to export and clean' "$workspace/repeat.err"
+grep -Fq 'no Ptah Go annotations found to export' "$workspace/repeat.err"
 cmp "$workspace/cleanup.before-repeat.hcl" "$workspace/cleanup.hcl"
 cmp "$workspace/models.before-repeat.go" "$cleanup_root/models.go"
 
