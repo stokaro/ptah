@@ -350,6 +350,44 @@ func TestExternalSchemaCommandsRejectsImplicitConfigExecution(t *testing.T) {
 	c.Assert(commands, qt.IsNil)
 }
 
+func TestExternalSchemaCommandsRejectsImplicitAtlasConfigExecution(t *testing.T) {
+	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
+	cfg := projectconfig.Config{
+		ExternalSchema: projectconfig.ExternalSchemaConfig{
+			Program: []string{"config-loader"},
+			Origin:  projectconfig.AtlasFileName,
+		},
+	}
+
+	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
+
+	c.Assert(err, qt.ErrorMatches, "atlas.hcl data.external_schema is disabled by default; pass --allow-external-schema to execute it")
+	c.Assert(commands, qt.IsNil)
+}
+
+func TestExternalSchemaCommandsAllowsAtlasConfigWithOptIn(t *testing.T) {
+	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
+	c.Assert(cmd.Flags().Set(dbcli.AllowExternalSchemaFlagName, "true"), qt.IsNil)
+	cfg := projectconfig.Config{
+		ExternalSchema: projectconfig.ExternalSchemaConfig{
+			Program: []string{"config-loader", "--dialect", "sqlite"},
+			Format:  "sql",
+			Origin:  projectconfig.AtlasFileName,
+		},
+	}
+
+	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(commands, qt.HasLen, 1)
+	c.Assert(commands[0].Args, qt.DeepEquals, []string{"config-loader", "--dialect", "sqlite"})
+	c.Assert(commands[0].Format, qt.Equals, "sql")
+}
+
 func TestExternalSchemaCommandsNilWhenNeitherSet(t *testing.T) {
 	c := qt.New(t)
 	cmd := &cobra.Command{Use: "test"}

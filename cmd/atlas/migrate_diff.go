@@ -132,7 +132,8 @@ func runAtlasMigrateDiff(
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	if loaded && !cmd.Flags().Changed("to") && len(projectCfg.SchemaSources) > 0 {
+	if loaded && !cmd.Flags().Changed("to") &&
+		(len(projectCfg.SchemaSources) > 0 || atlasExternalSchemaConfigured(projectCfg)) {
 		opts.toURLs = []string{"env://src"}
 	}
 	desired, err := prepareAtlasMigrateDiffSource(opts, projectEnv)

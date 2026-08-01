@@ -56,11 +56,11 @@
  {
   "area": "Schema sources",
   "feature": "Atlas HCL data \"external_schema\"",
-  "ptah": "no",
-  "atlas_oss": "yes",
+  "ptah": "yes",
+  "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "Ptah's `data` block is an unlabeled seed-row declaration; every labeled Atlas data source fails with `data block does not accept labels`.",
-  "evidence": "internal/atlashcl/objects.go:376-379; external_schema, composite_schema and remote_dir all produce that one error; comparison.md:415 lists Atlas OSS external schema as Open"
+  "note": "Ptah evaluates the data source and runs the program, gated behind `--allow-external-schema`/`PTAH_ALLOW_EXTERNAL_SCHEMA`. Community Atlas rejects `data.external_schema`.",
+  "evidence": "config/projectconfig/atlas.go (configureDataSources external_schema branch); repro: PTAH_ALLOW_EXTERNAL_SCHEMA=1 ptah-compat schema apply --url sqlite://app.db --env dev --dry-run --auto-approve emits the program's CREATE TABLE; ptah schema render --env dev --allow-external-schema renders it natively; go test ./cmd/atlas -run TestSchemaDiffExternalSchemaSource. Measured 2026-08-01, Atlas CE v1.2.0 logged out: atlas.hcl data \"external_schema\" -> exit 1 'Error: data.external_schema is not supported by the community version of Atlas.'"
  },
  {
   "area": "Schema sources",
@@ -86,7 +86,7 @@
   "ptah": "partial",
   "atlas_oss": "yes",
   "atlas_pro": "yes",
-  "note": "Rejects atlas, script, exporter, deployment; env for_each and schemas; migration baseline, skip_report, repo; data blocks but hcl_schema.",
+  "note": "Rejects atlas, script, exporter, deployment; env for_each and schemas; migration baseline, skip_report, repo; data blocks but hcl_schema and external_schema.",
   "evidence": "config/projectconfig/atlas.go:214 (collectAtlasTopBlock default -> unsupportedBlock), :402 (parseEnvAttr default), :475 (parseMigration default); each rejection reproduced with /tmp/pc-audit at exit 1; Atlas-side block inventory from https://atlasgo.io/atlas-schema/projects (top-level variable, locals, atlas, env, script, lint, diff, exporter, deployment)"
  },
  {

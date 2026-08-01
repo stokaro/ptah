@@ -94,7 +94,12 @@ Constraints on the block:
   directory after symlink resolution. Use an explicit absolute path for a
   deliberately external loader.
 - The block mirrors the desired-schema role of Atlas's
-  `data "external_schema"` but does not evaluate that Atlas HCL data source.
+  `data "external_schema"`. The same loader can also be declared directly in
+  `atlas.hcl` as a `data "external_schema"` source and selected as an env's
+  desired state; see
+  [Atlas project config](../../atlas/project-config/#external-schema-data-source).
+  All three spellings — `--schema-cmd`, `ptah.yaml` `external_schema`, and the
+  `atlas.hcl` data source — share one execution path and one opt-in gate.
 
 ## GORM (verified)
 

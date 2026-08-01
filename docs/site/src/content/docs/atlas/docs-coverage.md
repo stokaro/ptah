@@ -199,13 +199,13 @@ Before a non-dry-run apply, `--dev-url` rehearses the exact ordered plan on the 
 
 ### Desired-state sources
 
-**Atlas availability.** Open sources include SQL, HCL, and external schema integrations; some data sources are Pro
+**Atlas availability.** The Atlas docs describe SQL, HCL, and external schema integrations, with some data sources Pro. Measured 2026-08-01: the pinned Atlas CE v1.2.0 binary rejects `data "external_schema"` with "not supported by the community version", so the external-schema data source is not an Open capability
 
 **Ptah documentation.** [Composite desired schema](../../schema/composite/), [ORM and external loaders](../../schema/orm-and-external/), [OCI registry artifacts](../../operate/oci-registry/), [HCL schema](../../schema/hcl/)
 
 **Implementation status.** Partial. Native Ptah supports YAML, Go annotations, supported HCL schema files, SQL schema files, live DB introspection, external programs that emit SQL, HCL, or YAML, and canonical desired-schema artifacts in a bring-your-own OCI registry. The same `ptah.yaml external_schema` block supplies native render, compare, drift, and migration planning.
 
-The native OCI source is available to `schema compare` and `drift` through `--schema-file`; it is not Atlas Registry parity or an `atlas://` source for Atlas-compatible commands. Atlas HCL `data.external_schema`, registry-backed sources, and full Atlas data-source evaluation remain outside the supported compatibility subset.
+The native OCI source is available to `schema compare` and `drift` through `--schema-file`; it is not Atlas Registry parity or an `atlas://` source for Atlas-compatible commands. Atlas HCL `data "external_schema"` is implemented for both binaries, gated behind `--allow-external-schema` (native) or `PTAH_ALLOW_EXTERNAL_SCHEMA=1` (`ptah-compat`); registry-backed sources and the remaining Atlas data sources stay outside the supported compatibility subset.
 
 **Conformance status.** Native external programs are measured by a deterministic 20-observation SQL/HCL/YAML workflow through render, compare, drift, plan, generate, apply, live SQLite facts, and convergence. A separate zero-gap tier exercises pinned GORM and SQLAlchemy providers. The native OCI round trip remains covered by Ptah's own command and integration tests rather than Atlas conformance.
 
