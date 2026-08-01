@@ -35,7 +35,26 @@ each:
 Every Atlas cell has to come from an Atlas-side source: the command, usage, and
 flag inventory the conformance harness reads out of the pinned community
 binary, or a classification Atlas publishes. Where neither settles a question,
-the cell is ❔ rather than a guess. That is why the schema-object rows carry ❔
+the cell is ❔ rather than a guess.
+
+## Atlas plans are not the CE column
+
+Atlas's public plans are Starter (free), Pro, and Enterprise, and Atlas's own
+[pricing page](https://atlasgo.io/pricing) classifies capabilities by plan.
+That classification and the **CE** column answer different questions: the CE
+column reports what the pinned community binary does when run logged out, and
+the two diverge in both directions. Both examples below were measured on
+2026-08-01 against CE v1.2.0:
+
+- The pricing page places migration linting outside the Starter plan, yet the
+  CE binary runs `migrate lint` logged out and reports destructive changes.
+- The pricing page checks ERD visualization for Starter, yet the CE binary
+  rejects `schema inspect --web` as an unknown flag; the ERD lives in the
+  hosted service, not in the binary.
+
+Where the pricing page settles a Pro-side question, the Pro column cites it.
+Where plan marketing and measured binary behavior differ, the measured behavior
+wins the CE cell and the difference column records the tension. That is why the schema-object rows carry ❔
 in the Atlas columns: this page can show what Ptah emits for a domain or a
 trigger, but nothing it cites establishes what Atlas CE emits for the same
 object.
@@ -50,18 +69,18 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 149 capabilities below:
+Across the 152 capabilities below:
 
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 78 |
 | Ptah supports it with a stated limitation | 47 |
-| Ptah does not implement it | 24 |
+| Ptah does not implement it | 27 |
 | Ptah and Atlas CE both support it | 24 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 27 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 28 |
 | Ptah has it and neither Atlas edition does | 8 |
 | Atlas CE has it and Ptah does not, or only in part | 25 |
-| An Atlas column is ❔ — not established by this page's evidence | 34 |
+| An Atlas column is ❔ — not established by this page's evidence | 33 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
 binary built from this repository; Atlas-column verdicts rest on the cited
@@ -158,7 +177,7 @@ as open capabilities regardless.
 | Prometheus metrics endpoint (`--metrics-addr`) | ✅ | ❌ | ❔ | migrations up, down, and status serve a Prometheus /metrics endpoint at the given address for the run. |
 | Repair dirty or partial revision state | ✅ | ❌ | ❌ | `ptah migrations repair` `--resume-from` finishes remaining statements. No repair verb in the pinned CE inventory or reviewed Atlas evidence. |
 | Revision table format and placement | ✅ | ✅ | ✅ | `--revision-format` ptah\|atlas plus `--migrations-table` and `--migrations-schema`; the compat path defaults to Atlas rows. |
-| Roll back applied migrations (down) | 🟡 | ❌ | ✅ | Ptah reverts via pre-planned down files; `--to-tag`/`--skip-checks`/`--plan` fail loudly as waivers. `migrate down` is absent from the pinned CE binary. |
+| Roll back applied migrations (down) | 🟡 | ❌ | ✅ | Ptah reverts via pre-planned down files; `--to-tag`/`--skip-checks`/`--plan` fail loudly as waivers. In pinned CE, `migrate down` is a registered community-abort stub, not a working verb. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❔ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |
 | Transaction modes (`--tx-mode` file/all/none) | ✅ | ✅ | ✅ | all is limited to transactional-DDL dialects and rejects no_transaction files, per-file timeouts, and pre-migration checks. |
@@ -179,7 +198,7 @@ as open capabilities regardless.
 | Inline nolint suppression | 🟡 | ✅ | ✅ | Analyzer-name selectors suppress, but only codes DS102/DS103/MF103 map; atlas:nolint PG101 and unknown selectors are silently ignored. |
 | Native migration lint rule set | ✅ | 🟡 | ✅ | 42 codes across 9 families, gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
 | Per-rule severity policy | 🟡 | ❔ | ✅ | Severity vocabulary is warning\|error only (info errors out); atlas.hcl exposes 5 analyzer blocks mapped to an error bool and rejects force. |
-| Pre-migration assertion checks | 🟡 | ❌ | ✅ | Only the `-- +ptah check` spelling; `--tx-mode` all refuses checked files, and that error names `--skip-checks`, which compat apply lacks. |
+| Pre-migration assertion checks | 🟡 | ❌ | ✅ | Only the `-- +ptah check` spelling; `--tx-mode` all refuses checked files, and that error names `--skip-checks`, which compat apply lacks. CE applies a failing checks.sql unenforced. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❔ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |
@@ -223,7 +242,7 @@ as open capabilities regardless.
 | MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error; extensions, functions, domains, roles/grants, RLS and MariaDB SEQUENCE objects are dropped silently. DDL auto-commit blocks rollback. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Only engine where views, functions, sequences, roles, RLS and domains are emitted; presets 12-13, 14-16, 17+ from the server banner. |
-| Roles, grants, and row-level security | 🟡 | ❔ | ❔ | PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files reject ROLE, GRANT, POLICY and ENABLE RLS. |
+| Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files reject ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops a `role` block silently. |
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums and FKs render as skip comments, SERIAL hard-errors, no dedicated driver (uses the PostgreSQL pgx path), and no live container or live test exists. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | The mssql and tsql aliases silently drop views and triggers that sqlserver emits; render's default dialect list and `--dialect` help omit SQL Server; no sequences, RLS, roles/grants or matviews. |
 | SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops do emit a full rebuild; type, nullability, default and uniqueness changes fail with "modifying columns ... requires a table rebuild plan". PG-only objects error one at a time. |
@@ -247,7 +266,7 @@ as open capabilities regardless.
 | Public API compatibility gate | ✅ | ➖ | ➖ | check-public-api.sh keeps the committed API baseline and the package tree in sync; pre-v1 breaks need a per-baseline approval line. |
 | Query builder for parameterized SQL | 🟡 | ➖ | ➖ | Joins, DISTINCT, GROUP BY, HAVING and RETURNING work; no subqueries, CTEs, LIKE or upsert; SQL Server, ClickHouse, Spanner error. |
 | Reusable Go packages (embedder API) | ✅ | ➖ | ➖ | Documented embedder packages cover parse, diff, plan, render, migrate, lint and seed. CE conformance measures CLI commands, not Go APIs. |
-| Schema visualization (ERD diagrams) | ✅ | ❌ | ✅ | Mermaid, DOT or SVG ERD from Go annotations only; SVG shells out to Graphviz dot. Atlas features page lists visualization as Pro. |
+| Schema visualization (ERD diagrams) | ✅ | ❌ | ✅ | Mermaid, DOT or SVG ERD from Go annotations only; SVG shells out to Graphviz dot. Atlas ERD lives in the hosted service (any plan per its pricing page); the CE binary rejects `--web`. |
 | Statement observer and validator hooks (Go API) | ✅ | ➖ | ➖ | migrator.WithStatementObserver runs a read-only callback per executed statement; WithStatementValidator gates all statements pre-execution; both compose with StatementInterceptor. |
 | testkit companion module for database tests | ✅ | ➖ | ➖ | Separate module github.com/stokaro/ptah/testkit wraps testcontainers-go for tests needing real databases; versions independently and stays out of the main module graph. |
 
@@ -291,6 +310,9 @@ service, not artifact storage; the storage function is covered under
 | `schema plan` registry and output flags | ❌ | ❌ | ✅ | `--push`/`--pending`/`--repo` are recorded waivers; `--format`/`--name-format`/`--directive`/`--edit`/`--skip-lint` fail as unimplemented. |
 | `schema plan` registry sub-verbs | ❌ | ❌ | ✅ | approve, lint, list, new, pull, push, rm, test and validate all stay CE boundary stubs; only local plan files are implemented. |
 | Atlas Cloud deployment reporting | ❌ | ❌ | ✅ | No Atlas account model or deployment API. Ptah attaches a deployment-report referrer to its own OCI artifact after an oci:// migrations up. |
+| Atlas Copilot (AI assistant) | ❌ | ❌ | ✅ | AI assistant gated to Pro accounts; absent from the pinned CE v1.2.0 command inventory. No Ptah equivalent; the closest developer-assist surface is the `ptah-ls` language server. |
+| Column-level data lineage | ❌ | ❌ | ✅ | Hosted Atlas Cloud view tracing column-to-column dependencies across schemas. No Ptah surface: no lineage verb or flag; the nearest output is `ptah viz`, whose ERD edges are table-level FKs only. |
+| Hosted Schema Docs (schema documentation) | ❌ | ❌ | ✅ | Auto-generated schema documentation pages in Atlas Cloud. Ptah has no docs generator: `ptah schema export` emits HCL, OpenAPI, GraphQL, or protobuf definitions; `ptah viz` covers ERD only. |
 | Reviewer approval and policy workflows | ❌ | ❌ | ✅ | Local `-- +ptah check` pre-migration assertions exist; the Cloud-gated reviewer-approval half is out of scope. |
 | Schema monitoring, hosted UI, login | ❌ | ❌ | ✅ | Out of scope: no login, registry UI, promotion or monitoring. Native `ptah schema drift` is a local one-shot check. |
 

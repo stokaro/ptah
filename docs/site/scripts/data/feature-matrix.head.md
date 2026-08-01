@@ -35,7 +35,26 @@ each:
 Every Atlas cell has to come from an Atlas-side source: the command, usage, and
 flag inventory the conformance harness reads out of the pinned community
 binary, or a classification Atlas publishes. Where neither settles a question,
-the cell is ❔ rather than a guess. That is why the schema-object rows carry ❔
+the cell is ❔ rather than a guess.
+
+## Atlas plans are not the CE column
+
+Atlas's public plans are Starter (free), Pro, and Enterprise, and Atlas's own
+[pricing page](https://atlasgo.io/pricing) classifies capabilities by plan.
+That classification and the **CE** column answer different questions: the CE
+column reports what the pinned community binary does when run logged out, and
+the two diverge in both directions. Both examples below were measured on
+2026-08-01 against CE v1.2.0:
+
+- The pricing page places migration linting outside the Starter plan, yet the
+  CE binary runs `migrate lint` logged out and reports destructive changes.
+- The pricing page checks ERD visualization for Starter, yet the CE binary
+  rejects `schema inspect --web` as an unknown flag; the ERD lives in the
+  hosted service, not in the binary.
+
+Where the pricing page settles a Pro-side question, the Pro column cites it.
+Where plan marketing and measured binary behavior differ, the measured behavior
+wins the CE cell and the difference column records the tension. That is why the schema-object rows carry ❔
 in the Atlas columns: this page can show what Ptah emits for a domain or a
 trigger, but nothing it cites establishes what Atlas CE emits for the same
 object.
