@@ -101,10 +101,32 @@ var includeChildTypes = map[string]struct{}{
 	"grant":       {},
 }
 
+// includeSelectorMaxDots bounds how deep an --include selector may reach. The
+// selection matches top-level resources by their bare name and by their
+// effective-schema-qualified name, so a selector carries at most one "."
+// *separator*. A deeper selector is the positional spelling of the
+// child-resource selection [validateIncludeSelectorTypes] already rejects, and
+// it is rejected the same way instead of silently projecting an empty
+// selection.
+//
+// Depth is measured by [unquotedDots], not by counting "." characters: an
+// identifier may itself contain a dot, and [dbschematypes.QualifyTableName]
+// quotes any such part, so the candidate for table "my.table" in schema "main"
+// is `main."my.table"` — two dot characters, one separator. Counting
+// characters rejected the selector that matches it.
+//
+// The rule closes the literal-separator spelling only. Because path.Match
+// treats "." as an ordinary character, every metacharacter that can stand for
+// it escapes the check: `main.users*email`, `main.users?email`, and the
+// character class `main.users[.]email` all reach past a top-level resource and
+// still select nothing. See stokaro/ptah#979 for the outcome-based check that
+// would cover the whole class.
+const includeSelectorMaxDots = 1
+
 // ValidateIncludeSelectors parses Atlas-style --include selectors and rejects
 // forms Ptah cannot honor: malformed globs, field selectors, child resource
-// types, and unknown resource types. Commands run it before any database
-// work.
+// types, child-depth patterns, and unknown resource types. Commands run it
+// before any database work.
 func ValidateIncludeSelectors(values []string) error {
 	_, err := parseIncludeSelectors(values)
 	return err
@@ -138,7 +160,68 @@ func parseIncludeSelector(value string) (resourcePattern, error) {
 	if err := validateIncludeSelectorTypes(raw, pattern.types); err != nil {
 		return resourcePattern{}, err
 	}
+	if err := validateIncludeSelectorDepth(raw, pattern.glob); err != nil {
+		return resourcePattern{}, err
+	}
 	return pattern, nil
+}
+
+// validateIncludeSelectorDepth rejects include selectors that reach past the
+// "schema.name" qualification of a top-level resource.
+func validateIncludeSelectorDepth(raw, glob string) error {
+	if unquotedDots(glob) <= includeSelectorMaxDots {
+		return nil
+	}
+	return fmt.Errorf(
+		"unsupported Atlas include selector %q: selectors name top-level resources as \"name\" or \"schema.name\", and a deeper pattern names a child resource that rides along with its parent",
+		raw)
+}
+
+// unquotedDots counts the "." separators of a selector glob, skipping dots
+// that belong to an identifier rather than to the path.
+//
+// Dots are skipped inside the quoting forms the tableref parser accepts — SQL
+// standard double quotes, MySQL backticks, and SQL Server brackets — because a
+// qualified candidate quotes any part holding a dot, so `main."my.table"` is
+// one separator, not two. Dots are also skipped after a backslash, which
+// path.Match reads as an escape for the following character, so `a\.b\.c`
+// matches the single bare name "a.b.c" and stays a depth-one selector.
+//
+// An unterminated quote leaves the remainder uncounted, which is the
+// permissive direction for that input.
+//
+// The check is not conservative in general, though. The selection also offers
+// the bare name as a candidate, and a bare name is never quoted, so a table
+// literally named "a.b.c" is matched by the selector `a.b.c` — which this rule
+// refuses, because that spelling is indistinguishable from the
+// schema.table.column form it exists to reject. That ambiguity is why the
+// refusal is deliberate rather than a bug, and why the disambiguated spellings
+// `a\.b\.c` and `main."a.b.c"` are supported and documented. Resolving it
+// without an escape needs the outcome-based check in stokaro/ptah#979.
+func unquotedDots(glob string) int {
+	dots := 0
+	var closeQuote byte
+	for index := 0; index < len(glob); index++ {
+		character := glob[index]
+		if closeQuote != 0 {
+			if character == closeQuote {
+				closeQuote = 0
+			}
+			continue
+		}
+		switch character {
+		case '"', '`':
+			closeQuote = character
+		case '[':
+			closeQuote = ']'
+		case '\\':
+			// path.Match escape: the next byte is a literal, never a separator.
+			index++
+		case '.':
+			dots++
+		}
+	}
+	return dots
 }
 
 func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
