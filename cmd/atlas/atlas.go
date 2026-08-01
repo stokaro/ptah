@@ -733,10 +733,10 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 	}
 }
 
-// atlasVerbProject is one adapter invocation's Atlas-form arguments after the
-// selected atlas.hcl environment has been merged into them, plus the loaded
-// project itself.
-type atlasVerbProject struct {
+// atlasVerbArgs is one adapter invocation's Atlas-form arguments after the
+// selected atlas.hcl environment has been merged into them. The project itself
+// stays owned by the caller's cleanup scope.
+type atlasVerbArgs struct {
 	// args are the Atlas-form arguments with the project selection flags
 	// removed and the project's values appended: exactly what atlasargs.Map
 	// receives.
@@ -744,11 +744,6 @@ type atlasVerbProject struct {
 	// context carries the project's rooted migration directory and, for verbs
 	// that ask for it, the merged native project config.
 	context context.Context
-	// project is the loaded atlas.hcl root, or the zero value when no project
-	// was selected. Its Close is registered with the caller's cleanup scope.
-	project atlasProject
-	// loaded reports whether an atlas.hcl was read.
-	loaded bool
 }
 
 // resolveAtlasVerbProject merges the Atlas project selection flags reachable
@@ -767,11 +762,11 @@ func resolveAtlasVerbProject(
 	verb atlasVerb,
 	args []string,
 	cleanup *cmdadapter.CleanupScope,
-) (atlasVerbProject, error) {
-	resolved := atlasVerbProject{context: cmd.Context()}
+) (atlasVerbArgs, error) {
+	resolved := atlasVerbArgs{context: cmd.Context()}
 	parentProjectFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
-		return atlasVerbProject{}, err
+		return atlasVerbArgs{}, err
 	}
 	parentProject := atlasProjectArgValues{
 		flags:   parentProjectFlags,
@@ -779,7 +774,7 @@ func resolveAtlasVerbProject(
 	}
 	project, remaining, err := extractAtlasProjectArgs(args)
 	if err != nil {
-		return atlasVerbProject{}, err
+		return atlasVerbArgs{}, err
 	}
 	project = mergeAtlasProjectArgs(parentProject, project)
 	resolved.args = remaining
@@ -789,13 +784,11 @@ func resolveAtlasVerbProject(
 
 	loadedProject, targetCfg, err := loadAtlasAdapterProjectConfig(verb, project.flags)
 	if err != nil {
-		return atlasVerbProject{}, err
+		return atlasVerbArgs{}, err
 	}
 	cleanup.Add(loadedProject.Close)
-	resolved.project = loadedProject
-	resolved.loaded = true
 	if err := loadedProject.resolveMigrationDirForArgs(verb.flags, resolved.args); err != nil {
-		return atlasVerbProject{}, err
+		return atlasVerbArgs{}, err
 	}
 	applyProjectConfig := verb.projectConfig
 	if applyProjectConfig == nil {
@@ -803,7 +796,7 @@ func resolveAtlasVerbProject(
 	}
 	resolved.args, err = applyProjectConfig(verb.flags, resolved.args, loadedProject, project.flags)
 	if err != nil {
-		return atlasVerbProject{}, err
+		return atlasVerbArgs{}, err
 	}
 	resolved.context = withAtlasProjectMigrationRoot(resolved.context, group, loadedProject)
 	if verb.nativeProjectConfig {
