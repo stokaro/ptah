@@ -108,6 +108,57 @@ func VerifyHashed(fsys fs.FS, format migrator.MigrationDirFormat) (result *Resul
 	return result, true, err
 }
 
+// VerifyAtlasFiles recomputes the Atlas-format sum of fsys over exactly names,
+// in the order given, and compares it against the atlas.sum recorded in the
+// same directory. A missing atlas.sum returns an error matching
+// ErrSumFileMissing; a malformed one matches ErrSumFileMalformed. Drift is
+// reported in the Result rather than as an error, so callers choose the exit
+// code.
+//
+// It is the verification counterpart of [ComputeAtlasFiles]: a directory
+// written by another migration tool and read through Atlas's ?format= carries
+// an atlas.sum over its own source files, and only the caller knows which of
+// those files the selected format covers.
+func VerifyAtlasFiles(fsys fs.FS, names []string) (*Result, error) {
+	recordedRaw, err := fs.ReadFile(fsys, AtlasFileName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, sumFileMissingError{
+			name:   AtlasFileName,
+			format: migrator.MigrationDirFormatAtlas,
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", AtlasFileName, err)
+	}
+	recorded, err := Parse(recordedRaw)
+	if err != nil {
+		return nil, malformedSumFileError{name: AtlasFileName, err: err}
+	}
+
+	current, err := ComputeAtlasFiles(fsys, names)
+	if err != nil {
+		return nil, err
+	}
+
+	result := diff(recorded, current)
+	result.SumFileName = AtlasFileName
+	return result, nil
+}
+
+// VerifyAtlasFilesHashed verifies fsys against its atlas.sum when one exists.
+// hashed=false (with a nil Result and nil error) means the directory carries no
+// atlas.sum, so callers can enforce verification on hashed directories while
+// deciding separately what an unhashed one means. When the file exists, the
+// result and error are exactly those of [VerifyAtlasFiles].
+func VerifyAtlasFilesHashed(fsys fs.FS, names []string) (result *Result, hashed bool, err error) {
+	hashed, err = hasFile(fsys, AtlasFileName)
+	if err != nil || !hashed {
+		return nil, false, err
+	}
+	result, err = VerifyAtlasFiles(fsys, names)
+	return result, true, err
+}
+
 func hasSumFile(fsys fs.FS, format migrator.MigrationDirFormat) (bool, error) {
 	names := []string{FileName, AtlasFileName}
 	if format != migrator.MigrationDirFormatAuto {
