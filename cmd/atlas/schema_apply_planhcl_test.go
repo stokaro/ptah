@@ -215,9 +215,9 @@ func TestSchemaApplyAtlasPlanFileRefusesDevDatabaseEscape(t *testing.T) {
 	// Refused by name, and nothing ran: not on the dev database, not on the
 	// target, and not on the third database the plan tried to reach.
 	c.Assert(err, qt.ErrorMatches,
-		`pre-planned migration cannot be verified on a dev database: statement 1 uses ATTACH, which attaches another SQLite database file.*`)
-	c.Assert(err, qt.ErrorMatches, `(?s).*Replaying it would not stay inside the dev database.*`)
-	c.Assert(out, qt.Contains, "cannot be verified on a dev database")
+		`pre-planned migration was refused before it reached the dev database: statement 1 uses ATTACH, which attaches another SQLite database file.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*A dev database executes plan SQL for real.*`)
+	c.Assert(out, qt.Contains, "refused before it reached the dev database")
 	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
 	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
@@ -251,7 +251,7 @@ func TestSchemaApplyAtlasPlanFileRefusesEscapeHiddenBehindValidChanges(t *testin
 		"--auto-approve",
 	)
 
-	c.Assert(err, qt.ErrorMatches, `pre-planned migration cannot be verified on a dev database: statement 4 uses ATTACH.*`)
+	c.Assert(err, qt.ErrorMatches, `pre-planned migration was refused before it reached the dev database: statement 4 uses ATTACH.*`)
 	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 }
@@ -295,7 +295,7 @@ func TestSchemaApplyAtlasPlanFileDryRunRefusesDevDatabaseEscape(t *testing.T) {
 	)
 
 	c.Assert(err, qt.ErrorMatches,
-		`pre-planned migration cannot be verified on a dev database: statement 1 uses ATTACH.*`)
+		`pre-planned migration was refused before it reached the dev database: statement 1 uses ATTACH.*`)
 	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
 }

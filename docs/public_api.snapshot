@@ -4992,6 +4992,7 @@ func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) Reader() types.SchemaReader
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
+func (dc *DatabaseConnection) RestrictSQLiteSession(ctx context.Context) error
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
 func (dc *DatabaseConnection) WithSession(ctx context.Context, use func(*DatabaseConnection) error) (resultErr error)

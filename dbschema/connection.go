@@ -193,6 +193,10 @@ type DatabaseConnection struct {
 	newReader schemaReaderFactory
 	newWriter schemaWriterFactory
 	pinned    bool
+	// session is the pinned physical session set by WithSession. Connection
+	// state that only applies per physical connection — see
+	// RestrictSQLiteSession — needs it.
+	session *sql.Conn
 }
 
 type schemaReaderFactory func(sqlrunner.Runner) types.SchemaReader
@@ -304,6 +308,7 @@ func (dc *DatabaseConnection) WithSession(
 	scoped.writer = dc.newWriter(runner, session)
 	scoped.executor = nil
 	scoped.pinned = true
+	scoped.session = session
 	if dc.writer != nil && dc.writer.IsDryRun() {
 		scoped.writer.SetDryRun(true)
 	}
@@ -344,6 +349,30 @@ func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, arg
 		return executor.ExecContext(ctx, query, args...)
 	}
 	return dc.sqlRunner().ExecContext(ctx, query, args...)
+}
+
+// RestrictSQLiteSession applies engine-level restrictions to a SQLite session
+// pinned by [DatabaseConnection.WithSession]: ATTACH, DETACH, and VACUUM INTO
+// are refused by the engine itself, so SQL executed on the session cannot
+// reach another database file or write to an arbitrary filesystem path.
+//
+// It is meant for throwaway databases that execute untrusted SQL — a dev
+// database a plan file is rehearsed on. The restriction is a property of the
+// physical connection, so it applies only to a pinned session and returns an
+// error otherwise; it also verifies that the restriction took effect rather
+// than assuming it, so a silent failure is impossible. Non-SQLite dialects
+// have no equivalent and return an error.
+func (dc *DatabaseConnection) RestrictSQLiteSession(ctx context.Context) error {
+	if dc == nil {
+		return fmt.Errorf("sqlite session restriction requires an open database connection")
+	}
+	if platform.NormalizeDialect(dc.info.Dialect) != platform.SQLite {
+		return fmt.Errorf("sqlite session restriction does not apply to dialect %q", dc.info.Dialect)
+	}
+	if !dc.pinned || dc.session == nil {
+		return fmt.Errorf("sqlite session restriction requires a pinned session; call it inside WithSession")
+	}
+	return sqlite.RestrictSession(ctx, dc.session)
 }
 
 // Conn returns a dedicated database session. Callers that use session-scoped

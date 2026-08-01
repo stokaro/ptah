@@ -41,6 +41,13 @@ ptah-compat schema inspect --url "$DATABASE_URL" --format sql > schema.sql
 ptah-compat schema inspect --url "$DATABASE_URL" --format json > schema.json
 ```
 
+:::caution[A dev database executes SQL for real]
+Whatever you pass as `--dev-url` runs the SQL Ptah is evaluating, so point it
+at a disposable database. This matters most when the SQL came from a plan file
+someone else wrote — see
+[The replay is not a sandbox](#the-replay-is-not-a-sandbox).
+:::
+
 Non-database sources require `--dev-url`, mirroring Atlas dev-database
 normalization: the dev database is reset destructively, the source is
 materialized on it (schema files executed, migration directories replayed),
@@ -342,12 +349,31 @@ boundary against a hostile plan author.
 The practical rule: **a `--dev-url` must point at a database you are willing
 to have a foreign plan file execute arbitrary SQL against.** Use a disposable
 dev database, not one that shares a server, credentials, or filesystem with
-anything you care about.
+anything you care about. The lint is a tripwire in front of it, not a wall
+around it.
 
-The one path with no such exposure is the ephemeral SQLite dev database Ptah
-creates for SQLite targets: a throwaway file in a private temporary
-directory, removed when the command exits, with no operator-supplied
-credentials involved.
+### Where enforcement is real
+
+The ephemeral SQLite dev database — the one Ptah creates for SQLite targets,
+which you never opt into — is the exception, and it does not rely on the lint
+at all. It is a throwaway file in a private temporary directory, removed when
+the command exits, and its session is restricted at the engine level before
+any plan SQL runs:
+
+- `ATTACH` and `DETACH` are refused by SQLite itself, so plan SQL cannot reach
+  another database file — including the real target.
+- `VACUUM INTO` is refused by the same restriction, so it cannot write a
+  database copy to an arbitrary path.
+- Native extensions cannot be loaded.
+
+Ptah verifies the restriction is in force before rehearsing, and refuses to
+rehearse if it is not, so this cannot fail silently. These are engine
+refusals: they hold for statements the lint never recognized, including ones
+built by string concatenation at run time.
+
+For an operator-supplied `--dev-url`, none of the above applies: that database
+executes the plan's SQL for real, with whatever credentials and network reach
+you gave it.
 
 The verification also runs under `--dry-run`, so a plan received from someone
 else can be checked without committing to apply it.
@@ -385,11 +411,11 @@ names both fingerprints:
 error: pre-planned migration is stale: the target database schema does not match the plan's source fingerprint (plan sha256:..., database sha256:...); the database changed since the plan was computed, so re-run `schema plan` against the current database and review the fresh plan
 ```
 
-For an Atlas-authored plan the drift surfaces semantically, with the target
-left unchanged:
+For an Atlas-authored plan the drift surfaces semantically, and the plan is
+not applied to the target:
 
 ```text
-error: pre-planned migration does not converge to the desired state: replaying the plan on the dev database, starting from the target's current schema, left the following schema drift against --to (the target database was left unchanged):
+error: pre-planned migration does not converge to the desired state: replaying the plan on the dev database, starting from the target's current schema, left the following schema drift against --to (the plan was not applied to the target):
 ...
 ```
 

@@ -87,6 +87,15 @@ Use it when session-local state must remain consistent across cleanup, replay,
 introspection, and verification. The scoped connection must not escape the
 callback.
 
+`dbschema.DatabaseConnection.RestrictSQLiteSession` restricts a pinned SQLite
+session at the engine level: `ATTACH`, `DETACH`, and `VACUUM INTO` are refused
+by SQLite itself, so SQL executed on the session cannot reach another database
+file or write to an arbitrary path. Use it for throwaway databases that
+execute untrusted SQL, such as a dev database a plan file is rehearsed on. The
+restriction is a property of the physical connection, so it requires a session
+pinned by `WithSession` and verifies that it took effect rather than assuming
+it; non-SQLite dialects return an error.
+
 `migration/generator.PlanMigration` performs loading, diff planning, safety
 checks, and optional shadow verification without publishing files. Its
 `MigrationPlan.WriteFiles` method publishes the validated artifacts once. The

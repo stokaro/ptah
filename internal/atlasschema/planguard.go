@@ -11,10 +11,11 @@ import (
 )
 
 // PlanEscapeError reports that a pre-planned statement matched a known
-// dev-database escape construct, so replaying it would not stay inside the dev
-// database: the "verification" could modify the real target (or the host
-// filesystem) and could even pass while the effect landed somewhere the
-// comparison never looks.
+// dev-database escape construct.
+//
+// This is a lint result, not a containment verdict: see [escapeRules] for why
+// the deny-list cannot be a boundary, and [CheckPlanStatementsSandboxable] for
+// which dev databases get real enforcement instead.
 type PlanEscapeError struct {
 	// StatementIndex is the 1-based position of the offending statement.
 	StatementIndex int
@@ -26,9 +27,8 @@ type PlanEscapeError struct {
 
 func (e *PlanEscapeError) Error() string {
 	return fmt.Sprintf(
-		"pre-planned migration cannot be verified on a dev database: statement %d uses %s, which %s. "+
-			"Replaying it would not stay inside the dev database — it could modify the real target or the host "+
-			"filesystem while the plan is still being verified, so the plan is refused before anything runs. "+
+		"pre-planned migration was refused before it reached the dev database: statement %d uses %s, which %s. "+
+			"A dev database executes plan SQL for real, so the plan is refused before anything runs. "+
 			"Review the statement and run it deliberately outside `schema apply --plan`",
 		e.StatementIndex, e.Construct, e.Reach)
 }
@@ -39,13 +39,38 @@ func IsPlanEscape(err error) bool {
 	return errors.As(err, &target)
 }
 
+// PlanScanDepthError reports that a plan statement nested code inside string
+// literals more deeply than the scanner follows. The plan is refused rather
+// than accepted unscanned: the point of the scan is that unreviewed SQL does
+// not reach a dev database, and a document burying code this deep is not
+// something a legitimate planner emits.
+type PlanScanDepthError struct {
+	StatementIndex int
+}
+
+func (e *PlanScanDepthError) Error() string {
+	return fmt.Sprintf(
+		"pre-planned migration was refused before it reached the dev database: statement %d nests executable code "+
+			"inside string literals more than %d levels deep, which the plan scanner does not follow, so the "+
+			"statement cannot be checked; review it and run it deliberately outside `schema apply --plan`",
+		e.StatementIndex, maxPlanGuardNesting)
+}
+
 // maxPlanGuardNesting bounds how deep the scanner follows code carried inside
-// string literals (routine bodies inside routine bodies).
+// string literals (routine bodies inside routine bodies). Exceeding it is an
+// error, not a pass.
 const maxPlanGuardNesting = 4
 
-// tokenMatcher reports whether a statement's significant tokens match one
-// escape construct.
-type tokenMatcher func(tokens []lexer.Token) bool
+// scanContext is one statement's token stream plus whether it came from inside
+// a routine body, where statements also start after BEGIN/THEN/ELSE/LOOP/DO
+// rather than only after a semicolon.
+type scanContext struct {
+	tokens []lexer.Token
+	inBody bool
+}
+
+// tokenMatcher reports whether a statement matches one escape construct.
+type tokenMatcher func(scanContext) bool
 
 // escapeRule is one known escape construct: how to recognize it, and what it
 // can reach.
@@ -55,25 +80,30 @@ type escapeRule struct {
 	match     tokenMatcher
 }
 
-// escapeRules enumerates the escape constructs this guard knows about.
+// escapeRules enumerates the escape constructs this lint knows about.
 //
-// This list is a best-effort deny-list of known constructs, NOT a sandbox and
-// NOT exhaustive. SQL dialects offer many ways to address something other than
-// the connected database — server-side language extensions, foreign-data
-// wrappers, storage-engine options, loadable modules, and engine-specific
-// pragmas and functions — and new ones arrive with new engine versions. A
-// determined author of a plan file can very likely find a construct this list
-// does not name.
+// This is a BEST-EFFORT LINT over statement text, not a containment boundary,
+// and it cannot become one. String concatenation alone defeats any scanner:
+// `EXECUTE 'ATT' || 'ACH ...'` and `format('COPY t FROM PROGRAM %L', x)` build
+// the dangerous statement at run time, so no lexical rule can see it. Beyond
+// that, every dialect keeps adding ways to address something other than the
+// connected database.
 //
-// The security consequence is stated plainly in the docs and repeated here: a
-// --dev-url must be a database you are willing to have a foreign plan file
-// execute arbitrary SQL against. The only path with no such exposure is the
-// ephemeral SQLite dev database Ptah creates itself for SQLite targets, which
-// is a throwaway file in a private temp directory.
+// The security model is therefore split by who chose the database:
 //
-// The set is dialect-generic on purpose: a plan file is an untrusted document
-// and the reader does not know which engine authored it, so every family's
-// escape hatches are checked regardless of the target dialect.
+//   - Ephemeral SQLite dev databases, which Ptah creates itself and the
+//     operator never opts into, get REAL engine-level enforcement — see
+//     [RestrictEphemeralSQLiteDev]. That is what makes the ephemeral path
+//     safe, not this list.
+//   - Operator-supplied --dev-url databases get this lint, and nothing more.
+//     The operator chose that database; the docs state plainly that it must be
+//     one they are willing to have a foreign plan file execute arbitrary SQL
+//     against.
+//
+// Coverage is deliberately partial and dialect-specific: SQLite, PostgreSQL,
+// MySQL/MariaDB, SQL Server, and ClickHouse constructs are represented. It
+// catches honest mistakes and known tricks. It does not stop an author who is
+// trying to get past it.
 var escapeRules = []escapeRule{
 	{
 		construct: "ATTACH",
@@ -93,7 +123,17 @@ var escapeRules = []escapeRule{
 	{
 		construct: "PRAGMA temp_store_directory",
 		reach:     "redirects SQLite temporary storage to an arbitrary directory on the host filesystem",
-		match:     statementStartsWith("PRAGMA", "TEMP_STORE_DIRECTORY"),
+		match:     pragmaAssignment("TEMP_STORE_DIRECTORY"),
+	},
+	{
+		construct: "PRAGMA data_store_directory",
+		reach:     "redirects SQLite database storage to an arbitrary directory on the host filesystem",
+		match:     pragmaAssignment("DATA_STORE_DIRECTORY"),
+	},
+	{
+		construct: "load_extension",
+		reach:     "loads a native extension module from the host filesystem",
+		match:     calledFunction("LOAD_EXTENSION"),
 	},
 	{
 		construct: "DO",
@@ -108,12 +148,12 @@ var escapeRules = []escapeRule{
 	{
 		construct: "SELECT ... INTO OUTFILE",
 		reach:     "writes a file on the database server host",
-		match:     keywordAfterKeyword("INTO", "OUTFILE"),
+		match:     keywordSequenceWithStringArgument("INTO", "OUTFILE"),
 	},
 	{
 		construct: "SELECT ... INTO DUMPFILE",
 		reach:     "writes a file on the database server host",
-		match:     keywordAfterKeyword("INTO", "DUMPFILE"),
+		match:     keywordSequenceWithStringArgument("INTO", "DUMPFILE"),
 	},
 	{
 		construct: "LOAD_FILE",
@@ -123,7 +163,15 @@ var escapeRules = []escapeRule{
 	{
 		construct: "ENGINE=FEDERATED",
 		reach:     "stores the table on another database server reached over the network",
-		match:     keywordAfterKeyword("ENGINE", "FEDERATED"),
+		match:     engineAssignment("FEDERATED"),
+	},
+	{
+		construct: "ClickHouse remote table engine",
+		reach:     "stores or reads the table over the network or from the host filesystem",
+		match: anyMatch(
+			engineAssignment("URL"), engineAssignment("FILE"), engineAssignment("S3"),
+			engineAssignment("HDFS"), engineAssignment("MYSQL"), engineAssignment("POSTGRESQL"),
+		),
 	},
 	{
 		construct: "CREATE SERVER",
@@ -143,12 +191,12 @@ var escapeRules = []escapeRule{
 	{
 		construct: "DATA DIRECTORY",
 		reach:     "places table data at an arbitrary path on the database server host",
-		match:     adjacentKeywords("DATA", "DIRECTORY"),
+		match:     tableOptionPath("DATA", "DIRECTORY"),
 	},
 	{
 		construct: "INDEX DIRECTORY",
 		reach:     "places index data at an arbitrary path on the database server host",
-		match:     adjacentKeywords("INDEX", "DIRECTORY"),
+		match:     tableOptionPath("INDEX", "DIRECTORY"),
 	},
 	{
 		construct: "COPY ... PROGRAM",
@@ -159,6 +207,11 @@ var escapeRules = []escapeRule{
 		construct: "COPY with a file path",
 		reach:     "reads or writes a file on the database server host",
 		match:     all(statementStartsWith("COPY"), stringArgumentAfter("FROM", "TO")),
+	},
+	{
+		construct: "BULK INSERT",
+		reach:     "reads a file on the database server host",
+		match:     statementStartsWith("BULK", "INSERT"),
 	},
 	{
 		construct: "dblink",
@@ -200,23 +253,48 @@ var escapeRules = []escapeRule{
 		reach:     "writes a file on the database server host",
 		match:     calledFunction("LO_EXPORT"),
 	},
+	{
+		construct: "xp_cmdshell",
+		reach:     "executes a shell command on the database server host",
+		match:     procedureOrFunction("XP_CMDSHELL"),
+	},
+	{
+		construct: "xp_dirtree",
+		reach:     "lists directories on the database server host",
+		match:     procedureOrFunction("XP_DIRTREE"),
+	},
+	{
+		construct: "sp_addlinkedserver",
+		reach:     "defines a connection to another database server",
+		match:     procedureOrFunction("SP_ADDLINKEDSERVER"),
+	},
+	{
+		construct: "OPENROWSET",
+		reach:     "reads from another data source or a file on the database server host",
+		match:     calledFunction("OPENROWSET"),
+	},
+	{
+		construct: "OPENDATASOURCE",
+		reach:     "reads from another data source reached over the network",
+		match:     calledFunction("OPENDATASOURCE"),
+	},
 }
 
-// CheckPlanStatementsSandboxable refuses pre-planned statements that match a
-// known dev-database escape construct. It is the gate in front of every
-// replay: a plan file is an untrusted input, and a "verification" that can
-// mutate the real target or the host filesystem is worse than no verification
-// because it reports success while the effect landed elsewhere.
+// CheckPlanStatementsSandboxable lints pre-planned statements for known
+// dev-database escape constructs and refuses the plan when one matches. It
+// runs in front of every dev-database replay.
 //
-// It is a best-effort deny-list, not a sandbox — see [escapeRules] for what
-// that does and does not buy the caller.
+// It is a best-effort lint, NOT a containment boundary — see [escapeRules].
+// Real enforcement exists only on the ephemeral SQLite dev database Ptah
+// creates itself (see [RestrictEphemeralSQLiteDev]); an operator-supplied
+// --dev-url executes plan SQL for real and must be a database the operator is
+// willing to expose to a foreign plan file.
 //
 // dialect selects the same lexer behavior [SplitApplyStatements] uses, so the
 // scanner sees the statements the executor would run. Statements are
-// additionally scanned under both string-escape interpretations (with and
-// without backslash escapes), so a payload cannot hide a keyword inside text
-// that only one dialect's lexer would treat as a string literal, and code
-// carried inside routine bodies is scanned as code rather than as data.
+// additionally scanned under both string-escape interpretations, and code
+// carried in routine bodies or handed to a dynamic executor is scanned as
+// code rather than as data.
 func CheckPlanStatementsSandboxable(statements []string, dialect string) error {
 	for i, statement := range statements {
 		for _, backslashEscapes := range []bool{false, true} {
@@ -233,39 +311,45 @@ func checkStatementSandboxable(statement string, index int, backslashEscapes boo
 	if len(tokens) == 0 {
 		return nil
 	}
+	ctx := scanContext{tokens: tokens, inBody: depth > 0}
 	for _, rule := range escapeRules {
-		if !rule.match(tokens) {
+		if !rule.match(ctx) {
 			continue
 		}
 		return &PlanEscapeError{StatementIndex: index, Construct: rule.construct, Reach: rule.reach}
 	}
-	if depth >= maxPlanGuardNesting {
+	nested := codeBearingStrings(ctx)
+	if len(nested) == 0 {
 		return nil
 	}
-	// A dollar-quoted body and a routine definition's body are code, not data:
-	// the lexer hands them over as a single string token, so nothing inside
-	// would otherwise be scanned. Once inside such a body, deeper string
-	// literals are code as well — that is how dynamic SQL (EXECUTE '...')
-	// nests another routine definition.
-	for _, nested := range codeBearingStrings(tokens, depth > 0) {
-		if err := checkStatementSandboxable(nested, index, backslashEscapes, dialect, depth+1); err != nil {
+	if depth >= maxPlanGuardNesting {
+		return &PlanScanDepthError{StatementIndex: index}
+	}
+	for _, inner := range nested {
+		if err := checkStatementSandboxable(inner, index, backslashEscapes, dialect, depth+1); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// codeBearingStrings returns the string-literal contents of a statement that
-// carry executable code: dollar-quoted strings anywhere (PostgreSQL routine
-// bodies and quoted blocks), plus every string literal of a routine definition
-// or of a statement already known to be code, whose bodies may be ordinary
-// quoted strings. Ordinary top-level statements keep their string literals
-// treated as data, so a column default containing the words
-// "COPY ... FROM PROGRAM" stays harmless.
-func codeBearingStrings(tokens []lexer.Token, codeContext bool) []string {
-	routine := codeContext || isRoutineDefinition(tokens)
+// codeBearingStrings returns the string literals of a statement that carry
+// executable code. A string is code only where SQL actually executes it:
+//
+//   - a dollar-quoted string, which in PostgreSQL is how a routine body or a
+//     quoted block is written;
+//   - the body of a CREATE FUNCTION/PROCEDURE, i.e. the string right after AS;
+//   - an argument of a dynamic executor (EXECUTE, EXEC, PREPARE,
+//     sp_executesql, PERFORM), including through `(` and `||`.
+//
+// Every other string literal stays data. That distinction is what keeps
+// ordinary PL/pgSQL working: `RAISE EXCEPTION 'Do not delete rows'` and
+// `INSERT INTO docs (body) VALUES ('ATTACH the receipt here')` are a message
+// and a value, not statements, and must not be scanned as SQL.
+func codeBearingStrings(ctx scanContext) []string {
+	routineBody := isRoutineDefinition(ctx)
 	var nested []string
-	for _, token := range tokens {
+	for i, token := range ctx.tokens {
 		if token.Type != lexer.TokenString {
 			continue
 		}
@@ -273,20 +357,53 @@ func codeBearingStrings(tokens []lexer.Token, codeContext bool) []string {
 			nested = append(nested, inner)
 			continue
 		}
-		if routine {
+		if routineBody && followsKeyword(ctx.tokens, i, "AS") {
+			nested = append(nested, unquoteStringLiteral(token.Value))
+			continue
+		}
+		if followsDynamicExecutor(ctx.tokens, i) {
 			nested = append(nested, unquoteStringLiteral(token.Value))
 		}
 	}
 	return nested
 }
 
+// dynamicExecutorKeywords introduce a string that the database will execute.
+var dynamicExecutorKeywords = []string{"EXECUTE", "EXEC", "PREPARE", "SP_EXECUTESQL", "PERFORM"}
+
+// followsDynamicExecutor reports whether the string at index i is an argument
+// of a dynamic executor, walking back over `(` and `||` so that
+// `EXECUTE ('DROP ' || 'TABLE t')` is still recognized as code.
+func followsDynamicExecutor(tokens []lexer.Token, i int) bool {
+	for j := i - 1; j >= 0; j-- {
+		token := tokens[j]
+		switch {
+		case token.Type == lexer.TokenString:
+			continue
+		case token.MatchOperatorValue("(") || token.MatchOperatorValue("||"):
+			continue
+		case token.Type == lexer.TokenIdentifier:
+			return slices.Contains(dynamicExecutorKeywords, strings.ToUpper(token.Value))
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+// followsKeyword reports whether the token at index i is directly preceded by
+// the given bare keyword.
+func followsKeyword(tokens []lexer.Token, i int, keyword string) bool {
+	return i > 0 && isKeyword(tokens[i-1], keyword)
+}
+
 // isRoutineDefinition reports whether the statement defines a server-side
 // routine, whose body is code even when it arrives as an ordinary string.
-func isRoutineDefinition(tokens []lexer.Token) bool {
-	if !statementStartsWith("CREATE")(tokens) {
+func isRoutineDefinition(ctx scanContext) bool {
+	if !statementStartsWith("CREATE")(ctx) {
 		return false
 	}
-	return containsKeyword("FUNCTION")(tokens) || containsKeyword("PROCEDURE")(tokens)
+	return containsKeyword("FUNCTION")(ctx) || containsKeyword("PROCEDURE")(ctx)
 }
 
 // dollarQuotedBody extracts the body of a PostgreSQL dollar-quoted string
@@ -304,6 +421,9 @@ func dollarQuotedBody(value string) (string, bool) {
 	return strings.TrimSuffix(body, tag), true
 }
 
+// unquoteStringLiteral returns the text of a quoted string literal, collapsing
+// the doubled quotes and backslash escapes SQL uses to embed the delimiter, so
+// nested code round-trips as the database would see it.
 func unquoteStringLiteral(value string) string {
 	if len(value) < 2 {
 		return value
@@ -312,13 +432,27 @@ func unquoteStringLiteral(value string) string {
 	if quote != '\'' && quote != '"' {
 		return value
 	}
-	return strings.TrimSuffix(value[1:], string(quote))
+	inner := strings.TrimSuffix(value[1:], string(quote))
+	var out strings.Builder
+	for i := 0; i < len(inner); i++ {
+		switch {
+		case inner[i] == quote && i+1 < len(inner) && inner[i+1] == quote:
+			out.WriteByte(quote)
+			i++
+		case inner[i] == '\\' && i+1 < len(inner):
+			out.WriteByte(inner[i+1])
+			i++
+		default:
+			out.WriteByte(inner[i])
+		}
+	}
+	return out.String()
 }
 
 func all(matchers ...tokenMatcher) tokenMatcher {
-	return func(tokens []lexer.Token) bool {
+	return func(ctx scanContext) bool {
 		for _, matcher := range matchers {
-			if !matcher(tokens) {
+			if !matcher(ctx) {
 				return false
 			}
 		}
@@ -326,23 +460,40 @@ func all(matchers ...tokenMatcher) tokenMatcher {
 	}
 }
 
+func anyMatch(matchers ...tokenMatcher) tokenMatcher {
+	return func(ctx scanContext) bool {
+		for _, matcher := range matchers {
+			if matcher(ctx) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// statementBoundaryKeywords open a new statement inside a routine body, where
+// there is no leading semicolon before the first one.
+var statementBoundaryKeywords = []string{"BEGIN", "THEN", "ELSE", "LOOP", "DO"}
+
 // statementStartsWith matches a keyword sequence at the start of a statement:
-// at the beginning of the token stream, or directly after a semicolon. The
-// second case matters because the splitter and this scanner can disagree about
-// where a string literal ends, so a payload may still carry an embedded
-// statement inside what the splitter handed over as one statement.
+// at the beginning of the token stream, after a semicolon, or — inside a
+// routine body — after BEGIN/THEN/ELSE/LOOP/DO. The semicolon case matters
+// because the splitter and this scanner can disagree about where a string
+// literal ends; the body case matters because the first statement of a body
+// has no separator in front of it at all.
 func statementStartsWith(keywords ...string) tokenMatcher {
-	return func(tokens []lexer.Token) bool {
+	return func(ctx scanContext) bool {
 		atStatementStart := true
-		for i, token := range tokens {
+		for i, token := range ctx.tokens {
 			if token.Type == lexer.TokenSemicolon {
 				atStatementStart = true
 				continue
 			}
-			if atStatementStart && matchesKeywordSequence(tokens[i:], keywords) {
+			if atStatementStart && matchesKeywordSequence(ctx.tokens[i:], keywords) {
 				return true
 			}
-			atStatementStart = false
+			atStatementStart = ctx.inBody && token.Type == lexer.TokenIdentifier &&
+				slices.Contains(statementBoundaryKeywords, strings.ToUpper(token.Value))
 		}
 		return false
 	}
@@ -361,8 +512,8 @@ func matchesKeywordSequence(tokens []lexer.Token, keywords []string) bool {
 }
 
 func containsKeyword(keyword string) tokenMatcher {
-	return func(tokens []lexer.Token) bool {
-		for _, token := range tokens {
+	return func(ctx scanContext) bool {
+		for _, token := range ctx.tokens {
 			if isKeyword(token, keyword) {
 				return true
 			}
@@ -371,13 +522,18 @@ func containsKeyword(keyword string) tokenMatcher {
 	}
 }
 
-// adjacentKeywords matches two keywords next to each other anywhere in the
-// statement, which is how MySQL spells its DATA DIRECTORY / INDEX DIRECTORY
-// table options.
-func adjacentKeywords(first, second string) tokenMatcher {
-	return func(tokens []lexer.Token) bool {
-		for i := range tokens[:max(len(tokens)-1, 0)] {
-			if isKeyword(tokens[i], first) && isKeyword(tokens[i+1], second) {
+// keywordSequenceWithStringArgument matches adjacent keywords followed by a
+// string literal. `SELECT ... INTO OUTFILE '/tmp/x'` matches; the SQL Server
+// table form `SELECT * INTO outfile FROM src` and `INSERT INTO outfile ...` do
+// not, because neither is followed by a path literal.
+func keywordSequenceWithStringArgument(keywords ...string) tokenMatcher {
+	return func(ctx scanContext) bool {
+		for i := range ctx.tokens {
+			if !matchesKeywordSequence(ctx.tokens[i:], keywords) {
+				continue
+			}
+			next := i + len(keywords)
+			if next < len(ctx.tokens) && ctx.tokens[next].Type == lexer.TokenString {
 				return true
 			}
 		}
@@ -385,21 +541,69 @@ func adjacentKeywords(first, second string) tokenMatcher {
 	}
 }
 
-// keywordAfterKeyword matches a keyword whose preceding significant token —
-// ignoring operators such as `=` — is another keyword. It anchors constructs
-// like INTO OUTFILE and ENGINE=FEDERATED, so a column merely named `outfile`
-// does not match.
-func keywordAfterKeyword(previous, keyword string) tokenMatcher {
-	return func(tokens []lexer.Token) bool {
-		lastIdentifier := -1
-		for i, token := range tokens {
-			if token.Type != lexer.TokenIdentifier {
+// tableOptionPath matches a MySQL table option spelled as two adjacent
+// keywords assigned a path, such as `DATA DIRECTORY = '/var/lib/x'`. A column
+// named `directory` or an index named `directory` never carries a path
+// literal, so neither matches.
+func tableOptionPath(first, second string) tokenMatcher {
+	return func(ctx scanContext) bool {
+		for i := range ctx.tokens {
+			if !matchesKeywordSequence(ctx.tokens[i:], []string{first, second}) {
 				continue
 			}
-			if isKeyword(token, keyword) && lastIdentifier >= 0 && isKeyword(tokens[lastIdentifier], previous) {
+			next := i + 2
+			if next < len(ctx.tokens) && ctx.tokens[next].MatchOperatorValue("=") {
+				next++
+			}
+			if next < len(ctx.tokens) && ctx.tokens[next].Type == lexer.TokenString {
 				return true
 			}
-			lastIdentifier = i
+		}
+		return false
+	}
+}
+
+// engineAssignment matches `ENGINE = <name>`, the MySQL and ClickHouse storage
+// engine selector, including the ClickHouse parameterized form
+// `ENGINE = MySQL(...)`. Only an `=` may sit between the two, so a column list
+// such as `(engine, federated)` does not match.
+func engineAssignment(name string) tokenMatcher {
+	return func(ctx scanContext) bool {
+		for i, token := range ctx.tokens {
+			if !isKeyword(token, "ENGINE") {
+				continue
+			}
+			next := i + 1
+			if next < len(ctx.tokens) && ctx.tokens[next].MatchOperatorValue("=") {
+				next++
+			}
+			if next < len(ctx.tokens) && isKeyword(ctx.tokens[next], name) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// pragmaAssignment matches `PRAGMA <name> = ...`, including the schema-
+// qualified `PRAGMA main.<name> = ...` spelling.
+func pragmaAssignment(name string) tokenMatcher {
+	return func(ctx scanContext) bool {
+		for i, token := range ctx.tokens {
+			if !isKeyword(token, "PRAGMA") {
+				continue
+			}
+			for j := i + 1; j < len(ctx.tokens) && j <= i+3; j++ {
+				if ctx.tokens[j].MatchOperatorValue(".") {
+					continue
+				}
+				if isKeyword(ctx.tokens[j], name) {
+					return true
+				}
+				if ctx.tokens[j].Type != lexer.TokenIdentifier {
+					break
+				}
+			}
 		}
 		return false
 	}
@@ -417,7 +621,7 @@ var nameIntroducingKeywords = []string{
 
 // calledFunction matches an identifier in call position: immediately followed
 // by an opening parenthesis, and not sitting where DDL introduces an object
-// name. This is what separates `SELECT dblink_exec(...)` from a table called
+// name. This separates `SELECT dblink_exec(...)` from a table called
 // `dblink_events (id integer)` or an index named `lo_import`.
 func calledFunction(name string) tokenMatcher {
 	return callPositionMatcher(name, false)
@@ -430,23 +634,25 @@ func calledFunctionPrefix(prefix string) tokenMatcher {
 }
 
 func callPositionMatcher(name string, prefix bool) tokenMatcher {
-	return func(tokens []lexer.Token) bool {
-		for i, token := range tokens {
-			if token.Type != lexer.TokenIdentifier || i+1 >= len(tokens) {
+	return func(ctx scanContext) bool {
+		for i, token := range ctx.tokens {
+			if i+1 >= len(ctx.tokens) || !ctx.tokens[i+1].MatchOperatorValue("(") {
 				continue
 			}
-			if !tokens[i+1].MatchOperatorValue("(") {
+			// Quoting a name does not change which function runs, so call
+			// position accepts the quoted spellings too — "pg_read_file",
+			// `load_file`, [xp_cmdshell]. isKeyword stays strict, so a table
+			// named "attach" remains ordinary DDL.
+			value, ok := callableName(token)
+			if !ok {
 				continue
 			}
-			value := strings.ToUpper(token.Value)
 			matched := value == name || (prefix && strings.HasPrefix(value, name))
 			if !matched {
 				continue
 			}
-			// A qualified call (pg_catalog.pg_read_file(...)) is preceded by
-			// `.`, which is not a name-introducing keyword, so it still fires.
-			if i > 0 && tokens[i-1].Type == lexer.TokenIdentifier &&
-				slices.Contains(nameIntroducingKeywords, strings.ToUpper(tokens[i-1].Value)) {
+			if i > 0 && ctx.tokens[i-1].Type == lexer.TokenIdentifier &&
+				slices.Contains(nameIntroducingKeywords, strings.ToUpper(ctx.tokens[i-1].Value)) {
 				continue
 			}
 			return true
@@ -455,16 +661,64 @@ func callPositionMatcher(name string, prefix bool) tokenMatcher {
 	}
 }
 
+// procedureOrFunction matches a name used as a called function or as the
+// target of EXEC/EXECUTE/CALL, which is how SQL Server invokes xp_cmdshell
+// and friends.
+func procedureOrFunction(name string) tokenMatcher {
+	return func(ctx scanContext) bool {
+		if calledFunction(name)(ctx) {
+			return true
+		}
+		for i, token := range ctx.tokens {
+			value, ok := callableName(token)
+			if !ok || value != name || i == 0 {
+				continue
+			}
+			previous := ctx.tokens[i-1]
+			if previous.Type != lexer.TokenIdentifier {
+				continue
+			}
+			switch strings.ToUpper(previous.Value) {
+			case "EXEC", "EXECUTE", "CALL":
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// callableName returns the upper-cased name of a token that can name a
+// callable, unwrapping the quoted spellings. Double-quoted names arrive as
+// strings from the lexer; backticked and bracketed ones keep their quotes.
+func callableName(token lexer.Token) (string, bool) {
+	value := token.Value
+	switch token.Type {
+	case lexer.TokenIdentifier:
+		value = strings.Trim(value, "`[]")
+	case lexer.TokenString:
+		if !strings.HasPrefix(value, `"`) {
+			return "", false
+		}
+		value = strings.Trim(value, `"`)
+	default:
+		return "", false
+	}
+	if value == "" {
+		return "", false
+	}
+	return strings.ToUpper(value), true
+}
+
 // stringArgumentAfter reports whether a string literal directly follows one of
 // the given keywords, which is how a file path is passed to COPY.
 // `COPY t FROM STDIN` has no string argument and does not match.
 func stringArgumentAfter(keywords ...string) tokenMatcher {
-	return func(tokens []lexer.Token) bool {
-		for i, token := range tokens {
-			if token.Type != lexer.TokenIdentifier || i+1 >= len(tokens) {
+	return func(ctx scanContext) bool {
+		for i, token := range ctx.tokens {
+			if token.Type != lexer.TokenIdentifier || i+1 >= len(ctx.tokens) {
 				continue
 			}
-			if tokens[i+1].Type != lexer.TokenString {
+			if ctx.tokens[i+1].Type != lexer.TokenString {
 				continue
 			}
 			if slices.Contains(keywords, strings.ToUpper(token.Value)) {

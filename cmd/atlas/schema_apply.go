@@ -510,6 +510,16 @@ func resolveAtlasSchemaApplyPlanRehearsal(
 		return planRehearsalDecision{devURL: devURL}, nil
 	}
 	if format != atlasschema.PlanFormatHCL {
+		// A native JSON plan without a dev database is not rehearsed, so the
+		// escape lint — which only runs in front of a dev-database replay —
+		// does not see it either. That is deliberate, not an oversight: a JSON
+		// plan is Ptah-authored, its source fingerprint has already been
+		// verified against this exact database, and its statements are applied
+		// to the operator's own target, which is the one database the operator
+		// is unambiguously entitled to change. The lint exists to protect a
+		// dev database from a foreign document; neither half of that applies
+		// here. Do not "fix" this by linting the target apply: it would refuse
+		// legitimate operator-authored SQL with no security gain.
 		return planRehearsalDecision{skip: true}, nil
 	}
 	if platform.NormalizeDialect(dialect) == platform.SQLite {

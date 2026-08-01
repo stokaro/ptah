@@ -30,8 +30,11 @@ type SimulationError struct {
 }
 
 func (e *SimulationError) Error() string {
+	// The claim is narrow on purpose: this command did not apply the plan to
+	// the target. What the rehearsed SQL did on the dev database — or through
+	// it — is not something this message can speak for.
 	return fmt.Sprintf(
-		"dev database simulation failed during %s: %v; the target database was left unchanged",
+		"dev database simulation failed during %s: %v; the plan was not applied to the target database",
 		e.Stage, e.Err,
 	)
 }
@@ -143,7 +146,35 @@ func connectSimulationDev(
 // introspected current schema on it, and executes the ordered statements
 // under txMode — the shared rehearsal core of the pre-apply simulation and
 // the plan-file desired-state verification.
+//
+// Every caller reaches the dev database through here, so this is where the
+// escape lint runs: a dev database executes the statements for real, whether
+// they came from a plan file or from a freshly computed apply.
 func rehearseStatementsOnDev(
+	ctx context.Context,
+	devConn *dbschema.DatabaseConnection,
+	current *dbschematypes.DBSchema,
+	txMode migrator.MigrationTxMode,
+	statements []string,
+) error {
+	if err := CheckPlanStatementsSandboxable(statements, devConn.Info().Dialect); err != nil {
+		return err
+	}
+	// A SQLite dev database gets real engine-level restrictions for the whole
+	// rehearsal, which is what actually contains the ephemeral dev database
+	// Ptah creates itself. The lint above is only a lint.
+	if platform.NormalizeDialect(devConn.Info().Dialect) == platform.SQLite {
+		return devConn.WithSession(ctx, func(session *dbschema.DatabaseConnection) error {
+			if err := session.RestrictSQLiteSession(ctx); err != nil {
+				return fmt.Errorf("restrict dev database session: %w", err)
+			}
+			return rehearseOnPreparedDev(ctx, session, current, txMode, statements)
+		})
+	}
+	return rehearseOnPreparedDev(ctx, devConn, current, txMode, statements)
+}
+
+func rehearseOnPreparedDev(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	current *dbschematypes.DBSchema,

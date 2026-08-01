@@ -96,10 +96,10 @@ func RehearsePlanStatements(
 	if devURL == "" {
 		return errors.New("plan rehearsal requires a dev database URL")
 	}
-	// Known escape constructs are refused before anything is executed
-	// anywhere, including before the target is inspected. This is a
-	// best-effort deny-list rather than a sandbox: see CheckPlanStatements-
-	// Sandboxable for what a dev database is still exposed to.
+	// The escape lint runs again inside rehearseStatementsOnDev, which is the
+	// gate every dev-database caller passes through. Running it here too
+	// refuses a plan before the target database is even inspected, and lets
+	// the refusal name the target dialect rather than the dev one.
 	if err := CheckPlanStatementsSandboxable(statements, conn.Info().Dialect); err != nil {
 		return err
 	}

@@ -360,18 +360,27 @@ re-planning. Both plan formats are accepted, detected by content: the Atlas
   get a throwaway dev database automatically; every other dialect requires
   `--dev-url`.
 - Before replaying, statements matching a deny-list of known escape
-  constructs are refused by name before anything executes: `ATTACH`/`DETACH`,
-  `VACUUM INTO`, `PRAGMA temp_store_directory`, `DO` blocks, routine bodies
-  calling file-access or `dblink` functions, `LOAD DATA INFILE`,
-  `INTO OUTFILE`/`DUMPFILE`, `LOAD_FILE`, `ENGINE=FEDERATED`,
-  `CREATE SERVER`, `INSTALL PLUGIN`/`COMPONENT`, `DATA`/`INDEX DIRECTORY`,
-  `COPY ... PROGRAM` or `COPY` with a file path, `dblink`, `postgres_fdw`,
-  and `file_fdw`.
-- **The deny-list is best-effort, not exhaustive, and the replay is not a
-  sandbox.** A `--dev-url` must point at a database you are willing to have a
-  foreign plan file execute arbitrary SQL against; only the ephemeral SQLite
-  dev database Ptah creates for SQLite targets (a throwaway file in a private
-  temp directory) carries no such exposure.
+  constructs are refused by name before anything executes. The lint covers
+  SQLite (`ATTACH`/`DETACH`, `VACUUM INTO`, storage-directory pragmas,
+  `load_extension`), PostgreSQL (`DO` blocks, routine bodies and dynamic SQL
+  calling file-access or `dblink` functions, `COPY ... PROGRAM` or `COPY` with
+  a file path, `postgres_fdw`, `file_fdw`), MySQL/MariaDB
+  (`LOAD DATA INFILE`, `INTO OUTFILE`/`DUMPFILE`, `LOAD_FILE`,
+  `ENGINE=FEDERATED`, `CREATE SERVER`, `INSTALL PLUGIN`/`COMPONENT`,
+  `DATA`/`INDEX DIRECTORY`), SQL Server (`xp_cmdshell`, `xp_dirtree`,
+  `OPENROWSET`, `OPENDATASOURCE`, `BULK INSERT`, `sp_addlinkedserver`), and
+  ClickHouse (`URL`, `File`, `S3`, `HDFS`, `MySQL`, `PostgreSQL` table
+  engines).
+- **The lint is best-effort, not exhaustive, and it is not a sandbox.** String
+  concatenation alone defeats any scanner, so a `--dev-url` must point at a
+  database you are willing to have a foreign plan file execute arbitrary SQL
+  against.
+- **Real enforcement exists only on the ephemeral SQLite dev database** Ptah
+  creates for SQLite targets: a throwaway file in a private temp directory
+  whose session refuses `ATTACH`, `DETACH`, and `VACUUM INTO` at the engine
+  level and cannot load extensions. Ptah verifies the restriction is in force
+  before rehearsing and refuses to rehearse if it is not. See
+  [Save and execute plan files](../../atlas/schema-commands/#where-enforcement-is-real).
 - The replay also runs under `--dry-run`, so a plan can be verified without
   committing to apply it.
 - Whenever a desired state is available, the end state is verified again on

