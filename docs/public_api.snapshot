@@ -4995,6 +4995,7 @@ func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, na
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
 func (dc *DatabaseConnection) WithSession(ctx context.Context, use func(*DatabaseConnection) error) (resultErr error)
+func (dc *DatabaseConnection) WithUntrustedSQLSession(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) Writer() types.SchemaExecutor
 
 ## github.com/stokaro/ptah/dbschema/types

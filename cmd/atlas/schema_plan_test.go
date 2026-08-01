@@ -3,7 +3,6 @@ package atlas_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -86,16 +85,21 @@ func TestSchemaPlanSaveUsesDerivedDefaultFileName(t *testing.T) {
 		"--save",
 	)
 
-	// --save without --output writes <name>.plan.json in the working
-	// directory, with the deterministic fingerprint-derived default name.
+	// --save without --output writes <name>.plan.hcl in the working
+	// directory: the compat tree defaults to the Atlas plan format with the
+	// Atlas-style timestamp name.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	matches, globErr := filepath.Glob("plan_*.plan.json")
+	matches, globErr := filepath.Glob("*.plan.hcl")
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 1)
+	c.Assert(matches[0], qt.Matches, `\d{14}\.plan\.hcl`)
 	c.Assert(out, qt.Contains, "Plan saved to file://"+matches[0])
-	plan, err := atlasschema.ReadPlanFile(matches[0])
+	plan, format, err := atlasschema.ReadPlanDocument(matches[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Name+atlasschema.PlanFileSuffix, qt.Equals, matches[0])
+	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
+	c.Assert(plan.Name+atlasschema.PlanFileSuffixHCL, qt.Equals, matches[0])
+	c.Assert(atlasschema.IsNativeFingerprint(plan.FromFingerprint), qt.IsTrue)
+	c.Assert(atlasschema.IsNativeFingerprint(plan.ToFingerprint), qt.IsTrue)
 }
 
 func TestSchemaPlanCustomNameIsRecordedAndUsedAsFileName(t *testing.T) {
@@ -113,9 +117,10 @@ func TestSchemaPlanCustomNameIsRecordedAndUsedAsFileName(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "Plan saved to file://add_named_users.plan.json")
-	plan, err := atlasschema.ReadPlanFile("add_named_users.plan.json")
+	c.Assert(out, qt.Contains, "Plan saved to file://add_named_users.plan.hcl")
+	plan, format, err := atlasschema.ReadPlanDocument("add_named_users.plan.hcl")
 	c.Assert(err, qt.IsNil)
+	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
 	c.Assert(plan.Name, qt.Equals, "add_named_users")
 }
 
@@ -160,15 +165,29 @@ func TestSchemaPlanDryRunPrintsPlanDocumentWithoutSaving(t *testing.T) {
 		"--dry-run",
 	)
 
-	// --dry-run prints exactly the plan document that --save would write.
+	// --dry-run prints exactly the plan document that --save would write —
+	// the Atlas .plan.hcl shape by default.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	var plan atlasschema.PlanFile
-	c.Assert(json.Unmarshal([]byte(out), &plan), qt.IsNil)
-	c.Assert(plan.FormatVersion, qt.Equals, atlasschema.PlanFormatVersion)
+	plan := parsePlanDocumentOutput(c, out)
 	c.Assert(plan.Statements, qt.HasLen, 1)
-	matches, globErr := filepath.Glob("*.plan.json")
-	c.Assert(globErr, qt.IsNil)
-	c.Assert(matches, qt.HasLen, 0)
+	c.Assert(plan.Statements[0].SQL, qt.Contains, `CREATE TABLE "dry_users"`)
+	for _, pattern := range []string{"*.plan.json", "*.plan.hcl"} {
+		matches, globErr := filepath.Glob(pattern)
+		c.Assert(globErr, qt.IsNil)
+		c.Assert(matches, qt.HasLen, 0)
+	}
+}
+
+// parsePlanDocumentOutput round-trips printed plan-document output through
+// the plan reader, asserting it is a valid Atlas-format plan document.
+func parsePlanDocumentOutput(c *qt.C, out string) atlasschema.PlanFile {
+	c.Helper()
+	path := filepath.Join(c.TB.TempDir(), "stdout.plan.hcl")
+	c.Assert(os.WriteFile(path, []byte(out), 0o600), qt.IsNil)
+	plan, format, err := atlasschema.ReadPlanDocument(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
+	return plan
 }
 
 func TestSchemaPlanSyncedSchemaWritesNothing(t *testing.T) {
@@ -193,21 +212,74 @@ func TestSchemaPlanSyncedSchemaWritesNothing(t *testing.T) {
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
-func TestSchemaPlanRequiresSaveOutputOrDryRun(t *testing.T) {
+func TestSchemaPlanWithoutSavePrintsPlanDocument(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	schemaPath := filepath.Join(dir, "schema.sql")
-	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE u (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "plan-stdout.db")
+	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE stdout_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+filepath.Join(dir, "plan.db"),
-		"--to", "file://"+schemaPath,
+		"--from", "sqlite://"+dbPath,
+		"--to", "file://schema.sql",
 	)
 
-	// Atlas pushes an unsaved plan to its registry; Ptah has none, so the
-	// output selection must be explicit instead of silently defaulting.
-	c.Assert(err, qt.ErrorMatches, `atlas schema plan pushes unsaved plans to the Atlas Registry.*pass --save or --output <path>.*or --dry-run.*`)
-	c.Assert(out, qt.Contains, "error: atlas schema plan pushes unsaved plans")
+	// Without --save/--output/--dry-run the plan document prints to stdout
+	// like Atlas printing the computed plan, and no file is written.
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	plan := parsePlanDocumentOutput(c, out)
+	c.Assert(plan.Statements, qt.HasLen, 1)
+	c.Assert(plan.Statements[0].SQL, qt.Contains, `CREATE TABLE "stdout_users"`)
+	for _, pattern := range []string{"*.plan.json", "*.plan.hcl"} {
+		matches, globErr := filepath.Glob(pattern)
+		c.Assert(globErr, qt.IsNil)
+		c.Assert(matches, qt.HasLen, 0)
+	}
+}
+
+func TestSchemaPlanAcceptsAutoApprove(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "plan-approve.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	planPath := filepath.Join(dir, "p.plan.json")
+	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE approve_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+
+	// The exact invocation shape measured against the licensed Atlas binary:
+	// plan --from --to --save --output --auto-approve. --auto-approve is
+	// accepted (there is no local approval prompt to skip) and the .json
+	// output path keeps the native JSON plan format.
+	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		"--from", "sqlite://"+dbPath,
+		"--to", "file://"+schemaPath,
+		"--save", "--output", planPath,
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "Plan saved to file://"+planPath)
+	plan, err := atlasschema.ReadPlanFile(planPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.FormatVersion, qt.Equals, atlasschema.PlanFormatVersion)
+}
+
+func TestSchemaPlanHCLOutputRejectsExclude(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "plan-exclude.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE exclude_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+
+	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		"--from", "sqlite://"+dbPath,
+		"--to", "file://"+schemaPath,
+		"--exclude", "zzz_unrelated",
+		"--save", "--output", filepath.Join(dir, "x.plan.hcl"),
+	)
+
+	// The Atlas plan shape has no exclude field, and silently dropping the
+	// patterns would break apply-time fingerprint verification.
+	c.Assert(err, qt.ErrorMatches, `the Atlas \.plan\.hcl format has no field for exclude patterns.*`)
 }
 
 func TestSchemaPlanRejectsNonDatabaseFrom(t *testing.T) {
@@ -296,11 +368,6 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 			name: "repo",
 			args: []string{"--repo", "atlas://plans"},
 			want: `atlas schema plan accepts --repo, but schema repositories exist only in the Atlas Registry \(Atlas Cloud\); Ptah plans are local files`,
-		},
-		{
-			name: "auto_approve",
-			args: []string{"--auto-approve"},
-			want: `atlas schema plan accepts --auto-approve, but plan approval is an Atlas Registry state; a locally saved plan file is approved by operator review, so there is no approval prompt to skip`,
 		},
 		{
 			name: "edit",

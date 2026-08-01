@@ -193,6 +193,10 @@ type DatabaseConnection struct {
 	newReader schemaReaderFactory
 	newWriter schemaWriterFactory
 	pinned    bool
+	// session is the pinned physical session set by WithSession. Connection
+	// state that only applies per physical connection — see
+	// WithUntrustedSQLSession — needs it.
+	session *sql.Conn
 }
 
 type schemaReaderFactory func(sqlrunner.Runner) types.SchemaReader
@@ -304,6 +308,7 @@ func (dc *DatabaseConnection) WithSession(
 	scoped.writer = dc.newWriter(runner, session)
 	scoped.executor = nil
 	scoped.pinned = true
+	scoped.session = session
 	if dc.writer != nil && dc.writer.IsDryRun() {
 		scoped.writer.SetDryRun(true)
 	}
@@ -344,6 +349,58 @@ func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, arg
 		return executor.ExecContext(ctx, query, args...)
 	}
 	return dc.sqlRunner().ExecContext(ctx, query, args...)
+}
+
+// WithUntrustedSQLSession pins a session that will execute SQL the caller does
+// not trust, applying and verifying every engine-level restriction the dialect
+// supports before the callback runs.
+//
+// Use it instead of [DatabaseConnection.WithSession] whenever the statements
+// come from somewhere outside the operator's own project — a plan file
+// received from another tool, for example. Because the restrictions are
+// properties of the physical connection, applying them anywhere other than the
+// pinned session would silently protect nothing; taking the session and the
+// restrictions in one step is what makes that mistake unrepresentable.
+//
+// What the restrictions buy depends on the dialect. On SQLite the engine
+// refuses ATTACH, DETACH, and VACUUM INTO, so the callback's SQL cannot reach
+// another database file or write a database copy to an arbitrary path, and
+// native extensions cannot be loaded; the restriction is verified to be in
+// force before the callback runs. Storage-directory pragmas are not covered.
+// Other dialects have no equivalent session-level control, so the callback
+// runs unrestricted — on those, only the caller's own review of the SQL and
+// the disposability of the database stand between it and the statements.
+func (dc *DatabaseConnection) WithUntrustedSQLSession(
+	ctx context.Context,
+	use func(*DatabaseConnection) error,
+) error {
+	if dc == nil {
+		return fmt.Errorf("untrusted SQL session requires an open database connection")
+	}
+	// WithSession's own nil check never sees the caller's callback, because
+	// the one handed to it below is this method's closure.
+	if use == nil {
+		return fmt.Errorf("database session callback is nil")
+	}
+	return dc.WithSession(ctx, func(session *DatabaseConnection) error {
+		if err := session.restrictUntrustedSQL(ctx); err != nil {
+			return err
+		}
+		return use(session)
+	})
+}
+
+// restrictUntrustedSQL applies the engine-level restrictions available for the
+// pinned session's dialect. Dialects without such controls are a no-op, which
+// WithUntrustedSQLSession documents.
+func (dc *DatabaseConnection) restrictUntrustedSQL(ctx context.Context) error {
+	if !dc.pinned || dc.session == nil {
+		return fmt.Errorf("untrusted SQL restrictions require a pinned session")
+	}
+	if platform.NormalizeDialect(dc.info.Dialect) != platform.SQLite {
+		return nil
+	}
+	return sqlite.RestrictSession(ctx, dc.session)
 }
 
 // Conn returns a dedicated database session. Callers that use session-scoped

@@ -87,6 +87,24 @@ Use it when session-local state must remain consistent across cleanup, replay,
 introspection, and verification. The scoped connection must not escape the
 callback.
 
+`dbschema.DatabaseConnection.WithUntrustedSQLSession` pins a session that will
+execute SQL the caller does not trust and applies every engine-level
+restriction the dialect supports before the callback runs. Use it instead of
+`WithSession` whenever the statements come from outside the operator's own
+project, such as a plan file produced by another tool.
+
+- On SQLite the engine refuses `ATTACH`, `DETACH`, and `VACUUM INTO`, so the
+  callback's SQL cannot reach another database file or write a database copy
+  to an arbitrary path, and extensions cannot be loaded. The restriction is
+  verified to be in force before the callback runs.
+- Storage-directory pragmas and `writable_schema` are not covered.
+- Other dialects have no equivalent session-level control and run
+  unrestricted.
+
+Taking the session and the restrictions in one step is deliberate: the
+restrictions are properties of the physical session, so applying them
+separately would silently protect nothing.
+
 `migration/generator.PlanMigration` performs loading, diff planning, safety
 checks, and optional shadow verification without publishing files. Its
 `MigrationPlan.WriteFiles` method publishes the validated artifacts once. The

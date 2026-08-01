@@ -41,6 +41,13 @@ ptah-compat schema inspect --url "$DATABASE_URL" --format sql > schema.sql
 ptah-compat schema inspect --url "$DATABASE_URL" --format json > schema.json
 ```
 
+:::caution[A dev database executes SQL for real]
+Whatever you pass as `--dev-url` runs the SQL Ptah is evaluating, so point it
+at a disposable database. This matters most when the SQL came from a plan file
+someone else wrote — see
+[The replay is not a sandbox](#the-replay-is-not-a-sandbox).
+:::
+
 Non-database sources require `--dev-url`, mirroring Atlas dev-database
 normalization: the dev database is reset destructively, the source is
 materialized on it (schema files executed, migration directories replayed),
@@ -282,44 +289,149 @@ ptah-compat schema apply \
 ## Save and execute plan files
 
 `ptah-compat schema plan` is the open local replacement for Atlas's Pro
-registry-gated plan workflow.
+registry-gated plan workflow, and it speaks Atlas's plan-file format.
 
 It computes the same declarative plan `schema apply` would generate — from the
 `--from` target database to the local `--to` schema files — and saves it as a
-local JSON plan file (`format_version` 1) that records the ordered SQL
-statements with per-statement safety severity, the dialect, and the SHA-256
-fingerprints of the source and desired schema states.
+local plan file. The default format is the Atlas `.plan.hcl` shape: one
+`plan "<name>"` block with `from`/`to` fingerprints and the migration SQL in a
+heredoc, named with an Atlas-style UTC timestamp. The written file parses in
+Atlas's own plan reader; the `from`/`to` values are Ptah's sha256
+fingerprints, which the official binary parses but cannot verify against its
+own base64 hashes (those have no local recipe — in either direction). An
+`--output` path ending in `.json` writes the native JSON plan
+(`format_version` 1) instead, which additionally records per-statement safety
+severity, the dialect, and exclude patterns. Without
+`--save`/`--output`/`--dry-run`, the plan document prints to stdout, and
+`--auto-approve` is accepted for CLI compatibility.
 
-`schema apply --plan file://<path>` then executes exactly the reviewed
-statements after verifying the live database still matches the plan's source
-fingerprint; a drifted database refuses with a stale-plan error instead of
-running reviewed SQL against unreviewed state.
+`schema apply --plan file://<path>` accepts both formats, detected by
+content — including `.plan.hcl` files written by the licensed Atlas binary:
+
+- A **JSON plan** executes after verifying the live database still matches
+  the plan's recorded source fingerprint; a drifted database refuses with a
+  stale-plan error instead of running reviewed SQL against unreviewed state.
+  `--to` is optional.
+- An **Atlas-format plan** requires `--to`, exactly like the official binary
+  (`the flag "to" is required to verify the provided plan`). Its hashes are
+  re-verified with Ptah's own machinery: the plan is replayed on a dev
+  database starting from the target's current schema, and the reached state
+  must equal the `--to` desired state under Ptah's schema diff before the
+  target is touched. SQLite targets get a throwaway dev database
+  automatically; every other dialect requires `--dev-url`. A Ptah-written
+  `.plan.hcl` keeps native sha256 fingerprints, so it gets the stale-plan
+  check too — but the replay runs either way, because the fingerprint shape
+  is public and must never be able to switch a verification off.
+
+### The replay is not a sandbox
+
+Before replaying, Ptah refuses statements that match a **deny-list of known
+escape constructs** — `ATTACH`/`DETACH`, `VACUUM INTO`,
+storage-directory pragmas, `load_extension`, routine bodies and dynamic SQL
+calling file-access or `dblink` functions, `LOAD DATA INFILE`,
+`SELECT ... INTO OUTFILE`/`DUMPFILE`, `LOAD_FILE`, `ENGINE=FEDERATED`,
+`CREATE SERVER`, `INSTALL PLUGIN`/`COMPONENT`, `DATA`/`INDEX DIRECTORY`,
+`COPY ... PROGRAM` or `COPY` with a file path, `dblink`, `postgres_fdw`,
+`file_fdw`, the SQL Server `xp_`/`sp_addlinkedserver`/`OPENROWSET` family, and
+ClickHouse's remote table engines:
+
+```text
+error: pre-planned migration was refused before it reached the dev database: statement 1 uses ATTACH, which attaches another SQLite database file to the session ...
+```
+
+An anonymous `DO` block is not itself refused — it is the standard PostgreSQL
+idiom for idempotent DDL, and a foreign plan is full of them — but what its
+body does is scanned like any other statement.
+
+**That list is best-effort and not exhaustive, and the replay is not a
+sandbox.** SQL dialects offer many ways to address something other than the
+connected database — server-side language extensions, foreign-data wrappers,
+storage-engine options, loadable modules, and engine-specific pragmas and
+functions — and new ones arrive with new engine versions. Treat the deny-list
+as a tripwire for honest mistakes and known tricks, not as a security
+boundary against a hostile plan author.
+
+The practical rule: **a `--dev-url` must point at a database you are willing
+to have a foreign plan file execute arbitrary SQL against.** Use a disposable
+dev database, not one that shares a server, credentials, or filesystem with
+anything you care about. The lint is a tripwire in front of it, not a wall
+around it.
+
+### Where enforcement is real
+
+The ephemeral SQLite dev database — the one Ptah creates for SQLite targets,
+which you never opt into — is the exception, and it does not rely on the lint
+at all. It is a throwaway file in a private temporary directory, removed when
+the command exits, and its session is restricted at the engine level before
+any plan SQL runs:
+
+- `ATTACH` and `DETACH` are refused by SQLite itself, so plan SQL cannot reach
+  another database file — including the real target.
+- `VACUUM INTO` is refused by the same restriction, so it cannot write a
+  database copy to an arbitrary path.
+- Native extensions cannot be loaded.
+
+What the engine does **not** stop, and the lint therefore still has to: the
+storage-directory pragmas (`temp_store_directory`, `data_store_directory` —
+the first is process-global in SQLite) and `PRAGMA writable_schema`. The last
+one has a consequence worth stating: a plan that sets `writable_schema` could
+edit the dev database's catalog directly, so the "converges to `--to`" verdict
+is not tamper-proof against the very document being verified. The verdict is a
+good-faith check, not an adversarial one.
+
+Ptah verifies the restriction is in force before rehearsing, and refuses to
+rehearse if it is not, so this cannot fail silently. These are engine
+refusals: they hold for statements the lint never recognized, including ones
+built by string concatenation at run time.
+
+The restriction keys on the **dev** database's dialect, not on who supplied
+it, so an operator-supplied SQLite `--dev-url` gets exactly the same engine
+refusals. For any dialect other than SQLite, none of the above applies: that
+database executes the plan's SQL for real, with whatever credentials and
+network reach you gave it.
+
+The verification also runs under `--dry-run`, so a plan received from someone
+else can be checked without committing to apply it.
+
+After every `--plan` apply with a desired state available, the end state is
+verified again on the target — the semantic end-state verification Atlas
+performs — and a mismatch fails loudly. There is no flag to disable it.
 
 ```bash
-# Compute and save the plan for review (or --save for ./<name>.plan.json).
+# Compute and save the plan for review (or --save for ./<timestamp>.plan.hcl).
 ptah-compat schema plan \
   --from "$DATABASE_URL" \
   --to file://schema.sql \
-  --output add-orders.plan.json
+  --output add-orders.plan.hcl
 
 # Later, execute exactly the reviewed plan; drift refuses loudly.
 ptah-compat schema apply \
   --url "$DATABASE_URL" \
-  --plan file://add-orders.plan.json \
+  --to file://schema.sql \
+  --plan file://add-orders.plan.hcl \
   --auto-approve
 ```
 
 Expected output of the plan step ends with:
 
 ```text
-Plan saved to file://add-orders.plan.json
+Plan saved to file://add-orders.plan.hcl
 ```
 
-If the target database changed after the plan was saved, apply refuses with a
-stale-plan error naming both fingerprints:
+If the target database changed after the plan was saved, apply refuses before
+touching the target. For a plan with native fingerprints the stale-plan error
+names both fingerprints:
 
 ```text
 error: pre-planned migration is stale: the target database schema does not match the plan's source fingerprint (plan sha256:..., database sha256:...); the database changed since the plan was computed, so re-run `schema plan` against the current database and review the fresh plan
+```
+
+For an Atlas-authored plan the drift surfaces semantically, and the plan is
+not applied to the target:
+
+```text
+error: pre-planned migration does not converge to the desired state: replaying the plan on the dev database, starting from the target's current schema, left the following schema drift against --to (the plan was not applied to the target):
+...
 ```
 
 ## Diff schema files

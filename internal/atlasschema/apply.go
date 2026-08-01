@@ -277,6 +277,23 @@ func ApplySQL(
 	return applyStatements(ctx, conn, txMode, SplitApplyStatements(sqlText, conn.Info().Dialect))
 }
 
+// ApplyStatements executes an already-split ordered statement list under
+// txMode. Callers that verified a specific statement list must execute that
+// same list instead of re-splitting SQL text, so what was checked is what
+// runs.
+func ApplyStatements(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	txMode migrator.MigrationTxMode,
+	statements []string,
+) error {
+	if conn == nil {
+		return errors.New("schema apply execution requires database connection")
+	}
+
+	return applyStatements(ctx, conn, txMode, statements)
+}
+
 // applyStatements executes the ordered statements on conn under txMode. It is
 // shared by the target apply and the dev database simulation, so both run the
 // exact same ordered plan through the same execution path.

@@ -446,8 +446,8 @@
   "ptah": "yes",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "`schema plan` writes a format_version-1 JSON plan with sha256 fingerprints; `apply --plan` refuses a drifted target as stale.",
-  "evidence": "Verified: `schema plan --from sqlite://x.db --to file://new.sql --save --output p.plan.json`, then `schema apply --plan file://p.plan.json`; cli-surface.md `atlas schema plan`"
+  "note": "`schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check.",
+  "evidence": "Fixed by #958 (measured 2026-08-01 against Atlas v1.2.4-e282f76-canary licensed trial: mutual plan-file unreadability, opposite --plan/--to contracts, foreign fingerprints). Verified: `schema apply --url sqlite://b.db --to file://desired.sql --plan file://atlas.plan.hcl --auto-approve` applies the real Atlas-authored oracle plan end to end (cmd/atlas/schema_apply_planhcl_test.go); `schema plan --from sqlite://x.db --to file://new.sql --output x.plan.hcl` round-trips; internal/atlasschema/testdata/atlas.plan.hcl is the licensed binary's artifact. Ptah-written `.plan.hcl` parses in Atlas's reader but its sha256 fingerprints cannot satisfy Atlas's own hash verification (no local recipe, either direction)."
  },
  {
   "area": "Declarative / direct schema workflow",

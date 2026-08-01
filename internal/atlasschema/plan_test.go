@@ -165,9 +165,17 @@ func TestReadPlanFileValidatesContract(t *testing.T) {
 		want     string
 	}{
 		{
-			name:     "not_json",
-			contents: "plan {}",
-			want:     `parse plan file .*`,
+			// The native reader is JSON-only, but an Atlas plan document is a
+			// likely mistake and must say so instead of leaking a JSON
+			// decoder complaint about the letter 'p'.
+			name:     "atlas_hcl_plan_document",
+			contents: "plan \"x\" {\n  from = \"a\"\n  to = \"b\"\n  migration = \"c;\"\n}\n",
+			want:     `plan file .* is in the Atlas \.plan\.hcl format, which the native .ptah schema apply --plan. does not read; apply it with .ptah-compat schema apply --plan file://.*`,
+		},
+		{
+			name:     "not_json_and_not_hcl",
+			contents: "%%%",
+			want:     `plan file .* is in the Atlas \.plan\.hcl format.*`,
 		},
 		{
 			name:     "unknown_field",
