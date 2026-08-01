@@ -13,6 +13,15 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
+// These tests build the ptah-compat binary at run time and exercise it as a
+// subprocess, which is the only way to assert real process exit codes.
+//
+// Caution when iterating on behavior these tests pin: the Go test cache keys on
+// this package's own inputs, so an edit under cmd/atlas does not invalidate a
+// cached PASS here even though it changes the binary being built. Run
+// `go test ./cmd/ptah-compat/... -count=1` after touching the command tree, or
+// a mutation you expect to fail will silently report a stale PASS.
+
 func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)

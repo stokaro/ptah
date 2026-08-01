@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
+	"github.com/stokaro/ptah/internal/atlasmigrateimport"
 	"github.com/stokaro/ptah/internal/atlasmigratereport"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/migratesum"
@@ -196,16 +196,23 @@ func runAtlasMigrateApply(
 		return err
 	}
 
+	// Resolve the directory format once: the filesystem that gets executed and
+	// the format the integrity gate reasons about must be the same decision,
+	// not two computations that happen to agree (#970).
+	resolvedDirFormat, err := atlasmigrate.ResolveApplyDirFormat(opts.dirFormat, localDir.Query)
+	if err != nil {
+		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+
 	source, err := project.openLocal(localDir)
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	dir := source.Display()
-	migrationFS, err := atlasmigrate.ResolveApplySource(
+	migrationFS, err := atlasmigrate.ResolveApplySourceForFormat(
 		source.FS(),
 		dir,
-		opts.dirFormat,
-		localDir.Query,
+		resolvedDirFormat,
 	)
 	closeErr := source.Close()
 	if err != nil {
@@ -225,7 +232,7 @@ func runAtlasMigrateApply(
 	// database connection is even opened, so neither a tampered file
 	// (including a tampered checkpoint) nor an unhashed directory can execute
 	// or create the target database.
-	if err := verifyAtlasApplyChecksum(cmd, migrationFS, opts.dirFormat, localDir.Query); err != nil {
+	if err := verifyAtlasApplyChecksum(cmd, migrationFS, resolvedDirFormat); err != nil {
 		return err
 	}
 
@@ -304,15 +311,14 @@ func runAtlasMigrateApply(
 // verifyAtlasApplyChecksum enforces the atlas.sum integrity gate on the
 // captured migration filesystem of a native Atlas directory: a missing
 // atlas.sum and a failed verification both refuse the whole apply, with output
-// byte-identical to `migrate validate` on the same directory. A converted
-// external-tool directory (goose, flyway, liquibase, dbmate, golang-migrate)
-// carries no Atlas integrity file by construction and stays ungated.
-func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, dirFormat string, query url.Values) error {
-	nativeAtlasDir, err := atlasmigrate.ApplyReadsNativeAtlasDir(dirFormat, query)
-	if err != nil {
-		return err
-	}
-	if !nativeAtlasDir {
+// byte-identical to `migrate validate` on the same directory.
+//
+// A directory read through ?format= is converted in memory and carries no
+// Atlas integrity file, so it is not gated here. That is a known divergence
+// from Atlas CE, which does gate converted directories; see
+// verifyAtlasApplyChecksum's callers' tests and stokaro/ptah#973.
+func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, format atlasmigrateimport.Format) error {
+	if !atlasmigrate.ReadsNativeAtlasDir(format) {
 		return nil
 	}
 	result, hashed, err := migratesum.VerifyHashed(fsys, migrator.MigrationDirFormatAtlas)
@@ -324,13 +330,31 @@ func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, dirFormat string, 
 	case err != nil:
 		return err
 	case !hashed:
-		// Never hashed: Atlas CE refuses with "checksum file not found"
-		// instead of applying (#970).
-		return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
+		return failUnhashedAtlasApplyDir(cmd, fsys)
 	case !result.OK():
 		return migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())
 	}
 	return nil
+}
+
+// failUnhashedAtlasApplyDir refuses a directory that carries no atlas.sum,
+// unless it holds no SQL file at all.
+//
+// Measured against Atlas CE v1.2.0: the checksum gate fires on the presence of
+// any *.sql file, not on parseable versioned migrations — an unhashed directory
+// holding only `foo.sql` is refused, while an empty directory and one holding
+// only non-SQL files (a README, a .gitkeep) report "No migration files to
+// execute" and exit 0. A CI bootstrap that creates an empty migrations
+// directory must keep working (#970).
+func failUnhashedAtlasApplyDir(cmd *cobra.Command, fsys fs.FS) error {
+	sqlFiles, err := fs.Glob(fsys, "*.sql")
+	if err != nil {
+		return fmt.Errorf("scan migration directory for SQL files: %w", err)
+	}
+	if len(sqlFiles) == 0 {
+		return nil
+	}
+	return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
 }
 
 func needsAtlasMigrateApplyConfig(cmd *cobra.Command) bool {

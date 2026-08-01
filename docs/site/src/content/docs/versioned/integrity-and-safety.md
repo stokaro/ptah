@@ -114,9 +114,20 @@ Error: checksum file not found
 
 Nothing executes and the target is never opened, exactly as with a checksum
 mismatch. Run `ptah-compat migrate hash` once and commit the `atlas.sum` it
-writes. Directories read through `?format=goose` and the other external-tool
-formats are exempt: they carry no Atlas integrity file by construction, and
-Atlas does not gate them either.
+writes. A directory that holds no `.sql` file at all — a freshly created or
+`.gitkeep`-only migrations directory — is not a checksum error: it reports
+`No migration files to execute` and exits `0`, matching Atlas.
+
+:::caution[Known gap]
+Directories read through `?format=goose` and the other external-tool formats
+are **not** gated: they are converted in memory and carry no Atlas integrity
+file. Atlas CE does gate them, so an edited migration in a hashed converted
+directory still runs here where Atlas refuses. Closing the gap needs `?format=`
+support in `ptah-compat migrate hash`/`validate` and format-aware sum
+computation; tracked in
+[#973](https://github.com/stokaro/ptah/issues/973). Until then, do not rely on
+`atlas.sum` to protect a `?format=` directory.
+:::
 
 ## Replay on a dev database
 

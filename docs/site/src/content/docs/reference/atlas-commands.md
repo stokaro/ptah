@@ -46,10 +46,14 @@ matching measured Atlas behavior.
 **Fails before the target database is opened:** unknown formats, Flyway
 repeatable (`R__`) migrations, goose/dbmate files missing their up directive,
 colliding versions, an Atlas directory that fails `atlas.sum` verification, and
-an Atlas directory that carries no `atlas.sum` at all — both checksum refusals
-are byte-identical to `ptah-compat migrate validate` and nothing is applied.
-Directories in an external tool's format are converted in memory and carry no
-Atlas integrity file, so they are not checksum-gated.
+an Atlas directory that carries no `atlas.sum` at all while holding at least one
+`.sql` file — both checksum refusals are byte-identical to
+`ptah-compat migrate validate` and nothing is applied. A directory with no
+`.sql` file reports `No migration files to execute` and exits `0`.
+
+Directories in an external tool's format are converted in memory, carry no Atlas
+integrity file, and are not checksum-gated. Atlas CE gates them; the divergence
+is tracked in [#973](https://github.com/stokaro/ptah/issues/973).
 
 **Rejected on this verb, matching Atlas OSS:** `--dir-format`, `--to-version`,
 and `--lock-name`.

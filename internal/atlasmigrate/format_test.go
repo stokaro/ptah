@@ -265,45 +265,107 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 	})
 }
 
-// TestApplyReadsNativeAtlasDir covers the predicate the apply-time checksum
-// gate keys on (stokaro/ptah#970): only a native Atlas directory carries
-// atlas.sum, so only it is gated.
-func TestApplyReadsNativeAtlasDir(t *testing.T) {
-	c := qt.New(t)
-
-	tests := []struct {
+// applyDirFormatCases are the (configured, query) combinations the apply path
+// resolves, with the format each selects.
+func applyDirFormatCases() []struct {
+	name       string
+	configured string
+	query      url.Values
+	format     string
+} {
+	return []struct {
 		name       string
 		configured string
 		query      url.Values
-		want       bool
+		format     string
 	}{
-		{name: "default", want: true},
-		{name: "configured Atlas", configured: "atlas", want: true},
-		{name: "empty URL format selects Atlas", configured: "goose", query: url.Values{"format": []string{""}}, want: true},
-		{name: "URL query overrides configured to Atlas", configured: "goose", query: url.Values{"format": []string{"atlas"}}, want: true},
-		{name: "configured goose", configured: "goose"},
-		{name: "configured flyway", configured: "flyway"},
-		{name: "configured liquibase", configured: "liquibase"},
-		{name: "configured dbmate", configured: "dbmate"},
-		{name: "configured golang-migrate", configured: "golang-migrate"},
-		{name: "URL query overrides Atlas to goose", query: url.Values{"format": []string{"goose"}}},
+		{name: "default", format: "atlas"},
+		{name: "configured Atlas", configured: "atlas", format: "atlas"},
+		{name: "empty URL format selects Atlas", configured: "goose", query: url.Values{"format": []string{""}}, format: "atlas"},
+		{name: "URL query overrides configured to Atlas", configured: "goose", query: url.Values{"format": []string{"atlas"}}, format: "atlas"},
+		{name: "configured goose", configured: "goose", format: "goose"},
+		{name: "configured flyway", configured: "flyway", format: "flyway"},
+		{name: "configured liquibase", configured: "liquibase", format: "liquibase"},
+		{name: "configured dbmate", configured: "dbmate", format: "dbmate"},
+		{name: "configured golang-migrate", configured: "golang-migrate", format: "golang-migrate"},
+		{name: "URL query overrides Atlas to goose", query: url.Values{"format": []string{"goose"}}, format: "goose"},
 	}
+}
 
-	for _, tt := range tests {
+// TestResolveApplyDirFormat covers the single format resolution the apply path
+// makes (stokaro/ptah#970): the executed filesystem and the integrity gate both
+// consume this one value.
+func TestResolveApplyDirFormat(t *testing.T) {
+	c := qt.New(t)
+
+	for _, tt := range applyDirFormatCases() {
 		c.Run(tt.name, func(c *qt.C) {
-			got, err := atlasmigrate.ApplyReadsNativeAtlasDir(tt.configured, tt.query)
+			got, err := atlasmigrate.ResolveApplyDirFormat(tt.configured, tt.query)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, tt.want)
+			c.Assert(string(got), qt.Equals, tt.format)
+			// The gate keys on this same value: only the native Atlas format
+			// reads a directory that can carry atlas.sum.
+			c.Assert(atlasmigrate.ReadsNativeAtlasDir(got), qt.Equals, tt.format == "atlas")
 		})
 	}
 
 	c.Run("unknown format reports the resolve error", func(c *qt.C) {
-		got, err := atlasmigrate.ApplyReadsNativeAtlasDir("sqitch", nil)
+		got, err := atlasmigrate.ResolveApplyDirFormat("sqitch", nil)
 
 		c.Assert(err, qt.ErrorMatches, `unknown Atlas migration directory format "sqitch".*`)
-		c.Assert(got, qt.IsFalse)
+		c.Assert(string(got), qt.Equals, "")
 	})
+}
+
+// TestResolveApplySourceMatchesResolvedFormat pins the seam the apply path
+// depends on: ResolveApplySource is exactly ResolveApplySourceForFormat applied
+// to ResolveApplyDirFormat's answer. The apply command resolves the format once
+// and feeds both the loader and the integrity gate, so a future change to one
+// argument list cannot silently make them read different directories.
+func TestResolveApplySourceMatchesResolvedFormat(t *testing.T) {
+	c := qt.New(t)
+
+	for _, tt := range applyDirFormatCases() {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := c.TempDir()
+			writeSeamFixture(c, dir, tt.format)
+
+			format, err := atlasmigrate.ResolveApplyDirFormat(tt.configured, tt.query)
+			c.Assert(err, qt.IsNil)
+
+			viaQuery, queryErr := atlasmigrate.ResolveApplySource(os.DirFS(dir), dir, tt.configured, tt.query)
+			viaFormat, formatErr := atlasmigrate.ResolveApplySourceForFormat(os.DirFS(dir), dir, format)
+
+			c.Assert(queryErr, qt.IsNil)
+			c.Assert(formatErr, qt.IsNil)
+			names := fsFileNames(c, viaQuery)
+			c.Assert(fsFileNames(c, viaFormat), qt.DeepEquals, names)
+			for _, name := range names {
+				c.Assert(readFSFile(c, viaFormat, name), qt.Equals, readFSFile(c, viaQuery, name))
+			}
+		})
+	}
+}
+
+// writeSeamFixture writes the minimal directory the named format can read.
+func writeSeamFixture(c *qt.C, dir, format string) {
+	c.Helper()
+	switch format {
+	case "goose":
+		writeFormatFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE seam (id int);\n")
+	case "dbmate":
+		writeFormatFile(c, dir, "1_init.sql", "-- migrate:up\nCREATE TABLE seam (id int);\n")
+	case "liquibase":
+		writeFormatFile(c, dir, "1_init.sql", "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE seam (id int);\n")
+	case "flyway":
+		writeFormatFile(c, dir, "V1__init.sql", "CREATE TABLE seam (id int);\n")
+	case "golang-migrate":
+		writeFormatFile(c, dir, "1_init.up.sql", "CREATE TABLE seam (id int);\n")
+		writeFormatFile(c, dir, "1_init.down.sql", "DROP TABLE seam;\n")
+	default:
+		writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE seam (id int);\n")
+	}
 }
 
 func writeFormatFile(c *qt.C, dir, name, content string) {

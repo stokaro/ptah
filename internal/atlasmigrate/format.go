@@ -33,10 +33,24 @@ func ResolveApplySource(
 	configured string,
 	query url.Values,
 ) (fsnapshot.Snapshot, error) {
-	format, err := resolveApplyDirFormat(configured, query)
+	format, err := ResolveApplyDirFormat(configured, query)
 	if err != nil {
 		return fsnapshot.Snapshot{}, err
 	}
+	return ResolveApplySourceForFormat(source, display, format)
+}
+
+// ResolveApplySourceForFormat is [ResolveApplySource] on an already-resolved
+// format. Callers that must also branch on the format — the apply-time
+// checksum gate keys on whether the directory is native Atlas — resolve it once
+// with [ResolveApplyDirFormat] and pass the same value here, so the filesystem
+// that gets executed and the format the gate reasons about are the same
+// decision rather than two computations that happen to agree (#970).
+func ResolveApplySourceForFormat(
+	source fs.FS,
+	display string,
+	format atlasmigrateimport.Format,
+) (fsnapshot.Snapshot, error) {
 	if source == nil {
 		return fsnapshot.Snapshot{}, fmt.Errorf("migration directory filesystem is required")
 	}
@@ -58,23 +72,18 @@ func ResolveApplySource(
 	return converted, nil
 }
 
-// ApplyReadsNativeAtlasDir reports whether an apply of configured/query reads a
-// native Atlas directory rather than an external-tool directory converted in
-// memory. It resolves the format exactly the way [ResolveApplySource] does, so
-// the two can never disagree about what a given --dir selects.
-//
-// Only a native Atlas directory carries atlas.sum: every converted format is
-// rebuilt as up-only Atlas migrations with no integrity file, so the apply-time
-// checksum gate applies to the native format alone (#970).
-func ApplyReadsNativeAtlasDir(configured string, query url.Values) (bool, error) {
-	format, err := resolveApplyDirFormat(configured, query)
-	if err != nil {
-		return false, err
-	}
-	return format == atlasmigrateimport.FormatAtlas, nil
+// ReadsNativeAtlasDir reports whether format selects a native Atlas directory
+// rather than an external-tool directory converted in memory. Only a native
+// Atlas directory is read as-is, keeping whatever atlas.sum it carries; every
+// other format is rebuilt as up-only Atlas migrations with no integrity file.
+func ReadsNativeAtlasDir(format atlasmigrateimport.Format) bool {
+	return format == atlasmigrateimport.FormatAtlas
 }
 
-func resolveApplyDirFormat(configured string, query url.Values) (atlasmigrateimport.Format, error) {
+// ResolveApplyDirFormat resolves the migration directory format an apply reads:
+// the ?format= URL query value when present (an empty value selects the native
+// Atlas format), otherwise the configured project format.
+func ResolveApplyDirFormat(configured string, query url.Values) (atlasmigrateimport.Format, error) {
 	queryFormat, found, err := applyDirURLFormat(query)
 	if err != nil {
 		return "", err

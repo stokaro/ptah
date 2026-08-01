@@ -171,10 +171,12 @@ official Atlas:
   `Error: checksum mismatch`.
 - An Atlas directory that carries no `atlas.sum` at all is refused with
   `Error: checksum file not found`; run `ptah-compat migrate hash` once and
-  commit the file.
+  commit the file. A directory holding no `.sql` file is not a checksum error —
+  it reports `No migration files to execute` and exits `0`, matching Atlas.
 - Directories read through `?format=` (goose, flyway, liquibase, dbmate,
-  golang-migrate) carry no Atlas integrity file by construction and are not
-  gated.
+  golang-migrate) are converted in memory, carry no Atlas integrity file, and
+  are **not** gated. Atlas CE does gate them; this is a known divergence
+  tracked in [#973](https://github.com/stokaro/ptah/issues/973).
 
 Both refusals exit `1` with output identical to `ptah-compat migrate validate`
 on that directory, no migration runs, and the target database is never created.

@@ -110,6 +110,10 @@ integrity drift exits `1` with Ptah's native drift report.
 
 `migrate apply` refuses the same two directory states with the same exit code
 and the same output, before it opens the target database: a mismatched
-`atlas.sum` and a missing one. Native `ptah migrations up` verifies a hashed
-directory the same way (exit `2` with Ptah's drift report) but applies a
-never-hashed directory unless `--verify-sum` is passed.
+`atlas.sum` and a missing one. The missing-file refusal requires at least one
+`.sql` file in the directory; an empty or `.gitkeep`-only directory exits `0`
+with `No migration files to execute`. Directories read through `?format=` are
+not gated, a known divergence from Atlas CE tracked in issue #973. Native
+`ptah migrations up` verifies a hashed directory the same way (exit `2` with
+Ptah's drift report) but applies a never-hashed directory unless `--verify-sum`
+is passed.
