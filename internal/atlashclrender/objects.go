@@ -226,7 +226,7 @@ func (r *renderer) renderFunctions() {
 func (r *renderer) renderFunction(function goschema.Function) {
 	function.Canonicalize()
 	if function.Body == "" {
-		r.warn("function "+function.Name, "function body is required for HCL schema export")
+		r.warn("functions."+function.Name, "function body is required for HCL schema export")
 		return
 	}
 	name := objectNameFromQualified(function.Name)
@@ -330,18 +330,19 @@ func (r *renderer) renderTriggers() {
 
 func (r *renderer) renderTrigger(trigger goschema.Trigger) {
 	trigger.Canonicalize()
+	path := TriggerDiagnosticPath(trigger.Table, trigger.Name)
 	if trigger.Table == "" || trigger.Body == "" {
-		r.warn("triggers."+trigger.Name, "trigger requires table and body for HCL schema export")
+		r.warn(path, "trigger requires table and body for HCL schema export")
 		return
 	}
 	timing, ok := triggerTimingBlock(trigger.Timing)
 	if !ok {
-		r.warn("triggers."+trigger.Name, "trigger timing cannot be represented in HCL schema output")
+		r.warn(path, "trigger timing cannot be represented in HCL schema output")
 		return
 	}
 	event, ok := triggerEventAttr(trigger.Event)
 	if !ok {
-		r.warn("triggers."+trigger.Name, "trigger event cannot be represented in HCL schema output")
+		r.warn(path, "trigger event cannot be represented in HCL schema output")
 		return
 	}
 	r.linef(`trigger %s {`, quote(trigger.Name))

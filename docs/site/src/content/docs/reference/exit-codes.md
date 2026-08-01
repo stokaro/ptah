@@ -39,7 +39,7 @@ root-level command spellings are removed instead of preserved.
 | --- | --- | --- | --- |
 | `ptah introspect` | Annotated Go model files generated. | Not used. | Usage error, invalid output path, connection failure, schema-read failure, render error, or write error. |
 | `ptah schema render` | Schema rendered. | Not used. | Usage error, parse error, unsupported dialect, or render error. |
-| `ptah schema export` | Schema exported. | Not used. | Usage error, invalid paths, parse error, render error, write error, cleanup error, or a `--to protobuf` compatibility refusal: previous output that is foreign, modified, of an unsupported export version, malformed, or package-mismatched, or an unresolved type-removal, incompatible-change, or name-reuse policy violation. |
+| `ptah schema export` | Schema exported. | Not used. | Usage, path, parse, render, write, cleanup, empty-export, or Protobuf compatibility failure. See details below. |
 | `ptah viz` | Schema diagram rendered. | Not used. | Usage error, invalid paths, parse error, unsupported format/theme, missing Graphviz for SVG, SVG render error, or write error. |
 | `ptah db read` | Schema read and printed. | Not used. | Usage error, connection failure, or schema-read failure. |
 | `ptah db drop-all` | Objects dropped, dry-run output printed, or operation canceled by the user. | Not used. | Usage error, connection failure, input read error, or drop failure. |
@@ -64,6 +64,15 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations rm` | Migration deleted and the integrity file rewritten. | Not used. | Usage error, invalid directory or version, missing migration, refused because already applied without `--force`, database connection failure, or write error. |
 | `ptah seed` | Seed files applied or already applied. | Not used. | Usage error, protected environment rejection, connection failure, invalid seed files, or seed execution failure. |
 | `ptah version` | Version information printed. | Not used. | Usage error. |
+
+### `ptah schema export`
+
+Exit code `2` covers invalid paths; parse, render, write, and cleanup failures;
+Go input with no annotations or no exportable HCL objects; and Protobuf
+compatibility refusals. Protobuf export refuses previous output that is foreign,
+modified, malformed, package-mismatched, or written by an unsupported export
+version. It also refuses unresolved type-removal, incompatible-change, and
+name-reuse policy violations.
 
 ## Atlas-compatible command surfaces
 

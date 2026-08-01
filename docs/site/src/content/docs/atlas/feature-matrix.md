@@ -264,7 +264,7 @@ seven of them as open capabilities regardless.
 | Annotation metadata as JSON Schema | ✅ | ➖ | ➖ | Emits a JSON Schema describing every //ptah directive and attribute; Atlas has no //ptah annotation set for the concept to apply to. |
 | API schema export: OpenAPI 3.0 and GraphQL | ✅ | ❌ | ❌ | Go annotations to OpenAPI components or GraphQL SDL; no handlers or resolvers. Absent from the CE inventory and the cited Pro list. |
 | Concurrency-guarded migration plan publication | ✅ | ➖ | ➖ | generator.PlanMigration binds a plan to a directory snapshot; WriteFiles rejects changed history (ErrMigrationDirectoryChanged) under a cross-process lock; concurrent reuse fails (ErrMigrationPlanInUs |
-| Go annotations to HCL export with cleanup | ✅ | ➖ | ➖ | schema export `--to` hcl writes an HCL schema from Go annotations; `--cleanup-go-annotations` removes the annotations after a lossless export, with `--cleanup-dry-run`/`--cleanup-diff` previews. |
+| Go annotations to HCL export with cleanup | ✅ | ➖ | ➖ | Writes HCL; cleanup requires zero diagnostics. Opaque SQL bodies are emitted as HCL text, reported, and block cleanup. |
 | Pinned database sessions (WithSession) | ✅ | ➖ | ➖ | `WithSession` on `DatabaseConnection` pins one physical session for a callback, rebinding reader/writer/SQL runner, and discards the connection so session state cannot leak. |
 | Protobuf schema export with pinned field numbers | ✅ | ❌ | ❌ | Edition 2023 output; `--out` pins field numbers, with policies for type removal, name reuse and incompatible change. Not in CE inventory. |
 | ptah-ls annotation language server | ✅ | ➖ | ➖ | stdio LSP over //ptah annotations: hover, completion, diagnostics, plus a VS Code extension. Tied to Ptah's own annotation syntax. |

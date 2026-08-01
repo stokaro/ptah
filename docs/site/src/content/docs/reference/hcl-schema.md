@@ -1,5 +1,5 @@
 ---
-title: HCL Schema Reference
+title: HCL schema reference
 description: Atlas-compatible HCL schema subset and Ptah parity extensions.
 ---
 
@@ -8,7 +8,7 @@ same schema IR as Go annotations and YAML schema files, then uses Ptah's normal
 rendering and planning paths.
 
 Ptah's HCL schema syntax includes a supported subset of Atlas HCL schema files
-plus Ptah extensions for lossless Go annotation export. Ptah is an independent
+plus Ptah extensions for Go annotation parity. Ptah is an independent
 implementation and is not affiliated with or endorsed by Ariga or Atlas.
 
 ## Command
@@ -174,7 +174,10 @@ supports the feature.
 Function bodies are stored as raw SQL text. Ptah does not parse the dialect
 sub-language inside each function body today. That is intentional: PostgreSQL,
 MySQL, SQL Server, and other dialects have different procedural languages and
-require dialect-specific parsers.
+require dialect-specific parsers. Go-annotation export writes function, view,
+materialized-view, and trigger bodies as opaque HCL strings and reports a
+warning for each body. Because cleanup is destructive, any such warning prevents
+`--cleanup-go-annotations` from publishing HCL or removing annotations.
 
 ## Unsupported constructs
 

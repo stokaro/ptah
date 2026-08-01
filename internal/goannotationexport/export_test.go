@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/internal/atlashcl"
+	"github.com/stokaro/ptah/internal/atlashclrender"
 	"github.com/stokaro/ptah/internal/goannotationexport"
 )
 
@@ -305,6 +306,270 @@ func TestExport_FailurePath_RepeatCleanupPreservesExistingOutput(t *testing.T) {
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
 	assertFileBytes(c, source, sourceData)
 	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_FailurePath_NoAnnotationsPreservesExistingOutput(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte("package models\n\ntype User struct{}\n")
+	outputData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoAnnotations)
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_FailurePath_UnattachedAnnotationPreservesExistingOutput(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+const placeholder = 0
+`)
+	outputData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoAnnotations)
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_HappyPath_ParserAcceptedNonRemovableAnnotationIsNotEmpty(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+/* business documentation */ //ptah:schema:role name="app" login="true"
+type Roles struct{}
+`)
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.HasLen, 0)
+	outputData, err := os.ReadFile(output)
+	c.Assert(err, qt.IsNil)
+	parsed, err := atlashcl.Parse(outputData, output)
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Roles, qt.DeepEquals, []goschema.Role{
+		{StructName: "", Name: "app", Login: true, Inherit: true},
+	})
+}
+
+func TestExport_FailurePath_FieldOnlySchemaPreservesExistingOutput(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+type User struct {
+	//ptah:schema:field name="id" type="BIGINT"
+	ID int64
+}
+`)
+	outputData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoExportableSchema)
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_FailurePath_FieldOnlyCleanupPreservesExistingOutput(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+type User struct {
+	//ptah:schema:field name="id" type="BIGINT"
+	ID int64
+}
+`)
+	outputData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoExportableSchema)
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_FailurePath_OpaqueSQLBodyRefusesCleanupAndPreservesFiles(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:function name="app.lookup_user" returns="TEXT" language="sql" body="SELECT 'ok'"
+type SchemaObjects struct{}
+`)
+	outputData := []byte("previous schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
+	c.Assert(err.Error(), qt.Contains, "functions.app.lookup_user: raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted")
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_HappyPath_OpaqueSQLWarningDoesNotDuplicateRendererDiagnostic(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+
+//ptah:schema:trigger name="users_touch" table="users" timing="DURING" event="UPDATE" body="RETURN NEW;"
+type SchemaObjects struct{}
+`)
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     `triggers["users"]["users_touch"]`,
+			Message:  "trigger timing cannot be represented in HCL schema output",
+		},
+	})
+}
+
+func TestExport_HappyPath_ReportsSameNamedOpaqueTriggersOnDifferentTables(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+
+//ptah:schema:table name="posts"
+type Post struct{}
+
+//ptah:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" body="RETURN NEW;"
+//ptah:schema:trigger name="set_updated_at" table="posts" timing="BEFORE" event="UPDATE" body="RETURN NEW;"
+type SchemaObjects struct{}
+`)
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     `triggers["posts"]["set_updated_at"]`,
+			Message:  "raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete",
+		},
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     `triggers["users"]["set_updated_at"]`,
+			Message:  "raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete",
+		},
+	})
+}
+
+func TestExport_HappyPath_RendererDiagnosticDoesNotHideSameNamedOpaqueTrigger(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+
+//ptah:schema:table name="posts"
+type Post struct{}
+
+//ptah:schema:trigger name="set_updated_at" table="posts" timing="DURING" event="UPDATE" body="RETURN NEW;"
+//ptah:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" body="RETURN NEW;"
+type SchemaObjects struct{}
+`)
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     `triggers["posts"]["set_updated_at"]`,
+			Message:  "trigger timing cannot be represented in HCL schema output",
+		},
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     `triggers["users"]["set_updated_at"]`,
+			Message:  "raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete",
+		},
+	})
 }
 
 func TestExport_HappyPath_CleanupPreservesCustomSQL(t *testing.T) {
