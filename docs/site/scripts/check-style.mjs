@@ -322,7 +322,7 @@ function tableViolations(lines) {
 // indented continuations matter most: a numbered list reads as a list, and
 // joining its items would invent a paragraph nobody wrote.
 const blockStart =
-  /^\s*(?:[-*+]\s|\d+[.)]\s|>|\||#{1,6}\s|:::|<|\[\^[^\]]+\]:|\!\[|\s{2,}\S)/;
+  /^\s*(?:[-*+]\s|\d+[.)]\s|>|\||#{1,6}\s|:::|<|\[\^[^\]]+\]:|\[[^\]]+\]:\s|\!\[|\s{2,}\S)/;
 
 // paragraphViolations reports prose blocks that have grown into walls. Blank
 // lines, headings, tables, lists, list continuations, admonition markers, HTML,
@@ -378,6 +378,14 @@ function nameTokens(cell) {
   );
 }
 
+// The code spans in a capability name are its identity: rows named
+// "Upstream verb \`migrate ls\`" and "Upstream verb \`migrate show\`" share
+// every prose word and are different capabilities. When both names carry code
+// and the code differs, the rows are not comparable.
+function codeIdentity(cell) {
+  return (cell.match(/`[^`]+`/g) ?? []).sort().join('|');
+}
+
 function overlap(a, b) {
   if (a.size === 0 || b.size === 0) return 0;
   let shared = 0;
@@ -408,6 +416,12 @@ function contradictionViolations(lines) {
   const findings = [];
   for (let i = 0; i < rows.length; i += 1) {
     for (let j = i + 1; j < rows.length; j += 1) {
+      // Short names carry too little signal for overlap to mean identity:
+      // "Dry run" under two different command sections is two capabilities.
+      if (rows[i].tokens.size < 3 || rows[j].tokens.size < 3) continue;
+      const idA = codeIdentity(rows[i].name);
+      const idB = codeIdentity(rows[j].name);
+      if (idA && idB && idA !== idB) continue;
       if (overlap(rows[i].tokens, rows[j].tokens) < 0.6) continue;
       if (rows[i].statuses.join('') === rows[j].statuses.join('')) continue;
       findings.push({
@@ -422,10 +436,47 @@ function contradictionViolations(lines) {
   return findings;
 }
 
+// bareFlagViolations reports a --flag written outside a code span. Astro's
+// smartypants pass renders a bare double hyphen as an en dash, so the reader
+// sees a typographic dash where a flag was meant and copies a broken token.
+// Inside backticks nothing is transformed. Applies to site content only:
+// root docs render on GitHub, which leaves hyphens alone.
+function bareFlagViolations(lines) {
+  const findings = [];
+  // Inline code spans may wrap across lines inside one paragraph, so backtick
+  // parity carries from line to line and resets on a blank line. A per-line
+  // strip mispairs the ticks on such lines and reports flags that are inside
+  // a span.
+  let inSpan = false;
+  for (const [index, line] of lines.entries()) {
+    if (line.trim() === '') {
+      inSpan = false;
+      continue;
+    }
+    const segments = line.split('`');
+    let outside = '';
+    for (const [si, segment] of segments.entries()) {
+      const open = inSpan ? si % 2 === 1 : si % 2 === 0;
+      outside += open ? segment : ' '.repeat(segment.length);
+      outside += si < segments.length - 1 ? ' ' : '';
+    }
+    if (segments.length % 2 === 0) inSpan = !inSpan;
+    for (const match of outside.matchAll(/(?<![`\w-])--[a-z][a-z0-9-]*/g)) {
+      findings.push({
+        line: index + 1,
+        message:
+          `bare flag "${match[0]}" outside a code span renders with an en dash; wrap it in backticks`,
+      });
+    }
+  }
+  return findings;
+}
+
 // analyze is the single implementation of every rule. checkFile and the
 // self-test both call it, so a rule that stops firing here fails the self-test
 // instead of quietly passing every file forever.
-export function analyze(source) {
+export function analyze(source, options = {}) {
+  const { siteContent = true } = options;
   const findings = [];
   const { prose, code, text, fenceErrors } = splitSource(source);
 
@@ -473,13 +524,15 @@ export function analyze(source) {
   findings.push(...tableViolations(text));
   findings.push(...paragraphViolations(text));
   findings.push(...contradictionViolations(text));
+  if (siteContent) findings.push(...bareFlagViolations(text));
   findings.push(...fenceErrors);
   return findings.sort((a, b) => a.line - b.line);
 }
 
 function checkFile(file) {
   const displayPath = toPosix(relative(repoRoot, file));
-  return analyze(readFileSync(file, 'utf8')).map(
+  const siteContent = toPosix(file).includes('/docs/site/src/content/docs/');
+  return analyze(readFileSync(file, 'utf8'), { siteContent }).map(
     (finding) => `${displayPath}:${finding.line}: ${finding.message}`,
   );
 }
@@ -529,6 +582,30 @@ function selftest() {
     '| Desired-schema artifacts over OCI | ✅ | 🟡 |',
     '',
     `A wall of prose. ${'Every flag is described inline rather than in a list. '.repeat(20)}`,
+    '',
+    // A contradiction expressed through non-boolean symbols, and an overlap
+    // just above the threshold: pins the vocabulary and the 0.6 cut from below.
+    '| Capability | Ptah | CE |',
+    '| --- | --- | --- |',
+    '| Spanner live coverage probes | ➖ | ❔ |',
+    '| Spanner nightly coverage probes | ❌ | ❔ |',
+    '',
+    // A row with FEWER cells than its header exercises the missing-cell branch.
+    '| A | B | C |',
+    '| --- | --- | --- |',
+    '| only | two |',
+    '',
+    // An empty middle cell must not make the row a delimiter: the long third
+    // cell must still be measured.
+    '| H1 | H2 | H3 |',
+    '| --- | --- | --- |',
+    `| left |  | ${'y'.repeat(360)} |`,
+    '',
+    // A hard-wrapped wall: each source line is short, the joined block is not.
+    ...Array.from({ length: 16 }, () => 'This wall is wrapped at ordinary width like real documentation prose.'),
+    '',
+    // A bare flag outside any code span.
+    'Pass --dry-run to preview the plan.',
   ].join('\n');
 
   const expected = [
@@ -540,8 +617,13 @@ function selftest() {
     { line: 17, needle: 'no language label' },
     { line: 23, needle: 'over the 350 limit' },
     { line: 27, needle: 'cells but the header has 3' },
-    { line: 34, needle: 'over the 900 limit' },
     { line: 32, needle: 'name the same capability and disagree' },
+    { line: 34, needle: 'over the 900 limit' },
+    { line: 39, needle: 'name the same capability and disagree' },
+    { line: 43, needle: 'missing cells render empty' },
+    { line: 47, needle: 'over the 350 limit' },
+    { line: 49, needle: 'over the 900 limit' },
+    { line: 66, needle: 'bare flag "--dry-run"' },
   ];
 
   const findings = analyze(violating);
@@ -596,6 +678,41 @@ function selftest() {
     '5. Review the generated diff whenever the database model changes, treating',
     '   every added, removed, or retyped field as a deliberate contract change',
     '   that a reviewer has to approve rather than as incidental churn.',
+    '',
+    // A code span that wraps across two lines carries a flag inside it; the
+    // backtick parity must carry over so this never reports.
+    'Integrity checks such as `ptah migrations',
+    'validate` and `up --verify-sum` still pass on a clean directory.',
+    '',
+    // Same prose words, different code spans: different capabilities, and the
+    // differing verdicts are legitimate.
+    '| Capability | Ptah | CE |',
+    '| --- | --- | --- |',
+    '| Upstream verb `migrate ls` | 🟡 | ❌ |',
+    '| Upstream verb `migrate show` | ❌ | ❌ |',
+    '',
+    // Names too short to compare: two-token labels under different sections.
+    '| Capability | Ptah | CE |',
+    '| --- | --- | --- |',
+    '| Dry run | ✅ | ✅ |',
+    '',
+    '| Capability | Ptah | CE |',
+    '| --- | --- | --- |',
+    '| Dry run | ✅ | ❌ |',
+    '',
+    // A reference-link definition block is not a paragraph wall.
+    '[cli-surface]: https://github.com/stokaro/ptah-atlas-conformance/blob/main/cli-surface.md',
+    '[gaps]: https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps.md',
+    '[gaps-live]: https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-live.md',
+    '[gaps-diff]: https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md',
+    '[parity]: https://github.com/stokaro/ptah-atlas-conformance/blob/main/PARITY.md',
+    '[features]: https://atlasgo.io/features',
+    '[cli-ref]: https://atlasgo.io/cli-reference',
+    '[declarative]: https://atlasgo.io/declarative/plan',
+    '[versioned-apply]: https://atlasgo.io/versioned/apply',
+    '[versioned-down]: https://atlasgo.io/versioned/down',
+    '[versioned-import]: https://atlasgo.io/versioned/import',
+    '[cloud-deploy]: https://atlasgo.io/cloud/deployment',
     '',
     // Under the limit as a reader sees it, over it as raw markdown. Only the
     // rendered measurement keeps this from being reported.

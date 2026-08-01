@@ -277,6 +277,7 @@ in this guide is a review responsibility.
 | Table cells under 350 characters | 8 | `check:style` |
 | Table rows match the header's column count | 8 | `check:style` |
 | Two rows never state different verdicts for one capability | 8 | `check:style` |
+| No bare `--flag` outside a code span on site pages | 4, 6 | `check:style` |
 | Paragraphs under 900 rendered characters | 4 | `check:style` |
 | In-page and cross-page anchors resolve | 9 | `check:links` |
 | No page scrolls sideways at 390px or 1280px | 10 | `check:responsive` |
