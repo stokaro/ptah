@@ -5,15 +5,107 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-func TestParseChecks(t *testing.T) {
+func TestParseChecks_MySQLBackslashEscaping(t *testing.T) {
+	c := qt.New(t)
+
+	checks, err := migrator.ParseChecks(
+		`-- +ptah check name="escaped" assert="SELECT 'it\'s;ok'"`,
+		platform.MySQL,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(checks, qt.DeepEquals, []migrator.Check{{
+		Name:   "escaped",
+		Assert: `SELECT 'it\'s;ok'`,
+		OnFail: migrator.OnFailAbort,
+	}})
+}
+
+func TestParseChecks_ClickHouseBackslashEscaping(t *testing.T) {
+	c := qt.New(t)
+
+	checks, err := migrator.ParseChecks(
+		`-- +ptah check name="escaped" assert="SELECT 'it\'s;ok'"`,
+		platform.ClickHouse,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(checks, qt.DeepEquals, []migrator.Check{{
+		Name:   "escaped",
+		Assert: `SELECT 'it\'s;ok'`,
+		OnFail: migrator.OnFailAbort,
+	}})
+}
+
+func TestParseChecks_PostgresBackslashLiteralBeforeDirective(t *testing.T) {
+	c := qt.New(t)
+
+	checks, err := migrator.ParseChecks(`SELECT '\'::text;
+-- +ptah check name="after_literal" assert="SELECT 1"
+DROP TABLE users;
+`, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(checks, qt.DeepEquals, []migrator.Check{{
+		Name:   "after_literal",
+		Assert: "SELECT 1",
+		OnFail: migrator.OnFailAbort,
+	}})
+}
+
+func TestParseChecks_PostgresEscapeStringBeforeDirective(t *testing.T) {
+	c := qt.New(t)
+
+	checks, err := migrator.ParseChecks(`SELECT E'it\'s still one literal';
+-- +ptah check name="after_escape_literal" assert="SELECT 1"
+DROP TABLE users;
+`, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(checks, qt.DeepEquals, []migrator.Check{{
+		Name:   "after_escape_literal",
+		Assert: "SELECT 1",
+		OnFail: migrator.OnFailAbort,
+	}})
+}
+
+func TestParseChecks_PostgresFamilyEscapeStringBeforeDirective(t *testing.T) {
+	c := qt.New(t)
 	tests := []struct {
 		name    string
-		sql     string
-		want    []migrator.Check
-		wantErr bool
+		dialect string
+	}{
+		{name: "CockroachDB", dialect: platform.CockroachDB},
+		{name: "YugabyteDB", dialect: platform.YugabyteDB},
+		{name: "Spanner", dialect: platform.Spanner},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			checks, err := migrator.ParseChecks(`SELECT E'it\'s still one literal';
+-- +ptah check name="after_escape_literal" assert="SELECT 1"
+DROP TABLE users;
+`, test.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(checks, qt.DeepEquals, []migrator.Check{{
+				Name:   "after_escape_literal",
+				Assert: "SELECT 1",
+				OnFail: migrator.OnFailAbort,
+			}})
+		})
+	}
+}
+
+func TestParseChecks_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		sql  string
+		want []migrator.Check
 	}{
 		{
 			name: "single check with spaces and equals in assert",
@@ -59,44 +151,61 @@ func TestParseChecks(t *testing.T) {
 			sql:  `-- +ptah check name="q" assert="SELECT count(*) = 0 FROM ""My Table"""` + "\nSELECT 1;\n",
 			want: []migrator.Check{{Name: "q", Assert: `SELECT count(*) = 0 FROM "My Table"`, OnFail: migrator.OnFailAbort}},
 		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := migrator.ParseChecks(tt.sql, "")
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+func TestParseChecks_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		sql     string
+		wantErr string
+	}{
 		{
-			name:    "missing assert is an error",
+			name:    "missing assert",
 			sql:     `-- +ptah check name="x"` + "\nSELECT 1;\n",
-			wantErr: true,
+			wantErr: `\+ptah check requires a non-empty assert predicate`,
 		},
 		{
-			name:    "unknown key is an error",
+			name:    "unknown key",
 			sql:     `-- +ptah check name="x" assert="SELECT 1" bogus=1` + "\nSELECT 1;\n",
-			wantErr: true,
+			wantErr: `unknown \+ptah check key "bogus" \(want name, assert, on_fail\)`,
 		},
 		{
-			name:    "unsupported on_fail is an error",
+			name:    "unsupported on_fail",
 			sql:     `-- +ptah check name="x" assert="SELECT 1" on_fail=warn` + "\nSELECT 1;\n",
-			wantErr: true,
+			wantErr: `unsupported \+ptah check on_fail="warn" \(only abort is supported\)`,
 		},
 		{
-			name:    "unterminated quote is an error",
+			name:    "unterminated quote",
 			sql:     `-- +ptah check name="x" assert="SELECT 1` + "\nSELECT 1;\n",
-			wantErr: true,
+			wantErr: `unterminated quote in \+ptah check directive`,
 		},
 		{
-			name:    "multi-statement assert is an error",
+			name:    "multi-statement assert",
 			sql:     `-- +ptah check name="x" assert="SELECT 1; DROP TABLE t"` + "\nSELECT 1;\n",
-			wantErr: true,
+			wantErr: `\+ptah check assert must be a single statement, got 2`,
 		},
 		{
-			name:    "duplicate key is an error",
+			name:    "duplicate key",
 			sql:     `-- +ptah check name="x" name="y" assert="SELECT 1"` + "\nSELECT 1;\n",
-			wantErr: true,
+			wantErr: `duplicate \+ptah check key "name"`,
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := migrator.ParseChecks(tt.sql)
-			c.Assert(err != nil, qt.Equals, tt.wantErr, qt.Commentf("err=%v", err))
-			c.Assert(got, qt.DeepEquals, tt.want)
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := migrator.ParseChecks(tt.sql, "")
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+			c.Assert(got, qt.IsNil)
 		})
 	}
 }

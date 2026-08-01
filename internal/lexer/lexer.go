@@ -85,6 +85,24 @@ type Options struct {
 	// escapes regardless of this field.
 	BackslashEscapes bool
 
+	// PostgreSQLEscapeStrings recognizes the PostgreSQL-family E'...' string
+	// prefix. Backslashes escape the following character inside those literals
+	// even when BackslashEscapes is false for ordinary standard-conforming
+	// strings.
+	PostgreSQLEscapeStrings bool
+
+	// RequireWhitespaceAfterDashDash makes -- start a line comment only when
+	// the following character is whitespace or a control character. MySQL and
+	// MariaDB require this boundary; in other dialects -- always starts a line
+	// comment.
+	RequireWhitespaceAfterDashDash bool
+
+	// ExecutableComments selects dialect-specific executable block-comment
+	// recognition. Recognized comments are emitted as TokenUnknown rather than
+	// TokenComment so callers that remove ordinary comments preserve SQL whose
+	// contents can change query behavior.
+	ExecutableComments ExecutableCommentStyle
+
 	// BracketIdentifiers treats a square-bracket pair as one identifier token.
 	// Enable it only for SQL Server: in dialect-neutral and PostgreSQL-family
 	// input, square brackets can instead delimit array syntax.
@@ -96,6 +114,16 @@ type Options struct {
 	DisableHashComments bool
 }
 
+// ExecutableCommentStyle selects a database family's executable-comment
+// syntax. The zero value treats every block comment as an ordinary comment.
+type ExecutableCommentStyle uint8
+
+const (
+	ExecutableCommentsNone ExecutableCommentStyle = iota
+	ExecutableCommentsMySQL
+	ExecutableCommentsMariaDB
+)
+
 // Lexer tokenizes SQL input
 type Lexer struct {
 	input string
@@ -103,6 +131,13 @@ type Lexer struct {
 	start int
 	opts  Options
 }
+
+type stringBackslashMode uint8
+
+const (
+	stringBackslashLiteral stringBackslashMode = iota
+	stringBackslashEscape
+)
 
 // NewLexer creates a new SQL lexer with lenient dialect-neutral behavior.
 //
@@ -209,6 +244,8 @@ func (l *Lexer) NextToken() Token {
 		switch {
 		case unicode.IsSpace(ch):
 			return l.scanWhitespace()
+		case l.isPostgreSQLEscapeString(ch):
+			return l.scanPostgreSQLEscapeString()
 		case ch == '\'' || ch == '"':
 			return l.scanString()
 		case ch == '$':
@@ -220,9 +257,12 @@ func (l *Lexer) NextToken() Token {
 				return l.scanIdentifier()
 			}
 			return l.scanOperator()
-		case ch == '-' && l.peekNext() == '-':
+		case ch == '-' && l.peekNext() == '-' && l.isDashDashComment():
 			return l.scanLineComment()
 		case ch == '/' && l.peekNext() == '*':
+			if l.isExecutableBlockComment() {
+				return l.scanBlockToken(TokenUnknown)
+			}
 			return l.scanBlockComment()
 		case isIdentifierStart(ch):
 			return l.scanIdentifier()
@@ -338,6 +378,19 @@ func (l *Lexer) scanStringLegacy() Token {
 // SQLite). The legacy isStringTerminator heuristic is deliberately not applied
 // here - the doubled-quote rule supersedes it.
 func (l *Lexer) scanStringStandard() Token {
+	mode := stringBackslashLiteral
+	if l.opts.BackslashEscapes {
+		mode = stringBackslashEscape
+	}
+	return l.scanStringStandardWithBackslashMode(mode)
+}
+
+func (l *Lexer) scanPostgreSQLEscapeString() Token {
+	l.advance() // consume E prefix
+	return l.scanStringStandardWithBackslashMode(stringBackslashEscape)
+}
+
+func (l *Lexer) scanStringStandardWithBackslashMode(mode stringBackslashMode) Token {
 	quote := l.advance() // consume opening quote
 
 	for {
@@ -358,7 +411,7 @@ func (l *Lexer) scanStringStandard() Token {
 			break
 		}
 
-		if ch == '\\' && l.opts.BackslashEscapes {
+		if ch == '\\' && mode == stringBackslashEscape {
 			l.advance() // consume backslash
 			if l.peek() != 0 {
 				l.advance() // consume escaped character
@@ -370,6 +423,56 @@ func (l *Lexer) scanStringStandard() Token {
 	}
 
 	return l.emit(TokenString)
+}
+
+func (l *Lexer) isPostgreSQLEscapeString(ch rune) bool {
+	return l.opts.PostgreSQLEscapeStrings && (ch == 'e' || ch == 'E') && l.peekNext() == '\''
+}
+
+func (l *Lexer) isDashDashComment() bool {
+	if !l.opts.RequireWhitespaceAfterDashDash {
+		return true
+	}
+	afterMarker := l.peekAfterNext()
+	return afterMarker != 0 && (unicode.IsSpace(afterMarker) || unicode.IsControl(afterMarker))
+}
+
+func (l *Lexer) isExecutableBlockComment() bool {
+	remainder := l.input[l.pos:]
+	switch l.opts.ExecutableComments {
+	case ExecutableCommentsMySQL:
+		return strings.HasPrefix(remainder, "/*!")
+	case ExecutableCommentsMariaDB:
+		if len(remainder) >= 4 && strings.EqualFold(remainder[:4], "/*M!") {
+			return true
+		}
+		if !strings.HasPrefix(remainder, "/*!") {
+			return false
+		}
+		commentVersion := parseExecutableCommentVersion(remainder, len("/*!"))
+		return commentVersion.digits == 0 || commentVersion.digits < 5 ||
+			commentVersion.value < 50700 || commentVersion.value > 99999
+	default:
+		return false
+	}
+}
+
+type executableCommentVersion struct {
+	value  int
+	digits int
+}
+
+func parseExecutableCommentVersion(comment string, prefixLength int) executableCommentVersion {
+	var version executableCommentVersion
+	for i := prefixLength; i < len(comment); i++ {
+		ch := comment[i]
+		if ch < '0' || ch > '9' {
+			break
+		}
+		version.digits++
+		version.value = version.value*10 + int(ch-'0')
+	}
+	return version
 }
 
 func isStringTerminator(ch rune) bool {
@@ -418,6 +521,10 @@ func isHashOperatorContinuation(ch rune) bool {
 
 // scanBlockComment scans a block comment (/* comment */)
 func (l *Lexer) scanBlockComment() Token {
+	return l.scanBlockToken(TokenComment)
+}
+
+func (l *Lexer) scanBlockToken(tokenType TokenType) Token {
 	l.advance() // consume /
 	l.advance() // consume *
 
@@ -437,7 +544,7 @@ func (l *Lexer) scanBlockComment() Token {
 		l.advance()
 	}
 
-	return l.emit(TokenComment)
+	return l.emit(tokenType)
 }
 
 // scanIdentifier scans an identifier or keyword

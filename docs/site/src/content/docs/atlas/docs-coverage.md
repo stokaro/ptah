@@ -422,9 +422,9 @@ Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver
 
 **Ptah documentation.** [CI](../../testing/ci/), [Comparison](../comparison/)
 
-**Implementation status.** Partial. The local assertion half is implemented in both spellings: the native `-- +ptah check` directive and the Atlas txtar `checks.sql` section, which is enforced as a pre-migration gate rather than executed as plain SQL. The Atlas Cloud approval-policy half stays out of scope.
+**Implementation status.** Partial. The local assertion half is implemented in both spellings: the native `-- +ptah check` directive and Atlas txtar `checks.sql` / `checks/*.sql` sections, including file-level `atlas:assert oneof`. They are enforced as pre-migration gates rather than executed as plain SQL. The Atlas Cloud approval-policy half stays out of scope.
 
-**Conformance status.** Measured against a licensed Atlas build (v1.2.4): a failing `checks.sql` assertion aborts the apply before any body statement on both binaries, and no revision row is recorded.
+**Conformance status.** Measured against a licensed Atlas build (v1.2.4): a failing txtar assertion aborts the apply before any body statement on both binaries, and no revision row is recorded. Ptah also covers Atlas's documented named check files and one-of grouping.
 
 **Follow-up.** [`stokaro/ptah#956`](https://github.com/stokaro/ptah/issues/956) closed the txtar `checks.sql` gap; no Atlas OSS issue unless a further Open check surface is identified.
 

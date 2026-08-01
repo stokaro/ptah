@@ -2,10 +2,13 @@ package migrator
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/lexer"
 )
@@ -35,6 +38,19 @@ type Check struct {
 	OnFail OnFail
 }
 
+type checkGroupMode uint8
+
+const (
+	checkGroupAll checkGroupMode = iota
+	checkGroupOneOf
+)
+
+type checkGroup struct {
+	name   string
+	checks []Check
+	mode   checkGroupMode
+}
+
 // ParseChecks extracts ordered `-- +ptah check` assertion directives from
 // migration SQL, in file order. Unlike ParseFileDirectives — which merges every
 // directive into one file-scoped map (later keys win) — checks are an ordered
@@ -47,10 +63,12 @@ type Check struct {
 // parsed with a quote-aware tokenizer so an assert predicate can contain spaces
 // and '=' inside a double-quoted value. A malformed check line is a hard error,
 // so a bad directive fails the migration cleanly rather than being silently
-// skipped.
-func ParseChecks(sql string) ([]Check, error) {
+// skipped. dialect selects the target engine's string, identifier, comment, and
+// statement-boundary rules; pass an empty string only when no target dialect is
+// available.
+func ParseChecks(source, dialect string) ([]Check, error) {
 	var checks []Check
-	lexr := lexer.NewLexer(sql)
+	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
 	for {
 		tok := lexr.NextToken()
 		if tok.Type == lexer.TokenEOF {
@@ -63,7 +81,7 @@ func ParseChecks(sql string) ([]Check, error) {
 		if !ok {
 			continue // block comment: not a directive carrier
 		}
-		if !commentStartsLine(sql, tok.Start) {
+		if !commentStartsLine(source, tok.Start) {
 			continue // trailing comment: not a directive
 		}
 		body, ok = strings.CutPrefix(strings.TrimSpace(body), directivePrefix)
@@ -74,13 +92,36 @@ func ParseChecks(sql string) ([]Check, error) {
 		if !ok || (args != "" && args[0] != ' ' && args[0] != '\t') {
 			continue // a +ptah directive, but not a check
 		}
-		check, err := parseCheckArgs(strings.TrimSpace(args))
+		check, err := parseCheckArgs(strings.TrimSpace(args), dialect)
 		if err != nil {
 			return nil, err
 		}
 		checks = append(checks, check)
 	}
 	return checks, nil
+}
+
+func checkLexerOptions(dialect string) lexer.Options {
+	normalized := platform.NormalizeDialect(dialect)
+	options := lexer.Options{StandardStrings: true}
+	switch normalized {
+	case platform.MySQL:
+		options.BackslashEscapes = true
+		options.RequireWhitespaceAfterDashDash = true
+		options.ExecutableComments = lexer.ExecutableCommentsMySQL
+	case platform.MariaDB:
+		options.BackslashEscapes = true
+		options.RequireWhitespaceAfterDashDash = true
+		options.ExecutableComments = lexer.ExecutableCommentsMariaDB
+	case platform.ClickHouse:
+		options.BackslashEscapes = true
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		options.PostgreSQLEscapeStrings = true
+	case platform.SQLServer:
+		options.BracketIdentifiers = true
+		options.DisableHashComments = true
+	}
+	return options
 }
 
 // isCheckDirectiveBody reports whether a +ptah directive body (the text after
@@ -91,7 +132,7 @@ func isCheckDirectiveBody(body string) bool {
 	return ok && (after == "" || after[0] == ' ' || after[0] == '\t')
 }
 
-func parseCheckArgs(args string) (Check, error) {
+func parseCheckArgs(args, dialect string) (Check, error) {
 	tokens, err := tokenizeCheckArgs(args)
 	if err != nil {
 		return Check{}, err
@@ -128,7 +169,7 @@ func parseCheckArgs(args string) (Check, error) {
 	if check.OnFail != OnFailAbort {
 		return Check{}, fmt.Errorf("unsupported +ptah check on_fail=%q (only abort is supported)", check.OnFail)
 	}
-	if statements := SplitSQLStatements(check.Assert); len(statements) > 1 {
+	if statements := splitSQLStatementsForDialect(check.Assert, dialect); len(statements) > 1 {
 		return Check{}, fmt.Errorf("+ptah check assert must be a single statement, got %d", len(statements))
 	}
 	// Drop any trailing statement terminator(s) and whitespace so drivers that
@@ -167,22 +208,327 @@ func (e *CheckFailedError) Unwrap() error {
 	return e.Err
 }
 
-// runChecks executes each check's assert predicate against conn in file order
-// and returns a *CheckFailedError on the first query error or falsy result.
-// Checks are read-only assertions on the pre-migration state; on the
-// transactional apply paths conn is the migration's transaction connection, so
-// a failure rolls back with nothing applied.
-func runChecks(ctx context.Context, conn *dbschema.DatabaseConnection, version int64, checks []Check) error {
-	for _, check := range checks {
-		var result any
-		if err := conn.QueryRowContext(ctx, check.Assert).Scan(&result); err != nil {
+// CheckGroupFailedError reports an Atlas oneof check file in which no assertion
+// returned a truthy result, including an empty group. Individual assertion
+// execution errors and invalid result shapes remain [CheckFailedError] values
+// because they identify the exact SQL statement that made the group unsafe to
+// accept.
+type CheckGroupFailedError struct {
+	Version    int64
+	Name       string
+	Assertions int
+}
+
+func (e *CheckGroupFailedError) Error() string {
+	return fmt.Sprintf(
+		"pre-migration check group %s for migration %d was not satisfied: none of %d assertions passed",
+		e.Name,
+		e.Version,
+		e.Assertions,
+	)
+}
+
+// runCheckGroups executes pre-migration check groups in archive order. Normal
+// groups require every assertion to pass; Atlas files marked `atlas:assert
+// oneof` require at least one. Query errors and invalid result shapes always
+// fail closed, including inside oneof groups.
+func runCheckGroups(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	dialect string,
+	serverVersion string,
+	version int64,
+	groups []checkGroup,
+) error {
+	if len(groups) == 0 {
+		return nil
+	}
+
+	return conn.WithIsolatedQuerySession(ctx, checkTransactionOptions(dialect), func(queryer dbschema.IsolatedQueryer) error {
+		for _, group := range groups {
+			if err := runCheckGroup(ctx, queryer, dialect, serverVersion, version, group); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func runCheckGroup(
+	ctx context.Context,
+	queryer dbschema.IsolatedQueryer,
+	dialect string,
+	serverVersion string,
+	version int64,
+	group checkGroup,
+) error {
+	onePassed := false
+	for _, check := range group.checks {
+		result, err := runCheckAssertion(ctx, queryer, dialect, serverVersion, check.Assert)
+		if err != nil {
 			return &CheckFailedError{Version: version, Name: check.Name, Assert: check.Assert, Err: err}
 		}
-		if !assertionPassed(result) {
+		if assertionPassed(result) {
+			onePassed = true
+			continue
+		}
+		if group.mode == checkGroupAll {
 			return &CheckFailedError{Version: version, Name: check.Name, Assert: check.Assert}
 		}
 	}
+	if group.mode == checkGroupOneOf {
+		if onePassed {
+			return nil
+		}
+		return &CheckGroupFailedError{
+			Version:    version,
+			Name:       group.name,
+			Assertions: len(group.checks),
+		}
+	}
 	return nil
+}
+
+func atlasCheckFileMode(source, dialect string) checkGroupMode {
+	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
+	for {
+		tok := lexr.NextToken()
+		switch tok.Type {
+		case lexer.TokenEOF:
+			return checkGroupAll
+		case lexer.TokenWhitespace:
+			continue
+		case lexer.TokenComment:
+			if strings.EqualFold(strings.TrimSpace(tok.Value), "-- atlas:assert oneof") {
+				return checkGroupOneOf
+			}
+		default:
+			return checkGroupAll
+		}
+	}
+}
+
+func checkTransactionOptions(dialect string) *sql.TxOptions {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.MySQL, platform.MariaDB:
+		return &sql.TxOptions{ReadOnly: true}
+	default:
+		return new(sql.TxOptions)
+	}
+}
+
+func runCheckAssertion(
+	ctx context.Context,
+	queryer dbschema.IsolatedQueryer,
+	dialect string,
+	serverVersion string,
+	assertion string,
+) (any, error) {
+	if err := validateCheckAssertion(assertion, dialect, serverVersion); err != nil {
+		return nil, err
+	}
+	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
+		containsIdentifierSequence(assertion, dialect, "NEXT", "VALUE", "FOR") {
+		return nil, fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
+	}
+
+	rows, err := queryer.QueryContext(ctx, assertion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	if len(columns) != 1 {
+		return nil, fmt.Errorf("check assertion must return exactly one column, got %d", len(columns))
+	}
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("check assertion must return exactly one row, got 0")
+	}
+
+	var result any
+	if err := rows.Scan(&result); err != nil {
+		return nil, err
+	}
+	if rows.Next() {
+		return nil, fmt.Errorf("check assertion must return exactly one row, got more than 1")
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func validateCheckAssertion(assertion, dialect, serverVersion string) error {
+	effectiveSQL, err := effectiveCheckSQL(assertion, dialect, serverVersion)
+	if err != nil {
+		return err
+	}
+	statements := sqlutil.SplitSQLStatementsForDialect(effectiveSQL, dialect)
+	if len(statements) != 1 {
+		return fmt.Errorf("check assertion must be one read-only SELECT statement, got %d statements", len(statements))
+	}
+	tok, found := firstCheckToken(statements[0], dialect)
+	if !found || !tok.MatchIdentifierValue("SELECT") {
+		return fmt.Errorf("check assertion must be a read-only SELECT statement")
+	}
+	return nil
+}
+
+func effectiveCheckSQL(source, dialect, serverVersion string) (string, error) {
+	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
+	var effective strings.Builder
+	for {
+		tok := lexr.NextToken()
+		switch tok.Type {
+		case lexer.TokenEOF:
+			return effective.String(), nil
+		case lexer.TokenComment:
+			effective.WriteByte(' ')
+			continue
+		case lexer.TokenUnknown:
+			comment, ok := parseExecutableComment(tok.Value)
+			if !ok {
+				return "", fmt.Errorf("check assertion contains an unrecognized SQL token")
+			}
+			applies, err := executableCommentApplies(comment, serverVersion)
+			if err != nil {
+				return "", err
+			}
+			if !applies {
+				effective.WriteByte(' ')
+				continue
+			}
+			expanded, err := effectiveCheckSQL(comment.body, dialect, serverVersion)
+			if err != nil {
+				return "", err
+			}
+			effective.WriteByte(' ')
+			effective.WriteString(expanded)
+			effective.WriteByte(' ')
+		default:
+			effective.WriteString(tok.Value)
+		}
+	}
+}
+
+type executableComment struct {
+	body        string
+	guard       int
+	guardDigits int
+}
+
+func parseExecutableComment(source string) (executableComment, bool) {
+	prefixLength := 0
+	switch {
+	case strings.HasPrefix(source, "/*!"):
+		prefixLength = len("/*!")
+	case len(source) >= 4 && strings.EqualFold(source[:4], "/*M!"):
+		prefixLength = len("/*M!")
+	default:
+		return executableComment{}, false
+	}
+	rawBody := source[prefixLength:]
+	comment := executableComment{body: rawBody}
+	for len(comment.body) > 0 && comment.body[0] >= '0' && comment.body[0] <= '9' {
+		comment.guard = comment.guard*10 + int(comment.body[0]-'0')
+		comment.body = comment.body[1:]
+		comment.guardDigits++
+	}
+	if comment.guardDigits < 5 {
+		comment.body = rawBody
+		comment.guard = 0
+		comment.guardDigits = 0
+	}
+	comment.body = strings.TrimSuffix(comment.body, "*/")
+	return comment, true
+}
+
+func executableCommentApplies(comment executableComment, serverVersion string) (bool, error) {
+	if comment.guardDigits == 0 {
+		return true, nil
+	}
+	server, ok := mysqlExecutableCommentServerVersion(serverVersion)
+	if !ok {
+		return false, fmt.Errorf("check assertion cannot evaluate executable-comment guard against server version %q", serverVersion)
+	}
+	return server >= comment.guard, nil
+}
+
+func mysqlExecutableCommentServerVersion(version string) (int, bool) {
+	if strings.Contains(strings.ToLower(version), "mariadb") {
+		version = strings.TrimPrefix(version, "5.5.5-")
+	}
+	parts := [3]int{}
+	part := 0
+	found := false
+	for i := 0; i < len(version) && part < len(parts); i++ {
+		ch := version[i]
+		switch {
+		case ch >= '0' && ch <= '9':
+			found = true
+			parts[part] = parts[part]*10 + int(ch-'0')
+		case found && ch == '.':
+			part++
+		case found:
+			return parts[0]*10000 + parts[1]*100 + parts[2], true
+		}
+	}
+	if !found {
+		return 0, false
+	}
+	return parts[0]*10000 + parts[1]*100 + parts[2], true
+}
+
+func firstCheckToken(source, dialect string) (lexer.Token, bool) {
+	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
+	for {
+		tok := lexr.NextToken()
+		switch tok.Type {
+		case lexer.TokenEOF:
+			return lexer.Token{}, false
+		case lexer.TokenWhitespace, lexer.TokenComment:
+			continue
+		default:
+			return tok, true
+		}
+	}
+}
+
+func containsIdentifierSequence(source, dialect string, sequence ...string) bool {
+	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
+	matched := 0
+	for {
+		tok := lexr.NextToken()
+		switch tok.Type {
+		case lexer.TokenEOF:
+			return false
+		case lexer.TokenWhitespace, lexer.TokenComment:
+			continue
+		case lexer.TokenIdentifier:
+			if strings.EqualFold(tok.Value, sequence[matched]) {
+				matched++
+				if matched == len(sequence) {
+					return true
+				}
+				continue
+			}
+			if strings.EqualFold(tok.Value, sequence[0]) {
+				matched = 1
+			} else {
+				matched = 0
+			}
+		default:
+			matched = 0
+		}
+	}
 }
 
 // assertionPassed interprets a check's scalar result as a truthy pass. Booleans
@@ -196,7 +542,27 @@ func assertionPassed(value any) bool {
 		return false
 	case bool:
 		return v
+	case int:
+		return v != 0
+	case int8:
+		return v != 0
+	case int16:
+		return v != 0
+	case int32:
+		return v != 0
 	case int64:
+		return v != 0
+	case uint:
+		return v != 0
+	case uint8:
+		return v != 0
+	case uint16:
+		return v != 0
+	case uint32:
+		return v != 0
+	case uint64:
+		return v != 0
+	case float32:
 		return v != 0
 	case float64:
 		return v != 0

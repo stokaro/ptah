@@ -9,3 +9,4 @@
 # set changes.
 v0.1.1 github.com/stokaro/ptah/migration/generator
 v0.1.2 github.com/stokaro/ptah/migration/generator
+v0.1.2 github.com/stokaro/ptah/migration/migrator

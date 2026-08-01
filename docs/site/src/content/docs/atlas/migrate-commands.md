@@ -37,12 +37,27 @@ explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/
 
 ## Worked example: an Atlas-format directory
 
-Atlas-style migration files can include `migration.sql`, `down.sql`, and
-`checks.sql` sections inside txtar archives. Ptah executes `migration.sql` on
-apply and `down.sql` on rollback, enforces `checks.sql` as a pre-migration
-gate (each statement must return a truthy scalar or the apply aborts before
-any body statement, matching the licensed Atlas build), and ignores unrelated
-embedded files.
+Atlas-style migration files can include `migration.sql`, `down.sql`, the
+default `checks.sql`, and ordered `checks/*.sql` sections inside txtar archives.
+Ptah executes `migration.sql` on apply and `down.sql` on rollback, and enforces
+every check file as a pre-migration gate. Each assertion must be a top-level
+`SELECT` returning exactly one column and one row with a truthy scalar. All
+assertions in a file must pass unless a file-level `-- atlas:assert oneof`
+requires at least one; an empty `oneof` file fails closed.
+
+Dialect-aware splitting preserves PostgreSQL escape strings and MySQL/MariaDB
+semantic comments instead of rewriting assertion SQL. Checks use a dedicated
+physical session that Ptah discards afterward. Transaction-capable drivers roll
+back, while ClickHouse uses the disposable session directly because its driver
+does not implement transactions.
+
+For MySQL/MariaDB executable comments, Ptah validates the effective SQL and
+evaluates version guards against the connected server. Numeric prefixes shorter
+than five digits remain part of the executable SQL body. Hidden statement
+delimiters and non-`SELECT` effective bodies fail closed before query execution.
+
+A failure aborts before any body statement, matching the licensed Atlas build's
+enforcement point. Ptah ignores unrelated embedded files.
 
 Create an Atlas-style migration:
 

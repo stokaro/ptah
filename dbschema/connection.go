@@ -70,7 +70,8 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
-	if dialectProtocol == "sqlite" && isSQLiteMemoryDSN(connectionString) {
+	inMemorySQLite := dialectProtocol == "sqlite" && isSQLiteMemoryDSN(connectionString)
+	if inMemorySQLite {
 		db.SetMaxOpenConns(1)
 	}
 
@@ -155,13 +156,14 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 
 	runner := sqlrunner.Runner(db)
 	return &DatabaseConnection{
-		db:        db,
-		runner:    runner,
-		info:      info,
-		reader:    newReader(runner),
-		writer:    newWriter(runner, nil),
-		newReader: newReader,
-		newWriter: newWriter,
+		db:             db,
+		runner:         runner,
+		info:           info,
+		reader:         newReader(runner),
+		writer:         newWriter(runner, nil),
+		newReader:      newReader,
+		newWriter:      newWriter,
+		inMemorySQLite: inMemorySQLite,
 	}, nil
 }
 
@@ -184,15 +186,16 @@ func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName str
 
 // DatabaseConnection represents a database connection with metadata
 type DatabaseConnection struct {
-	db        *sql.DB
-	runner    sqlrunner.Runner
-	info      types.DBInfo
-	reader    types.SchemaReader
-	writer    types.SchemaWriter
-	executor  types.SchemaExecutor
-	newReader schemaReaderFactory
-	newWriter schemaWriterFactory
-	pinned    bool
+	db             *sql.DB
+	runner         sqlrunner.Runner
+	info           types.DBInfo
+	reader         types.SchemaReader
+	writer         types.SchemaWriter
+	executor       types.SchemaExecutor
+	newReader      schemaReaderFactory
+	newWriter      schemaWriterFactory
+	pinned         bool
+	inMemorySQLite bool
 	// session is the pinned physical session set by WithSession. Connection
 	// state that only applies per physical connection — see
 	// WithUntrustedSQLSession — needs it.
@@ -201,6 +204,30 @@ type DatabaseConnection struct {
 
 type schemaReaderFactory func(sqlrunner.Runner) types.SchemaReader
 type schemaWriterFactory func(sqlrunner.Runner, *sql.Conn) types.SchemaWriter
+
+// IsolatedQueryer is the query-only surface exposed inside an isolated physical
+// database session. It deliberately omits transaction control and schema
+// writers so the callback cannot commit or acquire an auxiliary connection
+// through Ptah.
+type IsolatedQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+type queryContextRunner interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+type isolatedQueryer struct {
+	runner queryContextRunner
+}
+
+func (q isolatedQueryer) QueryContext(
+	ctx context.Context,
+	query string,
+	args ...any,
+) (*sql.Rows, error) {
+	return q.runner.QueryContext(ctx, query, args...)
+}
 
 type schemaScopedReader interface {
 	SetSchemas([]string)
@@ -263,6 +290,60 @@ func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *Datab
 	return &cloned
 }
 
+// WithIsolatedQuerySession runs use with a query-only handle on one physical
+// database session. On transaction-capable drivers the queries run in a
+// transaction that is always rolled back; on ClickHouse, whose database/sql
+// driver does not implement transactions, they run directly on the disposable
+// session. The physical session is discarded afterward so session-level state
+// cannot leak back into the pool. In-memory SQLite is the sole exception: its
+// only connection owns the database lifetime, so Ptah rolls back and returns it
+// to the pool. The callback cannot control a transaction or reach Ptah schema
+// writers. opts is passed to database/sql unchanged when a transaction is
+// available. This method provides lifecycle isolation, not SQL read-only
+// validation: callers must restrict statements themselves.
+func (dc *DatabaseConnection) WithIsolatedQuerySession(
+	ctx context.Context,
+	opts *sql.TxOptions,
+	use func(IsolatedQueryer) error,
+) (resultErr error) {
+	if dc == nil || dc.db == nil {
+		return fmt.Errorf("isolated query session requires an open database connection")
+	}
+	if use == nil {
+		return fmt.Errorf("isolated query session callback is nil")
+	}
+	if dc.pinned {
+		return fmt.Errorf("database connection is already pinned to a session")
+	}
+
+	session, err := dc.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("pin isolated query session: %w", err)
+	}
+	defer func() {
+		if dc.inMemorySQLite {
+			resultErr = errors.Join(resultErr, closeSQLConnection(session, "in-memory SQLite query session"))
+			return
+		}
+		resultErr = errors.Join(resultErr, discardSQLConnection(session, "isolated query session"))
+	}()
+	if platform.NormalizeDialect(dc.info.Dialect) == platform.ClickHouse {
+		return use(isolatedQueryer{runner: session})
+	}
+
+	tx, err := session.BeginTx(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("begin isolated query transaction: %w", err)
+	}
+	defer func() {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			resultErr = errors.Join(resultErr, fmt.Errorf("roll back transaction: %w", rollbackErr))
+		}
+	}()
+
+	return use(isolatedQueryer{runner: tx})
+}
+
 // WithSession pins one physical database session for the callback and rebuilds
 // the dialect reader and writer on that same session. The scoped connection
 // does not own the pool and must not escape the callback. The physical
@@ -290,15 +371,7 @@ func (dc *DatabaseConnection) WithSession(
 		return fmt.Errorf("pin database session: %w", err)
 	}
 	defer func() {
-		discardErr := session.Raw(func(any) error {
-			return driver.ErrBadConn
-		})
-		if discardErr != nil && !errors.Is(discardErr, driver.ErrBadConn) {
-			resultErr = errors.Join(resultErr, fmt.Errorf("discard pinned database session: %w", discardErr))
-		}
-		if closeErr := session.Close(); closeErr != nil && !errors.Is(closeErr, sql.ErrConnDone) {
-			resultErr = errors.Join(resultErr, fmt.Errorf("close pinned database session: %w", closeErr))
-		}
+		resultErr = errors.Join(resultErr, discardSQLConnection(session, "pinned database session"))
 	}()
 
 	runner := sqlrunner.NewConn(ctx, session)
@@ -313,6 +386,25 @@ func (dc *DatabaseConnection) WithSession(
 		scoped.writer.SetDryRun(true)
 	}
 	return use(&scoped)
+}
+
+func discardSQLConnection(session *sql.Conn, label string) error {
+	var resultErr error
+	discardErr := session.Raw(func(any) error {
+		return driver.ErrBadConn
+	})
+	if discardErr != nil && !errors.Is(discardErr, driver.ErrBadConn) {
+		resultErr = errors.Join(resultErr, fmt.Errorf("discard %s: %w", label, discardErr))
+	}
+	resultErr = errors.Join(resultErr, closeSQLConnection(session, label))
+	return resultErr
+}
+
+func closeSQLConnection(session *sql.Conn, label string) error {
+	if err := session.Close(); err != nil && !errors.Is(err, sql.ErrConnDone) {
+		return fmt.Errorf("close %s: %w", label, err)
+	}
+	return nil
 }
 
 // Query executes a query and returns the result rows

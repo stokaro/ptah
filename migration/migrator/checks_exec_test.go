@@ -112,36 +112,56 @@ func TestMigrateUp_MultiColumnCheckResultFailsClosed(t *testing.T) {
 }
 
 // multiRowCheckSQL builds a migration guarded by a check whose predicate
-// returns two rows, so the engine's first-row reading is what decides.
+// returns two rows, so the result must be rejected regardless of row order.
 func multiRowCheckSQL(assert string) string {
 	return `-- +ptah check name="multi_row" assert="` + assert + `"` + "\nDROP TABLE users;\n"
 }
 
-// TestMigrateUp_MultiRowCheckFalsyFirstRowBlocks documents the deliberate
-// reading of a multi-row assertion: the predicate is contracted to return a
-// single scalar, and the engine judges the first row rather than erroring. This
-// direction is what keeps a multi-row predicate from passing by accident.
-func TestMigrateUp_MultiRowCheckFalsyFirstRowBlocks(t *testing.T) {
+// TestMigrateUp_MultiRowCheckFalsyFirstRowFailsClosed verifies that a check
+// cannot hide an invalid result shape behind a falsy first row.
+func TestMigrateUp_MultiRowCheckFalsyFirstRowFailsClosed(t *testing.T) {
 	c := qt.New(t)
 	conn, m := newSQLiteCheckMigratorWithSQL(t, 0, multiRowCheckSQL("SELECT 0 UNION ALL SELECT 1"))
 
 	err := m.MigrateUp(context.Background())
 
-	c.Assert(err, qt.IsNotNil)
+	c.Assert(err, qt.ErrorMatches, `.*check assertion must return exactly one row, got more than 1.*`)
 	c.Assert(usersTableExists(t, conn), qt.IsTrue) // nothing applied
 }
 
-// TestMigrateUp_MultiRowCheckTruthyFirstRowPasses is the same contract in the
-// passing direction: a truthy first row admits the migration even though a
-// later row is falsy.
-func TestMigrateUp_MultiRowCheckTruthyFirstRowPasses(t *testing.T) {
+// TestMigrateUp_MultiRowCheckTruthyFirstRowFailsClosed verifies that a truthy
+// first row cannot conceal later rows.
+func TestMigrateUp_MultiRowCheckTruthyFirstRowFailsClosed(t *testing.T) {
 	c := qt.New(t)
 	conn, m := newSQLiteCheckMigratorWithSQL(t, 0, multiRowCheckSQL("SELECT 1 UNION ALL SELECT 0"))
 
 	err := m.MigrateUp(context.Background())
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(usersTableExists(t, conn), qt.IsFalse)
+	c.Assert(err, qt.ErrorMatches, `.*check assertion must return exactly one row, got more than 1.*`)
+	c.Assert(usersTableExists(t, conn), qt.IsTrue)
+}
+
+func TestMigrateUp_MutatingCheckFailsClosedWithoutDeletingData(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteCheckMigratorWithSQL(t, 1, multiRowCheckSQL("DELETE FROM users RETURNING 1"))
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.ErrorMatches, `.*check assertion must be a read-only SELECT statement.*`)
+	var count int
+	c.Assert(conn.QueryRow("SELECT count(*) FROM users").Scan(&count), qt.IsNil)
+	c.Assert(count, qt.Equals, 1)
+	c.Assert(usersTableExists(t, conn), qt.IsTrue)
+}
+
+func TestMigrateUp_ZeroRowCheckFailsClosed(t *testing.T) {
+	c := qt.New(t)
+	conn, m := newSQLiteCheckMigratorWithSQL(t, 0, multiRowCheckSQL("SELECT 1 WHERE 0"))
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.ErrorMatches, `.*check assertion must return exactly one row, got 0.*`)
+	c.Assert(usersTableExists(t, conn), qt.IsTrue)
 }
 
 func TestMigrateUp_PassingCheckProceeds(t *testing.T) {

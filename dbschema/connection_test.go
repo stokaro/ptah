@@ -2,6 +2,8 @@ package dbschema_test
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -106,6 +108,80 @@ func TestDatabaseConnectionWithSession_DiscardsSessionState(t *testing.T) {
 	).Scan(&count)
 	c.Assert(err, qt.IsNil)
 	c.Assert(count, qt.Equals, 0)
+}
+
+func TestDatabaseConnectionWithIsolatedQuerySession_RollsBackWrites(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "rollback.db"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	_, err = conn.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+	_, err = conn.Exec("INSERT INTO users (id) VALUES (1)")
+	c.Assert(err, qt.IsNil)
+
+	err = conn.WithIsolatedQuerySession(t.Context(), new(sql.TxOptions), func(queryer dbschema.IsolatedQueryer) error {
+		attachmentRows, queryErr := queryer.QueryContext(t.Context(), "ATTACH DATABASE ':memory:' AS aux")
+		c.Assert(queryErr, qt.IsNil)
+		c.Assert(attachmentRows.Close(), qt.IsNil)
+
+		rows, queryErr := queryer.QueryContext(t.Context(), "DELETE FROM users RETURNING id")
+		c.Assert(queryErr, qt.IsNil)
+		defer rows.Close()
+		c.Assert(rows.Next(), qt.IsTrue)
+		var id int
+		c.Assert(rows.Scan(&id), qt.IsNil)
+		c.Assert(id, qt.Equals, 1)
+		c.Assert(rows.Next(), qt.IsFalse)
+		c.Assert(rows.Err(), qt.IsNil)
+		return nil
+	})
+	c.Assert(err, qt.IsNil)
+
+	var count int
+	c.Assert(conn.QueryRow("SELECT count(*) FROM users").Scan(&count), qt.IsNil)
+	c.Assert(count, qt.Equals, 1)
+	c.Assert(
+		conn.QueryRow("SELECT count(*) FROM pragma_database_list WHERE name = 'aux'").Scan(&count),
+		qt.IsNil,
+	)
+	c.Assert(count, qt.Equals, 0)
+}
+
+func TestDatabaseConnectionWithIsolatedQuerySession_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("nil receiver", func(c *qt.C) {
+		var conn *dbschema.DatabaseConnection
+		err := conn.WithIsolatedQuerySession(t.Context(), nil, func(dbschema.IsolatedQueryer) error {
+			return nil
+		})
+		c.Assert(err, qt.ErrorMatches, "isolated query session requires an open database connection")
+	})
+
+	conn, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "isolated-failures.db"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	c.Run("nil callback", func(c *qt.C) {
+		err := conn.WithIsolatedQuerySession(t.Context(), nil, nil)
+		c.Assert(err, qt.ErrorMatches, "isolated query session callback is nil")
+	})
+
+	c.Run("callback error", func(c *qt.C) {
+		callbackErr := errors.New("callback failed")
+		err := conn.WithIsolatedQuerySession(t.Context(), nil, func(dbschema.IsolatedQueryer) error {
+			return callbackErr
+		})
+		c.Assert(err, qt.ErrorIs, callbackErr)
+	})
 }
 
 func TestConnectToDatabase_InvalidURL(t *testing.T) {

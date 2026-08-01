@@ -686,7 +686,7 @@ func TestNewFSMigrationProvider_CheckDirectiveMigrationLoads(t *testing.T) {
 	c.Assert(migrations, qt.HasLen, 1)
 	// The check survives loading verbatim so it executes on apply.
 	c.Assert(migrations[0].UpSQL, qt.Contains, checkDirectiveLine)
-	checks, err := migrator.ParseChecks(migrations[0].UpSQL)
+	checks, err := migrator.ParseChecks(migrations[0].UpSQL, "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(checks, qt.HasLen, 1)
 	c.Assert(checks[0].Name, qt.Equals, "users_empty")
@@ -713,7 +713,7 @@ func TestNewFSMigrationProvider_CheckAndTimeoutDirectivesInOneFile(t *testing.T)
 	c.Assert(migrations[0].UpTimeouts.LockTimeout, qt.Equals, 3*time.Second)
 	c.Assert(migrations[0].UpTimeouts.HasStatementTimeout, qt.IsTrue)
 	c.Assert(migrations[0].UpTimeouts.StatementTimeout, qt.Equals, 30*time.Second)
-	checks, err := migrator.ParseChecks(migrations[0].UpSQL)
+	checks, err := migrator.ParseChecks(migrations[0].UpSQL, "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(checks, qt.HasLen, 1)
 }

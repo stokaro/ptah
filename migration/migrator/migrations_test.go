@@ -352,66 +352,6 @@ INSERT INTO users (id, name) VALUES (1, 'Alice');
 	c.Assert(parsed.downSQL, qt.Equals, "")
 }
 
-func TestParseAtlasTxtarSQLCapturesChecksSection(t *testing.T) {
-	c := qt.New(t)
-
-	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
-
--- checks.sql --
-SELECT NOT EXISTS (SELECT * FROM users);
-
--- migration.sql --
-ALTER TABLE users ADD COLUMN email TEXT;
-`)
-	c.Assert(err, qt.IsNil)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(parsed.checksSQL, qt.Contains, "SELECT NOT EXISTS")
-	c.Assert(parsed.migrationSQL, qt.Contains, "ALTER TABLE users")
-}
-
-func TestParseAtlasTxtarSQLRejectsDuplicateChecksSection(t *testing.T) {
-	c := qt.New(t)
-
-	_, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
-
--- checks.sql --
-SELECT 1;
-
--- checks.sql --
-SELECT 2;
-
--- migration.sql --
-SELECT 3;
-`)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(err, qt.ErrorMatches, `invalid Atlas txtar migration 20240305171146_seed.sql: duplicate checks.sql section`)
-}
-
-func TestParseAtlasTxtarChecks(t *testing.T) {
-	c := qt.New(t)
-
-	checks := parseAtlasTxtarChecks(`-- users must be empty
-SELECT NOT EXISTS (SELECT * FROM users);
-SELECT count(*) = 0 FROM posts;
-`)
-
-	c.Assert(checks, qt.HasLen, 2)
-	c.Assert(checks[0].Name, qt.Equals, "checks.sql#1")
-	// Comments are stripped and the trailing terminator is dropped so drivers
-	// that reject a trailing ';' on a prepared query accept the predicate.
-	c.Assert(checks[0].Assert, qt.Equals, "SELECT NOT EXISTS (SELECT * FROM users)")
-	c.Assert(checks[0].OnFail, qt.Equals, OnFailAbort)
-	c.Assert(checks[1].Name, qt.Equals, "checks.sql#2")
-	c.Assert(checks[1].Assert, qt.Equals, "SELECT count(*) = 0 FROM posts")
-}
-
-func TestParseAtlasTxtarChecksEmptySection(t *testing.T) {
-	c := qt.New(t)
-
-	c.Assert(parseAtlasTxtarChecks(""), qt.HasLen, 0)
-	c.Assert(parseAtlasTxtarChecks("-- comments only\n"), qt.HasLen, 0)
-}
-
 func TestParseAtlasTxtarSQLRequiresMigrationSection(t *testing.T) {
 	c := qt.New(t)
 
