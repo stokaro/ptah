@@ -49,7 +49,8 @@ func NewGenerateCommand() *cobra.Command {
 By default, this command scans the directory recursively for Go files with migrator directives.
 When --schema-file is set, it reads a language-agnostic YAML schema, HCL
 schema, or SQL schema file instead. An external program configured with
---schema-cmd or ptah.yaml external_schema can provide the desired schema too.`,
+--schema-cmd, ptah.yaml external_schema, or an atlas.hcl data.external_schema
+source can provide the desired schema too.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return generateCommand(cmd, &opts)
 		},

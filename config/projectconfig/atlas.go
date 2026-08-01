@@ -105,7 +105,7 @@ func ParseAtlasFSWithOptions(
 		return Config{}, fmt.Errorf("parse atlas project config: unsupported body type %T", file.Body)
 	}
 
-	p, err := newAtlasParser(fsys, opts.Vars)
+	p, err := newAtlasParser(fsys, opts.Vars, filename)
 	if err != nil {
 		return Config{}, err
 	}
@@ -115,9 +115,16 @@ func ParseAtlasFSWithOptions(
 type atlasParser struct {
 	ctx         *hcl.EvalContext
 	varOverride map[string]cty.Value
+	// baseDir is the directory that contains the parsed atlas.hcl file, as
+	// spelled by the caller. Relative data.external_schema working_dir values
+	// resolve against it so the configured program runs where the config file
+	// lives, matching how other atlas.hcl relative paths behave.
+	baseDir string
+	// externalSchemas holds the declared data.external_schema sources by name.
+	externalSchemas map[string]externalSchemaDataSource
 }
 
-func newAtlasParser(fsys fs.FS, rawVars []string) (atlasParser, error) {
+func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser, error) {
 	overrides, err := parseAtlasVarOverrides(rawVars)
 	if err != nil {
 		return atlasParser{}, err
@@ -133,7 +140,9 @@ func newAtlasParser(fsys fs.FS, rawVars []string) (atlasParser, error) {
 				"jsonencode": stdlib.JSONEncodeFunc,
 			},
 		},
-		varOverride: overrides,
+		varOverride:     overrides,
+		baseDir:         filepath.Dir(filename),
+		externalSchemas: map[string]externalSchemaDataSource{},
 	}, nil
 }
 
@@ -171,7 +180,11 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 	if err != nil {
 		return Config{}, err
 	}
-	return Merge(base, cfg), nil
+	merged := Merge(base, cfg)
+	if err := p.resolveExternalSchemaMarkers(&merged); err != nil {
+		return Config{}, err
+	}
+	return merged, nil
 }
 
 type atlasTopBlocks struct {
@@ -1007,29 +1020,281 @@ func (p atlasParser) evaluateLocals(locals map[string]cty.Value, pending hclsynt
 
 func (p atlasParser) configureDataSources(blocks []*hclsyntax.Block) error {
 	hclSchemas := map[string]cty.Value{}
+	externalSchemas := map[string]cty.Value{}
 	for _, block := range blocks {
 		if len(block.Labels) != 2 {
 			return unsupportedBlock(block)
 		}
-		if block.Labels[0] != "hcl_schema" {
+		switch block.Labels[0] {
+		case "hcl_schema":
+			if err := p.configureHCLSchemaDataSource(block, hclSchemas); err != nil {
+				return err
+			}
+		case "external_schema":
+			if err := p.configureExternalSchemaDataSource(block, externalSchemas); err != nil {
+				return err
+			}
+		default:
 			return unsupported(block.Type+"."+block.Labels[0], block.TypeRange)
 		}
-		name := block.Labels[1]
-		if _, ok := hclSchemas[name]; ok {
-			return fmt.Errorf("duplicate atlas.hcl data.hcl_schema %q at %s:%d", name, block.TypeRange.Filename, block.TypeRange.Start.Line)
+	}
+	data := map[string]cty.Value{}
+	if len(hclSchemas) > 0 {
+		data["hcl_schema"] = cty.ObjectVal(hclSchemas)
+	}
+	if len(externalSchemas) > 0 {
+		data["external_schema"] = cty.ObjectVal(externalSchemas)
+	}
+	if len(data) > 0 {
+		p.ctx.Variables["data"] = cty.ObjectVal(data)
+	}
+	return nil
+}
+
+func (p atlasParser) configureHCLSchemaDataSource(
+	block *hclsyntax.Block,
+	values map[string]cty.Value,
+) error {
+	name := block.Labels[1]
+	if _, ok := values[name]; ok {
+		return fmt.Errorf("duplicate atlas.hcl data.hcl_schema %q at %s:%d", name, block.TypeRange.Filename, block.TypeRange.Start.Line)
+	}
+	value, err := p.hclSchemaDataSource(block)
+	if err != nil {
+		return err
+	}
+	values[name] = value
+	return nil
+}
+
+// externalSchemaMarkerScheme prefixes the opaque data.external_schema.<name>.url
+// value. It is a Ptah-internal marker, never a runnable location: the scheme is
+// reserved (Classify and the schema-file loaders reject it), so a
+// user-provided URL cannot collide with a declared data source.
+const externalSchemaMarkerScheme = "ptah-external-schema://"
+
+// externalSchemaMarkerName reports whether value is a data.external_schema
+// marker URL and returns the declared data source name it references.
+func externalSchemaMarkerName(value string) (string, bool) {
+	return strings.CutPrefix(value, externalSchemaMarkerScheme)
+}
+
+// externalSchemaDataSource is one declared data.external_schema source. It
+// mirrors ExternalSchemaConfig: program is an explicit argv list run without a
+// shell, format is the stdout format, working_dir is the program's working
+// directory, and env holds extra KEY=VALUE entries.
+type externalSchemaDataSource struct {
+	program    []string
+	format     string
+	workingDir string
+	env        []string
+}
+
+func (p atlasParser) configureExternalSchemaDataSource(
+	block *hclsyntax.Block,
+	values map[string]cty.Value,
+) error {
+	name := block.Labels[1]
+	if _, ok := p.externalSchemas[name]; ok {
+		return fmt.Errorf("duplicate atlas.hcl data.external_schema %q at %s:%d", name, block.TypeRange.Filename, block.TypeRange.Start.Line)
+	}
+	source, err := p.externalSchemaDataSource(block)
+	if err != nil {
+		return err
+	}
+	p.externalSchemas[name] = source
+	values[name] = cty.ObjectVal(map[string]cty.Value{
+		"url": cty.StringVal(externalSchemaMarkerScheme + name),
+	})
+	return nil
+}
+
+func (p atlasParser) externalSchemaDataSource(block *hclsyntax.Block) (externalSchemaDataSource, error) {
+	if len(block.Body.Blocks) > 0 {
+		return externalSchemaDataSource{}, unsupportedBlock(block.Body.Blocks[0])
+	}
+	name := block.Labels[1]
+	source := externalSchemaDataSource{format: "sql"}
+	for attrName, attr := range block.Body.Attributes {
+		if err := p.parseExternalSchemaAttr(name, attrName, attr, &source); err != nil {
+			return externalSchemaDataSource{}, err
 		}
-		value, err := p.hclSchemaDataSource(block)
+	}
+	if len(source.program) == 0 {
+		return externalSchemaDataSource{}, fmt.Errorf(
+			"atlas.hcl data.external_schema %q requires a non-empty program list at %s:%d",
+			name, block.TypeRange.Filename, block.TypeRange.Start.Line,
+		)
+	}
+	return source, nil
+}
+
+func (p atlasParser) parseExternalSchemaAttr(
+	name string,
+	attrName string,
+	attr *hclsyntax.Attribute,
+	source *externalSchemaDataSource,
+) error {
+	switch attrName {
+	case "program":
+		values, err := p.stringListAttr(attrName, attr)
 		if err != nil {
 			return err
 		}
-		hclSchemas[name] = value
+		if len(values) == 0 || strings.TrimSpace(values[0]) == "" {
+			return fmt.Errorf(
+				"atlas.hcl data.external_schema %q requires a non-empty program list at %s:%d",
+				name, attr.NameRange.Filename, attr.NameRange.Start.Line,
+			)
+		}
+		source.program = values
+		return nil
+	case "format":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		return applyExternalSchemaFormat(name, value, attr, source)
+	case "working_dir":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		source.workingDir = value
+		return nil
+	case "env":
+		values, err := p.stringListAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		return applyExternalSchemaEnv(name, values, attr, source)
+	default:
+		return unsupportedAttr(attrName, attr)
 	}
-	if len(hclSchemas) > 0 {
-		p.ctx.Variables["data"] = cty.ObjectVal(map[string]cty.Value{
-			"hcl_schema": cty.ObjectVal(hclSchemas),
-		})
+}
+
+func applyExternalSchemaFormat(
+	name string,
+	value string,
+	attr *hclsyntax.Attribute,
+	source *externalSchemaDataSource,
+) error {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "sql", "hcl", "yaml":
+		source.format = normalized
+		return nil
+	case "yml":
+		source.format = "yaml"
+		return nil
+	default:
+		return fmt.Errorf(
+			"atlas.hcl data.external_schema %q format must be sql, hcl, or yaml, got %q at %s:%d",
+			name, value, attr.NameRange.Filename, attr.NameRange.Start.Line,
+		)
+	}
+}
+
+func applyExternalSchemaEnv(
+	name string,
+	values []string,
+	attr *hclsyntax.Attribute,
+	source *externalSchemaDataSource,
+) error {
+	for _, entry := range values {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return fmt.Errorf(
+				"atlas.hcl data.external_schema %q env entries must be KEY=VALUE, got %q at %s:%d",
+				name, entry, attr.NameRange.Filename, attr.NameRange.Start.Line,
+			)
+		}
+	}
+	source.env = values
+	return nil
+}
+
+// resolveExternalSchemaMarkers translates a data.external_schema marker
+// referenced by the selected env into the merged config's ExternalSchema
+// block. The marker is only valid as the env desired-state source (env src or
+// schema.src); any other reference is rejected. Declared-but-unreferenced data
+// sources are ignored and never executed.
+func (p atlasParser) resolveExternalSchemaMarkers(cfg *Config) error {
+	if err := rejectExternalSchemaMarker(cfg.DatabaseURL, "env url"); err != nil {
+		return err
+	}
+	if err := rejectExternalSchemaMarker(cfg.DevURL, "env dev"); err != nil {
+		return err
+	}
+	if err := rejectExternalSchemaMarker(cfg.Migration.Dir, "env migration.dir"); err != nil {
+		return err
+	}
+	for _, value := range cfg.Exclude {
+		if err := rejectExternalSchemaMarker(value, "env exclude"); err != nil {
+			return err
+		}
+	}
+	return p.consumeExternalSchemaMarker(cfg)
+}
+
+func rejectExternalSchemaMarker(value, location string) error {
+	name, ok := externalSchemaMarkerName(value)
+	if !ok {
+		return nil
+	}
+	return fmt.Errorf(
+		"atlas.hcl data.external_schema.%s.url can only be the env desired-state source (env src or schema.src), not %s",
+		name, location,
+	)
+}
+
+func (p atlasParser) consumeExternalSchemaMarker(cfg *Config) error {
+	for _, value := range cfg.SchemaSources {
+		name, ok := externalSchemaMarkerName(value)
+		if !ok {
+			continue
+		}
+		if len(cfg.SchemaSources) > 1 {
+			return fmt.Errorf("atlas.hcl data.external_schema.%s.url must be the only env src value", name)
+		}
+		source, declared := p.externalSchemas[name]
+		if !declared {
+			return fmt.Errorf("atlas.hcl env src references undeclared data.external_schema %q", name)
+		}
+		p.applyExternalSchemaSource(cfg, source)
+		return nil
 	}
 	return nil
+}
+
+// applyExternalSchemaSource replaces the config's external schema wholesale
+// with the referenced data source and drops the marker from the schema
+// sources, so downstream consumers see the ordinary "external schema
+// configured" state. Every field is marked present, defaults included, so an
+// atlas.hcl data source never mixes with a ptah.yaml external_schema block.
+func (p atlasParser) applyExternalSchemaSource(cfg *Config, source externalSchemaDataSource) {
+	cfg.ExternalSchema = ExternalSchemaConfig{
+		Program:    slices.Clone(source.program),
+		Format:     source.format,
+		WorkingDir: p.resolveExternalSchemaWorkingDir(source.workingDir),
+		Env:        slices.Clone(source.env),
+		Origin:     AtlasFileName,
+	}
+	cfg.presence.mark(fieldExternalSchemaProgram)
+	cfg.presence.mark(fieldExternalSchemaFormat)
+	cfg.presence.mark(fieldExternalSchemaWorkingDir)
+	cfg.presence.mark(fieldExternalSchemaEnv)
+	cfg.SchemaSources = nil
+	cfg.presence.unmark(fieldSchemaSources)
+}
+
+// resolveExternalSchemaWorkingDir resolves a relative working_dir against the
+// atlas.hcl directory, so the program runs where the config file lives no
+// matter which directory the CLI was invoked from.
+func (p atlasParser) resolveExternalSchemaWorkingDir(dir string) string {
+	if dir == "" || filepath.IsAbs(dir) {
+		return dir
+	}
+	return filepath.Join(p.baseDir, dir)
 }
 
 func (p atlasParser) hclSchemaDataSource(block *hclsyntax.Block) (cty.Value, error) {

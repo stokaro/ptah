@@ -709,6 +709,13 @@ func applyAtlasSchemaTestProjectConfig(
 	if atlasFlagValueSet(flags, args, "url") {
 		return args, nil
 	}
+	// The schema test verb consumes a single local schema file as --url; an
+	// external schema program has no file spelling to map onto it.
+	if atlasExternalSchemaConfigured(cfg) {
+		return nil, fmt.Errorf(
+			"atlas schema test does not support atlas.hcl data.external_schema desired state yet; pass --url explicitly",
+		)
+	}
 	sources := cfg.SchemaSourcesValue()
 	if !sources.Present {
 		return args, nil
@@ -724,6 +731,15 @@ func applyAtlasSchemaTestProjectConfig(
 		return nil, fmt.Errorf("atlas.hcl schema.src: %w", err)
 	}
 	return append(args, "--url", urls[0]), nil
+}
+
+// atlasExternalSchemaConfigured reports whether the loaded atlas.hcl env's
+// desired state is a data.external_schema program. The parser consumed the
+// data source marker into ExternalSchema and cleared the schema sources, so
+// commands spell the desired state as env://src and let the source resolver
+// expand (and gate) the program.
+func atlasExternalSchemaConfigured(cfg projectconfig.Config) bool {
+	return len(cfg.ExternalSchema.Program) > 0
 }
 
 func atlasProjectLatest(cfg projectconfig.Config) projectconfig.Value[string] {

@@ -474,6 +474,11 @@ type ExternalSchemaConfig struct {
 	WorkingDir string
 	// Env holds extra "KEY=VALUE" entries passed to the program.
 	Env []string
+	// Origin names the config file that supplied Program: PtahFileName for a
+	// ptah.yaml external_schema block or AtlasFileName for an atlas.hcl
+	// data.external_schema source. Safety-gate errors use it to point the user
+	// at the file that configured the program.
+	Origin string
 }
 
 // ConfigBool preserves whether a boolean project config value was set
@@ -811,6 +816,11 @@ func mergeExternalSchema(
 		overridePresence,
 		resultPresence,
 	)
+	// Origin follows Program: whichever source supplied the program names the
+	// file the safety gate should point at.
+	if overridePresence.has(fieldExternalSchemaProgram) || len(override.Program) > 0 {
+		result.Origin = override.Origin
+	}
 	result.Format = mergeStringValue(
 		base.Format,
 		override.Format,

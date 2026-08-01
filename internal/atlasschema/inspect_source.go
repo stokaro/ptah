@@ -116,6 +116,15 @@ func inspectOnDev(
 		if err != nil {
 			return "", err
 		}
+	case atlassource.KindExternalSchema:
+		state, err := set.Resolve(ctx, atlassource.ResolveOptions{
+			Dialect:     dialect,
+			DialectFlag: "--dev-url",
+		})
+		if err != nil {
+			return "", err
+		}
+		desired = state.Schema
 	case atlassource.KindMigrationDir:
 		if err := atlassource.VerifyMigrationDir(set.Sources[0].Path); err != nil {
 			return "", err
@@ -156,7 +165,7 @@ func inspectOnDev(
 			return "", fmt.Errorf("--url %q: %w", set.Sources[0].Raw, err)
 		}
 		return rendered, nil
-	case atlassource.KindLocalFile:
+	case atlassource.KindLocalFile, atlassource.KindExternalSchema:
 		var rendered string
 		err := withMaterializedDevSchema(
 			ctx,

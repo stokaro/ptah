@@ -17,6 +17,7 @@ Ptah accepts these local configuration blocks:
 - top-level `variable`
 - top-level `locals`
 - `data "hcl_schema"` for local schema file data
+- `data "external_schema"` for program-generated desired state
 - `env` blocks, with either one label or no label
 - top-level and env-local `lint`
 - env-local `schema`, `migration`, `format`, and `diff`
@@ -181,10 +182,75 @@ to the process working directory unless they are absolute.
 The Atlas-compatible schema commands and `migrate diff` also accept explicit
 `env://` references. `env://src` and `env://schema.src` expand the selected
 environment's schema sources through the typed desired-schema resolver, so the
-expanded value can be a supported local file or database URL. `env://url` and
-`env://dev` resolve the corresponding database URL; `env://migration.dir`
-resolves the configured local migration directory. Nested `env://` references
-fail explicitly.
+expanded value can be a supported local file, database URL, or declared
+external schema program. `env://url` and `env://dev` resolve the corresponding
+database URL; `env://migration.dir` resolves the configured local migration
+directory. Nested `env://` references fail explicitly.
+
+## External schema data source
+
+`data "external_schema"` declares a program whose standard output is the
+desired schema. Selecting its `.url` as an env's desired-state source makes
+that program the source of truth for the environment:
+
+```hcl
+data "external_schema" "app" {
+  program = ["python3", "export.py"]
+  format  = "sql"
+}
+
+env "dev" {
+  url = "sqlite://app.db"
+  src = data.external_schema.app.url
+}
+```
+
+The program runs directly with an explicit argument vector — never through a
+shell — and must print the complete desired schema to standard output. This is
+the `atlas.hcl` spelling of the native `ptah.yaml` `external_schema` block and
+the `--schema-cmd` flag; all three share one execution path. See
+[External and ORM schema sources](../../schema/orm-and-external/).
+
+| Attribute | Meaning |
+| --- | --- |
+| `program` | Required argv list. `program[0]` is the executable; no shell runs. |
+| `format` | Stdout format: `sql` (default), `hcl`, or `yaml`. Ptah extension. |
+| `working_dir` | Program working directory. Relative values resolve against the `atlas.hcl` directory. Ptah extension. |
+| `env` | Extra `KEY=VALUE` entries for the program. `PATH` and `PWD` cannot be overridden. Ptah extension. |
+
+The data source follows strict placement rules:
+
+- Its `.url` value is only valid as the selected env's desired-state source
+  (`env.src` or `env.schema.src`) and must be that source's only value.
+  Referencing it from `url`, `dev`, `migration.dir`, or `exclude` fails
+  explicitly.
+- A declared-but-unreferenced data source is ignored and never executed.
+- When the selected env's desired state is an external schema source, it
+  replaces a `ptah.yaml` `external_schema` block wholesale, so the two config
+  files never mix into one hybrid program configuration.
+
+Executing repository-controlled code from an auto-discovered config file
+requires an explicit opt-in, in both binaries:
+
+- Native `ptah` commands that consume project config (for example
+  `ptah schema render --env dev`) require `--allow-external-schema` or its
+  `PTAH_ALLOW_EXTERNAL_SCHEMA` environment twin. Without it, the command fails
+  with `atlas.hcl data.external_schema is disabled by default; pass
+  --allow-external-schema to execute it`.
+- `ptah-compat` keeps the Atlas-identical flag surface, so the opt-in is the
+  `PTAH_ALLOW_EXTERNAL_SCHEMA=1` environment variable. Without it, commands
+  fail during source classification, before the program could run.
+
+`ptah-compat schema diff`, `schema apply`, `schema inspect` (spelled
+`--url env://src`), and `migrate diff` consume the source. `schema plan` and
+`schema test` do not support it yet and fail explicitly.
+
+Community Atlas rejects this data source entirely: measured 2026-08-01 with a
+logged-out Atlas CE v1.2.0 binary, an `atlas.hcl` declaring
+`data "external_schema"` fails with exit 1 and
+`Error: data.external_schema is not supported by the community version of
+Atlas.` Ptah evaluates it in the open build, behind the opt-in described
+above.
 
 When an `atlas.hcl` `migration` block is present, Ptah defaults
 `revision-format` to `atlas`, so migration commands use

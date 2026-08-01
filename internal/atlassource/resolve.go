@@ -12,6 +12,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/schemasource"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasurl"
@@ -71,7 +72,8 @@ type State struct {
 // Resolve materializes the set's desired state. Local schema files load
 // exactly as before this resolver existed; database URLs are introspected
 // live; migration directories are replayed on the dev database and the result
-// is introspected.
+// is introspected; external schema programs run without a shell and their
+// standard output is parsed as the desired schema.
 func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 	switch s.Kind {
 	case KindLocalFile:
@@ -84,9 +86,26 @@ func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 		return s.resolveDatabase(ctx, opts)
 	case KindMigrationDir:
 		return s.resolveMigrationDir(ctx, opts)
+	case KindExternalSchema:
+		return s.resolveExternalSchema(ctx, opts)
 	default:
 		return State{}, fmt.Errorf("%s: unresolved %s desired-state source", s.Flag, s.Kind)
 	}
+}
+
+// resolveExternalSchema runs the classified external schema program and parses
+// its standard output into the desired schema IR. The classification gate has
+// already been passed; execution itself delegates to the same schemasource
+// runner the native external_schema path uses (no shell, bounded output,
+// stderr surfaced on failure).
+func (s Set) resolveExternalSchema(ctx context.Context, opts ResolveOptions) (State, error) {
+	command := s.Sources[0].Command
+	command.Dialect = opts.Dialect
+	schema, err := schemasource.Run(ctx, command)
+	if err != nil {
+		return State{}, fmt.Errorf("%s %q: %w", s.Flag, s.Sources[0].Raw, err)
+	}
+	return State{Kind: s.Kind, Schema: schema}, nil
 }
 
 func (s Set) rawURLs() []string {

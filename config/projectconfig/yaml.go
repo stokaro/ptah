@@ -288,6 +288,7 @@ func (c yamlSettings) projectConfig() (Config, error) {
 	c.OnlineDDL.applyTo(&cfg)
 	if c.ExternalSchema.Program != nil {
 		cfg.ExternalSchema.Program = slices.Clone(*c.ExternalSchema.Program)
+		cfg.ExternalSchema.Origin = PtahFileName
 		cfg.presence.mark(fieldExternalSchemaProgram)
 	}
 	if c.ExternalSchema.Env != nil {

@@ -375,7 +375,7 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 
 func (p *parser) parseManagedData(block *hclsyntax.Block) error {
 	if len(block.Labels) != 0 {
-		return p.blockError(block, "data block does not accept labels")
+		return p.labeledDataBlockError(block)
 	}
 	if len(block.Body.Blocks) > 0 {
 		return p.blockError(block.Body.Blocks[0], "unsupported data block %q", block.Body.Blocks[0].Type)
@@ -387,6 +387,29 @@ func (p *parser) parseManagedData(block *hclsyntax.Block) error {
 	}, "data"); err != nil {
 		return err
 	}
+	return p.parseManagedDataBody(block)
+}
+
+// labeledDataBlockError explains a labeled data block. In a schema file, data
+// declares managed seed rows and takes no labels; the labeled data sources
+// users paste here by accident are atlas.hcl project-config constructs, so the
+// known Atlas labels get an error that points at the right file.
+func (p *parser) labeledDataBlockError(block *hclsyntax.Block) error {
+	switch label := block.Labels[0]; label {
+	case "external_schema":
+		return p.blockError(block,
+			"data %q is an atlas.hcl project-config data source, not a schema declaration; declare it in atlas.hcl, where Ptah supports it",
+			label)
+	case "composite_schema", "remote_dir", "hcl_schema":
+		return p.blockError(block,
+			"data %q is an atlas.hcl project-config data source, not a schema declaration",
+			label)
+	default:
+		return p.blockError(block, "data block does not accept labels")
+	}
+}
+
+func (p *parser) parseManagedDataBody(block *hclsyntax.Block) error {
 	tableName, ok := traversalObjectRefName(p.optionalRawExpr(block.Body.Attributes["table"]), "table")
 	if !ok {
 		return p.blockError(block, "data requires table reference")

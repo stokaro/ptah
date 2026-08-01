@@ -11,8 +11,11 @@
 //   - An env:// reference must be the flag's only value; it expands to the
 //     selected env's configured sources, which are then re-classified under
 //     the same rules.
-//   - Database-URL and migration-directory sources accept exactly one URL per
-//     flag; local schema files accept many.
+//   - Database-URL, migration-directory, and external-schema sources accept
+//     exactly one URL per flag; local schema files accept many.
+//   - An env whose desired state is a declared atlas.hcl data.external_schema
+//     source expands to an external-schema program source, gated on the
+//     PTAH_ALLOW_EXTERNAL_SCHEMA environment variable.
 //   - A local file:// or plain-path directory that contains an atlas.sum file
 //     is a migration directory; any other directory keeps the pre-resolver
 //     local-file behavior.
@@ -25,10 +28,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/schemasource"
 	"github.com/stokaro/ptah/internal/atlasprojectpath"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/migratesum"
@@ -53,7 +59,19 @@ const (
 	// KindEnv is an env://<attribute> reference into the evaluated atlas.hcl
 	// environment. ClassifySet expands it, so resolved sets never carry it.
 	KindEnv Kind = "env reference"
+	// KindExternalSchema is an atlas.hcl data.external_schema program whose
+	// standard output is the desired state. It only ever appears through env
+	// expansion of a selected env whose desired-state source is a declared
+	// external schema data source.
+	KindExternalSchema Kind = "external schema program"
 )
+
+// AllowExternalSchemaEnvVar gates executing an atlas.hcl
+// data.external_schema program resolved through env expansion. The
+// Atlas-identical `ptah-compat` flag surface cannot grow a new flag, so the
+// opt-in is this environment variable — the same variable that drives the
+// native --allow-external-schema flag through Ptah's env twin machinery.
+const AllowExternalSchemaEnvVar = "PTAH_ALLOW_EXTERNAL_SCHEMA"
 
 // Source is one classified desired-state URL.
 type Source struct {
@@ -66,6 +84,10 @@ type Source struct {
 	Path string
 	// EnvAttr is the referenced attribute for env:// sources.
 	EnvAttr string
+	// Command is the resolved external schema program for external-schema
+	// sources; zero for every other kind. Its dialect hint is filled during
+	// resolution.
+	Command schemasource.Command
 }
 
 // ProjectEnv carries the evaluated atlas.hcl environment used to expand env://
@@ -167,7 +189,7 @@ func (s *Set) validate() error {
 				s.Flag, first.Raw, first.Kind, source.Raw, source.Kind)
 		}
 	}
-	if (s.Kind == KindDatabase || s.Kind == KindMigrationDir) && len(s.Sources) > 1 {
+	if s.Kind != KindLocalFile && len(s.Sources) > 1 {
 		return fmt.Errorf("%s accepts one %s desired-state source, got %d", s.Flag, s.Kind, len(s.Sources))
 	}
 	return nil
@@ -269,7 +291,7 @@ func expandEnv(source Source, env ProjectEnv) ([]Source, error) {
 	}
 	switch source.EnvAttr {
 	case "src", "schema.src":
-		return expandEnvSchemaSources(env)
+		return expandEnvSchemaSources(source, env)
 	case "url":
 		return expandEnvDatabaseURL(source.EnvAttr, env.Config.DatabaseURL)
 	case "dev":
@@ -281,8 +303,11 @@ func expandEnv(source Source, env ProjectEnv) ([]Source, error) {
 	}
 }
 
-func expandEnvSchemaSources(env ProjectEnv) ([]Source, error) {
+func expandEnvSchemaSources(source Source, env ProjectEnv) ([]Source, error) {
 	if len(env.Config.SchemaSources) == 0 {
+		if len(env.Config.ExternalSchema.Program) > 0 {
+			return expandEnvExternalSchema(source, env)
+		}
 		return nil, errors.New("the selected atlas.hcl env does not define schema sources (env.src or env.schema.src)")
 	}
 	sources := make([]Source, 0, len(env.Config.SchemaSources))
@@ -294,6 +319,40 @@ func expandEnvSchemaSources(env ProjectEnv) ([]Source, error) {
 		sources = append(sources, source)
 	}
 	return sources, nil
+}
+
+// expandEnvExternalSchema turns the selected env's external schema program
+// into a desired-state source. The program is repository-controlled code
+// reached through an auto-discovered config file, so expansion is gated on an
+// explicit environment opt-in; the gate fails during classification, before
+// any database is contacted and before the program could run.
+func expandEnvExternalSchema(source Source, env ProjectEnv) ([]Source, error) {
+	if !externalSchemaAllowed() {
+		return nil, fmt.Errorf(
+			"atlas.hcl data.external_schema executes a repository-controlled program and is disabled by default; set %s=1 to allow it",
+			AllowExternalSchemaEnvVar,
+		)
+	}
+	external := env.Config.ExternalSchema
+	return []Source{{
+		Raw:  source.Raw,
+		Kind: KindExternalSchema,
+		Command: schemasource.Command{
+			Args:   slices.Clone(external.Program),
+			Format: external.Format,
+			Dir:    external.WorkingDir,
+			Env:    slices.Clone(external.Env),
+		},
+	}}, nil
+}
+
+// externalSchemaAllowed reports whether the external schema opt-in variable is
+// set to a true boolean value. Unset, empty, false, and unparsable values all
+// deny, mirroring how the native env twin feeds the --allow-external-schema
+// bool flag.
+func externalSchemaAllowed() bool {
+	allowed, err := strconv.ParseBool(os.Getenv(AllowExternalSchemaEnvVar))
+	return err == nil && allowed
 }
 
 // classifyEnvValue classifies one env-provided source value. Relative local
