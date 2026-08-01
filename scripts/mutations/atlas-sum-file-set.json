@@ -1,0 +1,203 @@
+{
+  "packages": [
+    "./internal/atlasmigrateimport/",
+    "./internal/migratesum/"
+  ],
+  "env": {
+    "PTAH_ATLAS_FUZZ_N": "60"
+  },
+  "mutations": [
+    {
+      "name": "comparator zero-extends the shorter version",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\treturn cmp.Compare(len(a), len(b))",
+      "new": "\treturn 0"
+    },
+    {
+      "name": "version parse drops empty components",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tparts := strings.Split(strings.ReplaceAll(version, \"_\", \".\"), \".\")",
+      "new": "\tparts := strings.FieldsFunc(version, func(r rune) bool { return r == '.' || r == '_' })"
+    },
+    {
+      "name": "a non-numeric component poisons the whole token",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\tvalue, _ := strconv.Atoi(part)\n\t\tcomponents[i] = value",
+      "new": "\t\tvalue, err := strconv.Atoi(part)\n\t\tif err != nil {\n\t\t\treturn nil\n\t\t}\n\t\tcomponents[i] = value"
+    },
+    {
+      "name": "hidden directories are walked",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\treturn strings.HasPrefix(base, \".\")",
+      "new": "\treturn false"
+    },
+    {
+      "name": "flyway names are sorted instead of walk order",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\tnames, err := treeNames(fsys, skipHiddenDir)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}",
+      "new": "\t\tnames, err := treeNames(fsys, skipHiddenDir)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tslices.Sort(names)"
+    },
+    {
+      "name": "baseline squash compares numerically",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\tif baseline != nil && file.version <= baseline.version {",
+      "new": "\t\t\tif baseline != nil && compareFlywaySumVersions(file.components, baseline.components) <= 0 {"
+    },
+    {
+      "name": "baseline does not reach backwards",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\t\tsurvivors = slices.DeleteFunc(survivors, func(survivor flywaySumFile) bool {\n\t\t\t\t\treturn survivor.name <= file.version\n\t\t\t\t})\n",
+      "new": ""
+    },
+    {
+      "name": "backwards reach compares versions, not paths",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\t\t\treturn survivor.name <= file.version",
+      "new": "\t\t\t\t\treturn compareFlywaySumVersions(survivor.components, file.components) <= 0"
+    },
+    {
+      "name": "backwards reach also drops repeatables",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\t\tsurvivors = slices.DeleteFunc(survivors, func(survivor flywaySumFile) bool {\n\t\t\t\t\treturn survivor.name <= file.version\n\t\t\t\t})",
+      "new": "\t\t\t\tsurvivors = slices.DeleteFunc(survivors, func(survivor flywaySumFile) bool {\n\t\t\t\t\treturn survivor.name <= file.version\n\t\t\t\t})\n\t\t\t\trepeatable = slices.DeleteFunc(repeatable, func(r flywaySumFile) bool {\n\t\t\t\t\treturn r.name <= file.version\n\t\t\t\t})"
+    },
+    {
+      "name": "forward squash compares paths, not tokens",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\tif baseline != nil && file.version <= baseline.version {",
+      "new": "\t\t\tif baseline != nil && file.name <= baseline.version {"
+    },
+    {
+      "name": "supersede compares names, not version tokens",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\tif baseline == nil || file.version >= baseline.version {",
+      "new": "\t\t\tif baseline == nil || file.name >= baseline.version {"
+    },
+    {
+      "name": "backward reach is strict (< instead of <=)",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\t\t\treturn survivor.name <= file.version",
+      "new": "\t\t\t\t\treturn survivor.name < file.version"
+    },
+    {
+      "name": "a skipped baseline also reaches backwards",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\t\tsurvivors = slices.DeleteFunc(survivors, func(survivor flywaySumFile) bool {\n\t\t\t\t\treturn survivor.name <= file.version\n\t\t\t\t})\n\t\t\t}",
+      "new": "\t\t\t}\n\t\t\tsurvivors = slices.DeleteFunc(survivors, func(survivor flywaySumFile) bool {\n\t\t\t\treturn survivor.name <= file.version\n\t\t\t})"
+    },
+    {
+      "name": "baseline supersede requires strictly greater",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\tif baseline == nil || file.version >= baseline.version {",
+      "new": "\t\t\tif baseline == nil || file.version > baseline.version {"
+    },
+    {
+      "name": "baseline is not emitted first",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tif baseline != nil {\n\t\tout = append(out, baseline.name)\n\t}",
+      "new": "\tif baseline != nil {\n\t\tsurvivors = append(survivors, *baseline)\n\t}"
+    },
+    {
+      "name": "flyway keeps undo files",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tcase 'U':\n\t\tkind = flywaySumUndo",
+      "new": "\tcase 'U':\n\t\tkind = flywaySumVersioned"
+    },
+    {
+      "name": "flyway drops repeatables",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tcase 'R':\n\t\tkind = flywaySumRepeatable",
+      "new": "\tcase 'R':\n\t\tkind = flywaySumUndo"
+    },
+    {
+      "name": "flyway emits repeatables first",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tfor _, file := range survivors {\n\t\tout = append(out, file.name)\n\t}\n\tfor _, file := range repeatable {\n\t\tout = append(out, file.name)\n\t}",
+      "new": "\tfor _, file := range repeatable {\n\t\tout = append(out, file.name)\n\t}\n\tfor _, file := range survivors {\n\t\tout = append(out, file.name)\n\t}"
+    },
+    {
+      "name": "flyway prefix match becomes case-insensitive",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tswitch base[0] {",
+      "new": "\tswitch base[0] &^ 0x20 {"
+    },
+    {
+      "name": "flyway requires the __ separator",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tversion := base[1:]\n\tif before, _, found := strings.Cut(version, \"__\"); found {\n\t\tversion = before\n\t}",
+      "new": "\tversion, _, found := strings.Cut(base[1:], \"__\")\n\tif !found {\n\t\treturn flywaySumFile{}, false\n\t}"
+    },
+    {
+      "name": "flyway orders by name instead of version",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\treturn compareFlywaySumVersions(a.components, b.components)",
+      "new": "\t\treturn strings.Compare(a.name, b.name)"
+    },
+    {
+      "name": "flyway parses the full path instead of the base name",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "strings.CutSuffix(path.Base(name), \".sql\")",
+      "new": "strings.CutSuffix(path.Clean(name), \".sql\")"
+    },
+    {
+      "name": "flyway does not recurse",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\tnames, err := treeNames(fsys, skipHiddenDir)",
+      "new": "\t\tnames, err := topLevelNames(fsys)"
+    },
+    {
+      "name": "non-flyway formats recurse",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tcase FormatAtlas, FormatGoose, FormatDBMate, FormatLiquibase:\n\t\tnames, err := topLevelNames(fsys)",
+      "new": "\tcase FormatAtlas, FormatGoose, FormatDBMate, FormatLiquibase:\n\t\tnames, err := treeNames(fsys, nil)"
+    },
+    {
+      "name": "golang-migrate covers every .sql",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "return filterSuffix(names, \".up.sql\"), nil",
+      "new": "return filterSuffix(names, \".sql\"), nil"
+    },
+    {
+      "name": "suffix match becomes case-insensitive",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "if strings.HasSuffix(name, suffix) {",
+      "new": "if strings.HasSuffix(strings.ToLower(name), suffix) {"
+    },
+    {
+      "name": "empty file set errors (suffix formats)",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\treturn filterSuffix(names, \".sql\"), nil",
+      "new": "\t\tcovered := filterSuffix(names, \".sql\")\n\t\tif len(covered) == 0 {\n\t\t\treturn nil, fmt.Errorf(\"no covered migrations\")\n\t\t}\n\t\treturn covered, nil"
+    },
+    {
+      "name": "empty file set errors (golang-migrate)",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\treturn filterSuffix(names, \".up.sql\"), nil",
+      "new": "\t\tcovered := filterSuffix(names, \".up.sql\")\n\t\tif len(covered) == 0 {\n\t\t\treturn nil, fmt.Errorf(\"no covered migrations\")\n\t\t}\n\t\treturn covered, nil"
+    },
+    {
+      "name": "ComputeAtlasFiles re-sorts the caller's order",
+      "file": "internal/migratesum/sum.go",
+      "old": "\tentries := make([]Entry, 0, len(names))\n\th := sha256.New()",
+      "new": "\tnames = append([]string(nil), names...)\n\tsort.Strings(names)\n\tentries := make([]Entry, 0, len(names))\n\th := sha256.New()"
+    },
+    {
+      "name": "sum-ignore skips the file name too",
+      "file": "internal/migratesum/sum.go",
+      "old": "\t\t_, _ = h.Write([]byte(name))\n\t\tif atlasSumIgnored(data) {\n\t\t\tcontinue\n\t\t}",
+      "new": "\t\tif atlasSumIgnored(data) {\n\t\t\tcontinue\n\t\t}\n\t\t_, _ = h.Write([]byte(name))"
+    },
+    {
+      "name": "duplicate names are not rejected",
+      "file": "internal/migratesum/sum.go",
+      "old": "\tif err := checkDuplicateNames(names); err != nil {\n\t\treturn nil, err\n\t}\n",
+      "new": ""
+    },
+    {
+      "name": "VerifyAtlasFiles ignores names and globs",
+      "file": "internal/migratesum/verify.go",
+      "old": "\tcurrent, err := ComputeAtlasFiles(fsys, names)",
+      "new": "\tcurrent, err := computeAtlas(fsys)"
+    }
+  ]
+}

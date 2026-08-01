@@ -594,10 +594,25 @@ Atlas-compatible migration metadata commands default to Atlas directory
 format. `ptah-compat migrate hash`, `lint`, `new`, `set`, `status`, and
 `validate` register `--dir-format` with Atlas's default value `atlas`.
 
-The supported value is `atlas`; Atlas's external migration-tool formats
-(`golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate`) fail
-explicitly on those commands until they are imported with `ptah-compat migrate
-import` or implemented natively.
+`hash` and `validate` read a directory rather than rewrite one, so they accept
+every Atlas source layout — `golang-migrate`, `goose`, `flyway`, `liquibase`,
+and `dbmate` — under either spelling Atlas accepts, and produce the same
+`atlas.sum` from both:
+
+```bash
+ptah-compat migrate hash --dir "file://migrations?format=goose"
+ptah-compat migrate hash --dir file://migrations --dir-format goose
+```
+
+Each layout covers a different set of source files, matching Atlas; see
+[the compat command reference](../../reference/atlas-commands/) for the
+per-layout rules and for the inputs that stay refused.
+
+On `lint`, `new`, `set`, and `status` the supported value is still `atlas`;
+the external migration-tool formats fail explicitly there until the directory
+is imported with `ptah-compat migrate import` or the format is implemented
+natively. `migrate apply` registers no `--dir-format` at all, matching Atlas,
+and selects a converted source directory through `?format=` on `--dir`.
 
 `ptah-compat migrate set [version]` moves Atlas revision history to the
 selected boundary without executing migration SQL. It preserves existing clean

@@ -23,10 +23,8 @@ import (
 	"github.com/stokaro/ptah/cmd/migratecheckpoint"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/cmd/migrateedit"
-	"github.com/stokaro/ptah/cmd/migratehash"
 	"github.com/stokaro/ptah/cmd/migraterebase"
 	"github.com/stokaro/ptah/cmd/migraterm"
-	"github.com/stokaro/ptah/cmd/migratevalidate"
 	"github.com/stokaro/ptah/cmd/migrationstest"
 	"github.com/stokaro/ptah/cmd/schema"
 	"github.com/stokaro/ptah/config/projectconfig"
@@ -191,16 +189,6 @@ func newAtlasMigrateCommand() *cobra.Command {
 		},
 		atlasMigrateEditVerb(),
 		{
-			use:     "hash",
-			short:   "Write or update the migration directory checksum",
-			native:  "migrations hash",
-			factory: migratehash.NewMigrateHashCommand,
-			flags: []atlasargs.Flag{
-				atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
-				atlasMigrateDirFormatFlag("dir-format"),
-			},
-		},
-		{
 			use:        "new",
 			displayUse: "new [flags] [name]",
 			short:      "Create a new migration file",
@@ -215,20 +203,11 @@ func newAtlasMigrateCommand() *cobra.Command {
 		atlasMigrateRebaseVerb(),
 		atlasMigrateRmVerb(),
 		atlasMigrateTestVerb(),
-		{
-			use:     "validate",
-			short:   "Validate migration directory integrity",
-			native:  "migrations validate",
-			factory: migratevalidate.NewAtlasMigrateValidateCommand,
-			flags: []atlasargs.Flag{
-				atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
-				atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
-				atlasMigrateDirFormatFlag("dir-format"),
-			},
-		},
 	} {
 		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
 	}
+	cmd.AddCommand(newAtlasMigrateHashCommand())
+	cmd.AddCommand(newAtlasMigrateValidateCommand())
 	cmd.AddCommand(newAtlasMigrateDiffCommand())
 	cmd.AddCommand(newAtlasMigrateImportCommand())
 	addAtlasUnsupportedCommunityCommands(cmd, "migrate", []atlasUnsupportedCommunityVerb{
@@ -734,43 +713,11 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		args []string,
 		cleanup *cmdadapter.CleanupScope,
 	) ([]string, context.Context, error) {
-		forwardContext := cmd.Context()
-		parentProjectFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
+		project, err := resolveAtlasVerbProject(cmd, group, verb, args, cleanup)
 		if err != nil {
 			return nil, nil, err
 		}
-		parentProject := atlasProjectArgValues{
-			flags:   parentProjectFlags,
-			changed: parentChanged,
-		}
-		project, remaining, err := extractAtlasProjectArgs(args)
-		if err != nil {
-			return nil, nil, err
-		}
-		project = mergeAtlasProjectArgs(parentProject, project)
-		args = remaining
-		if project.changed {
-			loadedProject, targetCfg, err := loadAtlasAdapterProjectConfig(verb, project.flags)
-			if err != nil {
-				return nil, nil, err
-			}
-			cleanup.Add(loadedProject.Close)
-			if err := loadedProject.resolveMigrationDirForArgs(verb.flags, args); err != nil {
-				return nil, nil, err
-			}
-			applyProjectConfig := verb.projectConfig
-			if applyProjectConfig == nil {
-				applyProjectConfig = applyAtlasProjectConfigToArgs
-			}
-			args, err = applyProjectConfig(verb.flags, args, loadedProject, project.flags)
-			if err != nil {
-				return nil, nil, err
-			}
-			forwardContext = withAtlasProjectMigrationRoot(forwardContext, group, loadedProject)
-			if verb.nativeProjectConfig {
-				forwardContext = dbcli.WithProjectConfig(forwardContext, targetCfg)
-			}
-		}
+		args = project.args
 		if err := rejectNativeOnlyAtlasFlags(group, verb, args); err != nil {
 			return nil, nil, err
 		}
@@ -782,8 +729,80 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err != nil {
 			return nil, nil, err
 		}
-		return append(mapped, nativeTail...), forwardContext, nil
+		return append(mapped, nativeTail...), project.context, nil
 	}
+}
+
+// atlasVerbArgs is one adapter invocation's Atlas-form arguments after the
+// selected atlas.hcl environment has been merged into them. The project itself
+// stays owned by the caller's cleanup scope.
+type atlasVerbArgs struct {
+	// args are the Atlas-form arguments with the project selection flags
+	// removed and the project's values appended: exactly what atlasargs.Map
+	// receives.
+	args []string
+	// context carries the project's rooted migration directory and, for verbs
+	// that ask for it, the merged native project config.
+	context context.Context
+}
+
+// resolveAtlasVerbProject merges the Atlas project selection flags reachable
+// from cmd with the inline ones, loads the selected atlas.hcl, and applies its
+// values to the Atlas-form arguments.
+//
+// It is shared with the integrity verbs' converted-directory path
+// (see newAtlasMigrateIntegrityCommand), which resolves the source directory
+// format from this same state. Splitting it out is what keeps the format that
+// selects the covered file set and the format the forwarded native command
+// sees one decision rather than two computations that have to agree by
+// inspection.
+func resolveAtlasVerbProject(
+	cmd *cobra.Command,
+	group string,
+	verb atlasVerb,
+	args []string,
+	cleanup *cmdadapter.CleanupScope,
+) (atlasVerbArgs, error) {
+	resolved := atlasVerbArgs{context: cmd.Context()}
+	parentProjectFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
+	if err != nil {
+		return atlasVerbArgs{}, err
+	}
+	parentProject := atlasProjectArgValues{
+		flags:   parentProjectFlags,
+		changed: parentChanged,
+	}
+	project, remaining, err := extractAtlasProjectArgs(args)
+	if err != nil {
+		return atlasVerbArgs{}, err
+	}
+	project = mergeAtlasProjectArgs(parentProject, project)
+	resolved.args = remaining
+	if !project.changed {
+		return resolved, nil
+	}
+
+	loadedProject, targetCfg, err := loadAtlasAdapterProjectConfig(verb, project.flags)
+	if err != nil {
+		return atlasVerbArgs{}, err
+	}
+	cleanup.Add(loadedProject.Close)
+	if err := loadedProject.resolveMigrationDirForArgs(verb.flags, resolved.args); err != nil {
+		return atlasVerbArgs{}, err
+	}
+	applyProjectConfig := verb.projectConfig
+	if applyProjectConfig == nil {
+		applyProjectConfig = applyAtlasProjectConfigToArgs
+	}
+	resolved.args, err = applyProjectConfig(verb.flags, resolved.args, loadedProject, project.flags)
+	if err != nil {
+		return atlasVerbArgs{}, err
+	}
+	resolved.context = withAtlasProjectMigrationRoot(resolved.context, group, loadedProject)
+	if verb.nativeProjectConfig {
+		resolved.context = dbcli.WithProjectConfig(resolved.context, targetCfg)
+	}
+	return resolved, nil
 }
 
 func withAtlasProjectMigrationRoot(
