@@ -1,6 +1,7 @@
 package atlasschema
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"maps"
@@ -8,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
@@ -47,10 +49,16 @@ const hclPlanHeredocDelimiter = "SQL"
 // the `<<-SQL` heredoc content in Atlas-written plan files.
 const hclPlanBodyIndent = "  "
 
+// utf8BOM is stripped before format detection so a BOM-prefixed JSON plan is
+// not misread as an HCL document.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
 // DetectPlanFormat classifies plan-file contents. A JSON document starts with
-// '{' (after leading whitespace); everything else is treated as the Atlas HCL
-// plan format, whose top level is always a `plan` block.
+// '{' (after an optional UTF-8 BOM and leading whitespace); everything else is
+// treated as the Atlas HCL plan format, whose top level is always a `plan`
+// block.
 func DetectPlanFormat(contents []byte) PlanFormat {
+	contents = bytes.TrimPrefix(contents, utf8BOM)
 	for _, b := range contents {
 		switch b {
 		case ' ', '\t', '\r', '\n':
@@ -172,12 +180,22 @@ func MarshalPlanFileHCL(plan PlanFile) ([]byte, error) {
 	for _, statement := range plan.Statements {
 		text := strings.TrimSuffix(strings.TrimSpace(statement.SQL), ";") + ";"
 		for line := range strings.Lines(text + "\n") {
-			line = strings.TrimRight(line, "\r\n")
+			// Only the line separator is removed here: a carriage return must
+			// still reach the validator, which refuses it instead of letting
+			// the writer silently rewrite CRLF content to LF.
+			line = strings.TrimSuffix(line, "\n")
 			if err := validateHCLHeredocLine(line); err != nil {
 				return nil, err
 			}
-			migration.WriteString(hclPlanBodyIndent)
-			migration.WriteString(line)
+			// Empty lines stay empty instead of becoming indentation: HCL
+			// excludes blank lines when computing how much indentation `<<-`
+			// strips, so an unindented blank line round-trips exactly while
+			// an indented one would come back as whitespace the operator
+			// never wrote.
+			if line != "" {
+				migration.WriteString(hclPlanBodyIndent)
+				migration.WriteString(line)
+			}
 			migration.WriteString("\n")
 		}
 	}
@@ -297,6 +315,9 @@ func validatePlanHCL(plan PlanFile) error {
 // names, sha256 fingerprints) is plain ASCII, so hitting this means the
 // caller passed something the Atlas plan shape cannot carry verbatim.
 func validateHCLString(field, value string) error {
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("%s is not valid UTF-8 and cannot be written into an Atlas .plan.hcl document", field)
+	}
 	if strings.ContainsAny(value, "\"\\\n\r\t") || strings.Contains(value, "${") || strings.Contains(value, "%{") {
 		return fmt.Errorf("%s %q contains characters that cannot be written verbatim into an Atlas .plan.hcl quoted string", field, value)
 	}
@@ -304,14 +325,35 @@ func validateHCLString(field, value string) error {
 }
 
 // validateHCLHeredocLine rejects migration content that the `<<-SQL` heredoc
-// cannot carry verbatim: a line consisting of the heredoc delimiter would
-// terminate the document early, and HCL template interpolation sequences
-// would be evaluated instead of read back as SQL.
+// cannot carry verbatim. The writer's contract is that unrepresentable
+// content is refused, never silently rewritten: a line consisting of the
+// heredoc delimiter would terminate the document early, HCL template
+// interpolation sequences would be evaluated instead of read back as SQL, a
+// carriage return would not survive the line-by-line re-indentation, and
+// invalid UTF-8 produces a file neither parser can read.
 func validateHCLHeredocLine(line string) error {
+	if !utf8.ValidString(line) {
+		return errors.New(
+			"plan migration contains invalid UTF-8 and cannot be written as an Atlas .plan.hcl document; " +
+				"write the native JSON plan format instead")
+	}
 	if strings.TrimSpace(line) == hclPlanHeredocDelimiter {
 		return fmt.Errorf(
 			"plan migration contains a line consisting of the heredoc delimiter %q and cannot be written as an Atlas .plan.hcl document; "+
 				"write the native JSON plan format instead", hclPlanHeredocDelimiter)
+	}
+	if strings.Contains(line, "\r") {
+		return errors.New(
+			"plan migration contains a carriage return, which an Atlas .plan.hcl heredoc cannot carry back verbatim; " +
+				"normalize the statement to LF line endings or write the native JSON plan format instead")
+	}
+	// HCL excludes whitespace-only lines from `<<-` indent stripping and
+	// leaves them untouched, so the two spaces the writer adds would come
+	// back as part of the statement.
+	if line != "" && strings.TrimSpace(line) == "" {
+		return errors.New(
+			"plan migration contains a whitespace-only line, which an Atlas .plan.hcl heredoc cannot carry back " +
+				"verbatim; leave the line empty or write the native JSON plan format instead")
 	}
 	if strings.Contains(line, "${") || strings.Contains(line, "%{") {
 		return errors.New(

@@ -355,9 +355,17 @@ re-planning. Both plan formats are accepted, detected by content: the Atlas
   target refuses with a stale-plan error — and may run without `--to`.
 - An Atlas-format plan requires `--to`, matching the official binary: its
   hashes are Atlas-computed with no local recipe, so the plan is replayed on
-  a dev database (`--dev-url`, or an ephemeral SQLite dev database for SQLite
-  targets) from the target's current schema, and the reached state must equal
-  the `--to` desired state before the target is touched.
+  a dev database from the target's current schema, and the reached state must
+  equal the `--to` desired state before the target is touched. SQLite targets
+  get a throwaway dev database automatically; every other dialect requires
+  `--dev-url`.
+- The replay only sandboxes statements that cannot leave the dev database, so
+  a plan containing one that can — `ATTACH`/`DETACH`, `VACUUM INTO`,
+  `LOAD DATA INFILE`, `INTO OUTFILE`/`DUMPFILE`, `COPY ... PROGRAM` or `COPY`
+  with a file path, `dblink`, `postgres_fdw`, `file_fdw`, or the
+  file-access functions — is refused by name before anything executes.
+- The replay also runs under `--dry-run`, so a plan can be verified without
+  committing to apply it.
 - Whenever a desired state is available, the end state is verified again on
   the target after the apply and a mismatch fails loudly; the verification is
   always on, like Atlas's.
@@ -396,8 +404,8 @@ plan document prints to stdout.
 
 | Flag | Behavior |
 | --- | --- |
-| `--save` | Writes `<name>.plan.hcl`, using an Atlas-style UTC timestamp default name or `--name`. |
-| `--output <path>`/`-o` | Chooses the location; a `.json` path selects the native JSON plan format (deterministic fingerprint-derived default name). |
+| `--save` | Writes `<name>.plan.hcl`, using an Atlas-style UTC timestamp default name or `--name`. Refuses to overwrite an existing default-named file, since the timestamp has one-second granularity. |
+| `--output <path>`/`-o` | Chooses the location, and a `.json` path selects the native JSON plan format. The plan name recorded inside a JSON plan stays fingerprint-derived unless `--name` is given. |
 | `--dry-run` | Prints the plan document without saving. |
 | `--auto-approve` | Accepted for Atlas CLI compatibility; a locally saved plan file is approved by operator review, so there is no prompt to skip. |
 | `--env` | Reads `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported `diff` policy from `atlas.hcl`. |

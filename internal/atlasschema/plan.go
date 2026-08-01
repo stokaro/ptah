@@ -187,12 +187,22 @@ func MarshalPlanFile(plan PlanFile) ([]byte, error) {
 
 // ReadPlanFile loads and validates a local JSON plan document. Unknown fields
 // are rejected so a hand-edited or truncated plan fails loudly instead of
-// being partially honored. The Atlas-compatible command tree reads both
-// supported encodings through [ReadPlanDocument] instead.
+// being partially honored. The native plan format is JSON only: an Atlas
+// `.plan.hcl` document is refused with a named error naming the command that
+// does read it, rather than the raw JSON decoder complaint. The
+// Atlas-compatible command tree reads both encodings through
+// [ReadPlanDocument].
 func ReadPlanFile(path string) (PlanFile, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return PlanFile{}, fmt.Errorf("read plan file: %w", err)
+	}
+	if DetectPlanFormat(contents) == PlanFormatHCL {
+		return PlanFile{}, fmt.Errorf(
+			"plan file %s is in the Atlas %s format, which the native `ptah schema apply --plan` does not read; "+
+				"apply it with `ptah-compat schema apply --plan file://%s --to <desired state>`, "+
+				"or produce a native plan with `ptah schema plan --output <name>%s`",
+			path, PlanFileSuffixHCL, path, PlanFileSuffix)
 	}
 	return decodePlanJSON(contents, path)
 }

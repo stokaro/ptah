@@ -389,17 +389,23 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
 	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
 
-	// A JSON plan always carries a fingerprint contract; an Atlas-format plan
-	// only when Ptah wrote it (round-trip). Foreign Atlas hashes cannot be
-	// recomputed locally, so those plans rely on the rehearsal gate alone.
-	nativeFingerprint := atlasschema.IsNativeFingerprint(plan.FromFingerprint)
-	if planFormat == atlasschema.PlanFormatJSON || nativeFingerprint {
+	// A JSON plan always carries a fingerprint contract; a Ptah-written
+	// `.plan.hcl` carries one too (round-trip). Foreign Atlas hashes cannot be
+	// recomputed locally, so those plans rely on the rehearsal gate. The
+	// fingerprint shape is not a security boundary — the derivation is public
+	// — so it only ever adds a check, never removes one.
+	if planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint) {
 		if err := atlasschema.VerifyPlanTarget(conn, plan); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
 
-	statements := plan.StatementSQL()
+	// One statement list is derived here and used for everything that follows
+	// — display, policy validation, rehearsal, and execution — so the list
+	// that gets verified is exactly the list that runs. Splitting with the
+	// connection dialect matters for the MySQL family, whose backslash escapes
+	// change where a string literal ends.
+	statements := atlasschema.SplitApplyStatements(plan.SQL(), conn.Info().Dialect)
 	formattedPlan := ""
 	if opts.formatOutput {
 		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, statements)
@@ -410,21 +416,23 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	} else {
 		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
 	}
-	if opts.dryRun {
-		return nil
-	}
 	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// The rehearsal runs on --dry-run too: a dry run is how an operator
+	// test-drives a plan, and it would be useless if verifying a foreign plan
+	// required committing to apply it.
 	if err := rehearseAtlasSchemaApplyPlan(cmd, conn, opts, rehearsePlanParams{
-		format:            planFormat,
-		nativeFingerprint: nativeFingerprint,
-		statements:        statements,
-		desired:           desired,
-		exclude:           plan.Exclude,
-		txMode:            txMode,
+		format:     planFormat,
+		statements: statements,
+		desired:    desired,
+		exclude:    plan.Exclude,
+		txMode:     txMode,
 	}); err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	if opts.dryRun {
+		return nil
 	}
 
 	ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
@@ -436,7 +444,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	}
 
 	conn.SchemaWriter().SetDryRun(false)
-	if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, plan.SQL()); err != nil {
+	if err := atlasschema.ApplyStatements(cmd.Context(), conn, txMode, statements); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
 	}
 	// The semantic end-state verification mirrors Atlas: always on whenever a
@@ -456,55 +464,88 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 // rehearsePlanParams carries the plan-file rehearsal inputs derived from the
 // loaded plan document.
 type rehearsePlanParams struct {
-	format            atlasschema.PlanFormat
-	nativeFingerprint bool
-	statements        []string
-	desired           *goschema.Database
-	exclude           []string
-	txMode            migrator.MigrationTxMode
+	format     atlasschema.PlanFormat
+	statements []string
+	desired    *goschema.Database
+	exclude    []string
+	txMode     migrator.MigrationTxMode
+}
+
+// planRehearsalDecision is what the dev-database policy resolved to for one
+// plan apply.
+type planRehearsalDecision struct {
+	// skip reports that no rehearsal runs.
+	skip bool
+	// devURL is the dev database to rehearse on; empty with ephemeral set
+	// means the caller must create a throwaway SQLite dev database.
+	devURL string
+	// ephemeral requests a throwaway SQLite dev database.
+	ephemeral bool
+}
+
+// resolveAtlasSchemaApplyPlanRehearsal decides how a plan file gets rehearsed.
+// The plan format decides, never the fingerprint: the `sha256:` shape is
+// public and forgeable, so it must not be able to switch a verification off.
+//
+//   - An Atlas-format plan is always rehearsed. Its hashes are Atlas-computed
+//     and unverifiable locally, so the replay is the only from-state gate.
+//     SQLite targets get a throwaway dev database for free (it is just a temp
+//     file); every other dialect requires --dev-url, which every measured
+//     Atlas invocation passes anyway.
+//   - A native JSON plan already passed its fingerprint check, so it is
+//     rehearsed only when a dev database was requested explicitly.
+func resolveAtlasSchemaApplyPlanRehearsal(
+	format atlasschema.PlanFormat,
+	dialect string,
+	devURL string,
+	desired *goschema.Database,
+) (planRehearsalDecision, error) {
+	if desired == nil {
+		// Without a desired state there is nothing to verify the replay
+		// against, so there is no rehearsal to run.
+		return planRehearsalDecision{skip: true}, nil
+	}
+	devURL = strings.TrimSpace(devURL)
+	if devURL != "" {
+		return planRehearsalDecision{devURL: devURL}, nil
+	}
+	if format != atlasschema.PlanFormatHCL {
+		return planRehearsalDecision{skip: true}, nil
+	}
+	if platform.NormalizeDialect(dialect) == platform.SQLite {
+		return planRehearsalDecision{ephemeral: true}, nil
+	}
+	return planRehearsalDecision{}, fmt.Errorf(
+		"verifying an Atlas plan file requires a dev database: the plan's from/to hashes are Atlas-computed "+
+			"and Ptah cannot recompute them, so the plan is verified by replaying it on a dev database and "+
+			"comparing the reached state with --to; pass --dev-url with a %s dev database URL",
+		dialect)
 }
 
 // rehearseAtlasSchemaApplyPlan runs the pre-apply semantic verification of a
-// plan file when it applies. Atlas-format plans are always rehearsed — for
-// foreign Atlas hashes the rehearsal is the only from-state gate, so a
-// missing dev database is an error there; a Ptah-written `.plan.hcl` with a
-// verified native fingerprint skips the rehearsal when no dev database is
-// available. JSON plans rehearse only when a dev database was requested
-// explicitly. SQLite targets never need an operator-provided dev database: an
-// ephemeral one is created on the fly.
+// plan file when the policy calls for it.
 func rehearseAtlasSchemaApplyPlan(
 	cmd *cobra.Command,
 	conn *dbschema.DatabaseConnection,
 	opts atlasSchemaApplyOptions,
 	params rehearsePlanParams,
 ) error {
-	if params.desired == nil {
+	decision, err := resolveAtlasSchemaApplyPlanRehearsal(
+		params.format, conn.Info().Dialect, opts.devURL, params.desired)
+	if err != nil {
+		return err
+	}
+	if decision.skip {
 		return nil
 	}
-	devURL := strings.TrimSpace(opts.devURL)
-	if devURL == "" && params.format != atlasschema.PlanFormatHCL {
-		return nil
-	}
-	if devURL == "" {
-		switch {
-		case platform.NormalizeDialect(conn.Info().Dialect) == platform.SQLite:
-			ephemeralURL, cleanup, err := atlasschema.NewEphemeralSQLiteDev()
-			if err != nil {
-				return err
-			}
-			defer cleanup()
-			devURL = ephemeralURL
-		case params.nativeFingerprint:
-			// The verified source fingerprint plus the post-apply end-state
-			// check still hold; only the pre-apply replay is skipped.
-			return nil
-		default:
-			return fmt.Errorf(
-				"verifying an Atlas plan file requires a dev database: the plan's from/to hashes are Atlas-computed "+
-					"and Ptah cannot recompute them, so the plan is verified by replaying it on a dev database and "+
-					"comparing the reached state with --to; pass --dev-url with a %s dev database URL",
-				conn.Info().Dialect)
+	devURL := decision.devURL
+	if decision.ephemeral {
+		ephemeralURL, cleanup, err := atlasschema.NewEphemeralSQLiteDev()
+		if err != nil {
+			return err
 		}
+		defer cleanup()
+		devURL = ephemeralURL
 	}
 	return atlasschema.RehearsePlanStatements(cmd.Context(), conn, params.statements, params.desired, atlasschema.PlanRehearsalOptions{
 		DevURL:      devURL,

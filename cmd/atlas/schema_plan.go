@@ -1,7 +1,9 @@
 package atlas
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -191,6 +193,15 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	path := outputPath
 	if path == "" {
 		path = plan.Name + atlasschema.PlanFileSuffixFor(format)
+		// Default plan names are timestamps with one-second granularity, so
+		// two plans computed in the same second would silently overwrite each
+		// other's reviewed SQL. An explicit --output path stays overwritable.
+		if _, err := os.Stat(path); err == nil {
+			return cmdutil.Fail(cmd, fmt.Errorf(
+				"plan file %s already exists; pass --name or --output to choose a distinct plan file", path))
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return cmdutil.Fail(cmd, fmt.Errorf("check plan file %s: %w", path, err))
+		}
 	}
 	if err := os.WriteFile(path, document, 0o644); err != nil { //nolint:gosec // plan files are meant to be reviewed and shared, 0644 like migration files
 		return cmdutil.Fail(cmd, fmt.Errorf("write plan file: %w", err))

@@ -30,10 +30,15 @@ type PlanDesiredStateError struct {
 func (e *PlanDesiredStateError) Error() string {
 	drift := strings.TrimSpace(FormatMigrationSQL(e.Drift))
 	if e.Phase == "rehearsal" {
+		// The claim is deliberately narrow: the plan was not applied to the
+		// target by this command. Statements that could reach outside the dev
+		// database are refused before the replay (see PlanEscapeError), but
+		// this message does not promise anything about what a replayed
+		// statement did elsewhere.
 		return fmt.Sprintf(
 			"pre-planned migration does not converge to the desired state: replaying the plan on the dev database, "+
 				"starting from the target's current schema, left the following schema drift against --to "+
-				"(the target database was left unchanged):\n%s\n"+
+				"(the plan was not applied to the target):\n%s\n"+
 				"either the target database changed since the plan was computed or the plan was computed for a "+
 				"different desired state; re-run `schema plan` against the current database and review the fresh plan",
 			drift)
@@ -91,6 +96,12 @@ func RehearsePlanStatements(
 	if devURL == "" {
 		return errors.New("plan rehearsal requires a dev database URL")
 	}
+	// The dev database is only a sandbox for statements that cannot reach out
+	// of it. This gate runs before anything is executed anywhere, including
+	// before the target is inspected.
+	if err := CheckPlanStatementsSandboxable(statements); err != nil {
+		return err
+	}
 
 	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
 	if err != nil {
@@ -146,7 +157,10 @@ func VerifyAppliedPlanState(
 		Exclude: exclude,
 	})
 	if err != nil {
-		return fmt.Errorf("verify applied plan end state: %w", err)
+		// The plan already executed successfully; this is the verification
+		// itself failing to run, which must not read as a schema mismatch.
+		return fmt.Errorf(
+			"the plan was applied successfully, but the end-state verification could not be completed: %w", err)
 	}
 	if len(computation.statements) > 0 {
 		return &PlanDesiredStateError{Phase: "post-apply", Drift: computation.statements}

@@ -236,6 +236,38 @@ func TestSchemaApplyPlanFileExecutesAndRefusesStaleTarget(t *testing.T) {
 	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
 }
 
+// TestSchemaApplyPlanFileRejectsAtlasHCLPlanByName pins the native tree's
+// half of the interoperability contract: the native plan format stays JSON,
+// but handing it an Atlas `.plan.hcl` must name the command that does read it
+// instead of leaking a JSON decoder complaint about the letter 'p' — the
+// exact defect the compat campaign filed.
+func TestSchemaApplyPlanFileRejectsAtlasHCLPlanByName(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	planPath := filepath.Join(dir, "atlas.plan.hcl")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.WriteFile(planPath, []byte(
+		"plan \"20260801102801\" {\n"+
+			"  from      = \"2Avyplv6jw8kAsH/g2YFPkfnp+UNBpomMXPUl/4R4+Q=\"\n"+
+			"  to        = \"YEugbm2aJqmXFA8dDrzmqLPC4tiNUrXe6YCrvazKOiY=\"\n"+
+			"  migration = <<-SQL\n  CREATE TABLE `posts` (`id` integer);\n  SQL\n}\n",
+	), 0o600), qt.IsNil)
+
+	out, err := runSchema("", "apply",
+		"--db-url", "sqlite://"+dbPath,
+		"--plan", planPath,
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`plan file .* is in the Atlas \.plan\.hcl format, which the native .ptah schema apply --plan. does not read; `+
+			`apply it with .ptah-compat schema apply --plan file://.* --to <desired state>., `+
+			`or produce a native plan with .ptah schema plan --output <name>\.plan\.json.`)
+	c.Assert(out, qt.Not(qt.Contains), "invalid character")
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
+}
+
 func TestSchemaApplyPlanRejectsConflictingFlags(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

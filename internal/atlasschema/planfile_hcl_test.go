@@ -255,6 +255,144 @@ func TestMarshalPlanFileHCLRefusesUnrepresentablePlans(t *testing.T) {
 	}
 }
 
+// TestMarshalPlanFileHCLRoundTripPropertyOverAdversarialSQL asserts the
+// writer's whole contract over content designed to break the heredoc: either
+// the document round-trips byte-for-byte through the reader, or the write is
+// refused with a named error. Silent rewriting is never acceptable, because
+// the plan file is the reviewed artifact and a rewritten statement is no
+// longer what the operator approved.
+func TestMarshalPlanFileHCLRoundTripPropertyOverAdversarialSQL(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "plain_ddl",
+			sql:  `CREATE TABLE t (id integer)`,
+		},
+		{
+			name: "multiline_ddl_with_blank_line",
+			sql:  "CREATE TABLE t (\n  id integer,\n\n  name text\n)",
+		},
+		{
+			name: "leading_and_trailing_spaces_inside_lines",
+			sql:  "CREATE TABLE t (\n      id integer\n)",
+		},
+		{
+			name: "backslashes",
+			sql:  `INSERT INTO t VALUES ('C:\path\to\file')`,
+		},
+		{
+			name: "double_quotes_and_backticks",
+			sql:  "CREATE TABLE \"t\" (`id` integer)",
+		},
+		{
+			name: "sql_word_inside_a_longer_line",
+			sql:  "CREATE TABLE t (\n  SQL_MODE text\n)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			plan := goldenPlan()
+			plan.Statements = []atlasschema.PlanStatement{{
+				SQL:      tt.sql,
+				Severity: safety.Safe,
+				Reason:   "test fixture",
+			}}
+
+			document, err := atlasschema.MarshalPlanFileHCL(plan)
+			c.Assert(err, qt.IsNil)
+			path := filepath.Join(t.TempDir(), "property.plan.hcl")
+			c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
+
+			readBack, format, readErr := atlasschema.ReadPlanDocument(path)
+
+			// The statement survives the heredoc verbatim, modulo the
+			// trailing semicolon the writer normalizes onto every statement.
+			c.Assert(readErr, qt.IsNil)
+			c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
+			c.Assert(readBack.Statements, qt.HasLen, 1)
+			c.Assert(readBack.Statements[0].SQL, qt.Equals, strings.TrimSuffix(tt.sql, ";"))
+		})
+	}
+}
+
+// TestMarshalPlanFileHCLRefusesUnrepresentableMigrationContent is the other
+// half of the writer's contract: content the heredoc cannot carry back
+// verbatim is refused by name rather than silently rewritten, because a
+// rewritten statement is no longer the one the operator reviewed.
+func TestMarshalPlanFileHCLRefusesUnrepresentableMigrationContent(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{
+			// A line that trims to the delimiter would close the heredoc.
+			name: "sql_token_with_surrounding_spaces_on_its_own_line",
+			sql:  "CREATE TABLE t (\n  SQL  \n)",
+			want: `plan migration contains a line consisting of the heredoc delimiter "SQL".*`,
+		},
+		{
+			// Both the carriage return and the delimiter line are refusals;
+			// the CR is reported first because it is checked first.
+			name: "sql_token_line_with_crlf",
+			sql:  "CREATE TABLE t (\r\n  SQL\r\n)",
+			want: `plan migration contains a carriage return.*`,
+		},
+		{
+			name: "crlf_line_endings",
+			sql:  "CREATE TABLE t (\r\n  id integer\r\n)",
+			want: `plan migration contains a carriage return.*normalize the statement to LF line endings.*`,
+		},
+		{
+			name: "lone_carriage_return",
+			sql:  "CREATE TABLE t (\r  id integer)",
+			want: `plan migration contains a carriage return.*`,
+		},
+		{
+			name: "template_interpolation",
+			sql:  `INSERT INTO t VALUES ('${var.x}')`,
+			want: `plan migration contains an HCL template interpolation sequence.*`,
+		},
+		{
+			name: "template_directive",
+			sql:  `INSERT INTO t VALUES ('%{ if true }')`,
+			want: `plan migration contains an HCL template interpolation sequence.*`,
+		},
+		{
+			name: "invalid_utf8",
+			sql:  "CREATE TABLE t (name text DEFAULT '\xff\xfe')",
+			want: `plan migration contains invalid UTF-8.*`,
+		},
+		{
+			// HCL leaves whitespace-only lines out of `<<-` stripping, so the
+			// writer's indentation would come back inside the statement.
+			name: "whitespace_only_line",
+			sql:  "CREATE TABLE t (\n  \n  id integer\n)",
+			want: `plan migration contains a whitespace-only line.*leave the line empty or write the native JSON plan format instead`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			plan := goldenPlan()
+			plan.Statements = []atlasschema.PlanStatement{{
+				SQL:      tt.sql,
+				Severity: safety.Safe,
+				Reason:   "test fixture",
+			}}
+
+			_, err := atlasschema.MarshalPlanFileHCL(plan)
+
+			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
+}
+
 func TestReadPlanDocumentRejectsMalformedHCL(t *testing.T) {
 	tests := []struct {
 		name     string

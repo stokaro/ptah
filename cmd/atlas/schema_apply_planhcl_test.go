@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -142,7 +143,7 @@ func TestSchemaApplyAtlasPlanFileRefusesDriftedTarget(t *testing.T) {
 	// Ptah cannot compare the plan's Atlas hashes, so the drift surfaces
 	// semantically: replaying the plan from the drifted schema does not
 	// reach --to, and the apply refuses with the target untouched.
-	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state:.*the target database was left unchanged.*re-run .schema plan. against the current database and review the fresh plan`)
+	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state:.*the plan was not applied to the target.*re-run .schema plan. against the current database and review the fresh plan`)
 	c.Assert(atlasschema.IsPlanDesiredStateFailure(err), qt.IsTrue, qt.Commentf("%s", out))
 	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, dbPath, "drifted"), qt.Equals, 1)
@@ -172,6 +173,87 @@ func TestSchemaApplyAtlasPlanFileRefusesTamperedDesiredState(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state:.*tampered_extra.*`)
 	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, dbPath, "tampered_extra"), qt.Equals, 0)
+}
+
+// writeAtlasPlanFile writes a hand-built Atlas-format plan file carrying the
+// given migration body, the way a third party would hand one over.
+func writeAtlasPlanFile(c *qt.C, path, migration string) {
+	c.Helper()
+	var body strings.Builder
+	for line := range strings.SplitSeq(strings.TrimRight(migration, "\n"), "\n") {
+		body.WriteString("  " + line + "\n")
+	}
+	document := "plan \"20260801102801\" {\n" +
+		"  from      = \"2Avyplv6jw8kAsH/g2YFPkfnp+UNBpomMXPUl/4R4+Q=\"\n" +
+		"  to        = \"YEugbm2aJqmXFA8dDrzmqLPC4tiNUrXe6YCrvazKOiY=\"\n" +
+		"  migration = <<-SQL\n" + body.String() + "  SQL\n}\n"
+	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
+}
+
+// TestSchemaApplyAtlasPlanFileRefusesDevDatabaseEscape is the regression test
+// for the plan-verification sandbox escape: a plan whose migration attaches
+// another database file writes outside the dev database during what claims to
+// be a rehearsal, and could even pass verification because the effect lands
+// where the comparison never looks. The plan must be refused before anything
+// executes anywhere.
+func TestSchemaApplyAtlasPlanFileRefusesDevDatabaseEscape(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "escape-target.db")
+	victimPath := filepath.Join(dir, "victim.db")
+	planPath := filepath.Join(dir, "escape.plan.hcl")
+	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
+	writeAtlasPlanFile(c, planPath,
+		"ATTACH DATABASE '"+victimPath+"' AS victim;\nCREATE TABLE victim.pwned (id integer);")
+
+	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
+		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--auto-approve",
+	)
+
+	// Refused by name, and nothing ran: not on the dev database, not on the
+	// target, and not on the third database the plan tried to reach.
+	c.Assert(err, qt.ErrorMatches,
+		`pre-planned migration cannot be verified on a dev database: statement 1 uses ATTACH, which attaches another SQLite database file.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*Replaying it would not be a sandboxed rehearsal.*`)
+	c.Assert(out, qt.Contains, "cannot be verified on a dev database")
+	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(sqliteColumnCount(c, dbPath, "users", "email"), qt.Equals, 0)
+}
+
+// TestSchemaApplyAtlasPlanFileRefusesEscapeHiddenBehindValidChanges covers the
+// second probe from the review: the escape rides along with statements that do
+// converge to the desired state, so the end-state comparison would have passed
+// while the payload landed in an attached file.
+func TestSchemaApplyAtlasPlanFileRefusesEscapeHiddenBehindValidChanges(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "escape-hidden.db")
+	victimPath := filepath.Join(dir, "hidden-victim.db")
+	planPath := filepath.Join(dir, "hidden.plan.hcl")
+	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
+	oraclePlan, err := os.ReadFile(oracleFixturePath(c, oracleAtlasPlanFile))
+	c.Assert(err, qt.IsNil)
+	// The real oracle migration plus a trailing escape.
+	migration := strings.SplitN(string(oraclePlan), "migration = <<-SQL\n", 2)[1]
+	migration = strings.SplitN(migration, "\n  SQL\n", 2)[0]
+	migration = strings.ReplaceAll(migration, "\n  ", "\n")
+	migration = strings.TrimPrefix(migration, "  ")
+	writeAtlasPlanFile(c, planPath, migration+
+		"\nATTACH DATABASE '"+victimPath+"' AS victim;\nCREATE TABLE victim.pwned (id integer);")
+
+	_, err = runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
+		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.ErrorMatches, `pre-planned migration cannot be verified on a dev database: statement 4 uses ATTACH.*`)
+	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 }
 
 func TestSchemaApplyAtlasPlanFileDryRunPrintsWithoutApplying(t *testing.T) {

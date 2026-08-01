@@ -308,11 +308,27 @@ content — including `.plan.hcl` files written by the licensed Atlas binary:
 - An **Atlas-format plan** requires `--to`, exactly like the official binary
   (`the flag "to" is required to verify the provided plan`). Its hashes are
   re-verified with Ptah's own machinery: the plan is replayed on a dev
-  database (`--dev-url`, or an ephemeral SQLite dev database for SQLite
-  targets) starting from the target's current schema, and the reached state
+  database starting from the target's current schema, and the reached state
   must equal the `--to` desired state under Ptah's schema diff before the
-  target is touched. A Ptah-written `.plan.hcl` keeps native sha256
-  fingerprints, so it gets the stale-plan check too.
+  target is touched. SQLite targets get a throwaway dev database
+  automatically; every other dialect requires `--dev-url`. A Ptah-written
+  `.plan.hcl` keeps native sha256 fingerprints, so it gets the stale-plan
+  check too — but the replay runs either way, because the fingerprint shape
+  is public and must never be able to switch a verification off.
+
+The replay is a sandbox only for statements that cannot reach out of the dev
+database. A plan containing one that can — `ATTACH`/`DETACH`, `VACUUM INTO`,
+`LOAD DATA INFILE`, `SELECT ... INTO OUTFILE`/`DUMPFILE`, `COPY ... PROGRAM`
+or `COPY` with a file path, `dblink`, `postgres_fdw`, `file_fdw`, or the
+server-side file-access functions — is refused by name before anything runs
+anywhere:
+
+```text
+error: pre-planned migration cannot be verified on a dev database: statement 1 uses ATTACH, which attaches another SQLite database file to the session, so the statement can write to databases other than the dev database. Replaying it would not be a sandboxed rehearsal ...
+```
+
+The verification also runs under `--dry-run`, so a plan received from someone
+else can be checked without committing to apply it.
 
 After every `--plan` apply with a desired state available, the end state is
 verified again on the target — the semantic end-state verification Atlas
