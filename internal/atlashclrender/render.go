@@ -33,6 +33,12 @@ type Diagnostic struct {
 	Message  string
 }
 
+// TriggerDiagnosticPath returns an unambiguous diagnostic identity for a
+// trigger, whose schema identity is the pair of target table and trigger name.
+func TriggerDiagnosticPath(table, name string) string {
+	return fmt.Sprintf("triggers[%q][%q]", table, name)
+}
+
 // Result is the rendered HCL plus loss diagnostics.
 type Result struct {
 	Data        []byte

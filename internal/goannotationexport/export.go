@@ -23,10 +23,16 @@ import (
 )
 
 var (
-	// ErrNoAnnotations reports that destructive cleanup has no source annotations
-	// to migrate and would therefore risk replacing a previous export with an
-	// empty schema.
-	ErrNoAnnotations = errors.New("no Ptah Go annotations found to export and clean")
+	// ErrNoAnnotations reports that the source set has no annotations to export.
+	// Refusing the export protects an existing HCL schema from empty replacement.
+	ErrNoAnnotations = errors.New("no Ptah Go annotations found to export")
+	// ErrNoRemovableAnnotations reports that cleanup found no annotation edits it
+	// can apply safely.
+	ErrNoRemovableAnnotations = errors.New("no removable Ptah Go annotations found for cleanup")
+	// ErrNoExportableSchema reports that parsed annotations did not produce any
+	// HCL schema object. Refusing the export protects an existing HCL schema from
+	// header-only replacement.
+	ErrNoExportableSchema = errors.New("go annotations produced no exportable HCL schema objects")
 	// ErrLossyCleanup reports that destructive cleanup would discard schema intent.
 	ErrLossyCleanup = errors.New("refuse to clean Go annotations after a lossy HCL export")
 	// ErrInvalidHCL reports that generated HCL is not parseable and stable.
@@ -175,7 +181,7 @@ func prepareExport(opts Options) (exportPlan, error) {
 		cleanupResults = cleanupPlan.DiffResults()
 	}
 	if opts.Cleanup && len(cleanupResults) == 0 {
-		return exportPlan{}, ErrNoAnnotations
+		return exportPlan{}, ErrNoRemovableAnnotations
 	}
 
 	return exportPlan{
@@ -191,6 +197,9 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	db, err := goschema.ParseFS(plan.snapshot.FS(), ".")
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("parse Go annotations: %w", err)
+	}
+	if !databaseHasSchemaObjects(db) {
+		return renderedExport{}, ErrNoAnnotations
 	}
 	bindSnapshotManagedDataSourceRoot(db.ManagedData, plan.snapshot.Root())
 	if alias, err := managedDataSourceAlias(db.ManagedData, plan.outputPath); err != nil {
@@ -211,6 +220,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 		return renderedExport{}, fmt.Errorf("render HCL schema: %w", err)
 	}
 	diagnostics := append([]atlashclrender.Diagnostic(nil), rendered.Diagnostics...)
+	diagnostics = append(diagnostics, opaqueSQLDiagnostics(db, diagnostics)...)
 	// Normalization loss is detected against the SOURCE, not the rendered HCL:
 	// once cty has composed a value, the original code points are gone and the
 	// round-trip below can only prove the composed form is self-stable.
@@ -220,18 +230,46 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	}
 	diagnostics = append(diagnostics, normalization...)
 	sortDiagnostics(diagnostics)
-	canonicalHCL, err := canonicalRoundTrip(rendered.Data)
+	canonicalHCL, exportedDB, err := canonicalRoundTrip(rendered.Data)
 	if err != nil {
 		return renderedExport{}, err
 	}
 	if plan.options.Cleanup && len(diagnostics) > 0 {
 		return renderedExport{}, lossyCleanupError(diagnostics)
 	}
+	if !databaseHasSchemaObjects(exportedDB) {
+		return renderedExport{}, ErrNoExportableSchema
+	}
 	return renderedExport{
 		database:    db,
 		hcl:         canonicalHCL,
 		diagnostics: diagnostics,
 	}, nil
+}
+
+func databaseHasSchemaObjects(db *goschema.Database) bool {
+	objectCount := len(db.Schemas) +
+		len(db.Tables) +
+		len(db.Fields) +
+		len(db.Indexes) +
+		len(db.Constraints) +
+		len(db.Enums) +
+		len(db.EmbeddedFields) +
+		len(db.Extensions) +
+		len(db.Functions) +
+		len(db.Sequences) +
+		len(db.Domains) +
+		len(db.CompositeTypes) +
+		len(db.Ranges) +
+		len(db.Views) +
+		len(db.MaterializedViews) +
+		len(db.Triggers) +
+		len(db.RLSPolicies) +
+		len(db.RLSEnabledTables) +
+		len(db.Roles) +
+		len(db.Grants) +
+		len(db.ManagedData)
+	return objectCount > 0
 }
 
 func bindSnapshotManagedDataSourceRoot(values []goschema.ManagedData, root string) {
@@ -367,33 +405,33 @@ func resolvePaths(opts Options) (rootDir string, outputPath string, err error) {
 	return rootDir, outputPath, nil
 }
 
-func canonicalRoundTrip(data []byte) ([]byte, error) {
+func canonicalRoundTrip(data []byte) ([]byte, *goschema.Database, error) {
 	parsed, err := atlashcl.Parse(data, "schema.hcl")
 	if err != nil {
-		return nil, fmt.Errorf("%w: parse generated schema: %v", ErrInvalidHCL, err)
+		return nil, nil, fmt.Errorf("%w: parse generated schema: %v", ErrInvalidHCL, err)
 	}
 	canonical, err := atlashclrender.Render(parsed)
 	if err != nil {
-		return nil, fmt.Errorf("%w: render canonical schema: %v", ErrInvalidHCL, err)
+		return nil, nil, fmt.Errorf("%w: render canonical schema: %v", ErrInvalidHCL, err)
 	}
 	if len(canonical.Diagnostics) > 0 {
-		return nil, ErrInvalidHCL
+		return nil, nil, ErrInvalidHCL
 	}
 	if !bytes.Equal(canonical.Data, data) {
-		return nil, fmt.Errorf("%w: canonical render changed the generated schema", ErrInvalidHCL)
+		return nil, nil, fmt.Errorf("%w: canonical render changed the generated schema", ErrInvalidHCL)
 	}
 	reparsed, err := atlashcl.Parse(canonical.Data, "schema.hcl")
 	if err != nil {
-		return nil, fmt.Errorf("%w: parse canonical schema: %v", ErrInvalidHCL, err)
+		return nil, nil, fmt.Errorf("%w: parse canonical schema: %v", ErrInvalidHCL, err)
 	}
 	stable, err := atlashclrender.Render(reparsed)
 	if err != nil {
-		return nil, fmt.Errorf("%w: verify canonical schema: %v", ErrInvalidHCL, err)
+		return nil, nil, fmt.Errorf("%w: verify canonical schema: %v", ErrInvalidHCL, err)
 	}
 	if len(stable.Diagnostics) > 0 || !bytes.Equal(stable.Data, canonical.Data) {
-		return nil, ErrInvalidHCL
+		return nil, nil, ErrInvalidHCL
 	}
-	return canonical.Data, nil
+	return canonical.Data, parsed, nil
 }
 
 func sortDiagnostics(diagnostics []atlashclrender.Diagnostic) {

@@ -67,8 +67,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS "accounts_email_key" ON "public"."accounts" ("
 `ptah schema render`, `ptah schema compare`, `ptah schema drift`, and the
 migration commands (`ptah migrations plan` / `ptah migrations generate`).
 
-To replace Go annotations with an HCL source, use the lossless one-time export
-workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).
+To replace Go annotations with an HCL source, use the review-aware one-time
+export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).
 
 ## Plan against a database
 
@@ -88,10 +88,12 @@ the [Atlas project config subset](../../atlas/project-config/).
 
 :::caution[Supported subset]
 Ptah's HCL schema format is compatible with the Atlas HCL schema language for
-the supported subset and adds documented Ptah extensions for lossless Go
-annotation export. Ptah is not affiliated with or endorsed by Ariga or Atlas.
-If a construct is not implemented, the command fails with an explicit error;
-treat that as a compatibility gap and check the conformance reports.
+the supported subset and adds documented Ptah extensions for Go annotation
+parity. Export reports opaque SQL bodies and any byte-level
+normalization before automatic cleanup. Ptah is not affiliated with or endorsed
+by Ariga or Atlas. If a construct is not implemented, the command fails with an
+explicit error; treat that as a compatibility gap and check the conformance
+reports.
 :::
 
 ## Next steps

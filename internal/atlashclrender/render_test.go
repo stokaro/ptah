@@ -348,7 +348,7 @@ func TestRenderPreservesSensitiveAndComplexValuesWhileReportingInvalidObjects(t 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{
-		"triggers.bad_event",
+		`triggers["users"]["bad_event"]`,
 		"grants.app_user",
 	})
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
@@ -715,10 +715,10 @@ func TestRenderSkipsIncompleteObjectsWithDiagnostics(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{
-		"function missing_body",
+		"functions.missing_body",
 		"views.missing_body",
 		"materialized_views.missing_body",
-		"triggers.missing_table",
+		`triggers[""]["missing_table"]`,
 		"rls_policies.missing_table",
 	})
 	_, err = atlashcl.Parse(rendered.Data, "schema.hcl")
