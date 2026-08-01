@@ -119,6 +119,11 @@ func TestClassify_Errors(t *testing.T) {
 			want: `docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL`,
 		},
 		{
+			name: "reserved external-schema marker scheme",
+			url:  "ptah-external-schema://app",
+			want: `ptah-external-schema:// is a reserved internal marker scheme; reference data\.external_schema\.<name>\.url from an atlas\.hcl env src instead`,
+		},
+		{
 			name: "atlas registry",
 			url:  "atlas://remote/app",
 			want: `atlas:// registry URLs are not supported: Ptah has no Atlas Cloud registry; use a local schema file, a migration directory, a database URL, or an env:// reference`,
