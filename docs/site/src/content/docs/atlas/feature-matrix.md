@@ -49,15 +49,15 @@ row for a migration decision.
 :::
 ## At a glance
 
-Across the 132 capabilities below:
+Across the 129 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 65 |
+| Ptah supports it fully | 63 |
 | Ptah supports it with a stated limitation | 44 |
-| Ptah does not implement it | 23 |
+| Ptah does not implement it | 22 |
 | Ptah and Atlas CE both support it | 25 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 27 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 26 |
 | Ptah has it and neither Atlas edition does | 8 |
 | Atlas CE has it and Ptah does not, or only in part | 25 |
 | Atlas side not established by this page's evidence | 15 |
@@ -231,28 +231,44 @@ as open capabilities regardless.
 
 ## Data and distribution
 
+Ptah's registry story differs from Atlas's in storage, not in function.
+Everything artifact distribution needs — publish a migration directory or a
+desired schema, pull it elsewhere, pin an exact version, run migrations
+straight from the registry — works against any OCI-compliant registry: GHCR,
+ECR, GAR, Harbor, Docker Hub, or a self-hosted `registry:2`.
+
+For a team this means the registry and credentials already used for container
+images also serve schema artifacts; there is no separate account, login verb,
+or hosted service to depend on; and a digest pin makes a deployment
+reproducible byte for byte. The artifacts are ordinary OCI 1.1 manifests, so
+registry-side controls — replication, retention, immutable-tag policy, access
+control — come from the registry, not from Ptah. The full workflow is on
+[OCI registry artifacts](../../operate/oci-registry/).
+
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Artifact integrity check (--verify-sum) | 🟡 | ➖ | ❔ | On migrations push and up only. It checks the directory against the ptah.sum inside the same artifact, so content rewritten with its sum passes. |
 | Declarative reference data | ✅ | ❌ | ✅ | //ptah:schema:data rows diffed by key into a reversible data migration. Atlas lists declarative data management as a Pro feature. |
 | Digest pinning and write-once version tags | ✅ | ➖ | ❔ | Pushing to an @sha256 reference is refused; --version is write-once and a conflict exits 2. The reference tag, --tag values and latest all move. |
 | Environment-scoped SQL seed runner | ✅ | ❌ | ❌ | NNN_desc.env.sql files recorded in schema_seeds with protected-env gates. No seed verb in the CE inventory or the cited Pro list. |
-| Migration directories in an OCI registry | ✅ | ❌ | ✅ | `migrations push/pull`, plus `up`, `status`, `down` and `lint` reading `oci://` directly as the directory flag. No local checkout needed. |
 | oci:// as a --schema-file desired-state source | 🟡 | ❌ | ✅ | Accepted by schema render/compare/drift/plan/apply and migrations plan/generate. schema inspect rejects it, and only three of those expose --plain-http. |
-| oci:// in the Atlas-compatible ptah-compat binary | ❌ | ❌ | ➖ | By design: compat mirrors the Atlas surface, which has no oci:// scheme. migration.dir takes file:// only; the OCI workflow lives in the native ptah binary. |
 | Referrer attachments: lint, plan, deployment reports | 🟡 | ❌ | ❔ | lint --attach, migrations plan --attach and up attach reports to an exact digest. `oci referrers` lists descriptors only; no flag downloads the payload. |
-| Registry-backed artifact distribution | ✅ | ❌ | ✅ | Ptah pushes/pulls schema and migration artifacts to any OCI registry. Atlas Registry is a hosted Cloud service; CE v1.2.0 has no push verb. |
-| Self-hosted registry with no vendor account | ✅ | ➖ | ❌ | Any OCI registry; auth reads the Docker credential store. Ptah registers no login verb. Atlas Registry is documented as an Atlas Cloud service. |
+| Registry-backed distribution: `oci://` vs `atlas://` | ✅ | ❌ | ✅ | Same functions as `atlas://` — publish, pull, digest-pin, consume directly — over any OCI registry with no vendor account. Full workflow: [OCI registry artifacts](../../operate/oci-registry/). |
 
 ## Atlas Registry and Cloud
 
+These rows are the services Atlas hosts on top of its registry — approvals,
+reporting, monitoring, the `atlas://` scheme itself. They concern the hosted
+service, not artifact storage; the storage function is covered under
+[Data and distribution](#data-and-distribution).
+
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
+| `atlas://` vendor protocol | ❌ | ❌ | ✅ | The scheme is Cloud-bound and rejected with a named error; every function behind it is available natively over `oci://`. The compat binary mirrors the Atlas surface, which has no `oci://`. |
 | `migrate push` and `schema push` | ❌ | ❌ | ✅ | ptah-compat boundary stubs printing the CE abort text, exit 1. The native equivalents are `ptah schema push` and `ptah migrations push`. |
 | `schema plan` registry and output flags | ❌ | ❌ | ✅ | `--push`/`--pending`/`--repo` are recorded waivers; `--format`/`--name-format`/`--directive`/`--edit`/`--skip-lint` fail as unimplemented. |
 | `schema plan` registry sub-verbs | ❌ | ❌ | ✅ | approve, lint, list, new, pull, push, rm, test and validate all stay CE boundary stubs; only local plan files are implemented. |
 | Atlas Cloud deployment reporting | ❌ | ❌ | ✅ | No Atlas account model or deployment API. Ptah attaches a deployment-report referrer to its own OCI artifact after an oci:// migrations up. |
-| Atlas Registry `atlas://` source URLs | ❌ | ❌ | ✅ | ptah-compat rejects atlas:// in --to/--from and atlas.hcl migration.dir with named errors. Ptah's scheme is oci://, not an atlas:// resolver. |
 | Reviewer approval and policy workflows | ❌ | ❌ | ✅ | Local `-- +ptah check` pre-migration assertions exist; the Cloud-gated reviewer-approval half is out of scope. |
 | Schema monitoring, hosted UI, login | ❌ | ❌ | ✅ | Out of scope: no login, registry UI, promotion or monitoring. Native `ptah schema drift` is a local one-shot check. |
 
