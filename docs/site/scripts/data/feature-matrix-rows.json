@@ -69,7 +69,7 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "Repeatable `--root-dir`/`--schema-file` merge into one schema; conflicts error. Repo docs cite composite_schema as an Atlas Pro data source.",
-  "evidence": "ptah schema render --help ('repeatable; multiple sources merge into one composite schema'); docs/site/src/content/docs/schema/composite.md:58; docs/site/src/content/docs/atlas/comparison.md:407,413. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): atlas.hcl with `data \"composite_schema\"` -> exit 1 'missing data source handler for \"composite_schema\"'. Atlas pricing page (retrieved 2026-08-01): 'Schema compositions' is Pro, not Starter. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Schema compositions' is unchecked for Starter and checked for Pro/Enterprise, linking to the composite_schema data source"
+  "evidence": "ptah schema render --help ('repeatable; multiple sources merge into one composite schema'); docs/site/src/content/docs/schema/composite.md:58; docs/site/src/content/docs/atlas/comparison.md:407,413. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): atlas.hcl with `data \"composite_schema\"` -> exit 1 'missing data source handler for \"composite_schema\"'. Atlas pricing page (retrieved 2026-08-01): 'Schema compositions' is Pro, not Starter. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Schema compositions' is unchecked for Starter and checked for Pro/Enterprise, linking to the composite_schema data source. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `data \"composite_schema\"` with local file parts works on the licensed build (trial-study observations, scenario, atlas-hcl-pro-constructs)"
  },
  {
   "area": "Schema sources",
@@ -267,7 +267,7 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "`--push`/`--pending`/`--repo` are recorded waivers; `--format`/`--name-format`/`--directive`/`--edit`/`--skip-lint` fail as unimplemented.",
-  "evidence": "ptah-compat schema plan --push --from sqlite://x.db --to file://s.sql; conformance cli-surface.md classifies `atlas schema plan` as absent from the pinned CE binary"
+  "evidence": "ptah-compat schema plan --push --from sqlite://x.db --to file://s.sql; conformance cli-surface.md classifies `atlas schema plan` as absent from the pinned CE binary. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: all five output flags registered: `--format` `--name-format` `--directive` `--edit` `--skip-lint` (trial-study observations, scenario, verbs-and-flags)"
  },
  {
   "area": "Versioned migrations",
@@ -276,7 +276,7 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "`--plan`, `--to-tag` and `--skip-checks` are recorded waivers that fail loudly; Ptah reverts only through pre-planned down files.",
-  "evidence": "ptah-compat migrate down --plan --url sqlite://x.db --dir file://m; conformance cli-surface.md CE inventory"
+  "evidence": "ptah-compat migrate down --plan --url sqlite://x.db --dir file://m; conformance cli-surface.md CE inventory. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `migrate down` registers `--plan`, `--to-tag`, `--skip-checks` (trial-study observations, scenario, verbs-and-flags)"
  },
  {
   "area": "Atlas Registry and Cloud",
@@ -330,16 +330,16 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "No .test.hcl parser; a directory of them reports 'no test cases found' (`ptah-compat` exit 1, native exit 2).",
-  "evidence": "Built ptah-compat: `migrate test --dir file://migrations --dev-url sqlite://dev2.db hcltests` where hcltests holds one basic.test.hcl exits 1 with \"error: no test cases found in hcltests\"; migration/dbtest/parse.go reads YAML cases only; conformance cli-surface.md line 40 classifies `atlas migrate test` out-of-scope for CE. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Testing Framework' is unchecked for Starter and checked for Pro/Enterprise"
+  "evidence": "Built ptah-compat: `migrate test --dir file://migrations --dev-url sqlite://dev2.db hcltests` where hcltests holds one basic.test.hcl exits 1 with \"error: no test cases found in hcltests\"; migration/dbtest/parse.go reads YAML cases only; conformance cli-surface.md line 40 classifies `atlas migrate test` out-of-scope for CE. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Testing Framework' is unchecked for Starter and checked for Pro/Enterprise. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: authored .test.hcl fixtures run locally on sqlite; a single file is accepted as [paths] while ptah-compat requires a directory (trial-study observations, scenario, test-hcl)"
  },
  {
   "area": "Schema inspection filters",
   "feature": "`schema inspect --include` filtering",
   "ptah": "no",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
-  "note": "Flag absent from the pinned Atlas CE v1.2.0 inspect flags; Ptah rejects it as unknown. No cited source settles the licensed builds.",
-  "evidence": "conformance cli-surface.md line 47 lists Atlas CE `schema inspect` flags as --config --dev-url --env --exclude --format --schema --url --var, with no --include; built ptah-compat `schema inspect -u sqlite://t.db --include users` exits 1 with \"error: unknown flag: --include\". Pro cell corrected to unknown because the Atlas feature availability page is not cited for inspect-side --include"
+  "atlas_pro": "yes",
+  "note": "Flag absent from the pinned Atlas CE v1.2.0 inspect flags; Ptah rejects it as unknown. The licensed build registers it and it filters on SQLite.",
+  "evidence": "conformance cli-surface.md line 47 lists Atlas CE `schema inspect` flags as --config --dev-url --env --exclude --format --schema --url --var, with no --include; built ptah-compat `schema inspect -u sqlite://t.db --include users` exits 1 with \"error: unknown flag: --include\". Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `atlas schema inspect --include` registered and functional on sqlite (trial-study observations, scenario, verbs-and-flags)"
  },
  {
   "area": "Migration directory formats",
@@ -519,7 +519,7 @@
   "atlas_oss": "yes",
   "atlas_pro": "yes",
   "note": "schema apply and diff register only the sql helper: {{ json . }} fails to parse. json/hcl/mermaid/split/write and .Realm are inspect-only.",
-  "evidence": "internal/atlasreport/schema_apply.go:45-47 and schema_diff.go:66 register only \"sql\"; schema_inspect.go:161-173 registers base64url/hcl/json/mermaid/sql/split/write. Reproduced: `pc schema diff ... --format '{{ json . }}'` -> `error: parse --format template: template: atlas-schema-diff-format:1: function \"json\" not defined` (exit 1); same on schema apply; `{{ .Realm }}` on diff -> `can't evaluate field Realm in type atlasreport.SchemaDiff`. `{{ json . }}` works on schema inspect, schema clean, and migrate status"
+  "evidence": "internal/atlasreport/schema_apply.go:45-47 and schema_diff.go:66 register only \"sql\"; schema_inspect.go:161-173 registers base64url/hcl/json/mermaid/sql/split/write. Reproduced: `pc schema diff ... --format '{{ json . }}'` -> `error: parse --format template: template: atlas-schema-diff-format:1: function \"json\" not defined` (exit 1); same on schema apply; `{{ .Realm }}` on diff -> `can't evaluate field Realm in type atlasreport.SchemaDiff`. `{{ json . }}` works on schema inspect, schema clean, and migrate status. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `{{ json . }}` on `schema diff` is also undefined on the licensed build - parity on that sub-point (trial-study observations, scenario, ptah-extension-equivalents)"
  },
  {
   "area": "Versioned migrations — execution",
@@ -537,7 +537,7 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "Ptah reverts via pre-planned down files; `--to-tag`/`--skip-checks`/`--plan` fail loudly as waivers. In pinned CE, `migrate down` is a registered community-abort stub, not a working verb.",
-  "evidence": "cli-surface.md CE inventory (37 commands, no `migrate down`); atlas/conformance.md workflow parity: 'migrate down does not exist in the community binary; the CE notice lists down migrations among excluded features'; /tmp/v1-compat migrate down waiver errors reproduced. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): bare `atlas migrate down` -> exit 1 \"Abort: 'atlas migrate down' is not supported by the community version.\"; with --url/--dir it fails earlier on unknown flag because the stub registers no flags"
+  "evidence": "cli-surface.md CE inventory (37 commands, no `migrate down`); atlas/conformance.md workflow parity: 'migrate down does not exist in the community binary; the CE notice lists down migrations among excluded features'; /tmp/v1-compat migrate down waiver errors reproduced. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): bare `atlas migrate down` -> exit 1 \"Abort: 'atlas migrate down' is not supported by the community version.\"; with --url/--dir it fails earlier on unknown flag because the stub registers no flags. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `migrate down` works locally, deletes reverted revision rows (incl. Ptah-written), and inserts a `.atlas_cloud_identifier` metadata row that aborts Ptah reads - stokaro/ptah#957 (trial-study observations, scenario, migrate-down-revisions)"
  },
  {
   "area": "Versioned migrations — execution",
@@ -564,7 +564,7 @@
   "atlas_oss": "partial",
   "atlas_pro": "yes",
   "note": "CE registers `migrate lint` with a basic Open rule set; Atlas's features page marks the lint CLI Pro. Ptah loads custom rules only through the Go API at compile time.",
-  "evidence": "Executed: `ptah-compat migrate lint --dir file://migrations --latest 1` reports \"destructive changes detected -- L1: DROP COLUMN ... #DS103\" and exits 1; `--format '{{ range .Files }}{{ .Name }}{{ end }}'` renders the Atlas template. No rule-loading flag in `ptah migrations lint --help`; custom rules come from migration/lint/rules.go:20 (Register) and lint.Options.ExtraRules (migration/lint/lint.go:107). Atlas CE registers migrate lint (conformance cli-surface.md:33). Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate lint --dir file://m --dev-url sqlite --latest 1` analyzed and reported 'destructive changes detected', exit 1 - the binary lints logged out. The pricing page places 'Migration linting' outside Starter; that classifies the plan, not the binary. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' listed Starter ✗ / Pro ✓, corroborating the features-page Pro classification; the measured pinned CE binary still registers `migrate lint` with the basic rule set, so oss stays partial rather than flipping to no."
+  "evidence": "Executed: `ptah-compat migrate lint --dir file://migrations --latest 1` reports \"destructive changes detected -- L1: DROP COLUMN ... #DS103\" and exits 1; `--format '{{ range .Files }}{{ .Name }}{{ end }}'` renders the Atlas template. No rule-loading flag in `ptah migrations lint --help`; custom rules come from migration/lint/rules.go:20 (Register) and lint.Options.ExtraRules (migration/lint/lint.go:107). Atlas CE registers migrate lint (conformance cli-surface.md:33). Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate lint --dir file://m --dev-url sqlite --latest 1` analyzed and reported 'destructive changes detected', exit 1 - the binary lints logged out. The pricing page places 'Migration linting' outside Starter; that classifies the plan, not the binary. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' listed Starter ✗ / Pro ✓, corroborating the features-page Pro classification; the measured pinned CE binary still registers `migrate lint` with the basic rule set, so oss stays partial rather than flipping to no. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: logged out, current upstream `migrate lint` aborts 'Starting with v0.38, atlas migrate lint is available only to Atlas Pro users' - the pinned CE v1.2.0 behavior no longer matches current upstream (trial-study observations, scenario, lint-test-pro)"
  },
  {
   "area": "Versioned migrations — directory",
@@ -654,7 +654,7 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "Only the `-- +ptah check` spelling; `--tx-mode` all refuses checked files, and that error names `--skip-checks`, which compat apply lacks. CE applies a failing checks.sql unenforced.",
-  "evidence": "Executed: a migration carrying `-- +ptah check name=\"users_empty\" assert=\"SELECT count(*) = 0 FROM users\" on_fail=abort` aborts with \"pre-migration check users_empty ... was not satisfied\" and nothing applied; with `--tx-mode all` it fails \"...cannot run with tx-mode all; use the default per-file transaction mode or --skip-checks\", but `ptah-compat migrate apply --skip-checks` -> \"unknown flag: --skip-checks\" (the flag exists only on native `ptah migrations up`, cmd/migrateup/migrateup.go:150). Measured 2026-08-01, CE v1.2.0 logged out (scratch env): an `-- atlas:txtar` migration whose checks.sql held a failing assertion applied anyway, exit 0 - CE executes the section as plain SQL without assertion semantics. Atlas pricing page (atlasgo.io/pricing, retrieved 2026-08-01) lists 'Pre-migration safety checks' under Pro, not Starter"
+  "evidence": "Executed: a migration carrying `-- +ptah check name=\"users_empty\" assert=\"SELECT count(*) = 0 FROM users\" on_fail=abort` aborts with \"pre-migration check users_empty ... was not satisfied\" and nothing applied; with `--tx-mode all` it fails \"...cannot run with tx-mode all; use the default per-file transaction mode or --skip-checks\", but `ptah-compat migrate apply --skip-checks` -> \"unknown flag: --skip-checks\" (the flag exists only on native `ptah migrations up`, cmd/migrateup/migrateup.go:150). Measured 2026-08-01, CE v1.2.0 logged out (scratch env): an `-- atlas:txtar` migration whose checks.sql held a failing assertion applied anyway, exit 0 - CE executes the section as plain SQL without assertion semantics. Atlas pricing page (atlasgo.io/pricing, retrieved 2026-08-01) lists 'Pre-migration safety checks' under Pro, not Starter. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: the licensed build ENFORCES txtar checks.sql (failing assertion aborts before any body statement, exit 1) and registers no `migrate apply --skip-checks` - the flag lives on `migrate down` (trial-study observations, scenario, txtar-checks-enforcement, verbs-and-flags)"
  },
  {
   "area": "Versioned migrations — runtime policy",
@@ -708,7 +708,7 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "schema test -u takes only a Go-annotation directory; SQL/HCL files and DB URLs fail. Neither verb exposes `--report` or `--seed-dir`.",
-  "evidence": "Built ptah-compat `schema test --help` (flags: --dev-url, --run, -u only) and `migrate test --help` (--dev-url, --dir, --dir-format, --run only); `schema test -u file:///path/schema.sql` exits 1 with \"parse desired schema from ...: stat .: not a directory\"; `-u sqlite://target.db` and `-u env://src` exit 1 with \"only local file:// migration directories are supported\"; `migrate test --report json` is parsed as a positional path. Passing baseline: `migrate test --dir file://migrations --dev-url sqlite://dev.db tests` exits 0. Atlas side from cli-surface.md lines 40/59 (out-of-scope in CE) and lines 138-140/168-170"
+  "evidence": "Built ptah-compat `schema test --help` (flags: --dev-url, --run, -u only) and `migrate test --help` (--dev-url, --dir, --dir-format, --run only); `schema test -u file:///path/schema.sql` exits 1 with \"parse desired schema from ...: stat .: not a directory\"; `-u sqlite://target.db` and `-u env://src` exit 1 with \"only local file:// migration directories are supported\"; `migrate test --report json` is parsed as a positional path. Passing baseline: `migrate test --dir file://migrations --dev-url sqlite://dev.db tests` exits 0. Atlas side from cli-surface.md lines 40/59 (out-of-scope in CE) and lines 138-140/168-170. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: the licensed build's `migrate test` and `schema test` also lack `--report` and `--seed-dir`; `schema test -u` accepts a SQL file and a live sqlite URL (both PASS) (trial-study observations, scenario, lint-test-pro, test-hcl)"
  },
  {
   "area": "Test frameworks",
@@ -753,7 +753,7 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "Custom rules only from Go (lint.Register, Options.ExtraRules); atlas.hcl rule, review, naming, non_linear blocks and force all fail.",
-  "evidence": "migration/lint/rules.go:20 Register, migration/lint/lint.go:107 Options.ExtraRules; migration/lint/config.go Config has only Dialect/DisabledRules/Rules{severity,exclude} — no rule definition. config/projectconfig/atlas.go:536 parseLintPolicyBlocks accepts only concurrent_index, data_depend, destructive, git, nestedtx, incompatible; atlas.go:613 rejects `force`. Atlas features page classifies \"Custom linting rules\" as Pro."
+  "evidence": "migration/lint/rules.go:20 Register, migration/lint/lint.go:107 Options.ExtraRules; migration/lint/config.go Config has only Dialect/DisabledRules/Rules{severity,exclude} — no rule definition. config/projectconfig/atlas.go:536 parseLintPolicyBlocks accepts only concurrent_index, data_depend, destructive, git, nestedtx, incompatible; atlas.go:613 rejects `force`. Atlas features page classifies \"Custom linting rules\" as Pro. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `lint { rule \"hcl\" \"custom\" { src = [...] } }` accepted and the rules execute during migrate lint; rule severity is only `error=true/false` (trial-study observations, scenario, lint-test-pro)"
  },
  {
   "area": "Lint policy and suppression",
@@ -762,16 +762,16 @@
   "atlas_oss": "yes",
   "atlas_pro": "yes",
   "note": "Analyzer-name selectors suppress, but only codes DS102/DS103/MF103 map; atlas:nolint PG101 and unknown selectors are silently ignored.",
-  "evidence": "internal/atlaslint/rules.go:41 NativeSuppressionTargets maps 5 analyzer names + ds102/ds103/mf103 only, default returns nil. Reproduced: `ptah-compat migrate lint` prints `https://atlasgo.io/lint/analyzers#PG101` yet `-- atlas:nolint PG101` leaves the diagnostic. CE side: PARITY.md:420 records the imported Atlas fixtures asserting `-- atlas:nolint` suppression for `atlas migrate lint`; gaps.md:814 runs cli-migrate-lint-ignore.txtar with 57 assertions. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' is unchecked on Starter — a plan-tier claim in tension with the measured CE fixtures asserting `-- atlas:nolint` suppression; the measured yes stands."
+  "evidence": "internal/atlaslint/rules.go:41 NativeSuppressionTargets maps 5 analyzer names + ds102/ds103/mf103 only, default returns nil. Reproduced: `ptah-compat migrate lint` prints `https://atlasgo.io/lint/analyzers#PG101` yet `-- atlas:nolint PG101` leaves the diagnostic. CE side: PARITY.md:420 records the imported Atlas fixtures asserting `-- atlas:nolint` suppression for `atlas migrate lint`; gaps.md:814 runs cli-migrate-lint-ignore.txtar with 57 assertions. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' is unchecked on Starter — a plan-tier claim in tension with the measured CE fixtures asserting `-- atlas:nolint` suppression; the measured yes stands. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `-- atlas:nolint <CODE>` and analyzer-name spellings both suppress; matching is exact, not blanket (trial-study observations, scenario, lint-test-pro)"
  },
  {
   "area": "Lint policy and suppression",
   "feature": "Per-rule severity policy",
   "ptah": "partial",
   "atlas_oss": "unknown",
-  "atlas_pro": "yes",
-  "note": "Severity vocabulary is warning|error only (info errors out); atlas.hcl exposes 5 analyzer blocks mapped to an error bool and rejects force.",
-  "evidence": "migration/lint/config.go:78 validateConfig admits only SeverityWarning/SeverityError. Reproduced: `severity: info` -> `error: failed to parse lint config .ptah-lint.yaml: rule DS101 has unsupported severity \"info\"` (exit 2); `severity: warning` demotes DS101 from error. config/projectconfig/atlas.go:594 parseLintAnalyzer takes only `error` bool. No cited Atlas source establishes CE severity-policy behavior; the Atlas features page classifies the linting CLI as Pro."
+  "atlas_pro": "partial",
+  "note": "Severity vocabulary is warning|error only (info errors out). Measured licensed build is no richer: analyzer and rule blocks reject a `severity` attribute; only boolean error toggles exist.",
+  "evidence": "migration/lint/config.go:78 validateConfig admits only SeverityWarning/SeverityError. Reproduced: `severity: info` -> `error: failed to parse lint config .ptah-lint.yaml: rule DS101 has unsupported severity \"info\"` (exit 2); `severity: warning` demotes DS101 from error. config/projectconfig/atlas.go:594 parseLintAnalyzer takes only `error` bool. No cited Atlas source establishes CE severity-policy behavior; the Atlas features page classifies the linting CLI as Pro. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: analyzer blocks and .rule.hcl reject a `severity` attribute; the only per-analyzer control is boolean error (trial-study observations, scenario, lint-test-pro)"
  },
  {
   "area": "Lint output and CI",
@@ -1077,25 +1077,25 @@
   "atlas_oss": "yes",
   "atlas_pro": "yes",
   "note": "`variable` is parsed then discarded and `var.x` reaches DDL as the literal text `var.x`, exit 0 — no substitution and no error.",
-  "evidence": "internal/atlashcl/atlashcl.go:107-110 and 1478-1484; conformance gaps.md atlas-hcl-parse row `schemahcl/testdata/variables.hcl` — \"only non-schema top-level blocks: variable\""
+  "evidence": "internal/atlashcl/atlashcl.go:107-110 and 1478-1484; conformance gaps.md atlas-hcl-parse row `schemahcl/testdata/variables.hcl` — \"only non-schema top-level blocks: variable\". Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `variable` + var.x inside a schema file substitutes on the licensed build (trial-study observations, scenario, hcl-semantics)"
  },
  {
   "area": "Schema sources",
   "feature": "HCL function calls in schema files",
   "ptah": "partial",
   "atlas_oss": "unknown",
-  "atlas_pro": "unknown",
+  "atlas_pro": "partial",
   "note": "sql() unwraps in column default/on_update/unique_expr/check, index ops, domain check only; in type, check.expr, index.where it leaks literally.",
-  "evidence": "internal/atlashcl/atlashcl.go:1466-1476 (textual `sql(` prefix match, 6 call sites) and 1486-1496; render emits column type `sql(\"geometry(Point,4326)\")`"
+  "evidence": "internal/atlashcl/atlashcl.go:1466-1476 (textual `sql(` prefix match, 6 call sites) and 1486-1496; render emits column type `sql(\"geometry(Point,4326)\")`. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `sql(...)` as a column type works on the licensed build; `sql(...)` inside an index where clause is rejected under the sqlite dialect (trial-study observations, scenario, hcl-semantics)"
  },
  {
   "area": "Schema sources",
   "feature": "HCL locals, lock, atlas, dynamic/for_each",
   "ptah": "no",
   "atlas_oss": "unknown",
-  "atlas_pro": "unknown",
+  "atlas_pro": "partial",
   "note": "Named rejections, rejected (`ptah-compat` exit 1, native `ptah` exit 2): unsupported top-level block \"locals\"/\"lock\"/\"atlas\"; unsupported table block \"dynamic\".",
-  "evidence": "internal/atlashcl/atlashcl.go:111-113 and 321-323; `ptah schema render --schema-file t_locals.hcl` prints each quoted error"
+  "evidence": "internal/atlashcl/atlashcl.go:111-113 and 321-323; `ptah schema render --schema-file t_locals.hcl` prints each quoted error. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `locals` works in a schema file on the licensed build; `lock` and `atlas` top-level blocks are rejected under the sqlite dialect; `dynamic` was not probed on the licensed build (trial-study observations, scenario, hcl-semantics)"
  },
  {
   "area": "Schema sources",
@@ -1104,7 +1104,7 @@
   "atlas_oss": "unknown",
   "atlas_pro": "unknown",
   "note": "Errors: unsupported foreign_key attribute \"deferrable\". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too.",
-  "evidence": "internal/atlashcl/atlashcl.go:1324-1331; `grep -rin deferrable --include=*.go` outside tests returns only one code comment in migration/schemadiff"
+  "evidence": "internal/atlashcl/atlashcl.go:1324-1331; `grep -rin deferrable --include=*.go` outside tests returns only one code comment in migration/schemadiff. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `deferrable = true` rejected under the sqlite dialect; engine-gated, so the licensed-build cell stays unresolved for PostgreSQL (trial-study observations, scenario, hcl-semantics)"
  },
  {
   "area": "Schema sources",
@@ -1120,9 +1120,9 @@
   "feature": "Directory of .hcl files as one schema source",
   "ptah": "no",
   "atlas_oss": "unknown",
-  "atlas_pro": "unknown",
+  "atlas_pro": "yes",
   "note": "`--schema-file dir` and `--to file://dir` are refused (schema file is a directory); globs are not expanded. Multi-file needs one flag per file.",
-  "evidence": "cmd/internal/schemaload/schemaload.go:257-259; `ptah-compat schema diff --to file://dir` prints \"load --to schema: schema file is a directory\""
+  "evidence": "cmd/internal/schemaload/schemaload.go:257-259; `ptah-compat schema diff --to file://dir` prints \"load --to schema: schema file is a directory\". Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: a directory of .hcl files as `--url file://dir` works on schema inspect (trial-study observations, scenario, hcl-semantics)"
  },
  {
   "area": "Schema inspection filters",
@@ -1149,61 +1149,61 @@
   "atlas_oss": "unknown",
   "atlas_pro": "unknown",
   "note": "Only [type=extension].version is honored; other .field suffixes and non-final [type=...] fail before any database is contacted.",
-  "evidence": "internal/atlasfilter/filter.go:188-200 parseFieldSelector accepts only field==\"version\" with hasOnlyType(types,\"extension\"), and :132-135 rejects a second [type= segment; built ptah-compat on live PostgreSQL: `--exclude '*[type=extension].version'` blanks the version, `--exclude '*[type=table].comment'` exits 1 \"unsupported Atlas exclude field selector \\\".comment\\\"\", `--exclude '*[type=table]*'` exits 1 \"unsupported Atlas exclude field selector suffix \\\"*\\\"\". Atlas columns downgraded to unknown: conformance cli-surface.md line 47 establishes that --exclude exists on Atlas CE schema inspect but nothing cited establishes which field-selector forms Atlas honors, and no cited source defines an \"exporter block\" at all"
+  "evidence": "internal/atlasfilter/filter.go:188-200 parseFieldSelector accepts only field==\"version\" with hasOnlyType(types,\"extension\"), and :132-135 rejects a second [type= segment; built ptah-compat on live PostgreSQL: `--exclude '*[type=extension].version'` blanks the version, `--exclude '*[type=table].comment'` exits 1 \"unsupported Atlas exclude field selector \\\".comment\\\"\", `--exclude '*[type=table]*'` exits 1 \"unsupported Atlas exclude field selector suffix \\\"*\\\"\". Atlas columns downgraded to unknown: conformance cli-surface.md line 47 establishes that --exclude exists on Atlas CE schema inspect but nothing cited establishes which field-selector forms Atlas honors, and no cited source defines an \"exporter block\" at all. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `--exclude '*[type=table].comment'` parses and runs on sqlite (exit 0), but sqlite has no comment support, so filtering is unobserved - syntactic acceptance only (trial-study observations, scenario verbs-and-flags)"
  },
  {
   "area": "Versioned migrations",
   "feature": "Pre-migration webhook and shell hook gates",
   "ptah": "yes",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
+  "atlas_pro": "no",
   "note": "`--webhook` POSTs migration metadata and requires HTTP 200; `--pre-up-hook`/`--pre-down-hook` run a shell command that must exit 0, else the run aborts. Also ptah.yaml migration.webhook/pre_up_hook.",
-  "evidence": "/tmp/c-ptah migrations up --help shows --webhook and --pre-up-hook; down shows --pre-down-hook. Atlas-side: cli-surface.md line 27 lists every atlas migrate apply flag; no webhook or hook flag. docs/site/src/content/docs/versioned/apply.md:154-158. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Webhooks (Pipelines) and Pre-migration safety checks (/versioned/checks) are absent from Starter and Pro-gated; Starter absence matches the measured CE no, but Atlas webhooks are service event notifications rather than an apply-time gate like `--webhook`, so atlas_pro stays unknown."
+  "evidence": "/tmp/c-ptah migrations up --help shows --webhook and --pre-up-hook; down shows --pre-down-hook. Atlas-side: cli-surface.md line 27 lists every atlas migrate apply flag; no webhook or hook flag. docs/site/src/content/docs/versioned/apply.md:154-158. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Webhooks (Pipelines) and Pre-migration safety checks (/versioned/checks) are absent from Starter and Pro-gated; Starter absence matches the measured CE no, but Atlas webhooks are service event notifications rather than an apply-time gate like `--webhook`, Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: no equivalent flag on the licensed build's help surface (trial-study observations, scenario, ptah-extension-equivalents)"
  },
  {
   "area": "Versioned migrations",
   "feature": "Pre-migration database backups (`--pg-dump-to`)",
   "ptah": "yes",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
+  "atlas_pro": "no",
   "note": "`--pg-dump-to` writes a pg_dump custom-format backup and `--mysqldump-to` a SQL backup before applying or rolling back; ptah.yaml key migration.pg_dump_to.",
-  "evidence": "/tmp/c-ptah migrations up --help and down --help show --pg-dump-to/--mysqldump-to. Atlas-side: cli-surface.md line 27 migrate apply flag list has no backup flag. docs/site/src/content/docs/reference/configuration.md:87."
+  "evidence": "/tmp/c-ptah migrations up --help and down --help show --pg-dump-to/--mysqldump-to. Atlas-side: cli-surface.md line 27 migrate apply flag list has no backup flag. docs/site/src/content/docs/reference/configuration.md:87. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: no equivalent flag on the licensed build's help surface (trial-study observations, scenario, ptah-extension-equivalents)"
  },
  {
   "area": "Versioned migrations",
   "feature": "Prometheus metrics endpoint (`--metrics-addr`)",
   "ptah": "yes",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
+  "atlas_pro": "no",
   "note": "migrations up, down, and status serve a Prometheus /metrics endpoint at the given address for the run.",
-  "evidence": "/tmp/c-ptah migrations up/down/status --help all show \"--metrics-addr Address for the Prometheus /metrics endpoint, such as :9090\". Atlas-side: cli-surface.md lines 27/39 list migrate apply and status flags; none exposes a metrics endpoint."
+  "evidence": "/tmp/c-ptah migrations up/down/status --help all show \"--metrics-addr Address for the Prometheus /metrics endpoint, such as :9090\". Atlas-side: cli-surface.md lines 27/39 list migrate apply and status flags; none exposes a metrics endpoint. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: no equivalent flag on the licensed build's help surface (trial-study observations, scenario, ptah-extension-equivalents)"
  },
  {
   "area": "Versioned migrations",
   "feature": "Structured JSON log output (`--log-format`)",
   "ptah": "yes",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
+  "atlas_pro": "no",
   "note": "migrations up, down, and status take `--log-format` text|json and `--log-level` debug|info|warn|error for machine-readable run logs.",
-  "evidence": "/tmp/c-ptah migrations up --help shows --log-format and --log-level. Atlas-side: cli-surface.md line 27 migrate apply flag list has no log flags (only output --format)."
+  "evidence": "/tmp/c-ptah migrations up --help shows --log-format and --log-level. Atlas-side: cli-surface.md line 27 migrate apply flag list has no log flags (only output --format). Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: no equivalent flag on the licensed build's help surface (trial-study observations, scenario, ptah-extension-equivalents)"
  },
  {
   "area": "Versioned migrations",
   "feature": "Online DDL routing via gh-ost or pt-osc",
   "ptah": "yes",
   "atlas_oss": "unknown",
-  "atlas_pro": "unknown",
+  "atlas_pro": "no",
   "note": "ptah.yaml online_ddl.tool (ghost|pt-osc), threshold_rows, args, and fallback (error|plain) route large-table ALTERs through an online-DDL tool during migrations up/down.",
-  "evidence": "config/projectconfig/config.go:22-35,407-447 defines the config; cmd/migrateup/migrateup.go:374 consumes it; config/projectconfig/online_ddl_test.go. docs/site/src/content/docs/reference/configuration.md:89 documents the four keys. Matrix mentions online_ddl only as a ptah.yaml key name."
+  "evidence": "config/projectconfig/config.go:22-35,407-447 defines the config; cmd/migrateup/migrateup.go:374 consumes it; config/projectconfig/online_ddl_test.go. docs/site/src/content/docs/reference/configuration.md:89 documents the four keys. Matrix mentions online_ddl only as a ptah.yaml key name. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: no gh-ost/pt-osc routing on the licensed build's help surface (trial-study observations, scenario, ptah-extension-equivalents)"
  },
  {
   "area": "Versioned migrations",
   "feature": "Atlas txtar migration sections (-- atlas:txtar)",
   "ptah": "yes",
   "atlas_oss": "unknown",
-  "atlas_pro": "unknown",
-  "note": "Atlas-format .sql files with the -- atlas:txtar directive execute their migration.sql and down.sql sections (giving Atlas dirs a down path); unrelated embedded files are ignored.",
-  "evidence": "migration/migrator/migrations.go:164,351-377 parses the directive and sections; docs/site/src/content/docs/atlas/migrate-commands.md:40-47 documents it. The down row's \"Atlas single-file dirs have no down body\" note does not cover this exception."
+  "atlas_pro": "yes",
+  "note": "Atlas-format .sql files with `-- atlas:txtar` execute migration.sql and down.sql sections; checks.sql is discarded, not enforced (stokaro/ptah#956); other embedded files are ignored.",
+  "evidence": "migration/migrator/migrations.go:164,351-377 parses the directive and sections; docs/site/src/content/docs/atlas/migrate-commands.md:40-47 documents it. The down row's \"Atlas single-file dirs have no down body\" note does not cover this exception. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: txtar migrations run with checks.sql ENFORCED as a pre-migration gate (failing assertion aborts, exit 1) (trial-study observations, scenario, txtar-checks-enforcement). Ptah discards checks.sql sections - stokaro/ptah#956"
  },
  {
   "area": "Versioned migrations",
@@ -1219,9 +1219,9 @@
   "feature": "Generation-time destructive-change gate",
   "ptah": "yes",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
+  "atlas_pro": "no",
   "note": "migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row.",
-  "evidence": "/tmp/c-ptah migrations generate --help and plan --help show --check-destructive/--allow-destructive. Atlas-side: cli-surface.md line 29 migrate diff flag list has no destructive gate flag."
+  "evidence": "/tmp/c-ptah migrations generate --help and plan --help show --check-destructive/--allow-destructive. Atlas-side: cli-surface.md line 29 migrate diff flag list has no destructive gate flag. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: no equivalent flag on the licensed build's help surface (trial-study observations, scenario, ptah-extension-equivalents)"
  },
  {
   "area": "Linting and safety",
@@ -1230,7 +1230,7 @@
   "atlas_oss": "no",
   "atlas_pro": "unknown",
   "note": "Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not.",
-  "evidence": "echo \"DROP TABLE users;\" | /tmp/c-ptah sql lint --stdin --dialect postgres --format json exits 0 with a JSON findings document. Atlas-side: cli-surface.md inventory has no standalone SQL lint verb; migrate lint (line 33) is directory-based."
+  "evidence": "echo \"DROP TABLE users;\" | /tmp/c-ptah sql lint --stdin --dialect postgres --format json exits 0 with a JSON findings document. Atlas-side: cli-surface.md inventory has no standalone SQL lint verb; migrate lint (line 33) is directory-based. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: no standalone SQL-file lint verb; `atlas schema lint` exists but lints schema sources, a different mechanism (trial-study observations, scenario, lint-test-pro, ptah-extension-equivalents)"
  },
  {
   "area": "Declarative and direct schema changes",
@@ -1255,9 +1255,9 @@
   "feature": "PTAH_* environment-variable flag equivalents",
   "ptah": "yes",
   "atlas_oss": "unknown",
-  "atlas_pro": "unknown",
+  "atlas_pro": "no",
   "note": "Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) that substitutes for the flag.",
-  "evidence": "All 49 --help screens annotate each flag with [env: PTAH_*]; verified live: PTAH_FORMAT=dot /tmp/c-ptah viz --root-dir . emitted Graphviz DOT instead of the mermaid default, exit 0. No Atlas-side env-var inventory is cited by the page."
+  "evidence": "All 49 --help screens annotate each flag with [env: PTAH_*]; verified live: PTAH_FORMAT=dot /tmp/c-ptah viz --root-dir . emitted Graphviz DOT instead of the mermaid default, exit 0. No Atlas-side env-var inventory is cited by the page. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: no documented ATLAS_* env-var flag twins in the licensed build's help (trial-study observations, scenario, ptah-extension-equivalents)"
  },
  {
   "area": "Versioned migrations",
@@ -1273,36 +1273,36 @@
   "feature": "Upstream verb `migrate ls`",
   "ptah": "partial",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
-  "note": "Beyond the CE pin: ptah-compat rejects it as unknown command; native ptah migrations status lists every migration with version and state, per the gap register triage.",
-  "evidence": "Verified: /tmp/c-compat migrate ls -> 'unknown command'; /tmp/c-ptah migrations status --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin' records it absent from pinned CE v1.2.0 (unknown command, not an abort stub) while present in current Atlas docs. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate ls` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs"
+  "atlas_pro": "yes",
+  "note": "Beyond the CE pin: works on the licensed build against a local directory; ptah-compat rejects it as unknown command; native `ptah migrations status` lists versions and states.",
+  "evidence": "Verified: /tmp/c-compat migrate ls -> 'unknown command'; /tmp/c-ptah migrations status --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin' records it absent from pinned CE v1.2.0 (unknown command, not an abort stub) while present in current Atlas docs. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate ls` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `atlas migrate ls` works against a local migration directory (trial-study observations, scenario, verbs-and-flags)"
  },
  {
   "area": "Versioned migrations",
   "feature": "Upstream verb `migrate show`",
   "ptah": "no",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
+  "atlas_pro": "yes",
   "note": "Beyond the CE pin: prints a migration's SQL upstream; no compat or native Ptah verb exists, and the gap register triages it as future work.",
-  "evidence": "Verified: /tmp/c-compat migrate show -> 'unknown command'; comparison.md:699-701 triage 'migrate show (print a migration's SQL) is future work with no native verb today'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate show` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs"
+  "evidence": "Verified: /tmp/c-compat migrate show -> 'unknown command'; comparison.md:699-701 triage 'migrate show (print a migration's SQL) is future work with no native verb today'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate show` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `atlas migrate show` prints local migration file contents (trial-study observations, scenario, verbs-and-flags)"
  },
  {
   "area": "Declarative and direct schema changes",
   "feature": "Upstream verb `schema validate`",
   "ptah": "partial",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
+  "atlas_pro": "yes",
   "note": "Beyond the CE pin: no validate verb; the gap register triage covers it with native schema render parse/load validation plus schema test and schema apply `--dry-run`.",
-  "evidence": "Verified: /tmp/c-compat schema validate -> 'unknown command'; /tmp/c-ptah schema render --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema validate` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs"
+  "evidence": "Verified: /tmp/c-compat schema validate -> 'unknown command'; /tmp/c-ptah schema render --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema validate` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `atlas schema validate` exists on the licensed build (trial-study observations, scenario, verbs-and-flags)"
  },
  {
   "area": "Declarative and direct schema changes",
   "feature": "Upstream verb `schema stats`",
   "ptah": "no",
   "atlas_oss": "no",
-  "atlas_pro": "unknown",
-  "note": "Beyond the CE pin: upstream OpenMetrics database-statistics verb; the gap register triages it out of scope as an observability surface rather than schema management.",
-  "evidence": "Verified: /tmp/c-compat schema stats -> 'unknown command'; comparison.md:699-701 triage 'schema stats (OpenMetrics database statistics) is out of scope'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema stats` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Schema statistics appears only in the Schema Monitoring product (absent from Starter, Pro at $39/mo per monitored database); consistent with the measured CE no, but the pricing label does not name the `schema stats` verb, so atlas_pro stays unknown."
+  "atlas_pro": "yes",
+  "note": "Beyond the CE pin: on the licensed build it exists as `schema stats inspect` (OpenMetrics) and rejects SQLite at runtime; the gap register triages it out of scope as observability.",
+  "evidence": "Verified: /tmp/c-compat schema stats -> 'unknown command'; comparison.md:699-701 triage 'schema stats (OpenMetrics database statistics) is out of scope'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema stats` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Schema statistics appears only in the Schema Monitoring product (absent from Starter, Pro at $39/mo per monitored database); consistent with the measured CE no, but the pricing label does not name the `schema stats` verb, Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: registered as `atlas schema stats inspect`, OpenMetrics output, rejects sqlite targets at runtime (trial-study observations, scenario, verbs-and-flags)"
  },
  {
   "area": "Go embedding and developer tooling",
