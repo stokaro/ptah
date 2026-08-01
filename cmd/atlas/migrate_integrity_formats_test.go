@@ -1,0 +1,696 @@
+package atlas_test
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/cmd/atlas"
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/internal/migratesum"
+)
+
+// These tests pin `ptah-compat migrate hash` and `migrate validate` against
+// Atlas CE v1.2.0, measured through the pinned binary at
+// ptah-atlas-conformance/bin/atlas on 2026-08-02 (stokaro/ptah#973, #983).
+//
+// CE accepts a foreign tool's directory layout on both verbs under two
+// spellings — `--dir file://d?format=goose` and `--dir file://d --dir-format
+// goose` — and writes a byte-identical atlas.sum from either. Where they
+// disagree the query wins, measured in both directions:
+//
+//	$ atlas migrate hash --dir 'file://d?format=goose'  --dir-format flyway
+//	  -> 1_init.sql U1__undo.sql V1__x.sql        (goose covered the set)
+//	$ atlas migrate hash --dir 'file://d?format=flyway' --dir-format goose
+//	  -> V1__x.sql                                (flyway covered the set)
+//
+// The per-format covered sets below are the ones the corpus in
+// internal/atlasmigrateimport/testdata/ce-sums captures from the same binary.
+
+// integrityFixture is one layout every supported format reads differently, so
+// no assertion about a format can pass by accident on another format's rule.
+var integrityFixture = map[string]string{
+	"1_init.sql":         "-- +goose Up\nCREATE TABLE a (id int);\n",
+	"2_more.up.sql":      "-- +goose Up\nCREATE TABLE b (id int);\n",
+	"2_more.down.sql":    "DROP TABLE b;\n",
+	"V1__x.sql":          "CREATE TABLE v (id int);\n",
+	"V10__y.sql":         "CREATE TABLE v2 (id int);\n",
+	"U1__undo.sql":       "DROP TABLE v;\n",
+	"R__view.sql":        "CREATE VIEW r AS SELECT 1;\n",
+	"B0__base.sql":       "CREATE TABLE base (id int);\n",
+	"sub/V2__nested.sql": "CREATE TABLE nested (id int);\n",
+	"notes.txt":          "not sql at all\n",
+}
+
+// Covered sets measured from the pinned CE binary over integrityFixture.
+var (
+	sqlSuffixCoveredSet = []string{
+		"1_init.sql",
+		"2_more.down.sql",
+		"2_more.up.sql",
+		"B0__base.sql",
+		"R__view.sql",
+		"U1__undo.sql",
+		"V10__y.sql",
+		"V1__x.sql",
+	}
+	golangMigrateCoveredSet = []string{"2_more.up.sql"}
+	flywayCoveredSet        = []string{
+		"B0__base.sql",
+		"V1__x.sql",
+		"sub/V2__nested.sql",
+		"V10__y.sql",
+		"R__view.sql",
+	}
+)
+
+// runCompatExit runs the compat command tree and applies the same exit-code
+// normalization the ptah-compat binary applies, so these tests observe the exit
+// codes and stderr a script would.
+func runCompatExit(args ...string) (stdout, stderr string, err error) {
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs(args)
+	executed, execErr := cmd.ExecuteC()
+	return out.String(), errOut.String(), cmdutil.NormalizeCommandError(executed, execErr, 2)
+}
+
+func writeIntegrityFixture(c *qt.C) string {
+	c.Helper()
+	dir := c.TempDir()
+	for name, content := range integrityFixture {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		c.Assert(os.MkdirAll(filepath.Dir(path), 0o755), qt.IsNil)
+		c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
+	}
+	return dir
+}
+
+func readSumFile(c *qt.C, dir string) *migratesum.SumFile {
+	c.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, migratesum.AtlasFileName))
+	c.Assert(err, qt.IsNil)
+	sum, err := migratesum.Parse(raw)
+	c.Assert(err, qt.IsNil)
+	return sum
+}
+
+func sumEntryNames(c *qt.C, dir string) []string {
+	c.Helper()
+	names := make([]string, 0)
+	for _, entry := range readSumFile(c, dir).Entries {
+		names = append(names, entry.Name)
+	}
+	return names
+}
+
+func sumBytes(c *qt.C, dir string) string {
+	c.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, migratesum.AtlasFileName))
+	c.Assert(err, qt.IsNil)
+	return string(raw)
+}
+
+// TestCompatMigrateHashSourceFormat_HappyPath covers the file set each source
+// layout selects. The fixture is read differently by every rule, so a format
+// that was ignored would produce another format's names here.
+func TestCompatMigrateHashSourceFormat_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		format string
+		want   []string
+	}{
+		{name: "goose", format: "goose", want: sqlSuffixCoveredSet},
+		{name: "dbmate", format: "dbmate", want: sqlSuffixCoveredSet},
+		{name: "liquibase", format: "liquibase", want: sqlSuffixCoveredSet},
+		{name: "atlas", format: "atlas", want: sqlSuffixCoveredSet},
+		{name: "golang_migrate", format: "golang-migrate", want: golangMigrateCoveredSet},
+		{name: "flyway", format: "flyway", want: flywayCoveredSet},
+	}
+
+	for _, tt := range tests {
+		c.Run("query_"+tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			stdout, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, tt.want)
+		})
+		c.Run("flag_"+tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			stdout, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", tt.format)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+// TestCompatMigrateHashSpellingsAgree_HappyPath is the invariant #983 exists
+// for: the two spellings Atlas accepts are the same instruction, so they must
+// produce the same bytes, not merely both succeed.
+func TestCompatMigrateHashSpellingsAgree_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		format string
+	}{
+		{name: "atlas", format: "atlas"},
+		{name: "goose", format: "goose"},
+		{name: "dbmate", format: "dbmate"},
+		{name: "liquibase", format: "liquibase"},
+		{name: "golang_migrate", format: "golang-migrate"},
+		{name: "flyway", format: "flyway"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			queryDir := writeIntegrityFixture(c)
+			flagDir := writeIntegrityFixture(c)
+
+			queryOut, _, queryErr := runCompatExit("migrate", "hash", "--dir", "file://"+queryDir+"?format="+tt.format)
+			flagOut, _, flagErr := runCompatExit("migrate", "hash", "--dir", "file://"+flagDir, "--dir-format", tt.format)
+
+			c.Assert(queryErr, qt.IsNil, qt.Commentf("output:\n%s", queryOut))
+			c.Assert(flagErr, qt.IsNil, qt.Commentf("output:\n%s", flagOut))
+			c.Assert(sumBytes(c, flagDir), qt.Equals, sumBytes(c, queryDir))
+		})
+	}
+}
+
+// TestCompatMigrateSourceFormatPrecedence_HappyPath pins which spelling wins
+// when the two disagree. Both directions are measured because a resolver that
+// always preferred the flag, and one that always preferred the query, agree on
+// every input where the two name the same format.
+func TestCompatMigrateSourceFormatPrecedence_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		query string
+		flag  string
+		want  []string
+	}{
+		{name: "goose_query_beats_flyway_flag", query: "goose", flag: "flyway", want: sqlSuffixCoveredSet},
+		{name: "flyway_query_beats_goose_flag", query: "flyway", flag: "goose", want: flywayCoveredSet},
+		{name: "golang_migrate_query_beats_goose_flag", query: "golang-migrate", flag: "goose", want: golangMigrateCoveredSet},
+		// An empty query value selects the atlas layout and still outranks a
+		// non-empty flag: the query is authoritative whenever it is present.
+		{name: "empty_query_beats_flyway_flag", query: "", flag: "flyway", want: sqlSuffixCoveredSet},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			stdout, _, err := runCompatExit(
+				"migrate", "hash",
+				"--dir", "file://"+dir+"?format="+tt.query,
+				"--dir-format", tt.flag,
+			)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+// TestCompatMigrateHashAtlasLayoutUnmoved_HappyPath holds the native path
+// exactly where it was: naming the atlas layout through the query, through the
+// flag, or not at all must produce one sum and one stdout. The query spellings
+// reach the native command through an argument rewrite, so this is what catches
+// the rewrite dropping or mangling a value.
+func TestCompatMigrateHashAtlasLayoutUnmoved_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		args func(dir string) []string
+	}{
+		{
+			name: "no_format",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir} },
+		},
+		{
+			name: "flag_atlas",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir, "--dir-format", "atlas"} },
+		},
+		{
+			name: "query_atlas",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir + "?format=atlas"} },
+		},
+		{
+			name: "query_atlas_inline_dir",
+			args: func(dir string) []string { return []string{"--dir=file://" + dir + "?format=atlas"} },
+		},
+		{
+			name: "query_empty",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir + "?format="} },
+		},
+		{
+			// The query wins, so the goose flag beside it is irrelevant rather
+			// than an error: the rewrite replaces it instead of appending.
+			name: "query_atlas_overrides_goose_flag",
+			args: func(dir string) []string {
+				return []string{"--dir", "file://" + dir + "?format=atlas", "--dir-format", "goose"}
+			},
+		},
+		{
+			name: "query_atlas_overrides_inline_goose_flag",
+			args: func(dir string) []string {
+				return []string{"--dir=file://" + dir + "?format=atlas", "--dir-format=goose"}
+			},
+		},
+	}
+
+	baseline := writeIntegrityFixture(c)
+	baselineOut, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+baseline)
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", baselineOut))
+	wantSum := sumBytes(c, baseline)
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			stdout, stderr, err := runCompatExit(append([]string{"migrate", "hash"}, tt.args(dir)...)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
+			c.Assert(sumBytes(c, dir), qt.Equals, wantSum)
+			c.Assert(stdout, qt.Equals, "Wrote "+dir+"/atlas.sum\n8 migration file(s) hashed\n")
+		})
+	}
+}
+
+// TestCompatMigrateHashConvertedDirOutput_HappyPath pins the converted path's
+// stdout to the native path's. Atlas CE prints nothing on a successful hash;
+// that divergence predates this path and is tracked separately, so what this
+// holds is that naming a layout does not change the reporting.
+func TestCompatMigrateHashConvertedDirOutput_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir := writeIntegrityFixture(c)
+
+	stdout, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
+	c.Assert(stdout, qt.Equals, "Wrote "+dir+"/atlas.sum\n1 migration file(s) hashed\n")
+	c.Assert(stderr, qt.Equals, "")
+}
+
+// TestCompatMigrateHashEmptySourceSet_HappyPath covers the seam with the apply
+// gate (#973 PR 3): an empty covered set is not an error on either verb, so
+// LoadFS — and with it #980's "no importable migration files found" — is never
+// reached from the integrity path. Atlas CE writes the same empty-set sum.
+func TestCompatMigrateHashEmptySourceSet_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		format string
+		files  map[string]string
+	}{
+		{name: "empty_directory", format: "goose", files: nil},
+		{name: "no_sql_files", format: "goose", files: map[string]string{"readme.txt": "nope\n"}},
+		{name: "subdirectory_only", format: "goose", files: map[string]string{"sub/1_init.sql": "CREATE TABLE s (id int);\n"}},
+		{name: "golang_migrate_down_only", format: "golang-migrate", files: map[string]string{"1_init.down.sql": "DROP TABLE d;\n"}},
+		{name: "flyway_undo_only", format: "flyway", files: map[string]string{"U1__undo.sql": "DROP TABLE u;\n"}},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := c.TempDir()
+			for name, content := range tt.files {
+				path := filepath.Join(dir, filepath.FromSlash(name))
+				c.Assert(os.MkdirAll(filepath.Dir(path), 0o755), qt.IsNil)
+				c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
+			}
+
+			stdout, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
+			c.Assert(stdout, qt.Contains, "0 migration file(s) hashed")
+			// Measured CE empty-set sum, identical across formats.
+			c.Assert(sumBytes(c, dir), qt.Equals, "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n")
+
+			validateOut, validateErrOut, validateErr := runCompatExit(
+				"migrate", "validate", "--dir", "file://"+dir+"?format="+tt.format)
+
+			c.Assert(validateErr, qt.IsNil)
+			c.Assert(validateOut, qt.Equals, "")
+			c.Assert(validateErrOut, qt.Equals, "")
+		})
+	}
+}
+
+// TestCompatMigrateValidateSourceFormat_HappyPath covers a clean converted
+// directory on both spellings, and the covered-set rule seen from the
+// verification side: golang-migrate never hashes the down file of a pair, so
+// editing it leaves the directory clean where editing the up file does not
+// (see the FailurePath twin).
+func TestCompatMigrateValidateSourceFormat_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		format string
+	}{
+		{name: "goose", format: "goose"},
+		{name: "dbmate", format: "dbmate"},
+		{name: "liquibase", format: "liquibase"},
+		{name: "golang_migrate", format: "golang-migrate"},
+		{name: "flyway", format: "flyway"},
+	}
+
+	for _, tt := range tests {
+		c.Run("query_"+tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+			_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
+			c.Assert(err, qt.IsNil)
+
+			stdout, stderr, err := runCompatExit("migrate", "validate", "--dir", "file://"+dir+"?format="+tt.format)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, "")
+		})
+		c.Run("flag_"+tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+			_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", tt.format)
+			c.Assert(err, qt.IsNil)
+
+			stdout, stderr, err := runCompatExit("migrate", "validate", "--dir", "file://"+dir, "--dir-format", tt.format)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, "")
+		})
+	}
+
+	c.Run("golang_migrate_down_file_is_outside_the_covered_set", func(c *qt.C) {
+		dir := writeIntegrityFixture(c)
+		_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
+		c.Assert(err, qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(dir, "2_more.down.sql"), []byte("DROP TABLE b CASCADE;\n"), 0o600), qt.IsNil)
+
+		stdout, stderr, err := runCompatExit("migrate", "validate", "--dir", "file://"+dir+"?format=golang-migrate")
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "")
+	})
+}
+
+// TestCompatMigrateValidateSourceFormat_FailurePath covers the refusals. Both
+// are rendered by the helpers the native Atlas path and the apply-time gate
+// use, so all three surfaces stay byte-identical, and the mismatch line names
+// the SOURCE file rather than a converted name.
+func TestCompatMigrateValidateSourceFormat_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("unhashed converted directory", func(c *qt.C) {
+		dir := writeIntegrityFixture(c)
+
+		stdout, stderr, err := runCompatExit("migrate", "validate", "--dir", "file://"+dir+"?format=goose")
+
+		c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "You have a checksum error in your migration directory.\n"+
+			"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+		c.Assert(stderr, qt.Equals, "Error: checksum file not found\n")
+	})
+
+	tampered := []struct {
+		name   string
+		format string
+		file   string
+		want   string
+	}{
+		{name: "goose", format: "goose", file: "1_init.sql", want: "\n\tL2: 1_init.sql was edited\n\n"},
+		{name: "golang_migrate", format: "golang-migrate", file: "2_more.up.sql", want: "\n\tL2: 2_more.up.sql was edited\n\n"},
+		{name: "flyway", format: "flyway", file: "V1__x.sql", want: "\n\tL3: V1__x.sql was edited\n\n"},
+	}
+
+	for _, tt := range tampered {
+		c.Run("tampered "+tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+			_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
+			c.Assert(err, qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(dir, tt.file), []byte("CREATE TABLE pwned (id int);\n"), 0o600), qt.IsNil)
+
+			stdout, stderr, err := runCompatExit("migrate", "validate", "--dir", "file://"+dir+"?format="+tt.format)
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			c.Assert(stdout, qt.Equals, "You have a checksum error in your migration directory.\n"+tt.want+
+				"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+			c.Assert(stderr, qt.Equals, "Error: checksum mismatch\n")
+		})
+	}
+
+	c.Run("malformed sum file", func(c *qt.C) {
+		dir := writeIntegrityFixture(c)
+		_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
+		c.Assert(err, qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"), []byte("not a sum file\n"), 0o600), qt.IsNil)
+
+		stdout, stderr, err := runCompatExit("migrate", "validate", "--dir", "file://"+dir+"?format=goose")
+
+		c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "You have a checksum error in your migration directory.\n"+
+			"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+		c.Assert(stderr, qt.Equals, "Error: checksum mismatch\n")
+	})
+
+	c.Run("a directory hashed as one layout does not verify as another", func(c *qt.C) {
+		dir := writeIntegrityFixture(c)
+		_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=flyway")
+		c.Assert(err, qt.IsNil)
+
+		stdout, stderr, err := runCompatExit("migrate", "validate", "--dir", "file://"+dir+"?format=goose")
+
+		c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+		c.Assert(stdout, qt.Contains, "\tL2: 1_init.sql was added\n")
+		c.Assert(stderr, qt.Equals, "Error: checksum mismatch\n")
+	})
+}
+
+// TestCompatMigrateSourceFormat_FailurePathUnknownFormat covers the values CE
+// refuses. CE matches format names case-sensitively and does not trim, so
+// "GOOSE" and " goose " are unknown formats rather than goose.
+func TestCompatMigrateSourceFormat_FailurePathUnknownFormat(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		args func(dir string) []string
+		want string
+	}{
+		{
+			name: "unknown query value",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir + "?format=sqitch"} },
+			want: `atlas migrate hash --dir: unknown Atlas migration directory format "sqitch": .*`,
+		},
+		{
+			name: "unknown flag value",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir, "--dir-format", "sqitch"} },
+			want: `atlas migrate hash --dir-format: unknown Atlas migration directory format "sqitch": .*`,
+		},
+		{
+			name: "uppercase query value",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir + "?format=GOOSE"} },
+			want: `atlas migrate hash --dir: unknown Atlas migration directory format "GOOSE": .*`,
+		},
+		{
+			name: "uppercase flag value",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir, "--dir-format", "GOOSE"} },
+			want: `atlas migrate hash --dir-format: unknown Atlas migration directory format "GOOSE": .*`,
+		},
+		{
+			name: "uppercase atlas flag value",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir, "--dir-format", "ATLAS"} },
+			want: `atlas migrate hash --dir-format: unknown Atlas migration directory format "ATLAS": .*`,
+		},
+		{
+			name: "padded flag value",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir, "--dir-format", " goose "} },
+			want: `atlas migrate hash --dir-format: unknown Atlas migration directory format " goose ": .*`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			_, _, err := runCompatExit(append([]string{"migrate", "hash"}, tt.args(dir)...)...)
+
+			c.Assert(err, qt.ErrorMatches, tt.want)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			_, statErr := os.Stat(filepath.Join(dir, migratesum.AtlasFileName))
+			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+		})
+	}
+}
+
+// TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery pins the query
+// shapes Ptah refuses and Atlas CE accepts. Both are measured divergences kept
+// deliberately: the resolver is shared with `migrate apply`, where relaxing
+// them would silently widen what an integrity gate accepts.
+//
+//	$ atlas migrate hash --dir 'file://d?format=goose&other=1'      exit=0
+//	$ atlas migrate hash --dir 'file://d?format=goose&format=flyway' exit=0 (goose)
+func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{
+			name:  "unknown parameter beside format",
+			query: "?format=goose&other=1",
+			want:  `atlas migrate hash --dir: unsupported migration directory URL query parameter "other"`,
+		},
+		{
+			name:  "unknown parameter alone",
+			query: "?other=1",
+			want:  `atlas migrate hash --dir: unsupported migration directory URL query parameter "other"`,
+		},
+		{
+			name:  "repeated format parameter",
+			query: "?format=goose&format=flyway",
+			want:  "atlas migrate hash --dir: migration directory URL contains multiple format parameters",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+tt.query)
+
+			c.Assert(err, qt.ErrorMatches, tt.want)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+		})
+	}
+}
+
+// TestCompatMigrateIntegrity_FailurePathEmptyDirFormat pins the one
+// --dir-format value Atlas CE accepts and Ptah still refuses. CE treats an
+// empty value as the atlas layout and exits 0. Ptah rejects it on all nine
+// metadata verbs through one shared mapper; fixing it on two of them would
+// leave the surface less consistent than it is now.
+func TestCompatMigrateIntegrity_FailurePathEmptyDirFormat(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		verb string
+	}{
+		{name: "hash", verb: "hash"},
+		{name: "validate", verb: "validate"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			_, _, err := runCompatExit("migrate", tt.verb, "--dir", "file://"+dir, "--dir-format", "")
+
+			c.Assert(err, qt.ErrorMatches,
+				"atlas migrate "+tt.verb+" --dir-format: migration directory format must not be empty")
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+		})
+	}
+}
+
+// TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs holds the converted
+// path's diagnostics identical to the forwarding path's. The converted path
+// executes directly instead of handing the arguments to the native command, so
+// without this it would silently ignore what the other spelling refuses.
+func TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		verb string
+		args []string
+		want string
+	}{
+		{
+			name: "hash stray positional",
+			verb: "hash",
+			args: []string{"stray"},
+			want: `unexpected positional arguments \["stray"\]`,
+		},
+		{
+			name: "hash unknown flag",
+			verb: "hash",
+			args: []string{"--bogus"},
+			want: "unknown flag: --bogus",
+		},
+		{
+			name: "validate stray positional",
+			verb: "validate",
+			args: []string{"stray"},
+			want: `unexpected positional arguments \["stray"\]`,
+		},
+		{
+			name: "validate unknown flag",
+			verb: "validate",
+			args: []string{"--bogus"},
+			want: "unknown flag: --bogus",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+			base := []string{"migrate", tt.verb, "--dir", "file://" + dir}
+
+			convertedArgs := append(append(append([]string{}, base...), "--dir-format", "goose"), tt.args...)
+			_, _, convertedErr := runCompatExit(convertedArgs...)
+			_, _, forwardedErr := runCompatExit(append(append([]string{}, base...), tt.args...)...)
+
+			c.Assert(convertedErr, qt.ErrorMatches, tt.want)
+			c.Assert(forwardedErr, qt.ErrorMatches, tt.want)
+			c.Assert(exitcode.Code(convertedErr, 0), qt.Equals, exitcode.Code(forwardedErr, 0))
+		})
+	}
+}
+
+// TestCompatMigrateIntegrityConvertedDir_FailurePathMissingDirectory keeps the
+// missing-directory diagnostic identical on both layouts.
+func TestCompatMigrateIntegrityConvertedDir_FailurePathMissingDirectory(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		verb string
+	}{
+		{name: "hash", verb: "hash"},
+		{name: "validate", verb: "validate"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			missing := filepath.Join(c.TempDir(), "missing")
+
+			convertedOut, _, convertedErr := runCompatExit("migrate", tt.verb, "--dir", "file://"+missing+"?format=goose")
+			forwardedOut, _, forwardedErr := runCompatExit("migrate", tt.verb, "--dir", "file://"+missing)
+
+			c.Assert(convertedErr, qt.ErrorMatches, "migrations directory "+missing+": .*no such file or directory")
+			c.Assert(forwardedErr, qt.ErrorMatches, "migrations directory "+missing+": .*no such file or directory")
+			c.Assert(convertedOut, qt.Equals, forwardedOut)
+			c.Assert(exitcode.Code(convertedErr, 0), qt.Equals, 1)
+		})
+	}
+}

@@ -1827,6 +1827,11 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 	})
 }
 
+// TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat covers the
+// metadata verbs that still accept only the atlas layout. `migrate hash` and
+// `migrate validate` are deliberately absent: they read a directory rather than
+// rewrite one, so they implement every Atlas source layout under both
+// spellings (see migrate_integrity_formats_test.go) instead of rejecting it.
 func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1835,10 +1840,6 @@ func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testin
 		{
 			name: "edit",
 			args: []string{"migrate", "edit", "1", "--dir", t.TempDir(), "--dir-format", "goose"},
-		},
-		{
-			name: "hash",
-			args: []string{"migrate", "hash", "--dir", t.TempDir(), "--dir-format", "goose"},
 		},
 		{
 			name: "lint",

@@ -75,8 +75,9 @@ Native twin: [`ptah migrations status`](../native-commands/).
 
 ### `ptah-compat migrate hash`
 
-Forwards to `ptah migrations hash` with Atlas `--dir-format` defaulting to
-`atlas`, so the compatibility path writes `atlas.sum` by default.
+Writes `atlas.sum` for the migration directory. `--dir-format` defaults to
+`atlas`, so the compatibility path writes `atlas.sum` by default, and the
+atlas layout forwards to `ptah migrations hash`.
 
 ### `ptah-compat migrate validate`
 
@@ -85,6 +86,41 @@ use Atlas-compatible exit-1 stdout/stderr diagnostics, and `--dev-url` cleans
 the dev database and replays the migration directory to validate SQL
 execution. Native `ptah migrations validate` keeps its own banner and exit
 contract.
+
+### Source directory layouts on `hash` and `validate`
+
+Both verbs read a migration directory written by another tool. The layout is
+selected with either spelling Atlas accepts, and both produce the same
+`atlas.sum`:
+
+```bash
+ptah-compat migrate hash --dir "file://migrations?format=goose"
+ptah-compat migrate hash --dir file://migrations --dir-format goose
+```
+
+Accepted values are `atlas` (the default), `golang-migrate`, `goose`, `flyway`,
+`liquibase`, and `dbmate`. `migration.format` in `atlas.hcl` selects the same
+thing under `--env`. When the query and the flag disagree, the query wins: an
+empty `?format=` selects the atlas layout whatever the flag says.
+
+Each layout covers a different set of source files, matching Atlas:
+
+| Layout | Files the checksum covers |
+| --- | --- |
+| `atlas`, `goose`, `liquibase`, `dbmate` | every top-level `*.sql`, ordered by name |
+| `golang-migrate` | every top-level `*.up.sql`. The down file of a pair is not covered, so editing it is invisible to `validate` |
+| `flyway` | the whole tree: `V` and `B` files, then `R` repeatables last. `U` undo files are dropped, and everything at or below the highest baseline is squashed |
+
+Format names are matched exactly, so `GOOSE` and `" goose "` are unknown
+formats rather than `goose`. A directory with nothing for the layout to cover —
+an empty directory, or a `golang-migrate` directory holding only a down file —
+hashes to the empty-set checksum and validates clean.
+
+Three inputs stay refused where Atlas CE exits 0, all of them loudly: an empty
+`--dir-format` value, a query parameter other than `format`, and a repeated
+`format` parameter. `migrate apply` registers no `--dir-format` at all,
+matching Atlas, and does not yet gate a directory read through `?format=`
+(see [#973](https://github.com/stokaro/ptah/issues/973)).
 
 ### `ptah-compat migrate lint`
 
