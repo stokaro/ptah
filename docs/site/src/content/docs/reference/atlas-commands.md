@@ -116,10 +116,23 @@ formats rather than `goose`. A directory with nothing for the layout to cover â€
 an empty directory, or a `golang-migrate` directory holding only a down file â€”
 hashes to the empty-set checksum and validates clean.
 
-Three inputs stay refused where Atlas CE exits 0, all of them loudly: an empty
-`--dir-format` value, a query parameter other than `format`, and a repeated
-`format` parameter. `migrate apply` registers no `--dir-format` at all,
-matching Atlas, and does not yet gate a directory read through `?format=`
+Inputs that stay refused where Atlas CE exits 0, all of them loudly:
+
+- an empty `--dir-format` value;
+- a query parameter other than `format`;
+- a repeated `format` parameter;
+- a semicolon in the query, such as `?format=flyway;x=1`, which Atlas drops
+  whole and reads as the atlas layout;
+- a query on a `--dir` that a later `--dir` overrides;
+- a stray positional argument, including one after `--`.
+
+None of them can produce a wrong checksum. They are tracked in
+[#990](https://github.com/stokaro/ptah/issues/990); the query rules are shared
+with `migrate apply`, so relaxing one widens what a future integrity gate
+accepts.
+
+`migrate apply` registers no `--dir-format` at all, matching Atlas, and does not
+yet gate a directory read through `?format=`
 (see [#973](https://github.com/stokaro/ptah/issues/973)).
 
 ### `ptah-compat migrate lint`

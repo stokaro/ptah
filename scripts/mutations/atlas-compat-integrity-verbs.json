@@ -170,6 +170,24 @@
       "file": "cmd/atlas/migrate_validate.go",
       "old": "\tif err := cmdutil.StatDir(source.dir); err != nil {\n\t\treturn cmdutil.Fail(cmd, err)\n\t}",
       "new": ""
+    },
+    {
+      "name": "the rewrite drops the -- argument terminator",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\t\ttail = args[i:]",
+      "new": "\t\t\ttail = args[i+1:]"
+    },
+    {
+      "name": "--help no longer short-circuits before resolution",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\t\tif atlasArgsHaveHelp(args) {\n\t\t\treturn forward(cmd, args)\n\t\t}\n",
+      "new": ""
+    },
+    {
+      "name": "a semicolon query is parsed instead of refused",
+      "file": "cmd/atlas/migrate_integrity.go",
+      "old": "\tlocalDir, err := atlasargs.ParseLocalDir(rawDir)",
+      "new": "\tlocalDir, err := atlasargs.ParseLocalDir(strings.ReplaceAll(rawDir, \";\", \"&\"))"
     }
   ]
 }

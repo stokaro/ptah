@@ -714,6 +714,138 @@ func TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs(t *testing.T) {
 	}
 }
 
+// TestCompatMigrateIntegrityArgumentTerminator_FailurePath pins that `--`
+// survives the forwarding rewrite.
+//
+// Rewriting argv is the one place on this path whose failure mode is not a bad
+// diagnostic but hashing a directory the operator never named. Dropping the
+// terminator instead of preserving it turns everything after `--` back into
+// flags, and the last `--dir` among them wins:
+//
+//	$ atlas migrate hash --dir 'file://d?format=atlas' -- --dir file://other
+//	exit=0, wrote d/atlas.sum                      # CE ignores the positionals
+//	shipped: exit 1, unexpected positional arguments ["--dir" "file://other"]
+//	with `tail = args[i+1:]`: exit 0, wrote OTHER/atlas.sum
+//
+// So the assertion that matters here is not the exit code but that neither
+// directory was hashed.
+func TestCompatMigrateIntegrityArgumentTerminator_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		verb string
+	}{
+		{name: "hash", verb: "hash"},
+		{name: "validate", verb: "validate"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			named := writeIntegrityFixture(c)
+			other := writeIntegrityFixture(c)
+
+			_, _, err := runCompatExit("migrate", tt.verb,
+				"--dir", "file://"+named+"?format=atlas",
+				"--", "--dir", "file://"+other)
+
+			c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["--dir" "file://.*"\]`)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			_, namedStat := os.Stat(filepath.Join(named, migratesum.AtlasFileName))
+			c.Assert(os.IsNotExist(namedStat), qt.IsTrue)
+			_, otherStat := os.Stat(filepath.Join(other, migratesum.AtlasFileName))
+			c.Assert(os.IsNotExist(otherStat), qt.IsTrue)
+		})
+	}
+}
+
+// TestCompatMigrateIntegrityHelp_HappyPath pins that --help is answered before
+// the source layout is resolved, so an invocation whose flags cannot resolve
+// still gets its help instead of a resolution error. Atlas CE exits 0 on all
+// four of these.
+func TestCompatMigrateIntegrityHelp_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		verb string
+		args func(dir string) []string
+	}{
+		{
+			name: "hash with an unknown dir-format",
+			verb: "hash",
+			args: func(string) []string { return []string{"--dir-format", "bogus", "--help"} },
+		},
+		{
+			name: "hash with an unsupported query parameter",
+			verb: "hash",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir + "?other=1", "--help"} },
+		},
+		{
+			name: "validate with an unknown dir-format",
+			verb: "validate",
+			args: func(string) []string { return []string{"--dir-format", "bogus", "--help"} },
+		},
+		{
+			name: "validate with an unsupported query parameter",
+			verb: "validate",
+			args: func(dir string) []string { return []string{"--dir", "file://" + dir + "?other=1", "--help"} },
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			stdout, stderr, err := runCompatExit(append([]string{"migrate", tt.verb}, tt.args(dir)...)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
+			// runCompatExit names the root "atlas"; the shipped binary names it
+			// ptah-compat.
+			c.Assert(stdout, qt.Contains, "Usage:\n  atlas migrate "+tt.verb)
+			c.Assert(stdout, qt.Contains, "--dir-format string")
+		})
+	}
+}
+
+// TestCompatMigrateIntegritySemicolonQuery_FailurePath pins the query shape
+// Atlas CE drops whole. It arrives through atlasargs.ParseLocalDir's
+// url.ParseQuery rather than through the format validation, which is why an
+// enumeration written from the validation function misses it:
+//
+//	$ atlas migrate hash --dir 'file://d?format=flyway;x=1'
+//	exit=0, and it hashed the ATLAS set — the entire pair was discarded, so
+//	even the format selection was lost.
+//
+// Refusing is the safe side, and shared with `migrate apply`. Tracked in #990.
+func TestCompatMigrateIntegritySemicolonQuery_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		verb  string
+		query string
+	}{
+		{name: "hash with a trailing pair", verb: "hash", query: "?format=flyway;x=1"},
+		{name: "hash with a bare semicolon", verb: "hash", query: "?format=flyway;"},
+		{name: "validate with a trailing pair", verb: "validate", query: "?format=flyway;x=1"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			_, _, err := runCompatExit("migrate", tt.verb, "--dir", "file://"+dir+tt.query)
+
+			c.Assert(err, qt.ErrorMatches,
+				"atlas migrate "+tt.verb+" --dir: parse migration directory URL query: .*semicolon.*")
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			_, statErr := os.Stat(filepath.Join(dir, migratesum.AtlasFileName))
+			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+		})
+	}
+}
+
 // TestCompatMigrateIntegrityConvertedDir_FailurePathMissingDirectory keeps the
 // missing-directory diagnostic identical on both layouts.
 func TestCompatMigrateIntegrityConvertedDir_FailurePathMissingDirectory(t *testing.T) {
