@@ -104,6 +104,56 @@ func TestOpenedDirectoryOperations_FailurePath(t *testing.T) {
 	c.Assert(removeErr.Path, qt.Equals, "missing")
 }
 
+func TestOpenedDirectoryPublication_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	publishedPath := filepath.Join(dir, "published")
+	c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
+	opened, err := pathguard.OpenDirectory(dir)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(os.Chmod(publishedPath, 0o600), qt.IsNil)
+		c.Check(opened.Close(), qt.IsNil)
+	})
+	staged, stagedName, err := opened.CreateTemp("staged-*")
+	c.Assert(err, qt.IsNil)
+	_, err = staged.WriteString("new")
+	c.Assert(err, qt.IsNil)
+	c.Assert(staged.Sync(), qt.IsNil)
+	stagedInfo, err := staged.Stat()
+	c.Assert(err, qt.IsNil)
+	c.Assert(staged.Close(), qt.IsNil)
+	backup, backupName, err := opened.CreateTemp("backup")
+	c.Assert(err, qt.IsNil)
+	_, err = backup.WriteString("original")
+	c.Assert(err, qt.IsNil)
+	c.Assert(backup.Sync(), qt.IsNil)
+	backupInfo, err := backup.Stat()
+	c.Assert(err, qt.IsNil)
+	c.Assert(backup.Close(), qt.IsNil)
+	backupPath := filepath.Join(dir, backupName)
+	c.Cleanup(func() {
+		c.Check(os.Chmod(backupPath, 0o600), qt.IsNil)
+	})
+
+	c.Assert(opened.PublishFile(stagedName, "published", stagedInfo, 0o400), qt.IsNil)
+	c.Assert(opened.FinalizeFile(backupName, backupInfo, 0o400), qt.IsNil)
+	c.Assert(opened.Revalidate(), qt.IsNil)
+
+	contents, err := os.ReadFile(publishedPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "new")
+	publishedInfo, err := os.Stat(publishedPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(publishedInfo.Mode().Perm()&0o200, qt.Equals, os.FileMode(0))
+	contents, err = os.ReadFile(backupPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "original")
+	backupFinalInfo, err := os.Stat(backupPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(backupFinalInfo.Mode().Perm()&0o200, qt.Equals, os.FileMode(0))
+}
+
 func TestOpenedDirectoryCreateTemp_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	opened, err := pathguard.OpenDirectory(c.TempDir())

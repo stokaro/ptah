@@ -39,10 +39,3 @@ func ReplaceFileAt(root *os.Root, oldName, newName string) error {
 	}
 	return replacementCommittedError(errors.Join(verifyErr, staged.Sync(), staged.Close()))
 }
-
-func replacementCommittedError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%w: %w", ErrReplacementCommitted, err)
-}
