@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/internal/atlashcl"
 	"github.com/stokaro/ptah/internal/atlashclrender"
+	"github.com/stokaro/ptah/internal/fsdurable"
 	"github.com/stokaro/ptah/internal/goannotationcleanup"
 	"github.com/stokaro/ptah/internal/goannotationsource"
 	"github.com/stokaro/ptah/internal/pathguard"
@@ -35,6 +38,9 @@ var (
 	// ErrOutputAliasesManagedData reports that the output aliases a managed-data
 	// source and would overwrite the referenced row data.
 	ErrOutputAliasesManagedData = errors.New("HCL output aliases a managed data file")
+	// ErrOutputChanged reports that another writer changed the HCL destination
+	// after Ptah staged its replacement.
+	ErrOutputChanged = errors.New("HCL output changed after staging")
 )
 
 // Options controls one Go-annotation-to-HCL export.
@@ -71,9 +77,20 @@ type renderedExport struct {
 	diagnostics []atlashclrender.Diagnostic
 }
 
+type outputState struct {
+	exists bool
+	info   fs.FileInfo
+	data   []byte
+}
+
 type stagedOutput struct {
 	outputPath string
-	tempPath   string
+	parent     *pathguard.OpenedDirectory
+	targetName string
+	tempName   string
+	tempInfo   fs.FileInfo
+	mode       os.FileMode
+	original   outputState
 }
 
 // Export renders Go annotations to HCL and optionally applies one validated
@@ -91,11 +108,7 @@ func export(opts Options, afterOutputStage func()) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	mode, err := outputMode(plan.outputPath, rendered.database.Roles)
-	if err != nil {
-		return Result{}, err
-	}
-	staged, err := stageOutput(plan.outputPath, rendered.hcl, mode)
+	staged, err := stageOutput(plan.outputPath, rendered.hcl, rendered.database.Roles)
 	if err != nil {
 		return Result{}, err
 	}
@@ -103,8 +116,18 @@ func export(opts Options, afterOutputStage func()) (Result, error) {
 	if err := plan.validatePublication(rendered.database.ManagedData); err != nil {
 		return Result{}, errors.Join(err, staged.cleanup())
 	}
+	if err := staged.validateDestination(); err != nil {
+		return Result{}, errors.Join(err, staged.cleanup())
+	}
 	if err := staged.commit(); err != nil {
 		return Result{}, errors.Join(err, staged.cleanup())
+	}
+	if err := staged.close(); err != nil {
+		return Result{}, fmt.Errorf(
+			"%w: close HCL output directory after commit: %w",
+			fsdurable.ErrReplacementCommitted,
+			err,
+		)
 	}
 	if err := plan.applyCleanup(); err != nil {
 		return Result{}, err
@@ -396,37 +419,54 @@ func hasRolePasswords(roles []goschema.Role) bool {
 	})
 }
 
-func stageOutput(path string, data []byte, mode os.FileMode) (stagedOutput, error) {
-	parent := filepath.Dir(path)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+func stageOutput(path string, data []byte, roles []goschema.Role) (stagedOutput, error) {
+	parentPath := filepath.Dir(path)
+	if err := os.MkdirAll(parentPath, 0o755); err != nil {
 		return stagedOutput{}, fmt.Errorf("create HCL output directory: %w", err)
 	}
-
-	file, err := os.CreateTemp(parent, "."+filepath.Base(path)+".tmp-*")
+	parent, err := pathguard.OpenDirectory(parentPath)
 	if err != nil {
-		return stagedOutput{}, fmt.Errorf("create temporary HCL output: %w", err)
+		return stagedOutput{}, fmt.Errorf("open HCL output directory: %w", err)
 	}
-	tempPath := file.Name()
-	staged := stagedOutput{outputPath: path, tempPath: tempPath}
-
-	if err := file.Chmod(mode); err != nil {
-		_ = file.Close()
+	targetName := filepath.Base(path)
+	original, mode, err := captureOutputState(parent, targetName, path, roles)
+	if err != nil {
+		return stagedOutput{}, errors.Join(err, parent.Close())
+	}
+	file, tempName, err := parent.CreateTemp("." + targetName + ".tmp-*")
+	if err != nil {
 		return stagedOutput{}, errors.Join(
-			fmt.Errorf("set temporary HCL output mode: %w", err),
-			staged.cleanup(),
+			fmt.Errorf("create temporary HCL output: %w", err),
+			parent.Close(),
 		)
 	}
+	staged := stagedOutput{
+		outputPath: path,
+		parent:     parent,
+		targetName: targetName,
+		tempName:   tempName,
+		mode:       mode,
+		original:   original,
+	}
 	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
 		return stagedOutput{}, errors.Join(
 			fmt.Errorf("write temporary HCL output: %w", err),
+			file.Close(),
 			staged.cleanup(),
 		)
 	}
 	if err := file.Sync(); err != nil {
-		_ = file.Close()
 		return stagedOutput{}, errors.Join(
 			fmt.Errorf("sync temporary HCL output: %w", err),
+			file.Close(),
+			staged.cleanup(),
+		)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return stagedOutput{}, errors.Join(
+			fmt.Errorf("stat temporary HCL output: %w", err),
+			file.Close(),
 			staged.cleanup(),
 		)
 	}
@@ -436,45 +476,193 @@ func stageOutput(path string, data []byte, mode os.FileMode) (stagedOutput, erro
 			staged.cleanup(),
 		)
 	}
+	staged.tempInfo = info
+	if err := parent.Sync(); err != nil {
+		return stagedOutput{}, errors.Join(
+			fmt.Errorf("sync temporary HCL output directory: %w", err),
+			staged.cleanup(),
+		)
+	}
 	return staged, nil
 }
 
-func (s *stagedOutput) commit() error {
-	if err := os.Rename(s.tempPath, s.outputPath); err != nil {
-		return fmt.Errorf("commit HCL output: %w", err)
+func captureOutputState(
+	parent *pathguard.OpenedDirectory,
+	targetName, outputPath string,
+	roles []goschema.Role,
+) (outputState, os.FileMode, error) {
+	info, data, err := readOutputFile(parent, targetName, outputPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return outputState{}, 0o600, nil
 	}
-	s.tempPath = ""
+	if err != nil {
+		return outputState{}, 0, err
+	}
+	mode := info.Mode().Perm()
+	if hasRolePasswords(roles) {
+		mode = 0o600
+	}
+	return outputState{exists: true, info: info, data: data}, mode, nil
+}
+
+func readOutputFile(
+	parent *pathguard.OpenedDirectory,
+	targetName, outputPath string,
+) (fs.FileInfo, []byte, error) {
+	entryInfo, err := parent.Lstat(targetName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("stat HCL output %s: %w", outputPath, err)
+	}
+	if !entryInfo.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("HCL output is not a regular file: %s", outputPath)
+	}
+	file, err := parent.Open(targetName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open HCL output %s: %w", outputPath, err)
+	}
+	info, statErr := file.Stat()
+	openedEntryInfo, restatErr := parent.Lstat(targetName)
+	validationErr := errors.Join(statErr, restatErr)
+	if validationErr == nil {
+		validationErr = validateOpenedOutputFile(outputPath, entryInfo, info, openedEntryInfo)
+	}
+	var data []byte
+	readErr := error(nil)
+	if validationErr == nil {
+		data, readErr = io.ReadAll(file)
+	}
+	finalInfo, finalStatErr := file.Stat()
+	finalEntryInfo, finalRestatErr := parent.Lstat(targetName)
+	finalValidationErr := errors.Join(finalStatErr, finalRestatErr)
+	if finalValidationErr == nil && validationErr == nil {
+		finalValidationErr = validateReadOutputFile(outputPath, info, finalInfo, finalEntryInfo)
+	}
+	closeErr := file.Close()
+	if err := errors.Join(
+		validationErr,
+		readErr,
+		finalValidationErr,
+		closeErr,
+	); err != nil {
+		return nil, nil, err
+	}
+	return finalInfo, data, nil
+}
+
+func validateOpenedOutputFile(
+	outputPath string,
+	entryInfo, info, openedEntryInfo fs.FileInfo,
+) error {
+	if !info.Mode().IsRegular() ||
+		!openedEntryInfo.Mode().IsRegular() ||
+		!os.SameFile(entryInfo, info) ||
+		!os.SameFile(info, openedEntryInfo) {
+		return fmt.Errorf("%w: %s", ErrOutputChanged, outputPath)
+	}
 	return nil
+}
+
+func validateReadOutputFile(
+	outputPath string,
+	info, finalInfo, finalEntryInfo fs.FileInfo,
+) error {
+	if !finalInfo.Mode().IsRegular() ||
+		!finalEntryInfo.Mode().IsRegular() ||
+		info.Mode() != finalInfo.Mode() ||
+		finalInfo.Mode() != finalEntryInfo.Mode() ||
+		info.Size() != finalInfo.Size() ||
+		!info.ModTime().Equal(finalInfo.ModTime()) ||
+		!os.SameFile(info, finalInfo) ||
+		!os.SameFile(finalInfo, finalEntryInfo) {
+		return fmt.Errorf("%w: %s", ErrOutputChanged, outputPath)
+	}
+	return nil
+}
+
+func (s *stagedOutput) validateDestination() error {
+	if err := s.parent.Revalidate(); err != nil {
+		return fmt.Errorf("%w: revalidate output parent %s: %w", ErrOutputChanged, s.outputPath, err)
+	}
+	info, data, err := readOutputFile(s.parent, s.targetName, s.outputPath)
+	if !s.original.exists && errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrOutputChanged, s.outputPath, err)
+	}
+	if !s.original.exists ||
+		!os.SameFile(s.original.info, info) ||
+		s.original.info.Mode() != info.Mode() ||
+		!bytes.Equal(s.original.data, data) {
+		return fmt.Errorf("%w: %s", ErrOutputChanged, s.outputPath)
+	}
+	return nil
+}
+
+func (s *stagedOutput) commit() error {
+	if err := s.validateDestination(); err != nil {
+		return err
+	}
+	if err := s.parent.Revalidate(); err != nil {
+		return fmt.Errorf(
+			"%w: revalidate output parent before commit: %w",
+			ErrOutputChanged,
+			err,
+		)
+	}
+	replaceErr := s.parent.PublishFile(s.tempName, s.targetName, s.tempInfo, s.mode)
+	committed := replaceErr == nil || errors.Is(replaceErr, fsdurable.ErrReplacementCommitted)
+	if !committed {
+		return fmt.Errorf("commit HCL output: %w", replaceErr)
+	}
+	s.tempName = ""
+	commitErr := errors.Join(replaceErr, s.parent.Revalidate())
+	if commitErr == nil {
+		return nil
+	}
+	if !errors.Is(commitErr, fsdurable.ErrReplacementCommitted) {
+		commitErr = fmt.Errorf("%w: %w", fsdurable.ErrReplacementCommitted, commitErr)
+	}
+	return fmt.Errorf("commit HCL output: %w", commitErr)
 }
 
 func (s *stagedOutput) cleanup() error {
-	if s.tempPath == "" {
-		return nil
+	removeErr := error(nil)
+	syncErr := error(nil)
+	if s.tempName != "" {
+		removeErr = s.parent.Remove(s.tempName)
+		if errors.Is(removeErr, os.ErrNotExist) {
+			removeErr = nil
+		}
+		if removeErr == nil {
+			s.tempName = ""
+			syncErr = s.parent.Sync()
+		}
 	}
-	err := os.Remove(s.tempPath)
-	if errors.Is(err, os.ErrNotExist) {
-		err = nil
-	}
-	if err != nil {
-		return fmt.Errorf("remove temporary HCL output: %w", err)
-	}
-	s.tempPath = ""
-	return nil
+	closeParentErr := s.closeParent()
+	return errors.Join(
+		wrapOutputError("remove temporary HCL output", removeErr),
+		wrapOutputError("sync HCL output directory", syncErr),
+		wrapOutputError("close HCL output directory", closeParentErr),
+	)
 }
 
-func outputMode(path string, roles []goschema.Role) (os.FileMode, error) {
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0o600, nil
+func (s *stagedOutput) close() error {
+	return wrapOutputError("close HCL output directory", s.closeParent())
+}
+
+func (s *stagedOutput) closeParent() error {
+	if s.parent == nil {
+		return nil
 	}
-	if err != nil {
-		return 0, fmt.Errorf("stat HCL output: %w", err)
+	err := s.parent.Close()
+	s.parent = nil
+	return err
+}
+
+func wrapOutputError(action string, err error) error {
+	if err == nil {
+		return nil
 	}
-	if !info.Mode().IsRegular() {
-		return 0, fmt.Errorf("HCL output is not a regular file: %s", path)
-	}
-	if hasRolePasswords(roles) {
-		return 0o600, nil
-	}
-	return info.Mode().Perm(), nil
+	return fmt.Errorf("%s: %w", action, err)
 }

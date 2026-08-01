@@ -153,7 +153,11 @@ any unexpected diagnostic before cleanup.
 One export captures the complete selected Go source set and uses that immutable
 view for both HCL parsing and cleanup planning. Ptah rechecks source membership,
 file identity, permissions, and contents before publishing the HCL; a concurrent
-source change aborts the export.
+source change aborts the export. The output directory is bound before staging,
+and Ptah also rechecks an existing output's identity, permissions, and contents.
+An output creation, edit, or replacement detected at this commit barrier is
+left untouched and aborts publication. Successful HCL replacement is flushed
+to durable storage before Go annotation cleanup starts.
 
 Preview annotation removal only after the export has no diagnostics:
 
@@ -177,8 +181,15 @@ output uses a `.go` path or aliases a protected source, or no removable
 annotations remain. Ptah revalidates the Go source set before HCL publication
 and again before cleanup. If a source changes between those steps, the HCL file
 remains published but cleanup leaves every Go file unchanged and returns an
-error. Do not repeat the cleanup command after a successful migration; use
-`schema.hcl` as the new source.
+error.
+
+If a later source fails during a multi-file cleanup, Ptah rolls back earlier
+replacements only while they still match the exact cleaned file it committed.
+If that check detects a concurrent edit, Ptah leaves the edit in place,
+preserves the original source in a `.ptah-backup-*` file, and reports its
+location. These checks are optimistic; exclude uncooperative writers that can
+mutate the same paths after the final commit barrier. Do not repeat cleanup
+after a successful migration; use `schema.hcl` as the new source.
 :::
 
 ## Next steps

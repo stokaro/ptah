@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,7 +17,15 @@ import (
 
 	"github.com/stokaro/ptah/internal/annotationmeta"
 	"github.com/stokaro/ptah/internal/annotationparse"
+	"github.com/stokaro/ptah/internal/fsdurable"
 	"github.com/stokaro/ptah/internal/goannotationsource"
+	"github.com/stokaro/ptah/internal/pathguard"
+)
+
+var (
+	// ErrRollbackConflict reports that cleanup could not safely restore an
+	// original source because its committed file or parent directory changed.
+	ErrRollbackConflict = errors.New("Go annotation cleanup rollback conflict")
 )
 
 // Result describes cleanup changes for one file.
@@ -48,10 +57,27 @@ type filePlan struct {
 	removed []removedLine
 }
 
+type applyHooks struct {
+	revalidate  func() error
+	afterCommit func()
+}
+
+type openedPlan struct {
+	plan       filePlan
+	parent     *pathguard.OpenedDirectory
+	targetName string
+}
+
+type stagedFile struct {
+	name string
+	info fs.FileInfo
+}
+
 type stagedPlan struct {
-	plan           filePlan
-	cleanedPath    string
-	backupPath     string
+	opened         *openedPlan
+	cleaned        stagedFile
+	backup         stagedFile
+	committed      bool
 	preserveBackup bool
 }
 
@@ -116,7 +142,10 @@ func (p *Plan) Apply() error {
 	if err := p.snapshot.Revalidate(); err != nil {
 		return fmt.Errorf("revalidate Go annotation sources before cleanup: %w", err)
 	}
-	return applyPlans(p.changes, p.snapshot.Revalidate)
+	return applyPlans(p.changes, applyHooks{
+		revalidate:  p.snapshot.Revalidate,
+		afterCommit: func() {},
+	})
 }
 
 func planFile(source goannotationsource.File) (filePlan, error) {
@@ -147,105 +176,190 @@ func planFile(source goannotationsource.File) (filePlan, error) {
 	}, nil
 }
 
-func applyPlans(plans []filePlan, revalidate func() error) error {
-	files := make([]*os.File, 0, len(plans))
-	for _, plan := range plans {
-		file, err := openValidatedPlan(plan)
-		if err != nil {
-			return errors.Join(err, closeFiles(files))
-		}
-		files = append(files, file)
-	}
-
-	staged, err := stagePlans(plans)
+func applyPlans(plans []filePlan, hooks applyHooks) error {
+	opened, err := openPlans(plans)
 	if err != nil {
-		return errors.Join(err, closeFiles(files))
+		return err
 	}
-	for i, file := range files {
-		if err := validateOpenPlan(file, plans[i]); err != nil {
-			return errors.Join(err, closeFiles(files), cleanupStagedPlans(staged))
-		}
+	staged, err := stagePlans(opened)
+	if err != nil {
+		return errors.Join(err, closeOpenedPlans(opened))
 	}
-	if err := closeFiles(files); err != nil {
-		return errors.Join(err, cleanupStagedPlans(staged))
-	}
-	if err := revalidate(); err != nil {
-		return errors.Join(
+	if err := hooks.revalidate(); err != nil {
+		return finishApply(
+			opened,
+			staged,
 			fmt.Errorf("revalidate Go annotation sources before cleanup commit: %w", err),
-			cleanupStagedPlans(staged),
 		)
 	}
-	if err := commitStagedPlans(staged); err != nil {
-		return errors.Join(err, cleanupStagedPlans(staged))
+	if err := commitStagedPlans(staged, hooks.afterCommit); err != nil {
+		return finishApply(opened, staged, err)
 	}
-	return cleanupStagedPlans(staged)
+	return finishApply(opened, staged, nil)
 }
 
-func openValidatedPlan(plan filePlan) (*os.File, error) {
-	if err := validatePlanPath(plan); err != nil {
+func finishApply(opened []openedPlan, staged []stagedPlan, applyErr error) error {
+	finishErr := errors.Join(applyErr, cleanupStagedPlans(staged), closeOpenedPlans(opened))
+	if finishErr == nil || !hasCommittedPlan(staged) || errors.Is(finishErr, fsdurable.ErrReplacementCommitted) {
+		return finishErr
+	}
+	return fmt.Errorf("%w: %w", fsdurable.ErrReplacementCommitted, finishErr)
+}
+
+func hasCommittedPlan(staged []stagedPlan) bool {
+	return slices.ContainsFunc(staged, func(plan stagedPlan) bool {
+		return plan.committed
+	})
+}
+
+func openPlans(plans []filePlan) ([]openedPlan, error) {
+	opened := make([]openedPlan, 0, len(plans))
+	parents := make(map[string]*pathguard.OpenedDirectory)
+	for _, plan := range plans {
+		parentPath := filepath.Clean(filepath.Dir(plan.result.Path))
+		parent := parents[parentPath]
+		openedParent := false
+		if parent == nil {
+			var err error
+			parent, err = pathguard.OpenDirectory(parentPath)
+			if err != nil {
+				return nil, errors.Join(
+					fmt.Errorf("open Go source parent for cleanup %s: %w", plan.result.Path, err),
+					closeOpenedPlans(opened),
+				)
+			}
+			parents[parentPath] = parent
+			openedParent = true
+		}
+		current, err := openPlan(plan, parent)
+		if err != nil {
+			if openedParent {
+				err = errors.Join(err, parent.Close())
+			}
+			return nil, errors.Join(err, closeOpenedPlans(opened))
+		}
+		opened = append(opened, current)
+	}
+	return opened, nil
+}
+
+func openPlan(plan filePlan, parent *pathguard.OpenedDirectory) (openedPlan, error) {
+	targetName := filepath.Base(plan.result.Path)
+	source, err := openValidatedPlan(parent, targetName, plan)
+	if err != nil {
+		return openedPlan{}, err
+	}
+	if err := source.Close(); err != nil {
+		return openedPlan{}, fmt.Errorf("close validated Go source %s: %w", plan.result.Path, err)
+	}
+	return openedPlan{
+		plan:       plan,
+		parent:     parent,
+		targetName: targetName,
+	}, nil
+}
+
+func openValidatedPlan(
+	parent *pathguard.OpenedDirectory,
+	targetName string,
+	plan filePlan,
+) (*os.File, error) {
+	entryInfo, err := parent.Lstat(targetName)
+	if err != nil {
+		return nil, fmt.Errorf("stat Go source before cleanup %s: %w", plan.result.Path, err)
+	}
+	if entryInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("refuse to clean symlinked Go source %s", plan.result.Path)
+	}
+	if err := validatePlanInfo(entryInfo, plan); err != nil {
 		return nil, err
 	}
-	file, err := os.Open(plan.result.Path)
+	file, err := parent.Open(targetName)
 	if err != nil {
 		return nil, fmt.Errorf("open Go source for cleanup %s: %w", plan.result.Path, err)
 	}
-	if err := validateOpenPlan(file, plan); err != nil {
-		_ = file.Close()
-		return nil, err
+	if err := validateOpenPlanEntry(parent, targetName, file, plan); err != nil {
+		return nil, errors.Join(err, file.Close())
 	}
 	return file, nil
 }
 
-func validatePlanPath(plan filePlan) error {
-	info, err := os.Lstat(plan.result.Path)
-	if err != nil {
-		return fmt.Errorf("stat Go source before cleanup %s: %w", plan.result.Path, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("refuse to clean symlinked Go source %s", plan.result.Path)
-	}
-	if !info.Mode().IsRegular() || !plan.source.SameFile(info) {
-		return fmt.Errorf("go source changed before cleanup: %s", plan.result.Path)
-	}
-	current, err := os.ReadFile(plan.result.Path)
-	if err != nil {
-		return fmt.Errorf("read Go source before cleanup %s: %w", plan.result.Path, err)
-	}
-	if !bytes.Equal(current, plan.before) {
+func validatePlanInfo(info fs.FileInfo, plan filePlan) error {
+	if !info.Mode().IsRegular() ||
+		!plan.source.SameFile(info) ||
+		info.Mode() != plan.source.Mode() {
 		return fmt.Errorf("go source changed before cleanup: %s", plan.result.Path)
 	}
 	return nil
 }
 
-func validateOpenPlan(file *os.File, plan filePlan) error {
+func validateOpenPlanEntry(
+	parent *pathguard.OpenedDirectory,
+	targetName string,
+	file *os.File,
+	plan filePlan,
+) error {
 	currentInfo, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("stat opened Go source %s: %w", plan.result.Path, err)
 	}
-	if !plan.source.SameFile(currentInfo) {
+	if err := validatePlanInfo(currentInfo, plan); err != nil {
+		return err
+	}
+	entryInfo, err := parent.Lstat(targetName)
+	if err != nil {
+		return fmt.Errorf("restat Go source before cleanup %s: %w", plan.result.Path, err)
+	}
+	if entryInfo.Mode()&os.ModeSymlink != 0 ||
+		!os.SameFile(currentInfo, entryInfo) {
 		return fmt.Errorf("go source changed before cleanup: %s", plan.result.Path)
 	}
-	return validatePlanContent(file, plan)
-}
-
-func validatePlanContent(file *os.File, plan filePlan) error {
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("seek Go source before cleanup %s: %w", plan.result.Path, err)
+	if err := validatePlanContent(file, plan.before, plan.result.Path); err != nil {
+		return err
 	}
-	current, err := io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("read Go source before cleanup %s: %w", plan.result.Path, err)
+	finalInfo, statErr := file.Stat()
+	finalEntryInfo, restatErr := parent.Lstat(targetName)
+	if err := errors.Join(statErr, restatErr); err != nil {
+		return fmt.Errorf("restat Go source after cleanup validation %s: %w", plan.result.Path, err)
 	}
-	if !bytes.Equal(current, plan.before) {
+	if err := validatePlanInfo(finalInfo, plan); err != nil {
+		return err
+	}
+	if finalEntryInfo.Mode()&os.ModeSymlink != 0 ||
+		!os.SameFile(currentInfo, finalInfo) ||
+		!os.SameFile(finalInfo, finalEntryInfo) ||
+		finalEntryInfo.Mode() != plan.source.Mode() {
 		return fmt.Errorf("go source changed before cleanup: %s", plan.result.Path)
 	}
 	return nil
 }
 
-func stagePlans(plans []filePlan) ([]stagedPlan, error) {
-	staged := make([]stagedPlan, 0, len(plans))
-	for _, plan := range plans {
-		stagedFile, err := stagePlan(plan)
+func validatePlanPath(opened *openedPlan) error {
+	file, err := openValidatedPlan(opened.parent, opened.targetName, opened.plan)
+	if err != nil {
+		return err
+	}
+	return file.Close()
+}
+
+func validatePlanContent(file *os.File, expected []byte, displayPath string) error {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek Go source before cleanup %s: %w", displayPath, err)
+	}
+	current, err := io.ReadAll(file)
+	if err != nil {
+		return fmt.Errorf("read Go source before cleanup %s: %w", displayPath, err)
+	}
+	if !bytes.Equal(current, expected) {
+		return fmt.Errorf("go source changed before cleanup: %s", displayPath)
+	}
+	return nil
+}
+
+func stagePlans(opened []openedPlan) ([]stagedPlan, error) {
+	staged := make([]stagedPlan, 0, len(opened))
+	for i := range opened {
+		stagedFile, err := stagePlan(&opened[i])
 		if err != nil {
 			return nil, errors.Join(err, cleanupStagedPlans(staged))
 		}
@@ -254,123 +368,327 @@ func stagePlans(plans []filePlan) ([]stagedPlan, error) {
 	return staged, nil
 }
 
-func stagePlan(plan filePlan) (stagedPlan, error) {
-	backupPath, err := stageFile(plan, "backup", plan.before)
+func stagePlan(opened *openedPlan) (stagedPlan, error) {
+	backup, err := stageFile(opened, "backup", opened.plan.before)
 	if err != nil {
 		return stagedPlan{}, err
 	}
-	cleanedPath, err := stageFile(plan, "cleaned", plan.after)
+	cleaned, err := stageFile(opened, "cleaned", opened.plan.after)
 	if err != nil {
-		return stagedPlan{}, errors.Join(err, removeStagedFile(backupPath))
+		return stagedPlan{}, errors.Join(err, removeStagedFile(opened.parent, &backup))
 	}
-	return stagedPlan{
-		plan:        plan,
-		cleanedPath: cleanedPath,
-		backupPath:  backupPath,
-	}, nil
-}
-
-func stageFile(plan filePlan, kind string, data []byte) (string, error) {
-	dir := filepath.Dir(plan.result.Path)
-	pattern := "." + filepath.Base(plan.result.Path) + ".ptah-" + kind + "-*"
-	file, err := os.CreateTemp(dir, pattern)
-	if err != nil {
-		return "", fmt.Errorf("create staged %s for %s: %w", kind, plan.result.Path, err)
+	staged := stagedPlan{
+		opened:  opened,
+		cleaned: cleaned,
+		backup:  backup,
 	}
-	path := file.Name()
-	if err := file.Chmod(plan.source.Mode()); err != nil {
-		_ = file.Close()
-		return "", errors.Join(
-			fmt.Errorf("set staged %s mode for %s: %w", kind, plan.result.Path, err),
-			removeStagedFile(path),
+	if err := opened.parent.Sync(); err != nil {
+		return stagedPlan{}, errors.Join(
+			fmt.Errorf("sync staged cleanup files for %s: %w", opened.plan.result.Path, err),
+			cleanupStagedPlans([]stagedPlan{staged}),
 		)
 	}
+	return staged, nil
+}
+
+func stageFile(opened *openedPlan, kind string, data []byte) (stagedFile, error) {
+	pattern := "." + opened.targetName + ".ptah-" + kind + "-*"
+	file, name, err := opened.parent.CreateTemp(pattern)
+	if err != nil {
+		return stagedFile{}, fmt.Errorf(
+			"create staged %s for %s: %w",
+			kind,
+			opened.plan.result.Path,
+			err,
+		)
+	}
+	staged := stagedFile{name: name}
 	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return "", errors.Join(
-			fmt.Errorf("write staged %s for %s: %w", kind, plan.result.Path, err),
-			removeStagedFile(path),
+		return stagedFile{}, errors.Join(
+			fmt.Errorf("write staged %s for %s: %w", kind, opened.plan.result.Path, err),
+			file.Close(),
+			removeStagedFile(opened.parent, &staged),
 		)
 	}
 	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return "", errors.Join(
-			fmt.Errorf("sync staged %s for %s: %w", kind, plan.result.Path, err),
-			removeStagedFile(path),
+		return stagedFile{}, errors.Join(
+			fmt.Errorf("sync staged %s for %s: %w", kind, opened.plan.result.Path, err),
+			file.Close(),
+			removeStagedFile(opened.parent, &staged),
+		)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return stagedFile{}, errors.Join(
+			fmt.Errorf("stat staged %s for %s: %w", kind, opened.plan.result.Path, err),
+			file.Close(),
+			removeStagedFile(opened.parent, &staged),
 		)
 	}
 	if err := file.Close(); err != nil {
-		return "", errors.Join(
-			fmt.Errorf("close staged %s for %s: %w", kind, plan.result.Path, err),
-			removeStagedFile(path),
+		return stagedFile{}, errors.Join(
+			fmt.Errorf("close staged %s for %s: %w", kind, opened.plan.result.Path, err),
+			removeStagedFile(opened.parent, &staged),
 		)
 	}
-	return path, nil
+	staged.info = info
+	return staged, nil
 }
 
-func commitStagedPlans(staged []stagedPlan) error {
+func commitStagedPlans(staged []stagedPlan, afterCommit func()) error {
 	for i := range staged {
-		if err := validatePlanPath(staged[i].plan); err != nil {
-			return errors.Join(err, rollbackStagedPlans(staged[:i]))
-		}
-		if err := replaceFile(staged[i].cleanedPath, staged[i].plan.result.Path); err != nil {
+		if err := staged[i].opened.parent.Revalidate(); err != nil {
 			return errors.Join(
-				fmt.Errorf("commit cleaned Go source %s: %w", staged[i].plan.result.Path, err),
+				fmt.Errorf("revalidate Go source parent before cleanup %s: %w", staged[i].opened.plan.result.Path, err),
 				rollbackStagedPlans(staged[:i]),
 			)
 		}
-		staged[i].cleanedPath = ""
+		if err := validatePlanPath(staged[i].opened); err != nil {
+			return errors.Join(err, rollbackStagedPlans(staged[:i]))
+		}
+		committed, err := commitStagedFile(&staged[i], &staged[i].cleaned)
+		staged[i].committed = committed
+		if committed {
+			afterCommit()
+		}
+		if err != nil {
+			rollbackEnd := i
+			if committed {
+				rollbackEnd++
+			}
+			return errors.Join(
+				fmt.Errorf("commit cleaned Go source %s: %w", staged[i].opened.plan.result.Path, err),
+				rollbackStagedPlans(staged[:rollbackEnd]),
+			)
+		}
 	}
 	return nil
+}
+
+func commitStagedFile(plan *stagedPlan, staged *stagedFile) (bool, error) {
+	if err := plan.opened.parent.Revalidate(); err != nil {
+		return false, err
+	}
+	replaceErr := plan.opened.parent.PublishFile(
+		staged.name,
+		plan.opened.targetName,
+		staged.info,
+		plan.opened.plan.source.Mode(),
+	)
+	committed := replaceErr == nil || errors.Is(replaceErr, fsdurable.ErrReplacementCommitted)
+	if !committed {
+		return false, replaceErr
+	}
+	staged.name = ""
+	revalidateErr := plan.opened.parent.Revalidate()
+	return true, replacementCommittedError(errors.Join(replaceErr, revalidateErr))
+}
+
+func replacementCommittedError(err error) error {
+	if err == nil || errors.Is(err, fsdurable.ErrReplacementCommitted) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", fsdurable.ErrReplacementCommitted, err)
 }
 
 func rollbackStagedPlans(staged []stagedPlan) error {
 	var rollbackErr error
 	for i := range slices.Backward(staged) {
-		if err := replaceFile(staged[i].backupPath, staged[i].plan.result.Path); err != nil {
+		if !staged[i].committed {
+			continue
+		}
+		if err := staged[i].opened.parent.Revalidate(); err != nil {
 			staged[i].preserveBackup = true
 			rollbackErr = errors.Join(
 				rollbackErr,
-				fmt.Errorf(
-					"restore Go source %s from %s: %w",
-					staged[i].plan.result.Path,
-					staged[i].backupPath,
-					err,
-				),
+				rollbackConflictError(&staged[i], err),
 			)
 			continue
 		}
-		staged[i].backupPath = ""
+		if err := validateCommittedPlan(&staged[i]); err != nil {
+			staged[i].preserveBackup = true
+			rollbackErr = errors.Join(
+				rollbackErr,
+				rollbackConflictError(&staged[i], err),
+			)
+			continue
+		}
+		committed, err := commitStagedFile(&staged[i], &staged[i].backup)
+		if committed {
+			staged[i].committed = false
+		}
+		if err == nil {
+			continue
+		}
+		if !committed {
+			staged[i].preserveBackup = true
+		}
+		rollbackErr = errors.Join(
+			rollbackErr,
+			fmt.Errorf(
+				"restore Go source %s from %s: %w",
+				staged[i].opened.plan.result.Path,
+				stagedFilePath(staged[i].opened.parent, &staged[i].backup),
+				err,
+			),
+		)
 	}
 	return rollbackErr
 }
 
+func validateCommittedPlan(staged *stagedPlan) error {
+	entryInfo, err := staged.opened.parent.Lstat(staged.opened.targetName)
+	if err != nil {
+		return err
+	}
+	if !entryInfo.Mode().IsRegular() ||
+		!os.SameFile(staged.cleaned.info, entryInfo) ||
+		entryInfo.Mode() != staged.opened.plan.source.Mode() {
+		return errors.New("committed cleaned source identity or mode changed")
+	}
+	file, err := staged.opened.parent.Open(staged.opened.targetName)
+	if err != nil {
+		return err
+	}
+	currentInfo, statErr := file.Stat()
+	openedEntryInfo, restatErr := staged.opened.parent.Lstat(staged.opened.targetName)
+	validationErr := errors.Join(statErr, restatErr)
+	if validationErr == nil &&
+		(!os.SameFile(staged.cleaned.info, currentInfo) ||
+			!os.SameFile(currentInfo, openedEntryInfo)) {
+		validationErr = errors.New("committed cleaned source identity changed")
+	}
+	if validationErr == nil {
+		validationErr = validatePlanContent(
+			file,
+			staged.opened.plan.after,
+			staged.opened.plan.result.Path,
+		)
+	}
+	finalInfo, finalStatErr := file.Stat()
+	finalEntryInfo, finalRestatErr := staged.opened.parent.Lstat(staged.opened.targetName)
+	validationErr = errors.Join(validationErr, finalStatErr, finalRestatErr)
+	if validationErr == nil &&
+		(!finalInfo.Mode().IsRegular() ||
+			finalInfo.Mode() != staged.opened.plan.source.Mode() ||
+			finalEntryInfo.Mode() != staged.opened.plan.source.Mode() ||
+			currentInfo.Size() != finalInfo.Size() ||
+			!currentInfo.ModTime().Equal(finalInfo.ModTime()) ||
+			!os.SameFile(currentInfo, finalInfo) ||
+			!os.SameFile(finalInfo, finalEntryInfo)) {
+		validationErr = errors.New("committed cleaned source changed during rollback validation")
+	}
+	return errors.Join(validationErr, file.Close())
+}
+
+func rollbackConflictError(staged *stagedPlan, cause error) error {
+	return fmt.Errorf(
+		"%w: refuse to restore %s because the committed cleaned source cannot be safely validated; preserved backup %s: %w",
+		ErrRollbackConflict,
+		staged.opened.plan.result.Path,
+		stagedFilePath(staged.opened.parent, &staged.backup),
+		cause,
+	)
+}
+
 func cleanupStagedPlans(staged []stagedPlan) error {
 	var cleanupErr error
-	for _, stagedFile := range staged {
-		cleanupErr = errors.Join(cleanupErr, removeStagedFile(stagedFile.cleanedPath))
-		if !stagedFile.preserveBackup {
-			cleanupErr = errors.Join(cleanupErr, removeStagedFile(stagedFile.backupPath))
+	for i := range staged {
+		cleanupErr = errors.Join(
+			cleanupErr,
+			removeStagedFile(staged[i].opened.parent, &staged[i].cleaned),
+		)
+		if staged[i].preserveBackup {
+			preserveErr := finalizePreservedBackup(&staged[i])
+			cleanupErr = errors.Join(cleanupErr, preserveErr)
+			continue
 		}
+		cleanupErr = errors.Join(
+			cleanupErr,
+			removeStagedFile(staged[i].opened.parent, &staged[i].backup),
+		)
 	}
 	return cleanupErr
 }
 
-func removeStagedFile(path string) error {
-	if path == "" {
-		return nil
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove staged cleanup file %s: %w", path, err)
-	}
-	return nil
+func finalizePreservedBackup(staged *stagedPlan) error {
+	return wrapStagedFileError(
+		"finalize preserved cleanup backup",
+		staged.opened.parent,
+		&staged.backup,
+		staged.opened.parent.FinalizeFile(
+			staged.backup.name,
+			staged.backup.info,
+			staged.opened.plan.source.Mode(),
+		),
+	)
 }
 
-func closeFiles(files []*os.File) error {
+func removeStagedFile(parent *pathguard.OpenedDirectory, staged *stagedFile) error {
+	if staged.name == "" {
+		return nil
+	}
+	removeErr := parent.Remove(staged.name)
+	if errors.Is(removeErr, os.ErrNotExist) {
+		removeErr = nil
+	}
+	if removeErr == nil {
+		staged.name = ""
+	}
+	syncErr := error(nil)
+	if removeErr == nil {
+		syncErr = parent.Sync()
+	}
+	return errors.Join(
+		wrapStagedFileError("remove staged cleanup file", parent, staged, removeErr),
+		syncErr,
+	)
+}
+
+func wrapStagedFileError(
+	action string,
+	parent *pathguard.OpenedDirectory,
+	staged *stagedFile,
+	err error,
+) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s %s: %w", action, stagedFilePath(parent, staged), err)
+}
+
+func stagedFilePath(parent *pathguard.OpenedDirectory, staged *stagedFile) string {
+	if staged.name == "" {
+		return filepath.Join(parent.Path(), "<committed>")
+	}
+	if err := parent.Revalidate(); err != nil {
+		return fmt.Sprintf(
+			"entry %q in the originally opened directory %q (the current path no longer identifies that directory)",
+			staged.name,
+			parent.Path(),
+		)
+	}
+	return filepath.Join(parent.Path(), staged.name)
+}
+
+func closeOpenedPlans(opened []openedPlan) error {
 	var closeErr error
-	for _, file := range files {
-		if err := file.Close(); err != nil {
-			closeErr = errors.Join(closeErr, fmt.Errorf("close Go source %s: %w", file.Name(), err))
+	closed := make(map[*pathguard.OpenedDirectory]struct{})
+	for i := range opened {
+		if opened[i].parent == nil {
+			continue
+		}
+		parent := opened[i].parent
+		opened[i].parent = nil
+		if _, ok := closed[parent]; ok {
+			continue
+		}
+		closed[parent] = struct{}{}
+		if err := parent.Close(); err != nil {
+			closeErr = errors.Join(
+				closeErr,
+				fmt.Errorf("close Go source parent %s: %w", parent.Path(), err),
+			)
 		}
 	}
 	return closeErr
