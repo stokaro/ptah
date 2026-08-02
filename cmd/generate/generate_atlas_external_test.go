@@ -44,11 +44,12 @@ func TestGenerateCommand_UsesExternalSchemaFromAtlasConfigEnv(t *testing.T) {
 		"--dialect", "postgres",
 	})
 
-	output, err := captureGenerateStdout(c, cmd.Execute)
+	stdout, stderr, err := executeGenerate(c, cmd)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(output, qt.Contains, "Found 1 tables")
-	c.Assert(output, qt.Contains, `CREATE TABLE "configured_widgets"`)
+	c.Assert(stdout, qt.Contains, `CREATE TABLE "configured_widgets"`)
+	c.Assert(stdout, qt.Not(qt.Contains), "Found 1 tables")
+	c.Assert(stderr, qt.Contains, "Found 1 tables")
 }
 
 func TestGenerateCommand_RejectsImplicitExternalSchemaFromAtlasConfig(t *testing.T) {

@@ -357,6 +357,37 @@ func TestMerge_IsolatesSourceLocalNestedEmbeddedHelpers(t *testing.T) {
 	c.Assert(rendered, qt.Not(qt.Contains), "composite-source-")
 }
 
+func TestMerge_PreservesNestedEmbeddedHelpersAcrossRefinalization(t *testing.T) {
+	c := qt.New(t)
+	auth := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "User", Schema: "auth", Name: "users"}},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "id", Type: "BIGINT", Primary: true},
+			{StructName: "Metadata", Name: "label", Type: "TEXT"},
+			{StructName: "Audit", Name: "created_at", Type: "TIMESTAMPTZ"},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{
+			{StructName: "User", EmbeddedTypeName: "Metadata", Mode: "inline"},
+			{StructName: "Metadata", EmbeddedTypeName: "Audit", Mode: "inline"},
+		},
+	}
+
+	merged, err := goschema.Merge(auth)
+	c.Assert(err, qt.IsNil)
+	goschema.Finalize(merged)
+	refinalizedSQL, err := renderer.GetOrderedCreateStatements(merged, "postgres")
+	c.Assert(err, qt.IsNil)
+
+	remerged, err := goschema.Merge(merged)
+	c.Assert(err, qt.IsNil)
+	remergedSQL, err := renderer.GetOrderedCreateStatements(remerged, "postgres")
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(strings.Join(refinalizedSQL, "\n"), qt.Contains, `"label" TEXT`)
+	c.Assert(strings.Join(refinalizedSQL, "\n"), qt.Contains, `"created_at" TIMESTAMPTZ`)
+	c.Assert(remergedSQL, qt.DeepEquals, refinalizedSQL)
+}
+
 func TestMerge_DoesNotAttachSourceLocalHelperToSameNamedTable(t *testing.T) {
 	c := qt.New(t)
 

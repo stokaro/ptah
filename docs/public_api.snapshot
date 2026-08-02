@@ -3396,6 +3396,7 @@ type Database struct{ ... }
     func ParseSource(filename string, source any) (Database, error)
 type Domain struct{ ... }
 type EmbeddedField struct{ ... }
+type EmbeddedSources struct{ ... }
 type Enum struct{ ... }
 type Extension struct{ ... }
 type Field struct{ ... }
@@ -3544,6 +3545,10 @@ type Database struct {
     Dependencies               map[string][]string            // table -> list of tables it depends on
     FunctionDependencies       map[string][]string            // function -> list of functions it depends on
     SelfReferencingForeignKeys map[string][]SelfReferencingFK // table -> list of self-referencing foreign keys
+
+    // EmbeddedSources retains source-only helper declarations needed to
+    // materialize embedded columns again after a schema is merged or finalized.
+    EmbeddedSources EmbeddedSources
 }
     Database represents the complete database schema derived from Go struct
     annotations.
@@ -3612,7 +3617,7 @@ type EmbeddedField struct {
     Mode             string                       // inline, json, relation, skip
     Prefix           string                       // For inline mode - prefix for field names
     Name             string                       // For json mode - column name
-    Type             string                       // For json mode - column type (JSON/JSONB)
+    Type             string                       // For json/relation mode - generated column type
     Nullable         bool                         // Whether the field can be null
     Field            string                       // For relation mode - foreign key field name
     Ref              string                       // For relation mode - reference table(column)
@@ -3647,6 +3652,18 @@ type EmbeddedField struct {
             //ptah:embedded mode="relation" field="company_id" ref="companies(id)"
             Company Company  // Results in: company_id INTEGER + FK constraint
         }
+
+
+### github.com/stokaro/ptah/core/goschema.EmbeddedSources
+
+package goschema // import "github.com/stokaro/ptah/core/goschema"
+
+type EmbeddedSources struct {
+    Fields      []Field
+    Definitions []EmbeddedField
+}
+    EmbeddedSources preserves helper declarations separately from materialized
+    database columns so Finalize and Merge remain idempotent.
 
 
 ### github.com/stokaro/ptah/core/goschema.Enum
@@ -3771,6 +3788,10 @@ type Field struct {
     Collate   string
     Comment   string                       // Column comment
     Overrides map[string]map[string]string // Platform-specific overrides (e.g., platform.mysql.type)
+
+    // GeneratedFromEmbedded distinguishes materialized embedded columns from
+    // source declarations so Finalize can rebuild them after schema mutation.
+    GeneratedFromEmbedded bool
 }
     Field represents a database column/field definition parsed from Go struct
     field annotations. This is the core building block for table schema
@@ -4284,17 +4305,18 @@ type SelfReferencingFK struct {
     OnDelete       string // ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
     OnUpdate       string // ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
 }
-    SelfReferencingFK represents a self-referencing foreign key that needs to be
-    handled separately from regular foreign keys to avoid circular dependencies.
+    SelfReferencingFK represents a field-level self-referencing foreign key that
+    migration planners emit after creating its table.
 
     Self-referencing foreign keys occur when a table has a foreign key
-    that references its own primary key, such as a "parent_id" field in a
-    hierarchical structure. These cannot be created as part of the initial
-    CREATE TABLE statement because the table doesn't exist yet when the
-    constraint is being defined.
-
-    Instead, these foreign keys are tracked separately and added as ALTER TABLE
-    ADD CONSTRAINT statements after the table has been created.
+    that references its own primary key, such as a "parent_id" field in
+    a hierarchical structure. Ptah tracks these references separately
+    because PostgreSQL-family and MySQL- family planners use a table-first,
+    foreign-key-second creation strategy. SQL permits a self reference inside
+    CREATE TABLE, and SQLite renderers use that inline form because SQLite
+    cannot add a foreign key with ALTER TABLE. Table-level foreign keys remain
+    in Database.Constraints so composite column lists are never collapsed into
+    this single-field representation.
 
     Example:
 
@@ -4488,8 +4510,9 @@ type Capabilities map[Capability]bool
     func ForServerVersionResult(dialect, version string) (Capabilities, bool)
     func MariaDB1011() Capabilities
     func MariaDBLegacy() Capabilities
-    func MySQL80() Capabilities
     func MySQL8016() Capabilities
+    func MySQL8019() Capabilities
+    func MySQL84() Capabilities
     func MySQLLegacy() Capabilities
     func Postgres13() Capabilities
     func Postgres16() Capabilities
@@ -4519,8 +4542,9 @@ func ForServerVersion(dialect, version string) Capabilities
 func ForServerVersionResult(dialect, version string) (Capabilities, bool)
 func MariaDB1011() Capabilities
 func MariaDBLegacy() Capabilities
-func MySQL80() Capabilities
 func MySQL8016() Capabilities
+func MySQL8019() Capabilities
+func MySQL84() Capabilities
 func MySQLLegacy() Capabilities
 func Postgres13() Capabilities
 func Postgres16() Capabilities
@@ -4879,6 +4903,8 @@ func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nod
 func RenderSelect(stmt *ast.SelectStatement, dialect string) (string, []any, error)
 func RenderUpdate(stmt *ast.UpdateStatement, dialect string) (string, []any, error)
 func SupportedDialects() []string
+func ValidateSchema(r *goschema.Database, dialect string) error
+func ValidateSchemaWithCapabilities(r *goschema.Database, dialect string, caps capability.Capabilities) error
 func VisitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error)
 type RenderVisitor interface{ ... }
     func NewRenderer(dialect string) (RenderVisitor, error)

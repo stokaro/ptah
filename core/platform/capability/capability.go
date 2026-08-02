@@ -129,10 +129,29 @@ const (
 	RoleManagement Capability = "role_management"
 
 	// ForeignKeys marks support for declarative FOREIGN KEY constraints.
-	// PostgreSQL, CockroachDB, YugabyteDB, MySQL, and MariaDB support them;
-	// Spanner's PostgreSQL interface has historically not supported the
-	// PostgreSQL FOREIGN KEY surface, so its conservative preset disables it.
+	// PostgreSQL, CockroachDB, YugabyteDB, Spanner's PostgreSQL interface,
+	// MySQL, MariaDB, SQLite, and SQL Server support them.
 	ForeignKeys Capability = "foreign_keys"
+
+	// ForeignKeysRequireUniqueReference marks targets that reject a foreign
+	// key unless its referenced columns already form a declared unique key.
+	// PostgreSQL-family standards-oriented targets, SQLite, and SQL Server use
+	// this policy. MySQL 8.4+ enables it by default through
+	// restrict_fk_on_non_standard_key; MySQL 8.0 and MariaDB instead retain
+	// indexed, nonunique referenced-key support.
+	ForeignKeysRequireUniqueReference Capability = "foreign_keys_require_unique_reference"
+
+	// ForeignKeysRequireIndexedReference marks targets that permit a foreign
+	// key to reference a nonunique key, but require the referenced columns to
+	// be a full leftmost prefix of an existing index. MySQL before 8.4 and
+	// MariaDB use this policy.
+	ForeignKeysRequireIndexedReference Capability = "foreign_keys_require_indexed_reference"
+
+	// ForeignKeysCreateBackingIndex marks targets that create and manage the
+	// referenced-key backing index themselves. Cloud Spanner uses this policy,
+	// so Ptah must not reject an otherwise valid foreign key merely because the
+	// referenced columns are not declared unique or indexed in the input.
+	ForeignKeysCreateBackingIndex Capability = "foreign_keys_create_backing_index"
 
 	// Sequences marks support for database sequence objects used by
 	// PostgreSQL SERIAL/BIGSERIAL or explicit CREATE SEQUENCE support.
@@ -203,6 +222,18 @@ var registry = map[Capability]spec{
 	ForeignKeys: {
 		doc: "declarative FOREIGN KEY constraints",
 	},
+	ForeignKeysRequireUniqueReference: {
+		doc:      "foreign keys require a declared unique referenced key",
+		requires: []Capability{ForeignKeys},
+	},
+	ForeignKeysRequireIndexedReference: {
+		doc:      "foreign keys require the referenced columns as a full leftmost index prefix (MySQL before 8.4 and MariaDB)",
+		requires: []Capability{ForeignKeys},
+	},
+	ForeignKeysCreateBackingIndex: {
+		doc:      "the database creates the referenced-key backing index (Cloud Spanner)",
+		requires: []Capability{ForeignKeys},
+	},
 	Sequences: {
 		doc: "database sequence objects (SERIAL/BIGSERIAL or explicit CREATE SEQUENCE support)",
 	},
@@ -218,6 +249,13 @@ var registry = map[Capability]spec{
 // enabled: they describe mutually exclusive modelings of the same concept.
 var mutexGroups = [][]Capability{
 	{EnumInlineColumn, EnumCustomType},
+	{ForeignKeysRequireUniqueReference, ForeignKeysRequireIndexedReference, ForeignKeysCreateBackingIndex},
+}
+
+var foreignKeyReferencePolicies = []Capability{
+	ForeignKeysRequireUniqueReference,
+	ForeignKeysRequireIndexedReference,
+	ForeignKeysCreateBackingIndex,
 }
 
 // Capabilities is a set of feature flags describing one concrete target, as
@@ -292,6 +330,17 @@ func (c Capabilities) Validate() error {
 			return fmt.Errorf("capabilities %s are mutually exclusive", strings.Join(enabled, " and "))
 		}
 	}
+	if c.Has(ForeignKeys) {
+		enabled := 0
+		for _, key := range foreignKeyReferencePolicies {
+			if c.Has(key) {
+				enabled++
+			}
+		}
+		if enabled != 1 {
+			return fmt.Errorf("capability %q requires exactly one foreign-key reference policy", ForeignKeys)
+		}
+	}
 	return nil
 }
 
@@ -311,36 +360,46 @@ func All() []Capability {
 	return out
 }
 
-// MySQL80 is the preset for the current MySQL line: 8.0.19+ and the 9.x
-// releases, which share these capabilities. Notably NO IF EXISTS on
+// MySQL84 is the preset for MySQL 8.4 and newer. Notably NO IF EXISTS on
 // constraint or index drops — plans must be exactly-once by construction
 // (see the MySQL planner's constraint-drop ownership rules, issue #207).
-func MySQL80() Capabilities {
+func MySQL84() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:          true,
-		DropConstraintIfExists:         false,
-		DropIndexIfExists:              false,
-		CheckConstraintsEnforced:       true,
-		DropCheckClause:                true,
-		EnumInlineColumn:               true,
-		EnumCustomType:                 false,
-		CreateIndexConcurrently:        false,
-		CreateOrReplaceTrigger:         false,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               false,
-		RoleManagement:                 false,
-		ForeignKeys:                    true,
-		Sequences:                      false,
-		XMLType:                        false,
-		AdvisoryLocks:                  false,
+		DropConstraintGeneric:              true,
+		DropConstraintIfExists:             false,
+		DropIndexIfExists:                  false,
+		CheckConstraintsEnforced:           true,
+		DropCheckClause:                    true,
+		EnumInlineColumn:                   true,
+		EnumCustomType:                     false,
+		CreateIndexConcurrently:            false,
+		CreateOrReplaceTrigger:             false,
+		AlterGeneratedColumnExpression:     false,
+		RowLevelSecurity:                   false,
+		RoleManagement:                     false,
+		ForeignKeys:                        true,
+		ForeignKeysRequireUniqueReference:  true,
+		ForeignKeysRequireIndexedReference: false,
+		ForeignKeysCreateBackingIndex:      false,
+		Sequences:                          false,
+		XMLType:                            false,
+		AdvisoryLocks:                      false,
 	}
+}
+
+// MySQL8019 is the preset for MySQL 8.0.19–8.3. It permits foreign keys that
+// reference nonunique indexes, unlike MySQL 8.4 and newer.
+func MySQL8019() Capabilities {
+	return MySQL84().
+		With(ForeignKeysRequireUniqueReference, false).
+		With(ForeignKeysRequireIndexedReference, true)
 }
 
 // MySQL8016 is the preset for MySQL 8.0.16–8.0.18: CHECK constraints are
 // enforced, but the generic DROP CONSTRAINT clause does not exist yet (CHECK
 // drops must use ALTER TABLE ... DROP CHECK).
 func MySQL8016() Capabilities {
-	return MySQL80().With(DropConstraintGeneric, false)
+	return MySQL8019().With(DropConstraintGeneric, false)
 }
 
 // MySQLLegacy is the preset for MySQL before 8.0.16: no generic
@@ -357,22 +416,25 @@ func MySQLLegacy() Capabilities {
 // constraint and index drops.
 func MariaDB1011() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:          true,
-		DropConstraintIfExists:         true,
-		DropIndexIfExists:              true,
-		CheckConstraintsEnforced:       true,
-		DropCheckClause:                false,
-		EnumInlineColumn:               true,
-		EnumCustomType:                 false,
-		CreateIndexConcurrently:        false,
-		CreateOrReplaceTrigger:         true,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               false,
-		RoleManagement:                 false,
-		ForeignKeys:                    true,
-		Sequences:                      true,
-		XMLType:                        false,
-		AdvisoryLocks:                  false,
+		DropConstraintGeneric:              true,
+		DropConstraintIfExists:             true,
+		DropIndexIfExists:                  true,
+		CheckConstraintsEnforced:           true,
+		DropCheckClause:                    false,
+		EnumInlineColumn:                   true,
+		EnumCustomType:                     false,
+		CreateIndexConcurrently:            false,
+		CreateOrReplaceTrigger:             true,
+		AlterGeneratedColumnExpression:     false,
+		RowLevelSecurity:                   false,
+		RoleManagement:                     false,
+		ForeignKeys:                        true,
+		ForeignKeysRequireUniqueReference:  false,
+		ForeignKeysRequireIndexedReference: true,
+		ForeignKeysCreateBackingIndex:      false,
+		Sequences:                          true,
+		XMLType:                            false,
+		AdvisoryLocks:                      false,
 	}
 }
 
@@ -393,22 +455,25 @@ func MariaDBLegacy() Capabilities {
 // Postgres16 is the preset for PostgreSQL 14–16.
 func Postgres16() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:          true,
-		DropConstraintIfExists:         true,
-		DropIndexIfExists:              true,
-		CheckConstraintsEnforced:       true,
-		DropCheckClause:                false,
-		EnumInlineColumn:               false,
-		EnumCustomType:                 true,
-		CreateIndexConcurrently:        true,
-		CreateOrReplaceTrigger:         true,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               true,
-		RoleManagement:                 true,
-		ForeignKeys:                    true,
-		Sequences:                      true,
-		XMLType:                        true,
-		AdvisoryLocks:                  true,
+		DropConstraintGeneric:              true,
+		DropConstraintIfExists:             true,
+		DropIndexIfExists:                  true,
+		CheckConstraintsEnforced:           true,
+		DropCheckClause:                    false,
+		EnumInlineColumn:                   false,
+		EnumCustomType:                     true,
+		CreateIndexConcurrently:            true,
+		CreateOrReplaceTrigger:             true,
+		AlterGeneratedColumnExpression:     false,
+		RowLevelSecurity:                   true,
+		RoleManagement:                     true,
+		ForeignKeys:                        true,
+		ForeignKeysRequireUniqueReference:  true,
+		ForeignKeysRequireIndexedReference: false,
+		ForeignKeysCreateBackingIndex:      false,
+		Sequences:                          true,
+		XMLType:                            true,
+		AdvisoryLocks:                      true,
 	}
 }
 
@@ -429,22 +494,25 @@ func Postgres13() Capabilities {
 // (Enum8/Enum16).
 func ClickHouse24() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:          false,
-		DropConstraintIfExists:         false,
-		DropIndexIfExists:              false,
-		CheckConstraintsEnforced:       false,
-		DropCheckClause:                false,
-		EnumInlineColumn:               true,
-		EnumCustomType:                 false,
-		CreateIndexConcurrently:        false,
-		CreateOrReplaceTrigger:         false,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               false,
-		RoleManagement:                 false,
-		ForeignKeys:                    false,
-		Sequences:                      false,
-		XMLType:                        false,
-		AdvisoryLocks:                  false,
+		DropConstraintGeneric:              false,
+		DropConstraintIfExists:             false,
+		DropIndexIfExists:                  false,
+		CheckConstraintsEnforced:           false,
+		DropCheckClause:                    false,
+		EnumInlineColumn:                   true,
+		EnumCustomType:                     false,
+		CreateIndexConcurrently:            false,
+		CreateOrReplaceTrigger:             false,
+		AlterGeneratedColumnExpression:     false,
+		RowLevelSecurity:                   false,
+		RoleManagement:                     false,
+		ForeignKeys:                        false,
+		ForeignKeysRequireUniqueReference:  false,
+		ForeignKeysRequireIndexedReference: false,
+		ForeignKeysCreateBackingIndex:      false,
+		Sequences:                          false,
+		XMLType:                            false,
+		AdvisoryLocks:                      false,
 	}
 }
 
@@ -454,22 +522,25 @@ func ClickHouse24() Capabilities {
 // advisory-lock surface.
 func SQLite3() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:          false,
-		DropConstraintIfExists:         false,
-		DropIndexIfExists:              true,
-		CheckConstraintsEnforced:       true,
-		DropCheckClause:                false,
-		EnumInlineColumn:               false,
-		EnumCustomType:                 false,
-		CreateIndexConcurrently:        false,
-		CreateOrReplaceTrigger:         false,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               false,
-		RoleManagement:                 false,
-		ForeignKeys:                    true,
-		Sequences:                      false,
-		XMLType:                        false,
-		AdvisoryLocks:                  false,
+		DropConstraintGeneric:              false,
+		DropConstraintIfExists:             false,
+		DropIndexIfExists:                  true,
+		CheckConstraintsEnforced:           true,
+		DropCheckClause:                    false,
+		EnumInlineColumn:                   false,
+		EnumCustomType:                     false,
+		CreateIndexConcurrently:            false,
+		CreateOrReplaceTrigger:             false,
+		AlterGeneratedColumnExpression:     false,
+		RowLevelSecurity:                   false,
+		RoleManagement:                     false,
+		ForeignKeys:                        true,
+		ForeignKeysRequireUniqueReference:  true,
+		ForeignKeysRequireIndexedReference: false,
+		ForeignKeysCreateBackingIndex:      false,
+		Sequences:                          false,
+		XMLType:                            false,
+		AdvisoryLocks:                      false,
 	}
 }
 
@@ -480,22 +551,25 @@ func SQLite3() Capabilities {
 // are not.
 func SQLServer2022() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:          true,
-		DropConstraintIfExists:         false,
-		DropIndexIfExists:              false,
-		CheckConstraintsEnforced:       true,
-		DropCheckClause:                false,
-		EnumInlineColumn:               false,
-		EnumCustomType:                 false,
-		CreateIndexConcurrently:        false,
-		CreateOrReplaceTrigger:         true,
-		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               false,
-		RoleManagement:                 false,
-		ForeignKeys:                    true,
-		Sequences:                      false,
-		XMLType:                        true,
-		AdvisoryLocks:                  false,
+		DropConstraintGeneric:              true,
+		DropConstraintIfExists:             false,
+		DropIndexIfExists:                  false,
+		CheckConstraintsEnforced:           true,
+		DropCheckClause:                    false,
+		EnumInlineColumn:                   false,
+		EnumCustomType:                     false,
+		CreateIndexConcurrently:            false,
+		CreateOrReplaceTrigger:             true,
+		AlterGeneratedColumnExpression:     false,
+		RowLevelSecurity:                   false,
+		RoleManagement:                     false,
+		ForeignKeys:                        true,
+		ForeignKeysRequireUniqueReference:  true,
+		ForeignKeysRequireIndexedReference: false,
+		ForeignKeysCreateBackingIndex:      false,
+		Sequences:                          false,
+		XMLType:                            true,
+		AdvisoryLocks:                      false,
 	}
 }
 
@@ -528,7 +602,8 @@ func YugabyteDB25() Capabilities {
 // SpannerPostgres is the conservative preset for Cloud Spanner's PostgreSQL
 // interface. Spanner's SQL surface is sufficiently different that Ptah only
 // routes the simplest PostgreSQL-family statements through this preset; enums,
-// sequences, RLS, advisory locks, XML, and foreign keys are disabled.
+// sequences, RLS, advisory locks, and XML are disabled. Enforced foreign keys,
+// including circular relationships added with ALTER TABLE, are supported.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
 		With(DropConstraintGeneric, false).
@@ -540,10 +615,11 @@ func SpannerPostgres() Capabilities {
 		With(CreateOrReplaceTrigger, false).
 		With(RowLevelSecurity, false).
 		With(RoleManagement, false).
-		With(ForeignKeys, false).
 		With(Sequences, false).
 		With(XMLType, false).
-		With(AdvisoryLocks, false)
+		With(AdvisoryLocks, false).
+		With(ForeignKeysRequireUniqueReference, false).
+		With(ForeignKeysCreateBackingIndex, true)
 }
 
 // ForDialect returns the default preset for a dialect name (normalized via
@@ -554,7 +630,7 @@ func ForDialect(dialect string) Capabilities {
 	case platform.Postgres:
 		return Postgres17()
 	case platform.MySQL:
-		return MySQL80()
+		return MySQL84()
 	case platform.MariaDB:
 		return MariaDB1011()
 	case platform.ClickHouse:
@@ -616,14 +692,7 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 
 	switch normalized {
 	case platform.MySQL:
-		switch {
-		case v.major > 8 || (v.major == 8 && (v.minor > 0 || v.patch >= 19)):
-			return MySQL80(), true
-		case v.major == 8 && v.patch >= 16:
-			return MySQL8016(), true
-		default:
-			return MySQLLegacy(), true
-		}
+		return mysqlForVersion(v), true
 	case platform.MariaDB:
 		return mariaDBForVersion(version), parseableMariaDBVersion(version)
 	case platform.Postgres:
@@ -636,6 +705,19 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 		return Postgres13(), true
 	default:
 		return ForDialect(dialect), false
+	}
+}
+
+func mysqlForVersion(v serverVersion) Capabilities {
+	switch {
+	case v.major > 8 || (v.major == 8 && v.minor >= 4):
+		return MySQL84()
+	case v.major == 8 && (v.minor > 0 || v.patch >= 19):
+		return MySQL8019()
+	case v.major == 8 && v.patch >= 16:
+		return MySQL8016()
+	default:
+		return MySQLLegacy()
 	}
 }
 

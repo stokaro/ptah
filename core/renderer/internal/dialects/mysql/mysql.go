@@ -17,7 +17,7 @@ type Renderer struct {
 
 // New creates a new MySQL renderer
 func New() *Renderer {
-	return NewWithCapabilities(capability.MySQL80())
+	return NewWithCapabilities(capability.MySQL84())
 }
 
 // NewWithCapabilities creates a MySQL renderer for a concrete server

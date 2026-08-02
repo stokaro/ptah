@@ -46,8 +46,17 @@ rather than shipped.
   implementation serves four engines honestly, because each engine's preset
   removes what it does not support.
 - **Unsupported operations fail loudly.** Where an operation has no valid
-  spelling for the target, Ptah emits an explicit error or a loud `WARNING`
-  comment — never syntactically valid SQL the server would parse and ignore.
+  spelling for the target, Ptah emits an explicit error or, for explicitly
+  documented advisory operations, a loud `WARNING` comment. Schema rendering
+  never replaces a declared foreign key with a comment.
+- **Foreign-key validity is target-specific.** Capability presets distinguish
+  candidate-key targets, MySQL-family indexed-left-prefix targets, and
+  Spanner's engine-managed backing indexes. Root MySQL 8.4+ connections retain
+  the conservative unique-key policy; a pinned `WithSession` callback refines
+  it from `restrict_fk_on_non_standard_key` on the same physical connection
+  used for execution. Ptah also
+  validates column types, name namespaces, and engine-specific index/storage
+  restrictions before emitting SQL.
 - **Version upgrades can change plans.** Moving a server across a preset
   boundary (for example PostgreSQL 13 to 14) legitimately changes generated
   SQL, such as trigger replacement switching to `CREATE OR REPLACE TRIGGER`.

@@ -40,7 +40,7 @@ type User struct {
 	//ptah:embedded mode="json" name="metadata" type="JSONB" nullable="true" platform.mysql.type="JSON"
 	Metadata map[string]any
 
-	//ptah:embedded mode="relation" field="manager_id" ref="accounts(id)" platform.mysql.type="BIGINT UNSIGNED"
+	//ptah:embedded mode="relation" field="manager_id" ref="accounts(id)" type="BIGINT" platform.mysql.type="BIGINT UNSIGNED"
 	Manager Account
 }
 `
@@ -62,9 +62,9 @@ type User struct {
 		"mysql": {"type": "JSON"},
 	})
 	c.Assert(fields["User.manager_id"].Foreign, qt.Equals, "accounts(id)")
+	c.Assert(fields["User.manager_id"].Type, qt.Equals, "BIGINT")
 	c.Assert(fields["User.manager_id"].Overrides, qt.DeepEquals, map[string]map[string]string{
-		"mariadb": {"type": "INT"},
-		"mysql":   {"type": "BIGINT UNSIGNED"},
+		"mysql": {"type": "BIGINT UNSIGNED"},
 	})
 }
 

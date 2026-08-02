@@ -977,16 +977,21 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 	noAction := "NO ACTION"
 	filesTable := "files"
 	idCol := "id"
+	varcharLength := 255
 
 	// Generated (target) schema: file_id FK now uses ON DELETE SET NULL.
 	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
+		Tables: []goschema.Table{
+			{StructName: "Export", Name: "exports"},
+			{StructName: "File", Name: "files"},
+		},
 		Fields: []goschema.Field{
-			{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
+			{StructName: "File", Name: "id", Type: "VARCHAR(255)", Primary: true},
+			{StructName: "Export", Name: "id", Type: "VARCHAR(255)", Primary: true},
 			{
 				StructName:     "Export",
 				Name:           "file_id",
-				Type:           "TEXT",
+				Type:           "VARCHAR(255)",
 				Nullable:       true,
 				Foreign:        "files(id)",
 				ForeignKeyName: "fk_export_file",
@@ -1000,10 +1005,16 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 	dbSchema := &dbschematypes.DBSchema{
 		Tables: []dbschematypes.DBTable{
 			{
+				Name: "files",
+				Columns: []dbschematypes.DBColumn{
+					{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
+				},
+			},
+			{
 				Name: "exports",
 				Columns: []dbschematypes.DBColumn{
-					{Name: "id", DataType: "text", IsNullable: "NO", IsPrimaryKey: true},
-					{Name: "file_id", DataType: "text", IsNullable: "YES"},
+					{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
+					{Name: "file_id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "YES"},
 				},
 			},
 		},

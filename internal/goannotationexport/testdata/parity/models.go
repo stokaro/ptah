@@ -65,7 +65,7 @@ type User struct {
 	//ptah:embedded mode="json" name="metadata" type="JSONB" nullable="true" comment="User metadata" platform.mysql.type="JSON"
 	Metadata map[string]any
 
-	//ptah:embedded mode="relation" field="manager_id" ref="app.accounts(id)" nullable="true" on_delete="SET NULL" on_update="CASCADE" comment="Manager" platform.mysql.type="BIGINT UNSIGNED"
+	//ptah:embedded mode="relation" field="manager_id" ref="app.accounts(id)" type="BIGINT" nullable="true" on_delete="SET NULL" on_update="CASCADE" comment="Manager" platform.mysql.type="BIGINT UNSIGNED"
 	Manager Account
 }
 

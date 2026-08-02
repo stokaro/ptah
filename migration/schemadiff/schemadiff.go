@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/migration/internal/identifiervalidation"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/compare"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
@@ -51,6 +52,7 @@ func CompareWithDatabaseInfo(
 		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
 	}
 	merged.Dialect = info.Dialect
+	generated = fromschema.AssignDefaultForeignKeyNames(generated, info.Dialect)
 	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
 	if !info.IdentifierSemantics.IsZero() &&
 		!info.IdentifierSemantics.Equal(semantics) {
@@ -102,6 +104,9 @@ func CompareWithDatabaseInfo(
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, opts *config.CompareOptions) *difftypes.SchemaDiff {
 	if opts == nil {
 		opts = config.DefaultCompareOptions()
+	}
+	if opts.Dialect != "" {
+		generated = fromschema.AssignDefaultForeignKeyNames(generated, opts.Dialect)
 	}
 
 	diff := &difftypes.SchemaDiff{}

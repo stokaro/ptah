@@ -103,6 +103,10 @@ ptah migrations lint --dir ./migrations --dialect postgres
 ptah schema render --root-dir ./models --dialect postgres >/tmp/ptah-schema.sql
 ```
 
+`schema render` writes executable SQL to stdout and diagnostics to stderr. A CI
+job can apply `/tmp/ptah-schema.sql` unchanged to a disposable database to test
+the public command path, including cyclic foreign key ordering.
+
 Use a disposable database for `migrations plan`, `migrations generate`, and
 `migrations up` in pull requests.
 
@@ -136,7 +140,7 @@ code-scanning permission model.
 | --- | --- |
 | `migrations validate` | Fails when committed migration files and `ptah.sum` disagree. |
 | `migrations lint` | Catches risky SQL before it reaches a database. |
-| `schema render` | Proves the desired schema source still parses. |
+| `schema render` | Proves the desired schema source parses and produces executable, capability-valid SQL. |
 | `migrations plan` against a disposable DB | Shows the SQL Ptah would apply. |
 | `migrations up --verify-sum --dry-run` | Exercises the apply path without changing the shared target. |
 | `schema drift` | Fails when a long-lived environment diverged from the desired schema. |

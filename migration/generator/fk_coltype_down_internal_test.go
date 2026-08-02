@@ -76,6 +76,8 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_UpDownInverse(t *testing.T
 // and MODIFY.
 func TestGenerateMigration_ForeignKeyColumnTypeChange_CoincidentActionChange(t *testing.T) {
 	gen, dbSchema := fkColumnTypeFixtures("SET NULL")
+	gen.Fields[3].Nullable = true
+	dbSchema.Tables[1].Columns[1].IsNullable = "YES"
 
 	for _, tc := range fkColumnTypeDialects {
 		t.Run(tc.name, func(t *testing.T) {
@@ -94,7 +96,7 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_CoincidentActionChange(t *
 			// asserted by assertOrderedOnce against the dialect-specific spelling.
 			c.Assert(strings.Count(up, "ADD CONSTRAINT fk_posts_user_slug"), qt.Equals, 1, qt.Commentf("UP:\n%s", up))
 			assertOrderedOnce(c, up, tc.drop,
-				"ALTER TABLE posts MODIFY COLUMN user_slug VARCHAR(100) NOT NULL;",
+				"ALTER TABLE posts MODIFY COLUMN user_slug VARCHAR(100);",
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_slug FOREIGN KEY (user_slug) REFERENCES users(slug) ON DELETE SET NULL;")
 
 			down, err := generateDownMigrationSQL(upDiff, gen, dbSchema, tc.name)
@@ -103,7 +105,7 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_CoincidentActionChange(t *
 			c.Assert(strings.Count(down, "ADD CONSTRAINT fk_posts_user_slug"), qt.Equals, 1, qt.Commentf("DOWN:\n%s", down))
 			// Down restores the prior CASCADE action, after its own drop and MODIFY.
 			assertOrderedOnce(c, down, tc.drop,
-				"ALTER TABLE posts MODIFY COLUMN user_slug varchar(50) NOT NULL;",
+				"ALTER TABLE posts MODIFY COLUMN user_slug varchar(50);",
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_slug FOREIGN KEY (user_slug) REFERENCES users(slug) ON DELETE CASCADE")
 		})
 	}

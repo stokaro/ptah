@@ -165,6 +165,164 @@ func TestDatabaseConnectionWithSession_RebindsAllDatabaseOperations(t *testing.T
 	c.Assert(db.ExecCount(), qt.Equals, 3)
 }
 
+func TestResolveDatabaseCapabilities_MySQLKeepsVersionBaseline(t *testing.T) {
+	c := qt.New(t)
+
+	got, versionSpecific := resolveDatabaseCapabilities(types.DBInfo{
+		Dialect: "mysql",
+		Version: "8.4.0",
+	})
+
+	c.Assert(versionSpecific, qt.IsTrue)
+	c.Assert(got, qt.DeepEquals, capability.MySQL84())
+	c.Assert(got.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
+	c.Assert(got.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
+}
+
+func TestDatabaseConnectionWithSession_MySQLRelaxationIsCallbackScoped(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+		return dbtest.QueryResult{
+			Columns: []string{"restrict_fk_on_non_standard_key"},
+			Rows:    [][]driver.Value{{int64(0)}},
+		}, nil
+	})
+	db.SQL.SetMaxOpenConns(1)
+	newReader := func(runner sqlrunner.Runner) types.SchemaReader {
+		return &connectionSessionReader{runner: runner}
+	}
+	newWriter := func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+		return &connectionSessionWriter{runner: runner}
+	}
+	baseline := capability.MySQL84()
+	rootRunner := sqlrunner.Runner(db.SQL)
+	conn := &DatabaseConnection{
+		db:     db.SQL,
+		runner: rootRunner,
+		info: types.DBInfo{
+			Dialect:      "mysql",
+			Version:      "8.4.0",
+			Capabilities: baseline,
+		},
+		reader:    newReader(rootRunner),
+		writer:    newWriter(rootRunner, nil),
+		newReader: newReader,
+		newWriter: newWriter,
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	t.Cleanup(cancel)
+
+	c.Assert(conn.Info().Capabilities, qt.DeepEquals, baseline)
+	err := conn.WithSession(ctx, func(scoped *DatabaseConnection) error {
+		c.Assert(scoped.Info().Capabilities.Has(capability.ForeignKeysRequireUniqueReference), qt.IsFalse)
+		c.Assert(scoped.Info().Capabilities.Has(capability.ForeignKeysRequireIndexedReference), qt.IsTrue)
+		c.Assert(conn.Info().Capabilities, qt.DeepEquals, baseline)
+		return nil
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.QueryCount(), qt.Equals, 1)
+	c.Assert(conn.Info().Capabilities, qt.DeepEquals, baseline)
+}
+
+func TestRefineMySQLForeignKeyCapabilities_RestrictionEnabled(t *testing.T) {
+	c := qt.New(t)
+	probeCalls := 0
+
+	got, err := refineMySQLForeignKeyCapabilities(
+		"mysql",
+		capability.MySQL84(),
+		capability.MySQL84(),
+		func(destination ...any) error {
+			probeCalls++
+			value := destination[0].(*int64)
+			*value = 1
+			return nil
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(probeCalls, qt.Equals, 1)
+	c.Assert(got.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
+	c.Assert(got.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
+	c.Assert(got.Validate(), qt.IsNil)
+}
+
+func TestRefineMySQLForeignKeyCapabilities_RestrictionDisabled(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := refineMySQLForeignKeyCapabilities(
+		"mysql",
+		capability.MySQL84(),
+		capability.MySQL84(),
+		func(destination ...any) error {
+			value := destination[0].(*int64)
+			*value = 0
+			return nil
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Has(capability.ForeignKeysRequireUniqueReference), qt.IsFalse)
+	c.Assert(got.Has(capability.ForeignKeysRequireIndexedReference), qt.IsTrue)
+	c.Assert(got.Validate(), qt.IsNil)
+}
+
+func TestRefineMySQLForeignKeyCapabilities_LegacyPresetSkipsProbe(t *testing.T) {
+	c := qt.New(t)
+	probeCalls := 0
+
+	got, err := refineMySQLForeignKeyCapabilities(
+		"mysql",
+		capability.MySQL8019(),
+		capability.MySQL8019(),
+		func(...any) error {
+			probeCalls++
+			return nil
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(probeCalls, qt.Equals, 0)
+	c.Assert(got, qt.DeepEquals, capability.MySQL8019())
+}
+
+func TestRefineMySQLForeignKeyCapabilities_RestrictionEnabledRestoresStrictPolicy(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := refineMySQLForeignKeyCapabilities(
+		"mysql",
+		capability.MySQL84().
+			With(capability.ForeignKeysRequireUniqueReference, false).
+			With(capability.ForeignKeysRequireIndexedReference, true),
+		capability.MySQL84(),
+		func(destination ...any) error {
+			value := destination[0].(*int64)
+			*value = 1
+			return nil
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
+	c.Assert(got.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
+	c.Assert(got.Validate(), qt.IsNil)
+}
+
+func TestRefineMySQLForeignKeyCapabilities_ProbeFailure(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := refineMySQLForeignKeyCapabilities(
+		"mysql",
+		capability.MySQL84(),
+		capability.MySQL84(),
+		func(...any) error { return driver.ErrBadConn },
+	)
+
+	c.Assert(err, qt.ErrorMatches, `query restrict_fk_on_non_standard_key: driver: bad connection`)
+	c.Assert(got, qt.IsNil)
+}
+
 func TestConvertClickHouseURL(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -223,6 +223,7 @@ func TestSQLServerCompatibleScenariosAreExplicit(t *testing.T) {
 		"idempotency_up_to_date",
 		"parallel_migrate_smoke",
 		"cleanup_support",
+		"dynamic_circular_dependencies",
 		"dynamic_sqlserver_identity_schema_bracket_reserved_words",
 	})
 }

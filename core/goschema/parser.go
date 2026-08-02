@@ -6,7 +6,9 @@ import (
 	"go/parser"
 	"go/token"
 	"log/slog"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1407,13 +1409,9 @@ func ParseFileWithDependencies(filename string) (Database, error) {
 		return Database{}, fmt.Errorf("find related Go files for %q: %w", filename, err)
 	}
 
-	// Collect embedded type names that we need to resolve
-	embeddedTypeNames := make(map[string]bool)
-	for _, embedded := range database.EmbeddedFields {
-		embeddedTypeNames[embedded.EmbeddedTypeName] = true
-	}
-
-	// Parse each related file to collect embedded type definitions
+	// Parse each related file once, then include the transitive closure of helper
+	// fields and embeddings reachable from the main file.
+	relatedDatabases := make([]Database, 0, len(matches))
 	for _, match := range matches {
 		if match == filename {
 			continue // Skip the main file as it's already parsed
@@ -1424,16 +1422,58 @@ func ParseFileWithDependencies(filename string) (Database, error) {
 		if err != nil {
 			return Database{}, fmt.Errorf("parse related Go file %q: %w", match, err)
 		}
-		relatedFields := dbmatch.Fields
-
-		// Only add fields from embedded types that we actually need
-		for _, field := range relatedFields {
-			if embeddedTypeNames[field.StructName] {
-				database.Fields = append(database.Fields, field)
-			}
-		}
+		relatedDatabases = append(relatedDatabases, dbmatch)
 	}
 
-	buildDependencyGraph(&database)
+	includeRelatedEmbeddedDefinitions(&database, relatedDatabases)
+	Finalize(&database)
 	return database, nil
+}
+
+func includeRelatedEmbeddedDefinitions(database *Database, relatedDatabases []Database) {
+	embeddedTypeNames := make(map[string]struct{})
+	for _, embedded := range database.EmbeddedFields {
+		embeddedTypeNames[embedded.EmbeddedTypeName] = struct{}{}
+	}
+
+	included := make(map[string]bool, len(embeddedTypeNames))
+	for _, typeName := range slices.Sorted(maps.Keys(embeddedTypeNames)) {
+		includeRelatedEmbeddedType(database, relatedDatabases, typeName, included)
+	}
+}
+
+func includeRelatedEmbeddedType(database *Database, relatedDatabases []Database, typeName string, included map[string]bool) {
+	if typeName == "" || included[typeName] {
+		return
+	}
+	included[typeName] = true
+
+	for _, relatedDatabase := range relatedDatabases {
+		database.Fields = append(database.Fields, fieldsForStruct(relatedDatabase.Fields, typeName)...)
+		embeddedFields := embeddedFieldsForStruct(relatedDatabase.EmbeddedFields, typeName)
+		database.EmbeddedFields = append(database.EmbeddedFields, embeddedFields...)
+		for _, embedded := range embeddedFields {
+			includeRelatedEmbeddedType(database, relatedDatabases, embedded.EmbeddedTypeName, included)
+		}
+	}
+}
+
+func fieldsForStruct(fields []Field, structName string) []Field {
+	matching := make([]Field, 0)
+	for _, field := range fields {
+		if field.StructName == structName {
+			matching = append(matching, field)
+		}
+	}
+	return matching
+}
+
+func embeddedFieldsForStruct(embeddedFields []EmbeddedField, structName string) []EmbeddedField {
+	matching := make([]EmbeddedField, 0)
+	for _, embedded := range embeddedFields {
+		if embedded.StructName == structName {
+			matching = append(matching, embedded)
+		}
+	}
+	return matching
 }

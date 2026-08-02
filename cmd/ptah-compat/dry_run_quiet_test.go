@@ -246,13 +246,9 @@ func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 	}
 }
 
-// TestCompatBinaryKeepsLogOnlyDiagnostics is the other half of the quiet
-// contract: narration is dropped, but a Warn-level diagnostic that exists on no
-// other channel still gets through. A circular foreign-key graph is reordered
-// and reported only through this record — it is never returned as an error — so
-// dropping it would let an apply report success while quietly emitting DDL that
-// depends on creation order.
-func TestCompatBinaryKeepsLogOnlyDiagnostics(t *testing.T) {
+// TestCompatBinaryValidCircularForeignKeysDoNotWarn verifies that two-phase
+// foreign-key rendering treats valid cycles as ordinary schema relationships.
+func TestCompatBinaryValidCircularForeignKeysDoNotWarn(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
 	dir := c.TempDir()
@@ -292,8 +288,7 @@ func TestCompatBinaryKeepsLogOnlyDiagnostics(t *testing.T) {
 			err := run.Run()
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", stderr.String()))
-			c.Assert(stderr.String(), qt.Contains, "level=WARN")
-			c.Assert(stderr.String(), qt.Contains, "Circular dependency detected in foreign key relationships")
+			c.Assert(stderr.String(), qt.Equals, "")
 		})
 	}
 }

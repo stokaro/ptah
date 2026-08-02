@@ -157,9 +157,13 @@ Controls how an embedded Go field contributes schema objects.
 | `on_update` | No | Generated foreign key ON UPDATE action. |
 | `prefix` | No | Column prefix for inline embedded fields. |
 | `ref` | No | Relation target in table(column) form. |
-| `type` | No | Column type for json embedding. |
+| `type` | No | Generated column type for json or relation embedding. |
 
 Platform overrides: yes.
+
+For relation embedding, set `type` to the referenced column's physical type.
+When it is omitted, Ptah uses a conservative numeric or string heuristic,
+which cannot infer every user-defined or dialect-specific key type.
 
 ### `//ptah:schema:index`
 

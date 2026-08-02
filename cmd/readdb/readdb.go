@@ -3,7 +3,6 @@
 package readdb
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -51,14 +50,13 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 }
 
-func readDBCommand(_ *cobra.Command, opts *options) error {
+func readDBCommand(cmd *cobra.Command, opts *options) error {
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 
-	fmt.Printf("Reading schema from database: %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
-	fmt.Println("=== DATABASE SCHEMA ===")
-	fmt.Println()
+	stderr := cmd.ErrOrStderr()
+	fmt.Fprintf(stderr, "Reading schema from database: %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
 
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
@@ -66,28 +64,26 @@ func readDBCommand(_ *cobra.Command, opts *options) error {
 	}
 
 	// Connect to the database
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
-		fmt.Printf("Error connecting to database: %v\n", err)
-		fmt.Println()
-		fmt.Println("Make sure:")
-		fmt.Println("1. The database URL is correct")
-		fmt.Println("2. The database server is running")
-		fmt.Println("3. You have the correct permissions")
-		fmt.Println("4. The database exists")
+		fmt.Fprintf(stderr, "Error connecting to database: %v\n\n", err)
+		fmt.Fprintln(stderr, "Make sure:")
+		fmt.Fprintln(stderr, "1. The database URL is correct")
+		fmt.Fprintln(stderr, "2. The database server is running")
+		fmt.Fprintln(stderr, "3. You have the correct permissions")
+		fmt.Fprintln(stderr, "4. The database exists")
 		if connectTimeout > 0 {
-			fmt.Printf("5. The connection completes within --connect-timeout (currently %s)\n", connectTimeout)
+			fmt.Fprintf(stderr, "5. The connection completes within --connect-timeout (currently %s)\n", connectTimeout)
 		} else {
-			fmt.Println("5. --connect-timeout is disabled; the call will not time out at the application layer")
+			fmt.Fprintln(stderr, "5. --connect-timeout is disabled; the call will not time out at the application layer")
 		}
 		return err
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	fmt.Printf("Connected to %s database successfully!\n", conn.Info().Dialect)
-	fmt.Println()
+	fmt.Fprintf(stderr, "Connected to %s database successfully!\n", conn.Info().Dialect)
 
 	// Read the schema
 	schemas := dbcli.ParseSchemas(opts.schemas)
@@ -103,8 +99,7 @@ func readDBCommand(_ *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error rendering schema: %w", err)
 	}
-	output := strings.Join(statements, ";\n") + ";"
-	fmt.Print(output)
+	fmt.Fprintln(cmd.OutOrStdout(), strings.Join(statements, "\n\n"))
 
 	return nil
 }

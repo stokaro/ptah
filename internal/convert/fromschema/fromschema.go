@@ -50,6 +50,7 @@
 package fromschema
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -60,6 +61,8 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/identifier"
+	"github.com/stokaro/ptah/internal/planner/tablelookup"
 	"github.com/stokaro/ptah/internal/sqlident"
 )
 
@@ -72,8 +75,8 @@ func escapeSQLStringLiteral(value string) string {
 	return "'" + escaped + "'"
 }
 
-func sqlServerBracketIdentifier(identifier string) string {
-	return "[" + strings.ReplaceAll(identifier, "]", "]]") + "]"
+func sqlServerBracketIdentifier(value string) string {
+	return "[" + strings.ReplaceAll(value, "]", "]]") + "]"
 }
 
 // GenerateForeignKeyName generates a consistent foreign key constraint name
@@ -202,6 +205,12 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 		defaultSet,
 		defaultExpr,
 	)
+}
+
+// EffectiveFieldForPlatform returns the field definition after applying the
+// same platform overrides used by AST conversion.
+func EffectiveFieldForPlatform(field goschema.Field, targetPlatform string) goschema.Field {
+	return applyPlatformOverrides(field, targetPlatform)
 }
 
 func platformFieldType(fieldType, targetPlatform string) string {
@@ -771,7 +780,7 @@ func fromTableWithFieldConverter(
 			if tableLevelPK && slices.Contains(newTable.PrimaryKey, field.Name) {
 				field.Primary = false
 			}
-			field = withDefaultForeignKeyName(newTable.Name, field)
+			field = withDefaultForeignKeyName(newTable.Name, field, targetPlatform)
 			createTable.AddColumn(convertField(field, enums, targetPlatform))
 		}
 	}
@@ -801,11 +810,15 @@ func fromTableWithoutForeignKeys(
 	return fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromFieldWithoutForeignKeys)
 }
 
-func withDefaultForeignKeyName(tableName string, field goschema.Field) goschema.Field {
+func withDefaultForeignKeyName(tableName string, field goschema.Field, targetPlatform string) goschema.Field {
 	if field.Foreign == "" || field.ForeignKeyName != "" {
 		return field
 	}
-	field.ForeignKeyName = GenerateForeignKeyName(tableName, field.Name)
+	field.ForeignKeyName = generatedForeignKeyName(
+		GenerateForeignKeyName(tableName, field.Name),
+		fieldForeignKeyIdentity(field),
+		targetPlatform,
+	)
 	return field
 }
 
@@ -903,7 +916,13 @@ const (
 	tableConstraintsWithForeignKeys
 )
 
-func addTableConstraints(createTable *ast.CreateTableNode, table goschema.Table, constraints []goschema.Constraint, mode tableConstraintMode) {
+func addTableConstraints(
+	createTable *ast.CreateTableNode,
+	table goschema.Table,
+	constraints []goschema.Constraint,
+	mode tableConstraintMode,
+	targetPlatform string,
+) {
 	for _, constraint := range constraints {
 		if !constraintBelongsToTable(constraint, table) {
 			continue
@@ -911,7 +930,7 @@ func addTableConstraints(createTable *ast.CreateTableNode, table goschema.Table,
 		if isForeignKeyConstraint(constraint) && mode != tableConstraintsWithForeignKeys {
 			continue
 		}
-		constraint = withDefaultConstraintForeignKeyName(table.Name, constraint)
+		constraint = withDefaultConstraintForeignKeyName(table.Name, constraint, targetPlatform)
 
 		node := FromConstraint(constraint)
 		if node != nil {
@@ -924,16 +943,290 @@ func isForeignKeyConstraint(constraint goschema.Constraint) bool {
 	return strings.EqualFold(constraint.Type, "FOREIGN KEY")
 }
 
-func withDefaultConstraintForeignKeyName(tableName string, constraint goschema.Constraint) goschema.Constraint {
+func withDefaultConstraintForeignKeyName(tableName string, constraint goschema.Constraint, targetPlatform string) goschema.Constraint {
 	if !isForeignKeyConstraint(constraint) || constraint.Name != "" {
 		return constraint
 	}
+	constraint.Name = generatedForeignKeyName(
+		defaultConstraintForeignKeyName(tableName, constraint),
+		constraintForeignKeyIdentity(constraint),
+		targetPlatform,
+	)
+	return constraint
+}
+
+func defaultConstraintForeignKeyName(tableName string, constraint goschema.Constraint) string {
 	columnName := strings.Join(constraint.Columns, "_")
 	if columnName == "" {
 		columnName = "foreign_key"
 	}
-	constraint.Name = GenerateForeignKeyName(tableName, columnName)
-	return constraint
+	return GenerateForeignKeyName(tableName, columnName)
+}
+
+func assignDefaultForeignKeyNames(
+	tables []goschema.Table,
+	fields []goschema.Field,
+	constraints []goschema.Constraint,
+	targetPlatform string,
+) ([]goschema.Field, []goschema.Constraint) {
+	assignedFields := slices.Clone(fields)
+	assignedConstraints := slices.Clone(constraints)
+	allocations := make(map[string]*foreignKeyNameAllocation)
+	for _, table := range tables {
+		reserved, counts := foreignKeyNameReservations(table, assignedFields, assignedConstraints, targetPlatform)
+		scope := foreignKeyNameAllocationScope(table, targetPlatform)
+		allocation := allocations[scope]
+		if allocation == nil {
+			allocation = &foreignKeyNameAllocation{
+				allocated: make(map[string]struct{}),
+				counts:    make(map[string]int),
+			}
+			allocations[scope] = allocation
+		}
+		maps.Copy(allocation.allocated, reserved)
+		for name, count := range counts {
+			allocation.counts[name] += count
+		}
+	}
+	for _, table := range tables {
+		allocation := allocations[foreignKeyNameAllocationScope(table, targetPlatform)]
+		assignFieldForeignKeyNames(table, assignedFields, allocation.counts, allocation.allocated, targetPlatform)
+		assignConstraintForeignKeyNames(table, assignedConstraints, allocation.counts, allocation.allocated, targetPlatform)
+	}
+	return assignedFields, assignedConstraints
+}
+
+type foreignKeyNameAllocation struct {
+	allocated map[string]struct{}
+	counts    map[string]int
+}
+
+func foreignKeyNameAllocationScope(table goschema.Table, targetPlatform string) string {
+	switch platform.NormalizeDialect(targetPlatform) {
+	case platform.MySQL, platform.MariaDB:
+		return "database"
+	case platform.SQLServer, platform.Spanner:
+		schema := strings.TrimSpace(table.Schema)
+		if schema == "" {
+			schema = identifier.ForDialect(targetPlatform).DefaultSchema
+		}
+		return "schema:" + strings.ToLower(schema)
+	default:
+		return "table:" + table.QualifiedName()
+	}
+}
+
+func foreignKeyNameReservations(
+	table goschema.Table,
+	fields []goschema.Field,
+	constraints []goschema.Constraint,
+	targetPlatform string,
+) (map[string]struct{}, map[string]int) {
+	reserved := make(map[string]struct{})
+	counts := make(map[string]int)
+	for _, field := range fields {
+		if field.StructName != table.StructName || field.Foreign == "" {
+			continue
+		}
+		if field.ForeignKeyName != "" && !field.GeneratedFromEmbedded {
+			reserved[foreignKeyNameReservationKey(field.ForeignKeyName, targetPlatform)] = struct{}{}
+			continue
+		}
+		base := defaultFieldForeignKeyName(table.Name, field)
+		candidate := generatedForeignKeyName(base, fieldForeignKeyIdentity(field), targetPlatform)
+		counts[foreignKeyNameReservationKey(candidate, targetPlatform)]++
+	}
+	for _, constraint := range constraints {
+		if !isForeignKeyConstraint(constraint) || !constraintBelongsToTable(constraint, table) {
+			continue
+		}
+		if constraint.Name != "" {
+			reserved[foreignKeyNameReservationKey(constraint.Name, targetPlatform)] = struct{}{}
+			continue
+		}
+		base := defaultConstraintForeignKeyName(table.Name, constraint)
+		candidate := generatedForeignKeyName(base, constraintForeignKeyIdentity(constraint), targetPlatform)
+		counts[foreignKeyNameReservationKey(candidate, targetPlatform)]++
+	}
+	return reserved, counts
+}
+
+func assignFieldForeignKeyNames(
+	table goschema.Table,
+	fields []goschema.Field,
+	counts map[string]int,
+	allocated map[string]struct{},
+	targetPlatform string,
+) {
+	for i := range fields {
+		field := &fields[i]
+		if field.StructName != table.StructName || field.Foreign == "" ||
+			(field.ForeignKeyName != "" && !field.GeneratedFromEmbedded) {
+			continue
+		}
+		base := defaultFieldForeignKeyName(table.Name, *field)
+		candidate := generatedForeignKeyName(base, fieldForeignKeyIdentity(*field), targetPlatform)
+		field.ForeignKeyName = allocateForeignKeyName(
+			base,
+			counts[foreignKeyNameReservationKey(candidate, targetPlatform)],
+			fieldForeignKeyIdentity(*field),
+			allocated,
+			targetPlatform,
+		)
+	}
+}
+
+func defaultFieldForeignKeyName(tableName string, field goschema.Field) string {
+	if field.GeneratedFromEmbedded && field.ForeignKeyName != "" {
+		return field.ForeignKeyName
+	}
+	return GenerateForeignKeyName(tableName, field.Name)
+}
+
+func assignConstraintForeignKeyNames(
+	table goschema.Table,
+	constraints []goschema.Constraint,
+	counts map[string]int,
+	allocated map[string]struct{},
+	targetPlatform string,
+) {
+	for i := range constraints {
+		constraint := &constraints[i]
+		if constraint.Name != "" || !isForeignKeyConstraint(*constraint) || !constraintBelongsToTable(*constraint, table) {
+			continue
+		}
+		base := defaultConstraintForeignKeyName(table.Name, *constraint)
+		candidate := generatedForeignKeyName(base, constraintForeignKeyIdentity(*constraint), targetPlatform)
+		constraint.Name = allocateForeignKeyName(
+			base,
+			counts[foreignKeyNameReservationKey(candidate, targetPlatform)],
+			constraintForeignKeyIdentity(*constraint),
+			allocated,
+			targetPlatform,
+		)
+	}
+}
+
+func fieldForeignKeyIdentity(field goschema.Field) string {
+	return strings.Join([]string{
+		"field",
+		field.StructName,
+		field.Name,
+		field.Foreign,
+		field.OnDelete,
+		field.OnUpdate,
+	}, "\x00")
+}
+
+func constraintForeignKeyIdentity(constraint goschema.Constraint) string {
+	return strings.Join([]string{
+		"constraint",
+		constraint.StructName,
+		constraint.Table,
+		strings.Join(constraint.Columns, ","),
+		constraint.ForeignTable,
+		strings.Join(constraint.ForeignColumnsOrDefault(), ","),
+		constraint.OnDelete,
+		constraint.OnUpdate,
+	}, "\x00")
+}
+
+func allocateForeignKeyName(
+	base string,
+	candidateCount int,
+	identity string,
+	allocated map[string]struct{},
+	targetPlatform string,
+) string {
+	candidate := generatedForeignKeyName(base, identity, targetPlatform)
+	reservationKey := foreignKeyNameReservationKey(candidate, targetPlatform)
+	if _, conflict := allocated[reservationKey]; candidateCount == 1 && !conflict {
+		allocated[reservationKey] = struct{}{}
+		return candidate
+	}
+
+	suffix := foreignKeyNameHashSuffix(base, identity)
+	candidate = foreignKeyNameWithSuffix(base, suffix, targetPlatform)
+	for ordinal := 2; ; ordinal++ {
+		reservationKey = foreignKeyNameReservationKey(candidate, targetPlatform)
+		if _, conflict := allocated[reservationKey]; !conflict {
+			allocated[reservationKey] = struct{}{}
+			return candidate
+		}
+		ordinalSuffix := fmt.Sprintf("_%d", ordinal)
+		candidate = foreignKeyNameWithSuffix(base, suffix+ordinalSuffix, targetPlatform)
+	}
+}
+
+func foreignKeyNameReservationKey(name, targetPlatform string) string {
+	switch platform.NormalizeDialect(targetPlatform) {
+	case platform.MySQL, platform.MariaDB, platform.SQLServer, platform.Spanner:
+		return strings.ToLower(name)
+	default:
+		return name
+	}
+}
+
+func generatedForeignKeyName(base, identity, targetPlatform string) string {
+	if foreignKeyNameFits(base, targetPlatform) {
+		return base
+	}
+	return foreignKeyNameWithSuffix(base, foreignKeyNameHashSuffix(base, identity), targetPlatform)
+}
+
+func foreignKeyNameHashSuffix(base, identity string) string {
+	digest := sha256.Sum256([]byte(base + "\x00" + identity))
+	return fmt.Sprintf("_%x", digest[:4])
+}
+
+func foreignKeyNameFits(name, targetPlatform string) bool {
+	switch {
+	case platform.NormalizeDialect(targetPlatform) == platform.SQLServer,
+		platform.NormalizeDialect(targetPlatform) == platform.Spanner:
+		return len([]rune(name)) <= 128
+	case platform.IsPostgresFamily(targetPlatform):
+		return len(name) <= 63
+	case isMySQLFamilyTarget(targetPlatform):
+		return len([]rune(name)) <= 64
+	default:
+		return true
+	}
+}
+
+func foreignKeyNameWithSuffix(base, suffix, targetPlatform string) string {
+	switch {
+	case platform.NormalizeDialect(targetPlatform) == platform.SQLServer,
+		platform.NormalizeDialect(targetPlatform) == platform.Spanner:
+		return truncateIdentifierCharacters(base, 128-len([]rune(suffix))) + suffix
+	case platform.IsPostgresFamily(targetPlatform):
+		return truncateIdentifierBytes(base, 63-len(suffix)) + suffix
+	case isMySQLFamilyTarget(targetPlatform):
+		return truncateIdentifierCharacters(base, 64-len([]rune(suffix))) + suffix
+	default:
+		return base + suffix
+	}
+}
+
+func truncateIdentifierBytes(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
+	}
+	end := 0
+	for index := range value {
+		if index > maxBytes {
+			break
+		}
+		end = index
+	}
+	return value[:end]
+}
+
+func truncateIdentifierCharacters(value string, maxCharacters int) string {
+	runes := []rune(value)
+	if len(runes) <= maxCharacters {
+		return value
+	}
+	return string(runes[:maxCharacters])
 }
 
 func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Table) bool {
@@ -1327,7 +1620,7 @@ func appendForeignKeyConstraintStatements(
 	targetPlatform string,
 ) {
 	appendFieldForeignKeyConstraintStatements(statements, tables, fields, targetPlatform)
-	appendTableForeignKeyConstraintStatements(statements, tables, constraints)
+	appendTableForeignKeyConstraintStatements(statements, tables, constraints, targetPlatform)
 }
 
 func appendFieldForeignKeyConstraintStatements(
@@ -1345,11 +1638,12 @@ func appendFieldForeignKeyConstraintStatements(
 			if field.Foreign == "" {
 				continue
 			}
-			field = withDefaultForeignKeyName(table.Name, field)
+			field = withDefaultForeignKeyName(table.Name, field, targetPlatform)
 			fkRef := ParseForeignKeyReference(field.Foreign)
 			if fkRef == nil {
 				continue
 			}
+			fkRef.Table = tablelookup.ResolveReference(tables, table, fkRef.Table)
 			fkRef.OnDelete = field.OnDelete
 			fkRef.OnUpdate = field.OnUpdate
 			fkRef.Name = field.ForeignKeyName
@@ -1369,13 +1663,15 @@ func appendTableForeignKeyConstraintStatements(
 	statements *ast.StatementList,
 	tables []goschema.Table,
 	constraints []goschema.Constraint,
+	targetPlatform string,
 ) {
 	for _, table := range tables {
 		for _, constraint := range constraints {
 			if !constraintBelongsToTable(constraint, table) || !isForeignKeyConstraint(constraint) {
 				continue
 			}
-			constraint = withDefaultConstraintForeignKeyName(table.Name, constraint)
+			constraint = withDefaultConstraintForeignKeyName(table.Name, constraint, targetPlatform)
+			constraint.ForeignTable = tablelookup.ResolveReference(tables, table, constraint.ForeignTable)
 			node := FromConstraint(constraint)
 			if node == nil {
 				continue
@@ -1491,6 +1787,80 @@ func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode {
 		SetComment(grant.Comment)
 }
 
+// AssignDefaultForeignKeyNames returns a clone whose foreign keys have stable,
+// dialect-valid names. The input is never mutated. Dialect-specific comparison,
+// planning, and rendering paths use this normalization so generated and
+// explicit names share the same namespace and length rules.
+func AssignDefaultForeignKeyNames(database *goschema.Database, targetPlatform string) *goschema.Database {
+	if database == nil {
+		return nil
+	}
+
+	assigned := *database
+	assigned.Tables = slices.Clone(database.Tables)
+	assigned.EmbeddedFields = slices.Clone(database.EmbeddedFields)
+	assigned.Fields = ProcessEmbeddedFields(assigned.EmbeddedFields, database.Fields)
+	assigned.Fields, assigned.Constraints = assignDefaultForeignKeyNames(
+		assigned.Tables,
+		assigned.Fields,
+		database.Constraints,
+		targetPlatform,
+	)
+	assigned.SelfReferencingForeignKeys = assignedSelfReferencingForeignKeys(
+		database.SelfReferencingForeignKeys,
+		assigned.Tables,
+		assigned.Fields,
+	)
+	return &assigned
+}
+
+func assignedSelfReferencingForeignKeys(
+	foreignKeys map[string][]goschema.SelfReferencingFK,
+	tables []goschema.Table,
+	fields []goschema.Field,
+) map[string][]goschema.SelfReferencingFK {
+	if foreignKeys == nil {
+		return nil
+	}
+	assigned := make(map[string][]goschema.SelfReferencingFK, len(foreignKeys))
+	for tableName, tableForeignKeys := range foreignKeys {
+		cloned := slices.Clone(tableForeignKeys)
+		table := foreignKeyOwnerTable(tables, tableName)
+		for i := range cloned {
+			cloned[i].ForeignKeyName = assignedSelfReferencingForeignKeyName(table, cloned[i], fields)
+		}
+		assigned[tableName] = cloned
+	}
+	return assigned
+}
+
+func foreignKeyOwnerTable(tables []goschema.Table, tableName string) *goschema.Table {
+	for i := range tables {
+		if tables[i].QualifiedName() == tableName || tables[i].Name == tableName {
+			return &tables[i]
+		}
+	}
+	return nil
+}
+
+func assignedSelfReferencingForeignKeyName(
+	table *goschema.Table,
+	foreignKey goschema.SelfReferencingFK,
+	fields []goschema.Field,
+) string {
+	if table == nil {
+		return foreignKey.ForeignKeyName
+	}
+	for _, field := range fields {
+		if field.StructName == table.StructName &&
+			field.Name == foreignKey.FieldName &&
+			field.Foreign == foreignKey.Foreign {
+			return field.ForeignKeyName
+		}
+	}
+	return foreignKey.ForeignKeyName
+}
+
 // FromDatabase converts a complete goschema.Database to an ast.StatementList containing all DDL statements.
 //
 // This function creates a comprehensive database schema by converting all schema elements
@@ -1511,7 +1881,8 @@ func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode {
 //  3. Enum type definitions (CREATE TYPE statements)
 //  4. Table definitions (CREATE TABLE statements) with embedded fields processed, but without foreign keys
 //  5. PostgreSQL roles and functions
-//  6. Unique index definitions (CREATE UNIQUE INDEX statements)
+//  6. Unique index definitions (CREATE UNIQUE INDEX statements), plus all
+//     MySQL-family indexes required before foreign-key creation
 //  7. Foreign key constraints (ALTER TABLE statements)
 //  8. Dialect-specific objects such as views, RLS policies, grants, and triggers
 //  9. Non-unique index definitions (CREATE INDEX statements)
@@ -1574,8 +1945,10 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		Statements: make([]ast.Node, 0),
 	}
 
-	// Process embedded fields to generate additional fields for each table
-	allFields := ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	// Normalize once so every conversion path consumes the same names.
+	assigned := AssignDefaultForeignKeyNames(&database, targetPlatform)
+	database = *assigned
+	allFields := database.Fields
 
 	// 1. Add schema definitions first (they may be referenced by tables)
 	appendSchemaStatements(statements, database.Schemas)
@@ -1638,6 +2011,10 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// index as the referenced key for a foreign key, so it must exist before
 	// the FK constraint is added.
 	appendUniqueIndexStatements(statements, database.Tables, database.Indexes)
+	mysqlFamily := isMySQLFamilyTarget(targetPlatform)
+	if mysqlFamily {
+		appendNonUniqueIndexStatements(statements, database.Tables, database.Indexes)
+	}
 
 	// 7. Add foreign key constraints after all tables and unique indexes exist.
 	if !isSQLiteTarget(targetPlatform) {
@@ -1652,8 +2029,11 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		appendViewAndTriggerStatements(statements, database)
 	}
 
-	// 9. Add non-unique indexes last.
-	appendNonUniqueIndexStatements(statements, database.Tables, database.Indexes)
+	// 9. Add non-unique indexes last, except on MySQL-family targets where both
+	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.
+	if !mysqlFamily {
+		appendNonUniqueIndexStatements(statements, database.Tables, database.Indexes)
+	}
 
 	return statements
 }
@@ -1674,7 +2054,7 @@ func appendTableStatements(
 		if sqliteTarget {
 			tableNode = FromTable(table, allFields, database.Enums, targetPlatform)
 		}
-		addTableConstraints(tableNode, table, database.Constraints, mode)
+		addTableConstraints(tableNode, table, database.Constraints, mode, targetPlatform)
 		statements.Statements = append(statements.Statements, tableNode)
 	}
 }
@@ -1766,6 +2146,10 @@ func appendViewAndTriggerStatements(statements *ast.StatementList, database gosc
 
 func isSQLiteTarget(targetPlatform string) bool {
 	return strings.EqualFold(targetPlatform, "sqlite") || strings.EqualFold(targetPlatform, "sqlite3")
+}
+
+func isMySQLFamilyTarget(targetPlatform string) bool {
+	return strings.EqualFold(targetPlatform, "mysql") || strings.EqualFold(targetPlatform, "mariadb")
 }
 
 func appendSchemaStatements(statements *ast.StatementList, schemas []goschema.Schema) {
@@ -2057,13 +2441,33 @@ func fieldKeyFor(field goschema.Field) fieldKey {
 
 func processEmbeddedInlineMode(generatedFields []goschema.Field, embedded goschema.EmbeddedField, allFields []goschema.Field, allEmbeddedFields []goschema.EmbeddedField, structName string) []goschema.Field {
 	// INLINE MODE: Expand embedded struct fields as individual table columns
-	generatedFields = processEmbeddedInlineModeRecursive(generatedFields, embedded, allFields, allEmbeddedFields, structName)
+	generatedFields = processEmbeddedInlineModeRecursive(
+		generatedFields,
+		embedded,
+		allFields,
+		allEmbeddedFields,
+		structName,
+		make(map[string]bool),
+	)
 	return generatedFields
 }
 
 // processEmbeddedInlineModeRecursive recursively processes embedded fields in inline mode.
 // This handles nested embedded structs by recursively expanding embedded fields within embedded types.
-func processEmbeddedInlineModeRecursive(generatedFields []goschema.Field, embedded goschema.EmbeddedField, allFields []goschema.Field, allEmbeddedFields []goschema.EmbeddedField, structName string) []goschema.Field {
+func processEmbeddedInlineModeRecursive(
+	generatedFields []goschema.Field,
+	embedded goschema.EmbeddedField,
+	allFields []goschema.Field,
+	allEmbeddedFields []goschema.EmbeddedField,
+	structName string,
+	activeTypes map[string]bool,
+) []goschema.Field {
+	if embedded.EmbeddedTypeName == "" || activeTypes[embedded.EmbeddedTypeName] {
+		return generatedFields
+	}
+	activeTypes[embedded.EmbeddedTypeName] = true
+	defer delete(activeTypes, embedded.EmbeddedTypeName)
+
 	// Step 1: Add direct fields from the embedded type
 	for _, field := range allFields {
 		if field.StructName != embedded.EmbeddedTypeName {
@@ -2072,6 +2476,8 @@ func processEmbeddedInlineModeRecursive(generatedFields []goschema.Field, embedd
 		// Clone the field and reassign to target struct
 		newField := field
 		newField.StructName = structName
+		newField.Overrides = mergePlatformOverrides(field.Overrides, embedded.Overrides)
+		newField.GeneratedFromEmbedded = true
 
 		// Apply prefix to column name if specified
 		if embedded.Prefix != "" {
@@ -2087,23 +2493,30 @@ func processEmbeddedInlineModeRecursive(generatedFields []goschema.Field, embedd
 			continue
 		}
 
-		// Only process inline mode embedded fields recursively
-		if nestedEmbedded.Mode == "inline" {
-			// Create a new embedded field with the target struct name and combined prefix
-			recursiveEmbedded := nestedEmbedded
-			recursiveEmbedded.StructName = structName
+		recursiveEmbedded := nestedEmbedded
+		recursiveEmbedded.StructName = structName
+		recursiveEmbedded.Overrides = mergePlatformOverrides(
+			nestedEmbedded.Overrides,
+			embedded.Overrides,
+		)
+		recursiveEmbedded.Prefix = embedded.Prefix + nestedEmbedded.Prefix
 
-			// Combine prefixes: if the parent has a prefix, prepend it to the nested prefix
-			if embedded.Prefix != "" {
-				if recursiveEmbedded.Prefix != "" {
-					recursiveEmbedded.Prefix = embedded.Prefix + recursiveEmbedded.Prefix
-				} else {
-					recursiveEmbedded.Prefix = embedded.Prefix
-				}
-			}
-
-			// Recursively process the nested embedded field
-			generatedFields = processEmbeddedInlineModeRecursive(generatedFields, recursiveEmbedded, allFields, allEmbeddedFields, structName)
+		switch nestedEmbedded.Mode {
+		case "json":
+			generatedFields = processEmbeddedJSONMode(generatedFields, recursiveEmbedded, structName)
+		case "relation":
+			generatedFields = processEmbeddedRelationMode(generatedFields, recursiveEmbedded, structName)
+		case "skip":
+			continue
+		default:
+			generatedFields = processEmbeddedInlineModeRecursive(
+				generatedFields,
+				recursiveEmbedded,
+				allFields,
+				allEmbeddedFields,
+				structName,
+				activeTypes,
+			)
 		}
 	}
 
@@ -2117,6 +2530,7 @@ func processEmbeddedJSONMode(generatedFields []goschema.Field, embedded goschema
 		// Auto-generate column name: "Meta" -> "meta_data"
 		columnName = strings.ToLower(embedded.EmbeddedTypeName) + "_data"
 	}
+	columnName = embedded.Prefix + columnName
 
 	columnType := embedded.Type
 	if columnType == "" {
@@ -2131,7 +2545,9 @@ func processEmbeddedJSONMode(generatedFields []goschema.Field, embedded goschema
 		Type:       columnType,
 		Nullable:   embedded.Nullable,
 		Comment:    embedded.Comment,
-		Overrides:  embedded.Overrides, // Platform-specific type overrides (JSON vs JSONB vs TEXT)
+		Overrides:  mergePlatformOverrides(nil, embedded.Overrides),
+
+		GeneratedFromEmbedded: true,
 	})
 
 	return generatedFields
@@ -2144,16 +2560,19 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 		return generatedFields
 	}
 
-	// Intelligent type inference based on reference pattern
-	refType := "INTEGER" // Default assumption: numeric primary key
-	if strings.Contains(embedded.Ref, "VARCHAR") || strings.Contains(embedded.Ref, "TEXT") ||
-		strings.Contains(strings.ToLower(embedded.Ref), "uuid") {
-		// Reference suggests string-based key (likely UUID)
-		refType = "VARCHAR(36)" // Standard UUID length
+	// An explicit relation type is authoritative. When it is omitted, use the
+	// conservative numeric or string heuristic documented for relation fields.
+	refType := strings.TrimSpace(embedded.Type)
+	if refType == "" {
+		refType = "INTEGER"
+		if strings.Contains(embedded.Ref, "VARCHAR") || strings.Contains(embedded.Ref, "TEXT") ||
+			strings.Contains(strings.ToLower(embedded.Ref), "uuid") {
+			refType = "VARCHAR(36)"
+		}
 	}
 
-	// Generate automatic foreign key constraint name following convention
-	foreignKeyName := GenerateForeignKeyName(structName, embedded.Field)
+	fieldName := embedded.Prefix + embedded.Field
+	foreignKeyName := GenerateForeignKeyName(structName, fieldName)
 
 	// Create platform-specific overrides for MySQL/MariaDB compatibility
 	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
@@ -2162,12 +2581,13 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 		overrides["mysql"] = map[string]string{"type": "INT"}
 		overrides["mariadb"] = map[string]string{"type": "INT"}
 	}
+	overrides = mergePlatformOverrides(overrides, embedded.Overrides)
 
 	// Create the foreign key field
 	generatedFields = append(generatedFields, goschema.Field{
 		StructName:     structName,
 		FieldName:      embedded.EmbeddedTypeName,
-		Name:           embedded.Field,    // e.g., "user_id"
+		Name:           fieldName,         // e.g., "user_id"
 		Type:           refType,           // INTEGER or VARCHAR(36)
 		Nullable:       embedded.Nullable, // Can the relationship be optional?
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
@@ -2176,9 +2596,31 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 		OnUpdate:       embedded.OnUpdate, // ON UPDATE action (CASCADE, SET NULL, etc.)
 		Comment:        embedded.Comment,  // Documentation for the relationship
 		Overrides:      overrides,         // Platform-specific type overrides
+
+		GeneratedFromEmbedded: true,
 	})
 
 	return generatedFields
+}
+
+func mergePlatformOverrides(
+	base map[string]map[string]string,
+	explicit map[string]map[string]string,
+) map[string]map[string]string {
+	if len(base) == 0 && len(explicit) == 0 {
+		return nil
+	}
+	result := make(map[string]map[string]string, len(base)+len(explicit))
+	for dialect, values := range base {
+		result[dialect] = maps.Clone(values)
+	}
+	for dialect, values := range explicit {
+		if result[dialect] == nil {
+			result[dialect] = make(map[string]string)
+		}
+		maps.Copy(result[dialect], values)
+	}
+	return result
 }
 
 // processEmbeddedFieldsForStruct processes embedded fields for a specific struct and generates corresponding schema fields.

@@ -1747,11 +1747,6 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 		return err
 	}
 
-	// Add comment if provided
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	// Build CREATE ROLE statement
 	var parts []string
 	parts = append(parts, "CREATE ROLE", r.escapeIdentifier(node.Name))
@@ -1810,6 +1805,13 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	}
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	if node.Comment != "" {
+		r.w.WriteLinef(
+			"COMMENT ON ROLE %s IS %s;",
+			r.escapeIdentifier(node.Name),
+			r.escapeValue(node.Comment),
+		)
+	}
 
 	return nil
 }

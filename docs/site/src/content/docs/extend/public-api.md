@@ -21,7 +21,7 @@ packages, examples, fixtures, tests, or implementation details.
 | `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT statements. |
-| `core/renderer` | Dialect-aware SQL rendering from AST/schema IR. |
+| `core/renderer` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `dbschema` | Live database schema introspection connection layer. |
 | `dbschema/types` | Shared database schema types. |
@@ -50,6 +50,23 @@ its case model and [Database test commands](../../reference/test-cases/) for CLI
 `projectconfig.ParseAtlasFSWithOptions` evaluates `atlas.hcl` against a
 caller-provided `fs.FS`. Use it when project config and its `file()` or
 `fileset()` inputs must come from one anchored or immutable filesystem view.
+
+`renderer.ValidateSchema` and `renderer.ValidateSchemaWithCapabilities` check
+a complete `goschema.Database` without rendering SQL. They use the same
+foreign-key and capability validation as ordered schema rendering and migration
+planning.
+
+`goschema.Finalize` can be called again after mutating schema input. It rebuilds
+materialized embedded fields and marks them with
+`Field.GeneratedFromEmbedded`; source declarations should leave that derived
+metadata false.
+
+`Database.EmbeddedSources` preserves source-only field and embedding
+declarations needed to rebuild nested embedded fields after `Finalize` or
+`Merge`. Embedders normally should not modify this bookkeeping directly. Keep
+it when copying a finalized `Database` that will be finalized or merged again;
+discarding it can also discard the source declarations behind materialized
+`GeneratedFromEmbedded` fields.
 
 The separate [`testkit`](https://github.com/stokaro/ptah/tree/master/testkit)
 module (`github.com/stokaro/ptah/testkit`) is an opt-in helper for tests that
@@ -88,6 +105,11 @@ external executor is observed once after that executor reports success.
 for the duration of a callback and rebinds the dialect reader, writer, and SQL
 runner to that session. Use it for cleanup, replay, and inspection workflows
 that depend on session-local state or SQLite attached-database visibility.
+
+Root MySQL capability metadata remains conservative. On MySQL 8.4+ the scoped
+connection refines its referenced-key policy from
+`restrict_fk_on_non_standard_key` on the pinned physical session before the
+callback, so planning and execution use the same effective policy.
 
 The scoped connection must not escape the callback. Ptah discards the physical
 connection afterward so session-local state cannot leak to a later pool user.

@@ -69,6 +69,22 @@ ptah schema render --root-dir ./models --dialect sqlite >/tmp/ptah-schema.sql
 sed -n '1,80p' /tmp/ptah-schema.sql
 ```
 
+Standard output contains SQL only. Source-loading progress, schema counts, and
+the dependency summary go to standard error, so the redirected file can be
+executed unchanged. For PostgreSQL-family, MySQL-family, SQL Server, and
+Spanner targets, Ptah creates all tables before adding foreign keys. SQLite
+keeps foreign keys inline because it cannot add them after table creation.
+
+Malformed foreign keys and constraints unsupported by the selected dialect
+fail before Ptah emits any SQL. The output never silently omits a declared
+foreign key. Ptah also checks referenced-key policy, compatible column types,
+constraint-name scope, and dialect-specific index or storage restrictions.
+
+Always pass `--dialect` when redirecting executable SQL. Without it, Ptah
+attempts the built-in review targets and emits separate labeled sections only
+if every target can render the schema. Any unsupported feature fails atomically
+with empty standard output.
+
 ## Compare before changing data
 
 For an existing database, inspect and compare first:

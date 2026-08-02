@@ -49,6 +49,17 @@ SQL:
   that guard, so the `mysql` renderer strips it.
 - The `DROP CHECK` spelling exists only on MySQL 8.0.16+; MariaDB uses the
   generic `DROP CONSTRAINT` clause.
+- Portable foreign keys require InnoDB tables and compatible column types,
+  signedness, character sets, and collations. MariaDB generated FK columns and
+  MySQL virtual generated FK columns fail before rendering. MySQL stored
+  generated columns reject referential actions the engine cannot apply. When
+  an FK-participating table has no declared engine, Ptah emits
+  `ENGINE=InnoDB` explicitly instead of trusting the session default.
+- `SET NULL` requires nullable local columns. Explicit foreign-key names are
+  limited to 64 characters; generated names are shortened deterministically.
+- A nonunique referenced key must be a complete leftmost BTREE prefix.
+  FULLTEXT, SPATIAL, HASH, parser-backed, expression, and prefix indexes do not
+  qualify.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 
@@ -86,6 +97,11 @@ schema changes require a table rebuild, and PostgreSQL-only objects are
 rejected. [SQLite](../sqlite/) covers URL forms, the supported DDL surface,
 and the rebuild rules.
 
+SQLite checks foreign-key candidate keys from primary and inline unique
+declarations. Ptah does not accept a standalone unique index as a referenced
+key when its per-column collation is absent from the schema IR; this avoids SQL
+that creates successfully but fails later with `foreign key mismatch`.
+
 ## SQL Server
 
 SQL Server and Azure SQL are supported as a deliberately conservative portable
@@ -109,9 +125,15 @@ matching preset automatically.
 - **YugabyteDB**: the preset excludes concurrent index creation because
   regular `CREATE INDEX` is already asynchronous in YSQL; role management,
   standalone sequences, and `XML` columns are included.
-- **Spanner**: the most conservative preset — enums, foreign keys, standalone
-  sequences, row-level security, `XML` columns, advisory locks, and concurrent
-  indexes are all excluded.
+- **Spanner**: foreign keys are included, including composite and circular
+  relationships rendered in two phases. Spanner manages the referenced-key
+  backing index, so Ptah does not require an input unique/index declaration.
+  Participating columns must have compatible key-capable types; JSON and array
+  columns fail before rendering.
+  The preset excludes enums, standalone sequences, row-level security, `XML`
+  columns, advisory locks, and concurrent indexes. Foreign key actions are
+  limited to `ON DELETE NO ACTION` or `CASCADE`; `ON UPDATE` fails before
+  rendering.
 
 CockroachDB and YugabyteDB run in integration coverage against live
 open-source containers; Spanner coverage is offline (capability, planning,

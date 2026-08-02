@@ -236,9 +236,11 @@ ptah-compat migrate apply --url "$DATABASE_URL" --dir file://migrations \
 
 Two things still reach stderr, by design. A command that fails prints its
 `Error: …` diagnostic there and exits `1`. And a Warn-level diagnostic that
-exists on no other channel — a circular foreign-key or function ordering, a dev
-database that would not close — is still reported, because dropping it would let
-an apply claim success while quietly degrading. Neither appears on a clean run.
+exists on no other channel — such as function ordering or a dev database that
+would not close — is still reported, because dropping it would let an apply
+claim success while quietly degrading. Valid circular foreign keys are rendered
+in two phases and do not produce a warning. Neither diagnostic appears on a
+clean run.
 
 :::caution
 `ptah-compat migrate down` is the exception. Without `--format` it forwards to
