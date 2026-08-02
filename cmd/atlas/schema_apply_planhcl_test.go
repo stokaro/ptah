@@ -14,14 +14,14 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 )
 
-// The versioned fixture bundle under internal/atlasschema/testdata contains
-// the real measurement artifacts. plan.hcl was written by licensed Atlas
-// v1.2.4-e282f76-canary; provenance.json records the known capture facts,
-// file hashes, and the evidence the original campaign did not preserve.
+// The fixture bundle under internal/atlasschema/testdata holds a plan.hcl
+// Atlas itself produced, together with the source and desired SQL it was
+// produced from. provenance.json records the file hashes and the capture
+// details the original campaign did not preserve.
 const (
-	oracleAtlasPlanFile   = "../../internal/atlasschema/testdata/atlas-v1.2.4-plan/plan.hcl"
-	oracleDesiredFile     = "../../internal/atlasschema/testdata/atlas-v1.2.4-plan/to.sql"
-	oracleFromStateFile   = "../../internal/atlasschema/testdata/atlas-v1.2.4-plan/from.sql"
+	oracleAtlasPlanFile   = "../../internal/atlasschema/testdata/atlas-plan-oracle/plan.hcl"
+	oracleDesiredFile     = "../../internal/atlasschema/testdata/atlas-plan-oracle/to.sql"
+	oracleFromStateFile   = "../../internal/atlasschema/testdata/atlas-plan-oracle/from.sql"
 	oracleFromStateSchema = `CREATE TABLE users (id integer NOT NULL PRIMARY KEY AUTOINCREMENT, name text NOT NULL);`
 )
 

@@ -71,7 +71,7 @@ index; the sections carry the detail.
 
 | Area | Ptah | Atlas OSS | Atlas Pro / Cloud |
 | --- | --- | --- | --- |
-| [License and implementation](#license-and-implementation) | MIT, independent | Independent upstream product | Licensed additions |
+| [License and implementation](#license-and-implementation) | MIT, independent | Independent upstream product | Proprietary additions |
 | [Command compatibility](#command-compatibility) | Native tree plus `ptah-compat` | Open CLI surface | Not drop-in targets |
 | [Schema inspection](#schema-inspection) | Native plus Atlas-compatible | Open | Pro drivers and filters |
 | [Schema diff, apply, formatting, and cleanup](#schema-diff-apply-formatting-and-cleanup) | Native plus Atlas-compatible | Open | Registry plans and approvals |
@@ -461,7 +461,7 @@ Ptah also composes a desired-schema schema from multiple sources — several Go 
 
 Unsupported constructs fail explicitly rather than being silently ignored.
 
-**Atlas OSS.** Atlas OSS supports SQL and HCL schema sources. The community binary rejects the `data "external_schema"` project data source (measured 2026-08-01, Atlas CE v1.2.0 logged out: exit 1, `Error: data.external_schema is not supported by the community version of Atlas.`); Ptah evaluates it in the open build behind the external-schema opt-in.
+**Atlas OSS.** Atlas OSS supports SQL and HCL schema sources. The community binary rejects the `data "external_schema"` project data source (measured 2026-08-01, Atlas CE v1.2.0: exit 1, `Error: data.external_schema is not supported by the community version of Atlas.`); Ptah evaluates it in the open build behind the external-schema opt-in.
 
 **Atlas Commercial / Cloud.** Pro data sources and policy features include composite schema, blob directory, custom lint rules, and review workflows.
 
