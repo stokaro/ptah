@@ -102,7 +102,7 @@ func run(ctx context.Context, out io.Writer, opts options) error {
 		return err
 	}
 
-	cases, err := dbtest.LoadCases(opts.dir)
+	cases, err := dbtest.LoadCasesOfKind(opts.dir, dbtest.AtlasTestKindMigrate)
 	if err != nil {
 		return fmt.Errorf("failed to load test cases: %w", err)
 	}
