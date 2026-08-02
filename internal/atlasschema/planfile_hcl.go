@@ -249,10 +249,9 @@ func MarshalPlanFileAs(plan PlanFile, format PlanFormat) ([]byte, error) {
 	return MarshalPlanFile(plan)
 }
 
-// planStatementsFromSQL classifies raw migration statements exactly like
-// [PreparePlanFile] classifies freshly planned ones, so a plan read from the
-// Atlas format carries the same per-statement safety metadata a native plan
-// records at planning time.
+// planStatementsFromSQL assigns advisory safety metadata while decoding an
+// Atlas plan. Atlas plan files do not record a dialect, so correctness-sensitive
+// callers must reclassify the SQL after resolving the target dialect.
 func planStatementsFromSQL(raw []string) []PlanStatement {
 	statements, _ := classifyPlanStatements(raw, "")
 	return statements

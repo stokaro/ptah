@@ -76,7 +76,8 @@ replays an Atlas-format plan on a dev database and requires it to converge on
 --to, but a native .json plan carries no such check.
 --name-format computes the plan name from a Go template over .FromHash and
 .ToHash, which expose this plan's own digest bytes in Atlas's untagged Base64
-representation; it cannot be combined with --name. When --env is set, the
+representation; it cannot be combined with --name. Standard Base64 can contain
+/, so a rendered path separator requires an explicit --output. When --env is set, the
 selected atlas.hcl env can provide url
 (the --from target), schema.src, dev, exclude, schema.mode, and supported
 diff policy values. Registry-bound planning (--push, --pending, --repo),
@@ -92,7 +93,7 @@ diff policy values. Registry-bound planning (--push, --pending, --repo),
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from planning")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to plan when database URLs are used")
 	flags.StringVar(&opts.name, "name", "", "Plan name recorded in the plan file")
-	flags.StringVar(&opts.nameFormat, "name-format", "", "Go template used to compute the plan name (e.g. 'plan_{{ slice .ToHash 0 8 }}')")
+	flags.StringVar(&opts.nameFormat, "name-format", "", "Go template used to compute the plan name (standard Base64 may render '/', which requires --output)")
 	flags.StringVarP(&opts.output, "output", "o", "", "Plan file output path (default <name>"+atlasschema.PlanFileSuffixHCL+"; a .json path writes the native JSON plan format)")
 	flags.BoolVar(&opts.save, "save", false, "Save the plan to a local plan file")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the plan file document without saving it")
