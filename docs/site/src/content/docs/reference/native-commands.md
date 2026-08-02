@@ -54,7 +54,7 @@ review artifact, not one executable SQL script.
 | `ptah migrations edit` | Edit a migration's SQL (via `$EDITOR` or `--up-file`/`--down-file`) and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
 | `ptah migrations rebase` | Move a migration to the end of history by re-timestamping it, and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
 | `ptah migrations rm` | Delete a migration's up/down pair and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
-| `ptah migrations checkpoint` | Squash migration history into a cumulative-schema checkpoint pair by replaying the directory on a `--shadow-db`. |
+| `ptah migrations checkpoint` | Squash migration history into a cumulative-schema checkpoint by replaying the directory on a `--shadow-db`; `--dir-format` selects the ptah pair (default) or the Atlas single-file convention. |
 | `ptah migrations data` | Generate a reversible data migration from declarative reference-data drift against a live database. |
 | `ptah migrations push` | Publish a migration directory to an OCI registry. |
 | `ptah migrations pull` | Pull and reconstruct a migration directory from an OCI registry. |

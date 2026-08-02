@@ -240,6 +240,15 @@ resolves the complete candidate identifier set under the target catalog
 collation. `GenerateCheckpoint` remains the conservative dialect-only entry
 point.
 
+`migration/generator.WriteAtlasCheckpointFile` writes the Atlas single-file
+checkpoint convention (and refreshes `atlas.sum`), where
+`WriteCheckpointFiles` writes the reversible Ptah pair (and refreshes
+`ptah.sum`). `AtlasCheckpointArtifact` renders the same file name and contents
+without touching the filesystem, so previews cannot drift from what is
+written; the `AtlasCheckpointDirective` it emits is only honored on the file's
+first line. `ResolveAtlasCheckpointVersion` supplies the timestamp version,
+bumped past any newer migration already in the directory.
+
 `migration/planner.Planner` exposes only checked planning; malformed
 references, unresolved additions, and target index-namespace conflicts fail
 before SQL is returned.

@@ -75,11 +75,11 @@ Across the 157 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 84 |
+| Ptah supports it fully | 85 |
 | Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 25 |
+| Ptah does not implement it | 24 |
 | Ptah and Atlas CE both support it | 24 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 34 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 35 |
 | Ptah has it and neither Atlas edition does | 15 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
 | An Atlas column is ❔ — not established by this page's evidence | 23 |
@@ -159,7 +159,7 @@ seven of them as open capabilities regardless.
 | Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format table creation remains #950; Ptah-format is covered. |
 | Atlas SQL template migrations (`--atlas-env`) | ✅ | ❔ | ❔ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. Flag on 10 migrations verbs. |
 | Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❔ | ✅ | `-- atlas:txtar` executes migration.sql/down.sql and enforces checks.sql plus ordered checks/*.sql, including atlas:assert oneof; unrelated files are ignored. |
-| Atlas-format checkpoint output | ❌ | ❌ | ✅ | Writing stays a waiver (`--dir-format`=atlas); reading Atlas `-- atlas:checkpoint` dirs works: fresh databases bootstrap from the latest checkpoint, pre-checkpoint databases skip it silently. |
+| Atlas-format checkpoint output | ✅ | ❌ | ✅ | `migrate checkpoint --dir-format atlas` writes the single `-- atlas:checkpoint` file plus atlas.sum, and is compat's default; `--dir-format ptah` writes the reversible pair. Up-only, as Atlas is. |
 | Baseline an existing database | ✅ | ✅ | ✅ | Ptah adds a standalone baseline verb with `--shadow-db` verification and `--dry-run`; CE exposes baselining as migrate apply `--baseline`. |
 | Create an empty migration file | ✅ | ✅ | ✅ | Native create writes an up/down pair; compat new writes one Atlas .sql skeleton, refreshes `atlas.sum`, `--edit` opens $VISUAL or $EDITOR. |
 | Directory integrity file: hash, validate, and apply-time gate | ✅ | ✅ | ✅ | hash writes `ptah.sum` or `atlas.sum`; validate checks it. Compat apply refuses a stale or missing `atlas.sum`, including via `?format=`, over that layout's file set; native up gates hashed dirs only. |
@@ -171,7 +171,7 @@ seven of them as open capabilities regardless.
 | Flyway repeatable (`R__`) migration import | 🟡 | ✅ | ✅ | Compat import converts `R__` to a one-time migration ordered last, as Atlas CE runs it. Editing the body then fails on a Ptah revision checksum where CE exits 0. |
 | Generate migrations from a schema diff | 🟡 | ✅ | ✅ | New versions are a Unix epoch in an empty dir and latest+1 otherwise, not the UTC YYYYMMDDHHMMSS stamp migrate new and Atlas dirs carry. |
 | migrate apply `--allow-dirty` semantics | 🟡 | ✅ | ✅ | Flag gates a dirty revision row, not a non-empty target: a pre-populated database applies without it, and the recovery re-insert fails with UNIQUE on atlas_schema_revisions (SQLite). |
-| Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint pair; CE has no checkpoint verb and Atlas lists it as Pro. |
+| Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint: the ptah reversible pair, or Atlas's single `-- atlas:checkpoint` file under `--dir-format atlas`. CE gates the verb. |
 | Migration import from other tools | 🟡 | ✅ | ✅ | Native import converts golang-migrate/Goose/Flyway/Liquibase-SQL to ptah format (`R__` becomes one-time); the compat path writes atlas format and rejects `R__`. Liquibase XML/YAML/JSON not parsed. |
 | Migration linting | ✅ | 🟡 | ✅ | CE registers `migrate lint` with a basic Open rule set; Atlas's features page marks the lint CLI Pro. Ptah loads custom rules only through the Go API at compile time. |
 | Migration lock and lock timeout | ✅ | ✅ | ✅ | Compat `--lock-timeout` bounds directory and dev-db locks; native splits per-migration `--lock-timeout` from `--migration-lock-timeout`. |

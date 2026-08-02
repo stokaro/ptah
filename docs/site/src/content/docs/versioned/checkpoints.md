@@ -45,10 +45,11 @@ ptah migrations checkpoint --migrations-dir ./migrations \
 | --- | --- |
 | `--shadow-db` | Ephemeral database the directory is replayed into (required). |
 | `--migrations-dir` | Directory to checkpoint (default `./migrations`). |
-| `--version` | Checkpoint version; defaults to one above the newest migration. Must be positive, at most ten digits, and above every existing version. |
+| `--version` | Checkpoint version; defaults to one above the newest migration (`ptah` format) or a UTC timestamp raised to that bound when the bound is higher (`atlas` format). Must be positive and above every existing version; at most ten digits under `ptah`, and never exactly ten rendered digits under `atlas`. |
 | `--description` | Description used in the file name (default `checkpoint`). |
 | `--dialect` | Asserted dialect; inferred from the shadow database when omitted. |
 | `--schemas` | Comma-separated schemas to introspect. |
+| `--dir-format` | Checkpoint convention: `ptah` (default) or `atlas`. `auto` is refused. |
 | `--dry-run` | Print the checkpoint SQL instead of writing files. |
 
 ## File format
@@ -67,8 +68,18 @@ The description (`squash` here) comes from `--description` and defaults to
 The up body is the full cumulative `CREATE` schema in dependency order; the down
 body drops it in reverse. The marker is recognized by discovery and parsing
 without changing how ordinary `up`/`down` files are read, so a checkpoint and
-the historical migrations it squashes coexist in one directory. Checkpoints are
-written only in the Ptah directory format; see
+the historical migrations it squashes coexist in one directory.
+
+`--dir-format atlas` writes the Atlas convention instead: a single up-only file
+named `<version>_<description>.sql` whose **first line** is the
+`-- atlas:checkpoint` directive, with `atlas.sum` refreshed rather than
+`ptah.sum`. The version is a UTC timestamp (`20060102150405`), as Atlas writes
+it, raised to one above the newest migration in the directory whenever that is
+higher. Subdirectories count: the replay and the reader both descend into them,
+so a nested migration dated after the timestamp would otherwise sort *after* a
+checkpoint whose body already contains its SQL, and a fresh database would run
+both. There is no down body — the Atlas format is up-only, so an Atlas-format
+checkpoint is not reversible. See
 [Atlas-compatible surface](#atlas-compatible-surface) below.
 
 ## How a checkpoint applies
@@ -95,10 +106,23 @@ resumes to the same end state on the next `up`.
 
 ## Integrity
 
-Checkpoint files are covered by `ptah.sum` exactly like ordinary migrations, so
-`ptah migrations checkpoint` rewrites the integrity file after writing the pair
-and a tampered checkpoint fails `ptah migrations validate`. Commit the checkpoint
-files and the updated `ptah.sum` together.
+Checkpoint files are covered by the directory's integrity file exactly like
+ordinary migrations, so `ptah migrations checkpoint` rewrites it after writing
+the checkpoint and a tampered checkpoint fails `ptah migrations validate`. That
+is `ptah.sum` for the Ptah convention and `atlas.sum` for `--dir-format atlas`.
+Commit the checkpoint files and the updated sum together.
+
+A directory must carry only one integrity file. Checkpointing a `ptah.sum`
+directory under `--dir-format atlas` (or an `atlas.sum` directory under
+`--dir-format ptah`) would leave both behind, which `--dir-format auto` refuses
+to read, so the command rejects it before writing anything.
+
+An **unhashed** Ptah directory has no sum file to detect, so the same refusal is
+also made on file shape: `--dir-format atlas` is rejected whenever the directory
+holds Ptah-convention migrations at all. Otherwise the checkpoint would be
+written and then stay permanently invisible — discovery reads the Ptah pair and
+never sees it, while `validate` finds the `atlas.sum` and reports the directory
+as sound.
 
 ## Rollback boundary
 
@@ -130,9 +154,12 @@ fast.
 The `ptah-compat` binary's `migrate checkpoint [name]` forwards to the native
 command for drop-in Atlas familiarity: `--dir` maps to the migrations directory, `--dev-url`
 to the shadow database, and the optional positional name to the checkpoint
-description. Checkpoint output is Ptah-format only today, so this verb operates
-on Ptah-format directories; Atlas-format checkpoint output is a tracked
-follow-up.
+description.
+
+On the compat surface `--dir-format` defaults to `atlas`, matching the default
+Atlas registers, so an unflagged Atlas pipeline gets an Atlas-format checkpoint
+back. The native command keeps `ptah` as its default. Pass `--dir-format ptah`
+on compat, or `--dir-format atlas` natively, to select the other convention.
 
 Reading Atlas-format checkpoints works today: a migration whose first line is
 the `-- atlas:checkpoint` file directive (as written by Atlas's own
