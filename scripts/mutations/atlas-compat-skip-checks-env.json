@@ -21,7 +21,8 @@
       "name": "the resolved bypass never reaches ApplyOptions",
       "file": "cmd/atlas/migrate_apply.go",
       "old": "\t\tSkipChecks:           skipChecks,\n",
-      "new": ""
+      "new": "\t\tSkipChecks:           skipChecks && false,\n",
+      "comment": "Deleting the field outright leaves skipChecks unused and the package stops compiling, which is not a result. The dead conjunct keeps the variable live while making the resolved value unreachable."
     },
     {
       "name": "any value of the variable enables the bypass",
