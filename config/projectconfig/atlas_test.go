@@ -124,7 +124,7 @@ func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "Atlas Cloud block",
+			name:    "hosted service block",
 			input:   "unsupported-cloud.hcl",
 			wantErr: `unsupported atlas\.hcl construct "atlas" at atlas\.hcl:1`,
 		},

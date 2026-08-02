@@ -11,6 +11,8 @@ Ptah is developed in the Czech Republic under Czech and European Union law,
 including [Directive 2009/24/EC](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32009L0024)
 on the legal protection of computer programs.
 
+Ptah is an independent project, not affiliated with or endorsed by Ariga.
+
 Ptah is an original, independent implementation. It does not reverse engineer
 proprietary implementations: it does not decompile or disassemble proprietary
 binaries, access proprietary source code, or copy protected implementation

@@ -240,7 +240,7 @@
   "atlas_oss": "no",
   "atlas_pro": "yes",
   "note": "The scheme is Cloud-bound and rejected with a named error; every function behind it is available natively over `oci://`. The compat binary mirrors the Atlas surface, which has no `oci://`.",
-  "evidence": "ptah-compat schema apply --to atlas://myorg/myrepo -> exit 1 'atlas:// registry URLs are not supported: Ptah has no Atlas Cloud registry'; atlas.hcl migration.dir = atlas:// -> exit 1 'only local file:// migration directories are supported'; ptah-compat schema apply --to oci://localhost:5555/demo/schema:v1 -> exit 1 'unsupported desired-state URL scheme \"oci\"'; atlas.hcl migration.dir = oci:// -> exit 1 'only local file:// migration directories are supported'. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Atlas Registry' is unchecked for Starter and checked for Pro (limited to 500 objects), matching oss no / pro yes for the registry-backed `atlas://` scheme"
+  "evidence": "ptah-compat schema apply --to atlas://myorg/myrepo -> exit 1 'atlas:// registry URLs are not supported: Ptah has no hosted registry integration'; atlas.hcl migration.dir = atlas:// -> exit 1 'only local file:// migration directories are supported'; ptah-compat schema apply --to oci://localhost:5555/demo/schema:v1 -> exit 1 'unsupported desired-state URL scheme \"oci\"'; atlas.hcl migration.dir = oci:// -> exit 1 'only local file:// migration directories are supported'. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Atlas Registry' is unchecked for Starter and checked for Pro (limited to 500 objects), matching oss no / pro yes for the registry-backed `atlas://` scheme"
  },
  {
   "area": "Atlas Registry and Cloud",
@@ -248,8 +248,8 @@
   "ptah": "no",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "ptah-compat boundary stubs printing the CE abort text, exit 1. The native equivalents are `ptah schema push` and `ptah migrations push`.",
-  "evidence": "ptah-compat schema push -> exit 1 \"Abort: 'atlas schema push' is not supported by the community version.\"; cli-surface.md lines 35 and 58 mark both absent from CE v1.2.0. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema push` and `atlas migrate push demo` -> exit 1 community-abort, matching the stub texts"
+  "note": "ptah-compat boundary stubs report that the command is not implemented and exit 1. The native equivalents are `ptah schema push` and `ptah migrations push`.",
+  "evidence": "ptah-compat schema push -> exit 1 and reports that the command is not implemented by Ptah; cli-surface.md lines 35 and 58 mark both absent from CE v1.2.0. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema push` and `atlas migrate push demo` -> exit 1 community-abort"
  },
  {
   "area": "Atlas Registry and Cloud",
@@ -807,7 +807,7 @@
   "atlas_oss": "yes",
   "atlas_pro": "yes",
   "note": "Analyzer-name selectors suppress, but only codes DS102/DS103/MF103 map; atlas:nolint PG101 and unknown selectors are silently ignored.",
-  "evidence": "internal/atlaslint/rules.go:41 NativeSuppressionTargets maps 5 analyzer names + ds102/ds103/mf103 only, default returns nil. Reproduced: `ptah-compat migrate lint` prints `https://atlasgo.io/lint/analyzers#PG101` yet `-- atlas:nolint PG101` leaves the diagnostic. CE side: PARITY.md:420 records the imported Atlas fixtures asserting `-- atlas:nolint` suppression for `atlas migrate lint`; gaps.md:814 runs cli-migrate-lint-ignore.txtar with 57 assertions. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' is unchecked on Starter — a plan-tier claim in tension with the measured CE fixtures asserting `-- atlas:nolint` suppression; the measured yes stands. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `-- atlas:nolint <CODE>` and analyzer-name spellings both suppress; matching is exact, not blanket (trial-study observations, scenario, lint-test-pro)"
+  "evidence": "internal/atlaslint/rules.go:41 NativeSuppressionTargets maps 5 analyzer names + ds102/ds103/mf103 only, default returns nil. Reproduced: `ptah-compat migrate lint` reports `[PG101]` yet `-- atlas:nolint PG101` leaves the diagnostic. CE side: PARITY.md:420 records the imported Atlas fixtures asserting `-- atlas:nolint` suppression for `atlas migrate lint`; gaps.md:814 runs cli-migrate-lint-ignore.txtar with 57 assertions. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' is unchecked on Starter — a plan-tier claim in tension with the measured CE fixtures asserting `-- atlas:nolint` suppression; the measured yes stands. Measured 2026-08-01, Atlas v1.2.4-e282f76-canary licensed trial build, logged in: `-- atlas:nolint <CODE>` and analyzer-name spellings both suppress; matching is exact, not blanket (trial-study observations, scenario, lint-test-pro)"
  },
  {
   "area": "Lint policy and suppression",

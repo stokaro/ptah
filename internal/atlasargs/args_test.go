@@ -332,7 +332,7 @@ func TestMap_FailurePathUnsupportedReasonFlagsCarryRationale(t *testing.T) {
 	c := qt.New(t)
 	flags := []atlasargs.Flag{
 		atlasargs.UnsupportedStringReason("to-tag", "", "Target migration tag",
-			"migration tags exist only in Atlas Registry"),
+			"migration tags require a hosted registry"),
 		atlasargs.UnsupportedBoolReason("skip-checks", "", "Skip safety checks",
 			"Ptah has no generated checks to skip"),
 	}
@@ -345,7 +345,7 @@ func TestMap_FailurePathUnsupportedReasonFlagsCarryRationale(t *testing.T) {
 		{
 			name: "string_reason",
 			args: []string{"--to-tag", "release-v1"},
-			want: "atlas migrate down accepts --to-tag, but Ptah does not implement its behavior: migration tags exist only in Atlas Registry",
+			want: "atlas migrate down accepts --to-tag, but Ptah does not implement its behavior: migration tags require a hosted registry",
 		},
 		{
 			name: "bool_reason",

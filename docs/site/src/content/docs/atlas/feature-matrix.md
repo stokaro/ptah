@@ -312,7 +312,7 @@ service, not artifact storage; the storage function is covered under
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | `atlas://` vendor protocol | ❌ | ❌ | ✅ | The scheme is Cloud-bound and rejected with a named error; every function behind it is available natively over `oci://`. The compat binary mirrors the Atlas surface, which has no `oci://`. |
-| `migrate push` and `schema push` | ❌ | ❌ | ✅ | ptah-compat boundary stubs printing the CE abort text, exit 1. The native equivalents are `ptah schema push` and `ptah migrations push`. |
+| `migrate push` and `schema push` | ❌ | ❌ | ✅ | ptah-compat boundary stubs report that the command is not implemented and exit 1. The native equivalents are `ptah schema push` and `ptah migrations push`. |
 | `schema plan --edit` and `--name-format` | ✅ | ❌ | ✅ | `--edit` preserves comments and re-derives dialect-aware severity; `--name-format` uses Atlas-shaped Base64 .FromHash/.ToHash values. |
 | `schema plan --format` and `--directive` | ❌ | ❌ | ✅ | Both fail loudly, by design. `--format` is implemented on the eight compat verbs whose CE counterpart works and whose payload can therefore be measured; `schema plan` is the one verb where CE aborts. |
 | `schema plan --push`, `--pending`, `--repo` | ❌ | ❌ | ✅ | `--push`, `--pending` and `--repo` stay recorded waivers: they address the Atlas Registry, and Ptah's plan workflow saves local files instead. |

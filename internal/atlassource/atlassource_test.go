@@ -124,9 +124,9 @@ func TestClassify_Errors(t *testing.T) {
 			want: `ptah-external-schema:// is a reserved internal marker scheme; reference data\.external_schema\.<name>\.url from an atlas\.hcl env src instead`,
 		},
 		{
-			name: "atlas registry",
+			name: "hosted registry URL",
 			url:  "atlas://remote/app",
-			want: `atlas:// registry URLs are not supported: Ptah has no Atlas Cloud registry; use a local schema file, a migration directory, a database URL, or an env:// reference`,
+			want: `atlas:// registry URLs are not supported: Ptah has no hosted registry integration; use a local schema file, a migration directory, a database URL, or an env:// reference`,
 		},
 		{
 			name: "ent",

@@ -398,7 +398,7 @@ Supports golang-migrate, Goose, Flyway, and Liquibase formatted-SQL changelogs (
 
 ### Atlas CE community-version unsupported commands
 
-**Ptah.** Ptah registers Atlas-shaped boundary stubs for `migrate push`, `schema push`, and the `schema plan` registry sub-verbs (`approve`, `lint`, `list`, `new`, `pull`, `push`, `rm`, `test`, `validate`) in the `ptah-compat` binary. Help prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1.
+**Ptah.** Ptah registers Atlas-shaped boundary stubs for `migrate push`, `schema push`, and the `schema plan` registry sub-verbs (`approve`, `lint`, `list`, `new`, `pull`, `push`, `rm`, `test`, `validate`) in the `ptah-compat` binary. Ptah-owned help reports that the command is not implemented and exits 0; direct execution reports the same status and exits 1.
 
 These are compatibility boundaries, not implemented Ptah features. `migrate test`, `schema test`, `migrate edit`, `migrate rebase`, `migrate rm`, and `schema plan` now forward to or implement native Ptah behavior instead of reproducing the boundary.
 

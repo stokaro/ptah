@@ -1,11 +1,9 @@
 package atlasreport
 
-// White-box testing required: these tests pin the default Atlas migrate lint
-// text report byte-for-byte against the upstream Atlas conformance fixtures.
-// Doing so needs a deterministic elapsed-duration seam (writeMigrateLintText's
-// injected clock), which is deliberately not part of the exported API, so the
-// assertions cannot be expressed through the public WriteMigrateLintText entry
-// point alone.
+// White-box testing required: these tests pin deterministic report rendering
+// through writeMigrateLintText's injected clock. The clock is deliberately not
+// part of the exported API, so these assertions cannot be expressed through
+// the public WriteMigrateLintText entry point alone.
 
 import (
 	"bytes"
@@ -61,7 +59,7 @@ func analyzeMigrations(t *testing.T, files map[string]string, latest int) migrat
 	return analysis
 }
 
-func TestWriteMigrateLintText_MatchesAtlasFixtures(t *testing.T) {
+func TestWriteMigrateLintText_RendersPtahDiagnostics(t *testing.T) {
 	destructiveFiles := map[string]string{
 		"1.sql": "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n",
 		"2.sql": "DROP TABLE users;\n",
@@ -82,9 +80,8 @@ func TestWriteMigrateLintText_MatchesAtlasFixtures(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 3\n" +
 				"    -- destructive changes detected:\n" +
-				"      -- L1: Dropping table \"pets\" https://atlasgo.io/lint/analyzers#DS102\n" +
-				"    -- suggested fix:\n" +
-				"      -> Add a pre-migration check to ensure table \"pets\" is empty before dropping it\n" +
+				"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a verified backup\n" +
+				"         first and consider a rename-and-retire window instead\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
@@ -101,16 +98,14 @@ func TestWriteMigrateLintText_MatchesAtlasFixtures(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 2\n" +
 				"    -- destructive changes detected:\n" +
-				"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n" +
-				"    -- suggested fix:\n" +
-				"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n" +
+				"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a verified backup\n" +
+				"         first and consider a rename-and-retire window instead\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -- analyzing version 3\n" +
 				"    -- destructive changes detected:\n" +
-				"      -- L1: Dropping table \"pets\" https://atlasgo.io/lint/analyzers#DS102\n" +
-				"    -- suggested fix:\n" +
-				"      -> Add a pre-migration check to ensure table \"pets\" is empty before dropping it\n" +
+				"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a verified backup\n" +
+				"         first and consider a rename-and-retire window instead\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
@@ -151,9 +146,8 @@ func TestWriteMigrateLintText_MatchesAtlasFixtures(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 2\n" +
 				"    -- destructive changes detected:\n" +
-				"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n" +
-				"    -- suggested fix:\n" +
-				"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n" +
+				"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a verified backup\n" +
+				"         first and consider a rename-and-retire window instead\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
@@ -173,8 +167,8 @@ func TestWriteMigrateLintText_MatchesAtlasFixtures(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 2\n" +
 				"    -- data dependent changes detected:\n" +
-				"      -- L1: Adding a non-nullable \"text\" column \"name\" will fail in case table \"users\" is not\n" +
-				"         empty https://atlasgo.io/lint/analyzers#MF103\n" +
+				"      -- L1 [MF103]: adding a NOT NULL column without a DEFAULT fails or blocks on populated tables; add it\n" +
+				"         nullable, backfill, then enforce NOT NULL in a later migration\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
@@ -184,12 +178,10 @@ func TestWriteMigrateLintText_MatchesAtlasFixtures(t *testing.T) {
 				"  -- 1 diagnostic\n",
 		},
 		{
-			// The upstream cli-migrate-lint-add-notnull fixture: version 1 adds a
-			// NOT NULL column to a table created in the same file (exempt), and
-			// version 2 adds a NOT NULL column to the now-pre-existing table (MF103,
-			// with only the URL wrapping) plus a NOT NULL column with a DEFAULT (no
-			// report).
-			name: "add-notnull fixture reproduced byte for byte",
+			// Version 1 adds a NOT NULL column to a table created in the same file
+			// (exempt). Version 2 adds one to a pre-existing table (MF103) and one
+			// with a DEFAULT (no report).
+			name: "add-notnull reports the unsafe change",
 			files: map[string]string{
 				"1.sql": "CREATE TABLE users (id int);\n\n/* Adding a not-null column without default to a table created in this file should not report. */\nALTER TABLE users ADD COLUMN c1 int NOT NULL;\n",
 				"2.sql": "ALTER TABLE users ADD COLUMN c2 int NOT NULL;\n\nALTER TABLE users ADD COLUMN c3 int NOT NULL DEFAULT 1;\n",
@@ -203,8 +195,8 @@ func TestWriteMigrateLintText_MatchesAtlasFixtures(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 2\n" +
 				"    -- data dependent changes detected:\n" +
-				"      -- L1: Adding a non-nullable \"int\" column \"c2\" will fail in case table \"users\" is not empty\n" +
-				"         https://atlasgo.io/lint/analyzers#MF103\n" +
+				"      -- L1 [MF103]: adding a NOT NULL column without a DEFAULT fails or blocks on populated tables; add it\n" +
+				"         nullable, backfill, then enforce NOT NULL in a later migration\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +

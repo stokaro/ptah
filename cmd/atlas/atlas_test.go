@@ -1736,8 +1736,8 @@ func TestCompatCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "sql/sqlclient: missing driver.*")
-	c.Assert(out.String(), qt.Contains, "sql/sqlclient: missing driver")
+	c.Assert(err, qt.ErrorMatches, "database URL is required; pass --url")
+	c.Assert(out.String(), qt.Contains, "database URL is required; pass --url")
 	c.Assert(out.String(), qt.Not(qt.Contains), "unknown flag")
 }
 

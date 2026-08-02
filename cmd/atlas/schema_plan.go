@@ -107,10 +107,10 @@ diff policy values. Registry-bound planning (--push, --pending, --repo),
 	// not exist. Pinned by TestSchemaPlanSkipLintIsANoOp — if a plan linter is
 	// ever added, that test goes red and this comment stops being true.
 	flags.Bool("skip-lint", false, "Skip linting the migration plan")
-	// The remaining Atlas Pro plan flags are declared for CLI-surface parity
+	// The remaining hosted plan flags are declared for CLI-surface parity
 	// and rejected loudly in validateAtlasSchemaPlanOptions: their behavior is
-	// either bound to the Atlas Registry or not implemented yet.
-	flags.Bool("push", false, "Push the plan to the Atlas Registry")
+	// either bound to a remote registry or not implemented yet.
+	flags.Bool("push", false, "Push the plan to a remote registry")
 	flags.Bool("pending", false, "Push the plan in a pending state")
 	flags.String("repo", "", "URL to the schema repository")
 	flags.String("format", "", "Atlas Go template output format")
@@ -125,16 +125,16 @@ diff policy values. Registry-bound planning (--push, --pending, --repo),
 	// differently named plan file than the operator asked for.
 	cmd.MarkFlagsMutuallyExclusive("name", "name-format")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
-	addAtlasUnsupportedCommunityCommands(cmd, "schema plan", []atlasUnsupportedCommunityVerb{
-		{use: "approve", short: "Approve a plan in the Atlas Registry"},
-		{use: "lint", short: "Lint a plan against the Atlas Registry"},
-		{use: "list", short: "List plans in the Atlas Registry"},
-		{use: "new", short: "Create a new plan in the Atlas Registry"},
-		{use: "pull", short: "Pull a plan from the Atlas Registry"},
-		{use: "push", short: "Push a plan to the Atlas Registry"},
-		{use: "rm", short: "Remove a plan from the Atlas Registry"},
-		{use: "test", short: "Test a plan through the Atlas Registry"},
-		{use: "validate", short: "Validate a plan through the Atlas Registry"},
+	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
+		{use: "approve", short: "Approve a plan in a remote registry"},
+		{use: "lint", short: "Lint a plan against a remote registry"},
+		{use: "list", short: "List plans in a remote registry"},
+		{use: "new", short: "Create a new plan in a remote registry"},
+		{use: "pull", short: "Pull a plan from a remote registry"},
+		{use: "push", short: "Push a plan to a remote registry"},
+		{use: "rm", short: "Remove a plan from a remote registry"},
+		{use: "test", short: "Test a plan through a remote registry"},
+		{use: "validate", short: "Validate a plan through a remote registry"},
 	})
 	return cmd
 }
@@ -428,9 +428,9 @@ func rejectUnimplementedAtlasSchemaPlanFlags(cmd *cobra.Command, opts atlasSchem
 		flag   string
 		reason string
 	}{
-		{"push", "plan push targets the Atlas Registry (Atlas Cloud); Ptah's local plan workflow saves plan files with --save or --output instead"},
-		{"pending", "pending plans are an Atlas Registry approval state; a locally saved plan file is approved by operator review"},
-		{"repo", "schema repositories exist only in the Atlas Registry (Atlas Cloud); Ptah plans are local files"},
+		{"push", "plan push requires a hosted registry; Ptah's local plan workflow saves plan files with --save or --output instead"},
+		{"pending", "pending plans require a hosted approval state; a locally saved plan file is approved by operator review"},
+		{"repo", "schema repositories require a hosted registry; Ptah plans are local files"},
 		{"format", "Ptah does not implement --format for schema plan yet"},
 		{"directive", "Ptah does not implement Atlas plan directives yet; the plan file records only the migration SQL"},
 		{"lock-timeout", "Ptah does not implement database lock waiting yet"},

@@ -338,10 +338,9 @@ stub.
 
 ### `ptah-compat migrate push`
 
-Registered Atlas CE boundary stub for a community-version unsupported command,
-kept by decision: Atlas push targets the proprietary, account-bound Atlas
-Registry protocol. `--help` prints the Atlas CE unsupported notice and exits
-0; direct execution prints the Atlas CE abort text and exits 1. The open
+Registered but not implemented because the command targets an account-bound
+hosted registry protocol. `--help` reports that the command is not implemented
+and exits 0; direct execution reports the same status and exits 1. The open
 replacement is the native `ptah migrations push` to any OCI registry.
 
 ## Schema commands
@@ -674,10 +673,9 @@ rather than an Atlas CE stub.
 
 ### `ptah-compat schema push`
 
-Registered Atlas CE boundary stub for a community-version unsupported command,
-kept by decision: Atlas push targets the proprietary, account-bound Atlas
-Registry protocol. `--help` prints the Atlas CE unsupported notice and exits
-0; direct execution prints the Atlas CE abort text and exits 1. The open
+Registered but not implemented because the command targets an account-bound
+hosted registry protocol. `--help` reports that the command is not implemented
+and exits 0; direct execution reports the same status and exits 1. The open
 replacement is the native `ptah schema push` to any OCI registry.
 
 ## Related pages

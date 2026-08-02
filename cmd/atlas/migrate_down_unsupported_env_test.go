@@ -14,7 +14,7 @@ import (
 // `migrate down`'s --skip-checks waiver is explicit-only: it is never
 // synthesized from PTAH_SKIP_CHECKS, because `migrate apply` reads that
 // variable as its pre-migration check bypass (cmd/atlas/migrate_apply.go), so
-// on this verb an ambient value is not a request for Atlas Cloud down checks.
+// on this verb an ambient value is not a request for hosted down checks.
 // Before that exclusion, exporting the variable for an apply made every
 // `migrate down` in the same shell fail with "accepts --skip-checks, but Ptah
 // does not implement its behavior".

@@ -77,5 +77,5 @@ func TestMigrateSetValidatesDatabaseURLBeforeCapturingDirectory(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `sql/sqlclient: missing driver\. See: https://atlasgo\.io/url`)
+	c.Assert(err, qt.ErrorMatches, `database URL is required; pass --url`)
 }
