@@ -554,6 +554,55 @@ func TestForwardCommandStringSliceCLIOverridesEnvironment(t *testing.T) {
 	c.Assert(runs, qt.DeepEquals, [][]string{{"qa", "dev"}})
 }
 
+func TestForwardCommandMalformedEnvironmentFailsBeforeTargetRun(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_DRY_RUN", "notabool")
+
+	var runs int
+	target := &cobra.Command{
+		Use: "target",
+		Run: func(_ *cobra.Command, _ []string) {
+			runs++
+		},
+	}
+	target.Flags().Bool("dry-run", false, "Preview changes")
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+		return target
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "notabool" for PTAH_DRY_RUN`)
+	c.Assert(runs, qt.Equals, 0)
+}
+
+func TestForwardCommandExplicitCLIWinsOverMalformedEnvironment(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_DRY_RUN", "notabool")
+
+	var dryRun bool
+	var seenDryRun bool
+	var runs int
+	target := &cobra.Command{
+		Use: "target",
+		Run: func(_ *cobra.Command, _ []string) {
+			seenDryRun = dryRun
+			runs++
+		},
+	}
+	target.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes")
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+		return target
+	})
+	cmd.SetArgs([]string{"--dry-run"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(seenDryRun, qt.IsTrue)
+	c.Assert(runs, qt.Equals, 1)
+}
+
 func newTestTargetCommand(onRun func(string)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "target",

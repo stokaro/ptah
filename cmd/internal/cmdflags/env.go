@@ -4,18 +4,16 @@ package cmdflags
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-const disableEnvAnnotation = "ptah.env.disabled"
-
-var (
-	envOnceMu sync.Mutex
-	envOnce   = make(map[*cobra.Command]*sync.Once)
+const (
+	disableEnvAnnotation   = "ptah.env.disabled"
+	installedEnvAnnotation = "ptah.env.installed"
 )
 
 // DisableEnvBinding makes a flag explicit-only even when the command tree has
@@ -36,49 +34,59 @@ func DisableEnvBinding(flags *pflag.FlagSet, name string) error {
 // tree. Environment variables follow PTAH_<FLAG_NAME>, with '-' and '.'
 // normalized to '_'. Explicit CLI flags still win over environment values.
 func InstallEnvBinding(prefix string, root *cobra.Command) {
-	once := envOnceFor(root)
-	initEnv := func() {
-		once.Do(func() {
-			InitializeEnv(prefix, root)
-		})
-	}
-
-	helpFunc := root.HelpFunc()
-	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		initEnv()
-		helpFunc(cmd, args)
-	})
-	cobra.OnInitialize(initEnv)
-}
-
-// InitializeEnv applies environment defaults and help usage annotations to an
-// already-built command tree. It is also used by forwarding adapters that
-// execute a target command outside the root command's normal initialization.
-func InitializeEnv(prefix string, root *cobra.Command) {
 	visited := make(map[*pflag.Flag]bool)
-	initializeEnvRecursive(prefix, visited, root)
+	annotateEnvRecursive(prefix, visited, root)
+	installEnvValidationRecursive(prefix, root)
 }
 
-func envOnceFor(root *cobra.Command) *sync.Once {
-	envOnceMu.Lock()
-	defer envOnceMu.Unlock()
-	once := envOnce[root]
-	if once == nil {
-		once = &sync.Once{}
-		envOnce[root] = once
+// InitializeEnv applies environment defaults to one selected command after its
+// CLI flags have been parsed. It returns an error before command hooks or work
+// run when a non-empty value is invalid for the corresponding flag.
+func InitializeEnv(prefix string, cmd *cobra.Command) error {
+	cmd.InheritedFlags()
+	annotateEnv(prefix, make(map[*pflag.Flag]bool), cmd.Flags())
+	return applyEnv(prefix, make(map[*pflag.Flag]bool), cmd.Flags())
+}
+
+func installEnvValidationRecursive(prefix string, cmd *cobra.Command) {
+	if !envBindingInstalled(cmd, prefix) {
+		if cmd.Args != nil || !cmd.HasSubCommands() {
+			argsValidator := cmd.Args
+			cmd.Args = func(cmd *cobra.Command, args []string) error {
+				if !cmd.DisableFlagParsing {
+					if err := InitializeEnv(prefix, cmd); err != nil {
+						return err
+					}
+				}
+				if argsValidator == nil {
+					return nil
+				}
+				return argsValidator(cmd, args)
+			}
+		}
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+		cmd.Annotations[installedEnvAnnotation] = prefix
 	}
-	return once
-}
-
-func initializeEnvRecursive(prefix string, visited map[*pflag.Flag]bool, cmd *cobra.Command) {
-	applyEnv(prefix, visited, cmd.Flags())
-	applyEnv(prefix, visited, cmd.PersistentFlags())
 	for _, child := range cmd.Commands() {
-		initializeEnvRecursive(prefix, visited, child)
+		installEnvValidationRecursive(prefix, child)
 	}
 }
 
-func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet) {
+func envBindingInstalled(cmd *cobra.Command, prefix string) bool {
+	return cmd.Annotations[installedEnvAnnotation] == prefix
+}
+
+func annotateEnvRecursive(prefix string, visited map[*pflag.Flag]bool, cmd *cobra.Command) {
+	annotateEnv(prefix, visited, cmd.Flags())
+	annotateEnv(prefix, visited, cmd.PersistentFlags())
+	for _, child := range cmd.Commands() {
+		annotateEnvRecursive(prefix, visited, child)
+	}
+}
+
+func annotateEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet) {
 	flags.VisitAll(func(flag *pflag.Flag) {
 		if visited[flag] {
 			return
@@ -95,15 +103,47 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 		if !usageContainsEnv(flag.Usage) {
 			flag.Usage = fmt.Sprintf("%s [env: %s]", flag.Usage, envName)
 		}
+	})
+}
+
+func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet) error {
+	var applyErr error
+	flags.VisitAll(func(flag *pflag.Flag) {
+		if applyErr != nil || visited[flag] {
+			return
+		}
+		visited[flag] = true
+		if flag.Name == "help" || envBindingDisabled(flag) {
+			return
+		}
 		if flag.Changed {
 			return
 		}
+		envName := EnvName(prefix, flag.Name)
 		value, ok := os.LookupEnv(envName)
 		if !ok || value == "" {
 			return
 		}
-		_ = flags.Set(flag.Name, value)
+		applyErr = setEnvValue(flags, flag, envName, value)
 	})
+	return applyErr
+}
+
+func setEnvValue(flags *pflag.FlagSet, flag *pflag.Flag, envName, value string) error {
+	switch flag.Value.Type() {
+	case "bool":
+		if _, err := strconv.ParseBool(value); err != nil {
+			return fmt.Errorf("invalid boolean value %q for %s", value, envName)
+		}
+	case "uint", "uint64":
+		if _, err := strconv.ParseUint(value, 0, 64); err != nil {
+			return fmt.Errorf("invalid unsigned integer value %q for %s", value, envName)
+		}
+	}
+	if err := flags.Set(flag.Name, value); err != nil {
+		return fmt.Errorf("invalid value %q for %s: %w", value, envName, err)
+	}
+	return nil
 }
 
 func envBindingDisabled(flag *pflag.Flag) bool {

@@ -146,7 +146,7 @@ func newForwardCommandWithArgsMapper(
 			setCommandContext(target, forwardContext)
 			defer restoreCommandContexts(target, targetContexts)
 			resetCommandFlags(target)
-			initializeForwardedTarget(target)
+			installForwardedTargetEnv(target)
 			defer resetCommandFlags(target)
 			parent := target.Parent()
 			if parent != nil {
@@ -201,8 +201,8 @@ func walkCommands(root *cobra.Command, visit func(*cobra.Command)) {
 	}
 }
 
-func initializeForwardedTarget(target *cobra.Command) {
-	cmdflags.InitializeEnv(envPrefix, target)
+func installForwardedTargetEnv(target *cobra.Command) {
+	cmdflags.InstallEnvBinding(envPrefix, target)
 	normalizeEnvUsage(target)
 }
 

@@ -179,6 +179,26 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 // stokaro/ptah#963: the dialect writers' "[DRY RUN] Would ..." narration must
 // never reach the Atlas-compatible binary's streams, whatever mechanism keeps
 // it away.
+func TestCompatBinaryMalformedPTAHDryRunAppliesNothing(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
+	dbPath := filepath.Join(c.TempDir(), "malformed-env.db")
+	t.Setenv("PTAH_DRY_RUN", "notabool")
+	run := newCompatProcess(binPath,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+	)
+
+	combined, err := run.CombinedOutput()
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", combined))
+	c.Assert(string(combined), qt.Contains, `invalid boolean value "notabool" for PTAH_DRY_RUN`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+}
+
 func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
