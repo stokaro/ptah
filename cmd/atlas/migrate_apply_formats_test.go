@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 // TestMigrateApplyExecutesExternalFormatsUpOnly is the per-format black-box
@@ -460,7 +461,7 @@ func runFlywayApply(migrationsDir, dbPath string) error {
 
 func sqliteAtlasRevisionVersions(c *qt.C, dbPath string) []string {
 	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	rows, err := conn.QueryContext(context.Background(), "SELECT version FROM atlas_schema_revisions ORDER BY version")
@@ -478,7 +479,7 @@ func sqliteAtlasRevisionVersions(c *qt.C, dbPath string) []string {
 
 func sqliteRowCount(c *qt.C, dbPath, table string) int {
 	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	var count int

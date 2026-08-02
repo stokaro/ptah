@@ -1,6 +1,7 @@
 package atlasschema_test
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -139,6 +140,27 @@ func TestReadPlanDocumentParsesOracleAtlasPlan(t *testing.T) {
 	// apply-time verification cannot recompute them.
 	c.Assert(atlasschema.IsNativeFingerprint(plan.FromFingerprint), qt.IsFalse)
 	c.Assert(atlasschema.IsNativeFingerprint(plan.ToFingerprint), qt.IsFalse)
+}
+
+func TestReadPlanDocumentNormalizesCRLFDocumentLineEndings(t *testing.T) {
+	c := qt.New(t)
+	original, err := os.ReadFile(oraclePlanPath)
+	c.Assert(err, qt.IsNil)
+	original = bytes.ReplaceAll(original, []byte("\r\n"), []byte("\n"))
+	crlf := bytes.ReplaceAll(original, []byte("\n"), []byte("\r\n"))
+	file, err := os.CreateTemp(t.TempDir(), "plan-*.hcl")
+	c.Assert(err, qt.IsNil)
+	_, err = file.Write(crlf)
+	c.Assert(err, qt.IsNil)
+	path := file.Name()
+	c.Assert(file.Close(), qt.IsNil)
+
+	want, _, err := atlasschema.ReadPlanDocument(oraclePlanPath)
+	c.Assert(err, qt.IsNil)
+	got, format, err := atlasschema.ReadPlanDocument(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
+	c.Assert(got, qt.DeepEquals, want)
 }
 
 func TestReadPlanDocumentReadsNativeJSONPlan(t *testing.T) {

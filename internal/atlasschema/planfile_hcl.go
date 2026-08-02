@@ -138,6 +138,11 @@ func TimestampPlanName(now time.Time) string {
 // dialect-aware statement list that [ApplyStatements] runs, never from these
 // fields.
 func decodePlanHCL(contents []byte, path string) (PlanFile, error) {
+	// HCL plan files can acquire CRLF line endings during a Windows checkout.
+	// Normalize document separators before parsing; the writer still rejects
+	// carriage returns embedded in in-memory SQL statements.
+	contents = bytes.ReplaceAll(contents, []byte("\r\n"), []byte("\n"))
+
 	file, diags := hclsyntax.ParseConfig(contents, path, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
 		return PlanFile{}, fmt.Errorf("parse plan file %s: %s", path, diags.Error())
