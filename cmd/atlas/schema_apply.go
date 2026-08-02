@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/cmd/internal/editor"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
@@ -653,27 +651,7 @@ func validateAtlasSchemaApplyDiffPolicy(
 // text, which replaces the prepared plan for display, policy validation, and
 // execution.
 func editAtlasSchemaApplySQL(sqlText string) (string, error) {
-	file, err := os.CreateTemp("", "ptah-schema-apply-*.sql")
-	if err != nil {
-		return "", fmt.Errorf("create schema apply edit file: %w", err)
-	}
-	path := file.Name()
-	defer os.Remove(path)
-	if _, err := file.WriteString(sqlText); err != nil {
-		_ = file.Close()
-		return "", fmt.Errorf("write schema apply edit file: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return "", fmt.Errorf("close schema apply edit file: %w", err)
-	}
-	if err := editor.Open("", path); err != nil {
-		return "", err
-	}
-	edited, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("read edited schema apply SQL: %w", err)
-	}
-	return string(edited), nil
+	return editAtlasSQL("schema apply", sqlText)
 }
 
 func effectiveStringArray(cmd *cobra.Command, flagName string, flagValues, configValues []string) []string {

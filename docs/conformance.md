@@ -75,9 +75,9 @@ The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
 
 **Native Ptah.** Ptah plans and applies declarative schema changes through the same `internal/atlasschema` engine that powers `schema apply`.
 
-**Atlas-compatible Ptah surface.** `ptah-compat schema plan` saves the computed plan to a local JSON plan file with ordered statements, per-statement safety severity, and SHA-256 source/desired schema fingerprints; `ptah-compat schema apply --plan file://<path>` executes the saved statements only after the live database matches the plan's source fingerprint, refusing drifted targets.
+**Atlas-compatible Ptah surface.** `ptah-compat schema plan` saves the computed plan in the Atlas `.plan.hcl` shape by default; an `--output` path ending in `.json` writes the native JSON plan instead, with ordered statements, per-statement safety severity, and SHA-256 source/desired schema fingerprints. `ptah-compat schema apply --plan file://<path>` reads both shapes and executes the saved statements only after verifying the plan against the live database, refusing drifted targets.
 
-Registry planning flags (`--push`, `--pending`, `--repo`, `--auto-approve`) are recorded waivers and the plan registry sub-verbs stay CE boundary stubs.
+`--edit` opens the planned SQL in the operator's editor and re-derives severity from the result; `--name-format` templates the plan name; `--skip-lint` is accepted as a no-op because this command runs no lint step. `--auto-approve` is accepted for CLI compatibility — a locally saved plan file is approved by operator review, so there is no prompt to skip. Registry planning flags (`--push`, `--pending`, `--repo`) are recorded waivers, `--format` and `--directive` fail loudly because Atlas's shapes for them are unmeasured, and the plan registry sub-verbs stay CE boundary stubs.
 
 **Atlas CE.** `schema plan` aborts with the community-version boundary; the plan/approval flow is bound to the Atlas Pro registry.
 

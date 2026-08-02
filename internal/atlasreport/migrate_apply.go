@@ -328,8 +328,13 @@ func validateAtlasGoTemplate(name, format string) error {
 	return err
 }
 
-func newAtlasGoTemplate(name, format string) (*template.Template, error) {
-	tmpl, err := template.New(name).Funcs(template.FuncMap{
+// atlasTemplateFuncs is the helper set every Atlas Go-template surface in this
+// package exposes. It is shared rather than duplicated so a template that works
+// on one compat verb works on the next: the drop-in promise is that an Atlas
+// pipeline's template keeps running here, and a helper missing on one verb
+// breaks that quietly.
+func atlasTemplateFuncs() template.FuncMap {
+	return template.FuncMap{
 		"json":         atlasTemplateJSON,
 		"json_merge":   atlasTemplateJSONMerge,
 		"add":          func(a, b int) int { return a + b },
@@ -340,7 +345,11 @@ func newAtlasGoTemplate(name, format string) (*template.Template, error) {
 		"red":          atlasTemplateIdentity,
 		"yellow":       atlasTemplateIdentity,
 		"redBgWhiteFg": atlasTemplateIdentity,
-	}).Parse(format)
+	}
+}
+
+func newAtlasGoTemplate(name, format string) (*template.Template, error) {
+	tmpl, err := template.New(name).Funcs(atlasTemplateFuncs()).Parse(format)
 	if err != nil {
 		return nil, fmt.Errorf("parse --format template: %w", err)
 	}

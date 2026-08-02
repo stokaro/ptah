@@ -315,20 +315,57 @@ func TestSchemaPlanRejectsMultipleFromURLs(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `atlas schema plan accepts multiple --from URLs, but Ptah plans against one target database URL`)
 }
 
-func TestSchemaPlanRejectsNameWithPathSeparators(t *testing.T) {
+func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE u (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+filepath.Join(dir, "plan.db"),
-		"--to", "file://"+schemaPath,
-		"--name", "nested/plan",
-		"--save",
-	)
+	// --name and --name-format share one validator, so a literal name gets the
+	// same protection a templated one does: a plan name becomes a file name on
+	// every platform Ptah is built for, Windows included.
+	tests := []struct {
+		name     string
+		planName string
+		want     string
+	}{
+		{
+			name:     "path_separator",
+			planName: "nested/plan",
+			want:     `--name: the plan name "nested/plan" contains a path separator; use --output to choose the plan file location`,
+		},
+		{
+			name:     "windows_colon",
+			planName: "plan:1",
+			want:     `--name: the plan name "plan:1" contains one of :\*\?"<>\|, which cannot appear in a file name on Windows`,
+		},
+		{
+			name:     "parent_directory",
+			planName: "..",
+			want:     `--name: the plan name "\.\." is a directory reference, not a name`,
+		},
+	}
 
-	c.Assert(err, qt.ErrorMatches, `--name must not contain path separators; use --output to choose the plan file location`)
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			// --save without --output writes into the working directory, so a
+			// case that stopped refusing would drop its artifact into the
+			// package source tree. Pointing the working directory at a scratch
+			// dir contains that, and the no-file assertion is what proves the
+			// refusal happened before the write rather than after it.
+			scratch := chdirToScratch(c.TB.(*testing.T))
+
+			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+				"--from", "sqlite://"+filepath.Join(dir, "plan.db"),
+				"--to", "file://"+schemaPath,
+				"--name", tt.planName,
+				"--save",
+			)
+
+			c.Assert(err, qt.ErrorMatches, tt.want)
+			assertNoPlanFileWritten(c, scratch)
+		})
+	}
 }
 
 func TestSchemaPlanSaveAndDryRunAreMutuallyExclusive(t *testing.T) {
@@ -370,29 +407,14 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 			want: `atlas schema plan accepts --repo, but schema repositories exist only in the Atlas Registry \(Atlas Cloud\); Ptah plans are local files`,
 		},
 		{
-			name: "edit",
-			args: []string{"--edit"},
-			want: `atlas schema plan accepts --edit, but Ptah does not implement editing the plan before saving yet; review the saved plan file instead`,
-		},
-		{
-			name: "skip_lint",
-			args: []string{"--skip-lint"},
-			want: `atlas schema plan accepts --skip-lint, but Ptah does not lint declarative plans yet, so there is no lint step to skip`,
-		},
-		{
 			name: "format",
 			args: []string{"--format", "{{ json . }}"},
 			want: `atlas schema plan accepts --format, but Ptah does not implement --format for schema plan yet`,
 		},
 		{
-			name: "name_format",
-			args: []string{"--name-format", "{{ .Hash }}"},
-			want: `atlas schema plan accepts --name-format, but Ptah does not implement Go-template plan naming yet; use --name`,
-		},
-		{
 			name: "directive",
 			args: []string{"--directive", "atlas:txmode none"},
-			want: `atlas schema plan accepts --directive, but Ptah does not implement Atlas plan directives yet`,
+			want: `atlas schema plan accepts --directive, but Ptah does not implement Atlas plan directives yet; the plan file records only the migration SQL`,
 		},
 		{
 			name: "lock_timeout",
