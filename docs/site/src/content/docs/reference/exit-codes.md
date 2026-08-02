@@ -87,7 +87,7 @@ behavior such as migration apply, the license notice, or schema formatting.
 | `ptah-compat version` | `ptah version` |
 | `ptah-compat license` | Ptah license notice |
 | `ptah-compat migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
-| `ptah-compat migrate down` | `ptah migrations down`; with `--format`, an Atlas Go-template down report over the same rollback engine (prompt on stderr, report on stdout, same success/failure codes) |
+| `ptah-compat migrate down` | Non-interactive rollback through the same engine as `ptah migrations down`; with `--format`, an Atlas Go-template down report (no confirmation prompt, same success/failure codes) |
 | `ptah-compat migrate diff` | Atlas-style migration diff from a supported desired schema source, `atlas.sum` update, or dry-run output printed |
 | `ptah-compat migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
 | `ptah-compat migrate status` | Atlas-format migration status with Atlas revision-table metadata |

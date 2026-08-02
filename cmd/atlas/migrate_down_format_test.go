@@ -74,10 +74,11 @@ func TestCompatCommand_MigrateDownFormatRendersReportAndReverts(t *testing.T) {
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-format.db")
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	t.Setenv("PTAH_CONFIRM", "not-a-boolean")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
-	cmd.SetIn(strings.NewReader("YES\n"))
+	cmd.SetIn(bytes.NewReader(nil))
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
@@ -91,8 +92,8 @@ func TestCompatCommand_MigrateDownFormatRendersReportAndReverts(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
-	// The report is alone on stdout; the confirmation prompt went to stderr.
-	c.Assert(errOut.String(), qt.Contains, "Type 'YES' to confirm")
+	// Atlas migrate down does not read stdin or emit a confirmation prompt.
+	c.Assert(errOut.String(), qt.Equals, "")
 	var report migrateDownJSONReport
 	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil, qt.Commentf("stdout=%s", out.String()))
 	c.Assert(report.Driver, qt.Equals, "sqlite")
@@ -193,7 +194,6 @@ func TestCompatCommand_MigrateDownFormatReportsFirstRollbackFailure(t *testing.T
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
-	cmd.SetIn(strings.NewReader("YES\n"))
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
@@ -253,7 +253,6 @@ func TestCompatCommand_MigrateDownFormatDevURLVerifiesThenApplies(t *testing.T) 
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
-	cmd.SetIn(strings.NewReader("YES\n"))
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
@@ -297,8 +296,7 @@ func TestCompatCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) 
 
 	err := cmd.Execute()
 
-	// The dev replay fails before the confirmation prompt and before the
-	// target is touched.
+	// The dev replay fails before the target is touched.
 	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
 	c.Assert(out.String(), qt.Equals, "")
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
@@ -314,7 +312,6 @@ func TestCompatCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *te
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
-	cmd.SetIn(strings.NewReader("YES\n"))
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
@@ -364,11 +361,12 @@ func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T)
 }
 
 // TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand pins the
-// byte-identity contract: without --format, the wrapped verb forwards to the
-// native `ptah migrations down` and its stdout is exactly the native
-// command's stdout. The native invocation selects --revision-format atlas
-// explicitly because the forward injects that default itself, so both runs
-// perform the same real rollback against the Atlas revision table.
+// byte-identity contract: without --format, the wrapped verb's execution
+// output is exactly the output from a pre-approved native
+// `ptah migrations down` run. The native invocation selects
+// --revision-format atlas explicitly because the forward injects that default
+// itself, so both runs perform the same real rollback against the Atlas
+// revision table.
 func TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -387,7 +385,7 @@ func TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T
 	atlasOut := runDown("atlas-default", func(migrationsDir, dbPath string) (string, error) {
 		cmd := atlas.NewCompatCommand("atlas")
 		var out, errOut bytes.Buffer
-		cmd.SetIn(strings.NewReader("YES\n"))
+		cmd.SetIn(bytes.NewReader(nil))
 		cmd.SetOut(&out)
 		cmd.SetErr(&errOut)
 		cmd.SetArgs([]string{
@@ -403,7 +401,6 @@ func TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T
 	nativeOut := runDown("native-default", func(migrationsDir, dbPath string) (string, error) {
 		cmd := migratedown.NewMigrateDownCommand()
 		var out, errOut bytes.Buffer
-		cmd.SetIn(strings.NewReader("YES\n"))
 		cmd.SetOut(&out)
 		cmd.SetErr(&errOut)
 		cmd.SetArgs([]string{
@@ -411,6 +408,7 @@ func TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T
 			"--migrations-dir", migrationsDir,
 			"--target", "1",
 			"--revision-format", "atlas",
+			"--confirm",
 		})
 		err := cmd.Execute()
 		return strings.ReplaceAll(out.String(), dbPath, "<db>"), err
@@ -432,7 +430,7 @@ func TestCompatCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) {
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
-	cmd.SetIn(strings.NewReader("YES\n"))
+	cmd.SetIn(bytes.NewReader(nil))
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
@@ -445,6 +443,7 @@ func TestCompatCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
 	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1"})
@@ -483,7 +482,7 @@ func TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault(t *testing.
 	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
-func TestCompatCommand_MigrateDownFormatDeclinedConfirmationWritesNoReport(t *testing.T) {
+func TestCompatCommand_MigrateDownFormatDoesNotTreatStdinAsConfirmation(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -504,12 +503,14 @@ func TestCompatCommand_MigrateDownFormatDeclinedConfirmationWritesNoReport(t *te
 
 	err := cmd.Execute()
 
-	// Declining keeps the native contract: exit 0, nothing reverted, and no
-	// report bytes on stdout.
-	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "")
-	c.Assert(errOut.String(), qt.Contains, "Migration rollback canceled.")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	// Atlas does not consume stdin as a confirmation answer. Even a value that
+	// the native command treats as a decline cannot cancel the compat rollback.
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	var report migrateDownJSONReport
+	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil)
+	c.Assert(report.Reverted, qt.HasLen, 2)
+	c.Assert(errOut.String(), qt.Equals, "")
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
 }
 
 func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
@@ -594,6 +595,11 @@ func TestCompatCommand_MigrateDownFormatValidation(t *testing.T) {
 			want: `atlas migrate down: unknown flag: --pre-down-hook`,
 		},
 		{
+			name: "native_confirmation_flag_rejected",
+			args: []string{"--format", "{{ json . }}", "--confirm"},
+			want: `atlas migrate down does not accept native Ptah flag --confirm`,
+		},
+		{
 			name: "remote_dir_rejected",
 			args: []string{"--format", "{{ json . }}", "--url", "sqlite://x.db", "--dir", "atlas://repo"},
 			want: `atlas migrate down --dir: only local file:// migration directories are supported`,
@@ -612,6 +618,32 @@ func TestCompatCommand_MigrateDownFormatValidation(t *testing.T) {
 			err := cmd.Execute()
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
+}
+
+func TestCompatCommand_MigrateDownRejectsNativeConfirmationFlag(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "forward", args: []string{"--confirm"}},
+		{name: "forward_false", args: []string{"--confirm=false"}},
+		{name: "format_false", args: []string{"--format", "{{ json . }}", "--confirm=false"}},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			cmd := atlas.NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(append([]string{"migrate", "down"}, test.args...))
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, `atlas migrate down does not accept native Ptah flag --confirm`)
 		})
 	}
 }

@@ -193,11 +193,16 @@ Forwards to `ptah migrations down` with mapped Atlas flags.
 | Flag | Behavior |
 | --- | --- |
 | `--dev-url` | Replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`). |
-| `--format` | Flag or `PTAH_FORMAT`; renders an Atlas Go-template report with the `YES` confirmation prompt on stderr. `--dry-run` and the native `--confirm` pass-through skip the prompt. |
+| `--format` | Flag or `PTAH_FORMAT`; renders an Atlas Go-template report. Real and dry-run rollbacks are non-interactive. |
 | `--revision-format` | Defaults to `atlas`, like `migrate set`. The native `ptah` pass-through selects ptah bookkeeping. |
 
 Because the forward defaults to Atlas revision bookkeeping, a bare invocation
 reverts the revisions `ptah-compat migrate apply` wrote.
+
+The command starts a real rollback without reading stdin, matching Atlas. It
+does not accept the native `--confirm` flag. Review `--url`, `--dir`, and
+`--to-version` before running it. Native `ptah migrations down` keeps its
+interactive confirmation.
 
 The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded
 waivers that fail loudly with their rationale. `--to-tag` and `--plan` are also
