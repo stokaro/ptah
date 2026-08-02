@@ -278,13 +278,17 @@ func TestSchemaPlanNewEditRoundTripsTheStatementsVerbatim(t *testing.T) {
 	withoutEdit := filepath.Join(dir, "without.plan.hcl")
 	withEdit := filepath.Join(dir, "with.plan.hcl")
 
+	// The name is pinned because the default is a timestamp with one-second
+	// resolution, so the two runs disagree whenever they straddle a second
+	// boundary -- rare locally, routine on CI. This test is about the editor
+	// round trip, not about naming.
 	out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
-		fixture.args("--output", withoutEdit)...)
+		fixture.args("--name", "roundtrip", "--output", withoutEdit)...)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
 	installScriptEditor(t, "true")
 	out, err = runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
-		fixture.args("--output", withEdit, "--edit")...)
+		fixture.args("--name", "roundtrip", "--output", withEdit, "--edit")...)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
 	plain, readErr := os.ReadFile(withoutEdit)
