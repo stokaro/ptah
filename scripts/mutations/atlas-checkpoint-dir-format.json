@@ -81,7 +81,7 @@
       "name": "the body is not trimmed, so blank lines displace the directive",
       "file": "migration/generator/checkpoint.go",
       "old": "\tbody := strings.Trim(upSQL, \"\\n\")",
-      "new": "\tbody := upSQL"
+      "new": "\tbody := strings.Trim(upSQL, \"\")"
     },
     {
       "name": "an empty description writes the bare <version>.sql name",
@@ -98,8 +98,8 @@
     {
       "name": "an existing checkpoint file is overwritten",
       "file": "migration/generator/checkpoint.go",
-      "old": "\t\tif errors.Is(err, os.ErrExist) {\n\t\t\treturn \"\", fmt.Errorf(\"checkpoint file %s already exists\", filePath)\n\t\t}",
-      "new": "\t\tif errors.Is(err, os.ErrExist) {\n\t\t\tif writeErr := os.WriteFile(filePath, []byte(contents), 0644); writeErr == nil {\n\t\t\t\terr = nil\n\t\t\t}\n\t\t}\n\t\tif err != nil {"
+      "old": "\tif err := writeNewMigrationFile(filePath, contents); err != nil {",
+      "new": "\tif err := os.WriteFile(filePath, []byte(contents), 0o644); err != nil {"
     },
     {
       "name": "the atlas version is not bumped past a future-dated history",

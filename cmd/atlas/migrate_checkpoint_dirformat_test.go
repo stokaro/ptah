@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -115,6 +116,52 @@ func TestCompatCommand_MigrateCheckpointDefaultsToAtlasFormat(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
 	assertAtlasCheckpointWritten(c, migrationsDir, "checkpoint")
+}
+
+func TestCompatCommand_MigrateCheckpointEmptyDirFormatIsAtlas(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := filepath.Join(t.TempDir(), "migrations")
+	writeCheckpointAtlasFixture(c, migrationsDir)
+
+	// An explicitly empty --dir-format is a different path from omitting the
+	// flag: the registered default never fires, so the mapper sees "". Measured
+	// CE takes an empty value as the atlas default (it proceeds to a checksum
+	// error rather than rejecting the format), so checkpoint does too. This is
+	// deliberately unlike the other compat migrate verbs, which reject an empty
+	// value — that rejection is itself a recorded divergence from CE.
+	out, err := runCompatCheckpoint(c,
+		"migrate", "checkpoint",
+		"--dir", migrationsDir,
+		"--dev-url", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
+		"--dir-format", "",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	assertAtlasCheckpointWritten(c, migrationsDir, "checkpoint")
+}
+
+func TestCompatCommand_MigrateCheckpointAtlasVersionIsATimestamp(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := filepath.Join(t.TempDir(), "migrations")
+	writeCheckpointAtlasFixture(c, migrationsDir) // newest version 20250801000002
+
+	out, err := runCompatCheckpoint(c,
+		"migrate", "checkpoint",
+		"--dir", migrationsDir,
+		"--dev-url", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
+		"--dir-format", "atlas",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	name := assertAtlasCheckpointWritten(c, migrationsDir, "checkpoint")
+	version, err := strconv.ParseInt(strings.TrimSuffix(name, "_checkpoint.sql"), 10, 64)
+	c.Assert(err, qt.IsNil)
+
+	// The ptah counter would have produced 20250801000003 here — one above the
+	// newest migration, and a perfectly valid Atlas name, which is exactly why
+	// it would otherwise go unnoticed. Atlas timestamps instead, so the version
+	// must be a current UTC timestamp, far above the seeded history.
+	c.Assert(version > 20260101000000, qt.IsTrue, qt.Commentf("version=%d", version))
 }
 
 func TestCompatCommand_MigrateCheckpointDirFormatPtahWrites(t *testing.T) {
