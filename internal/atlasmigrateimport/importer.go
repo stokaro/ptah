@@ -13,7 +13,6 @@
 package atlasmigrateimport
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -24,7 +23,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/stokaro/ptah/atlascompat"
@@ -92,115 +90,65 @@ func (l *Loaded) FS() fs.FS {
 	return newMemFS(l.Entries)
 }
 
-type flywayEntry struct {
-	source   string
-	name     string
-	version  flywayVersion
-	baseline bool
-}
-
-// flywayVersion is a Flyway version parsed into numeric components. Flyway uses
-// '.' and '_' interchangeably as component separators and compares components
-// numerically, treating a shorter version as if zero-padded. So V1.5 < V2
-// (1 < 2) and V2 == V2.0, while V2.0 and V20 are distinct.
-type flywayVersion struct {
-	components []int
-	raw        string
-}
-
-// String returns the original version text, for diagnostics.
-func (v flywayVersion) String() string { return v.raw }
-
-// canonical drops trailing zero components so that equal Flyway versions (V2 and
-// V2.0) share a representation while distinct ones (V2.0 and V20) do not.
-func (v flywayVersion) canonical() []int {
-	end := len(v.components)
-	for end > 0 && v.components[end-1] == 0 {
-		end--
-	}
-	return v.components[:end]
-}
-
-// key is a canonical equality key built from the canonical components.
-func (v flywayVersion) key() string {
-	comps := v.canonical()
-	parts := make([]string, len(comps))
-	for i, c := range comps {
-		parts[i] = strconv.Itoa(c)
-	}
-	return strings.Join(parts, ".")
-}
-
+// Atlas CE identifies a Flyway migration by an opaque version STRING — the
+// token between the prefix letter and the "__" separator — and orders the
+// directory by that token scored into numeric components. Ptah's migrator
+// identifies a migration by an int64, so converting a Flyway directory means
+// projecting CE's version space onto int64. The projection below is the whole
+// reason the two cannot be identical, and every constant in it was chosen
+// against the pinned oracle:
+//
+//   - CE emits the surviving baseline FIRST, ahead of version order, so a
+//     baseline is not orderable against the survivors by its own components.
+//     B10__base.sql runs before V2__x.sql. Bands, not arithmetic, carry that.
+//   - CE gives EVERY repeatable the empty version, whatever its token: R__a.sql,
+//     R1__a.sql and Rfoo.sql all execute as version "". Two of them in one
+//     directory is a duplicate CE cannot execute, so one reserved slot at the
+//     top is exactly the right shape.
+//   - CE distinguishes version tokens that score to the same components —
+//     Vx__a.sql and Vy__b.sql both score {0} and both execute, ordered by walk
+//     position. No function of a single file can reproduce that, so the
+//     ordering key carries a small tie budget filled in walk order.
 const (
-	// flywayMaxComponents is how many numeric components a Flyway version may have
-	// to be encodable as one int64 Atlas version (major.minor.patch).
+	// flywayComponentSlot is the fixed width of one trailing version component.
+	// 0 encodes "this component is absent" and 1..100 encode the values 0..99.
+	// The absent code is what keeps V1 ordered strictly BEFORE V1.0: CE compares
+	// components element-wise and then by count, so zero-extending the shorter
+	// token would collapse a pair the oracle keeps distinct and ordered.
+	flywayComponentSlot = 101
+	// flywayMaxComponents is how many components the ordering key carries.
 	flywayMaxComponents = 3
-	// flywayComponentBase is the fixed decimal width of each trailing component:
-	// minor and patch each occupy two digits (0-99). Two digits keeps a full
-	// 14-digit yyyyMMddHHmmss timestamp version representable in the leading slot
-	// while the whole value stays within int64.
-	flywayComponentBase = 100
+	// flywayTieSlots is how many files sharing one ordering key can still be
+	// told apart, filled in the walk order CE breaks such ties by. Only the
+	// pathological class needs it — tokens that score identically without being
+	// equal, such as "x" and "y", or "1" and "01".
+	flywayTieSlots = 4
+	// flywayBandSize splits int64 into a baseline band and a versioned band, so
+	// the baseline sorts below every survivor regardless of its own version.
+	flywayBandSize = math.MaxInt64 / 2
+	// flywayVersionedBand is where non-baseline versioned migrations start.
+	flywayVersionedBand = flywayBandSize
+	// flywayRepeatableVersion is the reserved slot every repeatable lands on, at
+	// the very top because CE emits repeatables after every versioned file.
+	flywayRepeatableVersion = math.MaxInt64
+	// flywayMaxTrailingKey is the largest contribution the two trailing slots can
+	// make to an ordering key, both holding component 99.
+	flywayMaxTrailingKey = (flywayComponentSlot-1)*flywayComponentSlot + (flywayComponentSlot - 1)
+	// flywayMaxLeadingComponent is what is left for the leading component once
+	// the bands, the trailing slots and the tie budget are taken out. It stays
+	// above 99999999999999, so the 14-digit yyyyMMddHHmmss timestamps Flyway
+	// projects commonly use are all representable.
+	//
+	// The bound accounts for the trailing slots and the tie budget rather than
+	// only for the band width. Dropping either term lets a leading component
+	// just under the limit push the whole key past flywayBandSize, and a
+	// versioned migration one band up from there overflows int64 into a negative
+	// version — silently, since nothing else range-checks the result.
+	flywayMaxLeadingComponent = ((flywayBandSize-flywayTieSlots)/flywayTieSlots-flywayMaxTrailingKey)/
+		(flywayComponentSlot*flywayComponentSlot) - 1
 )
 
-// atlasVersion encodes the Flyway version as a stable, order-preserving int64
-// Atlas version. The encoding is a fixed-width positional number
-// (major*100^2 + minor*100 + patch) over the canonical (trailing-zero-trimmed)
-// components. Because it depends only on this version — never on the other files
-// in the directory — a given source file always maps to the same Atlas version,
-// so inserting a mid-sequence migration never renumbers the others and Atlas
-// revision checksums stay valid. V2 and V2.0 map to the same value. It returns a
-// clear error rather than truncating or colliding when a version cannot be
-// represented within int64.
-func (v flywayVersion) atlasVersion() (int64, error) {
-	comps := v.canonical()
-	if len(comps) == 0 {
-		return 0, fmt.Errorf("Flyway version %s has no numeric components", v)
-	}
-	if len(comps) > flywayMaxComponents {
-		return 0, fmt.Errorf("Flyway version %s has more than %d components and cannot map to an int64 Atlas version", v, flywayMaxComponents)
-	}
-	padded := make([]int, flywayMaxComponents)
-	copy(padded, comps)
-	for i := 1; i < flywayMaxComponents; i++ {
-		if padded[i] >= flywayComponentBase {
-			return 0, fmt.Errorf("Flyway version %s component %d (%d) exceeds the maximum %d for an int64 Atlas version", v, i+1, padded[i], flywayComponentBase-1)
-		}
-	}
-	var value int64
-	for _, c := range padded {
-		if value > (math.MaxInt64-int64(c))/flywayComponentBase {
-			return 0, fmt.Errorf("Flyway version %s is too large to map to an int64 Atlas version", v)
-		}
-		value = value*flywayComponentBase + int64(c)
-	}
-	if value <= 0 {
-		return 0, fmt.Errorf("Flyway version %s does not map to a positive Atlas version", v)
-	}
-	return value, nil
-}
-
-// compareFlywayVersions orders two Flyway versions numerically component by
-// component, zero-padding the shorter one, matching Flyway's ordering.
-func compareFlywayVersions(a, b flywayVersion) int {
-	n := max(len(a.components), len(b.components))
-	for i := range n {
-		av, bv := 0, 0
-		if i < len(a.components) {
-			av = a.components[i]
-		}
-		if i < len(b.components) {
-			bv = b.components[i]
-		}
-		if c := cmp.Compare(av, bv); c != 0 {
-			return c
-		}
-	}
-	return 0
-}
-
 var (
-	flywayFileRe        = regexp.MustCompile(`(?i)^([vbru])([0-9][0-9._]*)?__(.+)\.sql$`)
-	flywayVersionedRe   = regexp.MustCompile(`(?i)^[vbu].+__.+\.sql$`)
 	golangMigrateFileRe = regexp.MustCompile(`^([0-9]+)_(.+)\.(up|down)\.sql$`)
 	golangMigrateLikeRe = regexp.MustCompile(`^[0-9]+_.+\.(up|down)\.sql$`)
 	gooseGoFileRe       = regexp.MustCompile(`^[0-9]+_.+\.go$`)
@@ -522,7 +470,10 @@ func loadEntries(fsys fs.FS, display string, format Format) ([]Entry, error) {
 	case FormatLiquibase:
 		return loadLiquibaseEntries(fsys, files)
 	case FormatFlyway:
-		return loadFlywayEntries(fsys, files)
+		// Flyway does not get the top-level listing: it is the one layout Atlas
+		// CE recurses into, and its selection is a state machine over the walk.
+		// See loadFlywayEntries.
+		return loadFlywayEntries(fsys)
 	default:
 		return nil, fmt.Errorf("unknown migration import format %q", format)
 	}
@@ -638,134 +589,239 @@ func loadDirectiveSectionEntries(
 	return entries, nil
 }
 
-func loadFlywayEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
-	var parsed []flywayEntry
-	var baseline *flywayVersion
-	for _, file := range files {
-		entry, ok, err := parseFlywayEntry(file)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			continue
-		}
-		if entry.baseline && (baseline == nil || compareFlywayVersions(entry.version, *baseline) > 0) {
-			version := entry.version
-			baseline = &version
-		}
-		parsed = append(parsed, entry)
-	}
-
-	selected := make([]flywayEntry, 0, len(parsed))
-	for _, entry := range parsed {
-		if !entry.baseline && baseline != nil && compareFlywayVersions(entry.version, *baseline) <= 0 {
-			continue
-		}
-		selected = append(selected, entry)
-	}
-
-	if err := rejectDuplicateFlywayVersions(selected); err != nil {
+// loadFlywayEntries converts exactly the files a Flyway directory's atlas.sum
+// covers, in the order Atlas CE executes them.
+//
+// It shares [flywayCoveredFiles] with [SumFileNames] rather than filtering the
+// directory itself, which is what makes "everything executed was covered by the
+// checksum that was verified" a structural property instead of a claim two
+// separate rules have to keep agreeing on. #982 is what the claim was worth: a
+// superseded baseline and a lowercase-prefixed file both executed on a
+// directory whose atlas.sum covered neither, and which both tools called clean.
+//
+// The remaining work is projection, not selection. Atlas CE keys a migration on
+// an opaque version STRING, Ptah's migrator on an int64, and the mapping between
+// them is the band-and-slot encoding documented above flywayComponentSlot. It
+// refuses rather than truncates when a version cannot be represented, because
+// silently reusing a slot would execute a migration under another one's
+// identity.
+func loadFlywayEntries(fsys fs.FS) ([]Entry, error) {
+	covered, err := flywayCoveredFiles(fsys)
+	if err != nil {
 		return nil, err
 	}
-	slices.SortStableFunc(selected, func(a, b flywayEntry) int {
-		return compareFlywayVersions(a.version, b.version)
-	})
 
-	// Atlas migration versions are int64 ordered numerically, so a major.minor
-	// Flyway version (V1.5 sits between V1 and V2) cannot be represented by
-	// echoing the original number. Encode each version into a stable,
-	// order-preserving int64 instead (see flywayVersion.atlasVersion). The
-	// encoding depends only on the version itself, so inserting a mid-sequence
-	// migration never renumbers the others and Atlas revision checksums stay
-	// valid on re-apply. The original description is kept in the file name.
-	entries := make([]Entry, 0, len(selected))
-	for _, entry := range selected {
-		version, err := entry.version.atlasVersion()
+	if err := rejectDuplicateFlywayVersions(covered); err != nil {
+		return nil, err
+	}
+
+	versions, err := flywayConvertedVersions(covered)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]Entry, 0, len(covered))
+	for i, file := range covered {
+		data, err := readImportSQLFile(fsys, file.name)
 		if err != nil {
 			return nil, err
 		}
-		data, err := readImportSQLFile(fsys, entry.source)
-		if err != nil {
-			return nil, err
-		}
-		entries = append(entries, Entry{Name: fmt.Sprintf("%d_%s.sql", version, entry.name), Data: data})
+		entries = append(entries, Entry{Name: flywayEntryName(versions[i], file.description), Data: data})
 	}
 	return entries, nil
 }
 
-// rejectDuplicateFlywayVersions fails when two selected files resolve to the
-// same Flyway version (for example V1.5 and V1_5, or V2 and V2.0). It runs
-// before the monotonic version assignment so a genuine collision can never be
-// masked by sequential numbering or surface only after the database is opened.
-func rejectDuplicateFlywayVersions(entries []flywayEntry) error {
-	seen := make(map[string]string, len(entries))
-	for _, entry := range entries {
-		key := entry.version.key()
-		if prev, ok := seen[key]; ok {
-			return fmt.Errorf("Flyway migrations %s and %s resolve to the same version %s", prev, entry.source, entry.version)
+// flywayConvertedVersions assigns each covered file its int64 Atlas version,
+// positionally aligned with covered. It is the single place the tie index is
+// counted, so the versions the importer executes under and the versions
+// [LegacyFlywayAtlasVersions] reports cannot disagree.
+func flywayConvertedVersions(covered []flywaySumFile) ([]int64, error) {
+	versions := make([]int64, len(covered))
+	var previous *flywaySumFile
+	tie := 0
+	for i := range covered {
+		file := covered[i]
+		// Files whose tokens score to the same components arrive adjacent, in
+		// the walk order CE ranks them by, because flywaySumFiles stable-sorts
+		// the survivors. So the tie index is the position within that run.
+		if previous != nil && file.kind == previous.kind && slices.Equal(file.components, previous.components) {
+			tie++
+		} else {
+			tie = 0
 		}
-		seen[key] = entry.source
+		previous = &covered[i]
+
+		version, err := flywayAtlasVersion(file, tie)
+		if err != nil {
+			return nil, err
+		}
+		versions[i] = version
+	}
+	return versions, nil
+}
+
+// rejectDuplicateFlywayVersions refuses two covered files that carry the same
+// Atlas CE version. Atlas CE does not report such a directory: it executes the
+// migrations up to the collision and then panics with an index-out-of-range, so
+// V1__a.sql beside V1__b.sql leaves table a behind and exits 2. Refusing before
+// the database is touched is strictly safer, not merely different.
+//
+// The check is on CE's version STRING, and that operand is the whole point.
+// Scoring the tokens into components instead would merge V1.5__a.sql with
+// V1_5__b.sql and Vx__a.sql with Vy__b.sql, both of which CE runs — two pairs
+// the previous implementation refused. Comparing the strings separates
+// "identical to Atlas CE" from "merely ordered identically", and only the
+// second one is a tie for flywayAtlasVersion to break.
+func rejectDuplicateFlywayVersions(covered []flywaySumFile) error {
+	seen := make(map[string]string, len(covered))
+	for _, file := range covered {
+		version := flywayCEVersion(file)
+		if previous, ok := seen[version]; ok {
+			if version == "" {
+				// Reached by two repeatables, and by a repeatable beside a file
+				// whose own token is empty such as V.sql, so the message names
+				// the empty version rather than either file's role.
+				return fmt.Errorf("Flyway migrations %s and %s both carry the empty Atlas version and cannot be executed together", previous, file.name)
+			}
+			return fmt.Errorf("Flyway migrations %s and %s both carry the Atlas version %q", previous, file.name, version)
+		}
+		seen[version] = file.name
 	}
 	return nil
 }
 
-func parseFlywayEntry(file fs.DirEntry) (flywayEntry, bool, error) {
-	if file.IsDir() {
-		return flywayEntry{}, false, nil
+// flywayCEVersion is the version string Atlas CE gives a covered file. A
+// repeatable gets the empty string whatever its own token: R__a.sql, R1__a.sql
+// and Rfoo.sql all execute as version "", which is why two repeatables collide
+// with each other and with a file whose token is genuinely empty, such as V.sql.
+func flywayCEVersion(file flywaySumFile) string {
+	if file.kind == flywaySumRepeatable {
+		return ""
 	}
-	match := flywayFileRe.FindStringSubmatch(file.Name())
-	if match == nil {
-		if strings.HasSuffix(file.Name(), ".sql") && flywayVersionedRe.MatchString(file.Name()) {
-			return flywayEntry{}, false, fmt.Errorf("unsupported Flyway migration file name %s", file.Name())
-		}
-		return flywayEntry{}, false, nil
-	}
-
-	prefix := strings.ToUpper(match[1])
-	if prefix == "U" {
-		return flywayEntry{}, false, nil
-	}
-	entry := flywayEntry{source: file.Name(), name: sanitizeName(match[3])}
-	if prefix == "R" {
-		return flywayEntry{}, false, fmt.Errorf("Flyway repeatable migration %s cannot be imported yet because Ptah does not execute Atlas R-suffixed migrations", file.Name())
-	}
-	version, err := parseFlywayVersion(match[2], file.Name())
-	if err != nil {
-		return flywayEntry{}, false, err
-	}
-	entry.version = version
-	entry.baseline = prefix == "B"
-	return entry, true, nil
+	return file.version
 }
 
-// parseFlywayVersion parses a Flyway version string into numeric components. It
-// splits on '.'/'_' (Flyway's interchangeable separators) so "1.5" and "1_5"
-// both yield [1 5], preserving component boundaries for correct ordering rather
-// than concatenating digits.
-func parseFlywayVersion(raw, filename string) (flywayVersion, error) {
-	parts := strings.FieldsFunc(raw, func(r rune) bool { return r == '.' || r == '_' })
-	if len(parts) == 0 {
-		return flywayVersion{}, fmt.Errorf("parse Flyway version in %s: missing version", filename)
+// FlywayBaselineAtlasVersion returns the converted Atlas version of the
+// surviving baseline in a Flyway directory, or 0 when it holds none.
+//
+// The caller is the apply path, and the reason it needs this is narrow. The
+// converted version encodes Atlas CE's SUM order, in which a surviving baseline
+// comes FIRST whatever its own version — measured, and measured to hold across
+// runs, not only within one conversion. So the baseline is placed in a band
+// below every survivor, and on a database that already has migrations recorded
+// it therefore sorts below all of them. That LOOKS like a migration authored
+// before what is already applied, and it is not: it is an artifact of projecting
+// a sum order onto an int64. See checkFlywayBaselineOrdering in cmd/atlas.
+//
+// It shares flywayCoveredFiles and flywayConvertedVersions with the importer, so
+// the version reported here is the one the entry is actually executed under.
+func FlywayBaselineAtlasVersion(fsys fs.FS, format Format) (int64, error) {
+	if format != FormatFlyway {
+		return 0, nil
 	}
-	components := make([]int, len(parts))
-	allZero := true
-	for i, part := range parts {
-		n, err := strconv.Atoi(part)
-		if err != nil {
-			return flywayVersion{}, fmt.Errorf("parse Flyway version in %s: %w", filename, err)
-		}
-		if n < 0 {
-			return flywayVersion{}, fmt.Errorf("parse Flyway version in %s: version must be greater than zero", filename)
-		}
-		if n != 0 {
-			allZero = false
-		}
-		components[i] = n
+	covered, err := flywayCoveredFiles(fsys)
+	if err != nil {
+		return 0, err
 	}
-	if allZero {
-		return flywayVersion{}, fmt.Errorf("parse Flyway version in %s: version must be greater than zero", filename)
+	versions, err := flywayConvertedVersions(covered)
+	if err != nil {
+		return 0, err
 	}
-	return flywayVersion{components: components, raw: raw}, nil
+	for i, file := range covered {
+		if file.kind == flywaySumBaseline {
+			// flywaySumFiles emits at most one baseline, and always first.
+			return versions[i], nil
+		}
+	}
+	return 0, nil
+}
+
+// flywayEntryName renders the converted Atlas single-file name. A Flyway file
+// need not carry a description at all — V1.sql and Video.sql are both ordinary
+// migrations to Atlas CE — so the name degrades to the bare version rather than
+// growing a trailing separator with nothing after it.
+func flywayEntryName(version int64, description string) string {
+	if name := sanitizeName(description); name != "" {
+		return fmt.Sprintf("%d_%s.sql", version, name)
+	}
+	return fmt.Sprintf("%d.sql", version)
+}
+
+// flywayAtlasVersion projects one covered Flyway file onto the int64 Atlas
+// version Ptah's migrator orders and identifies migrations by. tie is the file's
+// position among the covered files that share its ordering key.
+//
+// The projection is a function of the file alone except for tie, which is a
+// function of its position. That is not a shortcut: CE itself separates such
+// files only by walk position, so no per-file rule could reproduce it. Every
+// file whose token scores uniquely — which is every file in a directory using
+// ordinary numeric versions — keeps tie 0 and therefore a version that does not
+// move when a sibling is added, so inserting a mid-sequence migration does not
+// renumber the others and recorded revisions stay valid.
+func flywayAtlasVersion(file flywaySumFile, tie int) (int64, error) {
+	if file.kind == flywaySumRepeatable {
+		// Every repeatable is version "" to Atlas CE regardless of its token, so
+		// they all land on the one reserved slot and a second one is caught as a
+		// collision below — which is what CE's own version space says it is.
+		return flywayRepeatableVersion, nil
+	}
+	if tie >= flywayTieSlots {
+		return 0, fmt.Errorf(
+			"Flyway migration %s shares its version ordering key with more than the %d files Ptah can tell apart (version %q)",
+			file.name, flywayTieSlots, file.version,
+		)
+	}
+
+	key, err := flywayOrderingKey(file)
+	if err != nil {
+		return 0, err
+	}
+	version := key*flywayTieSlots + int64(tie)
+	if file.kind == flywaySumBaseline {
+		// The surviving baseline is emitted, and executed, ahead of every
+		// survivor whatever its own version: CE runs B10__base.sql before
+		// V2__x.sql. A band keeps that true without making the baseline's
+		// version depend on the files around it.
+		return version, nil
+	}
+	return flywayVersionedBand + version, nil
+}
+
+// flywayOrderingKey packs a version token's components into one integer that
+// compares the way compareFlywaySumVersions compares the components themselves.
+func flywayOrderingKey(file flywaySumFile) (int64, error) {
+	components := file.components
+	if len(components) > flywayMaxComponents {
+		return 0, fmt.Errorf(
+			"Flyway migration %s has version %q with more than %d components and cannot map to an int64 Atlas version",
+			file.name, file.version, flywayMaxComponents,
+		)
+	}
+	// A negative component orders below every ordinary version on the oracle
+	// (V-5__x.sql runs before V2__two.sql) and there is no room below zero in a
+	// positive fixed-width slot.
+	if components[0] < 0 {
+		return 0, fmt.Errorf("Flyway migration %s has version %q with a negative component and cannot map to an int64 Atlas version", file.name, file.version)
+	}
+	if components[0] > flywayMaxLeadingComponent {
+		return 0, fmt.Errorf("Flyway migration %s has version %q that is too large to map to an int64 Atlas version", file.name, file.version)
+	}
+
+	key := components[0] + 1
+	for i := 1; i < flywayMaxComponents; i++ {
+		slot := int64(0)
+		if i < len(components) {
+			if components[i] < 0 || components[i] >= flywayComponentSlot-1 {
+				return 0, fmt.Errorf(
+					"Flyway migration %s has version %q whose component %d (%d) is outside 0..%d and cannot map to an int64 Atlas version",
+					file.name, file.version, i+1, components[i], flywayComponentSlot-2,
+				)
+			}
+			slot = components[i] + 1
+		}
+		key = key*flywayComponentSlot + slot
+	}
+	return key, nil
 }
 
 func readImportSQLFile(fsys fs.FS, name string) ([]byte, error) {

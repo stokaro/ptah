@@ -312,6 +312,14 @@ put V01__a.sql "$SQL_PLAIN"
 put V2__b.sql "$SQL_SECOND"
 seal flyway
 
+# Both leading components exceed MaxInt32, so a build that scored them with
+# strconv.Atoi (platform int) would clamp both to the same ceiling on a 32-bit
+# target and swap them. The oracle orders 9e9 before 1e10.
+new_case flyway/wide-components
+put V9000000000__a.sql "$SQL_PLAIN"
+put V10000000000__b.sql "$SQL_SECOND"
+seal flyway
+
 new_case flyway/no-version
 put V__x.sql "$SQL_PLAIN"
 put V1__ok.sql "$SQL_SECOND"

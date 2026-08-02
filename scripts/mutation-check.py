@@ -35,7 +35,19 @@ Two rules this harness exists to enforce, both learned the hard way:
     result that reads as "every mutation survived" when it actually means "the
     sweep ate the code under test". It cost a full reimplementation.
 
-2.  REFUSE A DIRTY TREE. Even with a byte-copy restore, an interrupted run
+2.  A NON-COMPILING MUTATION IS NOT A RESULT. BUILD-FAILED counts as neither
+    killed nor survived, which shrinks the table silently in exactly the way
+    PATCH-FAILED does. The build is checked separately from the test run so the
+    two are distinguishable, and a run that produced any BUILD-FAILED row exits
+    non-zero.
+
+3.  RUN THIS ALONE. The sweep mutates files in the working tree, so anything
+    else reading them concurrently -- a lint task, an editor's language server,
+    a second sweep -- can observe a mutated tree and report a failure that is
+    not the mutation's doing. A spurious survivor or an off-by-one total is the
+    usual symptom.
+
+4.  REFUSE A DIRTY TREE. Even with a byte-copy restore, an interrupted run
     leaves a mutated file behind, and a run started from a dirty tree cannot
     tell its own damage from the caller's work in progress. The tree is checked
     before the sweep and again after it, and the final state is printed.
@@ -119,6 +131,21 @@ def sweep(repo, spec, packages, mutations, only):
             rows.append((name, "PATCH-FAILED", f"anchor matched {occurrences} times"))
             continue
         try:
+            # Compile first, with no test selected. A mutation that does not
+            # build tells you nothing about whether the rule is held, and
+            # inferring that from the test run's output means guessing at
+            # compiler strings -- which reads a genuine failure containing the
+            # words "cannot use" as a build error and drops it from the table.
+            build = subprocess.run(
+                ["go", "test", "-run", "^$", "-count=1", *packages],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            if build.returncode != 0:
+                rows.append((name, "BUILD-FAILED", first_error_line(build.stdout + build.stderr)))
+                continue
             result = subprocess.run(
                 ["go", "test", *packages, "-count=1"],
                 cwd=repo,
@@ -127,9 +154,6 @@ def sweep(repo, spec, packages, mutations, only):
                 env=env,
             )
             combined = result.stdout + result.stderr
-            if "[build failed]" in combined or "undefined:" in combined or "cannot use" in combined:
-                rows.append((name, "BUILD-FAILED", "mutation does not compile"))
-                continue
             top, subtests = parse_failures(combined)
             if result.returncode == 0:
                 rows.append((name, "SURVIVED", "suite still green - rule untested"))
@@ -142,6 +166,16 @@ def sweep(repo, spec, packages, mutations, only):
     return rows
 
 
+def first_error_line(output):
+    """Return the first compiler diagnostic, for a BUILD-FAILED row."""
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#") or not stripped:
+            continue
+        return stripped[:120]
+    return "mutation does not compile"
+
+
 def report(repo, rows, paths):
     width = max(len(row[0]) for row in rows)
     print()
@@ -150,8 +184,14 @@ def report(repo, rows, paths):
     for name, status, detail in rows:
         print(f"{name.ljust(width)}  {status.ljust(12)}  {detail}")
     survivors = [row for row in rows if row[1] != "killed"]
+    unusable = [row for row in rows if row[1] in ("BUILD-FAILED", "PATCH-FAILED")]
     print()
     print(f"{len(rows) - len(survivors)}/{len(rows)} mutations killed")
+    if unusable:
+        # Neither killed nor survived. Reported separately so a shrinking table
+        # cannot be mistaken for a smaller suite.
+        print(f"{len(unusable)} mutation(s) produced no result at all: "
+              + ", ".join(f"{name} ({status})" for name, status, _ in unusable))
     remaining = dirty_files(repo, paths)
     print(f"git status --porcelain after restore: {remaining or '(clean)'}")
     return 1 if survivors or remaining else 0
