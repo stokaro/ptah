@@ -91,3 +91,60 @@ func isCaseFile(name string) bool {
 		return false
 	}
 }
+
+// LoadCasesOfKind reads the test cases of one kind from dir, accepting both the
+// native YAML documents [LoadCases] reads and Atlas-format `*.test.hcl` files.
+//
+// The kind is explicit rather than inferred because Atlas labels each case with
+// it and the two are not interchangeable: a `test "migrate"` case drives the
+// migration directory to a version, which a schema test run must not do. Native
+// YAML cases carry no kind and are returned for either.
+func LoadCasesOfKind(dir string, kind AtlasTestKind) ([]Case, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read test-case directory %s: %w", dir, err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if !isCaseFile(entry.Name()) && !isAtlasCaseFile(entry.Name()) {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+
+	var cases []Case
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read test-case file %s: %w", path, err)
+		}
+		var parsed []Case
+		if isAtlasCaseFile(name) {
+			parsed, err = ParseAtlasTestCases(data, name, kind)
+		} else {
+			parsed, err = ParseCases(data)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		cases = append(cases, parsed...)
+	}
+	return cases, nil
+}
+
+// isAtlasCaseFile reports whether name is an Atlas-format test document.
+//
+// The suffix is `.test.hcl`, not `.hcl`: a bare .hcl file in the same directory
+// is a schema definition, and reading one as a test document would fail on
+// every table block. Matching the compound suffix is what separates the two,
+// and it is why filepath.Ext alone -- which yields ".hcl" for both -- will not
+// do.
+func isAtlasCaseFile(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".test.hcl")
+}

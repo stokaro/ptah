@@ -74,11 +74,11 @@ Across the 159 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 86 |
+| Ptah supports it fully | 87 |
 | Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 25 |
+| Ptah does not implement it | 24 |
 | Ptah and Atlas CE both support it | 24 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 36 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 37 |
 | Ptah has it and neither Atlas edition does | 15 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
 | An Atlas column is ❔ — not established by this page's evidence | 23 |
@@ -212,7 +212,7 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| Atlas `.test.hcl` ingestion | ❌ | ❌ | ✅ | No .test.hcl parser; a directory of them reports 'no test cases found' (`ptah-compat` exit 1, native exit 2). |
+| Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
 | Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | schema test -u takes only a Go-annotation directory; SQL/HCL files and DB URLs fail. Neither verb exposes `--report` or `--seed-dir`. |
 | Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused, and schema apply `--dry-run` skips the rehearsal entirely. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❔ | migration/dbtest exports RunMigrationTest and RunSchemaTest. Nothing cited establishes an Atlas Go test-runner package. |
