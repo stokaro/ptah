@@ -180,7 +180,7 @@ type flywaySumFile struct {
 	kind        flywaySumFileKind
 	version     string
 	description string
-	components  []int
+	components  []int64
 }
 
 // flywayCoveredFiles walks fsys and returns the Flyway files an Atlas
@@ -355,18 +355,26 @@ func parseFlywaySumFile(name string) (flywaySumFile, bool) {
 // ranks after "1" — the component COUNT is significant, which is why a token is
 // never zero-extended when compared (see compareFlywaySumVersions).
 //
-// Every component is scored by what strconv.Atoi returns, and its error is
+// Every component is scored by what strconv.ParseInt returns, and its error is
 // deliberately ignored because the returned value is already the right answer
 // in each case the oracle exhibits: the exact value when the part is numeric,
 // zero when it is not (so "x" ranks as 0 without poisoning its siblings), and
-// the clamped MaxInt/MinInt on ErrRange (so a 20-digit timestamp ranks above
+// the clamped MaxInt64/MinInt64 on ErrRange (so a 20-digit timestamp ranks above
 // every ordinary version instead of being rejected). Negative parts are kept
 // and ordered, so V-5 precedes V-1.
-func parseFlywaySumVersion(version string) []int {
+//
+// The width is pinned at 64 rather than taken from strconv.Atoi, whose bit size
+// is the platform int. On a 32-bit build Atoi clamps at MaxInt32, so
+// V9000000000__a.sql and V10000000000__b.sql both score to the same ceiling and
+// swap places against the oracle — which writes an atlas.sum Atlas CE then
+// rejects, and converts the same file to a different Atlas version. The
+// differential fuzz cannot catch it because it only ever runs on the host
+// architecture.
+func parseFlywaySumVersion(version string) []int64 {
 	parts := strings.Split(strings.ReplaceAll(version, "_", "."), ".")
-	components := make([]int, len(parts))
+	components := make([]int64, len(parts))
 	for i, part := range parts {
-		value, _ := strconv.Atoi(part)
+		value, _ := strconv.ParseInt(part, 10, 64)
 		components[i] = value
 	}
 	return components
@@ -377,7 +385,7 @@ func parseFlywaySumVersion(version string) []int {
 // V1.0, and V2 precedes V2.0.0. Zero-extending the shorter list instead would
 // make those pairs compare equal and fall through to a name tiebreak, which
 // reverses the oracle's order on entirely ordinary file names.
-func compareFlywaySumVersions(a, b []int) int {
+func compareFlywaySumVersions(a, b []int64) int {
 	for i := range min(len(a), len(b)) {
 		if a[i] != b[i] {
 			return cmp.Compare(a[i], b[i])

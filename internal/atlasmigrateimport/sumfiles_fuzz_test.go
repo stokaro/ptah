@@ -49,6 +49,14 @@ func assertCaptureSelectsTheSame(c *qt.C, dir string, format atlasmigrateimport.
 // diverged on a superseded baseline and a lowercase prefix. Random generation
 // over the same shapes is what stops them drifting apart again.
 //
+// Two limits worth stating. Membership is a genuine cross-check, but ORDER is
+// weaker than it looks: both sides are derived from the same covered slice, so
+// this cannot see a projection that assigns versions out of that order — that is
+// what the literal expectations in TestLoadFSFlywayAtlasVersions and probe
+// section 9a hold. And the enumeration below sits at LoadFS, so a refusal raised
+// later, when the migrator registers the converted names, is invisible here
+// (see TestLoadFSFlywayDescriptionEndingInDown_KnownDivergence).
+//
 // A refused directory is checked against the enumerated refusal classes rather
 // than skipped. Skipping it would make this assertion vacuous exactly when the
 // importer started refusing everything — the one regression it most needs to

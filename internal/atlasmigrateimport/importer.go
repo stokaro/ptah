@@ -615,7 +615,28 @@ func loadFlywayEntries(fsys fs.FS) ([]Entry, error) {
 		return nil, err
 	}
 
+	versions, err := flywayConvertedVersions(covered)
+	if err != nil {
+		return nil, err
+	}
+
 	entries := make([]Entry, 0, len(covered))
+	for i, file := range covered {
+		data, err := readImportSQLFile(fsys, file.name)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, Entry{Name: flywayEntryName(versions[i], file.description), Data: data})
+	}
+	return entries, nil
+}
+
+// flywayConvertedVersions assigns each covered file its int64 Atlas version,
+// positionally aligned with covered. It is the single place the tie index is
+// counted, so the versions the importer executes under and the versions
+// [LegacyFlywayAtlasVersions] reports cannot disagree.
+func flywayConvertedVersions(covered []flywaySumFile) ([]int64, error) {
+	versions := make([]int64, len(covered))
 	var previous *flywaySumFile
 	tie := 0
 	for i := range covered {
@@ -634,18 +655,16 @@ func loadFlywayEntries(fsys fs.FS) ([]Entry, error) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := readImportSQLFile(fsys, file.name)
-		if err != nil {
-			return nil, err
-		}
-		entries = append(entries, Entry{Name: flywayEntryName(version, file.description), Data: data})
+		versions[i] = version
 	}
-	return entries, nil
+	return versions, nil
 }
 
 // rejectDuplicateFlywayVersions refuses two covered files that carry the same
-// Atlas CE version, which is a directory Atlas CE cannot execute at all: it
-// panics with an index-out-of-range rather than reporting anything.
+// Atlas CE version. Atlas CE does not report such a directory: it executes the
+// migrations up to the collision and then panics with an index-out-of-range, so
+// V1__a.sql beside V1__b.sql leaves table a behind and exits 2. Refusing before
+// the database is touched is strictly safer, not merely different.
 //
 // The check is on CE's version STRING, and that operand is the whole point.
 // Scoring the tokens into components instead would merge V1.5__a.sql with
@@ -749,13 +768,11 @@ func flywayOrderingKey(file flywaySumFile) (int64, error) {
 	if components[0] < 0 {
 		return 0, fmt.Errorf("Flyway migration %s has version %q with a negative component and cannot map to an int64 Atlas version", file.name, file.version)
 	}
-	// int64 on both sides: the bound exceeds MaxInt32, so comparing it against an
-	// int component would not compile on a 32-bit build.
-	if int64(components[0]) > flywayMaxLeadingComponent {
+	if components[0] > flywayMaxLeadingComponent {
 		return 0, fmt.Errorf("Flyway migration %s has version %q that is too large to map to an int64 Atlas version", file.name, file.version)
 	}
 
-	key := int64(components[0]) + 1
+	key := components[0] + 1
 	for i := 1; i < flywayMaxComponents; i++ {
 		slot := int64(0)
 		if i < len(components) {
@@ -765,7 +782,7 @@ func flywayOrderingKey(file flywaySumFile) (int64, error) {
 					file.name, file.version, i+1, components[i], flywayComponentSlot-2,
 				)
 			}
-			slot = int64(components[i]) + 1
+			slot = components[i] + 1
 		}
 		key = key*flywayComponentSlot + slot
 	}

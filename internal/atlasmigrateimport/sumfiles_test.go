@@ -19,7 +19,7 @@ import (
 // corpus test walks the tree, so a corpus that failed to load would otherwise
 // pass vacuously; asserting the count makes an empty or partial walk fail.
 // Adding a shape is expected to change this number.
-const ceSumCorpusCases = 88
+const ceSumCorpusCases = 89
 
 const sqlBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
 

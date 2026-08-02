@@ -22,8 +22,8 @@
     {
       "name": "a non-numeric component poisons the whole token",
       "file": "internal/atlasmigrateimport/sumfiles.go",
-      "old": "\t\tvalue, _ := strconv.Atoi(part)\n\t\tcomponents[i] = value",
-      "new": "\t\tvalue, err := strconv.Atoi(part)\n\t\tif err != nil {\n\t\t\treturn nil\n\t\t}\n\t\tcomponents[i] = value"
+      "old": "\t\tvalue, _ := strconv.ParseInt(part, 10, 64)\n\t\tcomponents[i] = value",
+      "new": "\t\tvalue, err := strconv.ParseInt(part, 10, 64)\n\t\tif err != nil {\n\t\t\treturn nil\n\t\t}\n\t\tcomponents[i] = value"
     },
     {
       "name": "hidden directories are walked",

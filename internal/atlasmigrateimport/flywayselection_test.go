@@ -252,6 +252,15 @@ func TestLoadFSFlywayAtlasVersions(t *testing.T) {
 		files: []string{"V20230101120000__x.sql"},
 		want:  []string{"5437155064527908707_x.sql"},
 	}, {
+		name: "leading components above MaxInt32 keep their order",
+		// Scoring a component with strconv.Atoi takes the PLATFORM int width, so
+		// a 32-bit build clamps both of these to the same ceiling and swaps
+		// them — writing an atlas.sum the oracle rejects and converting each
+		// file to the other's version. testdata/ce-sums/flyway/wide-components
+		// holds the oracle's own sum for the pair.
+		files: []string{"V9000000000__a.sql", "V10000000000__b.sql"},
+		want:  []string{"4612053254427428707_a.sql", "4612094058427428707_b.sql"},
+	}, {
 		name: "a baseline lands in the low band",
 		// 122412 is below the versioned band start, which is what makes the
 		// baseline execute first without depending on the files beside it.
@@ -406,9 +415,11 @@ func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T
 // TestLoadFSFlywayLeadingComponentBound pins the edge of the representable
 // range from both sides.
 //
-// The largest accepted version is asserted with every other slot at its maximum
-// too — three components, both trailing ones at 99, which is the shape that
-// actually reaches the top of the band. A bound derived from the band width
+// The largest accepted version is asserted with the other COMPONENT slots at
+// their maximum — three components, both trailing ones at 99 — which is the
+// shape that reaches the top of the band. The tie slot stays 0 here because one
+// file cannot tie with anything; the tie term of the bound is what the
+// "bound ignores the trailing slots and the tie budget" mutation covers. A bound derived from the band width
 // alone accepts this leading component and then overflows int64 into a negative
 // Atlas version, which nothing downstream range-checks: the migrator would order
 // it before every other migration instead of after. Asserting the accepted
@@ -435,23 +446,55 @@ func TestLoadFSFlywayLeadingComponentBound(t *testing.T) {
 }
 
 // TestLoadFSFlywayTieBudgetExhausted_KnownDivergence pins the one input class
-// where this change made Ptah refuse a directory Atlas CE applies.
+// this change made Ptah refuse where Atlas CE applies.
 //
-// Five files whose version tokens are distinct strings that all score to the
-// same ordering components. CE separates them by walk position; the int64
-// projection carries four tie slots, which is what is left once a 14-digit
-// leading component, three components and two bands are accounted for. On
-// master the first four are silently ignored and V1__ok.sql applies alone, so
-// this is a refusal replacing a silent partial execution rather than replacing a
-// correct one — but it is a refusal where CE exits 0, and it is the only one.
+// The fixture is five ordinary helper files that happen to start with a capital
+// V. Flyway itself ignores them — it needs the V<version>__ shape — but Atlas
+// CE's parse is loose enough to treat any V-prefixed .sql as a migration, so
+// their version tokens become "iews", "endors", "acuum", "alidation" and
+// "ersion". All five score to the same ordering components, and CE separates
+// them only by walk position, which no per-file projection can reproduce; the
+// int64 carries four tie slots, which is what is left once a 14-digit leading
+// component, three components and two bands are accounted for.
+//
+// Measured on the oracle: CE applies all six. On master the five are silently
+// ignored and V1__init.sql applies alone, so this replaces a silent partial
+// execution rather than a correct one — but it is a refusal where CE exits 0.
 func TestLoadFSFlywayTieBudgetExhausted_KnownDivergence(t *testing.T) {
 	c := qt.New(t)
-	source := flywaySource("Va.sql", "Vb.sql", "Vc.sql", "Vd.sql", "Ve.sql", "V1__ok.sql")
+	source := flywaySource(
+		"Views.sql", "Vendors.sql", "Vacuum.sql", "Validation.sql", "Version.sql", "V1__init.sql")
 
 	loaded, err := atlasmigrateimport.LoadFS(source, "migrations", atlasmigrateimport.FormatFlyway)
 
-	c.Assert(err, qt.ErrorMatches, `Flyway migration Ve\.sql shares its version ordering key with more than the 4 files Ptah can tell apart \(version "e"\)`)
+	c.Assert(err, qt.ErrorMatches,
+		`Flyway migration V\w+\.sql shares its version ordering key with more than the 4 files Ptah can tell apart \(version "\w+"\)`)
 	c.Assert(loaded, qt.IsNil)
-	// Four still convert, so the budget is a budget and not a ban on ties.
-	c.Assert(flywayConsumed(c, flywaySource("Va.sql", "Vb.sql", "Vc.sql", "Vd.sql", "V1__ok.sql")), qt.HasLen, 5)
+	// Four in one score class still convert, so the budget is a budget and not
+	// a ban on ties.
+	c.Assert(flywayConsumed(c, flywaySource(
+		"Vendors.sql", "Vacuum.sql", "Validation.sql", "Version.sql", "V1__init.sql")), qt.HasLen, 5)
+}
+
+// TestLoadFSFlywayDescriptionEndingInDown_KnownDivergence pins a refusal that
+// predates this change and that flywayRefusalClasses structurally cannot see.
+//
+// A Flyway description may end in ".down". The converted name then ends in
+// ".down.sql", which Ptah's Atlas migrator reads as the DOWN half of a pair with
+// no up half, so registration fails — after LoadFS has already succeeded, which
+// is why the fuzz's refusal enumeration never observes it. Atlas CE applies both
+// files. Measured on master and on this build: both refuse, identically.
+func TestLoadFSFlywayDescriptionEndingInDown_KnownDivergence(t *testing.T) {
+	c := qt.New(t)
+
+	loaded, err := atlasmigrateimport.LoadFS(
+		flywaySource("V1__a.down.sql", "V10__c.sql"), "migrations", atlasmigrateimport.FormatFlyway)
+
+	// Conversion itself succeeds; the converted name is what the migrator later
+	// rejects, so the divergence lives one layer below this package.
+	c.Assert(err, qt.IsNil)
+	c.Assert(entryNames(loaded), qt.DeepEquals, []string{
+		"4611686018427469511_a.down.sql",
+		"4611686018427836747_c.sql",
+	})
 }

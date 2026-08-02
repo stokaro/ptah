@@ -58,6 +58,14 @@ if [ ! -x "$COMPAT" ]; then
 	go build -o "$COMPAT" "$ROOT/cmd/ptah-compat" || exit 1
 fi
 
+# Section 9a compares the ORDER migrations executed in, which is read back out
+# of the sqlite target databases. Without sqlite3 that section would silently
+# degrade to comparing counts, which is exactly the weakness it exists to close.
+if ! command -v sqlite3 >/dev/null 2>&1; then
+	echo "probe: sqlite3 is required (section 9a compares execution order)" >&2
+	exit 1
+fi
+
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/ptah-apply-gate-probe.XXXXXX")"
 trap 'rm -rf "$BASE"' EXIT
 cd "$BASE" || exit 1
@@ -440,23 +448,38 @@ flyway_parity() { # flyway_parity <label> <builder> <slug> [file-to-tamper]
 		printf 'CREATE TABLE pwned (id int);\n' >>"$ce/$tamper"
 		printf 'CREATE TABLE pwned (id int);\n' >>"$pt/$tamper"
 	fi
-	local cev ptv ceout ptout cerc ptrc cen ptn
+	local cev ptv ceout ptout cerc ptrc cerun ptrun
 	cev=$("$ATLAS" migrate validate --dir "file://$ce?format=flyway" >/dev/null 2>&1; echo $?)
 	ptv=$("$COMPAT" migrate validate --dir "file://$pt?format=flyway" >/dev/null 2>&1; echo $?)
 	ceout=$("$ATLAS" migrate apply --url "sqlite://$ce.db" --dir "file://$ce?format=flyway" 2>&1); cerc=$?
 	ptout=$("$COMPAT" migrate apply --url "sqlite://$pt.db" --dir "file://$pt?format=flyway" 2>&1); ptrc=$?
-	cen=$(echo "$ceout" | grep -c 'migrating version')
-	ptn=$(echo "$ptout" | grep -oE 'from [0-9]+ pending' | grep -oE '[0-9]+')
-	ptn=${ptn:-0}
-	if [ "$cev" = "$ptv" ] && [ "$cerc" = "$ptrc" ] && [ "$cen" = "$covered" ] && [ "$ptn" = "$covered" ]; then
-		printf '  %-46s MATCH   validate=%s apply=%s  covered=%s ran ce=%s ptah=%s\n' \
-			"$label" "$cev" "$cerc" "$covered" "$cen" "$ptn"
+	# What each tool actually executed, in the order it executed it. Comparing
+	# COUNTS here would call a mutant that runs the surviving baseline second a
+	# MATCH; the tables are created in execution order, so rowid order separates
+	# them. The migration descriptions are what both tools have in common — the
+	# converted Atlas versions are Ptah's own projection and differ by design.
+	cerun=$(migration_order "$ce.db")
+	ptrun=$(migration_order "$pt.db")
+	local ceran
+	ceran=$(printf '%s' "$cerun" | tr ',' '\n' | grep -c .)
+	if [ "$cev" = "$ptv" ] && [ "$cerc" = "$ptrc" ] && [ "$cerun" = "$ptrun" ] && [ "$ceran" = "$covered" ]; then
+		printf '  %-46s MATCH   validate=%s apply=%s  covered=%s ran=[%s]\n' \
+			"$label" "$cev" "$cerc" "$covered" "$cerun"
 	else
 		fail=1
 		printf '  %-46s DIFFER  covered=%s\n' "$label" "$covered"
-		printf '       CE   validate=%s apply=%s ran=%s [%s]\n' "$cev" "$cerc" "$cen" "$(echo "$ceout" | tr '\n' '|' | cut -c1-160)"
-		printf '       ptah validate=%s apply=%s ran=%s [%s]\n' "$ptv" "$ptrc" "$ptn" "$(echo "$ptout" | tr '\n' '|' | cut -c1-160)"
+		printf '       CE   validate=%s apply=%s ran=[%s] [%s]\n' "$cev" "$cerc" "$cerun" "$(echo "$ceout" | tr '\n' '|' | cut -c1-120)"
+		printf '       ptah validate=%s apply=%s ran=[%s] [%s]\n' "$ptv" "$ptrc" "$ptrun" "$(echo "$ptout" | tr '\n' '|' | cut -c1-120)"
 	fi
+}
+
+# migration_order lists the descriptions of the migrations a target database
+# recorded, in the order they were applied. Both tools write the Flyway
+# description into the revision row, so it is the one identifier that survives
+# Ptah's version projection.
+migration_order() {
+	[ -f "$1" ] || { printf ''; return; }
+	sqlite3 "$1" "SELECT group_concat(description, ',') FROM (SELECT description FROM atlas_schema_revisions ORDER BY rowid);" 2>/dev/null
 }
 build_superseded_baseline() {
 	printf 'CREATE TABLE one (id int);\n'   >"$1/B1__one.sql"

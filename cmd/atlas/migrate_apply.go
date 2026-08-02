@@ -265,6 +265,14 @@ func runAtlasMigrateApply(
 		return err
 	}
 
+	// #982 changed the Atlas version a Flyway file converts to, which is the
+	// key `atlas_schema_revisions` stores. A database migrated by an older Ptah
+	// build therefore reads as entirely pending here. Refuse before executing
+	// anything rather than re-running migrations that already ran.
+	if err := checkLegacyFlywayRevisions(captured, resolvedDirFormat, plan, opts.revisionsSchema); err != nil {
+		return err
+	}
+
 	out := cmd.OutOrStdout()
 	if opts.dryRun && !formatOutput {
 		fmt.Fprintln(out, "Dry run mode: no changes will be made.")
