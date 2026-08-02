@@ -89,7 +89,7 @@ func runSchemaTest(ctx context.Context, out io.Writer, opts testOptions) error {
 		return fmt.Errorf("unsupported report format %q: want text, json, or html", opts.report)
 	}
 
-	cases, err := dbtest.LoadCases(opts.dir)
+	cases, err := dbtest.LoadCasesOfKind(opts.dir, dbtest.AtlasTestKindSchema)
 	if err != nil {
 		return fmt.Errorf("failed to load test cases: %w", err)
 	}
