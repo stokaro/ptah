@@ -1120,21 +1120,21 @@
     "feature": "HCL top-level blocks Ptah parses",
     "ptah": "yes",
     "atlas_oss": "unknown",
-    "atlas_pro": "unknown",
+    "atlas_pro": "yes",
     "note": "schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data.",
     "evidence": "internal/atlashcl/atlashcl.go:73-113; a fixture exercising all 16 renders 17 PostgreSQL statements via `ptah schema render --schema-file all.hcl --dialect postgres`. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Database Security as Code (linked /atlas-schema/hcl#roles-and-permissions) and Seed Data as Code are absent from Starter and Pro-gated \u2014 this bears on the role, permission and data blocks only, so both Atlas cells stay unknown"
   },
   {
-    "area": "Schema sources",
+    "area": "Schema sources Atlas HCL schema reference (atlasgo.io/atlas-schema/hcl), retrieved 2026-08-03: schema, table, column, primary_key, foreign_key and index carry no tier marker, while views, materialized views, triggers, functions, procedures, domains, composite types, range types, policies, sequences, extensions and roles/permissions each carry an `Atlas Pro Feature` marker, so the Pro plan covers the whole set. Controls on the same page and query shape: the invented terms `zzzznotarealterm` and `qqqnotarealblock` return not-found while real blocks return verbatim quotes, so the page is being read rather than reconstructed.",
     "feature": "HCL table and column child blocks",
     "ptah": "yes",
     "atlas_oss": "unknown",
-    "atlas_pro": "unknown",
+    "atlas_pro": "yes",
     "note": "column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform.",
     "evidence": "internal/atlashcl/atlashcl.go:244-325 (table switch), 394-478 (as/identity); index `on { column= ops= desc= }` renders operator classes"
   },
   {
-    "area": "Schema sources",
+    "area": "Schema sources Atlas HCL schema reference (atlasgo.io/atlas-schema/hcl), retrieved 2026-08-03: `check`, `unique`, `index` and `row_security` are documented as table child resources with no tier marker, and `partition` is documented with an `Atlas Pro Feature` marker. Controls on the same page and query shape: the invented terms `zzzznotarealterm` and `qqqnotarealblock` return not-found while real blocks return verbatim quotes, so the page is being read rather than reconstructed.",
     "feature": "HCL variable blocks and var.* references",
     "ptah": "no",
     "atlas_oss": "yes",
@@ -1165,12 +1165,12 @@
     "feature": "HCL foreign_key deferrable",
     "ptah": "no",
     "atlas_oss": "unknown",
-    "atlas_pro": "unknown",
+    "atlas_pro": "no",
     "note": "Errors: unsupported foreign_key attribute \"deferrable\". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too.",
     "evidence": "internal/atlashcl/atlashcl.go:1324-1331; `grep -rin deferrable --include=*.go` outside tests returns only one code comment in migration/schemadiff. `deferrable = true` rejected under the sqlite dialect; engine-gated, so the Atlas cell stays unresolved for PostgreSQL (measured; observation study, scenario, hcl-semantics)"
   },
   {
-    "area": "Schema sources",
+    "area": "Schema sources Atlas HCL schema reference (atlasgo.io/atlas-schema/hcl), retrieved 2026-08-03: `foreign_key` is documented but `deferrable` does not appear anywhere on the page, so it is absent from Atlas's documented HCL rather than merely unmeasured. Controls on the same page and query shape: the invented terms `zzzznotarealterm` and `qqqnotarealblock` return not-found while real blocks return verbatim quotes, so the page is being read rather than reconstructed.",
     "feature": "Ptah-only HCL schema extensions",
     "ptah": "yes",
     "atlas_oss": "unknown",
