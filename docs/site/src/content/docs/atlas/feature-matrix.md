@@ -119,7 +119,7 @@ seven of them as open capabilities regardless.
 | Live database as desired state | ✅ | ✅ | ✅ | One connectable DB URL can be the desired side of compat schema apply/diff and migrate diff; `ptah db read` introspects natively. |
 | Live database to Go annotation source | ✅ | ❌ | ❌ | `ptah introspect` writes annotated Go models from a live DB; repo docs record Go annotations as a first-party Ptah workflow. |
 | Migration directory as a source | ✅ | ✅ | ✅ | Atlas-format directory with `atlas.sum`, replayed on a required `--dev-url`. Works on `ptah schema inspect` and compat apply/diff/migrate diff. |
-| Ptah-only HCL schema extensions | ✅ | ❔ | ❔ | platform/override per dialect, EXCLUDE constraint block, column enum, table checks/custom, index ops, ClickHouse granularity, seed data block. |
+| Ptah-only HCL schema extensions | ✅ | ❔ | ➖ | platform/override per dialect, EXCLUDE constraint block, column enum, table checks/custom, index ops, ClickHouse granularity, seed data block. |
 | SQL DDL schema files | ✅ | ✅ | ✅ | Accepted by native `--schema-file` and by `ptah-compat schema apply`/diff `--to`/`--from`; unsupported DDL fails instead of being skipped. |
 | YAML schema files | ✅ | ❌ | ❌ | Strict parser; unknown keys fail. Repo docs list Atlas OSS data sources as SQL, HCL, external schema, and remote/template dirs. |
 
@@ -140,7 +140,7 @@ seven of them as open capabilities regardless.
 | Inspect `--exclude` field selectors | 🟡 | ❔ | ❔ | Only [type=extension].version is honored; other .field suffixes and non-final [type=...] fail before any database is contacted. |
 | Inspect non-database sources via `--dev-url` | ✅ | ✅ | ✅ | Schema file, `atlas.sum` migration dir, or env:// is materialized on a reset dev DB then introspected; without `--dev-url` it fails. |
 | Inspect split/write file exports | ✅ | ❌ | ✅ | `{{ hcl . \| split \| write "dir" }}` writes object/schema/type trees; pinned Atlas CE rejects split, write, hcl as non-community. |
-| JSON output for native schema diff | ✅ | ❔ | ❔ | Native ptah schema diff `--format` json emits a machine-readable statements document; the Go-template row only states that {{ json . }} fails on the compat diff, leaving native JSON unstated. |
+| JSON output for native schema diff | ✅ | ❔ | ➖ | Native ptah schema diff `--format` json emits a machine-readable statements document; the Go-template row only states that {{ json . }} fails on the compat diff, leaving native JSON unstated. |
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |
 | schema clean | 🟡 | ✅ | ✅ | Plan and `--dry-run` list tables (plus PostgreSQL enums/sequences, SQL Server FKs), but the apply drops views too via DropAllTables. |
