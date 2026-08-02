@@ -13,6 +13,7 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -91,13 +92,13 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 		return errors.New("schema apply simulation requires database connection")
 	}
 
-	devConn, err := connectSimulationDev(ctx, devURL, p.conn.Info(), opts.TargetURL, opts.DesiredURLs)
+	devConn, err := connectSimulationDev(ctx, devURL, p.conn, opts.TargetURL, opts.DesiredURLs)
 	if err != nil {
 		return err
 	}
 	defer dbschema.CloseAndWarn(devConn)
 
-	return rehearseStatementsOnDev(ctx, devConn, p.current, p.txMode, statements)
+	return rehearseStatementsOnDev(ctx, p.conn, devConn, p.current, p.txMode, statements)
 }
 
 // connectSimulationDev validates the dev database URL against the target and
@@ -106,10 +107,11 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 func connectSimulationDev(
 	ctx context.Context,
 	devURL string,
-	targetInfo dbschematypes.DBInfo,
+	targetConn *dbschema.DatabaseConnection,
 	targetURL string,
 	desiredURLs []string,
 ) (*dbschema.DatabaseConnection, error) {
+	targetInfo := targetConn.Info()
 	if err := atlasurl.ValidateDialectMatch(devURL, targetInfo.Dialect); err != nil {
 		return nil, err
 	}
@@ -117,7 +119,7 @@ func connectSimulationDev(
 		return nil, errors.New("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema apply simulation")
 	}
 	if strings.TrimSpace(targetURL) != "" {
-		sameTarget, err := atlasurl.SameDatabase(devURL, targetURL)
+		sameTarget, err := atlasurl.MayAddressSameDatabase(devURL, targetURL)
 		if err != nil {
 			return nil, fmt.Errorf("compare --dev-url with target database: %w", err)
 		}
@@ -160,7 +162,7 @@ func sameDirectDatabaseURL(databaseURL, candidate string) (bool, error) {
 	if !found || platform.NormalizeDialect(scheme) == "" {
 		return false, nil
 	}
-	return atlasurl.SameDatabase(databaseURL, candidate)
+	return atlasurl.MayAddressSameDatabase(databaseURL, candidate)
 }
 
 // rehearseStatementsOnDev resets the dev database, recreates the target's
@@ -173,11 +175,15 @@ func sameDirectDatabaseURL(databaseURL, candidate string) (bool, error) {
 // they came from a plan file or from a freshly computed apply.
 func rehearseStatementsOnDev(
 	ctx context.Context,
+	targetConn *dbschema.DatabaseConnection,
 	devConn *dbschema.DatabaseConnection,
 	current *dbschematypes.DBSchema,
 	txMode migrator.MigrationTxMode,
 	statements []string,
 ) error {
+	if targetConn == nil {
+		return errors.New("schema apply simulation requires target database connection")
+	}
 	if err := checkPlanStatements(statements, devConn.Info().Dialect); err != nil {
 		return err
 	}
@@ -187,6 +193,13 @@ func rehearseStatementsOnDev(
 	// WithUntrustedSQLSession is what makes an unrestricted rehearsal
 	// impossible to write; the lint above is only a lint.
 	return devConn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
+		sameTargetRealm, err := devlock.SameRealm(ctx, targetConn, session)
+		if err != nil {
+			return fmt.Errorf("compare live --dev-url and target database realms: %w", err)
+		}
+		if sameTargetRealm {
+			return errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
+		}
 		return rehearseOnPreparedDev(ctx, session, current, txMode, statements)
 	})
 }

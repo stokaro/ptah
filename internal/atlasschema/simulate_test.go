@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -28,7 +29,7 @@ CREATE TABLE sim_added (
 );
 `), 0o600), qt.IsNil)
 	conn := connectSQLite(c, dbPath)
-	defer dbschema.CloseAndWarn(conn)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 	c.Assert(atlasschema.ApplySQL(c.Context(), conn, migrator.MigrationTxModeAll, `
 CREATE TABLE sim_existing (
   id INTEGER PRIMARY KEY
@@ -64,8 +65,8 @@ CREATE TABLE sim_stale (
 		dbschema.CloseAndWarn(devConn)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL:    "sqlite://" + devPath,
-			TargetURL: "sqlite://" + dbPath,
+			DevURL:    atlasurl.SQLiteURLFromPath(devPath),
+			TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
 		})
 
 		c.Assert(err, qt.IsNil)
@@ -91,8 +92,8 @@ CREATE TABLE sim_stale (
 		plan := prepareSimulationPlan(c, dbPath)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL:     "sqlite://" + devPath,
-			TargetURL:  "sqlite://" + dbPath,
+			DevURL:     atlasurl.SQLiteURLFromPath(devPath),
+			TargetURL:  atlasurl.SQLiteURLFromPath(dbPath),
 			Statements: []string{"CREATE TABLE sim_edited (id INTEGER PRIMARY KEY)"},
 		})
 
@@ -110,8 +111,8 @@ func TestSimulateOnDev_FailedSimulationLeavesTargetUnchanged(t *testing.T) {
 	plan := prepareSimulationPlan(c, dbPath)
 
 	err := plan.SimulateOnDev(t.Context(), atlasschema.SimulateOptions{
-		DevURL:    "sqlite://" + devPath,
-		TargetURL: "sqlite://" + dbPath,
+		DevURL:    atlasurl.SQLiteURLFromPath(devPath),
+		TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
 		// sim_existing is part of the recreated baseline, so this statement
 		// fails on the dev database exactly as it would on the target.
 		Statements: []string{"CREATE TABLE sim_existing (id INTEGER PRIMARY KEY)"},
@@ -156,8 +157,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		plan := prepareSimulationPlan(c, dbPath)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL:    "sqlite://" + dbPath,
-			TargetURL: "sqlite://" + dbPath,
+			DevURL:    atlasurl.SQLiteURLFromPath(dbPath),
+			TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
 		})
 		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it`)
 		c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
@@ -171,8 +172,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 			string(os.PathSeparator) + filepath.Base(dbPath)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL:    "sqlite://" + aliasPath + "?mode=rwc",
-			TargetURL: "sqlite://" + dbPath,
+			DevURL:    atlasurl.SQLiteURLFromPath(aliasPath) + "?mode=rwc",
+			TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
 		})
 		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it`)
 		c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
@@ -186,7 +187,7 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
 			DevURL:    "sqlite:file:" + encodedPath + "?mode=rwc",
-			TargetURL: "sqlite://" + dbPath,
+			TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
 		})
 		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it`)
 		c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
@@ -199,9 +200,9 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		plan := prepareSimulationPlan(c, dbPath)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL:      "sqlite://" + devPath,
-			TargetURL:   "sqlite://" + dbPath,
-			DesiredURLs: []string{"sqlite://" + devPath},
+			DevURL:      atlasurl.SQLiteURLFromPath(devPath),
+			TargetURL:   atlasurl.SQLiteURLFromPath(dbPath),
+			DesiredURLs: []string{atlasurl.SQLiteURLFromPath(devPath)},
 		})
 		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the --to desired-state database ".*desired\.db": the dev database is reset destructively before the plan is rehearsed on it`)
 	})
@@ -213,9 +214,9 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		plan := prepareSimulationPlan(c, dbPath)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL:      "sqlite://" + desiredPath + "?mode=rwc",
-			TargetURL:   "sqlite://" + dbPath,
-			DesiredURLs: []string{"sqlite://" + desiredPath},
+			DevURL:      atlasurl.SQLiteURLFromPath(desiredPath) + "?mode=rwc",
+			TargetURL:   atlasurl.SQLiteURLFromPath(dbPath),
+			DesiredURLs: []string{atlasurl.SQLiteURLFromPath(desiredPath)},
 		})
 		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the --to desired-state database ".*desired\.db": the dev database is reset destructively before the plan is rehearsed on it`)
 	})
@@ -232,8 +233,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
 			DevURL:      "sqlite:file:" + url.PathEscape(filepath.ToSlash(desiredPath)) + "?mode=rwc",
-			TargetURL:   "sqlite://" + dbPath,
-			DesiredURLs: []string{"sqlite://" + desiredPath},
+			TargetURL:   atlasurl.SQLiteURLFromPath(dbPath),
+			DesiredURLs: []string{atlasurl.SQLiteURLFromPath(desiredPath)},
 		})
 		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the --to desired-state database ".*desired\.db": the dev database is reset destructively before the plan is rehearsed on it`)
 		c.Assert(sqliteTableExists(c, desiredPath, "desired_kept"), qt.IsTrue)
@@ -250,7 +251,7 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		dbschema.CloseAndWarn(devConn)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL:    "sqlite://" + devPath,
+			DevURL:    atlasurl.SQLiteURLFromPath(devPath),
 			TargetURL: "sqlite:file:%ZZ",
 		})
 		c.Assert(err, qt.ErrorMatches, `compare --dev-url with target database: invalid SQLite database URL`)
@@ -268,8 +269,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		dbschema.CloseAndWarn(devConn)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL:      "sqlite://" + devPath,
-			TargetURL:   "sqlite://" + dbPath,
+			DevURL:      atlasurl.SQLiteURLFromPath(devPath),
+			TargetURL:   atlasurl.SQLiteURLFromPath(dbPath),
 			DesiredURLs: []string{"sqlite:file:%ZZ"},
 		})
 		c.Assert(err, qt.ErrorMatches, `compare --dev-url with --to desired-state database "sqlite:file:%ZZ": invalid SQLite database URL`)
@@ -281,7 +282,7 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		plan := prepareSimulationPlan(c, filepath.Join(dir, "target.db"))
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL: "sqlite://" + filepath.Join(dir, "missing-dir", "sub", "dev.db"),
+			DevURL: atlasurl.SQLiteURLFromPath(filepath.Join(dir, "missing-dir", "sub", "dev.db")),
 		})
 		c.Assert(err, qt.ErrorMatches, `connect to --dev-url: .*`)
 	})

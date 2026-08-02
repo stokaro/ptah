@@ -23,7 +23,7 @@ func TestSchemaPlanValidateRefusesDevURLSymlinkToTarget(t *testing.T) {
 	c.Assert(os.Symlink(fixture.dbPath, aliasPath), qt.IsNil)
 
 	out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
-		fixture.validateArgs("--dev-url", "sqlite://"+aliasPath)...)
+		fixture.validateArgs("--dev-url", sqliteURLFromPath(aliasPath))...)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(out, qt.Contains, "--dev-url must not point at the target database")

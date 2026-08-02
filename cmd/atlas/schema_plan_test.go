@@ -13,15 +13,20 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/safety"
 )
+
+func sqliteURLFromPath(path string) string {
+	return atlasurl.SQLiteURLFromPath(path)
+}
 
 // seedSQLiteSchema executes DDL against a SQLite database file so plan tests
 // start from a known live schema state.
 func seedSQLiteSchema(c *qt.C, dbPath, schemaSQL string) {
 	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), sqliteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
@@ -51,7 +56,7 @@ func TestSchemaPlanSavesFingerprintedPlanFile(t *testing.T) {
 	), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://"+schemaPath,
 		"--output", planPath,
 	)
@@ -81,7 +86,7 @@ func TestSchemaPlanSaveUsesDerivedDefaultFileName(t *testing.T) {
 	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE plan_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://schema.sql",
 		"--save",
 	)
@@ -111,7 +116,7 @@ func TestSchemaPlanCustomNameIsRecordedAndUsedAsFileName(t *testing.T) {
 	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE named_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://schema.sql",
 		"--name", "add_named_users",
 		"--save",
@@ -136,7 +141,7 @@ func TestSchemaPlanRecordsDestructiveStatements(t *testing.T) {
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://"+schemaPath,
 		"--output", planPath,
 	)
@@ -161,7 +166,7 @@ func TestSchemaPlanDryRunPrintsPlanDocumentWithoutSaving(t *testing.T) {
 	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE dry_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://schema.sql",
 		"--dry-run",
 	)
@@ -202,7 +207,7 @@ func TestSchemaPlanSyncedSchemaWritesNothing(t *testing.T) {
 	c.Assert(os.WriteFile(schemaPath, []byte(schemaSQL), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://"+schemaPath,
 		"--output", planPath,
 	)
@@ -221,7 +226,7 @@ func TestSchemaPlanWithoutSavePrintsPlanDocument(t *testing.T) {
 	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE stdout_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://schema.sql",
 	)
 
@@ -251,7 +256,7 @@ func TestSchemaPlanAcceptsAutoApprove(t *testing.T) {
 	// accepted (there is no local approval prompt to skip) and the .json
 	// output path keeps the native JSON plan format.
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://"+schemaPath,
 		"--save", "--output", planPath,
 		"--auto-approve",
@@ -272,7 +277,7 @@ func TestSchemaPlanHCLOutputRejectsExclude(t *testing.T) {
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE exclude_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://"+schemaPath,
 		"--exclude", "zzz_unrelated",
 		"--save", "--output", filepath.Join(dir, "x.plan.hcl"),
@@ -357,7 +362,7 @@ func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 			scratch := chdirToScratch(c.TB.(*testing.T))
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-				"--from", "sqlite://"+filepath.Join(dir, "plan.db"),
+				"--from", sqliteURLFromPath(filepath.Join(dir, "plan.db")),
 				"--to", "file://"+schemaPath,
 				"--name", tt.planName,
 				"--save",
@@ -442,7 +447,7 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 			// package source tree. (A mutation sweep found exactly that leak.)
 			scratch := chdirToScratchC(c)
 			args := append([]string{
-				"--from", "sqlite://" + filepath.Join(dir, "plan.db"),
+				"--from", sqliteURLFromPath(filepath.Join(dir, "plan.db")),
 				"--to", "file://" + schemaPath,
 				"--save",
 			}, tt.args...)
@@ -466,7 +471,7 @@ func TestSchemaPlanUsesAtlasProjectEnv(t *testing.T) {
 	planPath := filepath.Join(dir, "env.plan.json")
 	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE env_plan_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "`+sqliteURLFromPath(dbPath)+`"
   src = "schema.sql"
   dev = "sqlite://dev.db"
 }
@@ -495,7 +500,7 @@ func TestNewCompatCommand_SchemaPlanResolves(t *testing.T) {
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE compat_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+dbPath,
+		"--from", sqliteURLFromPath(dbPath),
 		"--to", "file://"+schemaPath,
 		"--output", planPath,
 	)

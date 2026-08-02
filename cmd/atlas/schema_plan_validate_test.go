@@ -113,7 +113,7 @@ func TestSchemaPlanValidateAcceptsAMatchingPlanSilently(t *testing.T) {
 func TestSchemaPlanValidateAcceptsAtlasAuthoredPlan(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "oracle-validate.db")
-	dbURL := "sqlite://" + dbPath
+	dbURL := sqliteURLFromPath(dbPath)
 	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
 	execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
 	beforeFingerprint := targetSchemaFingerprint(c, dbURL)
@@ -161,7 +161,7 @@ func TestSchemaPlanValidateTreatsForeignFingerprintsAsUnauthenticatedMetadata(t 
 		c.Run(test.name, func(c *qt.C) {
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "target.db")
-			dbURL := "sqlite://" + dbPath
+			dbURL := sqliteURLFromPath(dbPath)
 			planPath := filepath.Join(dir, "foreign-fingerprint.plan.hcl")
 			seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
 			execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
@@ -210,7 +210,7 @@ func TestSchemaPlanValidateRejectsAtlasAuthoredPlanMutations(t *testing.T) {
 		c.Run(test.name, func(c *qt.C) {
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "target.db")
-			dbURL := "sqlite://" + dbPath
+			dbURL := sqliteURLFromPath(dbPath)
 			planPath := filepath.Join(dir, "mutated.plan.hcl")
 			seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
 			execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
@@ -235,7 +235,7 @@ func TestSchemaPlanValidateRejectsMalformedAtlasPlanWithoutMutation(t *testing.T
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	dbURL := "sqlite://" + dbPath
+	dbURL := sqliteURLFromPath(dbPath)
 	planPath := filepath.Join(dir, "malformed.plan.hcl")
 	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
 	execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
@@ -257,7 +257,7 @@ func TestSchemaPlanValidateRejectsMalformedAtlasPlanWithoutMutation(t *testing.T
 func TestSchemaPlanValidateRejectsDriftedSourceForAtlasAuthoredPlan(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "drifted-target.db")
-	dbURL := "sqlite://" + dbPath
+	dbURL := sqliteURLFromPath(dbPath)
 	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
 	seedSQLiteSchema(c, dbPath, "CREATE TABLE drifted (id INTEGER PRIMARY KEY);")
 	execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
@@ -279,7 +279,7 @@ func TestSchemaPlanValidateRejectsChangedDesiredStateForAtlasAuthoredPlan(t *tes
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	dbURL := "sqlite://" + dbPath
+	dbURL := sqliteURLFromPath(dbPath)
 	extraDesiredPath := filepath.Join(dir, "extra-desired.sql")
 	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
 	execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
@@ -380,7 +380,7 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
 		aliasPath := filepath.Dir(fixture.dbPath) + string(os.PathSeparator) + "." +
 			string(os.PathSeparator) + filepath.Base(fixture.dbPath)
-		aliasURL := "sqlite://" + aliasPath + "?mode=rwc"
+		aliasURL := sqliteURLFromPath(aliasPath) + "?mode=rwc"
 
 		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
 			fixture.validateArgs("--dev-url", aliasURL)...)
@@ -412,7 +412,7 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 		c.Assert(os.Link(fixture.dbPath, aliasPath), qt.IsNil)
 
 		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
-			fixture.validateArgs("--dev-url", "sqlite://"+aliasPath)...)
+			fixture.validateArgs("--dev-url", sqliteURLFromPath(aliasPath))...)
 
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(out, qt.Contains, "--dev-url must not point at the target database")

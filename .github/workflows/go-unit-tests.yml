@@ -67,4 +67,4 @@ jobs:
         run: go test -v -count=1 ./migration/generator -run '^TestMigrationPlanWriteFiles_' -timeout 5m
 
       - name: Run Windows database identity and schema plan safety tests
-        run: go test -v -count=1 ./internal/atlasurl ./internal/atlasschema ./cmd/atlas -run '^(TestSameDatabase_|TestSimulateOnDev_|TestSchemaPlanValidate)' -timeout 5m
+        run: go test -v -count=1 ./internal/atlasurl ./internal/atlasschema ./cmd/atlas -run '^(TestSameDatabaseEndpoint_|TestMayAddressSameDatabase_|TestSimulateOnDev_|TestSchemaPlanValidate)' -timeout 5m

@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasfilter"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -113,13 +114,13 @@ func RehearsePlanStatements(
 		return fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
 	}
 
-	devConn, err := connectSimulationDev(ctx, devURL, conn.Info(), opts.TargetURL, opts.DesiredURLs)
+	devConn, err := connectSimulationDev(ctx, devURL, conn, opts.TargetURL, opts.DesiredURLs)
 	if err != nil {
 		return err
 	}
 	defer dbschema.CloseAndWarn(devConn)
 
-	if err := rehearseStatementsOnDev(ctx, devConn, current, opts.TxMode, statements); err != nil {
+	if err := rehearseStatementsOnDev(ctx, conn, devConn, current, opts.TxMode, statements); err != nil {
 		return err
 	}
 
@@ -178,5 +179,5 @@ func NewEphemeralSQLiteDev() (devURL string, cleanup func(), err error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("create ephemeral dev database directory: %w", err)
 	}
-	return "sqlite://" + filepath.Join(dir, "dev.db"), func() { _ = os.RemoveAll(dir) }, nil
+	return atlasurl.SQLiteURLFromPath(filepath.Join(dir, "dev.db")), func() { _ = os.RemoveAll(dir) }, nil
 }
