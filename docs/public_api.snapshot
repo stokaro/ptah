@@ -3617,7 +3617,7 @@ type EmbeddedField struct {
     Mode             string                       // inline, json, relation, skip
     Prefix           string                       // For inline mode - prefix for field names
     Name             string                       // For json mode - column name
-    Type             string                       // For json mode - column type (JSON/JSONB)
+    Type             string                       // For json/relation mode - generated column type
     Nullable         bool                         // Whether the field can be null
     Field            string                       // For relation mode - foreign key field name
     Ref              string                       // For relation mode - reference table(column)
