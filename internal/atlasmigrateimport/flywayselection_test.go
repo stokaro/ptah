@@ -282,6 +282,45 @@ func TestLoadFSFlywayAtlasVersions(t *testing.T) {
 	}
 }
 
+// TestLoadFSFlywayBaselineDoesNotShiftSurvivorVersions pins that the tie index
+// is counted within one kind, so a baseline never consumes a slot the survivors
+// are numbered from.
+//
+// It needs a directory where the baseline and the survivors score to the SAME
+// ordering components, which is rarer than it sounds: a survivor must carry a
+// version token that is string-greater than the baseline's, and equal
+// components usually means an equal token, which the baseline squashes. Bx/Vy/Vz
+// gets there — all three score {0}, "y" and "z" both outrank "x" as strings, and
+// the baseline is visited first so its backward reach has nothing to drop. The
+// oracle covers and executes all three.
+//
+// Without the kind guard the survivors still order correctly, because the
+// baseline lives in a different band, so ordering alone cannot separate the two
+// rules. What separates them is stability: adding a baseline to a directory
+// would renumber every survivor that scored like it, and a renumbered migration
+// is one the migrator no longer recognizes as already applied.
+func TestLoadFSFlywayBaselineDoesNotShiftSurvivorVersions(t *testing.T) {
+	c := qt.New(t)
+
+	withBaseline, err := atlasmigrateimport.LoadFS(
+		flywaySource("Bx__a.sql", "Vy__b.sql", "Vz__c.sql"), "migrations", atlasmigrateimport.FormatFlyway)
+	c.Assert(err, qt.IsNil)
+	c.Assert(entryNames(withBaseline), qt.DeepEquals, []string{
+		"40804_a.sql",
+		"4611686018427428707_b.sql",
+		"4611686018427428708_c.sql",
+	})
+
+	withoutBaseline, err := atlasmigrateimport.LoadFS(
+		flywaySource("Vy__b.sql", "Vz__c.sql"), "migrations", atlasmigrateimport.FormatFlyway)
+	c.Assert(err, qt.IsNil)
+	// The survivors keep the versions they had before the baseline was added.
+	c.Assert(entryNames(withoutBaseline), qt.DeepEquals, []string{
+		"4611686018427428707_b.sql",
+		"4611686018427428708_c.sql",
+	})
+}
+
 // TestLoadFSFlywayRefusesVersionsAtlasCECannotExecute covers the directories
 // Atlas CE itself cannot run: it panics with an index-out-of-range on a
 // duplicate version rather than reporting anything, so refusing is a refusal

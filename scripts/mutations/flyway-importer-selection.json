@@ -60,7 +60,7 @@
       "name": "the tie index is never advanced, so equal keys collide",
       "file": "internal/atlasmigrateimport/importer.go",
       "old": "\t\tif previous != nil && file.kind == previous.kind && slices.Equal(file.components, previous.components) {\n\t\t\ttie++",
-      "new": "\t\tif false {\n\t\t\ttie++"
+      "new": "\t\tif previous != nil && false {\n\t\t\ttie++"
     },
     {
       "name": "the tie index ignores the kind, so a baseline ties with a survivor",
