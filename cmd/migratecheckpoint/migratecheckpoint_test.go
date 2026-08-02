@@ -110,6 +110,104 @@ func seedAtlasMigrations(c *qt.C, dir string) {
 		[]byte("ALTER TABLE users ADD COLUMN email TEXT;\n"), 0o600), qt.IsNil)
 }
 
+func TestMigrateCheckpointCommand_RefusesAtlasIntoUnhashedPtahDirectory(t *testing.T) {
+	tests := []struct {
+		name  string
+		extra []string
+	}{
+		{name: "explicit atlas", extra: []string{"--dir-format", "atlas"}},
+		// The native default is ptah, so the explicit spelling is the only way
+		// to reach this natively; the compat surface reaches it unflagged,
+		// which is covered in cmd/atlas.
+		{name: "atlas with a description", extra: []string{"--dir-format", "atlas", "--description", "snap"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			seedMigrations(c, dir) // ptah pair, deliberately NEVER hashed
+			shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+			args := append([]string{"--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite"}, tt.extra...)
+			out, err := runCheckpoint(args...)
+
+			// With no sum file the marker-shaped check cannot see the conflict;
+			// only a content-shaped one can. Left unguarded, the two auto rules
+			// then disagree about this directory forever: discovery prefers the
+			// ptah files and never sees the checkpoint, while verification finds
+			// the atlas.sum and calls the directory valid.
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(out, qt.Contains, "holds ptah-format migrations")
+
+			// Protected state: nothing written, and above all no atlas.sum —
+			// that file is what would make the invisibility permanent.
+			written, globErr := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+			c.Assert(globErr, qt.IsNil)
+			c.Assert(written, qt.HasLen, 0)
+			sums, globErr := filepath.Glob(filepath.Join(dir, "*.sum"))
+			c.Assert(globErr, qt.IsNil)
+			c.Assert(sums, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestMigrateCheckpointCommand_AtlasGuardDoesNotOverfire(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedAtlasMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	// A pure Atlas name carries no direction component, so ParseMigrationFileName
+	// yields nothing and the ptah-content guard must not fire. This separates
+	// "holds ptah files" from "holds any files at all" — without it the guard
+	// could refuse every directory and nothing would notice.
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	written, err := filepath.Glob(filepath.Join(dir, "*_checkpoint.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 1)
+}
+
+func TestMigrateCheckpointCommand_SurfacesUnreadableDirectory(t *testing.T) {
+	c := qt.New(t)
+	// A regular file where the migrations directory should be: stat of
+	// <file>/ptah.sum fails with ENOTDIR, which is deterministic on every
+	// platform and — unlike a chmod-based setup — needs no privilege check.
+	// Go does not fold ENOTDIR into fs.ErrNotExist, so this reaches the branch.
+	notADir := filepath.Join(t.TempDir(), "migrations")
+	c.Assert(os.WriteFile(notADir, []byte("not a directory\n"), 0o600), qt.IsNil)
+
+	// A stat failure that is not ErrNotExist means we could not determine
+	// whether the conflict exists. Treating that as "no conflict" would write
+	// into a directory whose state is unknown, so it must surface instead.
+	out, err := runCheckpoint("--shadow-db", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
+		"--migrations-dir", notADir, "--dialect", "sqlite", "--dir-format", "atlas")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "failed to inspect migrations directory")
+}
+
+func TestMigrateCheckpointCommand_AtlasVersionGuardMeasuresRenderedValue(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedAtlasMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	// Eleven characters, ten rendered digits: the file name is written with %d,
+	// so this produces 1234567890_checkpoint.sql — precisely the ptah-width name
+	// the guard exists to prevent. Measuring len(explicit) lets it through.
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas", "--version", "01234567890")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "indistinguishable from a ptah migration name")
+
+	written, err := filepath.Glob(filepath.Join(dir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 2) // the two seeded migrations, no checkpoint
+}
+
 func TestMigrateCheckpointCommand_RejectsAutoDirFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

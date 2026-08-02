@@ -108,6 +108,28 @@ func TestWriteAtlasCheckpointFile_WritesFileAndSum(t *testing.T) {
 	c.Assert(os.IsNotExist(err), qt.IsTrue)
 }
 
+func TestWriteAtlasCheckpointFile_RollsBackWhenTheSumCannotBeWritten(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "20250801000001_init.sql"),
+		[]byte("CREATE TABLE users (id integer);\n"), 0o600), qt.IsNil)
+	// atlas.sum as a directory: the checkpoint file writes fine, then the
+	// atomic sum replace fails. This is the only way to reach the rollback.
+	c.Assert(os.Mkdir(filepath.Join(dir, "atlas.sum"), 0o755), qt.IsNil)
+
+	_, err := generator.WriteAtlasCheckpointFile(dir, 20250801000003, "snapshot", "CREATE TABLE users (id integer);")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "checksum")
+
+	// The checkpoint must NOT survive: a checkpoint no integrity file covers
+	// makes the whole directory fail verification, and it would be applied on
+	// the next run. Asserting the file is gone is the point — the error alone
+	// says nothing about what was left behind.
+	leftovers, globErr := filepath.Glob(filepath.Join(dir, "*_snapshot.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(leftovers, qt.HasLen, 0)
+}
+
 func TestWriteAtlasCheckpointFile_RefusesToOverwrite(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

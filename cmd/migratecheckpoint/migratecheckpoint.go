@@ -190,15 +190,54 @@ func checkIntegrityFileConflict(migrationsDir string, dirFormat migrator.Migrati
 	if dirFormat == migrator.MigrationDirFormatPtah {
 		writes, foreign = migratesum.FileName, migratesum.AtlasFileName
 	}
-	if _, err := os.Stat(filepath.Join(migrationsDir, foreign)); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
+	switch _, err := os.Stat(filepath.Join(migrationsDir, foreign)); {
+	case err == nil:
+		return fmt.Errorf(
+			"cannot write %s-format checkpoint files into a directory that already has %s: it would leave both %s and %s behind, which --%s=%s refuses to read; re-hash the directory into one format first",
+			dirFormat, foreign, foreign, writes, dirFormatFlag, migrator.MigrationDirFormatAuto,
+		)
+	case !errors.Is(err, os.ErrNotExist):
 		return fmt.Errorf("failed to inspect migrations directory: %w", err)
 	}
+	return checkPtahFileConflict(migrationsDir, dirFormat)
+}
+
+// checkPtahFileConflict refuses an Atlas-format checkpoint in a directory that
+// holds ptah-convention migration files, whether or not it has been hashed.
+//
+// The integrity-file check above only catches directories somebody already ran
+// `migrations hash` on. An unhashed ptah directory has neither sum file, so it
+// passes that check — and then the two auto-mode rules disagree about the
+// result forever: discovery prefers the ptah files and never sees the
+// checkpoint, while verification finds the atlas.sum this command wrote and
+// reports the directory as valid. The checkpoint ends up permanently invisible
+// and permanently integrity-covered, which is worse than either failure alone.
+//
+// The test is content-shaped, so it holds for both. A ptah file name carries a
+// direction component that ParseMigrationFileName requires, so a pure Atlas
+// directory yields zero matches and never trips this.
+//
+// The converse (Atlas-shaped files under --dir-format=ptah) is NOT symmetric
+// and is deliberately not checked here: the Atlas name grammar also accepts
+// ptah's own `NNNNNNNNNN_name.up.sql`, so every ptah directory would match it
+// and the guard would refuse the format's ordinary use.
+func checkPtahFileConflict(migrationsDir string, dirFormat migrator.MigrationDirFormat) error {
+	if dirFormat != migrator.MigrationDirFormatAtlas {
+		return nil
+	}
+	ptahFiles, err := migrator.DiscoverMigrationFiles(os.DirFS(migrationsDir), migrator.MigrationDirFormatPtah)
+	if err != nil || len(ptahFiles) == 0 {
+		// A directory with no readable ptah files is exactly the case this
+		// guard must let through, and DiscoverMigrationFiles reports "nothing
+		// matched this format" as an error, so a failure here is not evidence
+		// of a conflict.
+		return nil
+	}
 	return fmt.Errorf(
-		"cannot write %s-format checkpoint files into a directory that already has %s: it would leave both %s and %s behind, which --%s=%s refuses to read; re-hash the directory into one format first",
-		dirFormat, foreign, foreign, writes, dirFormatFlag, migrator.MigrationDirFormatAuto,
+		"cannot write %s-format checkpoint files into a directory that holds ptah-format migrations (%s): "+
+			"the checkpoint would be invisible to format auto-detection, which reads the ptah files instead; "+
+			"convert the directory first or pass --%s=%s",
+		dirFormat, ptahFiles[0].Path, dirFormatFlag, migrator.MigrationDirFormatPtah,
 	)
 }
 
@@ -219,9 +258,19 @@ const ptahVersionWidth = 10
 //
 // Without --version the default depends on the target convention. The ptah
 // format counts: one above the newest migration. The Atlas format timestamps,
-// as Atlas itself was measured to do, bumped past the newest migration when a
-// directory already holds a future-dated one. Either way the checkpoint sorts
-// after and covers the whole existing history.
+// as Atlas itself was measured to do. Either way the checkpoint must sort
+// after every migration the replay covered, so that a fresh database runs the
+// checkpoint alone.
+//
+// The two rules are combined rather than trusted individually: the timestamp
+// is only used when it already outranks the whole history, and otherwise falls
+// back to the counter. [generator.ResolveAtlasCheckpointVersion] scans only the
+// top level, while the replay and the reader recurse, so on a directory with a
+// nested future-dated migration the timestamp alone sorts BELOW a file whose
+// SQL the checkpoint already contains — the fresh database would then run the
+// checkpoint and replay that migration on top of it, which is the double-apply
+// of stokaro/ptah#954. `latest` here comes from the recursive walk, so it sees
+// what the timestamp cannot.
 //
 // An explicit --version must be a positive value that fits the format's
 // file-name shape and is above every existing migration — otherwise the
@@ -244,7 +293,10 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migrator
 
 	if explicit == "" {
 		if atlas {
-			return generator.ResolveAtlasCheckpointVersion(migrationsDir), nil
+			if version := generator.ResolveAtlasCheckpointVersion(migrationsDir); version > latest {
+				return version, nil
+			}
+			return latest + 1, nil
 		}
 		return latest + 1, nil
 	}
@@ -257,10 +309,14 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migrator
 		return 0, fmt.Errorf("invalid --%s value %d: must be a positive version", versionFlag, version)
 	}
 	if atlas {
-		if len(explicit) == ptahVersionWidth {
+		// The rendered value, not the flag text: the file name is written with
+		// %d, so `--version 01234567890` renders as 1234567890 — exactly the
+		// ten-digit name this guard exists to prevent, while len(explicit) is
+		// eleven.
+		if rendered := strconv.FormatInt(version, 10); len(rendered) == ptahVersionWidth {
 			return 0, fmt.Errorf(
 				"invalid --%s value %s: an Atlas checkpoint version of exactly %d digits is indistinguishable from a ptah migration name and is skipped by format auto-detection",
-				versionFlag, explicit, ptahVersionWidth,
+				versionFlag, rendered, ptahVersionWidth,
 			)
 		}
 	} else if version > maxMigrationVersion {

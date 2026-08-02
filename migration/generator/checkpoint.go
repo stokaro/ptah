@@ -118,12 +118,22 @@ const AtlasCheckpointDirective = "-- atlas:checkpoint"
 
 // ResolveAtlasCheckpointVersion returns the version an Atlas-format checkpoint
 // written into outputDir should carry: the current UTC timestamp in Atlas's
-// 20060102150405 layout, bumped past the newest migration already present so
-// the checkpoint always sorts last and therefore covers the whole history.
+// 20060102150405 layout, bumped past the newest migration at the TOP LEVEL of
+// outputDir.
 //
 // This mirrors the version policy Atlas itself was measured to use and the one
 // `migrate new --dir-format atlas` already applies, rather than the ptah
 // format's "newest + 1" counter.
+//
+// The scan is deliberately shallow, matching Atlas's own reader, which does not
+// recurse. Ptah's reader and its checkpoint replay DO recurse, so this value
+// alone does not guarantee the checkpoint sorts above everything its body
+// covers: a nested migration dated after the timestamp still outranks it, and a
+// fresh database would then run the checkpoint and replay that migration on top
+// of it. Callers writing into a directory Ptah will read must take the maximum
+// of this and the newest version from a recursive walk — see
+// resolveCheckpointVersion in cmd/migratecheckpoint. The signature is kept free
+// of that bound on purpose; supplying it is the caller's job.
 func ResolveAtlasCheckpointVersion(outputDir string) int64 {
 	return nextAvailableAtlasMigrationVersion(outputDir, nextAtlasMigrationVersion())
 }

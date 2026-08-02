@@ -45,7 +45,7 @@ ptah migrations checkpoint --migrations-dir ./migrations \
 | --- | --- |
 | `--shadow-db` | Ephemeral database the directory is replayed into (required). |
 | `--migrations-dir` | Directory to checkpoint (default `./migrations`). |
-| `--version` | Checkpoint version; defaults to one above the newest migration (`ptah` format) or a UTC timestamp bumped past it (`atlas` format). Must be positive and above every existing version; at most ten digits under `ptah`, and never exactly ten digits under `atlas`. |
+| `--version` | Checkpoint version; defaults to one above the newest migration (`ptah` format) or a UTC timestamp raised to that bound when the bound is higher (`atlas` format). Must be positive and above every existing version; at most ten digits under `ptah`, and never exactly ten rendered digits under `atlas`. |
 | `--description` | Description used in the file name (default `checkpoint`). |
 | `--dialect` | Asserted dialect; inferred from the shadow database when omitted. |
 | `--schemas` | Comma-separated schemas to introspect. |
@@ -74,7 +74,11 @@ the historical migrations it squashes coexist in one directory.
 named `<version>_<description>.sql` whose **first line** is the
 `-- atlas:checkpoint` directive, with `atlas.sum` refreshed rather than
 `ptah.sum`. The version is a UTC timestamp (`20060102150405`), as Atlas writes
-it. There is no down body — the Atlas format is up-only, so an Atlas-format
+it, raised to one above the newest migration in the directory whenever that is
+higher. Subdirectories count: the replay and the reader both descend into them,
+so a nested migration dated after the timestamp would otherwise sort *after* a
+checkpoint whose body already contains its SQL, and a fresh database would run
+both. There is no down body — the Atlas format is up-only, so an Atlas-format
 checkpoint is not reversible. See
 [Atlas-compatible surface](#atlas-compatible-surface) below.
 
@@ -112,6 +116,13 @@ A directory must carry only one integrity file. Checkpointing a `ptah.sum`
 directory under `--dir-format atlas` (or an `atlas.sum` directory under
 `--dir-format ptah`) would leave both behind, which `--dir-format auto` refuses
 to read, so the command rejects it before writing anything.
+
+An **unhashed** Ptah directory has no sum file to detect, so the same refusal is
+also made on file shape: `--dir-format atlas` is rejected whenever the directory
+holds Ptah-convention migrations at all. Otherwise the checkpoint would be
+written and then stay permanently invisible — discovery reads the Ptah pair and
+never sees it, while `validate` finds the `atlas.sum` and reports the directory
+as sound.
 
 ## Rollback boundary
 

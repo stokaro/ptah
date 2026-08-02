@@ -62,20 +62,62 @@
     {
       "name": "the guard also refuses the directory's own integrity file",
       "file": "cmd/migratecheckpoint/migratecheckpoint.go",
-      "old": "\tif _, err := os.Stat(filepath.Join(migrationsDir, foreign)); err != nil {",
-      "new": "\tif _, err := os.Stat(filepath.Join(migrationsDir, writes)); err != nil {"
+      "old": "\tswitch _, err := os.Stat(filepath.Join(migrationsDir, foreign)); {",
+      "new": "\tswitch _, err := os.Stat(filepath.Join(migrationsDir, writes)); {"
+    },
+    {
+      "name": "an unreadable directory is treated as conflict-free",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tcase !errors.Is(err, os.ErrNotExist):\n\t\treturn fmt.Errorf(\"failed to inspect migrations directory: %w\", err)",
+      "new": "\tcase false:\n\t\treturn fmt.Errorf(\"failed to inspect migrations directory: %w\", err)"
+    },
+    {
+      "name": "the ptah-content guard is disabled, so unhashed ptah dirs convert",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\treturn checkPtahFileConflict(migrationsDir, dirFormat)",
+      "new": "\treturn nil"
+    },
+    {
+      "name": "the ptah-content guard fires on any format, not just atlas",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tif dirFormat != migrator.MigrationDirFormatAtlas {\n\t\treturn nil\n\t}\n\tptahFiles, err := migrator.DiscoverMigrationFiles(os.DirFS(migrationsDir), migrator.MigrationDirFormatPtah)",
+      "new": "\tptahFiles, err := migrator.DiscoverMigrationFiles(os.DirFS(migrationsDir), migrator.MigrationDirFormatPtah)"
+    },
+    {
+      "name": "the ptah-content guard probes the atlas format, so it refuses every directory",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tptahFiles, err := migrator.DiscoverMigrationFiles(os.DirFS(migrationsDir), migrator.MigrationDirFormatPtah)",
+      "new": "\tptahFiles, err := migrator.DiscoverMigrationFiles(os.DirFS(migrationsDir), migrator.MigrationDirFormatAtlas)"
     },
     {
       "name": "the ptah-width version guard is dropped for atlas",
       "file": "cmd/migratecheckpoint/migratecheckpoint.go",
-      "old": "\t\tif len(explicit) == ptahVersionWidth {",
-      "new": "\t\tif false {"
+      "old": "\t\tif rendered := strconv.FormatInt(version, 10); len(rendered) == ptahVersionWidth {",
+      "new": "\t\tif rendered := strconv.FormatInt(version, 10); false && len(rendered) == ptahVersionWidth {"
+    },
+    {
+      "name": "the width guard measures the flag text instead of the rendered value",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\t\tif rendered := strconv.FormatInt(version, 10); len(rendered) == ptahVersionWidth {",
+      "new": "\t\tif rendered := explicit; len(rendered) == ptahVersionWidth {"
     },
     {
       "name": "the ten-digit ceiling also applies to atlas versions",
       "file": "cmd/migratecheckpoint/migratecheckpoint.go",
-      "old": "\tif atlas {\n\t\tif len(explicit) == ptahVersionWidth {",
-      "new": "\tif atlas && version <= maxMigrationVersion {\n\t\tif len(explicit) == ptahVersionWidth {"
+      "old": "\tif atlas {\n\t\t// The rendered value, not the flag text",
+      "new": "\tif atlas && version <= maxMigrationVersion {\n\t\t// The rendered value, not the flag text"
+    },
+    {
+      "name": "the atlas timestamp is trusted without the recursive bound",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\t\t\tif version := generator.ResolveAtlasCheckpointVersion(migrationsDir); version > latest {\n\t\t\t\treturn version, nil\n\t\t\t}\n\t\t\treturn latest + 1, nil",
+      "new": "\t\t\treturn generator.ResolveAtlasCheckpointVersion(migrationsDir), nil"
+    },
+    {
+      "name": "the recursive bound is applied with the wrong comparison",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\t\t\tif version := generator.ResolveAtlasCheckpointVersion(migrationsDir); version > latest {",
+      "new": "\t\t\tif version := generator.ResolveAtlasCheckpointVersion(migrationsDir); version >= latest {"
     },
     {
       "name": "the atlas dry run writes files anyway",
@@ -130,6 +172,12 @@
       "file": "migration/generator/checkpoint.go",
       "old": "\treturn nextAvailableAtlasMigrationVersion(outputDir, nextAtlasMigrationVersion())",
       "new": "\treturn nextAtlasMigrationVersion()"
+    },
+    {
+      "name": "the checkpoint survives a failed atlas.sum write",
+      "file": "migration/generator/checkpoint.go",
+      "old": "\t\t_ = os.Remove(filePath)\n\t\treturn \"\", fmt.Errorf(\"failed to write atlas checkpoint checksum: %w\", err)",
+      "new": "\t\treturn \"\", fmt.Errorf(\"failed to write atlas checkpoint checksum: %w\", err)"
     },
     {
       "name": "a non-positive checkpoint version is accepted",

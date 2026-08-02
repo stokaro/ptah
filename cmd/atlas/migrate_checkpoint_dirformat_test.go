@@ -315,6 +315,96 @@ func sqliteCheckpointColumnCount(c *qt.C, dbPath, table, column string) int {
 	return count
 }
 
+// TestCompatCommand_MigrateCheckpointNestedMigrationOutranksTimestamp pins the
+// blocker fix: the replay and the reader recurse, but the Atlas timestamp
+// resolver scans only the top level. A nested migration dated after the
+// timestamp is therefore replayed INTO the checkpoint body while still sorting
+// AFTER it, so a fresh database runs the checkpoint and then replays that
+// migration on top of it — stokaro/ptah#954's double-apply, produced by our own
+// writer. It is also a divergence in the direction the PR body called
+// impossible: the pinned CE reader is shallow, so CE applies the same directory
+// at exit 0 with one clean row while Ptah exits 1 and leaves a dirty row.
+func TestCompatCommand_MigrateCheckpointNestedMigrationOutranksTimestamp(t *testing.T) {
+	c := qt.New(t)
+	dir := filepath.Join(c.TempDir(), "m")
+	writeCheckpointAtlasFixture(c, dir)
+	c.Assert(os.MkdirAll(filepath.Join(dir, "sub"), 0o755), qt.IsNil)
+	// Dated far beyond any real timestamp, so only a recursive bound can beat it.
+	c.Assert(os.WriteFile(filepath.Join(dir, "sub", "29990101000000_future.sql"),
+		[]byte("CREATE TABLE ckpt_future (id INTEGER);\n"), 0o600), qt.IsNil)
+	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
+
+	out, err := runCompatCheckpoint(c,
+		"migrate", "checkpoint",
+		"--dir", dir,
+		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "shadow.db"),
+		"--dir-format", "atlas",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	name := assertAtlasCheckpointWritten(c, dir, "checkpoint")
+	version, err := strconv.ParseInt(strings.TrimSuffix(name, "_checkpoint.sql"), 10, 64)
+	c.Assert(err, qt.IsNil)
+	// A bare timestamp would be ~2026xxxxxxxxxx here and lose to the nested file.
+	c.Assert(version > 29990101000000, qt.IsTrue, qt.Commentf("version=%d", version))
+
+	// The decisive assertion is the apply, not the number: a fresh database must
+	// run the checkpoint alone and record one clean row.
+	freshDB := filepath.Join(c.TempDir(), "fresh.db")
+	applyOut, _, err := compatApply(dir, freshDB)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", applyOut))
+	rows := compatRevisionRows(c, freshDB)
+	c.Assert(rows, qt.HasLen, 1)
+	c.Assert(rows[0].Applied, qt.Equals, int64(rows[0].Total))
+	// The nested migration's table exists via the cumulative body, and its own
+	// file never ran — the two facts that together mean no double-apply.
+	c.Assert(sqliteTableCount(c, freshDB, "ckpt_future"), qt.Equals, 1)
+	c.Assert(rows[0].Version, qt.Equals, strings.TrimSuffix(name, "_checkpoint.sql"))
+}
+
+func TestCompatCommand_MigrateCheckpointDirFormatIsCaseFolded(t *testing.T) {
+	c := qt.New(t)
+	dir := filepath.Join(c.TempDir(), "m")
+	writeCheckpointAtlasFixture(c, dir)
+
+	// A row of the PR's own branch table that nothing held: the mapper lowercases
+	// before matching, so an upper-case spelling selects atlas rather than
+	// falling through to the unknown-format rejection.
+	out, err := runCompatCheckpoint(c,
+		"migrate", "checkpoint",
+		"--dir", dir,
+		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "shadow.db"),
+		"--dir-format", "ATLAS",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	assertAtlasCheckpointWritten(c, dir, "checkpoint")
+}
+
+func TestCompatCommand_MigrateCheckpointRefusesUnhashedPtahDirectory(t *testing.T) {
+	c := qt.New(t)
+	dir := filepath.Join(c.TempDir(), "m")
+	writeCheckpointPtahFixture(c, dir) // never hashed: no sum file at all
+
+	// The unflagged compat run is the reachable form of this, because the compat
+	// default is atlas. Before the content-shaped guard it converted the
+	// directory at exit 0.
+	out, err := runCompatCheckpoint(c,
+		"migrate", "checkpoint",
+		"--dir", dir,
+		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "shadow.db"),
+	)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "holds ptah-format migrations", qt.Commentf("%s", out))
+
+	sums, globErr := filepath.Glob(filepath.Join(dir, "*.sum"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(sums, qt.HasLen, 0)
+	written, globErr := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
 func TestCompatCommand_MigrateCheckpointDirFormatRejections(t *testing.T) {
 	tests := []struct {
 		name  string
