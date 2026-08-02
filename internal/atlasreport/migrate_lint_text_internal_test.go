@@ -1,14 +1,15 @@
 package atlasreport
 
 // White-box testing required: these tests pin deterministic report rendering
-// through writeMigrateLintText's injected clock. The clock is deliberately not
-// part of the exported API, so these assertions cannot be expressed through
-// the public WriteMigrateLintText entry point alone.
+// through writeMigrateLintText's injected clock and the Atlas-measured wrapping
+// boundary. Neither implementation detail belongs in the exported API, so
+// these assertions cannot be expressed through WriteMigrateLintText alone.
 
 import (
 	"bytes"
 	"cmp"
 	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -21,6 +22,38 @@ import (
 
 func fixedZeroClock() func() time.Time {
 	return func() time.Time { return time.Unix(0, 0) }
+}
+
+func TestWrapContent_AtlasWidthBoundary(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{
+			name: "88 content columns remain on one line",
+			text: strings.Repeat("x", 88),
+			want: []string{strings.Repeat("x", 88)},
+		},
+		{
+			name: "word reaching column 89 wraps",
+			text: strings.Repeat("x", 87) + " y",
+			want: []string{strings.Repeat("x", 87), "y"},
+		},
+		{
+			name: "word reaching column 90 wraps",
+			text: strings.Repeat("x", 87) + " yy",
+			want: []string{strings.Repeat("x", 87), "yy"},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(wrapContent(test.text, lintWrapWidth), qt.DeepEquals, test.want)
+		})
+	}
 }
 
 // analyzeMigrations builds a lint analysis for the given migration files,
