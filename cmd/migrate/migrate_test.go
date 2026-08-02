@@ -2,6 +2,7 @@ package migrate_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/migrate"
+	"github.com/stokaro/ptah/migration/safety"
 )
 
 func TestMigratePlanTextOutputContainsSQLNotASTPointers(t *testing.T) {
@@ -41,6 +43,33 @@ type User struct {
 	c.Assert(out.String(), qt.Contains, `CREATE TABLE "users"`)
 	c.Assert(out.String(), qt.Not(qt.Contains), "[0x")
 	c.Assert(out.String(), qt.Not(qt.Contains), "&{")
+}
+
+func TestMigratePlanJSONReportEmitsStructuredSafetyOnStdout(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	schemaFile := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaFile, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	var stdout, stderr bytes.Buffer
+	cmd := migrate.NewMigrateCommand()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--schema-file", schemaFile,
+		"--db-url", "sqlite:///" + filepath.Join(dir, "ptah.db"),
+		"--report", "json",
+	})
+
+	err := cmd.Execute()
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+
+	var report safety.Report
+	c.Assert(json.Unmarshal(stdout.Bytes(), &report), qt.IsNil)
+	c.Assert(report.Highest, qt.Equals, safety.Safe)
+	c.Assert(report.Destructive, qt.IsFalse)
+	c.Assert(report.Assessments, qt.HasLen, 1)
+	c.Assert(report.Assessments[0].Statement, qt.Contains, `CREATE TABLE "users"`)
 }
 
 func TestMigratePlan_OCIFlags(t *testing.T) {

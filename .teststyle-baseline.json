@@ -775,13 +775,13 @@
       "count": 2
     },
     {
-      "path": "migration/generator/shadow_test.go",
+      "path": "migration/generator/shadow_internal_test.go",
       "function": "TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB",
       "kind": "if",
       "count": 3
     },
     {
-      "path": "migration/generator/shadow_test.go",
+      "path": "migration/generator/shadow_internal_test.go",
       "function": "TestGenerateMigrationShadowVerificationWithRealDB",
       "kind": "if",
       "count": 3
@@ -807,12 +807,6 @@
     {
       "path": "migration/lint/lint_test.go",
       "function": "TestLintFS_SameFileCreatedTablesAreExempt",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/lint/register_external_test.go",
-      "function": "TestRegisterCustomRuleFromExternalPackage",
       "kind": "if",
       "count": 1
     },
@@ -1218,11 +1212,6 @@
     },
     {
       "path": "migration/generator/safety_test.go",
-      "package": "generator",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "migration/generator/shadow_test.go",
       "package": "generator",
       "reason": "same-package test file is not named *_internal_test.go"
     },

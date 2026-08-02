@@ -7,7 +7,6 @@ import (
 	"maps"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/stokaro/ptah/config"
@@ -19,18 +18,17 @@ import (
 	"github.com/stokaro/ptah/migration/internal/shadowdb"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
-	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
 var missingColumnErrorRe = regexp.MustCompile(`column "([^"]+)" of relation "([^"]+)" does not exist`)
 
-// ShadowVerificationResult is a structured shadow-database verification
-// outcome. Errors preserve the historical text form through
+// ShadowVerificationResult describes one failed shadow-database verification.
+// Errors preserve the text form through
 // ShadowVerificationError.Error while exposing mismatches to callers that need
 // machine-readable diagnostics.
 type ShadowVerificationResult struct {
-	Stage      string           `json:"stage"`
-	Success    bool             `json:"success"`
+	Stage string `json:"stage"`
+	// Mismatches contains every structural mismatch in deterministic category and object order.
 	Mismatches []ShadowMismatch `json:"mismatches,omitempty"`
 }
 
@@ -69,8 +67,7 @@ func newShadowVerificationError(stage, kind, message string, err error) *ShadowV
 	}
 	return &ShadowVerificationError{
 		Result: ShadowVerificationResult{
-			Stage:   stage,
-			Success: false,
+			Stage: stage,
 			Mismatches: []ShadowMismatch{{
 				Kind:    kind,
 				Message: message,
@@ -279,167 +276,6 @@ func assertShadowSchemaMatches(
 	}
 	return &ShadowVerificationError{Result: ShadowVerificationResult{
 		Stage:      "schema-match",
-		Success:    false,
 		Mismatches: collectShadowMismatches(diff),
 	}}
-}
-
-func describeShadowDiff(diff *types.SchemaDiff) string {
-	mismatches := collectShadowMismatches(diff)
-	if len(mismatches) > 0 {
-		return mismatches[0].Message
-	}
-	return "schema differs"
-}
-
-// collectModifiedTableMismatch returns the first structural mismatch for a
-// modified table (a missing/extra column or constraint, or a column change), or
-// nil when the table matches. It is split out of collectShadowMismatches to
-// keep that dispatcher's cyclomatic complexity manageable.
-func collectModifiedTableMismatch(table types.TableDiff) []ShadowMismatch {
-	for _, columnName := range sortedStrings(table.ColumnsAdded) {
-		message := fmt.Sprintf("missing column %s.%s", table.TableName, columnName)
-		return []ShadowMismatch{{Kind: "missing_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message}}
-	}
-	for _, constraintName := range sortedStrings(table.ConstraintsAdded) {
-		message := fmt.Sprintf("missing constraint %s.%s", table.TableName, constraintName)
-		return []ShadowMismatch{{Kind: "missing_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message}}
-	}
-	for _, column := range sortedColumnDiffs(table.ColumnsModified) {
-		message := fmt.Sprintf("column mismatch %s.%s: %s", table.TableName, column.ColumnName, describeChanges(column.Changes))
-		return []ShadowMismatch{{Kind: "column_mismatch", Table: table.TableName, Column: column.ColumnName, Object: table.TableName + "." + column.ColumnName, Changes: column.Changes, Message: message}}
-	}
-	for _, columnName := range sortedStrings(table.ColumnsRemoved) {
-		message := fmt.Sprintf("extra column %s.%s", table.TableName, columnName)
-		return []ShadowMismatch{{Kind: "extra_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message}}
-	}
-	for _, constraintName := range sortedStrings(table.ConstraintsRemoved) {
-		message := fmt.Sprintf("extra constraint %s.%s", table.TableName, constraintName)
-		return []ShadowMismatch{{Kind: "extra_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message}}
-	}
-	return nil
-}
-
-func collectShadowMismatches(diff *types.SchemaDiff) []ShadowMismatch {
-	if diff == nil {
-		return []ShadowMismatch{{Kind: "schema", Message: "schema differs"}}
-	}
-
-	for _, tableName := range sortedStrings(diff.TablesAdded) {
-		return []ShadowMismatch{{Kind: "missing_table", Table: tableName, Object: tableName, Message: "missing table " + tableName}}
-	}
-	for _, table := range sortedTableDiffs(diff.TablesModified) {
-		if mismatch := collectModifiedTableMismatch(table); mismatch != nil {
-			return mismatch
-		}
-	}
-	for _, enumName := range sortedStrings(diff.EnumsAdded) {
-		return []ShadowMismatch{{Kind: "missing_enum", Object: enumName, Message: "missing enum " + enumName}}
-	}
-	for _, enum := range sortedEnumDiffs(diff.EnumsModified) {
-		for _, value := range sortedStrings(enum.ValuesAdded) {
-			message := fmt.Sprintf("missing enum value %s.%s", enum.EnumName, value)
-			return []ShadowMismatch{{Kind: "missing_enum_value", Object: enum.EnumName + "." + value, Message: message}}
-		}
-		for _, value := range sortedStrings(enum.ValuesRemoved) {
-			message := fmt.Sprintf("extra enum value %s.%s", enum.EnumName, value)
-			return []ShadowMismatch{{Kind: "extra_enum_value", Object: enum.EnumName + "." + value, Message: message}}
-		}
-	}
-	indexAdditions := sortedIndexRefs(diff.IndexAdditions())
-	if len(indexAdditions) > 0 {
-		ref := indexAdditions[0]
-		object := ref.Name
-		if ref.TableName != "" {
-			object = ref.TableName + "." + ref.Name
-		}
-		return []ShadowMismatch{{
-			Kind:    "missing_index",
-			Table:   ref.TableName,
-			Object:  object,
-			Message: "missing index " + object,
-		}}
-	}
-	for _, extensionName := range sortedStrings(diff.ExtensionsAdded) {
-		return []ShadowMismatch{{Kind: "missing_extension", Object: extensionName, Message: "missing extension " + extensionName}}
-	}
-	for _, functionName := range sortedStrings(diff.FunctionsAdded) {
-		return []ShadowMismatch{{Kind: "missing_function", Object: functionName, Message: "missing function " + functionName}}
-	}
-	for _, sequenceName := range sortedStrings(diff.SequencesAdded) {
-		return []ShadowMismatch{{Kind: "missing_sequence", Object: sequenceName, Message: "missing sequence " + sequenceName}}
-	}
-	for _, policyName := range sortedStrings(diff.RLSPoliciesAdded) {
-		return []ShadowMismatch{{Kind: "missing_rls_policy", Object: policyName, Message: "missing RLS policy " + policyName}}
-	}
-	for _, tableName := range sortedStrings(diff.RLSEnabledTablesAdded) {
-		return []ShadowMismatch{{Kind: "missing_rls_enablement", Table: tableName, Object: tableName, Message: "missing RLS enablement " + tableName}}
-	}
-	for _, roleName := range sortedStrings(diff.RolesAdded) {
-		return []ShadowMismatch{{Kind: "missing_role", Object: roleName, Message: "missing role " + roleName}}
-	}
-	for _, constraintName := range sortedStrings(diff.ConstraintsAdded) {
-		return []ShadowMismatch{{Kind: "missing_constraint", Constraint: constraintName, Object: constraintName, Message: "missing constraint " + constraintName}}
-	}
-
-	return []ShadowMismatch{{Kind: "schema", Message: "schema differs"}}
-}
-
-func sortedIndexRefs(refs []types.IndexRef) []types.IndexRef {
-	sorted := append([]types.IndexRef(nil), refs...)
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].TableName != sorted[j].TableName {
-			return sorted[i].TableName < sorted[j].TableName
-		}
-		return sorted[i].Name < sorted[j].Name
-	})
-	return sorted
-}
-
-func sortedStrings(values []string) []string {
-	out := append([]string(nil), values...)
-	sort.Strings(out)
-	return out
-}
-
-func sortedTableDiffs(values []types.TableDiff) []types.TableDiff {
-	out := append([]types.TableDiff(nil), values...)
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].TableName < out[j].TableName
-	})
-	return out
-}
-
-func sortedColumnDiffs(values []types.ColumnDiff) []types.ColumnDiff {
-	out := append([]types.ColumnDiff(nil), values...)
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].ColumnName < out[j].ColumnName
-	})
-	return out
-}
-
-func sortedEnumDiffs(values []types.EnumDiff) []types.EnumDiff {
-	out := append([]types.EnumDiff(nil), values...)
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].EnumName < out[j].EnumName
-	})
-	return out
-}
-
-func describeChanges(changes map[string]string) string {
-	if len(changes) == 0 {
-		return "unknown change"
-	}
-
-	keys := make([]string, 0, len(changes))
-	for key := range changes {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		parts = append(parts, key+" "+changes[key])
-	}
-	return strings.Join(parts, ", ")
 }

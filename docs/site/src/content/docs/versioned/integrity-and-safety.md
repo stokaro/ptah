@@ -211,8 +211,9 @@ artifact, and `--attach` stores the canonical report next to it — see
 ### Configure rules with `.ptah-lint.yaml`
 
 Commit a `.ptah-lint.yaml` next to the migration files to make lint policy
-part of the reviewed migration directory. Without an explicit `--config`
-path, Ptah loads `<dir>/.ptah-lint.yaml` when present:
+part of the reviewed migration directory. `ptah migrations lint --config`
+selects an explicit lint policy; without that flag, lint loads
+`<dir>/.ptah-lint.yaml` when present:
 
 ```yaml
 dialect: postgres
@@ -230,7 +231,8 @@ rules:
 
 - `dialect` sets the default lint dialect; `--dialect` overrides it.
 - `disabled-rules` lists rule codes (`DS101`) or family prefixes (`MY`) to
-  skip entirely; entries merge with `--disable` flags.
+  skip entirely; entries merge with `--disable` flags. Selectors and custom
+  rule codes use uppercase ASCII letters and digits and start with a letter.
 - `rules` keys name an exact code or a family prefix; the most specific key
   wins, so a `DS102` entry beats a `DS` entry.
 - `severity` accepts `warning` or `error` and replaces the rule's default
@@ -238,9 +240,16 @@ rules:
   destructive gate below evaluate. Any other value fails config parsing
   (exit `2`).
 - `exclude` lists slash-separated path globs (`**` crosses directory
-  levels) where the rule is skipped, matched against each migration file's
-  path — "DS102 is acceptable under `legacy/`" without disabling the rule
-  everywhere.
+  levels) where the rule is skipped. Prefer paths relative to the migration
+  directory, such as `legacy/**`; these match regardless of how `--dir` was
+  spelled. A directory-prefixed pattern such as `migrations/legacy/**`
+  matches only when the command path has that prefix, for example
+  `--dir migrations`, and need not match an absolute `--dir` path.
+
+Configuration decoding is strict. Unknown keys, misspelled keys such as
+`severty`, lowercase selectors, selectors that match no registered rule,
+unsupported severities, and multiple YAML documents fail before linting or
+migration execution instead of silently weakening policy.
 
 Precedence: a rule listed in `disabled-rules` never runs, regardless of its
 `rules` entry; then `exclude` skips the matching files; then `severity`
@@ -287,9 +296,15 @@ error: error running migrations: pending migrations contain destructive statemen
 Use `--allow-destructive` only after the plan has been reviewed and the
 rollback path is understood.
 
-The apply-time gate loads the same `.ptah-lint.yaml` as
-`ptah migrations lint` and blocks on error-severity `DS` data-safety
-findings. That makes the escape hatch proportional: a rule downgraded with
+The apply-time gate always loads the conventional
+`<migrations-dir>/.ptah-lint.yaml` and blocks on error-severity `DS`
+data-safety findings. The `--config` flag on `ptah migrations up` selects
+`ptah.yaml`; it does not select a lint policy. This distinction prevents a
+project configuration path from silently replacing the policy shipped with
+the migration directory.
+
+The gate otherwise uses the same rule configuration and path matching as
+`ptah migrations lint`. That makes the escape hatch proportional: a rule downgraded with
 `severity: warning`, listed under `disabled-rules`, or excluded for a path
 stops blocking exactly that reviewed pattern — a widening
 `ALTER COLUMN ... TYPE` under `rules: {DS103: {severity: warning}}` applies
@@ -297,6 +312,10 @@ without `--allow-destructive` — while a `DROP TABLE` in another pending
 file of the same batch still aborts the apply. `--allow-destructive`
 remains the all-or-nothing per-run override rather than the only way past
 a single warning-grade finding.
+
+Lint-policy severities are `warning` and `error`. Generated safety reports use
+the operational vocabulary `safe`, `warning`, and `destructive`; an `error`
+lint assessment and a `destructive` safety assessment are both blocking.
 
 Know the limits of this gate: the policy file is not tamper-evident.
 

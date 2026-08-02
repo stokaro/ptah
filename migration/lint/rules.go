@@ -28,7 +28,7 @@ func Register(rule Rule) error {
 			return fmt.Errorf("duplicate rule code %s", rule.Code)
 		}
 	}
-	registeredRules.rules = append(registeredRules.rules, rule)
+	registeredRules.rules = append(registeredRules.rules, cloneRule(rule))
 	return nil
 }
 
@@ -38,7 +38,20 @@ func Rules() []Rule {
 	rules := builtinRules()
 	registeredRules.RLock()
 	defer registeredRules.RUnlock()
-	return append(rules, registeredRules.rules...)
+	return append(rules, cloneRules(registeredRules.rules)...)
+}
+
+func cloneRule(rule Rule) Rule {
+	rule.Dialects = slices.Clone(rule.Dialects)
+	return rule
+}
+
+func cloneRules(rules []Rule) []Rule {
+	cloned := make([]Rule, len(rules))
+	for i, rule := range rules {
+		cloned[i] = cloneRule(rule)
+	}
+	return cloned
 }
 
 func builtinRules() []Rule {
@@ -56,8 +69,8 @@ func builtinRules() []Rule {
 }
 
 func validateRule(rule Rule) error {
-	if strings.TrimSpace(rule.Code) == "" {
-		return fmt.Errorf("rule code is required")
+	if !isCanonicalRuleCode(rule.Code) {
+		return fmt.Errorf("rule code %q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits", rule.Code)
 	}
 	if strings.TrimSpace(rule.Title) == "" {
 		return fmt.Errorf("rule %s title is required", rule.Code)
@@ -71,6 +84,19 @@ func validateRule(rule Rule) error {
 		return fmt.Errorf("rule %s must set exactly one checker", rule.Code)
 	}
 	return nil
+}
+
+func isCanonicalRuleCode(code string) bool {
+	for index, value := range code {
+		if value >= 'A' && value <= 'Z' {
+			continue
+		}
+		if index > 0 && value >= '0' && value <= '9' {
+			continue
+		}
+		return false
+	}
+	return code != ""
 }
 
 func validateRules(rules []Rule) error {

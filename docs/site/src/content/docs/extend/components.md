@@ -354,7 +354,20 @@ if err != nil {
 }
 fmt.Printf("directory hash: %s\n", sum.DirHash)
 
-findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+lintConfig, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
+if err != nil {
+	return err
+}
+dialect := lintConfig.Dialect
+if dialect == "" {
+	dialect = "postgres"
+}
+
+findings, err := lint.LintFS(fsys, lint.Options{
+	Dialect:     dialect,
+	Disabled:    lintConfig.DisabledRules,
+	RuleConfigs: lintConfig.Rules,
+})
 if err != nil {
 	return err
 }
@@ -415,8 +428,9 @@ captured snapshot.
 
 A host tool can add its own analyzers to the same run without reimplementing
 the dialect-aware scanner. `Options.ExtraRules` appends per-run rules — the
-preferred shape, with no global state — and `lint.Register` installs a rule
-process-wide. Either way, the rule receives statements Ptah has already
+preferred shape, with no global state. `lint.Register` separately installs a
+rule process-wide and returns an error for invalid or duplicate rules; callers
+must handle that error during initialization. Either way, the rule receives statements Ptah has already
 prepared: `Statement.Words` is the comment-free token-word sequence the
 built-in rules scan, and `Statement.Canonical` is the uppercased display
 form. This example is compile-checked in `examples/reusable_components`:
@@ -435,6 +449,24 @@ findings, err = lint.LintFS(fsys, lint.Options{
 })
 ```
 
+For plugin-style process initialization, register once and propagate the
+validation error:
+
+```go
+err := lint.Register(lint.Rule{
+	Code:     "ORG102",
+	Title:    "organization policy",
+	Severity: lint.SeverityWarning,
+	CheckStatement: func(stmt *lint.Statement) (bool, string) {
+		return slices.Contains(stmt.Words, "UNLOGGED"), "UNLOGGED tables require platform review"
+	},
+})
+if err != nil {
+	return err
+}
+```
+
+Rule codes use uppercase ASCII letters and digits and start with a letter.
 Custom codes flow through reporting, `--disable`, inline `-- ptah:nolint`
 directives, and `.ptah-lint.yaml` per-rule severity and path excludes
 exactly like built-in codes; the configuration surface is documented in

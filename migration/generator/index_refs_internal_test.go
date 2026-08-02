@@ -326,5 +326,11 @@ func TestCollectShadowMismatches_ReportsQualifiedIndex(t *testing.T) {
 			Object:  "orders.idx_shared",
 			Message: "missing index orders.idx_shared",
 		},
+		{
+			Kind:    "missing_index",
+			Table:   "users",
+			Object:  "users.idx_shared",
+			Message: "missing index users.idx_shared",
+		},
 	})
 }

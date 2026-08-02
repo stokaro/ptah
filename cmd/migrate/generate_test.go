@@ -3,6 +3,7 @@ package migrate_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +15,8 @@ import (
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/migration/generator"
+	"github.com/stokaro/ptah/migration/safety"
 )
 
 func TestMigrateGenerateCommandExposesShadowDBFlag(t *testing.T) {
@@ -86,6 +89,43 @@ func TestMigratePlanCommandRejectsAtlasApplyAtRoot(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["apply"\]`)
 }
 
+func TestMigrateGenerateJSONReportWritesSiblingSafetyArtifact(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	schemaFile := filepath.Join(dir, "schema.sql")
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.WriteFile(schemaFile, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	var stdout, stderr bytes.Buffer
+	cmd := migrate.NewMigrateGenerateCommand()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--schema-file", schemaFile,
+		"--db-url", "sqlite:///" + filepath.Join(dir, "ptah.db"),
+		"--migrations-dir", migrationsDir,
+		"--name", "init",
+		"--report", "json",
+	})
+
+	err := cmd.Execute()
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+
+	reportFiles, err := filepath.Glob(filepath.Join(migrationsDir, "*_init.safety.json"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(reportFiles, qt.HasLen, 1)
+	c.Assert(stdout.String(), qt.Contains, "REPORT: ")
+	c.Assert(stdout.String(), qt.Contains, filepath.Base(reportFiles[0]))
+
+	rawReport, err := os.ReadFile(reportFiles[0])
+	c.Assert(err, qt.IsNil)
+	var report safety.Report
+	c.Assert(json.Unmarshal(rawReport, &report), qt.IsNil)
+	c.Assert(report.Highest, qt.Equals, safety.Safe)
+	c.Assert(report.Destructive, qt.IsFalse)
+	c.Assert(report.Assessments, qt.HasLen, 1)
+}
+
 func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
@@ -120,6 +160,12 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 		err := cmd.Execute()
 
 		c.Assert(err, qt.ErrorMatches, `shadow check failed: missing column users\.name`)
+		var shadowErr *generator.ShadowVerificationError
+		c.Assert(err, qt.ErrorAs, &shadowErr)
+		c.Assert(shadowErr.Result.Stage, qt.Equals, "replay")
+		c.Assert(shadowErr.Result.Mismatches, qt.HasLen, 1)
+		c.Assert(shadowErr.Result.Mismatches[0].Kind, qt.Equals, "replay_error")
+		c.Assert(shadowErr.Err, qt.IsNotNil)
 		matches, globErr := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
 		c.Assert(globErr, qt.IsNil)
 		c.Assert(matches, qt.HasLen, 2)

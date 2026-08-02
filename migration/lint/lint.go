@@ -54,7 +54,8 @@ const (
 
 // Rule is one lint check. Exactly one of CheckStatement / CheckFile is set.
 type Rule struct {
-	// Code is the stable identifier (DS101, PG101, ...).
+	// Code is the stable identifier (DS101, PG101, ...). It starts with an
+	// uppercase ASCII letter and contains only uppercase ASCII letters and digits.
 	Code string
 	// Title is the short human-readable name of the hazard.
 	Title string
@@ -172,9 +173,9 @@ func commentStartsLine(sql string, pos int) bool {
 }
 
 // runRules applies every enabled rule to one prepared file.
-func runRules(file *File, opts Options) []Finding {
+func runRules(file *File, opts Options, rules []Rule) []Finding {
 	var findings []Finding
-	for _, rule := range rulesForOptions(opts) {
+	for _, rule := range rules {
 		if ruleDisabled(rule.Code, opts.Disabled) ||
 			fileSuppressesRule(file, rule.Code) ||
 			!ruleAppliesToDialect(rule, opts.Dialect) ||
@@ -222,7 +223,7 @@ func runRules(file *File, opts Options) []Finding {
 
 func rulesForOptions(opts Options) []Rule {
 	rules := Rules()
-	return append(rules, opts.ExtraRules...)
+	return append(rules, cloneRules(opts.ExtraRules)...)
 }
 
 func ruleSeverity(rule Rule, configs map[string]RuleConfig) Severity {

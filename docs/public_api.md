@@ -55,7 +55,10 @@ through that filesystem.
 `migration/lint` provides the compact `LintFS` findings API and the richer
 `AnalyzeFS` API. `AnalyzeFS` captures each migration input once: SQL files,
 integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
-prepared files and findings together with a read-only source snapshot.
+prepared files and findings together with a read-only source snapshot. Capture
+does not apply the lint policy automatically: embedders call `LoadConfigFS`
+and pass its `Dialect`, `DisabledRules`, and `Rules` through `lint.Options`.
+Configuration decoding rejects unknown keys and noncanonical rule selectors.
 
 Finding contexts identify the exact statement and affected tables or columns;
 column subjects can also carry the parent table and declared data type. Each
@@ -137,6 +140,20 @@ cross-process publication lock and rejects concurrent use of one plan with
 `generator.ErrMigrationPlanInUse`. `GenerateMigration` remains the convenience
 composition of planning and publication and propagates its context through
 both phases.
+
+`migration/safety.RenderJSON` writes a `safety.Report` containing the highest
+risk, destructive verdict, and rendered statement assessments. The native
+`ptah migrations plan --report json` command writes that document to standard
+output. `GenerateMigrationOptions.ReportFormat: "json"` instead publishes one
+`.safety.json` file beside each generated migration pair.
+
+Candidate shadow failures preserve a typed
+`*generator.ShadowVerificationError` through `PlanMigration`,
+`GenerateMigration`, and command wrappers. Use `errors.As` to inspect
+`Result.Stage` and the structured `Result.Mismatches`; operational failures
+also expose their underlying error through `Unwrap`. A schema mismatch carries
+the complete, deterministically ordered mismatch list without a wrapped
+execution error.
 
 `migration/generator.VerifyRollbackFromShadow` requires the caller's open
 target `dbschema.DatabaseConnection`. It checks the target and shadow's live

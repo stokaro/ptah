@@ -1,10 +1,15 @@
 package lint
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"maps"
 	"os"
+	"slices"
+	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
 )
@@ -39,7 +44,7 @@ type Config struct {
 }
 
 // LoadConfig reads an explicit lint configuration file. Missing, unreadable,
-// and malformed files are errors.
+// malformed, and unknown configuration fields are errors.
 func LoadConfig(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -53,7 +58,7 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 // LoadConfigFS reads a conventional lint configuration from fsys. A missing
-// file is not an error.
+// file is not an error; malformed and unknown configuration fields are errors.
 func LoadConfigFS(fsys fs.FS, name string) (*Config, error) {
 	raw, err := fs.ReadFile(fsys, name)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -67,8 +72,21 @@ func LoadConfigFS(fsys fs.FS, name string) (*Config, error) {
 
 func parseConfig(raw []byte, name string) (*Config, error) {
 	var cfg Config
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+	err := decoder.Decode(&cfg)
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("failed to parse lint config %s: %w", name, err)
+	}
+	if err == nil {
+		var trailing any
+		err = decoder.Decode(&trailing)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("failed to parse lint config %s: %w", name, err)
+		}
+		if err == nil {
+			return nil, fmt.Errorf("failed to parse lint config %s: multiple YAML documents are not supported", name)
+		}
 	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse lint config %s: %w", name, err)
@@ -77,7 +95,18 @@ func parseConfig(raw []byte, name string) (*Config, error) {
 }
 
 func validateConfig(cfg Config) error {
-	for code, rule := range cfg.Rules {
+	if err := validateRuleSelectors(cfg.DisabledRules); err != nil {
+		return err
+	}
+	return validateRuleConfigs(cfg.Rules)
+}
+
+func validateRuleConfigs(configs map[string]RuleConfig) error {
+	for _, code := range slices.Sorted(maps.Keys(configs)) {
+		rule := configs[code]
+		if !isCanonicalRuleCode(code) {
+			return invalidRuleSelectorError(code)
+		}
 		switch rule.Severity {
 		case "", SeverityWarning, SeverityError:
 		default:
@@ -85,4 +114,38 @@ func validateConfig(cfg Config) error {
 		}
 	}
 	return nil
+}
+
+func validateConfiguredRuleSelectors(rules []Rule, opts Options) error {
+	selectors := append(slices.Sorted(maps.Keys(opts.RuleConfigs)), opts.Disabled...)
+	for _, selector := range selectors {
+		trimmed := strings.TrimSpace(selector)
+		if trimmed != "" && !selectorMatchesRule(trimmed, rules) {
+			return fmt.Errorf("rule selector %q does not match any registered rule", selector)
+		}
+	}
+	return nil
+}
+
+func selectorMatchesRule(selector string, rules []Rule) bool {
+	for _, rule := range rules {
+		if strings.HasPrefix(rule.Code, selector) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateRuleSelectors(selectors []string) error {
+	for _, selector := range selectors {
+		trimmed := strings.TrimSpace(selector)
+		if trimmed != "" && !isCanonicalRuleCode(trimmed) {
+			return invalidRuleSelectorError(selector)
+		}
+	}
+	return nil
+}
+
+func invalidRuleSelectorError(selector string) error {
+	return fmt.Errorf("rule selector %q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits", selector)
 }

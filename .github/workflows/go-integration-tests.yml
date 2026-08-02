@@ -293,7 +293,9 @@ jobs:
         run: |
           go test -v ./migration/migrator -run 'TestNoTransactionDirective_PostgresEnumValueCanBeUsedInSameMigration' -timeout 3m
           go test -v ./migration/generator -run 'TestGenerateMigrationShadowVerificationWithRealDB|TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB' -timeout 5m
-          go test -v ./cmd/migrateup -run 'TestMigrateUpCommandHonorsLintConfigSeverityWithPostgres' -timeout 3m
+          go test ./cmd/migrateup -list '^TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration$' | grep -q '^TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration$'
+          go test ./cmd/migrateup -list '^TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable$' | grep -q '^TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable$'
+          go test -v -count=1 ./cmd/migrateup -run '^TestMigrateUp_LintConfig(SeverityOverrideControlsPostgresMigration|WarningStillBlocksPostgresDropTable)$' -timeout 3m
 
       - name: Run migrate-baseline integration tests
         env:
