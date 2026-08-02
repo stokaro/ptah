@@ -354,13 +354,10 @@ func TestNewCompatCommand_MigrateMaintResolvesAtRoot(t *testing.T) {
 
 			err := cmd.Execute()
 
-			// The verbs resolve as working forwards through the compat binary
-			// too; they no longer print the Atlas CE community-version
-			// unsupported boundary.
+			// The verbs resolve as working forwards through the compatibility binary.
 			c.Assert(err, qt.IsNil)
 			c.Assert(out.String(), qt.Contains, tt.usage)
 			c.Assert(out.String(), qt.Contains, "--dir")
-			c.Assert(out.String(), qt.Not(qt.Contains), "not supported by the community version")
 		})
 	}
 }

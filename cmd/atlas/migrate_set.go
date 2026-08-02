@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -73,7 +74,7 @@ func runAtlasMigrateSet(
 	defer closeAtlasProject(&prepared.project, &runErr)
 	opts = prepared.options
 	if opts.url == "" {
-		return failAtlasCommand(cmd, fmt.Errorf("sql/sqlclient: missing driver. See: https://atlasgo.io/url"))
+		return failAtlasCommand(cmd, errors.New("database URL is required; pass --url"))
 	}
 	source, err := prepared.project.captureLocal(prepared.dir)
 	if err != nil {

@@ -159,7 +159,7 @@ func UnsupportedBoolReason(name, shorthand, usage, reason string) Flag {
 // twin. The exception is a waiver whose name another verb has repurposed for a
 // different capability: `migrate apply` reads PTAH_SKIP_CHECKS as its
 // pre-migration check bypass (cmd/atlas/migrate_apply.go), so on `migrate down`
-// that same variable is not a request for Atlas Cloud down checks and must not
+// that same variable is not a request for hosted down checks and must not
 // refuse a rollback. Reach for this only when a name genuinely collides.
 func ExplicitUnsupportedBoolReason(name, shorthand, usage, reason string) Flag {
 	flag := UnsupportedBoolReason(name, shorthand, usage, reason)

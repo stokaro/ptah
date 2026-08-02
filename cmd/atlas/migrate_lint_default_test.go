@@ -80,9 +80,8 @@ func TestCompatCommand_MigrateLintDefaultTextDestructive(t *testing.T) {
 			"\n"+
 			"  -- analyzing version 2\n"+
 			"    -- destructive changes detected:\n"+
-			"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n"+
-			"    -- suggested fix:\n"+
-			"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n"+
+			"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a verified backup\n"+
+			"         first and consider a rename-and-retire window instead\n"+
 			"  -- ok (DUR)\n"+
 			"\n"+
 			"  -------------------------\n"+
@@ -107,8 +106,8 @@ func TestCompatCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T) 
 			"\n"+
 			"  -- analyzing version 2\n"+
 			"    -- data dependent changes detected:\n"+
-			"      -- L1: Adding a non-nullable \"int\" column \"c2\" will fail in case table \"users\" is not empty\n"+
-			"         https://atlasgo.io/lint/analyzers#MF103\n"+
+			"      -- L1 [MF103]: adding a NOT NULL column without a DEFAULT fails or blocks on populated tables; add it\n"+
+			"         nullable, backfill, then enforce NOT NULL in a later migration\n"+
 			"  -- ok (DUR)\n"+
 			"\n"+
 			"  -------------------------\n"+
@@ -142,8 +141,8 @@ func TestCompatCommand_MigrateLintDefaultTextAddNotNullFixture(t *testing.T) {
 			"\n"+
 			"  -- analyzing version 2\n"+
 			"    -- data dependent changes detected:\n"+
-			"      -- L1: Adding a non-nullable \"int\" column \"c2\" will fail in case table \"users\" is not empty\n"+
-			"         https://atlasgo.io/lint/analyzers#MF103\n"+
+			"      -- L1 [MF103]: adding a NOT NULL column without a DEFAULT fails or blocks on populated tables; add it\n"+
+			"         nullable, backfill, then enforce NOT NULL in a later migration\n"+
 			"  -- ok (DUR)\n"+
 			"\n"+
 			"  -------------------------\n"+

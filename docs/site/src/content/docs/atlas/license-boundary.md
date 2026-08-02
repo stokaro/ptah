@@ -5,6 +5,8 @@ description: Ptah's independent implementation boundary around Atlas compatibili
 
 Ptah does not use Atlas source code.
 
+Ptah is an independent project, not affiliated with or endorsed by Ariga.
+
 Ptah is an independent implementation that studies Atlas's public command surface, observable behavior, and test assets. Atlas-derived Apache-2.0 fixture material is kept in the separate `ptah-atlas-conformance` repository so the Ptah source tree remains implementation-clean and MIT-licensed.
 
 ## Repository boundary

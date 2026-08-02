@@ -105,12 +105,12 @@ behavior such as migration apply, the license notice, or schema formatting.
 | `ptah-compat schema fmt` | Format local `.hcl` files |
 | `ptah-compat schema test` | `ptah schema test` |
 | `ptah-compat schema plan` | Local Atlas-style plan computation saved to a fingerprinted plan file; its registry sub-verbs stay boundary stubs |
-| `ptah-compat migrate push` | Atlas CE community-version unsupported boundary stub |
-| `ptah-compat schema push` | Atlas CE community-version unsupported boundary stub |
+| `ptah-compat migrate push` | Registered but not implemented boundary command |
+| `ptah-compat schema push` | Registered but not implemented boundary command |
 
-Atlas CE community-version unsupported boundary stubs mirror Atlas CE: `--help`
-prints the unsupported notice and exits `0`, while direct execution prints the
-Atlas CE abort text and exits `1`. All other reported failures on
+These registered boundary commands use Ptah-owned diagnostics: `--help` reports
+that the command is not implemented and exits `0`, while direct execution
+reports the same status and exits `1`. All other reported failures on
 the `ptah-compat` binary, including unsupported flags, malformed input,
 missing files, configuration errors, and database failures, also exit `1`.
 This normalization applies only to the compatibility tree; equivalent native

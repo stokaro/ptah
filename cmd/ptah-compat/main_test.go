@@ -81,6 +81,13 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 			wantStderr: "Error: unknown command \"definitely-not-a-command\" for \"atlas\"\n" +
 				"Run 'atlas --help' for usage.\n",
 		},
+		{
+			name: "registered command without an implementation",
+			command: func(binPath string) *exec.Cmd {
+				return newCompatProcess(binPath, "migrate", "push")
+			},
+			wantStderr: "Error: atlas migrate push is not implemented by Ptah\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -268,7 +275,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
 		c.Assert(stdout.String(), qt.Equals, "")
 		c.Assert(stderr.String(), qt.Equals,
-			"Error: sql/sqlclient: missing driver. See: https://atlasgo.io/url\n")
+			"Error: database URL is required; pass --url\n")
 	})
 
 	c.Run("migrate set missing version after environment", func(c *qt.C) {

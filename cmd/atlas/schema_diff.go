@@ -50,7 +50,7 @@ schema universe, --include selectors pick top-level resources inside it, and
 --exclude plus env.schema.mode subtract from the result. A selected object
 that depends on an unselected object refuses the diff with an explicit
 diagnostic, and a selection that matches nothing reports synced schemas.
-Atlas Cloud web output is an explicit follow-up gap.`,
+Hosted report output is not implemented.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaDiff(cmd, opts)
 		},
