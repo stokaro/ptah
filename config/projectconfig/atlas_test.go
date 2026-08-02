@@ -116,6 +116,23 @@ func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
 	}
 }
 
+// The unsupported-attribute fixture is no longer a failure path: `project` is a
+// name the community binary parses and ignores, so refusing it was stricter
+// than Atlas. The fixture is kept and asserted from the tolerant side.
+func TestParseAtlasProjectConfigGoldenUnknownAttributeIsIgnored(t *testing.T) {
+	c := qt.New(t)
+	raw := readAtlasProjectConfigFixture(c, "unsupported-attribute.hcl")
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+
+	c.Assert(err, qt.IsNil)
+	names := make([]string, 0, len(cfg.IgnoredConstructs))
+	for _, ignored := range cfg.IgnoredConstructs {
+		names = append(names, ignored.Name)
+	}
+	c.Assert(names, qt.Contains, "project")
+}
+
 func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
@@ -127,11 +144,6 @@ func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
 			name:    "hosted service block",
 			input:   "unsupported-cloud.hcl",
 			wantErr: `atlas block is not supported by the community version of Atlas`,
-		},
-		{
-			name:    "unknown environment attribute",
-			input:   "unsupported-attribute.hcl",
-			wantErr: `unsupported atlas\.hcl construct "project" at atlas\.hcl:2`,
 		},
 	}
 
@@ -1230,12 +1242,17 @@ env "prod" {
 	c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" at atlas\.hcl:5: .*Unknown variable.*`)
 }
 
-func TestParseAtlasProjectConfigRejectsUnsupportedConstructsInUnselectedEnv(t *testing.T) {
+// Label arity and duplicate blocks are the two positions still refused in an
+// unselected env; the community binary accepts both. They are tracked as known
+// remaining divergences rather than folded into the unknown-name tolerance.
+// The community binary never decodes an env it was not asked for, so an unknown
+// name there is accepted -- measured: `--env dev` with an unresolvable reference
+// in `prod` exits 0.
+func TestParseAtlasProjectConfigAcceptsUnknownNamesInUnselectedEnv(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
-		name    string
-		raw     string
-		wantErr string
+		name string
+		raw  string
 	}{
 		{
 			name: "environment attribute",
@@ -1247,7 +1264,6 @@ env "prod" {
   project = "production"
 }
 `,
-			wantErr: `unsupported atlas\.hcl construct "project" at atlas\.hcl:6`,
 		},
 		{
 			name: "environment block",
@@ -1259,7 +1275,6 @@ env "prod" {
   cloud {}
 }
 `,
-			wantErr: `unsupported atlas\.hcl construct "cloud" at atlas\.hcl:6`,
 		},
 		{
 			name: "nested migration attribute",
@@ -1274,8 +1289,25 @@ env "prod" {
   }
 }
 `,
-			wantErr: `unsupported atlas\.hcl construct "remote_dir" at atlas\.hcl:8`,
 		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "dev")
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+func TestParseAtlasProjectConfigUnsupportedConstructsInUnselectedEnv(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
 		{
 			name: "labeled nested block",
 			raw: `env "dev" {
@@ -1375,12 +1407,195 @@ env "prod" {
 	c.Assert(err, qt.ErrorMatches, `atlas\.hcl contains multiple env blocks; pass --env`)
 }
 
+// TestParseAtlasProjectConfigToleratesConstructsCEIgnores covers atlas.hcl names
+// that are real Atlas constructs but that the community binary parses and never
+// acts on. Refusing them would be stricter than Atlas; each was measured by
+// planting a value the field cannot hold and confirming the community binary
+// reports no decode failure, with a name it does decode used as the control in
+// the same command.
+//
+// Names the community binary DOES decode stay in the rejection table above --
+// tolerating those would accept a policy and silently not enforce it.
+// The names the community binary decodes are refused by scope-qualified path,
+// not by bare name: `repo` is refused under schema and tolerated anywhere else.
+// Without this the deny-list would over-refuse every unrelated `repo`.
+func TestParseAtlasProjectConfigEnforcedNamesAreScopeQualified(t *testing.T) {
+	c := qt.New(t)
+
+	refused := `env "local" {
+  url = "sqlite://s.db"
+  schema {
+    repo {
+      name = "app"
+    }
+  }
+}
+`
+	_, err := projectconfig.ParseAtlas([]byte(refused), "atlas.hcl", "local")
+	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "repo" .*`)
+
+	elsewhere := `env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir  = "file://m"
+    repo = "x"
+  }
+}
+`
+	cfg, err := projectconfig.ParseAtlas([]byte(elsewhere), "atlas.hcl", "local")
+	c.Assert(err, qt.IsNil)
+	names := make([]string, 0, len(cfg.IgnoredConstructs))
+	for _, ignored := range cfg.IgnoredConstructs {
+		names = append(names, ignored.Name)
+	}
+	c.Assert(names, qt.Contains, "repo")
+}
+
+func TestParseAtlasProjectConfigToleratesConstructsCEIgnores(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		ignored string
+	}{
+		{
+			name: "schema mode sensitive allow",
+			raw: `env "local" {
+  schema {
+    mode {
+      sensitive = "ALLOW"
+    }
+  }
+}
+`,
+			ignored: "sensitive",
+		},
+		{
+			name: "lint format attr",
+			raw: `lint {
+  format = "{{ json . }}"
+}
+`,
+			ignored: "format",
+		},
+		{
+			name: "lint destructive force",
+			raw: `lint {
+  destructive {
+    force = true
+  }
+}
+`,
+			ignored: "force",
+		},
+		{
+			name: "lint check block",
+			raw: `lint {
+  check "DS102" {
+    error = true
+  }
+}
+`,
+			ignored: "check",
+		},
+		{
+			name: "lint custom rule",
+			raw: `lint {
+  rule "hcl" "custom" {
+    src = ["schema.rule.hcl"]
+  }
+}
+`,
+			ignored: "rule",
+		},
+		{
+			name: "lint non linear block",
+			raw: `lint {
+  non_linear {
+    error = true
+  }
+}
+`,
+			ignored: "non_linear",
+		},
+		{
+			name: "lint naming block",
+			raw: `lint {
+  naming {
+    error = true
+  }
+}
+`,
+			ignored: "naming",
+		},
+		{
+			name: "lint ownership block",
+			raw: `lint {
+  ownership "github" {
+    repo = "stokaro/ptah"
+  }
+}
+`,
+			ignored: "ownership",
+		},
+		{
+			name: "lint statement block",
+			raw: `lint {
+  statement {
+    error = true
+  }
+}
+`,
+			ignored: "statement",
+		},
+		{
+			name: "unknown migration attribute",
+			raw: `env "local" {
+  migration {
+    remote_dir = "atlas://example"
+  }
+}
+`,
+			ignored: "remote_dir",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := projectconfig.ParseAtlas([]byte(tt.raw), "atlas.hcl", "local")
+
+			c.Assert(err, qt.IsNil)
+			names := make([]string, 0, len(cfg.IgnoredConstructs))
+			for _, ignored := range cfg.IgnoredConstructs {
+				names = append(names, ignored.Name)
+			}
+			c.Assert(names, qt.Contains, tt.ignored)
+		})
+	}
+}
+
 func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
 		err  string
 	}{
+		{
+			// Unquoted ALLOW is an HCL variable reference, and the tolerance is
+			// name-level: the body of an ignored name is still evaluated. The
+			// community binary reports the same diagnostic, word for word.
+			name: "schema mode sensitive bare identifier",
+			raw: `env "local" {
+  schema {
+    mode {
+      sensitive = ALLOW
+    }
+  }
+}
+`,
+			err: `cannot evaluate atlas\.hcl "sensitive" at atlas\.hcl:4: .*There is no variable named "ALLOW"\.`,
+		},
 		{
 			name: "schema repo block",
 			raw: `env "local" {
@@ -1394,18 +1609,6 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 			err: `unsupported atlas\.hcl construct "repo" at atlas\.hcl:3`,
 		},
 		{
-			name: "schema mode sensitive allow",
-			raw: `env "local" {
-  schema {
-    mode {
-      sensitive = ALLOW
-    }
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "sensitive" at atlas\.hcl:4`,
-		},
-		{
 			name: "diff skip drop schema",
 			raw: `diff {
   skip {
@@ -1414,24 +1617,6 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 }
 `,
 			err: `unsupported atlas\.hcl construct "drop_schema" at atlas\.hcl:3`,
-		},
-		{
-			name: "lint format attr",
-			raw: `lint {
-  format = "{{ json . }}"
-}
-`,
-			err: `unsupported atlas\.hcl construct "format" at atlas\.hcl:2`,
-		},
-		{
-			name: "lint destructive force",
-			raw: `lint {
-  destructive {
-    force = true
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "force" at atlas\.hcl:3`,
 		},
 		{
 			name: "lint destructive allow table",
@@ -1457,66 +1642,6 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 }
 `,
 			err: `unsupported atlas\.hcl construct "destructive" at atlas\.hcl:5`,
-		},
-		{
-			name: "lint check block",
-			raw: `lint {
-  check "DS102" {
-    error = true
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "check" at atlas\.hcl:2`,
-		},
-		{
-			name: "lint custom rule",
-			raw: `lint {
-  rule "hcl" "custom" {
-    src = ["schema.rule.hcl"]
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "rule" at atlas\.hcl:2`,
-		},
-		{
-			name: "lint non linear block",
-			raw: `lint {
-  non_linear {
-    error = true
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "non_linear" at atlas\.hcl:2`,
-		},
-		{
-			name: "lint naming block",
-			raw: `lint {
-  naming {
-    error = true
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "naming" at atlas\.hcl:2`,
-		},
-		{
-			name: "lint ownership block",
-			raw: `lint {
-  ownership "github" {
-    repo = "stokaro/ptah"
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "ownership" at atlas\.hcl:2`,
-		},
-		{
-			name: "lint statement block",
-			raw: `lint {
-  statement {
-    error = true
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "statement" at atlas\.hcl:2`,
 		},
 		{
 			name: "lint constraint drop block",
@@ -1667,16 +1792,6 @@ locals {
 }
 `,
 			err: `cannot evaluate atlas\.hcl "paths" at atlas\.hcl:2: .*`,
-		},
-		{
-			name: "unknown migration attribute",
-			raw: `env "local" {
-  migration {
-    remote_dir = "atlas://example"
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "remote_dir" at atlas\.hcl:3`,
 		},
 		{
 			name: "duplicate migration block",
@@ -1874,13 +1989,14 @@ func TestAtlasParserDistinguishesFailureClasses(t *testing.T) {
 	// The third class, for contrast: an unknown NAME still has its own message
 	// and must not be reported as either of the two above.
 	//
-	// The position matters. A top-level unknown name is now TOLERATED, so this
-	// uses a nested one, which is the surface the next increment relaxes --
-	// when it does, this fixture moves rather than the assertion being deleted.
-	unknown := "env \"local\" {\n  frobnicate = \"yes\"\n  url = \"sqlite://m.db\"" + envBody
+	// The position matters. Unknown names are now tolerated at every level, so
+	// this uses `schema.repo` -- one of the few names the community binary
+	// genuinely decodes, which is why Ptah still refuses it rather than
+	// accepting a policy it does not enforce.
+	unknown := "env \"local\" {\n  schema {\n    repo {\n      name = \"app\"\n    }\n  }\n  url = \"sqlite://m.db\"" + envBody
 	_, err := projectconfig.ParseAtlas([]byte(unknown), "atlas.hcl", "local")
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "frobnicate" .*`)
+	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "repo" .*`)
 }
 
 // TestAtlasParserScrubsSensitiveValuesFromDiagnostics is a regression test for
