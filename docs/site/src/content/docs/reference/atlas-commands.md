@@ -56,9 +56,14 @@ subdirectories. Atlas CE ignores subdirectories, so for that layout CE reports
 nothing to execute while Ptah refuses an unhashed directory rather than running
 migrations it has not verified — see [#976](https://github.com/stokaro/ptah/issues/976).
 
-Directories in an external tool's format are converted in memory, carry no Atlas
-integrity file, and are not checksum-gated. Atlas CE gates them; the divergence
-is tracked in [#973](https://github.com/stokaro/ptah/issues/973).
+Directories in an external tool's format are gated on the `atlas.sum` the source
+directory carries, verified before the source layout is parsed and before the
+database is opened. The covered file set is Atlas's for that layout, so a
+golang-migrate down file and a Flyway undo file are not covered, and a layout
+that carries no `atlas.sum` and whose covered set is empty is not a checksum
+error. For Flyway the importer runs a wider set than Atlas hashes, so a
+superseded baseline or a lowercase prefix executes outside the checksum
+([#982](https://github.com/stokaro/ptah/issues/982)).
 
 **Rejected on this verb, matching Atlas OSS:** `--dir-format`, `--to-version`,
 and `--lock-name`.
@@ -131,9 +136,9 @@ None of them can produce a wrong checksum. They are tracked in
 with `migrate apply`, so relaxing one widens what a future integrity gate
 accepts.
 
-`migrate apply` registers no `--dir-format` at all, matching Atlas, and does not
-yet gate a directory read through `?format=`
-(see [#973](https://github.com/stokaro/ptah/issues/973)).
+`migrate apply` registers no `--dir-format` at all, matching Atlas. It gates a
+directory read through `?format=` over the same per-layout file set these two
+verbs hash, so what `migrate hash` writes is what `migrate apply` verifies.
 
 ### `ptah-compat migrate lint`
 

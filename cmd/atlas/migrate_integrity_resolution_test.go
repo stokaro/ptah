@@ -279,11 +279,25 @@ func TestCompatMigrateValidateConvertedDevURL_FailurePath(t *testing.T) {
 //	exit=1, no atlas.sum written
 //
 // atlasmigrateimport.SumFileNames skips directories, so the converted path
-// writes a sum instead — a sum CE then refuses to read, which is the only
-// direction that matters here since CE can never produce such a sum itself:
+// writes a sum instead — a sum CE then refuses to read:
 //
 //	$ atlas migrate validate --dir 'file://w?format=goose'   # sum written by Ptah
 //	Error: sql/migrate: read file "weird.sql": read w/weird.sql: is a directory
+//
+// An earlier version of this comment called that the only direction that
+// matters, because CE can never produce such a sum itself. That is true and
+// beside the point: CE hashes the directory BEFORE the *.sql directory exists,
+// and the shape then appears on a directory whose sum CE wrote. Measured on
+// 2026-08-02, that is a refusal on CE and an apply here:
+//
+//	$ mkdir 2_evil.sql            # after `atlas migrate hash`
+//	$ atlas       migrate apply … Error: … read "2_evil.sql": … is a directory   exit=1
+//	$ ptah-compat migrate apply … Migration complete. Current version: 1         exit=0
+//
+// Nothing unverified executes — a directory holds no SQL — so this is loss of
+// tamper DETECTION rather than of execution safety. It is still CE refusing
+// where Ptah applies, so the apply direction is pinned here alongside the
+// hash and validate ones (stokaro/ptah#991).
 //
 // The native atlas path globs like CE and fails, differently worded. The two
 // Ptah paths therefore disagree with each other, which is why this is pinned
@@ -302,6 +316,29 @@ func TestCompatMigrateHashDirectoryNamedSQL_KnownDivergence(t *testing.T) {
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
 		c.Assert(stdout, qt.Contains, "1 migration file(s) hashed")
 		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, []string{"1_init.sql"})
+	})
+
+	c.Run("apply accepts a sum CE wrote before the directory appeared", func(c *qt.C) {
+		dir := c.TempDir()
+		c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"),
+			[]byte("-- +goose Up\nCREATE TABLE w (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+		// Hashed while the directory holds only the migration, so the sum is one
+		// Atlas CE would have written too.
+		stdout, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
+		c.Assert(os.MkdirAll(filepath.Join(dir, "2_evil.sql"), 0o755), qt.IsNil)
+
+		dbPath := filepath.Join(c.TempDir(), "evil.db")
+		stdout, stderr, err := runCompatExit(
+			"migrate", "apply",
+			"--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir+"?format=goose",
+		)
+
+		// Atlas CE exits 1 here. Ptah applies, because SumFileNames skips the
+		// directory and the recomputed sum still matches.
+		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+		c.Assert(stdout, qt.Not(qt.Contains), "checksum")
 	})
 
 	c.Run("native atlas layout refuses it", func(c *qt.C) {

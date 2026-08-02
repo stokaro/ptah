@@ -209,11 +209,7 @@ func runAtlasMigrateApply(
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	dir := source.Display()
-	migrationFS, err := atlasmigrate.ResolveApplySourceForFormat(
-		source.FS(),
-		dir,
-		resolvedDirFormat,
-	)
+	captured, err := atlasmigrate.CaptureApplySource(source.FS(), resolvedDirFormat)
 	closeErr := source.Close()
 	if err != nil {
 		return errors.Join(
@@ -225,15 +221,26 @@ func runAtlasMigrateApply(
 		return fmt.Errorf("atlas migrate apply --dir: close migrations directory: %w", closeErr)
 	}
 
-	// Integrity gate (#955, #970): a native Atlas directory must carry an
+	// Integrity gate (#955, #970, #973): the SOURCE directory must carry an
 	// atlas.sum and verify against it before anything is read for execution,
 	// matching official Atlas, which refuses both a tampered and an unhashed
-	// directory before applying a single migration. This runs before the
-	// database connection is even opened, so neither a tampered file
-	// (including a tampered checkpoint) nor an unhashed directory can execute
-	// or create the target database.
-	if err := verifyAtlasApplyChecksum(cmd, migrationFS, resolvedDirFormat); err != nil {
+	// directory before applying a single migration.
+	//
+	// Ordering is measured, not incidental. The gate runs on the captured
+	// source, before the source layout is parsed, because that is where Atlas
+	// CE runs it: an unhashed Goose directory whose .sql has no `-- +goose Up`
+	// directive is refused with "checksum file not found", not with a
+	// conversion error. It also runs before the database connection is opened,
+	// so neither a tampered file (including a tampered checkpoint) nor an
+	// unhashed directory can execute or create the target database — CE emits
+	// the checksum refusal even when --url is unreachable.
+	if err := verifyAtlasApplyChecksum(cmd, captured, resolvedDirFormat); err != nil {
 		return err
+	}
+
+	migrationFS, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)
+	if err != nil {
+		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.url)
@@ -309,18 +316,30 @@ func runAtlasMigrateApply(
 }
 
 // verifyAtlasApplyChecksum enforces the atlas.sum integrity gate on the
-// captured migration filesystem of a native Atlas directory: a missing
-// atlas.sum and a failed verification both refuse the whole apply, with output
-// byte-identical to `migrate validate` on the same directory.
+// captured SOURCE migration filesystem: a missing atlas.sum and a failed
+// verification both refuse the whole apply, with output byte-identical to
+// `migrate validate` on the same directory.
 //
-// A directory read through ?format= is converted in memory and carries no
-// Atlas integrity file, so it is not gated here. That is a known divergence
-// from Atlas CE, which does gate converted directories; see
-// verifyAtlasApplyChecksum's callers' tests and stokaro/ptah#973.
+// fsys is the source snapshot, never the converted one. A directory read
+// through ?format= is rebuilt in memory as up-only Atlas migrations and has no
+// integrity file by construction, but the directory it was read FROM carries
+// atlas.sum next to its own migrations — that is the file Atlas CE writes for
+// it and verifies against, and the mismatch line it prints names the source
+// file (`L2: 1_init.up.sql was edited`, not a converted name).
+//
+// The two branches differ only in which files the sum covers, so they are two
+// verifiers rather than one: a native directory is hashed by Ptah's Atlas-format
+// hasher, while a converted one is hashed over the per-format file set Atlas CE
+// selects, which for golang-migrate excludes the down file and for Flyway drops
+// undo files, squashes baselines, and reaches into subdirectories (#984).
 func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, format atlasmigrateimport.Format) error {
-	if !atlasmigrate.ReadsNativeAtlasDir(format) {
-		return nil
+	if atlasmigrate.ReadsNativeAtlasDir(format) {
+		return verifyNativeAtlasApplyChecksum(cmd, fsys)
 	}
+	return verifyConvertedAtlasApplyChecksum(cmd, fsys, format)
+}
+
+func verifyNativeAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS) error {
 	result, hashed, err := migratesum.VerifyHashed(fsys, migrator.MigrationDirFormatAtlas)
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMalformed):
@@ -337,8 +356,76 @@ func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, format atlasmigrat
 	return nil
 }
 
-// failUnhashedAtlasApplyDir refuses a directory that carries no atlas.sum,
-// unless it holds no SQL file anywhere in its tree.
+// verifyConvertedAtlasApplyChecksum verifies a directory laid out in a foreign
+// tool's convention against the atlas.sum that directory carries, over exactly
+// the file set Atlas CE covers for that layout.
+//
+// It is the same computation `ptah-compat migrate hash` writes and
+// `migrate validate` checks (#984, #992), so a directory this gate refuses is
+// one those two verbs also refuse, and one they call clean applies here.
+//
+// WHAT THIS GATE DOES NOT GIVE YOU, FOR FLYWAY (#982). The gate verifies the
+// set Atlas CE covers; the importer that decides what actually RUNS is a
+// different selection, and for Flyway it is WIDER. flywayFileRe is case-
+// insensitive where parseFlywaySumFile is case-sensitive, and loadFlywayEntries
+// exempts baselines from the squash where the covered set drops every baseline
+// below the highest one. So for Flyway, and only for Flyway, executed is not a
+// subset of verified:
+//
+//	B1__one.sql B2__two.sql V3__three.sql, hashed by Atlas CE
+//	  -> atlas.sum covers B2__two.sql and V3__three.sql only
+//	  -> editing B1__one.sql passes validate on BOTH tools
+//	  -> Atlas applies two and three; Ptah applies two, three AND one
+//
+//	V1__init.sql hashed by Atlas CE, then v2__evil.sql added
+//	  -> validate passes on both; Atlas applies one migration, Ptah applies two
+//
+// Hashing does not help: the covered set is the same either way, so the file
+// stays outside it. goose, dbmate, liquibase and golang-migrate have no such
+// gap — measured, each refuses the corresponding file at import.
+//
+// The fix is #982, converging flywayFileRe and loadFlywayEntries on CE's
+// selection so consumed equals covered. It is NOT to refuse when the consumed
+// set escapes the covered one: CE executes its covered subset happily, so
+// refusing the whole directory would be an over-refusing gate, which is the
+// failure mode this whole chain is built to avoid.
+//
+// An empty covered set is exempt from the missing-sum refusal, and that
+// predicate is measured rather than assumed. CE's refusal keys on the covered
+// set being non-empty, NOT on the directory holding any *.sql: an unhashed
+// golang-migrate directory holding only 1_init.down.sql, and an unhashed Flyway
+// directory holding only U1__init.sql, both exit 0 with "No migration files to
+// execute", while an unhashed Goose directory holding only foo.sql exits 1.
+// SumFileNames returning an empty slice is exactly that predicate. The
+// exemption is deliberately limited to the unhashed branch: a hashed directory
+// whose covered files were all deleted is drift, and CE reports it as one.
+func verifyConvertedAtlasApplyChecksum(
+	cmd *cobra.Command,
+	fsys fs.FS,
+	format atlasmigrateimport.Format,
+) error {
+	names, err := atlasmigrateimport.SumFileNames(fsys, format)
+	if err != nil {
+		return err
+	}
+	result, hashed, err := migratesum.VerifyAtlasFilesHashed(fsys, names)
+	switch {
+	case errors.Is(err, migratesum.ErrSumFileMalformed):
+		return migratevalidate.FailAtlasChecksumMismatch(cmd, nil)
+	case err != nil:
+		return err
+	case !hashed && len(names) == 0:
+		return nil
+	case !hashed:
+		return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
+	case !result.OK():
+		return migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())
+	}
+	return nil
+}
+
+// failUnhashedAtlasApplyDir refuses a NATIVE Atlas directory that carries no
+// atlas.sum, unless it holds no SQL file anywhere in its tree.
 //
 // The exemption exists because a directory with nothing to execute is not a
 // checksum error: Atlas CE v1.2.0 reports "No migration files to execute" and
@@ -355,6 +442,16 @@ func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, format atlasmigrat
 // stop run unverified. The result is exit 1 where CE exits 0 for that layout —
 // the safe side of a pre-existing divergence in what the two tools consider a
 // migration (#976).
+//
+// That asymmetry is why a converted directory uses a different predicate
+// instead of reusing this one. It is the same asymmetry that produced the #972
+// commit-2 regression tracked as #976, so it is worth stating in both places:
+// on the converted path Ptah's own loader reads only top-level files, so the
+// shallow per-format covered set is both correct and precise there, and
+// recursing would refuse layouts CE and Ptah agree have nothing to execute.
+// Flyway is the exception that proves it is about the covered set rather than
+// about depth — CE hashes sub/V2__nested.sql, so an unhashed Flyway directory
+// whose only migration sits one level down is refused on both tools.
 func failUnhashedAtlasApplyDir(cmd *cobra.Command, fsys fs.FS) error {
 	var foundSQL bool
 	err := fs.WalkDir(fsys, ".", func(path string, entry fs.DirEntry, err error) error {

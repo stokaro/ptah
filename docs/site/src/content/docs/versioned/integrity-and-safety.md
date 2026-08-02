@@ -125,15 +125,51 @@ would run it — Ptah refuses it when unhashed rather than executing an unverifi
 migration, which is exit `1` where Atlas exits `0`
 ([#976](https://github.com/stokaro/ptah/issues/976)).
 
-:::caution[Known gap]
-Directories read through `?format=goose` and the other external-tool formats
-are **not** gated: they are converted in memory and carry no Atlas integrity
-file. Atlas CE does gate them, so an edited migration in a hashed converted
-directory still runs here where Atlas refuses. Closing the gap needs `?format=`
-support in `ptah-compat migrate hash`/`validate` and format-aware sum
-computation; tracked in
-[#973](https://github.com/stokaro/ptah/issues/973). Until then, do not rely on
-`atlas.sum` to protect a `?format=` directory.
+**Directories read through `?format=` are gated too.** A goose, flyway,
+liquibase, dbmate or golang-migrate directory is converted in memory and the
+converted filesystem carries no integrity file — but the directory it was read
+*from* carries `atlas.sum` beside its own migrations, and that is what is
+verified, before the source layout is parsed and before the database is opened.
+Run `ptah-compat migrate hash --dir 'file://migrations?format=goose'` once and
+commit the file. The same applies when the layout comes from `atlas.hcl`
+(`migration { format = goose }`) rather than from the URL.
+
+Each layout is verified over the file set Atlas covers for it, which is not
+always every `.sql` file:
+
+| Layout | Covered by `atlas.sum` |
+| --- | --- |
+| `atlas`, `goose`, `dbmate`, `liquibase` | every top-level `*.sql` |
+| `golang-migrate` | every top-level `*.up.sql` — the down file is never covered |
+| `flyway` | `V`/`B`/`R` files anywhere in the tree; `U` undo files and everything a baseline squashes are dropped |
+
+So editing a golang-migrate down file or a Flyway undo file is invisible to the
+check, exactly as it is in Atlas. A directory that carries no `atlas.sum` and
+whose covered set is empty — a golang-migrate directory holding only a down
+file, say — is not a checksum error and is not refused.
+
+:::caution[Flyway: a file outside the covered set can still execute]
+For every layout except Flyway, "not covered by `atlas.sum`" also means "not
+executed", the same as in Atlas. **For Flyway it does not.** Ptah's Flyway
+importer selects a wider set of files than Atlas hashes, so two shapes run SQL
+that no checksum covers — on a directory both `ptah-compat migrate validate`
+and `atlas migrate validate` call clean:
+
+- **A superseded baseline.** Atlas drops every baseline below the highest one
+  from `atlas.sum`; Ptah's importer keeps them all. With
+  `B1__one.sql B2__two.sql V3__three.sql`, the sum covers only `B2` and `V3`,
+  and whatever you put in `B1__one.sql` executes unverified.
+- **A prefix in the wrong case.** Atlas matches `V`/`B`/`R`/`U` case-sensitively
+  and ignores `v2__evil.sql`; Ptah's importer matches case-insensitively and
+  runs it. Adding such a file to a hashed directory does not disturb the sum.
+
+Re-running `ptah-compat migrate hash` does not close either one — the covered
+set is the same set, so the file stays outside it. Until
+[#982](https://github.com/stokaro/ptah/issues/982) converges the importer on
+Atlas's selection, treat a Flyway directory's `atlas.sum` as covering the files
+Atlas would run, not everything Ptah will run: review `B`-prefixed files and
+lowercase-prefixed files by hand, or normalize the directory so that every file
+matches Atlas's own selection.
 :::
 
 ## Replay on a dev database

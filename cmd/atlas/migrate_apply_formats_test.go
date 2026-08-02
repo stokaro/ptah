@@ -72,6 +72,7 @@ func TestMigrateApplyExecutesExternalFormatsUpOnly(t *testing.T) {
 			for name, content := range tt.files {
 				writeAtlasApplyProjectMigration(c, migrationsDir, name, content)
 			}
+			hashConvertedApplyDir(c, migrationsDir, tt.format)
 			dbPath := filepath.Join(dir, "apply.db")
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -99,6 +100,7 @@ func TestMigrateApplyFormatOutputRendersFromConvertedFilesystem(t *testing.T) {
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql",
 		"-- +goose Up\nCREATE TABLE up_ran (id INTEGER PRIMARY KEY);\n-- +goose Down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, migrationsDir, "goose")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -131,6 +133,7 @@ func TestMigrateApplyFlywayMajorMinorVersionsExecuteInOrder(t *testing.T) {
 	// 15 (> 2), inverting the order and making the ALTER fail with "no such table".
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__create.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V2__extend.sql", "ALTER TABLE widgets ADD COLUMN label TEXT;")
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -158,6 +161,7 @@ func TestMigrateApplyDBMateTransactionDirectiveOptionUpOnly(t *testing.T) {
 	// executable SQL, and only the up section must run.
 	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql",
 		"-- migrate:up transaction:false\nCREATE TABLE up_ran (id INTEGER PRIMARY KEY);\n-- migrate:down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, migrationsDir, "dbmate")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -185,6 +189,7 @@ func TestMigrateApplyGooseStatementBlockExecutesUpOnly(t *testing.T) {
 	// must execute and the down section must not run.
 	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql",
 		"-- +goose Up\n-- +goose StatementBegin\nCREATE TABLE up_ran (id INTEGER PRIMARY KEY);\nINSERT INTO up_ran (id) VALUES (1);\n-- +goose StatementEnd\n-- +goose Down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, migrationsDir, "goose")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -211,6 +216,10 @@ func TestMigrateApplyRejectsFlywayVersionCollisionBeforeOpeningDatabase(t *testi
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__a.sql", "CREATE TABLE a (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V1_5__b.sql", "CREATE TABLE b (id INTEGER PRIMARY KEY);")
+	// Hashed first: the conversion refusal below is reachable only once the
+	// integrity gate has passed, because the gate now precedes the source-format
+	// parse exactly as it does in Atlas CE (stokaro/ptah#973).
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	dbPath := filepath.Join(dir, "collision.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -236,6 +245,7 @@ func TestMigrateApplyRejectsDuplicateConvertedVersionBeforeOpeningDatabase(t *te
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", "-- +goose Up\nCREATE TABLE a (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyProjectMigration(c, migrationsDir, "01_init.sql", "-- +goose Up\nCREATE TABLE b (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, migrationsDir, "goose")
 	dbPath := filepath.Join(dir, "dup-version.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -279,6 +289,7 @@ func TestMigrateApplyRejectsMissingUpDirectiveBeforeOpeningDatabase(t *testing.T
 			dir := t.TempDir()
 			migrationsDir := filepath.Join(dir, "migrations")
 			writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", tt.content)
+			hashConvertedApplyDir(c, migrationsDir, tt.format)
 			dbPath := filepath.Join(dir, "missing-directive.db")
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -335,6 +346,7 @@ func TestMigrateApplyRejectsUnsupportedFormatFilesBeforeOpeningDatabase(t *testi
 			for name, content := range test.files {
 				writeAtlasApplyProjectMigration(c, migrationsDir, name, content)
 			}
+			hashConvertedApplyDir(c, migrationsDir, test.format)
 			dbPath := filepath.Join(dir, "must-not-exist.db")
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -393,6 +405,7 @@ func TestMigrateApplyFlywayMidSequenceInsertionKeepsStableVersions(t *testing.T)
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__base.sql", "CREATE TABLE t_v1 (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__minor.sql", "CREATE TABLE t_v15 (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V2__major.sql", "CREATE TABLE t_v2 (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	firstErr := runFlywayApply(migrationsDir, dbPath)
@@ -406,6 +419,8 @@ func TestMigrateApplyFlywayMidSequenceInsertionKeepsStableVersions(t *testing.T)
 	// Insert a migration that sorts in the middle (V1.6, between V1.5 and V2) and
 	// re-apply.
 	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.6__hotfix.sql", "CREATE TABLE t_v16 (id INTEGER PRIMARY KEY);")
+	// Adding a migration invalidates atlas.sum, so re-hash as a user would.
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	secondErr := runFlywayApply(migrationsDir, dbPath)
 
 	// No checksum mismatch: V2's recorded checksum still matches V2's SQL because

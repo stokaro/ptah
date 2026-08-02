@@ -270,73 +270,11 @@ func TestCompatMigrateApply_UnhashedDirMatchesValidateOutput(t *testing.T) {
 	c.Assert(applyErr.Error(), qt.Equals, validateErr.Error())
 }
 
-// TestCompatMigrateApply_ConvertedDirStaysUngated_KnownDivergence pins current
-// behavior, NOT parity: a directory read through ?format= is converted in
-// memory, carries no atlas.sum, and is applied ungated.
-//
-// Atlas CE v1.2.0 does gate these directories — measured 2026-08-01 on the
-// pinned binary, `atlas migrate apply --dir 'file://mig?format=goose'` on an
-// unhashed directory exits 1 with "checksum file not found", and after
-// `atlas migrate hash --dir 'file://mig?format=goose'` a tampered file exits 1
-// with "L2: 1_init.sql was edited". Closing the gap needs `?format=` support in
-// ptah-compat's own hash and validate verbs (they reject URL query parameters
-// today) plus format-aware sum computation: Ptah's atlas-format hasher is
-// byte-identical to CE's for goose, dbmate, liquibase, and flyway, but not for
-// golang-migrate, where CE hashes only the up file. Tracked in
-// stokaro/ptah#973; this test exists so the divergence is visible and its
-// resolution is a deliberate change, not an accident.
-func TestCompatMigrateApply_ConvertedDirStaysUngated_KnownDivergence(t *testing.T) {
-	formats := []struct {
-		name string
-		file string
-		body string
-	}{
-		{
-			name: "goose",
-			file: "1_init.sql",
-			body: "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE widgets;\n",
-		},
-		{
-			name: "dbmate",
-			file: "1_init.sql",
-			body: "-- migrate:up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- migrate:down\nDROP TABLE widgets;\n",
-		},
-		{
-			name: "liquibase",
-			file: "1_init.sql",
-			body: "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n--rollback DROP TABLE widgets;\n",
-		},
-		{
-			name: "flyway",
-			file: "V1__init.sql",
-			body: "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
-		},
-		{
-			name: "golang-migrate",
-			file: "1_init.up.sql",
-			body: "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
-		},
-	}
-
-	for _, format := range formats {
-		t.Run(format.name, func(t *testing.T) {
-			c := qt.New(t)
-			tempDir := c.TempDir()
-			dir := filepath.Join(tempDir, "m_"+format.name)
-			writeAtlasApplyProjectMigration(c, dir, format.file, format.body)
-			dbPath := filepath.Join(tempDir, "converted.db")
-
-			stdout, stderr, err := runCompat(
-				"migrate", "apply",
-				"--url", "sqlite://"+dbPath,
-				"--dir", "file://"+dir+"?format="+format.name,
-			)
-
-			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
-		})
-	}
-}
+// The converted-directory half of this gate — a directory read through
+// `?format=` in a foreign tool's layout — lives in
+// migrate_apply_converted_integrity_test.go. It replaced
+// TestCompatMigrateApply_ConvertedDirStaysUngated_KnownDivergence, which pinned
+// the gap rather than the parity (stokaro/ptah#973).
 
 // TestCompatMigrateApply_DirWithoutSQLFilesApplies pins the measured CE
 // predicate for the missing-atlas.sum refusal: it fires on the presence of any
