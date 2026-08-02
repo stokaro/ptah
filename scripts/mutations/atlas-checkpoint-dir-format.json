@@ -1,0 +1,117 @@
+{
+  "packages": [
+    "./cmd/atlas/",
+    "./cmd/migratecheckpoint/",
+    "./migration/generator/"
+  ],
+  "mutations": [
+    {
+      "name": "--dir-format=atlas silently writes the ptah convention",
+      "file": "cmd/atlas/atlas.go",
+      "old": "\tcase \"ptah\":\n\t\treturn \"ptah\", nil\n\tcase \"\", atlasDirFormatDefault:\n\t\treturn atlasDirFormatDefault, nil",
+      "new": "\tcase \"ptah\":\n\t\treturn \"ptah\", nil\n\tcase \"\", atlasDirFormatDefault:\n\t\treturn \"ptah\", nil"
+    },
+    {
+      "name": "compat default reverts to ptah instead of atlas",
+      "file": "cmd/atlas/atlas.go",
+      "old": "\tflag := atlasargs.NativeStringDefault(\n\t\t\"dir-format\",\n\t\t\"\",\n\t\t\"Migration directory format\",\n\t\t\"dir-format\",\n\t\tatlasDirFormatDefault,\n\t)\n\tflag.MapValue = atlasCheckpointDirFormatValue",
+      "new": "\tflag := atlasargs.NativeString(\"dir-format\", \"\", \"Migration directory format\", \"dir-format\")\n\tflag.MapValue = atlasCheckpointDirFormatValue"
+    },
+    {
+      "name": "an unset --dir-format falls back to ptah",
+      "file": "cmd/atlas/atlas.go",
+      "old": "\tcase \"\", atlasDirFormatDefault:\n\t\treturn atlasDirFormatDefault, nil",
+      "new": "\tcase \"\":\n\t\treturn \"ptah\", nil\n\tcase atlasDirFormatDefault:\n\t\treturn atlasDirFormatDefault, nil"
+    },
+    {
+      "name": "external dir formats are accepted on checkpoint",
+      "file": "cmd/atlas/atlas.go",
+      "old": "\t\tif slices.Contains(unsupportedAtlasDirFormats, normalized) {\n\t\t\treturn \"\", fmt.Errorf(\"Atlas accepts --dir-format=%s, but Ptah does not implement that directory format yet\", normalized)\n\t\t}\n\t\treturn \"\", fmt.Errorf(\"unknown Atlas migration directory format %q: expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate\", value)\n\t}\n}\n\nfunc atlasMigrateDirFormatFlag(nativeName string) atlasargs.Flag {",
+      "new": "\t\tif slices.Contains(unsupportedAtlasDirFormats, normalized) {\n\t\t\treturn normalized, nil\n\t\t}\n\t\treturn \"\", fmt.Errorf(\"unknown Atlas migration directory format %q: expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate\", value)\n\t}\n}\n\nfunc atlasMigrateDirFormatFlag(nativeName string) atlasargs.Flag {"
+    },
+    {
+      "name": "checkpoint accepts --dir-format=auto and guesses a convention",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tif dirFormat == migrator.MigrationDirFormatAuto {\n\t\treturn cmdutil.Fail(cmd, fmt.Errorf(",
+      "new": "\tif dirFormat == migrator.MigrationDirFormatAuto {\n\t\tdirFormat = migrator.MigrationDirFormatPtah\n\t}\n\tif false {\n\t\treturn cmdutil.Fail(cmd, fmt.Errorf("
+    },
+    {
+      "name": "the atlas branch is never taken, so atlas writes the ptah pair",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tif dirFormat == migrator.MigrationDirFormatAtlas {\n\t\treturn writeAtlasCheckpoint(cmd, out, opts, version, upSQL)\n\t}",
+      "new": "\tif false {\n\t\treturn writeAtlasCheckpoint(cmd, out, opts, version, upSQL)\n\t}"
+    },
+    {
+      "name": "the ptah-width version guard is dropped for atlas",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\t\tif len(explicit) == ptahVersionWidth {",
+      "new": "\t\tif false {"
+    },
+    {
+      "name": "the ten-digit ceiling also applies to atlas versions",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tif atlas {\n\t\tif len(explicit) == ptahVersionWidth {",
+      "new": "\tif atlas && version <= maxMigrationVersion {\n\t\tif len(explicit) == ptahVersionWidth {"
+    },
+    {
+      "name": "the atlas dry run writes files anyway",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tif opts.dryRun {\n\t\tname, contents := generator.AtlasCheckpointArtifact(version, opts.description, upSQL)",
+      "new": "\tif false {\n\t\tname, contents := generator.AtlasCheckpointArtifact(version, opts.description, upSQL)\n\t\t_, _ = name, contents"
+    },
+    {
+      "name": "atlas checkpoints use the ptah newest-plus-one counter",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\t\tif atlas {\n\t\t\treturn generator.ResolveAtlasCheckpointVersion(migrationsDir), nil\n\t\t}\n\t\treturn latest + 1, nil",
+      "new": "\t\treturn latest + 1, nil"
+    },
+    {
+      "name": "the directive is appended after the body instead of first",
+      "file": "migration/generator/checkpoint.go",
+      "old": "\treturn name, AtlasCheckpointDirective + \"\\n\\n\" + body + \"\\n\"",
+      "new": "\treturn name, body + \"\\n\\n\" + AtlasCheckpointDirective + \"\\n\""
+    },
+    {
+      "name": "the checkpoint directive is omitted entirely",
+      "file": "migration/generator/checkpoint.go",
+      "old": "const AtlasCheckpointDirective = \"-- atlas:checkpoint\"",
+      "new": "const AtlasCheckpointDirective = \"-- generated by ptah\""
+    },
+    {
+      "name": "the body is not trimmed, so blank lines displace the directive",
+      "file": "migration/generator/checkpoint.go",
+      "old": "\tbody := strings.Trim(upSQL, \"\\n\")",
+      "new": "\tbody := upSQL"
+    },
+    {
+      "name": "an empty description writes the bare <version>.sql name",
+      "file": "migration/generator/checkpoint.go",
+      "old": "\tstem := atlasEmptyMigrationName(description)\n\tif stem == \"\" {\n\t\tstem = \"checkpoint\"\n\t}\n\tname = fmt.Sprintf(\"%d_%s.sql\", version, stem)",
+      "new": "\tstem := atlasEmptyMigrationName(description)\n\tif stem == \"\" {\n\t\treturn fmt.Sprintf(\"%d.sql\", version), AtlasCheckpointDirective + \"\\n\\n\" + strings.Trim(upSQL, \"\\n\") + \"\\n\"\n\t}\n\tname = fmt.Sprintf(\"%d_%s.sql\", version, stem)"
+    },
+    {
+      "name": "atlas.sum is not refreshed after writing the checkpoint",
+      "file": "migration/generator/checkpoint.go",
+      "old": "\tif _, err := migratesum.WriteWithFormat(outputDir, migrator.MigrationDirFormatAtlas); err != nil {",
+      "new": "\tif _, err := migratesum.WriteWithFormat(outputDir, migrator.MigrationDirFormatPtah); err != nil {"
+    },
+    {
+      "name": "an existing checkpoint file is overwritten",
+      "file": "migration/generator/checkpoint.go",
+      "old": "\t\tif errors.Is(err, os.ErrExist) {\n\t\t\treturn \"\", fmt.Errorf(\"checkpoint file %s already exists\", filePath)\n\t\t}",
+      "new": "\t\tif errors.Is(err, os.ErrExist) {\n\t\t\tif writeErr := os.WriteFile(filePath, []byte(contents), 0644); writeErr == nil {\n\t\t\t\terr = nil\n\t\t\t}\n\t\t}\n\t\tif err != nil {"
+    },
+    {
+      "name": "the atlas version is not bumped past a future-dated history",
+      "file": "migration/generator/checkpoint.go",
+      "old": "\treturn nextAvailableAtlasMigrationVersion(outputDir, nextAtlasMigrationVersion())",
+      "new": "\treturn nextAtlasMigrationVersion()"
+    },
+    {
+      "name": "a non-positive checkpoint version is accepted",
+      "file": "migration/generator/checkpoint.go",
+      "old": "\tif version <= 0 {\n\t\treturn \"\", fmt.Errorf(\"checkpoint version must be greater than zero, got %d\", version)\n\t}",
+      "new": "\tif version < 0 {\n\t\treturn \"\", fmt.Errorf(\"checkpoint version must be greater than zero, got %d\", version)\n\t}"
+    }
+  ]
+}

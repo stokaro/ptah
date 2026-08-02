@@ -25,7 +25,7 @@ plus the flag translation rules are on the
 | `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL. |
 | `ptah-compat migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs them against the desired state, and writes Atlas-style migration files with `atlas.sum` updated atomically. |
 | `ptah-compat migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
-| `ptah-compat migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a ptah-format cumulative-schema checkpoint pair. |
+| `ptah-compat migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a cumulative-schema checkpoint, Atlas single-file format by default or the ptah pair under `--dir-format ptah`. |
 | `ptah-compat migrate test [paths]` | Forwards to `ptah migrations test` with Ptah-native YAML test cases. |
 | `ptah-compat migrate edit {name \| version}` | Forwards to `ptah migrations edit` and rewrites the directory checksum. |
 | `ptah-compat migrate rebase {name \| version}` | Forwards to `ptah migrations rebase`; one migration per run. |

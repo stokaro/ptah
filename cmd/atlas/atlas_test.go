@@ -774,7 +774,10 @@ func TestCompatCommand_MigrateCheckpointForwardsToNative(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "checkpoint", "--dir", migrationsDir, "--dev-url", shadow, "snapshot"})
+	// --dir-format is pinned to ptah so this stays a test of flag forwarding.
+	// The compat default is atlas; which convention the default selects is
+	// covered by TestCompatCommand_MigrateCheckpointDefaultsToAtlasFormat.
+	cmd.SetArgs([]string{"migrate", "checkpoint", "--dir", migrationsDir, "--dev-url", shadow, "--dir-format", "ptah", "snapshot"})
 
 	err := cmd.Execute()
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))

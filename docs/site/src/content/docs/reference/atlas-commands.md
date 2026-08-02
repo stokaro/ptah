@@ -273,27 +273,45 @@ Ptah-native migrations instead.
 ### `ptah-compat migrate checkpoint [name]`
 
 Forwards to `ptah migrations checkpoint`, replaying the migration directory on
-the `--dev-url` dev database and writing a ptah-format cumulative-schema
-checkpoint pair with `ptah.sum` refreshed.
+the `--dev-url` dev database and writing a cumulative-schema checkpoint.
 
 | Argument | Maps to |
 | --- | --- |
 | `--dir` | The native migrations directory. |
-| Positional name (optional) | The checkpoint description. |
-| `--dir-format=ptah` | Passes through. |
-| `--dir-format=atlas` | A recorded waiver, rejected loudly. |
+| Positional name (optional) | The checkpoint description, used as the file-name stem. |
+| `--dir-format=atlas` | Writes the Atlas single-file checkpoint (default). |
+| `--dir-format=ptah` | Writes the ptah reversible checkpoint pair. |
 
-Checkpoint output is ptah-format only, so this verb operates on ptah-format
-directories: Ptah marks the checkpoints it writes via the ptah file-name
-convention and does not emit Atlas-format checkpoint files yet. The read side
-does honor Atlas's `-- atlas:checkpoint` directive: applying an externally
-produced Atlas checkpoint directory bootstraps a fresh database from the
-latest checkpoint and silently skips the checkpoint on a database that
-already applied the pre-checkpoint history, matching measured Atlas
-behavior.
+`--dir-format` selects the checkpoint convention, and **on this verb it
+defaults to `atlas`**, matching the default Atlas registers and every other
+compat migrate verb:
 
-Atlas keeps `migrate checkpoint` in its Pro build, so this is a free Ptah
-capability rather than an Atlas CE stub.
+- **`atlas`** writes one up-only file, `<version>_<name>.sql`, whose first line
+  is the `-- atlas:checkpoint` directive, and refreshes `atlas.sum`. The version
+  is a UTC timestamp, bumped past the newest existing migration. There is no
+  down file: the Atlas format is up-only, so an Atlas checkpoint is not
+  reversible.
+- **`ptah`** writes the reversible pair
+  `NNNNNNNNNN_<name>.checkpoint.up.sql` / `.checkpoint.down.sql` and refreshes
+  `ptah.sum`.
+
+The native `ptah migrations checkpoint` keeps `ptah` as its default; only the
+compat surface defaults to `atlas`. `--dir-format=auto` is refused on both,
+because writing under it would have to guess the file convention and which
+integrity file to refresh.
+
+The read side honors the `-- atlas:checkpoint` directive either way: applying a
+checkpoint directory bootstraps a fresh database from the latest checkpoint and
+silently skips the checkpoint on a database that already applied the
+pre-checkpoint history, matching measured Atlas behavior.
+
+Atlas keeps `migrate checkpoint` in its Pro build — the pinned CE binary
+registers the verb but aborts with "not supported by the community version" and
+registers none of its own flags — so this is a free Ptah capability rather than
+an Atlas CE stub.
+
+`?format=` on this verb's `--dir` URL is still refused, as it is on `migrate
+lint`, `new`, `set` and `status`; use `--dir-format`.
 
 ### `ptah-compat migrate test [paths]`
 

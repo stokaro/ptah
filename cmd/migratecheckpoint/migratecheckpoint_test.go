@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -97,21 +98,147 @@ func TestMigrateCheckpointCommand_RejectsVersionAtOrBelowHistory(t *testing.T) {
 	c.Assert(written, qt.HasLen, 0)
 }
 
-func TestMigrateCheckpointCommand_RejectsNonPtahDirFormat(t *testing.T) {
+// seedAtlasMigrations fills dir with an Atlas-format history (single files,
+// timestamp versions) so the atlas branch is exercised on a directory Atlas
+// itself would produce, not on a ptah pair that the Atlas parser merely
+// tolerates.
+func seedAtlasMigrations(c *qt.C, dir string) {
+	c.Helper()
+	c.Assert(os.WriteFile(filepath.Join(dir, "20250801000001_init.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "20250801000002_email.sql"),
+		[]byte("ALTER TABLE users ADD COLUMN email TEXT;\n"), 0o600), qt.IsNil)
+}
+
+func TestMigrateCheckpointCommand_RejectsAutoDirFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	seedMigrations(c, dir)
 	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
 
-	// Checkpoint files are ptah-format only; the atlas format would leave a
-	// mixed directory with a stale integrity file, so it is refused up front.
-	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite", "--dir-format", "atlas")
+	// "auto" is a read-side probe. Writing under it would have to guess both the
+	// file convention and which integrity file to refresh, so it is refused up
+	// front rather than leaving a mixed directory with a stale sum.
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite", "--dir-format", "auto")
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(out, qt.Contains, "supports only the")
+	c.Assert(out, qt.Contains, "cannot write under --dir-format=auto")
 
 	written, err := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(written, qt.HasLen, 0)
+}
+
+func TestMigrateCheckpointCommand_AtlasDirFormatWritesSingleDirectiveFile(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedAtlasMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas", "--description", "snapshot")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	written, err := filepath.Glob(filepath.Join(dir, "*_snapshot.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 1)
+
+	body, err := os.ReadFile(written[0])
+	c.Assert(err, qt.IsNil)
+	// The directive is honored only on the first line, so assert the position,
+	// not merely that the text occurs somewhere in the file.
+	firstLine, _, _ := strings.Cut(string(body), "\n")
+	c.Assert(firstLine, qt.Equals, "-- atlas:checkpoint")
+	c.Assert(string(body), qt.Contains, "email")
+
+	// Atlas format is up-only and integrity-tracked by atlas.sum. A down file or
+	// a ptah.sum here would be a directory neither Atlas nor Ptah reads back the
+	// way this checkpoint intends.
+	sum, err := os.ReadFile(filepath.Join(dir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(sum), qt.Contains, filepath.Base(written[0]))
+	_, err = os.Stat(filepath.Join(dir, "ptah.sum"))
+	c.Assert(os.IsNotExist(err), qt.IsTrue)
+	downs, err := filepath.Glob(filepath.Join(dir, "*.down.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(downs, qt.HasLen, 0)
+}
+
+func TestMigrateCheckpointCommand_AtlasRejectsPtahWidthVersion(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedAtlasMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	// A 10-digit Atlas version is indistinguishable from a ptah file name, so
+	// format auto-detection skips the file and the checkpoint silently stops
+	// applying. 9999999999 is above the seeded history, so only the width rule
+	// can reject it — a shorter or longer value in the same position is accepted.
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas", "--version", "9999999999")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "indistinguishable from a ptah migration name")
+
+	written, err := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
+func TestMigrateCheckpointCommand_AtlasAcceptsVersionAbovePtahMaximum(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedAtlasMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	// The ptah 10-digit ceiling must not apply to Atlas names: this version is
+	// far above maxMigrationVersion and is exactly the shape Atlas timestamps
+	// produce. It is the case that separates a format-aware ceiling from the
+	// old unconditional one.
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas", "--version", "20260801100335")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	_, err = os.Stat(filepath.Join(dir, "20260801100335_checkpoint.sql"))
+	c.Assert(err, qt.IsNil)
+}
+
+func TestMigrateCheckpointCommand_PtahKeepsTenDigitCeiling(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	// Same value the atlas branch accepts, refused here: the ptah file name has
+	// no room for it. This pins that widening the ceiling for Atlas did not
+	// widen it for ptah.
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--version", "20260801100335")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "exceeds the maximum migration version")
+
+	written, err := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
+func TestMigrateCheckpointCommand_AtlasDryRunWritesNothing(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedAtlasMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas", "--dry-run")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "dry run")
+	// The preview must show the artifact that would be written, directive and all.
+	c.Assert(out, qt.Contains, "-- atlas:checkpoint")
+	c.Assert(out, qt.Contains, "_checkpoint.sql")
+
+	written, err := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+	_, err = os.Stat(filepath.Join(dir, "atlas.sum"))
+	c.Assert(os.IsNotExist(err), qt.IsTrue)
 }
 
 func TestMigrateCheckpointCommand_RejectsNonPositiveVersion(t *testing.T) {
