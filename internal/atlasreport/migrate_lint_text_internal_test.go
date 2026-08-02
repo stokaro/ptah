@@ -66,12 +66,43 @@ func TestWriteMigrateLintText_RendersPtahDiagnostics(t *testing.T) {
 		"3.sql": "DROP TABLE pets;\n",
 	}
 
+	// Two destructive statements in ONE version, so both diagnostics land in a
+	// single group. Every other destructive fixture here puts them in separate
+	// versions, where "a fix after each diagnostic" and "fixes collected at the
+	// end of the group" render identically -- so none of them can tell the two
+	// layouts apart. Atlas collects them, and pluralises the header.
+	groupedDestructiveFiles := map[string]string{
+		"1.sql": "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n",
+		"2.sql": "DROP TABLE users;\nDROP TABLE pets;\n",
+	}
+
 	tests := []struct {
 		name   string
 		files  map[string]string
 		latest int
 		want   string
 	}{
+		{
+			name:   "two diagnostics in one group collect their fixes",
+			files:  groupedDestructiveFiles,
+			latest: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"      -- L2: Dropping table \"pets\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- suggested fixes:\n" +
+				"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n" +
+				"      -> Add a pre-migration check to ensure table \"pets\" is empty before dropping it\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 2 schema changes\n" +
+				"  -- 2 diagnostics\n",
+		},
 		{
 			name:   "destructive latest 1",
 			files:  destructiveFiles,
@@ -80,8 +111,9 @@ func TestWriteMigrateLintText_RendersPtahDiagnostics(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 3\n" +
 				"    -- destructive changes detected:\n" +
-				"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a verified backup\n" +
-				"         first and consider a rename-and-retire window instead\n" +
+				"      -- L1: Dropping table \"pets\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure table \"pets\" is empty before dropping it\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
@@ -98,14 +130,16 @@ func TestWriteMigrateLintText_RendersPtahDiagnostics(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 2\n" +
 				"    -- destructive changes detected:\n" +
-				"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a verified backup\n" +
-				"         first and consider a rename-and-retire window instead\n" +
+				"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -- analyzing version 3\n" +
 				"    -- destructive changes detected:\n" +
-				"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a verified backup\n" +
-				"         first and consider a rename-and-retire window instead\n" +
+				"      -- L1: Dropping table \"pets\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure table \"pets\" is empty before dropping it\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
@@ -146,8 +180,9 @@ func TestWriteMigrateLintText_RendersPtahDiagnostics(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 2\n" +
 				"    -- destructive changes detected:\n" +
-				"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a verified backup\n" +
-				"         first and consider a rename-and-retire window instead\n" +
+				"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
@@ -167,8 +202,8 @@ func TestWriteMigrateLintText_RendersPtahDiagnostics(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 2\n" +
 				"    -- data dependent changes detected:\n" +
-				"      -- L1 [MF103]: adding a NOT NULL column without a DEFAULT fails or blocks on populated tables; add it\n" +
-				"         nullable, backfill, then enforce NOT NULL in a later migration\n" +
+				"      -- L1: Adding a non-nullable \"text\" column \"name\" will fail in case table \"users\" is not empty\n" +
+				"         https://atlasgo.io/lint/analyzers#MF103\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
@@ -195,8 +230,8 @@ func TestWriteMigrateLintText_RendersPtahDiagnostics(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 2\n" +
 				"    -- data dependent changes detected:\n" +
-				"      -- L1 [MF103]: adding a NOT NULL column without a DEFAULT fails or blocks on populated tables; add it\n" +
-				"         nullable, backfill, then enforce NOT NULL in a later migration\n" +
+				"      -- L1: Adding a non-nullable \"int\" column \"c2\" will fail in case table \"users\" is not empty\n" +
+				"         https://atlasgo.io/lint/analyzers#MF103\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
