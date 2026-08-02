@@ -56,7 +56,7 @@ evaluates version guards against the connected server. Numeric prefixes shorter
 than five digits remain part of the executable SQL body. Hidden statement
 delimiters and non-`SELECT` effective bodies fail closed before query execution.
 
-A failure aborts before any body statement, matching the licensed Atlas build's
+A failure aborts before any body statement, matching Atlas's
 enforcement point. Ptah ignores unrelated embedded files.
 
 Create an Atlas-style migration:

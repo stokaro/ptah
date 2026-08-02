@@ -110,7 +110,7 @@ func TestCompatCommand_MigrateCheckpointDefaultsToAtlasFormat(t *testing.T) {
 	writeCheckpointAtlasFixture(c, migrationsDir)
 
 	// No --dir-format at all: an unflagged Atlas pipeline must get the Atlas
-	// convention back, matching the default the Atlas Pro trial registers on
+	// convention back, matching the default Atlas registers on
 	// this verb. This is the case that separates the compat default from the
 	// native `ptah migrations checkpoint` default, which stays ptah.
 	out, err := runCompatCheckpoint(c,

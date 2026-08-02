@@ -69,7 +69,7 @@ local plan file is executed instead of re-planning; both the Atlas
 ` + "`.plan.hcl`" + ` format and Ptah's native ` + "`.plan.json`" + ` format are accepted, detected
 by content. A JSON plan is verified against its recorded source fingerprint
 (a drifted target refuses as stale) and may run without --to. An Atlas-format
-plan requires --to, exactly like the official binary: its hashes are
+plan requires --to, exactly as Atlas does: its hashes are
 Atlas-computed and Ptah cannot recompute them, so the plan is verified
 semantically instead — the plan is replayed on a dev database (--dev-url, or
 an ephemeral SQLite dev database for SQLite targets) starting from the
@@ -352,7 +352,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	}
 	// Atlas requires the desired state to verify a plan file; the Atlas plan
 	// format has nothing else to verify against, so the compat tree mirrors
-	// the official binary's contract and error for it.
+	// Atlas's contract and error for it.
 	if planFormat == atlasschema.PlanFormatHCL && len(opts.toURLs) == 0 {
 		return cmdutil.Fail(cmd, fmt.Errorf("the flag %q is required to verify the provided plan", "to"))
 	}
@@ -568,7 +568,7 @@ func rehearseAtlasSchemaApplyPlan(
 // validateAtlasSchemaApplyPlanOptions rejects flags that would recompute or
 // reshape the pre-approved plan: the plan file already fixes the exclude
 // patterns, the planned schema objects, and the exact SQL that was reviewed.
-// --to and --dev-url combine with --plan the way the official binary
+// --to and --dev-url combine with --plan the way Atlas
 // combines them: --to names the desired state the plan is verified against
 // and --dev-url hosts the pre-apply rehearsal.
 func validateAtlasSchemaApplyPlanOptions(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {

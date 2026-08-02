@@ -15,8 +15,8 @@
 #   version: atlas community version v1.2.0
 #   date:    2026-08-01
 #
-# A system-wide `atlas` on PATH is frequently a different build (a v1.2.4
-# canary at the time of writing), so the oracle is invoked by absolute path and
+# A system-wide `atlas` on PATH is frequently a different build, so the
+# oracle is invoked by absolute path and
 # its version is checked before anything is written.
 #
 # Usage:

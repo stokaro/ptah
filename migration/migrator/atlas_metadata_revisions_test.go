@@ -12,14 +12,14 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-// Atlas Pro `migrate down` inserts a `.atlas_cloud_identifier` metadata row
-// into atlas_schema_revisions even in purely local mode (measured 2026-08-01,
-// Atlas CLI v1.2.4-e282f76-canary). Revision readers must skip dot-prefixed
+// Atlas's `migrate down` inserts a `.atlas_cloud_identifier` metadata row
+// into atlas_schema_revisions even in purely local mode (measured). Revision
+// readers must skip dot-prefixed
 // versions in version math and preserve the row untouched on writes (#957).
 
 const dotRowVersion = ".atlas_cloud_identifier"
 
-// insertAtlasMetadataDotRow inserts the measured Atlas Pro metadata row shape:
+// insertAtlasMetadataDotRow inserts the measured Atlas metadata row shape:
 // description carries a UUID, applied=0, total=0, an empty hash, error/error_stmt and
 // partial_hashes are NULL.
 func insertAtlasMetadataDotRow(t *testing.T, conn *dbschema.DatabaseConnection) {
@@ -27,7 +27,7 @@ func insertAtlasMetadataDotRow(t *testing.T, conn *dbschema.DatabaseConnection) 
 	_, err := conn.Exec(
 		`INSERT INTO atlas_schema_revisions
 (version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
-VALUES (?, '472fecf4-5a9c-431f-8ff1-8e1facd1d50b', 2, 0, 0, '2026-08-01 12:04:21.291103+02:00', 0, NULL, NULL, '', NULL, 'Atlas CLI v1.2.4-e282f76-canary')`,
+VALUES (?, '472fecf4-5a9c-431f-8ff1-8e1facd1d50b', 2, 0, 0, '2026-08-01 12:04:21.291103+02:00', 0, NULL, NULL, '', NULL, 'Atlas')`,
 		dotRowVersion,
 	)
 	qt.Assert(t, err, qt.IsNil)

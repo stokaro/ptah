@@ -953,7 +953,7 @@ func (v atlasVariable) typed() bool {
 
 // atlasSupportedVariableTypes names the variable type constraints Ptah
 // implements, for error messages. Anything else fails loudly so a config never
-// silently drops a constraint the official Atlas binary enforces.
+// silently drops a constraint Atlas enforces.
 const atlasSupportedVariableTypes = "string, number, bool, and list(string)"
 
 func (p atlasParser) parseVariableBlock(block *hclsyntax.Block) (atlasVariable, error) {

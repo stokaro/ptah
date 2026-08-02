@@ -537,7 +537,7 @@ func atlasSchemaTestVerb() atlasVerb {
 // two-file pair plus ptah.sum. Every other Atlas directory format keeps the
 // shared "not implemented" rejection.
 //
-// The default is `atlas`, matching the default the Atlas Pro trial registers on
+// The default is `atlas`, matching the default Atlas registers on
 // this verb and every other compat migrate verb — an unflagged Atlas pipeline
 // runs against an Atlas-format directory and must get an Atlas checkpoint back.
 // The native `ptah migrations checkpoint` default stays `ptah`.

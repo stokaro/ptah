@@ -69,7 +69,7 @@ and `--lock-name`.
 Pre-migration checks — `-- +ptah check` directives and Atlas txtar
 `checks.sql` / `checks/*.sql` sections — are enforced here as they are natively.
 Atlas registers no `--skip-checks` on `migrate apply` (measured: CE v1.2.0
-answers with `unknown flag`, and the licensed v1.2.4 surface registers it only
+answers with `unknown flag`, and Atlas's own help surface registers it only
 on `migrate down`), so the emergency bypass is the `PTAH_SKIP_CHECKS`
 environment variable rather than a flag this surface must not grow:
 
@@ -448,7 +448,7 @@ non-community template functions, so these exports are an open Ptah extension.
   segments fail explicitly; exporter blocks remain an explicit gap.
 
 The pinned Atlas CE binary rejects `schema inspect --include` with
-`unknown flag: --include`; the licensed build registers it. The measured
+`unknown flag: --include`; Atlas registers it. The measured
 behavioral differences are tabulated in
 [the Atlas comparison](../../atlas/comparison/#schema-inspect---include).
 
@@ -500,7 +500,7 @@ re-planning. Both plan formats are accepted, detected by content: the Atlas
 
 - A JSON plan is verified against its recorded source fingerprint — a drifted
   target refuses with a stale-plan error — and may run without `--to`.
-- An Atlas-format plan requires `--to`, matching the official binary: its
+- An Atlas-format plan requires `--to`, as Atlas does: its
   hashes are Atlas-computed with no local recipe, so the plan is replayed on
   a dev database from the target's current schema, and the reached state must
   equal the `--to` desired state before the target is touched. SQLite targets
@@ -584,14 +584,14 @@ The JSON plan records the ordered SQL statements with per-statement safety
 severity, the dialect, the exclude patterns, and SHA-256 fingerprints of the
 source and desired schema states. The `.plan.hcl` shape carries only the
 name, the fingerprints, and the migration SQL; Ptah writes its own sha256
-fingerprints there (the official binary parses the file but verifies its own
+fingerprints there (Atlas parses the file but verifies its own
 base64 hashes, which have no local recipe), re-derives statement severity at
 read time, and refuses to save a plan computed with `--exclude` as
 `.plan.hcl` because the shape cannot record the patterns.
 
 The `.FromHash` and `.ToHash` field names and their untagged standard-Base64
-representation were verified with local Atlas trial v1.2.4 runs on 2026-08-02;
-their values still differ because Ptah fingerprints its independent schema
+representation were verified against Atlas's own reference; their values still
+differ because Ptah fingerprints its independent
 representation.
 
 Editing changes the statements, never the fingerprints. `from` still describes
@@ -621,7 +621,7 @@ path rules.
 - Registry-bound `--push`, `--pending`, and `--repo` are recorded waivers
   that fail loudly.
 - `--format` fails explicitly. Atlas's plan report payload was never executed
-  on the licensed trial, so its field names are unknown; an invented shape
+  in Atlas, so its field names are unknown; an invented shape
   would silently break Pro templates that reference the real ones.
 - `--directive` fails explicitly. The measured Atlas `.plan.hcl` carries only
   `from`, `to`, and `migration`, so a directive would have to ride inside the

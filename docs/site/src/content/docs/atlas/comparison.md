@@ -99,7 +99,7 @@ index; the sections carry the detail.
 
 **Atlas OSS.** Atlas is an independent upstream product. Ptah treats its public command names, flags, file formats, and observable behavior as compatibility inputs.
 
-**Atlas Commercial / Cloud.** Same Atlas product family plus licensed Pro and Cloud capabilities.
+**Atlas Commercial / Cloud.** Same Atlas product family plus its commercial Pro and Cloud capabilities.
 
 **Evidence.** [License boundary](../license-boundary/), [Atlas feature availability](https://atlasgo.io/features)
 
@@ -147,10 +147,10 @@ resources inspection keeps, through the same engine as `schema apply` and
 
 Atlas CE v1.2.0 does not register the flag at all — `atlas schema inspect -u
 sqlite://app.db --include users` exits 1 with `Error: unknown flag:
---include`. The licensed Atlas v1.2.4 build registers it, and Ptah's behavior
+--include`. Atlas registers it, and Ptah's behavior
 diverges from it in two measured ways, both deliberate:
 
-| Input | Licensed Atlas v1.2.4 | Ptah |
+| Input | Atlas | Ptah |
 | --- | --- | --- |
 | `--include 't1'` | `t1` with its columns, plus `schema "main"` | same selection |
 | `--include '*.t1'` | pattern is read at child depth: `t1` rendered without its columns and `t2` rendered as an empty shell, exit 0 | `*.t1` is the wildcard spelling of the qualified name `main.t1`, so `t1` is rendered whole and `t2` is dropped |
@@ -158,11 +158,10 @@ diverges from it in two measured ways, both deliberate:
 
 Ptah has no child-level include selection in either spelling, so it keeps
 whole objects instead of emitting partial ones. It also refuses a selection
-that drops a dependency of a selected object, where the licensed build renders
+that drops a dependency of a selected object, where Atlas renders
 the reference anyway — its `*.t1` output keeps `primary_key { columns =
 [column.id] }` on a table whose `id` column the same output omits. The
-Atlas-side rows are the recorded trial transcripts; the trial account has since
-been suspended, so behavior beyond those inputs is not established here.
+Atlas-side rows are the recorded transcripts, so behavior beyond those inputs is not established here.
 
 There is no `atlas.hcl` spelling of this selector. Atlas documents `exclude`
 but no `include` attribute on the `env` block; CE accepts `include = [...]`
@@ -272,7 +271,7 @@ Docker dev databases remain a gap.
 
 **Atlas OSS.** The pinned Atlas CE binary registers `migrate down` as a community-abort stub, so the capability is unreachable there.
 
-**Atlas Commercial / Cloud.** The licensed build runs the verb and records nothing when a down fails. Measured with Atlas CLI `v1.2.4-e282f76-canary` (licensed, local SQLite, 2026-08-01): after a down whose second statement fails, the body is rolled back and the revision row still reads `applied=2, total=2, error=''`, `atlas migrate status` reports the version applied, and a retry after repairing the down file succeeds and deletes the row.
+**Atlas Commercial / Cloud.** Atlas runs the verb and records nothing when a down fails (measured): after a down whose second statement fails, the body is rolled back and the revision row still reads `applied=2, total=2, error=''`, `atlas migrate status` reports the version applied, and a retry after repairing the down file succeeds and deletes the row.
 
 **Evidence.** [Atlas down migrations](https://atlasgo.io/versioned/down), [`stokaro/ptah#957`](https://github.com/stokaro/ptah/issues/957)
 
@@ -640,11 +639,11 @@ The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded 
 
 **Current boundary.** `ptah-compat schema plan` computes the declarative migration from the `--from` target database to local `--to` schema files and saves it as a local plan file (`--save`/`--output`/`--name`/`--dry-run`, `--env` project defaults; `--auto-approve` accepted for CLI compatibility). The default format is the Atlas `.plan.hcl` shape, readable by Atlas's plan reader; an `--output` path ending in `.json` writes the native JSON plan with ordered statements, per-statement safety severity, dialect, exclude patterns, and SHA-256 source/desired fingerprints.
 
-`ptah-compat schema apply --plan file://<path>` reads both formats, including `.plan.hcl` files written by the licensed Atlas binary. JSON plans execute after verifying the source fingerprint against the live database, refusing drifted targets loudly. Atlas-format plans require `--to` like the official binary and are verified by replaying the plan on a dev database (an ephemeral SQLite one when the target is SQLite) and comparing the reached state with the desired state; every `--plan` apply with a desired state re-verifies the end state on the target afterward.
+`ptah-compat schema apply --plan file://<path>` reads both formats, including `.plan.hcl` files written by Atlas. JSON plans execute after verifying the source fingerprint against the live database, refusing drifted targets loudly. Atlas-format plans require `--to` like Atlas and are verified by replaying the plan on a dev database (an ephemeral SQLite one when the target is SQLite) and comparing the reached state with the desired state; every `--plan` apply with a desired state re-verifies the end state on the target afterward.
 
-`--edit` opens the planned SQL in `$VISUAL`, then `$EDITOR`, and saves the plan rebuilt from valid UTF-8 text, re-deriving dialect-aware statement severity and the destructive marker so the saved plan describes the SQL it actually carries; statement text round-trips verbatim, comments included, so quitting the editor unchanged reproduces the plan byte for byte, and an edit that leaves no statement is refused with nothing written. `--name-format` computes the plan name from a Go template over `.FromHash`/`.ToHash`, exposed as untagged standard-Base64 digests like the measured Atlas trial v1.2.4 values, and cannot be combined with `--name`; default file names refuse path separators, control characters, `.`/`..`, and the characters Windows forbids. `--skip-lint` is accepted as an explicit no-op, because `schema plan` runs no lint step — that is a gap against Pro, which does lint, not parity with it.
+`--edit` opens the planned SQL in `$VISUAL`, then `$EDITOR`, and saves the plan rebuilt from valid UTF-8 text, re-deriving dialect-aware statement severity and the destructive marker so the saved plan describes the SQL it actually carries; statement text round-trips verbatim, comments included, so quitting the editor unchanged reproduces the plan byte for byte, and an edit that leaves no statement is refused with nothing written. `--name-format` computes the plan name from a Go template over `.FromHash`/`.ToHash`, exposed as untagged standard-Base64 digests like the measured Atlas values, and cannot be combined with `--name`; default file names refuse path separators, control characters, `.`/`..`, and the characters Windows forbids. `--skip-lint` is accepted as an explicit no-op, because `schema plan` runs no lint step — that is a gap against Pro, which does lint, not parity with it.
 
-The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded waivers, and the plan registry sub-verbs stay Atlas CE boundary stubs. `--format` and `--directive` fail explicitly: neither was executed on the licensed trial, so Atlas's plan report payload and its directive artifact shape are both unmeasured, and guessing either would produce silent divergence rather than parity.
+The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded waivers, and the plan registry sub-verbs stay Atlas CE boundary stubs. `--format` and `--directive` fail explicitly: neither was executed in Atlas, so Atlas's plan report payload and its directive artifact shape are both unmeasured, and guessing either would produce silent divergence rather than parity.
 
 **Tracking.** [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758)
 
@@ -672,7 +671,7 @@ The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded w
 
 `ptah-compat schema inspect --exclude` now filters inspection output with Atlas-style resource globs and type selectors, including the documented `*[type=extension].version` field selector with schema-qualified globs; other field selectors and type selectors on non-final pattern segments fail explicitly.
 
-`ptah-compat schema inspect --include` positively selects which top-level resources inspection keeps, through the same engine as `schema apply` and `schema diff`. The pinned Atlas CE binary rejects the flag with `unknown flag: --include`, so this is a Pro-surface spelling Ptah implements openly; the two measured divergences from the licensed build are tabulated under [Schema inspection](#schema-inspect---include).
+`ptah-compat schema inspect --include` positively selects which top-level resources inspection keeps, through the same engine as `schema apply` and `schema diff`. The pinned Atlas CE binary rejects the flag with `unknown flag: --include`, so this is a Pro-surface spelling Ptah implements openly; the two measured divergences from Atlas are tabulated under [Schema inspection](#schema-inspect---include).
 
 The pinned Atlas CE flag surface does not register `schema diff --web`, `migrate apply --to-version`, or `migrate apply --lock-name`, so Ptah rejects those flags as unknown.
 

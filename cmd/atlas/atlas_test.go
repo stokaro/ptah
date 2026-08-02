@@ -1282,7 +1282,7 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 }
 
 // TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags pins the inspect
-// flags the licensed Atlas build registers that compat deliberately does not:
+// flags Atlas registers that compat deliberately does not:
 // --output, --web, and --export are separate items of stokaro/ptah#951.
 // --include is registered and covered by schema_inspect_include_test.go.
 func TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags(t *testing.T) {

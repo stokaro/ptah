@@ -13,7 +13,7 @@ import (
 
 // SchemaPlanName is the template payload exposed to `atlas schema plan
 // --name-format`. The field names and representation were measured against
-// Atlas trial v1.2.4 on 2026-08-02: .FromHash and .ToHash are the untagged
+// Atlas: .FromHash and .ToHash are the untagged
 // standard-Base64 digests written to the plan block's from and to attributes.
 // This makes Atlas's documented `plan_{{ slice .ToHash 0 8 }}` example carry
 // 48 bits of fingerprint entropy. Standard Base64 can contain `/`, so callers

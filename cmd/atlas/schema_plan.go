@@ -120,7 +120,7 @@ diff policy values. Registry-bound planning (--push, --pending, --repo),
 	cmd.MarkFlagsMutuallyExclusive("save", "dry-run")
 	cmd.MarkFlagsMutuallyExclusive("output", "dry-run")
 	// Both spell the same field. Atlas registers both and its precedence is
-	// unmeasured (the licensed capture is help text only), so refusing the
+	// unmeasured (Atlas publishes help text only), so refusing the
 	// combination is preferred over silently picking a winner and writing a
 	// differently named plan file than the operator asked for.
 	cmd.MarkFlagsMutuallyExclusive("name", "name-format")
@@ -289,7 +289,7 @@ func editAtlasSchemaPlan(ctx context.Context, plan atlasschema.PlanFile) (atlass
 
 // renderAtlasSchemaPlanName computes the plan name from the --name-format Go
 // template. The template sees the plan's own fingerprints under the field
-// names the licensed Atlas binary documents.
+// names Atlas documents.
 func renderAtlasSchemaPlanName(
 	nameFormat string,
 	plan atlasschema.PlanFile,

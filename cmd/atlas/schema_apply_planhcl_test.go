@@ -15,8 +15,8 @@ import (
 )
 
 // The fixtures under testdata are the real measurement artifacts:
-// atlas.plan.hcl was written by the licensed Atlas binary
-// (v1.2.4-e282f76-canary) and atlas-plan-desired.sql is the desired state the
+// atlas.plan.hcl was written by Atlas and atlas-plan-desired.sql is the
+// desired state the
 // plan was computed for. The from-state DDL below recreates the scenario's
 // source database.
 const (
@@ -95,7 +95,7 @@ func TestSchemaApplyAtlasPlanFileWithExplicitDevURL(t *testing.T) {
 	dbPath := filepath.Join(dir, "oracle-dev.db")
 	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
 
-	// The exact invocation shape measured against the official binary:
+	// The exact invocation shape measured against Atlas:
 	// apply --url --to --dev-url --plan --auto-approve.
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath,
 		oracleFixturePath(c, oracleAtlasPlanFile),
@@ -120,7 +120,7 @@ func TestSchemaApplyAtlasPlanFileRequiresTo(t *testing.T) {
 		"--auto-approve",
 	)
 
-	// The official binary's contract and error, verbatim: an Atlas plan file
+	// Atlas's contract and error, verbatim: an Atlas plan file
 	// carries nothing Ptah can verify without the desired state.
 	c.Assert(err, qt.ErrorMatches, `the flag "to" is required to verify the provided plan`)
 	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)

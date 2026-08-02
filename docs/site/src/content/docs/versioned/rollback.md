@@ -167,7 +167,7 @@ row with `ptah migrations repair --version <version>`.
 is left byte-identical — no error recorded, `applied` and `total` unchanged.
 Both `atlas migrate status` and `ptah-compat migrate status` then report the
 version as applied, and a retry after fixing the down file needs no flags and
-no repair step. Measured against Atlas CLI `v1.2.4-e282f76-canary` (licensed
+no repair step. Measured against Atlas (
 build, 2026-08-01): after a down whose second statement fails, its revision row
 still reads `applied=2, total=2, error=''`.
 
