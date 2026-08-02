@@ -88,6 +88,7 @@ type Migrator struct {
 	migrationsSchema     string
 	revisionTableFormat  RevisionTableFormat
 	execOrder            ExecOrder
+	outOfOrderExempt     []int64
 	txMode               MigrationTxMode
 	migrationLockName    string
 	migrationLockTimeout time.Duration
@@ -232,6 +233,20 @@ func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration) error {
 func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator {
 	tmp := *m
 	tmp.execOrder = normalizeExecOrder(execOrder)
+	return &tmp
+}
+
+// WithOutOfOrderExempt exempts specific versions from the linear execution
+// guard.
+//
+// It exists for one caller: a Flyway directory read through `?format=`, whose
+// converted Atlas version is a projection of Atlas CE's sum order rather than a
+// chronology. See outOfOrderExempt for why that distinction matters, and why the
+// exempt set is data supplied by the projecting layer rather than a rule
+// inferred here.
+func (m *Migrator) WithOutOfOrderExempt(versions []int64) *Migrator {
+	tmp := *m
+	tmp.outOfOrderExempt = slices.Clone(versions)
 	return &tmp
 }
 
@@ -2051,7 +2066,10 @@ func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, t
 	bootstrap := checkpointBootstrap(migrations, applied, targetVersion)
 	floor := checkpointFloor(migrations, applied, bootstrap)
 	pendingVersions := pendingMigrationVersionsFloored(migrations, applied, bootstrap, floor)
-	outOfOrderVersions := outOfOrderMigrationVersions(pendingVersions, currentVersion)
+	outOfOrderVersions := outOfOrderExempt(
+		outOfOrderMigrationVersions(pendingVersions, currentVersion),
+		m.outOfOrderExempt,
+	)
 	execOrder := normalizeExecOrder(m.execOrder)
 
 	if execOrder == ExecOrderLinear && len(outOfOrderVersions) > 0 {
@@ -2070,7 +2088,8 @@ func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, t
 		if targetVersion > 0 && migration.Version > targetVersion {
 			continue
 		}
-		if execOrder == ExecOrderLinearSkip && migration.Version < currentVersion {
+		if execOrder == ExecOrderLinearSkip && migration.Version < currentVersion &&
+			!slices.Contains(m.outOfOrderExempt, migration.Version) {
 			m.logger.Warn("Skipping out-of-order migration", "version", migration.Version, "currentVersion", currentVersion)
 			continue
 		}

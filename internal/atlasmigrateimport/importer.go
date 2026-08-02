@@ -701,6 +701,41 @@ func flywayCEVersion(file flywaySumFile) string {
 	return file.version
 }
 
+// FlywayBaselineAtlasVersion returns the converted Atlas version of the
+// surviving baseline in a Flyway directory, or 0 when it holds none.
+//
+// The caller is the apply path, and the reason it needs this is narrow. The
+// converted version encodes Atlas CE's SUM order, in which a surviving baseline
+// comes FIRST whatever its own version — measured, and measured to hold across
+// runs, not only within one conversion. So the baseline is placed in a band
+// below every survivor, and on a database that already has migrations recorded
+// it therefore sorts below all of them. That LOOKS like a migration authored
+// before what is already applied, and it is not: it is an artifact of projecting
+// a sum order onto an int64. See checkFlywayBaselineOrdering in cmd/atlas.
+//
+// It shares flywayCoveredFiles and flywayConvertedVersions with the importer, so
+// the version reported here is the one the entry is actually executed under.
+func FlywayBaselineAtlasVersion(fsys fs.FS, format Format) (int64, error) {
+	if format != FormatFlyway {
+		return 0, nil
+	}
+	covered, err := flywayCoveredFiles(fsys)
+	if err != nil {
+		return 0, err
+	}
+	versions, err := flywayConvertedVersions(covered)
+	if err != nil {
+		return 0, err
+	}
+	for i, file := range covered {
+		if file.kind == flywaySumBaseline {
+			// flywaySumFiles emits at most one baseline, and always first.
+			return versions[i], nil
+		}
+	}
+	return 0, nil
+}
+
 // flywayEntryName renders the converted Atlas single-file name. A Flyway file
 // need not carry a description at all — V1.sql and Video.sql are both ordinary
 // migrations to Atlas CE — so the name degrades to the bare version rather than

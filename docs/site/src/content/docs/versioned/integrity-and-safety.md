@@ -156,6 +156,28 @@ lowercase-prefixed file could run SQL no checksum protected. The importer and
 the hasher now share one selection rule, so that class of gap cannot reopen
 without a failing test.
 
+:::note[Flyway baselines: Ptah runs one where Atlas sometimes does not]
+Atlas CE decides which migrations are pending by comparing the version token as
+a **string** against the highest version already recorded. A baseline whose
+token does not sort above that mark is silently treated as applied and never
+runs — measured on Atlas CE v1.2.0:
+
+- `V2__x.sql` applied, then `B10__base.sql` added: `"10" < "2"` as strings, so
+  Atlas reports `No migration files to execute` and the baseline never runs.
+- `V1`, `V2`, `V3` applied, then `B2__base.sql` added (superseding `V1` and
+  `V2`): same result.
+
+Ptah decides pending-ness from the recorded set instead, so it **runs** the
+baseline in both cases. Where a baseline is added deliberately, that is what was
+intended; it is a divergence from Atlas either way, and which behavior
+`ptah-compat` should keep is
+[#1003](https://github.com/stokaro/ptah/issues/1003).
+
+Both tools run a baseline added above the high-water mark, and both execute its
+SQL rather than merely recording it — Atlas fails loudly if that SQL cannot
+survive a second run.
+:::
+
 :::danger[Upgrading a Flyway directory applied by Ptah v0.1.0–v0.1.2]
 Converging the importer changed the Atlas version each Flyway file converts
 to, and that version is the key `atlas_schema_revisions` stores. A database

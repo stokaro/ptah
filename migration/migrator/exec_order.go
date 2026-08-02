@@ -44,6 +44,34 @@ func normalizeExecOrder(value ExecOrder) ExecOrder {
 	}
 }
 
+// outOfOrderExempt drops versions whose position below the high-water mark is
+// known not to mean "authored earlier".
+//
+// The linear guard reads "version below the current one" as evidence that a
+// migration was authored before what is already applied. That inference holds
+// only while the version is a chronology. It is not one for a Flyway directory
+// read through ?format=: there the int64 is a projection of Atlas CE's sum
+// order, in which a surviving baseline is emitted FIRST regardless of its own
+// version, so the baseline is deliberately placed below every survivor. Reading
+// that placement as out-of-order refuses a directory Atlas CE applies.
+//
+// The exemption is a list of specific versions supplied by the caller that
+// computed the projection, never a rule this package infers. Everything else
+// stays guarded, which is what keeps an ordinary migration inserted below the
+// high-water mark refused — Atlas CE refuses that too.
+func outOfOrderExempt(versions, exempt []int64) []int64 {
+	if len(exempt) == 0 {
+		return versions
+	}
+	out := make([]int64, 0, len(versions))
+	for _, version := range versions {
+		if !slices.Contains(exempt, version) {
+			out = append(out, version)
+		}
+	}
+	return out
+}
+
 // OutOfOrderError reports pending migrations that are below the current
 // high-water mark while linear execution is required.
 type OutOfOrderError struct {

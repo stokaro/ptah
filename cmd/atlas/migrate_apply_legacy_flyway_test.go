@@ -322,25 +322,19 @@ func TestCompatMigrateApply_LegacyFlywayRefusalPrecedesExecutionOnDDL(t *testing
 	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{legacyFlywayV1})
 }
 
-// TestCompatMigrateApply_FlywayBaselineAfterApply_KnownRegression pins a
-// behavior this change BREAKS, so it is visible rather than latent.
+// TestCompatMigrateApply_FlywayBaselineAfterApply is the parity assertion that
+// replaced a regression this change briefly carried.
 //
 // Adding a baseline to a directory that has already been applied is the ordinary
-// Flyway baseline workflow. Measured 2026-08-02: Atlas CE applies it (exit 0,
-// tables p,q,r,s) and so does ptah-compat built from 1c70ea1. This build refuses,
-// because the converted baseline lands in the LOW band — below every version
-// already recorded — and the migrator reads that as an out-of-order migration.
+// Flyway baseline workflow, and Atlas CE runs it — measured, including the case
+// where the baseline's SQL cannot survive a second run, which CE fails loudly on.
+// So it is "run this now", not "record it as history".
 //
-// The band is what makes a surviving baseline execute FIRST within one run,
-// which is CE's order and the reason it exists. Removing it fixes this workflow
-// and breaks that ordering; --exec-order=non-linear fixes this workflow and
-// breaks the repeatable case, where CE itself refuses. No single setting gives
-// parity on both, so the projection needs a decision rather than another
-// unilateral change.
-//
-// This test asserts the CURRENT behavior only. It is not a statement that the
-// behavior is acceptable.
-func TestCompatMigrateApply_FlywayBaselineAfterApply_KnownRegression(t *testing.T) {
+// The converted baseline lands in the LOW band, below every recorded version,
+// which the linear guard used to read as an out-of-order migration. That
+// position encodes Atlas CE's sum order, not authoring order, so the version is
+// exempted from the guard. See atlasmigrateimport.FlywayBaselineAtlasVersion.
+func TestCompatMigrateApply_FlywayBaselineAfterApply(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
@@ -354,19 +348,125 @@ func TestCompatMigrateApply_FlywayBaselineAfterApply_KnownRegression(t *testing.
 	writeAtlasApplyProjectMigration(c, dir, "B3__base.sql", "CREATE TABLE sq3 (id INTEGER PRIMARY KEY);")
 	writeAtlasApplyProjectMigration(c, dir, "V4__four.sql", "CREATE TABLE sq4 (id INTEGER PRIMARY KEY);")
 	hashConvertedApplyDir(c, dir, "flyway")
-	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+	stdout, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations below current version")
-	// It is NOT the #982 revision detector firing: this database was written by
-	// this build, so the two failure modes are not being conflated.
-	c.Assert(errorText(err)+stderr, qt.Not(qt.Contains), "stokaro/ptah#982")
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	// The baseline's SQL actually ran, matching Atlas CE, which creates the
+	// table rather than merely recording the version.
+	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"sq1", "sq2", "sq3", "sq4"})
+}
 
-	// --exec-order=non-linear reaches Atlas CE's outcome, which is the workaround
-	// until the projection is decided.
-	_, stderr, err = runCompat("migrate", "apply", "--exec-order", "non-linear",
-		"--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
-	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+// TestCompatMigrateApply_FlywayOutOfOrderStillRefused is the input that
+// separates the exemption that shipped from the looser one it could have been.
+//
+// "Exempt the surviving baseline" and "exempt anything that lands below the
+// current version" agree on every shape with a baseline in it. They disagree
+// here: an ordinary versioned migration inserted below the high-water mark is
+// NOT an encoding artifact, and Atlas CE refuses it too — measured,
+// `migration file V2__b.sql was added out of order`. A loose exemption would
+// silently apply it.
+func TestCompatMigrateApply_FlywayOutOfOrderStillRefused(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("an ordinary versioned migration below the high-water mark", func(c *qt.C) {
+		root := c.TempDir()
+		dir := filepath.Join(root, "migrations")
+		dbPath := filepath.Join(root, "ooo.db")
+		writeAtlasApplyProjectMigration(c, dir, "V1__a.sql", "CREATE TABLE oa (id INTEGER PRIMARY KEY);")
+		writeAtlasApplyProjectMigration(c, dir, "V3__c.sql", "CREATE TABLE oc (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+		c.Assert(err, qt.IsNil)
+
+		writeAtlasApplyProjectMigration(c, dir, "V2__b.sql", "CREATE TABLE ob (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations below current version")
+		c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"oa", "oc"})
+	})
+
+	c.Run("a versioned migration added after a repeatable", func(c *qt.C) {
+		// The repeatable occupies the reserved top slot, so anything added later
+		// sorts below it. Atlas CE refuses this too, by its own out-of-order
+		// check, so the exemption must not reach it.
+		root := c.TempDir()
+		dir := filepath.Join(root, "migrations")
+		dbPath := filepath.Join(root, "rep.db")
+		writeAtlasApplyProjectMigration(c, dir, "V1__a.sql", "CREATE TABLE ra (id INTEGER PRIMARY KEY);")
+		writeAtlasApplyProjectMigration(c, dir, "R__v.sql", "CREATE TABLE rv (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+		c.Assert(err, qt.IsNil)
+
+		writeAtlasApplyProjectMigration(c, dir, "V2__b.sql", "CREATE TABLE rb (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations below current version")
+	})
+}
+
+// TestCompatMigrateApply_FlywayBaselineBelowHighWaterMark_KnownDivergence pins
+// the two shapes where Ptah is LOUDER than Atlas CE, deliberately.
+//
+// CE decides pending-ness by comparing the version token as a STRING against the
+// current high-water mark, so a baseline whose token does not sort above it is
+// silently considered applied and never runs. Measured:
+//
+//	V2 applied, B10 added   -> CE "No migration files to execute", table base absent
+//	V1,V2,V3 applied, B2 added -> CE "No migration files to execute", base absent
+//
+// Ptah keys pending-ness on the recorded set instead, so it runs the baseline.
+// Whether ptah-compat should reproduce the silent skip for drop-in fidelity is
+// stokaro/ptah#1003; it is a decision, not a defect, and neither side is
+// implemented here.
+func TestCompatMigrateApply_FlywayBaselineBelowHighWaterMark_KnownDivergence(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("a baseline whose token does not sort above the high-water mark", func(c *qt.C) {
+		root := c.TempDir()
+		dir := filepath.Join(root, "migrations")
+		dbPath := filepath.Join(root, "skip.db")
+		writeAtlasApplyProjectMigration(c, dir, "V1__p.sql", "CREATE TABLE kp (id INTEGER PRIMARY KEY);")
+		writeAtlasApplyProjectMigration(c, dir, "V2__q.sql", "CREATE TABLE kq (id INTEGER PRIMARY KEY);")
+		writeAtlasApplyProjectMigration(c, dir, "V3__t.sql", "CREATE TABLE kt (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+		c.Assert(err, qt.IsNil)
+
+		// B2 supersedes V1 and V2 in the covered set. Its token "2" does not
+		// sort above CE's current "3", so CE never runs it.
+		writeAtlasApplyProjectMigration(c, dir, "B2__base.sql", "CREATE TABLE kbase (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		stdout, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+		// Ptah runs it; Atlas CE leaves kbase absent.
+		c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"kbase", "kp", "kq", "kt"})
+	})
+}
+
+// userTables lists the non-Atlas tables in a sqlite database, sorted.
+func userTables(c *qt.C, dbPath string) []string {
+	c.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table'
+		AND name NOT LIKE 'atlas%' AND name NOT LIKE 'sqlite%' ORDER BY name`)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	var out []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		out = append(out, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return out
 }
 
 func TestMain(m *testing.M) {

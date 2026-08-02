@@ -249,11 +249,29 @@ func runAtlasMigrateApply(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	// A surviving Flyway baseline is converted into the band BELOW every
+	// survivor, because Atlas CE emits and executes it first whatever its own
+	// version — measured, and measured to hold across runs, not only within one
+	// conversion. On a database that already has migrations recorded it
+	// therefore sorts below all of them, which the linear guard would read as
+	// "authored earlier". It is not: the position encodes sum order, not
+	// chronology. Exempting exactly that one version keeps every other
+	// out-of-order migration refused, which is what Atlas CE does too.
+	baselineVersionExempt, err := atlasmigrateimport.FlywayBaselineAtlasVersion(captured, resolvedDirFormat)
+	if err != nil {
+		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+	var outOfOrderExempt []int64
+	if baselineVersionExempt > 0 {
+		outOfOrderExempt = []int64{baselineVersionExempt}
+	}
+
 	plan, err := atlasmigrate.PrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
 		Dir:                  dir,
 		FS:                   migrationFS,
 		DryRun:               opts.dryRun,
 		ExecOrder:            execOrder,
+		OutOfOrderExempt:     outOfOrderExempt,
 		TxMode:               txMode,
 		RevisionsSchema:      opts.revisionsSchema,
 		MigrationLockTimeout: migrationLockTimeout,
