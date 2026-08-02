@@ -156,6 +156,44 @@ lowercase-prefixed file could run SQL no checksum protected. The importer and
 the hasher now share one selection rule, so that class of gap cannot reopen
 without a failing test.
 
+:::danger[Upgrading a Flyway directory applied by Ptah v0.1.0–v0.1.2]
+Converging the importer changed the Atlas version each Flyway file converts
+to, and that version is the key `atlas_schema_revisions` stores. A database
+migrated through `?format=flyway` by any of those releases therefore records
+migrations under versions this release matches to no file, so **every migration
+in the directory reads as pending**.
+
+`ptah-compat migrate apply` refuses such a database before executing anything
+and prints the `UPDATE` statements that migrate the recorded versions forward:
+
+```text
+error: this database was migrated by a Ptah build older than the one that fixed
+stokaro/ptah#982 ... 2 already-applied migration(s) would run a second time and
+nothing has been applied
+
+recorded version -> version this build uses:
+  10000                -> 4611686018427469511  V1__init.sql
+  20000                -> 4611686018427510315  V2__seed.sql
+
+to adopt the new encoding, migrate the recorded versions forward and re-run:
+  UPDATE atlas_schema_revisions SET version = '4611686018427469511' WHERE version = '10000';
+  UPDATE atlas_schema_revisions SET version = '4611686018427510315' WHERE version = '20000';
+```
+
+Run them against the schema `--revisions-schema` selects, then re-run the
+apply. Rewriting the version column is enough on its own: the recorded hash
+covers the converted SQL body, which this change does not touch.
+
+The statements have to be run by hand because `migrate set` and `migrate
+status` do not yet accept `?format=`
+([#1002](https://github.com/stokaro/ptah/issues/1002)), and `--baseline`
+refuses once the revision table is non-empty.
+
+Without the refusal this is not reliably loud: re-running a `CREATE TABLE`
+fails and leaves a dirty revision, but re-running a backfill or a seed
+succeeds, exits 0, and duplicates the rows.
+:::
+
 ## Replay on a dev database
 
 Hashes prove the files are unchanged, not that the SQL executes. Add
