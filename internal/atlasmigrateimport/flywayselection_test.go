@@ -53,7 +53,7 @@ func flywayCovered(c *qt.C, fsys fs.FS) []string {
 // It is asserted by construction rather than by listing expected names on both
 // sides, because a fixture that spells out both answers only proves the fixture
 // was written twice. Every shape here was measured against the pinned Atlas CE
-// v1.2.0 oracle, which executes exactly its covered set in exactly sum order;
+// v1.3.0 oracle, which executes exactly its covered set in exactly sum order;
 // scripts/probe-atlas-apply-gate.sh section 9a reproduces the comparison
 // against the binary.
 func TestLoadFSFlywayConsumesExactlyTheCoveredSet(t *testing.T) {
