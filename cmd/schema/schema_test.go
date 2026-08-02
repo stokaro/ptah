@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/schema"
-	"github.com/stokaro/ptah/internal/atlashcl"
-	"github.com/stokaro/ptah/internal/goannotationexport"
+	"go.5x5.cz/ptah/cmd/schema"
+	"go.5x5.cz/ptah/internal/atlashcl"
+	"go.5x5.cz/ptah/internal/goannotationexport"
 )
 
 func TestSchemaExportCommandWritesHCL(t *testing.T) {

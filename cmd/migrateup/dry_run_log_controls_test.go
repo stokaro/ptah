@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migrateup"
+	"go.5x5.cz/ptah/cmd/migrateup"
 )
 
 // The native surface keeps the dry-run statement narration the Atlas-compatible

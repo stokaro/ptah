@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 func TestOpenedDirectoryRevalidate_FailurePath_RejectsAncestorReplacement(t *testing.T) {

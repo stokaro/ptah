@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasschema"
-	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/internal/atlasschema"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing.T) {

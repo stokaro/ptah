@@ -4,9 +4,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/stokaro/ptah/cmd/atlas"
-	"github.com/stokaro/ptah/cmd/internal/cliobs"
-	"github.com/stokaro/ptah/cmd/root"
+	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/internal/cliobs"
+	"go.5x5.cz/ptah/cmd/root"
 )
 
 func main() {

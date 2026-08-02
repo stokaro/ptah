@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/stokaro/ptah/dbschema"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/atlasfilter"
-	"github.com/stokaro/ptah/internal/atlasreport"
-	"github.com/stokaro/ptah/internal/atlasurl"
-	"github.com/stokaro/ptah/internal/convert/dbschematogo"
-	"github.com/stokaro/ptah/internal/fileplan"
-	"github.com/stokaro/ptah/internal/schemascope"
+	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasfilter"
+	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/fileplan"
+	"go.5x5.cz/ptah/internal/schemascope"
 )
 
 // InspectOptions configures Atlas-compatible schema inspection.

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/annotationmeta"
 )
 
 const SchemaPath = "schemas/ptah-annotations.schema.json"

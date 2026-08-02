@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migrateup"
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/cmd/migrateup"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // writeUpMigrations writes a two-migration ptah-format directory.

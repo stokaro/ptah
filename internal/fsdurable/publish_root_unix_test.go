@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/internal/fsdurable"
 )
 
 func TestPublishFileAt_HappyPath_AppliesExactUnixMode(t *testing.T) {

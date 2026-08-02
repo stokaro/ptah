@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/sqlrunner"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
 // Engines we consider "real data tables" for schema introspection. The

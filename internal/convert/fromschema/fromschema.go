@@ -58,12 +58,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/platform/identifier"
-	"github.com/stokaro/ptah/internal/planner/tablelookup"
-	"github.com/stokaro/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/internal/planner/tablelookup"
+	"go.5x5.cz/ptah/internal/sqlident"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.

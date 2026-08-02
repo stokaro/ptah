@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasurl"
-	"github.com/stokaro/ptah/migration/generator"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/migration/generator"
 )
 
 func writeRollbackShadowMigrations(c *qt.C, dir string, downSQL string) {

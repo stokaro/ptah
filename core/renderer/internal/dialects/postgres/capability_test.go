@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/ptaherr"
-	"github.com/stokaro/ptah/core/renderer/internal/dialects/postgres"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
 )
 
 func TestPostgreSQLRenderer_NilCapabilitiesAreConservative(t *testing.T) {

@@ -3,12 +3,12 @@ package compare
 import (
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/platform/identifier"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/indexscope"
-	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/indexscope"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // isConstraintBasedUniqueIndex determines if a unique index was automatically created by a UNIQUE constraint.

@@ -10,10 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/dbschema/dbtest"
-	"github.com/stokaro/ptah/internal/testutils"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 func TestNewPostgreSQLReader(t *testing.T) {

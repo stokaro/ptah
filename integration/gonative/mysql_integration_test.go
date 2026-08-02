@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/dbschema/mysql"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbschema/mysql"
 )
 
 // skipIfNoMySQL skips only when MYSQL_TEST_DSN is absent; a bad configured DSN fails.

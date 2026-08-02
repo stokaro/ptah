@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"slices"
 
-	"github.com/stokaro/ptah/internal/atlasmigrateimport"
-	"github.com/stokaro/ptah/internal/fsnapshot"
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 )
 
 // ResolveApplySourceForFormat returns the immutable filesystem the Atlas apply

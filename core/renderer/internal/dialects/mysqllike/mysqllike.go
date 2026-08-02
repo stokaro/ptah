@@ -9,11 +9,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/ptaherr"
-	"github.com/stokaro/ptah/core/renderer/internal/dialects/internal/bufwriter"
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // Renderer provides MySQL-like-specific SQL rendering

@@ -8,8 +8,8 @@ import (
 	"slices"
 	"unicode/utf8"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 )
 
 // ResolveIdentifierSemantics resolves the finite identifier set against the

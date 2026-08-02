@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 )
 
 // Option configures parser behavior.

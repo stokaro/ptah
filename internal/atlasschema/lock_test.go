@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasschema"
-	"github.com/stokaro/ptah/internal/dblock"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/dblock"
 )
 
 func TestParseApplyLockTimeout_HappyPath(t *testing.T) {

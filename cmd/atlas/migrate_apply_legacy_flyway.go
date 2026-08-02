@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 )
 
 // legacyFlywayRevisionsTable is the table `migrate apply` records revisions in

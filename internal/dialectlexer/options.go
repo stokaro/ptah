@@ -3,8 +3,8 @@
 package dialectlexer
 
 import (
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/lexer"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/lexer"
 )
 
 // Options returns the lexer behavior for dialect-sensitive SQL tokenization.

@@ -12,10 +12,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
 func TestNewMySQLReader(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"oras.land/oras-go/v2/content/memory"
 
-	"github.com/stokaro/ptah/internal/migrationartifact"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/migrationartifact"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestPushDirectoryTo_HappyPath(t *testing.T) {

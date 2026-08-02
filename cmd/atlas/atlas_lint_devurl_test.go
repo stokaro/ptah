@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/atlas"
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 func TestCompatCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {

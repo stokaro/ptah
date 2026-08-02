@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/dbschema/dbtest"
-	"github.com/stokaro/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/internal/dbschema/postgres"
 )
 
 func TestWriterDropAllTables_CanceledContext(t *testing.T) {

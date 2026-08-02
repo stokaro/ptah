@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/generator"
-	"github.com/stokaro/ptah/migration/safety"
+	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/safety"
 )
 
 func TestMigrationPlanWriteFiles_PublishesMultiplePairsAndReports(t *testing.T) {

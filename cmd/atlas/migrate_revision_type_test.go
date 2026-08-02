@@ -15,7 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite"
 
-	"github.com/stokaro/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas"
 )
 
 func TestMigrateApply_RecordsAppliedAtlasRevisionMetadata(t *testing.T) {

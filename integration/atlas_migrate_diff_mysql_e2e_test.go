@@ -18,10 +18,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/dbschema"
-	mysqlschema "github.com/stokaro/ptah/internal/dbschema/mysql"
-	"github.com/stokaro/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema"
+	mysqlschema "go.5x5.cz/ptah/internal/dbschema/mysql"
+	"go.5x5.cz/ptah/internal/sqlident"
 )
 
 type mySQLMigrateDiffCase struct {

@@ -10,13 +10,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/cmd/migrate"
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/migration/generator"
-	"github.com/stokaro/ptah/migration/safety"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/migrate"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/safety"
 )
 
 func TestMigrateGenerateCommandExposesShadowDBFlag(t *testing.T) {

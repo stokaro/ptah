@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/lint"
 )
 
 var externalRuleSequence atomic.Uint64

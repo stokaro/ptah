@@ -3,7 +3,7 @@ package atlasfilter
 import (
 	"strings"
 
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 )
 
 // projectDatabase applies the schema universe and include selectors to the

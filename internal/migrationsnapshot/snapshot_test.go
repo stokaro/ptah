@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 )
 
 func TestCapture_IncludesOnlyMigrationInputs(t *testing.T) {

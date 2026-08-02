@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/cmd/sql"
-	"github.com/stokaro/ptah/internal/sqllint"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/sql"
+	"go.5x5.cz/ptah/internal/sqllint"
 )
 
 func execute(args ...string) (stdout, stderr string, err error) {

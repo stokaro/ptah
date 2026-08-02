@@ -39,7 +39,7 @@ packages, examples, fixtures, tests, or implementation details.
 Import paths use the module prefix:
 
 ```go
-import "github.com/stokaro/ptah/core/renderer"
+import "go.5x5.cz/ptah/core/renderer"
 ```
 
 The `migration/dbtest` package is the embeddable engine behind the native test
@@ -69,7 +69,7 @@ discarding it can also discard the source declarations behind materialized
 `GeneratedFromEmbedded` fields.
 
 The separate [`testkit`](https://github.com/stokaro/ptah/tree/master/testkit)
-module (`github.com/stokaro/ptah/testkit`) is an opt-in helper for tests that
+module (`go.5x5.cz/ptah/testkit`) is an opt-in helper for tests that
 need real databases. It keeps `testcontainers-go` out of Ptah's main module
 graph and versions independently.
 

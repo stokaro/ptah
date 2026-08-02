@@ -22,9 +22,9 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/ociartifact"
-	"github.com/stokaro/ptah/internal/ocireferrers"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/ocireferrers"
 )
 
 const ociMigrationVersion = int64(1775000101)

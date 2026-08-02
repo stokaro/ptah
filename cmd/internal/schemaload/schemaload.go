@@ -14,11 +14,11 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/schemasource"
-	"github.com/stokaro/ptah/internal/ociartifact"
-	"github.com/stokaro/ptah/internal/schemaartifact"
-	"github.com/stokaro/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemasource"
+	"go.5x5.cz/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/schemaartifact"
+	"go.5x5.cz/ptah/internal/schemafile"
 )
 
 // Options selects the desired-schema sources and how loading is reported.

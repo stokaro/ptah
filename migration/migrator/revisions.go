@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasretry"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasretry"
 )
 
 const (

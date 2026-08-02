@@ -3,7 +3,7 @@ package atlasfilter
 import (
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/goschema"
 )
 
 // projectGenerated applies the schema universe and include selectors to the

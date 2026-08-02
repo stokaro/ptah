@@ -6,9 +6,9 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // GetAllScenarios returns all integration test scenarios

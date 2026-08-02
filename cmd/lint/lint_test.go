@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	cmdlint "github.com/stokaro/ptah/cmd/lint"
-	migrationlint "github.com/stokaro/ptah/migration/lint"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	cmdlint "go.5x5.cz/ptah/cmd/lint"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
 )
 
 func execute(args ...string) (stdout, stderr string, err error) {

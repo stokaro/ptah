@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/annotationmeta"
-	"github.com/stokaro/ptah/internal/annotationparse"
+	"go.5x5.cz/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/annotationparse"
 )
 
 // DiagnosticSeverity follows the LSP DiagnosticSeverity values.

@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/stokaro/ptah/internal/dbschema/postgres"
-	"github.com/stokaro/ptah/internal/sqlrunner"
+	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
 type postgresWriterFamilyLiveCase struct {

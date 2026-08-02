@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/internal/sqlident"
 )
 
 func TestQuote(t *testing.T) {

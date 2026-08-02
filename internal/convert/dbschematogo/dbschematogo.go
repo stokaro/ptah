@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/goschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 )
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format

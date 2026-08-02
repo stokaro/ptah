@@ -6,7 +6,7 @@ package mocks
 import (
 	"errors"
 
-	"github.com/stokaro/ptah/core/ast"
+	"go.5x5.cz/ptah/core/ast"
 )
 
 // MockVisitor implements the Visitor interface for testing

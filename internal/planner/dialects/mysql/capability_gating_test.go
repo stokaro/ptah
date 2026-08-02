@@ -6,11 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
-	"github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
+	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // mixedSharedFKDiff is the issue #207 mixed scenario (shared_fk modified on

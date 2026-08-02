@@ -7,13 +7,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // GetDynamicScenarios returns all dynamic integration test scenarios that use versioned entities

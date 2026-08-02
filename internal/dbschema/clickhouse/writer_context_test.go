@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/dbschema/clickhouse"
-	"github.com/stokaro/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
+	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
 func TestWriterDropAllTables_CanceledContext(t *testing.T) {

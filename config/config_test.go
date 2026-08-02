@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/config"
+	"go.5x5.cz/ptah/config"
 )
 
 func TestDefaultCompareOptions(t *testing.T) {

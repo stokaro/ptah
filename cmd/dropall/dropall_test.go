@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 
-	"github.com/stokaro/ptah/cmd/dropall"
+	"go.5x5.cz/ptah/cmd/dropall"
 )
 
 func TestDropAllCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {

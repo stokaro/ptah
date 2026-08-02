@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migrate"
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/cmd/migrate"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 func runGenerate(args ...string) (string, error) {

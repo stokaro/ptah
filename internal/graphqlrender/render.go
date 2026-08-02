@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/schemaexport"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
 // Options controls the GraphQL export.

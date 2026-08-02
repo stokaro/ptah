@@ -14,7 +14,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/root"
+	"go.5x5.cz/ptah/cmd/root"
 )
 
 func TestDatabaseTestRunnersPostgresE2E(t *testing.T) {

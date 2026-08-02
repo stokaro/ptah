@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
-	dbtypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/migration/planner"
-	"github.com/stokaro/ptah/migration/schemadiff"
+	"go.5x5.cz/ptah/core/goschema"
+	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/planner"
+	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // multiTenantRLSSchema builds an RLS-heavy schema of the shape reported in

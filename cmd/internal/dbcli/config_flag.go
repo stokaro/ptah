@@ -3,7 +3,7 @@ package dbcli
 import (
 	"github.com/spf13/pflag"
 
-	"github.com/stokaro/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/config/projectconfig"
 )
 
 // ConfigFlagName is the shared Ptah config path flag name.

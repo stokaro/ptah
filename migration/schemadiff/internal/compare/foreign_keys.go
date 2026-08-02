@@ -4,8 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions.

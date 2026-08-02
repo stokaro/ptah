@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/generator"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestWriteDataMigrationFiles(t *testing.T) {

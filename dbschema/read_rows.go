@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/internal/sqlident"
 )
 
 // ReadTableRows reads the current rows of table, projected onto the requested

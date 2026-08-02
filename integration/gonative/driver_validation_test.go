@@ -12,8 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // TestPgxDriverValidation verifies that the pgx driver is actually being used

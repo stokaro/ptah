@@ -1382,8 +1382,8 @@
   "ptah": "yes",
   "atlas_oss": "na",
   "atlas_pro": "na",
-  "note": "Separate module github.com/stokaro/ptah/testkit wraps testcontainers-go for tests needing real databases; versions independently and stays out of the main module graph.",
-  "evidence": "testkit/go.mod line 1: module github.com/stokaro/ptah/testkit; testkit/testkit.go, containers_test.go present. Documented at docs/site/src/content/docs/extend/public-api.md:54-57. Distinct from the existing \"Embeddable test runner (Go package)\" row, which is migration/dbtest. Atlas cells na per the matrix's Go-API row convention."
+  "note": "Separate module go.5x5.cz/ptah/testkit wraps testcontainers-go for tests needing real databases; versions independently and stays out of the main module graph.",
+  "evidence": "testkit/go.mod line 1: module go.5x5.cz/ptah/testkit; testkit/testkit.go, containers_test.go present. Documented at docs/site/src/content/docs/extend/public-api.md:54-57. Distinct from the existing \"Embeddable test runner (Go package)\" row, which is migration/dbtest. Atlas cells na per the matrix's Go-API row convention."
  },
  {
   "area": "Atlas Registry and Cloud",

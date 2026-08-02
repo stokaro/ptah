@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migrations"
+	"go.5x5.cz/ptah/cmd/migrations"
 )
 
 func TestNewMigrationsCommand_RegistersNativePaths(t *testing.T) {

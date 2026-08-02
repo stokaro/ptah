@@ -34,9 +34,15 @@ baseline_dir="$(mktemp -d)"
 exports_dir="$(mktemp -d)"
 trap 'rm -f "$packages"; rm -rf "$baseline_dir" "$exports_dir"' EXIT
 
-grep -Eo "\`github\.com/stokaro/ptah[^\`]+\`" docs/public_api.md |
+grep -Eo "\`${module_path}[^\`]+\`" docs/public_api.md |
 	tr -d '`' |
 	sort -u >"$packages"
+
+if [[ ! -s "$packages" ]]; then
+	printf '%s: found no %s packages in docs/public_api.md; refusing to report a vacuous pass\n' \
+		"$0" "$module_path" >&2
+	exit 1
+fi
 
 if [[ -z "$baseline_ref" ]]; then
 	baseline_ref="$(git tag --list 'v0.*' --sort=-v:refname | head -n 1)"
@@ -67,11 +73,18 @@ trap 'rm -f "$packages" "$baseline_packages"; rm -rf "$baseline_dir" "$exports_d
 	go list ./...
 ) | sort -u >"$baseline_packages"
 
+# The baseline is an older tag, which may predate a module-path rename. Its
+# `go list` output is in the OLD path, so comparing today's paths against it
+# directly would match nothing and skip every package as "new" -- turning the
+# gate into a silent vacuous pass rather than a failure anyone would notice.
+baseline_module="$(cd "$baseline_dir" && go list -m -f '{{.Path}}')"
+
 status=0
 while IFS= read -r package_path; do
-	if ! grep -Fxq "$package_path" "$baseline_packages"; then
+	lookup_path="${package_path/#$module_path/$baseline_module}"
+	if ! grep -Fxq "$lookup_path" "$baseline_packages"; then
 		printf 'public API baseline %s has no package %s; treating it as a new stable package\n' \
-			"$baseline_ref" "$package_path" >&2
+			"$baseline_ref" "$lookup_path" >&2
 		continue
 	fi
 
@@ -79,8 +92,11 @@ while IFS= read -r package_path; do
 	export_file="$exports_dir/${relative_package//\//__}.export"
 
 	(
+		# Inside the baseline extraction the module still has its own path, so
+		# the package must be named the baseline's way here. Passing today's
+		# path makes apidiff fail to load a package that is present.
 		cd "$baseline_dir"
-		"$apidiff_bin" -w "$export_file" "$package_path"
+		"$apidiff_bin" -w "$export_file" "$lookup_path"
 	)
 
 	diff_output="$("$apidiff_bin" -incompatible "$export_file" "$package_path" 2>&1)" || {
@@ -93,6 +109,9 @@ while IFS= read -r package_path; do
 		continue
 	fi
 
+	# Name the package. A bare apidiff body does not say which package it came
+	# from, so a multi-package run is unreadable and unactionable.
+	printf '%s:\n' "$package_path"
 	printf '%s\n' "$diff_output"
 	if awk -v baseline="$baseline_ref" -v package="$package_path" \
 		'$1 == baseline && $2 == package { found = 1 } END { exit !found }' "$approvals"; then

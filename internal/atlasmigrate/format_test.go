@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/fsnapshot"
 )
 
 func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {

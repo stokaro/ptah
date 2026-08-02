@@ -1,6 +1,6 @@
 package main
 
-import "github.com/stokaro/ptah/cmd/root"
+import "go.5x5.cz/ptah/cmd/root"
 
 func main() {
 	root.Execute()

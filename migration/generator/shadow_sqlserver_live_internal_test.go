@@ -16,8 +16,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 func TestShadowIdentifierSemanticsMatch_SQLServerLive(t *testing.T) {

@@ -1,7 +1,7 @@
 package astbuilder
 
 import (
-	"github.com/stokaro/ptah/core/ast"
+	"go.5x5.cz/ptah/core/ast"
 )
 
 // IndexBuilder provides a fluent API for building CREATE INDEX statements.

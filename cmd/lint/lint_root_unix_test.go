@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
 )
 
 func TestRunLint_RejectsLocalDirectorySymlinkEscapeBeforeOpeningDevDatabase(t *testing.T) {

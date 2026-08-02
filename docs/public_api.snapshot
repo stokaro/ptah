@@ -1,4 +1,4 @@
-## github.com/stokaro/ptah/atlascompat
+## go.5x5.cz/ptah/atlascompat
 
 const AtlasSumFileName = "atlas.sum"
 const PtahSumFileName = "ptah.sum"
@@ -19,9 +19,9 @@ type SumResult struct{ ... }
     func VerifySum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumResult, error)
     func VerifySumDir(dir string, format migrator.MigrationDirFormat) (*SumResult, error)
 
-### github.com/stokaro/ptah/atlascompat.ParseSQLOptions
+### go.5x5.cz/ptah/atlascompat.ParseSQLOptions
 
-package atlascompat // import "github.com/stokaro/ptah/atlascompat"
+package atlascompat // import "go.5x5.cz/ptah/atlascompat"
 
 type ParseSQLOptions struct {
     // Dialect selects dialect-specific parsing behavior. Empty means
@@ -36,9 +36,9 @@ type ParseSQLOptions struct {
     ParseSQLOptions configures ParseSQL.
 
 
-### github.com/stokaro/ptah/atlascompat.SumEntry
+### go.5x5.cz/ptah/atlascompat.SumEntry
 
-package atlascompat // import "github.com/stokaro/ptah/atlascompat"
+package atlascompat // import "go.5x5.cz/ptah/atlascompat"
 
 type SumEntry struct {
     // Name is the slash-separated path of the file relative to the migrations
@@ -50,9 +50,9 @@ type SumEntry struct {
     SumEntry is one migration file and its content hash.
 
 
-### github.com/stokaro/ptah/atlascompat.SumFile
+### go.5x5.cz/ptah/atlascompat.SumFile
 
-package atlascompat // import "github.com/stokaro/ptah/atlascompat"
+package atlascompat // import "go.5x5.cz/ptah/atlascompat"
 
 type SumFile struct {
     // DirHash is the directory-level hash.
@@ -67,9 +67,9 @@ func ParseSum(data []byte) (*SumFile, error)
 func WriteSum(dir string, format migrator.MigrationDirFormat) (*SumFile, error)
 func (s *SumFile) Bytes() []byte
 
-### github.com/stokaro/ptah/atlascompat.SumResult
+### go.5x5.cz/ptah/atlascompat.SumResult
 
-package atlascompat // import "github.com/stokaro/ptah/atlascompat"
+package atlascompat // import "go.5x5.cz/ptah/atlascompat"
 
 type SumResult struct {
     // Added are migration files present on disk but absent from the sum file.
@@ -91,16 +91,16 @@ func VerifySumDir(dir string, format migrator.MigrationDirFormat) (*SumResult, e
 func (r *SumResult) Describe() string
 func (r *SumResult) OK() bool
 
-## github.com/stokaro/ptah/config
+## go.5x5.cz/ptah/config
 
 type CompareOptions struct{ ... }
     func DefaultCompareOptions() *CompareOptions
     func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions
     func WithIgnoredExtensions(extensions ...string) *CompareOptions
 
-### github.com/stokaro/ptah/config.CompareOptions
+### go.5x5.cz/ptah/config.CompareOptions
 
-package config // import "github.com/stokaro/ptah/config"
+package config // import "go.5x5.cz/ptah/config"
 
 type CompareOptions struct {
     // IgnoredExtensions is a list of PostgreSQL extension names that should be
@@ -140,7 +140,7 @@ func WithIgnoredExtensions(extensions ...string) *CompareOptions
 func (c *CompareOptions) FilterIgnoredExtensions(extensions []string) []string
 func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool
 
-## github.com/stokaro/ptah/config/projectconfig
+## go.5x5.cz/ptah/config/projectconfig
 
 const PtahFileName = "ptah.yaml" ...
 const OnlineDDLToolGhost = "ghost" ...
@@ -175,9 +175,9 @@ type StringField uint8
     const StringEnvName StringField = iota ...
 type Value[T any] struct{ ... }
 
-### github.com/stokaro/ptah/config/projectconfig.AtlasLoadOptions
+### go.5x5.cz/ptah/config/projectconfig.AtlasLoadOptions
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type AtlasLoadOptions struct {
     EnvName string
@@ -186,9 +186,9 @@ type AtlasLoadOptions struct {
     AtlasLoadOptions selects Atlas project config evaluation settings.
 
 
-### github.com/stokaro/ptah/config/projectconfig.Config
+### go.5x5.cz/ptah/config/projectconfig.Config
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type Config struct {
     // EnvName is the selected project env name, when the source had one.
@@ -239,9 +239,9 @@ func (c Config) SchemaSourcesValue() Value[[]string]
 func (c Config) SchemasValue() Value[[]string]
 func (c Config) StringValue(field StringField) Value[string]
 
-### github.com/stokaro/ptah/config/projectconfig.ConfigBool
+### go.5x5.cz/ptah/config/projectconfig.ConfigBool
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type ConfigBool struct {
     Value bool
@@ -251,9 +251,9 @@ type ConfigBool struct {
     explicitly, which is needed for Atlas global/env inheritance.
 
 
-### github.com/stokaro/ptah/config/projectconfig.DiffConcurrentIndexConfig
+### go.5x5.cz/ptah/config/projectconfig.DiffConcurrentIndexConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type DiffConcurrentIndexConfig struct {
     Create ConfigBool
@@ -262,9 +262,9 @@ type DiffConcurrentIndexConfig struct {
     DiffConcurrentIndexConfig holds Atlas diff.concurrent_index policy.
 
 
-### github.com/stokaro/ptah/config/projectconfig.DiffConfig
+### go.5x5.cz/ptah/config/projectconfig.DiffConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type DiffConfig struct {
     Skip            DiffSkipConfig
@@ -275,9 +275,9 @@ type DiffConfig struct {
 func (c DiffConfig) ConcurrentIndexCreate() bool
 func (c DiffConfig) SkipChangeKinds() []diffpolicy.ChangeKind
 
-### github.com/stokaro/ptah/config/projectconfig.DiffSkipConfig
+### go.5x5.cz/ptah/config/projectconfig.DiffSkipConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type DiffSkipConfig struct {
     DropTable  ConfigBool
@@ -290,9 +290,9 @@ type DiffSkipConfig struct {
     explicit false can override an inherited true.
 
 
-### github.com/stokaro/ptah/config/projectconfig.ExternalSchemaConfig
+### go.5x5.cz/ptah/config/projectconfig.ExternalSchemaConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type ExternalSchemaConfig struct {
     // Program is the executable and its arguments as an explicit argv list.
@@ -317,9 +317,9 @@ type ExternalSchemaConfig struct {
     desired schema as SQL, HCL, or YAML to stdout.
 
 
-### github.com/stokaro/ptah/config/projectconfig.FormatConfig
+### go.5x5.cz/ptah/config/projectconfig.FormatConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type FormatConfig struct {
     Migrate MigrateFormatConfig
@@ -328,9 +328,9 @@ type FormatConfig struct {
     FormatConfig holds Atlas env.format command templates.
 
 
-### github.com/stokaro/ptah/config/projectconfig.LintConfig
+### go.5x5.cz/ptah/config/projectconfig.LintConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type LintConfig struct {
     Dialect       string
@@ -343,9 +343,9 @@ type LintConfig struct {
     LintConfig is the lint section of the project config IR.
 
 
-### github.com/stokaro/ptah/config/projectconfig.LintRuleConfig
+### go.5x5.cz/ptah/config/projectconfig.LintRuleConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type LintRuleConfig struct {
     Severity string
@@ -355,9 +355,9 @@ type LintRuleConfig struct {
     rule-family prefix.
 
 
-### github.com/stokaro/ptah/config/projectconfig.LoadOptions
+### go.5x5.cz/ptah/config/projectconfig.LoadOptions
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type LoadOptions struct {
     PtahPath  string
@@ -368,9 +368,9 @@ type LoadOptions struct {
     LoadOptions selects project config files and the Atlas env.
 
 
-### github.com/stokaro/ptah/config/projectconfig.MigrateFormatConfig
+### go.5x5.cz/ptah/config/projectconfig.MigrateFormatConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type MigrateFormatConfig struct {
     Apply  string
@@ -381,9 +381,9 @@ type MigrateFormatConfig struct {
     MigrateFormatConfig holds Atlas env.format.migrate templates.
 
 
-### github.com/stokaro/ptah/config/projectconfig.MigrationConfig
+### go.5x5.cz/ptah/config/projectconfig.MigrationConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type MigrationConfig struct {
     Dir                  string
@@ -406,9 +406,9 @@ type MigrationConfig struct {
     MigrationConfig is the migration section of the project config IR.
 
 
-### github.com/stokaro/ptah/config/projectconfig.OnlineDDLConfig
+### go.5x5.cz/ptah/config/projectconfig.OnlineDDLConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type OnlineDDLConfig struct {
     // Tool selects the online-DDL tool: "ghost" or "pt-osc". Empty disables
@@ -431,9 +431,9 @@ type OnlineDDLConfig struct {
 func (c OnlineDDLConfig) Enabled() bool
 func (c OnlineDDLConfig) Validate() error
 
-### github.com/stokaro/ptah/config/projectconfig.SchemaConfig
+### go.5x5.cz/ptah/config/projectconfig.SchemaConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type SchemaConfig struct {
     Mode SchemaModeConfig
@@ -441,9 +441,9 @@ type SchemaConfig struct {
     SchemaConfig holds Atlas env.schema settings.
 
 
-### github.com/stokaro/ptah/config/projectconfig.SchemaFormatConfig
+### go.5x5.cz/ptah/config/projectconfig.SchemaFormatConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type SchemaFormatConfig struct {
     Apply   string
@@ -454,9 +454,9 @@ type SchemaFormatConfig struct {
     SchemaFormatConfig holds Atlas env.format.schema templates.
 
 
-### github.com/stokaro/ptah/config/projectconfig.SchemaModeConfig
+### go.5x5.cz/ptah/config/projectconfig.SchemaModeConfig
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type SchemaModeConfig struct {
     Funcs       ConfigBool
@@ -472,9 +472,9 @@ type SchemaModeConfig struct {
 
 func (m SchemaModeConfig) ExcludePatterns() []string
 
-### github.com/stokaro/ptah/config/projectconfig.StringField
+### go.5x5.cz/ptah/config/projectconfig.StringField
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type StringField uint8
     StringField identifies one string-valued Config field for presence-aware
@@ -482,9 +482,9 @@ type StringField uint8
 
 const StringEnvName StringField = iota ...
 
-### github.com/stokaro/ptah/config/projectconfig.Value
+### go.5x5.cz/ptah/config/projectconfig.Value
 
-package projectconfig // import "github.com/stokaro/ptah/config/projectconfig"
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type Value[T any] struct {
     Value   T
@@ -495,7 +495,7 @@ type Value[T any] struct {
     Present is false.
 
 
-## github.com/stokaro/ptah/core/ast
+## go.5x5.cz/ptah/core/ast
 
 type AddColumnOperation struct{ ... }
 type AddConstraintOperation struct{ ... }
@@ -691,9 +691,9 @@ type UpsertNode struct{ ... }
     func NewUpsert(table string) *UpsertNode
 type Visitor interface{ ... }
 
-### github.com/stokaro/ptah/core/ast.AddColumnOperation
+### go.5x5.cz/ptah/core/ast.AddColumnOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AddColumnOperation struct {
     // Column contains the complete column definition to add
@@ -707,9 +707,9 @@ type AddColumnOperation struct {
 
 func (op *AddColumnOperation) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.AddConstraintOperation
+### go.5x5.cz/ptah/core/ast.AddConstraintOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AddConstraintOperation struct {
     // Constraint contains the complete constraint definition to add
@@ -723,9 +723,9 @@ type AddConstraintOperation struct {
 
 func (op *AddConstraintOperation) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.AddEnumValueOperation
+### go.5x5.cz/ptah/core/ast.AddEnumValueOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AddEnumValueOperation struct {
     // Value is the new enum value to add
@@ -746,9 +746,9 @@ func (op *AddEnumValueOperation) Accept(visitor Visitor) error
 func (op *AddEnumValueOperation) SetAfter(value string) *AddEnumValueOperation
 func (op *AddEnumValueOperation) SetBefore(value string) *AddEnumValueOperation
 
-### github.com/stokaro/ptah/core/ast.AddSkippingIndexOperation
+### go.5x5.cz/ptah/core/ast.AddSkippingIndexOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AddSkippingIndexOperation struct {
     // Name is the index name.
@@ -773,9 +773,9 @@ type AddSkippingIndexOperation struct {
 
 func (op *AddSkippingIndexOperation) Accept(_visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.AlterGeneratedColumnExpressionOperation
+### go.5x5.cz/ptah/core/ast.AlterGeneratedColumnExpressionOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AlterGeneratedColumnExpressionOperation struct {
     // ColumnName is the generated column to alter.
@@ -789,9 +789,9 @@ type AlterGeneratedColumnExpressionOperation struct {
 
 func (op *AlterGeneratedColumnExpressionOperation) Accept(_visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.AlterOperation
+### go.5x5.cz/ptah/core/ast.AlterOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AlterOperation interface {
     Node
@@ -805,9 +805,9 @@ type AlterOperation interface {
     pattern and the marker method.
 
 
-### github.com/stokaro/ptah/core/ast.AlterRoleNode
+### go.5x5.cz/ptah/core/ast.AlterRoleNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AlterRoleNode struct {
     // Name is the name of the role to alter
@@ -829,9 +829,9 @@ func (n *AlterRoleNode) Accept(visitor Visitor) error
 func (n *AlterRoleNode) AddOperation(operation RoleOperation) *AlterRoleNode
 func (n *AlterRoleNode) SetComment(comment string) *AlterRoleNode
 
-### github.com/stokaro/ptah/core/ast.AlterSequenceNode
+### go.5x5.cz/ptah/core/ast.AlterSequenceNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AlterSequenceNode struct {
     // Name is the sequence name.
@@ -874,9 +874,9 @@ func (n *AlterSequenceNode) SetOwnedBy(ownedBy string) *AlterSequenceNode
 func (n *AlterSequenceNode) SetSchema(schema string) *AlterSequenceNode
 func (n *AlterSequenceNode) SetStart(start int64) *AlterSequenceNode
 
-### github.com/stokaro/ptah/core/ast.AlterTableDisableRLSNode
+### go.5x5.cz/ptah/core/ast.AlterTableDisableRLSNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AlterTableDisableRLSNode struct {
     // Table is the name of the table to disable RLS on
@@ -894,9 +894,9 @@ func NewAlterTableDisableRLS(table string) *AlterTableDisableRLSNode
 func (n *AlterTableDisableRLSNode) Accept(visitor Visitor) error
 func (n *AlterTableDisableRLSNode) SetComment(comment string) *AlterTableDisableRLSNode
 
-### github.com/stokaro/ptah/core/ast.AlterTableEnableRLSNode
+### go.5x5.cz/ptah/core/ast.AlterTableEnableRLSNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AlterTableEnableRLSNode struct {
     // Table is the name of the table to enable RLS on
@@ -914,9 +914,9 @@ func NewAlterTableEnableRLS(table string) *AlterTableEnableRLSNode
 func (n *AlterTableEnableRLSNode) Accept(visitor Visitor) error
 func (n *AlterTableEnableRLSNode) SetComment(comment string) *AlterTableEnableRLSNode
 
-### github.com/stokaro/ptah/core/ast.AlterTableNode
+### go.5x5.cz/ptah/core/ast.AlterTableNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AlterTableNode struct {
     // Name is the name of the table to alter
@@ -933,9 +933,9 @@ type AlterTableNode struct {
 
 func (n *AlterTableNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.AlterTypeNode
+### go.5x5.cz/ptah/core/ast.AlterTypeNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type AlterTypeNode struct {
     // Name is the name of the type to alter
@@ -954,9 +954,9 @@ func NewAlterType(name string) *AlterTypeNode
 func (n *AlterTypeNode) Accept(visitor Visitor) error
 func (n *AlterTypeNode) AddOperation(operation TypeOperation) *AlterTypeNode
 
-### github.com/stokaro/ptah/core/ast.Assignment
+### go.5x5.cz/ptah/core/ast.Assignment
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type Assignment struct {
     // Column is the target column name, rendered as a quoted identifier.
@@ -971,9 +971,9 @@ type Assignment struct {
     to the database as a placeholder rather than inline SQL.
 
 
-### github.com/stokaro/ptah/core/ast.BoundValue
+### go.5x5.cz/ptah/core/ast.BoundValue
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type BoundValue struct {
     // Value is the parameter value, bound positionally at render time.
@@ -986,9 +986,9 @@ type BoundValue struct {
     slice. The value is never interpolated into the SQL string.
 
 
-### github.com/stokaro/ptah/core/ast.ColumnNode
+### go.5x5.cz/ptah/core/ast.ColumnNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ColumnNode struct {
     // Name is the column name
@@ -1061,9 +1061,9 @@ func (n *ColumnNode) SetPrimary() *ColumnNode
 func (n *ColumnNode) SetUnique() *ColumnNode
 func (n *ColumnNode) SetUpdateExpression(expression string) *ColumnNode
 
-### github.com/stokaro/ptah/core/ast.ColumnRef
+### go.5x5.cz/ptah/core/ast.ColumnRef
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ColumnRef struct {
     // Qualifier is the optional table name or alias qualifying the column. An
@@ -1082,9 +1082,9 @@ type ColumnRef struct {
     each part quoted independently.
 
 
-### github.com/stokaro/ptah/core/ast.CommentNode
+### go.5x5.cz/ptah/core/ast.CommentNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CommentNode struct {
     // Text is the comment content
@@ -1099,9 +1099,9 @@ type CommentNode struct {
 func NewComment(text string) *CommentNode
 func (n *CommentNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.Comparison
+### go.5x5.cz/ptah/core/ast.Comparison
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type Comparison struct {
     // Left is the left-hand operand.
@@ -1118,9 +1118,9 @@ type Comparison struct {
     so later phases can compare columns or expressions directly.
 
 
-### github.com/stokaro/ptah/core/ast.ComparisonOperator
+### go.5x5.cz/ptah/core/ast.ComparisonOperator
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ComparisonOperator int
     ComparisonOperator enumerates the binary comparison operators supported in
@@ -1129,9 +1129,9 @@ type ComparisonOperator int
 const OpEqual ComparisonOperator = iota ...
 func (op ComparisonOperator) String() string
 
-### github.com/stokaro/ptah/core/ast.CompositeField
+### go.5x5.cz/ptah/core/ast.CompositeField
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CompositeField struct {
     // Name is the field name
@@ -1144,9 +1144,9 @@ type CompositeField struct {
     CompositeField represents a field in a composite type definition.
 
 
-### github.com/stokaro/ptah/core/ast.CompositeTypeDef
+### go.5x5.cz/ptah/core/ast.CompositeTypeDef
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CompositeTypeDef struct {
     // Fields contains the list of fields in the composite type
@@ -1161,9 +1161,9 @@ type CompositeTypeDef struct {
 func NewCompositeTypeDef(fields ...*CompositeField) *CompositeTypeDef
 func (td *CompositeTypeDef) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.ConstraintColumn
+### go.5x5.cz/ptah/core/ast.ConstraintColumn
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ConstraintColumn struct {
     // Name is the referenced column name.
@@ -1177,9 +1177,9 @@ type ConstraintColumn struct {
     constraint.
 
 
-### github.com/stokaro/ptah/core/ast.ConstraintNode
+### go.5x5.cz/ptah/core/ast.ConstraintNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ConstraintNode struct {
     // Type specifies the constraint type (PRIMARY KEY, UNIQUE, etc.)
@@ -1222,9 +1222,9 @@ func NewUniqueConstraint(name string, columns ...string) *ConstraintNode
 func (n *ConstraintNode) Accept(visitor Visitor) error
 func (c *ConstraintNode) SetWhereCondition(condition string) *ConstraintNode
 
-### github.com/stokaro/ptah/core/ast.ConstraintType
+### go.5x5.cz/ptah/core/ast.ConstraintType
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ConstraintType int
     ConstraintType represents the different types of table constraints.
@@ -1236,9 +1236,9 @@ type ConstraintType int
 const PrimaryKeyConstraint ConstraintType = iota ...
 func (ct ConstraintType) String() string
 
-### github.com/stokaro/ptah/core/ast.CreateDatabaseNode
+### go.5x5.cz/ptah/core/ast.CreateDatabaseNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateDatabaseNode struct {
     // Name is the database name.
@@ -1251,9 +1251,9 @@ type CreateDatabaseNode struct {
 func NewCreateDatabase(name string) *CreateDatabaseNode
 func (n *CreateDatabaseNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.CreateFunctionNode
+### go.5x5.cz/ptah/core/ast.CreateFunctionNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateFunctionNode struct {
     // Name is the name of the function to create
@@ -1298,9 +1298,9 @@ func (n *CreateFunctionNode) SetReturns(returns string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetSecurity(security string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetVolatility(volatility string) *CreateFunctionNode
 
-### github.com/stokaro/ptah/core/ast.CreateMaterializedViewNode
+### go.5x5.cz/ptah/core/ast.CreateMaterializedViewNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateMaterializedViewNode struct {
     Name            string
@@ -1316,9 +1316,9 @@ func (n *CreateMaterializedViewNode) SetBody(body string) *CreateMaterializedVie
 func (n *CreateMaterializedViewNode) SetComment(comment string) *CreateMaterializedViewNode
 func (n *CreateMaterializedViewNode) SetRefreshStrategy(refreshStrategy string) *CreateMaterializedViewNode
 
-### github.com/stokaro/ptah/core/ast.CreatePolicyNode
+### go.5x5.cz/ptah/core/ast.CreatePolicyNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreatePolicyNode struct {
     // Name is the name of the policy to create
@@ -1354,9 +1354,9 @@ func (n *CreatePolicyNode) SetToRoles(toRoles string) *CreatePolicyNode
 func (n *CreatePolicyNode) SetUsingExpression(expression string) *CreatePolicyNode
 func (n *CreatePolicyNode) SetWithCheckExpression(expression string) *CreatePolicyNode
 
-### github.com/stokaro/ptah/core/ast.CreateRoleNode
+### go.5x5.cz/ptah/core/ast.CreateRoleNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateRoleNode struct {
     // Name is the name of the role to create
@@ -1397,9 +1397,9 @@ func (n *CreateRoleNode) SetPassword(password string) *CreateRoleNode
 func (n *CreateRoleNode) SetReplication(replication bool) *CreateRoleNode
 func (n *CreateRoleNode) SetSuperuser(superuser bool) *CreateRoleNode
 
-### github.com/stokaro/ptah/core/ast.CreateSchemaNode
+### go.5x5.cz/ptah/core/ast.CreateSchemaNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateSchemaNode struct {
     // Name is the schema name.
@@ -1418,9 +1418,9 @@ type CreateSchemaNode struct {
 func NewCreateSchema(name string) *CreateSchemaNode
 func (n *CreateSchemaNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.CreateSequenceNode
+### go.5x5.cz/ptah/core/ast.CreateSequenceNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateSequenceNode struct {
     // Name is the sequence name.
@@ -1474,9 +1474,9 @@ func (n *CreateSequenceNode) SetOwnedBy(ownedBy string) *CreateSequenceNode
 func (n *CreateSequenceNode) SetSchema(schema string) *CreateSequenceNode
 func (n *CreateSequenceNode) SetStart(start int64) *CreateSequenceNode
 
-### github.com/stokaro/ptah/core/ast.CreateTableNode
+### go.5x5.cz/ptah/core/ast.CreateTableNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateTableNode struct {
     // Name is the name of the table to create
@@ -1510,9 +1510,9 @@ func (n *CreateTableNode) SetIfNotExists() *CreateTableNode
 func (n *CreateTableNode) SetOption(key, value string) *CreateTableNode
 func (n *CreateTableNode) SetSelectBody(body string) *CreateTableNode
 
-### github.com/stokaro/ptah/core/ast.CreateTriggerNode
+### go.5x5.cz/ptah/core/ast.CreateTriggerNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateTriggerNode struct {
     Name         string
@@ -1537,9 +1537,9 @@ func (n *CreateTriggerNode) SetFunctionName(functionName string) *CreateTriggerN
 func (n *CreateTriggerNode) SetReplace() *CreateTriggerNode
 func (n *CreateTriggerNode) SetTiming(timing string) *CreateTriggerNode
 
-### github.com/stokaro/ptah/core/ast.CreateTypeNode
+### go.5x5.cz/ptah/core/ast.CreateTypeNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateTypeNode struct {
     // Name is the name of the type to create
@@ -1560,9 +1560,9 @@ func NewCreateType(name string, typeDef TypeDefinition) *CreateTypeNode
 func (n *CreateTypeNode) Accept(visitor Visitor) error
 func (n *CreateTypeNode) SetComment(comment string) *CreateTypeNode
 
-### github.com/stokaro/ptah/core/ast.CreateViewNode
+### go.5x5.cz/ptah/core/ast.CreateViewNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateViewNode struct {
     Name      string
@@ -1580,9 +1580,9 @@ func (n *CreateViewNode) SetComment(comment string) *CreateViewNode
 func (n *CreateViewNode) SetReplace() *CreateViewNode
 func (n *CreateViewNode) SetWithCheck(withCheck bool) *CreateViewNode
 
-### github.com/stokaro/ptah/core/ast.DefaultValue
+### go.5x5.cz/ptah/core/ast.DefaultValue
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DefaultValue struct {
     // Value contains literal default values like 'default_value', '42', 'true'
@@ -1600,9 +1600,9 @@ type DefaultValue struct {
 
 func (d *DefaultValue) HasLiteral() bool
 
-### github.com/stokaro/ptah/core/ast.DeleteStatement
+### go.5x5.cz/ptah/core/ast.DeleteStatement
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DeleteStatement struct {
     // Table is the target table, rendered as a quoted identifier. Required.
@@ -1624,9 +1624,9 @@ type DeleteStatement struct {
     so the renderer rejects it unless Unconditional is set.
 
 
-### github.com/stokaro/ptah/core/ast.DomainTypeDef
+### go.5x5.cz/ptah/core/ast.DomainTypeDef
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DomainTypeDef struct {
     // BaseType is the underlying data type
@@ -1651,9 +1651,9 @@ func (td *DomainTypeDef) SetDefault(value string) *DomainTypeDef
 func (td *DomainTypeDef) SetDefaultExpression(fn string) *DomainTypeDef
 func (td *DomainTypeDef) SetNotNull() *DomainTypeDef
 
-### github.com/stokaro/ptah/core/ast.DropColumnOperation
+### go.5x5.cz/ptah/core/ast.DropColumnOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropColumnOperation struct {
     // ColumnName is the name of the column to drop
@@ -1670,9 +1670,9 @@ type DropColumnOperation struct {
 
 func (op *DropColumnOperation) Accept(_visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.DropConstraintOperation
+### go.5x5.cz/ptah/core/ast.DropConstraintOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropConstraintOperation struct {
     // ConstraintName is the name of the constraint to drop
@@ -1712,9 +1712,9 @@ type DropConstraintOperation struct {
 
 func (op *DropConstraintOperation) Accept(_visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.DropExtensionNode
+### go.5x5.cz/ptah/core/ast.DropExtensionNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropExtensionNode struct {
     // Name is the extension name to drop (pg_trgm, postgis, etc.)
@@ -1738,9 +1738,9 @@ func (n *DropExtensionNode) SetCascade() *DropExtensionNode
 func (n *DropExtensionNode) SetComment(comment string) *DropExtensionNode
 func (n *DropExtensionNode) SetIfExists() *DropExtensionNode
 
-### github.com/stokaro/ptah/core/ast.DropFunctionNode
+### go.5x5.cz/ptah/core/ast.DropFunctionNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropFunctionNode struct {
     // Name is the name of the function to drop
@@ -1769,9 +1769,9 @@ func (n *DropFunctionNode) SetComment(comment string) *DropFunctionNode
 func (n *DropFunctionNode) SetIfExists() *DropFunctionNode
 func (n *DropFunctionNode) SetParameters(parameters string) *DropFunctionNode
 
-### github.com/stokaro/ptah/core/ast.DropIndexNode
+### go.5x5.cz/ptah/core/ast.DropIndexNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropIndexNode struct {
     // Name is the raw, unqualified index identifier. Dialect renderers derive
@@ -1797,9 +1797,9 @@ func (n *DropIndexNode) SetComment(comment string) *DropIndexNode
 func (n *DropIndexNode) SetIfExists() *DropIndexNode
 func (n *DropIndexNode) SetTable(table string) *DropIndexNode
 
-### github.com/stokaro/ptah/core/ast.DropMaterializedViewNode
+### go.5x5.cz/ptah/core/ast.DropMaterializedViewNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropMaterializedViewNode struct {
     Name     string
@@ -1815,9 +1815,9 @@ func (n *DropMaterializedViewNode) SetCascade() *DropMaterializedViewNode
 func (n *DropMaterializedViewNode) SetComment(comment string) *DropMaterializedViewNode
 func (n *DropMaterializedViewNode) SetIfExists() *DropMaterializedViewNode
 
-### github.com/stokaro/ptah/core/ast.DropPolicyNode
+### go.5x5.cz/ptah/core/ast.DropPolicyNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropPolicyNode struct {
     // Name is the name of the policy to drop
@@ -1840,9 +1840,9 @@ func (n *DropPolicyNode) Accept(visitor Visitor) error
 func (n *DropPolicyNode) SetComment(comment string) *DropPolicyNode
 func (n *DropPolicyNode) SetIfExists() *DropPolicyNode
 
-### github.com/stokaro/ptah/core/ast.DropRoleNode
+### go.5x5.cz/ptah/core/ast.DropRoleNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropRoleNode struct {
     // Name is the name of the role to drop
@@ -1863,9 +1863,9 @@ func (n *DropRoleNode) Accept(visitor Visitor) error
 func (n *DropRoleNode) SetComment(comment string) *DropRoleNode
 func (n *DropRoleNode) SetIfExists() *DropRoleNode
 
-### github.com/stokaro/ptah/core/ast.DropSequenceNode
+### go.5x5.cz/ptah/core/ast.DropSequenceNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropSequenceNode struct {
     // Name is the sequence name to drop.
@@ -1888,9 +1888,9 @@ func (n *DropSequenceNode) SetComment(comment string) *DropSequenceNode
 func (n *DropSequenceNode) SetIfExists() *DropSequenceNode
 func (n *DropSequenceNode) SetSchema(schema string) *DropSequenceNode
 
-### github.com/stokaro/ptah/core/ast.DropTableNode
+### go.5x5.cz/ptah/core/ast.DropTableNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropTableNode struct {
     // Name is the name of the table to drop
@@ -1917,9 +1917,9 @@ func (n *DropTableNode) SetIfExists() *DropTableNode
 func (n *DropTableNode) SetNames(names []string) *DropTableNode
 func (n *DropTableNode) TableNames() []string
 
-### github.com/stokaro/ptah/core/ast.DropTriggerNode
+### go.5x5.cz/ptah/core/ast.DropTriggerNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropTriggerNode struct {
     Name         string
@@ -1938,9 +1938,9 @@ func (n *DropTriggerNode) SetComment(comment string) *DropTriggerNode
 func (n *DropTriggerNode) SetFunctionName(functionName string) *DropTriggerNode
 func (n *DropTriggerNode) SetIfExists() *DropTriggerNode
 
-### github.com/stokaro/ptah/core/ast.DropTypeNode
+### go.5x5.cz/ptah/core/ast.DropTypeNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropTypeNode struct {
     // Name is the name of the type to drop
@@ -1968,9 +1968,9 @@ func (n *DropTypeNode) SetComment(comment string) *DropTypeNode
 func (n *DropTypeNode) SetDomain() *DropTypeNode
 func (n *DropTypeNode) SetIfExists() *DropTypeNode
 
-### github.com/stokaro/ptah/core/ast.DropViewNode
+### go.5x5.cz/ptah/core/ast.DropViewNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropViewNode struct {
     Name     string
@@ -1986,9 +1986,9 @@ func (n *DropViewNode) SetCascade() *DropViewNode
 func (n *DropViewNode) SetComment(comment string) *DropViewNode
 func (n *DropViewNode) SetIfExists() *DropViewNode
 
-### github.com/stokaro/ptah/core/ast.EnumNode
+### go.5x5.cz/ptah/core/ast.EnumNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type EnumNode struct {
     // Name is the name of the enum type
@@ -2006,9 +2006,9 @@ type EnumNode struct {
 func NewEnum(name string, values ...string) *EnumNode
 func (n *EnumNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.EnumTypeDef
+### go.5x5.cz/ptah/core/ast.EnumTypeDef
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type EnumTypeDef struct {
     // Values contains the list of allowed enum values
@@ -2023,9 +2023,9 @@ type EnumTypeDef struct {
 func NewEnumTypeDef(values ...string) *EnumTypeDef
 func (td *EnumTypeDef) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.Expression
+### go.5x5.cz/ptah/core/ast.Expression
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type Expression interface {
     // Has unexported methods.
@@ -2040,9 +2040,9 @@ type Expression interface {
     never inlined.
 
 
-### github.com/stokaro/ptah/core/ast.ExtensionNode
+### go.5x5.cz/ptah/core/ast.ExtensionNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ExtensionNode struct {
     // Name is the extension name (pg_trgm, postgis, etc.)
@@ -2065,9 +2065,9 @@ func (n *ExtensionNode) SetComment(comment string) *ExtensionNode
 func (n *ExtensionNode) SetIfNotExists() *ExtensionNode
 func (n *ExtensionNode) SetVersion(version string) *ExtensionNode
 
-### github.com/stokaro/ptah/core/ast.ForeignKeyRef
+### go.5x5.cz/ptah/core/ast.ForeignKeyRef
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ForeignKeyRef struct {
     // Table is the name of the referenced table
@@ -2094,9 +2094,9 @@ type ForeignKeyRef struct {
 
 func (f *ForeignKeyRef) ReferencedColumns() []string
 
-### github.com/stokaro/ptah/core/ast.FuncCall
+### go.5x5.cz/ptah/core/ast.FuncCall
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type FuncCall struct {
     // Name is the function name, emitted verbatim as a keyword. Required. It must
@@ -2129,18 +2129,18 @@ type FuncCall struct {
     as a placeholder.
 
 
-### github.com/stokaro/ptah/core/ast.FunctionBodyKind
+### go.5x5.cz/ptah/core/ast.FunctionBodyKind
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type FunctionBodyKind string
     FunctionBodyKind specifies the PostgreSQL CREATE FUNCTION body syntax.
 
 const FunctionBodyQuoted FunctionBodyKind = "quoted" ...
 
-### github.com/stokaro/ptah/core/ast.GrantPrivilegeNode
+### go.5x5.cz/ptah/core/ast.GrantPrivilegeNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type GrantPrivilegeNode struct {
     // Role is the role receiving the privilege.
@@ -2163,9 +2163,9 @@ func (n *GrantPrivilegeNode) Accept(visitor Visitor) error
 func (n *GrantPrivilegeNode) SetComment(comment string) *GrantPrivilegeNode
 func (n *GrantPrivilegeNode) SetWithOption(withOption bool) *GrantPrivilegeNode
 
-### github.com/stokaro/ptah/core/ast.InExpr
+### go.5x5.cz/ptah/core/ast.InExpr
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type InExpr struct {
     // Operand is the expression tested for membership, typically a ColumnRef.
@@ -2179,9 +2179,9 @@ type InExpr struct {
     emitting the invalid "IN ()". Each value renders as its own placeholder.
 
 
-### github.com/stokaro/ptah/core/ast.IndexNode
+### go.5x5.cz/ptah/core/ast.IndexNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type IndexNode struct {
     // Name is the raw, unqualified index identifier. Dialect renderers derive
@@ -2246,9 +2246,9 @@ func (n *IndexNode) SetIfNotExists() *IndexNode
 func (n *IndexNode) SetParts(parts []IndexPart) *IndexNode
 func (n *IndexNode) SetUnique() *IndexNode
 
-### github.com/stokaro/ptah/core/ast.IndexPart
+### go.5x5.cz/ptah/core/ast.IndexPart
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type IndexPart struct {
     // Name is the indexed column name.
@@ -2267,9 +2267,9 @@ type IndexPart struct {
 
 func (p IndexPart) Reference() string
 
-### github.com/stokaro/ptah/core/ast.InsertStatement
+### go.5x5.cz/ptah/core/ast.InsertStatement
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type InsertStatement struct {
     // Table is the target table, rendered as a quoted identifier. Required.
@@ -2296,9 +2296,9 @@ type InsertStatement struct {
     rather than emit invalid SQL or panic on ragged input.
 
 
-### github.com/stokaro/ptah/core/ast.JoinClause
+### go.5x5.cz/ptah/core/ast.JoinClause
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type JoinClause struct {
     // Type is the join type (INNER, LEFT, RIGHT, or FULL OUTER).
@@ -2319,9 +2319,9 @@ type JoinClause struct {
     identifier quoting path as WHERE.
 
 
-### github.com/stokaro/ptah/core/ast.JoinType
+### go.5x5.cz/ptah/core/ast.JoinType
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type JoinType int
     JoinType enumerates the join kinds supported in Phase 2.
@@ -2329,9 +2329,9 @@ type JoinType int
 const JoinInner JoinType = iota ...
 func (t JoinType) String() string
 
-### github.com/stokaro/ptah/core/ast.LogicalExpr
+### go.5x5.cz/ptah/core/ast.LogicalExpr
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type LogicalExpr struct {
     // Operator is the boolean combinator applied between operands.
@@ -2344,9 +2344,9 @@ type LogicalExpr struct {
     whole expression so precedence is explicit regardless of nesting.
 
 
-### github.com/stokaro/ptah/core/ast.LogicalOperator
+### go.5x5.cz/ptah/core/ast.LogicalOperator
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type LogicalOperator int
     LogicalOperator enumerates the boolean combinators used by LogicalExpr.
@@ -2354,9 +2354,9 @@ type LogicalOperator int
 const LogicalAnd LogicalOperator = iota ...
 func (op LogicalOperator) String() string
 
-### github.com/stokaro/ptah/core/ast.ModifyColumnOperation
+### go.5x5.cz/ptah/core/ast.ModifyColumnOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ModifyColumnOperation struct {
     // Column contains the new column definition
@@ -2380,9 +2380,9 @@ type ModifyColumnOperation struct {
 
 func (op *ModifyColumnOperation) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.ModifyTTLOperation
+### go.5x5.cz/ptah/core/ast.ModifyTTLOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ModifyTTLOperation struct {
     // Expression is the new TTL clause. Empty clears the TTL.
@@ -2400,9 +2400,9 @@ type ModifyTTLOperation struct {
 
 func (op *ModifyTTLOperation) Accept(_visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.MySQLRoutineBody
+### go.5x5.cz/ptah/core/ast.MySQLRoutineBody
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type MySQLRoutineBody struct {
     // SQL is the full body fragment, usually BEGIN ... END or RETURN ...
@@ -2413,9 +2413,9 @@ type MySQLRoutineBody struct {
     MySQLRoutineBody contains a parsed MySQL routine body.
 
 
-### github.com/stokaro/ptah/core/ast.MySQLRoutineCursor
+### go.5x5.cz/ptah/core/ast.MySQLRoutineCursor
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type MySQLRoutineCursor struct {
     Name      string
@@ -2424,9 +2424,9 @@ type MySQLRoutineCursor struct {
     MySQLRoutineCursor models DECLARE ... CURSOR statements.
 
 
-### github.com/stokaro/ptah/core/ast.MySQLRoutineDeclaration
+### go.5x5.cz/ptah/core/ast.MySQLRoutineDeclaration
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type MySQLRoutineDeclaration struct {
     Kind         MySQLRoutineDeclarationKind
@@ -2440,18 +2440,18 @@ type MySQLRoutineDeclaration struct {
     parsing is intentionally outside the routine statement-boundary layer.
 
 
-### github.com/stokaro/ptah/core/ast.MySQLRoutineDeclarationKind
+### go.5x5.cz/ptah/core/ast.MySQLRoutineDeclarationKind
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type MySQLRoutineDeclarationKind string
     MySQLRoutineDeclarationKind identifies the DECLARE subform.
 
 const MySQLRoutineDeclarationVariable MySQLRoutineDeclarationKind = "variable" ...
 
-### github.com/stokaro/ptah/core/ast.MySQLRoutineHandler
+### go.5x5.cz/ptah/core/ast.MySQLRoutineHandler
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type MySQLRoutineHandler struct {
     Action       string
@@ -2461,9 +2461,9 @@ type MySQLRoutineHandler struct {
     MySQLRoutineHandler models DECLARE ... HANDLER statements.
 
 
-### github.com/stokaro/ptah/core/ast.MySQLRoutineNode
+### go.5x5.cz/ptah/core/ast.MySQLRoutineNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type MySQLRoutineNode struct {
     // SQL is the complete executable routine statement without client
@@ -2499,9 +2499,9 @@ func NewMySQLRoutine(sql, dialect string, kind RoutineKind) *MySQLRoutineNode
 func (n *MySQLRoutineNode) Accept(visitor Visitor) error
 func (n *MySQLRoutineNode) SetCharacteristics(characteristics []string) *MySQLRoutineNode
 
-### github.com/stokaro/ptah/core/ast.MySQLRoutineStatement
+### go.5x5.cz/ptah/core/ast.MySQLRoutineStatement
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type MySQLRoutineStatement struct {
     Kind        MySQLRoutineStatementKind
@@ -2514,18 +2514,18 @@ type MySQLRoutineStatement struct {
     body. SQL expression internals are preserved as raw fragments.
 
 
-### github.com/stokaro/ptah/core/ast.MySQLRoutineStatementKind
+### go.5x5.cz/ptah/core/ast.MySQLRoutineStatementKind
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type MySQLRoutineStatementKind string
     MySQLRoutineStatementKind identifies a MySQL routine-body statement class.
 
 const MySQLRoutineStatementRaw MySQLRoutineStatementKind = "raw" ...
 
-### github.com/stokaro/ptah/core/ast.Node
+### go.5x5.cz/ptah/core/ast.Node
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type Node interface {
     // Accept implements the visitor pattern for rendering
@@ -2538,9 +2538,9 @@ type Node interface {
     dialect-specific SQL output.
 
 
-### github.com/stokaro/ptah/core/ast.NotExpr
+### go.5x5.cz/ptah/core/ast.NotExpr
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type NotExpr struct {
     // Operand is the expression being negated.
@@ -2549,9 +2549,9 @@ type NotExpr struct {
     NotExpr negates its operand, rendering as "NOT (Operand)".
 
 
-### github.com/stokaro/ptah/core/ast.NullTest
+### go.5x5.cz/ptah/core/ast.NullTest
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type NullTest struct {
     // Operand is the expression tested for null, typically a ColumnRef.
@@ -2563,9 +2563,9 @@ type NullTest struct {
     "Operand IS NOT NULL".
 
 
-### github.com/stokaro/ptah/core/ast.OpaqueRoutineNode
+### go.5x5.cz/ptah/core/ast.OpaqueRoutineNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type OpaqueRoutineNode struct {
     // SQL is the complete executable routine statement without client batch
@@ -2584,9 +2584,9 @@ type OpaqueRoutineNode struct {
 func NewOpaqueRoutine(sql, dialect string, kind RoutineKind) *OpaqueRoutineNode
 func (n *OpaqueRoutineNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.OrderByClause
+### go.5x5.cz/ptah/core/ast.OrderByClause
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type OrderByClause struct {
     // Qualifier is the optional table name or alias qualifying the column,
@@ -2601,9 +2601,9 @@ type OrderByClause struct {
     The direction is always rendered explicitly so output is deterministic.
 
 
-### github.com/stokaro/ptah/core/ast.PartitionPart
+### go.5x5.cz/ptah/core/ast.PartitionPart
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type PartitionPart struct {
     // Name is the partition key column name.
@@ -2614,9 +2614,9 @@ type PartitionPart struct {
     PartitionPart represents one partition key column or expression.
 
 
-### github.com/stokaro/ptah/core/ast.PartitionSpec
+### go.5x5.cz/ptah/core/ast.PartitionSpec
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type PartitionSpec struct {
     // Type is the partitioning method, such as RANGE, LIST, or HASH.
@@ -2627,9 +2627,9 @@ type PartitionSpec struct {
     PartitionSpec represents a table PARTITION BY clause.
 
 
-### github.com/stokaro/ptah/core/ast.PostgresDoBlockNode
+### go.5x5.cz/ptah/core/ast.PostgresDoBlockNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type PostgresDoBlockNode struct {
     // SQL is the complete executable DO statement.
@@ -2646,9 +2646,9 @@ type PostgresDoBlockNode struct {
 func NewPostgresDoBlock(sql string) *PostgresDoBlockNode
 func (n *PostgresDoBlockNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.PostgresRoutineBody
+### go.5x5.cz/ptah/core/ast.PostgresRoutineBody
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type PostgresRoutineBody struct {
     // SQL is the raw body text without string or dollar-quote delimiters.
@@ -2666,9 +2666,9 @@ type PostgresRoutineBody struct {
     procedure, or DO body. Expressions remain raw PostgreSQL fragments.
 
 
-### github.com/stokaro/ptah/core/ast.PostgresRoutineNode
+### go.5x5.cz/ptah/core/ast.PostgresRoutineNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type PostgresRoutineNode struct {
     // SQL is the complete executable routine statement.
@@ -2693,9 +2693,9 @@ type PostgresRoutineNode struct {
 func NewPostgresRoutine(sql, dialect string, kind RoutineKind) *PostgresRoutineNode
 func (n *PostgresRoutineNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.PostgresRoutineStatement
+### go.5x5.cz/ptah/core/ast.PostgresRoutineStatement
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type PostgresRoutineStatement struct {
     Kind PostgresRoutineStatementKind
@@ -2705,9 +2705,9 @@ type PostgresRoutineStatement struct {
     routine body.
 
 
-### github.com/stokaro/ptah/core/ast.PostgresRoutineStatementKind
+### go.5x5.cz/ptah/core/ast.PostgresRoutineStatementKind
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type PostgresRoutineStatementKind string
     PostgresRoutineStatementKind identifies a PostgreSQL routine-body statement
@@ -2715,9 +2715,9 @@ type PostgresRoutineStatementKind string
 
 const PostgresRoutineStatementRaw PostgresRoutineStatementKind = "raw" ...
 
-### github.com/stokaro/ptah/core/ast.RangeTypeDef
+### go.5x5.cz/ptah/core/ast.RangeTypeDef
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RangeTypeDef struct {
     // Subtype is the required element type the range is built over (e.g. "integer").
@@ -2744,9 +2744,9 @@ func (td *RangeTypeDef) SetCollation(collation string) *RangeTypeDef
 func (td *RangeTypeDef) SetSubtypeDiff(subtypeDiff string) *RangeTypeDef
 func (td *RangeTypeDef) SetSubtypeOpClass(opClass string) *RangeTypeDef
 
-### github.com/stokaro/ptah/core/ast.RawSQLNode
+### go.5x5.cz/ptah/core/ast.RawSQLNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RawSQLNode struct {
     // SQL is the literal SQL text to emit. The renderer writes it as a single
@@ -2765,9 +2765,9 @@ type RawSQLNode struct {
 func NewRawSQL(sql string) *RawSQLNode
 func (n *RawSQLNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.RefreshMaterializedViewNode
+### go.5x5.cz/ptah/core/ast.RefreshMaterializedViewNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RefreshMaterializedViewNode struct {
     Name         string
@@ -2782,9 +2782,9 @@ func (n *RefreshMaterializedViewNode) Accept(visitor Visitor) error
 func (n *RefreshMaterializedViewNode) SetComment(comment string) *RefreshMaterializedViewNode
 func (n *RefreshMaterializedViewNode) SetConcurrently() *RefreshMaterializedViewNode
 
-### github.com/stokaro/ptah/core/ast.RenameColumnOperation
+### go.5x5.cz/ptah/core/ast.RenameColumnOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RenameColumnOperation struct {
     // OldName is the current column name.
@@ -2802,9 +2802,9 @@ type RenameColumnOperation struct {
 
 func (op *RenameColumnOperation) Accept(_visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.RenameEnumValueOperation
+### go.5x5.cz/ptah/core/ast.RenameEnumValueOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RenameEnumValueOperation struct {
     // OldValue is the current enum value name
@@ -2820,9 +2820,9 @@ type RenameEnumValueOperation struct {
 func NewRenameEnumValueOperation(oldValue, newValue string) *RenameEnumValueOperation
 func (op *RenameEnumValueOperation) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.RenameTableOperation
+### go.5x5.cz/ptah/core/ast.RenameTableOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RenameTableOperation struct {
     // NewName is the new table name.
@@ -2838,9 +2838,9 @@ type RenameTableOperation struct {
 
 func (op *RenameTableOperation) Accept(_visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.RenameTypeOperation
+### go.5x5.cz/ptah/core/ast.RenameTypeOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RenameTypeOperation struct {
     // NewName is the new type name
@@ -2854,9 +2854,9 @@ type RenameTypeOperation struct {
 func NewRenameTypeOperation(newName string) *RenameTypeOperation
 func (op *RenameTypeOperation) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.ResultColumn
+### go.5x5.cz/ptah/core/ast.ResultColumn
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type ResultColumn struct {
     // Expr is an optional projected expression, such as a FuncCall aggregate. When
@@ -2885,9 +2885,9 @@ type ResultColumn struct {
     Alias empty, so the Phase 1 and Phase 2 rendering is preserved unchanged.
 
 
-### github.com/stokaro/ptah/core/ast.RevokePrivilegeNode
+### go.5x5.cz/ptah/core/ast.RevokePrivilegeNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RevokePrivilegeNode struct {
     // Role is the role losing the privilege.
@@ -2910,9 +2910,9 @@ func (n *RevokePrivilegeNode) Accept(visitor Visitor) error
 func (n *RevokePrivilegeNode) SetComment(comment string) *RevokePrivilegeNode
 func (n *RevokePrivilegeNode) SetGrantOptionFor(grantOptionFor bool) *RevokePrivilegeNode
 
-### github.com/stokaro/ptah/core/ast.RoleOperation
+### go.5x5.cz/ptah/core/ast.RoleOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RoleOperation interface {
     // GetOperationType returns a string identifier for the operation type
@@ -2926,18 +2926,18 @@ type RoleOperation interface {
     interface to provide specific role modification behavior.
 
 
-### github.com/stokaro/ptah/core/ast.RoutineKind
+### go.5x5.cz/ptah/core/ast.RoutineKind
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type RoutineKind string
     RoutineKind identifies which CREATE routine form an opaque routine wraps.
 
 const RoutineKindFunction RoutineKind = "function" ...
 
-### github.com/stokaro/ptah/core/ast.SQLServerRoutineBody
+### go.5x5.cz/ptah/core/ast.SQLServerRoutineBody
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SQLServerRoutineBody struct {
     // SQL is the raw body text after AS.
@@ -2949,18 +2949,18 @@ type SQLServerRoutineBody struct {
     SQLServerRoutineBody contains parser metadata for a T-SQL routine body.
 
 
-### github.com/stokaro/ptah/core/ast.SQLServerRoutineForm
+### go.5x5.cz/ptah/core/ast.SQLServerRoutineForm
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SQLServerRoutineForm string
     SQLServerRoutineForm identifies SQL Server function and procedure shapes.
 
 const SQLServerRoutineFormProcedure SQLServerRoutineForm = "procedure" ...
 
-### github.com/stokaro/ptah/core/ast.SQLServerRoutineNode
+### go.5x5.cz/ptah/core/ast.SQLServerRoutineNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SQLServerRoutineNode struct {
     // SQL is the complete executable routine statement without GO separators.
@@ -2987,9 +2987,9 @@ type SQLServerRoutineNode struct {
 func NewSQLServerRoutine(sql, dialect string, kind RoutineKind) *SQLServerRoutineNode
 func (n *SQLServerRoutineNode) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.SQLServerRoutineStatement
+### go.5x5.cz/ptah/core/ast.SQLServerRoutineStatement
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SQLServerRoutineStatement struct {
     Kind SQLServerRoutineStatementKind
@@ -2999,9 +2999,9 @@ type SQLServerRoutineStatement struct {
     body.
 
 
-### github.com/stokaro/ptah/core/ast.SQLServerRoutineStatementKind
+### go.5x5.cz/ptah/core/ast.SQLServerRoutineStatementKind
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SQLServerRoutineStatementKind string
     SQLServerRoutineStatementKind identifies a T-SQL routine-body statement
@@ -3009,9 +3009,9 @@ type SQLServerRoutineStatementKind string
 
 const SQLServerRoutineStatementRaw SQLServerRoutineStatementKind = "raw" ...
 
-### github.com/stokaro/ptah/core/ast.SelectStatement
+### go.5x5.cz/ptah/core/ast.SelectStatement
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SelectStatement struct {
     // Distinct renders SELECT DISTINCT, deduplicating result rows. It defaults to
@@ -3054,9 +3054,9 @@ type SelectStatement struct {
     package.
 
 
-### github.com/stokaro/ptah/core/ast.SetCreateDBOperation
+### go.5x5.cz/ptah/core/ast.SetCreateDBOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SetCreateDBOperation struct {
     CreateDB bool
@@ -3066,9 +3066,9 @@ type SetCreateDBOperation struct {
 func NewSetCreateDBOperation(createDB bool) *SetCreateDBOperation
 func (op *SetCreateDBOperation) GetOperationType() string
 
-### github.com/stokaro/ptah/core/ast.SetCreateRoleOperation
+### go.5x5.cz/ptah/core/ast.SetCreateRoleOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SetCreateRoleOperation struct {
     CreateRole bool
@@ -3079,9 +3079,9 @@ type SetCreateRoleOperation struct {
 func NewSetCreateRoleOperation(createRole bool) *SetCreateRoleOperation
 func (op *SetCreateRoleOperation) GetOperationType() string
 
-### github.com/stokaro/ptah/core/ast.SetInheritOperation
+### go.5x5.cz/ptah/core/ast.SetInheritOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SetInheritOperation struct {
     Inherit bool
@@ -3091,9 +3091,9 @@ type SetInheritOperation struct {
 func NewSetInheritOperation(inherit bool) *SetInheritOperation
 func (op *SetInheritOperation) GetOperationType() string
 
-### github.com/stokaro/ptah/core/ast.SetLoginOperation
+### go.5x5.cz/ptah/core/ast.SetLoginOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SetLoginOperation struct {
     Login bool
@@ -3103,9 +3103,9 @@ type SetLoginOperation struct {
 func NewSetLoginOperation(login bool) *SetLoginOperation
 func (op *SetLoginOperation) GetOperationType() string
 
-### github.com/stokaro/ptah/core/ast.SetPasswordOperation
+### go.5x5.cz/ptah/core/ast.SetPasswordOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SetPasswordOperation struct {
     Password string
@@ -3115,9 +3115,9 @@ type SetPasswordOperation struct {
 func NewSetPasswordOperation(password string) *SetPasswordOperation
 func (op *SetPasswordOperation) GetOperationType() string
 
-### github.com/stokaro/ptah/core/ast.SetReplicationOperation
+### go.5x5.cz/ptah/core/ast.SetReplicationOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SetReplicationOperation struct {
     Replication bool
@@ -3128,9 +3128,9 @@ type SetReplicationOperation struct {
 func NewSetReplicationOperation(replication bool) *SetReplicationOperation
 func (op *SetReplicationOperation) GetOperationType() string
 
-### github.com/stokaro/ptah/core/ast.SetSuperuserOperation
+### go.5x5.cz/ptah/core/ast.SetSuperuserOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SetSuperuserOperation struct {
     Superuser bool
@@ -3140,9 +3140,9 @@ type SetSuperuserOperation struct {
 func NewSetSuperuserOperation(superuser bool) *SetSuperuserOperation
 func (op *SetSuperuserOperation) GetOperationType() string
 
-### github.com/stokaro/ptah/core/ast.SortDirection
+### go.5x5.cz/ptah/core/ast.SortDirection
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type SortDirection int
     SortDirection is the direction of an ORDER BY term.
@@ -3150,9 +3150,9 @@ type SortDirection int
 const SortAscending SortDirection = iota ...
 func (d SortDirection) String() string
 
-### github.com/stokaro/ptah/core/ast.StatementList
+### go.5x5.cz/ptah/core/ast.StatementList
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type StatementList struct {
     // Statements contains the ordered list of SQL statements
@@ -3167,9 +3167,9 @@ type StatementList struct {
 
 func (sl *StatementList) Accept(visitor Visitor) error
 
-### github.com/stokaro/ptah/core/ast.TypeDefinition
+### go.5x5.cz/ptah/core/ast.TypeDefinition
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type TypeDefinition interface {
     Node
@@ -3183,9 +3183,9 @@ type TypeDefinition interface {
     specific structure for its type.
 
 
-### github.com/stokaro/ptah/core/ast.TypeOperation
+### go.5x5.cz/ptah/core/ast.TypeOperation
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type TypeOperation interface {
     Node
@@ -3199,9 +3199,9 @@ type TypeOperation interface {
     visitor pattern and the marker method.
 
 
-### github.com/stokaro/ptah/core/ast.UpdateStatement
+### go.5x5.cz/ptah/core/ast.UpdateStatement
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type UpdateStatement struct {
     // Table is the target table, rendered as a quoted identifier. Required.
@@ -3230,9 +3230,9 @@ type UpdateStatement struct {
     update into a render-time error rather than silent data loss.
 
 
-### github.com/stokaro/ptah/core/ast.UpsertAssignment
+### go.5x5.cz/ptah/core/ast.UpsertAssignment
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type UpsertAssignment struct {
     Column     string
@@ -3243,9 +3243,9 @@ type UpsertAssignment struct {
     placeholder or a reference to the source row.
 
 
-### github.com/stokaro/ptah/core/ast.UpsertNode
+### go.5x5.cz/ptah/core/ast.UpsertNode
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type UpsertNode struct {
     Table             string
@@ -3275,9 +3275,9 @@ func (n *UpsertNode) SetInsertPredicate(predicate string) *UpsertNode
 func (n *UpsertNode) SetMatchColumns(columns ...string) *UpsertNode
 func (n *UpsertNode) SetUpdatePredicate(predicate string) *UpsertNode
 
-### github.com/stokaro/ptah/core/ast.Visitor
+### go.5x5.cz/ptah/core/ast.Visitor
 
-package ast // import "github.com/stokaro/ptah/core/ast"
+package ast // import "go.5x5.cz/ptah/core/ast"
 
 type Visitor interface {
     // VisitCreateTable renders a CREATE TABLE statement
@@ -3372,7 +3372,7 @@ type Visitor interface {
     their specific database dialect (PostgreSQL, MySQL, MariaDB, etc.).
 
 
-## github.com/stokaro/ptah/core/goschema
+## go.5x5.cz/ptah/core/goschema
 
 func Deduplicate(r *Database)
 func Finalize(r *Database)
@@ -3420,9 +3420,9 @@ type Table struct{ ... }
 type Trigger struct{ ... }
 type View struct{ ... }
 
-### github.com/stokaro/ptah/core/goschema.CompositeType
+### go.5x5.cz/ptah/core/goschema.CompositeType
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type CompositeType struct {
     StructName string               // Name of the Go struct this type is associated with
@@ -3443,9 +3443,9 @@ type CompositeType struct {
 func (c *CompositeType) Canonicalize()
 func (c CompositeType) QualifiedName() string
 
-### github.com/stokaro/ptah/core/goschema.CompositeTypeField
+### go.5x5.cz/ptah/core/goschema.CompositeTypeField
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type CompositeTypeField struct {
     Name string // Field name
@@ -3454,9 +3454,9 @@ type CompositeTypeField struct {
     CompositeTypeField is a single named field of a composite type.
 
 
-### github.com/stokaro/ptah/core/goschema.Constraint
+### go.5x5.cz/ptah/core/goschema.Constraint
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Constraint struct {
     StructName string // Name of the Go struct this constraint belongs to
@@ -3516,9 +3516,9 @@ type Constraint struct {
 
 func (c Constraint) ForeignColumnsOrDefault() []string
 
-### github.com/stokaro/ptah/core/goschema.Database
+### go.5x5.cz/ptah/core/goschema.Database
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Database struct {
     Schemas                    []Schema
@@ -3582,9 +3582,9 @@ func ParseFile(filename string) (Database, error)
 func ParseFileWithDependencies(filename string) (Database, error)
 func ParseSource(filename string, source any) (Database, error)
 
-### github.com/stokaro/ptah/core/goschema.Domain
+### go.5x5.cz/ptah/core/goschema.Domain
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Domain struct {
     StructName  string // Name of the Go struct this domain is associated with
@@ -3608,9 +3608,9 @@ type Domain struct {
 func (d *Domain) Canonicalize()
 func (d Domain) QualifiedName() string
 
-### github.com/stokaro/ptah/core/goschema.EmbeddedField
+### go.5x5.cz/ptah/core/goschema.EmbeddedField
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type EmbeddedField struct {
     StructName       string                       // The struct that contains this embedded field
@@ -3654,9 +3654,9 @@ type EmbeddedField struct {
         }
 
 
-### github.com/stokaro/ptah/core/goschema.EmbeddedSources
+### go.5x5.cz/ptah/core/goschema.EmbeddedSources
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type EmbeddedSources struct {
     Fields      []Field
@@ -3666,9 +3666,9 @@ type EmbeddedSources struct {
     database columns so Finalize and Merge remain idempotent.
 
 
-### github.com/stokaro/ptah/core/goschema.Enum
+### go.5x5.cz/ptah/core/goschema.Enum
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Enum struct {
     Name   string   // The generated enum type name (e.g., "enum_user_status")
@@ -3719,9 +3719,9 @@ type Enum struct {
           CREATE TABLE users (status ENUM('active', 'inactive', 'suspended') DEFAULT 'active');
 
 
-### github.com/stokaro/ptah/core/goschema.Extension
+### go.5x5.cz/ptah/core/goschema.Extension
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Extension struct {
     Name        string // Extension name (pg_trgm, postgis, etc.)
@@ -3744,9 +3744,9 @@ type Extension struct {
         type GeoExtensions struct{}
 
 
-### github.com/stokaro/ptah/core/goschema.Field
+### go.5x5.cz/ptah/core/goschema.Field
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Field struct {
     StructName string // Name of the Go struct this field belongs to
@@ -3824,9 +3824,9 @@ type Field struct {
         ID int64
 
 
-### github.com/stokaro/ptah/core/goschema.Function
+### go.5x5.cz/ptah/core/goschema.Function
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Function struct {
     StructName string // Name of the Go struct this function is associated with
@@ -3874,9 +3874,9 @@ type Function struct {
 
 func (f *Function) Canonicalize()
 
-### github.com/stokaro/ptah/core/goschema.Grant
+### go.5x5.cz/ptah/core/goschema.Grant
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Grant struct {
     StructName string   // Name of the Go struct this grant is associated with
@@ -3903,9 +3903,9 @@ type Grant struct {
 
 func (g *Grant) Canonicalize()
 
-### github.com/stokaro/ptah/core/goschema.Index
+### go.5x5.cz/ptah/core/goschema.Index
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Index struct {
     StructName string   // Name of the Go struct this index belongs to
@@ -4005,9 +4005,9 @@ type Index struct {
         }
 
 
-### github.com/stokaro/ptah/core/goschema.IndexPart
+### go.5x5.cz/ptah/core/goschema.IndexPart
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type IndexPart struct {
     Name     string // Column name
@@ -4019,9 +4019,9 @@ type IndexPart struct {
     IndexPart represents one column or expression inside an index definition.
 
 
-### github.com/stokaro/ptah/core/goschema.ManagedData
+### go.5x5.cz/ptah/core/goschema.ManagedData
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type ManagedData struct {
     StructName string   // Name of the Go struct this data annotation is associated with
@@ -4071,9 +4071,9 @@ type ManagedData struct {
     (later) data-diff phase to match a desired row against an existing one.
 
 
-### github.com/stokaro/ptah/core/goschema.MaterializedView
+### go.5x5.cz/ptah/core/goschema.MaterializedView
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type MaterializedView struct {
     StructName      string // Name of the Go struct this materialized view is associated with
@@ -4092,9 +4092,9 @@ type MaterializedView struct {
 
 func (v *MaterializedView) Canonicalize()
 
-### github.com/stokaro/ptah/core/goschema.PartitionPart
+### go.5x5.cz/ptah/core/goschema.PartitionPart
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type PartitionPart struct {
     Name string // Column name
@@ -4103,9 +4103,9 @@ type PartitionPart struct {
     PartitionPart represents one partition key column or expression.
 
 
-### github.com/stokaro/ptah/core/goschema.PartitionSpec
+### go.5x5.cz/ptah/core/goschema.PartitionSpec
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type PartitionSpec struct {
     Type  string          // Partitioning method, such as RANGE, LIST, or HASH
@@ -4114,9 +4114,9 @@ type PartitionSpec struct {
     PartitionSpec represents PostgreSQL table partitioning metadata.
 
 
-### github.com/stokaro/ptah/core/goschema.PrimaryKeyPart
+### go.5x5.cz/ptah/core/goschema.PrimaryKeyPart
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type PrimaryKeyPart struct {
     Name   string // Column name
@@ -4126,9 +4126,9 @@ type PrimaryKeyPart struct {
     PrimaryKeyPart represents one column reference inside a table primary key.
 
 
-### github.com/stokaro/ptah/core/goschema.RLSEnabledTable
+### go.5x5.cz/ptah/core/goschema.RLSEnabledTable
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type RLSEnabledTable struct {
     StructName string // Name of the Go struct this RLS enablement is associated with
@@ -4152,9 +4152,9 @@ type RLSEnabledTable struct {
         ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
 
-### github.com/stokaro/ptah/core/goschema.RLSPolicy
+### go.5x5.cz/ptah/core/goschema.RLSPolicy
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type RLSPolicy struct {
     StructName          string // Name of the Go struct this policy is associated with
@@ -4201,9 +4201,9 @@ type RLSPolicy struct {
             USING (tenant_id = get_current_tenant_id());
 
 
-### github.com/stokaro/ptah/core/goschema.Range
+### go.5x5.cz/ptah/core/goschema.Range
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Range struct {
     StructName     string // Name of the Go struct this type is associated with
@@ -4226,9 +4226,9 @@ type Range struct {
 func (r *Range) Canonicalize()
 func (r Range) QualifiedName() string
 
-### github.com/stokaro/ptah/core/goschema.Role
+### go.5x5.cz/ptah/core/goschema.Role
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Role struct {
     StructName  string // Name of the Go struct this role is associated with
@@ -4281,9 +4281,9 @@ type Role struct {
         CREATE ROLE readonly_user WITH LOGIN;
 
 
-### github.com/stokaro/ptah/core/goschema.Schema
+### go.5x5.cz/ptah/core/goschema.Schema
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Schema struct {
     Name    string // Schema name, e.g. "public"
@@ -4294,9 +4294,9 @@ type Schema struct {
     Schema represents a database schema/namespace.
 
 
-### github.com/stokaro/ptah/core/goschema.SelfReferencingFK
+### go.5x5.cz/ptah/core/goschema.SelfReferencingFK
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type SelfReferencingFK struct {
     FieldName      string // Name of the field (e.g., "parent_id")
@@ -4338,9 +4338,9 @@ type SelfReferencingFK struct {
             FOREIGN KEY (parent_id) REFERENCES users(id);
 
 
-### github.com/stokaro/ptah/core/goschema.Sequence
+### go.5x5.cz/ptah/core/goschema.Sequence
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Sequence struct {
     StructName  string // Name of the Go struct this sequence is associated with
@@ -4388,9 +4388,9 @@ type Sequence struct {
 func (s *Sequence) Canonicalize()
 func (s Sequence) QualifiedName() string
 
-### github.com/stokaro/ptah/core/goschema.Table
+### go.5x5.cz/ptah/core/goschema.Table
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Table struct {
     StructName    string   // Name of the Go struct this table represents
@@ -4450,9 +4450,9 @@ type Table struct {
 
 func (t Table) QualifiedName() string
 
-### github.com/stokaro/ptah/core/goschema.Trigger
+### go.5x5.cz/ptah/core/goschema.Trigger
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Trigger struct {
     StructName string // Name of the Go struct this trigger is associated with
@@ -4474,9 +4474,9 @@ type Trigger struct {
 func (t *Trigger) Canonicalize()
 func (t Trigger) FunctionName() string
 
-### github.com/stokaro/ptah/core/goschema.View
+### go.5x5.cz/ptah/core/goschema.View
 
-package goschema // import "github.com/stokaro/ptah/core/goschema"
+package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type View struct {
     StructName string // Name of the Go struct this view is associated with
@@ -4493,13 +4493,13 @@ type View struct {
         type User struct{}
 
 
-## github.com/stokaro/ptah/core/platform
+## go.5x5.cz/ptah/core/platform
 
 const Postgres = "postgres" ...
 func IsPostgresFamily(dialect string) bool
 func NormalizeDialect(dialect string) string
 
-## github.com/stokaro/ptah/core/platform/capability
+## go.5x5.cz/ptah/core/platform/capability
 
 func Doc(key Capability) string
 type Capabilities map[Capability]bool
@@ -4525,9 +4525,9 @@ type Capability string
     const DropConstraintGeneric Capability = "drop_constraint_generic" ...
     func All() []Capability
 
-### github.com/stokaro/ptah/core/platform/capability.Capabilities
+### go.5x5.cz/ptah/core/platform/capability.Capabilities
 
-package capability // import "github.com/stokaro/ptah/core/platform/capability"
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
 
 type Capabilities map[Capability]bool
     Capabilities is a set of feature flags describing one concrete target,
@@ -4558,9 +4558,9 @@ func (c Capabilities) Has(key Capability) bool
 func (c Capabilities) Validate() error
 func (c Capabilities) With(key Capability, enabled bool) Capabilities
 
-### github.com/stokaro/ptah/core/platform/capability.Capability
+### go.5x5.cz/ptah/core/platform/capability.Capability
 
-package capability // import "github.com/stokaro/ptah/core/platform/capability"
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
 
 type Capability string
     Capability is a single named feature flag from the curated registry below.
@@ -4568,7 +4568,7 @@ type Capability string
 const DropConstraintGeneric Capability = "drop_constraint_generic" ...
 func All() []Capability
 
-## github.com/stokaro/ptah/core/platform/identifier
+## go.5x5.cz/ptah/core/platform/identifier
 
 type Comparison string
     const ComparisonExact Comparison = "exact" ...
@@ -4579,9 +4579,9 @@ type Semantics struct{ ... }
     func ForDialect(dialect string) Semantics
     func ForSQLServerCatalog(catalogCollation string) Semantics
 
-### github.com/stokaro/ptah/core/platform/identifier.Comparison
+### go.5x5.cz/ptah/core/platform/identifier.Comparison
 
-package identifier // import "github.com/stokaro/ptah/core/platform/identifier"
+package identifier // import "go.5x5.cz/ptah/core/platform/identifier"
 
 type Comparison string
     Comparison describes how a database compares identifiers.
@@ -4590,18 +4590,18 @@ const ComparisonExact Comparison = "exact" ...
 func (c Comparison) ConflictKey(value string) string
 func (c Comparison) IdentityKey(value string) string
 
-### github.com/stokaro/ptah/core/platform/identifier.IndexNamespace
+### go.5x5.cz/ptah/core/platform/identifier.IndexNamespace
 
-package identifier // import "github.com/stokaro/ptah/core/platform/identifier"
+package identifier // import "go.5x5.cz/ptah/core/platform/identifier"
 
 type IndexNamespace string
     IndexNamespace describes where index names must be unique.
 
 const IndexNamespaceTable IndexNamespace = "table" ...
 
-### github.com/stokaro/ptah/core/platform/identifier.ResolvedName
+### go.5x5.cz/ptah/core/platform/identifier.ResolvedName
 
-package identifier // import "github.com/stokaro/ptah/core/platform/identifier"
+package identifier // import "go.5x5.cz/ptah/core/platform/identifier"
 
 type ResolvedName struct {
     Name string `json:"name"`
@@ -4611,9 +4611,9 @@ type ResolvedName struct {
     key. Names with the same key compare equal in the target database.
 
 
-### github.com/stokaro/ptah/core/platform/identifier.Semantics
+### go.5x5.cz/ptah/core/platform/identifier.Semantics
 
-package identifier // import "github.com/stokaro/ptah/core/platform/identifier"
+package identifier // import "go.5x5.cz/ptah/core/platform/identifier"
 
 type Semantics struct {
     DefaultSchema    string         `json:"default_schema,omitempty"`
@@ -4646,7 +4646,7 @@ func (s Semantics) TableConflictKey(value string) string
 func (s Semantics) TableIdentityKey(value string) string
 func (s Semantics) WithResolvedNames(names []ResolvedName) Semantics
 
-## github.com/stokaro/ptah/core/ptaherr
+## go.5x5.cz/ptah/core/ptaherr
 
 var ErrUnsupportedDialect = errors.New("unsupported database dialect") ...
 type CapabilityError struct{ ... }
@@ -4654,9 +4654,9 @@ type ParseError struct{ ... }
 type PlanError struct{ ... }
 type RenderError struct{ ... }
 
-### github.com/stokaro/ptah/core/ptaherr.CapabilityError
+### go.5x5.cz/ptah/core/ptaherr.CapabilityError
 
-package ptaherr // import "github.com/stokaro/ptah/core/ptaherr"
+package ptaherr // import "go.5x5.cz/ptah/core/ptaherr"
 
 type CapabilityError struct {
     Dialect string
@@ -4670,9 +4670,9 @@ type CapabilityError struct {
 func (e *CapabilityError) Error() string
 func (e *CapabilityError) Unwrap() error
 
-### github.com/stokaro/ptah/core/ptaherr.ParseError
+### go.5x5.cz/ptah/core/ptaherr.ParseError
 
-package ptaherr // import "github.com/stokaro/ptah/core/ptaherr"
+package ptaherr // import "go.5x5.cz/ptah/core/ptaherr"
 
 type ParseError struct {
     File      string
@@ -4687,9 +4687,9 @@ type ParseError struct {
 func (e *ParseError) Error() string
 func (e *ParseError) Unwrap() error
 
-### github.com/stokaro/ptah/core/ptaherr.PlanError
+### go.5x5.cz/ptah/core/ptaherr.PlanError
 
-package ptaherr // import "github.com/stokaro/ptah/core/ptaherr"
+package ptaherr // import "go.5x5.cz/ptah/core/ptaherr"
 
 type PlanError struct {
     Dialect string
@@ -4701,9 +4701,9 @@ type PlanError struct {
 func (e *PlanError) Error() string
 func (e *PlanError) Unwrap() error
 
-### github.com/stokaro/ptah/core/ptaherr.RenderError
+### go.5x5.cz/ptah/core/ptaherr.RenderError
 
-package ptaherr // import "github.com/stokaro/ptah/core/ptaherr"
+package ptaherr // import "go.5x5.cz/ptah/core/ptaherr"
 
 type RenderError struct {
     Dialect string
@@ -4716,7 +4716,7 @@ type RenderError struct {
 func (e *RenderError) Error() string
 func (e *RenderError) Unwrap() error
 
-## github.com/stokaro/ptah/core/query
+## go.5x5.cz/ptah/core/query
 
 func And(exprs ...ast.Expression) ast.Expression
 func Asc(column string) ast.OrderByClause
@@ -4752,9 +4752,9 @@ type SelectBuilder struct{ ... }
 type UpdateBuilder struct{ ... }
     func Update(table string) *UpdateBuilder
 
-### github.com/stokaro/ptah/core/query.Column
+### go.5x5.cz/ptah/core/query.Column
 
-package query // import "github.com/stokaro/ptah/core/query"
+package query // import "go.5x5.cz/ptah/core/query"
 
 type Column struct {
     // Has unexported fields.
@@ -4789,9 +4789,9 @@ func (c Column) Min() ast.Expression
 func (c Column) Ne(value any) ast.Expression
 func (c Column) Sum() ast.Expression
 
-### github.com/stokaro/ptah/core/query.DeleteBuilder
+### go.5x5.cz/ptah/core/query.DeleteBuilder
 
-package query // import "github.com/stokaro/ptah/core/query"
+package query // import "go.5x5.cz/ptah/core/query"
 
 type DeleteBuilder struct {
     // Has unexported fields.
@@ -4805,9 +4805,9 @@ func (b *DeleteBuilder) Returning(columns ...string) *DeleteBuilder
 func (b *DeleteBuilder) Unconditional() *DeleteBuilder
 func (b *DeleteBuilder) Where(expr ast.Expression) *DeleteBuilder
 
-### github.com/stokaro/ptah/core/query.ExprCompare
+### go.5x5.cz/ptah/core/query.ExprCompare
 
-package query // import "github.com/stokaro/ptah/core/query"
+package query // import "go.5x5.cz/ptah/core/query"
 
 type ExprCompare struct {
     // Has unexported fields.
@@ -4826,9 +4826,9 @@ func (e ExprCompare) Le(value any) ast.Expression
 func (e ExprCompare) Lt(value any) ast.Expression
 func (e ExprCompare) Ne(value any) ast.Expression
 
-### github.com/stokaro/ptah/core/query.InsertBuilder
+### go.5x5.cz/ptah/core/query.InsertBuilder
 
-package query // import "github.com/stokaro/ptah/core/query"
+package query // import "go.5x5.cz/ptah/core/query"
 
 type InsertBuilder struct {
     // Has unexported fields.
@@ -4842,9 +4842,9 @@ func (b *InsertBuilder) Columns(columns ...string) *InsertBuilder
 func (b *InsertBuilder) Returning(columns ...string) *InsertBuilder
 func (b *InsertBuilder) Values(values ...any) *InsertBuilder
 
-### github.com/stokaro/ptah/core/query.SelectBuilder
+### go.5x5.cz/ptah/core/query.SelectBuilder
 
-package query // import "github.com/stokaro/ptah/core/query"
+package query // import "go.5x5.cz/ptah/core/query"
 
 type SelectBuilder struct {
     // Has unexported fields.
@@ -4875,9 +4875,9 @@ func (b *SelectBuilder) OrderBy(terms ...ast.OrderByClause) *SelectBuilder
 func (b *SelectBuilder) RightJoin(table, alias string, on ast.Expression) *SelectBuilder
 func (b *SelectBuilder) Where(expr ast.Expression) *SelectBuilder
 
-### github.com/stokaro/ptah/core/query.UpdateBuilder
+### go.5x5.cz/ptah/core/query.UpdateBuilder
 
-package query // import "github.com/stokaro/ptah/core/query"
+package query // import "go.5x5.cz/ptah/core/query"
 
 type UpdateBuilder struct {
     // Has unexported fields.
@@ -4892,7 +4892,7 @@ func (b *UpdateBuilder) Set(column string, value any) *UpdateBuilder
 func (b *UpdateBuilder) Unconditional() *UpdateBuilder
 func (b *UpdateBuilder) Where(expr ast.Expression) *UpdateBuilder
 
-## github.com/stokaro/ptah/core/renderer
+## go.5x5.cz/ptah/core/renderer
 
 func GetOrderedCreateStatements(r *goschema.Database, dialect string) ([]string, error)
 func GetOrderedCreateStatementsWithCapabilities(r *goschema.Database, dialect string, caps capability.Capabilities) ([]string, error)
@@ -4910,9 +4910,9 @@ type RenderVisitor interface{ ... }
     func NewRenderer(dialect string) (RenderVisitor, error)
     func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (RenderVisitor, error)
 
-### github.com/stokaro/ptah/core/renderer.RenderVisitor
+### go.5x5.cz/ptah/core/renderer.RenderVisitor
 
-package renderer // import "github.com/stokaro/ptah/core/renderer"
+package renderer // import "go.5x5.cz/ptah/core/renderer"
 
 type RenderVisitor interface {
     ast.Visitor
@@ -4944,15 +4944,15 @@ type RenderVisitor interface {
 func NewRenderer(dialect string) (RenderVisitor, error)
 func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (RenderVisitor, error)
 
-## github.com/stokaro/ptah/core/schemasource
+## go.5x5.cz/ptah/core/schemasource
 
 const DefaultTimeout = 60 * time.Second
 func Run(ctx context.Context, cmd Command) (*goschema.Database, error)
 type Command struct{ ... }
 
-### github.com/stokaro/ptah/core/schemasource.Command
+### go.5x5.cz/ptah/core/schemasource.Command
 
-package schemasource // import "github.com/stokaro/ptah/core/schemasource"
+package schemasource // import "go.5x5.cz/ptah/core/schemasource"
 
 type Command struct {
     // Args is the program and its arguments. Args[0] is the executable; it is run
@@ -4977,7 +4977,7 @@ type Command struct {
     stdout.
 
 
-## github.com/stokaro/ptah/core/sqlutil
+## go.5x5.cz/ptah/core/sqlutil
 
 func IsSQLServerGoBatchSeparatorAt(input string, start, end int) bool
 func IsScalarIFExpressionFragment(fragment string) bool
@@ -4988,7 +4988,7 @@ func SplitSQLStatementsForDialect(sql string, dialect string) []string
 func StripComments(sql string) string
 func StripCommentsForDialect(sql, dialect string) string
 
-## github.com/stokaro/ptah/dbschema
+## go.5x5.cz/ptah/dbschema
 
 func CloseAndWarn(conn *DatabaseConnection)
 func FormatDatabaseURL(dbURL string) string
@@ -4998,9 +4998,9 @@ type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
 type IsolatedQueryer interface{ ... }
 
-### github.com/stokaro/ptah/dbschema.DatabaseConnection
+### go.5x5.cz/ptah/dbschema.DatabaseConnection
 
-package dbschema // import "github.com/stokaro/ptah/dbschema"
+package dbschema // import "go.5x5.cz/ptah/dbschema"
 
 type DatabaseConnection struct {
     // Has unexported fields.
@@ -5026,9 +5026,9 @@ func (dc *DatabaseConnection) WithSession(ctx context.Context, use func(*Databas
 func (dc *DatabaseConnection) WithUntrustedSQLSession(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) Writer() types.SchemaExecutor
 
-### github.com/stokaro/ptah/dbschema.IsolatedQueryer
+### go.5x5.cz/ptah/dbschema.IsolatedQueryer
 
-package dbschema // import "github.com/stokaro/ptah/dbschema"
+package dbschema // import "go.5x5.cz/ptah/dbschema"
 
 type IsolatedQueryer interface {
     QueryContext(context.Context, string, ...any) (*sql.Rows, error)
@@ -5039,7 +5039,7 @@ type IsolatedQueryer interface {
     connection through Ptah.
 
 
-## github.com/stokaro/ptah/dbschema/types
+## go.5x5.cz/ptah/dbschema/types
 
 func QualifyTableName(schema, table string) string
 type DBColumn struct{ ... }
@@ -5069,9 +5069,9 @@ type SchemaReader interface{ ... }
 type SchemaTransaction interface{ ... }
 type SchemaWriter interface{ ... }
 
-### github.com/stokaro/ptah/dbschema/types.DBColumn
+### go.5x5.cz/ptah/dbschema/types.DBColumn
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBColumn struct {
     Name               string  `json:"name"`
@@ -5112,9 +5112,9 @@ type DBColumn struct {
     fields when the goschema-side model also carries generated column metadata.
 
 
-### github.com/stokaro/ptah/dbschema/types.DBComposite
+### go.5x5.cz/ptah/dbschema/types.DBComposite
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBComposite struct {
     Name   string             `json:"name"`
@@ -5125,9 +5125,9 @@ type DBComposite struct {
 
 func (c DBComposite) QualifiedName() string
 
-### github.com/stokaro/ptah/dbschema/types.DBCompositeField
+### go.5x5.cz/ptah/dbschema/types.DBCompositeField
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBCompositeField struct {
     Name string `json:"name"`
@@ -5137,9 +5137,9 @@ type DBCompositeField struct {
     database.
 
 
-### github.com/stokaro/ptah/dbschema/types.DBConstraint
+### go.5x5.cz/ptah/dbschema/types.DBConstraint
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBConstraint struct {
     Name           string   `json:"name"`
@@ -5173,9 +5173,9 @@ func (c DBConstraint) ForeignColumnsOrDefault() []string
 func (c DBConstraint) QualifiedForeignTableName() string
 func (c DBConstraint) QualifiedTableName() string
 
-### github.com/stokaro/ptah/dbschema/types.DBDomain
+### go.5x5.cz/ptah/dbschema/types.DBDomain
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBDomain struct {
     Name     string `json:"name"`
@@ -5189,9 +5189,9 @@ type DBDomain struct {
 
 func (d DBDomain) QualifiedName() string
 
-### github.com/stokaro/ptah/dbschema/types.DBEnum
+### go.5x5.cz/ptah/dbschema/types.DBEnum
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBEnum struct {
     Name   string   `json:"name"`
@@ -5200,9 +5200,9 @@ type DBEnum struct {
     DBEnum represents a database enum type (PostgreSQL)
 
 
-### github.com/stokaro/ptah/dbschema/types.DBExtension
+### go.5x5.cz/ptah/dbschema/types.DBExtension
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBExtension struct {
     Name             string  `json:"name"`              // Extension name (pg_trgm, postgis, etc.)
@@ -5216,9 +5216,9 @@ type DBExtension struct {
     DBExtension represents a PostgreSQL extension installed in the database
 
 
-### github.com/stokaro/ptah/dbschema/types.DBFunction
+### go.5x5.cz/ptah/dbschema/types.DBFunction
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBFunction struct {
     Name       string `json:"name"`       // Function name
@@ -5233,9 +5233,9 @@ type DBFunction struct {
     DBFunction represents a PostgreSQL custom function read from the database
 
 
-### github.com/stokaro/ptah/dbschema/types.DBGrant
+### go.5x5.cz/ptah/dbschema/types.DBGrant
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBGrant struct {
     Role       string `json:"role"`                 // Role receiving the privilege
@@ -5250,9 +5250,9 @@ type DBGrant struct {
 
 func (g DBGrant) QualifiedTarget() string
 
-### github.com/stokaro/ptah/dbschema/types.DBIndex
+### go.5x5.cz/ptah/dbschema/types.DBIndex
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBIndex struct {
     Name      string   `json:"name"`
@@ -5296,9 +5296,9 @@ type DBIndex struct {
 
 func (i DBIndex) QualifiedTableName() string
 
-### github.com/stokaro/ptah/dbschema/types.DBIndexPart
+### go.5x5.cz/ptah/dbschema/types.DBIndexPart
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBIndexPart struct {
     Name string `json:"name"`
@@ -5307,9 +5307,9 @@ type DBIndexPart struct {
     DBIndexPart represents one ordered key column in an introspected index.
 
 
-### github.com/stokaro/ptah/dbschema/types.DBInfo
+### go.5x5.cz/ptah/dbschema/types.DBInfo
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBInfo struct {
     Dialect             string                  `json:"dialect"` // postgres, mysql, mariadb
@@ -5322,9 +5322,9 @@ type DBInfo struct {
     DBInfo contains connection and metadata information
 
 
-### github.com/stokaro/ptah/dbschema/types.DBMatView
+### go.5x5.cz/ptah/dbschema/types.DBMatView
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBMatView struct {
     Name            string `json:"name"`             // Materialized view name
@@ -5337,9 +5337,9 @@ type DBMatView struct {
 
 func (v DBMatView) QualifiedName() string
 
-### github.com/stokaro/ptah/dbschema/types.DBRLSPolicy
+### go.5x5.cz/ptah/dbschema/types.DBRLSPolicy
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBRLSPolicy struct {
     Name                string `json:"name"`                  // Policy name
@@ -5353,9 +5353,9 @@ type DBRLSPolicy struct {
     DBRLSPolicy represents a PostgreSQL RLS policy read from the database
 
 
-### github.com/stokaro/ptah/dbschema/types.DBRange
+### go.5x5.cz/ptah/dbschema/types.DBRange
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBRange struct {
     Name    string `json:"name"`
@@ -5366,9 +5366,9 @@ type DBRange struct {
 
 func (r DBRange) QualifiedName() string
 
-### github.com/stokaro/ptah/dbschema/types.DBRole
+### go.5x5.cz/ptah/dbschema/types.DBRole
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBRole struct {
     Name        string `json:"name"`         // Role name
@@ -5384,9 +5384,9 @@ type DBRole struct {
     DBRole represents a PostgreSQL role read from the database
 
 
-### github.com/stokaro/ptah/dbschema/types.DBSchema
+### go.5x5.cz/ptah/dbschema/types.DBSchema
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBSchema struct {
     Schemas     []DBSchemaInfo `json:"schemas"`
@@ -5410,9 +5410,9 @@ type DBSchema struct {
     DBSchema represents the complete schema read from a database
 
 
-### github.com/stokaro/ptah/dbschema/types.DBSchemaInfo
+### go.5x5.cz/ptah/dbschema/types.DBSchemaInfo
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBSchemaInfo struct {
     Name    string `json:"name"`
@@ -5423,9 +5423,9 @@ type DBSchemaInfo struct {
     DBSchemaInfo represents a database schema/namespace.
 
 
-### github.com/stokaro/ptah/dbschema/types.DBSequence
+### go.5x5.cz/ptah/dbschema/types.DBSequence
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBSequence struct {
     Name      string `json:"name"`                // Sequence name
@@ -5450,9 +5450,9 @@ type DBSequence struct {
 
 func (s DBSequence) QualifiedName() string
 
-### github.com/stokaro/ptah/dbschema/types.DBTable
+### go.5x5.cz/ptah/dbschema/types.DBTable
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBTable struct {
     Name          string     `json:"name"`
@@ -5469,9 +5469,9 @@ type DBTable struct {
 
 func (t DBTable) QualifiedName() string
 
-### github.com/stokaro/ptah/dbschema/types.DBTrigger
+### go.5x5.cz/ptah/dbschema/types.DBTrigger
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBTrigger struct {
     Name    string `json:"name"`    // Trigger name
@@ -5487,9 +5487,9 @@ type DBTrigger struct {
 
 func (t DBTrigger) QualifiedTable() string
 
-### github.com/stokaro/ptah/dbschema/types.DBView
+### go.5x5.cz/ptah/dbschema/types.DBView
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBView struct {
     Name        string `json:"name"`         // View name
@@ -5502,9 +5502,9 @@ type DBView struct {
 
 func (v DBView) QualifiedName() string
 
-### github.com/stokaro/ptah/dbschema/types.SchemaExecutor
+### go.5x5.cz/ptah/dbschema/types.SchemaExecutor
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type SchemaExecutor interface {
     ExecuteSQL(ctx context.Context, sql string, args ...any) error
@@ -5521,9 +5521,9 @@ type SchemaExecutor interface {
     parameterized — route them through a validated escape helper instead.
 
 
-### github.com/stokaro/ptah/dbschema/types.SchemaReader
+### go.5x5.cz/ptah/dbschema/types.SchemaReader
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type SchemaReader interface {
     ReadSchema() (*DBSchema, error)
@@ -5531,9 +5531,9 @@ type SchemaReader interface {
     SchemaReader interface for reading database schemas
 
 
-### github.com/stokaro/ptah/dbschema/types.SchemaTransaction
+### go.5x5.cz/ptah/dbschema/types.SchemaTransaction
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type SchemaTransaction interface {
     SchemaExecutor
@@ -5548,9 +5548,9 @@ type SchemaTransaction interface {
     racing over shared writer state.
 
 
-### github.com/stokaro/ptah/dbschema/types.SchemaWriter
+### go.5x5.cz/ptah/dbschema/types.SchemaWriter
 
-package types // import "github.com/stokaro/ptah/dbschema/types"
+package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type SchemaWriter interface {
     SchemaExecutor
@@ -5567,7 +5567,7 @@ type SchemaWriter interface {
     SchemaWriter writes schemas to databases.
 
 
-## github.com/stokaro/ptah/migration/datadiff
+## go.5x5.cz/ptah/migration/datadiff
 
 func Render(diff *DataDiff, dialect string) (up string, down string, err error)
 type DataDiff struct{ ... }
@@ -5575,9 +5575,9 @@ type DataDiff struct{ ... }
 type Row = map[string]any
 type RowUpdate struct{ ... }
 
-### github.com/stokaro/ptah/migration/datadiff.DataDiff
+### go.5x5.cz/ptah/migration/datadiff.DataDiff
 
-package datadiff // import "github.com/stokaro/ptah/migration/datadiff"
+package datadiff // import "go.5x5.cz/ptah/migration/datadiff"
 
 type DataDiff struct {
     // Schema is the database schema the table belongs to, or empty for the
@@ -5601,18 +5601,18 @@ type DataDiff struct {
 
 func Compute(schema, table string, keys []string, desired, live []Row) (*DataDiff, error)
 
-### github.com/stokaro/ptah/migration/datadiff.Row
+### go.5x5.cz/ptah/migration/datadiff.Row
 
-package datadiff // import "github.com/stokaro/ptah/migration/datadiff"
+package datadiff // import "go.5x5.cz/ptah/migration/datadiff"
 
 type Row = map[string]any
     Row is a single table row keyed by column name. It matches the shape
     returned by goschema.LoadManagedRows and dbschema.ReadTableRows.
 
 
-### github.com/stokaro/ptah/migration/datadiff.RowUpdate
+### go.5x5.cz/ptah/migration/datadiff.RowUpdate
 
-package datadiff // import "github.com/stokaro/ptah/migration/datadiff"
+package datadiff // import "go.5x5.cz/ptah/migration/datadiff"
 
 type RowUpdate struct {
     Key     map[string]any
@@ -5625,7 +5625,7 @@ type RowUpdate struct {
     the rollback). Key holds only the key-column values that identify the row.
 
 
-## github.com/stokaro/ptah/migration/dbtest
+## go.5x5.cz/ptah/migration/dbtest
 
 type Assertion struct{ ... }
 type Case struct{ ... }
@@ -5642,9 +5642,9 @@ type SeedStep struct{ ... }
 type Step struct{ ... }
 type StepResult struct{ ... }
 
-### github.com/stokaro/ptah/migration/dbtest.Assertion
+### go.5x5.cz/ptah/migration/dbtest.Assertion
 
-package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
 
 type Assertion struct {
     // Query is the SQL executed by the assertion. It is always required and
@@ -5668,9 +5668,9 @@ type Assertion struct {
     or ErrorContains.
 
 
-### github.com/stokaro/ptah/migration/dbtest.Case
+### go.5x5.cz/ptah/migration/dbtest.Case
 
-package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
 
 type Case struct {
     Name  string `yaml:"name"`
@@ -5683,9 +5683,9 @@ func FilterCases(cases []Case, pattern string) ([]Case, error)
 func LoadCases(dir string) ([]Case, error)
 func ParseCases(data []byte) ([]Case, error)
 
-### github.com/stokaro/ptah/migration/dbtest.CaseResult
+### go.5x5.cz/ptah/migration/dbtest.CaseResult
 
-package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
 
 type CaseResult struct {
     Name   string       `json:"name"`
@@ -5696,9 +5696,9 @@ type CaseResult struct {
     executed step passed.
 
 
-### github.com/stokaro/ptah/migration/dbtest.Options
+### go.5x5.cz/ptah/migration/dbtest.Options
 
-package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
 
 type Options struct {
     // Cases are the test cases to run, in order.
@@ -5725,9 +5725,9 @@ type Options struct {
     Options configures a single RunMigrationTest invocation.
 
 
-### github.com/stokaro/ptah/migration/dbtest.Report
+### go.5x5.cz/ptah/migration/dbtest.Report
 
-package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
 
 type Report struct {
     Cases []CaseResult
@@ -5744,9 +5744,9 @@ func (r *Report) JSON() (string, error)
 func (r *Report) Render(format string) (string, error)
 func (r *Report) Text() string
 
-### github.com/stokaro/ptah/migration/dbtest.SchemaOptions
+### go.5x5.cz/ptah/migration/dbtest.SchemaOptions
 
-package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
 
 type SchemaOptions struct {
     // Cases are the test cases to run, in order.
@@ -5768,9 +5768,9 @@ type SchemaOptions struct {
     SchemaOptions configures a single RunSchemaTest invocation.
 
 
-### github.com/stokaro/ptah/migration/dbtest.SeedStep
+### go.5x5.cz/ptah/migration/dbtest.SeedStep
 
-package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
 
 type SeedStep struct {
     // Dir is the directory of seed files. When empty, the run-level seed
@@ -5786,9 +5786,9 @@ type SeedStep struct {
     protected-environment and protected-table guards do not apply.
 
 
-### github.com/stokaro/ptah/migration/dbtest.Step
+### go.5x5.cz/ptah/migration/dbtest.Step
 
-package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
 
 type Step struct {
     // Name is a human-readable label used in reporting. It is optional.
@@ -5808,9 +5808,9 @@ type Step struct {
     Step performs exactly one action against the test database.
 
 
-### github.com/stokaro/ptah/migration/dbtest.StepResult
+### go.5x5.cz/ptah/migration/dbtest.StepResult
 
-package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
 
 type StepResult struct {
     Name   string `json:"name"`
@@ -5821,7 +5821,7 @@ type StepResult struct {
     human-readable explanation of the result, especially on failure.
 
 
-## github.com/stokaro/ptah/migration/diffpolicy
+## go.5x5.cz/ptah/migration/diffpolicy
 
 type ChangeKind string
     const DropTable ChangeKind = "drop_table" ...
@@ -5833,9 +5833,9 @@ type SkippedChange struct{ ... }
     func Apply(diff *types.SchemaDiff, skip SkipSet) (*types.SchemaDiff, []SkippedChange)
     func ApplyForDialect(diff *types.SchemaDiff, skip SkipSet, dialect string) (*types.SchemaDiff, []SkippedChange)
 
-### github.com/stokaro/ptah/migration/diffpolicy.ChangeKind
+### go.5x5.cz/ptah/migration/diffpolicy.ChangeKind
 
-package diffpolicy // import "github.com/stokaro/ptah/migration/diffpolicy"
+package diffpolicy // import "go.5x5.cz/ptah/migration/diffpolicy"
 
 type ChangeKind string
     ChangeKind identifies a destructive schema change kind that a diff policy
@@ -5846,9 +5846,9 @@ const DropTable ChangeKind = "drop_table" ...
 func AllChangeKinds() []ChangeKind
 func ParseChangeKind(raw string) (ChangeKind, error)
 
-### github.com/stokaro/ptah/migration/diffpolicy.SkipSet
+### go.5x5.cz/ptah/migration/diffpolicy.SkipSet
 
-package diffpolicy // import "github.com/stokaro/ptah/migration/diffpolicy"
+package diffpolicy // import "go.5x5.cz/ptah/migration/diffpolicy"
 
 type SkipSet map[ChangeKind]struct{}
     SkipSet is a set of change kinds a policy skips.
@@ -5857,9 +5857,9 @@ func NewSkipSet(kinds ...ChangeKind) SkipSet
 func (s SkipSet) Empty() bool
 func (s SkipSet) Has(kind ChangeKind) bool
 
-### github.com/stokaro/ptah/migration/diffpolicy.SkippedChange
+### go.5x5.cz/ptah/migration/diffpolicy.SkippedChange
 
-package diffpolicy // import "github.com/stokaro/ptah/migration/diffpolicy"
+package diffpolicy // import "go.5x5.cz/ptah/migration/diffpolicy"
 
 type SkippedChange struct {
     // Kind is the change kind that caused the omission.
@@ -5875,7 +5875,7 @@ func Apply(diff *types.SchemaDiff, skip SkipSet) (*types.SchemaDiff, []SkippedCh
 func ApplyForDialect(diff *types.SchemaDiff, skip SkipSet, dialect string) (*types.SchemaDiff, []SkippedChange)
 func (c SkippedChange) Comment() string
 
-## github.com/stokaro/ptah/migration/generator
+## go.5x5.cz/ptah/migration/generator
 
 const AtlasCheckpointDirective = "-- atlas:checkpoint"
 var ErrMigrationDirectoryChanged = errors.New("migration directory changed after migration planning") ...
@@ -5906,9 +5906,9 @@ type ShadowMismatch struct{ ... }
 type ShadowVerificationError struct{ ... }
 type ShadowVerificationResult struct{ ... }
 
-### github.com/stokaro/ptah/migration/generator.BaselineShadowVerifyOptions
+### go.5x5.cz/ptah/migration/generator.BaselineShadowVerifyOptions
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type BaselineShadowVerifyOptions struct {
     ShadowDatabaseURL string
@@ -5926,9 +5926,9 @@ type BaselineShadowVerifyOptions struct {
     baselining.
 
 
-### github.com/stokaro/ptah/migration/generator.CheckpointFromShadowOptions
+### go.5x5.cz/ptah/migration/generator.CheckpointFromShadowOptions
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type CheckpointFromShadowOptions struct {
     // ShadowDatabaseURL is an ephemeral database the generator drops clean and
@@ -5949,9 +5949,9 @@ type CheckpointFromShadowOptions struct {
     CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
 
 
-### github.com/stokaro/ptah/migration/generator.DiffPolicy
+### go.5x5.cz/ptah/migration/generator.DiffPolicy
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type DiffPolicy struct {
     // SkipChangeKinds lists destructive change kinds to omit from generated
@@ -5965,9 +5965,9 @@ type DiffPolicy struct {
     DiffPolicy is the generator-level view of the project diff policy.
 
 
-### github.com/stokaro/ptah/migration/generator.EmptyMigrationOptions
+### go.5x5.cz/ptah/migration/generator.EmptyMigrationOptions
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type EmptyMigrationOptions struct {
     // MigrationName is the descriptive migration name used in filenames and headers.
@@ -5983,9 +5983,9 @@ type EmptyMigrationOptions struct {
     EmptyMigrationOptions contains options for skeleton migration creation.
 
 
-### github.com/stokaro/ptah/migration/generator.GenerateMigrationOptions
+### go.5x5.cz/ptah/migration/generator.GenerateMigrationOptions
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type GenerateMigrationOptions struct {
     // GoEntitiesDir is the directory to scan for Go entities
@@ -6042,9 +6042,9 @@ type GenerateMigrationOptions struct {
     GenerateMigrationOptions contains options for migration generation
 
 
-### github.com/stokaro/ptah/migration/generator.MigrationFilePair
+### go.5x5.cz/ptah/migration/generator.MigrationFilePair
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type MigrationFilePair struct {
     UpFile        string // Path to the up migration file
@@ -6056,9 +6056,9 @@ type MigrationFilePair struct {
     MigrationFilePair represents one generated up/down migration file pair.
 
 
-### github.com/stokaro/ptah/migration/generator.MigrationFiles
+### go.5x5.cz/ptah/migration/generator.MigrationFiles
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type MigrationFiles struct {
     UpFile     string              // Path to the first up migration file
@@ -6072,9 +6072,9 @@ type MigrationFiles struct {
 func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error)
 
-### github.com/stokaro/ptah/migration/generator.MigrationPlan
+### go.5x5.cz/ptah/migration/generator.MigrationPlan
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type MigrationPlan struct {
     // Has unexported fields.
@@ -6086,9 +6086,9 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error)
 func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles, error)
 
-### github.com/stokaro/ptah/migration/generator.RollbackFromShadowOptions
+### go.5x5.cz/ptah/migration/generator.RollbackFromShadowOptions
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type RollbackFromShadowOptions struct {
     // TargetConnection is the already-open database the verified rollback
@@ -6113,9 +6113,9 @@ type RollbackFromShadowOptions struct {
     RollbackFromShadowOptions configures VerifyRollbackFromShadow.
 
 
-### github.com/stokaro/ptah/migration/generator.ShadowMismatch
+### go.5x5.cz/ptah/migration/generator.ShadowMismatch
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type ShadowMismatch struct {
     Kind       string            `json:"kind"`
@@ -6130,9 +6130,9 @@ type ShadowMismatch struct {
     verification.
 
 
-### github.com/stokaro/ptah/migration/generator.ShadowVerificationError
+### go.5x5.cz/ptah/migration/generator.ShadowVerificationError
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type ShadowVerificationError struct {
     Result ShadowVerificationResult `json:"result"`
@@ -6143,9 +6143,9 @@ type ShadowVerificationError struct {
 func (e *ShadowVerificationError) Error() string
 func (e *ShadowVerificationError) Unwrap() error
 
-### github.com/stokaro/ptah/migration/generator.ShadowVerificationResult
+### go.5x5.cz/ptah/migration/generator.ShadowVerificationResult
 
-package generator // import "github.com/stokaro/ptah/migration/generator"
+package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type ShadowVerificationResult struct {
     Stage string `json:"stage"`
@@ -6157,7 +6157,7 @@ type ShadowVerificationResult struct {
     exposing mismatches to callers that need machine-readable diagnostics.
 
 
-## github.com/stokaro/ptah/migration/importer
+## go.5x5.cz/ptah/migration/importer
 
 func SupportedTools() []string
 type EmitResult struct{ ... }
@@ -6171,9 +6171,9 @@ type Parser interface{ ... }
 type SourceMigration struct{ ... }
     func Normalize(migrations []SourceMigration) ([]SourceMigration, error)
 
-### github.com/stokaro/ptah/migration/importer.EmitResult
+### go.5x5.cz/ptah/migration/importer.EmitResult
 
-package importer // import "github.com/stokaro/ptah/migration/importer"
+package importer // import "go.5x5.cz/ptah/migration/importer"
 
 type EmitResult struct {
     // Files are the migration file names written into the output directory, in
@@ -6191,9 +6191,9 @@ type EmitResult struct {
 func Emit(outDir string, migrations []SourceMigration, opts Options) (*EmitResult, error)
 func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitResult, error)
 
-### github.com/stokaro/ptah/migration/importer.Options
+### go.5x5.cz/ptah/migration/importer.Options
 
-package importer // import "github.com/stokaro/ptah/migration/importer"
+package importer // import "go.5x5.cz/ptah/migration/importer"
 
 type Options struct {
     // DryRun reports the planned files without writing anything.
@@ -6202,9 +6202,9 @@ type Options struct {
     Options configures an import run.
 
 
-### github.com/stokaro/ptah/migration/importer.Parser
+### go.5x5.cz/ptah/migration/importer.Parser
 
-package importer // import "github.com/stokaro/ptah/migration/importer"
+package importer // import "go.5x5.cz/ptah/migration/importer"
 
 type Parser interface {
     // Name is the stable tool identifier used by the --from flag.
@@ -6221,9 +6221,9 @@ func DetectParser(fsys fs.FS) (Parser, error)
 func ParserByName(tool string) (Parser, error)
 func Parsers() []Parser
 
-### github.com/stokaro/ptah/migration/importer.SourceMigration
+### go.5x5.cz/ptah/migration/importer.SourceMigration
 
-package importer // import "github.com/stokaro/ptah/migration/importer"
+package importer // import "go.5x5.cz/ptah/migration/importer"
 
 type SourceMigration struct {
     Version    int64
@@ -6239,7 +6239,7 @@ type SourceMigration struct {
 
 func Normalize(migrations []SourceMigration) ([]SourceMigration, error)
 
-## github.com/stokaro/ptah/migration/lint
+## go.5x5.cz/ptah/migration/lint
 
 const ConfigFileName = ".ptah-lint.yaml"
 func Describe(f Finding) string
@@ -6271,9 +6271,9 @@ type SubjectKind string
     const SubjectTable SubjectKind = "table" ...
 type VersionSelection struct{ ... }
 
-### github.com/stokaro/ptah/migration/lint.Analysis
+### go.5x5.cz/ptah/migration/lint.Analysis
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type Analysis struct {
     // Has unexported fields.
@@ -6288,18 +6288,18 @@ func (a Analysis) Findings() []Finding
 func (a Analysis) SelectedFiles() []File
 func (a Analysis) SnapshotFS() fs.FS
 
-### github.com/stokaro/ptah/migration/lint.CompatibilityProfile
+### go.5x5.cz/ptah/migration/lint.CompatibilityProfile
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type CompatibilityProfile string
     CompatibilityProfile selects command-surface-specific lint semantics.
 
 const CompatibilityProfileNative CompatibilityProfile = "" ...
 
-### github.com/stokaro/ptah/migration/lint.Config
+### go.5x5.cz/ptah/migration/lint.Config
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type Config struct {
     // Dialect is the target dialect used to gate dialect-specific rules;
@@ -6328,9 +6328,9 @@ type Config struct {
 func LoadConfig(path string) (*Config, error)
 func LoadConfigFS(fsys fs.FS, name string) (*Config, error)
 
-### github.com/stokaro/ptah/migration/lint.File
+### go.5x5.cz/ptah/migration/lint.File
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type File struct {
     // Path is the file path as it should appear in findings (reporting
@@ -6392,9 +6392,9 @@ type File struct {
     File is one migration file prepared for linting.
 
 
-### github.com/stokaro/ptah/migration/lint.Finding
+### go.5x5.cz/ptah/migration/lint.Finding
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type Finding struct {
     Rule     string   `json:"rule"`
@@ -6413,9 +6413,9 @@ type Finding struct {
 
 func LintFS(fsys fs.FS, opts Options) ([]Finding, error)
 
-### github.com/stokaro/ptah/migration/lint.FindingContext
+### go.5x5.cz/ptah/migration/lint.FindingContext
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type FindingContext struct {
     StatementIndex int       `json:"statement_index"`
@@ -6425,9 +6425,9 @@ type FindingContext struct {
     objects. File-level findings have a nil context.
 
 
-### github.com/stokaro/ptah/migration/lint.Options
+### go.5x5.cz/ptah/migration/lint.Options
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type Options struct {
     // Compatibility selects command-surface-specific semantics. The zero value
@@ -6465,9 +6465,9 @@ type Options struct {
     Options configures a lint run.
 
 
-### github.com/stokaro/ptah/migration/lint.Rule
+### go.5x5.cz/ptah/migration/lint.Rule
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type Rule struct {
     // Code is the stable identifier (DS101, PG101, ...). It starts with an
@@ -6490,9 +6490,9 @@ type Rule struct {
 
 func Rules() []Rule
 
-### github.com/stokaro/ptah/migration/lint.RuleConfig
+### go.5x5.cz/ptah/migration/lint.RuleConfig
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type RuleConfig struct {
     // Severity overrides the rule's default severity when set.
@@ -6503,9 +6503,9 @@ type RuleConfig struct {
     RuleConfig customizes one rule for a lint run.
 
 
-### github.com/stokaro/ptah/migration/lint.SchemaChange
+### go.5x5.cz/ptah/migration/lint.SchemaChange
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type SchemaChange struct {
     // Version is the migration version that produced the change; zero when the
@@ -6537,27 +6537,27 @@ type SchemaChange struct {
     file count.
 
 
-### github.com/stokaro/ptah/migration/lint.SchemaChangeKind
+### go.5x5.cz/ptah/migration/lint.SchemaChangeKind
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type SchemaChangeKind string
     SchemaChangeKind classifies the DDL effect of one semantic schema change.
 
 const SchemaChangeAdd SchemaChangeKind = "add" ...
 
-### github.com/stokaro/ptah/migration/lint.Severity
+### go.5x5.cz/ptah/migration/lint.Severity
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type Severity = risk.Severity
     Severity is the urgency of a finding.
 
 const SeverityWarning Severity = risk.Warning ...
 
-### github.com/stokaro/ptah/migration/lint.SourceSpan
+### go.5x5.cz/ptah/migration/lint.SourceSpan
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type SourceSpan struct {
     Start int `json:"start"`
@@ -6566,9 +6566,9 @@ type SourceSpan struct {
     SourceSpan identifies a half-open byte range in File.SQL.
 
 
-### github.com/stokaro/ptah/migration/lint.Statement
+### go.5x5.cz/ptah/migration/lint.Statement
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type Statement struct {
     // Index is this statement's stable zero-based position in [File.Statements].
@@ -6595,9 +6595,9 @@ type Statement struct {
     consume.
 
 
-### github.com/stokaro/ptah/migration/lint.Subject
+### go.5x5.cz/ptah/migration/lint.Subject
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type Subject struct {
     Kind     SubjectKind `json:"kind"`
@@ -6608,18 +6608,18 @@ type Subject struct {
     Subject identifies one schema object affected by a finding.
 
 
-### github.com/stokaro/ptah/migration/lint.SubjectKind
+### go.5x5.cz/ptah/migration/lint.SubjectKind
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type SubjectKind string
     SubjectKind identifies the kind of schema object affected by a finding.
 
 const SubjectTable SubjectKind = "table" ...
 
-### github.com/stokaro/ptah/migration/lint.VersionSelection
+### go.5x5.cz/ptah/migration/lint.VersionSelection
 
-package lint // import "github.com/stokaro/ptah/migration/lint"
+package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type VersionSelection struct {
     // Versions lists selected migration versions.
@@ -6632,7 +6632,7 @@ type VersionSelection struct {
     between no selector and an explicitly empty changeset.
 
 
-## github.com/stokaro/ptah/migration/migrator
+## go.5x5.cz/ptah/migration/migrator
 
 const DirectiveNoTransaction = "no_transaction"
 func FindMigrationGaps(versions []int64) []int64
@@ -6733,9 +6733,9 @@ type StatementObserver interface{ ... }
 type StatementObserverFunc func(context.Context, StatementEvent) error
 type StatementValidator interface{ ... }
 
-### github.com/stokaro/ptah/migration/migrator.AtlasCheckpointTxtarConflictError
+### go.5x5.cz/ptah/migration/migrator.AtlasCheckpointTxtarConflictError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type AtlasCheckpointTxtarConflictError struct {
     // Path is the migration file that declares both directives.
@@ -6749,9 +6749,9 @@ type AtlasCheckpointTxtarConflictError struct {
 
 func (e *AtlasCheckpointTxtarConflictError) Error() string
 
-### github.com/stokaro/ptah/migration/migrator.AtlasDownNotImplementedError
+### go.5x5.cz/ptah/migration/migrator.AtlasDownNotImplementedError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type AtlasDownNotImplementedError struct {
     Version     int64
@@ -6763,9 +6763,9 @@ type AtlasDownNotImplementedError struct {
 
 func (e *AtlasDownNotImplementedError) Error() string
 
-### github.com/stokaro/ptah/migration/migrator.AtlasRevisionChange
+### go.5x5.cz/ptah/migration/migrator.AtlasRevisionChange
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type AtlasRevisionChange struct {
     Version     int64
@@ -6775,9 +6775,9 @@ type AtlasRevisionChange struct {
     revision history.
 
 
-### github.com/stokaro/ptah/migration/migrator.AtlasRevisionSetResult
+### go.5x5.cz/ptah/migration/migrator.AtlasRevisionSetResult
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type AtlasRevisionSetResult struct {
     CurrentVersion int64
@@ -6788,9 +6788,9 @@ type AtlasRevisionSetResult struct {
     Set and Removed are ordered by ascending version.
 
 
-### github.com/stokaro/ptah/migration/migrator.AtlasRevisionType
+### go.5x5.cz/ptah/migration/migrator.AtlasRevisionType
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type AtlasRevisionType uint
     AtlasRevisionType identifies how an Atlas-format revision row was recorded.
@@ -6798,9 +6798,9 @@ type AtlasRevisionType uint
 const AtlasRevisionTypeUnknown AtlasRevisionType = iota ...
 func (t AtlasRevisionType) String() string
 
-### github.com/stokaro/ptah/migration/migrator.AtlasTemplateData
+### go.5x5.cz/ptah/migration/migrator.AtlasTemplateData
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type AtlasTemplateData struct {
     Env string
@@ -6808,9 +6808,9 @@ type AtlasTemplateData struct {
     AtlasTemplateData is the default data object used for Atlas SQL templates.
 
 
-### github.com/stokaro/ptah/migration/migrator.BaselineOptions
+### go.5x5.cz/ptah/migration/migrator.BaselineOptions
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type BaselineOptions struct {
     Version int64
@@ -6819,9 +6819,9 @@ type BaselineOptions struct {
     BaselineOptions configures migration metadata baselining.
 
 
-### github.com/stokaro/ptah/migration/migrator.Check
+### go.5x5.cz/ptah/migration/migrator.Check
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type Check struct {
     Name   string
@@ -6835,9 +6835,9 @@ type Check struct {
 
 func ParseChecks(source, dialect string) ([]Check, error)
 
-### github.com/stokaro/ptah/migration/migrator.CheckFailedError
+### go.5x5.cz/ptah/migration/migrator.CheckFailedError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type CheckFailedError struct {
     Version int64
@@ -6855,9 +6855,9 @@ type CheckFailedError struct {
 func (e *CheckFailedError) Error() string
 func (e *CheckFailedError) Unwrap() error
 
-### github.com/stokaro/ptah/migration/migrator.CheckGroupFailedError
+### go.5x5.cz/ptah/migration/migrator.CheckGroupFailedError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type CheckGroupFailedError struct {
     Version    int64
@@ -6872,9 +6872,9 @@ type CheckGroupFailedError struct {
 
 func (e *CheckGroupFailedError) Error() string
 
-### github.com/stokaro/ptah/migration/migrator.CheckpointRollbackError
+### go.5x5.cz/ptah/migration/migrator.CheckpointRollbackError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type CheckpointRollbackError struct {
     TargetVersion     int64
@@ -6886,9 +6886,9 @@ type CheckpointRollbackError struct {
 
 func (e *CheckpointRollbackError) Error() string
 
-### github.com/stokaro/ptah/migration/migrator.ChecksumMismatchError
+### go.5x5.cz/ptah/migration/migrator.ChecksumMismatchError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type ChecksumMismatchError struct {
     Version  int64
@@ -6900,9 +6900,9 @@ type ChecksumMismatchError struct {
 
 func (e *ChecksumMismatchError) Error() string
 
-### github.com/stokaro/ptah/migration/migrator.DirtyMigrationError
+### go.5x5.cz/ptah/migration/migrator.DirtyMigrationError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type DirtyMigrationError struct {
     Revision MigrationRevision
@@ -6911,9 +6911,9 @@ type DirtyMigrationError struct {
 
 func (e *DirtyMigrationError) Error() string
 
-### github.com/stokaro/ptah/migration/migrator.ExecOrder
+### go.5x5.cz/ptah/migration/migrator.ExecOrder
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type ExecOrder string
     ExecOrder controls how the migrator handles unapplied migrations whose
@@ -6922,9 +6922,9 @@ type ExecOrder string
 const ExecOrderLinear ExecOrder = "linear" ...
 func ParseExecOrder(value string) (ExecOrder, error)
 
-### github.com/stokaro/ptah/migration/migrator.FSMigrationProvider
+### go.5x5.cz/ptah/migration/migrator.FSMigrationProvider
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type FSMigrationProvider struct {
     // Has unexported fields.
@@ -6936,9 +6936,9 @@ type FSMigrationProvider struct {
 func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationProvider, error)
 func (p *FSMigrationProvider) Migrations() []*Migration
 
-### github.com/stokaro/ptah/migration/migrator.FSProviderOption
+### go.5x5.cz/ptah/migration/migrator.FSProviderOption
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type FSProviderOption func(*FSMigrationProvider)
     FSProviderOption configures a FSMigrationProvider before it loads
@@ -6950,9 +6950,9 @@ func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption
 func WithStatementObserver(observer StatementObserver) FSProviderOption
 func WithStatementValidator(validator StatementValidator) FSProviderOption
 
-### github.com/stokaro/ptah/migration/migrator.MigrateUpOptions
+### go.5x5.cz/ptah/migration/migrator.MigrateUpOptions
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrateUpOptions struct {
     // TargetVersion limits the run to pending migrations at or below this
@@ -6975,9 +6975,9 @@ type MigrateUpOptions struct {
     MigrateUpOptions selects the pending up migration plan.
 
 
-### github.com/stokaro/ptah/migration/migrator.Migration
+### go.5x5.cz/ptah/migration/migrator.Migration
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type Migration struct {
     Version     int64
@@ -7013,9 +7013,9 @@ type Migration struct {
 
 func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration
 
-### github.com/stokaro/ptah/migration/migrator.MigrationDirFormat
+### go.5x5.cz/ptah/migration/migrator.MigrationDirFormat
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationDirFormat string
     MigrationDirFormat selects how a filesystem migration directory is parsed.
@@ -7023,18 +7023,18 @@ type MigrationDirFormat string
 const MigrationDirFormatAuto MigrationDirFormat = "auto" ...
 func ParseMigrationDirFormat(value string) (MigrationDirFormat, error)
 
-### github.com/stokaro/ptah/migration/migrator.MigrationDirection
+### go.5x5.cz/ptah/migration/migrator.MigrationDirection
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationDirection string
     MigrationDirection identifies the migration direction in a selected plan.
 
 const MigrationDirectionUp MigrationDirection = "up" ...
 
-### github.com/stokaro/ptah/migration/migrator.MigrationExecutionError
+### go.5x5.cz/ptah/migration/migrator.MigrationExecutionError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationExecutionError struct {
     Err            error
@@ -7048,9 +7048,9 @@ type MigrationExecutionError struct {
 func (e *MigrationExecutionError) Error() string
 func (e *MigrationExecutionError) Unwrap() error
 
-### github.com/stokaro/ptah/migration/migrator.MigrationFile
+### go.5x5.cz/ptah/migration/migrator.MigrationFile
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationFile struct {
     Path      string
@@ -7083,9 +7083,9 @@ func ParseAtlasMigrationFileName(filename string) (*MigrationFile, error)
 func ParseAtlasMigrationFileNameForAutoDetection(filename string) (*MigrationFile, error)
 func ParseMigrationFileName(filename string) (*MigrationFile, error)
 
-### github.com/stokaro/ptah/migration/migrator.MigrationFunc
+### go.5x5.cz/ptah/migration/migrator.MigrationFunc
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
     MigrationFunc represents a migration function that operates on a database
@@ -7094,9 +7094,9 @@ type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
 func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc
 func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) MigrationFunc
 
-### github.com/stokaro/ptah/migration/migrator.MigrationLockTimeoutError
+### go.5x5.cz/ptah/migration/migrator.MigrationLockTimeoutError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationLockTimeoutError struct {
     Dialect string
@@ -7108,9 +7108,9 @@ type MigrationLockTimeoutError struct {
 
 func (e *MigrationLockTimeoutError) Error() string
 
-### github.com/stokaro/ptah/migration/migrator.MigrationPair
+### go.5x5.cz/ptah/migration/migrator.MigrationPair
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationPair struct {
     Up   *MigrationFile
@@ -7124,9 +7124,9 @@ func (mp MigrationPair) HasDown() bool
 func (mp MigrationPair) HasUp() bool
 func (mp MigrationPair) IsComplete() bool
 
-### github.com/stokaro/ptah/migration/migrator.MigrationPlan
+### go.5x5.cz/ptah/migration/migrator.MigrationPlan
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationPlan struct {
     Direction      MigrationDirection
@@ -7138,9 +7138,9 @@ type MigrationPlan struct {
     migration lock.
 
 
-### github.com/stokaro/ptah/migration/migrator.MigrationProvider
+### go.5x5.cz/ptah/migration/migrator.MigrationProvider
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationProvider interface {
     // Migrations provides a list of migrations sorted by version in ascending order
@@ -7149,9 +7149,9 @@ type MigrationProvider interface {
     MigrationProvider provides a list of migrations
 
 
-### github.com/stokaro/ptah/migration/migrator.MigrationRevision
+### go.5x5.cz/ptah/migration/migrator.MigrationRevision
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationRevision struct {
     Version         int64             `json:"version"`
@@ -7172,9 +7172,9 @@ type MigrationRevision struct {
     MigrationRevision records one row from the migration metadata table.
 
 
-### github.com/stokaro/ptah/migration/migrator.MigrationStatus
+### go.5x5.cz/ptah/migration/migrator.MigrationStatus
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationStatus struct {
     CurrentVersion       int64              `json:"current_version"`
@@ -7188,9 +7188,9 @@ type MigrationStatus struct {
     MigrationStatus represents the current state of migrations
 
 
-### github.com/stokaro/ptah/migration/migrator.MigrationStatusSnapshot
+### go.5x5.cz/ptah/migration/migrator.MigrationStatusSnapshot
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationStatusSnapshot struct {
     Status    *MigrationStatus
@@ -7200,9 +7200,9 @@ type MigrationStatusSnapshot struct {
     used to derive it.
 
 
-### github.com/stokaro/ptah/migration/migrator.MigrationTimeouts
+### go.5x5.cz/ptah/migration/migrator.MigrationTimeouts
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationTimeouts struct {
     LockTimeout         time.Duration
@@ -7216,9 +7216,9 @@ type MigrationTimeouts struct {
 func ParseMigrationTimeouts(lockTimeout, statementTimeout string) (MigrationTimeouts, error)
 func (t MigrationTimeouts) IsZero() bool
 
-### github.com/stokaro/ptah/migration/migrator.MigrationTxMode
+### go.5x5.cz/ptah/migration/migrator.MigrationTxMode
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type MigrationTxMode string
     MigrationTxMode controls how pending up migrations are wrapped in
@@ -7227,9 +7227,9 @@ type MigrationTxMode string
 const MigrationTxModeFile MigrationTxMode = "file" ...
 func ParseMigrationTxMode(value string) (MigrationTxMode, error)
 
-### github.com/stokaro/ptah/migration/migrator.Migrator
+### go.5x5.cz/ptah/migration/migrator.Migrator
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type Migrator struct {
     // Has unexported fields.
@@ -7273,9 +7273,9 @@ func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator
 func (m *Migrator) WithSkipChecks(skip bool) *Migrator
 func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator
 
-### github.com/stokaro/ptah/migration/migrator.NoopObserver
+### go.5x5.cz/ptah/migration/migrator.NoopObserver
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type NoopObserver struct{}
     NoopObserver discards all migration observability events.
@@ -7284,9 +7284,9 @@ func (NoopObserver) AddCounter(context.Context, string, int64, ...ObservationAtt
 func (NoopObserver) RecordDuration(context.Context, string, time.Duration, ...ObservationAttribute)
 func (NoopObserver) StartSpan(ctx context.Context, _ string, _ ...ObservationAttribute) (context.Context, ObservationSpan)
 
-### github.com/stokaro/ptah/migration/migrator.ObservationAttribute
+### go.5x5.cz/ptah/migration/migrator.ObservationAttribute
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type ObservationAttribute struct {
     Key   string
@@ -7296,9 +7296,9 @@ type ObservationAttribute struct {
     observability events.
 
 
-### github.com/stokaro/ptah/migration/migrator.ObservationSpan
+### go.5x5.cz/ptah/migration/migrator.ObservationSpan
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type ObservationSpan interface {
     SetAttributes(attrs ...ObservationAttribute)
@@ -7307,9 +7307,9 @@ type ObservationSpan interface {
     ObservationSpan is an in-progress observed operation.
 
 
-### github.com/stokaro/ptah/migration/migrator.Observer
+### go.5x5.cz/ptah/migration/migrator.Observer
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type Observer interface {
     StartSpan(ctx context.Context, name string, attrs ...ObservationAttribute) (context.Context, ObservationSpan)
@@ -7319,9 +7319,9 @@ type Observer interface {
     Observer receives migration tracing and metrics events.
 
 
-### github.com/stokaro/ptah/migration/migrator.OnFail
+### go.5x5.cz/ptah/migration/migrator.OnFail
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type OnFail string
     OnFail selects what a failing check does. Only abort is supported today:
@@ -7330,9 +7330,9 @@ type OnFail string
 
 const OnFailAbort OnFail = "abort"
 
-### github.com/stokaro/ptah/migration/migrator.OutOfOrderError
+### go.5x5.cz/ptah/migration/migrator.OutOfOrderError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type OutOfOrderError struct {
     CurrentVersion int64
@@ -7344,9 +7344,9 @@ type OutOfOrderError struct {
 func NewOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError
 func (e *OutOfOrderError) Error() string
 
-### github.com/stokaro/ptah/migration/migrator.PreMigrationHook
+### go.5x5.cz/ptah/migration/migrator.PreMigrationHook
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
     PreMigrationHook runs after the migrator has acquired its migration lock and
@@ -7354,9 +7354,9 @@ type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
     state.
 
 
-### github.com/stokaro/ptah/migration/migrator.RegisteredMigrationProvider
+### go.5x5.cz/ptah/migration/migrator.RegisteredMigrationProvider
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type RegisteredMigrationProvider struct {
     // Has unexported fields.
@@ -7368,9 +7368,9 @@ func NewRegisteredMigrationProvider(migrations ...*Migration) *RegisteredMigrati
 func (p *RegisteredMigrationProvider) Migrations() []*Migration
 func (p *RegisteredMigrationProvider) Register(migration *Migration)
 
-### github.com/stokaro/ptah/migration/migrator.RepairMigrationOptions
+### go.5x5.cz/ptah/migration/migrator.RepairMigrationOptions
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type RepairMigrationOptions struct {
     Version    int64
@@ -7380,9 +7380,9 @@ type RepairMigrationOptions struct {
     RepairMigrationOptions configures migration metadata repair.
 
 
-### github.com/stokaro/ptah/migration/migrator.RevisionTableFormat
+### go.5x5.cz/ptah/migration/migrator.RevisionTableFormat
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type RevisionTableFormat string
     RevisionTableFormat selects the database table layout used for migration
@@ -7391,9 +7391,9 @@ type RevisionTableFormat string
 const RevisionTableFormatPtah RevisionTableFormat = "ptah" ...
 func ParseRevisionTableFormat(value string) (RevisionTableFormat, error)
 
-### github.com/stokaro/ptah/migration/migrator.StatementEvent
+### go.5x5.cz/ptah/migration/migrator.StatementEvent
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type StatementEvent struct {
     SourcePath string
@@ -7407,9 +7407,9 @@ type StatementEvent struct {
     migration execution or later events.
 
 
-### github.com/stokaro/ptah/migration/migrator.StatementInterceptor
+### go.5x5.cz/ptah/migration/migrator.StatementInterceptor
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type StatementInterceptor interface {
     ValidateDirectives(directives map[string]string) error
@@ -7431,9 +7431,9 @@ type StatementInterceptor interface {
     normally. A non-nil error aborts the migration.
 
 
-### github.com/stokaro/ptah/migration/migrator.StatementObservationError
+### go.5x5.cz/ptah/migration/migrator.StatementObservationError
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type StatementObservationError struct {
     Err   error
@@ -7445,9 +7445,9 @@ type StatementObservationError struct {
 func (e *StatementObservationError) Error() string
 func (e *StatementObservationError) Unwrap() error
 
-### github.com/stokaro/ptah/migration/migrator.StatementObserver
+### go.5x5.cz/ptah/migration/migrator.StatementObserver
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type StatementObserver interface {
     ObserveStatement(ctx context.Context, event StatementEvent) error
@@ -7460,18 +7460,18 @@ type StatementObserver interface {
     checkpointed. Returning an error aborts the migration.
 
 
-### github.com/stokaro/ptah/migration/migrator.StatementObserverFunc
+### go.5x5.cz/ptah/migration/migrator.StatementObserverFunc
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type StatementObserverFunc func(context.Context, StatementEvent) error
     StatementObserverFunc adapts a function to StatementObserver.
 
 func (f StatementObserverFunc) ObserveStatement(ctx context.Context, event StatementEvent) error
 
-### github.com/stokaro/ptah/migration/migrator.StatementValidator
+### go.5x5.cz/ptah/migration/migrator.StatementValidator
 
-package migrator // import "github.com/stokaro/ptah/migration/migrator"
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
 
 type StatementValidator interface {
     ValidateStatement(stmt string) error
@@ -7481,7 +7481,7 @@ type StatementValidator interface {
     validated before the first statement runs.
 
 
-## github.com/stokaro/ptah/migration/planner
+## go.5x5.cz/ptah/migration/planner
 
 func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error)
 func GenerateSchemaDiffASTWithCapabilities(diff *types.SchemaDiff, generated *goschema.Database, dialect string, ...) ([]ast.Node, error)
@@ -7503,17 +7503,17 @@ type Planner interface{ ... }
     func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) (Planner, error)
     func GetPlannerWithOptions(dialect string, opts Options) (Planner, error)
 
-### github.com/stokaro/ptah/migration/planner.Factory
+### go.5x5.cz/ptah/migration/planner.Factory
 
-package planner // import "github.com/stokaro/ptah/migration/planner"
+package planner // import "go.5x5.cz/ptah/migration/planner"
 
 type Factory func(Options) Planner
     Factory creates a planner for a dialect from construction options.
 
 
-### github.com/stokaro/ptah/migration/planner.Options
+### go.5x5.cz/ptah/migration/planner.Options
 
-package planner // import "github.com/stokaro/ptah/migration/planner"
+package planner // import "go.5x5.cz/ptah/migration/planner"
 
 type Options struct {
     // Capabilities describes the concrete target server. Nil means the
@@ -7536,9 +7536,9 @@ type Options struct {
 
 func (o Options) CapabilitiesFor(dialect string) capability.Capabilities
 
-### github.com/stokaro/ptah/migration/planner.Planner
+### go.5x5.cz/ptah/migration/planner.Planner
 
-package planner // import "github.com/stokaro/ptah/migration/planner"
+package planner // import "go.5x5.cz/ptah/migration/planner"
 
 type Planner interface {
     GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
@@ -7598,7 +7598,7 @@ func GetPlanner(dialect string) (Planner, error)
 func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) (Planner, error)
 func GetPlannerWithOptions(dialect string, opts Options) (Planner, error)
 
-## github.com/stokaro/ptah/migration/risk
+## go.5x5.cz/ptah/migration/risk
 
 func IsBlocking(severity Severity) bool
 func Rank(severity Severity) int
@@ -7606,16 +7606,16 @@ func SARIFLevel(severity Severity) string
 type Severity string
     const Safe Severity = "safe" ...
 
-### github.com/stokaro/ptah/migration/risk.Severity
+### go.5x5.cz/ptah/migration/risk.Severity
 
-package risk // import "github.com/stokaro/ptah/migration/risk"
+package risk // import "go.5x5.cz/ptah/migration/risk"
 
 type Severity string
     Severity is the shared risk level type used by lint and safety reports.
 
 const Safe Severity = "safe" ...
 
-## github.com/stokaro/ptah/migration/safety
+## go.5x5.cz/ptah/migration/safety
 
 func HasDestructive(findings []Finding) bool
 func HasDestructiveAssessment(assessments []StatementAssessment) bool
@@ -7638,9 +7638,9 @@ type StatementAssessment struct{ ... }
     func AssessRenderedWithCapabilities(nodes []ast.Node, dialect string, caps capability.Capabilities) ([]StatementAssessment, error)
     func AssessSQL(statement string) StatementAssessment
 
-### github.com/stokaro/ptah/migration/safety.Finding
+### go.5x5.cz/ptah/migration/safety.Finding
 
-package safety // import "github.com/stokaro/ptah/migration/safety"
+package safety // import "go.5x5.cz/ptah/migration/safety"
 
 type Finding struct {
     Category string   `json:"category"`
@@ -7651,9 +7651,9 @@ type Finding struct {
 
 func ClassifySchemaDiff(diff *types.SchemaDiff) []Finding
 
-### github.com/stokaro/ptah/migration/safety.Report
+### go.5x5.cz/ptah/migration/safety.Report
 
-package safety // import "github.com/stokaro/ptah/migration/safety"
+package safety // import "go.5x5.cz/ptah/migration/safety"
 
 type Report struct {
     Highest     Severity              `json:"highest"`
@@ -7664,9 +7664,9 @@ type Report struct {
 
 func NewReport(assessments []StatementAssessment) Report
 
-### github.com/stokaro/ptah/migration/safety.Severity
+### go.5x5.cz/ptah/migration/safety.Severity
 
-package safety // import "github.com/stokaro/ptah/migration/safety"
+package safety // import "go.5x5.cz/ptah/migration/safety"
 
 type Severity = risk.Severity
     Severity is the operational risk level for a schema change.
@@ -7676,9 +7676,9 @@ func Classify(node ast.Node) Severity
 func Highest(findings []Finding) Severity
 func HighestAssessment(assessments []StatementAssessment) Severity
 
-### github.com/stokaro/ptah/migration/safety.StatementAssessment
+### go.5x5.cz/ptah/migration/safety.StatementAssessment
 
-package safety // import "github.com/stokaro/ptah/migration/safety"
+package safety // import "go.5x5.cz/ptah/migration/safety"
 
 type StatementAssessment struct {
     Index     int      `json:"index"`
@@ -7695,7 +7695,7 @@ func AssessRendered(nodes []ast.Node, dialect string) ([]StatementAssessment, er
 func AssessRenderedWithCapabilities(nodes []ast.Node, dialect string, caps capability.Capabilities) ([]StatementAssessment, error)
 func AssessSQL(statement string) StatementAssessment
 
-## github.com/stokaro/ptah/migration/schemadiff
+## go.5x5.cz/ptah/migration/schemadiff
 
 func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.SchemaDiff
 func CompareWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (*difftypes.SchemaDiff, error)
@@ -7703,7 +7703,7 @@ func CompareWithDatabaseInfo(generated *goschema.Database, database *types.DBSch
 func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, dialect string) *difftypes.SchemaDiff
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, ...) *difftypes.SchemaDiff
 
-## github.com/stokaro/ptah/migration/schemadiff/types
+## go.5x5.cz/ptah/migration/schemadiff/types
 
 type ColumnDiff struct{ ... }
 type CompositeTypeDiff struct{ ... }
@@ -7725,9 +7725,9 @@ type TriggerDiff struct{ ... }
 type TriggerRef struct{ ... }
 type ViewDiff struct{ ... }
 
-### github.com/stokaro/ptah/migration/schemadiff/types.ColumnDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.ColumnDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type ColumnDiff struct {
     // ColumnName is the name of the column being modified
@@ -7764,9 +7764,9 @@ type ColumnDiff struct {
         }
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.CompositeTypeDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.CompositeTypeDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type CompositeTypeDiff struct {
     TypeName string            `json:"type_name"`
@@ -7775,9 +7775,9 @@ type CompositeTypeDiff struct {
     CompositeTypeDiff represents changes to a PostgreSQL composite type.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.ConstraintAdditionInfo
+### go.5x5.cz/ptah/migration/schemadiff/types.ConstraintAdditionInfo
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type ConstraintAdditionInfo struct {
     // Name is the name of the constraint to be added.
@@ -7829,9 +7829,9 @@ type ConstraintAdditionInfo struct {
     here lets the planner emit one correct ALTER TABLE per real host table.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.ConstraintRemovalInfo
+### go.5x5.cz/ptah/migration/schemadiff/types.ConstraintRemovalInfo
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type ConstraintRemovalInfo struct {
     // Name is the name of the constraint to be removed
@@ -7855,9 +7855,9 @@ type ConstraintRemovalInfo struct {
     parallel.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.DomainDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.DomainDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type DomainDiff struct {
     DomainName string            `json:"domain_name"`
@@ -7866,9 +7866,9 @@ type DomainDiff struct {
     DomainDiff represents changes to a PostgreSQL domain type.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.EnumDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.EnumDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type EnumDiff struct {
     // EnumName is the name of the enum type being modified
@@ -7905,9 +7905,9 @@ type EnumDiff struct {
         }
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.FunctionDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.FunctionDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type FunctionDiff struct {
     // FunctionName is the name of the function being modified
@@ -7946,9 +7946,9 @@ type FunctionDiff struct {
         }
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.GrantRef
+### go.5x5.cz/ptah/migration/schemadiff/types.GrantRef
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type GrantRef struct {
     // Role is the role receiving or losing the privilege.
@@ -7969,9 +7969,9 @@ type GrantRef struct {
     GrantRef identifies one PostgreSQL privilege grant.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.IndexRef
+### go.5x5.cz/ptah/migration/schemadiff/types.IndexRef
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type IndexRef struct {
     // Name is the raw, unqualified index identifier. TableName carries the
@@ -7986,9 +7986,9 @@ type IndexRef struct {
     names are scoped to a table rather than the database.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.MaterializedViewDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.MaterializedViewDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type MaterializedViewDiff struct {
     ViewName string            `json:"view_name"`
@@ -7997,9 +7997,9 @@ type MaterializedViewDiff struct {
     MaterializedViewDiff represents changes to a materialized view definition.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.RLSPolicyDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.RLSPolicyDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type RLSPolicyDiff struct {
     // PolicyName is the name of the RLS policy being modified
@@ -8039,9 +8039,9 @@ type RLSPolicyDiff struct {
         }
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.RLSPolicyRef
+### go.5x5.cz/ptah/migration/schemadiff/types.RLSPolicyRef
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type RLSPolicyRef struct {
     // PolicyName is the name of the RLS policy
@@ -8066,9 +8066,9 @@ type RLSPolicyRef struct {
         }
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.RoleDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.RoleDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type RoleDiff struct {
     // RoleName is the name of the role being modified
@@ -8109,9 +8109,9 @@ type RoleDiff struct {
         }
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.SchemaDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.SchemaDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type SchemaDiff struct {
     // IdentifierSemantics records live catalog identifier rules used to produce
@@ -8347,9 +8347,9 @@ func (d *SchemaDiff) IndexRemovals() []IndexRef
 func (d *SchemaDiff) SetIndexAdditions(refs []IndexRef)
 func (d *SchemaDiff) SetIndexRemovals(refs []IndexRef)
 
-### github.com/stokaro/ptah/migration/schemadiff/types.SequenceDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.SequenceDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type SequenceDiff struct {
     // SequenceName is the (optionally schema-qualified) name of the sequence.
@@ -8362,9 +8362,9 @@ type SequenceDiff struct {
     SequenceDiff represents changes to a standalone sequence definition.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.TableDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.TableDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type TableDiff struct {
     // TableName is the name of the table being modified
@@ -8408,9 +8408,9 @@ type TableDiff struct {
         }
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.TriggerDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.TriggerDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type TriggerDiff struct {
     TriggerName string            `json:"trigger_name"`
@@ -8420,9 +8420,9 @@ type TriggerDiff struct {
     TriggerDiff represents changes to a trigger definition.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.TriggerRef
+### go.5x5.cz/ptah/migration/schemadiff/types.TriggerRef
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type TriggerRef struct {
     TriggerName string `json:"trigger_name"`
@@ -8431,9 +8431,9 @@ type TriggerRef struct {
     TriggerRef identifies a trigger by table and trigger name.
 
 
-### github.com/stokaro/ptah/migration/schemadiff/types.ViewDiff
+### go.5x5.cz/ptah/migration/schemadiff/types.ViewDiff
 
-package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 
 type ViewDiff struct {
     ViewName string            `json:"view_name"`
@@ -8442,7 +8442,7 @@ type ViewDiff struct {
     ViewDiff represents changes to a view definition.
 
 
-## github.com/stokaro/ptah/migration/seeder
+## go.5x5.cz/ptah/migration/seeder
 
 func DefaultProtectedEnvs() []string
 func IsConflictError(err error) bool
@@ -8454,9 +8454,9 @@ type SeedFile struct{ ... }
     func Discover(fsys fs.FS) ([]SeedFile, error)
     func Select(seeds []SeedFile, env string) []SeedFile
 
-### github.com/stokaro/ptah/migration/seeder.Options
+### go.5x5.cz/ptah/migration/seeder.Options
 
-package seeder // import "github.com/stokaro/ptah/migration/seeder"
+package seeder // import "go.5x5.cz/ptah/migration/seeder"
 
 type Options struct {
     Env             string
@@ -8469,9 +8469,9 @@ type Options struct {
     Options controls seed execution.
 
 
-### github.com/stokaro/ptah/migration/seeder.Result
+### go.5x5.cz/ptah/migration/seeder.Result
 
-package seeder // import "github.com/stokaro/ptah/migration/seeder"
+package seeder // import "go.5x5.cz/ptah/migration/seeder"
 
 type Result struct {
     Env     string
@@ -8483,9 +8483,9 @@ type Result struct {
 
 func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, ...) (*Result, error)
 
-### github.com/stokaro/ptah/migration/seeder.SeedFile
+### go.5x5.cz/ptah/migration/seeder.SeedFile
 
-package seeder // import "github.com/stokaro/ptah/migration/seeder"
+package seeder // import "go.5x5.cz/ptah/migration/seeder"
 
 type SeedFile struct {
     Path        string

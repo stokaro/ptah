@@ -24,11 +24,11 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/registry/remote/retry"
 
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/internal/lintartifact"
-	"github.com/stokaro/ptah/internal/migrationartifact"
-	"github.com/stokaro/ptah/internal/ociartifact"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/internal/lintartifact"
+	"go.5x5.cz/ptah/internal/migrationartifact"
+	"go.5x5.cz/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const testOCIReference = "oci://registry.example/acme/migrations:latest"

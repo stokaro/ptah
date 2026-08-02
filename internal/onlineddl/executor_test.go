@@ -14,7 +14,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema/types"
+	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // fakeConn satisfies Conn without a database. QueryRowContext must never be

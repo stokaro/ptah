@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/query"
-	"github.com/stokaro/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/query"
+	"go.5x5.cz/ptah/core/renderer"
 )
 
 func TestColumnExpressionConstructors(t *testing.T) {

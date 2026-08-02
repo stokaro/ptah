@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/platform/identifier"
 )
 
 // IndexRef identifies an index together with its owning table.

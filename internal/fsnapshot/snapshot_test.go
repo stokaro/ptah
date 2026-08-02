@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/fsnapshot"
 )
 
 func TestCapture_ProducesIndependentCompleteSnapshot(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/atlasreport"
 )
 
 func TestSchemaDiffDefaultFormatReportsSyncedSchemas(t *testing.T) {

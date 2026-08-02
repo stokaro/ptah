@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasprojectpath"
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/atlasprojectpath"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 func TestLocalDir_HappyPath(t *testing.T) {

@@ -74,22 +74,22 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/ptaherr"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/internal/convert/fromschema"
-	"github.com/stokaro/ptah/internal/planner/dialects/clickhouse"
-	"github.com/stokaro/ptah/internal/planner/dialects/mssql"
-	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
-	"github.com/stokaro/ptah/internal/planner/dialects/postgres"
-	"github.com/stokaro/ptah/internal/planner/dialects/sqlite"
-	"github.com/stokaro/ptah/migration/diffpolicy"
-	"github.com/stokaro/ptah/migration/internal/identifiervalidation"
-	"github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
+	"go.5x5.cz/ptah/internal/planner/dialects/mssql"
+	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
+	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
+	"go.5x5.cz/ptah/internal/planner/dialects/sqlite"
+	"go.5x5.cz/ptah/migration/diffpolicy"
+	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
+	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 var builtInPlannerRegistration struct {
@@ -241,7 +241,7 @@ func RegisteredDialects() []string {
 //
 // # Usage Example
 //
-//	import "github.com/stokaro/ptah/core/platform"
+//	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Get PostgreSQL planner
 //	pgPlanner, err := planner.GetPlanner(platform.Postgres)
@@ -424,7 +424,7 @@ func normalizeRegistryDialect(dialect string) string {
 //
 // # Usage Example
 //
-//	import "github.com/stokaro/ptah/core/platform"
+//	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate AST nodes for PostgreSQL
 //	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
@@ -568,7 +568,7 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //
 // # Usage Example
 //
-//	import "github.com/stokaro/ptah/core/platform"
+//	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate SQL statements for MySQL
 //	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.MySQL)
@@ -657,7 +657,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //
 // # Usage Example
 //
-//	import "github.com/stokaro/ptah/core/platform"
+//	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate complete SQL script for PostgreSQL
 //	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)

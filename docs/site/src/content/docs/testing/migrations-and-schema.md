@@ -98,7 +98,7 @@ step scopes, assertions, reports, and exit contract.
 
 ## Embedding
 
-The runner is exported as `github.com/stokaro/ptah/migration/dbtest`
+The runner is exported as `go.5x5.cz/ptah/migration/dbtest`
 (`RunMigrationTest` / `RunSchemaTest`, with the `Case`/`Step`/`Assertion` model),
 so migration and schema tests can be driven directly from Go — no CLI, no account,
 no cloud.

@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/lexer"
 )
 
 func TestTokenType_String(t *testing.T) {

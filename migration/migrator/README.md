@@ -349,8 +349,8 @@ import (
     "os"
     "time"
 
-    "github.com/stokaro/ptah/dbschema"
-    "github.com/stokaro/ptah/migration/migrator"
+    "go.5x5.cz/ptah/dbschema"
+    "go.5x5.cz/ptah/migration/migrator"
 )
 
 func main() {
@@ -387,8 +387,8 @@ func main() {
 import (
     "context"
     "os"
-    "github.com/stokaro/ptah/dbschema"
-    "github.com/stokaro/ptah/migration/migrator"
+    "go.5x5.cz/ptah/dbschema"
+    "go.5x5.cz/ptah/migration/migrator"
 )
 
 // Option 1: Create migrator with registered migrations

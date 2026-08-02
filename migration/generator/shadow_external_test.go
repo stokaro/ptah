@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/migration/generator"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/generator"
 )
 
 func TestGenerateMigration_ShadowSchemaMismatchReturnsStructuredError(t *testing.T) {

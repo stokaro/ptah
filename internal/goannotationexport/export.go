@@ -13,13 +13,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/atlashcl"
-	"github.com/stokaro/ptah/internal/atlashclrender"
-	"github.com/stokaro/ptah/internal/fsdurable"
-	"github.com/stokaro/ptah/internal/goannotationcleanup"
-	"github.com/stokaro/ptah/internal/goannotationsource"
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/atlashcl"
+	"go.5x5.cz/ptah/internal/atlashclrender"
+	"go.5x5.cz/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/internal/goannotationcleanup"
+	"go.5x5.cz/ptah/internal/goannotationsource"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 var (

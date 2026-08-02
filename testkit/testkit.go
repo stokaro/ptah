@@ -22,11 +22,11 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/dbschema"
-	dbtypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/dbschema"
+	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const (

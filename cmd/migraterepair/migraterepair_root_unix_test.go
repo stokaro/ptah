@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migraterepair"
+	"go.5x5.cz/ptah/cmd/migraterepair"
 )
 
 func TestMigrateRepairCommand_RejectsEscapingSymlinkBeforeDatabaseConnection(t *testing.T) {

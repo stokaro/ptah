@@ -13,10 +13,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema/internal/parseutils"
-	"github.com/stokaro/ptah/core/ptaherr"
-	"github.com/stokaro/ptah/internal/annotationmeta"
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
+	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // validateAttributes rejects any key the directive does not recognize.

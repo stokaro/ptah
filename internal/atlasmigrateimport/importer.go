@@ -25,10 +25,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/atlascompat"
-	"github.com/stokaro/ptah/internal/fsnapshot"
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/atlascompat"
+	"go.5x5.cz/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // Format is a supported source migration directory format.

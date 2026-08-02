@@ -11,8 +11,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 )
 
 func TestAtlasArgMapperPreservesProjectConfigSnapshot(t *testing.T) {

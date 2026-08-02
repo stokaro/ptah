@@ -11,10 +11,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 
-	"github.com/stokaro/ptah/cmd/internal/cliobs"
-	"github.com/stokaro/ptah/cmd/migratedown"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/cmd/internal/cliobs"
+	"go.5x5.cz/ptah/cmd/migratedown"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestMigrateDownCommand_Creation(t *testing.T) {

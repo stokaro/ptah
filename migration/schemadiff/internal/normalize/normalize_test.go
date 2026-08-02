@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
+	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
 )
 
 func TestType(t *testing.T) {

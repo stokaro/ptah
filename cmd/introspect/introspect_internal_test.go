@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 )
 
 func TestValidateOptions_FailurePath(t *testing.T) {

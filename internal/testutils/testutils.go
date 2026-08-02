@@ -3,8 +3,8 @@
 package testutils
 
 import (
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // CreateTestParseResult creates a minimal PackageParseResult for testing

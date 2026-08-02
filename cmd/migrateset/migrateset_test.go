@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/atlas"
-	"github.com/stokaro/ptah/cmd/migrateset"
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/migrateset"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // writePtahMigrations writes a two-migration ptah-format directory.

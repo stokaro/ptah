@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/fsdurable"
-	"github.com/stokaro/ptah/internal/pathguard"
-	"github.com/stokaro/ptah/internal/protobufrender"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/protobufrender"
 )
 
 var (

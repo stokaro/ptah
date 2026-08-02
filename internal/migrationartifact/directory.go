@@ -10,10 +10,10 @@ import (
 
 	"oras.land/oras-go/v2"
 
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/ociartifact"
-	"github.com/stokaro/ptah/internal/pathguard"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // DirectoryPushOptions configures a migration-directory registry push.

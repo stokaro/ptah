@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/convert/fromschema"
-	"github.com/stokaro/ptah/internal/sqlident"
-	"github.com/stokaro/ptah/internal/sqlrunner"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
 var triggerHeaderPattern = regexp.MustCompile(
