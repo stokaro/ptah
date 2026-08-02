@@ -439,7 +439,7 @@ Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver
 
 The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` verbs forward to the native runners with Atlas-shaped flags (`--dir`/`-u --url`, `--dev-url`, `--run`, project flags) and the native exit-code contract; Ptah-native YAML/Go test files are the executable payload, and Atlas `.test.hcl` ingestion remains a separate gap.
 
-**Conformance status.** Measured by native command and Atlas-compatibility tests as implemented forwards.
+**Conformance status.** Measured by native command tests and Atlas-compatibility tests that exercise these forwards.
 
 **Follow-up.** [`stokaro/ptah#659`](https://github.com/stokaro/ptah/issues/659), [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758).
 
