@@ -302,37 +302,37 @@ func TestParseAtlasProjectConfigMigrationEnumIdentifiersFailurePath(t *testing.T
 		{
 			name:    "unknown format",
 			attr:    "format = atals",
-			wantErr: `unsupported atlas\.hcl construct "format" at atlas\.hcl:3`,
+			wantErr: `atlas\.hcl "format" at atlas\.hcl:3 must be one of .*`,
 		},
 		{
 			name:    "unknown execution order",
 			attr:    "exec_order = LINER",
-			wantErr: `unsupported atlas\.hcl construct "exec_order" at atlas\.hcl:3`,
+			wantErr: `atlas\.hcl "exec_order" at atlas\.hcl:3 must be one of .*`,
 		},
 		{
 			name:    "bare transaction mode",
 			attr:    "tx_mode = file",
-			wantErr: `unsupported atlas\.hcl construct "tx_mode" at atlas\.hcl:3`,
+			wantErr: `cannot evaluate atlas\.hcl "tx_mode" at atlas\.hcl:3: .*Unknown variable.*`,
 		},
 		{
 			name:    "enum traversal",
 			attr:    "format = local.format",
-			wantErr: `unsupported atlas\.hcl construct "format" at atlas\.hcl:3`,
+			wantErr: `atlas\.hcl "format" at atlas\.hcl:3 must be one of .*`,
 		},
 		{
 			name:    "uppercase format identifier",
 			attr:    "format = ATLAS",
-			wantErr: `unsupported atlas\.hcl construct "format" at atlas\.hcl:3`,
+			wantErr: `atlas\.hcl "format" at atlas\.hcl:3 must be one of .*`,
 		},
 		{
 			name:    "lowercase linear identifier",
 			attr:    "exec_order = linear",
-			wantErr: `unsupported atlas\.hcl construct "exec_order" at atlas\.hcl:3`,
+			wantErr: `atlas\.hcl "exec_order" at atlas\.hcl:3 must be one of .*`,
 		},
 		{
 			name:    "lowercase linear skip identifier",
 			attr:    "exec_order = linear_skip",
-			wantErr: `unsupported atlas\.hcl construct "exec_order" at atlas\.hcl:3`,
+			wantErr: `atlas\.hcl "exec_order" at atlas\.hcl:3 must be one of .*`,
 		},
 	}
 
@@ -1227,7 +1227,7 @@ env "prod" {
 	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://dev.db")
 
 	_, err = projectconfig.ParseAtlas(raw, "atlas.hcl", "prod")
-	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "url" at atlas\.hcl:5`)
+	c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" at atlas\.hcl:5: .*Unknown variable.*`)
 }
 
 func TestParseAtlasProjectConfigRejectsUnsupportedConstructsInUnselectedEnv(t *testing.T) {
@@ -1610,7 +1610,7 @@ env "local" {
   default   = "sqlite://typed.db"
 }
 `,
-			err: `unsupported atlas\.hcl construct "sensitive" at atlas\.hcl:2`,
+			err: `atlas\.hcl "sensitive" at atlas\.hcl:2 must be a bool`,
 		},
 		{
 			name: "variable validation block is unsupported",
@@ -1642,7 +1642,7 @@ locals {
   url = file("../secret.txt")
 }
 `,
-			err: `unsupported atlas\.hcl construct "url" at atlas\.hcl:2`,
+			err: `cannot evaluate atlas\.hcl "url" at atlas\.hcl:2: .*path escapes atlas\.hcl directory.*`,
 		},
 		{
 			name: "file function rejects absolute paths",
@@ -1650,7 +1650,7 @@ locals {
   url = file("/tmp/secret.txt")
 }
 `,
-			err: `unsupported atlas\.hcl construct "url" at atlas\.hcl:2`,
+			err: `cannot evaluate atlas\.hcl "url" at atlas\.hcl:2: .*absolute paths are not supported.*`,
 		},
 		{
 			name: "hcl schema data source rejects remote path",
@@ -1666,7 +1666,7 @@ locals {
   paths = fileset("../*.hcl")
 }
 `,
-			err: `unsupported atlas\.hcl construct "paths" at atlas\.hcl:2`,
+			err: `cannot evaluate atlas\.hcl "paths" at atlas\.hcl:2: .*`,
 		},
 		{
 			name: "unknown migration attribute",
@@ -1693,7 +1693,7 @@ locals {
   exclude = { tmp = "tmp_*" }
 }
 `,
-			err: `unsupported atlas\.hcl construct "exclude" at atlas\.hcl:2`,
+			err: `atlas\.hcl "exclude" at atlas\.hcl:2 must be a list of strings`,
 		},
 	}
 
@@ -1824,4 +1824,110 @@ func TestParseAtlasProjectConfigLintLogRejectsEmpty(t *testing.T) {
 	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
 
 	c.Assert(err, qt.IsNotNil)
+}
+
+// TestAtlasParserDistinguishesFailureClasses pins that an unknown NAME, a bad
+// VALUE on a known key, and an expression that cannot be evaluated produce
+// three different errors.
+//
+// They were one message until stokaro/ptah#1014, and collapsing them again is
+// the specific regression this test exists to catch. The distinction is
+// load-bearing: Atlas CE tolerates an unknown name while still failing on the
+// other two, so an accept-and-ignore change has to relax exactly one branch.
+// While the three share a message, no test can tell whether a refusal came from
+// the branch meant to relax or from one meant to stay, and a relaxation would
+// silently turn real agreements with CE into coincidental ones.
+func TestAtlasParserDistinguishesFailureClasses(t *testing.T) {
+	c := qt.New(t)
+
+	const envBody = `
+  dev = "sqlite://dev.db?mode=memory&_fk=1"
+}
+`
+	tests := []struct {
+		name    string
+		urlExpr string
+		wantErr string
+	}{
+		{
+			name:    "evaluation failure on a known key",
+			urlExpr: "var.nope",
+			wantErr: `cannot evaluate atlas\.hcl "url" .*`,
+		},
+		{
+			name:    "wrong value type on a known key",
+			urlExpr: "42",
+			wantErr: `atlas\.hcl "url" .* must be a string`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			body := "env \"local\" {\n  url = " + tt.urlExpr + envBody
+			_, err := projectconfig.ParseAtlas([]byte(body), "atlas.hcl", "local")
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+		})
+	}
+
+	// The third class, for contrast: an unknown NAME keeps the original
+	// message, and must not be reported as either of the two above.
+	unknown := "frobnicate = \"yes\"\nenv \"local\" {\n  url = \"sqlite://m.db\"" + envBody
+	_, err := projectconfig.ParseAtlas([]byte(unknown), "atlas.hcl", "local")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "frobnicate" .*`)
+}
+
+// TestAtlasParserScrubsSensitiveValuesFromDiagnostics is a regression test for
+// a leak this package's own error-class split introduced.
+//
+// Carrying the HCL diagnostic through is what makes an evaluation failure
+// readable — it names the offending sub-expression, and for file()/fileset() it
+// reports the sandbox violation. But HCL renders *evaluated arguments* into its
+// text: `file(var.secret)` fails with `openat <the secret>: no such file`. So
+// passing the diagnostic through verbatim publishes exactly the value that
+// `sensitive = true` exists to hide, on stderr, where it lands in CI logs.
+//
+// The rest of this parser already refuses to put variable values in messages
+// (see redactedAtlasVariableValue and the default-mismatch error). This keeps
+// that invariant when the text comes from HCL rather than from us.
+func TestAtlasParserScrubsSensitiveValuesFromDiagnostics(t *testing.T) {
+	c := qt.New(t)
+
+	const secret = "SUPERSECRET_TOKEN_12345"
+	raw := []byte(`
+variable "secret" {
+  type      = string
+  default   = "` + secret + `"
+  sensitive = true
+}
+env "local" {
+  url = file(var.secret)
+  dev = "sqlite://dev.db?mode=memory&_fk=1"
+}
+`)
+
+	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Not(qt.Contains), secret)
+	c.Assert(err.Error(), qt.Contains, "(sensitive value)")
+
+	// The control: a NON-sensitive variable keeps its value in the diagnostic,
+	// because that is what makes the message actionable. Without this half, a
+	// scrubber that redacted everything would pass the test above while
+	// destroying every diagnostic in the package.
+	rawOpen := []byte(`
+variable "path" {
+  type    = string
+  default = "VISIBLE_PATH_VALUE"
+}
+env "local" {
+  url = file(var.path)
+  dev = "sqlite://dev.db?mode=memory&_fk=1"
+}
+`)
+	_, err = projectconfig.ParseAtlas(rawOpen, "atlas.hcl", "local")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "VISIBLE_PATH_VALUE")
 }
