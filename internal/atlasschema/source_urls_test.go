@@ -159,7 +159,7 @@ func TestDiff_UnsupportedSchemeFails(t *testing.T) {
 		ToURLs:   []string{"sqlite://a.db"},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/app": atlas:// registry URLs are not supported: .*`)
+	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/app": atlas:// registry URLs are not supported; use oci://.*`)
 }
 
 func TestPrepareApply_DatabaseSource(t *testing.T) {

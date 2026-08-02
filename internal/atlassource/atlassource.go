@@ -143,7 +143,7 @@ func Classify(rawURL string) (Source, error) {
 	case scheme == "docker":
 		return Source{}, errors.New("docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL")
 	case scheme == "atlas":
-		return Source{}, errors.New("atlas:// registry URLs are not supported: Ptah has no hosted registry integration; use a local schema file, a migration directory, a database URL, or an env:// reference")
+		return Source{}, errors.New("atlas:// registry URLs are not supported; use oci:// with a native Ptah command, or use a local schema file, a migration directory, a database URL, or an env:// reference")
 	case scheme == "ptah-external-schema":
 		// The marker is minted internally when an atlas.hcl env src selects a
 		// data "external_schema" source; spelled directly it must never reach

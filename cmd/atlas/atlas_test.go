@@ -2021,7 +2021,7 @@ func TestCompatCommand_SchemaDiffRejectsUnsupportedRemoteTarget(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/schema": atlas:// registry URLs are not supported: .*`)
+	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/schema": atlas:// registry URLs are not supported; use oci://.*`)
 	c.Assert(out.String(), qt.Contains, `error: --from "atlas://remote/schema": atlas:// registry URLs are not supported`)
 }
 

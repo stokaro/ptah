@@ -138,7 +138,7 @@ func TestSchemaApplyUnsupportedSchemeFailsBeforeTarget(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `--to "atlas://remote/app": atlas:// registry URLs are not supported: .*`)
+	c.Assert(err, qt.ErrorMatches, `--to "atlas://remote/app": atlas:// registry URLs are not supported; use oci://.*`)
 	_, statErr := os.Stat(targetPath)
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
