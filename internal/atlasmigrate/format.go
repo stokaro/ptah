@@ -27,12 +27,43 @@ import (
 //
 // Callers resolve the format once with [ResolveApplyDirFormat] and pass the
 // same value to everything that branches on it — the apply-time checksum gate
-// keys on whether the directory is native Atlas — so the filesystem that gets
-// executed and the format the gate reasons about are one decision rather than
-// two computations that happen to agree (#970).
+// selects the covered file set from it — so the filesystem that gets executed
+// and the format the gate reasons about are one decision rather than two
+// computations that happen to agree (#970).
+//
+// A caller that gates integrity must not use this: it converts, and integrity
+// is verified before conversion. Use [CaptureApplySource], gate, then
+// [ConvertApplySource] (#973).
 func ResolveApplySourceForFormat(
 	source fs.FS,
 	display string,
+	format atlasmigrateimport.Format,
+) (fsnapshot.Snapshot, error) {
+	captured, err := CaptureApplySource(source, format)
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	return ConvertApplySource(captured, display, format)
+}
+
+// CaptureApplySource captures the immutable source snapshot for a migration
+// directory read as format. It is the first half of
+// [ResolveApplySourceForFormat], split out so a caller can verify the source
+// directory's integrity before its layout is parsed.
+//
+// The split is not cosmetic. Atlas CE checks atlas.sum before it reads the
+// source format at all: an unhashed Goose directory whose .sql carries no
+// `-- +goose Up` directive is refused with "checksum file not found", and a
+// hashed one tampered until it no longer parses is refused with "checksum
+// mismatch" — never with a conversion error. Converting first and gating the
+// result would report the wrong failure for both, and would gate a filesystem
+// rebuilt in memory that carries no integrity file by construction.
+//
+// The returned snapshot holds every file the format's integrity file covers
+// (see [atlasmigrateimport.CaptureFS]), so verification and execution read one
+// double-captured set of bytes rather than two reads of the same directory.
+func CaptureApplySource(
+	source fs.FS,
 	format atlasmigrateimport.Format,
 ) (fsnapshot.Snapshot, error) {
 	if source == nil {
@@ -42,10 +73,25 @@ func ResolveApplySourceForFormat(
 	if err != nil {
 		return fsnapshot.Snapshot{}, fmt.Errorf("capture migration directory: %w", err)
 	}
+	return snapshot, nil
+}
+
+// ConvertApplySource converts an already-captured source snapshot into the
+// filesystem the Atlas apply migrator executes. It is the second half of
+// [ResolveApplySourceForFormat] and reads only the captured bytes, never the
+// original directory.
+//
+// A native Atlas directory is executed as captured, keeping atlas.sum and its
+// down migrations. Every other format is rebuilt as up-only Atlas migrations.
+func ConvertApplySource(
+	captured fsnapshot.Snapshot,
+	display string,
+	format atlasmigrateimport.Format,
+) (fsnapshot.Snapshot, error) {
 	if format == atlasmigrateimport.FormatAtlas {
-		return snapshot, nil
+		return captured, nil
 	}
-	loaded, err := atlasmigrateimport.LoadFS(snapshot, display, format)
+	loaded, err := atlasmigrateimport.LoadFS(captured, display, format)
 	if err != nil {
 		return fsnapshot.Snapshot{}, err
 	}
@@ -60,6 +106,10 @@ func ResolveApplySourceForFormat(
 // rather than an external-tool directory converted in memory. Only a native
 // Atlas directory is read as-is, keeping whatever atlas.sum it carries; every
 // other format is rebuilt as up-only Atlas migrations with no integrity file.
+//
+// It does not report whether integrity is enforced. Both kinds of directory
+// are gated — the source directory carries atlas.sum in either case — they
+// differ only in which files that sum covers (#973).
 func ReadsNativeAtlasDir(format atlasmigrateimport.Format) bool {
 	return format == atlasmigrateimport.FormatAtlas
 }

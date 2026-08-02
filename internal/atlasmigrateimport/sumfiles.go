@@ -80,6 +80,30 @@ func SumFileNames(fsys fs.FS, format Format) ([]string, error) {
 	}
 }
 
+// sumCoversNestedFile reports whether a file below the directory root can
+// belong to format's Atlas integrity file set.
+//
+// Flyway is the sole format [SumFileNames] recurses into, and it prunes hidden
+// directories there, so nothing else below the top level is ever hashed. This
+// lives beside the selection rule on purpose: [CaptureFS] uses it to decide
+// what to snapshot, and a capture narrower than the selection makes the
+// verifier fail to read a file Atlas CE hashed.
+//
+// It is a superset of the selection: every non-hidden nested *.sql qualifies,
+// not only the V/B/R-prefixed names parseFlywaySumFile accepts. Widening costs
+// captured bytes that nothing hashes; narrowing would cost a false refusal.
+func sumCoversNestedFile(format Format, name string) bool {
+	if format != FormatFlyway || !strings.HasSuffix(name, ".sql") {
+		return false
+	}
+	for dir := path.Dir(name); dir != "."; dir = path.Dir(dir) {
+		if skipHiddenDir(path.Base(dir)) {
+			return false
+		}
+	}
+	return true
+}
+
 func topLevelNames(fsys fs.FS) ([]string, error) {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {

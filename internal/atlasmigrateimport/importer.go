@@ -287,9 +287,28 @@ func LoadDir(dir string, format Format) (*Loaded, error) {
 	return LoadFS(snapshot, dir, format)
 }
 
-// CaptureFS captures the root-level files that define a source directory in
-// format. Unsupported Goose and Liquibase inputs remain in the immutable
-// snapshot so LoadFS can reject them instead of silently ignoring them.
+// CaptureFS captures the files that define a source directory in format:
+// the root-level files the converter reads, plus everything the format's Atlas
+// integrity file covers. Unsupported Goose and Liquibase inputs remain in the
+// immutable snapshot so LoadFS can reject them instead of silently ignoring
+// them.
+//
+// The snapshot is also what an apply-time integrity gate verifies, which is why
+// it holds both halves rather than only what conversion consumes. Two files it
+// captures are read by nothing else:
+//
+//   - atlas.sum. A directory written by another migration tool still carries
+//     the Atlas integrity file beside its own migrations, and a snapshot
+//     without it has nothing to verify against.
+//   - For Flyway, nested *.sql files. Flyway is the one format whose covered
+//     set reaches below the top level (see [SumFileNames]); Atlas CE hashes
+//     sub/V2__nested.sql, so a snapshot missing it would recompute a smaller
+//     set than the oracle recorded and refuse a directory Atlas CE applies.
+//
+// The nested selection is deliberately a superset of the covered set — every
+// non-hidden nested *.sql rather than only the V/B/R-prefixed ones. A capture
+// that is narrower than the selection fails to read a covered file; a wider one
+// only carries bytes nothing hashes.
 func CaptureFS(fsys fs.FS, format Format) (fsnapshot.Snapshot, error) {
 	if fsys == nil {
 		return fsnapshot.Snapshot{}, fmt.Errorf("source migration filesystem is required")
@@ -301,7 +320,7 @@ func CaptureFS(fsys fs.FS, format Format) (fsnapshot.Snapshot, error) {
 		return fsnapshot.Snapshot{}, err
 	}
 	include := func(name string, _ fs.DirEntry) bool {
-		return path.Dir(name) == "." && sourceExtensionIncluded(format, strings.ToLower(path.Ext(name)))
+		return captureIncluded(format, name)
 	}
 	first, err := fsnapshot.CaptureMatching(fsys, include)
 	if err != nil {
@@ -326,6 +345,19 @@ func validateExternalFormat(format Format) error {
 	default:
 		return fmt.Errorf("unknown migration import format %q", format)
 	}
+}
+
+// captureIncluded reports whether a source path belongs in the captured
+// snapshot of a directory read as format. name is a slash path relative to the
+// directory root.
+func captureIncluded(format Format, name string) bool {
+	if path.Dir(name) != "." {
+		return sumCoversNestedFile(format, name)
+	}
+	if name == atlascompat.AtlasSumFileName {
+		return true
+	}
+	return sourceExtensionIncluded(format, strings.ToLower(path.Ext(name)))
 }
 
 func sourceExtensionIncluded(format Format, extension string) bool {
