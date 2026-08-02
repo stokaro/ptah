@@ -4543,13 +4543,14 @@ func TestCompatCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Imported migration files:")
-	// B1 and V2 encode to the stable Atlas versions 10000 and 20000.
-	c.Assert(out.String(), qt.Contains, filepath.Join(target, "10000_baseline.sql"))
-	c.Assert(out.String(), qt.Contains, filepath.Join(target, "20000_add_posts.sql"))
+	// The surviving baseline B1 lands in the low band and V2 in the versioned
+	// band, so the baseline executes first whatever its own version.
+	c.Assert(out.String(), qt.Contains, filepath.Join(target, "81608_baseline.sql"))
+	c.Assert(out.String(), qt.Contains, filepath.Join(target, "4611686018427510315_add_posts.sql"))
 	c.Assert(out.String(), qt.Contains, filepath.Join(target, "atlas.sum"))
-	c.Assert(readAtlasTestFile(c, target, "10000_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
-	c.Assert(readAtlasTestFile(c, target, "20000_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
-	c.Assert(readAtlasTestFile(c, target, "atlas.sum"), qt.Contains, "20000_add_posts.sql h1:")
+	c.Assert(readAtlasTestFile(c, target, "81608_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
+	c.Assert(readAtlasTestFile(c, target, "4611686018427510315_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
+	c.Assert(readAtlasTestFile(c, target, "atlas.sum"), qt.Contains, "4611686018427510315_add_posts.sql h1:")
 }
 
 func TestNewCompatCommand_MigrateImportResolvesAtRoot(t *testing.T) {

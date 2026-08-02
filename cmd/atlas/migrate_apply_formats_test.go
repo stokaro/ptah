@@ -214,8 +214,12 @@ func TestMigrateApplyRejectsFlywayVersionCollisionBeforeOpeningDatabase(t *testi
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__a.sql", "CREATE TABLE a (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "V1_5__b.sql", "CREATE TABLE b (id INTEGER PRIMARY KEY);")
+	// One version token, two files. Atlas CE panics on such a directory rather
+	// than executing it, so refusing is the oracle's own answer; V1.5 beside
+	// V1_5 is NOT this case, because those are two distinct version strings CE
+	// runs in walk order (stokaro/ptah#982).
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__a.sql", "CREATE TABLE a (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__b.sql", "CREATE TABLE b (id INTEGER PRIMARY KEY);")
 	// Hashed first: the conversion refusal below is reachable only once the
 	// integrity gate has passed, because the gate now precedes the source-format
 	// parse exactly as it does in Atlas CE (stokaro/ptah#973).
@@ -234,7 +238,7 @@ func TestMigrateApplyRejectsFlywayVersionCollisionBeforeOpeningDatabase(t *testi
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate apply --dir: Flyway migrations .* resolve to the same version 1[._]5`)
+	c.Assert(err, qt.ErrorMatches, `atlas migrate apply --dir: Flyway migrations V1__a\.sql and V1__b\.sql both carry the Atlas version "1"`)
 	_, statErr := os.Stat(dbPath)
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }

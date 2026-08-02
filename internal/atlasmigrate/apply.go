@@ -19,9 +19,14 @@ type ApplyOptions struct {
 	// Dir is the resolved migration directory path used for diagnostics.
 	Dir string
 	// FS is the already captured migration filesystem to execute.
-	FS                   fs.FS
-	DryRun               bool
-	ExecOrder            migrator.ExecOrder
+	FS        fs.FS
+	DryRun    bool
+	ExecOrder migrator.ExecOrder
+	// OutOfOrderExempt lists converted versions whose position below the
+	// current high-water mark is an artifact of the layout projection rather
+	// than a claim about authoring order. Only the Flyway converted path sets
+	// it; see atlasmigrateimport.FlywayBaselineAtlasVersion.
+	OutOfOrderExempt     []int64
 	TxMode               migrator.MigrationTxMode
 	RevisionsSchema      string
 	MigrationLockTimeout time.Duration
@@ -72,6 +77,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 	conn.SchemaWriter().SetDryRun(opts.DryRun)
 	mig, err := newApplyMigrator(conn, opts.FS, applyMigratorOptions{
 		execOrder:            opts.ExecOrder,
+		outOfOrderExempt:     opts.OutOfOrderExempt,
 		txMode:               opts.TxMode,
 		revisionsSchema:      opts.RevisionsSchema,
 		migrationLockTimeout: opts.MigrationLockTimeout,
@@ -214,6 +220,7 @@ func validateApplyOptions(conn *dbschema.DatabaseConnection, opts ApplyOptions) 
 
 type applyMigratorOptions struct {
 	execOrder            migrator.ExecOrder
+	outOfOrderExempt     []int64
 	txMode               migrator.MigrationTxMode
 	revisionsSchema      string
 	migrationLockTimeout time.Duration
@@ -235,6 +242,7 @@ func newApplyMigrator(
 	return mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
 		WithMigrationsTable(opts.revisionsSchema, "").
 		WithExecOrder(opts.execOrder).
+		WithOutOfOrderExempt(opts.outOfOrderExempt).
 		WithTransactionMode(opts.txMode).
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
 		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))), nil

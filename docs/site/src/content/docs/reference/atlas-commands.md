@@ -61,9 +61,7 @@ directory carries, verified before the source layout is parsed and before the
 database is opened. The covered file set is Atlas's for that layout, so a
 golang-migrate down file and a Flyway undo file are not covered, and a layout
 that carries no `atlas.sum` and whose covered set is empty is not a checksum
-error. For Flyway the importer runs a wider set than Atlas hashes, so a
-superseded baseline or a lowercase prefix executes outside the checksum
-([#982](https://github.com/stokaro/ptah/issues/982)).
+error. What executes is what the verified checksum covers, for every layout.
 
 **Rejected on this verb, matching Atlas OSS:** `--dir-format`, `--to-version`,
 and `--lock-name`.

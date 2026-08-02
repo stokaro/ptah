@@ -56,32 +56,39 @@ func TestImportFlywayBaselineAndUndo(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	// Selected migrations (baseline B2 and V3) map to stable encoded Atlas
-	// versions: B2 -> 2*100^2 = 20000, V3 -> 30000.
+	// The surviving baseline lands in the low band so it executes first, and
+	// V3 in the versioned band. V1, V2 are squashed by B2 and U1 is an undo
+	// file, so neither is covered by atlas.sum nor executed.
 	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
-		"20000_baseline.sql",
-		"30000_third_migration.sql",
+		"122412_baseline.sql",
+		"4611686018427551119_third_migration.sql",
 	})
-	c.Assert(readFile(c, target, "20000_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
-	c.Assert(readFile(c, target, "30000_third_migration.sql"), qt.Equals, "ALTER TABLE baseline ADD name text;\n")
+	c.Assert(readFile(c, target, "122412_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
+	c.Assert(readFile(c, target, "4611686018427551119_third_migration.sql"), qt.Equals, "ALTER TABLE baseline ADD name text;\n")
 	assertAtlasSumOK(c, target, result.SumFile)
 }
 
-func TestImportFlywayRejectsRepeatableMigrations(t *testing.T) {
+func TestImportFlywayConvertsRepeatableMigrations(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
 	writeFile(c, source, "V1__initial.sql", "CREATE TABLE users (id int);\n")
 	writeFile(c, source, "R__views.sql", "CREATE VIEW users_view AS SELECT * FROM users;\n")
 
-	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
 		ToURL:   "file://" + target,
 	})
 
-	c.Assert(err, qt.ErrorMatches, `Flyway repeatable migration R__views\.sql cannot be imported yet because Ptah does not execute Atlas R-suffixed migrations`)
-	_, statErr := os.Stat(filepath.Join(target, "1_initial.sql"))
-	c.Assert(os.IsNotExist(statErr), qt.Equals, true)
+	// Atlas CE hashes AND executes a repeatable, once, as version "". Refusing
+	// it was an over-refusal on a directory the oracle applies (#982).
+	c.Assert(err, qt.IsNil)
+	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
+		"4611686018427469511_initial.sql",
+		"9223372036854775807_views.sql",
+	})
+	c.Assert(readFile(c, target, "9223372036854775807_views.sql"), qt.Equals, "CREATE VIEW users_view AS SELECT * FROM users;\n")
+	assertAtlasSumOK(c, target, result.SumFile)
 }
 
 func TestImportFlywayOrdersDottedAndUnderscoreVersions(t *testing.T) {
@@ -100,12 +107,11 @@ func TestImportFlywayOrdersDottedAndUnderscoreVersions(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
-		"10500_add_users.sql",
-		"20000_add_posts.sql",
+		"4611686018427471935_add_users.sql",
+		"4611686018427510315_add_posts.sql",
 	})
-	// V1.5 (add_users) encodes to 1*100^2 + 5*100 = 10500; V2 (add_posts) to 20000.
-	c.Assert(readFile(c, target, "10500_add_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
-	c.Assert(readFile(c, target, "20000_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
+	c.Assert(readFile(c, target, "4611686018427471935_add_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+	c.Assert(readFile(c, target, "4611686018427510315_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
 	assertAtlasSumOK(c, target, result.SumFile)
 }
 
@@ -269,17 +275,40 @@ func TestImportRejectsDuplicateFlywayVersions(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	// V1 and V01 are the same Flyway version (1); reject before assigning Atlas
-	// versions rather than silently renumbering them to distinct migrations.
-	writeFile(c, source, "V1__same-name.sql", "CREATE TABLE first (id int);\n")
-	writeFile(c, source, "V01__same-name.sql", "CREATE TABLE second (id int);\n")
+	// "1" and "1" really are one version to Atlas CE, which panics rather than
+	// executing such a directory, so refusing it is the oracle's own answer.
+	writeFile(c, source, "V1__first.sql", "CREATE TABLE first (id int);\n")
+	writeFile(c, source, "V1__second.sql", "CREATE TABLE second (id int);\n")
 
 	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
 		ToURL:   "file://" + target,
 	})
 
-	c.Assert(err, qt.ErrorMatches, `Flyway migrations V01__same-name\.sql and V1__same-name\.sql resolve to the same version 1`)
+	c.Assert(err, qt.ErrorMatches, `Flyway migrations V1__first\.sql and V1__second\.sql both carry the Atlas version "1"`)
+}
+
+func TestImportConvertsFlywayTokensThatOnlyOrderAlike(t *testing.T) {
+	c := qt.New(t)
+	source := t.TempDir()
+	target := t.TempDir()
+	// "1" and "01" are DIFFERENT versions to Atlas CE, which runs both in walk
+	// order. Scoring them into components merges them, and the previous
+	// implementation refused the pair on that merge.
+	writeFile(c, source, "V1__first.sql", "CREATE TABLE first (id int);\n")
+	writeFile(c, source, "V01__second.sql", "CREATE TABLE second (id int);\n")
+
+	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+		FromURL: "file://" + source + "?format=flyway",
+		ToURL:   "file://" + target,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
+		"4611686018427469511_second.sql",
+		"4611686018427469512_first.sql",
+	})
+	assertAtlasSumOK(c, target, result.SumFile)
 }
 
 func writeFile(c *qt.C, dir, name, content string) {
