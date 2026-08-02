@@ -821,12 +821,15 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 		return generatedFields
 	}
 
-	// Intelligent type inference based on reference pattern
-	refType := "INTEGER" // Default assumption: numeric primary key
-	if strings.Contains(embedded.Ref, "VARCHAR") || strings.Contains(embedded.Ref, "TEXT") ||
-		strings.Contains(strings.ToLower(embedded.Ref), "uuid") {
-		// Reference suggests string-based key (likely UUID)
-		refType = "VARCHAR(36)" // Standard UUID length
+	// An explicit relation type is authoritative. When it is omitted, use the
+	// conservative numeric or string heuristic documented for relation fields.
+	refType := strings.TrimSpace(embedded.Type)
+	if refType == "" {
+		refType = "INTEGER"
+		if strings.Contains(embedded.Ref, "VARCHAR") || strings.Contains(embedded.Ref, "TEXT") ||
+			strings.Contains(strings.ToLower(embedded.Ref), "uuid") {
+			refType = "VARCHAR(36)"
+		}
 	}
 
 	fieldName := embedded.Prefix + embedded.Field

@@ -2763,6 +2763,7 @@ func TestProcessEmbeddedFields_PropagatesNestedPlatformOverrides(t *testing.T) {
 			Mode:             "relation",
 			Field:            "tenant_id",
 			Ref:              "tenants(id)",
+			Type:             "BIGINT",
 			Overrides: map[string]map[string]string{
 				"postgres": {"type": "BIGINT"},
 			},
@@ -2779,10 +2780,10 @@ func TestProcessEmbeddedFields_PropagatesNestedPlatformOverrides(t *testing.T) {
 		"postgres": {"type": "CITEXT"},
 	})
 	c.Assert(got[2].Name, qt.Equals, "owner_tenant_id")
+	c.Assert(got[2].Type, qt.Equals, "BIGINT")
 	c.Assert(got[2].GeneratedFromEmbedded, qt.IsTrue)
 	c.Assert(got[2].Overrides, qt.DeepEquals, map[string]map[string]string{
 		"mysql":    {"type": "BIGINT"},
-		"mariadb":  {"type": "INT"},
 		"postgres": {"type": "BIGINT"},
 	})
 }
