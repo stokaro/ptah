@@ -840,7 +840,9 @@ env "local" {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
 }
 
 func TestCompatCommand_AdapterCommandUsesAttachedConfigShorthand(t *testing.T) {
@@ -873,7 +875,9 @@ env "local" {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
 }
 
 func TestCompatCommand_AdapterCommandUsesParentAtlasProjectFlags(t *testing.T) {
@@ -907,7 +911,9 @@ env "local" {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
 }
 
 func TestCompatCommand_AdapterCommandForwardsAtlasProjectConfigToNativeLoader(t *testing.T) {
@@ -1372,7 +1378,7 @@ func TestCompatCommand_MigrateHashDefaultsToAtlasSum(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "atlas.sum")
+	c.Assert(out.String(), qt.Equals, "")
 	_, err = os.Stat(filepath.Join(dir, "atlas.sum"))
 	c.Assert(err, qt.IsNil)
 	_, err = os.Stat(filepath.Join(dir, "ptah.sum"))
@@ -3766,7 +3772,7 @@ func TestCompatCommand_MigrateHashResolvesProjectRelativeMigrationDir(t *testing
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
 	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
 	c.Assert(err, qt.IsNil)
 }

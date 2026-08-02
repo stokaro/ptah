@@ -275,8 +275,10 @@ func TestCompatMigrateHashAtlasLayoutUnmoved_HappyPath(t *testing.T) {
 	}
 
 	baseline := writeIntegrityFixture(c)
-	baselineOut, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+baseline)
-	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", baselineOut))
+	baselineOut, baselineErrOut, err := runCompatExit("migrate", "hash", "--dir", "file://"+baseline)
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", baselineOut, baselineErrOut))
+	c.Assert(baselineOut, qt.Equals, "")
+	c.Assert(baselineErrOut, qt.Equals, "")
 	wantSum := sumBytes(c, baseline)
 
 	for _, tt := range tests {
@@ -287,15 +289,14 @@ func TestCompatMigrateHashAtlasLayoutUnmoved_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
 			c.Assert(sumBytes(c, dir), qt.Equals, wantSum)
-			c.Assert(stdout, qt.Equals, "Wrote "+dir+"/atlas.sum\n8 migration file(s) hashed\n")
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, "")
 		})
 	}
 }
 
-// TestCompatMigrateHashConvertedDirOutput_HappyPath pins the converted path's
-// stdout to the native path's. Atlas CE prints nothing on a successful hash;
-// that divergence predates this path and is tracked separately, so what this
-// holds is that naming a layout does not change the reporting.
+// TestCompatMigrateHashConvertedDirOutput_HappyPath pins Atlas CE's silent
+// success contract for converted migration directory formats.
 func TestCompatMigrateHashConvertedDirOutput_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	dir := writeIntegrityFixture(c)
@@ -303,8 +304,9 @@ func TestCompatMigrateHashConvertedDirOutput_HappyPath(t *testing.T) {
 	stdout, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
-	c.Assert(stdout, qt.Equals, "Wrote "+dir+"/atlas.sum\n1 migration file(s) hashed\n")
+	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Equals, "")
+	c.Assert(sumEntryNames(c, dir), qt.DeepEquals, golangMigrateCoveredSet)
 }
 
 // TestCompatMigrateHashEmptySourceSet_HappyPath covers the seam with the apply
@@ -338,7 +340,7 @@ func TestCompatMigrateHashEmptySourceSet_HappyPath(t *testing.T) {
 			stdout, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-			c.Assert(stdout, qt.Contains, "0 migration file(s) hashed")
+			c.Assert(stdout, qt.Equals, "")
 			// Measured CE empty-set sum, identical across formats.
 			c.Assert(sumBytes(c, dir), qt.Equals, "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n")
 

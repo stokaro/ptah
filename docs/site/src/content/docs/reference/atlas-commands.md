@@ -96,7 +96,9 @@ Native twin: [`ptah migrations status`](../native-commands/).
 
 Writes `atlas.sum` for the migration directory. `--dir-format` defaults to
 `atlas`, so the compatibility path writes `atlas.sum` by default, and the
-atlas layout forwards to `ptah migrations hash`.
+atlas layout forwards to `ptah migrations hash`. A successful compatibility
+hash is silent, matching Atlas CE; inspect or commit the resulting `atlas.sum`
+instead of relying on a progress message.
 
 ### `ptah-compat migrate validate`
 

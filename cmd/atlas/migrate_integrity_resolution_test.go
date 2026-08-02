@@ -173,7 +173,7 @@ func TestCompatMigrateIntegrityEnvironment_HappyPath(t *testing.T) {
 		stdout, _, err := runCompatExit("migrate", "hash")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-		c.Assert(stdout, qt.Equals, "Wrote "+dir+"/atlas.sum\n8 migration file(s) hashed\n")
+		c.Assert(stdout, qt.Equals, "")
 		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 }
@@ -314,7 +314,7 @@ func TestCompatMigrateHashDirectoryNamedSQL_KnownDivergence(t *testing.T) {
 		stdout, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-		c.Assert(stdout, qt.Contains, "1 migration file(s) hashed")
+		c.Assert(stdout, qt.Equals, "")
 		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, []string{"1_init.sql"})
 	})
 
