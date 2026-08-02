@@ -20,6 +20,15 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
+// instrumentationName is the OpenTelemetry instrumentation-scope identity, not
+// an import path -- it is emitted as otel.scope.name on every span this CLI
+// produces. It tracked the module path before the move to go.5x5.cz/ptah and
+// deliberately still does, following the OTel convention that a scope is named
+// after the instrumenting library. That makes the import-path move a BREAKING
+// OBSERVABILITY CHANGE as well: a dashboard, alert or query filtering on the
+// previous scope name goes blank rather than erroring, so it has to be updated
+// alongside the import paths. Pin this to a literal instead if downstream
+// dashboards must survive a future rename untouched.
 const instrumentationName = "go.5x5.cz/ptah"
 
 func startOTel(ctx context.Context, opts Options) (migrator.Observer, func(context.Context) error, error) {
