@@ -34,7 +34,7 @@ func sourceFS(names ...string) fstest.MapFS {
 // TestSumFileNamesMatchesAtlasCE replays the pinned oracle's own atlas.sum for
 // every captured directory shape. It is the test that makes the per-format file
 // set a measured fact rather than a transcribed rule: each case directory holds
-// the source files and the atlas.sum Atlas CE v1.2.0 wrote for them, produced
+// the source files and the atlas.sum Atlas CE v1.3.0 wrote for them, produced
 // by testdata/ce-sums/regenerate.sh.
 func TestSumFileNamesMatchesAtlasCE(t *testing.T) {
 	c := qt.New(t)

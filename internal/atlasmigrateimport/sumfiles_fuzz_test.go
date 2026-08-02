@@ -99,7 +99,17 @@ const oracleEnv = "PTAH_ATLAS_ORACLE"
 // oracleVersion is the only build this fuzz trusts. A different build may have
 // changed the very rules under test, so comparing against it would report
 // divergences that are really version drift.
-const oracleVersion = "atlas community version v1.2.0"
+const oracleVersion = "atlas community version v1.3.0"
+
+func TestAtlasCEOracleLockMatchesDifferentialFuzz(t *testing.T) {
+	c := qt.New(t)
+
+	lock, err := os.ReadFile("../../scripts/atlas-ce-oracle.lock")
+	c.Assert(err, qt.IsNil)
+	version, found := strings.CutPrefix(oracleVersion, "atlas community version ")
+	c.Assert(found, qt.IsTrue)
+	c.Assert(string(lock), qt.Contains, "\nversion "+version+"\n")
+}
 
 // TestSumFileNamesDifferentialFuzz generates random Flyway directories and
 // checks Ptah's integrity file set against the live oracle.

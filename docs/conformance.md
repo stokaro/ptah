@@ -105,10 +105,10 @@ code-by-code table lives in
 
 `atlas migrate ls`, `atlas migrate show`, `atlas schema stats`, and
 `atlas schema validate` appear in current Atlas documentation but are entirely
-absent from the pinned conformance Atlas CE v1.2.0 binary (each resolves to
+absent from the pinned conformance Atlas CE v1.3.0 binary (each resolves to
 `unknown command`, not a community-version abort stub), so they are outside the
 CLI-surface parity target today. Triage outcome, to revisit when the
-conformance Atlas pin advances past v1.2.0:
+conformance Atlas pin advances past v1.3.0:
 
 | Atlas verb | Current Atlas docs behavior | Triage |
 | --- | --- | --- |
@@ -139,6 +139,31 @@ From this repository:
 ```bash
 make conformance
 ```
+
+The repository's Atlas-oracle workflow independently rebuilds Atlas CE from an
+immutable source archive, verifies that the release tag resolves to the locked
+commit, checks the committed SHA-256 digest and exact
+`atlas community version v1.3.0` output, then runs the differential migration
+sum tests and regenerates the committed corpus. Reproduce that oracle locally:
+
+```bash
+scripts/build-atlas-ce-oracle.sh
+GOWORK=off \
+  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_FUZZ_N=200 \
+  go test -count=1 \
+  -run '^TestSumFileNamesDifferentialFuzz(RealisticFlyway|OtherFormats)?$' \
+  ./internal/atlasmigrateimport
+internal/atlasmigrateimport/testdata/ce-sums/regenerate.sh \
+  "$PWD/bin/atlas-ce-oracle"
+git diff --exit-code -- internal/atlasmigrateimport/testdata/ce-sums
+```
+
+Atlas's GitHub release publishes no CE binary asset. The lock therefore pins
+the release tag's commit and the digest of its immutable source archive. The
+archive is built only into a disposable external test executable; no Atlas
+source or compiled code is imported, vendored, or linked into Ptah. Atlas Cloud
+and commercial binaries are outside this oracle workflow.
 
 From `ptah-atlas-conformance`:
 

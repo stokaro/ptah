@@ -7,13 +7,13 @@
 # Ptah's per-format file set reproduces the oracle byte for byte instead of
 # trusting a rule transcribed by hand.
 #
-# The oracle is pinned. Bumping it is a deliberate act: change ORACLE_VERSION
-# below, re-run, and review the resulting diff, because any change in the sums
-# is a change in what Atlas considers a migration.
+# The oracle is pinned. Bumping it is a deliberate act: update the repository
+# lock, re-run, and review the resulting diff, because any change in the sums is
+# a change in what Atlas considers a migration.
 #
 #   oracle:  ptah-atlas-conformance/bin/atlas
-#   version: atlas community version v1.2.0
-#   date:    2026-08-01
+#   version: atlas community version v1.3.0
+#   date:    2026-08-03
 #
 # A system-wide `atlas` on PATH is frequently a different build, so the
 # oracle is invoked by absolute path and
@@ -27,9 +27,13 @@
 
 set -euo pipefail
 
-ORACLE_VERSION="atlas community version v1.2.0"
 ATLAS="${1:-$HOME/Work/denis/ptah-atlas-conformance/bin/atlas}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
+
+# shellcheck source=scripts/lib/atlas-ce-oracle.sh
+source "$ROOT/scripts/lib/atlas-ce-oracle.sh"
+atlas_ce_load_lock "$ROOT/scripts/atlas-ce-oracle.lock"
 
 if [ ! -x "$ATLAS" ]; then
 	echo "regenerate: oracle not found or not executable: $ATLAS" >&2
@@ -37,14 +41,7 @@ if [ ! -x "$ATLAS" ]; then
 	exit 1
 fi
 
-actual_version="$("$ATLAS" version | head -1)"
-if [ "$actual_version" != "$ORACLE_VERSION" ]; then
-	echo "regenerate: oracle version mismatch" >&2
-	echo "  want: $ORACLE_VERSION" >&2
-	echo "  got:  $actual_version" >&2
-	echo "regenerate: update ORACLE_VERSION deliberately and review the corpus diff" >&2
-	exit 1
-fi
+actual_version="$(atlas_ce_verify_binary "$ATLAS")"
 
 # Migration bodies. Content is irrelevant to the file-set rule under test but
 # must stay byte-stable, because every recorded hash covers it.
