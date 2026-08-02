@@ -15,8 +15,8 @@
 #   oracle:  ptah-atlas-conformance/bin/atlas
 #   version: atlas community version v1.2.0
 #
-# A system-wide `atlas` on PATH is frequently a different build (a v1.2.4
-# canary at the time of writing), so the oracle is invoked by absolute path.
+# A system-wide `atlas` on PATH is frequently a different build, so the
+# oracle is invoked by absolute path.
 #
 # Usage:
 #   scripts/probe-atlas-integrity-verbs.sh [path-to-atlas]

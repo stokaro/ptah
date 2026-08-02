@@ -12,9 +12,9 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-// txtarCheckedAddEmail mirrors the measured Atlas Pro fixture: a txtar
+// txtarCheckedAddEmail mirrors the measured Atlas fixture: a txtar
 // migration whose checks.sql asserts users is empty before migration.sql adds
-// the email column. Atlas v1.2.4 (licensed) aborts with exit 1 before any body
+// the email column. Atlas aborts with exit 1 before any body
 // statement when the assertion fails; Ptah maps the section onto the
 // `-- +ptah check` machinery (#956).
 const txtarCheckedAddEmail = `-- atlas:txtar

@@ -29,8 +29,8 @@ const (
 	// per-statement safety classification.
 	PlanFormatJSON PlanFormat = "json"
 
-	// PlanFormatHCL is the Atlas `.plan.hcl` encoding measured from the
-	// official binary: one `plan "<name>"` block with `from`, `to`, and
+	// PlanFormatHCL is the Atlas `.plan.hcl` encoding, measured: one
+	// `plan "<name>"` block with `from`, `to`, and
 	// `migration` attributes. It carries no dialect, exclude patterns, or
 	// per-statement metadata; Ptah re-derives those at read time.
 	PlanFormatHCL PlanFormat = "hcl"
@@ -104,7 +104,7 @@ func IsNativeFingerprint(fingerprint string) bool {
 
 // TimestampPlanName returns the Atlas-style timestamp plan name
 // (YYYYMMDDHHMMSS in UTC) used as the default name for `.plan.hcl` plans,
-// mirroring the names the official binary writes.
+// mirroring the names Atlas writes.
 func TimestampPlanName(now time.Time) string {
 	return now.UTC().Format("20060102150405")
 }
@@ -176,10 +176,10 @@ func CheckPlanFormatSupported(plan PlanFile, format PlanFormat) error {
 }
 
 // MarshalPlanFileHCL renders the plan in the Atlas `.plan.hcl` shape measured
-// from the official binary: one `plan "<name>"` block with aligned `from`,
+// from Atlas: one `plan "<name>"` block with aligned `from`,
 // `to`, and `migration` attributes and a `<<-SQL` heredoc holding the ordered
 // statements. The from/to values are Ptah's own sha256 fingerprints — the
-// file parses in Atlas's reader, but the official binary verifies its own
+// file parses in Atlas's reader, but Atlas verifies its own
 // base64 hashes, which Ptah cannot compute locally. The output is
 // deterministic for identical plan contents.
 func MarshalPlanFileHCL(plan PlanFile) ([]byte, error) {

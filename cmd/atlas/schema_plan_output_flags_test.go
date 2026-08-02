@@ -22,7 +22,7 @@ import (
 // --name-formxxxx and --totally-bogus-flag, and so does --dev-url, a flag CE
 // certainly knows on sibling verbs. Only the inherited --env/-c/--var parse,
 // and they reach the abort. CE therefore constrains none of this file's
-// behavior; the flags exist on the licensed Pro surface only.
+// behavior; the flags exist on Atlas's non-community surface only.
 
 // installScriptEditor installs an $EDITOR whose shell body runs with the file
 // being edited as "$1", so a test can rewrite, empty, or fail on the planned

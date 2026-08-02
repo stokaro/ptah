@@ -11,8 +11,8 @@ import (
 	"github.com/stokaro/ptah/cmd/atlas"
 )
 
-// inspectIncludeDDL mirrors the shape of the fixture the licensed Atlas
-// v1.2.4 `schema inspect --include` transcripts were recorded against: two
+// inspectIncludeDDL mirrors the fixture shape the `schema inspect --include`
+// transcripts were recorded against: two
 // tables joined by a foreign key plus one independent table, so selection,
 // dependency refusal, and non-selection are all observable.
 const inspectIncludeDDL = `
@@ -99,7 +99,7 @@ func TestSchemaInspectIncludeUnionsValues(t *testing.T) {
 func TestSchemaInspectIncludeAcceptsQualifiedNames(t *testing.T) {
 	c := qt.New(t)
 
-	// Both spellings name one top-level table. Licensed Atlas v1.2.4 treats
+	// Both spellings name one top-level table. Atlas treats
 	// the wildcard form as a child-level pattern instead and renders the
 	// tables as empty shells; Ptah keeps the selected table whole.
 	tests := []struct {

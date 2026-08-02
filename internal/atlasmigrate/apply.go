@@ -34,8 +34,8 @@ type ApplyOptions struct {
 	AllowDirty           bool
 	BaselineVersion      int64
 	// SkipChecks bypasses pre-migration check evaluation. Atlas registers no
-	// flag for this on `migrate apply` (measured on CE v1.2.0 and on the
-	// licensed v1.2.4 help surface), so the compat command resolves it from
+	// flag for this on `migrate apply` (measured on CE v1.2.0 and on
+	// Atlas's own help surface), so the compat command resolves it from
 	// PTAH_SKIP_CHECKS rather than from the Atlas flag surface.
 	SkipChecks bool
 }

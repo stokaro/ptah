@@ -443,7 +443,7 @@ func (m *Migrator) updateAtlasRevisionTypeSQL() string {
 }
 
 // atlasMetadataRowPredicate excludes Atlas metadata revision rows from a query.
-// Atlas Pro writes dot-prefixed pseudo-versions (for example
+// Atlas writes dot-prefixed pseudo-versions (for example
 // `.atlas_cloud_identifier`, inserted by `migrate down` even in local mode)
 // into the revision table. Those rows are bookkeeping, not migrations: version
 // math, status, and pending calculations skip them, and no write path deletes
@@ -464,7 +464,7 @@ const atlasMetadataVersionNullGuard = `CASE WHEN version LIKE '.%' THEN NULL ELS
 // every row), countRevisionsAboveSQL, and deleteRevisionsAboveSQL. Without it,
 // a strict dialect fails those statements outright — PostgreSQL reports
 // `invalid input syntax for type bigint: ".atlas_cloud_identifier"` — so
-// GetCurrentVersion and SetAtlasRevision would error on any database Atlas Pro
+// GetCurrentVersion and SetAtlasRevision would error on any database Atlas
 // has run `migrate down` against. SQLite's lenient CAST silently yields 0
 // instead, which is why no SQLite-only test can observe the difference and the
 // guard is pinned by asserting the generated SQL (#957).

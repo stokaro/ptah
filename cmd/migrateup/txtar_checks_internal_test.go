@@ -20,7 +20,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 )
 
-// txtarCheckedAddEmailSQL mirrors the measured Atlas Pro fixture: checks.sql
+// txtarCheckedAddEmailSQL mirrors the measured Atlas fixture: checks.sql
 // asserts users is empty before migration.sql adds the email column.
 const txtarCheckedAddEmailSQL = `-- atlas:txtar
 

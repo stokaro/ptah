@@ -14,8 +14,8 @@ import (
 	"github.com/stokaro/ptah/migration/safety"
 )
 
-// oraclePlanPath is the real `.plan.hcl` produced by the licensed Atlas
-// binary (v1.2.4-e282f76-canary) for the schema-plan-file measurement
+// oraclePlanPath is the real `.plan.hcl` produced by Atlas for the
+// schema-plan-file measurement
 // scenario; it is the format oracle for the reader.
 const oraclePlanPath = "testdata/atlas.plan.hcl"
 
@@ -137,7 +137,7 @@ func TestMarshalPlanFileHCLMatchesGolden(t *testing.T) {
 	document, err := atlasschema.MarshalPlanFileHCL(goldenPlan())
 
 	// The written document is byte-identical to the golden fixture, whose
-	// shape the official Atlas binary parsed during the measurement campaign
+	// shape Atlas parsed during the measurement campaign
 	// (it aborted only at hash verification, which has no local recipe).
 	c.Assert(err, qt.IsNil)
 	golden, readErr := os.ReadFile(writtenGoldenPlanPath)

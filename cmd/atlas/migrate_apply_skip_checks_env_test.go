@@ -32,7 +32,7 @@ func unsetSkipChecksEnv(t *testing.T) {
 // v1.2.0 answers `migrate apply --skip-checks` with `unknown flag:
 // --skip-checks`, the same text it gives a nonsense sibling (`--skip-chxxxx`),
 // so the flag is unregistered rather than registered-and-community-gated; and
-// the licensed v1.2.4 help surface registers `--skip-checks` only on `migrate
+// Atlas's own help surface registers `--skip-checks` only on `migrate
 // down`, never on `migrate apply`. Adding it here would put a non-Atlas flag on
 // the compat surface, which the conformance cli-surface tier forbids.
 // TestMigrateApplyHasNoSkipChecksFlag pins that half; these tests pin the

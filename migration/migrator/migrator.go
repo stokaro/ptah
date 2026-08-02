@@ -2053,7 +2053,7 @@ func (m *Migrator) failMigrationWithDirtyState(
 //
 // The split is by surface, not by preference. `ptah-compat` is the Atlas-shaped
 // drop-in and always writes Atlas-format revisions, so it has to reproduce
-// Atlas's bookkeeping exactly. Measured against Atlas CLI v1.2.4 (licensed,
+// Atlas's bookkeeping exactly. Measured against Atlas (
 // local SQLite): a failed `migrate down` leaves the revision row
 // byte-identical — no pre-rewrite, no recorded error, `applied`/`total` and
 // `execution_time` unchanged — the body is rolled back, and `atlas migrate

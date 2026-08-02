@@ -136,7 +136,7 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 		// Child depth is the positional spelling of the [type=column] form
 		// above: the selection matches "name" and "schema.name" only, so a
 		// deeper pattern can never match and is rejected instead of silently
-		// selecting nothing. Licensed Atlas v1.2.4 also refuses this input
+		// selecting nothing. Atlas also refuses this input
 		// ("too many parts in pattern").
 		{
 			name:    "child depth",

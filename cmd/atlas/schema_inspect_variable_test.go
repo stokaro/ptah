@@ -9,7 +9,7 @@ import (
 )
 
 // typedVariableAtlasHCL mirrors the measured b-variable-var fixture from the
-// Atlas Pro trial campaign: the official Atlas binary requires the type
+// Atlas compatibility study: Atlas requires the type
 // attribute on variable blocks, so this exact file must parse on both
 // binaries for atlas.hcl portability (issue #959).
 const typedVariableAtlasHCL = `variable "schema_file" {
@@ -41,8 +41,8 @@ func writeTypedVariableProject(t *testing.T) string {
 }
 
 // TestSchemaInspectTypedVariableAtlasHCL is the acceptance test for issue
-// #959: an atlas.hcl whose variable block carries the type attribute the
-// official binary requires must inspect successfully with a --var override.
+// #959: an atlas.hcl whose variable block carries the type attribute Atlas
+// requires must inspect successfully with a --var override.
 func TestSchemaInspectTypedVariableAtlasHCL(t *testing.T) {
 	c := qt.New(t)
 	configPath := writeTypedVariableProject(t)
@@ -60,7 +60,7 @@ func TestSchemaInspectTypedVariableAtlasHCL(t *testing.T) {
 	c.Assert(out, qt.Contains, `column "email"`)
 }
 
-// TestSchemaInspectTypedVariableMissingVar mirrors the official binary's
+// TestSchemaInspectTypedVariableMissingVar mirrors Atlas's
 // "missing value for required variable" failure mode: without --var, a typed
 // variable that has no default fails with Ptah's named error.
 func TestSchemaInspectTypedVariableMissingVar(t *testing.T) {
