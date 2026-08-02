@@ -87,34 +87,52 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 	}
 }
 
-func validateAtlasEnvStructures(envs []atlasEnvBlock) error {
+func (p atlasParser) validateAtlasEnvStructures(envs []atlasEnvBlock) error {
 	structure := atlasEnvBodyStructure()
 	for _, env := range envs {
-		if err := validateAtlasBodyStructure(env.block.Body, structure); err != nil {
+		if err := p.validateAtlasBodyStructure("env", env.block.Body, structure); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateAtlasBodyStructure(body *hclsyntax.Body, structure atlasBodyStructure) error {
+// scope is the dotted path of body within atlas.hcl ("env", "env.schema", ...).
+// It is what lets the unknown-name tolerance stay clear of the handful of names
+// Atlas CE really does decode -- see ceEnforcedConstructs.
+func (p atlasParser) validateAtlasBodyStructure(scope string, body *hclsyntax.Body, structure atlasBodyStructure) error {
+	// This validator, not the per-block parsers, is what refuses an unknown
+	// name anywhere under `env` -- it runs first and recurses, so relaxing the
+	// parsers' own switch defaults would have changed nothing here.
 	for _, name := range sortedAttributeNames(body.Attributes) {
 		if !slices.Contains(structure.attributes, name) {
-			return unsupportedAttr(name, body.Attributes[name])
+			if err := p.tolerateUnknownAttr(scope, name, body.Attributes[name]); err != nil {
+				return err
+			}
+			continue
 		}
 	}
 
 	seen := map[string]struct{}{}
 	for _, block := range body.Blocks {
 		blockStructure, ok := structure.blocks[block.Type]
-		if !ok || len(block.Labels) != blockStructure.labels {
+		if !ok {
+			if err := p.tolerateUnknownBlock(scope, block); err != nil {
+				return err
+			}
+			continue
+		}
+		if len(block.Labels) != blockStructure.labels {
+			// Label arity is left refusing for now. CE applies the block and
+			// ignores the extra labels -- measured -- so this is a known
+			// remaining divergence, not the rule above.
 			return unsupportedBlock(block)
 		}
 		if _, duplicate := seen[block.Type]; duplicate {
 			return unsupportedBlock(block)
 		}
 		seen[block.Type] = struct{}{}
-		if err := validateAtlasBodyStructure(block.Body, blockStructure.body); err != nil {
+		if err := p.validateAtlasBodyStructure(scope+"."+block.Type, block.Body, blockStructure.body); err != nil {
 			return err
 		}
 	}
