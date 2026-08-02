@@ -436,6 +436,11 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
+			// --save with no --output writes into the working directory, so
+			// point it at a scratch directory: a refusal that regresses must
+			// leave its artifact somewhere a test can see it, not in the
+			// package source tree. (A mutation sweep found exactly that leak.)
+			scratch := chdirToScratchC(c)
 			args := append([]string{
 				"--from", "sqlite://" + filepath.Join(dir, "plan.db"),
 				"--to", "file://" + schemaPath,
@@ -445,6 +450,10 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), args...)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
+			// Assert the protected state, not the proxy: the thing a refusal
+			// must prevent is a plan file, and an error return alone does not
+			// prove one was not written first.
+			assertNoPlanFileWritten(c, scratch)
 		})
 	}
 }

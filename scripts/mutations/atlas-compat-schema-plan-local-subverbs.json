@@ -1,0 +1,184 @@
+{
+  "packages": [
+    "./cmd/atlas/"
+  ],
+  "mutations": [
+    {
+      "name": "new does not force saving, so it prints the plan and writes nothing",
+      "file": "cmd/atlas/schema_plan_new.go",
+      "old": "\t\t\topts.save = true",
+      "new": "\t\t\topts.save = false",
+      "comment": "The whole documented function of `new`. An exit-code assertion cannot catch it: `schema plan` with no save destination prints the document and exits 0, so only asserting the FILE separates the two."
+    },
+    {
+      "name": "new behaves like --dry-run instead of writing the plan file",
+      "file": "cmd/atlas/schema_plan_new.go",
+      "old": "\t\t\topts.save = true",
+      "new": "\t\t\topts.dryRun = true"
+    },
+    {
+      "name": "new registers --save defaulted to true instead of forcing it",
+      "file": "cmd/atlas/schema_plan_new.go",
+      "old": "\tflags.BoolVar(&opts.edit, \"edit\", false, \"Edit the plan in the terminal editor\")",
+      "new": "\tflags.BoolVar(&opts.edit, \"edit\", false, \"Edit the plan in the terminal editor\")\n\tflags.BoolVar(&opts.save, \"save\", true, \"Save the plan to a local plan file\")",
+      "comment": "The plausible alternative implementation. It writes the file on a bare invocation and therefore passes the behavior tests, but it accepts `--save=false` — a flag Atlas does not register on this sub-verb — and quietly turns the verb into a no-op."
+    },
+    {
+      "name": "new loses the docs-derived provenance note",
+      "file": "cmd/atlas/schema_plan_new.go",
+      "old": "\t\t\twriteAtlasSchemaPlanDocsDerivedNote(cmd,\n\t\t\t\t\"the behavior of `\"+atlasSchemaPlanNewVerb+\n\t\t\t\t\t\"` (writing a plan file with no --save flag to request it)\")",
+      "new": "\t\t\t_ = atlasSchemaPlanNewVerb"
+    },
+    {
+      "name": "the docs-derived note is written to stdout instead of stderr",
+      "file": "cmd/atlas/schema_plan_transition.go",
+      "old": "\tfmt.Fprintf(cmd.ErrOrStderr(),",
+      "new": "\tfmt.Fprintf(cmd.OutOrStdout(),",
+      "comment": "stdout must stay machine-readable; the note exists precisely because it can be ignored by a pipeline reading stdout."
+    },
+    {
+      "name": "the docs-derived note grows past one line",
+      "file": "cmd/atlas/schema_plan_transition.go",
+      "old": "\t\t\"Note: %s is derived from Atlas documentation and is not verified against the Atlas binary (stokaro/ptah#951).\\n\",",
+      "new": "\t\t\"Note: %s is derived from Atlas documentation\\nand is not verified against the Atlas binary (stokaro/ptah#951).\\n\","
+    },
+    {
+      "name": "new reports the parent verb in its diagnostics",
+      "file": "cmd/atlas/schema_plan_new.go",
+      "old": "\topts := atlasSchemaPlanOptions{verb: atlasSchemaPlanNewVerb}",
+      "new": "\topts := atlasSchemaPlanOptions{verb: atlasSchemaPlanVerb}",
+      "comment": "A refusal naming `atlas schema plan` after the operator typed `atlas schema plan new` sends them to a different command's help and a different flag set."
+    },
+    {
+      "name": "new accepts positional arguments",
+      "file": "cmd/atlas/schema_plan_new.go",
+      "old": "\tcmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)",
+      "new": "\tcmdutil.ConfigureCommandArgs(cmd, nil)",
+      "comment": "The captured Atlas usage line is `atlas schema plan new [flags]`; the parent's is `atlas schema plan [flags] [name]`."
+    },
+    {
+      "name": "new allows --name and --name-format together",
+      "file": "cmd/atlas/schema_plan_new.go",
+      "old": "\tcmd.MarkFlagsMutuallyExclusive(\"name\", \"name-format\")",
+      "new": "\t_ = cmd"
+    },
+    {
+      "name": "validate skips the from-fingerprint gate",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\tif planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint) {",
+      "new": "\tif false && (planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint)) {",
+      "comment": "Killed only by the idempotent-plan fixture: with an ordinary drifted target the replay fails too, so this mutation would survive on every other input in the suite."
+    },
+    {
+      "name": "the from-fingerprint gate keys on the fingerprint shape alone",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\tif planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint) {",
+      "new": "\tif atlasschema.IsNativeFingerprint(plan.FromFingerprint) {",
+      "comment": "The `sha256:` shape is public. A JSON plan whose from_fingerprint is simply not in that form must not be able to switch the gate off."
+    },
+    {
+      "name": "validate reuses the apply rehearsal policy and skips the replay",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\t\tpolicy:     rehearseAlways,",
+      "new": "\t\tpolicy:     rehearseWhenUnverified,",
+      "comment": "Under the apply policy a fingerprint-verified native plan with no --dev-url is not replayed at all, so validate would report a plan valid against a desired state it cannot reach."
+    },
+    {
+      "name": "validate applies the plan to the target after verifying it",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\t// Success is silent on stdout. The shape of a successful Atlas plan\n\t// validation is unmeasured, and an empty stdout cannot be the wrong shape;\n\t// the documented sibling `atlas schema validate` also exits successfully\n\t// with no output (https://atlasgo.io/cli-reference).\n\treturn nil",
+      "new": "\tconn.SchemaWriter().SetDryRun(false)\n\tif err := atlasschema.ApplyStatements(cmd.Context(), conn, migrator.MigrationTxModeNone, statements); err != nil {\n\t\treturn cmdutil.Fail(cmd, err)\n\t}\n\treturn nil",
+      "comment": "The protected state, not the proxy: this mutation still exits 0 and still prints nothing, and is caught only by re-introspecting the target."
+    },
+    {
+      "name": "validate reports success on stdout",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\t// Success is silent on stdout. The shape of a successful Atlas plan\n\t// validation is unmeasured, and an empty stdout cannot be the wrong shape;\n\t// the documented sibling `atlas schema validate` also exits successfully\n\t// with no output (https://atlasgo.io/cli-reference).\n\treturn nil",
+      "new": "\tfmt.Fprintln(cmd.OutOrStdout(), \"Plan is valid.\")\n\treturn nil"
+    },
+    {
+      "name": "validate accepts --exclude and verifies a different transition",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\tif cmd.Flags().Changed(\"exclude\") {",
+      "new": "\tif false && cmd.Flags().Changed(\"exclude\") {"
+    },
+    {
+      "name": "the missing --to wording also swallows a missing --from",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\t\tif errors.Is(err, errAtlasSchemaPlanMissingTo) {",
+      "new": "\t\tif len(opts.toURLs) == 0 && errors.Is(err, err) {",
+      "comment": "This is the blanket-rule shape that cost a predecessor a whole migration history: a substitution keyed on a symptom rather than on the specific error swallows every other diagnostic that shares the symptom. `errors.Is(err, err)` is always true for the non-nil err reaching this branch and exists only to keep the errors import in use; dropping it is a build failure, which is not a result."
+    },
+    {
+      "name": "validate treats --file as optional",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\tif opts.file == \"\" {",
+      "new": "\tif false && opts.file == \"\" {"
+    },
+    {
+      "name": "validate accepts a registry plan URL",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\tif strings.Contains(trimmed, \"://\") && !strings.HasPrefix(trimmed, \"file://\") {",
+      "new": "\tif false && strings.Contains(trimmed, \"://\") && !strings.HasPrefix(trimmed, \"file://\") {"
+    },
+    {
+      "name": "validate accepts positional arguments",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\tcmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)",
+      "new": "\tcmdutil.ConfigureCommandArgs(cmd, nil)"
+    },
+    {
+      "name": "the sub-verbs stop refusing what the parent refuses",
+      "file": "cmd/atlas/schema_plan_transition.go",
+      "old": "\tif err := rejectUnimplementedAtlasSchemaPlanFlags(cmd, verb, transition); err != nil {\n\t\treturn err\n\t}",
+      "new": "\t_ = verb"
+    },
+    {
+      "name": "the shared transition registration drops a flag Atlas registers",
+      "file": "cmd/atlas/schema_plan_transition.go",
+      "old": "\tflags.String(\"lock-timeout\", \"\", \"Timeout for acquiring the database lock\")",
+      "new": "\t_ = flags",
+      "comment": "Drift away from the captured Atlas flag set. Caught by the surface pin, not by any behavior test — the flag is refused anyway, so nothing else notices it disappearing."
+    },
+    {
+      "name": "--from may be a schema file rather than the target database",
+      "file": "cmd/atlas/schema_plan_transition.go",
+      "old": "\tif err := ensureAtlasPlanDatabaseURL(verb, transition.fromURLs[0]); err != nil {\n\t\treturn err\n\t}",
+      "new": "\t_ = ensureAtlasPlanDatabaseURL"
+    },
+    {
+      "name": "the parent verb name is lost, so every shared diagnostic goes unnamed",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\topts := atlasSchemaPlanOptions{verb: atlasSchemaPlanVerb}",
+      "new": "\topts := atlasSchemaPlanOptions{}"
+    },
+    {
+      "name": "the transition config resolution is skipped, so --env stops feeding the plan",
+      "file": "cmd/atlas/schema_plan_transition.go",
+      "old": "\t\tin.toURLs = effectiveStringArray(cmd, \"to\", in.toURLs, projectCfg.SchemaSources)",
+      "new": "\t\t_ = projectCfg.SchemaSources",
+      "comment": "The extraction of this block out of runAtlasSchemaPlan is a refactor; this proves the moved code is still reached from the parent verb."
+    },
+    {
+      "name": "validate stops guarding --dev-url against the target database",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\t\ttargetURL:   opts.fromURLs[0],",
+      "new": "\t\ttargetURL:   \"\",",
+      "comment": "MEASURED consequence, not a hypothetical: with this field dropped, `validate --dev-url <target>` resets the target destructively and applies the plan, then exits 0 with empty stdout. On a target holding keep_me with 3 rows: before = tables [keep_me], 3 rows; after = tables [added, keep_me], 0 rows. The entire suite stayed green before the guard subtest existed, which is why it is pinned by state (tables AND row count), not by the message."
+    },
+    {
+      "name": "validate ignores the exclude patterns the plan records",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\t\texclude:    plan.Exclude,",
+      "new": "\t\texclude:    nil,",
+      "comment": "The inverse of this PR's invariant: validate then refuses a plan `schema apply --plan` accepts, because the comparison sees an object the plan was explicitly computed without. Killed only by a fixture whose plan carries --exclude patterns; every other fixture here is computed without them and so cannot tell the two apart."
+    },
+    {
+      "name": "the validate provenance note names the parent verb",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "\t\t\"the behavior of `\"+atlasSchemaPlanValidateVerb+",
+      "new": "\t\t\"the behavior of `\"+atlasSchemaPlanVerb+",
+      "comment": "The note is the whole provenance contract; naming the wrong command sends the operator to a different verb's flag set. The `new` side already pins this."
+    }
+  ]
+}

@@ -421,12 +421,16 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	// The rehearsal runs on --dry-run too: a dry run is how an operator
 	// test-drives a plan, and it would be useless if verifying a foreign plan
 	// required committing to apply it.
-	if err := rehearseAtlasSchemaApplyPlan(cmd, conn, opts, rehearsePlanParams{
-		format:     planFormat,
-		statements: statements,
-		desired:    desired,
-		exclude:    plan.Exclude,
-		txMode:     txMode,
+	if err := rehearseAtlasSchemaApplyPlan(cmd, conn, rehearsePlanParams{
+		policy:      rehearseWhenUnverified,
+		format:      planFormat,
+		statements:  statements,
+		desired:     desired,
+		exclude:     plan.Exclude,
+		txMode:      txMode,
+		devURL:      opts.devURL,
+		targetURL:   opts.url,
+		desiredURLs: opts.toURLs,
 	}); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -461,14 +465,53 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 }
 
 // rehearsePlanParams carries the plan-file rehearsal inputs derived from the
-// loaded plan document.
+// loaded plan document and from the command's URLs.
+//
+// The URLs travel in the struct rather than in a command-options argument so
+// that `schema apply --plan` and `schema plan validate` reach the rehearsal
+// through one function. The rehearsal is the only gate standing between a
+// foreign plan file and a dev database, so a second call site that could drift
+// from this one is not worth the convenience.
 type rehearsePlanParams struct {
+	// policy selects whether a plan whose fingerprint already verified may
+	// skip the replay.
+	policy     planRehearsalPolicy
 	format     atlasschema.PlanFormat
 	statements []string
 	desired    *goschema.Database
 	exclude    []string
 	txMode     migrator.MigrationTxMode
+	// devURL is the operator-supplied dev database, empty when none was given.
+	devURL string
+	// targetURL is the database the plan applies to; the simulation refuses a
+	// dev URL that resolves to it.
+	targetURL string
+	// desiredURLs are the --to sources, refused as dev databases for the same
+	// reason.
+	desiredURLs []string
 }
+
+// planRehearsalPolicy selects how hard the dev-database replay is required.
+type planRehearsalPolicy uint8
+
+const (
+	// rehearseAlways replays every plan format. `schema plan validate` uses
+	// it: the verb has no other effect, so a skipped replay would silently
+	// answer a narrower question than the one it was asked. A plan can carry a
+	// matching from-fingerprint and still not reach --to, and for a validate
+	// verb that is the interesting failure.
+	//
+	// It is deliberately the zero value: a rehearsePlanParams literal that
+	// forgets to set policy then gets the STRONGER verification. The other
+	// order fails open, and the thing being skipped is the only gate between a
+	// foreign plan file and a dev database.
+	rehearseAlways planRehearsalPolicy = iota
+	// rehearseWhenUnverified replays only what the fingerprint contract cannot
+	// already vouch for. `schema apply --plan` uses it: a native JSON plan
+	// whose source fingerprint matched this exact database, applied by the
+	// operator to their own target, gains nothing from a dev replay.
+	rehearseWhenUnverified
+)
 
 // planRehearsalDecision is what the dev-database policy resolved to for one
 // plan apply.
@@ -491,9 +534,12 @@ type planRehearsalDecision struct {
 //     SQLite targets get a throwaway dev database for free (it is just a temp
 //     file); every other dialect requires --dev-url, which every measured
 //     Atlas invocation passes anyway.
-//   - A native JSON plan already passed its fingerprint check, so it is
-//     rehearsed only when a dev database was requested explicitly.
+//   - A native JSON plan already passed its fingerprint check, so under
+//     rehearseWhenUnverified it is rehearsed only when a dev database was
+//     requested explicitly. Under rehearseAlways it is rehearsed like any
+//     other plan.
 func resolveAtlasSchemaApplyPlanRehearsal(
+	policy planRehearsalPolicy,
 	format atlasschema.PlanFormat,
 	dialect string,
 	devURL string,
@@ -508,7 +554,7 @@ func resolveAtlasSchemaApplyPlanRehearsal(
 	if devURL != "" {
 		return planRehearsalDecision{devURL: devURL}, nil
 	}
-	if format != atlasschema.PlanFormatHCL {
+	if policy == rehearseWhenUnverified && format != atlasschema.PlanFormatHCL {
 		// A native JSON plan without a dev database is not rehearsed, so the
 		// escape lint — which only runs in front of a dev-database replay —
 		// does not see it either. That is deliberate, not an oversight: a JSON
@@ -524,6 +570,12 @@ func resolveAtlasSchemaApplyPlanRehearsal(
 	if platform.NormalizeDialect(dialect) == platform.SQLite {
 		return planRehearsalDecision{ephemeral: true}, nil
 	}
+	if policy == rehearseAlways {
+		return planRehearsalDecision{}, fmt.Errorf(
+			"verifying a plan file requires a dev database: the plan is verified by replaying it on a dev "+
+				"database and comparing the reached state with --to; pass --dev-url with a %s dev database URL",
+			dialect)
+	}
 	return planRehearsalDecision{}, fmt.Errorf(
 		"verifying an Atlas plan file requires a dev database: the plan's from/to hashes are Atlas-computed "+
 			"and Ptah cannot recompute them, so the plan is verified by replaying it on a dev database and "+
@@ -536,11 +588,10 @@ func resolveAtlasSchemaApplyPlanRehearsal(
 func rehearseAtlasSchemaApplyPlan(
 	cmd *cobra.Command,
 	conn *dbschema.DatabaseConnection,
-	opts atlasSchemaApplyOptions,
 	params rehearsePlanParams,
 ) error {
 	decision, err := resolveAtlasSchemaApplyPlanRehearsal(
-		params.format, conn.Info().Dialect, opts.devURL, params.desired)
+		params.policy, params.format, conn.Info().Dialect, params.devURL, params.desired)
 	if err != nil {
 		return err
 	}
@@ -558,8 +609,8 @@ func rehearseAtlasSchemaApplyPlan(
 	}
 	return atlasschema.RehearsePlanStatements(cmd.Context(), conn, params.statements, params.desired, atlasschema.PlanRehearsalOptions{
 		DevURL:      devURL,
-		TargetURL:   opts.url,
-		DesiredURLs: opts.toURLs,
+		TargetURL:   params.targetURL,
+		DesiredURLs: params.desiredURLs,
 		Exclude:     params.exclude,
 		TxMode:      params.txMode,
 	})

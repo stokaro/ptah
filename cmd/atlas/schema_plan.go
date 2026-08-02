@@ -13,18 +13,17 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 )
 
 type atlasSchemaPlanOptions struct {
-	fromURLs   []string
-	toURLs     []string
-	devURL     string
-	exclude    []string
-	schemas    []string
+	atlasSchemaPlanTransitionFlags
+	// verb is the Atlas command the operator invoked. `schema plan new`
+	// delegates to the same run function, and a diagnostic naming the wrong
+	// command is a diagnostic the operator cannot act on.
+	verb       string
 	name       string
 	nameFormat string
 	output     string
@@ -41,7 +40,7 @@ const (
 )
 
 func newAtlasSchemaPlanCommand() *cobra.Command {
-	opts := atlasSchemaPlanOptions{}
+	opts := atlasSchemaPlanOptions{verb: atlasSchemaPlanVerb}
 	cmd := &cobra.Command{
 		Use:   "plan",
 		Short: "Plan a declarative migration for a schema transition",
@@ -81,26 +80,24 @@ representation; it cannot be combined with --name. Standard Base64 can contain
 selected atlas.hcl env can provide url
 (the --from target), schema.src, dev, exclude, schema.mode, and supported
 diff policy values. Registry-bound planning (--push, --pending, --repo),
---format, --directive, and the plan registry sub-verbs remain unimplemented.`,
+--format and --directive remain unimplemented.
+
+Two local sub-verbs are implemented: ` + "`new`" + ` creates a plan file for the
+transition and ` + "`validate`" + ` checks an existing plan file against it. The
+registry sub-verbs (approve, list, pull, push, rm) and the ` + "`lint`" + ` and
+` + "`test`" + ` sub-verbs remain unimplemented.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaPlan(cmd, opts)
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringArrayVar(&opts.fromURLs, atlasFromFlagName, nil, "Current schema state URL: the target database the plan applies to")
-	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema state URL")
-	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for planning")
-	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from planning")
-	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to plan when database URLs are used")
+	registerAtlasSchemaPlanTransitionFlags(flags, &opts.atlasSchemaPlanTransitionFlags)
 	flags.StringVar(&opts.name, "name", "", "Plan name recorded in the plan file")
 	flags.StringVar(&opts.nameFormat, "name-format", "", "Go template used to compute the plan name (standard Base64 may render '/', which requires --output)")
 	flags.StringVarP(&opts.output, "output", "o", "", "Plan file output path (default <name>"+atlasschema.PlanFileSuffixHCL+"; a .json path writes the native JSON plan format)")
 	flags.BoolVar(&opts.save, "save", false, "Save the plan to a local plan file")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the plan file document without saving it")
 	flags.BoolVar(&opts.edit, "edit", false, "Edit the plan in the terminal editor")
-	// Accepted for Atlas CLI compatibility: a locally saved plan file is
-	// approved by operator review, so there is no approval prompt to skip.
-	flags.Bool("auto-approve", false, "Approve the plan without asking for confirmation")
 	// Accepted as an explicit no-op: `schema plan` runs no lint step, so there
 	// is nothing for --skip-lint to skip. Refusing it would break a Pro
 	// pipeline that passes it, and honoring it cannot loosen a check that does
@@ -109,14 +106,14 @@ diff policy values. Registry-bound planning (--push, --pending, --repo),
 	flags.Bool("skip-lint", false, "Skip linting the migration plan")
 	// The remaining hosted plan flags are declared for CLI-surface parity
 	// and rejected loudly in validateAtlasSchemaPlanOptions: their behavior is
-	// either bound to a remote registry or not implemented yet.
+	// either bound to a remote registry or not implemented yet. The rest of
+	// the rejected set is registered by registerAtlasSchemaPlanTransitionFlags,
+	// which the local sub-verbs share; --push, --pending and --directive are
+	// registered here because the Atlas help capture shows them only on the
+	// parent verb.
 	flags.Bool("push", false, "Push the plan to a remote registry")
 	flags.Bool("pending", false, "Push the plan in a pending state")
-	flags.String("repo", "", "URL to the schema repository")
-	flags.String("format", "", "Atlas Go template output format")
 	flags.StringArrayP("directive", "d", nil, "Directives for the migration plan")
-	flags.StringArray("include", nil, "Schema objects to include in planning")
-	flags.String("lock-timeout", "", "Timeout for acquiring the database lock")
 	cmd.MarkFlagsMutuallyExclusive("save", "dry-run")
 	cmd.MarkFlagsMutuallyExclusive("output", "dry-run")
 	// Both spell the same field. Atlas registers both and its precedence is
@@ -125,60 +122,36 @@ diff policy values. Registry-bound planning (--push, --pending, --repo),
 	// differently named plan file than the operator asked for.
 	cmd.MarkFlagsMutuallyExclusive("name", "name-format")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmd.AddCommand(newAtlasSchemaPlanNewCommand())
+	cmd.AddCommand(newAtlasSchemaPlanValidateCommand())
+	// The remaining sub-verbs stay unsupported-boundary stubs, for two
+	// different reasons, and their descriptions must not blur them: approve,
+	// list, pull, push and rm take --url and arbitrate plan state in a remote
+	// registry, which the local plan-file workflow replaces; lint and test take
+	// no --url and are local, deferred only because neither has a measured
+	// contract. Describing lint or test as registry work would assert a
+	// dependency they do not have, so they keep Atlas's own descriptions. The
+	// reasons they are deferred rather than guessed are recorded on
+	// unsupportedCommandTests.
 	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
 		{use: "approve", short: "Approve a plan in a remote registry"},
-		{use: "lint", short: "Lint a plan against a remote registry"},
+		{use: "lint", short: "Run analysis (migration linting) on a plan file"},
 		{use: "list", short: "List plans in a remote registry"},
-		{use: "new", short: "Create a new plan in a remote registry"},
 		{use: "pull", short: "Pull a plan from a remote registry"},
 		{use: "push", short: "Push a plan to a remote registry"},
 		{use: "rm", short: "Remove a plan from a remote registry"},
-		{use: "test", short: "Test a plan through a remote registry"},
-		{use: "validate", short: "Validate a plan through a remote registry"},
+		{use: "test", short: "Run schema plan tests"},
 	})
 	return cmd
 }
 
 func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
-	policy := atlasschema.DiffPolicy{}
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
-	if needsAtlasSchemaPlanConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
-	}
+	transition, policy, err := resolveAtlasSchemaPlanTransitionConfig(
+		cmd, opts.verb, opts.atlasSchemaPlanTransitionFlags)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if loaded {
-		databaseURL := projectCfg.StringValue(projectconfig.StringDatabaseURL)
-		if !cmd.Flags().Changed(atlasFromFlagName) && databaseURL.Present {
-			opts.fromURLs = []string{databaseURL.Value}
-		}
-		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
-		opts.devURL = dbcli.EffectiveString(
-			cmd,
-			"dev-url",
-			opts.devURL,
-			projectCfg.StringValue(projectconfig.StringDevURL),
-		)
-		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
-		policy, err = atlasDiffPolicy(projectCfg)
-		if err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
-	}
-	if loaded && !cmd.Flags().Changed("to") && len(projectCfg.SchemaSources) > 0 {
-		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
-		if err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
-		}
-	}
-	// Schema plan resolves local schema files only (LocalFilesOnly), so an env
-	// whose desired state is an external schema program cannot feed it yet.
-	if loaded && !cmd.Flags().Changed("to") && atlasExternalSchemaConfigured(projectCfg) {
-		return cmdutil.Fail(cmd, fmt.Errorf(
-			"atlas schema plan does not support atlas.hcl data.external_schema desired state yet; pass --to explicitly",
-		))
-	}
+	opts.atlasSchemaPlanTransitionFlags = transition
 	if err := validateAtlasSchemaPlanOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -368,22 +341,8 @@ func needsAtlasSchemaPlanConfig(cmd *cobra.Command) bool {
 }
 
 func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
-	if err := rejectUnimplementedAtlasSchemaPlanFlags(cmd, opts); err != nil {
-		return err
-	}
-	if len(opts.fromURLs) == 0 {
-		return fmt.Errorf("--from is required")
-	}
-	if len(opts.fromURLs) > 1 {
-		return fmt.Errorf("atlas schema plan accepts multiple --from URLs, but Ptah plans against one target database URL")
-	}
-	if err := ensureAtlasPlanDatabaseURL(opts.fromURLs[0]); err != nil {
-		return err
-	}
-	if len(opts.toURLs) == 0 {
-		return fmt.Errorf("--to is required")
-	}
-	if err := ensureLocalSchemaURLs("--to", opts.toURLs); err != nil {
+	if err := validateAtlasSchemaPlanTransition(
+		cmd, opts.verb, opts.atlasSchemaPlanTransitionFlags); err != nil {
 		return err
 	}
 	// An empty --name means "use the default name", so only a supplied one is
@@ -414,16 +373,33 @@ func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOpti
 // ensureAtlasPlanDatabaseURL requires the plan source to be a database URL:
 // the plan's whole value is binding its statements to the fingerprint of the
 // live database it will later be applied to.
-func ensureAtlasPlanDatabaseURL(raw string) error {
+//
+// Atlas documents `--from file://schema.hcl` on `schema plan validate`
+// (https://atlasgo.io/cli-reference, retrieved 2026-08-02), so this is a
+// divergence, not parity: a fingerprint over a file has nothing to be stale
+// against.
+func ensureAtlasPlanDatabaseURL(verb, raw string) error {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" || !strings.Contains(trimmed, "://") || strings.HasPrefix(trimmed, "file://") {
-		return fmt.Errorf("atlas schema plan requires --from to be the target database URL the plan will be applied to "+
-			"(got %q); local desired-state schema files belong in --to", raw)
+		return fmt.Errorf("%s requires --from to be the target database URL the plan will be applied to "+
+			"(got %q); local desired-state schema files belong in --to", verb, raw)
 	}
 	return nil
 }
 
-func rejectUnimplementedAtlasSchemaPlanFlags(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
+// rejectUnimplementedAtlasSchemaPlanFlags refuses the transition flags that
+// `schema plan` and its local sub-verbs declare for CLI-surface parity but do
+// not implement. verb names the invoked command so a sub-verb's diagnostic
+// points at the command the operator actually ran.
+//
+// Flags absent from a sub-verb's Atlas flag set are simply not registered
+// there; pflag reports an unregistered flag as unchanged, so the same table
+// serves every verb without claiming a flag exists where Atlas has none.
+func rejectUnimplementedAtlasSchemaPlanFlags(
+	cmd *cobra.Command,
+	verb string,
+	transition atlasSchemaPlanTransitionFlags,
+) error {
 	rejections := []struct {
 		flag   string
 		reason string
@@ -437,14 +413,14 @@ func rejectUnimplementedAtlasSchemaPlanFlags(cmd *cobra.Command, opts atlasSchem
 	}
 	for _, rejection := range rejections {
 		if cmd.Flags().Changed(rejection.flag) {
-			return fmt.Errorf("atlas schema plan accepts --%s, but %s", rejection.flag, rejection.reason)
+			return fmt.Errorf("%s accepts --%s, but %s", verb, rejection.flag, rejection.reason)
 		}
 	}
-	if len(opts.schemas) > 0 {
-		return fmt.Errorf("atlas schema plan accepts --schema, but Ptah only supports local schema files for this command yet")
+	if len(transition.schemas) > 0 {
+		return fmt.Errorf("%s accepts --schema, but Ptah only supports local schema files for this command yet", verb)
 	}
 	if values, err := cmd.Flags().GetStringArray("include"); err == nil && len(values) > 0 {
-		return fmt.Errorf("atlas schema plan accepts --include, but Ptah only supports local schema files for this command yet")
+		return fmt.Errorf("%s accepts --include, but Ptah only supports local schema files for this command yet", verb)
 	}
 	return nil
 }

@@ -60,25 +60,31 @@ type unsupportedCommandTest struct {
 }
 
 // unsupportedCommandTests lists the compatibility verbs that remain
-// deliberate unsupported-boundary stubs. `migrate test`,
-// `schema test`, `migrate edit`, `migrate rebase`, `migrate rm`, and
-// `schema plan` are no longer here: they forward to or implement native Ptah
-// behavior (see migrate_test_forward_test.go, schema_test_forward_test.go,
-// migrate_maint_forward_test.go, and schema_plan_test.go). The registry
-// sub-verbs under `schema plan` stay stubs: they operate on plans stored in
-// a remote registry, which Ptah's local plan-file workflow replaces.
+// deliberate unsupported-boundary stubs. `migrate test`, `schema test`,
+// `migrate edit`, `migrate rebase`, `migrate rm`, `schema plan`,
+// `schema plan new` and `schema plan validate` are no longer here: they
+// forward to or implement native Ptah behavior (see
+// migrate_test_forward_test.go, schema_test_forward_test.go,
+// migrate_maint_forward_test.go, schema_plan_test.go,
+// schema_plan_new_test.go and schema_plan_validate_test.go).
+//
+// The remaining `schema plan` sub-verbs stay stubs for two different reasons.
+// approve, list, pull, push and rm arbitrate plan state in a remote registry,
+// which Ptah's local plan-file workflow replaces. lint and test are local by
+// their Atlas flag sets, but neither has a measured contract: a plan linter
+// narrower than Atlas's analyzer set would sit in a gating position and report
+// clean on a plan Atlas flags, and `plan test` consumes `.test.hcl` files that
+// nothing in this repository parses yet.
 func unsupportedCommandTests() []unsupportedCommandTest {
 	return []unsupportedCommandTest{
 		{name: "migrate_push", path: []string{"migrate", "push"}},
 		{name: "schema_plan_approve", path: []string{"schema", "plan", "approve"}},
 		{name: "schema_plan_lint", path: []string{"schema", "plan", "lint"}},
 		{name: "schema_plan_list", path: []string{"schema", "plan", "list"}},
-		{name: "schema_plan_new", path: []string{"schema", "plan", "new"}},
 		{name: "schema_plan_pull", path: []string{"schema", "plan", "pull"}},
 		{name: "schema_plan_push", path: []string{"schema", "plan", "push"}},
 		{name: "schema_plan_rm", path: []string{"schema", "plan", "rm"}},
 		{name: "schema_plan_test", path: []string{"schema", "plan", "test"}},
-		{name: "schema_plan_validate", path: []string{"schema", "plan", "validate"}},
 		{name: "schema_push", path: []string{"schema", "push"}},
 	}
 }
