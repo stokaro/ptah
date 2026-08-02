@@ -198,3 +198,22 @@ func TestGenerateCommand_OmittedDialectForeignKeyFailureKeepsStdoutEmpty(t *test
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Contains, "Found 2 tables")
 }
+
+func TestGenerateCommand_OmittedDialectIncludesSQLServerReviewTarget(t *testing.T) {
+	c := qt.New(t)
+
+	schemaPath := filepath.Join(t.TempDir(), "schema.yaml")
+	c.Assert(os.WriteFile(schemaPath, []byte(`tables:
+  accounts:
+    columns:
+      id: {type: INTEGER, primary: true}
+`), 0o600), qt.IsNil)
+
+	cmd := generate.NewGenerateCommand()
+	cmd.SetArgs([]string{"--schema-file", schemaPath})
+	stdout, stderr, err := executeGenerate(c, cmd)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
+	c.Assert(stdout, qt.Contains, "-- sqlserver schema")
+	c.Assert(stdout, qt.Contains, "-- spanner schema")
+}
