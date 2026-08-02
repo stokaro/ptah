@@ -240,9 +240,9 @@ seven of them as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables and indexes only. Views, matviews, functions, triggers, roles, grants, RLS, sequences, domains and CHECKs vanish from the plan with no diagnostic. |
 | CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | Preset drops concurrent indexes, sequences, XML, advisory locks, roles and RLS. SERIAL is a hard error. Offline render also omits views, functions and triggers. |
-| Domains, composite types, and range types | 🟡 | ❔ | ❔ | PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. Range subtype changes produce no diff at all. |
+| Domains, composite types, and range types | 🟡 | ❔ | ✅ | PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. Range subtype changes produce no diff at all. |
 | Enum types | 🟡 | ✅ | ✅ | MySQL/SQLite/SQL Server inline-enum rewrite fires only if the type name starts with `enum_`; other names emit the bare type name verbatim. |
-| Extensions | 🟡 | ❔ | ❔ | PostgreSQL-family only; `plpgsql` ignored by default on compare. MySQL/MariaDB render an empty statement instead of the intended comment. |
+| Extensions | 🟡 | ❔ | ✅ | PostgreSQL-family only; `plpgsql` ignored by default on compare. MySQL/MariaDB render an empty statement instead of the intended comment. |
 | Functions | 🟡 | ❌ | ✅ | `schema render`: PostgreSQL only, silent on MySQL/MariaDB. `schema apply` also emits CREATE FUNCTION on YugabyteDB; MySQL drops it silently. |
 | MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error; extensions, functions, domains, roles/grants, RLS and MariaDB SEQUENCE objects are dropped silently. DDL auto-commit blocks rollback. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. |
