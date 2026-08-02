@@ -129,7 +129,8 @@ exercise a real server dialect — see
   engine (and ideally the same version) as the target.
 - **Every flag has an environment variable.** `PTAH_DB_URL`, `PTAH_DEV_URL`,
   and `PTAH_SHADOW_DB` set the corresponding flags, which keeps credentials
-  out of CI command lines — see [Configuration](../../reference/configuration/).
+  out of CI command lines. A malformed non-empty value fails before command
+  execution. See [Configuration](../../reference/configuration/).
 
 ### Statement forms that fail closed
 

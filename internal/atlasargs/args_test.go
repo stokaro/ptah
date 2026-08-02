@@ -265,6 +265,16 @@ func TestMap_HappyPathCLIFlagWinsOverEnvFlag(t *testing.T) {
 	c.Assert(got, qt.DeepEquals, []string{"--db-url", "postgres://cli/db"})
 }
 
+func TestMap_HappyPathExplicitBoolFlagWinsOverMalformedEnvFlag(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_DRY_RUN", "notabool")
+
+	got, err := atlasargs.Map("migrate", "down", migrateDownFlags(), []string{"--dry-run"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{"--dry-run"})
+}
+
 func TestMap_HappyPathFalseBoolEnvDoesNotEnableFlag(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_PLAN", "false")
@@ -283,6 +293,26 @@ func TestMap_FailurePathRejectsRemoteDir(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorMatches, `atlas migrate down --dir: only local file:// migration directories are supported`)
+}
+
+func TestMap_FailurePathRejectsMalformedBoolEnvironment(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_DRY_RUN", "notabool")
+
+	got, err := atlasargs.Map("migrate", "down", migrateDownFlags(), nil)
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "notabool" for PTAH_DRY_RUN`)
+	c.Assert(got, qt.IsNil)
+}
+
+func TestMap_FailurePathRejectsMalformedUintEnvironment(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LATEST", "many")
+
+	got, err := atlasargs.Map("migrate", "lint", migrateLintFlags(), nil)
+
+	c.Assert(err, qt.ErrorMatches, `invalid unsigned integer value "many" for PTAH_LATEST`)
+	c.Assert(got, qt.IsNil)
 }
 
 func TestMap_FailurePathUnsupportedFlagsFailExplicitly(t *testing.T) {
