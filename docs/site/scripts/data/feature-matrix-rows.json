@@ -1030,12 +1030,12 @@
     "feature": "Extensions",
     "ptah": "partial",
     "atlas_oss": "unknown",
-    "atlas_pro": "unknown",
+    "atlas_pro": "yes",
     "note": "PostgreSQL-family only; `plpgsql` ignored by default on compare. MySQL/MariaDB render an empty statement instead of the intended comment.",
     "evidence": "core/renderer/internal/dialects/mysql/mysql.go:26-30 copies the bufwriter by value so VisitExtension (line 132) writes to a buffer Output() never reads; verified live: `ptah schema compare` against PostgreSQL 18 proposed DROP EXTENSION for pg_trgm and left plpgsql alone"
   },
   {
-    "area": "Schema object kinds",
+    "area": "Schema object kinds Atlas features page (atlasgo.io/features), retrieved 2026-08-03: `Extensions` is listed under the PostgreSQL Pro Plan features. Control on the same page and the same query: `Database Inspection` carries the tier label `Open`, and `deferrable` is absent entirely, so the page distinguishes tiers rather than labelling everything Pro.",
     "feature": "Roles, grants, and row-level security",
     "ptah": "partial",
     "atlas_oss": "no",
@@ -1048,12 +1048,12 @@
     "feature": "Domains, composite types, and range types",
     "ptah": "partial",
     "atlas_oss": "unknown",
-    "atlas_pro": "unknown",
+    "atlas_pro": "yes",
     "note": "PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. Range subtype changes produce no diff at all.",
     "evidence": "internal/convert/fromschema/fromschema.go:1616 gates domain/range/composite emission on isPostgreSQLPlatform (postgres|postgresql only); migration/schemadiff/internal/compare/usertypes.go:158-174 compares ranges by name only; live YugabyteDB 2026.1.0.0 `ptah schema apply --dry-run` planned CREATE DOMAIN \"yb_domain\" AS TEXT"
   },
   {
-    "area": "Data and distribution",
+    "area": "Data and distribution Atlas features page (atlasgo.io/features), retrieved 2026-08-03: `Domain types`, `Composite types` and `Range types` are each listed under the PostgreSQL Pro Plan features. Same control as the extensions row.",
     "feature": "Registry-backed distribution: `oci://` vs `atlas://`",
     "ptah": "yes",
     "atlas_oss": "no",
