@@ -70,15 +70,15 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 157 capabilities below:
+Across the 159 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 85 |
+| Ptah supports it fully | 86 |
 | Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 24 |
+| Ptah does not implement it | 25 |
 | Ptah and Atlas CE both support it | 24 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 35 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 36 |
 | Ptah has it and neither Atlas edition does | 15 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
 | An Atlas column is ❔ — not established by this page's evidence | 23 |
@@ -316,7 +316,9 @@ service, not artifact storage; the storage function is covered under
 | `schema plan --format` and `--directive` | ❌ | ❌ | ✅ | Both fail loudly, by design. `--format` is implemented on the eight compat verbs whose CE counterpart works and whose payload can therefore be measured; `schema plan` is the one verb where CE aborts. |
 | `schema plan --push`, `--pending`, `--repo` | ❌ | ❌ | ✅ | `--push`, `--pending` and `--repo` stay recorded waivers: they address the Atlas Registry, and Ptah's plan workflow saves local files instead. |
 | `schema plan --skip-lint` | ✅ | ❌ | ✅ | Accepted, and does nothing: `schema plan` runs no lint step, so there is nothing to skip. A Pro pipeline passing it keeps working; no check is loosened. |
-| `schema plan` registry sub-verbs | ❌ | ❌ | ✅ | approve, lint, list, new, pull, push, rm, test and validate all stay CE boundary stubs; only local plan files are implemented. |
+| `schema plan lint` and `schema plan test` | ❌ | ❌ | ✅ | Local by their flag sets (neither takes `--url`) but deferred: neither has a measured output contract, and guessing one puts a narrower checker in a gating position. |
+| `schema plan new` and `schema plan validate` | ✅ | ❌ | ✅ | Implemented. Flag sets follow the published Atlas CLI reference; their behavior is read out of Atlas docs and unverified, and each run says so on stderr. |
+| `schema plan` registry sub-verbs (approve, list, pull, push, rm) | ❌ | ❌ | ✅ | These five arbitrate plan state in a remote registry; Ptah's local plan-file workflow replaces the function rather than the service. |
 | Atlas Cloud deployment reporting | ❌ | ❌ | ✅ | No Atlas account model or deployment API. Ptah attaches a deployment-report referrer to its own OCI artifact after an oci:// migrations up. |
 | Atlas Copilot (AI assistant) | ❌ | ❌ | ✅ | AI assistant gated to Pro accounts; absent from the pinned CE v1.2.0 command inventory. No Ptah equivalent; the closest developer-assist surface is the `ptah-ls` language server. |
 | Column-level data lineage | ❌ | ❌ | ✅ | Hosted Atlas Cloud view tracing column-to-column dependencies across schemas. No Ptah surface: no lineage verb or flag; the nearest output is `ptah viz`, whose ERD edges are table-level FKs only. |

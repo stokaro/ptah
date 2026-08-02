@@ -1,0 +1,249 @@
+package atlas_test
+
+import (
+	"bytes"
+	"slices"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
+	"go.5x5.cz/ptah/cmd/atlas"
+)
+
+// Evidence for everything this file pins.
+//
+// Atlas CE v1.2.0, the pinned oracle binary, has NO `schema plan` sub-verbs at
+// all. Measured 2026-08-02 in a scratch directory:
+//
+//	atlas schema plan new                  -> Abort: 'atlas schema plan' is not supported...  exit 1
+//	atlas schema plan lint                 -> Abort: 'atlas schema plan' ...                  exit 1
+//	atlas schema plan validate             -> Abort: 'atlas schema plan' ...                  exit 1
+//	atlas schema plan test                 -> Abort: 'atlas schema plan' ...                  exit 1
+//	atlas schema plan frobnicate-nonsense  -> Abort: 'atlas schema plan' ...                  exit 1   NONSENSE CONTROL
+//
+// The abort names `atlas schema plan`, never the token after it, and the
+// nonsense control is byte-identical to the four real sub-verb names, so CE
+// does not know any of them: the positional is swallowed by the community
+// gate. The control that shows an unknown command CAN look different one level
+// up is `atlas schema frobnicate`, which prints the `schema` group help at
+// exit 0.
+//
+// CE also registers zero own flags on this path — flag parsing runs before the
+// gate, so the set is measurable even on a gated verb:
+//
+//	atlas schema plan new --file x                -> Error: unknown flag: --file            exit 1
+//	atlas schema plan lint -f x                   -> Error: unknown shorthand flag: 'f'     exit 1
+//	atlas schema plan test --run x                -> Error: unknown flag: --run             exit 1
+//	atlas schema plan validate --from a --to b    -> Error: unknown flag: --from            exit 1
+//	atlas schema plan new --frobnicate-nonsense x -> Error: unknown flag: --frobnicate...   exit 1   NONSENSE CONTROL
+//
+// So none of this is a CE parity gap: there is no input on this path where CE
+// succeeds and this tree fails. The flag sets asserted below come from the
+// published Atlas CLI reference (https://atlasgo.io/cli-reference, retrieved
+// 2026-08-02). The sub-verbs' behavior is not established, only their flag
+// surface, so each writes a note to stderr saying so.
+
+// atlasSchemaPlanNewFlags is the local flag set Atlas registers on
+// `atlas schema plan new`, verbatim from the published reference minus the
+// global -c/--config, --env and --var, which the compat tree registers on the
+// `schema` group, and minus --help, which Cobra adds.
+var atlasSchemaPlanNewFlags = []string{
+	"auto-approve",
+	"dev-url",
+	"edit",
+	"exclude",
+	"format",
+	"from",
+	"include",
+	"lock-timeout",
+	"name",
+	"name-format",
+	"output",
+	"repo",
+	"schema",
+	"to",
+}
+
+// atlasSchemaPlanValidateFlags is the same for `atlas schema plan validate`.
+var atlasSchemaPlanValidateFlags = []string{
+	"auto-approve",
+	"dev-url",
+	"exclude",
+	"file",
+	"format",
+	"from",
+	"include",
+	"lock-timeout",
+	"repo",
+	"schema",
+	"to",
+}
+
+// TestAtlasSchemaPlanVerbFlagSetsMatchAtlas pins each implemented sub-verb's
+// registered flag set against the captured Atlas surface.
+//
+// This is the anti-drift gate the shared registration helper cannot provide by
+// itself: sharing registration keeps the sub-verbs equal to each other, and
+// only an external list keeps them equal to Atlas. In particular it fails if a
+// sub-verb ever acquires a flag Atlas does not register there — `new` gaining
+// --save or --dry-run is the exact mistake the delegation to the parent's run
+// function makes easy.
+func TestAtlasSchemaPlanVerbFlagSetsMatchAtlas(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		path []string
+		want []string
+	}{
+		{name: "new", path: []string{"schema", "plan", "new"}, want: atlasSchemaPlanNewFlags},
+		{name: "validate", path: []string{"schema", "plan", "validate"}, want: atlasSchemaPlanValidateFlags},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			cmd := findAtlasCommand(c, test.path)
+
+			c.Assert(localFlagNames(cmd), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestAtlasSchemaPlanVerbShorthandsMatchAtlas pins the two shorthands the
+// capture shows on these sub-verbs. A long name can match while the shorthand
+// silently does not, and `-f` is the one an Atlas pipeline actually types.
+func TestAtlasSchemaPlanVerbShorthandsMatchAtlas(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name      string
+		path      []string
+		flag      string
+		shorthand string
+	}{
+		{name: "new_output", path: []string{"schema", "plan", "new"}, flag: "output", shorthand: "o"},
+		{name: "new_schema", path: []string{"schema", "plan", "new"}, flag: "schema", shorthand: "s"},
+		{name: "validate_file", path: []string{"schema", "plan", "validate"}, flag: "file", shorthand: "f"},
+		{name: "validate_schema", path: []string{"schema", "plan", "validate"}, flag: "schema", shorthand: "s"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			cmd := findAtlasCommand(c, test.path)
+
+			flag := cmd.Flags().Lookup(test.flag)
+
+			c.Assert(flag, qt.IsNotNil)
+			c.Assert(flag.Shorthand, qt.Equals, test.shorthand)
+		})
+	}
+}
+
+// TestAtlasSchemaPlanNewRejectsParentOnlyFlags proves the negative half of the
+// flag-set claim through the CLI rather than through reflection: the flags
+// Atlas registers on `schema plan` but NOT on `schema plan new` must be
+// unknown there. Without this, forcing --save on inside `new` could just as
+// well have been done by registering --save and defaulting it to true, which
+// would accept `--save=false` and quietly turn the verb into a no-op.
+func TestAtlasSchemaPlanNewRejectsParentOnlyFlags(t *testing.T) {
+	c := qt.New(t)
+
+	for _, flag := range []string{"--save", "--dry-run", "--push", "--pending", "--skip-lint", "--directive"} {
+		c.Run(flag, func(c *qt.C) {
+			dir := chdirToScratchC(c)
+			fixture := newPlanFixture(c, "parentonly",
+				`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`,
+				"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE added (id INTEGER PRIMARY KEY);")
+
+			out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
+				append(fixture.args(), flag, "x")...)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(out, qt.Contains, "unknown flag: "+flag)
+			assertNoPlanFileWritten(c, dir)
+		})
+	}
+}
+
+// TestAtlasSchemaPlanRegistrySubverbsStayStubs pins which sub-verbs did NOT
+// move. `lint` and `test` are local by their Atlas flag sets, so their
+// presence here is a deliberate deferral, not an oversight; the reasons are on
+// unsupportedCommandTests.
+func TestAtlasSchemaPlanRegistrySubverbsStayStubs(t *testing.T) {
+	c := qt.New(t)
+	root := atlas.NewCompatCommand("atlas")
+
+	plan := findAtlasCommand(c, []string{"schema", "plan"})
+	var names []string
+	for _, child := range plan.Commands() {
+		names = append(names, child.Name())
+	}
+	slices.Sort(names)
+
+	c.Assert(names, qt.DeepEquals, []string{
+		"approve", "lint", "list", "new", "pull", "push", "rm", "test", "validate",
+	})
+	c.Assert(root, qt.IsNotNil)
+}
+
+// runSchemaPlanSubverb executes `schema plan <verb>` with args and returns the
+// merged output plus the execution error, matching runSchemaPlan's contract
+// one level down.
+func runSchemaPlanSubverb(root *cobra.Command, verb string, args ...string) (string, error) {
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs(append([]string{"schema", "plan", verb}, args...))
+	err := root.Execute()
+	return out.String(), err
+}
+
+// runSchemaPlanSubverbStreams is runSchemaPlanSubverb with the streams kept
+// apart, which every stdout-purity assertion needs: the docs-derived note goes
+// to stderr precisely so stdout stays machine-readable, and a merged buffer
+// cannot tell the two apart.
+func runSchemaPlanSubverbStreams(
+	root *cobra.Command,
+	verb string,
+	args ...string,
+) (stdout, stderr string, err error) {
+	var out, errBuf bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errBuf)
+	root.SetArgs(append([]string{"schema", "plan", verb}, args...))
+	err = root.Execute()
+	return out.String(), errBuf.String(), err
+}
+
+// chdirToScratchC is chdirToScratch for a quicktest subtest context.
+func chdirToScratchC(c *qt.C) string {
+	c.Helper()
+	dir := c.TB.TempDir()
+	c.TB.Chdir(dir)
+	return dir
+}
+
+// findAtlasCommand walks the compat tree to the command named by path.
+func findAtlasCommand(c *qt.C, path []string) *cobra.Command {
+	c.Helper()
+	cmd, _, err := atlas.NewCompatCommand("atlas").Find(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(cmd.Name(), qt.Equals, path[len(path)-1])
+	return cmd
+}
+
+// localFlagNames returns the command's own sorted flag names, excluding the
+// Cobra-generated --help and the inherited project flags.
+func localFlagNames(cmd *cobra.Command) []string {
+	var names []string
+	cmd.LocalNonPersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if flag.Name == "help" {
+			return
+		}
+		names = append(names, flag.Name)
+	})
+	slices.Sort(names)
+	return names
+}

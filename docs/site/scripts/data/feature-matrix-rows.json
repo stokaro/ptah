@@ -253,12 +253,30 @@
  },
  {
   "area": "Atlas Registry and Cloud",
-  "feature": "`schema plan` registry sub-verbs",
+  "feature": "`schema plan` registry sub-verbs (approve, list, pull, push, rm)",
   "ptah": "no",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "approve, lint, list, new, pull, push, rm, test and validate all stay CE boundary stubs; only local plan files are implemented.",
-  "evidence": "ptah-compat schema plan approve; conformance cli-surface.md classifies every `atlas schema plan` sub-verb as absent from the pinned CE binary. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema plan --env x` -> exit 1 \"Abort: 'atlas schema plan' is not supported by the community version.\""
+  "note": "These five arbitrate plan state in a remote registry; Ptah's local plan-file workflow replaces the function rather than the service.",
+  "evidence": "ptah-compat schema plan approve. Measured 2026-08-02, CE v1.2.0 (scratch env): CE has NO `schema plan` sub-verbs at all — `atlas schema plan approve` prints \"Abort: 'atlas schema plan' is not supported by the community version.\" naming the PARENT, byte-identical to the nonsense control `atlas schema plan frobnicate-nonsense`; the control showing that an unknown command can look different one level up is `atlas schema frobnicate`, which prints the `schema` group help at exit 0. Each of the five takes `--url` in the published Atlas CLI reference (https://atlasgo.io/cli-reference, retrieved 2026-08-02), which is what makes them registry-bound."
+ },
+ {
+  "area": "Atlas Registry and Cloud",
+  "feature": "`schema plan new` and `schema plan validate`",
+  "ptah": "yes",
+  "atlas_oss": "no",
+  "atlas_pro": "yes",
+  "note": "Implemented. Flag sets follow the published Atlas CLI reference; their behavior is read out of Atlas docs and unverified, and each run says so on stderr.",
+  "evidence": "Verified: `ptah-compat schema plan new --from sqlite://x.db --to file://s.sql` writes <timestamp>.plan.hcl with no --save flag registered, and `ptah-compat schema plan validate --from sqlite://x.db --to file://s.sql --file file://p.plan.hcl` exits 0 with EMPTY stdout and leaves the target schema AND its rows unchanged (cmd/atlas/schema_plan_new_test.go, cmd/atlas/schema_plan_validate_test.go). SURFACE follows the published Atlas CLI reference (https://atlasgo.io/cli-reference, retrieved 2026-08-02), which lists on `new` exactly {auto-approve, dev-url, edit, exclude, format, from, include, lock-timeout, name, name-format, output, repo, schema, to} and on `validate` exactly {auto-approve, dev-url, exclude, file, format, from, include, lock-timeout, repo, schema, to}, both pinned by TestAtlasSchemaPlanVerbFlagSetsMatchAtlas. BEHAVIOR is DOCUMENTED-not-measured: `new` is described as \"Create a new plan file for the schema transition\" and lists neither --save nor --dry-run, so writing unconditionally is a reading, not an observation; `validate` is described as \"Validate a plan file against the schema transition\" and the from-must-match rule is documented for `test \"plan\"` blocks (atlasgo.io/hcl/testing), but the checks it runs, their order, its exit code and its output are inferred. Atlas CE aborts the whole `schema plan` path (measured 2026-08-02, CE v1.2.0), so no oracle exists for either verb; an awaiting-oracle conformance fixture is proposed rather than a green row. `validate` refuses a --dev-url that resolves to the target: without that guard it resets the target destructively and applies the plan while exiting 0 (measured: one table with 3 rows came back with the plan's new table and 0 rows)"
+ },
+ {
+  "area": "Atlas Registry and Cloud",
+  "feature": "`schema plan lint` and `schema plan test`",
+  "ptah": "no",
+  "atlas_oss": "no",
+  "atlas_pro": "yes",
+  "note": "Local by their flag sets (neither takes `--url`) but deferred: neither has a measured output contract, and guessing one puts a narrower checker in a gating position.",
+  "evidence": "ptah-compat schema plan lint -> unsupported-boundary stub. `lint` adds only -f/--file to the shared transition set and `test` takes --dev-url, --run and positional [paths] in the published Atlas CLI reference (https://atlasgo.io/cli-reference, retrieved 2026-08-02), so both are local. `lint` is deferred because Atlas documents no output shape, failure threshold or exit code for it, and the engine that would back it (the `migrate lint` analyzer set) reports on a migration DIRECTORY; a plan linter covering fewer analyzers than Atlas's would report clean on a plan Atlas flags, which is a silent wrong answer in a gating position. `test` is deferred because it consumes `test \"plan\"` blocks in `.test.hcl` files (schema{url} + apply{url}, with the documented hard rule that the plan's `from` must match the schema block's state, and `-- PASS: <name> (2ms)` output) and nothing in Ptah parses `.test.hcl` yet — the engine reads YAML cases. `.test.hcl` ingestion is a shared item with `migrate test` and `schema test`"
  },
  {
   "area": "Atlas Registry and Cloud",
