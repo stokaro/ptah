@@ -3,7 +3,7 @@ title: License boundary
 description: Ptah's independent implementation boundary around Atlas compatibility work.
 ---
 
-Ptah does not use Atlas source code.
+Ptah's implementation does not use Atlas source code.
 
 Ptah is an independent project, not affiliated with or endorsed by Ariga.
 
@@ -26,6 +26,13 @@ Ptah compatibility work may use:
 - observable behavior from running Atlas OSS;
 - Apache-2.0 test assets kept in the separate conformance repository;
 - independently written Ptah code, tests, and documentation.
+
+Ptah CI may build an Apache-2.0 Atlas CE release into a disposable executable
+and invoke it as an external black-box test oracle. The build verifies the
+release tag's locked commit, downloads that immutable commit archive, checks
+its committed SHA-256 digest, and validates the exact version string before any
+comparison. The source archive and executable are never imported, vendored,
+linked, or shipped with Ptah.
 
 Ptah must not copy, vendor, or port Atlas source code into this repository.
 

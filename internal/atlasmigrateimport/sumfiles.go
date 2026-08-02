@@ -20,8 +20,8 @@ import (
 // refusing a directory Atlas CE hashed and applies.
 //
 // Every rule here was derived from measurement against the pinned Atlas CE
-// v1.2.0 binary, never from reading its source. The corpus in testdata/ce-sums
-// holds the oracle's own atlas.sum for each captured shape, and
+// v1.3.0 executable; no rule was derived by inspecting its source. The corpus
+// in testdata/ce-sums holds the oracle's own atlas.sum for each captured shape.
 // TestSumFileNamesDifferentialFuzz compares against the live oracle over
 // randomly generated directories.
 //

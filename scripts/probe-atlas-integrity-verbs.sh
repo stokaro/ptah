@@ -13,7 +13,7 @@
 # under test, so the version is checked before anything is compared.
 #
 #   oracle:  ptah-atlas-conformance/bin/atlas
-#   version: atlas community version v1.2.0
+#   version: atlas community version v1.3.0
 #
 # A system-wide `atlas` on PATH is frequently a different build, so the
 # oracle is invoked by absolute path.
@@ -28,23 +28,20 @@
 # Refs stokaro/ptah#973, #983, #990, #991.
 set -u
 
-ORACLE_VERSION="atlas community version v1.2.0"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ATLAS="${1:-${PTAH_ATLAS_ORACLE:-$HOME/Work/denis/ptah-atlas-conformance/bin/atlas}}"
 COMPAT="$ROOT/bin/ptah-compat"
+
+# shellcheck source=scripts/lib/atlas-ce-oracle.sh
+source "$ROOT/scripts/lib/atlas-ce-oracle.sh"
+atlas_ce_load_lock "$ROOT/scripts/atlas-ce-oracle.lock"
 
 if [ ! -x "$ATLAS" ]; then
 	echo "probe: oracle not found or not executable: $ATLAS" >&2
 	echo "probe: pass the path to the pinned Atlas CE binary as \$1" >&2
 	exit 1
 fi
-actual_version="$("$ATLAS" version | head -1)"
-if [ "$actual_version" != "$ORACLE_VERSION" ]; then
-	echo "probe: oracle version mismatch" >&2
-	echo "  want: $ORACLE_VERSION" >&2
-	echo "  got:  $actual_version" >&2
-	exit 1
-fi
+atlas_ce_verify_binary "$ATLAS" >/dev/null || exit 1
 
 if [ ! -x "$COMPAT" ]; then
 	echo "probe: building ptah-compat" >&2

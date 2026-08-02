@@ -1,0 +1,71 @@
+name: Atlas CE Oracle
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  schedule:
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  differential-and-corpus:
+    name: differential and corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      PTAH_ATLAS_FUZZ_N: '200'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure oracle path
+        run: echo "PTAH_ATLAS_ORACLE=$RUNNER_TEMP/ptah-atlas-ce/atlas" >> "$GITHUB_ENV"
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install Ptah dependencies
+        run: GOWORK=off go mod download
+
+      - name: Build pinned Atlas CE oracle
+        run: scripts/build-atlas-ce-oracle.sh "$PTAH_ATLAS_ORACLE"
+
+      - name: Verify differential test selection
+        run: |
+          GOWORK=off go test -list '^TestSumFileNamesDifferentialFuzz' \
+            ./internal/atlasmigrateimport > "$RUNNER_TEMP/atlas-differential-tests"
+          cat "$RUNNER_TEMP/atlas-differential-tests"
+          grep -Fx 'TestSumFileNamesDifferentialFuzz' "$RUNNER_TEMP/atlas-differential-tests"
+          grep -Fx 'TestSumFileNamesDifferentialFuzzExplicitLayout' "$RUNNER_TEMP/atlas-differential-tests"
+          grep -Fx 'TestSumFileNamesDifferentialFuzzRealisticFlyway' "$RUNNER_TEMP/atlas-differential-tests"
+          grep -Fx 'TestSumFileNamesDifferentialFuzzOtherFormats' "$RUNNER_TEMP/atlas-differential-tests"
+          test "$(grep -c '^TestSumFileNamesDifferentialFuzz' "$RUNNER_TEMP/atlas-differential-tests")" -eq 4
+
+      - name: Run differential oracle tests
+        run: >-
+          GOWORK=off go test -count=1
+          -run '^TestSumFileNamesDifferentialFuzz(RealisticFlyway|OtherFormats)?$'
+          ./internal/atlasmigrateimport
+
+      - name: Regenerate Atlas CE corpus
+        run: >-
+          internal/atlasmigrateimport/testdata/ce-sums/regenerate.sh
+          "$PTAH_ATLAS_ORACLE"
+
+      - name: Verify corpus is current
+        run: |
+          corpus=internal/atlasmigrateimport/testdata/ce-sums
+          git diff --exit-code -- "$corpus"
+          git status --short --untracked-files=all -- "$corpus" > "$RUNNER_TEMP/atlas-corpus-status"
+          cat "$RUNNER_TEMP/atlas-corpus-status"
+          test ! -s "$RUNNER_TEMP/atlas-corpus-status"

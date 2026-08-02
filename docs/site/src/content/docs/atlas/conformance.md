@@ -63,7 +63,7 @@ This is a workflow-parity record, not a claim of full Atlas Pro compatibility.
 For the code-by-code audit of the analyzer checks Atlas marks as Pro, see
 [Comparison: Atlas Pro analyzer coverage](../comparison/#atlas-pro-analyzer-coverage).
 The upstream `atlas migrate ls`, `migrate show`, `schema stats`, and
-`schema validate` verbs are absent from the pinned Atlas CE v1.2.0 binary and
+`schema validate` verbs are absent from the pinned Atlas CE v1.3.0 binary and
 are triaged in the comparison gap register rather than measured here.
 
 ### Declarative migration and schema tests
@@ -115,6 +115,25 @@ From the Ptah repository:
 
 ```bash
 make conformance
+```
+
+Ptah's own CI also rebuilds the pinned Atlas CE oracle from an immutable source
+archive on every run. It verifies the release tag's locked commit, the archive
+SHA-256, and exact version output. It then runs differential migration-sum
+tests, regenerates the recorded corpus, and fails if the committed corpus
+changes. This is a black-box executable used only by tests; Atlas source and
+compiled code are not imported, vendored, or linked into Ptah.
+
+Atlas Cloud and commercial binaries are outside this oracle workflow.
+
+```bash
+scripts/build-atlas-ce-oracle.sh
+GOWORK=off \
+  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_FUZZ_N=200 \
+  go test -count=1 \
+  -run '^TestSumFileNamesDifferentialFuzz(RealisticFlyway|OtherFormats)?$' \
+  ./internal/atlasmigrateimport
 ```
 
 From `ptah-atlas-conformance`:
