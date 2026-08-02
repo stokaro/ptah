@@ -197,15 +197,9 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
-	skipChecks, err := atlasApplySkipChecksFromEnv()
+	skipChecks, err := resolveAtlasApplySkipChecks(cmd)
 	if err != nil {
 		return err
-	}
-	if skipChecks {
-		fmt.Fprintf(cmd.ErrOrStderr(),
-			"warning: %s is set; pre-migration checks are bypassed for this run\n",
-			applySkipChecksEnvVar,
-		)
 	}
 
 	// Resolve the directory format once: the filesystem that gets executed and
@@ -532,6 +526,25 @@ func atlasApplySkipChecksFromEnv() (bool, error) {
 	skip, err := strconv.ParseBool(value)
 	if err != nil {
 		return false, fmt.Errorf("invalid boolean value %q for %s", value, applySkipChecksEnvVar)
+	}
+	return skip, nil
+}
+
+// resolveAtlasApplySkipChecks resolves the bypass and announces an active one.
+//
+// The warning is not optional decoration. A flag leaves a trace in the command
+// line an operator can read back; an environment variable does not, so a run
+// whose safety gate is off has to say so on its own.
+func resolveAtlasApplySkipChecks(cmd *cobra.Command) (bool, error) {
+	skip, err := atlasApplySkipChecksFromEnv()
+	if err != nil {
+		return false, err
+	}
+	if skip {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"warning: %s is set; pre-migration checks are bypassed for this run\n",
+			applySkipChecksEnvVar,
+		)
 	}
 	return skip, nil
 }

@@ -38,8 +38,8 @@
     {
       "name": "the malformed-value refusal is raised after the database work",
       "file": "cmd/atlas/migrate_apply.go",
-      "old": "\tskipChecks, err := atlasApplySkipChecksFromEnv()\n\tif err != nil {\n\t\treturn err\n\t}\n\tif skipChecks {",
-      "new": "\tskipChecks, skipChecksErr := atlasApplySkipChecksFromEnv()\n\tdefer func() {\n\t\tif runErr == nil {\n\t\t\trunErr = skipChecksErr\n\t\t}\n\t}()\n\tif skipChecks {",
+      "old": "\tskipChecks, err := resolveAtlasApplySkipChecks(cmd)\n\tif err != nil {\n\t\treturn err\n\t}",
+      "new": "\tskipChecks, skipChecksErr := resolveAtlasApplySkipChecks(cmd)\n\tdefer func() {\n\t\tif runErr == nil {\n\t\t\trunErr = skipChecksErr\n\t\t}\n\t}()",
       "comment": "Separated only by TestMigrateApplySkipChecksEnvMalformedValueAppliesNothing: every other malformed-value case still sees an error, just after migration 1 has run."
     },
     {
@@ -51,7 +51,7 @@
     {
       "name": "an active bypass runs silently",
       "file": "cmd/atlas/migrate_apply.go",
-      "old": "\tif skipChecks {\n\t\tfmt.Fprintf(cmd.ErrOrStderr(),\n\t\t\t\"warning: %s is set; pre-migration checks are bypassed for this run\\n\",\n\t\t\tapplySkipChecksEnvVar,\n\t\t)\n\t}",
+      "old": "\tif skip {\n\t\tfmt.Fprintf(cmd.ErrOrStderr(),\n\t\t\t\"warning: %s is set; pre-migration checks are bypassed for this run\\n\",\n\t\t\tapplySkipChecksEnvVar,\n\t\t)\n\t}\n",
       "new": ""
     },
     {
