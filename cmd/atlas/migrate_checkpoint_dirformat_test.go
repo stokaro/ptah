@@ -2,6 +2,7 @@ package atlas_test
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/atlas"
+	"github.com/stokaro/ptah/dbschema"
 )
 
 // writeCheckpointPtahFixture fills migrationsDir with a ptah-format migration
@@ -43,7 +45,10 @@ func runCompatCheckpoint(c *qt.C, args ...string) (string, error) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
-	return out.String(), cmd.Execute()
+	// Execute first and bind the result: `return out.String(), cmd.Execute()`
+	// evaluates out.String() before Execute runs and always yields "".
+	err := cmd.Execute()
+	return out.String(), err
 }
 
 // assertAtlasCheckpointWritten asserts the Atlas artifact: exactly one new
@@ -243,6 +248,71 @@ func TestCompatCommand_MigrateCheckpointAtlasRoundTrip(t *testing.T) {
 	c.Assert(rows, qt.HasLen, 2)
 	c.Assert(rows[0].Version, qt.Equals, "20250801000001")
 	c.Assert(rows[1].Version, qt.Equals, "20250801000002")
+}
+
+// TestCompatCommand_MigrateCheckpointAtlasSupersedesEarlierCheckpoint pins the
+// layering case: checkpointing a directory that already holds a checkpoint. The
+// new one must sort above the whole history — including a future-dated
+// migration, which is the input where a plain timestamp would land too low —
+// and a fresh apply must bootstrap from the newest checkpoint, not the first.
+func TestCompatCommand_MigrateCheckpointAtlasSupersedesEarlierCheckpoint(t *testing.T) {
+	c := qt.New(t)
+	dir := filepath.Join(c.TempDir(), "m")
+	writeCheckpointAtlasFixture(c, dir)
+
+	devURL := "sqlite://" + filepath.Join(c.TempDir(), "shadow1.db")
+	out, err := runCompatCheckpoint(c, "migrate", "checkpoint", "--dir", dir, "--dev-url", devURL, "--dir-format", "atlas")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	first := assertAtlasCheckpointWritten(c, dir, "checkpoint")
+
+	// A migration dated far past any real timestamp, added after the first
+	// checkpoint.
+	c.Assert(os.WriteFile(filepath.Join(dir, "29990101000000_later.sql"),
+		[]byte("ALTER TABLE ckpt_users ADD COLUMN nickname TEXT;\n"), 0o600), qt.IsNil)
+	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
+
+	devURL2 := "sqlite://" + filepath.Join(c.TempDir(), "shadow2.db")
+	out, err = runCompatCheckpoint(c, "migrate", "checkpoint", "--dir", dir, "--dev-url", devURL2, "--dir-format", "atlas")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	// Both checkpoints coexist; the new one is above the future-dated migration.
+	c.Assert(out, qt.Contains, "29990101000001")
+	_, err = os.Stat(filepath.Join(dir, first))
+	c.Assert(err, qt.IsNil)
+
+	freshDB := filepath.Join(c.TempDir(), "fresh.db")
+	applyOut, _, err := compatApply(dir, freshDB)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", applyOut))
+	c.Assert(compatRevisionRows(c, freshDB), qt.DeepEquals, []compatRevisionRow{
+		{Version: "29990101000001", Description: "checkpoint", Type: 2, Applied: 1, Total: 1},
+	})
+	// The newest checkpoint is cumulative through the later migration, so the
+	// column that migration adds exists without it having run.
+	c.Assert(sqliteCheckpointColumnCount(c, freshDB, "ckpt_users", "nickname"), qt.Equals, 1)
+}
+
+// sqliteCheckpointColumnCount reports whether table carries column, so a
+// cumulative checkpoint body can be asserted by its effect on the database
+// rather than by grepping the SQL it was rendered from.
+func sqliteCheckpointColumnCount(c *qt.C, dbPath, table, column string) int {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	rows, err := conn.Query("SELECT name FROM pragma_table_info('" + table + "')")
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		if name == column {
+			count++
+		}
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return count
 }
 
 func TestCompatCommand_MigrateCheckpointDirFormatRejections(t *testing.T) {
