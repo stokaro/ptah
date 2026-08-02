@@ -123,6 +123,17 @@ type atlasParser struct {
 	baseDir string
 	// externalSchemas holds the declared data.external_schema sources by name.
 	externalSchemas map[string]externalSchemaDataSource
+	// sensitiveValues holds the resolved values of variables declared
+	// `sensitive = true`, so they can be scrubbed from any diagnostic before it
+	// reaches stderr. HCL renders function arguments into its own error text --
+	// `file(var.secret)` produces `openat <the secret>: no such file` -- so a
+	// diagnostic that is merely passed through leaks exactly what `sensitive`
+	// exists to protect.
+	//
+	// It is a pointer for the same reason ctx is: the parser is passed by
+	// value, so a plain slice field would be appended to on a copy and the
+	// values would never reach the scrubber.
+	sensitiveValues *[]string
 }
 
 func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser, error) {
@@ -131,6 +142,7 @@ func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser,
 		return atlasParser{}, err
 	}
 	return atlasParser{
+		sensitiveValues: &[]string{},
 		ctx: &hcl.EvalContext{
 			Variables: map[string]cty.Value{},
 			Functions: map[string]function.Function{
@@ -892,6 +904,12 @@ func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 		if err != nil {
 			return err
 		}
+		if variable.sensitive && p.sensitiveValues != nil &&
+			value.Type() == cty.String && !value.IsNull() {
+			if raw := value.AsString(); raw != "" {
+				*p.sensitiveValues = append(*p.sensitiveValues, raw)
+			}
+		}
 		vars[name] = value
 	}
 	for name, value := range p.varOverride {
@@ -1526,8 +1544,11 @@ func selectAtlasEnvBlock(envs []atlasEnvBlock, envName string) (atlasEnvBlock, e
 
 func (p atlasParser) stringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
 	value, diags := attr.Expr.Value(p.ctx)
-	if diags.HasErrors() || value.Type() != cty.String {
-		return "", unsupportedAttr(name, attr)
+	if diags.HasErrors() {
+		return "", p.evaluationFailed(name, attr, diags)
+	}
+	if value.Type() != cty.String {
+		return "", wrongValueType(name, attr, "a string")
 	}
 	return value.AsString(), nil
 }
@@ -1538,7 +1559,7 @@ func (p atlasParser) nonEmptyStringAttr(name string, attr *hclsyntax.Attribute) 
 		return "", err
 	}
 	if strings.TrimSpace(value) == "" {
-		return "", unsupportedAttr(name, attr)
+		return "", emptyValue(name, attr)
 	}
 	return value, nil
 }
@@ -1565,7 +1586,7 @@ func (p atlasParser) sensitiveModeAttr(name string, attr *hclsyntax.Attribute) (
 	case "ALLOW":
 		return true, nil
 	default:
-		return false, unsupportedAttr(name, attr)
+		return false, wrongValueType(name, attr, "one of DENY, ALLOW")
 	}
 }
 
@@ -1576,11 +1597,11 @@ func (p atlasParser) identifierOrStringAttr(name string, attr *hclsyntax.Attribu
 	}
 	traversal, ok := attr.Expr.(*hclsyntax.ScopeTraversalExpr)
 	if !ok || len(traversal.Traversal) != 1 {
-		return "", unsupportedAttr(name, attr)
+		return "", wrongValueType(name, attr, "a string or a bare identifier")
 	}
 	root, ok := traversal.Traversal[0].(hcl.TraverseRoot)
 	if !ok {
-		return "", unsupportedAttr(name, attr)
+		return "", wrongValueType(name, attr, "a string or a bare identifier")
 	}
 	return root.Name, nil
 }
@@ -1596,11 +1617,11 @@ func (p atlasParser) scopedEnumOrStringAttr(
 	}
 	traversal, ok := attr.Expr.(*hclsyntax.ScopeTraversalExpr)
 	if !ok || len(traversal.Traversal) != 1 {
-		return "", unsupportedAttr(name, attr)
+		return "", wrongValueType(name, attr, "one of "+strings.Join(allowed, ", "))
 	}
 	root, ok := traversal.Traversal[0].(hcl.TraverseRoot)
 	if !ok || !slices.Contains(allowed, root.Name) {
-		return "", unsupportedAttr(name, attr)
+		return "", wrongValueType(name, attr, "one of "+strings.Join(allowed, ", "))
 	}
 	return root.Name, nil
 }
@@ -1615,8 +1636,11 @@ func (p atlasParser) configBoolAttr(name string, attr *hclsyntax.Attribute) (Con
 
 func (p atlasParser) boolAttr(name string, attr *hclsyntax.Attribute) (bool, error) {
 	value, diags := attr.Expr.Value(p.ctx)
-	if diags.HasErrors() || value.Type() != cty.Bool {
-		return false, unsupportedAttr(name, attr)
+	if diags.HasErrors() {
+		return false, p.evaluationFailed(name, attr, diags)
+	}
+	if value.Type() != cty.Bool {
+		return false, wrongValueType(name, attr, "a bool")
 	}
 	return value.True(), nil
 }
@@ -1624,7 +1648,7 @@ func (p atlasParser) boolAttr(name string, attr *hclsyntax.Attribute) (bool, err
 func (p atlasParser) stringOrStringListAttr(name string, attr *hclsyntax.Attribute) ([]string, error) {
 	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() {
-		return nil, unsupportedAttr(name, attr)
+		return nil, p.evaluationFailed(name, attr, diags)
 	}
 	if value.Type() == cty.String {
 		return []string{value.AsString()}, nil
@@ -1634,12 +1658,15 @@ func (p atlasParser) stringOrStringListAttr(name string, attr *hclsyntax.Attribu
 
 func (p atlasParser) intAttr(name string, attr *hclsyntax.Attribute) (int, error) {
 	value, diags := attr.Expr.Value(p.ctx)
-	if diags.HasErrors() || value.Type() != cty.Number {
-		return 0, unsupportedAttr(name, attr)
+	if diags.HasErrors() {
+		return 0, p.evaluationFailed(name, attr, diags)
+	}
+	if value.Type() != cty.Number {
+		return 0, wrongValueType(name, attr, "a number")
 	}
 	raw, accuracy := value.AsBigFloat().Int64()
 	if accuracy != big.Exact {
-		return 0, unsupportedAttr(name, attr)
+		return 0, wrongValueType(name, attr, "a whole number")
 	}
 	return int(raw), nil
 }
@@ -1647,7 +1674,7 @@ func (p atlasParser) intAttr(name string, attr *hclsyntax.Attribute) (int, error
 func (p atlasParser) stringListAttr(name string, attr *hclsyntax.Attribute) ([]string, error) {
 	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() {
-		return nil, unsupportedAttr(name, attr)
+		return nil, p.evaluationFailed(name, attr, diags)
 	}
 	return stringListValue(name, attr, value)
 }
@@ -1655,14 +1682,14 @@ func (p atlasParser) stringListAttr(name string, attr *hclsyntax.Attribute) ([]s
 func stringListValue(name string, attr *hclsyntax.Attribute, value cty.Value) ([]string, error) {
 	valueType := value.Type()
 	if !value.CanIterateElements() || (!valueType.IsTupleType() && !valueType.IsListType()) {
-		return nil, unsupportedAttr(name, attr)
+		return nil, wrongValueType(name, attr, "a list of strings")
 	}
 	values := make([]string, 0, value.LengthInt())
 	it := value.ElementIterator()
 	for it.Next() {
 		_, item := it.Element()
 		if item.Type() != cty.String {
-			return nil, unsupportedAttr(name, attr)
+			return nil, wrongValueType(name, attr, "a list of strings")
 		}
 		values = append(values, item.AsString())
 	}
@@ -1888,4 +1915,62 @@ func unsupportedAttr(name string, attr *hclsyntax.Attribute) error {
 
 func unsupported(name string, rng hcl.Range) error {
 	return fmt.Errorf("unsupported atlas.hcl construct %q at %s:%d", name, rng.Filename, rng.Start.Line)
+}
+
+// The three failures below all used to be reported as "unsupported atlas.hcl
+// construct", which made them indistinguishable to a reader and to a test.
+//
+// They are not the same thing, and the difference is load-bearing for the work
+// in stokaro/ptah#1014. Atlas CE tolerates an unknown NAME while still failing
+// on a bad VALUE and on an expression it cannot evaluate -- so an
+// accept-and-ignore change must relax exactly the first and leave the other two
+// alone. While one message covers all three, no test can tell whether a
+// refusal came from the branch that is meant to relax or from a branch that is
+// meant to stay, and a relaxation would silently convert real agreements with
+// CE into coincidental ones.
+//
+// Exit codes are unchanged: all three still fail. Only the message tells them
+// apart.
+
+// evaluationFailed reports an expression that could not be evaluated -- an
+// undefined reference, a failing function call. The HCL diagnostic is carried
+// through because it names the offending sub-expression, which our own message
+// cannot.
+func (p atlasParser) evaluationFailed(name string, attr *hclsyntax.Attribute, diags hcl.Diagnostics) error {
+	return fmt.Errorf("cannot evaluate atlas.hcl %q at %s:%d: %s",
+		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
+		p.scrubSensitive(diags.Error()))
+}
+
+// scrubSensitive removes the values of `sensitive = true` variables from text
+// that is about to be shown to the user.
+//
+// It is needed because HCL renders evaluated arguments into its own diagnostics
+// -- `file(var.secret)` fails with `openat <the secret>: no such file or
+// directory` -- so passing a diagnostic through verbatim publishes the value
+// that `sensitive` exists to hide. The rest of this parser already refuses to
+// put variable values in messages; this keeps that invariant when the message
+// comes from HCL rather than from us.
+func (p atlasParser) scrubSensitive(text string) string {
+	if p.sensitiveValues == nil {
+		return text
+	}
+	for _, secret := range *p.sensitiveValues {
+		text = strings.ReplaceAll(text, secret, "(sensitive value)")
+	}
+	return text
+}
+
+// wrongValueType reports a known key given a value of the wrong type. The key
+// is supported; the value is not.
+func wrongValueType(name string, attr *hclsyntax.Attribute, want string) error {
+	return fmt.Errorf("atlas.hcl %q at %s:%d must be %s",
+		name, attr.NameRange.Filename, attr.NameRange.Start.Line, want)
+}
+
+// emptyValue reports a known key given a value that is syntactically fine but
+// carries nothing usable.
+func emptyValue(name string, attr *hclsyntax.Attribute) error {
+	return fmt.Errorf("atlas.hcl %q at %s:%d must not be empty",
+		name, attr.NameRange.Filename, attr.NameRange.Start.Line)
 }
