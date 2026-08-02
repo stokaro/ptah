@@ -12,9 +12,31 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlasmigrateimport"
 	"github.com/stokaro/ptah/internal/migratesum"
 )
+
+// assertCaptureSelectsTheSame checks that selecting the covered set over the
+// SNAPSHOT the apply gate verifies gives the same names, in the same order, as
+// selecting it over the live directory.
+//
+// The differential fuzz proves SumFileNames matches the oracle over os.DirFS.
+// The apply gate does not read os.DirFS — it reads a capture, and the capture
+// filters. If the two ever disagree the gate recomputes a set the oracle never
+// wrote, so this seam needs the same random population rather than the handful
+// of fixtures a unit test can name. Order is asserted because it feeds the
+// Atlas hash.
+func assertCaptureSelectsTheSame(c *qt.C, dir string, format atlasmigrateimport.Format, names []string, layout []string) {
+	c.Helper()
+	captured, err := atlasmigrate.CaptureApplySource(os.DirFS(dir), format)
+	c.Assert(err, qt.IsNil, qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
+	fromCapture, err := atlasmigrateimport.SumFileNames(captured, format)
+	c.Assert(err, qt.IsNil, qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
+	c.Assert(fromCapture, qt.DeepEquals, names,
+		qt.Commentf("the capture and the live directory disagree: PTAH_ATLAS_FUZZ_LAYOUT=%s",
+			strings.Join(layout, ",")))
+}
 
 // oracleEnv names the environment variable holding the path to the pinned
 // Atlas CE binary the differential fuzz compares against.
@@ -94,6 +116,7 @@ func checkFlywayLayout(c *qt.C, oracle string, layout []string) {
 
 	c.Assert(string(sum.Bytes()), qt.Equals, want,
 		qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
+	assertCaptureSelectsTheSame(c, dir, atlasmigrateimport.FormatFlyway, names, layout)
 }
 
 // TestSumFileNamesDifferentialFuzzRealisticFlyway restricts generation to what
@@ -128,6 +151,7 @@ func TestSumFileNamesDifferentialFuzzRealisticFlyway(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(sum.Bytes()), qt.Equals, want,
 				qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
+			assertCaptureSelectsTheSame(c, dir, atlasmigrateimport.FormatFlyway, names, layout)
 		})
 	}
 }
@@ -196,6 +220,7 @@ func TestSumFileNamesDifferentialFuzzOtherFormats(t *testing.T) {
 				c.Assert(err, qt.IsNil)
 
 				c.Assert(string(sum.Bytes()), qt.Equals, want, qt.Commentf("layout:\n  %s", strings.Join(layout, "\n  ")))
+				assertCaptureSelectsTheSame(c, dir, format, names, layout)
 			})
 		}
 	}

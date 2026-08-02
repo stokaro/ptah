@@ -538,6 +538,39 @@ func TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetIsNotRefused(t *tes
 	}
 }
 
+// TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetDriftRefuses is the
+// SECOND input separating `!hashed && len(names) == 0` from a bare
+// `len(names) == 0`, and it is a different mechanism from the first.
+//
+// The first is the `removed` row of the drift suite: a hashed directory whose
+// covered file was deleted, where the entry sequence diverges. This one has no
+// entry sequence at all — the covered set is empty on both sides — and diverges
+// only on the recorded directory-hash line. A bare `len(names) == 0` returns nil
+// for both, so a suite holding only the first would let this one through.
+//
+// Atlas CE refuses it, measured 2026-08-02.
+func TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetDriftRefuses(t *testing.T) {
+	c := qt.New(t)
+	tempDir := c.TempDir()
+	dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
+		"1_init.down.sql": "DROP TABLE widgets;\n",
+		// The empty-set digest is h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=;
+		// this is a hand-edited directory-hash line over the same empty set.
+		"atlas.sum": "h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n",
+	})
+	dbPath := filepath.Join(tempDir, "converted.db")
+
+	stdout, stderr, err := compatApplyConverted(dir, "golang-migrate", dbPath)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals, "checksum mismatch")
+	// No L<line> pointer: there is no entry sequence to point into.
+	c.Assert(stdout, qt.Equals, atlasChecksumFileNotFoundStdout)
+	c.Assert(stderr, qt.Equals, atlasChecksumMismatchStderr)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
 // TestCompatMigrateApply_ConvertedFlywaySubdirectoryOnlyRefuses is the row that
 // separates "the per-format covered set" from "the top-level per-format covered
 // set". Flyway is the one layout whose atlas.sum reaches below the root, so a

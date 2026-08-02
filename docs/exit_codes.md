@@ -125,7 +125,9 @@ directory exits `0`
 with `No migration files to execute`. Directories read through `?format=` are
 gated the same way, over the file set Atlas covers for that layout, so a
 golang-migrate down file and a Flyway undo file are outside the check and a
-layout whose covered set is empty is not refused. Native
+layout that carries no `atlas.sum` and whose covered set is empty is not
+refused. A hashed directory whose covered set is empty is still verified, and a
+drifted one exits `1`. Native
 `ptah migrations up` verifies a hashed directory the same way (exit `2` with
 Ptah's drift report) but applies a never-hashed directory unless `--verify-sum`
 is passed.

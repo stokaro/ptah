@@ -10,6 +10,11 @@
 # the SOURCE file. This compares both tools row by row on that behavior, and on
 # the rows where CE exits 0 — the ones that stop the gate from over-refusing.
 #
+# Section 9a is the one to read before trusting the gate: for Flyway, and only
+# for Flyway, Ptah's importer runs a WIDER set of files than atlas.sum covers,
+# so SQL can execute that no checksum protects, on a directory both tools call
+# clean. That is stokaro/ptah#982 and the gate cannot see it.
+#
 # The oracle is pinned. A different Atlas build may have changed the very rules
 # under test, so the version is checked before anything is compared.
 #
@@ -407,6 +412,89 @@ for state in unhashed clean tampered; do
 done
 
 echo
+echo "===== 9a. Flyway: SQL that EXECUTES outside the covered set (stokaro/ptah#982)"
+# The rows above are all loud: ptah-compat exits 1 where CE exits 0. These two
+# are silent, and they are the reason this gate is incomplete for one format.
+# The importer selects a WIDER set than atlas.sum covers, so a file no checksum
+# protects runs on a directory both tools call clean. A section that enumerated
+# only the loud half of #982 (the R__ row below) would read as if the silent
+# half did not exist.
+silent_flyway() { # silent_flyway <label> <builder>
+	local label="$1" build="$2"
+	local ce="ce-silent-$3" pt="pt-silent-$3"
+	rm -rf "$ce" "$pt"; mkdir -p "$ce" "$pt"
+	$build "$ce"; $build "$pt"
+	"$ATLAS" migrate hash --dir "file://$ce?format=flyway" >/dev/null 2>&1
+	"$ATLAS" migrate hash --dir "file://$pt?format=flyway" >/dev/null 2>&1
+	# The tamper lands on a file the oracle's own sum does not cover.
+	printf 'CREATE TABLE pwned (id int);\n' >>"$ce/$4"
+	printf 'CREATE TABLE pwned (id int);\n' >>"$pt/$4"
+	local cev ptv ceout ptout cerc ptrc
+	cev=$("$ATLAS" migrate validate --dir "file://$ce?format=flyway" >/dev/null 2>&1; echo $?)
+	ptv=$("$COMPAT" migrate validate --dir "file://$pt?format=flyway" >/dev/null 2>&1; echo $?)
+	ceout=$("$ATLAS" migrate apply --url "sqlite://$ce.db" --dir "file://$ce?format=flyway" 2>&1); cerc=$?
+	ptout=$("$COMPAT" migrate apply --url "sqlite://$pt.db" --dir "file://$pt?format=flyway" 2>&1); ptrc=$?
+	local cen ptn
+	cen=$(echo "$ceout" | grep -c 'migrating version')
+	ptn=$(echo "$ptout" | grep -oE 'from [0-9]+ pending' | grep -oE '[0-9]+')
+	printf '  %-46s validate ce=%s ptah=%s | apply ce=%s (%s ran) ptah=%s (%s ran)\n' \
+		"$label" "$cev" "$ptv" "$cerc" "${cen:-0}" "$ptrc" "${ptn:-0}"
+	if [ "$ptv" = 0 ] && [ "${ptn:-0}" -gt "${cen:-0}" ]; then
+		echo "       ^ unverified SQL executed here and not on CE (stokaro/ptah#982)"
+	else
+		fail=1
+		echo "       UNEXPECTED: the shape no longer reproduces; re-measure before editing #982"
+	fi
+}
+build_superseded_baseline() {
+	printf 'CREATE TABLE one (id int);\n'   >"$1/B1__one.sql"
+	printf 'CREATE TABLE two (id int);\n'   >"$1/B2__two.sql"
+	printf 'CREATE TABLE three (id int);\n' >"$1/V3__three.sql"
+}
+build_lowercase_prefix() {
+	printf 'CREATE TABLE init (id int);\n' >"$1/V1__init.sql"
+	printf 'CREATE TABLE evil (id int);\n' >"$1/v2__evil.sql"
+}
+silent_flyway "superseded baseline B1 executes" build_superseded_baseline base B1__one.sql
+silent_flyway "lowercase v2__ prefix executes" build_lowercase_prefix lower v2__evil.sql
+
+echo
+echo "===== 9b. a DIRECTORY named *.sql appears after hashing (stokaro/ptah#991)"
+# CE's shallow glob matches the directory and then hard-errors; SumFileNames
+# skips it, so the recomputed sum still verifies. Nothing unverified executes —
+# a directory holds no SQL — so this is loss of tamper DETECTION, not of
+# execution safety. It is still CE refusing where we apply.
+ce="ce-evildir"; pt="pt-evildir"
+seed "$ce" goose; seed "$pt" goose
+hash_both "$ce" "$pt" goose
+mkdir -p "$ce/2_evil.sql" "$pt/2_evil.sql"
+ceout=$("$ATLAS" migrate apply --url "sqlite://$ce.db" --dir "file://$ce?format=goose" 2>&1); cerc=$?
+ptout=$("$COMPAT" migrate apply --url "sqlite://$pt.db" --dir "file://$pt?format=goose" 2>&1); ptrc=$?
+printf '  %-46s ce exit=%s | ptah exit=%s [%s]\n' "goose + 2_evil.sql/ after hashing" "$cerc" "$ptrc" \
+	"$(echo "$ptout" | tr '\n' '|' | cut -c1-70)"
+
+echo
+echo "===== 9c. an unreadable source file (dangling symlink under sub/)"
+# Both refuse; only the wording differs. Ptah reports the capture failure where
+# CE reports its checksum block, because Ptah cannot read the file at capture
+# time and CE cannot read it at hash time. Safe direction, pinned so a future
+# Atlas-shaped message is a visible change.
+ce="ce-symlink"; pt="pt-symlink"
+for d in "$ce" "$pt"; do
+	rm -rf "$d"; mkdir -p "$d/sub"
+	printf 'CREATE TABLE a (id int);\n' >"$d/V1__init.sql"
+	ln -s /nonexistent/target "$d/sub/V2__dangling.sql"
+done
+ceout=$("$ATLAS" migrate apply --url "sqlite://$ce.db" --dir "file://$ce?format=flyway" 2>&1); cerc=$?
+ptout=$("$COMPAT" migrate apply --url "sqlite://$pt.db" --dir "file://$pt?format=flyway" 2>&1); ptrc=$?
+printf '  %-46s ce exit=%s | ptah exit=%s [%s]\n' "flyway, dangling nested symlink" "$cerc" "$ptrc" \
+	"$(echo "$ptout" | sed "s|$BASE|.|g" | tr '\n' '|' | cut -c1-70)"
+if [ "$cerc" != "$ptrc" ]; then
+	fail=1
+	echo "       UNEXPECTED: the two tools no longer agree on the exit code"
+fi
+
+echo
 echo "===== 9. divergences the gate passes through (stokaro/ptah#980, #981, #982)"
 # All three are exit-1 refusals where CE exits 0, all predate this change, and
 # all are reached only AFTER the gate passes. The second is why #980 is not
@@ -440,4 +528,8 @@ if [ "$fail" -ne 0 ]; then
 	echo "probe: FAILED"
 	exit 1
 fi
-echo "probe: every gated row matches Atlas CE; $open980 exempt rows still diverge after the gate (stokaro/ptah#980)"
+echo "probe: every gated row matches Atlas CE."
+echo "       $open980 exempt rows still exit 1 after the gate passes (stokaro/ptah#980)."
+echo "       2 Flyway shapes execute SQL the covered set does not protect (stokaro/ptah#982);"
+echo "       the gate cannot see them, and closing them means converging the importer"
+echo "       on Atlas's selection, NOT refusing where Atlas applies."

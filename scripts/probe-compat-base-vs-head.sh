@@ -15,6 +15,15 @@
 #      changed, so "import is unaffected" is a claim needing the same evidence.
 #   C. native `migrate hash` / `validate` / `status`.
 #
+# WHAT SECTION B CAN AND CANNOT SEE. Loaders skip inputs they do not recognize,
+# so `migrate import` detects a capture that NARROWED and is blind to one that
+# WIDENED — and #973's capture change is a widening. A mutation that stops
+# capturing atlas.sum entirely, undoing half of that change, leaves this sweep
+# at 57/57 SAME while scripts/probe-atlas-apply-gate.sh reddens 30 rows. Section
+# B bounds the blast radius of the change on import; it does not bound the
+# change itself. Sections A and C are two-sided: their commands read what the
+# capture produces, so both directions surface there.
+#
 # Usage:
 #   go build -o bin/ptah-compat-base ./cmd/ptah-compat   # from the base commit
 #   go build -o bin/ptah-compat-head ./cmd/ptah-compat   # from the head commit
@@ -39,6 +48,11 @@ for bin in "$BASE" "$HEAD"; do
 		exit 1
 	fi
 done
+# Resolved AFTER the check and BEFORE the cd below: a relative override would
+# otherwise pass the check and then make every row exit 127 from the scratch
+# directory, which reads as 57 matching failures rather than as a bad path.
+BASE="$(cd "$(dirname "$BASE")" && pwd)/$(basename "$BASE")"
+HEAD="$(cd "$(dirname "$HEAD")" && pwd)/$(basename "$HEAD")"
 if [ "$(shasum -a 256 "$BASE" | cut -d" " -f1)" = "$(shasum -a 256 "$HEAD" | cut -d" " -f1)" ]; then
 	echo "probe: base and head are the same binary; every row would trivially match" >&2
 	exit 1
