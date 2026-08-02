@@ -110,7 +110,7 @@ func ClassifySchemaDiff(diff *types.SchemaDiff) []Finding {
 func Highest(findings []Finding) Severity {
 	highest := Safe
 	for _, finding := range findings {
-		if severityRank(finding.Severity) > severityRank(highest) {
+		if severityOutranks(finding.Severity, highest) {
 			highest = finding.Severity
 		}
 	}
@@ -119,7 +119,12 @@ func Highest(findings []Finding) Severity {
 
 // HasDestructive returns true when any finding is destructive.
 func HasDestructive(findings []Finding) bool {
-	return Highest(findings) == Destructive
+	for _, finding := range findings {
+		if finding.Severity == Destructive {
+			return true
+		}
+	}
+	return false
 }
 
 // Classify returns the highest operational risk for a migration AST node.
@@ -195,7 +200,7 @@ func AssessSQL(statement string) StatementAssessment {
 func HighestAssessment(assessments []StatementAssessment) Severity {
 	highest := Safe
 	for _, assessment := range assessments {
-		if severityRank(assessment.Severity) > severityRank(highest) {
+		if severityOutranks(assessment.Severity, highest) {
 			highest = assessment.Severity
 		}
 	}
@@ -204,15 +209,19 @@ func HighestAssessment(assessments []StatementAssessment) Severity {
 
 // HasDestructiveAssessment returns true when any statement is destructive.
 func HasDestructiveAssessment(assessments []StatementAssessment) bool {
-	return HighestAssessment(assessments) == Destructive
+	for _, assessment := range assessments {
+		if assessment.Severity == Destructive {
+			return true
+		}
+	}
+	return false
 }
 
 // NewReport returns a machine-readable safety report envelope.
 func NewReport(assessments []StatementAssessment) Report {
-	highest := HighestAssessment(assessments)
 	return Report{
-		Highest:     highest,
-		Destructive: highest == Destructive,
+		Highest:     HighestAssessment(assessments),
+		Destructive: HasDestructiveAssessment(assessments),
 		Assessments: assessments,
 	}
 }
@@ -542,6 +551,13 @@ func aggregate(findings []Finding) []Finding {
 
 func severityRank(severity Severity) int {
 	return risk.Rank(severity)
+}
+
+func severityOutranks(candidate, current Severity) bool {
+	candidateRank := severityRank(candidate)
+	currentRank := severityRank(current)
+	return candidateRank > currentRank ||
+		(candidateRank == currentRank && candidate == Destructive && current != Destructive)
 }
 
 // IsTypeNarrowing reports whether changing from oldType to newType can lose

@@ -13,7 +13,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/internal/migrationsnapshot"
+	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -28,11 +30,52 @@ func TestLintPendingDestructive_DoesNotApplyAtlasFileSuppression(t *testing.T) {
 		},
 	}
 
-	findings, err := lintPendingDestructive(fsys, []int64{1}, "sqlite")
+	findings, err := lintPendingDestructive(fsys, []int64{1}, "sqlite", "")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
 	c.Assert(findings[0].Rule, qt.Equals, "DS101")
+}
+
+func TestLintPendingDestructive_HonorsDirectoryPrefixedExclusion(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		lint.ConfigFileName: {
+			Data: []byte("rules:\n  DS101:\n    exclude:\n      - migrations/legacy/**\n"),
+		},
+		"legacy/0000000001_drop.up.sql": {
+			Data: []byte("DROP TABLE users;\n"),
+		},
+		"legacy/0000000001_drop.down.sql": {
+			Data: []byte("CREATE TABLE users (id INTEGER);\n"),
+		},
+	}
+
+	findings, err := lintPendingDestructive(fsys, []int64{1}, "sqlite", "migrations")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 0)
+}
+
+func TestLintPathPrefixForSource_PreservesLocalSpelling(t *testing.T) {
+	c := qt.New(t)
+
+	got := lintPathPrefixForSource("db/migrations", migrationsource.Source{
+		Display: "/absolute/db/migrations",
+	})
+
+	c.Assert(got, qt.Equals, "db/migrations")
+}
+
+func TestLintPathPrefixForSource_UsesCanonicalOCIDisplay(t *testing.T) {
+	c := qt.New(t)
+
+	got := lintPathPrefixForSource("oci://REGISTRY.EXAMPLE/acme/migrations:latest", migrationsource.Source{
+		Display: "oci://registry.example/acme/migrations:latest",
+		OCI:     &migrationsource.OCI{},
+	})
+
+	c.Assert(got, qt.Equals, "oci://registry.example/acme/migrations:latest")
 }
 
 func TestCapturedMigrationsFeedProviderAndDestructiveGateFromSameBytes(t *testing.T) {
@@ -56,7 +99,7 @@ func TestCapturedMigrationsFeedProviderAndDestructiveGateFromSameBytes(t *testin
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatPtah),
 	)
 	c.Assert(err, qt.IsNil)
-	findings, err := lintPendingDestructive(snapshot, []int64{1}, "sqlite")
+	findings, err := lintPendingDestructive(snapshot, []int64{1}, "sqlite", "")
 	c.Assert(err, qt.IsNil)
 
 	migrations := provider.Migrations()
@@ -86,7 +129,7 @@ func TestLockedDestructiveLintHookUsesLockedPlanVersions(t *testing.T) {
 			Data: []byte("CREATE TABLE users (id INTEGER);\n"),
 		},
 	}
-	hook := lockedDestructiveLintHook(fsys, "sqlite")
+	hook := lockedDestructiveLintHook(fsys, "sqlite", "")
 
 	err := hook(context.Background(), migrator.MigrationPlan{
 		Versions: []int64{2},
@@ -111,7 +154,7 @@ func TestLockedDestructiveLintHookAllowsSafeLockedPlan(t *testing.T) {
 			Data: []byte("CREATE TABLE users (id INTEGER);\n"),
 		},
 	}
-	hook := lockedDestructiveLintHook(fsys, "sqlite")
+	hook := lockedDestructiveLintHook(fsys, "sqlite", "")
 
 	err := hook(context.Background(), migrator.MigrationPlan{
 		Versions: []int64{1},

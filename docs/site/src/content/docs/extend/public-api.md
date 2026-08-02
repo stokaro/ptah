@@ -143,6 +143,40 @@ Embedders that need cancellation while waiting for that lock use
 checked planning; malformed references, unresolved additions, and target
 index-namespace conflicts fail before SQL is returned.
 
+## Safety reports and shadow errors
+
+`migration/safety.RenderJSON` writes a `safety.Report` with the highest risk,
+the destructive verdict, and every rendered statement assessment. Use this
+API when an embedder needs the same machine-readable contract as
+`ptah migrations plan --report json`. Setting
+`generator.GenerateMigrationOptions.ReportFormat` to `json` instead publishes
+one `.safety.json` artifact beside each generated migration pair.
+
+When candidate shadow verification fails, `generator.PlanMigration` and
+`generator.GenerateMigration` preserve a typed
+`*generator.ShadowVerificationError`. Inspect it with `errors.As` instead of
+parsing `Error()`:
+
+```go
+var shadowErr *generator.ShadowVerificationError
+if errors.As(err, &shadowErr) {
+	stage := shadowErr.Result.Stage
+	mismatches := shadowErr.Result.Mismatches
+	// Report stage and mismatches to the caller.
+}
+```
+
+`Result.Stage` identifies the failed boundary, such as `connect`, `replay`,
+`schema-match`, `round-trip-down`, or `round-trip-up`. A schema-match result
+contains every mismatch in deterministic category and object order, not only
+the first.
+Each `ShadowMismatch` has a stable `Kind`, a human-readable `Message`, and the
+available object, table, column, constraint, or changed-property fields.
+Operational failures also preserve their underlying error through `Unwrap`;
+a structural schema mismatch has no wrapped error. A successful verification
+returns `nil` and continues planning; `ShadowVerificationResult` is only the
+structured failure payload carried by `ShadowVerificationError`.
+
 ## Error contracts
 
 Public failures should use `core/ptaherr` when callers can reasonably branch on
@@ -154,6 +188,8 @@ the error:
   `ptaherr.ErrUnsupportedDialect`;
 - invalid schema diffs rejected during planning should support `errors.Is` with
   `ptaherr.ErrInvalidSchemaDiff`;
+- shadow candidate verification should support `errors.As` with
+  `*generator.ShadowVerificationError`;
 - command wrappers should preserve typed errors instead of replacing them with
   string-only errors.
 

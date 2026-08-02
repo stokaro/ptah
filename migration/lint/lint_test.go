@@ -71,6 +71,62 @@ ALTER TYPE mood ADD VALUE 'ambivalent';
 	c.Assert(byRule["PG101"].Severity, qt.Equals, lint.SeverityWarning)
 }
 
+func TestLintFS_InvalidProgrammaticRuleSeverityFailsFast(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := lint.LintFS(fixture(map[string]string{
+		"0000000001_init.up.sql":   "CREATE TABLE users (id INTEGER);\n",
+		"0000000001_init.down.sql": "DROP TABLE users;\n",
+	}), lint.Options{
+		RuleConfigs: map[string]lint.RuleConfig{
+			"DS101": {Severity: lint.Severity("fatal")},
+		},
+	})
+
+	c.Assert(err, qt.ErrorMatches, `rule DS101 has unsupported severity "fatal"`)
+}
+
+func TestLintFS_InvalidProgrammaticRuleSelectorFailsFast(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := lint.LintFS(fixture(map[string]string{
+		"0000000001_init.up.sql":   "DROP TABLE users;\n",
+		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
+	}), lint.Options{
+		RuleConfigs: map[string]lint.RuleConfig{
+			"ds101": {Severity: lint.SeverityError},
+		},
+	})
+
+	c.Assert(err, qt.ErrorMatches, `rule selector "ds101" must start with an uppercase ASCII letter.*`)
+}
+
+func TestLintFS_WhitespacePaddedProgrammaticRuleSelectorFailsFast(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := lint.LintFS(fixture(map[string]string{
+		"0000000001_init.up.sql":   "DROP TABLE users;\n",
+		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
+	}), lint.Options{Disabled: []string{" DS101 "}})
+
+	c.Assert(err, qt.ErrorMatches, `rule selector " DS101 " must start with an uppercase ASCII letter.*`)
+}
+
+func TestLintFS_UnknownProgrammaticRuleSelectorFailsFast(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := lint.LintFS(fixture(map[string]string{
+		"0000000001_init.up.sql":   "DROP TABLE users;\n",
+		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
+	}), lint.Options{
+		RuleConfigs: map[string]lint.RuleConfig{
+			"ZZ404": {Severity: lint.SeverityError},
+		},
+	})
+
+	c.Assert(err, qt.ErrorMatches, `rule selector "ZZ404" does not match any registered rule`)
+}
+
 func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
 	c := qt.New(t)
 
@@ -767,9 +823,15 @@ func TestAnalyzeFS_CustomRuleUsesPublicScanner(t *testing.T) {
 		Severity:       lint.SeverityWarning,
 		CheckStatement: checkCustomCreateTable,
 	}
-	findings, err := lint.LintFS(fsys, lint.Options{ExtraRules: []lint.Rule{customRule}})
+	findings, err := lint.LintFS(fsys, lint.Options{
+		ExtraRules: []lint.Rule{customRule},
+		RuleConfigs: map[string]lint.RuleConfig{
+			"XX001": {Severity: lint.SeverityError},
+		},
+	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"XX001"})
+	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityError)
 	c.Assert(findings[0].Message, qt.Contains, "Ptah's scanner")
 }
 
@@ -789,6 +851,24 @@ func TestLintFS_InvalidCustomRuleFailsFast(t *testing.T) {
 	}), lint.Options{ExtraRules: []lint.Rule{{Code: "XX001", Title: "broken"}}})
 
 	c.Assert(err, qt.ErrorMatches, "rule XX001 has unsupported severity.*")
+}
+
+func TestLintFS_LowercaseCustomRuleCodeFailsFast(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := lint.LintFS(fixture(map[string]string{
+		"0000000001_x.up.sql":   "SELECT 1;\n",
+		"0000000001_x.down.sql": "-- restore\n",
+	}), lint.Options{ExtraRules: []lint.Rule{{
+		Code:     "ext001",
+		Title:    "lowercase code",
+		Severity: lint.SeverityWarning,
+		CheckStatement: func(*lint.Statement) (bool, string) {
+			return false, ""
+		},
+	}}})
+
+	c.Assert(err, qt.ErrorMatches, `rule code "ext001" must start with an uppercase ASCII letter.*`)
 }
 
 func TestLintFS_RuleConfigsOverrideSeverityAndExcludePaths(t *testing.T) {
@@ -1004,6 +1084,36 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 	c.Run("invalid rule severity", func(c *qt.C) {
 		_, err := lint.LoadConfig(dir + "/bad-severity.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported severity "fatal".*`)
+	})
+
+	c.Assert(writeFile(dir+"/unknown-top-level.yaml", "severty: error\n"), qt.IsNil)
+	c.Run("unknown top-level key", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/unknown-top-level.yaml")
+		c.Assert(err, qt.ErrorMatches, `(?s)failed to parse lint config .*field severty not found in type lint.Config.*`)
+	})
+
+	c.Assert(writeFile(dir+"/unknown-rule-key.yaml", "rules:\n  DS103:\n    severty: error\n"), qt.IsNil)
+	c.Run("unknown nested rule key", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/unknown-rule-key.yaml")
+		c.Assert(err, qt.ErrorMatches, `(?s)failed to parse lint config .*field severty not found in type lint.RuleConfig.*`)
+	})
+
+	c.Assert(writeFile(dir+"/lowercase-selector.yaml", "rules:\n  ds103:\n    severity: error\n"), qt.IsNil)
+	c.Run("lowercase rule selector", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/lowercase-selector.yaml")
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector "ds103" must start with an uppercase ASCII letter.*`)
+	})
+
+	c.Assert(writeFile(dir+"/whitespace-selector.yaml", "disabled-rules:\n  - ' DS103 '\n"), qt.IsNil)
+	c.Run("whitespace-padded rule selector", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/whitespace-selector.yaml")
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector " DS103 " must start with an uppercase ASCII letter.*`)
+	})
+
+	c.Assert(writeFile(dir+"/multiple-documents.yaml", "dialect: postgres\n---\ndialect: sqlite\n"), qt.IsNil)
+	c.Run("multiple YAML documents", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/multiple-documents.yaml")
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*multiple YAML documents are not supported`)
 	})
 }
 
