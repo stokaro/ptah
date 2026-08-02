@@ -71,15 +71,15 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 154 capabilities below:
+Across the 157 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 82 |
+| Ptah supports it fully | 84 |
 | Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 24 |
+| Ptah does not implement it | 25 |
 | Ptah and Atlas CE both support it | 24 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 32 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 34 |
 | Ptah has it and neither Atlas edition does | 15 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
 | An Atlas column is ❔ — not established by this page's evidence | 23 |
@@ -313,7 +313,10 @@ service, not artifact storage; the storage function is covered under
 | --- | :-: | :-: | :-: | --- |
 | `atlas://` vendor protocol | ❌ | ❌ | ✅ | The scheme is Cloud-bound and rejected with a named error; every function behind it is available natively over `oci://`. The compat binary mirrors the Atlas surface, which has no `oci://`. |
 | `migrate push` and `schema push` | ❌ | ❌ | ✅ | ptah-compat boundary stubs printing the CE abort text, exit 1. The native equivalents are `ptah schema push` and `ptah migrations push`. |
-| `schema plan` registry and output flags | ❌ | ❌ | ✅ | `--push`/`--pending`/`--repo` are recorded waivers; `--format`/`--name-format`/`--directive`/`--edit`/`--skip-lint` fail as unimplemented. |
+| `schema plan --edit` and `--name-format` | ✅ | ❌ | ✅ | `--edit` opens the planned SQL in $VISUAL/$EDITOR and re-derives severity from what you wrote; `--name-format` templates the plan name over .FromHash/.ToHash. |
+| `schema plan --format` and `--directive` | ❌ | ❌ | ✅ | Both fail loudly, by design. `--format` is implemented on the eight compat verbs whose CE counterpart works and whose payload can therefore be measured; `schema plan` is the one verb where CE aborts. |
+| `schema plan --push`, `--pending`, `--repo` | ❌ | ❌ | ✅ | `--push`, `--pending` and `--repo` stay recorded waivers: they address the Atlas Registry, and Ptah's plan workflow saves local files instead. |
+| `schema plan --skip-lint` | ✅ | ❌ | ✅ | Accepted, and does nothing: `schema plan` runs no lint step, so there is nothing to skip. A Pro pipeline passing it keeps working; no check is loosened. |
 | `schema plan` registry sub-verbs | ❌ | ❌ | ✅ | approve, lint, list, new, pull, push, rm, test and validate all stay CE boundary stubs; only local plan files are implemented. |
 | Atlas Cloud deployment reporting | ❌ | ❌ | ✅ | No Atlas account model or deployment API. Ptah attaches a deployment-report referrer to its own OCI artifact after an oci:// migrations up. |
 | Atlas Copilot (AI assistant) | ❌ | ❌ | ✅ | AI assistant gated to Pro accounts; absent from the pinned CE v1.2.0 command inventory. No Ptah equivalent; the closest developer-assist surface is the `ptah-ls` language server. |

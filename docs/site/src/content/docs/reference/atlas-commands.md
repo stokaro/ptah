@@ -537,6 +537,9 @@ plan document prints to stdout.
 | `--output <path>`/`-o` | Chooses the location, and a `.json` path selects the native JSON plan format. The plan name recorded inside a JSON plan stays fingerprint-derived unless `--name` is given. |
 | `--dry-run` | Prints the plan document without saving. |
 | `--auto-approve` | Accepted for Atlas CLI compatibility; a locally saved plan file is approved by operator review, so there is no prompt to skip. |
+| `--edit` | Opens the planned SQL in `$VISUAL`, then `$EDITOR`, and saves the plan rebuilt from the edited text. Statement severity and the destructive marker are re-derived from what you wrote. An edit leaving no statement is refused, and nothing is written. |
+| `--name-format <template>` | Computes the plan name from a Go template over `.FromHash` and `.ToHash`, this plan's own `sha256:` fingerprints. The Atlas template helpers (`json`, `upper`, `add`, `indent_ln`, …) are available. Cannot be combined with `--name`. |
+| `--skip-lint` | Accepted as an explicit no-op: `schema plan` runs no lint step, so there is nothing to skip. |
 | `--env` | Reads `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported `diff` policy from `atlas.hcl`. |
 
 The JSON plan records the ordered SQL statements with per-statement safety
@@ -548,12 +551,41 @@ base64 hashes, which have no local recipe), re-derives statement severity at
 read time, and refuses to save a plan computed with `--exclude` as
 `.plan.hcl` because the shape cannot record the patterns.
 
+Editing changes the statements, never the fingerprints. `from` still describes
+the live source database, so apply-time staleness detection keeps working. `to`
+still describes the schema the plan was computed against, which edited SQL may
+no longer reach: `schema apply` replays an Atlas-format plan on a dev database
+and requires it to converge on `--to` before touching the target, but a native
+`.json` plan carries no such replay, so an edited JSON plan is only as good as
+its review.
+
+Everything that can refuse the plan without reading its statements — the
+`--exclude`/`.plan.hcl` incompatibility, and every `--name-format` failure —
+happens before the editor opens, so an edit is never thrown away over a problem
+that was decidable beforehand.
+
+A plan name becomes a file name, so both `--name` and `--name-format` refuse
+path separators, control characters, `.`/`..`, and the characters Windows
+forbids in a file name (`:*?"<>|`). That last rule means Atlas's own documented
+example, `plan_{{ slice .ToHash 0 8 }}`, is refused here: Ptah fingerprints are
+`sha256:<hex>`, so slicing from `0` keeps the prefix and yields `plan_sha256:`.
+Slice from `7` to skip it — `plan_{{ slice .ToHash 7 15 }}` gives the digest
+characters the Atlas example is after. The colon matters because it is NTFS's
+alternate-data-stream separator: accepted, it would write an empty
+`plan_sha256` file with the plan document hidden in a stream.
+
 **Not implemented**
 
 - Registry-bound `--push`, `--pending`, and `--repo` are recorded waivers
   that fail loudly.
-- `--edit`, `--skip-lint`, `--format`, `--name-format`, `--directive`,
-  `--schema`, `--include`, and `--lock-timeout` fail explicitly until
+- `--format` fails explicitly. Atlas's plan report payload was never executed
+  on the licensed trial, so its field names are unknown; an invented shape
+  would silently break Pro templates that reference the real ones.
+- `--directive` fails explicitly. The measured Atlas `.plan.hcl` carries only
+  `from`, `to`, and `migration`, so a directive would have to ride inside the
+  migration heredoc in an unmeasured spelling — and Ptah's own reader ignores
+  `-- atlas:checkpoint` today, so emitted directives would be silent no-ops.
+- `--schema`, `--include`, and `--lock-timeout` fail explicitly until
   implemented.
 - The registry sub-verbs (`approve`, `lint`, `list`, `new`, `pull`, `push`,
   `rm`, `test`, `validate`) stay Atlas CE boundary stubs.

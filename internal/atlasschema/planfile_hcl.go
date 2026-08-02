@@ -159,6 +159,22 @@ func decodePlanHCL(contents []byte, path string) (PlanFile, error) {
 	return plan, nil
 }
 
+// CheckPlanFormatSupported reports whether plan can be written in format
+// without losing information that the format has no field for. It depends only
+// on the plan's metadata, never on its statement text, so a command can call it
+// before doing work it would have to throw away — opening an editor, for
+// instance — and [MarshalPlanFileHCL] calls it too, so the writer stays the
+// authority and the two cannot drift.
+func CheckPlanFormatSupported(plan PlanFile, format PlanFormat) error {
+	if format == PlanFormatHCL && len(plan.Exclude) > 0 {
+		return errors.New(
+			"the Atlas .plan.hcl format has no field for exclude patterns, so a plan computed with --exclude " +
+				"cannot be represented faithfully; write the native JSON plan format (--output <name>" + PlanFileSuffix + ") " +
+				"or drop --exclude")
+	}
+	return nil
+}
+
 // MarshalPlanFileHCL renders the plan in the Atlas `.plan.hcl` shape measured
 // from the official binary: one `plan "<name>"` block with aligned `from`,
 // `to`, and `migration` attributes and a `<<-SQL` heredoc holding the ordered
@@ -167,11 +183,8 @@ func decodePlanHCL(contents []byte, path string) (PlanFile, error) {
 // base64 hashes, which Ptah cannot compute locally. The output is
 // deterministic for identical plan contents.
 func MarshalPlanFileHCL(plan PlanFile) ([]byte, error) {
-	if len(plan.Exclude) > 0 {
-		return nil, errors.New(
-			"the Atlas .plan.hcl format has no field for exclude patterns, so a plan computed with --exclude " +
-				"cannot be represented faithfully; write the native JSON plan format (--output <name>" + PlanFileSuffix + ") " +
-				"or drop --exclude")
+	if err := CheckPlanFormatSupported(plan, PlanFormatHCL); err != nil {
+		return nil, err
 	}
 	if err := validateHCLString("plan name", plan.Name); err != nil {
 		return nil, err
@@ -241,15 +254,7 @@ func MarshalPlanFileAs(plan PlanFile, format PlanFormat) ([]byte, error) {
 // Atlas format carries the same per-statement safety metadata a native plan
 // records at planning time.
 func planStatementsFromSQL(raw []string) []PlanStatement {
-	statements := make([]PlanStatement, 0, len(raw))
-	for _, statement := range raw {
-		assessment := safety.AssessSQL(strings.TrimSpace(sqlutil.StripComments(statement)))
-		statements = append(statements, PlanStatement{
-			SQL:      statement,
-			Severity: assessment.Severity,
-			Reason:   assessment.Reason,
-		})
-	}
+	statements, _ := classifyPlanStatements(raw)
 	return statements
 }
 
