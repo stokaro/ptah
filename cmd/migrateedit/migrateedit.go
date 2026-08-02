@@ -5,6 +5,7 @@
 package migrateedit
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -73,7 +74,7 @@ func runEdit(cmd *cobra.Command, opts *migratemaint.Options, inputs *editInputs)
 		if err := replaceFrom(downPath, inputs.downFile, "down"); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-	} else if err := openEditor(inputs.editor, upPath, downPath); err != nil {
+	} else if err := openEditor(cmd.Context(), inputs.editor, upPath, downPath); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -109,8 +110,8 @@ func replaceFrom(target, src, direction string) error {
 
 // openEditor launches the resolved editor on the pair's existing files, wired to
 // the current terminal for interactive editing.
-func openEditor(editorCmd string, paths ...string) error {
-	err := editor.Open(editorCmd, paths...)
+func openEditor(ctx context.Context, editorCmd string, paths ...string) error {
+	err := editor.Open(ctx, editorCmd, paths...)
 	if errors.Is(err, editor.ErrNoEditor) {
 		return fmt.Errorf("%w, or pass --editor, --up-file, or --down-file", err)
 	}

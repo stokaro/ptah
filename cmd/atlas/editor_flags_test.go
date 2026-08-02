@@ -187,7 +187,7 @@ func TestCompatCommand_SchemaApplyEditWithoutEditorFails(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `no editor configured: set \$EDITOR or \$VISUAL`)
+	c.Assert(err, qt.ErrorMatches, `.*no editor configured: set \$EDITOR or \$VISUAL`)
 }
 
 func assertEditorFlagsSQLiteTableExists(c *qt.C, dbPath, table string) {

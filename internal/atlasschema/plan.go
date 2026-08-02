@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasurl"
+	"github.com/stokaro/ptah/internal/sqlsafety"
 	"github.com/stokaro/ptah/migration/risk"
 	"github.com/stokaro/ptah/migration/safety"
 )
@@ -130,7 +131,7 @@ func PreparePlanFile(
 		name = defaultPlanName(fromFingerprint, toFingerprint)
 	}
 
-	statements, destructive := classifyPlanStatements(computation.statements)
+	statements, destructive := classifyPlanStatements(computation.statements, conn.Info().Dialect)
 
 	return PlanFile{
 		FormatVersion:   PlanFormatVersion,
@@ -149,12 +150,13 @@ func PreparePlanFile(
 // behind every plan statement list, so a plan read from the Atlas format and a
 // plan re-derived from operator-edited SQL carry the same per-statement
 // metadata a freshly planned one records.
-func classifyPlanStatements(raw []string) (statements []PlanStatement, destructive bool) {
+func classifyPlanStatements(raw []string, dialect string) (statements []PlanStatement, destructive bool) {
 	statements = make([]PlanStatement, 0, len(raw))
 	for _, statement := range raw {
-		// Statements can carry leading SQL comments (for example the DROP
-		// TABLE data-loss warning); classify the executable text only.
-		assessment := safety.AssessSQL(strings.TrimSpace(sqlutil.StripComments(statement)))
+		// Statements can carry comments and MySQL-family executable comments.
+		// Classify the SQL the plan's dialect may execute, including guarded
+		// executable-comment bodies regardless of server version.
+		assessment := safety.AssessSQL(strings.TrimSpace(sqlsafety.SQLForAssessment(statement, dialect)))
 		destructive = destructive || assessment.Severity == safety.Destructive
 		statements = append(statements, PlanStatement{
 			SQL:      statement,
@@ -213,7 +215,7 @@ func splitPlanStatements(sqlText, dialect string) []string {
 // carries no such replay, so an edited JSON plan is only as good as the review
 // it received. [MarshalPlanFileAs] callers that accept edits must say so.
 func (p PlanFile) WithStatementsFromSQL(sqlText string) PlanFile {
-	p.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))
+	p.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)
 	return p
 }
 

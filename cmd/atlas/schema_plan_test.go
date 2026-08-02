@@ -27,8 +27,9 @@ func seedSQLiteSchema(c *qt.C, dbPath, schemaSQL string) {
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
 }
 
-// runSchemaPlan executes `schema plan` with args on a fresh command tree and
-// returns combined output plus the execution error.
+// runSchemaPlan executes `schema plan` with args on root and returns combined
+// output plus the execution error. Callers may reuse root to verify cleanup
+// between Execute calls.
 func runSchemaPlan(root *cobra.Command, args ...string) (string, error) {
 	var out bytes.Buffer
 	root.SetOut(&out)

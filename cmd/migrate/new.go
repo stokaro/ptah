@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -103,7 +104,7 @@ func migrateNewCommand(cmd *cobra.Command, args []string, dirFormatValue string)
 		return err
 	}
 	if edit {
-		if err := editCreatedMigration(files, editorCmd, migrationsDir, dirFormat); err != nil {
+		if err := editCreatedMigration(cmd.Context(), files, editorCmd, migrationsDir, dirFormat); err != nil {
 			return err
 		}
 	}
@@ -126,12 +127,13 @@ func migrateNewCommand(cmd *cobra.Command, args []string, dirFormatValue string)
 // afterwards; ptah-format create does not maintain a checksum file, so there is
 // nothing to refresh.
 func editCreatedMigration(
+	ctx context.Context,
 	files *generator.MigrationFiles,
 	editorCmd string,
 	migrationsDir string,
 	dirFormat migrator.MigrationDirFormat,
 ) error {
-	err := editor.Open(editorCmd, files.UpFile, files.DownFile)
+	err := editor.Open(ctx, editorCmd, files.UpFile, files.DownFile)
 	if errors.Is(err, editor.ErrNoEditor) {
 		return fmt.Errorf("%w, or pass --editor", err)
 	}

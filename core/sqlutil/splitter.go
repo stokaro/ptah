@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/internal/dialectlexer"
 	"github.com/stokaro/ptah/internal/lexer"
 )
 
@@ -30,7 +31,7 @@ func stripComments(sql, dialect string) string {
 
 	options := lexer.Options{}
 	if dialect != "" {
-		options = dialectLexerOptions(dialect)
+		options = dialectlexer.Options(dialect)
 	}
 	lexr := lexer.NewLexerWithOptions(sql, options)
 	var result strings.Builder
@@ -63,41 +64,6 @@ func SplitSQLStatementsForDialect(sql string, dialect string) []string {
 	return splitSQLStatements(sql, platform.NormalizeDialect(dialect))
 }
 
-// dialectUsesBackslashEscapes reports whether dialect processes C-style
-// backslash escapes inside string literals. MySQL, MariaDB, and ClickHouse do;
-// the PostgreSQL family (standard_conforming_strings), SQLite, SQL Server, and
-// the no-dialect default treat a backslash as an ordinary character. dialect is
-// expected to be normalized via platform.NormalizeDialect (as done by the
-// exported entry points).
-func dialectUsesBackslashEscapes(dialect string) bool {
-	switch dialect {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
-		return true
-	default:
-		return false
-	}
-}
-
-func dialectLexerOptions(dialect string) lexer.Options {
-	options := lexer.Options{
-		StandardStrings:     true,
-		BackslashEscapes:    dialectUsesBackslashEscapes(dialect),
-		BracketIdentifiers:  dialect == platform.SQLServer,
-		DisableHashComments: dialect == platform.SQLServer,
-	}
-	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		options.PostgreSQLEscapeStrings = true
-	case platform.MySQL:
-		options.RequireWhitespaceAfterDashDash = true
-		options.ExecutableComments = lexer.ExecutableCommentsMySQL
-	case platform.MariaDB:
-		options.RequireWhitespaceAfterDashDash = true
-		options.ExecutableComments = lexer.ExecutableCommentsMariaDB
-	}
-	return options
-}
-
 func splitSQLStatements(sql string, dialect string) []string {
 	if strings.TrimSpace(sql) == "" {
 		return []string{}
@@ -108,7 +74,7 @@ func splitSQLStatements(sql string, dialect string) []string {
 	// cannot leak out and be mis-split into an extra statement. Backslash
 	// escapes are only honored for the dialects that actually process them;
 	// the no-dialect path stays PostgreSQL-safe (backslash is literal).
-	options := dialectLexerOptions(dialect)
+	options := dialectlexer.Options(dialect)
 	lexr := lexer.NewLexerWithOptions(sql, options)
 	var statements []string
 	var currentStatement strings.Builder

@@ -533,12 +533,12 @@ plan document prints to stdout.
 
 | Flag | Behavior |
 | --- | --- |
-| `--save` | Writes `<name>.plan.hcl`, using an Atlas-style UTC timestamp default name or `--name`. Refuses to overwrite an existing default-named file, since the timestamp has one-second granularity. |
-| `--output <path>`/`-o` | Chooses the location, and a `.json` path selects the native JSON plan format. The plan name recorded inside a JSON plan stays fingerprint-derived unless `--name` is given. |
+| `--save` | Atomically writes `<name>.plan.hcl`, using an Atlas-style UTC timestamp default name or `--name`. Refuses to replace any existing entry at the default path, including a concurrent writer or symlink. |
+| `--output <path>`/`-o` | Chooses the location and atomically replaces that entry; a `.json` path selects the native JSON plan format. The plan name recorded inside a JSON plan stays fingerprint-derived unless `--name` is given. |
 | `--dry-run` | Prints the plan document without saving. |
 | `--auto-approve` | Accepted for Atlas CLI compatibility; a locally saved plan file is approved by operator review, so there is no prompt to skip. |
-| `--edit` | Opens the planned SQL in `$VISUAL`, then `$EDITOR`, and saves the plan rebuilt from the edited text. Statement severity and the destructive marker are re-derived from what you wrote. An edit leaving no statement is refused, and nothing is written. |
-| `--name-format <template>` | Computes the plan name from a Go template over `.FromHash` and `.ToHash`, this plan's own `sha256:` fingerprints. The Atlas template helpers (`json`, `upper`, `add`, `indent_ln`, …) are available. Cannot be combined with `--name`. |
+| `--edit` | Opens the planned SQL in `$VISUAL`, then `$EDITOR`, and saves the plan rebuilt from valid UTF-8 text. Comments round-trip, and dialect-aware statement severity and the destructive marker are re-derived from what you wrote. An edit leaving no statement is refused, and nothing is written. |
+| `--name-format <template>` | Templates the name over `.FromHash` and `.ToHash`; hashes use Atlas's measured untagged standard-Base64 representation, and the Atlas template helpers (`json`, `upper`, `add`, `indent_ln`, …) are available. Cannot be combined with `--name`. A rendered `/` or `\` requires explicit `--output`. |
 | `--skip-lint` | Accepted as an explicit no-op: `schema plan` runs no lint step, so there is nothing to skip. |
 | `--env` | Reads `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported `diff` policy from `atlas.hcl`. |
 
@@ -550,6 +550,11 @@ fingerprints there (the official binary parses the file but verifies its own
 base64 hashes, which have no local recipe), re-derives statement severity at
 read time, and refuses to save a plan computed with `--exclude` as
 `.plan.hcl` because the shape cannot record the patterns.
+
+The `.FromHash` and `.ToHash` field names and their untagged standard-Base64
+representation were verified with local Atlas trial v1.2.4 runs on 2026-08-02;
+their values still differ because Ptah fingerprints its independent schema
+representation.
 
 Editing changes the statements, never the fingerprints. `from` still describes
 the live source database, so apply-time staleness detection keeps working. `to`
@@ -564,15 +569,14 @@ Everything that can refuse the plan without reading its statements — the
 happens before the editor opens, so an edit is never thrown away over a problem
 that was decidable beforehand.
 
-A plan name becomes a file name, so both `--name` and `--name-format` refuse
-path separators, control characters, `.`/`..`, and the characters Windows
-forbids in a file name (`:*?"<>|`). That last rule means Atlas's own documented
-example, `plan_{{ slice .ToHash 0 8 }}`, is refused here: Ptah fingerprints are
-`sha256:<hex>`, so slicing from `0` keeps the prefix and yields `plan_sha256:`.
-Slice from `7` to skip it — `plan_{{ slice .ToHash 7 15 }}` gives the digest
-characters the Atlas example is after. The colon matters because it is NTFS's
-alternate-data-stream separator: accepted, it would write an empty
-`plan_sha256` file with the plan document hidden in a stream.
+A default plan name becomes a file name, so `--name` and `--name-format`
+refuse path separators unless `--output` supplies the location separately.
+Both flags always refuse control characters, `.`/`..`, and the characters
+Windows forbids in a file name (`:*?"<>|`). Atlas's documented
+`plan_{{ slice .ToHash 0 8 }}` example works against Ptah's untagged
+standard-Base64 hash value; because standard Base64 can contain `/`, use an
+explicit `--output` when the rendered name must never depend on file-system
+path rules.
 
 **Not implemented**
 

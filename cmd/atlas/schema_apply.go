@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -240,7 +241,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	sqlText := plan.SQL()
 	statements := plan.Statements()
 	if opts.edit {
-		edited, err := editAtlasSchemaApplySQL(sqlText)
+		edited, err := editAtlasSchemaApplySQL(cmd.Context(), sqlText)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -650,8 +651,8 @@ func validateAtlasSchemaApplyDiffPolicy(
 // editor ($VISUAL, then $EDITOR) via a temporary file and returns the edited
 // text, which replaces the prepared plan for display, policy validation, and
 // execution.
-func editAtlasSchemaApplySQL(sqlText string) (string, error) {
-	return editAtlasSQL("schema apply", sqlText)
+func editAtlasSchemaApplySQL(ctx context.Context, sqlText string) (string, error) {
+	return editAtlasSQL(ctx, "schema apply", sqlText)
 }
 
 func effectiveStringArray(cmd *cobra.Command, flagName string, flagValues, configValues []string) []string {

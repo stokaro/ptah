@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/atlas"
+	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/migration/safety"
 )
@@ -170,7 +171,7 @@ func TestSchemaPlanSkipLintCombinesWithEveryOutputMode(t *testing.T) {
 		{name: "dry_run", args: []string{"--dry-run", "--skip-lint"}},
 		{name: "stdout", args: []string{"--skip-lint"}},
 		{name: "save", args: []string{"--save", "--skip-lint"}},
-		{name: "with_name_format", args: []string{"--save", "--skip-lint", "--name-format", "p_{{ slice .ToHash 7 15 }}"}},
+		{name: "with_name_format", args: []string{"--save", "--skip-lint", "--name-format", "combo_name"}},
 	}
 
 	for _, tt := range tests {
@@ -199,16 +200,16 @@ func TestSchemaPlanNameFormatRendersPlanName(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Remove(referencePath), qt.IsNil)
 
+	templateData, err := atlasreport.NewSchemaPlanName(reference.FromFingerprint, reference.ToFingerprint)
+	c.Assert(err, qt.IsNil)
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		fixture.args("--save", "--name-format", "plan_{{ slice .ToHash 7 19 }}")...)
+		fixture.args("--save", "--name-format", "plan_{{ slice .ToHash 0 12 }}")...)
 
-	// The template sees this plan's own fingerprints. Slicing past the
-	// "sha256:" prefix keeps the assertion about the digest rather than the
-	// encoding, and asserting the exact expected name — not merely a shape —
-	// is what separates "the template ran" from "the template ran on the
-	// right value".
+	// The template sees this plan's fingerprints in Atlas's untagged Base64
+	// representation. Asserting the exact expected name — not merely a shape —
+	// separates "the template ran" from "the template ran on the right value".
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	want := "plan_" + reference.ToFingerprint[7:19]
+	want := "plan_" + templateData.ToHash[:12]
 	c.Assert(out, qt.Contains, "Plan saved to file://"+want+".plan.hcl")
 	plan, format, err := atlasschema.ReadPlanDocument(filepath.Join(dir, want+".plan.hcl"))
 	c.Assert(err, qt.IsNil)
@@ -232,18 +233,20 @@ func TestSchemaPlanNameFormatDistinguishesFromHashAndToHash(t *testing.T) {
 	reference, err := atlasschema.ReadPlanFile(referencePath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(reference.FromFingerprint, qt.Not(qt.Equals), reference.ToFingerprint)
+	templateData, err := atlasreport.NewSchemaPlanName(reference.FromFingerprint, reference.ToFingerprint)
+	c.Assert(err, qt.IsNil)
 
 	tests := []struct {
 		name     string
 		template string
 		want     string
 	}{
-		{name: "to_hash", template: "to_{{ slice .ToHash 7 19 }}", want: "to_" + reference.ToFingerprint[7:19]},
-		{name: "from_hash", template: "from_{{ slice .FromHash 7 19 }}", want: "from_" + reference.FromFingerprint[7:19]},
+		{name: "to_hash", template: "to_{{ slice .ToHash 0 12 }}", want: "to_" + templateData.ToHash[:12]},
+		{name: "from_hash", template: "from_{{ slice .FromHash 0 12 }}", want: "from_" + templateData.FromHash[:12]},
 		{
 			name:     "both",
-			template: "{{ slice .FromHash 7 11 }}_{{ slice .ToHash 7 11 }}",
-			want:     reference.FromFingerprint[7:11] + "_" + reference.ToFingerprint[7:11],
+			template: "{{ slice .FromHash 0 4 }}_{{ slice .ToHash 0 4 }}",
+			want:     templateData.FromHash[:4] + "_" + templateData.ToHash[:4],
 		},
 	}
 
@@ -289,6 +292,33 @@ func TestSchemaPlanNameFormatTrimsSurroundingWhitespace(t *testing.T) {
 	plan, err := atlasschema.ReadPlanFile(fixture.outputPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Name, qt.Equals, "spaced_name")
+}
+
+func TestSchemaPlanNameFormatAllowsPathSeparatorWithExplicitOutput(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		suffix string
+	}{
+		{name: "native json", suffix: ".plan.json"},
+		{name: "atlas hcl", suffix: ".plan.hcl"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			fixture := newPlanFixture(c, "explicit-name-path", "", `CREATE TABLE explicit_name_users (id INTEGER PRIMARY KEY);`)
+			outputPath := filepath.Join(fixture.dir, "explicit"+test.suffix)
+
+			out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+				fixture.args("--output", outputPath, "--name-format", "nested/plan")...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			plan, _, err := atlasschema.ReadPlanDocument(outputPath)
+			c.Assert(err, qt.IsNil)
+			c.Assert(plan.Name, qt.Equals, "nested/plan")
+		})
+	}
 }
 
 func TestSchemaPlanNameFormatLastValueWins(t *testing.T) {
@@ -370,15 +400,6 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 			name:     "renders_parent_directory",
 			template: "..",
 			want:     `--name-format: the plan name "\.\." is a directory reference, not a name`,
-		},
-		{
-			// The literal example in Atlas's licensed help. Ptah fingerprints
-			// carry a "sha256:" prefix, so slicing from 0 keeps the colon —
-			// which NTFS reads as an alternate-data-stream separator. Refusing
-			// beats writing an empty file with the plan hidden in a stream.
-			name:     "atlas_documented_example_keeps_the_fingerprint_prefix",
-			template: "plan_{{ slice .ToHash 0 8 }}",
-			want:     `--name-format: the plan name "plan_sha256:[0-9a-f]" contains one of :\*\?"<>\|, which cannot appear in a file name on Windows`,
 		},
 		{
 			name:     "renders_windows_wildcard",
@@ -521,14 +542,14 @@ func TestSchemaPlanNameFormatAcceptsAtlasTemplateHelpers(t *testing.T) {
 	fixture := newPlanFixture(c, "helpers", "", `CREATE TABLE helper_users (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		fixture.args("--output", fixture.outputPath, "--name-format", "plan_{{ upper (slice .ToHash 7 15) }}")...)
+		fixture.args("--output", fixture.outputPath, "--name-format", "plan_{{ upper (slice .ToHash 0 8) }}")...)
 
 	// The helper set is shared with the eight verbs that implement --format,
 	// so an Atlas pipeline's template keeps working when it names a plan.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	plan, err := atlasschema.ReadPlanFile(fixture.outputPath)
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Name, qt.Matches, `plan_[0-9A-F]{8}`)
+	c.Assert(plan.Name, qt.Matches, `plan_[A-Z0-9+/]{8}`)
 }
 
 func TestSchemaPlanNameFormatDryRunWritesNothing(t *testing.T) {
@@ -543,6 +564,73 @@ func TestSchemaPlanNameFormatDryRunWritesNothing(t *testing.T) {
 	plan := parsePlanDocumentOutput(c, out)
 	c.Assert(plan.Name, qt.Equals, "dry_named")
 	assertNoPlanFileWritten(c, fixture.dir)
+}
+
+func TestSchemaPlanLocalFlagsResetAcrossSuccessfulRootReuse(t *testing.T) {
+	c := qt.New(t)
+	root := atlas.NewCompatCommand("atlas")
+	first := newPlanFixture(c, "reuse-first", "", `CREATE TABLE first_users (id INTEGER PRIMARY KEY);`)
+	second := newPlanFixture(c, "reuse-second", "", `CREATE TABLE second_users (id INTEGER PRIMARY KEY);`)
+	firstPath := filepath.Join(first.dir, "first.plan.json")
+	secondPath := filepath.Join(second.dir, "second.plan.json")
+
+	_, err := runSchemaPlan(root, first.args("--output", firstPath, "--name-format", "first_name")...)
+	c.Assert(err, qt.IsNil)
+	_, err = runSchemaPlan(root, second.args("--output", secondPath)...)
+
+	c.Assert(err, qt.IsNil)
+	plan, err := atlasschema.ReadPlanFile(secondPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Name, qt.Matches, `plan_[0-9a-f]{12}`)
+}
+
+func TestSchemaPlanLocalFlagsResetAcrossFailedRootReuse(t *testing.T) {
+	c := qt.New(t)
+	root := atlas.NewCompatCommand("atlas")
+	first := newPlanFixture(c, "reuse-failed-first", "", `CREATE TABLE first_users (id INTEGER PRIMARY KEY);`)
+	second := newPlanFixture(c, "reuse-failed-second", "", `CREATE TABLE second_users (id INTEGER PRIMARY KEY);`)
+	secondPath := filepath.Join(second.dir, "second.plan.json")
+
+	_, err := runSchemaPlan(root, first.args("--dry-run", "--name-format", "{{ .Missing }}")...)
+	c.Assert(err, qt.ErrorMatches, `execute --name-format template: .*Missing.*`)
+	_, err = runSchemaPlan(root, second.args("--output", secondPath)...)
+
+	c.Assert(err, qt.IsNil)
+	plan, err := atlasschema.ReadPlanFile(secondPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Name, qt.Matches, `plan_[0-9a-f]{12}`)
+}
+
+func TestSchemaPlanLocalFlagsResetAcrossParseFailureRootReuse(t *testing.T) {
+	c := qt.New(t)
+	root := atlas.NewCompatCommand("atlas")
+	fixture := newPlanFixture(c, "reuse-parse", "", `CREATE TABLE parse_users (id INTEGER PRIMARY KEY);`)
+	outputPath := filepath.Join(fixture.dir, "after-parse.plan.json")
+
+	_, err := runSchemaPlan(root, "--edit=not-a-bool")
+	c.Assert(err, qt.ErrorMatches, `invalid argument "not-a-bool" for "--edit" flag: .*`)
+	_, err = runSchemaPlan(root, fixture.args("--output", outputPath)...)
+
+	c.Assert(err, qt.IsNil)
+	plan, err := atlasschema.ReadPlanFile(outputPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Name, qt.Matches, `plan_[0-9a-f]{12}`)
+}
+
+func TestSchemaPlanLocalFlagsResetAcrossHelpRootReuse(t *testing.T) {
+	c := qt.New(t)
+	root := atlas.NewCompatCommand("atlas")
+	fixture := newPlanFixture(c, "reuse-help", "", `CREATE TABLE help_users (id INTEGER PRIMARY KEY);`)
+	outputPath := filepath.Join(fixture.dir, "after-help.plan.json")
+
+	_, err := runSchemaPlan(root, "--name-format", "sticky_name", "--help")
+	c.Assert(err, qt.IsNil)
+	_, err = runSchemaPlan(root, fixture.args("--output", outputPath)...)
+
+	c.Assert(err, qt.IsNil)
+	plan, err := atlasschema.ReadPlanFile(outputPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Name, qt.Matches, `plan_[0-9a-f]{12}`)
 }
 
 // -------------------------------------------------------------------- --edit
@@ -751,7 +839,7 @@ func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
 		{
 			name:          "editor_exits_non_zero",
 			installEditor: withBody(`exit 3`),
-			want:          `editor .* failed: .*`,
+			want:          `.*editor .* failed: .*`,
 		},
 		{
 			name: "no_editor_configured",
@@ -759,7 +847,7 @@ func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
 				t.Setenv("VISUAL", "")
 				t.Setenv("EDITOR", "")
 			},
-			want: `no editor configured: set \$EDITOR or \$VISUAL`,
+			want: `.*no editor configured: set \$EDITOR or \$VISUAL`,
 		},
 		{
 			name:          "heredoc_hostile_sql_for_the_hcl_format",
@@ -787,6 +875,19 @@ func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
 			assertNoPlanFileWritten(c, fixture.dir)
 		})
 	}
+}
+
+func TestSchemaPlanEditRejectsInvalidUTF8BeforeWritingJSON(t *testing.T) {
+	c := qt.New(t)
+	installScriptEditor(t, `printf '\377' > "$1"`)
+	fixture := newPlanFixture(c, "invalid-utf8", "", `CREATE TABLE utf8_users (id INTEGER PRIMARY KEY);`)
+
+	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		fixture.args("--output", fixture.outputPath, "--edit")...)
+
+	c.Assert(err, qt.ErrorMatches, `edited schema plan SQL is not valid UTF-8`)
+	_, statErr := os.Stat(fixture.outputPath)
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 }
 
 func TestSchemaPlanEditIsNotInvokedWhenSchemaIsSynced(t *testing.T) {
