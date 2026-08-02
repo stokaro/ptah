@@ -397,7 +397,7 @@ Supports golang-migrate, Goose, Flyway, and Liquibase formatted-SQL changelogs (
 
 ### Atlas CE community-version unsupported commands
 
-**Ptah.** Ptah registers Atlas-shaped boundary stubs for `migrate push`, `schema push`, and the `schema plan` registry sub-verbs (`approve`, `lint`, `list`, `new`, `pull`, `push`, `rm`, `test`, `validate`) in the `ptah-compat` binary. Ptah-owned help reports that the command is not implemented and exits 0; direct execution reports the same status and exits 1.
+**Ptah.** Ptah registers Atlas-shaped boundary stubs for `migrate push`, `schema push`, and the `schema plan` sub-verbs `approve`, `lint`, `list`, `pull`, `push`, `rm` and `test` in the `ptah-compat` binary. `schema plan new` and `schema plan validate` are no longer stubs — they are implemented, so neither the exit-0 help nor the exit-1 execution described below applies to them. Ptah-owned help reports that the command is not implemented and exits 0; direct execution reports the same status and exits 1.
 
 These are compatibility boundaries, not implemented Ptah features. `migrate test`, `schema test`, `migrate edit`, `migrate rebase`, `migrate rm`, and `schema plan` now forward to or implement native Ptah behavior instead of reproducing the boundary.
 
@@ -643,7 +643,7 @@ The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded 
 
 `--edit` opens the planned SQL in `$VISUAL`, then `$EDITOR`, and saves the plan rebuilt from valid UTF-8 text, re-deriving dialect-aware statement severity and the destructive marker so the saved plan describes the SQL it actually carries; statement text round-trips verbatim, comments included, so quitting the editor unchanged reproduces the plan byte for byte, and an edit that leaves no statement is refused with nothing written. `--name-format` computes the plan name from a Go template over `.FromHash`/`.ToHash`, exposed as untagged standard-Base64 digests like the measured Atlas values, and cannot be combined with `--name`; default file names refuse path separators, control characters, `.`/`..`, and the characters Windows forbids. `--skip-lint` is accepted as an explicit no-op, because `schema plan` runs no lint step — that is a gap against Pro, which does lint, not parity with it.
 
-The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded waivers, and the plan registry sub-verbs stay Atlas CE boundary stubs. `--format` and `--directive` fail explicitly: neither was executed in Atlas, so Atlas's plan report payload and its directive artifact shape are both unmeasured, and guessing either would produce silent divergence rather than parity.
+The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded waivers. The registry sub-verbs `approve`, `list`, `pull`, `push` and `rm` stay boundary stubs, and so do `lint` and `test` — both are local by their flag sets, but neither has a measured output contract. `schema plan new` and `schema plan validate` are implemented. `--format` and `--directive` fail explicitly: neither was executed in Atlas, so Atlas's plan report payload and its directive artifact shape are both unmeasured, and guessing either would produce silent divergence rather than parity.
 
 **Tracking.** [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758)
 

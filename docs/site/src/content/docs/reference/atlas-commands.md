@@ -629,12 +629,90 @@ path rules.
   `-- atlas:checkpoint` today, so emitted directives would be silent no-ops.
 - `--schema`, `--include`, and `--lock-timeout` fail explicitly until
   implemented.
-- The registry sub-verbs (`approve`, `lint`, `list`, `new`, `pull`, `push`,
-  `rm`, `test`, `validate`) stay Atlas CE boundary stubs.
+- The registry sub-verbs (`approve`, `list`, `pull`, `push`, `rm`) stay
+  unsupported-boundary stubs: they arbitrate plan state in a remote registry.
+- `lint` and `test` also stay stubs — see below for why.
 
 Atlas keeps `schema plan` in its Pro registry flow, so this is a free Ptah
 capability rather than an Atlas CE stub.
 Native twin: [`ptah schema plan`](../native-commands/).
+
+#### `ptah-compat schema plan new`
+
+Creates a plan file for the schema transition. It is `schema plan` restricted
+to the flag set Atlas registers on this sub-verb, with saving always on:
+Atlas gives `new` neither `--save` nor `--dry-run`, and its documented purpose
+is to create the plan file.
+
+The plan is written to `--output`/`-o` when given, and to `<name>.plan.hcl` in
+the working directory otherwise; an existing default-named plan file is never
+overwritten. An `--output` path ending in `.json` writes the native JSON plan
+format. `--edit`, `--name` and `--name-format` behave exactly as they do on
+`schema plan`, and the same refusals apply to `--repo`, `--format`,
+`--lock-timeout`, `--schema` and `--include`.
+
+`--save`, `--dry-run`, `--push`, `--pending`, `--skip-lint` and `--directive`
+are **not registered** here, because Atlas does not register them here.
+
+#### `ptah-compat schema plan validate`
+
+Checks that the plan file named by `-f`/`--file` describes the transition from
+the `--from` target database to the local `--to` schema files, without changing
+the target database. On success it writes nothing to stdout and exits 0.
+
+Two checks run, and they are the two `schema apply --plan` runs before it
+touches anything:
+
+1. the plan's recorded from-fingerprint must match the live `--from` database,
+   for plans carrying Ptah's own `sha256:` fingerprints. An Atlas-written plan
+   file carries Atlas hashes with no local recipe, so this check is skipped for
+   those and the replay below is the only from-state gate.
+2. the plan's statements are replayed on a dev database seeded from the
+   target's current schema, and the state they reach must equal `--to`.
+
+The replay always runs, in both plan formats — unlike `schema apply --plan`,
+which may skip it for a fingerprint-verified native plan. A matching
+from-fingerprint says the plan was computed against this database, not that its
+statements reach `--to`, and the second question is the one this command exists
+to answer. A SQLite target gets a throwaway dev database; every other dialect
+requires `--dev-url`.
+
+The plan's SQL is **not** required to equal a freshly computed plan's. Atlas
+documents editing a saved plan's `migration` attribute, so what is checked is
+where the statements arrive, not how they are spelled.
+
+`--to` is required; without it the command reports Atlas's own wording,
+`the flag "to" is required to verify the provided plan`. `--exclude` is
+refused: a JSON plan records the patterns it was computed with and the Atlas
+`.plan.hcl` shape records none at all, so flag-supplied patterns would verify a
+different transition than the plan describes. Registry plan URLs
+(`atlas://…`) are refused like they are on `schema apply --plan`.
+
+#### Evidence for the two local sub-verbs
+
+Their **flag sets** follow the published
+[Atlas CLI reference](https://atlasgo.io/cli-reference) (retrieved 2026-08-02).
+Their **behavior** is not established there, and Atlas CE settles nothing
+either: it aborts the entire `schema plan` path — measured 2026-08-02 on the
+pinned CE v1.2.0 binary, where `atlas schema plan new` is byte-identical to
+`atlas schema plan frobnicate-nonsense`. Both commands therefore print one line
+to **stderr** on every run saying their behavior is derived from documentation
+rather than verified, with the tracking issue number. stdout stays
+machine-readable.
+
+**Why `lint` and `test` are not implemented.** Both are local by their Atlas
+flag sets, and both are deferred deliberately:
+
+- `schema plan lint` has no measured output contract, no measured failure
+  threshold and no measured exit code. The engine that would back it — the
+  `migrate lint` analyzer set — reports on a migration *directory*, and a
+  linter narrower than Atlas's analyzer set sitting in a gating position would
+  report clean on a plan Atlas flags. That is a silent wrong answer in the one
+  position where silence is most expensive.
+- `schema plan test` consumes `test "plan"` blocks in `.test.hcl` files.
+  Nothing in Ptah parses that format yet; the test engine reads YAML cases.
+  `.test.hcl` ingestion is its own item, shared with `migrate test` and
+  `schema test`.
 
 ### `ptah-compat schema diff`
 
