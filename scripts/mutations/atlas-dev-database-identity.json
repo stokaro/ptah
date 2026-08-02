@@ -1,0 +1,36 @@
+{
+  "packages": [
+    "./internal/atlasschema/",
+    "./cmd/atlas/"
+  ],
+  "mutations": [
+    {
+      "name": "target identity falls back to raw URL equality",
+      "file": "internal/atlasschema/simulate.go",
+      "old": "\t\tsameTarget, err := atlasurl.SameDatabase(devURL, targetURL)",
+      "new": "\t\tsameTarget, err := devURL == strings.TrimSpace(targetURL), error(nil)",
+      "comment": "Equivalent paths, symlinks, hard links, credentials, ports, and loopback aliases must not bypass the destructive-reset guard."
+    },
+    {
+      "name": "desired-state identity falls back to raw URL equality",
+      "file": "internal/atlasschema/simulate.go",
+      "old": "\treturn atlasurl.SameDatabase(databaseURL, candidate)",
+      "new": "\treturn databaseURL == strings.TrimSpace(candidate), nil",
+      "comment": "A database-URL desired state is just as destructive to reset through an alias as the target is."
+    },
+    {
+      "name": "target identity comparison errors fail open",
+      "file": "internal/atlasschema/simulate.go",
+      "old": "\t\tif err != nil {\n\t\t\treturn nil, fmt.Errorf(\"compare --dev-url with target database: %w\", err)\n\t\t}",
+      "new": "\t\tif err != nil {\n\t\t\tsameTarget = false\n\t\t}",
+      "comment": "Malformed or unsupported target URLs must stop the operation before the dev database is reset."
+    },
+    {
+      "name": "desired-state identity comparison errors fail open",
+      "file": "internal/atlasschema/simulate.go",
+      "old": "\t\tif err != nil {\n\t\t\treturn nil, fmt.Errorf(\"compare --dev-url with --to desired-state database %q: %w\", desired, err)\n\t\t}",
+      "new": "\t\tif err != nil {\n\t\t\tsameDesired = false\n\t\t}",
+      "comment": "Malformed or unsupported desired-state URLs must stop the operation before the dev database is reset."
+    }
+  ]
+}

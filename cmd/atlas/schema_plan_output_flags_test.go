@@ -71,7 +71,7 @@ func newPlanFixture(c *qt.C, name, seedSQL, desiredSQL string) planFixture {
 	c.Assert(os.WriteFile(schemaPath, []byte(desiredSQL), 0o600), qt.IsNil)
 	return planFixture{
 		dir:        dir,
-		dbURL:      "sqlite://" + dbPath,
+		dbURL:      sqliteURLFromPath(dbPath),
 		schemaURL:  "file://" + schemaPath,
 		outputPath: filepath.Join(dir, name+".plan.json"),
 	}
@@ -487,7 +487,7 @@ func TestSchemaPlanNameFormatIsParsedBeforeAnyDatabaseWork(t *testing.T) {
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE u (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 	// A SQLite path under a directory that does not exist cannot be opened,
 	// so reaching the connection at all produces a connect error instead.
-	unreachable := "sqlite://" + filepath.Join(dir, "no-such-directory", "target.db")
+	unreachable := sqliteURLFromPath(filepath.Join(dir, "no-such-directory", "target.db"))
 
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		"--from", unreachable,

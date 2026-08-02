@@ -20,7 +20,7 @@ func TestSameDatabase_SQLiteSymlinkAlias(t *testing.T) {
 	c.Assert(os.WriteFile(databasePath, nil, 0o600), qt.IsNil)
 	c.Assert(os.Symlink(databasePath, aliasPath), qt.IsNil)
 
-	same, err := atlasurl.SameDatabase(
+	same, err := atlasurl.SameDatabaseEndpoint(
 		"sqlite://"+databasePath,
 		"sqlite://"+aliasPath,
 	)

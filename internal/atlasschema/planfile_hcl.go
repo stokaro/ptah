@@ -2,6 +2,8 @@ package atlasschema
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"maps"
@@ -102,6 +104,15 @@ func IsNativeFingerprint(fingerprint string) bool {
 	return err == nil && parsed.Algorithm() == digest.SHA256
 }
 
+// IsAtlasFingerprint reports whether fingerprint has the observed Atlas plan
+// hash shape: a standard-Base64 encoding of a 32-byte SHA-256 digest. Ptah
+// cannot recompute Atlas's schema serialization, but it rejects malformed
+// values instead of silently treating arbitrary metadata as an Atlas hash.
+func IsAtlasFingerprint(fingerprint string) bool {
+	decoded, err := base64.StdEncoding.Strict().DecodeString(fingerprint)
+	return err == nil && len(decoded) == sha256.Size
+}
+
 // TimestampPlanName returns the Atlas-style timestamp plan name
 // (YYYYMMDDHHMMSS in UTC) used as the default name for `.plan.hcl` plans,
 // mirroring the names Atlas writes.
@@ -127,6 +138,11 @@ func TimestampPlanName(now time.Time) string {
 // dialect-aware statement list that [ApplyStatements] runs, never from these
 // fields.
 func decodePlanHCL(contents []byte, path string) (PlanFile, error) {
+	// HCL plan files can acquire CRLF line endings during a Windows checkout.
+	// Normalize document separators before parsing; the writer still rejects
+	// carriage returns embedded in in-memory SQL statements.
+	contents = bytes.ReplaceAll(contents, []byte("\r\n"), []byte("\n"))
+
 	file, diags := hclsyntax.ParseConfig(contents, path, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
 		return PlanFile{}, fmt.Errorf("parse plan file %s: %s", path, diags.Error())
@@ -315,6 +331,12 @@ func validatePlanHCL(plan PlanFile) error {
 	}
 	if len(plan.Statements) == 0 {
 		return errors.New("plan migration contains no statements")
+	}
+	if !IsNativeFingerprint(plan.FromFingerprint) && !IsAtlasFingerprint(plan.FromFingerprint) {
+		return errors.New("plan from fingerprint must be a Ptah sha256 digest or an Atlas Base64 SHA-256 hash")
+	}
+	if !IsNativeFingerprint(plan.ToFingerprint) && !IsAtlasFingerprint(plan.ToFingerprint) {
+		return errors.New("plan to fingerprint must be a Ptah sha256 digest or an Atlas Base64 SHA-256 hash")
 	}
 	for i, statement := range plan.Statements {
 		if strings.TrimSpace(statement.SQL) == "" {

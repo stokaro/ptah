@@ -1,0 +1,26 @@
+Create a new plan file for the schema transition
+
+Usage:
+  atlas schema plan new [flags]
+
+Flags:
+      --from strings            URL(s) of the current schema state
+      --to strings              URL(s) of the desired schema state
+  -s, --schema strings          set schema names
+      --exclude strings         list of glob patterns used to filter resources from applying
+      --include strings         list of glob patterns used to select which resources to keep in inspection
+      --auto-approve            approve the plan without asking for confirmation
+      --repo string             URL to the schema repository
+      --format string           output format
+      --dev-url string          [driver://username:password@address/dbname?param=value] select a dev database using the URL format
+      --lock-timeout duration   set how long to wait for the database lock (default 10s)
+      --edit                    edit the plan in the terminal editor
+      --name string             plan name as stored in the registry
+      --name-format string      Go template to dynamically compute the plan name (e.g., 'plan_{{ slice .ToHash 0 8 }}')
+  -o, --output string           output file path (e.g., path/to/file.plan.hcl)
+  -h, --help                    help for new
+
+Global Flags:
+  -c, --config strings       select config (project) files using URL format (comma-separated) (default [file://atlas.hcl])
+      --env string           set which env from the config file to use
+      --var <name>=<value>   input variables (default [])

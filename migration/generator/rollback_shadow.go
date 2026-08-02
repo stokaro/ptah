@@ -53,7 +53,7 @@ func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOption
 	if opts.FS == nil {
 		return fmt.Errorf("rollback verification failed: a migration filesystem is required")
 	}
-	sameDatabase, err := atlasurl.SameDatabase(
+	sameDatabase, err := atlasurl.MayAddressSameDatabase(
 		opts.TargetConnection.Info().URL,
 		opts.ShadowDatabaseURL,
 	)

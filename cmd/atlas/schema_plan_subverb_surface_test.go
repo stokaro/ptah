@@ -2,6 +2,11 @@ package atlas_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -12,10 +17,42 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 )
 
+const atlasV13SchemaPlanHelpDir = "testdata/atlas-v1.3.0-schema-plan-help"
+
+type atlasV13SchemaPlanHelpProvenance struct {
+	AtlasVersion    string            `json:"atlas_version"`
+	AtlasEdition    string            `json:"atlas_edition"`
+	Platform        string            `json:"platform"`
+	CapturedOn      string            `json:"captured_on"`
+	ReleaseURL      string            `json:"release_url"`
+	BinarySHA256    string            `json:"binary_sha256"`
+	Environment     string            `json:"environment"`
+	Captures        map[string]string `json:"captures"`
+	ArtifactSHA256  map[string]string `json:"artifact_sha256"`
+	RuntimeArtifact *string           `json:"runtime_artifact"`
+	Limitations     []string          `json:"limitations"`
+}
+
+func readAtlasV13SchemaPlanHelpProvenance(c *qt.C) atlasV13SchemaPlanHelpProvenance {
+	c.Helper()
+	document, err := os.ReadFile(filepath.Join(atlasV13SchemaPlanHelpDir, "provenance.json"))
+	c.Assert(err, qt.IsNil)
+	var provenance atlasV13SchemaPlanHelpProvenance
+	c.Assert(json.Unmarshal(document, &provenance), qt.IsNil)
+	return provenance
+}
+
+func fileSHA256(c *qt.C, path string) string {
+	c.Helper()
+	document, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	return fmt.Sprintf("%x", sha256.Sum256(document))
+}
+
 // Evidence for everything this file pins.
 //
-// Atlas CE v1.2.0, the pinned oracle binary, has NO `schema plan` sub-verbs at
-// all. Measured 2026-08-02 in a scratch directory:
+// Atlas CE v1.3.0, the pinned oracle binary, has NO usable `schema plan`
+// sub-verbs. Reconfirmed 2026-08-02 in a scratch directory:
 //
 //	atlas schema plan new                  -> Abort: 'atlas schema plan' is not supported...  exit 1
 //	atlas schema plan lint                 -> Abort: 'atlas schema plan' ...                  exit 1
@@ -40,10 +77,45 @@ import (
 //	atlas schema plan new --frobnicate-nonsense x -> Error: unknown flag: --frobnicate...   exit 1   NONSENSE CONTROL
 //
 // So none of this is a CE parity gap: there is no input on this path where CE
-// succeeds and this tree fails. The flag sets asserted below come from the
-// published Atlas CLI reference (https://atlasgo.io/cli-reference, retrieved
-// 2026-08-02). The sub-verbs' behavior is not established, only their flag
-// surface, so each writes a note to stderr saying so.
+// succeeds and this tree fails. The flag sets asserted below were captured
+// from the standard Atlas v1.3.0 binary's own help on 2026-08-02 and agree with
+// the published Atlas CLI reference. The sub-verbs' runtime behavior is not
+// established; successful Ptah executions therefore remain silent and keep
+// that provenance in source and compatibility documentation.
+
+func TestAtlasSchemaPlanV13HelpOracleProvenance(t *testing.T) {
+	c := qt.New(t)
+	provenance := readAtlasV13SchemaPlanHelpProvenance(c)
+
+	c.Assert(provenance.AtlasVersion, qt.Equals, "v1.3.0")
+	c.Assert(provenance.AtlasEdition, qt.Equals, "standard")
+	c.Assert(provenance.Platform, qt.Equals, "darwin/arm64")
+	c.Assert(provenance.CapturedOn, qt.Equals, "2026-08-02")
+	c.Assert(provenance.ReleaseURL, qt.Equals, "https://github.com/ariga/atlas/releases/tag/v1.3.0")
+	c.Assert(provenance.BinarySHA256, qt.Equals, "47aaf7c295c7569c7eecfcbc53f02de862846ce1fbef16f1bd8ae98b03c3c68f")
+	c.Assert(provenance.Environment, qt.Equals,
+		"empty temporary HOME; no Atlas account, token, organization, project, or repository identifiers")
+	c.Assert(provenance.Captures, qt.DeepEquals, map[string]string{
+		"new.txt":      "HOME=<empty-temp-home> atlas schema plan new --help",
+		"validate.txt": "HOME=<empty-temp-home> atlas schema plan validate --help",
+	})
+	c.Assert(provenance.RuntimeArtifact, qt.IsNil)
+	c.Assert(provenance.Limitations, qt.HasLen, 3)
+
+	tests := []struct {
+		name string
+		hash string
+	}{
+		{name: "new.txt", hash: "4ec146e7e8660cc85a137547c5c02ee7a818e621ed39d34f156a708b2b1b663f"},
+		{name: "validate.txt", hash: "d636db61bea0187ff29dd79ea608b18162cb768719f1081d51433fd32eab9103"},
+	}
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(provenance.ArtifactSHA256[test.name], qt.Equals, test.hash)
+			c.Assert(fileSHA256(c, filepath.Join(atlasV13SchemaPlanHelpDir, test.name)), qt.Equals, test.hash)
+		})
+	}
+}
 
 // atlasSchemaPlanNewFlags is the local flag set Atlas registers on
 // `atlas schema plan new`, verbatim from the published reference minus the
@@ -201,9 +273,7 @@ func runSchemaPlanSubverb(root *cobra.Command, verb string, args ...string) (str
 }
 
 // runSchemaPlanSubverbStreams is runSchemaPlanSubverb with the streams kept
-// apart, which every stdout-purity assertion needs: the docs-derived note goes
-// to stderr precisely so stdout stays machine-readable, and a merged buffer
-// cannot tell the two apart.
+// apart so tests can pin stdout and stderr independently.
 func runSchemaPlanSubverbStreams(
 	root *cobra.Command,
 	verb string,

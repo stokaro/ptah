@@ -645,7 +645,7 @@ The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded 
 
 The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded waivers. The registry sub-verbs `approve`, `list`, `pull`, `push` and `rm` stay boundary stubs, and so do `lint` and `test` — both are local by their flag sets, but neither has a measured output contract. `schema plan new` and `schema plan validate` are implemented. `--format` and `--directive` fail explicitly: neither was executed in Atlas, so Atlas's plan report payload and its directive artifact shape are both unmeasured, and guessing either would produce silent divergence rather than parity.
 
-**Tracking.** [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758)
+**Tracking.** [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758), [`stokaro/ptah#1037`](https://github.com/stokaro/ptah/issues/1037)
 
 
 ### Atlas-compatible Flyway repeatable import execution

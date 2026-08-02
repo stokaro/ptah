@@ -79,6 +79,9 @@ type Source struct {
 	Raw string
 	// Kind is the classified source kind.
 	Kind Kind
+	// Dialect is the normalized database dialect for database URL sources and
+	// empty for every other source kind.
+	Dialect string
 	// Path is the resolved local filesystem path for local-file and
 	// migration-directory sources, when it could be resolved.
 	Path string
@@ -124,6 +127,12 @@ func Classify(rawURL string) (Source, error) {
 	base, _, hasQuery := strings.Cut(trimmed, "?")
 	scheme, rest, hasScheme := strings.Cut(base, "://")
 	if !hasScheme {
+		// SQLite drive paths use the opaque form on Windows so the drive's
+		// colon cannot be parsed as a URL host port.
+		opaqueScheme, _, hasOpaqueScheme := strings.Cut(base, ":")
+		if hasOpaqueScheme && platform.NormalizeDialect(opaqueScheme) == platform.SQLite {
+			return Source{Raw: trimmed, Kind: KindDatabase, Dialect: platform.SQLite}, nil
+		}
 		return classifyLocal(trimmed)
 	}
 	switch scheme = strings.ToLower(scheme); {
@@ -139,7 +148,7 @@ func Classify(rawURL string) (Source, error) {
 		}
 		return Source{Raw: trimmed, Kind: KindEnv, EnvAttr: attr}, nil
 	case platform.NormalizeDialect(scheme) != "":
-		return Source{Raw: trimmed, Kind: KindDatabase}, nil
+		return Source{Raw: trimmed, Kind: KindDatabase, Dialect: platform.NormalizeDialect(scheme)}, nil
 	case scheme == "docker":
 		return Source{}, errors.New("docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL")
 	case scheme == "atlas":
@@ -219,7 +228,7 @@ func (s Set) EnsureDevIsolation(devURL string) error {
 	if s.Kind != KindDatabase || len(s.Sources) == 0 || strings.TrimSpace(devURL) == "" {
 		return nil
 	}
-	same, err := atlasurl.SameDatabase(s.Sources[0].Raw, devURL)
+	same, err := atlasurl.MayAddressSameDatabase(s.Sources[0].Raw, devURL)
 	if err != nil {
 		return fmt.Errorf("compare %s database identity with --dev-url: %w", s.Flag, err)
 	}
@@ -235,8 +244,7 @@ func (s Set) ImpliedDialect() string {
 	if s.Kind != KindDatabase || len(s.Sources) == 0 {
 		return ""
 	}
-	scheme, _, _ := strings.Cut(s.Sources[0].Raw, "://")
-	return platform.NormalizeDialect(scheme)
+	return s.Sources[0].Dialect
 }
 
 // PinDialect determines the SQL dialect shared by the dev database and all

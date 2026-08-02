@@ -1,6 +1,7 @@
 package atlasurl_test
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,6 +26,7 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 		{name: "mysql TCP spelling", rawURL: "mysql://root@tcp(localhost:3306)/dev", want: "mysql"},
 		{name: "mysql TCP spelling with closing parenthesis in password", rawURL: "mysql://root:pa)ss@tcp(localhost:3306)/dev", want: "mysql"},
 		{name: "mariadb TCP spelling", rawURL: "mariadb://root@tcp(localhost:3306)/dev", want: "mariadb"},
+		{name: "sqlite3 opaque drive path alias", rawURL: "sqlite3:C:/work/app.db", want: "sqlite"},
 		{name: "docker postgres", rawURL: "docker://postgres/16/dev", want: "postgres"},
 		{name: "docker postgres port", rawURL: "docker://postgres:16/dev", want: "postgres"},
 	}
@@ -95,7 +97,7 @@ func TestValidateDialectMatch_FailurePath(t *testing.T) {
 	})
 }
 
-func TestSameDatabase_HappyPath(t *testing.T) {
+func TestSameDatabaseEndpoint_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	sqlitePath := filepath.Join(dir, "dev.db")
@@ -134,6 +136,12 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "sqlite percent-encoded file URI identifies the same file",
+			left:  atlasurl.SQLiteURLFromPath(sqlitePath),
+			right: "sqlite:file:" + url.PathEscape(filepath.ToSlash(sqlitePath)) + "?mode=rwc",
+			want:  true,
+		},
+		{
 			name:  "loopback host aliases identify the same server",
 			left:  "postgres://localhost/app",
 			right: "postgres://127.0.0.1:5432/app",
@@ -152,15 +160,57 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "postgres query parameters override endpoint and database",
+			left:  "postgres://ignored.invalid/ignored?host=localhost&port=5432&dbname=app",
+			right: "postgres://localhost/app",
+			want:  true,
+		},
+		{
+			name:  "sqlserver database query parameter is case insensitive",
+			left:  "sqlserver://localhost:1433?DATABASE=app",
+			right: "mssql://localhost?database=app",
+			want:  true,
+		},
+		{
+			name:  "sqlserver named instances remain distinct",
+			left:  `sqlserver://localhost/instance-a?database=app`,
+			right: `sqlserver://localhost/instance-b?database=app`,
+			want:  false,
+		},
+		{
+			name:  "clickhouse database query parameter overrides path",
+			left:  "clickhouse://localhost:9000/ignored?database=app",
+			right: "clickhouse://localhost/app",
+			want:  true,
+		},
+		{
 			name:  "different database names",
 			left:  "postgres://localhost/source",
 			right: "postgres://localhost/dev",
 			want:  false,
 		},
 		{
-			name:  "different hosts",
+			name:  "unspecified sqlserver databases are not proven identical",
+			left:  "sqlserver://cleanup@localhost",
+			right: "sqlserver://scenario@localhost",
+			want:  false,
+		},
+		{
+			name:  "case-distinct database names are not assumed identical",
+			left:  "postgres://localhost/app",
+			right: "postgres://localhost/App",
+			want:  false,
+		},
+		{
+			name:  "different hosts defer alias detection to live realm identity",
 			left:  "postgres://db-a/app",
 			right: "postgres://db-b/app",
+			want:  false,
+		},
+		{
+			name:  "different postgres fallback routes are not proven identical",
+			left:  "postgres://ignored/app?host=db-a,db-b&port=5432,5432",
+			right: "postgres://ignored/app?host=db-a,db-c&port=5432,5432",
 			want:  false,
 		},
 		{
@@ -173,25 +223,75 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			got, err := atlasurl.SameDatabase(test.left, test.right)
+			got, err := atlasurl.SameDatabaseEndpoint(test.left, test.right)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
 		})
 	}
 }
 
-func TestSameDatabase_FailurePath(t *testing.T) {
+func TestSameDatabaseEndpoint_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	c.Run("unsupported dialect", func(c *qt.C) {
-		got, err := atlasurl.SameDatabase("oracle://localhost/source", "postgres://localhost/dev")
+		got, err := atlasurl.SameDatabaseEndpoint("oracle://localhost/source", "postgres://localhost/dev")
 		c.Assert(err, qt.ErrorMatches, "unsupported database URL dialect")
 		c.Assert(got, qt.IsFalse)
 	})
 
 	c.Run("invalid URL", func(c *qt.C) {
-		got, err := atlasurl.SameDatabase("postgres://%zz", "postgres://localhost/dev")
+		got, err := atlasurl.SameDatabaseEndpoint("postgres://%zz", "postgres://localhost/dev")
 		c.Assert(err, qt.ErrorMatches, "invalid database URL")
 		c.Assert(got, qt.IsFalse)
 	})
+}
+
+func TestMayAddressSameDatabase_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		left  string
+		right string
+		want  bool
+	}{
+		{
+			name:  "same database name across hosts fails closed",
+			left:  "postgres://db-a/app",
+			right: "postgres://db-b/app",
+			want:  true,
+		},
+		{
+			name:  "case-only database difference fails closed",
+			left:  "postgres://db-a/app",
+			right: "postgres://db-b/App",
+			want:  true,
+		},
+		{
+			name:  "different database names prove distinct realms",
+			left:  "postgres://db-a/source",
+			right: "postgres://db-a/dev",
+			want:  false,
+		},
+		{
+			name:  "different dialects prove distinct realms",
+			left:  "postgres://localhost/app",
+			right: "mysql://localhost/app",
+			want:  false,
+		},
+		{
+			name:  "unspecified database fails closed",
+			left:  "sqlserver://localhost",
+			right: "sqlserver://localhost/app?database=dev",
+			want:  true,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, err := atlasurl.MayAddressSameDatabase(test.left, test.right)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
 }

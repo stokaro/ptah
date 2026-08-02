@@ -3,8 +3,10 @@ package atlas_test
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -76,8 +78,17 @@ func readTargetSchema(c *qt.C, dbURL string) *dbschematypes.DBSchema {
 	return schema
 }
 
+// targetSchemaFingerprint captures the complete introspected target shape in
+// the same deterministic form used by native plan stale-state checks.
+func targetSchemaFingerprint(c *qt.C, dbURL string) string {
+	c.Helper()
+	fingerprint, err := atlasschema.SchemaFingerprint(readTargetSchema(c, dbURL))
+	c.Assert(err, qt.IsNil)
+	return fingerprint
+}
+
 // TestSchemaPlanValidateAcceptsAMatchingPlanSilently pins the success contract:
-// exit 0, EMPTY stdout, and the one-line provenance note on stderr.
+// exit 0 with empty stdout and stderr.
 //
 // Empty stdout is the deliberate choice: no measurement settles what a
 // successful Atlas plan validation prints, and an empty stdout cannot be the
@@ -93,13 +104,209 @@ func TestSchemaPlanValidateAcceptsAMatchingPlanSilently(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s%s", stdout, stderr))
 	c.Assert(stdout, qt.Equals, "")
-	c.Assert(stderr, qt.Contains, "derived from Atlas documentation")
-	c.Assert(stderr, qt.Contains, "stokaro/ptah#951")
-	// The note must name THIS verb. Without it the note can name the parent and
-	// still satisfy every other assertion, sending an operator to a different
-	// command's contract; the `new` side already pins the same property.
-	c.Assert(stderr, qt.Contains, "atlas schema plan validate")
-	c.Assert(countLines(stderr), qt.Equals, 1)
+	c.Assert(stderr, qt.Equals, "")
+}
+
+// TestSchemaPlanValidateAcceptsAtlasAuthoredPlan keeps validation independent
+// from Ptah's plan writer. The plan file was produced by the standard Atlas
+// distribution during the plan-format measurement campaign.
+func TestSchemaPlanValidateAcceptsAtlasAuthoredPlan(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "oracle-validate.db")
+	dbURL := sqliteURLFromPath(dbPath)
+	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
+	beforeFingerprint := targetSchemaFingerprint(c, dbURL)
+
+	stdout, stderr, err := runSchemaPlanSubverbStreams(atlas.NewCompatCommand("atlas"), "validate",
+		"--from", dbURL,
+		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--file", "file://"+oracleFixturePath(c, oracleAtlasPlanFile),
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s%s", stdout, stderr))
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(targetSchemaFingerprint(c, dbURL), qt.Equals, beforeFingerprint)
+	c.Assert(sqliteRowCount(c, dbPath, "users"), qt.Equals, 1)
+}
+
+// TestSchemaPlanValidateTreatsForeignFingerprintsAsUnauthenticatedMetadata
+// pins the limit of validating Atlas-authored plans. Atlas's base64 hashes
+// have no public local derivation, so the semantic replay below is the
+// authority; neither foreign fingerprint can serve as an integrity check.
+func TestSchemaPlanValidateTreatsForeignFingerprintsAsUnauthenticatedMetadata(t *testing.T) {
+	c := qt.New(t)
+	oraclePlan, _, err := atlasschema.ReadPlanDocument(oracleFixturePath(c, oracleAtlasPlanFile))
+	c.Assert(err, qt.IsNil)
+	tests := []struct {
+		name   string
+		mutate func(*atlasschema.PlanFile)
+	}{
+		{
+			name: "from fingerprint",
+			mutate: func(plan *atlasschema.PlanFile) {
+				plan.FromFingerprint = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+			},
+		},
+		{
+			name: "to fingerprint",
+			mutate: func(plan *atlasschema.PlanFile) {
+				plan.ToFingerprint = "//////////////////////////////////////////8="
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dir := t.TempDir()
+			dbPath := filepath.Join(dir, "target.db")
+			dbURL := sqliteURLFromPath(dbPath)
+			planPath := filepath.Join(dir, "foreign-fingerprint.plan.hcl")
+			seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+			execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
+			beforeFingerprint := targetSchemaFingerprint(c, dbURL)
+			plan := oraclePlan
+			test.mutate(&plan)
+			document, err := atlasschema.MarshalPlanFileAs(plan, atlasschema.PlanFormatHCL)
+			c.Assert(err, qt.IsNil)
+			c.Assert(os.WriteFile(planPath, document, 0o600), qt.IsNil)
+
+			stdout, stderr, err := runSchemaPlanSubverbStreams(atlas.NewCompatCommand("atlas"), "validate",
+				"--from", dbURL,
+				"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+				"--file", "file://"+planPath,
+			)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s%s", stdout, stderr))
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, "")
+			c.Assert(targetSchemaFingerprint(c, dbURL), qt.Equals, beforeFingerprint)
+			c.Assert(sqliteRowCount(c, dbPath, "users"), qt.Equals, 1)
+		})
+	}
+}
+
+func TestSchemaPlanValidateRejectsAtlasAuthoredPlanMutations(t *testing.T) {
+	c := qt.New(t)
+	oraclePlan, _, err := atlasschema.ReadPlanDocument(oracleFixturePath(c, oracleAtlasPlanFile))
+	c.Assert(err, qt.IsNil)
+	tests := []struct {
+		name      string
+		migration string
+	}{
+		{
+			name:      "changed migration",
+			migration: "CREATE TABLE unrelated (id INTEGER PRIMARY KEY);",
+		},
+		{
+			name: "extra statement",
+			migration: atlasPlanMigrationSQL(oraclePlan.Statements) +
+				"\nCREATE TABLE unexpected (id INTEGER PRIMARY KEY);",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dir := t.TempDir()
+			dbPath := filepath.Join(dir, "target.db")
+			dbURL := sqliteURLFromPath(dbPath)
+			planPath := filepath.Join(dir, "mutated.plan.hcl")
+			seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+			execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
+			beforeFingerprint := targetSchemaFingerprint(c, dbURL)
+			writeAtlasPlanFile(c, planPath, test.migration)
+
+			out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
+				"--from", dbURL,
+				"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+				"--file", "file://"+planPath,
+			)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(out, qt.Contains, "does not converge to the desired state")
+			c.Assert(targetSchemaFingerprint(c, dbURL), qt.Equals, beforeFingerprint)
+			c.Assert(sqliteRowCount(c, dbPath, "users"), qt.Equals, 1)
+		})
+	}
+}
+
+func TestSchemaPlanValidateRejectsMalformedAtlasPlanWithoutMutation(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	dbURL := sqliteURLFromPath(dbPath)
+	planPath := filepath.Join(dir, "malformed.plan.hcl")
+	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
+	beforeFingerprint := targetSchemaFingerprint(c, dbURL)
+	c.Assert(os.WriteFile(planPath, []byte("plan {"), 0o600), qt.IsNil)
+
+	out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
+		"--from", dbURL,
+		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--file", "file://"+planPath,
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "parse plan file")
+	c.Assert(targetSchemaFingerprint(c, dbURL), qt.Equals, beforeFingerprint)
+	c.Assert(sqliteRowCount(c, dbPath, "users"), qt.Equals, 1)
+}
+
+func TestSchemaPlanValidateRejectsDriftedSourceForAtlasAuthoredPlan(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "drifted-target.db")
+	dbURL := sqliteURLFromPath(dbPath)
+	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c, dbPath, "CREATE TABLE drifted (id INTEGER PRIMARY KEY);")
+	execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
+	beforeFingerprint := targetSchemaFingerprint(c, dbURL)
+
+	out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
+		"--from", dbURL,
+		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--file", "file://"+oracleFixturePath(c, oracleAtlasPlanFile),
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "does not converge to the desired state")
+	c.Assert(targetSchemaFingerprint(c, dbURL), qt.Equals, beforeFingerprint)
+	c.Assert(sqliteRowCount(c, dbPath, "users"), qt.Equals, 1)
+}
+
+func TestSchemaPlanValidateRejectsChangedDesiredStateForAtlasAuthoredPlan(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	dbURL := sqliteURLFromPath(dbPath)
+	extraDesiredPath := filepath.Join(dir, "extra-desired.sql")
+	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	execOnTarget(c, dbURL, `INSERT INTO users (id, name) VALUES (1, 'kept');`)
+	beforeFingerprint := targetSchemaFingerprint(c, dbURL)
+	c.Assert(os.WriteFile(extraDesiredPath, []byte(
+		"CREATE TABLE desired_extra (id INTEGER PRIMARY KEY);\n",
+	), 0o600), qt.IsNil)
+
+	out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
+		"--from", dbURL,
+		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--to", "file://"+extraDesiredPath,
+		"--file", "file://"+oracleFixturePath(c, oracleAtlasPlanFile),
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "does not converge to the desired state")
+	c.Assert(targetSchemaFingerprint(c, dbURL), qt.Equals, beforeFingerprint)
+	c.Assert(sqliteRowCount(c, dbPath, "users"), qt.Equals, 1)
+}
+
+func atlasPlanMigrationSQL(statements []atlasschema.PlanStatement) string {
+	sql := make([]string, len(statements))
+	for i, statement := range statements {
+		sql[i] = statement.SQL
+	}
+	return strings.Join(sql, ";\n") + ";"
 }
 
 // TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged asserts the protected
@@ -165,6 +372,51 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 		after := readTargetSchema(c, fixture.dbURL)
 		c.Assert(tableNames(after), qt.DeepEquals, tableNames(before))
 		c.Assert(tableNames(after), qt.DeepEquals, []string{"keep_me"})
+		c.Assert(countRows(c, fixture.dbPath, "keep_me"), qt.Equals, 3)
+	})
+
+	c.Run("dev_url_path_alias_of_the_target_is_refused", func(c *qt.C) {
+		fixture := newSeededFixture(c, "validate-devurl-path-alias")
+		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
+		aliasPath := filepath.Dir(fixture.dbPath) + string(os.PathSeparator) + "." +
+			string(os.PathSeparator) + filepath.Base(fixture.dbPath)
+		aliasURL := sqliteURLFromPath(aliasPath) + "?mode=rwc"
+
+		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
+			fixture.validateArgs("--dev-url", aliasURL)...)
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(out, qt.Contains, "--dev-url must not point at the target database")
+		c.Assert(targetSchemaFingerprint(c, fixture.dbURL), qt.Equals, beforeFingerprint)
+		c.Assert(countRows(c, fixture.dbPath, "keep_me"), qt.Equals, 3)
+	})
+
+	c.Run("percent_encoded_dev_url_alias_of_the_target_is_refused", func(c *qt.C) {
+		fixture := newSeededFixture(c, "validate-devurl-percent-encoded-alias")
+		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
+		aliasURL := "sqlite:file:" + url.PathEscape(filepath.ToSlash(fixture.dbPath)) + "?mode=rwc"
+
+		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
+			fixture.validateArgs("--dev-url", aliasURL)...)
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(out, qt.Contains, "--dev-url must not point at the target database")
+		c.Assert(targetSchemaFingerprint(c, fixture.dbURL), qt.Equals, beforeFingerprint)
+		c.Assert(countRows(c, fixture.dbPath, "keep_me"), qt.Equals, 3)
+	})
+
+	c.Run("dev_url_hard_link_of_the_target_is_refused", func(c *qt.C) {
+		fixture := newSeededFixture(c, "validate-devurl-hard-link")
+		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
+		aliasPath := filepath.Join(filepath.Dir(fixture.dbPath), "target-hard-link.db")
+		c.Assert(os.Link(fixture.dbPath, aliasPath), qt.IsNil)
+
+		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
+			fixture.validateArgs("--dev-url", sqliteURLFromPath(aliasPath))...)
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(out, qt.Contains, "--dev-url must not point at the target database")
+		c.Assert(targetSchemaFingerprint(c, fixture.dbURL), qt.Equals, beforeFingerprint)
 		c.Assert(countRows(c, fixture.dbPath, "keep_me"), qt.Equals, 3)
 	})
 }

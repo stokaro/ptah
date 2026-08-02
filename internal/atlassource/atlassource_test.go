@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -42,18 +43,22 @@ func TestClassify_Kinds(t *testing.T) {
 	c.Assert(os.WriteFile(schemaFile, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
 	tests := []struct {
-		name string
-		url  string
-		want atlassource.Kind
+		name        string
+		url         string
+		want        atlassource.Kind
+		wantDialect string
 	}{
 		{name: "file url", url: "file://" + schemaFile, want: atlassource.KindLocalFile},
 		{name: "plain path", url: schemaFile, want: atlassource.KindLocalFile},
 		{name: "missing file", url: "file://" + filepath.Join(schemaDir, "missing.sql"), want: atlassource.KindLocalFile},
 		{name: "directory without atlas.sum", url: "file://" + schemaDir, want: atlassource.KindLocalFile},
-		{name: "postgres url", url: "postgres://app_user@localhost:5432/app", want: atlassource.KindDatabase},
-		{name: "mysql tcp url", url: "mysql://app_user@tcp(localhost:3306)/app", want: atlassource.KindDatabase},
-		{name: "sqlite url", url: "sqlite://app.db", want: atlassource.KindDatabase},
-		{name: "sqlite url with query", url: "sqlite://dev?mode=memory", want: atlassource.KindDatabase},
+		{name: "postgres url", url: "postgres://app_user@localhost:5432/app", want: atlassource.KindDatabase, wantDialect: "postgres"},
+		{name: "mysql tcp url", url: "mysql://app_user@tcp(localhost:3306)/app", want: atlassource.KindDatabase, wantDialect: "mysql"},
+		{name: "sqlite url", url: "sqlite://app.db", want: atlassource.KindDatabase, wantDialect: "sqlite"},
+		{name: "platform-safe sqlite path", url: atlasurl.SQLiteURLFromPath(schemaFile), want: atlassource.KindDatabase, wantDialect: "sqlite"},
+		{name: "windows sqlite drive path", url: "sqlite:C:/work/app.db", want: atlassource.KindDatabase, wantDialect: "sqlite"},
+		{name: "windows sqlite3 drive path alias", url: "sqlite3:C:/work/app.db", want: atlassource.KindDatabase, wantDialect: "sqlite"},
+		{name: "sqlite url with query", url: "sqlite://dev?mode=memory", want: atlassource.KindDatabase, wantDialect: "sqlite"},
 		{name: "env reference", url: "env://src", want: atlassource.KindEnv},
 	}
 	for _, tc := range tests {
@@ -65,6 +70,7 @@ func TestClassify_Kinds(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(source.Kind, qt.Equals, tc.want)
 			c.Assert(source.Raw, qt.Equals, tc.url)
+			c.Assert(source.Dialect, qt.Equals, tc.wantDialect)
 		})
 	}
 }
@@ -393,6 +399,21 @@ func TestSetEnsureDevIsolation_RejectsAliasedDatabase(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	err = set.EnsureDevIsolation("postgresql://planner@localhost:5432/app?sslmode=require")
+
+	c.Assert(err, qt.ErrorMatches,
+		`--to database must differ from --dev-url because the dev database is reset during planning`)
+}
+
+func TestSetEnsureDevIsolation_RejectsPotentialHostAlias(t *testing.T) {
+	c := qt.New(t)
+	set, err := atlassource.ClassifySet(
+		"--to",
+		[]string{"postgres://desired.example/app"},
+		atlassource.ProjectEnv{},
+	)
+	c.Assert(err, qt.IsNil)
+
+	err = set.EnsureDevIsolation("postgres://dev.example/app")
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to database must differ from --dev-url because the dev database is reset during planning`)

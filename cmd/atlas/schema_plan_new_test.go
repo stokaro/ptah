@@ -3,7 +3,6 @@ package atlas_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -19,7 +18,7 @@ import (
 // Atlas CLI reference; what the verb does with those flags is not established
 // there. The tests below therefore pin two different kinds of claim, and say
 // which: SURFACE claims follow the published reference, BEHAVIOR claims are the
-// reading this tree implements plus the stderr note that admits it.
+// reading this tree implements.
 
 // newSubverbFixture is the additive fixture the `new` tests share: one live
 // SQLite table, a desired state with one more.
@@ -66,10 +65,9 @@ func TestSchemaPlanNewWritesThePlanFileWithoutASaveFlag(t *testing.T) {
 	c.Assert(plan.Statements[0].Severity, qt.Equals, safety.Safe)
 }
 
-// TestSchemaPlanNewWritesTheDocsDerivedNoteToStderr pins the provenance
-// contract: the note exists, it is exactly one line, and it is on stderr so a
-// pipeline reading stdout is unaffected.
-func TestSchemaPlanNewWritesTheDocsDerivedNoteToStderr(t *testing.T) {
+// TestSchemaPlanNewDoesNotEmitInternalProvenance pins that development
+// provenance stays out of operator-facing output.
+func TestSchemaPlanNewDoesNotEmitInternalProvenance(t *testing.T) {
 	c := qt.New(t)
 	chdirToScratchC(c)
 	fixture := newSubverbFixture(c, "new-note")
@@ -77,10 +75,8 @@ func TestSchemaPlanNewWritesTheDocsDerivedNoteToStderr(t *testing.T) {
 	stdout, stderr, err := runSchemaPlanSubverbStreams(atlas.NewCompatCommand("atlas"), "new", fixture.args()...)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s%s", stdout, stderr))
-	c.Assert(stderr, qt.Contains, "derived from Atlas documentation")
-	c.Assert(stderr, qt.Contains, "stokaro/ptah#951")
-	c.Assert(countLines(stderr), qt.Equals, 1)
-	c.Assert(stdout, qt.Not(qt.Contains), "derived from Atlas documentation")
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(stdout, qt.Not(qt.Contains), "stokaro/ptah#")
 }
 
 // TestSchemaPlanNewHonorsOutputPathAndFormat proves --output still selects both
@@ -297,15 +293,4 @@ func TestSchemaPlanNewEditRoundTripsTheStatementsVerbatim(t *testing.T) {
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(string(edited), qt.Equals, string(plain))
 	c.Assert(string(edited), qt.Contains, "-- WARNING: This will delete all data!")
-}
-
-// countLines counts the lines in s. The docs-derived note is required to be
-// ONE line: a note that grows into a paragraph stops being a note and starts
-// being output an operator learns to ignore.
-func countLines(s string) int {
-	count := 0
-	for range strings.Lines(s) {
-		count++
-	}
-	return count
 }

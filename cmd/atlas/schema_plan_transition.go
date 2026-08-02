@@ -145,19 +145,3 @@ func validateAtlasSchemaPlanTransition(
 // "--to came back empty" instead would also swallow a missing --from, which is
 // reported first and is the more useful diagnostic.
 var errAtlasSchemaPlanMissingTo = errors.New("--to is required")
-
-// writeAtlasSchemaPlanDocsDerivedNote prints the one-line provenance note that
-// separates a verb's measured surface from its unmeasured behavior.
-//
-// Atlas CE aborts `schema plan` and every token after it as one unsupported
-// command (measured on the pinned CE v1.2.0 binary, 2026-08-02), so no oracle
-// exists for any sub-verb. The flag sets come from the published Atlas CLI
-// reference; what the commands DO with them is not established there. Saying so
-// on stderr — never on stdout, which stays machine-readable — moves the
-// complaint about a wrong reading from whoever's artifact Atlas later rejects to
-// the person running the command.
-func writeAtlasSchemaPlanDocsDerivedNote(cmd *cobra.Command, behavior string) {
-	fmt.Fprintf(cmd.ErrOrStderr(),
-		"Note: %s is derived from Atlas documentation and is not verified against the Atlas binary (stokaro/ptah#951).\n",
-		behavior)
-}

@@ -12,14 +12,19 @@ require a table rebuild.
 
 ## URLs
 
-Four URL forms are accepted:
+These URL forms are accepted:
 
 ```bash
 sqlite://relative.db
 sqlite:///absolute/path/app.db
+sqlite:file:C:/absolute/windows/path/app.db
 sqlite:///:memory:
 sqlite:file:memdb1?mode=memory&cache=shared
 ```
+
+Use forward slashes in the Windows file URI. The `file:` portion keeps the
+drive-letter colon out of the URL host and lets reserved filename characters
+be percent-encoded without changing the selected file.
 
 Ptah adds `_pragma=foreign_keys(1)` unless the URL already supplies a
 `foreign_keys` pragma, so declared foreign keys are enforced by default.
