@@ -1245,12 +1245,14 @@ env "prod" {
 // Label arity and duplicate blocks are the two positions still refused in an
 // unselected env; the community binary accepts both. They are tracked as known
 // remaining divergences rather than folded into the unknown-name tolerance.
-func TestParseAtlasProjectConfigUnsupportedConstructsInUnselectedEnv(t *testing.T) {
+// The community binary never decodes an env it was not asked for, so an unknown
+// name there is accepted -- measured: `--env dev` with an unresolvable reference
+// in `prod` exits 0.
+func TestParseAtlasProjectConfigAcceptsUnknownNamesInUnselectedEnv(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
-		name    string
-		raw     string
-		wantErr string
+		name string
+		raw  string
 	}{
 		{
 			name: "environment attribute",
@@ -1262,10 +1264,6 @@ env "prod" {
   project = "production"
 }
 `,
-			// The community binary never decodes an env it was not asked for, so
-			// an unknown name there is accepted. Measured: `--env dev` with an
-			// unresolvable reference in `prod` exits 0.
-			wantErr: "",
 		},
 		{
 			name: "environment block",
@@ -1277,7 +1275,6 @@ env "prod" {
   cloud {}
 }
 `,
-			wantErr: "",
 		},
 		{
 			name: "nested migration attribute",
@@ -1292,8 +1289,25 @@ env "prod" {
   }
 }
 `,
-			wantErr: "",
 		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "dev")
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+func TestParseAtlasProjectConfigUnsupportedConstructsInUnselectedEnv(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
 		{
 			name: "labeled nested block",
 			raw: `env "dev" {
@@ -1331,10 +1345,6 @@ env "prod" {
 		c.Run(test.name, func(c *qt.C) {
 			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "dev")
 
-			if test.wantErr == "" {
-				c.Assert(err, qt.IsNil)
-				return
-			}
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
