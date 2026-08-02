@@ -87,14 +87,8 @@ ptah-compat migrate hash --dir file://migrations
 ptah-compat migrate validate --dir file://migrations
 ```
 
-Expected output includes:
-
-```text
-Wrote migrations/atlas.sum
-1 migration file(s) hashed
-```
-
-A successful `validate` is silent.
+Successful `hash` and `validate` commands are silent. The hash command writes
+`migrations/atlas.sum`; commit that file with the migration.
 
 Apply it, then check status:
 

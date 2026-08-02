@@ -1,7 +1,7 @@
 package atlas
 
 import (
-	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -22,12 +22,25 @@ func newAtlasMigrateHashCommand() *cobra.Command {
 	return newAtlasMigrateIntegrityCommand(atlasMigrateHashVerb(), runAtlasMigrateHash)
 }
 
+func newSilentNativeMigrateHashCommand() *cobra.Command {
+	cmd := migratehash.NewMigrateHashCommand()
+	run := cmd.RunE
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		// Atlas CE writes only the checksum file on success. The adapter creates
+		// this native target for each execution, so suppressing its progress does
+		// not retain a writer on the reusable compatibility command.
+		cmd.SetOut(io.Discard)
+		return run(cmd, args)
+	}
+	return cmd
+}
+
 func atlasMigrateHashVerb() atlasVerb {
 	return atlasVerb{
 		use:     "hash",
 		short:   "Write or update the migration directory checksum",
 		native:  "migrations hash",
-		factory: migratehash.NewMigrateHashCommand,
+		factory: newSilentNativeMigrateHashCommand,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
 			atlasMigrateDirFormatFlag("dir-format"),
@@ -42,11 +55,6 @@ func atlasMigrateHashVerb() atlasVerb {
 // reproduces Atlas CE's per-format selection, and the rolling hash from
 // migratesum.ComputeAtlasFiles — the same pair `migrate validate` verifies
 // with, so a directory this writes is one that verifies.
-//
-// The success output is the native command's, not Atlas CE's: CE writes
-// nothing at all on a successful hash. That divergence predates this path and
-// is tracked separately; reproducing the native output here keeps the two
-// layouts of the same verb consistent with each other.
 func runAtlasMigrateHash(cmd *cobra.Command, source atlasMigrateSource) error {
 	if err := cmdutil.StatDir(source.dir); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -64,8 +72,5 @@ func runAtlasMigrateHash(cmd *cobra.Command, source atlasMigrateSource) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Wrote %s/%s\n", source.dir, migratesum.AtlasFileName)
-	fmt.Fprintf(out, "%d migration file(s) hashed\n", len(sum.Entries))
 	return nil
 }

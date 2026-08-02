@@ -309,7 +309,9 @@ func TestCompatCommandProjectConfigDefersToDirectoryEnvironment(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "2 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+	_, err = os.Stat(filepath.Join(environmentDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
 }
 
 func TestCompatCommandProjectSelectionDoesNotLeakAcrossRootReuse(t *testing.T) {
@@ -348,7 +350,9 @@ func TestCompatCommandProjectSelectionDoesNotLeakAcrossRootReuse(t *testing.T) {
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
 }
 
 func TestCompatCommandProjectSelectionDoesNotLeakAfterArgumentValidationFailure(t *testing.T) {
@@ -387,7 +391,9 @@ func TestCompatCommandProjectSelectionDoesNotLeakAfterArgumentValidationFailure(
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
 }
 
 func TestCompatCommandProjectSelectionDoesNotLeakAfterFlagGroupValidationFailure(t *testing.T) {
@@ -483,14 +489,47 @@ func TestCompatCommandProjectEnvironmentRemainsEffectiveAcrossRootReuse(t *testi
 	firstErr := cmd.Execute()
 
 	c.Assert(firstErr, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+	_, statErr := os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(statErr, qt.IsNil)
 	out.Reset()
 	cmd.SetArgs([]string{"migrate", "hash"})
 
 	secondErr := cmd.Execute()
 
 	c.Assert(secondErr, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+}
+
+func TestCompatMigrateHashHelpUsesUpdatedRootWriter(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "1_init.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var firstOut bytes.Buffer
+	cmd.SetOut(&firstOut)
+	cmd.SetErr(&firstOut)
+	cmd.SetArgs([]string{"migrate", "hash", "--dir", "file://" + dir})
+
+	firstErr := cmd.Execute()
+
+	c.Assert(firstErr, qt.IsNil, qt.Commentf("%s", firstOut.String()))
+	c.Assert(firstOut.String(), qt.Equals, "")
+	var secondOut bytes.Buffer
+	cmd.SetOut(&secondOut)
+	cmd.SetErr(&secondOut)
+	cmd.SetArgs([]string{"migrate", "hash", "--help"})
+
+	secondErr := cmd.Execute()
+
+	c.Assert(secondErr, qt.IsNil, qt.Commentf("%s", secondOut.String()))
+	c.Assert(firstOut.String(), qt.Equals, "")
+	c.Assert(secondOut.String(), qt.Contains, "Usage:\n  atlas migrate hash [flags]")
 }
 
 func TestCompatCommandProjectSelectionDoesNotLeakAfterRootHelp(t *testing.T) {
@@ -532,7 +571,9 @@ func TestCompatCommandProjectSelectionDoesNotLeakAfterRootHelp(t *testing.T) {
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
 }
 
 func TestCompatCommandProjectSelectionDoesNotLeakAfterRootArgumentFailure(t *testing.T) {
@@ -574,7 +615,9 @@ func TestCompatCommandProjectSelectionDoesNotLeakAfterRootArgumentFailure(t *tes
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	c.Assert(out.String(), qt.Equals, "")
+	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
 }
 
 func TestCompatCommandDirectExecutionRefreshesContextAcrossRootReuse(t *testing.T) {
