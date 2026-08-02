@@ -241,7 +241,12 @@ leaves the target unchanged.
 The dev database must not be the target itself or a database-URL `--to`
 desired state (it is reset destructively), must be directly connectable (no
 `docker://`), and must use the same schema scope as the target on
-scope-parameterized dialects such as SQL Server.
+scope-parameterized dialects such as SQL Server. Ptah compares semantic
+database identity rather than raw URL text, including percent-encoded SQLite
+file URIs, path/symlink/hard-link aliases, network credentials, default ports,
+loopback host spellings, and driver-level endpoint/database overrides.
+Network URLs with the same dialect and selected database name fail closed
+across different endpoints; malformed comparison inputs fail before reset.
 
 `--lock-timeout` bounds how long the apply waits for the session advisory lock
 (`ptah_schema_apply`) that serializes concurrent schema applies against one

@@ -1,6 +1,7 @@
 package atlasurl_test
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -134,6 +135,12 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "sqlite percent-encoded file URI identifies the same file",
+			left:  atlasurl.SQLiteURLFromPath(sqlitePath),
+			right: "sqlite:file:" + url.PathEscape(filepath.ToSlash(sqlitePath)) + "?mode=rwc",
+			want:  true,
+		},
+		{
 			name:  "loopback host aliases identify the same server",
 			left:  "postgres://localhost/app",
 			right: "postgres://127.0.0.1:5432/app",
@@ -152,16 +159,34 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "postgres query parameters override endpoint and database",
+			left:  "postgres://ignored.invalid/ignored?host=localhost&port=5432&dbname=app",
+			right: "postgres://localhost/app",
+			want:  true,
+		},
+		{
+			name:  "sqlserver database query parameter is case insensitive",
+			left:  "sqlserver://localhost:1433?DATABASE=app",
+			right: "mssql://localhost?database=APP",
+			want:  true,
+		},
+		{
+			name:  "clickhouse database query parameter overrides path",
+			left:  "clickhouse://localhost:9000/ignored?database=app",
+			right: "clickhouse://localhost/APP",
+			want:  true,
+		},
+		{
 			name:  "different database names",
 			left:  "postgres://localhost/source",
 			right: "postgres://localhost/dev",
 			want:  false,
 		},
 		{
-			name:  "different hosts",
+			name:  "same database name across different hosts fails closed",
 			left:  "postgres://db-a/app",
 			right: "postgres://db-b/app",
-			want:  false,
+			want:  true,
 		},
 		{
 			name:  "different sqlite files",

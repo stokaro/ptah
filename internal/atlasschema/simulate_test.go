@@ -1,6 +1,7 @@
 package atlasschema_test
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -162,6 +163,35 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
 	})
 
+	c.Run("dev URL must not alias the target URL", func(c *qt.C) {
+		dir := c.TB.TempDir()
+		dbPath := filepath.Join(dir, "target.db")
+		plan := prepareSimulationPlan(c, dbPath)
+		aliasPath := filepath.Dir(dbPath) + string(os.PathSeparator) + "." +
+			string(os.PathSeparator) + filepath.Base(dbPath)
+
+		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
+			DevURL:    "sqlite://" + aliasPath + "?mode=rwc",
+			TargetURL: "sqlite://" + dbPath,
+		})
+		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it`)
+		c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
+	})
+
+	c.Run("percent-encoded dev URL must not alias the target URL", func(c *qt.C) {
+		dir := c.TB.TempDir()
+		dbPath := filepath.Join(dir, "target.db")
+		plan := prepareSimulationPlan(c, dbPath)
+		encodedPath := url.PathEscape(filepath.ToSlash(dbPath))
+
+		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
+			DevURL:    "sqlite:file:" + encodedPath + "?mode=rwc",
+			TargetURL: "sqlite://" + dbPath,
+		})
+		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it`)
+		c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
+	})
+
 	c.Run("dev URL must not equal a database desired-state URL", func(c *qt.C) {
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
@@ -174,6 +204,76 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 			DesiredURLs: []string{"sqlite://" + devPath},
 		})
 		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the --to desired-state database ".*desired\.db": the dev database is reset destructively before the plan is rehearsed on it`)
+	})
+
+	c.Run("dev URL must not alias a database desired-state URL", func(c *qt.C) {
+		dir := c.TB.TempDir()
+		dbPath := filepath.Join(dir, "target.db")
+		desiredPath := filepath.Join(dir, "desired.db")
+		plan := prepareSimulationPlan(c, dbPath)
+
+		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
+			DevURL:      "sqlite://" + desiredPath + "?mode=rwc",
+			TargetURL:   "sqlite://" + dbPath,
+			DesiredURLs: []string{"sqlite://" + desiredPath},
+		})
+		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the --to desired-state database ".*desired\.db": the dev database is reset destructively before the plan is rehearsed on it`)
+	})
+
+	c.Run("percent-encoded dev URL must not alias a database desired-state URL", func(c *qt.C) {
+		dir := c.TB.TempDir()
+		dbPath := filepath.Join(dir, "target.db")
+		desiredPath := filepath.Join(dir, "desired.db")
+		plan := prepareSimulationPlan(c, dbPath)
+		desiredConn := connectSQLite(c, desiredPath)
+		c.Assert(atlasschema.ApplySQL(c.Context(), desiredConn, migrator.MigrationTxModeAll,
+			"CREATE TABLE desired_kept (id INTEGER PRIMARY KEY);"), qt.IsNil)
+		dbschema.CloseAndWarn(desiredConn)
+
+		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
+			DevURL:      "sqlite:file:" + url.PathEscape(filepath.ToSlash(desiredPath)) + "?mode=rwc",
+			TargetURL:   "sqlite://" + dbPath,
+			DesiredURLs: []string{"sqlite://" + desiredPath},
+		})
+		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the --to desired-state database ".*desired\.db": the dev database is reset destructively before the plan is rehearsed on it`)
+		c.Assert(sqliteTableExists(c, desiredPath, "desired_kept"), qt.IsTrue)
+	})
+
+	c.Run("malformed target URL fails closed before resetting dev", func(c *qt.C) {
+		dir := c.TB.TempDir()
+		dbPath := filepath.Join(dir, "target.db")
+		devPath := filepath.Join(dir, "dev.db")
+		plan := prepareSimulationPlan(c, dbPath)
+		devConn := connectSQLite(c, devPath)
+		c.Assert(atlasschema.ApplySQL(c.Context(), devConn, migrator.MigrationTxModeAll,
+			"CREATE TABLE dev_kept (id INTEGER PRIMARY KEY);"), qt.IsNil)
+		dbschema.CloseAndWarn(devConn)
+
+		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
+			DevURL:    "sqlite://" + devPath,
+			TargetURL: "sqlite:file:%ZZ",
+		})
+		c.Assert(err, qt.ErrorMatches, `compare --dev-url with target database: invalid SQLite database URL`)
+		c.Assert(sqliteTableExists(c, devPath, "dev_kept"), qt.IsTrue)
+	})
+
+	c.Run("malformed desired URL fails closed before resetting dev", func(c *qt.C) {
+		dir := c.TB.TempDir()
+		dbPath := filepath.Join(dir, "target.db")
+		devPath := filepath.Join(dir, "dev.db")
+		plan := prepareSimulationPlan(c, dbPath)
+		devConn := connectSQLite(c, devPath)
+		c.Assert(atlasschema.ApplySQL(c.Context(), devConn, migrator.MigrationTxModeAll,
+			"CREATE TABLE dev_kept (id INTEGER PRIMARY KEY);"), qt.IsNil)
+		dbschema.CloseAndWarn(devConn)
+
+		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
+			DevURL:      "sqlite://" + devPath,
+			TargetURL:   "sqlite://" + dbPath,
+			DesiredURLs: []string{"sqlite:file:%ZZ"},
+		})
+		c.Assert(err, qt.ErrorMatches, `compare --dev-url with --to desired-state database "sqlite:file:%ZZ": invalid SQLite database URL`)
+		c.Assert(sqliteTableExists(c, devPath, "dev_kept"), qt.IsTrue)
 	})
 
 	c.Run("unreachable dev database", func(c *qt.C) {

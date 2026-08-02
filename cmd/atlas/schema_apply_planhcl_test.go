@@ -14,16 +14,23 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 )
 
-// The fixtures under testdata are the real measurement artifacts:
-// atlas.plan.hcl was written by Atlas and atlas-plan-desired.sql is the
-// desired state the
-// plan was computed for. The from-state DDL below recreates the scenario's
-// source database.
+// The versioned fixture bundle under internal/atlasschema/testdata contains
+// the real measurement artifacts. plan.hcl was written by licensed Atlas
+// v1.2.4-e282f76-canary; provenance.json records the known capture facts,
+// file hashes, and the evidence the original campaign did not preserve.
 const (
-	oracleAtlasPlanFile   = "testdata/atlas.plan.hcl"
-	oracleDesiredFile     = "testdata/atlas-plan-desired.sql"
+	oracleAtlasPlanFile   = "../../internal/atlasschema/testdata/atlas-v1.2.4-plan/plan.hcl"
+	oracleDesiredFile     = "../../internal/atlasschema/testdata/atlas-v1.2.4-plan/to.sql"
+	oracleFromStateFile   = "../../internal/atlasschema/testdata/atlas-v1.2.4-plan/from.sql"
 	oracleFromStateSchema = `CREATE TABLE users (id integer NOT NULL PRIMARY KEY AUTOINCREMENT, name text NOT NULL);`
 )
+
+func TestSchemaApplyAtlasOracleSourceFixtureMatchesSeedDDL(t *testing.T) {
+	c := qt.New(t)
+	contents, err := os.ReadFile(oracleFixturePath(c, oracleFromStateFile))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, oracleFromStateSchema+"\n")
+}
 
 // oracleFixturePath returns the absolute path of a testdata fixture so plan
 // and schema URLs stay valid regardless of the working directory.

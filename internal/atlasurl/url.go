@@ -6,24 +6,17 @@ package atlasurl
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
+	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/microsoft/go-mssqldb/msdsn"
+
 	"go.5x5.cz/ptah/core/platform"
 )
-
-var defaultPorts = map[string]string{
-	platform.Postgres:    "5432",
-	platform.CockroachDB: "26257",
-	platform.YugabyteDB:  "5433",
-	platform.MySQL:       "3306",
-	platform.MariaDB:     "3306",
-	platform.SQLServer:   "1433",
-	platform.ClickHouse:  "9000",
-}
 
 // SQLiteURLFromPath returns a SQLite URL whose path remains unambiguous on the
 // current operating system. Windows drive paths use the URL's opaque form
@@ -76,7 +69,10 @@ func ValidateDialectMatch(rawURL, targetDialect string) error {
 // SameDatabase reports whether two directly connectable URLs identify the same
 // database. Credentials and non-identity connection options are intentionally
 // ignored: using different users, TLS settings, or pool settings does not make
-// a destructive dev operation safe against the same database.
+// a destructive dev operation safe against the same database. Network URLs
+// with the same dialect and selected database name fail closed even when their
+// endpoints differ, because DNS aliases and replicated members cannot be
+// proven to be independent before destructive cleanup.
 func SameDatabase(left, right string) (bool, error) {
 	leftURL, leftDialect, err := parseDatabaseURL(left)
 	if err != nil {
@@ -92,36 +88,61 @@ func SameDatabase(left, right string) (bool, error) {
 	if leftDialect == platform.SQLite {
 		return sameSQLiteDatabase(leftURL, rightURL)
 	}
-	leftIdentity, err := databaseIdentity(left)
+	leftIdentity, err := networkDatabaseIdentity(leftURL, leftDialect)
 	if err != nil {
 		return false, err
 	}
-	rightIdentity, err := databaseIdentity(right)
+	rightIdentity, err := networkDatabaseIdentity(rightURL, rightDialect)
 	if err != nil {
 		return false, err
 	}
-	return leftIdentity == rightIdentity, nil
+	return networkIdentitiesMayOverlap(leftIdentity, rightIdentity), nil
 }
 
-func databaseIdentity(rawURL string) (string, error) {
-	parsed, dialect, err := parseDatabaseURL(rawURL)
-	if err != nil {
-		return "", err
-	}
-	if dialect == platform.SQLite {
-		return sqliteIdentity(parsed)
-	}
+type databaseIdentity struct {
+	dialect  string
+	database string
+}
 
-	host := normalizedDatabaseHost(parsed.Hostname())
-	port := parsed.Port()
-	if port == "" {
-		port = defaultPorts[dialect]
+func networkIdentitiesMayOverlap(left, right databaseIdentity) bool {
+	return left.dialect == right.dialect &&
+		(left.database == "" || right.database == "" || left.database == right.database)
+}
+
+func networkDatabaseIdentity(parsed *url.URL, dialect string) (databaseIdentity, error) {
+	var database string
+	switch dialect {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		connectionURL := *parsed
+		connectionURL.Scheme = platform.Postgres
+		config, err := pgconn.ParseConfig(connectionURL.String())
+		if err != nil {
+			return databaseIdentity{}, errors.New("invalid PostgreSQL database URL")
+		}
+		database = config.Database
+	case platform.SQLServer:
+		connectionURL := *parsed
+		connectionURL.Scheme = platform.SQLServer
+		config, err := msdsn.Parse(connectionURL.String())
+		if err != nil {
+			return databaseIdentity{}, errors.New("invalid SQL Server database URL")
+		}
+		database = config.Database
+	case platform.ClickHouse:
+		connectionURL := *parsed
+		connectionURL.Scheme = platform.ClickHouse
+		options, err := clickhouse.ParseDSN(connectionURL.String())
+		if err != nil {
+			return databaseIdentity{}, errors.New("invalid ClickHouse database URL")
+		}
+		database = options.Auth.Database
+	default:
+		database = strings.Trim(parsed.Path, "/")
 	}
-	database := strings.Trim(parsed.Path, "/")
-	if dialect == platform.SQLServer && database == "" {
-		database = parsed.Query().Get("database")
-	}
-	return strings.Join([]string{dialect, host, port, database}, "\x00"), nil
+	return databaseIdentity{
+		dialect:  dialect,
+		database: strings.ToLower(database),
+	}, nil
 }
 
 func parseDatabaseURL(rawURL string) (*url.URL, string, error) {
@@ -153,7 +174,10 @@ func normalizeMySQLTCPURL(rawURL string) string {
 }
 
 func sqliteIdentity(parsed *url.URL) (string, error) {
-	path, memory := sqliteDatabasePath(parsed)
+	path, memory, err := sqliteDatabasePath(parsed)
+	if err != nil {
+		return "", err
+	}
 	if memory {
 		return "sqlite\x00:memory:", nil
 	}
@@ -171,8 +195,14 @@ func sqliteIdentity(parsed *url.URL) (string, error) {
 }
 
 func sameSQLiteDatabase(left, right *url.URL) (bool, error) {
-	leftPath, leftMemory := sqliteDatabasePath(left)
-	rightPath, rightMemory := sqliteDatabasePath(right)
+	leftPath, leftMemory, err := sqliteDatabasePath(left)
+	if err != nil {
+		return false, err
+	}
+	rightPath, rightMemory, err := sqliteDatabasePath(right)
+	if err != nil {
+		return false, err
+	}
 	if leftMemory || rightMemory {
 		return leftMemory && rightMemory, nil
 	}
@@ -192,8 +222,9 @@ func sameSQLiteDatabase(left, right *url.URL) (bool, error) {
 	return leftIdentity == rightIdentity, nil
 }
 
-func sqliteDatabasePath(parsed *url.URL) (string, bool) {
+func sqliteDatabasePath(parsed *url.URL) (string, bool, error) {
 	path := parsed.Opaque
+	fileURI := strings.HasPrefix(path, "file:")
 	switch {
 	case path != "":
 		// Opaque SQLite URLs already contain the driver path verbatim.
@@ -205,26 +236,18 @@ func sqliteDatabasePath(parsed *url.URL) (string, bool) {
 		path = parsed.Path
 	}
 	path = strings.TrimPrefix(path, "file:")
+	if fileURI {
+		decoded, err := url.PathUnescape(path)
+		if err != nil {
+			return "", false, errors.New("invalid SQLite database URL")
+		}
+		path = decoded
+	}
 	if path == "" || path == "/:memory:" || path == ":memory:" ||
 		parsed.Query().Get("mode") == "memory" {
-		return "", true
+		return "", true, nil
 	}
-	return filepath.Clean(path), false
-}
-
-func normalizedDatabaseHost(host string) string {
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	if host == "localhost" {
-		return "loopback"
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return host
-	}
-	if ip.IsLoopback() {
-		return "loopback"
-	}
-	return ip.String()
+	return filepath.Clean(path), false, nil
 }
 
 func dialectFromDockerURL(parsed *url.URL) (string, error) {

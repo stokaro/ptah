@@ -1,0 +1,18 @@
+{
+  "atlas_version": "v1.2.4-e282f76-canary",
+  "atlas_edition": "licensed",
+  "captured_on": "2026-08-01",
+  "source_issue": "https://github.com/stokaro/ptah/issues/958",
+  "source_pr": "https://github.com/stokaro/ptah/pull/965",
+  "capture_command": null,
+  "atlas_binary_sha256": null,
+  "capture_limitations": [
+    "The original observation campaign did not preserve the exact sanitized capture command in the repository.",
+    "The original observation campaign did not preserve the Atlas binary digest in the repository."
+  ],
+  "files": {
+    "plan.hcl": "335a8b191c8e5297f59daf5e6d2b6d2970b50dbf488dbe52de26919a8155ef35",
+    "from.sql": "22745ed9b5fa963ad445cfcd2af263ffa77eccafde1adf2e3008dafbba8c4b8f",
+    "to.sql": "4f92f0c7c2b3cef9f49c46948767abfdeacbe1a3633f7d0f2827efec8b11cfab"
+  }
+}

@@ -116,11 +116,21 @@ func connectSimulationDev(
 	if isDockerSimulationURL(devURL) {
 		return nil, errors.New("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema apply simulation")
 	}
-	if devURL == strings.TrimSpace(targetURL) {
-		return nil, errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
+	if strings.TrimSpace(targetURL) != "" {
+		sameTarget, err := atlasurl.SameDatabase(devURL, targetURL)
+		if err != nil {
+			return nil, fmt.Errorf("compare --dev-url with target database: %w", err)
+		}
+		if sameTarget {
+			return nil, errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
+		}
 	}
 	for _, desired := range desiredURLs {
-		if devURL == strings.TrimSpace(desired) {
+		sameDesired, err := sameDirectDatabaseURL(devURL, desired)
+		if err != nil {
+			return nil, fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
+		}
+		if sameDesired {
 			return nil, fmt.Errorf("--dev-url must not point at the --to desired-state database %q: the dev database is reset destructively before the plan is rehearsed on it", desired)
 		}
 	}
@@ -140,6 +150,17 @@ func connectSimulationDev(
 		return nil, err
 	}
 	return devConn, nil
+}
+
+// sameDirectDatabaseURL compares candidate only when its scheme names a
+// directly connectable database. Desired-state files and migration directories
+// share the DesiredURLs collection and are intentionally not database aliases.
+func sameDirectDatabaseURL(databaseURL, candidate string) (bool, error) {
+	scheme, _, found := strings.Cut(strings.TrimSpace(candidate), ":")
+	if !found || platform.NormalizeDialect(scheme) == "" {
+		return false, nil
+	}
+	return atlasurl.SameDatabase(databaseURL, candidate)
 }
 
 // rehearseStatementsOnDev resets the dev database, recreates the target's

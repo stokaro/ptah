@@ -679,6 +679,16 @@ statements reach `--to`, and the second question is the one this command exists
 to answer. A SQLite target gets a throwaway dev database; every other dialect
 requires `--dev-url`.
 
+An explicit `--dev-url` is refused when it identifies the `--from` target,
+even through an equivalent or percent-encoded SQLite path, a symlink or hard
+link, or a network URL with different credentials, default-port spelling,
+loopback alias, or driver-level endpoint/database override. Network URLs with
+the same dialect and selected database name fail closed even across different
+endpoints because DNS aliases and replicas cannot be proven independent.
+Malformed target and desired-state URLs also fail closed. These shared checks
+protect both `schema apply` simulation and `schema plan validate`, and run
+before the dev database can be reset.
+
 The plan's SQL is **not** required to equal a freshly computed plan's. Atlas
 documents editing a saved plan's `migration` attribute, so what is checked is
 where the statements arrive, not how they are spelled.
@@ -692,15 +702,27 @@ different transition than the plan describes. Registry plan URLs
 
 #### Evidence for the two local sub-verbs
 
-Their **flag sets** follow the published
-[Atlas CLI reference](https://atlasgo.io/cli-reference) (retrieved 2026-08-02).
-Their **behavior** is not established there, and Atlas CE settles nothing
-either: it aborts the entire `schema plan` path — measured 2026-08-02 on the
-pinned CE v1.2.0 binary, where `atlas schema plan new` is byte-identical to
-`atlas schema plan frobnicate-nonsense`. Both commands therefore print one line
-to **stderr** on every run saying their behavior is derived from documentation
-rather than verified, with the tracking issue number. stdout stays
-machine-readable.
+Their **flag sets** match a sanitized standard Atlas v1.3.0 help bundle
+captured on 2026-08-02 with the exact binary and artifact SHA-256 values pinned
+in testdata, and the published
+[Atlas CLI reference](https://atlasgo.io/cli-reference). Their
+**behavior** is not established by help, and Atlas Community Edition (CE)
+settles nothing because it aborts the entire `schema plan` path. Ptah records
+that limitation in tests and documentation instead of printing development
+provenance during normal commands; successful `new` and `validate` runs keep
+stderr empty. Runtime parity remains tracked in
+[`stokaro/ptah#1037`](https://github.com/stokaro/ptah/issues/1037).
+
+The validation tests do not rely only on plans written by Ptah. They also run
+a licensed Atlas `v1.2.4-e282f76-canary` `.plan.hcl` artifact against live
+SQLite, then mutate the source, desired schema, migration SQL, HCL syntax, and
+statement set. Its versioned bundle includes source and desired SQL plus a
+manifest of file hashes, known capture facts, and the original evidence that
+was not preserved. Every invalid semantic variant is refused without changing
+the target. Structurally valid Atlas Base64 SHA-256 `from` and `to` hashes are
+treated as unauthenticated metadata because their derivation is not public;
+malformed values are rejected. The replayed end state, not a foreign hash, is
+the integrity boundary.
 
 **Why `lint` and `test` are not implemented.** Both are local by their Atlas
 flag sets, and both are deferred deliberately:
