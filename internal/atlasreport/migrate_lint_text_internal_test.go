@@ -202,8 +202,8 @@ func TestWriteMigrateLintText_RendersPtahDiagnostics(t *testing.T) {
 				"\n" +
 				"  -- analyzing version 2\n" +
 				"    -- data dependent changes detected:\n" +
-				"      -- L1: Adding a non-nullable \"text\" column \"name\" will fail in case table \"users\" is not empty\n" +
-				"         https://atlasgo.io/lint/analyzers#MF103\n" +
+				"      -- L1: Adding a non-nullable \"text\" column \"name\" will fail in case table \"users\" is not\n" +
+				"         empty https://atlasgo.io/lint/analyzers#MF103\n" +
 				"  -- ok (0s)\n" +
 				"\n" +
 				"  -------------------------\n" +
