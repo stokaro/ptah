@@ -233,8 +233,7 @@ check changes the file hash and fails verification.
 
 ## Relationship to Atlas
 
-Atlas keeps pre-migration checks in its proprietary Pro build (free-with-login on
-a free tier, paid after a trial), requiring the closed-source binary and an Atlas
-account, and not embeddable. Ptah offers the local assertion half as an open,
+Atlas keeps pre-migration checks in its proprietary Pro build, requiring the
+closed-source binary, and not embeddable. Ptah offers the local assertion half as an open,
 no-account, in-process capability. The Atlas Cloud approval-policy half is out of
 scope.

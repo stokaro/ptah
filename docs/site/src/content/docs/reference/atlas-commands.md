@@ -714,7 +714,7 @@ stderr empty. Runtime parity remains tracked in
 [`stokaro/ptah#1037`](https://github.com/stokaro/ptah/issues/1037).
 
 The validation tests do not rely only on plans written by Ptah. They also run
-a licensed Atlas `v1.2.4-e282f76-canary` `.plan.hcl` artifact against live
+an Atlas-produced `.plan.hcl` artifact against live
 SQLite, then mutate the source, desired schema, migration SQL, HCL syntax, and
 statement set. Its versioned bundle includes source and desired SQL plus a
 manifest of file hashes, known capture facts, and the original evidence that

@@ -43,12 +43,12 @@ Where nothing settles a question, the cell is ❔ rather than a guess.
 Atlas's public plans are Starter (free), Pro, and Enterprise, and Atlas's own
 [pricing page](https://atlasgo.io/pricing) classifies capabilities by plan.
 That classification and the **CE** column answer different questions: the CE
-column reports what the pinned community binary does when run logged out, and
+column reports what the pinned community binary does, and
 the two diverge in both directions. Both examples below were measured on
 2026-08-01 against CE v1.2.0:
 
 - The pricing page places migration linting outside the Starter plan, yet the
-  CE binary runs `migrate lint` logged out and reports destructive changes.
+  CE binary runs `migrate lint` and reports destructive changes.
 - The pricing page checks ERD visualization for Starter, yet the CE binary
   rejects `schema inspect --web` as an unknown flag; the ERD lives in the
   hosted service, not in the binary.
@@ -351,7 +351,7 @@ Four sources carry most of the weight:
   inventories every command in Atlas CE v1.2.0 and classifies it as an OSS
   parity target or out of scope, with the reason recorded per command.
 - [`ce-gating.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/ce-gating.md)
-  goes further than the inventory: it runs the pinned CE binary logged out
+  goes further than the inventory: it runs the pinned CE binary
   through the capability set this page asserts about the CE column and records
   the observed class per scenario — works, community-abort stub, absent verb,
   unknown flag, or silently unenforced. A version bump that changes Atlas's

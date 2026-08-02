@@ -43,12 +43,12 @@ Where nothing settles a question, the cell is ❔ rather than a guess.
 Atlas's public plans are Starter (free), Pro, and Enterprise, and Atlas's own
 [pricing page](https://atlasgo.io/pricing) classifies capabilities by plan.
 That classification and the **CE** column answer different questions: the CE
-column reports what the pinned community binary does when run logged out, and
+column reports what the pinned community binary does, and
 the two diverge in both directions. Both examples below were measured on
 2026-08-01 against CE v1.2.0:
 
 - The pricing page places migration linting outside the Starter plan, yet the
-  CE binary runs `migrate lint` logged out and reports destructive changes.
+  CE binary runs `migrate lint` and reports destructive changes.
 - The pricing page checks ERD visualization for Starter, yet the CE binary
   rejects `schema inspect --web` as an unknown flag; the ERD lives in the
   hosted service, not in the binary.
