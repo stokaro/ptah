@@ -35,7 +35,7 @@ func TestParseAtlasFSWithOptionsRejectsFileSymlinkEscape(t *testing.T) {
 		projectconfig.AtlasLoadOptions{EnvName: "local"},
 	)
 
-	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "url" at atlas\.hcl:2`)
+	c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" at atlas\.hcl:2: .*path escapes from parent.*`)
 }
 
 func TestParseAtlasFSWithOptionsRejectsFilesetSymlinkEscape(t *testing.T) {
@@ -67,5 +67,5 @@ env "local" {
 		projectconfig.AtlasLoadOptions{EnvName: "local"},
 	)
 
-	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "paths" at atlas\.hcl:2`)
+	c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "paths" at atlas\.hcl:2: .*`)
 }
