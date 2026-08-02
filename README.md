@@ -5,6 +5,55 @@ models, YAML schema files, supported HCL schema files, and live databases;
 render SQL; plan and run migrations; and validate migration hashes. A separate
 `ptah-compat` binary is a drop-in replacement for the Atlas CLI.
 
+## Independent implementation under European law
+
+Ptah is developed in the Czech Republic under Czech and European Union law,
+including [Directive 2009/24/EC](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32009L0024)
+on the legal protection of computer programs.
+
+Ptah is an original, independent implementation. It does not reverse engineer
+proprietary implementations: it does not decompile or disassemble proprietary
+binaries, access proprietary source code, or copy protected implementation
+expression from Atlas or any other product. The Ptah implementation includes
+no third-party product code, including Atlas code. External implementation code
+enters the project only through dependencies explicitly declared in repository
+manifests.
+
+Compatibility work is limited to public interfaces, documentation, properly
+licensed assets, and external behavior lawfully observed while using software
+under a valid right to use it. Subject to applicable law and without copying
+protected expression, Ptah reserves the right to independently reimplement the
+interface of any application to provide a free and open-source alternative.
+
+This position rests in particular on:
+
+- Articles 1(2), 5(3), and 8 of Directive 2009/24/EC. They distinguish protected
+  expression from the ideas and principles underlying a program and its
+  interfaces, permit an authorized user to observe, study, and test program
+  behavior, and make contrary contractual terms null and void.
+- [Sections 65 and 66 of Czech Act No. 121/2000 Coll.](https://e-sbirka.gov.cz/sb/2000/121),
+  including Section 66(1)(d), which implements the right to study and test a
+  computer program's functionality.
+- [*SAS Institute Inc. v World Programming Ltd.*, C-406/10](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:62010CJ0406),
+  where the Court of Justice of the European Union held that program
+  functionality, programming languages, and data file formats are not protected
+  forms of program expression, and confirmed the licensed user's right to
+  observe, study, and test program behavior.
+
+Atlas-derived Apache-2.0 fixture material remains in the separate
+[`stokaro/ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance)
+repository so this MIT-licensed source tree stays implementation-clean:
+
+```text
+ptah-atlas-conformance -> ptah
+ptah                  !-> ptah-atlas-conformance
+```
+
+Legal questions concerning Ptah's development and compatibility work should be
+addressed under Czech and European Union law. This section records the project's
+development and provenance policy; it is not legal advice. See the detailed
+[license boundary](docs/site/src/content/docs/atlas/license-boundary.md).
+
 Ptah is pre-GA. The native command tree is still allowed to change when a cleaner
 architecture is better.
 
@@ -115,22 +164,6 @@ repository. That repo owns the regenerated reports:
 - [`PARITY.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/PARITY.md)
 
 See [Conformance](docs/site/src/content/docs/atlas/conformance.md).
-
-## License-Clean Boundary
-
-Ptah does not use Atlas source code.
-
-Ptah is an independent implementation that studies Atlas's public interface,
-observable behavior, and test assets. Atlas-derived Apache-2.0 fixture material
-is kept in the separate `ptah-atlas-conformance` repository so this MIT-licensed
-source tree stays implementation-clean:
-
-```text
-ptah-atlas-conformance -> ptah
-ptah                  !-> ptah-atlas-conformance
-```
-
-See [License boundary](docs/site/src/content/docs/atlas/license-boundary.md).
 
 ## Existing References
 
