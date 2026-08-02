@@ -1,0 +1,154 @@
+{
+  "packages": [
+    "./cmd/atlas/",
+    "./internal/atlasschema/",
+    "./internal/atlasreport/"
+  ],
+  "mutations": [
+    {
+      "name": "the rendered name never wins over the default naming",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tcase opts.nameFormat != \"\":\n\t\tplan.Name, err = renderAtlasSchemaPlanName(opts.nameFormat, plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}",
+      "new": "\tcase opts.nameFormat != \"\":\n\t\t_, err = renderAtlasSchemaPlanName(opts.nameFormat, plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}",
+      "comment": "The template still runs and still refuses bad names, so every rejection case stays green; only a case asserting the resulting name separates them."
+    },
+    {
+      "name": "--name-format is evaluated but --name's default still wins for HCL",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tcase opts.nameFormat != \"\":",
+      "new": "\tcase opts.nameFormat != \"\" && format == atlasschema.PlanFormatJSON:"
+    },
+    {
+      "name": "the template sees the fingerprints swapped",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\t\tFromHash: plan.FromFingerprint,\n\t\tToHash:   plan.ToFingerprint,",
+      "new": "\t\tFromHash: plan.ToFingerprint,\n\t\tToHash:   plan.FromFingerprint,",
+      "comment": "Killed only by a fixture whose two fingerprints differ; a plan from an empty database would make both branches agree."
+    },
+    {
+      "name": "the rendered name is not trimmed",
+      "file": "internal/atlasreport/schema_plan_name.go",
+      "old": "\treturn strings.TrimSpace(out.String()), nil",
+      "new": "\treturn out.String(), nil"
+    },
+    {
+      "name": "an unknown template field renders as empty instead of failing",
+      "file": "internal/atlasreport/schema_plan_name.go",
+      "old": "template.New(\"atlas-schema-plan-name-format\").Option(\"missingkey=error\").Parse(format)",
+      "new": "template.New(\"atlas-schema-plan-name-format\").Parse(format)",
+      "comment": "Struct field lookups fail regardless of missingkey, so this is expected to SURVIVE against a struct payload; it is here to record that the option is not load-bearing today and would become so if the payload ever became a map."
+    },
+    {
+      "name": "the empty rendered name is accepted",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tif name == \"\" {\n\t\treturn fmt.Errorf(\"%s rendered an empty plan name\", source)\n\t}",
+      "new": ""
+    },
+    {
+      "name": "a rendered path separator is accepted",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tif strings.ContainsAny(name, `/\\`) {\n\t\treturn fmt.Errorf(\n\t\t\t\"%s rendered the plan name %q, which contains a path separator; use --output to choose the plan file location\",\n\t\t\tsource, name)\n\t}",
+      "new": ""
+    },
+    {
+      "name": "a rendered control character is accepted",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tif strings.ContainsFunc(name, unicode.IsControl) {\n\t\treturn fmt.Errorf(\"%s rendered the plan name %q, which contains a control character\", source, name)\n\t}",
+      "new": ""
+    },
+    {
+      "name": "an empty --name-format falls through to the default naming",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\t\tif opts.nameFormat == \"\" {\n\t\t\treturn fmt.Errorf(\"--name-format must not be empty\")\n\t\t}\n",
+      "new": ""
+    },
+    {
+      "name": "the template is parsed only after the database is contacted",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\t\tif err := atlasreport.ValidateSchemaPlanNameTemplate(opts.nameFormat); err != nil {\n\t\t\treturn err\n\t\t}",
+      "new": "",
+      "comment": "Every rejection case still errors, just later and after a connection attempt; only the unreachable-target case separates the orderings."
+    },
+    {
+      "name": "--name and --name-format may be combined",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tcmd.MarkFlagsMutuallyExclusive(\"name\", \"name-format\")",
+      "new": ""
+    },
+    {
+      "name": "--skip-lint is refused again",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\t\t{\"format\", \"Ptah does not implement --format for schema plan yet\"},",
+      "new": "\t\t{\"format\", \"Ptah does not implement --format for schema plan yet\"},\n\t\t{\"skip-lint\", \"Ptah does not lint declarative plans yet, so there is no lint step to skip\"},"
+    },
+    {
+      "name": "--edit is refused again",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\t\t{\"format\", \"Ptah does not implement --format for schema plan yet\"},",
+      "new": "\t\t{\"format\", \"Ptah does not implement --format for schema plan yet\"},\n\t\t{\"edit\", \"Ptah does not implement editing the plan before saving yet; review the saved plan file instead\"},"
+    },
+    {
+      "name": "the edited plan is discarded and the computed one saved",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}",
+      "new": "\tif opts.edit {\n\t\tif _, err = editAtlasSchemaPlan(plan); err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}"
+    },
+    {
+      "name": "an editor failure is swallowed and the computed plan saved",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}",
+      "new": "\tif opts.edit {\n\t\tif edited, editErr := editAtlasSchemaPlan(plan); editErr == nil {\n\t\t\tplan = edited\n\t\t}\n\t}",
+      "comment": "The dangerous shape: a refused edit still writes a reviewable-looking plan file. Must be killed by the no-plan-file assertion, not only by the message."
+    },
+    {
+      "name": "an edit that leaves no statement is saved as an empty plan",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tplan = plan.WithStatementsFromSQL(edited)\n\tif !plan.HasChanges() {\n\t\treturn atlasschema.PlanFile{}, fmt.Errorf(\n\t\t\t\"the edited plan contains no SQL statement; nothing was saved\")\n\t}",
+      "new": "\tplan = plan.WithStatementsFromSQL(edited)"
+    },
+    {
+      "name": "the editor is opened before the no-changes check",
+      "file": "cmd/atlas/schema_plan.go",
+      "old": "\tif !plan.HasChanges() {\n\t\tfmt.Fprintln(cmd.OutOrStdout(), \"Schema is synced, no changes to be made.\")\n\t\treturn nil\n\t}\n\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}",
+      "new": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}\n\tif !plan.HasChanges() {\n\t\tfmt.Fprintln(cmd.OutOrStdout(), \"Schema is synced, no changes to be made.\")\n\t\treturn nil\n\t}"
+    },
+    {
+      "name": "the edited statements keep the pre-edit severity and destructive marker",
+      "file": "internal/atlasschema/plan.go",
+      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))\n\treturn p",
+      "new": "\tstatements, _ := classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))\n\tfor i := range statements {\n\t\tif i < len(p.Statements) {\n\t\t\tstatements[i].Severity = p.Statements[i].Severity\n\t\t\tstatements[i].Reason = p.Statements[i].Reason\n\t\t}\n\t}\n\tp.Statements = statements\n\treturn p",
+      "comment": "The silent-wrong-metadata shape: an edit introducing a DROP is saved under the pre-edit destructive=false verdict. Killed only through the JSON format, whose reader returns what was written; the .plan.hcl reader re-derives both fields on load and would mask it."
+    },
+    {
+      "name": "the destructive marker alone is not recomputed",
+      "file": "internal/atlasschema/plan.go",
+      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))",
+      "new": "\tp.Statements, _ = classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))"
+    },
+    {
+      "name": "the edit splits with a fixed dialect instead of the plan's",
+      "file": "internal/atlasschema/plan.go",
+      "old": "classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))",
+      "new": "classifyPlanStatements(SplitApplyStatements(sqlText, \"sqlite\"))"
+    },
+    {
+      "name": "editing rewrites the source fingerprint",
+      "file": "internal/atlasschema/plan.go",
+      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))\n\treturn p",
+      "new": "\tp.Statements, p.Destructive = classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))\n\tp.FromFingerprint, p.ToFingerprint = p.ToFingerprint, p.FromFingerprint\n\treturn p"
+    },
+    {
+      "name": "the shared classifier stops reporting destructive statements",
+      "file": "internal/atlasschema/plan.go",
+      "old": "\t\tdestructive = destructive || assessment.Severity == safety.Destructive",
+      "new": "\t\tdestructive = destructive && assessment.Severity == safety.Destructive",
+      "comment": "Guards the refactor that folded PreparePlanFile's classification loop and the HCL reader's into one function."
+    },
+    {
+      "name": "the classifier assesses the commented text instead of the executable text",
+      "file": "internal/atlasschema/plan.go",
+      "old": "\t\tassessment := safety.AssessSQL(strings.TrimSpace(sqlutil.StripComments(statement)))",
+      "new": "\t\tassessment := safety.AssessSQL(strings.TrimSpace(statement))"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -14,19 +15,22 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
 )
 
 type atlasSchemaPlanOptions struct {
-	fromURLs []string
-	toURLs   []string
-	devURL   string
-	exclude  []string
-	schemas  []string
-	name     string
-	output   string
-	save     bool
-	dryRun   bool
+	fromURLs   []string
+	toURLs     []string
+	devURL     string
+	exclude    []string
+	schemas    []string
+	name       string
+	nameFormat string
+	output     string
+	save       bool
+	dryRun     bool
+	edit       bool
 }
 
 func newAtlasSchemaPlanCommand() *cobra.Command {
@@ -51,11 +55,22 @@ verifying it against the live database, so a reviewed plan is exactly what
 runs. Pass --save or --output <path> to write the plan file; without either,
 the plan document prints to stdout (--dry-run does the same explicitly).
 --auto-approve is accepted for Atlas CLI compatibility: a locally saved plan
-file is approved by operator review, so there is no prompt to skip. When
---env is set, the selected atlas.hcl env can provide url (the --from
-target), schema.src, dev, exclude, schema.mode, and supported diff policy
-values. Registry-bound planning (--push, --pending, --repo) and the plan
-registry sub-verbs remain Atlas CE boundary stubs.`,
+file is approved by operator review, so there is no prompt to skip.
+--skip-lint is accepted as an explicit no-op: this command runs no lint step,
+so there is nothing to skip.
+--edit opens the planned SQL in $VISUAL, then $EDITOR, and saves the plan
+rebuilt from the edited text; severity and the destructive marker are
+re-derived from what you wrote, and an edit that leaves no statement is
+refused. The recorded to-fingerprint still describes the schema the plan was
+computed against, which edited SQL may no longer reach — ` + "`schema apply`" + `
+replays an Atlas-format plan on a dev database and requires it to converge on
+--to, but a native .json plan carries no such check.
+--name-format computes the plan name from a Go template over .FromHash and
+.ToHash, which are this plan's own sha256 fingerprints; it cannot be combined
+with --name. When --env is set, the selected atlas.hcl env can provide url
+(the --from target), schema.src, dev, exclude, schema.mode, and supported
+diff policy values. Registry-bound planning (--push, --pending, --repo),
+--format, --directive, and the plan registry sub-verbs remain unimplemented.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaPlan(cmd, opts)
 		},
@@ -67,27 +82,37 @@ registry sub-verbs remain Atlas CE boundary stubs.`,
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from planning")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to plan when database URLs are used")
 	flags.StringVar(&opts.name, "name", "", "Plan name recorded in the plan file")
+	flags.StringVar(&opts.nameFormat, "name-format", "", "Go template used to compute the plan name (e.g. 'plan_{{ slice .ToHash 0 8 }}')")
 	flags.StringVarP(&opts.output, "output", "o", "", "Plan file output path (default <name>"+atlasschema.PlanFileSuffixHCL+"; a .json path writes the native JSON plan format)")
 	flags.BoolVar(&opts.save, "save", false, "Save the plan to a local plan file")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the plan file document without saving it")
+	flags.BoolVar(&opts.edit, "edit", false, "Edit the plan in the terminal editor")
 	// Accepted for Atlas CLI compatibility: a locally saved plan file is
 	// approved by operator review, so there is no approval prompt to skip.
 	flags.Bool("auto-approve", false, "Approve the plan without asking for confirmation")
+	// Accepted as an explicit no-op: `schema plan` runs no lint step, so there
+	// is nothing for --skip-lint to skip. Refusing it would break a Pro
+	// pipeline that passes it, and honoring it cannot loosen a check that does
+	// not exist. Pinned by TestSchemaPlanSkipLintIsANoOp — if a plan linter is
+	// ever added, that test goes red and this comment stops being true.
+	flags.Bool("skip-lint", false, "Skip linting the migration plan")
 	// The remaining Atlas Pro plan flags are declared for CLI-surface parity
 	// and rejected loudly in validateAtlasSchemaPlanOptions: their behavior is
 	// either bound to the Atlas Registry or not implemented yet.
 	flags.Bool("push", false, "Push the plan to the Atlas Registry")
 	flags.Bool("pending", false, "Push the plan in a pending state")
 	flags.String("repo", "", "URL to the schema repository")
-	flags.Bool("edit", false, "Edit the plan in the terminal editor")
-	flags.Bool("skip-lint", false, "Skip linting the migration plan")
 	flags.String("format", "", "Atlas Go template output format")
-	flags.String("name-format", "", "Go template used to compute the plan name")
 	flags.StringArrayP("directive", "d", nil, "Directives for the migration plan")
 	flags.StringArray("include", nil, "Schema objects to include in planning")
 	flags.String("lock-timeout", "", "Timeout for acquiring the database lock")
 	cmd.MarkFlagsMutuallyExclusive("save", "dry-run")
 	cmd.MarkFlagsMutuallyExclusive("output", "dry-run")
+	// Both spell the same field. Atlas registers both and its precedence is
+	// unmeasured (the licensed capture is help text only), so refusing the
+	// combination is preferred over silently picking a winner and writing a
+	// differently named plan file than the operator asked for.
+	cmd.MarkFlagsMutuallyExclusive("name", "name-format")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	addAtlasUnsupportedCommunityCommands(cmd, "schema plan", []atlasUnsupportedCommunityVerb{
 		{use: "approve", short: "Approve a plan in the Atlas Registry"},
@@ -169,11 +194,23 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
 		return nil
 	}
+	if opts.edit {
+		plan, err = editAtlasSchemaPlan(plan)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	outputPath := strings.TrimSpace(opts.output)
 	format := atlasSchemaPlanFormat(outputPath)
+	switch {
+	case opts.nameFormat != "":
+		plan.Name, err = renderAtlasSchemaPlanName(opts.nameFormat, plan)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	// The Atlas plan format names plans with a UTC timestamp; keep the
 	// deterministic fingerprint-derived default for the native JSON format.
-	if format == atlasschema.PlanFormatHCL && strings.TrimSpace(opts.name) == "" {
+	case format == atlasschema.PlanFormatHCL && strings.TrimSpace(opts.name) == "":
 		plan.Name = atlasschema.TimestampPlanName(time.Now())
 	}
 	document, err := atlasschema.MarshalPlanFileAs(plan, format)
@@ -207,6 +244,66 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("write plan file: %w", err))
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Plan saved to file://%s\n", path)
+	return nil
+}
+
+// editAtlasSchemaPlan opens the planned SQL in the operator's editor and
+// returns the plan rebuilt from the edited text. Severity and the destructive
+// marker are re-derived so the saved plan describes the SQL it actually
+// carries; the fingerprints are not, for the reasons documented on
+// [atlasschema.PlanFile.WithStatementsFromSQL].
+//
+// An edit that leaves no executable statement is refused rather than saved:
+// an empty plan file would apply cleanly and change nothing, which reads as
+// success. Note that the statement splitter strips SQL comments, so comments
+// added in the editor do not survive into the plan file.
+func editAtlasSchemaPlan(plan atlasschema.PlanFile) (atlasschema.PlanFile, error) {
+	edited, err := editAtlasSQL("schema plan", plan.SQL())
+	if err != nil {
+		return atlasschema.PlanFile{}, err
+	}
+	plan = plan.WithStatementsFromSQL(edited)
+	if !plan.HasChanges() {
+		return atlasschema.PlanFile{}, fmt.Errorf(
+			"the edited plan contains no SQL statement; nothing was saved")
+	}
+	return plan, nil
+}
+
+// renderAtlasSchemaPlanName computes the plan name from the --name-format Go
+// template. The template sees the plan's own fingerprints under the field
+// names the licensed Atlas binary documents.
+func renderAtlasSchemaPlanName(nameFormat string, plan atlasschema.PlanFile) (string, error) {
+	name, err := atlasreport.RenderSchemaPlanName(nameFormat, atlasreport.SchemaPlanName{
+		FromHash: plan.FromFingerprint,
+		ToHash:   plan.ToFingerprint,
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := validateAtlasSchemaPlanName("--name-format", name); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+// validateAtlasSchemaPlanName rejects rendered names that cannot safely become
+// a plan file name or a plan block label. Control characters are refused
+// because a template emitting a stray newline would otherwise produce both an
+// unusable file name and a plan block label the HCL writer has to reject
+// later, with a message pointing at the writer rather than at the template.
+func validateAtlasSchemaPlanName(source, name string) error {
+	if name == "" {
+		return fmt.Errorf("%s rendered an empty plan name", source)
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf(
+			"%s rendered the plan name %q, which contains a path separator; use --output to choose the plan file location",
+			source, name)
+	}
+	if strings.ContainsFunc(name, unicode.IsControl) {
+		return fmt.Errorf("%s rendered the plan name %q, which contains a control character", source, name)
+	}
 	return nil
 }
 
@@ -246,6 +343,16 @@ func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOpti
 	if strings.ContainsAny(opts.name, `/\`) {
 		return fmt.Errorf("--name must not contain path separators; use --output to choose the plan file location")
 	}
+	// Parse the name template before any database work, so a malformed
+	// template fails with no connection opened and nothing written.
+	if cmd.Flags().Changed("name-format") {
+		if opts.nameFormat == "" {
+			return fmt.Errorf("--name-format must not be empty")
+		}
+		if err := atlasreport.ValidateSchemaPlanNameTemplate(opts.nameFormat); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -269,11 +376,8 @@ func rejectUnimplementedAtlasSchemaPlanFlags(cmd *cobra.Command, opts atlasSchem
 		{"push", "plan push targets the Atlas Registry (Atlas Cloud); Ptah's local plan workflow saves plan files with --save or --output instead"},
 		{"pending", "pending plans are an Atlas Registry approval state; a locally saved plan file is approved by operator review"},
 		{"repo", "schema repositories exist only in the Atlas Registry (Atlas Cloud); Ptah plans are local files"},
-		{"edit", "Ptah does not implement editing the plan before saving yet; review the saved plan file instead"},
-		{"skip-lint", "Ptah does not lint declarative plans yet, so there is no lint step to skip"},
 		{"format", "Ptah does not implement --format for schema plan yet"},
-		{"name-format", "Ptah does not implement Go-template plan naming yet; use --name"},
-		{"directive", "Ptah does not implement Atlas plan directives yet"},
+		{"directive", "Ptah does not implement Atlas plan directives yet; the plan file records only the migration SQL"},
 		{"lock-timeout", "Ptah does not implement database lock waiting yet"},
 	}
 	for _, rejection := range rejections {

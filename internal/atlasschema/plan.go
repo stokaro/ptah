@@ -130,19 +130,7 @@ func PreparePlanFile(
 		name = defaultPlanName(fromFingerprint, toFingerprint)
 	}
 
-	statements := make([]PlanStatement, 0, len(computation.statements))
-	destructive := false
-	for _, statement := range computation.statements {
-		// Generated statements can carry leading SQL comments (for example the
-		// DROP TABLE data-loss warning); classify the executable text only.
-		assessment := safety.AssessSQL(strings.TrimSpace(sqlutil.StripComments(statement)))
-		destructive = destructive || assessment.Severity == safety.Destructive
-		statements = append(statements, PlanStatement{
-			SQL:      statement,
-			Severity: assessment.Severity,
-			Reason:   assessment.Reason,
-		})
-	}
+	statements, destructive := classifyPlanStatements(computation.statements)
 
 	return PlanFile{
 		FormatVersion:   PlanFormatVersion,
@@ -154,6 +142,49 @@ func PreparePlanFile(
 		Destructive:     destructive,
 		Statements:      statements,
 	}, nil
+}
+
+// classifyPlanStatements records the safety assessment of each raw statement
+// and reports whether any of them is destructive. It is the single classifier
+// behind every plan statement list, so a plan read from the Atlas format and a
+// plan re-derived from operator-edited SQL carry the same per-statement
+// metadata a freshly planned one records.
+func classifyPlanStatements(raw []string) (statements []PlanStatement, destructive bool) {
+	statements = make([]PlanStatement, 0, len(raw))
+	for _, statement := range raw {
+		// Statements can carry leading SQL comments (for example the DROP
+		// TABLE data-loss warning); classify the executable text only.
+		assessment := safety.AssessSQL(strings.TrimSpace(sqlutil.StripComments(statement)))
+		destructive = destructive || assessment.Severity == safety.Destructive
+		statements = append(statements, PlanStatement{
+			SQL:      statement,
+			Severity: assessment.Severity,
+			Reason:   assessment.Reason,
+		})
+	}
+	return statements, destructive
+}
+
+// WithStatementsFromSQL returns a copy of the plan whose statement list,
+// per-statement severity, and plan-level destructive marker are re-derived
+// from sqlText, split with the plan's own dialect. It backs `schema plan
+// --edit`, where the operator rewrites the planned SQL before it is saved.
+//
+// Re-deriving the severity metadata is the point: an edit that introduces a
+// DROP must not be saved under the destructive=false marker the pre-edit plan
+// carried.
+//
+// The fingerprints are deliberately NOT recomputed. `from` is the fingerprint
+// of the live source database, which an edit cannot change. `to` is the
+// fingerprint of the desired schema the plan was computed against, and edited
+// SQL may no longer reach it — that claim is verified where it can be, at
+// apply time: an Atlas-format plan is replayed on a dev database and required
+// to converge on `--to` before the target is touched. A native JSON plan
+// carries no such replay, so an edited JSON plan is only as good as the review
+// it received. [MarshalPlanFileAs] callers that accept edits must say so.
+func (p PlanFile) WithStatementsFromSQL(sqlText string) PlanFile {
+	p.Statements, p.Destructive = classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))
+	return p
 }
 
 // HasChanges reports whether the plan contains any statement.

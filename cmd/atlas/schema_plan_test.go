@@ -370,29 +370,14 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 			want: `atlas schema plan accepts --repo, but schema repositories exist only in the Atlas Registry \(Atlas Cloud\); Ptah plans are local files`,
 		},
 		{
-			name: "edit",
-			args: []string{"--edit"},
-			want: `atlas schema plan accepts --edit, but Ptah does not implement editing the plan before saving yet; review the saved plan file instead`,
-		},
-		{
-			name: "skip_lint",
-			args: []string{"--skip-lint"},
-			want: `atlas schema plan accepts --skip-lint, but Ptah does not lint declarative plans yet, so there is no lint step to skip`,
-		},
-		{
 			name: "format",
 			args: []string{"--format", "{{ json . }}"},
 			want: `atlas schema plan accepts --format, but Ptah does not implement --format for schema plan yet`,
 		},
 		{
-			name: "name_format",
-			args: []string{"--name-format", "{{ .Hash }}"},
-			want: `atlas schema plan accepts --name-format, but Ptah does not implement Go-template plan naming yet; use --name`,
-		},
-		{
 			name: "directive",
 			args: []string{"--directive", "atlas:txmode none"},
-			want: `atlas schema plan accepts --directive, but Ptah does not implement Atlas plan directives yet`,
+			want: `atlas schema plan accepts --directive, but Ptah does not implement Atlas plan directives yet; the plan file records only the migration SQL`,
 		},
 		{
 			name: "lock_timeout",
