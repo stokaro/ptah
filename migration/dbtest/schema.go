@@ -23,7 +23,13 @@ type SchemaOptions struct {
 	// schema. It is parsed with goschema.ParseDir and converged through the live
 	// diff and planner path before any case runs (once per ephemeral per-case
 	// database, or once for a shared explicit database).
+	//
+	// Desired takes precedence when set, which is how callers supply a schema
+	// resolved from a source RootDir cannot express -- a .sql or .hcl file.
 	RootDir string
+	// Desired is an already-resolved desired schema. When non-nil RootDir is
+	// used only to name the source in errors.
+	Desired *goschema.Database
 	// SeedDir is the default directory of seed files for seed steps that omit
 	// their own [SeedStep.Dir].
 	SeedDir string
@@ -55,9 +61,13 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 		return nil, fmt.Errorf("invalid test cases: %w", err)
 	}
 
-	schema, err := goschema.ParseDir(opts.RootDir)
-	if err != nil {
-		return nil, fmt.Errorf("parse desired schema from %s: %w", opts.RootDir, err)
+	schema := opts.Desired
+	if schema == nil {
+		parsed, err := goschema.ParseDir(opts.RootDir)
+		if err != nil {
+			return nil, fmt.Errorf("parse desired schema from %s: %w", opts.RootDir, err)
+		}
+		schema = parsed
 	}
 	if err := validateTestSchema(schema); err != nil {
 		return nil, err

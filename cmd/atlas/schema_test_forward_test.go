@@ -191,3 +191,99 @@ func TestNewCompatCommand_SchemaTestResolvesAtRoot(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "atlas schema test [flags] [paths]")
 	c.Assert(out.String(), qt.Contains, "-u, --url")
 }
+
+// writeDistinctSourceFixture writes three desired-schema sources that each
+// declare a DIFFERENT table, plus a test case asserting the SQL-sourced one.
+//
+// The distinct table names are the point. With every source declaring the same
+// table, a run passes whether or not the source was read at all, so it would
+// not show that -u resolved anything.
+func writeDistinctSourceFixture(c *qt.C, dir, testsDir string) (sqlFile, hclFile, modelsDir string) {
+	c.Helper()
+	modelsDir = filepath.Join(dir, "models")
+	c.Assert(os.MkdirAll(modelsDir, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(modelsDir, "user.go"), []byte(`package models
+
+//ptah:schema:table name="users_from_go"
+type User struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int64
+}
+`), 0o600), qt.IsNil)
+
+	sqlFile = filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(sqlFile,
+		[]byte("CREATE TABLE orders_from_sql (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	hclFile = filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(hclFile, []byte(`schema "main" {
+}
+table "widgets_from_hcl" {
+  schema = schema.main
+  column "id" {
+    type = int
+  }
+}
+`), 0o600), qt.IsNil)
+
+	c.Assert(os.WriteFile(filepath.Join(testsDir, "sql.yaml"), []byte(`cases:
+  - name: sql-sourced table exists
+    steps:
+      - assert:
+          query: "SELECT count(*) FROM orders_from_sql"
+          row_count: 1
+`), 0o600), qt.IsNil)
+	return sqlFile, hclFile, modelsDir
+}
+
+func runCompatSchemaTest(c *qt.C, testsDir, source string) (string, error) {
+	c.Helper()
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "test", testsDir,
+		"-u", "file://" + source,
+		"--dev-url", "sqlite://" + filepath.Join(c.TempDir(), "dev.db"),
+	})
+	return func() (string, error) { err := cmd.Execute(); return out.String(), err }()
+}
+
+// TestCompatCommand_SchemaTestAcceptsSQLFileSource covers a .sql desired schema.
+// The Go-annotation directory is the control: it declares a different table, so
+// the same case fails against it. Without that half, a pass would not
+// distinguish "read the SQL file" from "read anything at all".
+func TestCompatCommand_SchemaTestAcceptsSQLFileSource(t *testing.T) {
+	c := qt.New(t)
+	dir, testsDir := t.TempDir(), t.TempDir()
+	sqlFile, _, modelsDir := writeDistinctSourceFixture(c, dir, testsDir)
+
+	out, err := runCompatSchemaTest(c, testsDir, sqlFile)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+
+	controlOut, controlErr := runCompatSchemaTest(c, testsDir, modelsDir)
+	c.Assert(controlErr, qt.IsNotNil)
+	c.Assert(controlOut, qt.Contains, "no such table: orders_from_sql")
+}
+
+// TestCompatCommand_SchemaTestAcceptsHCLFileSource covers a .hcl desired schema.
+func TestCompatCommand_SchemaTestAcceptsHCLFileSource(t *testing.T) {
+	c := qt.New(t)
+	dir, testsDir := t.TempDir(), t.TempDir()
+	_, hclFile, _ := writeDistinctSourceFixture(c, dir, testsDir)
+	c.Assert(os.Remove(filepath.Join(testsDir, "sql.yaml")), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(testsDir, "hcl.yaml"), []byte(`cases:
+  - name: hcl-sourced table exists
+    steps:
+      - assert:
+          query: "SELECT count(*) FROM widgets_from_hcl"
+          row_count: 1
+`), 0o600), qt.IsNil)
+
+	out, err := runCompatSchemaTest(c, testsDir, hclFile)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+}
