@@ -1,13 +1,16 @@
 package atlas_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/cmd/atlas"
 	"github.com/stokaro/ptah/dbschema"
 )
 
@@ -320,6 +323,58 @@ func TestMigrateApplySkipChecksEnvRestoresDryRunOnCheckedDirectory(t *testing.T)
 	c.Assert(out, qt.Contains, "Would have applied 2 migrations.")
 	// Dry run stays a dry run: the bypass must not turn a preview into an apply.
 	c.Assert(sqliteTableCount(c, previewDB, "users"), qt.Equals, 0)
+}
+
+// The warning belongs on stderr, and the shared test helper cannot show that
+// because it points SetOut and SetErr at one buffer. With --format the run's
+// stdout is machine-readable, so a warning that leaked there would corrupt the
+// caller's parse — the exact failure this separation prevents.
+func TestMigrateApplySkipChecksEnvWarningStaysOffStdout(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	dbPath := filepath.Join(dir, "apply.db")
+	t.Setenv("PTAH_SKIP_CHECKS", "1")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--format", "{{ json . }}",
+	})
+
+	c.Assert(cmd.Execute(), qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stderr.String(), qt.Contains, "warning: PTAH_SKIP_CHECKS is set")
+	c.Assert(stdout.String(), qt.Not(qt.Contains), "PTAH_SKIP_CHECKS")
+	c.Assert(stdout.String(), qt.Not(qt.Contains), "warning")
+	// The bypass ran, so stdout carries the report the template asked for.
+	c.Assert(json.Valid(bytes.TrimSpace(stdout.Bytes())), qt.IsTrue)
+}
+
+// A value carrying whitespace is not a boolean and is refused like any other
+// non-boolean. A leading space is ordinary in CI environment files, so this is
+// a deliberate choice rather than an accident of the parser: strconv.ParseBool
+// is exactly what the native --skip-checks flag parses with, and trimming here
+// would make the compat surface accept values native rejects.
+func TestMigrateApplySkipChecksEnvRefusesWhitespacePaddedValue(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	dbPath := filepath.Join(dir, "apply.db")
+	t.Setenv("PTAH_SKIP_CHECKS", " 1")
+
+	_, err := executeAtlasProjectCommand(
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `invalid boolean value " 1" for PTAH_SKIP_CHECKS`)
 }
 
 // sqliteMigrationRowCount counts revision rows, so a bypassed run can be shown

@@ -376,7 +376,12 @@ func atlasMigrateDownVerb() atlasVerb {
 			// --skip-checks skips the checks of an Atlas Cloud pre-planned down
 			// migration; Ptah reverts through locally reviewed down files and
 			// has no generated checks to skip.
-			atlasargs.UnsupportedBoolReason("skip-checks", "", "Skip Atlas down migration safety checks",
+			//
+			// Explicit-only, unlike the waivers around it, because `migrate
+			// apply` reads PTAH_SKIP_CHECKS as its pre-migration check bypass.
+			// An ambient value meant for an apply is not a request for Atlas
+			// Cloud down checks, and must not refuse a rollback.
+			atlasargs.ExplicitUnsupportedBoolReason("skip-checks", "", "Skip Atlas down migration safety checks",
 				"Atlas down checks are part of the Atlas Cloud plan-approval flow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip"),
 			// --plan forces Atlas's registry-bound dynamic down planning.
 			// Ptah's local plan files (the `schema plan` workflow) are
@@ -703,6 +708,17 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 			cmd.Flags().BoolP(flag.Name, flag.Shorthand, false, flag.Usage)
 		case atlasargs.UintFlag:
 			cmd.Flags().UintP(flag.Name, flag.Shorthand, 0, flag.Usage)
+		}
+		if !flag.EnvDisabled {
+			continue
+		}
+		// A flag the arg mapper will not read from the environment must not be
+		// advertised with an "[env: PTAH_X]" suffix, or the help promises a
+		// variable that does nothing. cmdflags owns that annotation, so the
+		// opt-out has to be recorded there too — the same helper schema apply
+		// uses for --auto-approve.
+		if err := cmdflags.DisableEnvBinding(cmd.Flags(), flag.Name); err != nil {
+			panic(err)
 		}
 	}
 }

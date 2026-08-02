@@ -198,10 +198,15 @@ Because the forward defaults to Atlas revision bookkeeping, a bare invocation
 reverts the revisions `ptah-compat migrate apply` wrote.
 
 The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded
-waivers that fail loudly with their rationale. They are explicit-only: unlike
-the supported flags above they are never filled from a `PTAH_<FLAG>`
-environment twin, so `PTAH_SKIP_CHECKS` — which `migrate apply` reads as its
-pre-migration check bypass — does not refuse a rollback.
+waivers that fail loudly with their rationale. `--to-tag` and `--plan` are also
+settable through their `PTAH_<FLAG>` twins, and refusing them is the point:
+setting `PTAH_TO_TAG` is a request for a capability Ptah lacks, and discarding
+it would leave an empty rollback target that reverts the whole history.
+
+`--skip-checks` is the single exception, and it is explicit-only. `migrate
+apply` reads `PTAH_SKIP_CHECKS` as its pre-migration check bypass, so on this
+verb the variable is not a request for Atlas Cloud down checks; it neither
+refuses a rollback nor appears as an `[env: ...]` suffix in `--help`.
 
 ### `ptah-compat migrate diff`
 

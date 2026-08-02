@@ -13,9 +13,11 @@ import (
 // Atlas Pro enforces a txtar checks.sql section as a pre-migration gate: a
 // failing assertion aborts the apply with exit 1 before any body statement
 // runs (measured 2026-08-01, Atlas CLI v1.2.4-e282f76-canary). ptah-compat
-// matches that behavior, and — like Atlas — `migrate apply` has no
-// --skip-checks escape hatch, so checks always enforce on the compat surface
-// (#956).
+// matches that behavior, and — like Atlas — `migrate apply` registers no
+// --skip-checks flag (#956). The bypass exists but is spelled as an
+// environment variable, PTAH_SKIP_CHECKS, so the flag surface stays at parity;
+// it is covered in migrate_apply_skip_checks_env_test.go. Every test in this
+// file runs without that variable set.
 
 const compatTxtarCheckedAddEmail = `-- atlas:txtar
 
@@ -141,8 +143,10 @@ func TestMigrateApplyHasNoSkipChecksFlag(t *testing.T) {
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n")
 	dbPath := filepath.Join(dir, "apply.db")
 
-	// Parity with Atlas: `migrate apply` registers no --skip-checks, so the
-	// compat surface cannot bypass pre-migration checks.
+	// Parity with Atlas: `migrate apply` registers no --skip-checks flag, so
+	// the bypass is unreachable from the command line. It is reachable from
+	// PTAH_SKIP_CHECKS, which is the point — the capability exists without the
+	// flag surface growing a flag no Atlas build has.
 	out, err := executeAtlasProjectCommand(
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,

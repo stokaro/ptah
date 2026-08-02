@@ -8,16 +8,18 @@ import (
 	"github.com/stokaro/ptah/internal/atlasargs"
 )
 
-// Map fills unset flags from their PTAH_<FLAG> environment twins, but an
-// unsupported flag is explicit-only: its only behavior is a loud refusal, and a
-// refusal must mean the operator asked for it.
+// Map fills unset flags from their PTAH_<FLAG> environment twins, and that
+// includes unsupported ones on purpose: setting PTAH_TO_TAG is a request for
+// --to-tag, and the loud refusal is the correct answer to a request Ptah cannot
+// honor. Silently dropping it would be worse than refusing — on `migrate down`
+// a discarded --to-tag leaves an empty target that parses as version 0, turning
+// a bounded rollback into a full one.
 //
-// The concrete collision this rule prevents: PTAH_SKIP_CHECKS is the sanctioned
-// pre-migration check bypass on `ptah-compat migrate apply`, and `migrate down`
-// carries an unsupported --skip-checks. Synthesizing the down flag from that
-// variable made exporting it for an apply break every down in the same shell.
+// Exactly one flag opts out, via EnvDisabled, and only because another verb
+// repurposed its name: `migrate apply` reads PTAH_SKIP_CHECKS as its
+// pre-migration check bypass, so on `migrate down` that variable is not an ask.
 
-func TestMap_UnsupportedFlagsAreNotSynthesizedFromTheEnvironment(t *testing.T) {
+func TestMap_UnsupportedFlagsAreStillSynthesizedFromTheEnvironment(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		flag atlasargs.Flag
@@ -25,35 +27,72 @@ func TestMap_UnsupportedFlagsAreNotSynthesizedFromTheEnvironment(t *testing.T) {
 		env string
 		// value is what that variable is set to.
 		value string
+		// want is the refusal the mapper must produce.
+		want string
 	}{
 		{
 			name:  "bool with a rationale",
-			flag:  atlasargs.UnsupportedBoolReason("skip-checks", "", "Skip safety checks", "no generated checks to skip"),
-			env:   "PTAH_SKIP_CHECKS",
+			flag:  atlasargs.UnsupportedBoolReason("plan", "", "Force dynamic down planning", "bound to Atlas Cloud"),
+			env:   "PTAH_PLAN",
 			value: "1",
+			want:  "atlas migrate down accepts --plan, but Ptah does not implement its behavior: bound to Atlas Cloud",
 		},
 		{
 			name:  "bool without a rationale",
 			flag:  atlasargs.UnsupportedBool("plan", "", "Force dynamic down planning"),
 			env:   "PTAH_PLAN",
 			value: "true",
+			want:  "atlas migrate down accepts --plan, but Ptah does not implement its behavior yet",
 		},
 		{
 			name:  "string with a rationale",
 			flag:  atlasargs.UnsupportedStringReason("to-tag", "", "Target tag", "tags exist only in Atlas Registry"),
 			env:   "PTAH_TO_TAG",
 			value: "release-v1",
+			want:  "atlas migrate down accepts --to-tag, but Ptah does not implement its behavior: tags exist only in Atlas Registry",
 		},
 		{
 			name:  "string without a rationale",
 			flag:  atlasargs.UnsupportedString("format", "", "Go template output format"),
 			env:   "PTAH_FORMAT",
 			value: "{{ json . }}",
+			want:  "atlas migrate down accepts --format, but Ptah does not implement its behavior yet",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			t.Setenv(tc.env, tc.value)
+
+			_, err := atlasargs.Map("migrate", "down", []atlasargs.Flag{tc.flag}, nil)
+
+			c.Assert(err, qt.ErrorMatches, tc.want)
+		})
+	}
+}
+
+// The EnvDisabled marker is what narrows the exclusion to a single flag. The
+// cases use true values because the mapper separately ignores a bool-false
+// environment value, which would mask the marker.
+func TestMap_EnvDisabledFlagsAreNotSynthesizedFromTheEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		flag atlasargs.Flag
+		env  string
+	}{
+		{
+			name: "unsupported waiver",
+			flag: atlasargs.ExplicitUnsupportedBoolReason("skip-checks", "", "Skip down checks", "no generated checks to skip"),
+			env:  "PTAH_SKIP_CHECKS",
+		},
+		{
+			name: "native mapping",
+			flag: atlasargs.ExplicitNativeBool("auto-approve", "", "Skip interactive approval", "auto-approve"),
+			env:  "PTAH_AUTO_APPROVE",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(tc.env, "1")
 
 			out, err := atlasargs.Map("migrate", "down", []atlasargs.Flag{tc.flag}, nil)
 
@@ -63,9 +102,9 @@ func TestMap_UnsupportedFlagsAreNotSynthesizedFromTheEnvironment(t *testing.T) {
 	}
 }
 
-// The same variables still fill SUPPORTED flags, so the exclusion is keyed on
-// the flag being unsupported and not on the environment fallback being off.
-// Without this case, deleting appendEnvArgs entirely would pass the test above.
+// Supported flags are still filled from the environment, so the exclusion is
+// keyed on the marker and not on the fallback being off. Without this case,
+// deleting appendEnvArgs entirely would pass everything above.
 func TestMap_SupportedFlagsAreStillFilledFromTheEnvironment(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_TO_VERSION", "20260801000001")
@@ -78,15 +117,15 @@ func TestMap_SupportedFlagsAreStillFilledFromTheEnvironment(t *testing.T) {
 	c.Assert(out, qt.DeepEquals, []string{"--target=20260801000001"})
 }
 
-// An unsupported flag passed explicitly still fails loudly while its twin is
-// set, so the rule narrows what the environment may do without weakening the
+// An EnvDisabled waiver passed explicitly still fails loudly while its twin is
+// set, so the marker narrows what the environment may do without weakening the
 // waiver itself.
-func TestMap_ExplicitUnsupportedFlagStillFailsWithTheEnvironmentSet(t *testing.T) {
+func TestMap_ExplicitEnvDisabledFlagStillFailsWithTheEnvironmentSet(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
 
 	_, err := atlasargs.Map("migrate", "down", []atlasargs.Flag{
-		atlasargs.UnsupportedBoolReason("skip-checks", "", "Skip safety checks", "no generated checks to skip"),
+		atlasargs.ExplicitUnsupportedBoolReason("skip-checks", "", "Skip down checks", "no generated checks to skip"),
 	}, []string{"--skip-checks"})
 
 	c.Assert(err, qt.ErrorMatches,

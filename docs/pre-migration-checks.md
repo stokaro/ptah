@@ -188,12 +188,18 @@ PTAH_SKIP_CHECKS=1 ptah-compat migrate apply --url "$DB" --dir file://migrations
 The name is not a second convention. Ptah binds every native flag to a
 `PTAH_<FLAG>` environment twin, so `ptah migrations up --skip-checks` already
 answers to `PTAH_SKIP_CHECKS`; `ptah-compat migrate apply` reads the same
-variable. Values are parsed as booleans (`1`, `true`, `t`, and their negations);
-an unset or empty value enforces checks, and a value that is not a boolean is a
-hard error rather than a silent "enforce", so a typo in a CI environment file
-cannot read as a bypass that silently was not one. A run with the bypass active
-prints a warning on stderr, because unlike a flag it leaves no trace in the
-command line.
+variable. Values are parsed as booleans (`1`, `true`, `t`, and their negations),
+and an unset or empty value enforces checks. A run with the bypass active prints
+a warning on stderr, because unlike a flag it leaves no trace in the command
+line.
+
+The two binaries agree on the name and on every valid boolean. They differ on an
+**invalid** one: `ptah-compat migrate apply` refuses it outright, before opening
+the database, so a typo in a CI environment file cannot read as a bypass that
+silently was not one, while native `ptah migrations up` discards the parse error
+and enforces checks. Both fail safe — a value neither of them understands never
+bypasses anything — but only the compat surface says so. Values with surrounding
+whitespace (`" 1"`) are not booleans and follow the same split.
 
 It is an environment variable rather than a flag because Atlas registers no
 `--skip-checks` on `migrate apply` and `ptah-compat` does not add flags Atlas
@@ -208,9 +214,16 @@ uses for `atlas.hcl` `data "external_schema"`.
 directory, and revision bookkeeping is unchanged.
 
 `ptah-compat migrate down` accepts an Atlas `--skip-checks` flag it does not
-implement and refuses it loudly. That refusal is deliberately explicit-only:
+implement and refuses it loudly. That one refusal is explicit-only:
 `PTAH_SKIP_CHECKS` does not trigger it, so exporting the variable for an apply
-does not break rollbacks in the same shell.
+does not break rollbacks in the same shell, and `migrate down --help` shows no
+`[env: ...]` suffix for it.
+
+That exception stops there. `migrate down`'s other waivers — `--to-tag` and
+`--plan` — keep their environment twins, because those names mean nothing else:
+setting `PTAH_TO_TAG` *is* a request for a capability Ptah lacks, and refusing
+it is the right answer. Ignoring it would not be a harmless no-op — the target
+would parse as version `0` and the rollback would revert the entire history.
 
 ## Integrity
 
