@@ -200,7 +200,7 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 	if err != nil {
 		return Config{}, err
 	}
-	if err := validateAtlasEnvStructures(blocks.envs); err != nil {
+	if err := p.validateAtlasEnvStructures(blocks.envs); err != nil {
 		return Config{}, err
 	}
 
@@ -272,6 +272,83 @@ func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
 	out := make([]IgnoredAtlasConstruct, len(*p.ignored))
 	copy(out, *p.ignored)
 	return out
+}
+
+// ceEnforcedConstructs lists scope-qualified names that Atlas CE genuinely
+// decodes and acts on, but Ptah does not implement.
+//
+// These must keep being refused rather than swept into the unknown-name
+// tolerance. Accepting them would produce the worst outcome available: the user
+// writes a policy, nothing enforces it, and nothing says so. A loud refusal is
+// a divergence from CE, but it is the safe direction; silent non-enforcement is
+// not. Each entry was measured on the pinned CE binary by planting a value the
+// target field cannot hold and checking whether CE reports a decode failure --
+// a name CE ignores cannot produce one:
+//
+//	lint { destructive { error = "x" } } -> "parsing destructive check options"
+//	lint { condrop { error = "x" } }     -> "parsing datadepend check options"
+//	diff { skip { drop_schema = "x" } }  -> attr "drop_schema" cannot be read as bool
+//	env { schema { repo { name = 1 } } } -> attr "name" cannot be read as string
+//
+// The same probe run against lint.naming, lint.statement, lint.non_linear,
+// lint.ownership, lint.check, lint.rule, destructive.allow_table and
+// schema.mode.sensitive stays silent, so those are tolerated.
+//
+// Note the probe only proves the positive: a decode failure means CE reads the
+// field. Silence alone means nothing unless a known-decoded name in the SAME
+// command produces a failure -- `migration { baseline = [1,2] }` is silent under
+// `migrate diff` purely because that command never reads baseline.
+// lint.destructive is decoded by CE too, but Ptah already implements it, so it
+// never reaches the tolerance path and is not listed here.
+var ceEnforcedConstructs = map[string]struct{}{
+	"lint.condrop":          {},
+	"diff.skip.drop_schema": {},
+	"schema.repo":           {},
+}
+
+// enforcedByCE reports whether a scope-qualified name is one CE acts on.
+//
+// The same block may sit at the top level or inside env -- `lint` and `diff`
+// are both -- so the env prefix is stripped before the lookup rather than every
+// name being registered twice.
+func enforcedByCE(scope, name string) bool {
+	if _, ok := ceEnforcedConstructs[scope+"."+name]; ok {
+		return true
+	}
+	_, ok := ceEnforcedConstructs[strings.TrimPrefix(scope, "env.")+"."+name]
+	return ok
+}
+
+// tolerateUnknownAttr accepts an attribute name Atlas CE does not recognize.
+//
+// The expression is still evaluated and its failure still returned: CE's
+// tolerance is name-level, not subtree-level, so `env { frobnicate = var.nope }`
+// is fatal on CE even though `env { frobnicate = "x" }` is not.
+//
+// scope is the dotted path of the enclosing body, used to keep names CE really
+// enforces out of the tolerance -- see ceEnforcedConstructs.
+func (p atlasParser) tolerateUnknownAttr(scope, name string, attr *hclsyntax.Attribute) error {
+	if enforcedByCE(scope, name) {
+		return unsupported(name, attr.NameRange)
+	}
+	if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
+		return p.evaluationFailed(name, attr, diags)
+	}
+	p.noteIgnored("attribute", name, attr.NameRange)
+	return nil
+}
+
+// tolerateUnknownBlock accepts a block name Atlas CE does not recognize, with
+// the same name-level and enforced-name rules as tolerateUnknownAttr.
+func (p atlasParser) tolerateUnknownBlock(scope string, block *hclsyntax.Block) error {
+	if enforcedByCE(scope, block.Type) {
+		return unsupported(block.Type, block.TypeRange)
+	}
+	if err := p.evaluateIgnoredBody(block.Body); err != nil {
+		return err
+	}
+	p.noteIgnored("block", block.Type, block.TypeRange)
+	return nil
 }
 
 // noteIgnored records a construct tolerated under the unknown-name policy.
@@ -425,7 +502,7 @@ func (p atlasParser) parseEnvBlock(block *hclsyntax.Block, seen map[string]struc
 	case "schema":
 		return p.parseSchema(block, cfg)
 	default:
-		return unsupportedBlock(block)
+		return p.tolerateUnknownBlock("env", block)
 	}
 }
 
@@ -443,7 +520,9 @@ func (p atlasParser) parseSchema(block *hclsyntax.Block, cfg *Config) error {
 			cfg.SchemaSources = values
 			cfg.presence.mark(fieldSchemaSources)
 		default:
-			return unsupportedAttr(attrName, attr)
+			if err := p.tolerateUnknownAttr("env.schema", attrName, attr); err != nil {
+				return err
+			}
 		}
 	}
 	seenMode := false
@@ -458,7 +537,11 @@ func (p atlasParser) parseSchema(block *hclsyntax.Block, cfg *Config) error {
 				return err
 			}
 		default:
-			return unsupportedBlock(nested)
+			// Same in-loop rule as the attribute switches: returning here
+			// would end the loop and skip every later block.
+			if err := p.tolerateUnknownBlock("env.schema", nested); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -492,10 +575,14 @@ func (p atlasParser) parseSchemaMode(block *hclsyntax.Block, cfg *Config) error 
 			cfg.Schema.Mode.Views = value
 		case "sensitive":
 			if value.Value {
-				return unsupportedAttr(attrName, attr)
+				if err := p.tolerateUnknownAttr("env.schema.mode", attrName, attr); err != nil {
+					return err
+				}
 			}
 		default:
-			return unsupportedAttr(attrName, attr)
+			if err := p.tolerateUnknownAttr("env.schema.mode", attrName, attr); err != nil {
+				return err
+			}
 		}
 	}
 	if len(block.Body.Blocks) > 0 {
@@ -535,7 +622,9 @@ func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cf
 		cfg.Exclude = values
 		cfg.presence.mark(fieldExclude)
 	default:
-		return unsupportedAttr(attrName, attr)
+		if err := p.tolerateUnknownAttr("env", attrName, attr); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -608,7 +697,9 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 			migration.TxMode = value
 			cfg.presence.mark(fieldMigrationTxMode)
 		default:
-			return unsupportedAttr(attrName, attr)
+			if err := p.tolerateUnknownAttr("env.migration", attrName, attr); err != nil {
+				return err
+			}
 		}
 	}
 	if len(block.Body.Blocks) > 0 {
@@ -663,7 +754,9 @@ func (p atlasParser) parseLintAttr(attrName string, attr *hclsyntax.Attribute, c
 		cfg.Format.Migrate.Lint = value
 		cfg.presence.mark(fieldFormatMigrateLint)
 	default:
-		return unsupportedAttr(attrName, attr)
+		if err := p.tolerateUnknownAttr("lint", attrName, attr); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -709,7 +802,11 @@ func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) 
 				return err
 			}
 		default:
-			return unsupportedBlock(nested)
+			// Same in-loop rule as the attribute switches: returning here
+			// would end the loop and skip every later block.
+			if err := p.tolerateUnknownBlock("lint", nested); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -746,9 +843,13 @@ func (p atlasParser) parseLintAnalyzer(block *hclsyntax.Block, cfg *Config, code
 				setLintRuleSeverity(cfg, code, severity)
 			}
 		case "force":
-			return unsupportedAttr(attrName, attr)
+			if err := p.tolerateUnknownAttr("lint.analyzer", attrName, attr); err != nil {
+				return err
+			}
 		default:
-			return unsupportedAttr(attrName, attr)
+			if err := p.tolerateUnknownAttr("lint.analyzer", attrName, attr); err != nil {
+				return err
+			}
 		}
 	}
 	if len(block.Body.Blocks) > 0 {
@@ -800,7 +901,9 @@ func (p atlasParser) parseLintGit(block *hclsyntax.Block, cfg *Config) error {
 			cfg.Lint.GitDir = value
 			cfg.presence.mark(fieldLintGitDir)
 		default:
-			return unsupportedAttr(attrName, attr)
+			if err := p.tolerateUnknownAttr("lint.git", attrName, attr); err != nil {
+				return err
+			}
 		}
 	}
 	if len(block.Body.Blocks) > 0 {
@@ -809,40 +912,55 @@ func (p atlasParser) parseLintGit(block *hclsyntax.Block, cfg *Config) error {
 	return nil
 }
 
-func (p atlasParser) parseFormat(block *hclsyntax.Block, cfg *Config) error {
+// atlasNestedParser parses one known child of a container block.
+type atlasNestedParser func(*hclsyntax.Block, *Config) error
+
+// parseContainerBlock parses an unlabeled block that carries no attributes of
+// its own and a fixed set of nested blocks, each allowed once.
+//
+// Attributes are all unknown by definition and go to the tolerance path;
+// unknown nested blocks do too. Neither `return`s from inside the loop on the
+// tolerated path -- that would end the loop and silently skip every later
+// name, which map iteration order would make intermittent.
+func (p atlasParser) parseContainerBlock(
+	scope string,
+	block *hclsyntax.Block,
+	cfg *Config,
+	nested map[string]atlasNestedParser,
+) error {
 	if len(block.Labels) > 0 {
 		return unsupportedBlock(block)
 	}
-	if len(block.Body.Attributes) > 0 {
-		for name, attr := range block.Body.Attributes {
-			return unsupportedAttr(name, attr)
+	for _, name := range sortedAttributeNames(block.Body.Attributes) {
+		if err := p.tolerateUnknownAttr(scope, name, block.Body.Attributes[name]); err != nil {
+			return err
 		}
 	}
-	seenMigrate := false
-	seenSchema := false
-	for _, nested := range block.Body.Blocks {
-		switch nested.Type {
-		case "migrate":
-			if seenMigrate {
-				return unsupportedBlock(nested)
-			}
-			seenMigrate = true
-			if err := p.parseMigrateFormat(nested, cfg); err != nil {
+	seen := map[string]struct{}{}
+	for _, child := range block.Body.Blocks {
+		parse, known := nested[child.Type]
+		if !known {
+			if err := p.tolerateUnknownBlock(scope, child); err != nil {
 				return err
 			}
-		case "schema":
-			if seenSchema {
-				return unsupportedBlock(nested)
-			}
-			seenSchema = true
-			if err := p.parseSchemaFormat(nested, cfg); err != nil {
-				return err
-			}
-		default:
-			return unsupportedBlock(nested)
+			continue
+		}
+		if _, duplicate := seen[child.Type]; duplicate {
+			return unsupportedBlock(child)
+		}
+		seen[child.Type] = struct{}{}
+		if err := parse(child, cfg); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func (p atlasParser) parseFormat(block *hclsyntax.Block, cfg *Config) error {
+	return p.parseContainerBlock("format", block, cfg, map[string]atlasNestedParser{
+		"migrate": p.parseMigrateFormat,
+		"schema":  p.parseSchemaFormat,
+	})
 }
 
 func (p atlasParser) parseMigrateFormat(block *hclsyntax.Block, cfg *Config) error {
@@ -895,39 +1013,10 @@ func (p atlasParser) parseFormatAttributes(
 }
 
 func (p atlasParser) parseDiff(block *hclsyntax.Block, cfg *Config) error {
-	if len(block.Labels) > 0 {
-		return unsupportedBlock(block)
-	}
-	if len(block.Body.Attributes) > 0 {
-		for name, attr := range block.Body.Attributes {
-			return unsupportedAttr(name, attr)
-		}
-	}
-	seenSkip := false
-	seenConcurrentIndex := false
-	for _, nested := range block.Body.Blocks {
-		switch nested.Type {
-		case "skip":
-			if seenSkip {
-				return unsupportedBlock(nested)
-			}
-			seenSkip = true
-			if err := p.parseDiffSkip(nested, cfg); err != nil {
-				return err
-			}
-		case "concurrent_index":
-			if seenConcurrentIndex {
-				return unsupportedBlock(nested)
-			}
-			seenConcurrentIndex = true
-			if err := p.parseDiffConcurrentIndex(nested, cfg); err != nil {
-				return err
-			}
-		default:
-			return unsupportedBlock(nested)
-		}
-	}
-	return nil
+	return p.parseContainerBlock("diff", block, cfg, map[string]atlasNestedParser{
+		"skip":             p.parseDiffSkip,
+		"concurrent_index": p.parseDiffConcurrentIndex,
+	})
 }
 
 func (p atlasParser) parseDiffSkip(block *hclsyntax.Block, cfg *Config) error {
@@ -943,9 +1032,13 @@ func (p atlasParser) parseDiffSkip(block *hclsyntax.Block, cfg *Config) error {
 		case "drop_table":
 			cfg.Diff.Skip.DropTable = value
 		case "drop_schema":
-			return unsupportedAttr(attrName, attr)
+			if err := p.tolerateUnknownAttr("diff.skip", attrName, attr); err != nil {
+				return err
+			}
 		default:
-			return unsupportedAttr(attrName, attr)
+			if err := p.tolerateUnknownAttr("diff.skip", attrName, attr); err != nil {
+				return err
+			}
 		}
 	}
 	if len(block.Body.Blocks) > 0 {
@@ -969,7 +1062,9 @@ func (p atlasParser) parseDiffConcurrentIndex(block *hclsyntax.Block, cfg *Confi
 		case "drop":
 			cfg.Diff.ConcurrentIndex.Drop = value
 		default:
-			return unsupportedAttr(attrName, attr)
+			if err := p.tolerateUnknownAttr("diff.concurrent_index", attrName, attr); err != nil {
+				return err
+			}
 		}
 	}
 	if len(block.Body.Blocks) > 0 {
