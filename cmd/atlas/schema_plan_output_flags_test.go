@@ -1,11 +1,13 @@
 package atlas_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/atlas"
 	"github.com/stokaro/ptah/internal/atlasschema"
@@ -33,6 +35,19 @@ func installScriptEditor(t *testing.T, body string) {
 	}
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", path)
+}
+
+// runSchemaPlanStreams executes `schema plan` with stdout and stderr captured
+// separately, so a test can assert that nothing was reported on stderr. The
+// shared runSchemaPlan helper merges them, which is right for reading a failure
+// but cannot distinguish "printed nothing" from "printed to the other stream".
+func runSchemaPlanStreams(root *cobra.Command, args ...string) (stdout, stderr string, err error) {
+	var out, errBuf bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errBuf)
+	root.SetArgs(append([]string{"schema", "plan"}, args...))
+	err = root.Execute()
+	return out.String(), errBuf.String(), err
 }
 
 // planFixture is a live SQLite target plus a desired-state schema file whose
@@ -109,26 +124,37 @@ func TestSchemaPlanSkipLintIsANoOp(t *testing.T) {
 	// identical and the whole reported output can be compared verbatim.
 	planPath := filepath.Join(fixture.dir, "p.plan.json")
 
-	outWithout, errWithout := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+	stdoutWithout, stderrWithout, errWithout := runSchemaPlanStreams(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", planPath)...)
-	c.Assert(errWithout, qt.IsNil, qt.Commentf("%s", outWithout))
+	c.Assert(errWithout, qt.IsNil, qt.Commentf("%s%s", stdoutWithout, stderrWithout))
 	withoutDocument, err := os.ReadFile(planPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Remove(planPath), qt.IsNil)
 
-	outWith, errWith := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+	stdoutWith, stderrWith, errWith := runSchemaPlanStreams(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", planPath, "--skip-lint")...)
 
-	// `schema plan` runs no lint step, so --skip-lint has nothing to skip. The
-	// assertion is on the WHOLE reported output, not only the saved document:
-	// a linter emits diagnostics, and a document-only comparison cannot tell a
-	// linter that honors the flag from one that ignores it. runSchemaPlan
-	// merges stdout and stderr, so diagnostics on either stream are covered.
+	// Two claims, and they need different assertions.
+	//
+	// "The flag changes nothing" is the equality: whole reported output and
+	// saved document, both byte for byte. A document-only comparison could not
+	// tell a linter that honors the flag from one that ignores it, because a
+	// linter reports rather than rewriting the plan.
+	//
+	// "There is no lint step at all" is the empty stderr. Equality alone
+	// cannot carry that one — a linter that ignores the flag emits in BOTH
+	// runs and leaves them equal. Diagnostics belong on stderr, so a
+	// successful plan over a destructive fixture producing nothing there is
+	// the evidence that no such step exists.
+	//
 	// The native JSON format is used deliberately — its default plan name is
 	// fingerprint-derived and so reproducible across runs, whereas the
 	// .plan.hcl name is a one-second-granularity timestamp.
-	c.Assert(errWith, qt.IsNil, qt.Commentf("%s", outWith))
-	c.Assert(outWith, qt.Equals, outWithout)
+	c.Assert(errWith, qt.IsNil, qt.Commentf("%s%s", stdoutWith, stderrWith))
+	c.Assert(stdoutWith, qt.Equals, stdoutWithout)
+	c.Assert(stderrWith, qt.Equals, stderrWithout)
+	c.Assert(stderrWithout, qt.Equals, "")
+	c.Assert(stderrWith, qt.Equals, "")
 	withDocument, err := os.ReadFile(planPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(withDocument), qt.Equals, string(withoutDocument))
