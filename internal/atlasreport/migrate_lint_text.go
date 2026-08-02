@@ -75,9 +75,36 @@ func writeMigrateLintTextGroup(w io.Writer, group migrateLintTextGroup) error {
 	if _, err := fmt.Fprintf(w, "    -- %s detected:\n", group.label); err != nil {
 		return err
 	}
+	// Atlas prints every diagnostic in the group first, then collects the
+	// suggested fixes under ONE header at the end -- pluralised when there is
+	// more than one. Interleaving fix-after-diagnostic produces identical
+	// output for a single diagnostic, which is why that layout has to be
+	// checked against a group with two.
+	var fixes []string
 	for _, diag := range group.diags {
-		content := fmt.Sprintf("L%d [%s]: %s", diag.line, diag.code, diag.message)
+		content := fmt.Sprintf("L%d: %s", diag.line, diag.message)
+		if diag.code != "" {
+			content += " " + atlasAnalyzerDocsURL + diag.code
+		}
 		if err := writeWrapped(w, "      -- ", "         ", content); err != nil {
+			return err
+		}
+		if diag.fix != "" {
+			fixes = append(fixes, diag.fix)
+		}
+	}
+	if len(fixes) == 0 {
+		return nil
+	}
+	header := "    -- suggested fix:"
+	if len(fixes) > 1 {
+		header = "    -- suggested fixes:"
+	}
+	if _, err := fmt.Fprintln(w, header); err != nil {
+		return err
+	}
+	for _, fix := range fixes {
+		if err := writeWrapped(w, "      -> ", "         ", fix); err != nil {
 			return err
 		}
 	}
@@ -160,9 +187,12 @@ type migrateLintTextGroup struct {
 }
 
 type migrateLintTextDiag struct {
-	line     int
-	code     string
-	message  string
+	line    int
+	code    string
+	message string
+	// fix is the Atlas-shaped suggested fix, printed under its own header.
+	// Empty for analyzers where Atlas prints none.
+	fix      string
 	group    string
 	severity migrationlint.Severity
 }
@@ -245,10 +275,12 @@ func diagnosticsByFile(findings []migrationlint.Finding) map[string][]migrateLin
 // but uses the native Ptah finding as the sole source of human-readable prose.
 func compatibilityDiagnostic(finding migrationlint.Finding) migrateLintTextDiag {
 	rule := atlaslint.RuleForNativeCode(finding.Rule)
+	message, fix := atlasDiagnosticText(rule.Code, finding)
 	return migrateLintTextDiag{
 		line:     finding.Line,
 		code:     rule.Code,
-		message:  finding.Message,
+		message:  message,
+		fix:      fix,
 		group:    analyzerGroupLabel(rule.Analyzer),
 		severity: finding.Severity,
 	}
