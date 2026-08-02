@@ -363,6 +363,49 @@ func TestCompatCommand_MigrateCheckpointNestedMigrationOutranksTimestamp(t *test
 	c.Assert(rows[0].Version, qt.Equals, strings.TrimSuffix(name, "_checkpoint.sql"))
 }
 
+// TestCompatCommand_MigrateCheckpointNestedTieDoesNotCollide covers the
+// equality boundary of the recursive bound, which a strict-vs-non-strict
+// comparison cannot be told apart on any other input.
+//
+// The top-level history is dated 29990101000000, so the shallow resolver
+// returns 29990101000001; a NESTED migration sits at exactly that version, so
+// the recursive bound equals the resolved value. Accepting it (`>=`) writes a
+// checkpoint carrying the same version as an existing migration — two files,
+// one version — instead of stepping past it.
+func TestCompatCommand_MigrateCheckpointNestedTieDoesNotCollide(t *testing.T) {
+	c := qt.New(t)
+	dir := filepath.Join(c.TempDir(), "m")
+	c.Assert(os.MkdirAll(filepath.Join(dir, "sub"), 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "29990101000000_init.sql"),
+		[]byte("CREATE TABLE ckpt_users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "sub", "29990101000001_tie.sql"),
+		[]byte("ALTER TABLE ckpt_users ADD COLUMN tie TEXT;\n"), 0o600), qt.IsNil)
+	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
+
+	out, err := runCompatCheckpoint(c,
+		"migrate", "checkpoint",
+		"--dir", dir,
+		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "shadow.db"),
+		"--dir-format", "atlas",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	name := assertAtlasCheckpointWritten(c, dir, "checkpoint")
+	version := strings.TrimSuffix(name, "_checkpoint.sql")
+	// Strictly above the nested migration, not equal to it.
+	c.Assert(version, qt.Equals, "29990101000002")
+
+	// The protected state is that no two migrations share a version: a fresh
+	// apply must still record exactly one row, for the checkpoint.
+	freshDB := filepath.Join(c.TempDir(), "fresh.db")
+	applyOut, _, err := compatApply(dir, freshDB)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", applyOut))
+	rows := compatRevisionRows(c, freshDB)
+	c.Assert(rows, qt.HasLen, 1)
+	c.Assert(rows[0].Version, qt.Equals, "29990101000002")
+}
+
 func TestCompatCommand_MigrateCheckpointDirFormatIsCaseFolded(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")

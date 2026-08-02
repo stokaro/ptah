@@ -68,8 +68,8 @@
     {
       "name": "an unreadable directory is treated as conflict-free",
       "file": "cmd/migratecheckpoint/migratecheckpoint.go",
-      "old": "\tcase !errors.Is(err, os.ErrNotExist):\n\t\treturn fmt.Errorf(\"failed to inspect migrations directory: %w\", err)",
-      "new": "\tcase false:\n\t\treturn fmt.Errorf(\"failed to inspect migrations directory: %w\", err)"
+      "old": "\tcase !errors.Is(err, os.ErrNotExist):",
+      "new": "\tcase !errors.Is(err, os.ErrNotExist) && false:"
     },
     {
       "name": "the ptah-content guard is disabled, so unhashed ptah dirs convert",
@@ -128,8 +128,8 @@
     {
       "name": "atlas checkpoints use the ptah newest-plus-one counter",
       "file": "cmd/migratecheckpoint/migratecheckpoint.go",
-      "old": "\t\tif atlas {\n\t\t\treturn generator.ResolveAtlasCheckpointVersion(migrationsDir), nil\n\t\t}\n\t\treturn latest + 1, nil",
-      "new": "\t\treturn latest + 1, nil"
+      "old": "\t\tif atlas {\n\t\t\tif version := generator.ResolveAtlasCheckpointVersion(migrationsDir); version > latest {\n\t\t\t\treturn version, nil\n\t\t\t}\n\t\t\treturn latest + 1, nil\n\t\t}",
+      "new": "\t\tif false {\n\t\t\tif version := generator.ResolveAtlasCheckpointVersion(migrationsDir); version > latest {\n\t\t\t\treturn version, nil\n\t\t\t}\n\t\t\treturn latest + 1, nil\n\t\t}"
     },
     {
       "name": "the directive is appended after the body instead of first",
