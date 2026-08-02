@@ -49,17 +49,22 @@ func RenderSchemaPlanName(format string, data SchemaPlanName) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-// newSchemaPlanNameTemplate parses a plan-name template. No FuncMap is
-// installed: the one template Atlas documents uses only text/template
-// builtins (`slice`), and inventing helper functions the official binary may
-// not have would make a template that works here fail there.
+// newSchemaPlanNameTemplate parses a plan-name template with the same helper
+// set every other Atlas Go-template surface in this package exposes.
+//
+// Sharing the helpers is the portable direction. #951's premise is that an
+// Atlas pipeline keeps working here: a template that runs under the official
+// binary and fails here breaks that promise, while a template that runs here
+// and fails there only inconveniences someone migrating away. Whether Atlas
+// builds *this* template from a bare environment is unmeasured, so the
+// permissive choice is the safe one.
 //
 // No "missingkey" option is set. The payload is a struct, and a struct field
 // lookup that misses is already an execution error whatever the option says —
 // a mutation removing the option left the suite green, which is what proved it
 // inert. A map payload would need the option back.
 func newSchemaPlanNameTemplate(format string) (*template.Template, error) {
-	tmpl, err := template.New("atlas-schema-plan-name-format").Parse(format)
+	tmpl, err := template.New("atlas-schema-plan-name-format").Funcs(atlasTemplateFuncs()).Parse(format)
 	if err != nil {
 		return nil, fmt.Errorf("parse --name-format template: %w", err)
 	}

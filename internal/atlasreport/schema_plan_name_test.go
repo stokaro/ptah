@@ -34,6 +34,15 @@ func TestRenderSchemaPlanName(t *testing.T) {
 		{name: "from hash", format: "{{ .FromHash }}", want: data.FromHash},
 		{name: "both hashes", format: "{{ slice .FromHash 7 11 }}-{{ slice .ToHash 7 11 }}", want: "1111-2222"},
 		{name: "literal", format: "fixed_name", want: "fixed_name"},
+		{
+			// The Atlas helper set is shared with every other Go-template
+			// surface in this package: a template that runs on `migrate apply
+			// --format` must not fail here just because it is naming a plan.
+			name:   "atlas helper set is available",
+			format: "{{ upper (slice .ToHash 7 11) }}",
+			want:   "2222",
+		},
+		{name: "add helper", format: "plan_{{ add 1 6 }}", want: "plan_7"},
 		{name: "surrounding whitespace is trimmed", format: "\n\t  spaced \n", want: "spaced"},
 		{name: "printf builtin", format: `{{ printf "%s_%d" "plan" 7 }}`, want: "plan_7"},
 	}

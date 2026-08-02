@@ -315,20 +315,49 @@ func TestSchemaPlanRejectsMultipleFromURLs(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `atlas schema plan accepts multiple --from URLs, but Ptah plans against one target database URL`)
 }
 
-func TestSchemaPlanRejectsNameWithPathSeparators(t *testing.T) {
+func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE u (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		"--from", "sqlite://"+filepath.Join(dir, "plan.db"),
-		"--to", "file://"+schemaPath,
-		"--name", "nested/plan",
-		"--save",
-	)
+	// --name and --name-format share one validator, so a literal name gets the
+	// same protection a templated one does: a plan name becomes a file name on
+	// every platform Ptah is built for, Windows included.
+	tests := []struct {
+		name     string
+		planName string
+		want     string
+	}{
+		{
+			name:     "path_separator",
+			planName: "nested/plan",
+			want:     `--name: the plan name "nested/plan" contains a path separator; use --output to choose the plan file location`,
+		},
+		{
+			name:     "windows_colon",
+			planName: "plan:1",
+			want:     `--name: the plan name "plan:1" contains one of :\*\?"<>\|, which cannot appear in a file name on Windows`,
+		},
+		{
+			name:     "parent_directory",
+			planName: "..",
+			want:     `--name: the plan name "\.\." is a directory reference, not a name`,
+		},
+	}
 
-	c.Assert(err, qt.ErrorMatches, `--name must not contain path separators; use --output to choose the plan file location`)
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+				"--from", "sqlite://"+filepath.Join(dir, "plan.db"),
+				"--to", "file://"+schemaPath,
+				"--name", tt.planName,
+				"--save",
+			)
+
+			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
 }
 
 func TestSchemaPlanSaveAndDryRunAreMutuallyExclusive(t *testing.T) {

@@ -109,6 +109,48 @@ func TestPlanFileWithStatementsFromSQLSplitsWithThePlansOwnDialect(t *testing.T)
 	}
 }
 
+func TestPlanFileWithStatementsFromSQLRoundTripsItsOwnSQLExactly(t *testing.T) {
+	c := qt.New(t)
+	plan := atlasschema.PlanFile{
+		Dialect: "sqlite",
+		Statements: []atlasschema.PlanStatement{
+			{
+				SQL:      "-- WARNING: This will delete all data in table \"victim\"!\nDROP TABLE IF EXISTS \"victim\"",
+				Severity: safety.Destructive,
+				Reason:   "drops a table",
+			},
+			{SQL: "CREATE TABLE \"fresh\" (\n  \"id\" INTEGER PRIMARY KEY\n)", Severity: safety.Safe},
+		},
+	}
+
+	got := plan.WithStatementsFromSQL(plan.SQL())
+
+	// Feeding a plan its own SQL back must be the identity. This is what makes
+	// `--edit` safe when the operator quits the editor without typing: the
+	// Atlas .plan.hcl shape has no severity field, so the generated
+	// "-- WARNING" comment is the only in-artifact signal that the plan
+	// destroys data, and a split that stripped comments would erase it.
+	c.Assert(got.Statements, qt.HasLen, 2)
+	c.Assert(got.Statements[0].SQL, qt.Equals, plan.Statements[0].SQL)
+	c.Assert(got.Statements[1].SQL, qt.Equals, plan.Statements[1].SQL)
+	c.Assert(got.SQL(), qt.Equals, plan.SQL())
+	c.Assert(got.Destructive, qt.IsTrue)
+}
+
+func TestPlanFileWithStatementsFromSQLClassifiesPastLeadingComments(t *testing.T) {
+	c := qt.New(t)
+	plan := atlasschema.PlanFile{Dialect: "sqlite"}
+
+	got := plan.WithStatementsFromSQL("-- this comment mentions CREATE TABLE\nDROP TABLE victim;")
+
+	// The comment is kept in the statement text but must not steer the
+	// classifier: severity comes from the executable body alone.
+	c.Assert(got.Statements, qt.HasLen, 1)
+	c.Assert(got.Statements[0].SQL, qt.Contains, "-- this comment mentions CREATE TABLE")
+	c.Assert(got.Statements[0].Severity, qt.Equals, safety.Destructive)
+	c.Assert(got.Destructive, qt.IsTrue)
+}
+
 func TestPlanFileWithStatementsFromSQLDropsCommentOnlyEdits(t *testing.T) {
 	c := qt.New(t)
 	plan := atlasschema.PlanFile{

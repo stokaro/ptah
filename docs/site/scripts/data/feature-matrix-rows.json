@@ -271,12 +271,21 @@
  },
  {
   "area": "Atlas Registry and Cloud",
-  "feature": "`schema plan --edit`, `--name-format`, `--skip-lint`",
+  "feature": "`schema plan --edit` and `--name-format`",
   "ptah": "yes",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "`--edit` opens the planned SQL in $VISUAL/$EDITOR and re-derives severity from what you wrote; `--name-format` templates the name over .FromHash/.ToHash; `--skip-lint` is an explicit no-op.",
-  "evidence": "Verified: `ptah-compat schema plan --from sqlite://x.db --to file://s.sql --save --edit --name-format 'plan_{{ slice .ToHash 7 19 }}'` (cmd/atlas/schema_plan_output_flags_test.go, internal/atlasschema/plan_edit_test.go). Measured 2026-08-02, CE v1.2.0 logged out: `schema plan` declares no own flags at all — each of the five answers `unknown flag` byte-identically to the nonsense controls `--name-formxxxx` and `--totally-bogus-flag`, and so does `--dev-url`, a flag CE knows on sibling verbs; only inherited `--env`/`-c`/`--var` parse and they reach the community abort, so CE never evaluates atlas.hcl for this verb (`schema plan --env nosuchenv` aborts where `schema inspect --env nosuchenv` says 'env not defined'). All five are registered on the Atlas v1.2.4 licensed trial capture (help-surface/trial-surface.json), which records help text only — no execution. `--skip-lint` is a no-op because `PreparePlanFile` invokes no linter; pinned by a byte-identity test over the plan document with and without the flag"
+  "note": "`--edit` opens the planned SQL in $VISUAL/$EDITOR and re-derives severity from what you wrote; `--name-format` templates the plan name over .FromHash/.ToHash.",
+  "evidence": "Verified: `ptah-compat schema plan --from sqlite://x.db --to file://s.sql --save --edit --name-format 'plan_{{ slice .ToHash 7 19 }}'` (cmd/atlas/schema_plan_output_flags_test.go, internal/atlasschema/plan_edit_test.go). Measured 2026-08-02, CE v1.2.0 logged out: `schema plan` declares no own flags at all — each of the five answers `unknown flag` byte-identically to the nonsense controls `--name-formxxxx` and `--totally-bogus-flag`, and so does `--dev-url`, a flag CE knows on sibling verbs; only inherited `--env`/`-c`/`--var` parse and they reach the community abort, so CE never evaluates atlas.hcl for this verb (`schema plan --env nosuchenv` aborts where `schema inspect --env nosuchenv` says 'env not defined'). Registered on the Atlas v1.2.4 licensed trial capture (help-surface/trial-surface.json), which records help text only. Two divergences are deliberate and pinned: an edit round-trips statement text verbatim (comments included) so quitting the editor unchanged reproduces the plan byte for byte, and a templated name is refused if it contains a Windows-illegal character — which Atlas's own documented example `{{ slice .ToHash 0 8 }}` does here, because Ptah fingerprints carry a `sha256:` prefix; slice from 7"
+ },
+ {
+  "area": "Atlas Registry and Cloud",
+  "feature": "`schema plan --skip-lint`",
+  "ptah": "yes",
+  "atlas_oss": "no",
+  "atlas_pro": "yes",
+  "note": "Accepted, and does nothing: `schema plan` runs no lint step, so there is nothing to skip. A Pro pipeline passing it keeps working; no check is loosened.",
+  "evidence": "Verified: `ptah-compat schema plan --from sqlite://x.db --to file://s.sql --output p.plan.json --skip-lint` produces byte-identical reported output AND a byte-identical plan document to the same run without the flag, over a DESTRUCTIVE fixture — the input any plausible linter would report on (cmd/atlas/schema_plan_output_flags_test.go TestSchemaPlanSkipLintIsANoOp). Measured 2026-08-02, CE v1.2.0: `unknown flag`, same as the nonsense controls; registered on the Atlas v1.2.4 trial capture as 'skip linting migration plan', help text only. `internal/atlasschema.PreparePlanFile` invokes no linter — `migration/lint` is not imported on this path. The no-op status is a gap against Pro, not parity: Atlas lints the plan and Ptah does not, so a Pro pipeline relying on `schema plan` FAILING on an unlinted destructive change gets no such refusal here"
  },
  {
   "area": "Atlas Registry and Cloud",
@@ -284,8 +293,8 @@
   "ptah": "no",
   "atlas_oss": "no",
   "atlas_pro": "yes",
-  "note": "Both fail loudly, by design: Atlas's plan report payload and its directive artifact shape were never executed on the licensed trial, so guessing either buys silent divergence, not parity.",
-  "evidence": "ptah-compat schema plan --format '{{ json . }}' -> 'Ptah does not implement --format for schema plan yet'. Measured 2026-08-02, CE v1.2.0: both answer `unknown flag`, same as the nonsense controls. Registered on the Atlas v1.2.4 trial capture with help text only: `--format` 'output format', `-d/--directive` 'set a directive for the migration plan'. `--format` is deferred because the payload field names are unknown, and a Ptah-shaped payload would fail Pro templates that reference Atlas's. `--directive` is deferred because the measured Atlas `.plan.hcl` artifact (internal/atlasschema/testdata/atlas.plan.hcl) carries only from/to/migration, so a directive would have to ride inside the migration heredoc in an unmeasured spelling — and Ptah's own Atlas-format reader ignores `-- atlas:checkpoint` today (#954), so emitted directives would be silent no-ops"
+  "note": "Both fail loudly, by design. `--format` is implemented on the eight compat verbs whose CE counterpart works and whose payload can therefore be measured; `schema plan` is the one verb where CE aborts.",
+  "evidence": "ptah-compat schema plan --format '{{ json . }}' -> 'Ptah does not implement --format for schema plan yet'. Measured 2026-08-02, CE v1.2.0: both answer `unknown flag`, same as the nonsense controls. Registered on the Atlas v1.2.4 trial capture with help text only: `--format` 'output format', `-d/--directive` 'set a directive for the migration plan'. The rule is consistent rather than an exception: `--format` ships on `migrate apply/diff/lint/status` and `schema apply/clean/diff/inspect` because CE executes those verbs, so their report payload is measurable; `schema plan` aborts on CE and the licensed capture is help text only, so its payload field names are unknown and a Ptah-shaped payload would fail Pro templates referencing Atlas's. `--directive` is deferred because the measured Atlas `.plan.hcl` artifact (internal/atlasschema/testdata/atlas.plan.hcl) carries only from/to/migration, so a directive would have to ride inside the migration heredoc in an unmeasured spelling — and Ptah's own Atlas-format reader ignores `-- atlas:checkpoint` today (#954), so emitted directives would be silent no-ops"
  },
  {
   "area": "Versioned migrations",

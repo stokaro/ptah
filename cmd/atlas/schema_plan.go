@@ -61,13 +61,18 @@ so there is nothing to skip.
 --edit opens the planned SQL in $VISUAL, then $EDITOR, and saves the plan
 rebuilt from the edited text; severity and the destructive marker are
 re-derived from what you wrote, and an edit that leaves no statement is
-refused. The recorded to-fingerprint still describes the schema the plan was
-computed against, which edited SQL may no longer reach — ` + "`schema apply`" + `
+refused. Statement text round-trips verbatim, comments included, so quitting
+the editor without changing anything yields the same plan document as no
+--edit at all. The recorded to-fingerprint still describes the schema the plan
+was computed against, which edited SQL may no longer reach — ` + "`schema apply`" + `
 replays an Atlas-format plan on a dev database and requires it to converge on
 --to, but a native .json plan carries no such check.
 --name-format computes the plan name from a Go template over .FromHash and
 .ToHash, which are this plan's own sha256 fingerprints; it cannot be combined
-with --name. When --env is set, the selected atlas.hcl env can provide url
+with --name. Because those fingerprints are "sha256:"-prefixed, Atlas's own
+documented example ({{ slice .ToHash 0 8 }}) yields a name containing a colon
+and is refused; slice from 7 to skip the prefix. When --env is set, the
+selected atlas.hcl env can provide url
 (the --from target), schema.src, dev, exclude, schema.mode, and supported
 diff policy values. Registry-bound planning (--push, --pending, --repo),
 --format, --directive, and the plan registry sub-verbs remain unimplemented.`,
@@ -82,7 +87,12 @@ diff policy values. Registry-bound planning (--push, --pending, --repo),
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from planning")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to plan when database URLs are used")
 	flags.StringVar(&opts.name, "name", "", "Plan name recorded in the plan file")
-	flags.StringVar(&opts.nameFormat, "name-format", "", "Go template used to compute the plan name (e.g. 'plan_{{ slice .ToHash 0 8 }}')")
+	// Atlas's own help advertises 'plan_{{ slice .ToHash 0 8 }}'. That example
+	// cannot be copied verbatim here: Ptah fingerprints are "sha256:<hex>", so
+	// slicing from 0 keeps the prefix and yields "plan_sha256:", whose colon is
+	// illegal in a Windows file name and is refused. Slicing from 7 skips the
+	// prefix and gives the digest characters the Atlas example is after.
+	flags.StringVar(&opts.nameFormat, "name-format", "", "Go template used to compute the plan name (e.g. 'plan_{{ slice .ToHash 7 15 }}')")
 	flags.StringVarP(&opts.output, "output", "o", "", "Plan file output path (default <name>"+atlasschema.PlanFileSuffixHCL+"; a .json path writes the native JSON plan format)")
 	flags.BoolVar(&opts.save, "save", false, "Save the plan to a local plan file")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the plan file document without saving it")
@@ -194,16 +204,21 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
 		return nil
 	}
-	if opts.edit {
-		plan, err = editAtlasSchemaPlan(plan)
-		if err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
-	}
+	// Everything that can refuse the plan without looking at its statements
+	// runs before the editor. An edit is operator work, and throwing it away
+	// over a format or naming problem that was decidable beforehand loses it
+	// for nothing: the editor's buffer is a temporary file this command
+	// deletes. Nothing below depends on the statement text — the name template
+	// reads only fingerprints, which an edit cannot change.
 	outputPath := strings.TrimSpace(opts.output)
 	format := atlasSchemaPlanFormat(outputPath)
+	if err := atlasschema.CheckPlanFormatSupported(plan, format); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	nameSource := "--name"
 	switch {
 	case opts.nameFormat != "":
+		nameSource = "--name-format"
 		plan.Name, err = renderAtlasSchemaPlanName(opts.nameFormat, plan)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
@@ -212,6 +227,12 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	// deterministic fingerprint-derived default for the native JSON format.
 	case format == atlasschema.PlanFormatHCL && strings.TrimSpace(opts.name) == "":
 		plan.Name = atlasschema.TimestampPlanName(time.Now())
+	}
+	if opts.edit {
+		plan, err = editAtlasSchemaPlan(plan)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	document, err := atlasschema.MarshalPlanFileAs(plan, format)
 	if err != nil {
@@ -234,8 +255,12 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		// two plans computed in the same second would silently overwrite each
 		// other's reviewed SQL. An explicit --output path stays overwritable.
 		if _, err := os.Stat(path); err == nil {
+			// The remediation names whichever flag produced this name:
+			// --name and --name-format are mutually exclusive, so suggesting
+			// --name to someone who used --name-format sends them at a
+			// combination the command refuses.
 			return cmdutil.Fail(cmd, fmt.Errorf(
-				"plan file %s already exists; pass --name or --output to choose a distinct plan file", path))
+				"plan file %s already exists; pass %s or --output to choose a distinct plan file", path, nameSource))
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return cmdutil.Fail(cmd, fmt.Errorf("check plan file %s: %w", path, err))
 		}
@@ -287,22 +312,40 @@ func renderAtlasSchemaPlanName(nameFormat string, plan atlasschema.PlanFile) (st
 	return name, nil
 }
 
-// validateAtlasSchemaPlanName rejects rendered names that cannot safely become
-// a plan file name or a plan block label. Control characters are refused
-// because a template emitting a stray newline would otherwise produce both an
-// unusable file name and a plan block label the HCL writer has to reject
-// later, with a message pointing at the writer rather than at the template.
+// atlasPlanNameIllegalWindowsChars are the characters Windows forbids in a file
+// name and POSIX does not. They are refused on every platform so a plan file
+// written on Linux stays readable on Windows, which goreleaser builds for.
+// `:` is the one that bites in practice: it is NTFS's alternate-data-stream
+// separator, so `plan_sha256:9.plan.hcl` would create an empty `plan_sha256`
+// with the document hidden in a stream, under a cheerful success message.
+const atlasPlanNameIllegalWindowsChars = `:*?"<>|`
+
+// validateAtlasSchemaPlanName rejects plan names that cannot safely become a
+// plan file name or a plan block label. source names the flag the name came
+// from, so the same rules can back --name and --name-format with a message
+// that points at the right flag.
+//
+// Control characters are refused because a template emitting a stray newline
+// would otherwise produce both an unusable file name and a plan block label the
+// HCL writer has to reject later, with a message pointing at the writer rather
+// than at the template. `.` and `..` are refused because they name a directory
+// rather than a plan.
 func validateAtlasSchemaPlanName(source, name string) error {
-	if name == "" {
-		return fmt.Errorf("%s rendered an empty plan name", source)
-	}
-	if strings.ContainsAny(name, `/\`) {
+	switch {
+	case name == "":
+		return fmt.Errorf("%s: the plan name is empty", source)
+	case name == "." || name == "..":
+		return fmt.Errorf("%s: the plan name %q is a directory reference, not a name", source, name)
+	case strings.ContainsAny(name, `/\`):
 		return fmt.Errorf(
-			"%s rendered the plan name %q, which contains a path separator; use --output to choose the plan file location",
+			"%s: the plan name %q contains a path separator; use --output to choose the plan file location",
 			source, name)
-	}
-	if strings.ContainsFunc(name, unicode.IsControl) {
-		return fmt.Errorf("%s rendered the plan name %q, which contains a control character", source, name)
+	case strings.ContainsAny(name, atlasPlanNameIllegalWindowsChars):
+		return fmt.Errorf(
+			"%s: the plan name %q contains one of %s, which cannot appear in a file name on Windows",
+			source, name, atlasPlanNameIllegalWindowsChars)
+	case strings.ContainsFunc(name, unicode.IsControl):
+		return fmt.Errorf("%s: the plan name %q contains a control character", source, name)
 	}
 	return nil
 }
@@ -340,8 +383,13 @@ func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOpti
 	if err := ensureLocalSchemaURLs("--to", opts.toURLs); err != nil {
 		return err
 	}
-	if strings.ContainsAny(opts.name, `/\`) {
-		return fmt.Errorf("--name must not contain path separators; use --output to choose the plan file location")
+	// An empty --name means "use the default name", so only a supplied one is
+	// checked. Everything else that makes a name unusable applies to both
+	// flags, so they share one validator.
+	if opts.name != "" {
+		if err := validateAtlasSchemaPlanName("--name", opts.name); err != nil {
+			return err
+		}
 	}
 	// Parse the name template before any database work, so a malformed
 	// template fails with no connection opened and nothing written.

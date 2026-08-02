@@ -165,6 +165,32 @@ func classifyPlanStatements(raw []string) (statements []PlanStatement, destructi
 	return statements, destructive
 }
 
+// splitPlanStatements splits sqlText into plan statements, keeping each
+// statement's text verbatim — leading comments included — and dropping only
+// those with no executable body.
+//
+// Keeping the comments is what makes an edit round-trip lossless.
+// [SplitApplyStatements] strips them, which is right for text about to be
+// executed but wrong for text about to be *saved*: the statements
+// [PreparePlanFile] records carry their generated comments, and the Atlas
+// `.plan.hcl` shape has no severity field, so for a plan written in that shape
+// the "-- WARNING: This will delete all data" line is the only in-artifact
+// signal that the plan destroys data. Stripping it would let an operator who
+// opened the editor and quit without typing anything turn a plan that warns
+// into one that does not.
+func splitPlanStatements(sqlText, dialect string) []string {
+	raw := sqlutil.SplitSQLStatementsForDialect(sqlText, dialect)
+	statements := make([]string, 0, len(raw))
+	for _, statement := range raw {
+		statement = strings.TrimSpace(statement)
+		if strings.TrimSpace(sqlutil.StripCommentsForDialect(statement, dialect)) == "" {
+			continue
+		}
+		statements = append(statements, statement)
+	}
+	return statements
+}
+
 // WithStatementsFromSQL returns a copy of the plan whose statement list,
 // per-statement severity, and plan-level destructive marker are re-derived
 // from sqlText, split with the plan's own dialect. It backs `schema plan
@@ -173,6 +199,10 @@ func classifyPlanStatements(raw []string) (statements []PlanStatement, destructi
 // Re-deriving the severity metadata is the point: an edit that introduces a
 // DROP must not be saved under the destructive=false marker the pre-edit plan
 // carried.
+//
+// Statement text is preserved verbatim, so feeding back an unmodified
+// [PlanFile.SQL] reproduces the same statements — an editor the operator quits
+// without changing anything yields the same plan document as no edit at all.
 //
 // The fingerprints are deliberately NOT recomputed. `from` is the fingerprint
 // of the live source database, which an edit cannot change. `to` is the
@@ -183,7 +213,7 @@ func classifyPlanStatements(raw []string) (statements []PlanStatement, destructi
 // carries no such replay, so an edited JSON plan is only as good as the review
 // it received. [MarshalPlanFileAs] callers that accept edits must say so.
 func (p PlanFile) WithStatementsFromSQL(sqlText string) PlanFile {
-	p.Statements, p.Destructive = classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))
+	p.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))
 	return p
 }
 

@@ -97,31 +97,41 @@ func chdirToScratch(t *testing.T) string {
 
 func TestSchemaPlanSkipLintIsANoOp(t *testing.T) {
 	c := qt.New(t)
+	// The fixture is DESTRUCTIVE on purpose. A lint step reports; it does not
+	// rewrite the plan, so an additive fixture gives any plausible linter
+	// nothing to say and the assertion passes whether the flag is honored,
+	// ignored, or absent. Dropping a table is the input a linter would speak
+	// up about, which is what makes this test able to fail.
 	fixture := newPlanFixture(c, "skiplint",
-		`CREATE TABLE users (id INTEGER PRIMARY KEY);`,
-		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
-	withPath := filepath.Join(fixture.dir, "with.plan.json")
-	withoutPath := filepath.Join(fixture.dir, "without.plan.json")
+		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE drop_me (id INTEGER);",
+		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`)
+	// Both runs write to the same path so the "Plan saved to" line is
+	// identical and the whole reported output can be compared verbatim.
+	planPath := filepath.Join(fixture.dir, "p.plan.json")
 
 	outWithout, errWithout := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		fixture.args("--output", withoutPath)...)
-	outWith, errWith := runSchemaPlan(atlas.NewCompatCommand("atlas"),
-		fixture.args("--output", withPath, "--skip-lint")...)
-
-	// `schema plan` runs no lint step, so --skip-lint has nothing to skip and
-	// must not perturb the plan. Comparing the documents byte for byte is the
-	// discriminator: an assertion that the command merely succeeds would pass
-	// even if the flag silently changed what was planned. The native JSON
-	// format is used deliberately — its default plan name is derived from the
-	// fingerprints, so two runs are reproducible, whereas the .plan.hcl name
-	// is a one-second-granularity timestamp.
+		fixture.args("--output", planPath)...)
 	c.Assert(errWithout, qt.IsNil, qt.Commentf("%s", outWithout))
+	withoutDocument, err := os.ReadFile(planPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Remove(planPath), qt.IsNil)
+
+	outWith, errWith := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		fixture.args("--output", planPath, "--skip-lint")...)
+
+	// `schema plan` runs no lint step, so --skip-lint has nothing to skip. The
+	// assertion is on the WHOLE reported output, not only the saved document:
+	// a linter emits diagnostics, and a document-only comparison cannot tell a
+	// linter that honors the flag from one that ignores it. runSchemaPlan
+	// merges stdout and stderr, so diagnostics on either stream are covered.
+	// The native JSON format is used deliberately — its default plan name is
+	// fingerprint-derived and so reproducible across runs, whereas the
+	// .plan.hcl name is a one-second-granularity timestamp.
 	c.Assert(errWith, qt.IsNil, qt.Commentf("%s", outWith))
-	withoutBytes, err := os.ReadFile(withoutPath)
+	c.Assert(outWith, qt.Equals, outWithout)
+	withDocument, err := os.ReadFile(planPath)
 	c.Assert(err, qt.IsNil)
-	withBytes, err := os.ReadFile(withPath)
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(withBytes), qt.Equals, string(withoutBytes))
+	c.Assert(string(withDocument), qt.Equals, string(withoutDocument))
 }
 
 func TestSchemaPlanSkipLintCombinesWithEveryOutputMode(t *testing.T) {
@@ -308,22 +318,46 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 		{
 			name:     "renders_empty",
 			template: `{{ "" }}`,
-			want:     `--name-format rendered an empty plan name`,
+			want:     `--name-format: the plan name is empty`,
 		},
 		{
 			name:     "renders_whitespace_only",
 			template: "   ",
-			want:     `--name-format rendered an empty plan name`,
+			want:     `--name-format: the plan name is empty`,
 		},
 		{
 			name:     "renders_path_separator",
 			template: "nested/plan",
-			want:     `--name-format rendered the plan name "nested/plan", which contains a path separator; use --output to choose the plan file location`,
+			want:     `--name-format: the plan name "nested/plan" contains a path separator; use --output to choose the plan file location`,
 		},
 		{
 			name:     "renders_control_character",
 			template: "plan{{ printf \"\\n\" }}name",
-			want:     `--name-format rendered the plan name .*, which contains a control character`,
+			want:     `--name-format: the plan name .* contains a control character`,
+		},
+		{
+			name:     "renders_current_directory",
+			template: ".",
+			want:     `--name-format: the plan name "\." is a directory reference, not a name`,
+		},
+		{
+			name:     "renders_parent_directory",
+			template: "..",
+			want:     `--name-format: the plan name "\.\." is a directory reference, not a name`,
+		},
+		{
+			// The literal example in Atlas's licensed help. Ptah fingerprints
+			// carry a "sha256:" prefix, so slicing from 0 keeps the colon —
+			// which NTFS reads as an alternate-data-stream separator. Refusing
+			// beats writing an empty file with the plan hidden in a stream.
+			name:     "atlas_documented_example_keeps_the_fingerprint_prefix",
+			template: "plan_{{ slice .ToHash 0 8 }}",
+			want:     `--name-format: the plan name "plan_sha256:[0-9a-f]" contains one of :\*\?"<>\|, which cannot appear in a file name on Windows`,
+		},
+		{
+			name:     "renders_windows_wildcard",
+			template: "plan*name",
+			want:     `--name-format: the plan name "plan\*name" contains one of :\*\?"<>\|, which cannot appear in a file name on Windows`,
 		},
 	}
 
@@ -348,9 +382,11 @@ func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
 	c := qt.New(t)
 
 	// Each case names the layer that refuses it, so the test cannot pass
-	// because planning failed for some unrelated reason. The backslash is
-	// caught earlier than the others: it is a path separator on the name
-	// rules, and never reaches the writer.
+	// because planning failed for some unrelated reason. Two are caught by the
+	// name rules before the writer ever sees them — a backslash is a path
+	// separator, a double quote is illegal in a Windows file name — and the
+	// HCL interpolation sequences are legal in a file name, so only the writer
+	// can refuse those.
 	tests := []struct {
 		name     string
 		template string
@@ -359,12 +395,12 @@ func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
 		{
 			name:     "double_quote",
 			template: `plan"name`,
-			want:     `plan name "plan\\"name" contains characters that cannot be written verbatim into an Atlas \.plan\.hcl quoted string`,
+			want:     `--name-format: the plan name "plan\\"name" contains one of :\*\?"<>\|, which cannot appear in a file name on Windows`,
 		},
 		{
 			name:     "backslash",
 			template: `plan\name`,
-			want:     `--name-format rendered the plan name "plan\\\\name", which contains a path separator.*`,
+			want:     `--name-format: the plan name "plan\\\\name" contains a path separator.*`,
 		},
 		{
 			name:     "hcl_interpolation",
@@ -421,6 +457,54 @@ func TestSchemaPlanNameFormatIsParsedBeforeAnyDatabaseWork(t *testing.T) {
 	assertNoPlanFileWritten(c, dir)
 }
 
+func TestSchemaPlanNameFormatCollisionRecommendsAReachableFlag(t *testing.T) {
+	c := qt.New(t)
+	dir := chdirToScratch(t)
+	fixture := newPlanFixture(c, "collide", "", `CREATE TABLE collide_users (id INTEGER PRIMARY KEY);`)
+
+	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		fixture.args("--save", "--name-format", "collides")...)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	_, statErr := os.Stat(filepath.Join(dir, "collides.plan.hcl"))
+	c.Assert(statErr, qt.IsNil)
+
+	_, err = runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		fixture.args("--save", "--name-format", "collides")...)
+
+	// --name and --name-format are mutually exclusive, so telling someone who
+	// used --name-format to "pass --name" sends them at a combination this
+	// command refuses. The remediation names the flag they actually have.
+	c.Assert(err, qt.ErrorMatches, `plan file collides\.plan\.hcl already exists; pass --name-format or --output to choose a distinct plan file`)
+}
+
+func TestSchemaPlanNameCollisionRecommendsName(t *testing.T) {
+	c := qt.New(t)
+	chdirToScratch(t)
+	fixture := newPlanFixture(c, "collidename", "", `CREATE TABLE collidename_users (id INTEGER PRIMARY KEY);`)
+
+	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--save", "--name", "taken")...)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	_, err = runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--save", "--name", "taken")...)
+
+	c.Assert(err, qt.ErrorMatches, `plan file taken\.plan\.hcl already exists; pass --name or --output to choose a distinct plan file`)
+}
+
+func TestSchemaPlanNameFormatAcceptsAtlasTemplateHelpers(t *testing.T) {
+	c := qt.New(t)
+	fixture := newPlanFixture(c, "helpers", "", `CREATE TABLE helper_users (id INTEGER PRIMARY KEY);`)
+
+	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		fixture.args("--output", fixture.outputPath, "--name-format", "plan_{{ upper (slice .ToHash 7 15) }}")...)
+
+	// The helper set is shared with the eight verbs that implement --format,
+	// so an Atlas pipeline's template keeps working when it names a plan.
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	plan, err := atlasschema.ReadPlanFile(fixture.outputPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Name, qt.Matches, `plan_[0-9A-F]{8}`)
+}
+
 func TestSchemaPlanNameFormatDryRunWritesNothing(t *testing.T) {
 	c := qt.New(t)
 	chdirToScratch(t)
@@ -455,6 +539,112 @@ func TestSchemaPlanEditSavesTheEditedSQL(t *testing.T) {
 	c.Assert(plan.Statements, qt.HasLen, 1)
 	c.Assert(plan.Statements[0].SQL, qt.Contains, "edited_table")
 	c.Assert(plan.Statements[0].SQL, qt.Not(qt.Contains), "original_table")
+}
+
+func TestSchemaPlanEditThatChangesNothingProducesTheSamePlan(t *testing.T) {
+	c := qt.New(t)
+	// The commonest editor session: open, read, quit without typing. /bin/true
+	// leaves the file byte-for-byte as written.
+	fixture := newPlanFixture(c, "noopedit",
+		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE victim (id INTEGER);",
+		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`)
+	planPath := filepath.Join(fixture.dir, "p.plan.hcl")
+
+	outWithout, errWithout := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		fixture.args("--output", planPath, "--name", "fixed")...)
+	c.Assert(errWithout, qt.IsNil, qt.Commentf("%s", outWithout))
+	withoutDocument, err := os.ReadFile(planPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Remove(planPath), qt.IsNil)
+
+	installScriptEditor(t, `exit 0`)
+	outWith, errWith := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		fixture.args("--output", planPath, "--name", "fixed", "--edit")...)
+
+	// An editor that changes nothing must change nothing. The .plan.hcl shape
+	// has no severity field, so the generated "-- WARNING: This will delete all
+	// data" comment is the ONLY in-artifact signal that this plan is
+	// destructive; a round-trip that strips comments would silently turn a plan
+	// that warns into one that does not, and a reviewer would see a bare DROP.
+	c.Assert(errWith, qt.IsNil, qt.Commentf("%s", outWith))
+	withDocument, err := os.ReadFile(planPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(withDocument), qt.Equals, string(withoutDocument))
+	c.Assert(string(withDocument), qt.Contains, "WARNING")
+	c.Assert(string(withDocument), qt.Contains, "DROP TABLE")
+}
+
+func TestSchemaPlanEditPreservesCommentsOnEditedStatements(t *testing.T) {
+	c := qt.New(t)
+	installScriptEditor(t, `printf -- '-- reviewed by hand\nDROP TABLE victim;\n' > "$1"`)
+	fixture := newPlanFixture(c, "editcomment",
+		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE victim (id INTEGER);",
+		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`)
+
+	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+		fixture.args("--output", fixture.outputPath, "--edit")...)
+
+	// A comment the operator writes is part of the artifact a reviewer reads,
+	// so it is kept verbatim. The severity is still classified from the
+	// executable body, not from the comment.
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	plan, err := atlasschema.ReadPlanFile(fixture.outputPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Statements, qt.HasLen, 1)
+	c.Assert(plan.Statements[0].SQL, qt.Contains, "-- reviewed by hand")
+	c.Assert(plan.Statements[0].SQL, qt.Contains, "DROP TABLE victim")
+	c.Assert(plan.Statements[0].Severity, qt.Equals, safety.Destructive)
+	c.Assert(plan.Destructive, qt.IsTrue)
+}
+
+func TestSchemaPlanEditIsNotOpenedWhenNamingFailsFirst(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "name_format_execute_failure",
+			args: []string{"--save", "--name-format", "{{ .NoSuchField }}"},
+			want: `execute --name-format template: .*NoSuchField.*`,
+		},
+		{
+			name: "name_format_renders_unusable_name",
+			args: []string{"--save", "--name-format", "nested/plan"},
+			want: `--name-format: the plan name "nested/plan" contains a path separator.*`,
+		},
+		{
+			name: "exclude_cannot_be_written_as_hcl",
+			args: []string{"--save", "--exclude", "zzz_unrelated"},
+			want: `the Atlas \.plan\.hcl format has no field for exclude patterns.*`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			t := c.TB.(*testing.T)
+			dir := chdirToScratch(t)
+			marker := filepath.Join(dir, "editor-ran")
+			installScriptEditor(t, `touch "`+marker+`"`)
+			fixture := newPlanFixture(c, "preflight", "", `CREATE TABLE preflight_users (id INTEGER PRIMARY KEY);`)
+
+			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+				fixture.args(append(tt.args, "--edit")...)...)
+
+			// Every refusal that does not depend on the statement text belongs
+			// before the editor. An edit is operator work, and the temporary
+			// file this command edits is deleted on the way out, so a failure
+			// after the editor loses that work for a reason that was knowable
+			// beforehand. The marker is the assertion: an error message alone
+			// cannot tell you whether the editor was opened.
+			c.Assert(err, qt.ErrorMatches, tt.want)
+			_, statErr := os.Stat(marker)
+			c.Assert(os.IsNotExist(statErr), qt.IsTrue, qt.Commentf("editor must not open before a decidable refusal"))
+			assertNoPlanFileWritten(c, fixture.dir)
+		})
+	}
 }
 
 func TestSchemaPlanEditRederivesSeverityAndDestructiveMarker(t *testing.T) {
