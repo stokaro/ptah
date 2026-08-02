@@ -4,7 +4,12 @@ set -eu
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-if rg -n 'github\.com/stretchr/testify|\b(assert|require)\.' --glob '*.go' .; then
+# git grep rather than rg: when ripgrep is absent the command exits 127, the
+# `if` reads that as "no matches", and `set -e` does not fire inside a condition
+# -- so this gate reported success without ever running. It did exactly that on
+# CI, which has no ripgrep. git grep is always present here and searches tracked
+# files only, which also keeps stray worktrees out of the result.
+if git grep -nE 'github\.com/stretchr/testify|\b(assert|require)\.' -- '*.go'; then
 	echo "teststyle: testify/assert/require usage is prohibited; use quicktest as qt instead" >&2
 	exit 1
 fi
