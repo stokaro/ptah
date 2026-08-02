@@ -119,8 +119,7 @@ func validateRuleConfigs(configs map[string]RuleConfig) error {
 func validateConfiguredRuleSelectors(rules []Rule, opts Options) error {
 	selectors := append(slices.Sorted(maps.Keys(opts.RuleConfigs)), opts.Disabled...)
 	for _, selector := range selectors {
-		trimmed := strings.TrimSpace(selector)
-		if trimmed != "" && !selectorMatchesRule(trimmed, rules) {
+		if selector != "" && !selectorMatchesRule(selector, rules) {
 			return fmt.Errorf("rule selector %q does not match any registered rule", selector)
 		}
 	}
@@ -138,8 +137,7 @@ func selectorMatchesRule(selector string, rules []Rule) bool {
 
 func validateRuleSelectors(selectors []string) error {
 	for _, selector := range selectors {
-		trimmed := strings.TrimSpace(selector)
-		if trimmed != "" && !isCanonicalRuleCode(trimmed) {
+		if selector != "" && !isCanonicalRuleCode(selector) {
 			return invalidRuleSelectorError(selector)
 		}
 	}

@@ -247,7 +247,7 @@ rules:
   `--dir migrations`, and need not match an absolute `--dir` path.
 
 Configuration decoding is strict. Unknown keys, misspelled keys such as
-`severty`, lowercase selectors, selectors that match no registered rule,
+`severty`, lowercase or whitespace-padded selectors, selectors that match no registered rule,
 unsupported severities, and multiple YAML documents fail before linting or
 migration execution instead of silently weakening policy.
 

@@ -58,7 +58,8 @@ integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
 prepared files and findings together with a read-only source snapshot. Capture
 does not apply the lint policy automatically: embedders call `LoadConfigFS`
 and pass its `Dialect`, `DisabledRules`, and `Rules` through `lint.Options`.
-Configuration decoding rejects unknown keys and noncanonical rule selectors.
+Configuration decoding rejects unknown keys and noncanonical rule selectors,
+including selectors with leading or trailing whitespace.
 
 Finding contexts identify the exact statement and affected tables or columns;
 column subjects can also carry the parent table and declared data type. Each

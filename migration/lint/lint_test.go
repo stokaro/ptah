@@ -101,6 +101,17 @@ func TestLintFS_InvalidProgrammaticRuleSelectorFailsFast(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `rule selector "ds101" must start with an uppercase ASCII letter.*`)
 }
 
+func TestLintFS_WhitespacePaddedProgrammaticRuleSelectorFailsFast(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := lint.LintFS(fixture(map[string]string{
+		"0000000001_init.up.sql":   "DROP TABLE users;\n",
+		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
+	}), lint.Options{Disabled: []string{" DS101 "}})
+
+	c.Assert(err, qt.ErrorMatches, `rule selector " DS101 " must start with an uppercase ASCII letter.*`)
+}
+
 func TestLintFS_UnknownProgrammaticRuleSelectorFailsFast(t *testing.T) {
 	c := qt.New(t)
 
@@ -1091,6 +1102,12 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 	c.Run("lowercase rule selector", func(c *qt.C) {
 		_, err := lint.LoadConfig(dir + "/lowercase-selector.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector "ds103" must start with an uppercase ASCII letter.*`)
+	})
+
+	c.Assert(writeFile(dir+"/whitespace-selector.yaml", "disabled-rules:\n  - ' DS103 '\n"), qt.IsNil)
+	c.Run("whitespace-padded rule selector", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/whitespace-selector.yaml")
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector " DS103 " must start with an uppercase ASCII letter.*`)
 	})
 
 	c.Assert(writeFile(dir+"/multiple-documents.yaml", "dialect: postgres\n---\ndialect: sqlite\n"), qt.IsNil)
