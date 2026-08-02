@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/schema"
+	"go.5x5.cz/ptah/cmd/schema"
 )
 
 // cliSecret is the credential planted in the compiled-command tests. Assertions

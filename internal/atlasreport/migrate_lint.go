@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/atlaslint"
-	"github.com/stokaro/ptah/internal/migratesum"
-	migrationlint "github.com/stokaro/ptah/migration/lint"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/atlaslint"
+	"go.5x5.cz/ptah/internal/migratesum"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 type MigrateLintOptions struct {

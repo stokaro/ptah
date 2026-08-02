@@ -1,4 +1,4 @@
-module github.com/stokaro/ptah/examples/orm-loaders/gorm
+module go.5x5.cz/ptah/examples/orm-loaders/gorm
 
 go 1.26.5
 

@@ -17,7 +17,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // txtarCheckedAddEmailSQL mirrors the measured Atlas fixture: checks.sql

@@ -7,17 +7,17 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/atlasfilter"
-	"github.com/stokaro/ptah/internal/atlassource"
-	"github.com/stokaro/ptah/internal/atlasurl"
-	"github.com/stokaro/ptah/internal/schemafile"
-	"github.com/stokaro/ptah/migration/migrator"
-	"github.com/stokaro/ptah/migration/planner"
-	"github.com/stokaro/ptah/migration/schemadiff"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasfilter"
+	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/planner"
+	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 type ApplyOptions struct {

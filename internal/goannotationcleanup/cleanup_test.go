@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/goannotationcleanup"
-	"github.com/stokaro/ptah/internal/goannotationsource"
+	"go.5x5.cz/ptah/internal/goannotationcleanup"
+	"go.5x5.cz/ptah/internal/goannotationsource"
 )
 
 func TestCleanDirDryRunDiffAndWrite(t *testing.T) {

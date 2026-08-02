@@ -12,9 +12,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/atlasmigrateimport"
-	"github.com/stokaro/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/migratesum"
 )
 
 // assertCaptureSelectsTheSame checks that selecting the covered set over the

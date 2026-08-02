@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/stokaro/ptah/internal/annotationparse"
+	"go.5x5.cz/ptah/internal/annotationparse"
 )
 
 const maxContentLength = 16 << 20

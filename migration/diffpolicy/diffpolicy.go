@@ -21,8 +21,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/indexscope"
-	"github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // ChangeKind identifies a destructive schema change kind that a diff policy can

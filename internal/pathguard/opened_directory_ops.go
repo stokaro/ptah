@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/internal/fsdurable"
 )
 
 const createTempAttempts = 10_000

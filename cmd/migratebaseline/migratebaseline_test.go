@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migratebaseline"
+	"go.5x5.cz/ptah/cmd/migratebaseline"
 )
 
 func TestMigrateBaselineCommandCreation(t *testing.T) {

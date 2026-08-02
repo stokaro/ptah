@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/cmd/migratehash"
-	"github.com/stokaro/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/migratehash"
+	"go.5x5.cz/ptah/internal/migratesum"
 )
 
 func execute(args ...string) (stdout string, err error) {

@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas"
 )
 
 // inspectIncludeDDL mirrors the fixture shape the `schema inspect --include`

@@ -16,8 +16,8 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	"github.com/zclconf/go-cty/cty"
 
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/migration/safety"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/migration/safety"
 )
 
 // PlanFormat identifies the on-disk encoding of a local plan file.

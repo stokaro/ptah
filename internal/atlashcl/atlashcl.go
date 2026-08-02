@@ -13,8 +13,8 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // ParseFile parses an HCL schema file into the same Database IR used by

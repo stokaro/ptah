@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/internal/lexer"
-	"github.com/stokaro/ptah/internal/parser"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/parser"
 )
 
 const (

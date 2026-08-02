@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdflags"
+	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 )
 
 const envPrefix = "PTAH"

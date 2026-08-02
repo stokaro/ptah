@@ -7,9 +7,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/platform/identifier"
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // DBSchema represents the complete schema read from a database

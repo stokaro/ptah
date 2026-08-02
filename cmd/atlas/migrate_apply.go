@@ -10,18 +10,18 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/cmd/migratevalidate"
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasargs"
-	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/atlasmigrateimport"
-	"github.com/stokaro/ptah/internal/atlasmigratereport"
-	"github.com/stokaro/ptah/internal/atlasreport"
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/migratevalidate"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/atlasmigratereport"
+	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 type atlasMigrateApplyOptions struct {

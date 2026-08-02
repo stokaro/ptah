@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 func TestResolveWithinRootAllowsMissingChild(t *testing.T) {

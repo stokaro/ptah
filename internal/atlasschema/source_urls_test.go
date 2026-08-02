@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasschema"
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // seedSourceSQLite creates a SQLite database with the given DDL and returns

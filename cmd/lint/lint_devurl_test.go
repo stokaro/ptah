@@ -10,10 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	cmdlint "github.com/stokaro/ptah/cmd/lint"
-	"github.com/stokaro/ptah/dbschema"
-	migrationlint "github.com/stokaro/ptah/migration/lint"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	cmdlint "go.5x5.cz/ptah/cmd/lint"
+	"go.5x5.cz/ptah/dbschema"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
 )
 
 func TestRunLint_DevURLReplaysMigrationAndInfersDialect(t *testing.T) {

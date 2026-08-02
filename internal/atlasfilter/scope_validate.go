@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/deporder"
+	"go.5x5.cz/ptah/core/goschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/deporder"
 )
 
 // scopeDiagnostics collects deduplicated cross-scope dependency violations.

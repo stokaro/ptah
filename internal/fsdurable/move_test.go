@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/internal/fsdurable"
 )
 
 func TestMoveFileNoReplace_HappyPath(t *testing.T) {

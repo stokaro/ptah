@@ -3,10 +3,10 @@ package compare
 import (
 	"sort"
 
-	"github.com/stokaro/ptah/config"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/dbschema/types"
-	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/dbschema/types"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // Extensions performs comprehensive extension comparison between generated and database schemas.

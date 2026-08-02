@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/schemaviz"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/schemaviz"
 )
 
 func TestRenderMermaidWithColumnsAndRelationships(t *testing.T) {

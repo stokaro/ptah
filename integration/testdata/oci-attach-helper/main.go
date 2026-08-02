@@ -8,7 +8,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/stokaro/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/ociartifact"
 )
 
 func main() {

@@ -44,7 +44,7 @@ the in-repository composite action before they are published to
 The action downloads the requested Ptah release binary by default. Use
 `version` to pin a release tag, or `binary-path` when a workflow builds Ptah
 from source before invoking the action. If a release asset is not available yet,
-the installer falls back to `go install github.com/stokaro/ptah/cmd/ptah@...`
+the installer falls back to `go install go.5x5.cz/ptah/cmd/ptah@...`
 using `master` for `version: latest`. Source fallback uses direct module fetch
 to avoid stale Go module proxy results for moving refs.
 

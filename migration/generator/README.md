@@ -24,7 +24,7 @@ import (
     "log"
     "time"
 
-    "github.com/stokaro/ptah/migration/generator"
+    "go.5x5.cz/ptah/migration/generator"
 )
 
 func main() {

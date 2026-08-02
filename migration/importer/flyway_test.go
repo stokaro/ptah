@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/importer"
+	"go.5x5.cz/ptah/migration/importer"
 )
 
 // flywayFS has dotted versions (forcing sequential reassignment), an undo file

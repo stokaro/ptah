@@ -31,9 +31,9 @@ import (
     "fmt"
     "time"
 
-    "github.com/stokaro/ptah/core/goschema"
-    "github.com/stokaro/ptah/dbschema"
-    "github.com/stokaro/ptah/migration/schemadiff"
+    "go.5x5.cz/ptah/core/goschema"
+    "go.5x5.cz/ptah/dbschema"
+    "go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func main() {
@@ -70,7 +70,7 @@ func main() {
 ### Custom Ignore List
 
 ```go
-import "github.com/stokaro/ptah/config"
+import "go.5x5.cz/ptah/config"
 
 // Ignore specific extensions only
 opts := config.WithIgnoredExtensions("plpgsql", "adminpack", "pg_stat_statements")
@@ -170,7 +170,7 @@ import (
     "context"
     "time"
 
-    "github.com/stokaro/ptah/migration/generator"
+    "go.5x5.cz/ptah/migration/generator"
 )
 
 // Generate migration with custom extension ignore options

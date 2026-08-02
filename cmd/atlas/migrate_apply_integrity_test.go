@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/atlas"
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // These tests pin the measured Atlas semantics from stokaro/ptah#954,

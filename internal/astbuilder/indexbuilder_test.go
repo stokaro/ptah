@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/astbuilder"
+	"go.5x5.cz/ptah/internal/astbuilder"
 )
 
 func TestNewIndex(t *testing.T) {

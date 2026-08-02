@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/integration"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/integration"
 )
 
 // Root command flag constants

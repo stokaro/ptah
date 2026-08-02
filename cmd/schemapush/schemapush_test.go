@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/schemapush"
+	"go.5x5.cz/ptah/cmd/schemapush"
 )
 
 func TestNewSchemaPushCommand_Help(t *testing.T) {

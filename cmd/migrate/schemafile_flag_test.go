@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migrate"
+	"go.5x5.cz/ptah/cmd/migrate"
 )
 
 func TestMigratePlanCommandExposesRepeatableSchemaFileFlag(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/ociartifact"
 )
 
 func TestClient_RegistryOperationTimeout(t *testing.T) {

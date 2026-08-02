@@ -9,15 +9,15 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/atlashcl"
-	"github.com/stokaro/ptah/internal/convert/fromschema"
-	"github.com/stokaro/ptah/internal/convert/toschema"
-	"github.com/stokaro/ptah/internal/parser"
-	"github.com/stokaro/ptah/internal/pathguard"
-	"github.com/stokaro/ptah/internal/tableref"
-	"github.com/stokaro/ptah/internal/yamlschema"
+	"go.5x5.cz/ptah/core/goschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlashcl"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/tableref"
+	"go.5x5.cz/ptah/internal/yamlschema"
 )
 
 // Options configures schema file loading.

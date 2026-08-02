@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/lexer"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/lexer"
 )
 
 // PlanEscapeError reports that a pre-planned statement matched a known

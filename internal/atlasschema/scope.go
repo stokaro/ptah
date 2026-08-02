@@ -3,10 +3,10 @@ package atlasschema
 import (
 	"fmt"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/atlasfilter"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
 // scopeGeneratedSide filters one generated-schema comparison side. Positive

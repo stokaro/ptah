@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 const ambiguousTableScope = "\x00"

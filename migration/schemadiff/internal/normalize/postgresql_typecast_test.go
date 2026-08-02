@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
+	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
 )
 
 // TestPostgreSQLTypeCastingIssue32 tests the specific issue described in GitHub issue #32

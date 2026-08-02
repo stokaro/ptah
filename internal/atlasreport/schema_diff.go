@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/stokaro/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/goschema"
 )
 
 const schemaDiffDefaultFormat = `{{- with .Changes -}}

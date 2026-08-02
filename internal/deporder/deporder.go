@@ -10,8 +10,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // ViewLike is a PostgreSQL view-like object that can reference other view-like

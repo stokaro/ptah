@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasreport"
 )
 
 func TestNormalizeSchemaInspectFormat_HappyPath(t *testing.T) {

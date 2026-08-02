@@ -1,6 +1,6 @@
 # Ptah Testkit
 
-`github.com/stokaro/ptah/testkit` is an opt-in helper module for tests that
+`go.5x5.cz/ptah/testkit` is an opt-in helper module for tests that
 need real databases. It keeps `testcontainers-go` out of Ptah's main module
 graph while giving users a small public API for migration and schema tests.
 
@@ -11,7 +11,7 @@ import (
 	"embed"
 	"testing"
 
-	"github.com/stokaro/ptah/testkit"
+	"go.5x5.cz/ptah/testkit"
 )
 
 //go:embed migrations/*.sql
@@ -47,9 +47,9 @@ Because Ptah has not published a first release tag yet, repository-local
 development uses:
 
 ```go
-replace github.com/stokaro/ptah => ..
+replace go.5x5.cz/ptah => ..
 ```
 
-Consumers should pin `github.com/stokaro/ptah` and
-`github.com/stokaro/ptah/testkit` to matching commits until Ptah starts
+Consumers should pin `go.5x5.cz/ptah` and
+`go.5x5.cz/ptah/testkit` to matching commits until Ptah starts
 publishing release tags.

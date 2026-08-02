@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stokaro/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/parser"
 )
 
 func FuzzParseSQL(f *testing.F) {

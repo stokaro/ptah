@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // MigrationProvider provides a list of migrations

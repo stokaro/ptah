@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/platform"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
 )
 
 // This file renders the write-side DML statements — INSERT, UPDATE, and DELETE —

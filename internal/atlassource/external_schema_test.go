@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/core/schemasource"
-	"github.com/stokaro/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/schemasource"
+	"go.5x5.cz/ptah/internal/atlassource"
 )
 
 // externalHelperModes maps a mode name to the behavior the re-executed test

@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 
-	"github.com/stokaro/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/core/sqlutil"
 )
 
 // Split modes mirror the documented Atlas schema inspect split strategies:

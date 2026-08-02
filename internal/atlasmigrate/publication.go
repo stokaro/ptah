@@ -16,10 +16,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/fsdurable"
-	"github.com/stokaro/ptah/internal/fsnapshot"
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const (

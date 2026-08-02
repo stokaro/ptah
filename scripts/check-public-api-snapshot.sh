@@ -60,9 +60,21 @@ tmp="$(mktemp)"
 packages="$(mktemp)"
 trap 'rm -f "$tmp" "$packages"' EXIT
 
-grep -Eo '`github\.com/stokaro/ptah[^`]+`' docs/public_api.md |
+# Derive the package prefix from the module itself. A literal here silently
+# stops matching the day the module path moves, and because the pipeline runs
+# under `set -euo pipefail` the failing grep aborts the script with zero bytes
+# on stdout and stderr -- a check that reports failure without saying anything.
+module_path="$(go list -m -f '{{.Path}}')"
+
+grep -Eo "\`${module_path}[^\`]+\`" docs/public_api.md |
 	tr -d '`' |
 	sort -u >"$packages"
+
+if [[ ! -s "$packages" ]]; then
+	printf '%s: found no %s packages in docs/public_api.md; refusing to report a vacuous pass\n' \
+		"$0" "$module_path" >&2
+	exit 1
+fi
 
 while IFS= read -r package_path; do
 	emit_package_snapshot "$package_path" >>"$tmp"

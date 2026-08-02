@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/editor"
+	"go.5x5.cz/ptah/cmd/internal/editor"
 )
 
 // writeAppendScript writes an executable shell script that appends a marker

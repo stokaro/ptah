@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/schemaops"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/schemasource"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"go.5x5.cz/ptah/cmd/internal/schemaops"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemasource"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 )
 
 const sqlServerDatabaseURL = "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable"

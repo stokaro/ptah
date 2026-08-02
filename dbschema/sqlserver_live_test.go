@@ -10,12 +10,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/dbschema"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/migration/schemadiff"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func TestSQLServerLiveReadSchema(t *testing.T) {

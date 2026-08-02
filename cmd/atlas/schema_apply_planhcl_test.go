@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/atlas"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasschema"
 )
 
 // The fixtures under testdata are the real measurement artifacts:

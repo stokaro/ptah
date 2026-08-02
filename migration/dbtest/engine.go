@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/migration/internal/shadowdb"
-	"github.com/stokaro/ptah/migration/migrator"
-	"github.com/stokaro/ptah/migration/seeder"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/internal/shadowdb"
+	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/seeder"
 )
 
 // Options configures a single [RunMigrationTest] invocation.

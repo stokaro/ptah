@@ -4,11 +4,11 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/migration/planner"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/migration/planner"
 )
 
 // AtlasTxModeNoneDirective is the Atlas file directive that keeps a migration

@@ -8,9 +8,15 @@ allowlist="$(mktemp)"
 packages="$(mktemp)"
 trap 'rm -f "$allowlist" "$packages"' EXIT
 
-grep -Eo '`github\.com/stokaro/ptah[^`]+`' docs/public_api.md |
+grep -Eo "\`${module_path}[^\`]+\`" docs/public_api.md |
 	tr -d '`' |
 	sort -u >"$allowlist"
+
+if [[ ! -s "$allowlist" ]]; then
+	printf '%s: found no %s packages in docs/public_api.md; refusing to report a vacuous pass\n' \
+		"$0" "$module_path" >&2
+	exit 1
+fi
 
 go list -f '{{.ImportPath}}|{{.Name}}' ./... >"$packages"
 

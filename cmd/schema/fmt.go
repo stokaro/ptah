@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/internal/atlashclfmt"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/internal/atlashclfmt"
 )
 
 const fmtCheckFlag = "check"

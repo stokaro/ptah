@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/goschema/internal/parseutils"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
 )
 
 func mustParseSource(c *qt.C, filename string, source any) goschema.Database {

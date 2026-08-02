@@ -5,7 +5,7 @@ package cliobs
 import (
 	"context"
 
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func startOTel(context.Context, Options) (migrator.Observer, func(context.Context) error, error) {

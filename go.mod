@@ -1,4 +1,4 @@
-module github.com/stokaro/ptah
+module go.5x5.cz/ptah
 
 go 1.26.5
 

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/sqlutil"
 )
 
 func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {

@@ -9,10 +9,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/atlas"
-	"github.com/stokaro/ptah/internal/atlasreport"
-	"github.com/stokaro/ptah/internal/atlasschema"
-	"github.com/stokaro/ptah/migration/safety"
+	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/migration/safety"
 )
 
 // Measured against the pinned Atlas CE v1.2.0 binary on 2026-08-02: `schema

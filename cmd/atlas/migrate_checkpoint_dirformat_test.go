@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/atlas"
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // writeCheckpointPtahFixture fills migrationsDir with a ptah-format migration

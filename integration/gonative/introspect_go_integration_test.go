@@ -15,11 +15,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/stokaro/ptah/cmd/root"
-	"github.com/stokaro/ptah/config"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/migration/schemadiff"
+	"go.5x5.cz/ptah/cmd/root"
+	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func openPostgres(t *testing.T, dsn string) (*sql.DB, error) {

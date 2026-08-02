@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 func TestCanonical_PreservesStructuralIdentity(t *testing.T) {

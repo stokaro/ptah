@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/internal/atlaslint"
-	migrationlint "github.com/stokaro/ptah/migration/lint"
+	"go.5x5.cz/ptah/internal/atlaslint"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
 )
 
 // lintWrapWidth keeps diagnostics readable without coupling Ptah's prose to

@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/config"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/dbschema"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/convert/dbschematogo"
-	"github.com/stokaro/ptah/internal/devlock"
-	"github.com/stokaro/ptah/migration/migrator"
-	"github.com/stokaro/ptah/migration/schemadiff"
+	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/devlock"
+	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // BaselineShadowVerifyOptions configures shadow verification before metadata

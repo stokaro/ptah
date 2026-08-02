@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/internal/migratemaint"
-	"github.com/stokaro/ptah/internal/migrateops"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/migratemaint"
+	"go.5x5.cz/ptah/internal/migrateops"
 )
 
 // NewMigrateRebaseCommand returns the migrations rebase command.

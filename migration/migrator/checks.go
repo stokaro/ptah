@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/lexer"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/lexer"
 )
 
 // checkDirective is the +ptah directive keyword that introduces a pre-migration

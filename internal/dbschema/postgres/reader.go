@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/sqlrunner"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
 // Reader reads schema from PostgreSQL databases

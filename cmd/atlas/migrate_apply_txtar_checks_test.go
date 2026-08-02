@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // Atlas enforces a txtar checks.sql section as a pre-migration gate: a

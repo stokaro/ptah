@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/stokaro/ptah/internal/fsdurable"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // Write computes the sum of the migrations directory at dir and writes it to

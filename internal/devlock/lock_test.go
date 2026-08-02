@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasurl"
-	"github.com/stokaro/ptah/internal/devlock"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/devlock"
 )
 
 func TestAcquire_SQLiteSerializesSameRealm(t *testing.T) {

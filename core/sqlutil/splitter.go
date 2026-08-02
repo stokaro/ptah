@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/dialectlexer"
-	"github.com/stokaro/ptah/internal/lexer"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/dialectlexer"
+	"go.5x5.cz/ptah/internal/lexer"
 )
 
 // StripComments removes all SQL comments from the input string using lexer-based parsing.

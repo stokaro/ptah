@@ -15,11 +15,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/annotationmeta"
-	"github.com/stokaro/ptah/internal/annotationparse"
-	"github.com/stokaro/ptah/internal/fsdurable"
-	"github.com/stokaro/ptah/internal/goannotationsource"
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/annotationparse"
+	"go.5x5.cz/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/internal/goannotationsource"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 var (

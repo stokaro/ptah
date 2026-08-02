@@ -3,7 +3,7 @@ package query
 import (
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
+	"go.5x5.cz/ptah/core/ast"
 )
 
 // SelectBuilder builds an *ast.SelectStatement through a fluent, chainable API.

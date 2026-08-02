@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/ast/mocks"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/ast/mocks"
 )
 
 // TestVisitorInterface_HappyPath tests that the visitor interface works correctly

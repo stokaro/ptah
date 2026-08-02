@@ -3,7 +3,7 @@ package protobufrender
 import (
 	"strings"
 
-	"github.com/stokaro/ptah/internal/schemaexport"
+	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
 // Well-known type imports the exporter can emit.

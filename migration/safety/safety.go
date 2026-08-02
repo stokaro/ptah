@@ -9,13 +9,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/migration/internal/typechange"
-	"github.com/stokaro/ptah/migration/risk"
-	"github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/migration/internal/typechange"
+	"go.5x5.cz/ptah/migration/risk"
+	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // Severity is the operational risk level for a schema change.

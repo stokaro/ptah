@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	yaml "go.yaml.in/yaml/v3"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/openapirender"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/openapirender"
 )
 
 func fixture() *goschema.Database {

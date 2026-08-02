@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 // LocalDir resolves a local Atlas migration directory URL relative to baseDir.

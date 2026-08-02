@@ -3,10 +3,10 @@
 package mysql
 
 import (
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/renderer/internal/dialects/internal/bufwriter"
-	"github.com/stokaro/ptah/core/renderer/internal/dialects/mysqllike"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/mysqllike"
 )
 
 // Renderer provides MySQL-specific SQL rendering

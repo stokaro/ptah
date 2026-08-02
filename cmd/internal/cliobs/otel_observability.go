@@ -17,10 +17,10 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.38.0"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
-const instrumentationName = "github.com/stokaro/ptah"
+const instrumentationName = "go.5x5.cz/ptah"
 
 func startOTel(ctx context.Context, opts Options) (migrator.Observer, func(context.Context) error, error) {
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" {

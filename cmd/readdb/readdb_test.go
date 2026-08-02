@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite"
 
-	"github.com/stokaro/ptah/cmd/readdb"
+	"go.5x5.cz/ptah/cmd/readdb"
 )
 
 func TestReadDBCommand_StdoutIsExecutableSQL(t *testing.T) {

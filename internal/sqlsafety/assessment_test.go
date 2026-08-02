@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/sqlsafety"
+	"go.5x5.cz/ptah/internal/sqlsafety"
 )
 
 func TestSQLForAssessment_ExpandsExecutableComments(t *testing.T) {

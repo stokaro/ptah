@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/sqlident"
 )
 
 // Render renders diff into a pair of SQL scripts: up applies the desired state

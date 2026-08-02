@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/importer"
+	"go.5x5.cz/ptah/migration/importer"
 )
 
 func TestImportWritesPtahPairsAndSum(t *testing.T) {

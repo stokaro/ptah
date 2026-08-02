@@ -32,14 +32,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/schemasource"
-	"github.com/stokaro/ptah/internal/atlasprojectpath"
-	"github.com/stokaro/ptah/internal/atlasurl"
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/pathguard"
-	"github.com/stokaro/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemasource"
+	"go.5x5.cz/ptah/internal/atlasprojectpath"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/schemafile"
 )
 
 // Kind classifies one desired-state source URL. The values read naturally in

@@ -1,7 +1,7 @@
 package compare
 
 import (
-	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // SearchColumnByName searches for a specific column difference by name within a slice of column diffs.

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/platform/capability"
 )
 
 func TestCapabilities_Has_NilSafe(t *testing.T) {

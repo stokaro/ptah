@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/schemascope"
+	"go.5x5.cz/ptah/core/goschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/schemascope"
 )
 
 // Scope is the positive selection applied to Atlas schema apply and diff.

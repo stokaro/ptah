@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/stokaro/ptah/internal/annotationparse"
-	"github.com/stokaro/ptah/internal/atlashclrender"
+	"go.5x5.cz/ptah/internal/annotationparse"
+	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
 // normalizationDiagnostics reports annotation attribute values that are not in

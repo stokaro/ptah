@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema/testutil"
+	"go.5x5.cz/ptah/core/goschema/testutil"
 )
 
 func TestRLSPolicyParsingRobustness(t *testing.T) {

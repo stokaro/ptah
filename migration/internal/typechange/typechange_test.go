@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/internal/typechange"
+	"go.5x5.cz/ptah/migration/internal/typechange"
 )
 
 func TestIsWidening(t *testing.T) {

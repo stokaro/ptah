@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
+	"go.5x5.cz/ptah/core/ast"
 )
 
 func (r *Renderer) VisitUpsert(node *ast.UpsertNode) error {

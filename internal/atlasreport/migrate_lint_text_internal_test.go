@@ -15,8 +15,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	migrationlint "github.com/stokaro/ptah/migration/lint"
-	"github.com/stokaro/ptah/migration/migrator"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func fixedZeroClock() func() time.Time {

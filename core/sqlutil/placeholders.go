@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform"
 )
 
 // Rebind converts portable `?` placeholders in query to the dialect's

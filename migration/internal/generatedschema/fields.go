@@ -1,7 +1,7 @@
 // Package generatedschema provides reusable views over generated schema data.
 package generatedschema
 
-import "github.com/stokaro/ptah/core/goschema"
+import "go.5x5.cz/ptah/core/goschema"
 
 // FieldsForTable returns direct and embedded columns for table.
 func FieldsForTable(

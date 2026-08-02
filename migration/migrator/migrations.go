@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/lexer"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/lexer"
 )
 
 // MigrationFunc represents a migration function that operates on a database connection

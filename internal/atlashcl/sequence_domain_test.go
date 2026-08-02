@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlashcl"
+	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
 func TestParseSequenceFullOptions(t *testing.T) {

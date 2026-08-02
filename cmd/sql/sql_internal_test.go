@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/sqllint"
+	"go.5x5.cz/ptah/internal/sqllint"
 )
 
 func TestWriteSQLLintReport_TextPropagatesWriterError(t *testing.T) {

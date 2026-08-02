@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/config/projectconfig"
 )
 
 func TestEffectiveStringPrefersExplicitCLIFlag(t *testing.T) {

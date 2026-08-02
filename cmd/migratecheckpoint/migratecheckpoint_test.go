@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migratecheckpoint"
+	"go.5x5.cz/ptah/cmd/migratecheckpoint"
 )
 
 func seedMigrations(c *qt.C, dir string) {

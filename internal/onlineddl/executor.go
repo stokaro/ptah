@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/dbschema/types"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // DirectiveTool is the per-migration directive key selecting the online-DDL

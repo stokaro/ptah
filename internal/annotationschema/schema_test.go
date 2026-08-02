@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/annotationschema"
+	"go.5x5.cz/ptah/internal/annotationschema"
 )
 
 func TestGenerateMatchesCommittedSchema(t *testing.T) {

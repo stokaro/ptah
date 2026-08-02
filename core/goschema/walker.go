@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/stokaro/ptah/internal/goannotationsource"
+	"go.5x5.cz/ptah/internal/goannotationsource"
 )
 
 // ParseDir parses all Go files in the given root directory and its subdirectories

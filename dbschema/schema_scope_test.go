@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 )
 
 type scopedReaderStub struct {

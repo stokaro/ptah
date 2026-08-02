@@ -13,10 +13,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/migrationsource"
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
-	"github.com/stokaro/ptah/migration/lint"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/cmd/internal/migrationsource"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestLintPendingDestructive_DoesNotApplyAtlasFileSuppression(t *testing.T) {

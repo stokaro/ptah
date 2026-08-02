@@ -62,9 +62,9 @@ manage indices by hand.
 
 ```go
 import (
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/query"
-	"github.com/stokaro/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/query"
+	"go.5x5.cz/ptah/core/renderer"
 )
 
 stmt := query.Select("id", "name").

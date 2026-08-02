@@ -13,7 +13,7 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/stokaro/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/ociartifact"
 )
 
 const (

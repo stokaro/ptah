@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas"
 )
 
 // The native command tree (#850) reuses the binary-agnostic internals behind

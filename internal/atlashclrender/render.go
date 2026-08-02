@@ -14,8 +14,8 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // Severity is the diagnostic severity emitted by the exporter.

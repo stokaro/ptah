@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
 // TestClickHouseWriter_SchemaWriterInterface is a compile-time guard that

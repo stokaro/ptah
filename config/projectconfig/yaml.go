@@ -10,7 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/stokaro/ptah/migration/diffpolicy"
+	"go.5x5.cz/ptah/migration/diffpolicy"
 )
 
 type yamlDocument struct {

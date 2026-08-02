@@ -6,7 +6,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 func TestMigratorObserverRecordsMigrateUp(t *testing.T) {

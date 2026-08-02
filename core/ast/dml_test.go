@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/ast"
+	"go.5x5.cz/ptah/core/ast"
 )
 
 func TestUpsertNodeBuilder(t *testing.T) {
