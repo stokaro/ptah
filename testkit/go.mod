@@ -9,7 +9,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/testcontainers/testcontainers-go/modules/mysql v0.43.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.43.0
-	go.5x5.cz/ptah v0.1.2
+	go.5x5.cz/ptah v0.2.0
 )
 
 require (
