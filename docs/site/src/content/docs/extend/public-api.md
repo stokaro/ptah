@@ -72,6 +72,13 @@ migration and returns a `migrator.StatementObservationError` with source and
 statement context; dirty progress includes the statement that completed before
 the callback failed.
 
+For SQL-backed `no_transaction` migrations, Ptah writes a durable progress
+checkpoint before invoking the observer. Before each statement, it first marks
+that statement's outcome as unknown; after success, it advances the completed
+count and clears the marker. Atlas-format down execution is excluded because it
+preserves Atlas's unchanged-row bookkeeping. A custom `MigrationFunc` is opaque
+to the migrator and does not receive statement-level checkpointing.
+
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.
 

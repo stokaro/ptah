@@ -202,8 +202,6 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 			migration.atlasCheckFiles = up.checkFiles
 			migration.UpTimeouts = up.timeouts
 			migration.UpNoTransaction = up.noTransaction
-			migration.NoTransaction = migration.UpNoTransaction || migration.DownNoTransaction
-			migration.directionalNoTransactionMode = true
 		case "down":
 			down, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.hooks, nil)
 			if err != nil {
@@ -215,8 +213,6 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 			migration.DownSQL = down.sql
 			migration.DownTimeouts = down.timeouts
 			migration.DownNoTransaction = down.noTransaction
-			migration.NoTransaction = migration.UpNoTransaction || migration.DownNoTransaction
-			migration.directionalNoTransactionMode = true
 		default:
 			return fmt.Errorf("invalid migration direction: %s", migrationFile.Direction)
 		}
@@ -370,8 +366,6 @@ func setAtlasUp(parts *atlasParts, up sqlMigrationFile) {
 	migration.atlasCheckFiles = up.checkFiles
 	migration.UpTimeouts = up.timeouts
 	migration.UpNoTransaction = up.noTransaction
-	migration.NoTransaction = migration.UpNoTransaction || migration.DownNoTransaction
-	migration.directionalNoTransactionMode = true
 	parts.hasUp = true
 }
 
@@ -383,8 +377,6 @@ func setAtlasDown(parts *atlasParts, down sqlMigrationFile) {
 	migration.DownSQL = down.sql
 	migration.DownTimeouts = down.timeouts
 	migration.DownNoTransaction = down.noTransaction
-	migration.NoTransaction = migration.UpNoTransaction || migration.DownNoTransaction
-	migration.directionalNoTransactionMode = true
 	parts.hasDown = true
 }
 

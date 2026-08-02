@@ -18,12 +18,14 @@ import (
 )
 
 const (
-	migrationStateApplied = "applied"
-	migrationStatePending = "pending"
-	migrationStateFailed  = "failed"
-	ptahOperatorVersion   = "Ptah"
-	atlasNullJSON         = "null"
-	atlasSetMaxAttempts   = 3
+	migrationStateApplied        = "applied"
+	migrationStatePending        = "pending"
+	migrationStateFailed         = "failed"
+	ptahOperatorVersion          = "Ptah"
+	atlasNullJSON                = "null"
+	atlasSetMaxAttempts          = 3
+	revisionWriteTimeout         = 10 * time.Second
+	unknownStatementOutcomeError = "statement execution outcome is unknown after process interruption"
 )
 
 // MigrationRevision records one row from the migration metadata table.
@@ -141,6 +143,12 @@ func (m *Migrator) migrationStatementCount(sqlText string) int {
 }
 
 func migrationExecutionProgress(err error, dialect string, txMode MigrationTxMode) (applied int, total int, stmt string) {
+	var progressErr *statementProgressError
+	if errors.As(err, &progressErr) {
+		event := progressErr.event
+		return progressErr.applied, event.Total, event.Statement
+	}
+
 	var observationErr *StatementObservationError
 	if errors.As(err, &observationErr) {
 		event := observationErr.Event
@@ -306,53 +314,74 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.qualifiedMigrationsTable())
 
 func (m *Migrator) completeMigrationSQL() string {
 	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`UPDATE %s
-SET applied = ?, total = ?, execution_time = ?, error = '', error_stmt = '', partial_hashes = ?, operator_version = ?
-WHERE version = ?`, m.qualifiedMigrationsTable())
+		return revisionUpdateSQL(
+			m.connectionDialect(),
+			m.qualifiedMigrationsTable(),
+			"applied = ?, total = ?, execution_time = ?, error = '', error_stmt = '', partial_hashes = ?, operator_version = ?",
+		)
 	}
-	if m.isClickHouse() {
-		return fmt.Sprintf(`ALTER TABLE %s
-UPDATE state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, applied_at = ?
-WHERE version = ?
-SETTINGS mutations_sync = 1`, m.qualifiedMigrationsTable())
+	return revisionUpdateSQL(
+		m.connectionDialect(),
+		m.qualifiedMigrationsTable(),
+		"state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, applied_at = ?",
+	)
+}
+
+func (m *Migrator) checkpointMigrationSQL() string {
+	if m.revisionTableFormat.isAtlas() {
+		return revisionUpdateSQL(
+			m.connectionDialect(),
+			m.qualifiedMigrationsTable(),
+			"applied = ?, total = ?, execution_time = ?, error = '', error_stmt = '', operator_version = ?",
+		)
 	}
-	return fmt.Sprintf(`UPDATE %s
-SET state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, applied_at = ?
-WHERE version = ?`, m.qualifiedMigrationsTable())
+	return revisionUpdateSQL(
+		m.connectionDialect(),
+		m.qualifiedMigrationsTable(),
+		"state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?",
+	)
 }
 
 func (m *Migrator) beginRollbackSQL() string {
 	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`UPDATE %s
-SET applied = ?, total = ?, executed_at = ?, execution_time = ?, error = '', error_stmt = '', partial_hashes = ?, operator_version = ?
-WHERE version = ?`, m.qualifiedMigrationsTable())
+		return revisionUpdateSQL(
+			m.connectionDialect(),
+			m.qualifiedMigrationsTable(),
+			"applied = ?, total = ?, executed_at = ?, execution_time = ?, error = '', error_stmt = '', partial_hashes = ?, operator_version = ?",
+		)
 	}
-	if m.isClickHouse() {
-		return fmt.Sprintf(`ALTER TABLE %s
-UPDATE state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?
-WHERE version = ?
-SETTINGS mutations_sync = 1`, m.qualifiedMigrationsTable())
-	}
-	return fmt.Sprintf(`UPDATE %s
-SET state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?
-WHERE version = ?`, m.qualifiedMigrationsTable())
+	return revisionUpdateSQL(
+		m.connectionDialect(),
+		m.qualifiedMigrationsTable(),
+		"state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?",
+	)
 }
 
 func (m *Migrator) failMigrationSQL() string {
 	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`UPDATE %s
-SET applied = ?, total = ?, execution_time = ?, error = ?, error_stmt = ?, operator_version = ?
-WHERE version = ?`, m.qualifiedMigrationsTable())
+		return revisionUpdateSQL(
+			m.connectionDialect(),
+			m.qualifiedMigrationsTable(),
+			"applied = ?, total = ?, execution_time = ?, error = ?, error_stmt = ?, operator_version = ?",
+		)
 	}
-	if m.isClickHouse() {
+	return revisionUpdateSQL(
+		m.connectionDialect(),
+		m.qualifiedMigrationsTable(),
+		"state = ?, applied = ?, total = ?, error = ?, error_stmt = ?, execution_time_ms = ?",
+	)
+}
+
+func revisionUpdateSQL(dialect, table, assignments string) string {
+	if platform.NormalizeDialect(dialect) == platform.ClickHouse {
 		return fmt.Sprintf(`ALTER TABLE %s
-UPDATE state = ?, applied = ?, total = ?, error = ?, error_stmt = ?, execution_time_ms = ?
+UPDATE %s
 WHERE version = ?
-SETTINGS mutations_sync = 1`, m.qualifiedMigrationsTable())
+SETTINGS mutations_sync = 1`, table, assignments)
 	}
 	return fmt.Sprintf(`UPDATE %s
-SET state = ?, applied = ?, total = ?, error = ?, error_stmt = ?, execution_time_ms = ?
-WHERE version = ?`, m.qualifiedMigrationsTable())
+SET %s
+WHERE version = ?`, table, assignments)
 }
 
 func (m *Migrator) forceAppliedMigrationSQL() string {
@@ -371,11 +400,20 @@ func (m *Migrator) insertAtlasRevisionSQL() string {
 VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)`, m.qualifiedMigrationsTable())
 }
 
-func (m *Migrator) forceAppliedUpdateSQL() string {
-	return fmt.Sprintf(`ALTER TABLE %s
-UPDATE description = ?, applied_at = ?, state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, checksum = ?
-WHERE version = ?
-SETTINGS mutations_sync = 1`, m.qualifiedMigrationsTable())
+func (m *Migrator) forceAppliedPtahUpdateSQL() string {
+	return revisionUpdateSQL(
+		m.connectionDialect(),
+		m.qualifiedMigrationsTable(),
+		"description = ?, applied_at = ?, state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, checksum = ?",
+	)
+}
+
+func (m *Migrator) forceAppliedAtlasUpdateSQL() string {
+	return revisionUpdateSQL(
+		m.connectionDialect(),
+		m.qualifiedMigrationsTable(),
+		"description = ?, type = ?, applied = ?, total = ?, executed_at = ?, execution_time = ?, error = '', error_stmt = '', hash = ?, partial_hashes = ?, operator_version = ?",
+	)
 }
 
 func (m *Migrator) countRevisionsSQL() string {
@@ -774,7 +812,7 @@ func (m *Migrator) beginAtlasMigrationRevisionOn(
 		query,
 		strconv.FormatInt(migration.Version, 10),
 		migration.atlasFilenameDescription(),
-		AtlasRevisionTypeApplied,
+		int64(AtlasRevisionTypeApplied),
 		0,
 		m.migrationStatementCount(migration.UpSQL),
 		m.atlasRevisionTimestamp(startedAt),
@@ -835,6 +873,82 @@ func (m *Migrator) completeAtlasMigrationRevisionOn(
 		m.atlasNullJSONValue(),
 		ptahOperatorVersion,
 		strconv.FormatInt(migration.Version, 10),
+	)
+}
+
+func (m *Migrator) checkpointMigrationRevision(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	event StatementEvent,
+) error {
+	if m.conn.Writer().IsDryRun() {
+		return nil
+	}
+	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
+	defer cancelRecord()
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.checkpointMigrationSQL())
+	if m.revisionTableFormat.isAtlas() {
+		return executeSQLOutsideTransaction(
+			recordCtx,
+			m.conn,
+			query,
+			event.Index,
+			event.Total,
+			time.Since(startedAt).Nanoseconds(),
+			ptahOperatorVersion,
+			strconv.FormatInt(migration.Version, 10),
+		)
+	}
+	return executeSQLOutsideTransaction(
+		recordCtx,
+		m.conn,
+		query,
+		migrationStatePending,
+		event.Index,
+		event.Total,
+		time.Since(startedAt).Milliseconds(),
+		migration.Version,
+	)
+}
+
+func (m *Migrator) markMigrationStatementInFlight(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	event StatementEvent,
+) error {
+	if m.conn.Writer().IsDryRun() {
+		return nil
+	}
+	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
+	defer cancelRecord()
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
+	if m.revisionTableFormat.isAtlas() {
+		return executeSQLOutsideTransaction(
+			recordCtx,
+			m.conn,
+			query,
+			event.Index-1,
+			event.Total,
+			time.Since(startedAt).Nanoseconds(),
+			unknownStatementOutcomeError,
+			event.Statement,
+			ptahOperatorVersion,
+			strconv.FormatInt(migration.Version, 10),
+		)
+	}
+	return executeSQLOutsideTransaction(
+		recordCtx,
+		m.conn,
+		query,
+		migrationStatePending,
+		event.Index-1,
+		event.Total,
+		unknownStatementOutcomeError,
+		event.Statement,
+		time.Since(startedAt).Milliseconds(),
+		migration.Version,
 	)
 }
 
@@ -901,16 +1015,18 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
+	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
+	defer cancelRecord()
 	applied, total, stmt := migrationExecutionProgress(failure, m.conn.Info().Dialect, txMode)
 	if total == 0 {
 		total = m.migrationStatementCount(sqlText)
 	}
 	if m.revisionTableFormat.isAtlas() {
-		return m.failAtlasMigrationRevision(ctx, migration, startedAt, failure, applied, total, stmt)
+		return m.failAtlasMigrationRevision(recordCtx, migration, startedAt, failure, applied, total, stmt)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
 	return executeSQLOutsideTransaction(
-		ctx,
+		recordCtx,
 		m.conn,
 		query,
 		migrationStateFailed,
@@ -921,6 +1037,10 @@ func (m *Migrator) failMigrationRevisionWithMode(
 		time.Since(startedAt).Milliseconds(),
 		migration.Version,
 	)
+}
+
+func durableRevisionWriteContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), revisionWriteTimeout)
 }
 
 func (m *Migrator) failAtlasMigrationRevision(
@@ -1137,7 +1257,7 @@ func (m *Migrator) writeAtlasBaselineMigrationRow(
 		query,
 		strconv.FormatInt(migration.Version, 10),
 		migration.atlasFilenameDescription(),
-		AtlasRevisionTypeBaseline,
+		int64(AtlasRevisionTypeBaseline),
 		0,
 		0,
 		m.atlasRevisionTimestamp(time.Now()),
@@ -1346,7 +1466,7 @@ func (m *Migrator) writeAtlasSetRevisionRows(
 			if _, err := tx.ExecContext(
 				ctx,
 				updateTypeSQL,
-				revisionType,
+				int64(revisionType),
 				strconv.FormatInt(revision.Version, 10),
 			); err != nil {
 				return fmt.Errorf("failed to update dirty Atlas revision %d type: %w", revision.Version, err)
@@ -1450,6 +1570,13 @@ func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOpti
 		return fmt.Errorf("migration %d is not dirty; rerun with --force to rewrite it", opts.Version)
 	}
 	if opts.ResumeFrom > 0 {
+		if revision != nil && revision.Error == unknownStatementOutcomeError {
+			return fmt.Errorf(
+				"migration %d has an unknown statement outcome for %q; inspect the database before repair and omit --resume-from to avoid repeating committed SQL",
+				migration.Version,
+				revision.ErrorStatement,
+			)
+		}
 		if err := m.resumeMigration(ctx, migration, opts.ResumeFrom); err != nil {
 			return err
 		}
@@ -1527,7 +1654,7 @@ func (m *Migrator) forceAppliedAtlasMigration(ctx context.Context, migration *Mi
 		query,
 		strconv.FormatInt(migration.Version, 10),
 		migration.atlasFilenameDescription(),
-		AtlasRevisionTypeApplied,
+		int64(AtlasRevisionTypeApplied),
 		total,
 		total,
 		m.atlasRevisionTimestamp(time.Now()),
@@ -1549,7 +1676,7 @@ func (m *Migrator) writeAtlasManuallySetMigrationRow(
 		query,
 		strconv.FormatInt(migration.Version, 10),
 		migration.atlasFilenameDescription(),
-		AtlasRevisionTypeManuallySet,
+		int64(AtlasRevisionTypeManuallySet),
 		0,
 		0,
 		m.atlasRevisionTimestamp(time.Now()),
@@ -1572,14 +1699,17 @@ func (m *Migrator) atlasRevisionTimestamp(at time.Time) any {
 }
 
 func (m *Migrator) atlasNullJSONValue() any {
-	if m.isSQLServer() {
+	if m.isSQLServer() || m.isClickHouse() {
 		return atlasNullJSON
 	}
 	return []byte(atlasNullJSON)
 }
 
 func (m *Migrator) forceAppliedMigrationClickHouse(ctx context.Context, migration *Migration) error {
-	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedUpdateSQL())
+	if m.revisionTableFormat.isAtlas() {
+		return m.forceAppliedAtlasMigrationClickHouse(ctx, migration)
+	}
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedPtahUpdateSQL())
 	return executeSQLOutsideTransaction(
 		ctx,
 		m.conn,
@@ -1592,6 +1722,26 @@ func (m *Migrator) forceAppliedMigrationClickHouse(ctx context.Context, migratio
 		0,
 		migrationRevisionHash(migration),
 		migration.Version,
+	)
+}
+
+func (m *Migrator) forceAppliedAtlasMigrationClickHouse(ctx context.Context, migration *Migration) error {
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedAtlasUpdateSQL())
+	total := m.migrationStatementCount(migration.UpSQL)
+	return executeSQLOutsideTransaction(
+		ctx,
+		m.conn,
+		query,
+		migration.atlasFilenameDescription(),
+		int64(AtlasRevisionTypeApplied),
+		total,
+		total,
+		m.atlasRevisionTimestamp(time.Now()),
+		int64(0),
+		migrationRevisionHash(migration),
+		m.atlasNullJSONValue(),
+		ptahOperatorVersion,
+		strconv.FormatInt(migration.Version, 10),
 	)
 }
 

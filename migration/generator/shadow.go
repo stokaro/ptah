@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/devlock"
 	"github.com/stokaro/ptah/migration/internal/shadowdb"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -79,6 +80,7 @@ func newShadowVerificationError(stage, kind, message string, err error) *ShadowV
 
 type shadowMigrationOptions struct {
 	DatabaseURL         string
+	TargetConnection    *dbschema.DatabaseConnection
 	MigrationsDir       string
 	Dialect             string
 	Capabilities        capability.Capabilities
@@ -109,6 +111,31 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 			"dialect-check",
 			"dialect_mismatch",
 			fmt.Sprintf("shadow database dialect %q does not match target dialect %q", conn.Info().Dialect, opts.Dialect),
+			nil,
+		)
+	}
+	if opts.TargetConnection == nil {
+		return newShadowVerificationError(
+			"realm-check",
+			"target_connection_required",
+			"compare target and shadow database realms: target connection is required",
+			nil,
+		)
+	}
+	sameRealm, err := devlock.SameRealm(ctx, opts.TargetConnection, conn)
+	if err != nil {
+		return newShadowVerificationError(
+			"realm-check",
+			"realm_comparison_error",
+			"compare target and shadow database realms",
+			err,
+		)
+	}
+	if sameRealm {
+		return newShadowVerificationError(
+			"realm-check",
+			"target_shadow_same_realm",
+			"shadow database must be distinct from target database",
 			nil,
 		)
 	}
@@ -146,8 +173,6 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return newShadowVerificationError("drop-all", "drop_all_error", "drop all objects", err)
 	}
-	replayCtx := context.Background()
-
 	prior, err := loadPriorMigrations(opts.MigrationsDir)
 	if err != nil {
 		return newShadowVerificationError("load-prior", "load_prior_error", "load prior migrations", err)
@@ -162,24 +187,24 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 	}
 
 	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...))
-	if err := mig.MigrateUp(replayCtx); err != nil {
+	if err := mig.MigrateUp(ctx); err != nil {
 		if description := describeReplayError(err); description != "" {
 			return newShadowVerificationError("replay", "replay_error", description, err)
 		}
 		return newShadowVerificationError("replay", "replay_error", "replay migrations", err)
 	}
-	if err := assertShadowSchemaMatches(replayCtx, conn, opts); err != nil {
+	if err := assertShadowSchemaMatches(ctx, conn, opts); err != nil {
 		return err
 	}
 
 	previousVersion := latestMigrationVersion(prior)
-	if err := mig.MigrateDownTo(replayCtx, previousVersion); err != nil {
+	if err := mig.MigrateDownTo(ctx, previousVersion); err != nil {
 		return newShadowVerificationError("round-trip-down", "round_trip_down_error", "round-trip down", err)
 	}
-	if err := mig.MigrateTo(replayCtx, latestMigrationVersion(migrations)); err != nil {
+	if err := mig.MigrateTo(ctx, latestMigrationVersion(migrations)); err != nil {
 		return newShadowVerificationError("round-trip-up", "round_trip_up_error", "round-trip up", err)
 	}
-	return assertShadowSchemaMatches(replayCtx, conn, opts)
+	return assertShadowSchemaMatches(ctx, conn, opts)
 }
 
 func shadowIdentifierSemanticsMatch(

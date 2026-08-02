@@ -775,18 +775,6 @@
       "count": 2
     },
     {
-      "path": "migration/generator/shadow_internal_test.go",
-      "function": "TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "migration/generator/shadow_internal_test.go",
-      "function": "TestGenerateMigrationShadowVerificationWithRealDB",
-      "kind": "if",
-      "count": 3
-    },
-    {
       "path": "migration/lint/lint_test.go",
       "function": "TestLintFS_CommentsAndLiteralsDoNotHideOrFakeHazards",
       "kind": "if",

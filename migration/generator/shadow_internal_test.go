@@ -7,9 +7,13 @@ package generator
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -245,23 +249,46 @@ func TestVerifyShadowMigrationConnectErrorIsStructured(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `shadow check failed: connect to shadow database: invalid database URL: missing scheme`)
 }
 
-func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
-	dbURL := shadowTestDatabaseURL()
-	if dbURL == "" {
-		t.Skip("PostgreSQL test database URL is not set")
-	}
+func TestVerifyShadowMigration_ReplayHonorsCallerCancellation(t *testing.T) {
+	c := qt.New(t)
+	target, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "target.db"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(target)
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
 
+	err = verifyShadowMigration(ctx, shadowMigrationOptions{
+		DatabaseURL:      "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
+		TargetConnection: target,
+		Dialect:          platform.SQLite,
+		Candidates: []shadowCandidate{{
+			Version: 1,
+			Name:    "long replay",
+			UpSQL: `WITH RECURSIVE counter(value) AS (
+				VALUES (0)
+				UNION ALL
+				SELECT value + 1 FROM counter WHERE value < 100000000
+			) SELECT sum(value) FROM counter;`,
+			DownSQL: "SELECT 1;",
+		}},
+	})
+
+	var shadowErr *ShadowVerificationError
+	c.Assert(err, qt.ErrorAs, &shadowErr)
+	c.Assert(shadowErr.Result.Stage, qt.Equals, "replay")
+	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
+}
+
+func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
-
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	if err != nil {
-		t.Skipf("test database is not available: %v", err)
-	}
+	dbURL, conn := openShadowTestPostgres(c)
 	defer dbschema.CloseAndWarn(conn)
-	if platform.NormalizeDialect(conn.Info().Dialect) != platform.Postgres {
-		t.Skipf("shadow acceptance test requires PostgreSQL, got %s", conn.Info().Dialect)
-	}
+	shadowURL, shadowDatabase := createShadowTestPostgres(c, conn, dbURL)
+	defer dropShadowTestPostgres(c, conn, shadowDatabase)
 	releaseLock := acquireShadowTestLock(c, ctx, conn)
 	defer releaseLock()
 	defer func() {
@@ -282,7 +309,7 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 			DatabaseURL:       dbURL,
 			MigrationName:     "add_email",
 			OutputDir:         migrationsDir,
-			ShadowDatabaseURL: dbURL,
+			ShadowDatabaseURL: shadowURL,
 		})
 
 		c.Assert(files, qt.IsNil)
@@ -312,7 +339,7 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 			DatabaseURL:       dbURL,
 			MigrationName:     "add_email",
 			OutputDir:         migrationsDir,
-			ShadowDatabaseURL: dbURL,
+			ShadowDatabaseURL: shadowURL,
 		})
 
 		c.Assert(err, qt.IsNil)
@@ -326,22 +353,10 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 }
 
 func TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB(t *testing.T) {
-	dbURL := shadowTestDatabaseURL()
-	if dbURL == "" {
-		t.Skip("PostgreSQL test database URL is not set")
-	}
-
 	c := qt.New(t)
 	ctx := t.Context()
-
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	if err != nil {
-		t.Skipf("test database is not available: %v", err)
-	}
+	dbURL, conn := openShadowTestPostgres(c)
 	defer dbschema.CloseAndWarn(conn)
-	if platform.NormalizeDialect(conn.Info().Dialect) != platform.Postgres {
-		t.Skipf("concurrent index acceptance test requires PostgreSQL, got %s", conn.Info().Dialect)
-	}
 	releaseLock := acquireShadowTestLock(c, ctx, conn)
 	defer releaseLock()
 	defer func() {
@@ -349,7 +364,7 @@ func TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB(t *t
 	}()
 
 	c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
-	_, err = conn.ExecContext(ctx, `
+	_, err := conn.ExecContext(ctx, `
 		CREATE TABLE users (
 			id SERIAL PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -386,6 +401,14 @@ func TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB(t *t
 	c.Assert(err, qt.IsNil)
 	mig := migrator.NewMigrator(conn, provider)
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+	var valid bool
+	c.Assert(conn.QueryRowContext(ctx, `
+		SELECT index.indisvalid AND index.indisready
+		FROM pg_index AS index
+		JOIN pg_class AS class ON class.oid = index.indexrelid
+		WHERE class.relname = 'idx_users_email'
+	`).Scan(&valid), qt.IsNil)
+	c.Assert(valid, qt.IsTrue)
 }
 
 func shadowTestDatabaseURL() string {
@@ -395,6 +418,52 @@ func shadowTestDatabaseURL() string {
 		}
 	}
 	return ""
+}
+
+func openShadowTestPostgres(c *qt.C) (string, *dbschema.DatabaseConnection) {
+	c.Helper()
+	dbURL := shadowTestDatabaseURL()
+	if dbURL == "" {
+		c.Skip("PostgreSQL test database URL is not set")
+	}
+	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Assert(platform.NormalizeDialect(conn.Info().Dialect), qt.Equals, platform.Postgres)
+	return dbURL, conn
+}
+
+func createShadowTestPostgres(
+	c *qt.C,
+	admin *dbschema.DatabaseConnection,
+	baseURL string,
+) (shadowURL, database string) {
+	c.Helper()
+	database = fmt.Sprintf("ptah_generator_shadow_%d", time.Now().UnixNano())
+	_, err := admin.ExecContext(c.Context(), "CREATE DATABASE "+quoteShadowTestPostgresIdentifier(database))
+	c.Assert(err, qt.IsNil)
+	parsed, err := url.Parse(baseURL)
+	c.Assert(err, qt.IsNil)
+	parsed.Path = "/" + database
+	parsed.RawPath = ""
+	return parsed.String(), database
+}
+
+func dropShadowTestPostgres(c *qt.C, admin *dbschema.DatabaseConnection, database string) {
+	c.Helper()
+	_, _ = admin.ExecContext(
+		context.Background(),
+		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+		database,
+	)
+	_, err := admin.ExecContext(
+		context.Background(),
+		"DROP DATABASE IF EXISTS "+quoteShadowTestPostgresIdentifier(database),
+	)
+	c.Assert(err, qt.IsNil)
+}
+
+func quoteShadowTestPostgresIdentifier(identifier string) string {
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
 }
 
 func writeConcurrentIndexEntities(c *qt.C, dir string) string {

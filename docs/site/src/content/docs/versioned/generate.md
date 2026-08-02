@@ -193,7 +193,8 @@ Generated migration files for ...
 ```
 
 The shadow database must be an ephemeral database of the same engine as the
-target — never a real environment.
+target and must identify a different live database realm. Never point it at a
+real environment.
 
 ## Generate without the target database (replay)
 

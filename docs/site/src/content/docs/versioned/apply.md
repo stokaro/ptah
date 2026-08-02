@@ -168,7 +168,11 @@ people and pipelines share a directory:
   versions as out-of-order.
 - **Timeouts and locks**: `--statement-timeout`, `--lock-timeout`, and
   `--migration-lock-timeout` bound long DDL and the session-level advisory
-  lock that keeps two migrators from racing.
+  lock that keeps two migrators from racing. A `no_transaction` migration
+  cannot use statement or lock timeouts. Ptah rejects the combination before
+  executing SQL or changing the revision row. SQL-backed migrations record a
+  durable progress marker before and after each autocommit statement. A custom
+  Go `MigrationFunc` remains opaque and is recorded only when it returns.
 - **Run logging** (`--log-level`, `--log-format`): `--log-level`
   debug\|info\|warn\|error selects how much of the run is narrated —
   `warn` silences the per-statement dry-run narration — and `--log-format`
@@ -243,6 +247,12 @@ every later run refuses to continue until it is repaired — see
 that state on the native surface only; `ptah-compat migrate down` reproduces
 Atlas's bookkeeping and leaves the row untouched, which
 [Roll back migrations](../rollback/) states in full.
+
+**The process stopped during a non-transactional statement.** The revision row
+records the last known completed statement and marks the interrupted
+statement's outcome as unknown. Inspect the database before repair. Ptah
+rejects `repair --resume-from` while this marker is present because the SQL may
+already have committed.
 
 **A pre-migration check blocked the migration.** Nothing is applied and no
 revision row is written, so the run is recorded as never started. Fix the data

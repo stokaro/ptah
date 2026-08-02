@@ -175,7 +175,8 @@ On the default per-file transaction mode the down body is rolled back with it,
 so the schema is untouched. A down marked `-- atlas:txmode none` runs outside a
 transaction, so statements that already completed stay applied: the schema is
 left half-reverted behind a revision row that still reads as fully applied,
-with no dirty state and no repair hook. That is Atlas's behavior too.
+with no dirty state and no repair hook. Ptah deliberately does not write
+statement checkpoints on this path. That is Atlas's behavior too.
 
 That fidelity is the point of the compat surface: a database it touched must
 read the same way to Atlas. It also means the failure is not visible in the
