@@ -411,7 +411,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver rejected loudly, because the checkpoint engine does not emit Atlas-format checkpoint files yet. The read side honors Atlas's `-- atlas:checkpoint` directive: externally produced Atlas checkpoint directories bootstrap fresh databases from the latest checkpoint and are silently skipped on databases that already applied pre-checkpoint history, matching measured Atlas behavior.
 
-**Conformance status.** Measured by native command and Atlas-compatibility tests as an implemented forward.
+**Conformance status.** Measured by native command tests and Atlas-compatibility tests that verify `ptah-compat migrate checkpoint` forwards to the native implementation.
 
 **Follow-up.** [`stokaro/ptah#660`](https://github.com/stokaro/ptah/issues/660), [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758).
 
