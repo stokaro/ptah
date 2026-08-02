@@ -39,3 +39,33 @@ jobs:
       - name: Test testkit container helpers
         working-directory: testkit
         run: go test -tags=testkitcontainers ./...
+
+  published-pin:
+    name: Resolve the published root module without replace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # testkit requires the root module AND replaces it with `..`, so every
+      # other job here builds against the working tree and proves nothing about
+      # the version in the require line. That version can name a release that
+      # does not exist -- after the move to go.5x5.cz/ptah it named v0.1.2,
+      # which was only ever published under the old path and can never resolve
+      # under the new one. The replace hid that completely.
+      #
+      # This job drops the replace and builds against the module proxy, so the
+      # require line has to name a release an external consumer can actually
+      # fetch. It fails loudly the moment the pin becomes fiction again.
+      - name: Build against the published module
+        working-directory: testkit
+        run: |
+          set -euo pipefail
+          grep -v '^replace go\.5x5\.cz/ptah => \.\.$' go.mod > go.mod.published
+          mv go.mod.published go.mod
+          # -mod=mod so the checked-in go.sum, which only covers the replaced
+          # local module, may gain the published module's entry. Without it the
+          # build fails on a missing go.sum line whatever the pin says, which
+          # would make this job red for a reason unrelated to what it checks.
+          GOFLAGS=-mod=mod go build ./...
