@@ -13,9 +13,15 @@ import (
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 )
 
-// lintWrapWidth keeps diagnostics readable without coupling Ptah's prose to
-// another tool's presentation details.
-const lintWrapWidth = 100
+// lintWrapWidth is the content width Atlas wraps lint diagnostics at, measured
+// on the pinned CE binary rather than chosen.
+//
+// It is bracketed, not guessed. A message whose content is 88 columns does NOT
+// wrap; one whose next word would reach 89 DOES. Two fixtures with table names
+// sized to land the boundary on 89 and on 90 both wrap, which rules out those
+// values -- without them, 88, 89 and 90 all reproduce the everyday cases
+// identically and the constant would have been unpinned.
+const lintWrapWidth = 88
 
 // WriteMigrateLintText renders the default Atlas-compatible migration-analysis
 // text report. It preserves the compatibility surface's per-version analysis
