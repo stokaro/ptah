@@ -48,7 +48,6 @@ func TestCreateMigrationFromSQL(t *testing.T) {
 	c.Assert(migration.Description, qt.Equals, "Create test table")
 	c.Assert(migration.Up, qt.IsNotNil)
 	c.Assert(migration.Down, qt.IsNotNil)
-	c.Assert(migration.NoTransaction, qt.IsFalse)
 	c.Assert(migration.UpNoTransaction, qt.IsFalse)
 	c.Assert(migration.DownNoTransaction, qt.IsFalse)
 
@@ -65,7 +64,6 @@ func TestCreateMigrationFromSQL_NoTransactionDirective(t *testing.T) {
 		"-- manual down migration required",
 	)
 
-	c.Assert(migration.NoTransaction, qt.IsTrue)
 	c.Assert(migration.UpNoTransaction, qt.IsTrue)
 	c.Assert(migration.DownNoTransaction, qt.IsFalse)
 }
@@ -78,7 +76,6 @@ func TestCreateMigrationFromSQL_DownNoTransactionDirective(t *testing.T) {
 		"-- +ptah no_transaction\nDROP INDEX CONCURRENTLY users_email_idx;",
 	)
 
-	c.Assert(migration.NoTransaction, qt.IsTrue)
 	c.Assert(migration.UpNoTransaction, qt.IsFalse)
 	c.Assert(migration.DownNoTransaction, qt.IsTrue)
 }
@@ -91,15 +88,14 @@ func TestCreateMigrationFromSQL_AtlasTxModeNoneDirective(t *testing.T) {
 		"DROP INDEX users_email_idx;",
 	)
 
-	c.Assert(migration.NoTransaction, qt.IsTrue)
 	c.Assert(migration.UpNoTransaction, qt.IsTrue)
 	c.Assert(migration.DownNoTransaction, qt.IsFalse)
 }
 
-func TestMigration_ExplicitNoTransactionFieldControlsManualMigrations(t *testing.T) {
+func TestMigration_ExplicitDirectionalNoTransactionFieldsControlManualMigrations(t *testing.T) {
 	c := qt.New(t)
 
-	migration := &Migration{NoTransaction: true}
+	migration := &Migration{UpNoTransaction: true, DownNoTransaction: true}
 
 	c.Assert(migration.upExecutionMode(), qt.Equals, migrationExecutionNoTransaction)
 	c.Assert(migration.downExecutionMode(), qt.Equals, migrationExecutionNoTransaction)

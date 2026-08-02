@@ -126,8 +126,10 @@ opts := generator.GenerateMigrationOptions{
 }
 ```
 
-The shadow database is treated as disposable. The generator drops all objects in
-it, applies every existing migration from `OutputDir`, applies the candidate
+The shadow database is treated as disposable and must identify a different
+live database realm from the target. Ptah verifies that separation before any
+destructive work. The generator drops all objects in the shadow database,
+applies every existing migration from `OutputDir`, applies the candidate
 migration, re-introspects the database, and compares the result against the Go
 schema. If the replayed schema differs, generation aborts before writing files:
 
@@ -284,7 +286,7 @@ type GenerateMigrationOptions struct {
 - `OutputDir`: Directory where migration files will be saved (required)
 - `CompareOptions`: Schema comparison options (optional)
 - `Schemas`: PostgreSQL schema allow-list for database introspection (optional)
-- `ShadowDatabaseURL`: Disposable database URL for pre-write migration replay and round-trip checks (optional)
+- `ShadowDatabaseURL`: Disposable database URL for pre-write migration replay and round-trip checks; it must identify a different live database realm from the target (optional)
 
 ### PostgreSQL Concurrent Indexes
 

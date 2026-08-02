@@ -142,6 +142,17 @@ Error Statement: INSERT INTO missing_table (id) VALUES (1)
 Run 'ptah migrations repair --version <version>' after fixing the database state.
 ```
 
+An abrupt process exit during a `no_transaction` statement is more ambiguous.
+Before each SQL-backed statement, Ptah durably records the last known completed
+statement and marks the next statement's outcome as unknown. After success, it
+advances the progress count and clears the marker.
+
+If the process exits between those writes, the statement may or may not have
+committed. Inspect the database before changing the revision row. Ptah rejects
+`--resume-from` while the unknown-outcome marker is present because automatic
+replay could duplicate committed SQL. Repair without `--resume-from` only after
+you have reconciled the schema by hand.
+
 Fix the migration file (it is unapplied, so `edit` applies), re-hash, and
 repair. `--resume-from` executes the remaining up statements — here starting
 at the second — before marking the migration applied:

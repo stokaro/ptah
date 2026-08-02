@@ -37,11 +37,16 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
 
-	testDBName := fmt.Sprintf("ptah_shadow_e2e_%d", time.Now().UnixNano())
-	createE2EDatabase(c, ctx, adminDB, testDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+	testID := time.Now().UnixNano()
+	targetDBName := fmt.Sprintf("ptah_shadow_target_e2e_%d", testID)
+	shadowDBName := fmt.Sprintf("ptah_shadow_replay_e2e_%d", testID)
+	createE2EDatabase(c, ctx, adminDB, targetDBName)
+	defer dropE2EDatabase(c, context.Background(), adminDB, targetDBName)
+	createE2EDatabase(c, ctx, adminDB, shadowDBName)
+	defer dropE2EDatabase(c, context.Background(), adminDB, shadowDBName)
 
-	testDBURL := replaceDatabaseName(c, dbURL, testDBName)
+	targetDBURL := replaceDatabaseName(c, dbURL, targetDBName)
+	shadowDBURL := replaceDatabaseName(c, dbURL, shadowDBName)
 
 	t.Run("broken hand-edited migration aborts before writing candidate files", func(t *testing.T) {
 		c := qt.New(t)
@@ -50,7 +55,7 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 		migrationsDir := filepath.Join(dir, "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
 		writeShadowE2EPriorMigration(c, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY);\n")
-		prepareShadowE2ETargetDB(c, ctx, testDBURL)
+		prepareShadowE2ETargetDB(c, ctx, targetDBURL)
 
 		output, err := runPtah(
 			ctx,
@@ -58,10 +63,10 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 			binaryPath,
 			"migrations", "generate",
 			"--root-dir", entitiesDir,
-			"--db-url", testDBURL,
+			"--db-url", targetDBURL,
 			"--migrations-dir", migrationsDir,
 			"--name", "add_email",
-			"--shadow-db", testDBURL,
+			"--shadow-db", shadowDBURL,
 		)
 
 		c.Assert(err, qt.Not(qt.IsNil))
@@ -78,7 +83,7 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 		migrationsDir := filepath.Join(dir, "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
 		writeShadowE2EPriorMigration(c, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL);\n")
-		prepareShadowE2ETargetDB(c, ctx, testDBURL)
+		prepareShadowE2ETargetDB(c, ctx, targetDBURL)
 
 		output, err := runPtah(
 			ctx,
@@ -86,10 +91,10 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 			binaryPath,
 			"migrations", "generate",
 			"--root-dir", entitiesDir,
-			"--db-url", testDBURL,
+			"--db-url", targetDBURL,
 			"--migrations-dir", migrationsDir,
 			"--name", "add_email",
-			"--shadow-db", testDBURL,
+			"--shadow-db", shadowDBURL,
 		)
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))

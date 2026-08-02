@@ -548,7 +548,6 @@ DROP TABLE users;
 
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].NoTransaction, qt.IsTrue)
 	c.Assert(migrations[0].UpNoTransaction, qt.IsFalse)
 	c.Assert(migrations[0].DownNoTransaction, qt.IsTrue)
 }
@@ -572,7 +571,6 @@ DROP INDEX users_email_idx;
 
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].NoTransaction, qt.IsTrue)
 	c.Assert(migrations[0].UpNoTransaction, qt.IsTrue)
 	c.Assert(migrations[0].DownNoTransaction, qt.IsFalse)
 }

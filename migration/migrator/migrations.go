@@ -110,7 +110,10 @@ type StatementEvent struct {
 
 // StatementObserver receives successfully executed migration statements. It is
 // called after either an interceptor or the normal migrator path executes the
-// statement. Returning an error aborts the migration.
+// statement. When a Migrator executes SQL in no-transaction mode, the observer
+// normally runs after Ptah durably checkpoints that statement's progress.
+// Atlas-format down execution preserves Atlas bookkeeping and is not
+// checkpointed. Returning an error aborts the migration.
 type StatementObserver interface {
 	ObserveStatement(ctx context.Context, event StatementEvent) error
 }
@@ -130,6 +133,73 @@ type statementExecutionHooks struct {
 	interceptor StatementInterceptor
 	validator   StatementValidator
 	observer    StatementObserver
+}
+
+type statementProgressRecorder func(context.Context, StatementEvent) error
+
+type statementProgressHooks struct {
+	before statementProgressRecorder
+	after  statementProgressRecorder
+}
+
+type statementProgressRecorderContextKey struct{}
+
+type statementProgressError struct {
+	err     error
+	event   StatementEvent
+	applied int
+	phase   string
+}
+
+func (e *statementProgressError) Error() string {
+	return fmt.Sprintf("failed to checkpoint migration progress %s statement %d: %v", e.phase, e.event.Index, e.err)
+}
+
+func (e *statementProgressError) Unwrap() error {
+	return e.err
+}
+
+func withStatementProgressRecorder(
+	ctx context.Context,
+	before statementProgressRecorder,
+	after statementProgressRecorder,
+) context.Context {
+	return context.WithValue(ctx, statementProgressRecorderContextKey{}, statementProgressHooks{
+		before: before,
+		after:  after,
+	})
+}
+
+func recordStatementProgressBefore(ctx context.Context, event StatementEvent) error {
+	hooks, _ := ctx.Value(statementProgressRecorderContextKey{}).(statementProgressHooks)
+	if hooks.before == nil {
+		return nil
+	}
+	if err := hooks.before(ctx, event); err != nil {
+		return &statementProgressError{
+			err:     err,
+			event:   event,
+			applied: event.Index - 1,
+			phase:   "before",
+		}
+	}
+	return nil
+}
+
+func recordStatementProgressAfter(ctx context.Context, event StatementEvent) error {
+	hooks, _ := ctx.Value(statementProgressRecorderContextKey{}).(statementProgressHooks)
+	if hooks.after == nil {
+		return nil
+	}
+	if err := hooks.after(ctx, event); err != nil {
+		return &statementProgressError{
+			err:     err,
+			event:   event,
+			applied: event.Index,
+			phase:   "after",
+		}
+	}
+	return nil
 }
 
 type migrationExecutionMode int
@@ -518,10 +588,6 @@ type Migration struct {
 	UpNoTransaction bool
 	// DownNoTransaction is the down-direction counterpart to UpNoTransaction.
 	DownNoTransaction bool
-	// NoTransaction reports whether either direction opts out of the normal
-	// per-migration transaction. Execution uses the direction-specific fields.
-	NoTransaction                bool
-	directionalNoTransactionMode bool
 	// atlasCheckFiles are raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They are parsed with the live connection dialect before `-- +ptah check`
 	// directives in UpSQL, preventing dialect-blind boundary decisions.
@@ -547,14 +613,14 @@ func (m *Migration) atlasFilenameDescription() string {
 }
 
 func (m *Migration) upExecutionMode() migrationExecutionMode {
-	if m.UpNoTransaction || (!m.directionalNoTransactionMode && m.NoTransaction) {
+	if m.UpNoTransaction {
 		return migrationExecutionNoTransaction
 	}
 	return migrationExecutionTransactional
 }
 
 func (m *Migration) downExecutionMode() migrationExecutionMode {
-	if m.DownNoTransaction || (!m.directionalNoTransactionMode && m.NoTransaction) {
+	if m.DownNoTransaction {
 		return migrationExecutionNoTransaction
 	}
 	return migrationExecutionTransactional
@@ -567,14 +633,12 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 	downNoTransaction, downDirectiveErr := parseNoTransactionDirectiveFromSQL(downSQL)
 
 	migration := &Migration{
-		Version:                      version,
-		Description:                  description,
-		UpSQL:                        upSQL,
-		DownSQL:                      downSQL,
-		UpNoTransaction:              upNoTransaction,
-		DownNoTransaction:            downNoTransaction,
-		NoTransaction:                upNoTransaction || downNoTransaction,
-		directionalNoTransactionMode: true,
+		Version:           version,
+		Description:       description,
+		UpSQL:             upSQL,
+		DownSQL:           downSQL,
+		UpNoTransaction:   upNoTransaction,
+		DownNoTransaction: downNoTransaction,
 	}
 
 	upFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
@@ -606,6 +670,14 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 			continue // Skip empty statements and comments
 		}
 
+		event := StatementEvent{
+			Statement: stmt,
+			Index:     i + 1,
+			Total:     len(statements),
+		}
+		if err := recordStatementProgressBefore(ctx, event); err != nil {
+			return err
+		}
 		if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
 			return &MigrationExecutionError{
 				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
@@ -613,6 +685,9 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 				StatementIndex: i + 1,
 				Total:          len(statements),
 			}
+		}
+		if err := recordStatementProgressAfter(ctx, event); err != nil {
+			return err
 		}
 	}
 
@@ -651,6 +726,17 @@ func executeMigrationFileSQL(
 			continue
 		}
 
+		event := StatementEvent{
+			SourcePath: filename,
+			Statement:  stmt,
+			Index:      i + 1,
+			Total:      len(statements),
+			Directives: maps.Clone(fileDirectives),
+		}
+		if err := recordStatementProgressBefore(ctx, event); err != nil {
+			return err
+		}
+
 		handled := false
 		if hooks.interceptor != nil {
 			var err error
@@ -675,14 +761,10 @@ func executeMigrationFileSQL(
 				}
 			}
 		}
+		if err := recordStatementProgressAfter(ctx, event); err != nil {
+			return err
+		}
 		if hooks.observer != nil {
-			event := StatementEvent{
-				SourcePath: filename,
-				Statement:  stmt,
-				Index:      i + 1,
-				Total:      len(statements),
-				Directives: maps.Clone(fileDirectives),
-			}
 			if err := hooks.observer.ObserveStatement(ctx, event); err != nil {
 				return &StatementObservationError{
 					Err:   err,
