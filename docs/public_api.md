@@ -76,7 +76,11 @@ Ptah behavior is the zero-value default.
 audit successful filesystem-migration execution without replacing the
 interceptor, splitter, directive, or transaction path. Observers receive
 structured source and statement metadata after execution but no connection
-handle, so they cannot alter the migrator execution path.
+handle, so they cannot alter the migrator execution path. For SQL-backed
+`no_transaction` migrations, Ptah durably checkpoints the statement before
+calling the observer. Atlas-format down execution is excluded because it
+preserves Atlas's unchanged-row bookkeeping. A custom `MigrationFunc` remains
+opaque and has no statement-level checkpointing.
 
 `migration/migrator.WithStatementValidator` installs a pre-execution safety
 gate on a filesystem provider. Ptah splits and validates every statement in one

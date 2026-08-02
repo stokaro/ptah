@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/core/platform"
 )
 
 // atlasMetadataNullGuard restates the expected CASE arm as a literal rather
@@ -121,4 +123,25 @@ func TestPtahRevisionSQL_HasNoMetadataFilter(t *testing.T) {
 		c.Assert(sql, qt.Not(qt.Contains), atlasMetadataNullGuard,
 			qt.Commentf("%s (ptah layout) must not carry the Atlas cast guard", name))
 	}
+}
+
+func TestRevisionUpdateSQL_ClickHouseUsesSynchronousMutation(t *testing.T) {
+	c := qt.New(t)
+
+	got := revisionUpdateSQL(platform.ClickHouse, "`revisions`", "applied = ?, total = ?")
+
+	c.Assert(got, qt.Equals, `ALTER TABLE `+"`revisions`"+`
+UPDATE applied = ?, total = ?
+WHERE version = ?
+SETTINGS mutations_sync = 1`)
+}
+
+func TestRevisionUpdateSQL_TransactionalDialectUsesUpdate(t *testing.T) {
+	c := qt.New(t)
+
+	got := revisionUpdateSQL(platform.Postgres, `"revisions"`, "applied = ?, total = ?")
+
+	c.Assert(got, qt.Equals, `UPDATE "revisions"
+SET applied = ?, total = ?
+WHERE version = ?`)
 }

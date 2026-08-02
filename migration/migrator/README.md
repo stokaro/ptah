@@ -641,9 +641,37 @@ ALTER TABLE users ALTER COLUMN status SET DEFAULT 'archived';
 normal per-migration transaction. This is intended for narrow database
 requirements such as PostgreSQL enum value additions that must be used by a
 later statement in the same migration, or PostgreSQL `CREATE INDEX
-CONCURRENTLY` operations. Migration timeouts
-are rejected for `no_transaction` migrations because Ptah cannot safely apply
-writer/session timeouts to raw autocommit statements.
+CONCURRENTLY` operations. Programmatic migrations set `UpNoTransaction` or
+`DownNoTransaction` explicitly; the two directions never share an execution-mode
+flag.
+
+Migration timeouts are rejected for `no_transaction` migrations because Ptah
+cannot safely apply writer/session timeouts to raw autocommit statements. Ptah
+rejects that combination before running the migration body or changing its
+revision row, so fixing the directives and retrying does not require dirty-state
+repair. If execution is canceled after an autocommit statement, Ptah uses a
+bounded cleanup context to record committed progress or finalize the revision
+state before returning.
+
+SQL-backed migrations executed through `Migrator` use a two-phase progress
+record around each autocommit statement. Before execution, Ptah records the
+last known completed statement and marks the next statement's outcome as
+unknown. After success, it advances `applied/total`, clears that marker, and
+then calls the configured `StatementObserver`.
+
+An abrupt process exit therefore leaves either exact completed progress or a
+dirty row that requires database inspection. `RepairMigration` rejects
+`ResumeFrom` while the unknown-outcome marker is present because replaying the
+statement could duplicate committed SQL. A custom `MigrationFunc` is opaque to
+Ptah and can only be recorded at function completion; use SQL-backed migrations
+when statement-level crash progress is required.
+
+Atlas-format down execution is the deliberate exception. It leaves the
+revision row unchanged before and during the down body to reproduce Atlas's
+measured bookkeeping. A non-transactional Atlas-format down can therefore
+partially change the schema without leaving statement progress in the revision
+table. Prefer the native revision format when crash-visible rollback progress
+matters.
 
 ## Safety Features
 

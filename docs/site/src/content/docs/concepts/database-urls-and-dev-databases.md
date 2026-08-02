@@ -51,6 +51,10 @@ keeping any files, and `ptah migrations checkpoint` and
 expected schema before anything is recorded. `ptah migrations down` uses it to
 verify the rollback plan before changing the target.
 
+The shadow database must identify a different live database realm from the
+target. Ptah compares both connections before cleanup and fails before changing
+either database when they resolve to the same realm.
+
 **A throwaway test database** is what `ptah migrations test` and
 `ptah schema test` run cases against: by default a fresh ephemeral SQLite
 database per case, or the database passed with `--db-url` when tests must

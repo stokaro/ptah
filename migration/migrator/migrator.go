@@ -1571,6 +1571,14 @@ func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migr
 	}()
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
+	if migration.upExecutionMode() == migrationExecutionNoTransaction {
+		if err := ensureNoTransactionHasNoTimeouts(
+			migration.Version,
+			mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts),
+		); err != nil {
+			return err
+		}
+	}
 	if err := m.runPreMigrationChecks(ctx, migration); err != nil {
 		return err
 	}
@@ -1625,6 +1633,12 @@ func (m *Migrator) applyUpMigrationForcedNoTransactionObserved(ctx context.Conte
 }
 
 func (m *Migrator) applyUpMigrationForcedNoTransactionAt(ctx context.Context, migration *Migration, startedAt time.Time) error {
+	if err := ensureNoTransactionHasNoTimeouts(
+		migration.Version,
+		mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts),
+	); err != nil {
+		return err
+	}
 	if err := m.runPreMigrationChecks(ctx, migration); err != nil {
 		return err
 	}
@@ -1744,6 +1758,17 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.UpSQL, "")
 	}
+	if err := m.completeMigrationRevisionOn(ctx, txConn, migration, startedAt); err != nil {
+		_ = tx.Rollback()
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("failed to record migration %d", migration.Version),
+		)
+	}
 
 	if err := tx.Commit(); err != nil {
 		return m.failMigrationWithDirtyState(
@@ -1755,21 +1780,23 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 			fmt.Sprintf("failed to commit transaction for migration %d", migration.Version),
 		)
 	}
-	if err := m.completeMigrationRevision(ctx, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
-	}
-
 	m.logger.Info("Applied migration", "version", migration.Version, "description", migration.Description)
 	return nil
 }
 
 func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration *Migration, startedAt time.Time) error {
-	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts)); err != nil {
-		return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.UpSQL, "", MigrationTxModeNone)
-	}
 	// Pre-migration checks already ran in runPreMigrationChecks, before this
 	// migration had any revision row.
-	if err := migration.Up(ctx, m.conn); err != nil {
+	executionCtx := withStatementProgressRecorder(
+		ctx,
+		func(ctx context.Context, event StatementEvent) error {
+			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event)
+		},
+		func(ctx context.Context, event StatementEvent) error {
+			return m.checkpointMigrationRevision(ctx, migration, startedAt, event)
+		},
+	)
+	if err := migration.Up(executionCtx, m.conn); err != nil {
 		return m.failMigrationWithDirtyStateWithMode(
 			ctx,
 			migration,
@@ -1780,7 +1807,9 @@ func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration 
 			MigrationTxModeNone,
 		)
 	}
-	if err := m.completeMigrationRevision(ctx, migration, startedAt); err != nil {
+	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
+	defer cancelRecord()
+	if err := m.completeMigrationRevision(recordCtx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
 	}
 	m.logger.Info("Applied non-transactional migration", "version", migration.Version, "description", migration.Description)
@@ -1808,6 +1837,14 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	}()
 
 	m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
+	if migration.downExecutionMode() == migrationExecutionNoTransaction {
+		if err := ensureNoTransactionHasNoTimeouts(
+			migration.Version,
+			mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts),
+		); err != nil {
+			return err
+		}
+	}
 	// The Atlas-shaped surface records nothing before the down body: Atlas marks
 	// a reverted migration only by deleting its row on success. See
 	// reproducesAtlasDownBookkeeping.
@@ -1925,10 +1962,19 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 	startedAt time.Time,
 	deleteSQL string,
 ) error {
-	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts)); err != nil {
-		return m.failRollbackWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.DownSQL, "", MigrationTxModeNone)
+	executionCtx := ctx
+	if !m.reproducesAtlasDownBookkeeping() {
+		executionCtx = withStatementProgressRecorder(
+			ctx,
+			func(ctx context.Context, event StatementEvent) error {
+				return m.markMigrationStatementInFlight(ctx, migration, startedAt, event)
+			},
+			func(ctx context.Context, event StatementEvent) error {
+				return m.checkpointMigrationRevision(ctx, migration, startedAt, event)
+			},
+		)
 	}
-	if err := migration.Down(ctx, m.conn); err != nil {
+	if err := migration.Down(executionCtx, m.conn); err != nil {
 		return m.failRollbackWithDirtyStateWithMode(
 			ctx,
 			migration,
@@ -1939,7 +1985,9 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 			MigrationTxModeNone,
 		)
 	}
-	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
+	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
+	defer cancelRecord()
+	if err := executeSQLOutsideTransaction(recordCtx, m.conn, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
 	m.logger.Info("Rolled back non-transactional migration", "version", migration.Version, "description", migration.Description)

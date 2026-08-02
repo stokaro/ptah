@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
+	"github.com/stokaro/ptah/internal/devlock"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
@@ -45,15 +46,8 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 	}
 	defer dbschema.CloseAndWarn(shadowConn)
 
-	if !sameDialect(opts.Dialect, shadowConn.Info().Dialect) {
-		return fmt.Errorf(
-			"baseline shadow check failed: shadow database dialect %q does not match target dialect %q",
-			shadowConn.Info().Dialect,
-			opts.Dialect,
-		)
-	}
-	if opts.Capabilities != nil && !maps.Equal(opts.Capabilities, shadowConn.Info().Capabilities) {
-		return fmt.Errorf("baseline shadow check failed: shadow database capabilities do not match target %s capabilities", opts.Dialect)
+	if err := validateBaselineShadowConnection(ctx, opts, shadowConn); err != nil {
+		return err
 	}
 
 	targetSchema, err := validateBaselineTargetIdentifierSemantics(
@@ -127,6 +121,31 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 		return nil
 	}
 	return fmt.Errorf("baseline shadow check failed: %s", describeShadowDiff(diff))
+}
+
+func validateBaselineShadowConnection(
+	ctx context.Context,
+	opts BaselineShadowVerifyOptions,
+	shadowConn *dbschema.DatabaseConnection,
+) error {
+	if !sameDialect(opts.Dialect, shadowConn.Info().Dialect) {
+		return fmt.Errorf(
+			"baseline shadow check failed: shadow database dialect %q does not match target dialect %q",
+			shadowConn.Info().Dialect,
+			opts.Dialect,
+		)
+	}
+	sameRealm, err := devlock.SameRealm(ctx, opts.TargetConn, shadowConn)
+	if err != nil {
+		return fmt.Errorf("baseline shadow check failed: compare target and shadow database realms: %w", err)
+	}
+	if sameRealm {
+		return fmt.Errorf("baseline shadow check failed: shadow database must be distinct from target database")
+	}
+	if opts.Capabilities != nil && !maps.Equal(opts.Capabilities, shadowConn.Info().Capabilities) {
+		return fmt.Errorf("baseline shadow check failed: shadow database capabilities do not match target %s capabilities", opts.Dialect)
+	}
+	return nil
 }
 
 func validateBaselineTargetIdentifierSemantics(

@@ -93,3 +93,176 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrationFiles, qt.HasLen, 2)
 }
+
+func TestGenerateMigration_RejectsTargetDatabaseAsShadow(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target.db")
+	targetURL := "sqlite://" + targetPath
+	target, err := dbschema.ConnectToDatabase(t.Context(), targetURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(target)
+	_, err = target.ExecContext(t.Context(), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+
+	modelsDir, migrationsDir := writeShadowRealmSafetyFixture(c, dir)
+
+	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{
+		GoEntitiesDir:     modelsDir,
+		DBConn:            target,
+		MigrationName:     "add_email",
+		OutputDir:         migrationsDir,
+		ShadowDatabaseURL: targetURL,
+	})
+
+	assertShadowRealmRejected(c, target, files, err)
+}
+
+func TestGenerateMigration_RejectsEquivalentTargetDatabaseAliasAsShadow(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target.db")
+	targetURL := "sqlite://" + targetPath
+	target, err := dbschema.ConnectToDatabase(t.Context(), targetURL)
+	c.Assert(err, qt.IsNil)
+	_, err = target.ExecContext(t.Context(), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+	dbschema.CloseAndWarn(target)
+
+	aliasPath := filepath.Join(dir, "target-alias.db")
+	c.Assert(os.Link(targetPath, aliasPath), qt.IsNil)
+	target, err = dbschema.ConnectToDatabase(t.Context(), targetURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(target)
+	modelsDir, migrationsDir := writeShadowRealmSafetyFixture(c, dir)
+
+	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{
+		GoEntitiesDir:     modelsDir,
+		DBConn:            target,
+		MigrationName:     "add_email",
+		OutputDir:         migrationsDir,
+		ShadowDatabaseURL: "sqlite://" + aliasPath,
+	})
+
+	assertShadowRealmRejected(c, target, files, err)
+}
+
+func TestVerifyBaselineShadow_RejectsTargetDatabaseAsShadow(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target.db")
+	targetURL := "sqlite://" + targetPath
+	target, err := dbschema.ConnectToDatabase(t.Context(), targetURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(target)
+	_, err = target.ExecContext(t.Context(), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+	migrationsDir := writeBaselineShadowRealmSafetyFixture(c, dir)
+
+	err = generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{
+		ShadowDatabaseURL: targetURL,
+		TargetConn:        target,
+		MigrationsDir:     migrationsDir,
+		Version:           1,
+		Dialect:           target.Info().Dialect,
+	})
+
+	assertBaselineShadowRealmRejected(c, target, err)
+}
+
+func TestVerifyBaselineShadow_RejectsEquivalentTargetDatabaseAlias(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target.db")
+	targetURL := "sqlite://" + targetPath
+	target, err := dbschema.ConnectToDatabase(t.Context(), targetURL)
+	c.Assert(err, qt.IsNil)
+	_, err = target.ExecContext(t.Context(), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+	dbschema.CloseAndWarn(target)
+
+	aliasPath := filepath.Join(dir, "target-alias.db")
+	c.Assert(os.Link(targetPath, aliasPath), qt.IsNil)
+	target, err = dbschema.ConnectToDatabase(t.Context(), targetURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(target)
+	migrationsDir := writeBaselineShadowRealmSafetyFixture(c, dir)
+
+	err = generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{
+		ShadowDatabaseURL: "sqlite://" + aliasPath,
+		TargetConn:        target,
+		MigrationsDir:     migrationsDir,
+		Version:           1,
+		Dialect:           target.Info().Dialect,
+	})
+
+	assertBaselineShadowRealmRejected(c, target, err)
+}
+
+func writeShadowRealmSafetyFixture(c *qt.C, dir string) (modelsDir, migrationsDir string) {
+	c.Helper()
+	modelsDir = filepath.Join(dir, "models")
+	c.Assert(os.MkdirAll(modelsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(modelsDir, "models.go"), []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+	//ptah:schema:field name="email" type="TEXT"
+	Email string
+}
+`), 0o600), qt.IsNil)
+	migrationsDir = filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	return modelsDir, migrationsDir
+}
+
+func assertShadowRealmRejected(
+	c *qt.C,
+	target *dbschema.DatabaseConnection,
+	files *generator.MigrationFiles,
+	err error,
+) {
+	c.Helper()
+	c.Assert(files, qt.IsNil)
+	var shadowErr *generator.ShadowVerificationError
+	c.Assert(err, qt.ErrorAs, &shadowErr)
+	c.Assert(shadowErr.Result.Stage, qt.Equals, "realm-check")
+	c.Assert(shadowErr.Result.Mismatches, qt.DeepEquals, []generator.ShadowMismatch{{
+		Kind:    "target_shadow_same_realm",
+		Message: "shadow database must be distinct from target database",
+	}})
+	var tableCount int64
+	c.Assert(target.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'users'").Scan(&tableCount), qt.IsNil)
+	c.Assert(tableCount, qt.Equals, int64(1))
+}
+
+func writeBaselineShadowRealmSafetyFixture(c *qt.C, dir string) string {
+	c.Helper()
+	migrationsDir := filepath.Join(dir, "baseline-migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "0000000001_init.up.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "0000000001_init.down.sql"),
+		[]byte("DROP TABLE users;"),
+		0o600,
+	), qt.IsNil)
+	return migrationsDir
+}
+
+func assertBaselineShadowRealmRejected(
+	c *qt.C,
+	target *dbschema.DatabaseConnection,
+	err error,
+) {
+	c.Helper()
+	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: shadow database must be distinct from target database`)
+	var tableCount int64
+	c.Assert(target.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'users'").Scan(&tableCount), qt.IsNil)
+	c.Assert(tableCount, qt.Equals, int64(1))
+}

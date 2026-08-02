@@ -290,9 +290,16 @@ jobs:
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
         run: |
-          go test -v ./migration/migrator -run 'TestNoTransactionDirective_PostgresEnumValueCanBeUsedInSameMigration' -timeout 3m
-          go test -v ./migration/generator -run 'TestGenerateMigrationShadowVerificationWithRealDB|TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB' -timeout 5m
+          go test ./migration/migrator -list '^TestNoTransactionDirective_PostgresEnumValueCanBeUsedInSameMigration$' | grep -q '^TestNoTransactionDirective_PostgresEnumValueCanBeUsedInSameMigration$'
+          go test ./migration/migrator -list '^TestNoTransactionCheckpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver$' | grep -q '^TestNoTransactionCheckpoint_ClickHousePtahRevisionIsVisibleToObserver$'
+          go test ./migration/migrator -list '^TestNoTransactionCheckpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver$' | grep -q '^TestNoTransactionCheckpoint_ClickHouseAtlasRevisionIsVisibleToObserver$'
+          go test ./migration/migrator -list '^TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation$' | grep -q '^TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation$'
+          go test ./migration/generator -list '^TestGenerateMigrationShadowVerificationWithRealDB$' | grep -q '^TestGenerateMigrationShadowVerificationWithRealDB$'
+          go test ./migration/generator -list '^TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB$' | grep -q '^TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB$'
+          go test -v -count=1 ./migration/migrator -run '^TestNoTransaction(Directive_PostgresEnumValueCanBeUsedInSameMigration|Checkpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver|Repair_ClickHouseAtlasRevisionAfterManualReconciliation)$' -timeout 3m
+          go test -v -count=1 ./migration/generator -run '^TestGenerateMigration(ShadowVerificationWithRealDB|ConcurrentIndexOnPopulatedPostgresTableWithRealDB)$' -timeout 5m
           go test ./cmd/migrateup -list '^TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration$' | grep -q '^TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration$'
           go test ./cmd/migrateup -list '^TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable$' | grep -q '^TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable$'
           go test -v -count=1 ./cmd/migrateup -run '^TestMigrateUp_LintConfig(SeverityOverrideControlsPostgresMigration|WarningStillBlocksPostgresDropTable)$' -timeout 3m

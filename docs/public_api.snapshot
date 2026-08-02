@@ -5990,7 +5990,8 @@ type GenerateMigrationOptions struct {
     // ReportFormat optionally writes a safety report next to generated files.
     // Supported values: "", "html", "json".
     ReportFormat string
-    // ShadowDatabaseURL enables pre-write verification on an ephemeral database.
+    // ShadowDatabaseURL enables pre-write verification on an ephemeral database
+    // whose live database realm must be distinct from the target connection.
     // The generator drops all objects in this database, replays existing
     // migrations from OutputDir, applies the candidate migration, re-introspects
     // the result, and aborts if it differs from the Go schema.
@@ -6966,9 +6967,6 @@ type Migration struct {
     UpNoTransaction bool
     // DownNoTransaction is the down-direction counterpart to UpNoTransaction.
     DownNoTransaction bool
-    // NoTransaction reports whether either direction opts out of the normal
-    // per-migration transaction. Execution uses the direction-specific fields.
-    NoTransaction bool
 
     // IsCheckpoint marks a checkpoint migration whose up body is the full
     // cumulative schema at its version. On a fresh database the migrator
@@ -7423,9 +7421,12 @@ package migrator // import "github.com/stokaro/ptah/migration/migrator"
 type StatementObserver interface {
     ObserveStatement(ctx context.Context, event StatementEvent) error
 }
-    StatementObserver receives successfully executed migration statements. It is
-    called after either an interceptor or the normal migrator path executes the
-    statement. Returning an error aborts the migration.
+    StatementObserver receives successfully executed migration statements.
+    It is called after either an interceptor or the normal migrator path
+    executes the statement. When a Migrator executes SQL in no-transaction mode,
+    the observer normally runs after Ptah durably checkpoints that statement's
+    progress. Atlas-format down execution preserves Atlas bookkeeping and is not
+    checkpointed. Returning an error aborts the migration.
 
 
 ### github.com/stokaro/ptah/migration/migrator.StatementObserverFunc

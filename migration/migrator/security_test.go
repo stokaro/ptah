@@ -30,6 +30,7 @@ func TestMigrationMetadataSQL_UsesPlaceholders(t *testing.T) {
 	}{
 		"begin migration":    {sql: (&Migrator{}).beginMigrationSQL(), placeholders: 10},
 		"complete migration": {sql: (&Migrator{}).completeMigrationSQL(), placeholders: 6},
+		"checkpoint":         {sql: (&Migrator{}).checkpointMigrationSQL(), placeholders: 5},
 		"begin rollback":     {sql: (&Migrator{}).beginRollbackSQL(), placeholders: 5},
 		"fail migration":     {sql: (&Migrator{}).failMigrationSQL(), placeholders: 7},
 		"force applied":      {sql: (&Migrator{}).forceAppliedMigrationSQL(), placeholders: 8},

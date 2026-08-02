@@ -86,7 +86,8 @@ type GenerateMigrationOptions struct {
 	// ReportFormat optionally writes a safety report next to generated files.
 	// Supported values: "", "html", "json".
 	ReportFormat string
-	// ShadowDatabaseURL enables pre-write verification on an ephemeral database.
+	// ShadowDatabaseURL enables pre-write verification on an ephemeral database
+	// whose live database realm must be distinct from the target connection.
 	// The generator drops all objects in this database, replays existing
 	// migrations from OutputDir, applies the candidate migration, re-introspects
 	// the result, and aborts if it differs from the Go schema.
@@ -437,10 +438,11 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 
 	if opts.ShadowDatabaseURL != "" {
 		if err := verifyShadowMigration(ctx, shadowMigrationOptions{
-			DatabaseURL:   opts.ShadowDatabaseURL,
-			MigrationsDir: opts.OutputDir,
-			Dialect:       info.Dialect,
-			Capabilities:  info.Capabilities,
+			DatabaseURL:      opts.ShadowDatabaseURL,
+			TargetConnection: conn,
+			MigrationsDir:    opts.OutputDir,
+			Dialect:          info.Dialect,
+			Capabilities:     info.Capabilities,
 			IdentifierSemantics: cloneIdentifierSemanticsValue(
 				diff.IdentifierSemantics,
 			),
