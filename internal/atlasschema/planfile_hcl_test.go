@@ -21,7 +21,7 @@ import (
 // oraclePlanPath is the real `.plan.hcl` produced by Atlas for the
 // schema-plan-file measurement
 // scenario; it is the format oracle for the reader.
-const oraclePlanPath = "testdata/atlas-v1.2.4-plan/plan.hcl"
+const oraclePlanPath = "testdata/atlas-plan-oracle/plan.hcl"
 
 // writtenGoldenPlanPath is the byte-exact document MarshalPlanFileHCL must
 // produce for the measured scenario's native plan contents. It mirrors the
@@ -30,13 +30,11 @@ const oraclePlanPath = "testdata/atlas-v1.2.4-plan/plan.hcl"
 const writtenGoldenPlanPath = "testdata/ptah-written-golden.plan.hcl"
 
 type atlasPlanOracleProvenance struct {
-	AtlasVersion       string            `json:"atlas_version"`
-	AtlasEdition       string            `json:"atlas_edition"`
+	Artifact           string            `json:"artifact"`
 	CapturedOn         string            `json:"captured_on"`
 	SourceIssue        string            `json:"source_issue"`
 	SourcePR           string            `json:"source_pr"`
 	CaptureCommand     *string           `json:"capture_command"`
-	AtlasBinarySHA256  *string           `json:"atlas_binary_sha256"`
 	CaptureLimitations []string          `json:"capture_limitations"`
 	Files              map[string]string `json:"files"`
 }
@@ -55,14 +53,12 @@ func TestAtlasPlanOracleProvenance(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	var provenance atlasPlanOracleProvenance
 	c.Assert(json.Unmarshal(rawManifest, &provenance), qt.IsNil)
-	c.Assert(provenance.AtlasVersion, qt.Equals, "v1.2.4-e282f76-canary")
-	c.Assert(provenance.AtlasEdition, qt.Equals, "licensed")
+	c.Assert(provenance.Artifact, qt.Contains, "produced by Atlas")
 	c.Assert(provenance.CapturedOn, qt.Equals, "2026-08-01")
 	c.Assert(provenance.SourceIssue, qt.Equals, "https://github.com/stokaro/ptah/issues/958")
 	c.Assert(provenance.SourcePR, qt.Equals, "https://github.com/stokaro/ptah/pull/965")
 	c.Assert(provenance.CaptureCommand, qt.IsNil)
-	c.Assert(provenance.AtlasBinarySHA256, qt.IsNil)
-	c.Assert(provenance.CaptureLimitations, qt.HasLen, 2)
+	c.Assert(provenance.CaptureLimitations, qt.HasLen, 1)
 	c.Assert(provenance.Files, qt.DeepEquals, map[string]string{
 		"from.sql": "22745ed9b5fa963ad445cfcd2af263ffa77eccafde1adf2e3008dafbba8c4b8f",
 		"plan.hcl": "335a8b191c8e5297f59daf5e6d2b6d2970b50dbf488dbe52de26919a8155ef35",

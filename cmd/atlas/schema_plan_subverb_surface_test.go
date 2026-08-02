@@ -94,13 +94,13 @@ func TestAtlasSchemaPlanV13HelpOracleProvenance(t *testing.T) {
 	c.Assert(provenance.ReleaseURL, qt.Equals, "https://github.com/ariga/atlas/releases/tag/v1.3.0")
 	c.Assert(provenance.BinarySHA256, qt.Equals, "47aaf7c295c7569c7eecfcbc53f02de862846ce1fbef16f1bd8ae98b03c3c68f")
 	c.Assert(provenance.Environment, qt.Equals,
-		"empty temporary HOME; no Atlas account, token, organization, project, or repository identifiers")
+		"empty temporary HOME; no external identifiers of any kind")
 	c.Assert(provenance.Captures, qt.DeepEquals, map[string]string{
 		"new.txt":      "HOME=<empty-temp-home> atlas schema plan new --help",
 		"validate.txt": "HOME=<empty-temp-home> atlas schema plan validate --help",
 	})
 	c.Assert(provenance.RuntimeArtifact, qt.IsNil)
-	c.Assert(provenance.Limitations, qt.HasLen, 3)
+	c.Assert(provenance.Limitations, qt.HasLen, 2)
 
 	tests := []struct {
 		name string

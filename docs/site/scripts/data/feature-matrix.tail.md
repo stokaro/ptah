@@ -23,7 +23,7 @@ Four sources carry most of the weight:
   inventories every command in Atlas CE v1.2.0 and classifies it as an OSS
   parity target or out of scope, with the reason recorded per command.
 - [`ce-gating.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/ce-gating.md)
-  goes further than the inventory: it runs the pinned CE binary logged out
+  goes further than the inventory: it runs the pinned CE binary
   through the capability set this page asserts about the CE column and records
   the observed class per scenario — works, community-abort stub, absent verb,
   unknown flag, or silently unenforced. A version bump that changes Atlas's

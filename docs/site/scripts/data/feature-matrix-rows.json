@@ -60,7 +60,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Ptah evaluates the data source and runs the program, gated behind `--allow-external-schema`/`PTAH_ALLOW_EXTERNAL_SCHEMA`. Community Atlas rejects `data.external_schema`.",
-    "evidence": "config/projectconfig/atlas.go (configureDataSources external_schema branch); repro: PTAH_ALLOW_EXTERNAL_SCHEMA=1 ptah-compat schema apply --url sqlite://app.db --env dev --dry-run --auto-approve emits the program's CREATE TABLE; ptah schema render --env dev --allow-external-schema renders it natively; go test ./cmd/atlas -run TestSchemaDiffExternalSchemaSource. Measured 2026-08-01, Atlas CE v1.2.0 logged out: atlas.hcl data \"external_schema\" -> exit 1 'Error: data.external_schema is not supported by the community version of Atlas.'"
+    "evidence": "config/projectconfig/atlas.go (configureDataSources external_schema branch); repro: PTAH_ALLOW_EXTERNAL_SCHEMA=1 ptah-compat schema apply --url sqlite://app.db --env dev --dry-run --auto-approve emits the program's CREATE TABLE; ptah schema render --env dev --allow-external-schema renders it natively; go test ./cmd/atlas -run TestSchemaDiffExternalSchemaSource. Measured 2026-08-01, Atlas CE v1.2.0: atlas.hcl data \"external_schema\" -> exit 1 'Error: data.external_schema is not supported by the community version of Atlas.'"
   },
   {
     "area": "Schema sources",
@@ -69,7 +69,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Repeatable `--root-dir`/`--schema-file` merge into one schema; conflicts error. Repo docs cite composite_schema as an Atlas Pro data source.",
-    "evidence": "ptah schema render --help ('repeatable; multiple sources merge into one composite schema'); docs/site/src/content/docs/schema/composite.md:58; docs/site/src/content/docs/atlas/comparison.md:407,413. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): atlas.hcl with `data \"composite_schema\"` -> exit 1 'missing data source handler for \"composite_schema\"'. Atlas pricing page (retrieved 2026-08-01): 'Schema compositions' is Pro, not Starter. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Schema compositions' is unchecked for Starter and checked for Pro/Enterprise, linking to the composite_schema data source. `data \"composite_schema\"` with local file parts works in Atlas (measured; observation study, scenario, atlas-hcl-pro-constructs)"
+    "evidence": "ptah schema render --help ('repeatable; multiple sources merge into one composite schema'); docs/site/src/content/docs/schema/composite.md:58; docs/site/src/content/docs/atlas/comparison.md:407,413. Measured 2026-08-01, CE v1.2.0 (scratch env): atlas.hcl with `data \"composite_schema\"` -> exit 1 'missing data source handler for \"composite_schema\"'. Atlas pricing page (retrieved 2026-08-01): 'Schema compositions' is Pro, not Starter. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Schema compositions' is unchecked for Starter and checked for Pro/Enterprise, linking to the composite_schema data source. `data \"composite_schema\"` with local file parts works in Atlas (measured; observation study, scenario, atlas-hcl-pro-constructs)"
   },
   {
     "area": "Schema sources",
@@ -168,7 +168,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Mermaid, DOT or SVG ERD from Go annotations only; SVG shells out to Graphviz dot. Atlas ERD lives in the hosted service (any plan per its pricing page); the CE binary rejects `--web`.",
-    "evidence": "ptah viz --help; docs/site/src/content/docs/schema/visualize.md; docs/site/src/content/docs/atlas/comparison.md (cites atlasgo.io/features: visualization is Pro); conformance cli-surface.md CE inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema inspect --url sqlite://t.db --web` -> exit 1 'unknown flag: --web'. Atlas pricing page (retrieved 2026-08-01) checks ERD visualization for every plan including free Starter - hosted-service side. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'ERD visualization' is checked for the free Starter plan \u2014 a plan-level claim that may be login/cloud-side; the pinned CE v1.2.0 binary registers no visualization command, so atlas_oss stays no"
+    "evidence": "ptah viz --help; docs/site/src/content/docs/schema/visualize.md; docs/site/src/content/docs/atlas/comparison.md (cites atlasgo.io/features: visualization is Pro); conformance cli-surface.md CE inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema inspect --url sqlite://t.db --web` -> exit 1 'unknown flag: --web'. Atlas pricing page (retrieved 2026-08-01) checks ERD visualization for every plan including free Starter - hosted-service side. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'ERD visualization' is checked for the free Starter plan \u2014 a plan-level claim that may be login/cloud-side; the pinned CE v1.2.0 binary registers no visualization command, so atlas_oss stays no"
   },
   {
     "area": "API schema export",
@@ -249,7 +249,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "ptah-compat boundary stubs report that the command is not implemented and exit 1. The native equivalents are `ptah schema push` and `ptah migrations push`.",
-    "evidence": "ptah-compat schema push -> exit 1 and reports that the command is not implemented by Ptah; cli-surface.md lines 35 and 58 mark both absent from CE v1.2.0. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema push` and `atlas migrate push demo` -> exit 1 community-abort"
+    "evidence": "ptah-compat schema push -> exit 1 and reports that the command is not implemented by Ptah; cli-surface.md lines 35 and 58 mark both absent from CE v1.2.0. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema push` and `atlas migrate push demo` -> exit 1 community-abort"
   },
   {
     "area": "Atlas Registry and Cloud",
@@ -294,7 +294,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "`--edit` preserves comments and re-derives dialect-aware severity; `--name-format` uses Atlas-shaped Base64 .FromHash/.ToHash values.",
-    "evidence": "Verified: `ptah-compat schema plan --from sqlite://x.db --to file://s.sql --save --edit --name-format 'plan_{{ slice .ToHash 0 12 }}'` (cmd/atlas/schema_plan_output_flags_test.go, internal/atlasschema/plan_edit_test.go). Measured 2026-08-02, CE v1.3.0 logged out: `schema plan` declares no own flags at all — each of the five answers `unknown flag` byte-identically to the nonsense controls `--name-formxxxx` and `--totally-bogus-flag`, and so does `--dev-url`, a flag CE knows on sibling verbs; only inherited `--env`/`-c`/`--var` parse and they reach the community abort, so CE never evaluates atlas.hcl for this verb (`schema plan --env nosuchenv` aborts where `schema inspect --env nosuchenv` says 'env not defined'). Registered on Atlas; live local runs verify that `.FromHash` and `.ToHash` are the untagged standard-Base64 values written to the plan block. An edit round-trips statement text verbatim, comments included, so quitting the editor unchanged reproduces the plan byte for byte."
+    "evidence": "Verified: `ptah-compat schema plan --from sqlite://x.db --to file://s.sql --save --edit --name-format 'plan_{{ slice .ToHash 0 12 }}'` (cmd/atlas/schema_plan_output_flags_test.go, internal/atlasschema/plan_edit_test.go). Measured 2026-08-02, CE v1.3.0: `schema plan` declares no own flags at all — each of the five answers `unknown flag` byte-identically to the nonsense controls `--name-formxxxx` and `--totally-bogus-flag`, and so does `--dev-url`, a flag CE knows on sibling verbs; only inherited `--env`/`-c`/`--var` parse and they reach the community abort, so CE never evaluates atlas.hcl for this verb (`schema plan --env nosuchenv` aborts where `schema inspect --env nosuchenv` says 'env not defined'). Registered on Atlas; live local runs verify that `.FromHash` and `.ToHash` are the untagged standard-Base64 values written to the plan block. An edit round-trips statement text verbatim, comments included, so quitting the editor unchanged reproduces the plan byte for byte."
   },
   {
     "area": "Atlas Registry and Cloud",
@@ -312,7 +312,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Both fail loudly, by design. `--format` is implemented on the eight compat verbs whose CE counterpart works and whose payload can therefore be measured; `schema plan` is the one verb where CE aborts.",
-    "evidence": "ptah-compat schema plan --format '{{ json . }}' -> 'Ptah does not implement --format for schema plan yet'. Measured 2026-08-02, CE v1.3.0: both answer `unknown flag`, same as the nonsense controls. Registered on Atlas's own help surface with help text only: `--format` 'output format', `-d/--directive` 'set a directive for the migration plan'. The rule is consistent rather than an exception: `--format` ships on `migrate apply/diff/lint/status` and `schema apply/clean/diff/inspect` because CE executes those verbs, so their report payload is measurable; `schema plan` aborts on CE and Atlas publishes help text only, so its payload field names are unknown and a Ptah-shaped payload would fail Pro templates referencing Atlas's. `--directive` is deferred because the measured Atlas `.plan.hcl` artifact (internal/atlasschema/testdata/atlas-v1.2.4-plan/plan.hcl) carries only from/to/migration, so a directive would have to ride inside the migration heredoc in an unmeasured spelling — and Ptah's own Atlas-format reader ignores `-- atlas:checkpoint` today (#954), so emitted directives would be silent no-ops"
+    "evidence": "ptah-compat schema plan --format '{{ json . }}' -> 'Ptah does not implement --format for schema plan yet'. Measured 2026-08-02, CE v1.3.0: both answer `unknown flag`, same as the nonsense controls. Registered on Atlas's own help surface with help text only: `--format` 'output format', `-d/--directive` 'set a directive for the migration plan'. The rule is consistent rather than an exception: `--format` ships on `migrate apply/diff/lint/status` and `schema apply/clean/diff/inspect` because CE executes those verbs, so their report payload is measurable; `schema plan` aborts on CE and Atlas publishes help text only, so its payload field names are unknown and a Ptah-shaped payload would fail Pro templates referencing Atlas's. `--directive` is deferred because the measured Atlas `.plan.hcl` artifact (internal/atlasschema/testdata/atlas-plan-oracle/plan.hcl) carries only from/to/migration, so a directive would have to ride inside the migration heredoc in an unmeasured spelling — and Ptah's own Atlas-format reader ignores `-- atlas:checkpoint` today (#954), so emitted directives would be silent no-ops"
   },
   {
     "area": "Versioned migrations",
@@ -447,7 +447,7 @@
     "atlas_oss": "yes",
     "atlas_pro": "yes",
     "note": "Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite.",
-    "evidence": "Verified: `ptah-compat schema apply --url sqlite://target.db --to file://new.sql --auto-approve`; conformance cli-surface.md `atlas schema apply`. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema apply --url sqlite://t.db --to file://schema.sql --dev-url 'sqlite://file?mode=memory' --auto-approve` planned and applied, exit 0; without `--dev-url` CE errors '--dev-url cannot be empty'. The pricing page's 'Declarative migrations' Starter cross refers to the plan/approve product flow, not to `schema apply`. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Declarative migrations' is listed Starter \u2717 / Pro \u2713 and links /declarative/plan \u2014 tension with the measured CE apply; read as covering the pre-planned (`schema plan`) flow, not plain `schema apply`, so the measured oss=yes stands"
+    "evidence": "Verified: `ptah-compat schema apply --url sqlite://target.db --to file://new.sql --auto-approve`; conformance cli-surface.md `atlas schema apply`. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema apply --url sqlite://t.db --to file://schema.sql --dev-url 'sqlite://file?mode=memory' --auto-approve` planned and applied, exit 0; without `--dev-url` CE errors '--dev-url cannot be empty'. The pricing page's 'Declarative migrations' Starter cross refers to the plan/approve product flow, not to `schema apply`. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Declarative migrations' is listed Starter \u2717 / Pro \u2713 and links /declarative/plan \u2014 tension with the measured CE apply; read as covering the pre-planned (`schema plan`) flow, not plain `schema apply`, so the measured oss=yes stands"
   },
   {
     "area": "Declarative / direct schema workflow",
@@ -492,7 +492,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "`schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check.",
-    "evidence": "Fixed by #958 (measured: mutual plan-file unreadability, opposite --plan/--to contracts, foreign fingerprints). Verified: `schema apply --url sqlite://b.db --to file://desired.sql --plan file://atlas.plan.hcl --auto-approve` applies the real Atlas-authored oracle plan end to end (cmd/atlas/schema_apply_planhcl_test.go); `schema plan --from sqlite://x.db --to file://new.sql --output x.plan.hcl` round-trips. The canonical internal/atlasschema/testdata/atlas-v1.2.4-plan bundle preserves Atlas's artifact, source and desired SQL, file hashes, licensed binary version, and the original capture fields that were not recorded. Ptah-written `.plan.hcl` parses in Atlas's reader but its sha256 fingerprints cannot satisfy Atlas's own hash verification (no local recipe, either direction)."
+    "evidence": "Fixed by #958 (measured: mutual plan-file unreadability, opposite --plan/--to contracts, foreign fingerprints). Verified: `schema apply --url sqlite://b.db --to file://desired.sql --plan file://atlas.plan.hcl --auto-approve` applies the real Atlas-authored oracle plan end to end (cmd/atlas/schema_apply_planhcl_test.go); `schema plan --from sqlite://x.db --to file://new.sql --output x.plan.hcl` round-trips. The canonical internal/atlasschema/testdata/atlas-plan-oracle bundle preserves Atlas's artifact, source and desired SQL, file hashes, and the capture fields that were not recorded. Ptah-written `.plan.hcl` parses in Atlas's reader but its sha256 fingerprints cannot satisfy Atlas's own hash verification (no local recipe, either direction)."
   },
   {
     "area": "Declarative / direct schema workflow",
@@ -582,7 +582,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Ptah validates all selected down bodies before changing state. Dry-run reports distinguish preflight rejection from attempted rollback. Registry flags remain waivers.",
-    "evidence": "internal/atlasmigrate/down_test.go covers missing-down preservation, dry-run validation, and dirty preflight; cmd/atlas/migrate_down_format_test.go proves preflight failures render no reverted files. CE v1.2.0 logged out aborts as unsupported. `migrate down` works locally, deletes reverted revision rows (including Ptah-written rows), and inserts `.atlas_cloud_identifier`, which Ptah cannot yet read (#957; observation study scenario migrate-down-revisions). Fixed 2026-08-01 (stokaro/ptah#957): Ptah revision readers now treat dot-prefixed versions as metadata - skipped in version/status/pending math, never rewritten or deleted - and dry-run down reads the live revision table instead of reporting version 0"
+    "evidence": "internal/atlasmigrate/down_test.go covers missing-down preservation, dry-run validation, and dirty preflight; cmd/atlas/migrate_down_format_test.go proves preflight failures render no reverted files. CE v1.2.0 aborts as unsupported. `migrate down` works locally, deletes reverted revision rows (including Ptah-written rows), and inserts `.atlas_cloud_identifier`, which Ptah cannot yet read (#957; observation study scenario migrate-down-revisions). Fixed 2026-08-01 (stokaro/ptah#957): Ptah revision readers now treat dot-prefixed versions as metadata - skipped in version/status/pending math, never rewritten or deleted - and dry-run down reads the live revision table instead of reporting version 0"
   },
   {
     "area": "Versioned migrations \u2014 execution",
@@ -618,7 +618,7 @@
     "atlas_oss": "partial",
     "atlas_pro": "yes",
     "note": "CE registers `migrate lint` with a basic Open rule set; Atlas's features page marks the lint CLI Pro. Ptah loads custom rules only through the Go API at compile time.",
-    "evidence": "Executed: `ptah-compat migrate lint --dir file://migrations --latest 1` reports \"destructive changes detected -- L1: DROP COLUMN ... #DS103\" and exits 1; `--format '{{ range .Files }}{{ .Name }}{{ end }}'` renders the Atlas template. No rule-loading flag in `ptah migrations lint --help`; custom rules come from migration/lint/rules.go:20 (Register) and lint.Options.ExtraRules (migration/lint/lint.go:107). Atlas CE registers migrate lint (conformance cli-surface.md:33). Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate lint --dir file://m --dev-url sqlite --latest 1` analyzed and reported 'destructive changes detected', exit 1 - the binary lints logged out. The pricing page places 'Migration linting' outside Starter; that classifies the plan, not the binary. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' listed Starter \u2717 / Pro \u2713, corroborating the features-page Pro classification; the measured pinned CE binary still registers `migrate lint` with the basic rule set, so oss stays partial rather than flipping to no. logged out, current upstream `migrate lint` aborts 'Starting with v0.38, atlas migrate lint is available only to Atlas Pro users' - the pinned CE v1.2.0 behavior no longer matches current upstream (measured; observation study, scenario, lint-test-pro)"
+    "evidence": "Executed: `ptah-compat migrate lint --dir file://migrations --latest 1` reports \"destructive changes detected -- L1: DROP COLUMN ... #DS103\" and exits 1; `--format '{{ range .Files }}{{ .Name }}{{ end }}'` renders the Atlas template. No rule-loading flag in `ptah migrations lint --help`; custom rules come from migration/lint/rules.go:20 (Register) and lint.Options.ExtraRules (migration/lint/lint.go:107). Atlas CE registers migrate lint (conformance cli-surface.md:33). Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate lint --dir file://m --dev-url sqlite --latest 1` analyzed and reported 'destructive changes detected', exit 1 - the pinned CE binary lints. The pricing page places 'Migration linting' outside Starter; that classifies the plan, not the binary. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' listed Starter \u2717 / Pro \u2713, corroborating the features-page Pro classification; the measured pinned CE binary still registers `migrate lint` with the basic rule set, so oss stays partial rather than flipping to no. Current upstream `migrate lint` aborts 'Starting with v0.38, atlas migrate lint is available only to Atlas Pro users' - the pinned CE v1.2.0 behavior no longer matches current upstream (measured; observation study, scenario, lint-test-pro)"
   },
   {
     "area": "Versioned migrations \u2014 directory",
@@ -681,7 +681,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Replays the directory on `--shadow-db` into a cumulative checkpoint: the ptah reversible pair, or Atlas's single `-- atlas:checkpoint` file under `--dir-format atlas`. CE gates the verb.",
-    "evidence": "/tmp/ptah migrations checkpoint --help (--shadow-db required); conformance cli-surface.md `atlas migrate checkpoint` (out-of-scope: Pro, absent from CE); PARITY.md `checkpoint-workflow`. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate checkpoint` -> exit 1 community-abort. Pricing page: 'Migration checkpoints' is Pro, not Starter"
+    "evidence": "/tmp/ptah migrations checkpoint --help (--shadow-db required); conformance cli-surface.md `atlas migrate checkpoint` (out-of-scope: Pro, absent from CE); PARITY.md `checkpoint-workflow`. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate checkpoint` -> exit 1 community-abort. Pricing page: 'Migration checkpoints' is Pro, not Starter"
   },
   {
     "area": "Versioned migrations \u2014 directory",
@@ -690,7 +690,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Each rewrites `ptah.sum`/`atlas.sum` and refuses a migration applied in `--db-url` unless `--force`; CE aborts all three as non-community verbs.",
-    "evidence": "/tmp/ptah migrations edit|rebase|rm --help (\"refusing already-applied migrations\", --force, --db-url); conformance cli-surface.md rows `atlas migrate edit|rebase|rm` (out-of-scope: Pro); PARITY.md `pro-maint-workflow`. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate edit`, `migrate rebase 1`, `migrate rm` each -> exit 1 community-abort"
+    "evidence": "/tmp/ptah migrations edit|rebase|rm --help (\"refusing already-applied migrations\", --force, --db-url); conformance cli-surface.md rows `atlas migrate edit|rebase|rm` (out-of-scope: Pro); PARITY.md `pro-maint-workflow`. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate edit`, `migrate rebase 1`, `migrate rm` each -> exit 1 community-abort"
   },
   {
     "area": "Versioned migrations \u2014 revision state",
@@ -753,7 +753,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Declarative YAML cases: migrate_to, apply_schema, seed, exec, assert. Fresh ephemeral SQLite per case unless `--db-url` is set.",
-    "evidence": "`ptah migrations test --help`; docs/site/src/content/docs/reference/test-cases.md (Isolation); conformance cli-surface.md classifies `atlas migrate test` as absent from the pinned CE binary. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate test` -> exit 1 community-abort. Pricing page: 'Testing Framework' is Pro, not Starter. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Testing Framework' (linked to /testing/schema) is unchecked on Starter and checked on Pro \u2014 Starter absence corroborates the measured CE no, and the Pro check is the first Atlas-side source cited for the Pro column"
+    "evidence": "`ptah migrations test --help`; docs/site/src/content/docs/reference/test-cases.md (Isolation); conformance cli-surface.md classifies `atlas migrate test` as absent from the pinned CE binary. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate test` -> exit 1 community-abort. Pricing page: 'Testing Framework' is Pro, not Starter. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Testing Framework' (linked to /testing/schema) is unchecked on Starter and checked on Pro \u2014 Starter absence corroborates the measured CE no, and the Pro check is the first Atlas-side source cited for the Pro column"
   },
   {
     "area": "Test frameworks",
@@ -762,7 +762,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Desired schema from Go annotations converges before steps; migrate_to is rejected. Atlas CE v1.2.0 registers no schema test verb.",
-    "evidence": "ptah-atlas-conformance cli-surface.md (`atlas schema test` = out-of-scope); `ptah schema test --help`. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema test` -> exit 1 community-abort. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Testing Framework' (linked to /testing/schema) is unchecked on Starter and checked on Pro \u2014 corroborates the measured CE absence and supplies an Atlas-side source for the Pro column"
+    "evidence": "ptah-atlas-conformance cli-surface.md (`atlas schema test` = out-of-scope); `ptah schema test --help`. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema test` -> exit 1 community-abort. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Testing Framework' (linked to /testing/schema) is unchecked on Starter and checked on Pro \u2014 corroborates the measured CE absence and supplies an Atlas-side source for the Pro column"
   },
   {
     "area": "Test frameworks",
@@ -1041,7 +1041,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files reject ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops a `role` block silently.",
-    "evidence": "internal/convert/fromschema/fromschema.go:1710-1745 (roles/grants/RLS behind isPostgreSQLPlatform); live YugabyteDB apply planned CREATE ROLE \"yb_role\"; `ptah schema render --schema-file` rejects CREATE ROLE / GRANT / CREATE POLICY / ALTER TABLE ... ENABLE ROW LEVEL SECURITY. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `schema apply` with `role \"app\" { }` on sqlite -> exit 0 'Schema is synced, no changes to be made' (silent no-op). Atlas pricing page (atlasgo.io/pricing, retrieved 2026-08-01): 'Database Security as Code' is Pro, not Starter"
+    "evidence": "internal/convert/fromschema/fromschema.go:1710-1745 (roles/grants/RLS behind isPostgreSQLPlatform); live YugabyteDB apply planned CREATE ROLE \"yb_role\"; `ptah schema render --schema-file` rejects CREATE ROLE / GRANT / CREATE POLICY / ALTER TABLE ... ENABLE ROW LEVEL SECURITY. Measured 2026-08-01, CE v1.2.0 (scratch env): `schema apply` with `role \"app\" { }` on sqlite -> exit 0 'Schema is synced, no changes to be made' (silent no-op). Atlas pricing page (atlasgo.io/pricing, retrieved 2026-08-01): 'Database Security as Code' is Pro, not Starter"
   },
   {
     "area": "Schema object kinds",
@@ -1338,7 +1338,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Beyond the CE pin: works in Atlas against a local directory; ptah-compat rejects it as unknown command; native `ptah migrations status` lists versions and states.",
-    "evidence": "Verified: /tmp/c-compat migrate ls -> 'unknown command'; /tmp/c-ptah migrations status --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin' records it absent from pinned CE v1.2.0 (unknown command, not an abort stub) while present in current Atlas docs. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate ls` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas migrate ls` works against a local migration directory (measured; observation study, scenario, verbs-and-flags)"
+    "evidence": "Verified: /tmp/c-compat migrate ls -> 'unknown command'; /tmp/c-ptah migrations status --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin' records it absent from pinned CE v1.2.0 (unknown command, not an abort stub) while present in current Atlas docs. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate ls` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas migrate ls` works against a local migration directory (measured; observation study, scenario, verbs-and-flags)"
   },
   {
     "area": "Versioned migrations",
@@ -1347,7 +1347,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Beyond the CE pin: prints a migration's SQL upstream; no compat or native Ptah verb exists, and the gap register triages it as future work.",
-    "evidence": "Verified: /tmp/c-compat migrate show -> 'unknown command'; comparison.md:699-701 triage 'migrate show (print a migration's SQL) is future work with no native verb today'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas migrate show` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas migrate show` prints local migration file contents (measured; observation study, scenario, verbs-and-flags)"
+    "evidence": "Verified: /tmp/c-compat migrate show -> 'unknown command'; comparison.md:699-701 triage 'migrate show (print a migration's SQL) is future work with no native verb today'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate show` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas migrate show` prints local migration file contents (measured; observation study, scenario, verbs-and-flags)"
   },
   {
     "area": "Declarative and direct schema changes",
@@ -1356,7 +1356,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Beyond the CE pin: no validate verb; the gap register triage covers it with native schema render parse/load validation plus schema test and schema apply `--dry-run`.",
-    "evidence": "Verified: /tmp/c-compat schema validate -> 'unknown command'; /tmp/c-ptah schema render --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema validate` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas schema validate` exists in Atlas (measured; observation study, scenario, verbs-and-flags)"
+    "evidence": "Verified: /tmp/c-compat schema validate -> 'unknown command'; /tmp/c-ptah schema render --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema validate` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas schema validate` exists in Atlas (measured; observation study, scenario, verbs-and-flags)"
   },
   {
     "area": "Declarative and direct schema changes",
@@ -1365,7 +1365,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Beyond the CE pin: in Atlas it exists as `schema stats inspect` (OpenMetrics) and rejects SQLite at runtime; the gap register triages it out of scope as observability.",
-    "evidence": "Verified: /tmp/c-compat schema stats -> 'unknown command'; comparison.md:699-701 triage 'schema stats (OpenMetrics database statistics) is out of scope'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 logged out (scratch env): `atlas schema stats` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Schema statistics appears only in the Schema Monitoring product (absent from Starter, Pro at $39/mo per monitored database); consistent with the measured CE no, but the pricing label does not name the `schema stats` verb, registered as `atlas schema stats inspect`, OpenMetrics output, rejects sqlite targets at runtime (measured; observation study, scenario, verbs-and-flags)"
+    "evidence": "Verified: /tmp/c-compat schema stats -> 'unknown command'; comparison.md:699-701 triage 'schema stats (OpenMetrics database statistics) is out of scope'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema stats` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Schema statistics appears only in the Schema Monitoring product (absent from Starter, Pro at $39/mo per monitored database); consistent with the measured CE no, but the pricing label does not name the `schema stats` verb, registered as `atlas schema stats inspect`, OpenMetrics output, rejects sqlite targets at runtime (measured; observation study, scenario, verbs-and-flags)"
   },
   {
     "area": "Go embedding and developer tooling",
