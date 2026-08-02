@@ -35,6 +35,13 @@ const legacyFlywayRevisionsTable = "atlas_schema_revisions"
 // It fires only when a legacy version is recorded AND the version that file
 // converts to today is not, so a database already migrated by this build, and
 // an ordinary baseline squash that retires an applied migration, both pass.
+// The FormatFlyway guard is deliberately not mutation-tested. Producing a
+// legacy pairing at all needs V or B prefixed files, and no other loader
+// accepts those — a goose or liquibase directory holding them reports "no
+// importable migration files found" long before this runs — so no input
+// separates the guard from its absence. It is defensive against a future format
+// whose files this reconstruction would recognize, and saying so is better than
+// implying a test holds it.
 func checkLegacyFlywayRevisions(
 	captured fs.FS,
 	format atlasmigrateimport.Format,

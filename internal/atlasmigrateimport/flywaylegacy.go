@@ -132,6 +132,12 @@ func legacyFlywayComponents(raw string) ([]int, bool) {
 
 // legacyFlywayEncode reproduces the old flywayVersion.atlasVersion: trim
 // trailing zero components, then fold into a fixed-width base-100 number.
+//
+// The trim is kept for faithfulness rather than for effect, and no mutation
+// covers it, because no input separates it today: padding makes {2} and {2, 0}
+// encode identically, so the trim changes only whether a version of four or more
+// components is accepted — and this build refuses those before any pairing is
+// looked up. It becomes observable the moment the current encoding widens.
 func legacyFlywayEncode(components []int) (int64, bool) {
 	end := len(components)
 	for end > 0 && components[end-1] == 0 {

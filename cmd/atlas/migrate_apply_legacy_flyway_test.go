@@ -176,6 +176,30 @@ func execRecoverySQL(c *qt.C, dbPath string, statements []string) {
 	}
 }
 
+// TestCompatMigrateApply_LegacyFlywayPartialRecoveryReportsOnlyWhatIsLeft covers
+// an operator who ran some of the printed statements and stopped.
+//
+// It is the input that separates the detector's real rule from the plausible
+// simpler one. "A legacy version is recorded" alone would report V1 again after
+// its row had already been migrated forward; the rule is "a legacy version is
+// recorded AND the version that file converts to today is not", so only the
+// statement still outstanding is printed.
+func TestCompatMigrateApply_LegacyFlywayPartialRecoveryReportsOnlyWhatIsLeft(t *testing.T) {
+	c := qt.New(t)
+	dir, dbPath := legacyFlywayFixture(c)
+	// Run only the first of the two statements.
+	rewriteRevisionVersion(c, dbPath, legacyFlywayV1, "4611686018427469511")
+
+	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+
+	c.Assert(err, qt.IsNotNil)
+	message := errorText(err) + stderr
+	c.Assert(message, qt.Contains, "1 already-applied migration(s)")
+	c.Assert(message, qt.Contains, "V2__seed.sql")
+	c.Assert(message, qt.Not(qt.Contains), "V1__init.sql")
+	c.Assert(extractUpdateStatements(message), qt.HasLen, 1)
+}
+
 // TestCompatMigrateApply_LegacyFlywayDetectorDoesNotOverRefuse covers the
 // databases that must keep working. The detector keys on a legacy version being
 // recorded while the version that file converts to today is NOT, so a database

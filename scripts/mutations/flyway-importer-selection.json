@@ -135,28 +135,16 @@
       "new": "\t\tif slices.Contains(applied, pair.Legacy) {"
     },
     {
-      "name": "the detector runs for every converted layout, not only flyway",
-      "file": "cmd/atlas/migrate_apply_legacy_flyway.go",
-      "old": "\tif format != atlasmigrateimport.FormatFlyway || plan.Status == nil {",
-      "new": "\tif plan.Status == nil {"
-    },
-    {
       "name": "the recovery SQL ignores --revisions-schema",
       "file": "cmd/atlas/migrate_apply_legacy_flyway.go",
       "old": "\tif schema := strings.TrimSpace(revisionsSchema); schema != \"\" {\n\t\ttable = schema + \".\" + table\n\t}",
       "new": ""
     },
     {
-      "name": "the legacy encoding keeps trailing zero components",
-      "file": "internal/atlasmigrateimport/flywaylegacy.go",
-      "old": "\tend := len(components)\n\tfor end > 0 && components[end-1] == 0 {\n\t\tend--\n\t}",
-      "new": "\tend := len(components)"
-    },
-    {
       "name": "the legacy reconstruction reads nested files the old build never saw",
       "file": "internal/atlasmigrateimport/flywaylegacy.go",
-      "old": "\tif path.Dir(file.name) != \".\" {\n\t\treturn 0, false\n\t}\n",
-      "new": ""
+      "old": "\tif path.Dir(file.name) != \".\" {",
+      "new": "\tif false && path.Dir(file.name) != \".\" {"
     }
   ]
 }
