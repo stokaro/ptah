@@ -110,11 +110,11 @@ seven of them as open capabilities regardless.
 | Directory of .hcl files as one schema source | ❌ | ❔ | ✅ | `--schema-file dir` and `--to file://dir` are refused (schema file is a directory); globs are not expanded. Multi-file needs one flag per file. |
 | External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-external-schema`) runs a program without a shell emitting SQL, HCL, or YAML. |
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
-| HCL foreign_key deferrable | ❌ | ❔ | ❔ | Errors: unsupported foreign_key attribute "deferrable". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too. |
+| HCL foreign_key deferrable | ❌ | ❔ | ❌ | Errors: unsupported foreign_key attribute "deferrable". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too. |
 | HCL function calls in schema files | 🟡 | ❔ | 🟡 | sql() unwraps in column default/on_update/unique_expr/check, index ops, domain check only; in type, check.expr, index.where it leaks literally. |
 | HCL locals, lock, atlas, dynamic/for_each | ❌ | ❔ | 🟡 | Named rejections, rejected (`ptah-compat` exit 1, native `ptah` exit 2): unsupported top-level block "locals"/"lock"/"atlas"; unsupported table block "dynamic". |
-| HCL table and column child blocks | ✅ | ❔ | ❔ | column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. |
-| HCL top-level blocks Ptah parses | ✅ | ❔ | ❔ | schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data. |
+| HCL table and column child blocks | ✅ | ❔ | ✅ | column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. |
+| HCL top-level blocks Ptah parses | ✅ | ❔ | ✅ | schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data. |
 | HCL variable blocks and var.* references | ❌ | ✅ | ✅ | `variable` is parsed then discarded and `var.x` reaches DDL as the literal text `var.x`, exit 0 — no substitution and no error. |
 | Live database as desired state | ✅ | ✅ | ✅ | One connectable DB URL can be the desired side of compat schema apply/diff and migrate diff; `ptah db read` introspects natively. |
 | Live database to Go annotation source | ✅ | ❌ | ❌ | `ptah introspect` writes annotated Go models from a live DB; repo docs record Go annotations as a first-party Ptah workflow. |
