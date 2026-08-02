@@ -503,7 +503,7 @@ const applySkipChecksEnvVar = "PTAH_SKIP_CHECKS"
 // v1.2.0 rejects `migrate apply --skip-checks` with `unknown flag:
 // --skip-checks`, byte-identical to the refusal for a nonsense sibling
 // (`--skip-chxxxx`), so it is genuinely unregistered rather than registered and
-// community-gated. The licensed v1.2.4 help surface does not register it on
+// community-gated. Atlas's own help surface does not register it on
 // `migrate apply` either — across that whole surface `--skip-checks` appears
 // only on `migrate down`. Registering it here would therefore put a non-Atlas
 // flag on the compat surface and break the conformance cli-surface tier, which

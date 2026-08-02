@@ -99,7 +99,7 @@ DELETE FROM users WHERE id = 1;
 For Atlas txtar migrations, Ptah executes only the `migration.sql` section for
 `migrations up` and only the `down.sql` section for `migrations down`. A
 `checks.sql` and `checks/*.sql` sections are pre-migration gates, matching
-Atlas Pro semantics:
+Atlas semantics:
 
 - Each statement must be a top-level `SELECT` that returns exactly one column
   and one row containing a truthy scalar.
@@ -149,7 +149,7 @@ fields, and writes the Atlas `hash` value from `atlas.sum` when it is
 available. Successful rows created by migration execution use the migration
 filename description, store empty `error` and `error_stmt` values, and
 identify Ptah as the operator. Dot-prefixed versions — such as the
-`.atlas_cloud_identifier` row Atlas Pro's `migrate down` writes even in local
+`.atlas_cloud_identifier` row Atlas's `migrate down` writes even in local
 mode — are metadata, not migrations: Ptah skips them in version, status, and
 pending calculations and never rewrites or deletes them.
 

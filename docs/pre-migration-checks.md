@@ -116,8 +116,8 @@ migration's `statement_timeout`.
 
 An Atlas txtar migration can carry the default `checks.sql` section and ordered
 named sections under `checks/*.sql`. Ptah enforces every check file through the
-same machinery as `-- +ptah check`, matching the licensed Atlas build's
-enforcement point (measured against Atlas CLI v1.2.4). Each statement is a
+same machinery as `-- +ptah check`, matching Atlas's
+enforcement point (measured). Each statement is a
 top-level `SELECT` that must return exactly one column and one row containing a
 truthy scalar. Statements are split using the target database dialect and files
 run in archive order before any `migration.sql` statement.
@@ -205,7 +205,7 @@ It is an environment variable rather than a flag because Atlas registers no
 `--skip-checks` on `migrate apply` and `ptah-compat` does not add flags Atlas
 does not have. Measured, not assumed: Atlas CE v1.2.0 answers
 `migrate apply --skip-checks` with `unknown flag: --skip-checks`, identically to
-a nonsense flag, and the licensed v1.2.4 help surface registers `--skip-checks`
+a nonsense flag, and Atlas's own help surface registers `--skip-checks`
 only on `migrate down`. This is the same mechanism `PTAH_ALLOW_EXTERNAL_SCHEMA`
 uses for `atlas.hcl` `data "external_schema"`.
 

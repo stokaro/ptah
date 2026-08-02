@@ -10,9 +10,9 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 )
 
-// Atlas Pro enforces a txtar checks.sql section as a pre-migration gate: a
+// Atlas enforces a txtar checks.sql section as a pre-migration gate: a
 // failing assertion aborts the apply with exit 1 before any body statement
-// runs (measured 2026-08-01, Atlas CLI v1.2.4-e282f76-canary). ptah-compat
+// runs (measured). ptah-compat
 // matches that behavior, and — like Atlas — `migrate apply` registers no
 // --skip-checks flag (#956). The bypass exists but is spelled as an
 // environment variable, PTAH_SKIP_CHECKS, so the flag surface stays at parity;

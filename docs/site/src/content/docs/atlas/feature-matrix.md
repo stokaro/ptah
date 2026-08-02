@@ -4,8 +4,8 @@ description: Ptah and Atlas capabilities side by side, with the evidence behind 
 ---
 
 This page answers one question: for a given capability, what does Ptah do, what
-does the open Atlas community binary do, and what does Atlas keep in its
-licensed builds. Every row cites the evidence it rests on.
+does the open Atlas community binary do, and what does Atlas keep outside its
+community build. Every row cites the evidence it rests on.
 
 It is a status index, not an argument. The per-area detail behind these rows is
 on [Comparison](../comparison/), the measured evidence is on
@@ -28,10 +28,9 @@ each:
 - **Ptah** — the native `ptah` binary plus the separate `ptah-compat` drop-in.
 - **CE** — the pinned Atlas community binary, version 1.2.0, which the
   conformance harness runs against.
-- **Pro** — capabilities in Atlas's licensed builds, established either by the
+- **Pro** — capabilities Atlas keeps outside its community build, per the
   [Atlas feature availability](https://atlasgo.io/features) page and
-  [pricing page](https://atlasgo.io/pricing), or by direct measurement of a
-  licensed Atlas build run locally against disposable SQLite databases.
+  [pricing page](https://atlasgo.io/pricing).
 
 Every Atlas cell has to come from an Atlas-side source: the command, usage, and
 flag inventory the conformance harness reads out of the pinned community
@@ -149,7 +148,7 @@ seven of them as open capabilities regardless.
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; `--format` sql\|json\|template. Native twin `ptah schema inspect` adds `--out-dir` and `--split` file export. |
 | Schema-qualified exclude globs for enums and functions | 🟡 | ❔ | ❔ | Tables, views and extensions match schema-qualified exclude globs; enum and function filters compare the bare name only. |
-| Upstream verb `schema stats` | ❌ | ❌ | ✅ | Beyond the CE pin: on the licensed build it exists as `schema stats inspect` (OpenMetrics) and rejects SQLite at runtime; the gap register triages it out of scope as observability. |
+| Upstream verb `schema stats` | ❌ | ❌ | ✅ | Beyond the CE pin: in Atlas it exists as `schema stats inspect` (OpenMetrics) and rejects SQLite at runtime; the gap register triages it out of scope as observability. |
 | Upstream verb `schema validate` | 🟡 | ❌ | ✅ | Beyond the CE pin: no validate verb; the gap register triage covers it with native schema render parse/load validation plus schema test and schema apply `--dry-run`. |
 
 ## Versioned migrations
@@ -186,7 +185,7 @@ seven of them as open capabilities regardless.
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❌ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |
 | Transaction modes (`--tx-mode` file/all/none) | ✅ | ✅ | ✅ | all is limited to transactional-DDL dialects and rejects no_transaction files, per-file timeouts, and pre-migration checks. |
-| Upstream verb `migrate ls` | 🟡 | ❌ | ✅ | Beyond the CE pin: works on the licensed build against a local directory; ptah-compat rejects it as unknown command; native `ptah migrations status` lists versions and states. |
+| Upstream verb `migrate ls` | 🟡 | ❌ | ✅ | Beyond the CE pin: works in Atlas against a local directory; ptah-compat rejects it as unknown command; native `ptah migrations status` lists versions and states. |
 | Upstream verb `migrate show` | ❌ | ❌ | ✅ | Beyond the CE pin: prints a migration's SQL upstream; no compat or native Ptah verb exists, and the gap register triages it as future work. |
 
 ## Linting and safety
@@ -203,7 +202,7 @@ seven of them as open capabilities regardless.
 | Generation-time destructive-change gate | ✅ | ❌ | ❌ | migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row. |
 | Inline nolint suppression | 🟡 | ✅ | ✅ | Analyzer-name selectors suppress, but only codes DS102/DS103/MF103 map; atlas:nolint PG101 and unknown selectors are silently ignored. |
 | Native migration lint rule set | ✅ | 🟡 | ✅ | 42 codes across 9 families, gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
-| Per-rule severity policy | 🟡 | ❔ | 🟡 | Severity vocabulary is warning\|error only (info errors out). Measured licensed build is no richer: analyzer and rule blocks reject a `severity` attribute; only boolean error toggles exist. |
+| Per-rule severity policy | 🟡 | ❔ | 🟡 | Severity vocabulary is warning\|error only (info errors out). Measured, Atlas is no richer: analyzer and rule blocks reject a `severity` attribute; only boolean error toggles exist. |
 | Pre-migration assertion checks | 🟡 | ❌ | ✅ | Scalar SELECTs; txtar checks.sql and checks/*.sql support all-of/oneof groups. CE ignores checks. Compat bypass is PTAH_SKIP_CHECKS. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❔ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not. |

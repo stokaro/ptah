@@ -4,8 +4,8 @@ description: Ptah and Atlas capabilities side by side, with the evidence behind 
 ---
 
 This page answers one question: for a given capability, what does Ptah do, what
-does the open Atlas community binary do, and what does Atlas keep in its
-licensed builds. Every row cites the evidence it rests on.
+does the open Atlas community binary do, and what does Atlas keep outside its
+community build. Every row cites the evidence it rests on.
 
 It is a status index, not an argument. The per-area detail behind these rows is
 on [Comparison](../comparison/), the measured evidence is on
@@ -28,10 +28,9 @@ each:
 - **Ptah** — the native `ptah` binary plus the separate `ptah-compat` drop-in.
 - **CE** — the pinned Atlas community binary, version 1.2.0, which the
   conformance harness runs against.
-- **Pro** — capabilities in Atlas's licensed builds, established either by the
+- **Pro** — capabilities Atlas keeps outside its community build, per the
   [Atlas feature availability](https://atlasgo.io/features) page and
-  [pricing page](https://atlasgo.io/pricing), or by direct measurement of a
-  licensed Atlas build run locally against disposable SQLite databases.
+  [pricing page](https://atlasgo.io/pricing).
 
 Every Atlas cell has to come from an Atlas-side source: the command, usage, and
 flag inventory the conformance harness reads out of the pinned community

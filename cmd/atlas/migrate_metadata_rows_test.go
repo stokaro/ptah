@@ -10,9 +10,9 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 )
 
-// Atlas Pro `migrate down` inserts a `.atlas_cloud_identifier` metadata row
-// into atlas_schema_revisions even in purely local mode (measured 2026-08-01,
-// Atlas CLI v1.2.4-e282f76-canary). The compat surface must keep reading such
+// Atlas's `migrate down` inserts a `.atlas_cloud_identifier` metadata row
+// into atlas_schema_revisions even in purely local mode (measured). The compat
+// surface must keep reading such
 // databases: dot-prefixed versions are metadata, not migrations (#957).
 
 const compatTxtarPostsWithDown = `-- atlas:txtar
@@ -40,7 +40,7 @@ func setupMetadataRowDatabase(c *qt.C, dir string) (migrationsDir, dbPath string
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("apply output:\n%s", out))
 
-	// The measured Atlas Pro metadata row shape: UUID description, applied=0,
+	// The measured Atlas metadata row shape: UUID description, applied=0,
 	// total=0, hash='', NULL error/error_stmt/partial_hashes.
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -49,7 +49,7 @@ func setupMetadataRowDatabase(c *qt.C, dir string) (migrationsDir, dbPath string
 		context.Background(),
 		`INSERT INTO atlas_schema_revisions
 (version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
-VALUES ('.atlas_cloud_identifier', '472fecf4-5a9c-431f-8ff1-8e1facd1d50b', 2, 0, 0, '2026-08-01 12:04:21.291103+02:00', 0, NULL, NULL, '', NULL, 'Atlas CLI v1.2.4-e282f76-canary')`,
+VALUES ('.atlas_cloud_identifier', '472fecf4-5a9c-431f-8ff1-8e1facd1d50b', 2, 0, 0, '2026-08-01 12:04:21.291103+02:00', 0, NULL, NULL, '', NULL, 'Atlas')`,
 	)
 	c.Assert(err, qt.IsNil)
 	return migrationsDir, dbPath

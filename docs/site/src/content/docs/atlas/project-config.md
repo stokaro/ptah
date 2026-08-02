@@ -288,7 +288,7 @@ repeated. Repeating the same variable name produces a string list for supported
 Atlas HCL expressions.
 
 Variable blocks accept the `type` constraints `string`, `number`, `bool`, and
-`list(string)` — the attribute the official Atlas binary requires — so one
+`list(string)` — the attribute Atlas requires — so one
 `atlas.hcl` with typed variables works with both binaries. `--var` overrides
 convert to the declared type, and repeated `--var` flags fill a `list(string)`
 variable. Overrides of the wrong shape, defaults that do not match the declared

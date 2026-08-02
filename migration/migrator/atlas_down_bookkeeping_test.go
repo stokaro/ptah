@@ -15,7 +15,7 @@ import (
 // Down bookkeeping is split by surface (see Migrator.reproducesAtlasDownBookkeeping):
 // the Atlas-shaped surface must leave exactly what Atlas leaves, while native
 // Ptah keeps its richer dirty state for recovery tooling. Measured against
-// Atlas CLI v1.2.4 (licensed, local SQLite): a failed `migrate down` leaves the
+// Atlas: a failed `migrate down` leaves the
 // revision row byte-identical and a successful one deletes it (#957).
 
 const failingDownTxtar = `-- atlas:txtar

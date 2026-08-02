@@ -980,7 +980,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?)`)
 		time.Now(),
 		int64(0),
 		"",
-		"Atlas CLI v1.2.4",
+		"Atlas CLI",
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -1039,7 +1039,7 @@ FROM atlas_schema_revisions WHERE version = '.atlas_cloud_identifier'`,
 	c.Assert(errorStatement.Valid, qt.IsFalse)
 	c.Assert(hash, qt.Equals, "")
 	c.Assert(partialHashes.Valid, qt.IsFalse)
-	c.Assert(operator, qt.Equals, "Atlas CLI v1.2.4")
+	c.Assert(operator, qt.Equals, "Atlas CLI")
 }
 
 func runAtlasTxtarChecksIntegration(t *testing.T, dbURL string, revisionFormat migrator.RevisionTableFormat) {

@@ -246,7 +246,7 @@ func TestSchemaPlanAcceptsAutoApprove(t *testing.T) {
 	planPath := filepath.Join(dir, "p.plan.json")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE approve_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	// The exact invocation shape measured against the licensed Atlas binary:
+	// The exact invocation shape measured against Atlas:
 	// plan --from --to --save --output --auto-approve. --auto-approve is
 	// accepted (there is no local approval prompt to skip) and the .json
 	// output path keeps the native JSON plan format.

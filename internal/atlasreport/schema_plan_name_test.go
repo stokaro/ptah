@@ -23,7 +23,7 @@ func TestRenderSchemaPlanName(t *testing.T) {
 	}{
 		{
 			name: "atlas documented example shape",
-			// The example the licensed Atlas help advertises. `slice` is a
+			// The example Atlas's own help advertises. `slice` is a
 			// text/template builtin, so it works with no FuncMap and selects
 			// 48 bits from the untagged Base64 digest.
 			format: "plan_{{ slice .ToHash 0 8 }}",

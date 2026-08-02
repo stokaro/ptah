@@ -141,7 +141,7 @@ add the missing objects to the selection or exclude the dependent objects
 
 The flag is not part of the pinned Atlas CE inspect surface: CE v1.2.0 rejects
 `schema inspect --include` with `Error: unknown flag: --include`. It is
-registered on the licensed Atlas build, where its behavior differs from
+registered by Atlas, where its behavior differs from
 Ptah's in two measured ways, both documented in
 [the comparison](../comparison/#schema-inspect---include).
 
@@ -389,7 +389,7 @@ local plan file. The default format is the Atlas `.plan.hcl` shape: one
 `plan "<name>"` block with `from`/`to` fingerprints and the migration SQL in a
 heredoc, named with an Atlas-style UTC timestamp. The written file parses in
 Atlas's own plan reader; the `from`/`to` values are Ptah's sha256
-fingerprints, which the official binary parses but cannot verify against its
+fingerprints, which Atlas parses but cannot verify against its
 own base64 hashes (those have no local recipe — in either direction). An
 `--output` path ending in `.json` writes the native JSON plan
 (`format_version` 1) instead, which additionally records per-statement safety
@@ -402,8 +402,8 @@ before publication. Ptah preserves statement text and comments, rejects
 invalid UTF-8 and empty edited plans, and recomputes safety metadata with the
 plan dialect, including MySQL and MariaDB executable comments. `--name-format` accepts a Go template over `.FromHash`
 and `.ToHash`; Ptah exposes its digest bytes in the untagged standard-Base64
-representation measured from Atlas trial v1.2.4. `--skip-lint` is accepted as
-an explicit no-op because this command has no lint step.
+representation measured from Atlas. `--skip-lint` is
+accepted as an explicit no-op because this command has no lint step.
 
 Plan publication stages and syncs the complete document before an atomic
 rename. Default `--save` refuses an existing entry without a check/write race;
@@ -411,13 +411,13 @@ explicit `--output` atomically replaces the named entry instead of following a
 symlink or exposing a partially written document.
 
 `schema apply --plan file://<path>` accepts both formats, detected by
-content — including `.plan.hcl` files written by the licensed Atlas binary:
+content — including `.plan.hcl` files written by Atlas:
 
 - A **JSON plan** executes after verifying the live database still matches
   the plan's recorded source fingerprint; a drifted database refuses with a
   stale-plan error instead of running reviewed SQL against unreviewed state.
   `--to` is optional.
-- An **Atlas-format plan** requires `--to`, exactly like the official binary
+- An **Atlas-format plan** requires `--to`, exactly as Atlas does
   (`the flag "to" is required to verify the provided plan`). Its hashes are
   re-verified with Ptah's own machinery: the plan is replayed on a dev
   database starting from the target's current schema, and the reached state
