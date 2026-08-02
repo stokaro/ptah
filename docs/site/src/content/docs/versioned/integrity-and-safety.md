@@ -125,16 +125,28 @@ would run it — Ptah refuses it when unhashed rather than executing an unverifi
 migration, which is exit `1` where Atlas exits `0`
 ([#976](https://github.com/stokaro/ptah/issues/976)).
 
-:::caution[Known gap]
-Directories read through `?format=goose` and the other external-tool formats
-are **not** gated: they are converted in memory and carry no Atlas integrity
-file. Atlas CE does gate them, so an edited migration in a hashed converted
-directory still runs here where Atlas refuses. Closing the gap needs `?format=`
-support in `ptah-compat migrate hash`/`validate` and format-aware sum
-computation; tracked in
-[#973](https://github.com/stokaro/ptah/issues/973). Until then, do not rely on
-`atlas.sum` to protect a `?format=` directory.
-:::
+**Directories read through `?format=` are gated too.** A goose, flyway,
+liquibase, dbmate or golang-migrate directory is converted in memory and the
+converted filesystem carries no integrity file — but the directory it was read
+*from* carries `atlas.sum` beside its own migrations, and that is what is
+verified, before the source layout is parsed and before the database is opened.
+Run `ptah-compat migrate hash --dir 'file://migrations?format=goose'` once and
+commit the file. The same applies when the layout comes from `atlas.hcl`
+(`migration { format = goose }`) rather than from the URL.
+
+Each layout is verified over the file set Atlas covers for it, which is not
+always every `.sql` file:
+
+| Layout | Covered by `atlas.sum` |
+| --- | --- |
+| `atlas`, `goose`, `dbmate`, `liquibase` | every top-level `*.sql` |
+| `golang-migrate` | every top-level `*.up.sql` — the down file is never covered |
+| `flyway` | `V`/`B`/`R` files anywhere in the tree; `U` undo files and everything a baseline squashes are dropped |
+
+So editing a golang-migrate down file or a Flyway undo file is invisible to the
+check, exactly as it is in Atlas. A directory whose covered set is empty — a
+golang-migrate directory holding only a down file, say — is not a checksum
+error and is not refused.
 
 ## Replay on a dev database
 

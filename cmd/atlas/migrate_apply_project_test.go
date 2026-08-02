@@ -46,6 +46,7 @@ CREATE TABLE widgets (id INTEGER PRIMARY KEY);
 -- +goose Down
 DROP TABLE widgets;
 `)
+	hashConvertedApplyDir(c, "migrations", "goose")
 	dbPath := filepath.Join(root, "apply.db")
 	writeAtlasApplyProjectConfig(c, dbPath, "goose", "LINEAR")
 
@@ -82,6 +83,7 @@ func TestMigrateApplyExecutesGooseFormatFromURL(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	writeAtlasApplyProjectMigration(c, "migrations", "1_create_widgets.sql", "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE widgets;\n")
+	hashConvertedApplyDir(c, "migrations", "goose")
 	dbPath := filepath.Join(root, "apply.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -154,6 +156,7 @@ func TestMigrateApplyProjectDirURLFormatSelectsGoose(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	writeAtlasApplyProjectMigration(c, "migrations", "1_create_widgets.sql", "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE widgets;\n")
+	hashConvertedApplyDir(c, "migrations", "goose")
 	dbPath := filepath.Join(root, "apply.db")
 	writeAtlasApplyProjectConfigWithDir(c, dbPath, "file://migrations?format=goose", "atlas", "LINEAR")
 

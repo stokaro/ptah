@@ -1,0 +1,105 @@
+{
+  "packages": [
+    "./cmd/atlas/",
+    "./internal/atlasmigrate/",
+    "./internal/atlasmigrateimport/"
+  ],
+  "mutations": [
+    {
+      "name": "conversion runs before the gate",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif err := verifyAtlasApplyChecksum(cmd, captured, resolvedDirFormat); err != nil {\n\t\treturn err\n\t}\n\n\tmigrationFS, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"atlas migrate apply --dir: %w\", err)\n\t}\n",
+      "new": "\tmigrationFS, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"atlas migrate apply --dir: %w\", err)\n\t}\n\n\tif err := verifyAtlasApplyChecksum(cmd, captured, resolvedDirFormat); err != nil {\n\t\treturn err\n\t}\n"
+    },
+    {
+      "name": "the gate verifies the converted filesystem, not the source",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif err := verifyAtlasApplyChecksum(cmd, captured, resolvedDirFormat); err != nil {\n\t\treturn err\n\t}\n\n\tmigrationFS, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"atlas migrate apply --dir: %w\", err)\n\t}\n",
+      "new": "\tmigrationFS, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"atlas migrate apply --dir: %w\", err)\n\t}\n\n\tif err := verifyAtlasApplyChecksum(cmd, migrationFS, resolvedDirFormat); err != nil {\n\t\treturn err\n\t}\n"
+    },
+    {
+      "name": "a converted directory stays ungated (the pre-#973 behavior)",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif atlasmigrate.ReadsNativeAtlasDir(format) {\n\t\treturn verifyNativeAtlasApplyChecksum(cmd, fsys)\n\t}\n\treturn verifyConvertedAtlasApplyChecksum(cmd, fsys, format)",
+      "new": "\tif !atlasmigrate.ReadsNativeAtlasDir(format) {\n\t\treturn nil\n\t}\n\treturn verifyNativeAtlasApplyChecksum(cmd, fsys)"
+    },
+    {
+      "name": "a native directory is verified with the converted rule",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif atlasmigrate.ReadsNativeAtlasDir(format) {\n\t\treturn verifyNativeAtlasApplyChecksum(cmd, fsys)\n\t}\n\treturn verifyConvertedAtlasApplyChecksum(cmd, fsys, format)",
+      "new": "\treturn verifyConvertedAtlasApplyChecksum(cmd, fsys, format)"
+    },
+    {
+      "name": "a converted directory is verified with the native rule",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif atlasmigrate.ReadsNativeAtlasDir(format) {\n\t\treturn verifyNativeAtlasApplyChecksum(cmd, fsys)\n\t}\n\treturn verifyConvertedAtlasApplyChecksum(cmd, fsys, format)",
+      "new": "\treturn verifyNativeAtlasApplyChecksum(cmd, fsys)"
+    },
+    {
+      "name": "the converted gate hashes the atlas glob, not the per-layout set",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tnames, err := atlasmigrateimport.SumFileNames(fsys, format)",
+      "new": "\tnames, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatAtlas)"
+    },
+    {
+      "name": "the empty-covered-set exemption is dropped",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tcase !hashed && len(names) == 0:\n\t\treturn nil\n\tcase !hashed:\n\t\treturn migratevalidate.FailAtlasChecksumFileNotFound(cmd)",
+      "new": "\tcase !hashed:\n\t\treturn migratevalidate.FailAtlasChecksumFileNotFound(cmd)"
+    },
+    {
+      "name": "the exemption also covers a hashed directory whose files were deleted",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tcase !hashed && len(names) == 0:\n\t\treturn nil\n\tcase !hashed:",
+      "new": "\tcase len(names) == 0:\n\t\treturn nil\n\tcase !hashed:"
+    },
+    {
+      "name": "the converted mismatch drops its L<line> pointer",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tcase !result.OK():\n\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())\n\t}\n\treturn nil\n}\n\n// failUnhashedAtlasApplyDir",
+      "new": "\tcase !result.OK():\n\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, nil)\n\t}\n\treturn nil\n}\n\n// failUnhashedAtlasApplyDir"
+    },
+    {
+      "name": "a malformed converted atlas.sum is reported as a usage error",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tresult, hashed, err := migratesum.VerifyAtlasFilesHashed(fsys, names)\n\tswitch {\n\tcase errors.Is(err, migratesum.ErrSumFileMalformed):\n\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, nil)",
+      "new": "\tresult, hashed, err := migratesum.VerifyAtlasFilesHashed(fsys, names)\n\tswitch {\n\tcase errors.Is(err, migratesum.ErrSumFileMalformed):\n\t\treturn err"
+    },
+    {
+      "name": "atlas.sum is not pulled into the source capture",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif name == atlascompat.AtlasSumFileName {\n\t\treturn true\n\t}",
+      "new": "\tif name == \"never-captured.sum\" {\n\t\treturn true\n\t}"
+    },
+    {
+      "name": "the capture never reaches below the top level",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif path.Dir(name) != \".\" {\n\t\treturn sumCoversNestedFile(format, name)\n\t}",
+      "new": "\tif path.Dir(name) != \".\" {\n\t\treturn false\n\t}"
+    },
+    {
+      "name": "every layout recurses, not only flyway",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tif format != FormatFlyway || !strings.HasSuffix(name, \".sql\") {\n\t\treturn false\n\t}",
+      "new": "\tif !strings.HasSuffix(name, \".sql\") {\n\t\treturn false\n\t}"
+    },
+    {
+      "name": "the nested capture stops pruning hidden directories",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\tfor dir := path.Dir(name); dir != \".\"; dir = path.Dir(dir) {\n\t\tif skipHiddenDir(path.Base(dir)) {\n\t\t\treturn false\n\t\t}\n\t}\n\treturn true\n}",
+      "new": "\treturn true\n}"
+    },
+    {
+      "name": "conversion is skipped and the source layout is executed as-is",
+      "file": "internal/atlasmigrate/format.go",
+      "old": "\tif format == atlasmigrateimport.FormatAtlas {\n\t\treturn captured, nil\n\t}\n\tloaded, err := atlasmigrateimport.LoadFS(captured, display, format)",
+      "new": "\tif true {\n\t\treturn captured, nil\n\t}\n\tloaded, err := atlasmigrateimport.LoadFS(captured, display, format)"
+    },
+    {
+      "name": "CaptureApplySource accepts a nil filesystem",
+      "file": "internal/atlasmigrate/format.go",
+      "old": "\tif source == nil {\n\t\treturn fsnapshot.Snapshot{}, fmt.Errorf(\"migration directory filesystem is required\")\n\t}",
+      "new": "\tif source == nil {\n\t\treturn fsnapshot.Snapshot{}, nil\n\t}"
+    }
+  ]
+}
