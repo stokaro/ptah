@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -195,6 +197,10 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
+	skipChecks, err := resolveAtlasApplySkipChecks(cmd)
+	if err != nil {
+		return err
+	}
 
 	// Resolve the directory format once: the filesystem that gets executed and
 	// the format the integrity gate reasons about must be the same decision,
@@ -278,6 +284,7 @@ func runAtlasMigrateApply(
 		Amount:               amount,
 		AllowDirty:           opts.allowDirty,
 		BaselineVersion:      baselineVersion,
+		SkipChecks:           skipChecks,
 	})
 	if err != nil {
 		return err
@@ -478,6 +485,75 @@ func failUnhashedAtlasApplyDir(cmd *cobra.Command, fsys fs.FS) error {
 		return nil
 	}
 	return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
+}
+
+// applySkipChecksEnvVar gates pre-migration checks on the compat apply path.
+//
+// The name is not invented here. Native `ptah migrations up` registers a
+// --skip-checks flag, and Ptah's generic flag/environment twin convention
+// (cmd/internal/cmdflags) already binds that flag to PTAH_SKIP_CHECKS. This
+// command reads the same variable so one name means one thing across both
+// binaries.
+const applySkipChecksEnvVar = "PTAH_SKIP_CHECKS"
+
+// atlasApplySkipChecksFromEnv resolves the pre-migration check bypass for
+// `ptah-compat migrate apply` from the environment instead of from a flag.
+//
+// WHY AN ENVIRONMENT VARIABLE AND NOT A FLAG. Measured, not assumed: Atlas CE
+// v1.2.0 rejects `migrate apply --skip-checks` with `unknown flag:
+// --skip-checks`, byte-identical to the refusal for a nonsense sibling
+// (`--skip-chxxxx`), so it is genuinely unregistered rather than registered and
+// community-gated. The licensed v1.2.4 help surface does not register it on
+// `migrate apply` either — across that whole surface `--skip-checks` appears
+// only on `migrate down`. Registering it here would therefore put a non-Atlas
+// flag on the compat surface and break the conformance cli-surface tier, which
+// asserts flag parity against the pinned CE binary. An environment variable is
+// invisible to the help surface, which is exactly why it is the sanctioned gate
+// for capabilities with no Atlas spelling (precedent:
+// PTAH_ALLOW_EXTERNAL_SCHEMA).
+//
+// WHY THE CAPABILITY IS EXPOSED AT ALL. The checks this bypasses are not only
+// Atlas txtar checks.sql sections; they are also `-- +ptah check` directives, a
+// Ptah-only construct Atlas has no counterpart for and therefore no oracle
+// behavior to reproduce. Before this, a directory carrying those directives was
+// enforceable through ptah-compat with no escape hatch of any kind, while
+// native `ptah migrations up --skip-checks` had one — a Pro-shaped capability
+// reachable only from the native verb, which is what stokaro/ptah#951 exists to
+// close.
+//
+// An invalid value is a hard error rather than a silent false. A typo in a CI
+// environment file must not read as "checks enforced" when the operator
+// believes they are bypassed; the same choice is already made for the
+// PTAH_<FLAG> fallbacks on `migrate down`.
+func atlasApplySkipChecksFromEnv() (bool, error) {
+	value, ok := os.LookupEnv(applySkipChecksEnvVar)
+	if !ok || value == "" {
+		return false, nil
+	}
+	skip, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("invalid boolean value %q for %s", value, applySkipChecksEnvVar)
+	}
+	return skip, nil
+}
+
+// resolveAtlasApplySkipChecks resolves the bypass and announces an active one.
+//
+// The warning is not optional decoration. A flag leaves a trace in the command
+// line an operator can read back; an environment variable does not, so a run
+// whose safety gate is off has to say so on its own.
+func resolveAtlasApplySkipChecks(cmd *cobra.Command) (bool, error) {
+	skip, err := atlasApplySkipChecksFromEnv()
+	if err != nil {
+		return false, err
+	}
+	if skip {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"warning: %s is set; pre-migration checks are bypassed for this run\n",
+			applySkipChecksEnvVar,
+		)
+	}
+	return skip, nil
 }
 
 func needsAtlasMigrateApplyConfig(cmd *cobra.Command) bool {

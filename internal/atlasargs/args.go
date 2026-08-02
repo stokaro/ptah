@@ -149,6 +149,24 @@ func UnsupportedBoolReason(name, shorthand, usage, reason string) Flag {
 	return flag
 }
 
+// ExplicitUnsupportedBoolReason creates an unsupported boolean waiver that is
+// reachable only from the command line, never from a PTAH_<FLAG> environment
+// value.
+//
+// This is NOT the default for waivers, and the distinction is the whole point.
+// Setting PTAH_TO_TAG or PTAH_PLAN is a request for a capability Ptah lacks, so
+// the loud refusal is the right answer and those flags keep their environment
+// twin. The exception is a waiver whose name another verb has repurposed for a
+// different capability: `migrate apply` reads PTAH_SKIP_CHECKS as its
+// pre-migration check bypass (cmd/atlas/migrate_apply.go), so on `migrate down`
+// that same variable is not a request for Atlas Cloud down checks and must not
+// refuse a rollback. Reach for this only when a name genuinely collides.
+func ExplicitUnsupportedBoolReason(name, shorthand, usage, reason string) Flag {
+	flag := UnsupportedBoolReason(name, shorthand, usage, reason)
+	flag.EnvDisabled = true
+	return flag
+}
+
 // UnsupportedFlagError is the loud rejection returned when an accepted Atlas
 // flag has no implemented behavior. Callers that intercept args before Map
 // runs (for example dedicated format paths) use it so the rejection text stays
@@ -294,6 +312,12 @@ func nativeEnvironmentPresent(flag Flag) bool {
 	return ok && value != ""
 }
 
+// appendEnvArgs fills unset flags from their PTAH_<FLAG> environment twins,
+// including unsupported ones: setting PTAH_TO_TAG is a request for --to-tag,
+// and the loud refusal is the correct answer to a request Ptah cannot honor.
+//
+// Only a flag marked EnvDisabled opts out, and on this surface exactly one
+// does — see ExplicitUnsupportedBoolReason.
 func appendEnvArgs(flags []Flag, args []string) []string {
 	out := args
 	cloned := false
