@@ -29,7 +29,8 @@
       "name": "the rendered name is not trimmed",
       "file": "internal/atlasreport/schema_plan_name.go",
       "old": "\treturn strings.TrimSpace(out.String()), nil",
-      "new": "\treturn out.String(), nil"
+      "new": "\treturn strings.Clone(out.String()), nil",
+      "comment": "strings.Clone rather than a bare out.String() so the package still imports strings; dropping the import is a build failure, which is not a result."
     },
     {
       "name": "an unknown template field renders as empty instead of failing",
@@ -53,8 +54,9 @@
     {
       "name": "a rendered control character is accepted",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\tif strings.ContainsFunc(name, unicode.IsControl) {\n\t\treturn fmt.Errorf(\"%s rendered the plan name %q, which contains a control character\", source, name)\n\t}",
-      "new": ""
+      "old": "\tif strings.ContainsFunc(name, unicode.IsControl) {",
+      "new": "\tif strings.ContainsFunc(name, unicode.IsControl) && false {",
+      "comment": "The dead conjunct disables the rule while keeping the unicode import live; deleting the block outright is a build failure, which is not a result."
     },
     {
       "name": "an empty --name-format falls through to the default naming",
@@ -148,7 +150,8 @@
       "name": "the classifier assesses the commented text instead of the executable text",
       "file": "internal/atlasschema/plan.go",
       "old": "\t\tassessment := safety.AssessSQL(strings.TrimSpace(sqlutil.StripComments(statement)))",
-      "new": "\t\tassessment := safety.AssessSQL(strings.TrimSpace(statement))"
+      "new": "\t\tassessment := safety.AssessSQL(strings.TrimSpace(statement))\n\t\t_ = sqlutil.StripComments",
+      "comment": "The discarded reference keeps the sqlutil import live; a generated DROP TABLE carries a leading '-- WARNING' comment that defeats the classifier when it is not stripped."
     }
   ]
 }
