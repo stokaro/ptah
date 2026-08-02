@@ -37,7 +37,7 @@ func TestMoveFileNoReplace_RefusesExistingDestination(t *testing.T) {
 
 	err := fsdurable.MoveFileNoReplace(oldPath, newPath)
 
-	c.Assert(err, qt.IsNotNil)
+	c.Assert(err, qt.ErrorIs, os.ErrExist)
 	oldContents, readErr := os.ReadFile(oldPath)
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(string(oldContents), qt.Equals, "new")

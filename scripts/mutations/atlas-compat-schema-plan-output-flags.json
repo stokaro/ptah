@@ -1,15 +1,18 @@
 {
   "packages": [
     "./cmd/atlas/",
+    "./cmd/internal/editor/",
+    "./core/sqlutil/",
     "./internal/atlasschema/",
-    "./internal/atlasreport/"
+    "./internal/atlasreport/",
+    "./internal/sqlsafety/"
   ],
   "mutations": [
     {
       "name": "the rendered name never wins over the default naming",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\t\tplan.Name, err = renderAtlasSchemaPlanName(opts.nameFormat, plan)",
-      "new": "\t\t_, err = renderAtlasSchemaPlanName(opts.nameFormat, plan)",
+      "old": "\t\tplan.Name, err = renderAtlasSchemaPlanName(opts.nameFormat, plan, outputMode)",
+      "new": "\t\t_, err = renderAtlasSchemaPlanName(opts.nameFormat, plan, outputMode)",
       "comment": "The template still runs and still refuses bad names, so every rejection case stays green; only a case asserting the resulting name separates them."
     },
     {
@@ -21,8 +24,8 @@
     {
       "name": "the template sees the fingerprints swapped",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\t\tFromHash: plan.FromFingerprint,\n\t\tToHash:   plan.ToFingerprint,",
-      "new": "\t\tFromHash: plan.ToFingerprint,\n\t\tToHash:   plan.FromFingerprint,",
+      "old": "atlasreport.NewSchemaPlanName(plan.FromFingerprint, plan.ToFingerprint)",
+      "new": "atlasreport.NewSchemaPlanName(plan.ToFingerprint, plan.FromFingerprint)",
       "comment": "Killed only by a fixture whose two fingerprints differ; a plan from an empty database would make both branches agree."
     },
     {
@@ -41,8 +44,8 @@
     {
       "name": "a rendered path separator is accepted",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\tcase strings.ContainsAny(name, `/\\`):",
-      "new": "\tcase false && strings.ContainsAny(name, `/\\`):"
+      "old": "\tcase outputMode == atlasSchemaPlanDefaultOutput && strings.ContainsAny(name, `/\\`):",
+      "new": "\tcase false && outputMode == atlasSchemaPlanDefaultOutput && strings.ContainsAny(name, `/\\`):"
     },
     {
       "name": "a rendered control character is accepted",
@@ -85,14 +88,14 @@
     {
       "name": "the edited plan is discarded and the computed one saved",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}",
-      "new": "\tif opts.edit {\n\t\tif _, err = editAtlasSchemaPlan(plan); err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}"
+      "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(cmd.Context(), plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}",
+      "new": "\tif opts.edit {\n\t\tif _, err = editAtlasSchemaPlan(cmd.Context(), plan); err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}"
     },
     {
       "name": "an editor failure is swallowed and the computed plan saved",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}",
-      "new": "\tif opts.edit {\n\t\tif edited, editErr := editAtlasSchemaPlan(plan); editErr == nil {\n\t\t\tplan = edited\n\t\t}\n\t}",
+      "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(cmd.Context(), plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}",
+      "new": "\tif opts.edit {\n\t\tif edited, editErr := editAtlasSchemaPlan(cmd.Context(), plan); editErr == nil {\n\t\t\tplan = edited\n\t\t}\n\t}",
       "comment": "The dangerous shape: a refused edit still writes a reviewable-looking plan file. Must be killed by the no-plan-file assertion, not only by the message."
     },
     {
@@ -105,33 +108,33 @@
       "name": "the editor is opened before the no-changes check",
       "file": "cmd/atlas/schema_plan.go",
       "old": "\tif !plan.HasChanges() {\n\t\tfmt.Fprintln(cmd.OutOrStdout(), \"Schema is synced, no changes to be made.\")\n\t\treturn nil\n\t}",
-      "new": "\tif opts.edit {\n\t\tif edited, editErr := editAtlasSchemaPlan(plan); editErr == nil {\n\t\t\tplan = edited\n\t\t}\n\t}\n\tif !plan.HasChanges() {\n\t\tfmt.Fprintln(cmd.OutOrStdout(), \"Schema is synced, no changes to be made.\")\n\t\treturn nil\n\t}",
+      "new": "\tif opts.edit {\n\t\tif edited, editErr := editAtlasSchemaPlan(cmd.Context(), plan); editErr == nil {\n\t\t\tplan = edited\n\t\t}\n\t}\n\tif !plan.HasChanges() {\n\t\tfmt.Fprintln(cmd.OutOrStdout(), \"Schema is synced, no changes to be made.\")\n\t\treturn nil\n\t}",
       "comment": "The naming block now sits between the check and the edit, so the two are no longer adjacent to swap; hoisting a copy of the edit above the check reproduces the same defect."
     },
     {
       "name": "the edited statements keep the pre-edit severity and destructive marker",
       "file": "internal/atlasschema/plan.go",
-      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))\n\treturn p",
-      "new": "\tstatements, _ := classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))\n\tfor i := range statements {\n\t\tif i < len(p.Statements) {\n\t\t\tstatements[i].Severity = p.Statements[i].Severity\n\t\t\tstatements[i].Reason = p.Statements[i].Reason\n\t\t}\n\t}\n\tp.Statements = statements\n\treturn p",
+      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)\n\treturn p",
+      "new": "\tstatements, _ := classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)\n\tfor i := range statements {\n\t\tif i < len(p.Statements) {\n\t\t\tstatements[i].Severity = p.Statements[i].Severity\n\t\t\tstatements[i].Reason = p.Statements[i].Reason\n\t\t}\n\t}\n\tp.Statements = statements\n\treturn p",
       "comment": "The silent-wrong-metadata shape: an edit introducing a DROP is saved under the pre-edit destructive=false verdict. Killed only through the JSON format, whose reader returns what was written; the .plan.hcl reader re-derives both fields on load and would mask it."
     },
     {
       "name": "the destructive marker alone is not recomputed",
       "file": "internal/atlasschema/plan.go",
-      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))",
-      "new": "\tp.Statements, _ = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))"
+      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)",
+      "new": "\tp.Statements, _ = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)"
     },
     {
       "name": "the edit splits with a fixed dialect instead of the plan's",
       "file": "internal/atlasschema/plan.go",
-      "old": "classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))",
-      "new": "classifyPlanStatements(splitPlanStatements(sqlText, \"sqlite\"))"
+      "old": "classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)",
+      "new": "classifyPlanStatements(splitPlanStatements(sqlText, \"sqlite\"), \"sqlite\")"
     },
     {
       "name": "editing rewrites the source fingerprint",
       "file": "internal/atlasschema/plan.go",
-      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))\n\treturn p",
-      "new": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))\n\tp.FromFingerprint, p.ToFingerprint = p.ToFingerprint, p.FromFingerprint\n\treturn p"
+      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)\n\treturn p",
+      "new": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)\n\tp.FromFingerprint, p.ToFingerprint = p.ToFingerprint, p.FromFingerprint\n\treturn p"
     },
     {
       "name": "the shared classifier stops reporting destructive statements",
@@ -143,29 +146,29 @@
     {
       "name": "the edit round-trip strips comments (a no-op edit erases the data-loss warning)",
       "file": "internal/atlasschema/plan.go",
-      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect))",
-      "new": "\tp.Statements, p.Destructive = classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect))",
+      "old": "\tp.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)",
+      "new": "\tp.Statements, p.Destructive = classifyPlanStatements(SplitApplyStatements(sqlText, p.Dialect), p.Dialect)",
       "comment": "The shipped-in-round-one bug. The .plan.hcl shape has no severity field, so the generated '-- WARNING' comment is the only in-artifact signal the plan destroys data; an editor the operator quits without typing would silently remove it."
     },
     {
       "name": "a lint step is added that ignores --skip-lint",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\toutputPath := strings.TrimSpace(opts.output)\n\tformat := atlasSchemaPlanFormat(outputPath)",
-      "new": "\tif plan.Destructive {\n\t\tfmt.Fprintln(cmd.ErrOrStderr(), \"lint: plan contains a destructive change\")\n\t}\n\toutputPath := strings.TrimSpace(opts.output)\n\tformat := atlasSchemaPlanFormat(outputPath)",
+      "old": "\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
+      "new": "\tif plan.Destructive {\n\t\tfmt.Fprintln(cmd.ErrOrStderr(), \"lint: plan contains a destructive change\")\n\t}\n\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
       "comment": "Killed only by a DESTRUCTIVE fixture plus a whole-output assertion. An additive fixture gives the linter nothing to say, and a document-only comparison cannot see diagnostics at all."
     },
     {
       "name": "a lint step is added that honors --skip-lint",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\toutputPath := strings.TrimSpace(opts.output)\n\tformat := atlasSchemaPlanFormat(outputPath)",
-      "new": "\tif plan.Destructive && !cmd.Flags().Changed(\"skip-lint\") {\n\t\tfmt.Fprintln(cmd.ErrOrStderr(), \"lint: plan contains a destructive change\")\n\t}\n\toutputPath := strings.TrimSpace(opts.output)\n\tformat := atlasSchemaPlanFormat(outputPath)",
+      "old": "\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
+      "new": "\tif plan.Destructive && !cmd.Flags().Changed(\"skip-lint\") {\n\t\tfmt.Fprintln(cmd.ErrOrStderr(), \"lint: plan contains a destructive change\")\n\t}\n\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
       "comment": "The flag acquiring a real meaning. The no-op claim is only honest while both runs report identically, so honoring the flag must go red too."
     },
     {
       "name": "a refusing lint step is added",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\toutputPath := strings.TrimSpace(opts.output)\n\tformat := atlasSchemaPlanFormat(outputPath)",
-      "new": "\tif plan.Destructive && !cmd.Flags().Changed(\"skip-lint\") {\n\t\treturn cmdutil.Fail(cmd, fmt.Errorf(\"lint: plan contains a destructive change\"))\n\t}\n\toutputPath := strings.TrimSpace(opts.output)\n\tformat := atlasSchemaPlanFormat(outputPath)"
+      "old": "\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
+      "new": "\tif plan.Destructive && !cmd.Flags().Changed(\"skip-lint\") {\n\t\treturn cmdutil.Fail(cmd, fmt.Errorf(\"lint: plan contains a destructive change\"))\n\t}\n\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)"
     },
     {
       "name": "--skip-lint acquires a document-affecting meaning",
@@ -176,7 +179,7 @@
     {
       "name": "the editor opens before the naming and format checks",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}\n\tdocument, err := atlasschema.MarshalPlanFileAs(plan, format)",
+      "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(cmd.Context(), plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}\n\tdocument, err := atlasschema.MarshalPlanFileAs(plan, format)",
       "new": "\tdocument, err := atlasschema.MarshalPlanFileAs(plan, format)",
       "comment": "Deleting the edit block entirely is the only way to move it without duplicating anchors; the marker-file assertions in ...IsNotOpenedWhenNamingFailsFirst pin the ordering, and the edit tests pin that editing still happens."
     },
@@ -202,7 +205,7 @@
     {
       "name": "--name skips the shared name validation",
       "file": "cmd/atlas/schema_plan.go",
-      "old": "\tif opts.name != \"\" {\n\t\tif err := validateAtlasSchemaPlanName(\"--name\", opts.name); err != nil {\n\t\t\treturn err\n\t\t}\n\t}",
+      "old": "\tif opts.name != \"\" {\n\t\tif err := validateAtlasSchemaPlanName(\n\t\t\t\"--name\",\n\t\t\topts.name,\n\t\t\tatlasSchemaPlanOutputModeFor(strings.TrimSpace(opts.output)),\n\t\t); err != nil {\n\t\t\treturn err\n\t\t}\n\t}",
       "new": ""
     },
     {
@@ -221,9 +224,42 @@
     {
       "name": "the classifier assesses the commented text instead of the executable text",
       "file": "internal/atlasschema/plan.go",
-      "old": "\t\tassessment := safety.AssessSQL(strings.TrimSpace(sqlutil.StripComments(statement)))",
-      "new": "\t\tassessment := safety.AssessSQL(strings.TrimSpace(statement))\n\t\t_ = sqlutil.StripComments",
-      "comment": "The discarded reference keeps the sqlutil import live; a generated DROP TABLE carries a leading '-- WARNING' comment that defeats the classifier when it is not stripped."
+      "old": "\t\tassessment := safety.AssessSQL(strings.TrimSpace(sqlsafety.SQLForAssessment(statement, dialect)))",
+      "new": "\t\tassessment := safety.AssessSQL(strings.TrimSpace(statement))\n\t\t_ = sqlsafety.SQLForAssessment",
+      "comment": "The discarded reference keeps the sqlsafety import live; a generated DROP TABLE carries a leading '-- WARNING' comment that defeats the classifier when it is not stripped."
+    },
+    {
+      "name": "the safety normalizer discards executable-comment bodies",
+      "file": "internal/sqlsafety/assessment.go",
+      "old": "\t\t\tresult.WriteString(SQLForAssessment(body, dialect))",
+      "new": "\t\t\t_ = body\n\t\t\tresult.WriteByte(' ')",
+      "comment": "Executable comments remain executable SQL and must not disappear from the safety verdict."
+    },
+    {
+      "name": "Ptah fingerprints keep their sha256 prefix instead of Atlas-shaped Base64",
+      "file": "internal/atlasreport/schema_plan_name.go",
+      "old": "\treturn base64.StdEncoding.EncodeToString(raw), nil",
+      "new": "\t_ = raw\n\t_ = base64.StdEncoding\n\treturn fingerprint, nil",
+      "comment": "The Atlas documented slice would retain only four bits of digest entropy and can produce a colon in a default file name."
+    },
+    {
+      "name": "invalid UTF-8 editor output reaches plan marshaling",
+      "file": "cmd/atlas/editsql.go",
+      "old": "\tif !utf8.Valid(edited) {",
+      "new": "\tif !utf8.Valid(edited) && false {",
+      "comment": "The dead conjunct keeps the utf8 import live so the mutation exercises behavior instead of producing an uninformative build failure."
+    },
+    {
+      "name": "default plan publication replaces an existing reviewed plan",
+      "file": "cmd/atlas/planfile_write.go",
+      "old": "\t\terr = fsdurable.MoveFileNoReplace(stagedPath, path)",
+      "new": "\t\terr = fsdurable.ReplaceFile(stagedPath, path)"
+    },
+    {
+      "name": "successful execution leaves schema-plan local flags sticky",
+      "file": "cmd/atlas/project_config.go",
+      "old": "\t\t\tdefer resetAtlasExecutionFlags(cmd, group)\n\t\t\treturn runE(cmd, args)",
+      "new": "\t\t\treturn runE(cmd, args)"
     }
   ]
 }

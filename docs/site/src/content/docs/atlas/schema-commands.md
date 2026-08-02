@@ -397,6 +397,19 @@ severity, the dialect, and exclude patterns. Without
 `--save`/`--output`/`--dry-run`, the plan document prints to stdout, and
 `--auto-approve` is accepted for CLI compatibility.
 
+Use `--edit` to review or rewrite the planned SQL in `$VISUAL` or `$EDITOR`
+before publication. Ptah preserves statement text and comments, rejects
+invalid UTF-8 and empty edited plans, and recomputes safety metadata with the
+plan dialect, including MySQL and MariaDB executable comments. `--name-format` accepts a Go template over `.FromHash`
+and `.ToHash`; Ptah exposes its digest bytes in the untagged standard-Base64
+representation measured from Atlas trial v1.2.4. `--skip-lint` is accepted as
+an explicit no-op because this command has no lint step.
+
+Plan publication stages and syncs the complete document before an atomic
+rename. Default `--save` refuses an existing entry without a check/write race;
+explicit `--output` atomically replaces the named entry instead of following a
+symlink or exposing a partially written document.
+
 `schema apply --plan file://<path>` accepts both formats, detected by
 content — including `.plan.hcl` files written by the licensed Atlas binary:
 

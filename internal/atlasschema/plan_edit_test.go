@@ -151,6 +151,30 @@ func TestPlanFileWithStatementsFromSQLClassifiesPastLeadingComments(t *testing.T
 	c.Assert(got.Destructive, qt.IsTrue)
 }
 
+func TestPlanFileWithStatementsFromSQLClassifiesExecutableComments(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		dialect string
+		sql     string
+	}{
+		{name: "MySQL versioned comment", dialect: "mysql", sql: "/*!50003 DROP TABLE victim */;"},
+		{name: "MariaDB native comment", dialect: "mariadb", sql: "/*M!100100 DROP TABLE victim */;"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			plan := atlasschema.PlanFile{Dialect: test.dialect}.WithStatementsFromSQL(test.sql)
+
+			c.Assert(plan.Statements, qt.HasLen, 1)
+			c.Assert(plan.Statements[0].Severity, qt.Equals, safety.Destructive)
+			c.Assert(plan.Statements[0].Reason, qt.Equals, "DROP TABLE removes the table and all rows")
+			c.Assert(plan.Destructive, qt.IsTrue)
+		})
+	}
+}
+
 func TestPlanFileWithStatementsFromSQLDropsCommentOnlyEdits(t *testing.T) {
 	c := qt.New(t)
 	plan := atlasschema.PlanFile{

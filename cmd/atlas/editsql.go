@@ -1,9 +1,11 @@
 package atlas
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/stokaro/ptah/cmd/internal/editor"
 )
@@ -16,7 +18,7 @@ import (
 // The temporary file is removed on every path. A non-zero exit from the editor
 // is returned as an error with the file already discarded, so a caller that
 // bails on the error writes nothing.
-func editAtlasSQL(command, sqlText string) (string, error) {
+func editAtlasSQL(ctx context.Context, command, sqlText string) (string, error) {
 	file, err := os.CreateTemp("", "ptah-"+strings.ReplaceAll(command, " ", "-")+"-*.sql")
 	if err != nil {
 		return "", fmt.Errorf("create %s edit file: %w", command, err)
@@ -30,12 +32,15 @@ func editAtlasSQL(command, sqlText string) (string, error) {
 	if err := file.Close(); err != nil {
 		return "", fmt.Errorf("close %s edit file: %w", command, err)
 	}
-	if err := editor.Open("", path); err != nil {
-		return "", err
+	if err := editor.Open(ctx, "", path); err != nil {
+		return "", fmt.Errorf("edit %s SQL: %w", command, err)
 	}
 	edited, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read edited %s SQL: %w", command, err)
+	}
+	if !utf8.Valid(edited) {
+		return "", fmt.Errorf("edited %s SQL is not valid UTF-8", command)
 	}
 	return string(edited), nil
 }
