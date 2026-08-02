@@ -228,7 +228,10 @@ func ParseLocalDir(value string) (LocalDir, error) {
 // Map translates Atlas-style args to native Ptah args using the provided flag
 // descriptors.
 func Map(group, use string, flags []Flag, args []string) ([]string, error) {
-	args = appendEnvArgs(flags, args)
+	args, err := appendEnvArgs(flags, args)
+	if err != nil {
+		return nil, err
+	}
 	args = appendDefaultArgs(flags, args)
 	out := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
@@ -318,7 +321,7 @@ func nativeEnvironmentPresent(flag Flag) bool {
 //
 // Only a flag marked EnvDisabled opts out, and on this surface exactly one
 // does — see ExplicitUnsupportedBoolReason.
-func appendEnvArgs(flags []Flag, args []string) []string {
+func appendEnvArgs(flags []Flag, args []string) ([]string, error) {
 	out := args
 	cloned := false
 	for _, flag := range flags {
@@ -332,8 +335,19 @@ func appendEnvArgs(flags []Flag, args []string) []string {
 		if !ok || value == "" {
 			continue
 		}
-		if flag.Kind == BoolFlag && boolEnvFalse(value) {
-			continue
+		if flag.Kind == BoolFlag {
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return nil, fmt.Errorf("invalid boolean value %q for %s", value, envName("PTAH", flag.Name))
+			}
+			if !parsed {
+				continue
+			}
+		}
+		if flag.Kind == UintFlag {
+			if _, err := strconv.ParseUint(value, 0, 64); err != nil {
+				return nil, fmt.Errorf("invalid unsigned integer value %q for %s", value, envName("PTAH", flag.Name))
+			}
 		}
 		if !cloned {
 			out = slices.Clone(args)
@@ -341,17 +355,12 @@ func appendEnvArgs(flags []Flag, args []string) []string {
 		}
 		out = append(out, "--"+flag.Name+"="+value)
 	}
-	return out
+	return out, nil
 }
 
 func envName(prefix, flagName string) string {
 	name := strings.NewReplacer("-", "_", ".", "_").Replace(flagName)
 	return strings.ToUpper(prefix + "_" + name)
-}
-
-func boolEnvFalse(value string) bool {
-	parsed, err := strconv.ParseBool(value)
-	return err == nil && !parsed
 }
 
 func flagPresent(args []string, flag Flag) bool {

@@ -134,6 +134,28 @@ func TestNewRootCommand_PTAHDBURLFeedsCommandFlag(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "error connecting to database")
 }
 
+func TestNewRootCommand_MalformedPTAHDryRunAppliesNothing(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_DRY_RUN", "notabool")
+	migrationsDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "0000000001_users.up.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "0000000001_users.down.sql"),
+		[]byte("DROP TABLE users;\n"), 0o600), qt.IsNil)
+	dbPath := filepath.Join(t.TempDir(), "native-env.db")
+	dbURL := (&url.URL{Scheme: "sqlite", Path: dbPath}).String()
+
+	_, _, err := executeRootCommand(
+		"migrations", "up",
+		"--db-url", dbURL,
+		"--migrations-dir", migrationsDir,
+	)
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "notabool" for PTAH_DRY_RUN`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+}
+
 func TestNewRootCommand_PTAHAutoApproveDoesNotBypassDropAllConfirmation(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_AUTO_APPROVE", "true")
