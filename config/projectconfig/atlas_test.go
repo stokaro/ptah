@@ -1406,6 +1406,41 @@ env "prod" {
 //
 // Names the community binary DOES decode stay in the rejection table above --
 // tolerating those would accept a policy and silently not enforce it.
+// The names the community binary decodes are refused by scope-qualified path,
+// not by bare name: `repo` is refused under schema and tolerated anywhere else.
+// Without this the deny-list would over-refuse every unrelated `repo`.
+func TestParseAtlasProjectConfigEnforcedNamesAreScopeQualified(t *testing.T) {
+	c := qt.New(t)
+
+	refused := `env "local" {
+  url = "sqlite://s.db"
+  schema {
+    repo {
+      name = "app"
+    }
+  }
+}
+`
+	_, err := projectconfig.ParseAtlas([]byte(refused), "atlas.hcl", "local")
+	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "repo" .*`)
+
+	elsewhere := `env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir  = "file://m"
+    repo = "x"
+  }
+}
+`
+	cfg, err := projectconfig.ParseAtlas([]byte(elsewhere), "atlas.hcl", "local")
+	c.Assert(err, qt.IsNil)
+	names := make([]string, 0, len(cfg.IgnoredConstructs))
+	for _, ignored := range cfg.IgnoredConstructs {
+		names = append(names, ignored.Name)
+	}
+	c.Assert(names, qt.Contains, "repo")
+}
+
 func TestParseAtlasProjectConfigToleratesConstructsCEIgnores(t *testing.T) {
 	tests := []struct {
 		name    string
