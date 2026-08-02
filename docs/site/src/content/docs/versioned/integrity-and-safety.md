@@ -148,28 +148,72 @@ check, exactly as it is in Atlas. A directory that carries no `atlas.sum` and
 whose covered set is empty — a golang-migrate directory holding only a down
 file, say — is not a checksum error and is not refused.
 
-:::caution[Flyway: a file outside the covered set can still execute]
-For every layout except Flyway, "not covered by `atlas.sum`" also means "not
-executed", the same as in Atlas. **For Flyway it does not.** Ptah's Flyway
-importer selects a wider set of files than Atlas hashes, so two shapes run SQL
-that no checksum covers — on a directory both `ptah-compat migrate validate`
-and `atlas migrate validate` call clean:
+For every layout, "not covered by `atlas.sum`" also means "not executed": the
+set `migrate apply` runs is the set the checksum it verified covers. Flyway was
+the exception until [#982](https://github.com/stokaro/ptah/issues/982) — its
+importer selected a wider set than Atlas hashes, so a superseded baseline or a
+lowercase-prefixed file could run SQL no checksum protected. The importer and
+the hasher now share one selection rule, so that class of gap cannot reopen
+without a failing test.
 
-- **A superseded baseline.** Atlas drops every baseline below the highest one
-  from `atlas.sum`; Ptah's importer keeps them all. With
-  `B1__one.sql B2__two.sql V3__three.sql`, the sum covers only `B2` and `V3`,
-  and whatever you put in `B1__one.sql` executes unverified.
-- **A prefix in the wrong case.** Atlas matches `V`/`B`/`R`/`U` case-sensitively
-  and ignores `v2__evil.sql`; Ptah's importer matches case-insensitively and
-  runs it. Adding such a file to a hashed directory does not disturb the sum.
+:::note[Flyway baselines: Ptah runs one where Atlas sometimes does not]
+Atlas CE decides which migrations are pending by comparing the version token as
+a **string** against the highest version already recorded. A baseline whose
+token does not sort above that mark is silently treated as applied and never
+runs — measured on Atlas CE v1.2.0:
 
-Re-running `ptah-compat migrate hash` does not close either one — the covered
-set is the same set, so the file stays outside it. Until
-[#982](https://github.com/stokaro/ptah/issues/982) converges the importer on
-Atlas's selection, treat a Flyway directory's `atlas.sum` as covering the files
-Atlas would run, not everything Ptah will run: review `B`-prefixed files and
-lowercase-prefixed files by hand, or normalize the directory so that every file
-matches Atlas's own selection.
+- `V2__x.sql` applied, then `B10__base.sql` added: `"10" < "2"` as strings, so
+  Atlas reports `No migration files to execute` and the baseline never runs.
+- `V1`, `V2`, `V3` applied, then `B2__base.sql` added (superseding `V1` and
+  `V2`): same result.
+
+Ptah decides pending-ness from the recorded set instead, so it **runs** the
+baseline in both cases. Where a baseline is added deliberately, that is what was
+intended; it is a divergence from Atlas either way, and which behavior
+`ptah-compat` should keep is
+[#1003](https://github.com/stokaro/ptah/issues/1003).
+
+Both tools run a baseline added above the high-water mark, and both execute its
+SQL rather than merely recording it — Atlas fails loudly if that SQL cannot
+survive a second run.
+:::
+
+:::danger[Upgrading a Flyway directory applied by Ptah v0.1.0–v0.1.2]
+Converging the importer changed the Atlas version each Flyway file converts
+to, and that version is the key `atlas_schema_revisions` stores. A database
+migrated through `?format=flyway` by any of those releases therefore records
+migrations under versions this release matches to no file, so **every migration
+in the directory reads as pending**.
+
+`ptah-compat migrate apply` refuses such a database before executing anything
+and prints the `UPDATE` statements that migrate the recorded versions forward:
+
+```text
+error: this database was migrated by a Ptah build older than the one that fixed
+stokaro/ptah#982 ... 2 already-applied migration(s) would run a second time and
+nothing has been applied
+
+recorded version -> version this build uses:
+  10000                -> 4611686018427469511  V1__init.sql
+  20000                -> 4611686018427510315  V2__seed.sql
+
+to adopt the new encoding, migrate the recorded versions forward and re-run:
+  UPDATE atlas_schema_revisions SET version = '4611686018427469511' WHERE version = '10000';
+  UPDATE atlas_schema_revisions SET version = '4611686018427510315' WHERE version = '20000';
+```
+
+Run them against the schema `--revisions-schema` selects, then re-run the
+apply. Rewriting the version column is enough on its own: the recorded hash
+covers the converted SQL body, which this change does not touch.
+
+The statements have to be run by hand because `migrate set` and `migrate
+status` do not yet accept `?format=`
+([#1002](https://github.com/stokaro/ptah/issues/1002)), and `--baseline`
+refuses once the revision table is non-empty.
+
+Without the refusal this is not reliably loud: re-running a `CREATE TABLE`
+fails and leaves a dirty revision, but re-running a backfill or a seed
+succeeds, exits 0, and duplicates the rows.
 :::
 
 ## Replay on a dev database

@@ -1,0 +1,175 @@
+{
+  "packages": [
+    "./internal/atlasmigrateimport/",
+    "./internal/atlasmigrate/",
+    "./cmd/atlas/",
+    "./migration/migrator/"
+  ],
+  "env": {
+    "PTAH_ATLAS_FUZZ_N": "60"
+  },
+  "mutations": [
+    {
+      "name": "the importer keeps its own selection instead of the covered set",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tcovered, err := flywayCoveredFiles(fsys)\n\tif err != nil {\n\t\treturn nil, err\n\t}",
+      "new": "\tnames, err := treeNames(fsys, skipHiddenDir)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tcovered := make([]flywaySumFile, 0, len(names))\n\tfor _, name := range names {\n\t\tif file, ok := parseFlywaySumFile(name); ok && file.kind != flywaySumUndo {\n\t\t\tcovered = append(covered, file)\n\t\t}\n\t}"
+    },
+    {
+      "name": "the importer reads only the top level, as it did before",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "func flywayCoveredFiles(fsys fs.FS) ([]flywaySumFile, error) {\n\tnames, err := treeNames(fsys, skipHiddenDir)",
+      "new": "func flywayCoveredFiles(fsys fs.FS) ([]flywaySumFile, error) {\n\tnames, err := topLevelNames(fsys)"
+    },
+    {
+      "name": "a superseded baseline is executed (the #982 exploit)",
+      "file": "internal/atlasmigrateimport/sumfiles.go",
+      "old": "\t\t\tif baseline == nil || file.version >= baseline.version {",
+      "new": "\t\t\tsurvivors = append(survivors, file)\n\t\t\tif baseline == nil || file.version >= baseline.version {"
+    },
+    {
+      "name": "the baseline band is dropped, so a baseline orders by its own version",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif file.kind == flywaySumBaseline {\n\t\t// The surviving baseline is emitted, and executed, ahead of every",
+      "new": "\tif false {\n\t\t// The surviving baseline is emitted, and executed, ahead of every"
+    },
+    {
+      "name": "a repeatable is versioned by its token instead of the reserved slot",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif file.kind == flywaySumRepeatable {\n\t\t// Every repeatable is version \"\" to Atlas CE regardless of its token, so\n\t\t// they all land on the one reserved slot and a second one is caught as a\n\t\t// collision below — which is what CE's own version space says it is.\n\t\treturn flywayRepeatableVersion, nil\n\t}",
+      "new": ""
+    },
+    {
+      "name": "the duplicate check scores tokens instead of comparing them",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\tversion := flywayCEVersion(file)",
+      "new": "\t\tversion := fmt.Sprint(flywayCEVersion(file) != \"\", file.components)"
+    },
+    {
+      "name": "a repeatable is not folded onto Atlas CE's empty version",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif file.kind == flywaySumRepeatable {\n\t\treturn \"\"\n\t}\n\treturn file.version",
+      "new": "\treturn file.version"
+    },
+    {
+      "name": "duplicate Atlas CE versions are accepted",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif err := rejectDuplicateFlywayVersions(covered); err != nil {\n\t\treturn nil, err\n\t}\n",
+      "new": ""
+    },
+    {
+      "name": "the tie index is never advanced, so equal keys collide",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\tif previous != nil && file.kind == previous.kind && slices.Equal(file.components, previous.components) {\n\t\t\ttie++",
+      "new": "\t\tif previous != nil && false {\n\t\t\ttie++"
+    },
+    {
+      "name": "the tie index ignores the kind, so a baseline ties with a survivor",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\tif previous != nil && file.kind == previous.kind && slices.Equal(file.components, previous.components) {",
+      "new": "\t\tif previous != nil && slices.Equal(file.components, previous.components) {"
+    },
+    {
+      "name": "the tie budget is unbounded, so it silently overflows its slot",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif tie >= flywayTieSlots {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "the ordering key zero-extends, so V1 and V1.0 collide",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\t\tslot = components[i] + 1",
+      "new": "\t\t\tslot = components[i]"
+    },
+    {
+      "name": "the leading component is not offset, so V0 collides with the absent slot",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tkey := components[0] + 1",
+      "new": "\tkey := components[0]"
+    },
+    {
+      "name": "an over-long version silently truncates instead of being refused",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif len(components) > flywayMaxComponents {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "a trailing component outside one slot is not refused",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\t\tif components[i] < 0 || components[i] >= flywayComponentSlot-1 {",
+      "new": "\t\t\tif false {"
+    },
+    {
+      "name": "a leading component past the band is not refused",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif components[0] > flywayMaxLeadingComponent {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "a negative component is not refused",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif components[0] < 0 {",
+      "new": "\tif false {"
+    },
+    {
+      "name": "the description is dropped from the converted name",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif name := sanitizeName(description); name != \"\" {\n\t\treturn fmt.Sprintf(\"%d_%s.sql\", version, name)\n\t}",
+      "new": "\tif false {\n\t\treturn fmt.Sprintf(\"%d_%s.sql\", version, sanitizeName(description))\n\t}"
+    },
+    {
+      "name": "the leading-component bound ignores the trailing slots and the tie budget",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tflywayMaxLeadingComponent = ((flywayBandSize-flywayTieSlots)/flywayTieSlots-flywayMaxTrailingKey)/\n\t\t(flywayComponentSlot*flywayComponentSlot) - 1",
+      "new": "\tflywayMaxLeadingComponent = flywayBandSize/(flywayComponentSlot*flywayComponentSlot*flywayTieSlots) - 1"
+    },
+    {
+      "name": "the legacy-revision detector never fires",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif err := checkLegacyFlywayRevisions(captured, resolvedDirFormat, plan, opts.revisionsSchema); err != nil {\n\t\treturn err\n\t}\n",
+      "new": ""
+    },
+    {
+      "name": "the detector fires even when the current version is already recorded",
+      "file": "cmd/atlas/migrate_apply_legacy_flyway.go",
+      "old": "\t\tif slices.Contains(applied, pair.Legacy) && !slices.Contains(applied, pair.Current) {",
+      "new": "\t\tif slices.Contains(applied, pair.Legacy) {"
+    },
+    {
+      "name": "the recovery SQL ignores --revisions-schema",
+      "file": "cmd/atlas/migrate_apply_legacy_flyway.go",
+      "old": "\tif schema := strings.TrimSpace(revisionsSchema); schema != \"\" {\n\t\ttable = schema + \".\" + table\n\t}",
+      "new": ""
+    },
+    {
+      "name": "the legacy reconstruction reads nested files the old build never saw",
+      "file": "internal/atlasmigrateimport/flywaylegacy.go",
+      "old": "\tif path.Dir(file.name) != \".\" {",
+      "new": "\tif false && path.Dir(file.name) != \".\" {"
+    },
+    {
+      "name": "the surviving baseline is not exempt from the out-of-order guard",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif baselineVersionExempt > 0 {\n\t\toutOfOrderExempt = []int64{baselineVersionExempt}\n\t}",
+      "new": "\t_ = baselineVersionExempt"
+    },
+    {
+      "name": "the exemption is loosened to every out-of-order version",
+      "file": "migration/migrator/exec_order.go",
+      "old": "\t\tif !slices.Contains(exempt, version) {\n\t\t\tout = append(out, version)\n\t\t}",
+      "new": "\t\t_ = version"
+    },
+    {
+      "name": "the exempted version is the last covered file, not the baseline",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\tif file.kind == flywaySumBaseline {\n\t\t\t// flywaySumFiles emits at most one baseline, and always first.\n\t\t\treturn versions[i], nil\n\t\t}",
+      "new": "\t\tif file.kind != flywaySumBaseline {\n\t\t\treturn versions[i], nil\n\t\t}"
+    },
+    {
+      "name": "FlywayBaselineAtlasVersion answers for every layout, not only flyway",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tif format != FormatFlyway {\n\t\treturn 0, nil\n\t}\n\tcovered, err := flywayCoveredFiles(fsys)",
+      "new": "\tcovered, err := flywayCoveredFiles(fsys)"
+    }
+  ]
+}

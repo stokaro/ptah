@@ -88,6 +88,7 @@ type Migrator struct {
 	migrationsSchema     string
 	revisionTableFormat  RevisionTableFormat
 	execOrder            ExecOrder
+	outOfOrderExempt     []int64
 	txMode               MigrationTxMode
 	migrationLockName    string
 	migrationLockTimeout time.Duration
@@ -232,6 +233,47 @@ func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration) error {
 func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator {
 	tmp := *m
 	tmp.execOrder = normalizeExecOrder(execOrder)
+	return &tmp
+}
+
+// WithOutOfOrderExempt exempts specific versions from the linear execution
+// guard. It is an escape hatch, and using it wrongly disables a safety check
+// silently, so read this before reaching for it.
+//
+// WHAT THE GUARD ASSUMES. Under [ExecOrderLinear] the migrator refuses a pending
+// migration whose version is below the highest version already applied, and
+// under [ExecOrderLinearSkip] it leaves such a migration unapplied. Both treat
+// "version below the current one" as evidence that the migration was AUTHORED
+// before what is already in the database — someone branched, and their migration
+// arrived late. That inference is only sound while the version is a chronology:
+// a number that increases as migrations are written.
+//
+// WHEN IT IS NOT A CHRONOLOGY. A migration directory laid out in another tool's
+// convention is converted in memory, and its Atlas version is whatever that
+// conversion assigns. For Flyway the version is a projection of Atlas CE's
+// atlas.sum ORDER, which is not authoring order: a surviving baseline is emitted
+// and executed FIRST whatever its own version — measured, and measured to hold
+// across runs and not only within a single conversion — so it is deliberately
+// placed below every migration it squashes. On a database that already has
+// migrations recorded it therefore sorts below all of them and trips a guard
+// that has nothing to guard against. Exempting that one version is what this
+// method is for; see atlasmigrateimport.FlywayBaselineAtlasVersion.
+//
+// HOW TO MISUSE IT. The exempt list is taken on trust. Supplying a version that
+// IS chronological — an ordinary migration that really was authored late —
+// silently turns off out-of-order detection for it: no error, no warning, it
+// simply applies, and under linear-skip it is no longer skipped either. Pass
+// only versions whose position you computed yourself and know to be an artifact
+// of a layout projection. Anything derived from user input, or a whole band of
+// versions rather than the specific ones, defeats the guard for real branching
+// mistakes, which is the failure it exists to catch.
+//
+// It changes only whether the guard refuses. Execution order is still version
+// order, and an exempt migration is applied in its numeric position like any
+// other.
+func (m *Migrator) WithOutOfOrderExempt(versions []int64) *Migrator {
+	tmp := *m
+	tmp.outOfOrderExempt = slices.Clone(versions)
 	return &tmp
 }
 
@@ -2099,7 +2141,10 @@ func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, t
 	bootstrap := checkpointBootstrap(migrations, applied, targetVersion)
 	floor := checkpointFloor(migrations, applied, bootstrap)
 	pendingVersions := pendingMigrationVersionsFloored(migrations, applied, bootstrap, floor)
-	outOfOrderVersions := outOfOrderMigrationVersions(pendingVersions, currentVersion)
+	outOfOrderVersions := outOfOrderExempt(
+		outOfOrderMigrationVersions(pendingVersions, currentVersion),
+		m.outOfOrderExempt,
+	)
 	execOrder := normalizeExecOrder(m.execOrder)
 
 	if execOrder == ExecOrderLinear && len(outOfOrderVersions) > 0 {
@@ -2118,7 +2163,8 @@ func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, t
 		if targetVersion > 0 && migration.Version > targetVersion {
 			continue
 		}
-		if execOrder == ExecOrderLinearSkip && migration.Version < currentVersion {
+		if execOrder == ExecOrderLinearSkip && migration.Version < currentVersion &&
+			!slices.Contains(m.outOfOrderExempt, migration.Version) {
 			m.logger.Warn("Skipping out-of-order migration", "version", migration.Version, "currentVersion", currentVersion)
 			continue
 		}

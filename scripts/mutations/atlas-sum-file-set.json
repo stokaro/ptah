@@ -22,8 +22,8 @@
     {
       "name": "a non-numeric component poisons the whole token",
       "file": "internal/atlasmigrateimport/sumfiles.go",
-      "old": "\t\tvalue, _ := strconv.Atoi(part)\n\t\tcomponents[i] = value",
-      "new": "\t\tvalue, err := strconv.Atoi(part)\n\t\tif err != nil {\n\t\t\treturn nil\n\t\t}\n\t\tcomponents[i] = value"
+      "old": "\t\tvalue, _ := strconv.ParseInt(part, 10, 64)\n\t\tcomponents[i] = value",
+      "new": "\t\tvalue, err := strconv.ParseInt(part, 10, 64)\n\t\tif err != nil {\n\t\t\treturn nil\n\t\t}\n\t\tcomponents[i] = value"
     },
     {
       "name": "hidden directories are walked",
@@ -34,8 +34,8 @@
     {
       "name": "flyway names are sorted instead of walk order",
       "file": "internal/atlasmigrateimport/sumfiles.go",
-      "old": "\t\tnames, err := treeNames(fsys, skipHiddenDir)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}",
-      "new": "\t\tnames, err := treeNames(fsys, skipHiddenDir)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tslices.Sort(names)"
+      "old": "\tnames, err := treeNames(fsys, skipHiddenDir)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treturn flywaySumFiles(names), nil",
+      "new": "\tnames, err := treeNames(fsys, skipHiddenDir)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tslices.Sort(names)\n\treturn flywaySumFiles(names), nil"
     },
     {
       "name": "baseline squash compares numerically",
@@ -94,7 +94,7 @@
     {
       "name": "baseline is not emitted first",
       "file": "internal/atlasmigrateimport/sumfiles.go",
-      "old": "\tif baseline != nil {\n\t\tout = append(out, baseline.name)\n\t}",
+      "old": "\tif baseline != nil {\n\t\tout = append(out, *baseline)\n\t}",
       "new": "\tif baseline != nil {\n\t\tsurvivors = append(survivors, *baseline)\n\t}"
     },
     {
@@ -112,8 +112,8 @@
     {
       "name": "flyway emits repeatables first",
       "file": "internal/atlasmigrateimport/sumfiles.go",
-      "old": "\tfor _, file := range survivors {\n\t\tout = append(out, file.name)\n\t}\n\tfor _, file := range repeatable {\n\t\tout = append(out, file.name)\n\t}",
-      "new": "\tfor _, file := range repeatable {\n\t\tout = append(out, file.name)\n\t}\n\tfor _, file := range survivors {\n\t\tout = append(out, file.name)\n\t}"
+      "old": "\tout = append(out, survivors...)\n\tout = append(out, repeatable...)",
+      "new": "\tout = append(out, repeatable...)\n\tout = append(out, survivors...)"
     },
     {
       "name": "flyway prefix match becomes case-insensitive",
@@ -124,8 +124,8 @@
     {
       "name": "flyway requires the __ separator",
       "file": "internal/atlasmigrateimport/sumfiles.go",
-      "old": "\tversion := base[1:]\n\tif before, _, found := strings.Cut(version, \"__\"); found {\n\t\tversion = before\n\t}",
-      "new": "\tversion, _, found := strings.Cut(base[1:], \"__\")\n\tif !found {\n\t\treturn flywaySumFile{}, false\n\t}"
+      "old": "\tversion, description := base[1:], \"\"\n\tif before, after, found := strings.Cut(version, \"__\"); found {\n\t\tversion, description = before, after\n\t}",
+      "new": "\tversion, description, found := strings.Cut(base[1:], \"__\")\n\tif !found {\n\t\treturn flywaySumFile{}, false\n\t}"
     },
     {
       "name": "flyway orders by name instead of version",
@@ -142,8 +142,8 @@
     {
       "name": "flyway does not recurse",
       "file": "internal/atlasmigrateimport/sumfiles.go",
-      "old": "\t\tnames, err := treeNames(fsys, skipHiddenDir)",
-      "new": "\t\tnames, err := topLevelNames(fsys)"
+      "old": "\tnames, err := treeNames(fsys, skipHiddenDir)",
+      "new": "\tnames, err := topLevelNames(fsys)"
     },
     {
       "name": "non-flyway formats recurse",
