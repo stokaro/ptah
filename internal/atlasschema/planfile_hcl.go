@@ -254,7 +254,7 @@ func MarshalPlanFileAs(plan PlanFile, format PlanFormat) ([]byte, error) {
 // Atlas format carries the same per-statement safety metadata a native plan
 // records at planning time.
 func planStatementsFromSQL(raw []string) []PlanStatement {
-	statements, _ := classifyPlanStatements(raw)
+	statements, _ := classifyPlanStatements(raw, "")
 	return statements
 }
 

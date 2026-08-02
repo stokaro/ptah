@@ -390,7 +390,7 @@ func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
 		}
 		err := validateArgs(cmd, args)
 		if err != nil {
-			resetAtlasProjectFlags(group)
+			resetAtlasExecutionFlags(cmd, group)
 		}
 		return err
 	}
@@ -398,7 +398,7 @@ func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
 		cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 			err := persistentPreRunE(cmd, args)
 			if err != nil {
-				resetAtlasProjectFlags(group)
+				resetAtlasExecutionFlags(cmd, group)
 			}
 			return err
 		}
@@ -409,43 +409,55 @@ func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
 	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		if preRunE != nil {
 			if err := preRunE(cmd, args); err != nil {
-				resetAtlasProjectFlags(group)
+				resetAtlasExecutionFlags(cmd, group)
 				return err
 			}
 		} else if preRun != nil {
 			preRun(cmd, args)
 		}
 		if err := cmd.ValidateRequiredFlags(); err != nil {
-			resetAtlasProjectFlags(group)
+			resetAtlasExecutionFlags(cmd, group)
 			return err
 		}
 		if err := cmd.ValidateFlagGroups(); err != nil {
-			resetAtlasProjectFlags(group)
+			resetAtlasExecutionFlags(cmd, group)
 			return err
 		}
 		return nil
 	}
 	if runE := cmd.RunE; runE != nil {
 		cmd.RunE = func(cmd *cobra.Command, args []string) error {
-			defer resetAtlasProjectFlags(group)
+			defer resetAtlasExecutionFlags(cmd, group)
 			return runE(cmd, args)
 		}
 	}
 	if run := cmd.Run; run != nil {
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			defer resetAtlasProjectFlags(group)
+			defer resetAtlasExecutionFlags(cmd, group)
 			run(cmd, args)
 		}
 	}
 	help := cmd.HelpFunc()
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		defer resetAtlasProjectFlags(group)
+		defer resetAtlasExecutionFlags(cmd, group)
 		help(cmd, args)
 	})
 	flagError := cmd.FlagErrorFunc()
 	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		defer resetAtlasProjectFlags(group)
+		defer resetAtlasExecutionFlags(cmd, group)
 		return flagError(cmd, err)
+	})
+}
+
+func resetAtlasExecutionFlags(cmd, group *cobra.Command) {
+	resetAtlasProjectFlags(group)
+	cmd.LocalNonPersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if value, ok := flag.Value.(pflag.SliceValue); ok {
+			_ = value.Replace(nil)
+		} else {
+			_ = flag.Value.Set(flag.DefValue)
+		}
+		flag.Changed = false
 	})
 }
 

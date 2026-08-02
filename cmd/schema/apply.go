@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -244,7 +245,7 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 	sqlText := plan.SQL()
 	statements := plan.Statements()
 	if opts.edit {
-		edited, err := editSchemaApplySQL(sqlText)
+		edited, err := editSchemaApplySQL(cmd.Context(), sqlText)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -416,7 +417,7 @@ func validateSchemaApplyConcurrentIndexPolicy(
 // editor ($VISUAL, then $EDITOR) via a temporary file and returns the edited
 // text, which replaces the prepared plan for display, policy validation, and
 // execution.
-func editSchemaApplySQL(sqlText string) (string, error) {
+func editSchemaApplySQL(ctx context.Context, sqlText string) (string, error) {
 	file, err := os.CreateTemp("", "ptah-schema-apply-*.sql")
 	if err != nil {
 		return "", fmt.Errorf("create schema apply edit file: %w", err)
@@ -430,7 +431,7 @@ func editSchemaApplySQL(sqlText string) (string, error) {
 	if err := file.Close(); err != nil {
 		return "", fmt.Errorf("close schema apply edit file: %w", err)
 	}
-	if err := editor.Open("", path); err != nil {
+	if err := editor.Open(ctx, "", path); err != nil {
 		return "", err
 	}
 	edited, err := os.ReadFile(path)

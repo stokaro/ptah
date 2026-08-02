@@ -5,11 +5,14 @@
 package editor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/google/shlex"
 )
 
 // ErrNoEditor reports that no editor command could be resolved. Callers may
@@ -18,20 +21,30 @@ var ErrNoEditor = errors.New("no editor configured: set $EDITOR or $VISUAL")
 
 // Open launches the resolved editor on the given file paths, wired to the
 // current terminal for interactive editing. An empty editorCmd falls back to
-// $VISUAL, then $EDITOR; empty paths are skipped. The editor command may carry
-// arguments of its own (for example "code --wait"), like git's core.editor.
-func Open(editorCmd string, paths ...string) error {
+// $VISUAL, then $EDITOR; empty paths are skipped. Shell-style quoting is parsed
+// without invoking a shell, so commands such as `code --wait` and quoted
+// executable paths work without exposing the edited paths to shell expansion.
+func Open(ctx context.Context, editorCmd string, paths ...string) error {
 	if editorCmd == "" {
 		editorCmd = firstNonEmpty(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
 	}
 	if strings.TrimSpace(editorCmd) == "" {
 		return ErrNoEditor
 	}
-	fields := strings.Fields(editorCmd)
+	fields, err := shlex.Split(editorCmd)
+	if err != nil {
+		return fmt.Errorf("parse editor command %q: %w", editorCmd, err)
+	}
+	if len(fields) == 0 || strings.TrimSpace(fields[0]) == "" {
+		return fmt.Errorf("parse editor command %q: command has no executable", editorCmd)
+	}
 	args := append(append([]string{}, fields[1:]...), nonEmpty(paths)...)
-	c := exec.Command(fields[0], args...) //nolint:gosec // the editor is operator-provided, like git's core.editor
+	c := exec.CommandContext(ctx, fields[0], args...) //nolint:gosec // the editor is operator-provided and runs directly without a shell
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
 		return fmt.Errorf("editor %q failed: %w", editorCmd, err)
 	}
 	return nil

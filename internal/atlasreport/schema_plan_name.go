@@ -2,27 +2,55 @@ package atlasreport
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"text/template"
+
+	digest "github.com/opencontainers/go-digest"
 )
 
 // SchemaPlanName is the template payload exposed to `atlas schema plan
-// --name-format`. The field names follow the only spelling the licensed Atlas
-// binary documents for this template — its help text advertises the example
-// `plan_{{ slice .ToHash 0 8 }}` — so a Pro pipeline's name template keeps
-// working. FromHash is the symmetric counterpart; Atlas documents no example
-// using it.
+// --name-format`. The field names and representation were measured against
+// Atlas trial v1.2.4 on 2026-08-02: .FromHash and .ToHash are the untagged
+// standard-Base64 digests written to the plan block's from and to attributes.
+// This makes Atlas's documented `plan_{{ slice .ToHash 0 8 }}` example carry
+// 48 bits of fingerprint entropy and produce a portable name in the common
+// case.
 //
-// The values are Ptah's own `sha256:<hex>` schema fingerprints, byte-identical
-// to the `from` and `to` fields of the plan file the same run writes. Atlas
-// computes base64 hashes over a different schema representation, so a template
-// that slices a fixed prefix produces a different-looking name here than it
-// does under the official binary. That divergence is inherent to the
-// fingerprints, not to the template: Atlas's hashes have no local recipe.
+// Ptah computes hashes over its independent schema representation. The digest
+// values therefore differ from Atlas's, but NewSchemaPlanName exposes Ptah's
+// digest bytes in the same untagged Base64 representation.
 type SchemaPlanName struct {
 	FromHash string
 	ToHash   string
+}
+
+// NewSchemaPlanName converts Ptah's tagged hexadecimal schema fingerprints to
+// the untagged Base64 hash representation exposed by Atlas name templates.
+func NewSchemaPlanName(fromFingerprint, toFingerprint string) (SchemaPlanName, error) {
+	fromHash, err := schemaPlanTemplateHash("from", fromFingerprint)
+	if err != nil {
+		return SchemaPlanName{}, err
+	}
+	toHash, err := schemaPlanTemplateHash("to", toFingerprint)
+	if err != nil {
+		return SchemaPlanName{}, err
+	}
+	return SchemaPlanName{FromHash: fromHash, ToHash: toHash}, nil
+}
+
+func schemaPlanTemplateHash(field, fingerprint string) (string, error) {
+	parsed, err := digest.Parse(fingerprint)
+	if err != nil {
+		return "", fmt.Errorf("parse %s schema fingerprint for --name-format: %w", field, err)
+	}
+	raw, err := hex.DecodeString(parsed.Encoded())
+	if err != nil {
+		return "", fmt.Errorf("decode %s schema fingerprint for --name-format: %w", field, err)
+	}
+	return base64.StdEncoding.EncodeToString(raw), nil
 }
 
 // ValidateSchemaPlanNameTemplate reports whether format parses as a plan-name

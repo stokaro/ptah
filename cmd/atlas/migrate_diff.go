@@ -188,7 +188,7 @@ func runAtlasMigrateDiff(
 	var preparePublication func([]string) error
 	if opts.edit {
 		preparePublication = func(stagedPaths []string) error {
-			return editor.Open("", stagedPaths...)
+			return editor.Open(cmd.Context(), "", stagedPaths...)
 		}
 	}
 	diffResult, err := atlasmigrate.GenerateDiff(cmd.Context(), conn, atlasmigrate.DiffOptions{
