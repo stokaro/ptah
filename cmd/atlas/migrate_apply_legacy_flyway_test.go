@@ -176,28 +176,77 @@ func execRecoverySQL(c *qt.C, dbPath string, statements []string) {
 	}
 }
 
-// TestCompatMigrateApply_LegacyFlywayPartialRecoveryReportsOnlyWhatIsLeft covers
-// an operator who ran some of the printed statements and stopped.
+// TestCompatMigrateApply_LegacyFlywayBothVersionsRecorded is the input that
+// separates the detector's rule from the plausible simpler one.
 //
-// It is the input that separates the detector's real rule from the plausible
-// simpler one. "A legacy version is recorded" alone would report V1 again after
-// its row had already been migrated forward; the rule is "a legacy version is
-// recorded AND the version that file converts to today is not", so only the
-// statement still outstanding is printed.
-func TestCompatMigrateApply_LegacyFlywayPartialRecoveryReportsOnlyWhatIsLeft(t *testing.T) {
+// "A legacy version is recorded" and "a legacy version is recorded AND the
+// version that file converts to today is not" agree on every input where the
+// legacy row was MOVED — rewriting it removes the legacy version, so both rules
+// go quiet together. They disagree only when both versions are present at once,
+// which is what an operator who inserted the new row instead of updating the old
+// one leaves behind. The migration has demonstrably already run under its new
+// identity, so re-reporting it would send them at a row that is already correct.
+func TestCompatMigrateApply_LegacyFlywayBothVersionsRecorded(t *testing.T) {
 	c := qt.New(t)
 	dir, dbPath := legacyFlywayFixture(c)
-	// Run only the first of the two statements.
-	rewriteRevisionVersion(c, dbPath, legacyFlywayV1, "4611686018427469511")
+	copyRevisionRow(c, dbPath, legacyFlywayV1, "4611686018427469511")
 
 	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 
 	c.Assert(err, qt.IsNotNil)
 	message := errorText(err) + stderr
+	// Only V2 is outstanding; V1 already has its new row.
 	c.Assert(message, qt.Contains, "1 already-applied migration(s)")
 	c.Assert(message, qt.Contains, "V2__seed.sql")
 	c.Assert(message, qt.Not(qt.Contains), "V1__init.sql")
 	c.Assert(extractUpdateStatements(message), qt.HasLen, 1)
+}
+
+// copyRevisionRow duplicates a revision under a second version, leaving both.
+func copyRevisionRow(c *qt.C, dbPath, from, to string) {
+	c.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	result, err := db.Exec(`
+INSERT INTO atlas_schema_revisions
+  (version, description, type, applied, total, executed_at, execution_time, hash, operator_version)
+SELECT ?, description, type, applied, total, executed_at, execution_time, hash, operator_version
+FROM atlas_schema_revisions WHERE version = ?`, to, from)
+	c.Assert(err, qt.IsNil)
+	affected, err := result.RowsAffected()
+	c.Assert(err, qt.IsNil)
+	c.Assert(affected, qt.Equals, int64(1))
+}
+
+// TestCompatMigrateApply_LegacyFlywayIgnoresNestedFiles pins that the
+// reconstruction only pairs files the OLD build would have executed.
+//
+// The pre-#982 importer read one directory level, so a nested migration never
+// produced a revision row and no recorded version can have come from one.
+// Pairing it anyway turns any unrelated stale row that happens to collide with
+// its would-be legacy version into a refusal — an over-refusal invented out of
+// a file the old build never read.
+func TestCompatMigrateApply_LegacyFlywayIgnoresNestedFiles(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dir := filepath.Join(root, "migrations")
+	dbPath := filepath.Join(root, "nested.db")
+	writeAtlasApplyProjectMigration(c, dir, "V1__init.sql", "CREATE TABLE IF NOT EXISTS n1 (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, filepath.Join(dir, "sub"), "V2__nested.sql", "CREATE TABLE IF NOT EXISTS n2 (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "flyway")
+	_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+	c.Assert(err, qt.IsNil)
+
+	// A stale row that collides with the version the nested file WOULD have had
+	// under the old encoding, had the old build been able to see it.
+	rewriteRevisionVersion(c, dbPath, "4611686018427510315", legacyFlywayV2)
+
+	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+
+	// The nested file contributes no pairing, so nothing claims this database
+	// was written by an older build.
+	c.Assert(errorText(err)+stderr, qt.Not(qt.Contains), "stokaro/ptah#982")
 }
 
 // TestCompatMigrateApply_LegacyFlywayDetectorDoesNotOverRefuse covers the
