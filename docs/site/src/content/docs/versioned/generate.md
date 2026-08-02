@@ -65,6 +65,24 @@ Generated 1 migration statements.
 Because the database is empty, the difference is the whole schema. On a
 migrated database the plan contains only the delta.
 
+### Send the plan verdict to CI
+
+Use `--report json` when automation needs the safety verdict:
+
+```bash
+ptah migrations plan \
+  --schema-file ./schema.sql \
+  --db-url "sqlite://app.db" \
+  --report json
+```
+
+This form writes one `safety.Report` JSON document to standard output. Its
+`highest` field carries the highest operational risk, `destructive` is the
+blocking destructive verdict, and `assessments` lists every rendered
+statement assessment. It does not print migration SQL or write migration
+files. Run the default text plan separately when reviewers also need the SQL,
+as the [CI](../../testing/ci/) workflow does.
+
 ## Generate the migration files
 
 ```bash
@@ -86,6 +104,13 @@ DOWN: .../migrations/1785255952_init.down.sql
 The version prefix is a timestamp; `--name` becomes the description in the
 file name. Ptah writes both directions — the generated down file reverses the
 up file:
+
+Pass `--report json` to publish a machine-readable safety artifact with each
+generated pair. `generate` writes
+`<version>_<name>.safety.json` beside the up and down files and prints its path
+as `REPORT: ...`; unlike `plan --report json`, it does not write the JSON to
+standard output. HTML reports follow the same rule with a `.safety.html`
+suffix.
 
 ```sql
 -- Migration rollback
@@ -236,11 +261,10 @@ exit `2`:
 error: destructive migration statements require AllowDestructive
 ```
 
-Review the plan, then rerun with `--allow-destructive` to accept it. Use
-`--report json` when CI needs the safety classification as structured data
-instead of text — the GitHub Action's destructive-change check run is driven
-by exactly that report ([CI](../../testing/ci/)). The apply-time gate on
-`ptah migrations up` is separate — see
+Review the plan, then rerun with `--allow-destructive` to accept it. Use the
+[structured plan report](#send-the-plan-verdict-to-ci) for CI decisions, or
+the generated sibling report when an audit artifact must stay with the
+migration pair. The apply-time gate on `ptah migrations up` is separate — see
 [Integrity and safety](../integrity-and-safety/).
 
 **Conflicting sources stop generation.** When two schema sources disagree

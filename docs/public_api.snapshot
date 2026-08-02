@@ -6117,14 +6117,13 @@ func (e *ShadowVerificationError) Unwrap() error
 package generator // import "github.com/stokaro/ptah/migration/generator"
 
 type ShadowVerificationResult struct {
-    Stage      string           `json:"stage"`
-    Success    bool             `json:"success"`
+    Stage string `json:"stage"`
+    // Mismatches contains every structural mismatch in deterministic category and object order.
     Mismatches []ShadowMismatch `json:"mismatches,omitempty"`
 }
-    ShadowVerificationResult is a structured shadow-database verification
-    outcome. Errors preserve the historical text form through
-    ShadowVerificationError.Error while exposing mismatches to callers that need
-    machine-readable diagnostics.
+    ShadowVerificationResult describes one failed shadow-database verification.
+    Errors preserve the text form through ShadowVerificationError.Error while
+    exposing mismatches to callers that need machine-readable diagnostics.
 
 
 ## github.com/stokaro/ptah/migration/importer
@@ -6440,7 +6439,8 @@ type Options struct {
 package lint // import "github.com/stokaro/ptah/migration/lint"
 
 type Rule struct {
-    // Code is the stable identifier (DS101, PG101, ...).
+    // Code is the stable identifier (DS101, PG101, ...). It starts with an
+    // uppercase ASCII letter and contains only uppercase ASCII letters and digits.
     Code string
     // Title is the short human-readable name of the hazard.
     Title string

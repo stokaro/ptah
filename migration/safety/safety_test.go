@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/migration/risk"
 	"github.com/stokaro/ptah/migration/safety"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -171,6 +172,38 @@ func TestRenderJSON(t *testing.T) {
 	c.Assert(report.Highest, qt.Equals, safety.Destructive)
 	c.Assert(report.Destructive, qt.IsTrue)
 	c.Assert(report.Assessments, qt.DeepEquals, assessments)
+}
+
+func TestNewReportDestructiveVerdictDoesNotDependOnAssessmentOrder(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name        string
+		assessments []safety.StatementAssessment
+	}{
+		{
+			name: "lint error before destructive assessment",
+			assessments: []safety.StatementAssessment{
+				{Severity: risk.Error},
+				{Severity: safety.Destructive},
+			},
+		},
+		{
+			name: "destructive assessment before lint error",
+			assessments: []safety.StatementAssessment{
+				{Severity: safety.Destructive},
+				{Severity: risk.Error},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			report := safety.NewReport(test.assessments)
+			c.Assert(report.Highest, qt.Equals, safety.Destructive)
+			c.Assert(report.Destructive, qt.IsTrue)
+			c.Assert(safety.HasDestructiveAssessment(test.assessments), qt.IsTrue)
+		})
+	}
 }
 
 func TestAssessRenderedSplitsPostgresModifyColumnStatements(t *testing.T) {

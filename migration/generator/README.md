@@ -87,8 +87,13 @@ The plan records the migration-directory snapshot used for planning.
 `WriteFiles` acquires the shared cross-process directory lock and rejects the
 plan if migration SQL or integrity metadata changed before publication. It
 never renumbers and publishes a plan derived from stale history.
+
 It renders every up/down file and requested safety report before publishing
 the artifacts as one batch. A filename collision leaves no partial new files.
+Set `ReportFormat` to `json` or `html` to publish one
+`<version>_<name>.safety.<format>` file beside each migration pair. The
+resulting `MigrationFilePair.ReportFile` names the published artifact.
+
 Use `WriteFilesContext` when lock acquisition must honor cancellation or an
 operation deadline. Callers can branch on
 `generator.ErrMigrationDirectoryChanged` when another process changed the
@@ -132,6 +137,23 @@ shadow check failed: missing column users.email
 
 Ptah also runs an `up -> down -> up` round-trip on the candidate migration and
 aborts if either direction fails.
+
+Shadow failures preserve structured diagnostics. Use `errors.As` rather than
+parsing the display message:
+
+```go
+var shadowErr *generator.ShadowVerificationError
+if errors.As(err, &shadowErr) {
+    fmt.Printf("shadow stage: %s\n", shadowErr.Result.Stage)
+    for _, mismatch := range shadowErr.Result.Mismatches {
+        fmt.Printf("%s: %s\n", mismatch.Kind, mismatch.Message)
+    }
+}
+```
+
+Operational failures also unwrap to the underlying database or migration
+error. Structural schema mismatches carry the complete, deterministically
+ordered mismatch list without an underlying error.
 
 ### File Naming Convention
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -303,6 +304,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
+	requestedMigrationsDir := migrationsDir
 	settings, err := parseMigrationSettings(
 		dirFormatValue,
 		revisionFormatValue,
@@ -321,6 +323,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	lintPathPrefix := lintPathPrefixForSource(requestedMigrationsDir, source)
 	migrationsFS := source.FileSystem
 	migrationsDir = source.Display
 	settings.dirFormat = source.DirFormat
@@ -452,7 +455,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
 	if !opts.allowDestructive {
 		preflightHook = dbcli.CombineMigrationHooks(
-			lockedDestructiveLintHook(migrationsFS, conn.Info().Dialect),
+			lockedDestructiveLintHook(migrationsFS, conn.Info().Dialect, lintPathPrefix),
 			preflightHook,
 		)
 	}
@@ -512,6 +515,13 @@ func emitMigrateUpSummary(
 	}
 	emit.Println("✅ Migrations completed successfully!")
 	emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
+}
+
+func lintPathPrefixForSource(requested string, source migrationsource.Source) string {
+	if source.OCI != nil {
+		return filepath.ToSlash(source.Display)
+	}
+	return filepath.ToSlash(requested)
 }
 
 func verifyMigrationIntegrity(
@@ -602,14 +612,20 @@ func shutdownObservability(runtime *cliobs.Runtime) {
 	}
 }
 
-func lintPendingDestructive(fsys fs.FS, pending []int64, dialect string) ([]lint.Finding, error) {
+func lintPendingDestructive(
+	fsys fs.FS,
+	pending []int64,
+	dialect string,
+	pathPrefix string,
+) ([]lint.Finding, error) {
 	cfg, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
 	if err != nil {
 		return nil, err
 	}
 	findings, err := lint.LintFS(fsys, lint.Options{
-		Dialect:  dialect,
-		Disabled: append([]string{"MF", "BC", "PG", "MY"}, cfg.DisabledRules...),
+		Dialect:    dialect,
+		Disabled:   append([]string{"MF", "BC", "PG", "MY"}, cfg.DisabledRules...),
+		PathPrefix: pathPrefix,
 		Selection: lint.VersionSelection{
 			Versions:   pending,
 			Restricted: true,
@@ -628,9 +644,9 @@ func lintPendingDestructive(fsys fs.FS, pending []int64, dialect string) ([]lint
 	return destructive, nil
 }
 
-func lockedDestructiveLintHook(fsys fs.FS, dialect string) migrator.PreMigrationHook {
+func lockedDestructiveLintHook(fsys fs.FS, dialect, pathPrefix string) migrator.PreMigrationHook {
 	return func(_ context.Context, plan migrator.MigrationPlan) error {
-		findings, err := lintPendingDestructive(fsys, plan.Versions, dialect)
+		findings, err := lintPendingDestructive(fsys, plan.Versions, dialect, pathPrefix)
 		if err != nil {
 			return fmt.Errorf("error checking pending migration safety: %w", err)
 		}

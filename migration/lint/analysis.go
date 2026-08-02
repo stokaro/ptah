@@ -249,7 +249,17 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
 		return Analysis{}, err
 	}
-	if err := validateRules(rulesForOptions(opts)); err != nil {
+	rules := rulesForOptions(opts)
+	if err := validateRules(rules); err != nil {
+		return Analysis{}, err
+	}
+	if err := validateRuleConfigs(opts.RuleConfigs); err != nil {
+		return Analysis{}, err
+	}
+	if err := validateRuleSelectors(opts.Disabled); err != nil {
+		return Analysis{}, err
+	}
+	if err := validateConfiguredRuleSelectors(rules, opts); err != nil {
 		return Analysis{}, err
 	}
 	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
@@ -316,7 +326,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			continue
 		}
 		file := cloneFile(files[i])
-		findings = append(findings, runRules(&file, opts)...)
+		findings = append(findings, runRules(&file, opts, rules)...)
 	}
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {

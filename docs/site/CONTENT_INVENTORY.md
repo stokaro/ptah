@@ -424,7 +424,7 @@ Versioned migrations
   versioned/apply                     howto
   versioned/rollback                  howto
   versioned/integrity-and-safety      howto (hash/validate/verify-sum, lint, destructive gate,
-                                      pre-migration checks, shadow verification)
+                                      pre-migration checks)
   versioned/maintain-history          howto (edit, rebase, rm, repair)
   versioned/import                    howto (golang-migrate/Goose/Flyway/Liquibase)
   versioned/checkpoints               howto (current workflows/checkpoints)
