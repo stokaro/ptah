@@ -9,16 +9,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/cmd/internal/migrationsource"
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/internal/lintartifact"
-	"github.com/stokaro/ptah/internal/migrationlintreport"
-	"github.com/stokaro/ptah/internal/ociartifact"
-	migrationlint "github.com/stokaro/ptah/migration/lint"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/migrationsource"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/lintartifact"
+	"go.5x5.cz/ptah/internal/migrationlintreport"
+	"go.5x5.cz/ptah/internal/ociartifact"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const (

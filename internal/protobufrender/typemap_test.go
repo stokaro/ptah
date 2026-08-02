@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/goschema"
 )
 
 // typeCase pins one row of the documented type-mapping table. want is the whole

@@ -413,7 +413,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 func TestDialectFromURL_HappyPath(t *testing.T) {

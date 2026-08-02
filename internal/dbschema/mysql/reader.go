@@ -8,8 +8,8 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/sqlrunner"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
 // Reader reads schema information from MySQL/MariaDB databases

@@ -12,7 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform"
 )
 
 // atlasMetadataNullGuard restates the expected CASE arm as a literal rather

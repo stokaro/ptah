@@ -14,19 +14,19 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cliobs"
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/cmd/internal/migrationsource"
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/deploymentreport"
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/onlineddl"
-	"github.com/stokaro/ptah/internal/preflight"
-	"github.com/stokaro/ptah/migration/lint"
-	"github.com/stokaro/ptah/migration/migrator"
-	"github.com/stokaro/ptah/migration/risk"
+	"go.5x5.cz/ptah/cmd/internal/cliobs"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrationsource"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/deploymentreport"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/onlineddl"
+	"go.5x5.cz/ptah/internal/preflight"
+	"go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/risk"
 )
 
 const (

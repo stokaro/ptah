@@ -6,11 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/platform/identifier"
-	"github.com/stokaro/ptah/migration/planner"
-	"github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/migration/planner"
+	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // fkColumnTypeChangeInputs is the shared scenario for issue #694: posts.user_id

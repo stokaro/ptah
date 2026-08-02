@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/dbtest"
+	"go.5x5.cz/ptah/migration/dbtest"
 )
 
 func TestParseCases_MultiDocument(t *testing.T) {

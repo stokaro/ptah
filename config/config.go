@@ -8,7 +8,7 @@ package config
 import (
 	"slices"
 
-	"github.com/stokaro/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/platform/identifier"
 )
 
 // CompareOptions contains configuration options for schema comparison operations.

@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/devclean"
-	"github.com/stokaro/ptah/internal/devlock"
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/devclean"
+	"go.5x5.cz/ptah/internal/devlock"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const failedReplayCleanupTimeout = 30 * time.Second

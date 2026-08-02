@@ -4,8 +4,8 @@ package license
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/internal/licensetext"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/licensetext"
 )
 
 // NewLicenseCommand returns the native license command.

@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/migration/generator"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/generator"
 )
 
 type roundTripFixture struct {

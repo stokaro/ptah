@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // DiffPolicy holds Atlas-compatible schema diff policy that maps to Ptah's

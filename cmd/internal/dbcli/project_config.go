@@ -9,9 +9,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/core/schemasource"
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/schemasource"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 const (

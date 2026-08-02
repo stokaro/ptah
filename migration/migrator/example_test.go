@@ -10,9 +10,9 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"github.com/stokaro/ptah/dbschema"
-	examples "github.com/stokaro/ptah/examples/migrator"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/dbschema"
+	examples "go.5x5.cz/ptah/examples/migrator"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // Example demonstrates how to use the migrator programmatically

@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlashclfmt"
+	"go.5x5.cz/ptah/internal/atlashclfmt"
 )
 
 func TestFormatPaths_HappyPathFormatsFilesRecursively(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
 )
 
 const (

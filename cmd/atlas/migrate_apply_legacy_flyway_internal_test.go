@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 )
 
 // TestLegacyFlywayRefusalRendersRecoverySQL is white-box because the branch it

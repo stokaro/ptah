@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema/types"
+	"go.5x5.cz/ptah/dbschema/types"
 )
 
 func TestReaderOutputSchema_DefaultSchemaUnscoped(t *testing.T) {

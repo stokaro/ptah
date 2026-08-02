@@ -24,8 +24,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/schemaexport"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
 // RemovalPolicy controls what happens when a whole message or enum disappears

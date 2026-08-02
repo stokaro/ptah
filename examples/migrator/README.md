@@ -23,9 +23,9 @@ import (
     
     "github.com/go-extras/go-kit/must"
     
-    "github.com/stokaro/ptah/executor"
-    "github.com/stokaro/ptah/migrator"
-    migrator_examples "github.com/stokaro/ptah/examples/migrator"
+    "go.5x5.cz/ptah/executor"
+    "go.5x5.cz/ptah/migrator"
+    migrator_examples "go.5x5.cz/ptah/examples/migrator"
 )
 
 func main() {

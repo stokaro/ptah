@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/schemaexport"
+	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
 // openAPIType is the OpenAPI Schema Object shape a Ptah column type maps to.

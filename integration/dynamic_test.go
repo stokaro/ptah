@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 //go:embed fixtures

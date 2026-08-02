@@ -46,8 +46,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/goschema"
 )
 
 // ToField converts an ast.ColumnNode to a goschema.Field with comprehensive attribute extraction.

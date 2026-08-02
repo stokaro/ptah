@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 type statementValidatorRecorder struct {

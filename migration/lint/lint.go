@@ -35,10 +35,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/atlaslint"
-	"github.com/stokaro/ptah/internal/lexer"
-	"github.com/stokaro/ptah/migration/migrator"
-	"github.com/stokaro/ptah/migration/risk"
+	"go.5x5.cz/ptah/internal/atlaslint"
+	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/risk"
 )
 
 // Severity is the urgency of a finding.

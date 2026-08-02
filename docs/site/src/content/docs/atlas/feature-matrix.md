@@ -273,7 +273,7 @@ seven of them as open capabilities regardless.
 | Reusable Go packages (embedder API) | ✅ | ➖ | ➖ | Documented embedder packages cover parse, diff, plan, render, migrate, lint and seed. CE conformance measures CLI commands, not Go APIs. |
 | Schema visualization (ERD diagrams) | ✅ | ❌ | ✅ | Mermaid, DOT or SVG ERD from Go annotations only; SVG shells out to Graphviz dot. Atlas ERD lives in the hosted service (any plan per its pricing page); the CE binary rejects `--web`. |
 | Statement observer and validator hooks (Go API) | ✅ | ➖ | ➖ | migrator.WithStatementObserver runs a read-only callback per executed statement; WithStatementValidator gates all statements pre-execution; both compose with StatementInterceptor. |
-| testkit companion module for database tests | ✅ | ➖ | ➖ | Separate module github.com/stokaro/ptah/testkit wraps testcontainers-go for tests needing real databases; versions independently and stays out of the main module graph. |
+| testkit companion module for database tests | ✅ | ➖ | ➖ | Separate module go.5x5.cz/ptah/testkit wraps testcontainers-go for tests needing real databases; versions independently and stays out of the main module graph. |
 
 ## Data and distribution
 

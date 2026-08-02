@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // Global regex cache for function dependency analysis

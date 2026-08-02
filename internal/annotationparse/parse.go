@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/annotationmeta"
 )
 
 var attrRe = regexp.MustCompile(`(\w+(?:\.\w+)*)=("(?:\\.|[^"\\])*"|[^\s]+)`)

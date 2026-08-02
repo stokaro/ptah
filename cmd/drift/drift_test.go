@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/drift"
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/drift"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
 )
 
 const (

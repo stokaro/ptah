@@ -15,12 +15,12 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/atlashcl"
-	"github.com/stokaro/ptah/internal/atlashclrender"
-	"github.com/stokaro/ptah/internal/fsnapshot"
-	"github.com/stokaro/ptah/internal/ociartifact"
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/atlashcl"
+	"go.5x5.cz/ptah/internal/atlashclrender"
+	"go.5x5.cz/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 const (

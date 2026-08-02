@@ -17,7 +17,7 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
-	"github.com/stokaro/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/ociartifact"
 )
 
 const fixedCreatedAt = "2026-07-27T12:00:00Z"

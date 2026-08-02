@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/dbschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // MigrationStatus represents the current state of migrations

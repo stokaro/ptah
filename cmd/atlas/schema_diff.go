@@ -6,14 +6,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/internal/atlasfilter"
-	"github.com/stokaro/ptah/internal/atlasreport"
-	"github.com/stokaro/ptah/internal/atlasschema"
-	"github.com/stokaro/ptah/internal/atlassource"
-	"github.com/stokaro/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/atlasfilter"
+	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/schemafile"
 )
 
 type atlasSchemaDiffOptions struct {

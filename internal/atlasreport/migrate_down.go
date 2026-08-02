@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 var atlasMigrateDownFailedVersionRe = regexp.MustCompile(`failed to revert migration ([0-9]+)`)

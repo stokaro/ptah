@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 // File is one planned output file. Path is slash-separated and relative to

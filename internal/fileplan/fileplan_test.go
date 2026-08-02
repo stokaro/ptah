@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/fileplan"
+	"go.5x5.cz/ptah/internal/fileplan"
 )
 
 func TestApply_HappyPath(t *testing.T) {

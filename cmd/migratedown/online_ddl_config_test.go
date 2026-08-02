@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migratedown"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/cmd/migratedown"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestMigrateDownCommandUsesNamedEnvOnlineDDLConfig(t *testing.T) {

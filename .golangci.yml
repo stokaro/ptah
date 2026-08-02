@@ -313,7 +313,7 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/stokaro/ptah)
+        - prefix(go.5x5.cz/ptah)
   exclusions:
     generated: lax
     paths:

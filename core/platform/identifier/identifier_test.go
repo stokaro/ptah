@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/platform/identifier"
 )
 
 func TestForDialect(t *testing.T) {

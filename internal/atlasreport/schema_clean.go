@@ -3,7 +3,7 @@ package atlasreport
 import (
 	"io"
 
-	"github.com/stokaro/ptah/internal/schemaclean"
+	"go.5x5.cz/ptah/internal/schemaclean"
 )
 
 type SchemaCleanOptions struct {

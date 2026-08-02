@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/devclean"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/devclean"
 )
 
 func TestReplayGuardSQLite_HappyPath(t *testing.T) {

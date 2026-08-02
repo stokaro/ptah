@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/compare"
+	"go.5x5.cz/ptah/cmd/compare"
 )
 
 const (

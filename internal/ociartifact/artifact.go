@@ -21,7 +21,7 @@ import (
 	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry"
 
-	"github.com/stokaro/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/fsnapshot"
 )
 
 const (

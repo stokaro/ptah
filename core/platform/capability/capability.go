@@ -43,7 +43,7 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform"
 )
 
 // Capability is a single named feature flag from the curated registry below.

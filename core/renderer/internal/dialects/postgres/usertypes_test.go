@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/renderer/internal/dialects/postgres"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
 )
 
 func TestPostgreSQLRenderer_VisitCreateType_Domain(t *testing.T) {

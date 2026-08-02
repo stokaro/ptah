@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/safety"
+	"go.5x5.cz/ptah/migration/safety"
 )
 
 func TestCheckDestructiveAllowed(t *testing.T) {

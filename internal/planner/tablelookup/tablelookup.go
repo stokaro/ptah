@@ -4,8 +4,8 @@ package tablelookup
 import (
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // ResolveReference returns the canonical identity of a referenced table when

@@ -26,7 +26,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // FileName is the conventional integrity file inside a migrations directory.

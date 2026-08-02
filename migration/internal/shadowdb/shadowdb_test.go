@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/migration/internal/shadowdb"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/internal/shadowdb"
 )
 
 func TestDatabase_CloseZeroValue(t *testing.T) {

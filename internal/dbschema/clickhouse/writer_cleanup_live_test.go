@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/dbschema/clickhouse"
-	"github.com/stokaro/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
+	"go.5x5.cz/ptah/internal/sqlident"
 )
 
 func TestWriterDropDatabaseRealm_Live(t *testing.T) {

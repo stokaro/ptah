@@ -7,11 +7,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/internal/atlassource"
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/pathguard"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // resolvedPath mirrors the resolver's pathguard resolution (symlinks such as

@@ -12,10 +12,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/dbschema/dbtest"
-	"github.com/stokaro/ptah/internal/dbschema/mysql"
-	"github.com/stokaro/ptah/internal/sqlrunner"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/internal/dbschema/mysql"
+	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
 func TestWriterDropAllTables_RestoresForeignKeyChecksAfterCancellation(t *testing.T) {

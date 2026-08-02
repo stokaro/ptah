@@ -12,14 +12,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasschema"
-	"github.com/stokaro/ptah/internal/atlassource"
-	"github.com/stokaro/ptah/internal/devlock"
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/schemafile"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/devlock"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestInspectSource_DatabaseURL(t *testing.T) {

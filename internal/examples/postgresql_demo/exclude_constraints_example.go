@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/stokaro/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/goschema"
 )
 
 // Example 1: Room booking system with EXCLUDE constraint to prevent overlapping bookings

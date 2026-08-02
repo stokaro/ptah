@@ -16,7 +16,7 @@ paths. The separate `ptah-compat` binary is a binary-level drop-in replacement
 for the Atlas CLI, built for scripts that need Atlas-style root commands:
 
 ```bash
-go install github.com/stokaro/ptah/cmd/ptah-compat@latest
+go install go.5x5.cz/ptah/cmd/ptah-compat@latest
 
 ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
 ```
@@ -40,7 +40,7 @@ For a byte-level drop-in with existing scripts that call an executable named
 go build -o atlas ./cmd/ptah-compat
 
 # Or install it and link the atlas name:
-go install github.com/stokaro/ptah/cmd/ptah-compat@latest
+go install go.5x5.cz/ptah/cmd/ptah-compat@latest
 install_dir="$(go env GOPATH)/bin"
 ln -sf "$install_dir/ptah-compat" "$install_dir/atlas"
 ```

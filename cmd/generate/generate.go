@@ -9,11 +9,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/cmd/internal/schemaload"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/renderer"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/schemaload"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/renderer"
 )
 
 const (

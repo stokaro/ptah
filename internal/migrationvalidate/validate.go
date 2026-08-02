@@ -5,9 +5,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/migrationreplay"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationreplay"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // Options configures a migration validation run.

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
 )
 
 // Regular expressions for constraint-based index detection

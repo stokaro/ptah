@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/generator"
 )
 
 func TestGenerateMigration_HappyPath(t *testing.T) {

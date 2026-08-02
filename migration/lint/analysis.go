@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/fsnapshot"
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // CompatibilityProfile selects command-surface-specific lint semantics.

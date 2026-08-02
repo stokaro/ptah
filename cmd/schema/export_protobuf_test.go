@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/cmd/schema"
-	"github.com/stokaro/ptah/internal/protobufrender"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/schema"
+	"go.5x5.cz/ptah/internal/protobufrender"
 )
 
 // protoTestPackage is the well-formed package used by the happy-path tests: it

@@ -97,10 +97,10 @@ GOWORK=off go build -o ./bin/ptah-compat ./cmd/ptah-compat
 From Go modules:
 
 ```bash
-go install github.com/stokaro/ptah/cmd/ptah@latest
+go install go.5x5.cz/ptah/cmd/ptah@latest
 ptah version
 
-go install github.com/stokaro/ptah/cmd/ptah-compat@latest
+go install go.5x5.cz/ptah/cmd/ptah-compat@latest
 ptah-compat migrate --help
 ```
 

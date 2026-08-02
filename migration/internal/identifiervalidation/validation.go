@@ -5,13 +5,13 @@ package identifiervalidation
 import (
 	"fmt"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform/identifier"
-	"github.com/stokaro/ptah/core/ptaherr"
-	"github.com/stokaro/ptah/internal/indexscope"
-	"github.com/stokaro/ptah/internal/tableref"
-	"github.com/stokaro/ptah/migration/internal/generatedschema"
-	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/tableref"
+	"go.5x5.cz/ptah/migration/internal/generatedschema"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // ValidateCoverage rejects catalog-resolved snapshots that omit a candidate.

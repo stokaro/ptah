@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
 func TestFromSequence(t *testing.T) {

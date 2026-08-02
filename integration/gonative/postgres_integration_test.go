@@ -9,9 +9,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/dbschema/postgres"
-	"github.com/stokaro/ptah/internal/testutils"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // skipIfNoPostgreSQL skips only when POSTGRES_TEST_DSN is absent; a bad configured DSN fails.

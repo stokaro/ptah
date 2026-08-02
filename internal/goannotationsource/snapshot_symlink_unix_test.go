@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"golang.org/x/sys/unix"
 
-	"github.com/stokaro/ptah/internal/goannotationsource"
+	"go.5x5.cz/ptah/internal/goannotationsource"
 )
 
 func TestCapture_FailurePath_RejectsSelectedSourceSymlink(t *testing.T) {

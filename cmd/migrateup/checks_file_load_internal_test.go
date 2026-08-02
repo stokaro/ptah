@@ -20,7 +20,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migratehash"
+	"go.5x5.cz/ptah/cmd/migratehash"
 )
 
 // checkDirectiveDropUsersSQL is the exact documented directive syntax from

@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migrationsimport"
+	"go.5x5.cz/ptah/cmd/migrationsimport"
 )
 
 func execute(args ...string) (stdout string, err error) {

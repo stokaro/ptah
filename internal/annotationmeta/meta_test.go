@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/annotationmeta"
 )
 
 func TestAllowsAttributeValidatesPlatformOverrideShape(t *testing.T) {

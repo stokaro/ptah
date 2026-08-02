@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 func TestOpenedDirectoryOperations_HappyPath(t *testing.T) {

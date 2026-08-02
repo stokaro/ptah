@@ -5,12 +5,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/ptaherr"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
-	migrationplanner "github.com/stokaro/ptah/migration/planner"
-	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
+	migrationplanner "go.5x5.cz/ptah/migration/planner"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {

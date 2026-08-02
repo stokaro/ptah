@@ -25,9 +25,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Version={{ .Version }}
-        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Commit={{ .Commit }}
-        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Date={{ .CommitDate }}
+        -X go.5x5.cz/ptah/cmd/internal/buildinfo.Version={{ .Version }}
+        -X go.5x5.cz/ptah/cmd/internal/buildinfo.Commit={{ .Commit }}
+        -X go.5x5.cz/ptah/cmd/internal/buildinfo.Date={{ .CommitDate }}
   - id: ptah-ls
     main: ./cmd/ptah-ls
     binary: ptah-ls
@@ -46,9 +46,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Version={{ .Version }}
-        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Commit={{ .Commit }}
-        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Date={{ .CommitDate }}
+        -X go.5x5.cz/ptah/cmd/internal/buildinfo.Version={{ .Version }}
+        -X go.5x5.cz/ptah/cmd/internal/buildinfo.Commit={{ .Commit }}
+        -X go.5x5.cz/ptah/cmd/internal/buildinfo.Date={{ .CommitDate }}
   - id: ptah-compat
     main: ./cmd/ptah-compat
     binary: ptah-compat
@@ -67,9 +67,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Version={{ .Version }}
-        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Commit={{ .Commit }}
-        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Date={{ .CommitDate }}
+        -X go.5x5.cz/ptah/cmd/internal/buildinfo.Version={{ .Version }}
+        -X go.5x5.cz/ptah/cmd/internal/buildinfo.Commit={{ .Commit }}
+        -X go.5x5.cz/ptah/cmd/internal/buildinfo.Date={{ .CommitDate }}
 
 archives:
   - id: ptah

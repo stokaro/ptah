@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdflags"
+	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 )
 
 func TestEnvNameNormalizesFlagName(t *testing.T) {

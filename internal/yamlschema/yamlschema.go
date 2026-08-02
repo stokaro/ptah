@@ -11,7 +11,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/stokaro/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/goschema"
 )
 
 // ParseFile parses a YAML schema file into the same Database IR used by Go annotations.

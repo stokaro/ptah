@@ -5,10 +5,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // Qualifier is the typed model for Atlas's `migrate diff --qualifier` value.

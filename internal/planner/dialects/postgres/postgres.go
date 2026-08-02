@@ -6,17 +6,17 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/internal/convert/fromschema"
-	"github.com/stokaro/ptah/internal/deporder"
-	"github.com/stokaro/ptah/internal/indexscope"
-	"github.com/stokaro/ptah/internal/planner/tablelookup"
-	"github.com/stokaro/ptah/internal/tableref"
-	"github.com/stokaro/ptah/migration/diffpolicy"
-	"github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/deporder"
+	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/planner/tablelookup"
+	"go.5x5.cz/ptah/internal/tableref"
+	"go.5x5.cz/ptah/migration/diffpolicy"
+	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform"
 )
 
 func TestMigration_Basic(t *testing.T) {

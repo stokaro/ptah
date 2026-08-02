@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/config/projectconfig"
 )
 
 func TestParsePtahExternalSchema(t *testing.T) {

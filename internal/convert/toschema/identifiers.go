@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/stokaro/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/goschema"
 )
 
 func normalizeSQLIdentifier(value string) string {

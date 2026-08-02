@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/internal/lexer"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/internal/lexer"
 )
 
 func (p *Parser) parseCreateMySQLRoutineStatement(statementStart int, kind ast.RoutineKind) (ast.Node, error) {

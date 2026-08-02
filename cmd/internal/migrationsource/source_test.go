@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/migrationsource"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/cmd/internal/migrationsource"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestResolve_LocalDirectory(t *testing.T) {

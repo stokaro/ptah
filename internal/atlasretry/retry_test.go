@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	mssql "github.com/microsoft/go-mssqldb"
 
-	"github.com/stokaro/ptah/internal/atlasretry"
+	"go.5x5.cz/ptah/internal/atlasretry"
 )
 
 func TestIsRetryable(t *testing.T) {

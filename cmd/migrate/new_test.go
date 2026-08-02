@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/migrate"
-	"github.com/stokaro/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/cmd/migrate"
+	"go.5x5.cz/ptah/internal/migratesum"
 )
 
 func TestMigrateNewCommandCreatesSkeletonFiles(t *testing.T) {

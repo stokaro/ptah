@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 func TestSchemaDiff_SetIndexAdditionsPreservesDuplicateMultiset(t *testing.T) {

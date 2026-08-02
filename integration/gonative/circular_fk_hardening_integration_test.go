@@ -17,14 +17,14 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/microsoft/go-mssqldb"
 
-	"github.com/stokaro/ptah/cmd/generate"
-	"github.com/stokaro/ptah/cmd/readdb"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/ptaherr"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/cmd/generate"
+	"go.5x5.cz/ptah/cmd/readdb"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 func TestPostgreSQLSchemaRenderCircularForeignKeysApplyIntegration(t *testing.T) {

@@ -29,7 +29,7 @@
 //
 // Example usage:
 //
-//	import "github.com/stokaro/ptah/core/platform"
+//	import "go.5x5.cz/ptah/core/platform"
 //
 //	func generateSQL(platformType string) string {
 //		switch platformType {

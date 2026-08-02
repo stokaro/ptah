@@ -5,7 +5,7 @@ import (
 	"hash/fnv"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // Database represents the complete database schema derived from Go struct annotations.

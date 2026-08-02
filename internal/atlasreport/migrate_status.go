@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 type MigrateStatusOptions struct {

@@ -3,7 +3,7 @@
 // construction keeps behavior consistent across commands.
 //
 // For the close-with-warning idiom used after a successful Connect, prefer
-// [github.com/stokaro/ptah/dbschema.CloseAndWarn] — it lives next to the
+// [go.5x5.cz/ptah/dbschema.CloseAndWarn] — it lives next to the
 // DatabaseConnection type so non-CLI consumers (for example the migration
 // generator) can also use it.
 package dbcli

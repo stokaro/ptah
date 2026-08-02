@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/schemasource"
+	"go.5x5.cz/ptah/core/schemasource"
 )
 
 func TestRun_TimeoutKillsDescendantProcess(t *testing.T) {

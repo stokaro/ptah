@@ -14,14 +14,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/readdb"
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/renderer"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/dbschema/postgres"
-	"github.com/stokaro/ptah/migration/migrator"
-	"github.com/stokaro/ptah/migration/planner"
-	"github.com/stokaro/ptah/migration/schemadiff"
+	"go.5x5.cz/ptah/cmd/readdb"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/renderer"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/planner"
+	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {

@@ -11,11 +11,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/internal/migrationlintreport"
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
-	migrationlint "github.com/stokaro/ptah/migration/lint"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/migrationlintreport"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func writeLintTestFile(c *qt.C, dir, name, content string) {

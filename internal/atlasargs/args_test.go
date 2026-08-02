@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlasargs"
 )
 
 func TestParseLocalDir_HappyPath(t *testing.T) {

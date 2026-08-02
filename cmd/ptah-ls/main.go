@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/stokaro/ptah/cmd/internal/buildinfo"
-	"github.com/stokaro/ptah/internal/ptahls"
+	"go.5x5.cz/ptah/cmd/internal/buildinfo"
+	"go.5x5.cz/ptah/internal/ptahls"
 )
 
 func main() {

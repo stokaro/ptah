@@ -6,10 +6,10 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasurl"
-	"github.com/stokaro/ptah/internal/devlock"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/devlock"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // RollbackFromShadowOptions configures VerifyRollbackFromShadow.

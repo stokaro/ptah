@@ -20,8 +20,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
 func TestAcquirePostgresLock_RetriesUntilAcquired(t *testing.T) {

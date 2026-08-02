@@ -19,13 +19,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/internal/atlasurl"
-	"github.com/stokaro/ptah/internal/migrationreplay"
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
-	"github.com/stokaro/ptah/migration/lint"
-	"github.com/stokaro/ptah/migration/migrator"
-	"github.com/stokaro/ptah/migration/risk"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/migrationreplay"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/risk"
 )
 
 const (

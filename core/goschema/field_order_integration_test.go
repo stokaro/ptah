@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/internal/planner/dialects/postgres"
-	"github.com/stokaro/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
+	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // TestFieldOrderConsistencyInMigrationGeneration tests that field order is preserved

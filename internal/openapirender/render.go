@@ -10,8 +10,8 @@ import (
 
 	yaml "go.yaml.in/yaml/v3"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/internal/schemaexport"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
 const (

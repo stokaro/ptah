@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stokaro/ptah/internal/fsnapshot"
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 var (

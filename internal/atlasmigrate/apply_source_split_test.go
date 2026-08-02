@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/atlasmigrateimport"
-	"github.com/stokaro/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/migratesum"
 )
 
 // The apply command captures, gates, then converts (stokaro/ptah#973). These

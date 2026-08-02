@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/integration"
+	"go.5x5.cz/ptah/integration"
 )
 
 func TestTestRunnerAddDatabaseWithCleanup_HappyPath(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/secretdisplay"
+	"go.5x5.cz/ptah/internal/secretdisplay"
 )
 
 func TestSanitize_RedactsEnvironmentAndArgumentSecrets(t *testing.T) {

@@ -12,18 +12,18 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/cmd/internal/schemaload"
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasurl"
-	"github.com/stokaro/ptah/internal/planartifact"
-	"github.com/stokaro/ptah/migration/planner"
-	"github.com/stokaro/ptah/migration/safety"
-	"github.com/stokaro/ptah/migration/schemadiff"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/schemaload"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/planartifact"
+	"go.5x5.cz/ptah/migration/planner"
+	"go.5x5.cz/ptah/migration/safety"
+	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 const (

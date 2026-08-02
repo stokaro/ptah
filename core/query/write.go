@@ -1,6 +1,6 @@
 package query
 
-import "github.com/stokaro/ptah/core/ast"
+import "go.5x5.cz/ptah/core/ast"
 
 // This file adds the write-side builders — INSERT, UPDATE, and DELETE — alongside
 // the SELECT builder. They share the SELECT builder's conventions: each method

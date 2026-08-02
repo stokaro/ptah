@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 func TestSameDatabase_SQLiteSymlinkAlias(t *testing.T) {

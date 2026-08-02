@@ -12,8 +12,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/renderer"
 )
 
 // skipIfNoPostgreSQLRenderer skips only when POSTGRES_TEST_DSN is absent; a bad configured DSN fails.

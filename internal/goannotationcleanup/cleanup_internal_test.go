@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/fsdurable"
-	"github.com/stokaro/ptah/internal/goannotationsource"
+	"go.5x5.cz/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/internal/goannotationsource"
 )
 
 func TestApplyPlans_FailurePath_RevalidatesCompleteSourceSetAfterStaging(t *testing.T) {

@@ -14,16 +14,16 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"  // PostgreSQL driver
 	_ "github.com/microsoft/go-mssqldb" // SQL Server driver
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/core/platform/identifier"
-	"github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/dbschema/clickhouse"
-	"github.com/stokaro/ptah/internal/dbschema/mssql"
-	"github.com/stokaro/ptah/internal/dbschema/mysql"
-	"github.com/stokaro/ptah/internal/dbschema/postgres"
-	"github.com/stokaro/ptah/internal/dbschema/sqlite"
-	"github.com/stokaro/ptah/internal/sqlrunner"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
+	"go.5x5.cz/ptah/internal/dbschema/mssql"
+	"go.5x5.cz/ptah/internal/dbschema/mysql"
+	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/internal/dbschema/sqlite"
+	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
 // ConnectToDatabase creates a database connection from a URL.

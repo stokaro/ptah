@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/stokaro/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/goschema"
 )
 
 // Severity classifies an export diagnostic.

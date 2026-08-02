@@ -14,10 +14,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/microsoft/go-mssqldb"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/dbschema/dbtest"
-	"github.com/stokaro/ptah/internal/dbschema/mssql"
-	"github.com/stokaro/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/internal/dbschema/mssql"
+	"go.5x5.cz/ptah/internal/sqlident"
 )
 
 func TestWriterDropDatabaseRealm_CleansCrossSchemaGraph(t *testing.T) {

@@ -8,17 +8,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/dbschema"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/atlasfilter"
-	"github.com/stokaro/ptah/internal/atlassource"
-	"github.com/stokaro/ptah/internal/devclean"
-	"github.com/stokaro/ptah/internal/devlock"
-	"github.com/stokaro/ptah/internal/migrationreplay"
-	"github.com/stokaro/ptah/internal/schemafile"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasfilter"
+	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/devclean"
+	"go.5x5.cz/ptah/internal/devlock"
+	"go.5x5.cz/ptah/internal/migrationreplay"
+	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const inspectDevCleanupTimeout = 30 * time.Second

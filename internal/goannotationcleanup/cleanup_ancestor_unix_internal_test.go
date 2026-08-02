@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/goannotationsource"
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/goannotationsource"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 func TestApplyPlans_FailurePath_AncestorSwapAbortsCleanup(t *testing.T) {

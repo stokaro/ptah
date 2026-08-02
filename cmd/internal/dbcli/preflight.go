@@ -7,8 +7,8 @@ import (
 	"os"
 	"slices"
 
-	"github.com/stokaro/ptah/internal/preflight"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/preflight"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // CombineMigrationHooks returns one hook that runs each non-nil hook in order

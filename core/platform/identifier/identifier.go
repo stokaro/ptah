@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/internal/tableref"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // Comparison describes how a database compares identifiers.

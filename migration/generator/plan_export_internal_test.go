@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/stokaro/ptah/migration/safety"
+	"go.5x5.cz/ptah/migration/safety"
 )
 
 type pendingPublicationJournalForTest struct {

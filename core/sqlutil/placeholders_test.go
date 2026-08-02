@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/core/sqlutil"
 )
 
 func TestRebind(t *testing.T) {

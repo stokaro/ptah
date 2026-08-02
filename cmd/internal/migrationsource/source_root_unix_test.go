@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/cmd/internal/migrationsource"
+	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 )
 
 func TestCaptureLocal_RejectsSymlinkedFileEscape(t *testing.T) {

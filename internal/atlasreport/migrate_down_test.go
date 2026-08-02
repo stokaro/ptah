@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/atlasreport"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func migrateDownReportFS() fstest.MapFS {

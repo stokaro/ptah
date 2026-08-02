@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/onlineddl"
+	"go.5x5.cz/ptah/internal/onlineddl"
 )
 
 func TestParseDatabaseURL_HappyPath(t *testing.T) {

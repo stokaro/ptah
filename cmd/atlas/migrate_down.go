@@ -11,15 +11,15 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/cmd/internal/migrationsource"
-	"github.com/stokaro/ptah/config/projectconfig"
-	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasargs"
-	"github.com/stokaro/ptah/internal/atlasmigrate"
-	"github.com/stokaro/ptah/internal/atlasreport"
-	"github.com/stokaro/ptah/migration/generator"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrationsource"
+	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // newAtlasMigrateDownCommand wraps the table-driven `atlas migrate down`

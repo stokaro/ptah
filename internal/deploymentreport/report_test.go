@@ -13,9 +13,9 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 
-	"github.com/stokaro/ptah/internal/deploymentreport"
-	"github.com/stokaro/ptah/internal/ociartifact"
-	"github.com/stokaro/ptah/migration/migrator"
+	"go.5x5.cz/ptah/internal/deploymentreport"
+	"go.5x5.cz/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const artifactDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

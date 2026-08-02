@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/internal/fsdurable"
-	"github.com/stokaro/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/fsdurable"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 func TestOpenedDirectoryReplaceFile_FailurePath(t *testing.T) {
