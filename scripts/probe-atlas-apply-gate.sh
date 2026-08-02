@@ -92,16 +92,6 @@ covered() {
 	esac
 }
 
-# added <format> — a file added after hashing, which CE also covers.
-added() {
-	case "$1" in
-	goose) printf -- '-- +goose Up\nCREATE TABLE t2 (id int);\n' >"$1x"; echo 2_extra.sql ;;
-	dbmate | liquibase) echo 2_extra.sql ;;
-	flyway) echo V2__extra.sql ;;
-	golang-migrate) echo 2_extra.up.sql ;;
-	esac
-}
-
 # signature <output> — the refusal shape, or "-" when there is none. Success
 # text differs between the two tools by design (Atlas prints a per-statement
 # log, ptah-compat prints its own summary), so only refusals are compared
@@ -232,7 +222,7 @@ for f in goose dbmate liquibase golang-migrate; do
 done
 # The .sql suffix match is case-sensitive on both tools, so an uppercase name
 # leaves the covered set empty rather than making it unverifiable.
-ce=ce-upper; pt=pt-upper
+ce="ce-upper"; pt="pt-upper"
 rm -rf "$ce" "$pt"; mkdir -p "$ce" "$pt"
 printf -- '-- +goose Up\nCREATE TABLE t1 (id int);\n' >"$ce/1_INIT.SQL"
 printf -- '-- +goose Up\nCREATE TABLE t1 (id int);\n' >"$pt/1_INIT.SQL"
@@ -251,13 +241,13 @@ done
 # Editing a file the covered set excludes is invisible to CE, so it must stay
 # invisible here: the golang-migrate down file, the Flyway undo file, and a
 # versioned Flyway file squashed away by a higher baseline.
-ce=ce-neg-gm; pt=pt-neg-gm
+ce="ce-neg-gm"; pt="pt-neg-gm"
 seed "$ce" golang-migrate; seed "$pt" golang-migrate
 hash_both "$ce" "$pt" golang-migrate
 printf -- '\n-- tampered down\n' >>"$ce/1_init.down.sql"
 printf -- '\n-- tampered down\n' >>"$pt/1_init.down.sql"
 compare "golang-migrate, down file edited" "$ce" "$pt" golang-migrate
-ce=ce-neg-fw; pt=pt-neg-fw
+ce="ce-neg-fw"; pt="pt-neg-fw"
 for d in "$ce" "$pt"; do
 	rm -rf "$d"; mkdir -p "$d"
 	printf 'CREATE TABLE t1 (id int);\n' >"$d/V1__init.sql"
@@ -267,7 +257,7 @@ hash_both "$ce" "$pt" flyway
 printf -- '\n-- tampered undo\n' >>"$ce/U1__undo.sql"
 printf -- '\n-- tampered undo\n' >>"$pt/U1__undo.sql"
 compare "flyway, undo file edited" "$ce" "$pt" flyway
-ce=ce-neg-base; pt=pt-neg-base
+ce="ce-neg-base"; pt="pt-neg-base"
 for d in "$ce" "$pt"; do
 	rm -rf "$d"; mkdir -p "$d"
 	printf 'CREATE TABLE a (id int);\n' >"$d/V1__one.sql"
@@ -290,12 +280,12 @@ done
 # Flyway is the one layout whose covered set reaches below the top level, so
 # the same shape is a checksum refusal there. A capture that stopped at the top
 # level would make the verifier hash a smaller set than CE recorded.
-ce=ce-sub-flyway; pt=pt-sub-flyway
+ce="ce-sub-flyway"; pt="pt-sub-flyway"
 rm -rf "$ce" "$pt"; mkdir -p "$ce/sub" "$pt/sub"
 printf 'CREATE TABLE n (id int);\n' >"$ce/sub/V2__nested.sql"
 printf 'CREATE TABLE n (id int);\n' >"$pt/sub/V2__nested.sql"
 compare "flyway, migration only in sub/ (refused)" "$ce" "$pt" flyway
-ce=ce-nested; pt=pt-nested
+ce="ce-nested"; pt="pt-nested"
 for d in "$ce" "$pt"; do
 	rm -rf "$d"; mkdir -p "$d/sub"
 	printf 'CREATE TABLE t1 (id int);\n' >"$d/V1__init.sql"
@@ -309,12 +299,12 @@ compare "flyway, nested file tampered" "$ce" "$pt" flyway
 
 echo
 echo "===== 4. the gate precedes the source-format parse"
-ce=ce-nodirective; pt=pt-nodirective
+ce="ce-nodirective"; pt="pt-nodirective"
 rm -rf "$ce" "$pt"; mkdir -p "$ce" "$pt"
 printf 'CREATE TABLE nd (id int);\n' >"$ce/1_init.sql"
 printf 'CREATE TABLE nd (id int);\n' >"$pt/1_init.sql"
 compare "goose, unhashed and unparseable" "$ce" "$pt" goose
-ce=ce-unparseable; pt=pt-unparseable
+ce="ce-unparseable"; pt="pt-unparseable"
 seed "$ce" goose; seed "$pt" goose
 hash_both "$ce" "$pt" goose
 printf 'CREATE TABLE t1 (id int);\n' >"$ce/1_init.sql"
