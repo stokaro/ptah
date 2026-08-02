@@ -348,6 +348,13 @@ func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
+			// --save without --output writes into the working directory, so a
+			// case that stopped refusing would drop its artifact into the
+			// package source tree. Pointing the working directory at a scratch
+			// dir contains that, and the no-file assertion is what proves the
+			// refusal happened before the write rather than after it.
+			scratch := chdirToScratch(c.TB.(*testing.T))
+
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 				"--from", "sqlite://"+filepath.Join(dir, "plan.db"),
 				"--to", "file://"+schemaPath,
@@ -356,6 +363,7 @@ func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 			)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
+			assertNoPlanFileWritten(c, scratch)
 		})
 	}
 }
