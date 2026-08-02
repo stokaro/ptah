@@ -224,25 +224,31 @@ FROM atlas_schema_revisions WHERE version = ?`, to, from)
 //
 // The pre-#982 importer read one directory level, so a nested migration never
 // produced a revision row and no recorded version can have come from one.
-// Pairing it anyway turns any unrelated stale row that happens to collide with
-// its would-be legacy version into a refusal — an over-refusal invented out of
-// a file the old build never read.
+//
+// Reaching that guard takes a specific shape, because the old file-name regexp
+// is anchored and matches the whole slash path: for an ordinary nested file such
+// as sub/V2__nested.sql it fails on the "s" and the guard never decides
+// anything. It decides only when the DIRECTORY name also parses — here V2__sub
+// holding V3__x.sql, whose full path V2__sub/V3__x.sql matches the old pattern
+// with version "2" and description "sub/V3__x". Without the guard that file
+// pairs to the old encoding's 20000, and any unrelated row at 20000 becomes a
+// refusal invented out of a file the old build never read.
 func TestCompatMigrateApply_LegacyFlywayIgnoresNestedFiles(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
 	dbPath := filepath.Join(root, "nested.db")
 	writeAtlasApplyProjectMigration(c, dir, "V1__init.sql", "CREATE TABLE IF NOT EXISTS n1 (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyProjectMigration(c, filepath.Join(dir, "sub"), "V2__nested.sql", "CREATE TABLE IF NOT EXISTS n2 (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, filepath.Join(dir, "V2__sub"), "V3__x.sql", "CREATE TABLE IF NOT EXISTS n2 (id INTEGER PRIMARY KEY);")
 	hashConvertedApplyDir(c, dir, "flyway")
-	_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
-	c.Assert(err, qt.IsNil)
+	stdout, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 
-	// A stale row that collides with the version the nested file WOULD have had
-	// under the old encoding, had the old build been able to see it.
-	rewriteRevisionVersion(c, dbPath, "4611686018427510315", legacyFlywayV2)
+	// A stale row at the version the nested file WOULD have had under the old
+	// encoding, if the old build had been able to see it.
+	rewriteRevisionVersion(c, dbPath, "4611686018427551119", legacyFlywayV2)
 
-	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+	_, stderr, err = runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 
 	// The nested file contributes no pairing, so nothing claims this database
 	// was written by an older build.
