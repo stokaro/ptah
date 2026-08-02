@@ -108,6 +108,11 @@ the checkpoint and a tampered checkpoint fails `ptah migrations validate`. That
 is `ptah.sum` for the Ptah convention and `atlas.sum` for `--dir-format atlas`.
 Commit the checkpoint files and the updated sum together.
 
+A directory must carry only one integrity file. Checkpointing a `ptah.sum`
+directory under `--dir-format atlas` (or an `atlas.sum` directory under
+`--dir-format ptah`) would leave both behind, which `--dir-format auto` refuses
+to read, so the command rejects it before writing anything.
+
 ## Rollback boundary
 
 A checkpoint's down body is meaningful only for a database that bootstrapped

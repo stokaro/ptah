@@ -42,6 +42,30 @@
       "new": "\tif false {\n\t\treturn writeAtlasCheckpoint(cmd, out, opts, version, upSQL)\n\t}"
     },
     {
+      "name": "the second-integrity-file guard is disabled",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tif err := checkIntegrityFileConflict(opts.migrationsDir, dirFormat); err != nil {",
+      "new": "\tif err := error(nil); err != nil {"
+    },
+    {
+      "name": "the guard protects only the ptah direction",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\twrites, foreign := migratesum.AtlasFileName, migratesum.FileName\n\tif dirFormat == migrator.MigrationDirFormatPtah {\n\t\twrites, foreign = migratesum.FileName, migratesum.AtlasFileName\n\t}",
+      "new": "\twrites, foreign := migratesum.FileName, migratesum.AtlasFileName\n\tif dirFormat == migrator.MigrationDirFormatPtah {\n\t\twrites, foreign = migratesum.FileName, migratesum.AtlasFileName\n\t}"
+    },
+    {
+      "name": "the guard protects only the atlas direction",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tif dirFormat == migrator.MigrationDirFormatPtah {\n\t\twrites, foreign = migratesum.FileName, migratesum.AtlasFileName\n\t}",
+      "new": "\tif false {\n\t\twrites, foreign = migratesum.FileName, migratesum.AtlasFileName\n\t}"
+    },
+    {
+      "name": "the guard also refuses the directory's own integrity file",
+      "file": "cmd/migratecheckpoint/migratecheckpoint.go",
+      "old": "\tif _, err := os.Stat(filepath.Join(migrationsDir, foreign)); err != nil {",
+      "new": "\tif _, err := os.Stat(filepath.Join(migrationsDir, writes)); err != nil {"
+    },
+    {
       "name": "the ptah-width version guard is dropped for atlas",
       "file": "cmd/migratecheckpoint/migratecheckpoint.go",
       "old": "\t\tif len(explicit) == ptahVersionWidth {",

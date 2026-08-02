@@ -3,15 +3,18 @@
 package migratecheckpoint
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/migration/generator"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -110,6 +113,9 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 			migrator.MigrationDirFormatPtah, migrator.MigrationDirFormatAtlas,
 		))
 	}
+	if err := checkIntegrityFileConflict(opts.migrationsDir, dirFormat); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -168,6 +174,32 @@ func writeAtlasCheckpoint(cmd *cobra.Command, out io.Writer, opts *options, vers
 	}
 	fmt.Fprintf(out, "Wrote checkpoint version %d:\n  %s\n", version, path)
 	return nil
+}
+
+// checkIntegrityFileConflict refuses to write a checkpoint whose convention
+// would leave the directory carrying a second integrity file.
+//
+// Each format refreshes its own sum: ptah writes ptah.sum, atlas writes
+// atlas.sum. A directory holding both is ambiguous — `--dir-format auto`
+// refuses to read it at all ("both ptah.sum and atlas.sum exist") — and the
+// checkpoint command would otherwise exit 0 and surface the damage on some
+// later command instead. Writing the checkpoint is the step that creates the
+// second file, so it is the step that refuses.
+func checkIntegrityFileConflict(migrationsDir string, dirFormat migrator.MigrationDirFormat) error {
+	writes, foreign := migratesum.AtlasFileName, migratesum.FileName
+	if dirFormat == migrator.MigrationDirFormatPtah {
+		writes, foreign = migratesum.FileName, migratesum.AtlasFileName
+	}
+	if _, err := os.Stat(filepath.Join(migrationsDir, foreign)); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("failed to inspect migrations directory: %w", err)
+	}
+	return fmt.Errorf(
+		"cannot write %s-format checkpoint files into a directory that already has %s: it would leave both %s and %s behind, which --%s=%s refuses to read; re-hash the directory into one format first",
+		dirFormat, foreign, foreign, writes, dirFormatFlag, migrator.MigrationDirFormatAuto,
+	)
 }
 
 // maxMigrationVersion is the largest value the 10-digit NNNNNNNNNN file-name

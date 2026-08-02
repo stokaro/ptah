@@ -220,6 +220,79 @@ func TestMigrateCheckpointCommand_PtahKeepsTenDigitCeiling(t *testing.T) {
 	c.Assert(written, qt.HasLen, 0)
 }
 
+func TestMigrateCheckpointCommand_RefusesToAddASecondIntegrityFile(t *testing.T) {
+	tests := []struct {
+		name       string
+		dirFormat  string
+		seed       func(*qt.C, string)
+		foreignSum string
+	}{
+		{
+			// The case the compat default (atlas) newly makes reachable: an
+			// existing ptah directory checkpointed under the atlas convention.
+			name:       "atlas checkpoint into a ptah.sum directory",
+			dirFormat:  "atlas",
+			seed:       seedMigrations,
+			foreignSum: "ptah.sum",
+		},
+		{
+			name:       "ptah checkpoint into an atlas.sum directory",
+			dirFormat:  "ptah",
+			seed:       seedAtlasMigrations,
+			foreignSum: "atlas.sum",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			tt.seed(c, dir)
+			c.Assert(os.WriteFile(filepath.Join(dir, tt.foreignSum), []byte("h1:seeded\n"), 0o600), qt.IsNil)
+			shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+			out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+				"--dir-format", tt.dirFormat)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(out, qt.Contains, "it would leave both")
+
+			// Assert the protected state: no checkpoint, and above all no second
+			// integrity file — a directory carrying both is one `--dir-format
+			// auto` read away from failing, long after this command exited.
+			written, globErr := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+			c.Assert(globErr, qt.IsNil)
+			c.Assert(written, qt.HasLen, 0)
+			sums, globErr := filepath.Glob(filepath.Join(dir, "*.sum"))
+			c.Assert(globErr, qt.IsNil)
+			c.Assert(sums, qt.HasLen, 1)
+			// The pre-existing sum is untouched, not rewritten.
+			body, readErr := os.ReadFile(filepath.Join(dir, tt.foreignSum))
+			c.Assert(readErr, qt.IsNil)
+			c.Assert(string(body), qt.Equals, "h1:seeded\n")
+		})
+	}
+}
+
+func TestMigrateCheckpointCommand_AllowsCheckpointBesideItsOwnSum(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedAtlasMigrations(c, dir)
+	// The directory's OWN integrity file is not a conflict — it is the one the
+	// checkpoint refreshes. This is the fixture that separates "a second sum
+	// file" from "any sum file at all".
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"), []byte("h1:stale\n"), 0o600), qt.IsNil)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	sum, err := os.ReadFile(filepath.Join(dir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(sum), qt.Not(qt.Equals), "h1:stale\n")
+	c.Assert(string(sum), qt.Contains, "_checkpoint.sql")
+}
+
 func TestMigrateCheckpointCommand_AtlasDryRunWritesNothing(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

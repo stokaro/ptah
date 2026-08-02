@@ -300,6 +300,12 @@ compat surface defaults to `atlas`. `--dir-format=auto` is refused on both,
 because writing under it would have to guess the file convention and which
 integrity file to refresh.
 
+Each convention refreshes its own integrity file, so a checkpoint that would
+leave a directory holding both `ptah.sum` and `atlas.sum` is refused up front —
+`--dir-format auto` cannot read such a directory, and the failure would
+otherwise only surface on a later command. Re-hash the directory into one
+format first.
+
 The read side honors the `-- atlas:checkpoint` directive either way: applying a
 checkpoint directory bootstraps a fresh database from the latest checkpoint and
 silently skips the checkpoint on a database that already applied the

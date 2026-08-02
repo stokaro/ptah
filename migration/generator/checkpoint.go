@@ -141,6 +141,12 @@ func ResolveAtlasCheckpointVersion(outputDir string) int64 {
 // not above the existing history after all, which would produce a checkpoint
 // that does not cover it, so the write fails rather than silently choosing a
 // different version.
+//
+// atlas.sum is written unconditionally. This does not check whether outputDir
+// also carries a ptah.sum; a directory holding both integrity files is
+// ambiguous to `--dir-format auto`, so callers that accept a user-chosen
+// directory should reject that combination first, as
+// `ptah migrations checkpoint` does.
 func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error) {
 	if version <= 0 {
 		return "", fmt.Errorf("checkpoint version must be greater than zero, got %d", version)
