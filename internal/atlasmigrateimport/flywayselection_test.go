@@ -403,6 +403,37 @@ func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T
 	}
 }
 
+// TestLoadFSFlywayLeadingComponentBound pins the edge of the representable
+// range from both sides.
+//
+// The largest accepted version is asserted with every other slot at its maximum
+// too — three components, both trailing ones at 99, which is the shape that
+// actually reaches the top of the band. A bound derived from the band width
+// alone accepts this leading component and then overflows int64 into a negative
+// Atlas version, which nothing downstream range-checks: the migrator would order
+// it before every other migration instead of after. Asserting the accepted
+// version is positive and below the reserved repeatable slot is what makes the
+// row a bound rather than a spot check.
+func TestLoadFSFlywayLeadingComponentBound(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("the largest representable version converts", func(c *qt.C) {
+		loaded, err := atlasmigrateimport.LoadFS(
+			flywaySource("V113020439624235.99.99__x.sql"), "migrations", atlasmigrateimport.FormatFlyway)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(entryNames(loaded), qt.DeepEquals, []string{"9223372036854754447_x.sql"})
+	})
+
+	c.Run("one past it is refused", func(c *qt.C) {
+		loaded, err := atlasmigrateimport.LoadFS(
+			flywaySource("V113020439624236__x.sql"), "migrations", atlasmigrateimport.FormatFlyway)
+
+		c.Assert(err, qt.ErrorMatches, `Flyway migration V113020439624236__x\.sql has version "113020439624236" that is too large.*`)
+		c.Assert(loaded, qt.IsNil)
+	})
+}
+
 // TestLoadFSFlywayTieBudgetExhausted_KnownDivergence pins the one input class
 // where this change made Ptah refuse a directory Atlas CE applies.
 //

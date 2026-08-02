@@ -131,11 +131,21 @@ const (
 	// flywayRepeatableVersion is the reserved slot every repeatable lands on, at
 	// the very top because CE emits repeatables after every versioned file.
 	flywayRepeatableVersion = math.MaxInt64
+	// flywayMaxTrailingKey is the largest contribution the two trailing slots can
+	// make to an ordering key, both holding component 99.
+	flywayMaxTrailingKey = (flywayComponentSlot-1)*flywayComponentSlot + (flywayComponentSlot - 1)
 	// flywayMaxLeadingComponent is what is left for the leading component once
 	// the bands, the trailing slots and the tie budget are taken out. It stays
 	// above 99999999999999, so the 14-digit yyyyMMddHHmmss timestamps Flyway
 	// projects commonly use are all representable.
-	flywayMaxLeadingComponent = flywayBandSize/(flywayComponentSlot*flywayComponentSlot*flywayTieSlots) - 1
+	//
+	// The bound accounts for the trailing slots and the tie budget rather than
+	// only for the band width. Dropping either term lets a leading component
+	// just under the limit push the whole key past flywayBandSize, and a
+	// versioned migration one band up from there overflows int64 into a negative
+	// version — silently, since nothing else range-checks the result.
+	flywayMaxLeadingComponent = ((flywayBandSize-flywayTieSlots)/flywayTieSlots-flywayMaxTrailingKey)/
+		(flywayComponentSlot*flywayComponentSlot) - 1
 )
 
 var (
@@ -739,7 +749,9 @@ func flywayOrderingKey(file flywaySumFile) (int64, error) {
 	if components[0] < 0 {
 		return 0, fmt.Errorf("Flyway migration %s has version %q with a negative component and cannot map to an int64 Atlas version", file.name, file.version)
 	}
-	if components[0] > flywayMaxLeadingComponent {
+	// int64 on both sides: the bound exceeds MaxInt32, so comparing it against an
+	// int component would not compile on a 32-bit build.
+	if int64(components[0]) > flywayMaxLeadingComponent {
 		return 0, fmt.Errorf("Flyway migration %s has version %q that is too large to map to an int64 Atlas version", file.name, file.version)
 	}
 

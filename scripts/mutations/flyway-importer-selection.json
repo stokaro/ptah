@@ -115,6 +115,12 @@
       "file": "internal/atlasmigrateimport/importer.go",
       "old": "\tif name := sanitizeName(description); name != \"\" {\n\t\treturn fmt.Sprintf(\"%d_%s.sql\", version, name)\n\t}",
       "new": "\tif false {\n\t\treturn fmt.Sprintf(\"%d_%s.sql\", version, sanitizeName(description))\n\t}"
+    },
+    {
+      "name": "the leading-component bound ignores the trailing slots and the tie budget",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tflywayMaxLeadingComponent = ((flywayBandSize-flywayTieSlots)/flywayTieSlots-flywayMaxTrailingKey)/\n\t\t(flywayComponentSlot*flywayComponentSlot) - 1",
+      "new": "\tflywayMaxLeadingComponent = flywayBandSize/(flywayComponentSlot*flywayComponentSlot*flywayTieSlots) - 1"
     }
   ]
 }
