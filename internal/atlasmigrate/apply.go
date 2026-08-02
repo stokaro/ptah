@@ -33,6 +33,11 @@ type ApplyOptions struct {
 	Amount               uint64
 	AllowDirty           bool
 	BaselineVersion      int64
+	// SkipChecks bypasses pre-migration check evaluation. Atlas registers no
+	// flag for this on `migrate apply` (measured on CE v1.2.0 and on the
+	// licensed v1.2.4 help surface), so the compat command resolves it from
+	// PTAH_SKIP_CHECKS rather than from the Atlas flag surface.
+	SkipChecks bool
 }
 
 // ApplyPlan is the selected Atlas migrate apply work prepared from the
@@ -81,6 +86,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		txMode:               opts.TxMode,
 		revisionsSchema:      opts.RevisionsSchema,
 		migrationLockTimeout: opts.MigrationLockTimeout,
+		skipChecks:           opts.SkipChecks,
 	})
 	if err != nil {
 		return ApplyPlan{}, err
@@ -224,6 +230,7 @@ type applyMigratorOptions struct {
 	txMode               migrator.MigrationTxMode
 	revisionsSchema      string
 	migrationLockTimeout time.Duration
+	skipChecks           bool
 }
 
 func newApplyMigrator(
@@ -245,6 +252,7 @@ func newApplyMigrator(
 		WithOutOfOrderExempt(opts.outOfOrderExempt).
 		WithTransactionMode(opts.txMode).
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
+		WithSkipChecks(opts.skipChecks).
 		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))), nil
 }
 

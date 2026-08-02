@@ -1,0 +1,122 @@
+{
+  "packages": [
+    "./cmd/atlas/",
+    "./internal/atlasargs/",
+    "./internal/atlasmigrate/"
+  ],
+  "mutations": [
+    {
+      "name": "the bypass is never wired into the migrator",
+      "file": "internal/atlasmigrate/apply.go",
+      "old": "\t\tWithSkipChecks(opts.skipChecks).\n",
+      "new": ""
+    },
+    {
+      "name": "the bypass is always on",
+      "file": "internal/atlasmigrate/apply.go",
+      "old": "\t\tWithSkipChecks(opts.skipChecks).\n",
+      "new": "\t\tWithSkipChecks(true).\n"
+    },
+    {
+      "name": "the resolved bypass never reaches ApplyOptions",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\t\tSkipChecks:           skipChecks,\n",
+      "new": "\t\tSkipChecks:           skipChecks && false,\n",
+      "comment": "Deleting the field outright leaves skipChecks unused and the package stops compiling, which is not a result. The dead conjunct keeps the variable live while making the resolved value unreachable."
+    },
+    {
+      "name": "any value of the variable enables the bypass",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tskip, err := strconv.ParseBool(value)\n\tif err != nil {\n\t\treturn false, fmt.Errorf(\"invalid boolean value %q for %s\", value, applySkipChecksEnvVar)\n\t}\n\treturn skip, nil",
+      "new": "\tskip, err := strconv.ParseBool(value)\n\t_, _ = skip, err\n\treturn true, nil"
+    },
+    {
+      "name": "a malformed value reads as false instead of failing",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tskip, err := strconv.ParseBool(value)\n\tif err != nil {\n\t\treturn false, fmt.Errorf(\"invalid boolean value %q for %s\", value, applySkipChecksEnvVar)\n\t}\n\treturn skip, nil",
+      "new": "\tskip, _ := strconv.ParseBool(value)\n\treturn skip, nil"
+    },
+    {
+      "name": "the malformed-value refusal is raised after the database work",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tskipChecks, err := resolveAtlasApplySkipChecks(cmd)\n\tif err != nil {\n\t\treturn err\n\t}",
+      "new": "\tskipChecks, skipChecksErr := resolveAtlasApplySkipChecks(cmd)\n\tdefer func() {\n\t\tif runErr == nil {\n\t\t\trunErr = skipChecksErr\n\t\t}\n\t}()",
+      "comment": "Separated only by TestMigrateApplySkipChecksEnvMalformedValueAppliesNothing: every other malformed-value case still sees an error, just after migration 1 has run."
+    },
+    {
+      "name": "the variable is read under a different name",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "const applySkipChecksEnvVar = \"PTAH_SKIP_CHECKS\"",
+      "new": "const applySkipChecksEnvVar = \"PTAH_MIGRATE_APPLY_SKIP_CHECKS\""
+    },
+    {
+      "name": "an active bypass runs silently",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif skip {\n\t\tfmt.Fprintf(cmd.ErrOrStderr(),\n\t\t\t\"warning: %s is set; pre-migration checks are bypassed for this run\\n\",\n\t\t\tapplySkipChecksEnvVar,\n\t\t)\n\t}\n",
+      "new": ""
+    },
+    {
+      "name": "the warning lands on stdout, corrupting --format output",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\t\tfmt.Fprintf(cmd.ErrOrStderr(),",
+      "new": "\t\tfmt.Fprintf(cmd.OutOrStdout(),",
+      "comment": "Survives the project-command helper, which points SetOut and SetErr at one buffer; only the separate-buffer test separates the streams."
+    },
+    {
+      "name": "a whitespace-padded value is trimmed and accepted",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tskip, err := strconv.ParseBool(value)",
+      "new": "\tskip, err := strconv.ParseBool(strings.TrimSpace(value))"
+    },
+    {
+      "name": "the mapper synthesizes skip-checks from the environment again",
+      "file": "cmd/atlas/atlas.go",
+      "old": "\t\t\tatlasargs.ExplicitUnsupportedBoolReason(\"skip-checks\", \"\", \"Skip Atlas down migration safety checks\",",
+      "new": "\t\t\tatlasargs.UnsupportedBoolReason(\"skip-checks\", \"\", \"Skip Atlas down migration safety checks\","
+    },
+    {
+      "name": "no flag is ever synthesized from the environment",
+      "file": "internal/atlasargs/args.go",
+      "old": "\tfor _, flag := range flags {\n\t\tif flag.EnvDisabled {\n\t\t\tcontinue\n\t\t}\n\t\tif flagPresent(args, flag) {",
+      "new": "\tfor _, flag := range flags {\n\t\tif true {\n\t\t\tcontinue\n\t\t}\n\t\tif flagPresent(args, flag) {"
+    },
+    {
+      "name": "the exclusion widens to every unsupported flag (the destructive rule)",
+      "file": "internal/atlasargs/args.go",
+      "old": "\tfor _, flag := range flags {\n\t\tif flag.EnvDisabled {\n\t\t\tcontinue\n\t\t}\n\t\tif flagPresent(args, flag) {",
+      "new": "\tfor _, flag := range flags {\n\t\tif flag.EnvDisabled || flag.Unsupported {\n\t\t\tcontinue\n\t\t}\n\t\tif flagPresent(args, flag) {",
+      "comment": "The regression this PR's first round shipped: PTAH_TO_TAG is discarded, the rollback target parses as 0, and the whole history rolls back. Must be caught by the surviving-row assertion, not only by the error text."
+    },
+    {
+      "name": "the down format path synthesizes skip-checks from the environment again",
+      "file": "cmd/atlas/migrate_down.go",
+      "old": "\t\tif slices.Contains(atlasMigrateDownExplicitOnlyFlags, flag.Name) {\n\t\t\treturn\n\t\t}\n",
+      "new": "\t\tif slices.Contains([]string{}, flag.Name) {\n\t\t\treturn\n\t\t}\n"
+    },
+    {
+      "name": "the down format path exclusion widens to every waiver (the destructive rule)",
+      "file": "cmd/atlas/migrate_down.go",
+      "old": "var atlasMigrateDownExplicitOnlyFlags = []string{\"skip-checks\"}",
+      "new": "var atlasMigrateDownExplicitOnlyFlags = []string{\"to-tag\", \"skip-checks\", \"plan\"}"
+    },
+    {
+      "name": "the down format path suppresses its refusal when the env twin is set",
+      "file": "cmd/atlas/migrate_down.go",
+      "old": "\tfor _, name := range atlasMigrateDownUnsupportedFlags {\n\t\tif !flagSet.Changed(name) {\n\t\t\tcontinue\n\t\t}",
+      "new": "\tfor _, name := range atlasMigrateDownUnsupportedFlags {\n\t\tif !flagSet.Changed(name) || os.Getenv(atlasFlagEnvName(name)) != \"\" {\n\t\t\tcontinue\n\t\t}",
+      "comment": "The reviewer's surviving mutant. Killed only by a case that passes the flag explicitly AND sets its twin; neither of the original two tables did both."
+    },
+    {
+      "name": "the help advertises an environment twin the mapper will not read",
+      "file": "cmd/atlas/atlas.go",
+      "old": "\t\tif !flag.EnvDisabled {\n\t\t\tcontinue\n\t\t}",
+      "new": "\t\tif true {\n\t\t\tcontinue\n\t\t}"
+    },
+    {
+      "name": "the down format path stops refusing explicit unsupported flags",
+      "file": "cmd/atlas/migrate_down.go",
+      "old": "\tfor _, name := range atlasMigrateDownUnsupportedFlags {\n\t\tif !flagSet.Changed(name) {\n\t\t\tcontinue\n\t\t}",
+      "new": "\tfor _, name := range []string{} {\n\t\tif !flagSet.Changed(name) {\n\t\t\tcontinue\n\t\t}"
+    }
+  ]
+}

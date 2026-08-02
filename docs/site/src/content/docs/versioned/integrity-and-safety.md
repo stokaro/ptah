@@ -443,9 +443,12 @@ Each check is a separate read against committed state that runs before the
 migration's statements, so a failing assertion leaves nothing applied and
 exits non-zero. Checks are rejected under `--tx-mode all` (a pooled read
 cannot see the batch's uncommitted state), and
-`ptah migrations up --skip-checks` is an emergency bypass. This is the open,
-local half of Atlas Pro's pre-migration checks; the Cloud approval-policy
-half is intentionally out of scope.
+`ptah migrations up --skip-checks` is an emergency bypass. On the
+Atlas-compatible surface that bypass is spelled `PTAH_SKIP_CHECKS=1`, because
+Atlas registers no `--skip-checks` on `migrate apply` and `ptah-compat` adds no
+flags Atlas does not have. This is the open, local half of Atlas Pro's
+pre-migration checks; the Cloud approval-policy half is intentionally out of
+scope.
 
 ## Exit codes are the contract
 

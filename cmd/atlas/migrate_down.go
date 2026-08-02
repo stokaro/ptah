@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -262,7 +263,7 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 	if err := applyAtlasMigrateDownEnvFallback(flagSet); err != nil {
 		return nil, err
 	}
-	for _, name := range []string{"to-tag", "skip-checks", "plan"} {
+	for _, name := range atlasMigrateDownUnsupportedFlags {
 		if !flagSet.Changed(name) {
 			continue
 		}
@@ -284,6 +285,27 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 	return opts, nil
 }
 
+// atlasMigrateDownUnsupportedFlags are the Atlas down flags this command
+// accepts for help parity but refuses at runtime.
+var atlasMigrateDownUnsupportedFlags = []string{"to-tag", "skip-checks", "plan"}
+
+// atlasMigrateDownExplicitOnlyFlags are the flags this path must not fill from
+// a PTAH_<FLAG> environment value. It is deliberately NOT the unsupported list:
+// PTAH_TO_TAG and PTAH_PLAN are requests for capabilities Ptah lacks, and the
+// loud refusal is the right answer to them — silently discarding PTAH_TO_TAG
+// would roll the whole history back to version 0 instead.
+//
+// Only --skip-checks is excluded, and only because `migrate apply` reads
+// PTAH_SKIP_CHECKS as its pre-migration check bypass, so on this verb the
+// variable is not an ask at all. It mirrors the EnvDisabled marker the arg
+// mapper honors on the same flag (see atlasargs.ExplicitUnsupportedBoolReason);
+// the two paths parse flags independently, so both need it.
+//
+// --format is deliberately absent: it is unsupported in the mapper but IS
+// honored here, and atlasMigrateDownWantsFormat routes to this path on
+// PTAH_FORMAT alone.
+var atlasMigrateDownExplicitOnlyFlags = []string{"skip-checks"}
+
 // applyAtlasMigrateDownEnvFallback fills unset flags from PTAH_<FLAG>
 // environment values, mirroring the env convention the forward path's arg
 // mapper applies.
@@ -291,6 +313,9 @@ func applyAtlasMigrateDownEnvFallback(flagSet *pflag.FlagSet) error {
 	var envErr error
 	flagSet.VisitAll(func(flag *pflag.Flag) {
 		if envErr != nil || flag.Changed {
+			return
+		}
+		if slices.Contains(atlasMigrateDownExplicitOnlyFlags, flag.Name) {
 			return
 		}
 		value, ok := os.LookupEnv(atlasFlagEnvName(flag.Name))
