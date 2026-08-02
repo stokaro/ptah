@@ -38,6 +38,52 @@ func assertCaptureSelectsTheSame(c *qt.C, dir string, format atlasmigrateimport.
 			strings.Join(layout, ",")))
 }
 
+// assertImporterConsumesTheCoveredSet checks that the files a Flyway directory
+// EXECUTES are the files its atlas.sum COVERS — same members, same order.
+//
+// This is the third assertion over one population, and the reason there are
+// three. The sum comparison proves SumFileNames matches the oracle; the capture
+// comparison proves the gate recomputes that same set; neither says anything
+// about what the importer runs, and #982 lived in exactly that gap: the hasher
+// and the importer were separate rules that agreed on ordinary directories and
+// diverged on a superseded baseline and a lowercase prefix. Random generation
+// over the same shapes is what stops them drifting apart again.
+//
+// A refused directory is checked against the enumerated refusal classes rather
+// than skipped. Skipping it would make this assertion vacuous exactly when the
+// importer started refusing everything — the one regression it most needs to
+// catch — so a refusal outside flywayRefusalClasses fails the shape.
+func assertImporterConsumesTheCoveredSet(c *qt.C, dir string, names []string, layout []string) {
+	c.Helper()
+	loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatFlyway)
+	if err != nil {
+		c.Assert(err, qt.ErrorMatches, flywayRefusalClasses,
+			qt.Commentf("unenumerated refusal: PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
+		return
+	}
+	bodies := make(map[string]string, len(layout))
+	for i, name := range layout {
+		bodies[fmt.Sprintf("CREATE TABLE t%d (id INTEGER PRIMARY KEY);\n", i)] = name
+	}
+	consumed := make([]string, 0, len(loaded.Entries))
+	for _, entry := range loaded.Entries {
+		consumed = append(consumed, bodies[string(entry.Data)])
+	}
+	c.Assert(consumed, qt.DeepEquals, names,
+		qt.Commentf("the importer executes a different set than atlas.sum covers: PTAH_ATLAS_FUZZ_LAYOUT=%s",
+			strings.Join(layout, ",")))
+}
+
+// flywayRefusalClasses enumerates every way a Flyway directory may be refused
+// once its covered set has been selected. Each one is pinned by a named test in
+// flywayselection_test.go; anything else reaching the fuzz is a refusal nobody
+// decided on, which for a directory Atlas CE applies is the regression #982's
+// fix most needed to avoid.
+const flywayRefusalClasses = `no importable migration files found in .* for format "flyway"` +
+	`|Flyway migrations .* and .* both carry the (Atlas version ".*"|empty Atlas version .*)` +
+	`|Flyway migration .* has version ".*" (with more than 3 components|whose component .* is outside .*|that is too large|with a negative component) .*` +
+	`|Flyway migration .* shares its version ordering key with more than the 4 files Ptah can tell apart .*`
+
 // oracleEnv names the environment variable holding the path to the pinned
 // Atlas CE binary the differential fuzz compares against.
 const oracleEnv = "PTAH_ATLAS_ORACLE"
@@ -117,6 +163,7 @@ func checkFlywayLayout(c *qt.C, oracle string, layout []string) {
 	c.Assert(string(sum.Bytes()), qt.Equals, want,
 		qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
 	assertCaptureSelectsTheSame(c, dir, atlasmigrateimport.FormatFlyway, names, layout)
+	assertImporterConsumesTheCoveredSet(c, dir, names, layout)
 }
 
 // TestSumFileNamesDifferentialFuzzRealisticFlyway restricts generation to what
@@ -152,6 +199,7 @@ func TestSumFileNamesDifferentialFuzzRealisticFlyway(t *testing.T) {
 			c.Assert(string(sum.Bytes()), qt.Equals, want,
 				qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
 			assertCaptureSelectsTheSame(c, dir, atlasmigrateimport.FormatFlyway, names, layout)
+			assertImporterConsumesTheCoveredSet(c, dir, names, layout)
 		})
 	}
 }

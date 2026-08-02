@@ -75,13 +75,13 @@ Across the 153 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 81 |
-| Ptah supports it with a stated limitation | 48 |
+| Ptah supports it fully | 82 |
+| Ptah supports it with a stated limitation | 47 |
 | Ptah does not implement it | 24 |
-| Ptah and Atlas CE both support it | 24 |
+| Ptah and Atlas CE both support it | 25 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 32 |
 | Ptah has it and neither Atlas edition does | 14 |
-| Atlas CE has it and Ptah does not, or only in part | 24 |
+| Atlas CE has it and Ptah does not, or only in part | 23 |
 | An Atlas column is ❔ — not established by this page's evidence | 23 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -168,7 +168,7 @@ seven of them as open capabilities regardless.
 | Execution order (`--exec-order`) | ✅ | ✅ | ✅ | linear fails on a pending migration below the current version, linear-skip warns and leaves it pending, non-linear applies it. |
 | External `--dir-format` outside `migrate import` | 🟡 | ✅ | ✅ | hash and validate read every Atlas source layout, under both `?format=` and `--dir-format`; lint, new, set and status still take only atlas and need migrate import first. |
 | Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Native `ptah migrations down` marks the row failed with the error and completed-statement count, so status reports it dirty and `migrations repair` clears it; compat matches Atlas, which records none. |
-| Flyway repeatable (`R__`) migration import | 🟡 | ✅ | ✅ | Compat import aborts the entire directory on any R__ file; native import rewrites R__ as a one-time migration, losing re-run-on-change. |
+| Flyway repeatable (`R__`) migration import | ✅ | ✅ | ✅ | Compat import converts `R__` to a one-time migration ordered after every versioned file, matching Atlas CE, which records it with an empty version and does not re-run it when the body changes. |
 | Generate migrations from a schema diff | 🟡 | ✅ | ✅ | New versions are a Unix epoch in an empty dir and latest+1 otherwise, not the UTC YYYYMMDDHHMMSS stamp migrate new and Atlas dirs carry. |
 | migrate apply `--allow-dirty` semantics | 🟡 | ✅ | ✅ | Flag gates a dirty revision row, not a non-empty target: a pre-populated database applies without it, and the recovery re-insert fails with UNIQUE on atlas_schema_revisions (SQLite). |
 | Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint pair; CE has no checkpoint verb and Atlas lists it as Pro. |

@@ -51,16 +51,15 @@ func SumFileNames(fsys fs.FS, format Format) ([]string, error) {
 
 	switch format {
 	case FormatFlyway:
-		// Flyway selection is a walk-order state machine, so names must arrive
-		// in visit order rather than sorted by path. Hidden directories are
-		// pruned: Atlas CE does not descend into them, so covering
-		// .archive/V1__old.sql would make Ptah refuse a directory the oracle
-		// still considers clean.
-		names, err := treeNames(fsys, skipHiddenDir)
+		covered, err := flywayCoveredFiles(fsys)
 		if err != nil {
 			return nil, err
 		}
-		return flywaySumFileNames(names), nil
+		names := make([]string, 0, len(covered))
+		for _, file := range covered {
+			names = append(names, file.name)
+		}
+		return names, nil
 	case FormatGolangMigrate:
 		names, err := topLevelNames(fsys)
 		if err != nil {
@@ -175,15 +174,45 @@ const (
 
 // flywaySumFile is one parsed Flyway file name. version is the raw token
 // between the prefix and the "__" separator; components is that token scored
-// into numbers for ordering.
+// into numbers for ordering; description is what follows the separator.
 type flywaySumFile struct {
-	name       string
-	kind       flywaySumFileKind
-	version    string
-	components []int
+	name        string
+	kind        flywaySumFileKind
+	version     string
+	description string
+	components  []int
 }
 
-// flywaySumFileNames selects and orders the Flyway files an atlas.sum covers.
+// flywayCoveredFiles walks fsys and returns the Flyway files an Atlas
+// integrity file covers, in the order Atlas CE hashes — and executes — them.
+//
+// This is the single selection rule for the Flyway layout. [SumFileNames]
+// projects the file names out of it for hashing and verification, and
+// loadFlywayEntries converts the very same records into executable migrations,
+// so the set a Flyway directory EXECUTES is by construction the set its
+// atlas.sum COVERS. Two implementations that merely agreed on today's inputs is
+// what produced #982, where a superseded baseline and a lowercase prefix ran
+// outside the checksum that had just been verified.
+//
+// It returns the parsed records rather than names because the importer needs
+// each file's kind, version token and description. Handing it names alone would
+// force it to parse them a second time, which is the same two-implementations
+// shape one level down.
+//
+// Flyway is the sole format Atlas CE recurses into, so names arrive in walk
+// order rather than sorted by path — selection is a state machine over the
+// visit sequence. Hidden directories are pruned: Atlas CE does not descend into
+// them, so covering .archive/V1__old.sql would make Ptah refuse a directory the
+// oracle still considers clean.
+func flywayCoveredFiles(fsys fs.FS) ([]flywaySumFile, error) {
+	names, err := treeNames(fsys, skipHiddenDir)
+	if err != nil {
+		return nil, err
+	}
+	return flywaySumFiles(names), nil
+}
+
+// flywaySumFiles selects and orders the Flyway files an atlas.sum covers.
 //
 // Selection is a state machine over the walk, not a filter over a set — that
 // distinction is the whole difficulty, and it is invisible unless
@@ -216,7 +245,7 @@ type flywaySumFile struct {
 //     cut lands on the directory's first byte. Repeatables are exempt.
 //  3. Output order compares version components NUMERICALLY, so V2 precedes
 //     V10 — the reverse of (1).
-func flywaySumFileNames(names []string) []string {
+func flywaySumFiles(names []string) []flywaySumFile {
 	var survivors, repeatable []flywaySumFile
 	var baseline *flywaySumFile
 
@@ -252,9 +281,9 @@ func flywaySumFileNames(names []string) []string {
 		}
 	}
 
-	out := make([]string, 0, len(survivors)+len(repeatable)+1)
+	out := make([]flywaySumFile, 0, len(survivors)+len(repeatable)+1)
 	if baseline != nil {
-		out = append(out, baseline.name)
+		out = append(out, *baseline)
 	}
 
 	// survivors is still in walk order, so a stable sort leaves files whose
@@ -262,12 +291,8 @@ func flywaySumFileNames(names []string) []string {
 	slices.SortStableFunc(survivors, func(a, b flywaySumFile) int {
 		return compareFlywaySumVersions(a.components, b.components)
 	})
-	for _, file := range survivors {
-		out = append(out, file.name)
-	}
-	for _, file := range repeatable {
-		out = append(out, file.name)
-	}
+	out = append(out, survivors...)
+	out = append(out, repeatable...)
 	return out
 }
 
@@ -308,16 +333,18 @@ func parseFlywaySumFile(name string) (flywaySumFile, bool) {
 
 	// The version token runs to the FIRST "__" when there is one, so
 	// V1__a__b.sql is version 1 described as "a__b", and covers the whole
-	// remainder when there is not.
-	version := base[1:]
-	if before, _, found := strings.Cut(version, "__"); found {
-		version = before
+	// remainder when there is not — V1.sql and Video.sql both carry an empty
+	// description.
+	version, description := base[1:], ""
+	if before, after, found := strings.Cut(version, "__"); found {
+		version, description = before, after
 	}
 	return flywaySumFile{
-		name:       name,
-		kind:       kind,
-		version:    version,
-		components: parseFlywaySumVersion(version),
+		name:        name,
+		kind:        kind,
+		version:     version,
+		description: description,
+		components:  parseFlywaySumVersion(version),
 	}, true
 }
 

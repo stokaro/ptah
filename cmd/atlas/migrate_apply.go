@@ -364,31 +364,12 @@ func verifyNativeAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS) error {
 // `migrate validate` checks (#984, #992), so a directory this gate refuses is
 // one those two verbs also refuse, and one they call clean applies here.
 //
-// WHAT THIS GATE DOES NOT GIVE YOU, FOR FLYWAY (#982). The gate verifies the
-// set Atlas CE covers; the importer that decides what actually RUNS is a
-// different selection, and for Flyway it is WIDER. flywayFileRe is case-
-// insensitive where parseFlywaySumFile is case-sensitive, and loadFlywayEntries
-// exempts baselines from the squash where the covered set drops every baseline
-// below the highest one. So for Flyway, and only for Flyway, executed is not a
-// subset of verified:
-//
-//	B1__one.sql B2__two.sql V3__three.sql, hashed by Atlas CE
-//	  -> atlas.sum covers B2__two.sql and V3__three.sql only
-//	  -> editing B1__one.sql passes validate on BOTH tools
-//	  -> Atlas applies two and three; Ptah applies two, three AND one
-//
-//	V1__init.sql hashed by Atlas CE, then v2__evil.sql added
-//	  -> validate passes on both; Atlas applies one migration, Ptah applies two
-//
-// Hashing does not help: the covered set is the same either way, so the file
-// stays outside it. goose, dbmate, liquibase and golang-migrate have no such
-// gap — measured, each refuses the corresponding file at import.
-//
-// The fix is #982, converging flywayFileRe and loadFlywayEntries on CE's
-// selection so consumed equals covered. It is NOT to refuse when the consumed
-// set escapes the covered one: CE executes its covered subset happily, so
-// refusing the whole directory would be an over-refusing gate, which is the
-// failure mode this whole chain is built to avoid.
+// What this gate verifies is also what apply executes, for every layout. That
+// holds structurally rather than by agreement: the importer selects the file
+// set it converts with the same [atlasmigrateimport.SumFileNames] rule this
+// gate hashes. It was not always true — until #982 the Flyway importer ran a
+// wider selection than the checksum covered, so a superseded baseline and a
+// lowercase-prefixed file executed on a directory both tools called clean.
 //
 // An empty covered set is exempt from the missing-sum refusal, and that
 // predicate is measured rather than assumed. CE's refusal keys on the covered

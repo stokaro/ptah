@@ -10,10 +10,11 @@
 # the SOURCE file. This compares both tools row by row on that behavior, and on
 # the rows where CE exits 0 — the ones that stop the gate from over-refusing.
 #
-# Section 9a is the one to read before trusting the gate: for Flyway, and only
-# for Flyway, Ptah's importer runs a WIDER set of files than atlas.sum covers,
-# so SQL can execute that no checksum protects, on a directory both tools call
-# clean. That is stokaro/ptah#982 and the gate cannot see it.
+# Section 9a is the one to read before trusting the gate: for Flyway it asserts
+# that what EXECUTES is exactly what atlas.sum COVERS. It used to assert the
+# opposite — the importer ran a wider set than the checksum covered, so SQL
+# executed that nothing protected on a directory both tools called clean. That
+# was stokaro/ptah#982, and it is closed.
 #
 # The oracle is pinned. A different Atlas build may have changed the very rules
 # under test, so the version is checked before anything is compared.
@@ -31,7 +32,7 @@
 # Exits non-zero if any comparison diverges. Scratch directories are created
 # under the system temp directory and removed on exit.
 #
-# Refs stokaro/ptah#973, #976, #980, #982, #984, #992.
+# Refs stokaro/ptah#973, #976, #980, #982, #984, #992, #994.
 set -u
 
 ORACLE_VERSION="atlas community version v1.2.0"
@@ -412,38 +413,49 @@ for state in unhashed clean tampered; do
 done
 
 echo
-echo "===== 9a. Flyway: SQL that EXECUTES outside the covered set (stokaro/ptah#982)"
-# The rows above are all loud: ptah-compat exits 1 where CE exits 0. These two
-# are silent, and they are the reason this gate is incomplete for one format.
-# The importer selects a WIDER set than atlas.sum covers, so a file no checksum
-# protects runs on a directory both tools call clean. A section that enumerated
-# only the loud half of #982 (the R__ row below) would read as if the silent
-# half did not exist.
-silent_flyway() { # silent_flyway <label> <builder>
-	local label="$1" build="$2"
-	local ce="ce-silent-$3" pt="pt-silent-$3"
+echo "===== 9a. Flyway: what EXECUTES is what atlas.sum COVERS (stokaro/ptah#982)"
+# This section used to assert a DIVERGENCE. Before #982 the importer selected a
+# WIDER set than atlas.sum covers, so a file no checksum protected executed on a
+# directory both tools called clean, and the gate could not see it. #982 made the
+# importer and the hasher share one selection rule, so the section now asserts
+# PARITY and fails if either shape stops matching.
+#
+# The count is compared against the covered set itself, not merely between the
+# two tools: a change that made both run the same WRONG number would otherwise
+# read as green. atlas.sum carries one directory-hash line plus one line per
+# covered file, so the covered count is its line count minus one.
+flyway_parity() { # flyway_parity <label> <builder> <slug> [file-to-tamper]
+	local label="$1" build="$2" slug="$3" tamper="${4:-}"
+	local ce="ce-parity-$slug" pt="pt-parity-$slug"
 	rm -rf "$ce" "$pt"; mkdir -p "$ce" "$pt"
 	$build "$ce"; $build "$pt"
 	"$ATLAS" migrate hash --dir "file://$ce?format=flyway" >/dev/null 2>&1
 	"$ATLAS" migrate hash --dir "file://$pt?format=flyway" >/dev/null 2>&1
-	# The tamper lands on a file the oracle's own sum does not cover.
-	printf 'CREATE TABLE pwned (id int);\n' >>"$ce/$4"
-	printf 'CREATE TABLE pwned (id int);\n' >>"$pt/$4"
-	local cev ptv ceout ptout cerc ptrc
+	local covered
+	covered=$(($(wc -l <"$ce/atlas.sum") - 1))
+	# When a tamper target is named it lands on a file the oracle's own sum does
+	# NOT cover, which is what made both shapes silent: validate stays clean on
+	# both tools, so only the executed set can tell the two behaviors apart.
+	if [ -n "$tamper" ]; then
+		printf 'CREATE TABLE pwned (id int);\n' >>"$ce/$tamper"
+		printf 'CREATE TABLE pwned (id int);\n' >>"$pt/$tamper"
+	fi
+	local cev ptv ceout ptout cerc ptrc cen ptn
 	cev=$("$ATLAS" migrate validate --dir "file://$ce?format=flyway" >/dev/null 2>&1; echo $?)
 	ptv=$("$COMPAT" migrate validate --dir "file://$pt?format=flyway" >/dev/null 2>&1; echo $?)
 	ceout=$("$ATLAS" migrate apply --url "sqlite://$ce.db" --dir "file://$ce?format=flyway" 2>&1); cerc=$?
 	ptout=$("$COMPAT" migrate apply --url "sqlite://$pt.db" --dir "file://$pt?format=flyway" 2>&1); ptrc=$?
-	local cen ptn
 	cen=$(echo "$ceout" | grep -c 'migrating version')
 	ptn=$(echo "$ptout" | grep -oE 'from [0-9]+ pending' | grep -oE '[0-9]+')
-	printf '  %-46s validate ce=%s ptah=%s | apply ce=%s (%s ran) ptah=%s (%s ran)\n' \
-		"$label" "$cev" "$ptv" "$cerc" "${cen:-0}" "$ptrc" "${ptn:-0}"
-	if [ "$ptv" = 0 ] && [ "${ptn:-0}" -gt "${cen:-0}" ]; then
-		echo "       ^ unverified SQL executed here and not on CE (stokaro/ptah#982)"
+	ptn=${ptn:-0}
+	if [ "$cev" = "$ptv" ] && [ "$cerc" = "$ptrc" ] && [ "$cen" = "$covered" ] && [ "$ptn" = "$covered" ]; then
+		printf '  %-46s MATCH   validate=%s apply=%s  covered=%s ran ce=%s ptah=%s\n' \
+			"$label" "$cev" "$cerc" "$covered" "$cen" "$ptn"
 	else
 		fail=1
-		echo "       UNEXPECTED: the shape no longer reproduces; re-measure before editing #982"
+		printf '  %-46s DIFFER  covered=%s\n' "$label" "$covered"
+		printf '       CE   validate=%s apply=%s ran=%s [%s]\n' "$cev" "$cerc" "$cen" "$(echo "$ceout" | tr '\n' '|' | cut -c1-160)"
+		printf '       ptah validate=%s apply=%s ran=%s [%s]\n' "$ptv" "$ptrc" "$ptn" "$(echo "$ptout" | tr '\n' '|' | cut -c1-160)"
 	fi
 }
 build_superseded_baseline() {
@@ -455,8 +467,32 @@ build_lowercase_prefix() {
 	printf 'CREATE TABLE init (id int);\n' >"$1/V1__init.sql"
 	printf 'CREATE TABLE evil (id int);\n' >"$1/v2__evil.sql"
 }
-silent_flyway "superseded baseline B1 executes" build_superseded_baseline base B1__one.sql
-silent_flyway "lowercase v2__ prefix executes" build_lowercase_prefix lower v2__evil.sql
+build_repeatable() {
+	printf 'CREATE TABLE init (id int);\n' >"$1/V1__init.sql"
+	printf 'CREATE VIEW v AS SELECT 1;\n'  >"$1/R__views.sql"
+}
+build_nested() {
+	printf 'CREATE TABLE init (id int);\n'   >"$1/V1__init.sql"
+	mkdir -p "$1/sub"
+	printf 'CREATE TABLE nested (id int);\n' >"$1/sub/V2__nested.sql"
+}
+build_baseline_outranks() {
+	printf 'CREATE TABLE base (id int);\n' >"$1/B10__base.sql"
+	printf 'CREATE TABLE x (id int);\n'    >"$1/V2__x.sql"
+}
+# The two shapes #982 opened with: the tampered file is OUTSIDE the covered set,
+# so both tools must leave it unexecuted.
+flyway_parity "superseded baseline B1 stays unexecuted" build_superseded_baseline base B1__one.sql
+flyway_parity "lowercase v2__ prefix stays unexecuted" build_lowercase_prefix lower v2__evil.sql
+# The loud half of #982, an over-refusal rather than a silent execution: CE
+# hashes AND executes a repeatable, and the importer used to refuse it.
+flyway_parity "repeatable is covered and executes" build_repeatable repeat
+# Flyway is the one layout whose covered set reaches below the top level, and
+# the importer used to read only the top level.
+flyway_parity "nested migration is covered and executes" build_nested nested
+# A surviving baseline executes FIRST even when its version outranks the
+# survivor numerically, which is what the converted version bands carry.
+flyway_parity "baseline outranking its survivor executes" build_baseline_outranks band
 
 echo
 echo "===== 9b. a DIRECTORY named *.sql appears after hashing (stokaro/ptah#991)"
@@ -495,24 +531,24 @@ if [ "$cerc" != "$ptrc" ]; then
 fi
 
 echo
-echo "===== 9. divergences the gate passes through (stokaro/ptah#980, #981, #982)"
-# All three are exit-1 refusals where CE exits 0, all predate this change, and
-# all are reached only AFTER the gate passes. The second is why #980 is not
-# fixed here: its covered set is NOT empty and Atlas CE really does execute
-# foo.sql (as version "foo"), so reporting "No migration files to execute" there
-# would replace a loud refusal with a silent no-op. A correct #980 fix has to
-# tell "the covered set is empty" apart from "the covered set is non-empty and
-# Ptah's importer refused it", which is a decision for that issue. The third is
-# the same shape for Flyway repeatables: CE hashes R__ files and executes them,
-# Ptah hashes them (so the sum matches) and then refuses to import them.
-for spec in "golang-migrate:1_init.down.sql:down-only, empty covered set" "goose:foo.sql:foo.sql hashed, non-empty covered set" "flyway:R__view.sql:R__ repeatable hashed, importer refuses"; do
+echo "===== 9. divergences the gate passes through (stokaro/ptah#980, #981)"
+# Both are exit-1 refusals where CE exits 0, both predate this change, and both
+# are reached only AFTER the gate passes. The second is why #980 is not fixed
+# here: its covered set is NOT empty and Atlas CE really does execute foo.sql
+# (as version "foo"), so reporting "No migration files to execute" there would
+# replace a loud refusal with a silent no-op. A correct #980 fix has to tell
+# "the covered set is empty" apart from "the covered set is non-empty and Ptah's
+# importer refused it", which is a decision for that issue.
+#
+# A third row lived here until #982: a hashed Flyway R__ file, which CE executes
+# and Ptah refused to import. It is now parity and moved to section 9a.
+for spec in "golang-migrate:1_init.down.sql:down-only, empty covered set" "goose:foo.sql:foo.sql hashed, non-empty covered set"; do
 	f="${spec%%:*}"; rest="${spec#*:}"; name="${rest%%:*}"; label="${rest##*:}"
 	ce="ce-open-$f-$name"; pt="pt-open-$f-$name"
 	rm -rf "$ce" "$pt"; mkdir -p "$ce" "$pt"
 	printf 'CREATE TABLE t1 (id int);\n' >"$ce/$name"
 	printf 'CREATE TABLE t1 (id int);\n' >"$pt/$name"
 	[ "$name" = foo.sql ] && hash_both "$ce" "$pt" "$f"
-	[ "$name" = R__view.sql ] && hash_both "$ce" "$pt" "$f"
 	ceout=$("$ATLAS" migrate apply --url "sqlite://$ce.db" --dir "file://$ce?format=$f" 2>&1); cerc=$?
 	ptout=$("$COMPAT" migrate apply --url "sqlite://$pt.db" --dir "file://$pt?format=$f" 2>&1); ptrc=$?
 	printf '  %-46s CE exit=%s | ptah exit=%s [%s]\n' "$f, $label" "$cerc" "$ptrc" \
@@ -530,6 +566,5 @@ if [ "$fail" -ne 0 ]; then
 fi
 echo "probe: every gated row matches Atlas CE."
 echo "       $open980 exempt rows still exit 1 after the gate passes (stokaro/ptah#980)."
-echo "       2 Flyway shapes execute SQL the covered set does not protect (stokaro/ptah#982);"
-echo "       the gate cannot see them, and closing them means converging the importer"
-echo "       on Atlas's selection, NOT refusing where Atlas applies."
+echo "       Flyway executes exactly its covered set (section 9a), so for all five"
+echo "       layouts everything apply executes was covered by the checksum it verified."

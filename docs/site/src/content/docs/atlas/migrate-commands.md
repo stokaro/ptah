@@ -197,10 +197,8 @@ official Atlas:
   Atlas uses for that layout, so a golang-migrate down file and a Flyway undo
   file are not covered, and a layout whose covered set is empty is not refused.
   Run `ptah-compat migrate hash --dir 'file://migrations?format=goose'` to write
-  it. For Flyway, "not covered" does not imply "not executed" — a superseded
-  baseline and a lowercase prefix both run outside the checksum
-  ([#982](https://github.com/stokaro/ptah/issues/982), and see
-  [Integrity and safety](../../versioned/integrity-and-safety/)).
+  it. "Not covered" also means "not executed": for every layout the set apply
+  runs is the set the verified checksum covers.
 
 Both refusals exit `1` with output identical to `ptah-compat migrate validate`
 on that directory, no migration runs, and the target database is never created.

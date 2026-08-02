@@ -148,29 +148,13 @@ check, exactly as it is in Atlas. A directory that carries no `atlas.sum` and
 whose covered set is empty — a golang-migrate directory holding only a down
 file, say — is not a checksum error and is not refused.
 
-:::caution[Flyway: a file outside the covered set can still execute]
-For every layout except Flyway, "not covered by `atlas.sum`" also means "not
-executed", the same as in Atlas. **For Flyway it does not.** Ptah's Flyway
-importer selects a wider set of files than Atlas hashes, so two shapes run SQL
-that no checksum covers — on a directory both `ptah-compat migrate validate`
-and `atlas migrate validate` call clean:
-
-- **A superseded baseline.** Atlas drops every baseline below the highest one
-  from `atlas.sum`; Ptah's importer keeps them all. With
-  `B1__one.sql B2__two.sql V3__three.sql`, the sum covers only `B2` and `V3`,
-  and whatever you put in `B1__one.sql` executes unverified.
-- **A prefix in the wrong case.** Atlas matches `V`/`B`/`R`/`U` case-sensitively
-  and ignores `v2__evil.sql`; Ptah's importer matches case-insensitively and
-  runs it. Adding such a file to a hashed directory does not disturb the sum.
-
-Re-running `ptah-compat migrate hash` does not close either one — the covered
-set is the same set, so the file stays outside it. Until
-[#982](https://github.com/stokaro/ptah/issues/982) converges the importer on
-Atlas's selection, treat a Flyway directory's `atlas.sum` as covering the files
-Atlas would run, not everything Ptah will run: review `B`-prefixed files and
-lowercase-prefixed files by hand, or normalize the directory so that every file
-matches Atlas's own selection.
-:::
+For every layout, "not covered by `atlas.sum`" also means "not executed": the
+set `migrate apply` runs is the set the checksum it verified covers. Flyway was
+the exception until [#982](https://github.com/stokaro/ptah/issues/982) — its
+importer selected a wider set than Atlas hashes, so a superseded baseline or a
+lowercase-prefixed file could run SQL no checksum protected. The importer and
+the hasher now share one selection rule, so that class of gap cannot reopen
+without a failing test.
 
 ## Replay on a dev database
 

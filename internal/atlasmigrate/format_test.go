@@ -112,8 +112,9 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 			configured: "flyway",
 			file:       "V1__init.sql",
 			source:     "CREATE TABLE flyway_up (id int);\n",
-			// V1 encodes to the stable Atlas version 10000.
-			wantFile: "10000_init.sql",
+			// V1 lands in the versioned band; see
+			// atlasmigrateimport.TestLoadFSFlywayAtlasVersions.
+			wantFile: "4611686018427469511_init.sql",
 			wantSQL:  "CREATE TABLE flyway_up (id int);\n",
 		},
 		{
@@ -223,14 +224,14 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("flyway repeatable migration", func(c *qt.C) {
+	c.Run("flyway migrations sharing one Atlas version", func(c *qt.C) {
 		dir := c.TempDir()
-		writeFormatFile(c, dir, "V1__init.sql", "CREATE TABLE flyway_versioned (id int);\n")
-		writeFormatFile(c, dir, "R__views.sql", "CREATE VIEW v AS SELECT 1;\n")
+		writeFormatFile(c, dir, "V1__a.sql", "CREATE TABLE a (id int);\n")
+		writeFormatFile(c, dir, "V1__b.sql", "CREATE TABLE b (id int);\n")
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "flyway", nil)
 
-		c.Assert(err, qt.ErrorMatches, `Flyway repeatable migration R__views\.sql cannot be imported yet because Ptah does not execute Atlas R-suffixed migrations`)
+		c.Assert(err, qt.ErrorMatches, `Flyway migrations V1__a\.sql and V1__b\.sql both carry the Atlas version "1"`)
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
 
