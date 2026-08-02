@@ -24,6 +24,7 @@ import (
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 )
 
 func TestPostgreSQLSchemaRenderCircularForeignKeysApplyIntegration(t *testing.T) {
@@ -130,9 +131,28 @@ ALTER TABLE ptah_cycle_read_137.right_nodes
 	c.Assert(stdout.String(), qt.Contains, "fk_cycle_read_right_left")
 	c.Assert(stderr.String(), qt.Contains, "Connected to postgres database successfully!")
 
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	liveSchema, err := dbschema.ReadSchemaWithSchemas(conn, []string{"ptah_cycle_read_137"})
+	c.Assert(err, qt.IsNil)
+	// Roles and grants are cluster-global. Replaying them inside the source
+	// cluster must fail closed, so this same-cluster assertion renders only the
+	// schema-local objects from the structured snapshot.
+	liveSchema.Roles = nil
+	liveSchema.Grants = nil
+	database := dbschematogo.ConvertDBSchemaToGoSchema(liveSchema)
+	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+		database,
+		conn.Info().Dialect,
+		conn.Info().Capabilities,
+	)
+	c.Assert(err, qt.IsNil)
+	replaySQL := strings.Join(statements, "\n\n")
+
 	cleanupPostgreSQLReadCycleSchema(c, db)
-	_, err = db.Exec(stdout.String())
-	c.Assert(err, qt.IsNil, qt.Commentf("db read SQL:\n%s", stdout.String()))
+	_, err = db.Exec(replaySQL)
+	c.Assert(err, qt.IsNil, qt.Commentf("schema-local db read SQL:\n%s", replaySQL))
 
 	var foreignKeyCount int
 	err = db.QueryRow(`
