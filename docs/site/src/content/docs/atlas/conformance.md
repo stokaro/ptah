@@ -107,7 +107,7 @@ are triaged in the comparison gap register rather than measured here.
 
 **Atlas CE.** `schema plan` aborts with the community-version boundary; the plan/approval flow is bound to the Atlas Pro registry
 
-**Evidence.** Unit coverage over live SQLite: plan computation and save, plan execution with schema assertions, stale-plan refusal after target drift, dry-run, dialect mismatch, malformed documents, and waiver rejections; not counted as a schema-object fixture
+**Evidence.** Unit coverage over live SQLite: plan computation and save, plan execution with schema assertions, stale-plan refusal after target drift, dry-run, dialect mismatch, malformed documents, and waiver rejections. Validation consumes a versioned Atlas-authored plan bundle independently of Ptah's writer and rejects source, desired-schema, SQL, statement-set, HCL, and malformed-hash mutations without changing target schema or rows. The bundle records known capture provenance and artifact hashes; destructive dev-database guards cover percent-encoded/path/query-option/symlink/hard-link aliases, driver endpoint/database overrides, and fail-closed comparison errors. This workflow is not counted as a schema-object fixture
 
 ## Local commands
 

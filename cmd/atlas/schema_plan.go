@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/atlassource"
 )
 
 type atlasSchemaPlanOptions struct {
@@ -380,7 +381,8 @@ func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOpti
 // against.
 func ensureAtlasPlanDatabaseURL(verb, raw string) error {
 	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" || !strings.Contains(trimmed, "://") || strings.HasPrefix(trimmed, "file://") {
+	source, err := atlassource.Classify(trimmed)
+	if err != nil || source.Kind != atlassource.KindDatabase {
 		return fmt.Errorf("%s requires --from to be the target database URL the plan will be applied to "+
 			"(got %q); local desired-state schema files belong in --to", verb, raw)
 	}

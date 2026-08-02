@@ -1,0 +1,23 @@
+{
+  "atlas_version": "v1.3.0",
+  "atlas_edition": "standard",
+  "platform": "darwin/arm64",
+  "captured_on": "2026-08-02",
+  "release_url": "https://github.com/ariga/atlas/releases/tag/v1.3.0",
+  "binary_sha256": "47aaf7c295c7569c7eecfcbc53f02de862846ce1fbef16f1bd8ae98b03c3c68f",
+  "environment": "empty temporary HOME; no Atlas account, token, organization, project, or repository identifiers",
+  "captures": {
+    "new.txt": "HOME=<empty-temp-home> atlas schema plan new --help",
+    "validate.txt": "HOME=<empty-temp-home> atlas schema plan validate --help"
+  },
+  "artifact_sha256": {
+    "new.txt": "4ec146e7e8660cc85a137547c5c02ee7a818e621ed39d34f156a708b2b1b663f",
+    "validate.txt": "d636db61bea0187ff29dd79ea608b18162cb768719f1081d51433fd32eab9103"
+  },
+  "runtime_artifact": null,
+  "limitations": [
+    "The public v1.3.0 binary help surface was captured without account state.",
+    "Licensed schema plan runtime output was not captured because external account access was unavailable.",
+    "The help bundle establishes command, flag, shorthand, usage, and descriptive-text parity only."
+  ]
+}

@@ -317,7 +317,7 @@ service, not artifact storage; the storage function is covered under
 | `schema plan --push`, `--pending`, `--repo` | ❌ | ❌ | ✅ | `--push`, `--pending` and `--repo` stay recorded waivers: they address the Atlas Registry, and Ptah's plan workflow saves local files instead. |
 | `schema plan --skip-lint` | ✅ | ❌ | ✅ | Accepted, and does nothing: `schema plan` runs no lint step, so there is nothing to skip. A Pro pipeline passing it keeps working; no check is loosened. |
 | `schema plan lint` and `schema plan test` | ❌ | ❌ | ✅ | Local by their flag sets (neither takes `--url`) but deferred: neither has a measured output contract, and guessing one puts a narrower checker in a gating position. |
-| `schema plan new` and `schema plan validate` | ✅ | ❌ | ✅ | Implemented. Flag sets follow the published Atlas CLI reference; their behavior is read out of Atlas docs and unverified, and each run says so on stderr. |
+| `schema plan new` and `schema plan validate` | ✅ | ❌ | ✅ | Implemented. Flag sets match standard Atlas v1.3.0 help; runtime parity remains unverified. Successful Ptah runs keep stderr free of development notes. |
 | `schema plan` registry sub-verbs (approve, list, pull, push, rm) | ❌ | ❌ | ✅ | These five arbitrate plan state in a remote registry; Ptah's local plan-file workflow replaces the function rather than the service. |
 | Atlas Cloud deployment reporting | ❌ | ❌ | ✅ | No Atlas account model or deployment API. Ptah attaches a deployment-report referrer to its own OCI artifact after an oci:// migrations up. |
 | Atlas Copilot (AI assistant) | ❌ | ❌ | ✅ | AI assistant gated to Pro accounts; absent from the pinned CE v1.2.0 command inventory. No Ptah equivalent; the closest developer-assist surface is the `ptah-ls` language server. |

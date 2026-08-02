@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 func TestFormatDatabaseURL(t *testing.T) {
@@ -279,6 +281,22 @@ func TestConnectToDatabase_SQLiteFile(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 1)
 	c.Assert(schema.Tables[0].Name, qt.Equals, "users")
+}
+
+func TestConnectToDatabase_SQLiteURLFromPathEscapesFilename(t *testing.T) {
+	c := qt.New(t)
+
+	dbPath := filepath.Join(t.TempDir(), "space % question? fragment#.sqlite")
+	conn, err := dbschema.ConnectToDatabase(
+		context.Background(),
+		atlasurl.SQLiteURLFromPath(dbPath),
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(conn.Close(), qt.IsNil)
+
+	info, err := os.Stat(dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info.Mode().IsRegular(), qt.IsTrue)
 }
 
 // stuckPostgresURL spins up a local TCP listener that completes the TCP

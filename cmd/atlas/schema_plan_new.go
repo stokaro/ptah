@@ -22,13 +22,14 @@ import (
 // (https://atlasgo.io/cli-reference).
 //
 // Behavior: INFERRED. Only the flag surface above is established. CE aborts
-// the whole `schema plan` path (measured on the pinned CE v1.2.0 binary,
+// the whole `schema plan` path (reconfirmed on the pinned CE v1.3.0 binary,
 // 2026-08-02: `atlas schema plan new` is byte-identical to
 // `atlas schema plan frobnicate-nonsense`), so it settles nothing here either.
 // The chain "the verb creates a plan FILE, and it has neither --save nor
 // --dry-run, therefore it always writes one" is the only reading that leaves
-// the verb with a function, but it is a reading, not a measurement. The stderr
-// note says so on every run.
+// the verb with a function, but it is a reading, not a measurement. This
+// provenance belongs in source and compatibility documentation, not in normal
+// operator output.
 //
 // # Implementation
 //
@@ -59,9 +60,6 @@ fingerprinted JSON plan instead of the Atlas ` + "`.plan.hcl`" + ` shape.
 Registry-bound planning (--repo), --format and --lock-timeout are declared for
 CLI-surface parity and refused.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			writeAtlasSchemaPlanDocsDerivedNote(cmd,
-				"the behavior of `"+atlasSchemaPlanNewVerb+
-					"` (writing a plan file with no --save flag to request it)")
 			// Atlas registers neither --save nor --dry-run here, so there is no
 			// operator input that could select the print-to-stdout path; the
 			// verb's whole documented function is to produce the file.

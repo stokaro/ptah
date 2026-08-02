@@ -178,7 +178,7 @@ func (tr *TestRunner) AddDatabase(name, connectionURL string) {
 // the same database. The cleanup URL may grant broader destructive privileges,
 // but it must not address a different database realm.
 func (tr *TestRunner) AddDatabaseWithCleanup(name, connectionURL, cleanupURL string) error {
-	sameDatabase, err := atlasurl.SameDatabase(connectionURL, cleanupURL)
+	sameDatabase, err := atlasurl.SameDatabaseEndpoint(connectionURL, cleanupURL)
 	if err != nil {
 		return fmt.Errorf("validate %s cleanup database URL: %w", name, err)
 	}

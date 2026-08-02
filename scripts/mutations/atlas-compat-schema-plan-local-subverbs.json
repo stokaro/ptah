@@ -24,23 +24,25 @@
       "comment": "The plausible alternative implementation. It writes the file on a bare invocation and therefore passes the behavior tests, but it accepts `--save=false` — a flag Atlas does not register on this sub-verb — and quietly turns the verb into a no-op."
     },
     {
-      "name": "new loses the docs-derived provenance note",
+      "name": "new emits internal provenance on stderr",
       "file": "cmd/atlas/schema_plan_new.go",
-      "old": "\t\t\twriteAtlasSchemaPlanDocsDerivedNote(cmd,\n\t\t\t\t\"the behavior of `\"+atlasSchemaPlanNewVerb+\n\t\t\t\t\t\"` (writing a plan file with no --save flag to request it)\")",
-      "new": "\t\t\t_ = atlasSchemaPlanNewVerb"
+      "old": "\t\t\topts.save = true",
+      "new": "\t\t\tcmd.PrintErrln(\"development provenance: stokaro/ptah#1037\")\n\t\t\topts.save = true",
+      "comment": "Compatibility-development provenance belongs in source and documentation, not in successful operator output."
     },
     {
-      "name": "the docs-derived note is written to stdout instead of stderr",
-      "file": "cmd/atlas/schema_plan_transition.go",
-      "old": "\tfmt.Fprintf(cmd.ErrOrStderr(),",
-      "new": "\tfmt.Fprintf(cmd.OutOrStdout(),",
-      "comment": "stdout must stay machine-readable; the note exists precisely because it can be ignored by a pipeline reading stdout."
+      "name": "new emits internal provenance on stdout",
+      "file": "cmd/atlas/schema_plan_new.go",
+      "old": "\t\t\topts.save = true",
+      "new": "\t\t\tcmd.Println(\"development provenance: stokaro/ptah#1037\")\n\t\t\topts.save = true",
+      "comment": "The normal saved-file status remains allowed on stdout; an internal issue reference does not."
     },
     {
-      "name": "the docs-derived note grows past one line",
-      "file": "cmd/atlas/schema_plan_transition.go",
-      "old": "\t\t\"Note: %s is derived from Atlas documentation and is not verified against the Atlas binary (stokaro/ptah#951).\\n\",",
-      "new": "\t\t\"Note: %s is derived from Atlas documentation\\nand is not verified against the Atlas binary (stokaro/ptah#951).\\n\","
+      "name": "validate emits internal provenance on stderr",
+      "file": "cmd/atlas/schema_plan_validate.go",
+      "old": "func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidateOptions) error {",
+      "new": "func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidateOptions) error {\n\tcmd.PrintErrln(\"development provenance: stokaro/ptah#1037\")",
+      "comment": "Successful validation is silent on both streams."
     },
     {
       "name": "new reports the parent verb in its diagnostics",
@@ -174,11 +176,11 @@
       "comment": "The inverse of this PR's invariant: validate then refuses a plan `schema apply --plan` accepts, because the comparison sees an object the plan was explicitly computed without. Killed only by a fixture whose plan carries --exclude patterns; every other fixture here is computed without them and so cannot tell the two apart."
     },
     {
-      "name": "the validate provenance note names the parent verb",
+      "name": "validate emits internal provenance on stdout",
       "file": "cmd/atlas/schema_plan_validate.go",
-      "old": "\t\t\"the behavior of `\"+atlasSchemaPlanValidateVerb+",
-      "new": "\t\t\"the behavior of `\"+atlasSchemaPlanVerb+",
-      "comment": "The note is the whole provenance contract; naming the wrong command sends the operator to a different verb's flag set. The `new` side already pins this."
+      "old": "func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidateOptions) error {",
+      "new": "func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidateOptions) error {\n\tcmd.Println(\"development provenance: stokaro/ptah#1037\")",
+      "comment": "A machine-readable validator must not leak implementation tracking into stdout."
     }
   ]
 }

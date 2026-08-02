@@ -157,9 +157,9 @@ func TestVerifyRollbackFromShadow_FailurePathRejectsDriverOverrideAliasLive(t *t
 	)
 	shadowURL := rollbackPostgresDriverOverrideURL(c, targetURL)
 	targetConn := openRollbackTarget(c, targetURL)
-	fastPathSame, err := atlasurl.SameDatabase(targetURL, shadowURL)
+	fastPathSame, err := atlasurl.SameDatabaseEndpoint(targetURL, shadowURL)
 	c.Assert(err, qt.IsNil)
-	c.Assert(fastPathSame, qt.IsFalse)
+	c.Assert(fastPathSame, qt.IsTrue)
 
 	err = generator.VerifyRollbackFromShadow(c.Context(), generator.RollbackFromShadowOptions{
 		TargetConnection:  targetConn,

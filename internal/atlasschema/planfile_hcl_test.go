@@ -1,6 +1,10 @@
 package atlasschema_test
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,13 +21,58 @@ import (
 // oraclePlanPath is the real `.plan.hcl` produced by Atlas for the
 // schema-plan-file measurement
 // scenario; it is the format oracle for the reader.
-const oraclePlanPath = "testdata/atlas.plan.hcl"
+const oraclePlanPath = "testdata/atlas-v1.2.4-plan/plan.hcl"
 
 // writtenGoldenPlanPath is the byte-exact document MarshalPlanFileHCL must
 // produce for the measured scenario's native plan contents. It mirrors the
 // mechanical Ptah-to-Atlas conversion validated against the official
 // binary's parser during the measurement campaign.
 const writtenGoldenPlanPath = "testdata/ptah-written-golden.plan.hcl"
+
+type atlasPlanOracleProvenance struct {
+	AtlasVersion       string            `json:"atlas_version"`
+	AtlasEdition       string            `json:"atlas_edition"`
+	CapturedOn         string            `json:"captured_on"`
+	SourceIssue        string            `json:"source_issue"`
+	SourcePR           string            `json:"source_pr"`
+	CaptureCommand     *string           `json:"capture_command"`
+	AtlasBinarySHA256  *string           `json:"atlas_binary_sha256"`
+	CaptureLimitations []string          `json:"capture_limitations"`
+	Files              map[string]string `json:"files"`
+}
+
+func oracleFileSHA256(c *qt.C, path string) string {
+	c.Helper()
+	contents, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	return fmt.Sprintf("%x", sha256.Sum256(contents))
+}
+
+func TestAtlasPlanOracleProvenance(t *testing.T) {
+	c := qt.New(t)
+	fixtureDir := filepath.Dir(oraclePlanPath)
+	rawManifest, err := os.ReadFile(filepath.Join(fixtureDir, "provenance.json"))
+	c.Assert(err, qt.IsNil)
+	var provenance atlasPlanOracleProvenance
+	c.Assert(json.Unmarshal(rawManifest, &provenance), qt.IsNil)
+	c.Assert(provenance.AtlasVersion, qt.Equals, "v1.2.4-e282f76-canary")
+	c.Assert(provenance.AtlasEdition, qt.Equals, "licensed")
+	c.Assert(provenance.CapturedOn, qt.Equals, "2026-08-01")
+	c.Assert(provenance.SourceIssue, qt.Equals, "https://github.com/stokaro/ptah/issues/958")
+	c.Assert(provenance.SourcePR, qt.Equals, "https://github.com/stokaro/ptah/pull/965")
+	c.Assert(provenance.CaptureCommand, qt.IsNil)
+	c.Assert(provenance.AtlasBinarySHA256, qt.IsNil)
+	c.Assert(provenance.CaptureLimitations, qt.HasLen, 2)
+	c.Assert(provenance.Files, qt.DeepEquals, map[string]string{
+		"from.sql": "22745ed9b5fa963ad445cfcd2af263ffa77eccafde1adf2e3008dafbba8c4b8f",
+		"plan.hcl": "335a8b191c8e5297f59daf5e6d2b6d2970b50dbf488dbe52de26919a8155ef35",
+		"to.sql":   "4f92f0c7c2b3cef9f49c46948767abfdeacbe1a3633f7d0f2827efec8b11cfab",
+	})
+
+	c.Assert(oracleFileSHA256(c, filepath.Join(fixtureDir, "from.sql")), qt.Equals, provenance.Files["from.sql"])
+	c.Assert(oracleFileSHA256(c, filepath.Join(fixtureDir, "plan.hcl")), qt.Equals, provenance.Files["plan.hcl"])
+	c.Assert(oracleFileSHA256(c, filepath.Join(fixtureDir, "to.sql")), qt.Equals, provenance.Files["to.sql"])
+}
 
 // goldenPlan is the native plan for the measured scenario (the contents of
 // the campaign's p.plan.json), used to exercise the HCL writer.
@@ -91,6 +140,27 @@ func TestReadPlanDocumentParsesOracleAtlasPlan(t *testing.T) {
 	// apply-time verification cannot recompute them.
 	c.Assert(atlasschema.IsNativeFingerprint(plan.FromFingerprint), qt.IsFalse)
 	c.Assert(atlasschema.IsNativeFingerprint(plan.ToFingerprint), qt.IsFalse)
+}
+
+func TestReadPlanDocumentNormalizesCRLFDocumentLineEndings(t *testing.T) {
+	c := qt.New(t)
+	original, err := os.ReadFile(oraclePlanPath)
+	c.Assert(err, qt.IsNil)
+	original = bytes.ReplaceAll(original, []byte("\r\n"), []byte("\n"))
+	crlf := bytes.ReplaceAll(original, []byte("\n"), []byte("\r\n"))
+	file, err := os.CreateTemp(t.TempDir(), "plan-*.hcl")
+	c.Assert(err, qt.IsNil)
+	_, err = file.Write(crlf)
+	c.Assert(err, qt.IsNil)
+	path := file.Name()
+	c.Assert(file.Close(), qt.IsNil)
+
+	want, _, err := atlasschema.ReadPlanDocument(oraclePlanPath)
+	c.Assert(err, qt.IsNil)
+	got, format, err := atlasschema.ReadPlanDocument(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(format, qt.Equals, atlasschema.PlanFormatHCL)
+	c.Assert(got, qt.DeepEquals, want)
 }
 
 func TestReadPlanDocumentReadsNativeJSONPlan(t *testing.T) {
@@ -462,6 +532,22 @@ func TestReadPlanDocumentRejectsMalformedHCL(t *testing.T) {
 			contents: "plan \"a\" {\n  from = \"\"\n  to = \"b\"\n  migration = \"c;\"\n}\n",
 			want:     `invalid plan file .*: plan from fingerprint is required`,
 		},
+		{
+			name: "malformed_from_fingerprint",
+			contents: "plan \"a\" {\n" +
+				"  from = \"not-an-atlas-hash\"\n" +
+				"  to = \"YEugbm2aJqmXFA8dDrzmqLPC4tiNUrXe6YCrvazKOiY=\"\n" +
+				"  migration = \"CREATE TABLE t (id integer);\"\n}\n",
+			want: `invalid plan file .*: plan from fingerprint must be a Ptah sha256 digest or an Atlas Base64 SHA-256 hash`,
+		},
+		{
+			name: "short_to_fingerprint",
+			contents: "plan \"a\" {\n" +
+				"  from = \"2Avyplv6jw8kAsH/g2YFPkfnp+UNBpomMXPUl/4R4+Q=\"\n" +
+				"  to = \"YWJj\"\n" +
+				"  migration = \"CREATE TABLE t (id integer);\"\n}\n",
+			want: `invalid plan file .*: plan to fingerprint must be a Ptah sha256 digest or an Atlas Base64 SHA-256 hash`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -512,6 +598,36 @@ func TestIsNativeFingerprint(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(atlasschema.IsNativeFingerprint(tt.fingerprint), qt.Equals, tt.want)
+		})
+	}
+}
+
+func TestIsAtlasFingerprint(t *testing.T) {
+	tests := []struct {
+		name        string
+		fingerprint string
+		want        bool
+	}{
+		{
+			name:        "atlas_base64_sha256",
+			fingerprint: "2Avyplv6jw8kAsH/g2YFPkfnp+UNBpomMXPUl/4R4+Q=",
+			want:        true,
+		},
+		{
+			name:        "ptah_sha256",
+			fingerprint: "sha256:2ef81def17f625ec4fc7927e136e516022e244ab587bb702b5b71d38b05cbe27",
+			want:        false,
+		},
+		{name: "empty", fingerprint: "", want: false},
+		{name: "short_base64", fingerprint: "YWJj", want: false},
+		{name: "invalid_base64", fingerprint: "not-an-atlas-hash", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(atlasschema.IsAtlasFingerprint(tt.fingerprint), qt.Equals, tt.want)
 		})
 	}
 }

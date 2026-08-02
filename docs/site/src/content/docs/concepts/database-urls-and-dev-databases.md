@@ -16,7 +16,7 @@ page defines all four; other pages link here instead of redefining them.
 | PostgreSQL | `postgres://user:pass@localhost:5432/app` |
 | MySQL | `mysql://user:pass@localhost:3306/app` (Go-driver form `mysql://user:pass@tcp(localhost:3306)/app` is also accepted) |
 | MariaDB | `mariadb://user:pass@localhost:3306/app` |
-| SQLite | `sqlite://relative.db`, `sqlite:///absolute/path/app.db`, `sqlite:///:memory:`, `sqlite:file:memdb1?mode=memory&cache=shared` |
+| SQLite | `sqlite://relative.db`, `sqlite:///absolute/path/app.db`, `sqlite:file:C:/absolute/windows/path/app.db`, `sqlite:///:memory:`, `sqlite:file:memdb1?mode=memory&cache=shared` |
 | SQL Server | `sqlserver://sa:pass@localhost:1433?database=app` (plus a Ptah-only `schema` parameter — see [SQL Server](../../databases/sqlserver/)) |
 | ClickHouse | `clickhouse://user:pass@localhost:9000/app` |
 | CockroachDB | `cockroachdb://user:pass@localhost:26257/app` |

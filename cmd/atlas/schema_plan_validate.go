@@ -44,9 +44,11 @@ type atlasSchemaPlanValidateOptions struct {
 // reproduces verbatim (#965).
 //
 // Which checks run, their order, the exit code and the output: INFERRED. None
-// of it is established — CE aborts the entire `schema plan` path (measured on
-// the pinned CE v1.2.0 binary, 2026-08-02), so it settles nothing here either.
-// The stderr note says so on every run.
+// of it is established — CE aborts the entire `schema plan` path (reconfirmed
+// on the pinned CE v1.3.0 binary, 2026-08-02), so it settles nothing here
+// either.
+// This provenance belongs in source and compatibility documentation, not in
+// normal operator output.
 //
 // # Implementation
 //
@@ -122,10 +124,6 @@ since a local plan file is approved by operator review.`,
 }
 
 func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidateOptions) error {
-	writeAtlasSchemaPlanDocsDerivedNote(cmd,
-		"the behavior of `"+atlasSchemaPlanValidateVerb+
-			"` (which checks it runs, and its silent success output)")
-
 	transition, _, err := resolveAtlasSchemaPlanTransitionConfig(
 		cmd, atlasSchemaPlanValidateVerb, opts.atlasSchemaPlanTransitionFlags)
 	if err != nil {

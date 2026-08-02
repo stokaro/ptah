@@ -19,6 +19,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -37,7 +38,7 @@ func withoutPlanLint(c *qt.C) {
 
 func connectSQLiteForWiring(c *qt.C, dbPath string) *dbschema.DatabaseConnection {
 	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 	return conn
@@ -75,12 +76,13 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLint(t *testing.T) {
 	c.Assert(victim.Close(), qt.IsNil)
 
 	devConn := connectSQLiteForWiring(c, devPath)
+	targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 	statements := []string{
 		fmt.Sprintf("ATTACH DATABASE '%s' AS victim", victimPath),
 		"CREATE TABLE victim.pwned (id integer)",
 	}
 
-	err = rehearseStatementsOnDev(context.Background(), devConn, nil, migrator.MigrationTxModeNone, statements)
+	err = rehearseStatementsOnDev(context.Background(), targetConn, devConn, nil, migrator.MigrationTxModeNone, statements)
 
 	// The refusal comes from SQLite, not from Ptah's scanner.
 	c.Assert(err, qt.IsNotNil)
@@ -110,8 +112,9 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLintUnderEveryTxMode(t *testing.T) 
 			dir := t.TempDir()
 			victimPath := filepath.Join(dir, "victim.db")
 			devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
+			targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 
-			err := rehearseStatementsOnDev(context.Background(), devConn, nil, tt.txMode,
+			err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, nil, tt.txMode,
 				[]string{fmt.Sprintf("ATTACH DATABASE '%s' AS victim", victimPath)})
 
 			c.Assert(err, qt.IsNotNil)
@@ -131,8 +134,9 @@ func TestRehearsalCoreLintsStatementsTheEngineWouldAccept(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
+	targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 
-	err := rehearseStatementsOnDev(context.Background(), devConn, nil, migrator.MigrationTxModeNone,
+	err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, nil, migrator.MigrationTxModeNone,
 		[]string{fmt.Sprintf("PRAGMA temp_store_directory = '%s'", dir)})
 
 	c.Assert(IsPlanEscape(err), qt.IsTrue, qt.Commentf("err=%v", err))
@@ -153,7 +157,7 @@ func TestRehearsePlanStatementsLintsBeforeTouchingTheTarget(t *testing.T) {
 
 	err = RehearsePlanStatements(context.Background(), target,
 		[]string{`PRAGMA temp_store_directory = '/tmp/evil'`},
-		&goschemaDatabaseFixture, PlanRehearsalOptions{DevURL: "sqlite://" + filepath.Join(dir, "dev.db")})
+		&goschemaDatabaseFixture, PlanRehearsalOptions{DevURL: atlasurl.SQLiteURLFromPath(filepath.Join(dir, "dev.db"))})
 
 	c.Assert(IsPlanEscape(err), qt.IsTrue, qt.Commentf("err=%v", err))
 }
