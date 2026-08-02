@@ -157,7 +157,7 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 		// The DROP INDEX spelling is version-universal (issue #195), so every
 		// preset uses it — including targets without the generic clause,
 		// where DROP CONSTRAINT would be invalid SQL.
-		for _, caps := range []capability.Capabilities{capability.MySQL8016(), capability.MySQL80()} {
+		for _, caps := range []capability.Capabilities{capability.MySQL8016(), capability.MySQL84()} {
 			nodes, err := mysql.NewWithCapabilities(caps).GenerateMigrationASTChecked(diff, &goschema.Database{})
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("mysql", nodes...)

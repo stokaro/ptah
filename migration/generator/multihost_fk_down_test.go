@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/ptaherr"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -30,11 +31,13 @@ import (
 // embedded into each host table.
 func multiHostMixinGenerated(onDelete string, hosts ...string) *goschema.Database {
 	db := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "Tenant", Name: "tenants"}},
 		Fields: []goschema.Field{
+			{StructName: "Tenant", Name: "id", Type: "VARCHAR(255)", Primary: true},
 			{
 				StructName:     "Ownable",
 				Name:           "tenant_id",
-				Type:           "TEXT",
+				Type:           "VARCHAR(255)",
 				Foreign:        "tenants(id)",
 				ForeignKeyName: "fk_entity_tenant",
 				OnDelete:       onDelete,
@@ -57,13 +60,19 @@ func multiHostMixinGenerated(onDelete string, hosts ...string) *goschema.Databas
 // multiHostMixinDB builds the introspected (pre-change) DB: each host has the
 // tenant FK with the given delete rule.
 func multiHostMixinDB(deleteRule string, hosts ...string) *dbschematypes.DBSchema {
-	db := &dbschematypes.DBSchema{}
+	varcharLength := 255
+	db := &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{
+		Name: "tenants",
+		Columns: []dbschematypes.DBColumn{
+			{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
+		},
+	}}}
 	for _, h := range hosts {
 		db.Tables = append(db.Tables, dbschematypes.DBTable{
 			Name: h,
 			Columns: []dbschematypes.DBColumn{
-				{Name: "id", DataType: "text", IsNullable: "NO", IsPrimaryKey: true},
-				{Name: "tenant_id", DataType: "text", IsNullable: "NO"},
+				{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
+				{Name: "tenant_id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO"},
 			},
 		})
 		db.Constraints = append(db.Constraints, dbschematypes.DBConstraint{
@@ -81,54 +90,53 @@ func multiHostMixinDB(deleteRule string, hosts ...string) *dbschematypes.DBSchem
 // generated DOWN must, for EACH host, drop the (CASCADE) constraint and re-add
 // it with the prior NO ACTION — table-qualified so no host collides.
 func TestGenerateDownMigration_MultiHostMixinFKModify_RestoresPriorActionPerHost(t *testing.T) {
+	c := qt.New(t)
 	hosts := []string{"locations", "areas", "commodities"}
+	gen := multiHostMixinGenerated("CASCADE", hosts...)
+	dbSchema := multiHostMixinDB("NO ACTION", hosts...)
 
-	for _, dialect := range []string{"postgres", "mysql"} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
+	upDiff := schemadiff.CompareWithDialect(gen, dbSchema, "postgres")
+	c.Assert(upDiff.HasChanges(), qt.IsTrue)
+	c.Assert(countConstraint(upDiff.ConstraintsAdded, "fk_entity_tenant"), qt.Equals, len(hosts))
+	c.Assert(countConstraint(upDiff.ConstraintsRemoved, "fk_entity_tenant"), qt.Equals, len(hosts))
 
-			// Generated = CASCADE; DB (pre-change) = converged NO ACTION.
-			gen := multiHostMixinGenerated("CASCADE", hosts...)
-			dbSchema := multiHostMixinDB("NO ACTION", hosts...)
+	downSQL, err := generateDownMigrationSQL(upDiff, gen, dbSchema, "postgres")
+	c.Assert(err, qt.IsNil)
+	downSQL = legacyRenderedSQL(downSQL)
 
-			upDiff := schemadiff.CompareWithDialect(gen, dbSchema, dialect)
-			c.Assert(upDiff.HasChanges(), qt.IsTrue)
-			// The shared FK name is added + removed once per host (a modification).
-			c.Assert(countConstraint(upDiff.ConstraintsAdded, "fk_entity_tenant"), qt.Equals, len(hosts))
-			c.Assert(countConstraint(upDiff.ConstraintsRemoved, "fk_entity_tenant"), qt.Equals, len(hosts))
+	for _, host := range hosts {
+		dropStatement := "ALTER TABLE " + host + " DROP CONSTRAINT IF EXISTS fk_entity_tenant;"
+		addStatement := "ALTER TABLE " + host + " ADD CONSTRAINT fk_entity_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)"
 
-			downSQL, err := generateDownMigrationSQL(upDiff, gen, dbSchema, dialect)
-			c.Assert(err, qt.IsNil)
-			downSQL = legacyRenderedSQL(downSQL)
+		c.Assert(strings.Count(downSQL, dropStatement), qt.Equals, 1,
+			qt.Commentf("host %s: expected exactly one table-qualified DROP in DOWN, got:\n%s", host, downSQL))
+		c.Assert(strings.Count(downSQL, addStatement), qt.Equals, 1,
+			qt.Commentf("host %s: expected exactly one re-ADD in DOWN, got:\n%s", host, downSQL))
 
-			for _, h := range hosts {
-				var dropStmt string
-				if dialect == "mysql" {
-					dropStmt = "ALTER TABLE " + h + " DROP FOREIGN KEY fk_entity_tenant;"
-				} else {
-					dropStmt = "ALTER TABLE " + h + " DROP CONSTRAINT IF EXISTS fk_entity_tenant;"
-				}
-				addStmt := "ALTER TABLE " + h + " ADD CONSTRAINT fk_entity_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)"
-
-				c.Assert(strings.Count(downSQL, dropStmt), qt.Equals, 1,
-					qt.Commentf("host %s: expected exactly one table-qualified DROP in DOWN, got:\n%s", h, downSQL))
-				c.Assert(strings.Count(downSQL, addStmt), qt.Equals, 1,
-					qt.Commentf("host %s: expected exactly one re-ADD in DOWN, got:\n%s", h, downSQL))
-
-				dropIdx := strings.Index(downSQL, dropStmt)
-				addIdx := strings.Index(downSQL, addStmt)
-				c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
-					qt.Commentf("host %s: DOWN DROP must precede the re-ADD; drop@%d add@%d\n%s", h, dropIdx, addIdx, downSQL))
-			}
-
-			// The DOWN restores the PRIOR action (NO ACTION), never the new CASCADE.
-			c.Assert(downSQL, qt.Not(qt.Contains), "ON DELETE CASCADE",
-				qt.Commentf("DOWN must restore the prior action, not re-apply CASCADE:\n%s", downSQL))
-			// Never the mixin struct name.
-			c.Assert(downSQL, qt.Not(qt.Contains), "Ownable",
-				qt.Commentf("DOWN must not reference the mixin struct name:\n%s", downSQL))
-		})
+		dropIndex := strings.Index(downSQL, dropStatement)
+		addIndex := strings.Index(downSQL, addStatement)
+		c.Assert(dropIndex >= 0 && addIndex >= 0 && dropIndex < addIndex, qt.IsTrue,
+			qt.Commentf("host %s: DOWN DROP must precede the re-ADD; drop@%d add@%d\n%s", host, dropIndex, addIndex, downSQL))
 	}
+
+	c.Assert(downSQL, qt.Not(qt.Contains), "ON DELETE CASCADE",
+		qt.Commentf("DOWN must restore the prior action, not re-apply CASCADE:\n%s", downSQL))
+	c.Assert(downSQL, qt.Not(qt.Contains), "Ownable",
+		qt.Commentf("DOWN must not reference the mixin struct name:\n%s", downSQL))
+}
+
+func TestGenerateDownMigration_MultiHostMixinFKModify_MySQLRejectsDuplicateNames(t *testing.T) {
+	c := qt.New(t)
+	hosts := []string{"locations", "areas", "commodities"}
+	generated := multiHostMixinGenerated("CASCADE", hosts...)
+	dbSchema := multiHostMixinDB("NO ACTION", hosts...)
+	diff := schemadiff.CompareWithDialect(generated, dbSchema, "mysql")
+
+	downSQL, err := generateDownMigrationSQL(diff, generated, dbSchema, "mysql")
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `error generating down migration SQL: invalid foreign key: foreign-key name "fk_entity_tenant" is duplicated in database constraint namespace`)
+	c.Assert(downSQL, qt.Equals, "")
 }
 
 // TestGenerateDownMigration_MultiHostMixinFKModify_NameOnlyCounterfactual proves

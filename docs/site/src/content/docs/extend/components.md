@@ -167,6 +167,11 @@ if err != nil {
 fmt.Println(statements[0])
 ```
 
+For targets other than SQLite, schema rendering places every `CREATE TABLE`
+before phase-two foreign key statements. SQLite keeps foreign keys inline.
+Malformed or capability-incompatible foreign keys return a typed error and no
+partial statement list.
+
 ### Render SQL from Atlas HCL
 
 Use `atlascompat` when you need Atlas-shaped HCL input through a stable public

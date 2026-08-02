@@ -13,7 +13,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 
 | Command | Purpose |
 | --- | --- |
-| `ptah schema render` | Render desired schema SQL from Go, YAML, HCL, SQL, or external-command inputs. |
+| `ptah schema render` | Render desired-schema SQL to stdout from Go, YAML, HCL, SQL, or external-command inputs; write progress and dependency diagnostics to stderr. |
 | `ptah schema annotations` | Export Ptah Go annotation metadata as a JSON Schema document. |
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
@@ -26,6 +26,12 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema push` | Publish a lossless canonical desired schema to an OCI registry. |
 | `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
 | `ptah schema test` | Apply a desired schema (from Go annotations) to a throwaway database and run declarative seed/SQL/assert YAML cases against it. |
+
+Pass an explicit `--dialect` when the output must be executable by one target.
+Without it, `schema render` attempts the built-in review targets and emits
+labeled output only if every target can render the schema. An unsupported
+feature fails atomically with empty standard output. The combined output is a
+review artifact, not one executable SQL script.
 
 ## Migration lifecycle: `ptah migrations`
 
@@ -57,7 +63,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 
 | Command | Purpose |
 | --- | --- |
-| `ptah db read` | Read schema from a live database. |
+| `ptah db read` | Read a live database as executable SQL on stdout; write connection status and failures to stderr. |
 | `ptah db drop-all` | Drop all schema objects in a live database. |
 
 ## Registries and SQL files: `ptah oci`, `ptah sql`

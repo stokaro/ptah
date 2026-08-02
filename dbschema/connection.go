@@ -83,13 +83,17 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	}
 
 	// Get database info
-	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL)
+	info, versionSpecific, err := getDatabaseInfoWithCapabilities(
+		ctx,
+		db,
+		dialect,
+		parsedURL,
+		dbURL,
+	)
 	if err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to get database info: %w", err)
 	}
-	caps, versionSpecific := capability.ForServerVersionResult(info.Dialect, info.Version)
-	info.Capabilities = caps
 	if !versionSpecific {
 		slog.Debug(
 			"falling back to dialect default capabilities",
@@ -165,6 +169,30 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		newWriter:      newWriter,
 		inMemorySQLite: inMemorySQLite,
 	}, nil
+}
+
+func getDatabaseInfoWithCapabilities(
+	ctx context.Context,
+	db *sql.DB,
+	dialect string,
+	parsedURL *url.URL,
+	dbURL string,
+) (types.DBInfo, bool, error) {
+	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL)
+	if err != nil {
+		return types.DBInfo{}, false, err
+	}
+	caps, versionSpecific := resolveDatabaseCapabilities(info)
+	info.Capabilities = caps
+	return info, versionSpecific, nil
+}
+
+func resolveDatabaseCapabilities(info types.DBInfo) (capability.Capabilities, bool) {
+	// Root metadata must describe the conservative server-version baseline.
+	// Session variables can differ between pooled physical connections, so
+	// session-specific relaxations are detected only after WithSession pins the
+	// connection that will plan and execute the statements.
+	return capability.ForServerVersionResult(info.Dialect, info.Version)
 }
 
 func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName string) {
@@ -375,7 +403,23 @@ func (dc *DatabaseConnection) WithSession(
 	}()
 
 	runner := sqlrunner.NewConn(ctx, session)
+	baselineCapabilities := capability.ForServerVersion(dc.info.Dialect, dc.info.Version)
+	sessionCapabilities, err := refineMySQLForeignKeyCapabilities(
+		dc.info.Dialect,
+		baselineCapabilities,
+		baselineCapabilities,
+		func(destination ...any) error {
+			return session.QueryRowContext(
+				ctx,
+				"SELECT @@SESSION.restrict_fk_on_non_standard_key",
+			).Scan(destination...)
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("detect pinned-session foreign-key reference policy: %w", err)
+	}
 	scoped := *dc
+	scoped.info.Capabilities = sessionCapabilities
 	scoped.runner = runner
 	scoped.reader = dc.newReader(runner)
 	scoped.writer = dc.newWriter(runner, session)
@@ -386,6 +430,32 @@ func (dc *DatabaseConnection) WithSession(
 		scoped.writer.SetDryRun(true)
 	}
 	return use(&scoped)
+}
+
+func refineMySQLForeignKeyCapabilities(
+	dialect string,
+	caps capability.Capabilities,
+	baseline capability.Capabilities,
+	scan func(...any) error,
+) (capability.Capabilities, error) {
+	if platform.NormalizeDialect(dialect) != platform.MySQL ||
+		!baseline.Has(capability.ForeignKeysRequireUniqueReference) {
+		return caps, nil
+	}
+
+	var restrictNonstandardKey int64
+	if err := scan(&restrictNonstandardKey); err != nil {
+		return nil, fmt.Errorf("query restrict_fk_on_non_standard_key: %w", err)
+	}
+	if restrictNonstandardKey != 0 {
+		return caps.
+			With(capability.ForeignKeysRequireIndexedReference, false).
+			With(capability.ForeignKeysRequireUniqueReference, true), nil
+	}
+
+	return caps.
+		With(capability.ForeignKeysRequireUniqueReference, false).
+		With(capability.ForeignKeysRequireIndexedReference, true), nil
 }
 
 func discardSQLConnection(session *sql.Conn, label string) error {

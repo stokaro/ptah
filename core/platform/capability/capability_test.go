@@ -84,11 +84,33 @@ func TestCapabilities_Validate_MutexGroup(t *testing.T) {
 	c.Assert(capability.Capabilities{}.Validate(), qt.IsNil)
 }
 
+func TestCapabilities_Validate_ForeignKeyReferencePolicy(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(capability.Capabilities{
+		capability.ForeignKeys: true,
+	}.Validate(), qt.ErrorMatches,
+		`capability "foreign_keys" requires exactly one foreign-key reference policy`)
+
+	c.Assert(capability.Capabilities{
+		capability.ForeignKeys:                        true,
+		capability.ForeignKeysRequireUniqueReference:  true,
+		capability.ForeignKeysRequireIndexedReference: true,
+	}.Validate(), qt.ErrorMatches,
+		`capabilities foreign_keys_require_unique_reference and foreign_keys_require_indexed_reference are mutually exclusive`)
+
+	c.Assert(capability.Capabilities{
+		capability.ForeignKeys:                        true,
+		capability.ForeignKeysRequireIndexedReference: true,
+	}.Validate(), qt.IsNil)
+}
+
 func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 	c := qt.New(t)
 
 	presets := map[string]capability.Capabilities{
-		"MySQL80":       capability.MySQL80(),
+		"MySQL84":       capability.MySQL84(),
+		"MySQL8019":     capability.MySQL8019(),
 		"MySQL8016":     capability.MySQL8016(),
 		"MySQLLegacy":   capability.MySQLLegacy(),
 		"MariaDB1011":   capability.MariaDB1011(),
@@ -119,13 +141,18 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c := qt.New(t)
 
 	// The MySQL family never gets IF EXISTS guards; MariaDB does.
-	c.Assert(capability.MySQL80().Has(capability.DropConstraintIfExists), qt.IsFalse)
-	c.Assert(capability.MySQL80().Has(capability.DropIndexIfExists), qt.IsFalse)
+	c.Assert(capability.MySQL84().Has(capability.DropConstraintIfExists), qt.IsFalse)
+	c.Assert(capability.MySQL84().Has(capability.DropIndexIfExists), qt.IsFalse)
+	c.Assert(capability.MySQL84().Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
+	c.Assert(capability.MySQL8019().Has(capability.ForeignKeysRequireUniqueReference), qt.IsFalse)
+	c.Assert(capability.MySQL8019().Has(capability.ForeignKeysRequireIndexedReference), qt.IsTrue)
 	c.Assert(capability.MariaDB1011().Has(capability.DropConstraintIfExists), qt.IsTrue)
 	c.Assert(capability.MariaDB1011().Has(capability.DropIndexIfExists), qt.IsTrue)
+	c.Assert(capability.MariaDB1011().Has(capability.ForeignKeysRequireUniqueReference), qt.IsFalse)
+	c.Assert(capability.MariaDB1011().Has(capability.ForeignKeysRequireIndexedReference), qt.IsTrue)
 
 	// Version ladder within MySQL.
-	c.Assert(capability.MySQL80().Has(capability.DropConstraintGeneric), qt.IsTrue)
+	c.Assert(capability.MySQL84().Has(capability.DropConstraintGeneric), qt.IsTrue)
 	c.Assert(capability.MySQL8016().Has(capability.DropConstraintGeneric), qt.IsFalse)
 	c.Assert(capability.MySQL8016().Has(capability.CheckConstraintsEnforced), qt.IsTrue)
 	c.Assert(capability.MySQLLegacy().Has(capability.CheckConstraintsEnforced), qt.IsFalse)
@@ -141,15 +168,15 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(capability.Postgres16().Has(capability.RoleManagement), qt.IsTrue)
 
 	// Enum modeling is mutually exclusive and dialect-appropriate.
-	c.Assert(capability.MySQL80().Has(capability.EnumInlineColumn), qt.IsTrue)
-	c.Assert(capability.MySQL80().Has(capability.EnumCustomType), qt.IsFalse)
-	c.Assert(capability.MySQL80().Has(capability.RoleManagement), qt.IsFalse)
+	c.Assert(capability.MySQL84().Has(capability.EnumInlineColumn), qt.IsTrue)
+	c.Assert(capability.MySQL84().Has(capability.EnumCustomType), qt.IsFalse)
+	c.Assert(capability.MySQL84().Has(capability.RoleManagement), qt.IsFalse)
 	c.Assert(capability.Postgres16().Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(capability.Postgres16().Has(capability.EnumInlineColumn), qt.IsFalse)
 
 	// DROP CHECK is a MySQL-only spelling (MariaDB rejects it — verified
 	// live), present exactly in the enforcing MySQL windows.
-	c.Assert(capability.MySQL80().Has(capability.DropCheckClause), qt.IsTrue)
+	c.Assert(capability.MySQL84().Has(capability.DropCheckClause), qt.IsTrue)
 	c.Assert(capability.MySQL8016().Has(capability.DropCheckClause), qt.IsTrue)
 	c.Assert(capability.MySQLLegacy().Has(capability.DropCheckClause), qt.IsFalse)
 	c.Assert(capability.MariaDB1011().Has(capability.DropCheckClause), qt.IsFalse)
@@ -183,7 +210,8 @@ func TestPresets_KeyDifferences(t *testing.T) {
 
 	spanner := capability.SpannerPostgres()
 	c.Assert(spanner.Has(capability.EnumCustomType), qt.IsFalse)
-	c.Assert(spanner.Has(capability.ForeignKeys), qt.IsFalse)
+	c.Assert(spanner.Has(capability.ForeignKeys), qt.IsTrue)
+	c.Assert(spanner.Has(capability.ForeignKeysCreateBackingIndex), qt.IsTrue)
 	c.Assert(spanner.Has(capability.Sequences), qt.IsFalse)
 	c.Assert(spanner.Has(capability.XMLType), qt.IsFalse)
 	c.Assert(spanner.Has(capability.RoleManagement), qt.IsFalse)
@@ -222,7 +250,7 @@ func TestCapabilities_Clone(t *testing.T) {
 	var nilSet capability.Capabilities
 	c.Assert(nilSet.Clone(), qt.IsNil)
 
-	orig := capability.MySQL80()
+	orig := capability.MySQL84()
 	cl := orig.Clone()
 	cl[capability.DropIndexIfExists] = true
 	c.Assert(orig.Has(capability.DropIndexIfExists), qt.IsFalse, qt.Commentf("clone must be independent"))
@@ -247,7 +275,7 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("yugabyte").Has(capability.CreateIndexConcurrently), qt.IsFalse)
 	c.Assert(capability.ForDialect("mssql").Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(capability.ForDialect("sql-server").Has(capability.ForeignKeys), qt.IsTrue)
-	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsFalse)
+	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsTrue)
 	// Unknown dialects get the conservative nil set.
 	c.Assert(capability.ForDialect("oracle"), qt.IsNil)
 }
@@ -263,7 +291,10 @@ func TestForServerVersion(t *testing.T) {
 	}{
 		{"mysql 8.0.19+ line", "mysql", "8.0.42", capability.DropConstraintGeneric, true},
 		{"mysql 8.0.42-log suffix", "mysql", "8.0.42-log", capability.DropConstraintGeneric, true},
+		{"mysql 8.0 permits nonunique referenced keys", "mysql", "8.0.42", capability.ForeignKeysRequireUniqueReference, false},
+		{"mysql 8.4 requires unique referenced keys", "mysql", "8.4.0", capability.ForeignKeysRequireUniqueReference, true},
 		{"mysql 9.x line", "mysql", "9.7.1", capability.DropConstraintGeneric, true},
+		{"mysql 9 requires unique referenced keys", "mysql", "9.7.1", capability.ForeignKeysRequireUniqueReference, true},
 		{"mysql 8.1 minor above zero", "mysql", "8.1.0", capability.DropConstraintGeneric, true},
 		{"mysql 8.0.19 exact boundary", "mysql", "8.0.19", capability.DropConstraintGeneric, true},
 		{"mysql 8.0.18 upper edge of the DROP CHECK window", "mysql", "8.0.18", capability.DropConstraintGeneric, false},
@@ -289,7 +320,7 @@ func TestForServerVersion(t *testing.T) {
 		{"cockroach banner disables concurrent indexes", "postgres", "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)", capability.CreateIndexConcurrently, false},
 		{"cockroach banner disables XML", "postgres", "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)", capability.XMLType, false},
 		{"yugabytedb banner disables concurrent indexes", "postgres", "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang", capability.CreateIndexConcurrently, false},
-		{"spanner banner disables foreign keys", "postgres", "Cloud Spanner PostgreSQL interface", capability.ForeignKeys, false},
+		{"spanner banner supports foreign keys", "postgres", "Cloud Spanner PostgreSQL interface", capability.ForeignKeys, true},
 		{"unparseable falls back to dialect default", "mysql", "who knows", capability.DropConstraintGeneric, true},
 	}
 	for _, tt := range tests {

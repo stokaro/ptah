@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
 	"github.com/stokaro/ptah/internal/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -250,7 +251,8 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		c := qt.New(t)
 
 		gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", hosts...)
-		diff := schemadiff.CompareWithDialect(gen, ownableMixinConvergedDB(hosts...), "mysql")
+		converged := ownableMixinConvergedDBForDialect(gen, "mysql", hosts...)
+		diff := schemadiff.CompareWithDialect(gen, converged, "mysql")
 		c.Assert(diff.HasChanges(), qt.IsTrue)
 
 		nodes, err := mysql.New().GenerateMigrationASTChecked(diff, gen)
@@ -260,8 +262,9 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		sql = legacyRenderedSQL(sql)
 
 		for _, h := range hosts {
-			dropStmt := "ALTER TABLE " + h + " DROP FOREIGN KEY fk_entity_tenant;"
-			addStmt := "ALTER TABLE " + h + " ADD CONSTRAINT fk_entity_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;"
+			constraintName := assignedForeignKeyName(gen, "mysql", h, "tenant_id")
+			dropStmt := "ALTER TABLE " + h + " DROP FOREIGN KEY " + constraintName + ";"
+			addStmt := "ALTER TABLE " + h + " ADD CONSTRAINT " + constraintName + " FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;"
 
 			c.Assert(strings.Count(sql, dropStmt), qt.Equals, 1,
 				qt.Commentf("host %s: expected one DROP FOREIGN KEY, got:\n%s", h, sql))
@@ -274,6 +277,35 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 				qt.Commentf("host %s: DROP must precede ADD; drop@%d add@%d\n%s", h, dropIdx, addIdx, sql))
 		}
 	})
+}
+
+func ownableMixinConvergedDBForDialect(
+	generated *goschema.Database,
+	dialect string,
+	hostTables ...string,
+) *types.DBSchema {
+	database := ownableMixinConvergedDB(hostTables...)
+	for i := range database.Constraints {
+		constraint := &database.Constraints[i]
+		constraint.Name = assignedForeignKeyName(generated, dialect, constraint.TableName, constraint.ColumnName)
+	}
+	return database
+}
+
+func assignedForeignKeyName(generated *goschema.Database, dialect, tableName, columnName string) string {
+	assigned := fromschema.AssignDefaultForeignKeyNames(generated, dialect)
+	structName := ""
+	for _, table := range assigned.Tables {
+		if table.Name == tableName {
+			structName = table.StructName
+		}
+	}
+	for _, field := range assigned.Fields {
+		if field.StructName == structName && field.Name == columnName {
+			return field.ForeignKeyName
+		}
+	}
+	return ""
 }
 
 // TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop covers the MIXED

@@ -251,7 +251,7 @@ func scopeHelperType(
 	helperTypes map[string]struct{},
 ) string {
 	if _, exists := helperTypes[structName]; exists {
-		return scopedGoTypeIdentity(sourceScope, structName)
+		return scopedGoTypeIdentity(sourceScope, unscopedGoTypeIdentity(structName))
 	}
 	return structName
 }
@@ -369,7 +369,8 @@ func (v compositeDefinitionValidator) constraints() error {
 	return validateNamedDefinitions(
 		v.database.Constraints,
 		func(constraint Constraint) string {
-			return v.resolver.resolve(constraint.StructName, constraint.Table) + "." + constraint.Name
+			scope := v.resolver.resolve(constraint.StructName, constraint.Table)
+			return constraintIdentity(scope, constraint)
 		},
 		canonicalConstraintDefinition,
 		func(constraint Constraint, _ string) error {

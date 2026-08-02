@@ -12,7 +12,7 @@ and restrict or enable individual emissions accordingly (issues #225/#226/#171).
 
 Package: `core/platform/capability`.
 
-## Cross-Cutting Artifact Distribution
+## Cross-cutting artifact distribution
 
 OCI artifact distribution is a cross-cutting Ptah capability, not a database
 dialect capability key in `core/platform/capability`.
@@ -94,6 +94,9 @@ so typos fail fast. Current registry:
 | `row_level_security` | Row-level security policies (PostgreSQL) |
 | `role_management` | PostgreSQL role and object privilege management (`CREATE/ALTER ROLE`, `GRANT`, `REVOKE`) |
 | `foreign_keys` | Declarative `FOREIGN KEY` constraints |
+| `foreign_keys_require_unique_reference` | Foreign keys require a declared primary or unique referenced key (MySQL 8.4+ default). Requires `foreign_keys` |
+| `foreign_keys_require_indexed_reference` | Foreign keys may reference a complete leftmost index prefix (MySQL before 8.4 and MariaDB). Requires `foreign_keys` |
+| `foreign_keys_create_backing_index` | The database creates the foreign key's backing index (Spanner). Requires `foreign_keys` |
 | `sequences` | Database sequence objects: `SERIAL`/`BIGSERIAL` column backing and first-class standalone sequences via `//ptah:schema:sequence` (`CREATE`/`ALTER`/`DROP SEQUENCE`). See [Sequences](./sequences.md). |
 | `xml_type` | PostgreSQL `XML` column type |
 | `advisory_locks` | PostgreSQL advisory lock functions such as `pg_advisory_lock` |
@@ -110,33 +113,40 @@ so typos fail fast. Current registry:
 3. **Mutual exclusion groups** — at most one member of a group may be enabled
    (`enum_inline_column` vs `enum_custom_type`: a dialect models enums one way
    or the other).
+4. **Foreign-key reference policy** — a target with `foreign_keys` enabled has
+   exactly one referenced-key policy: declared unique key, full leftmost index
+   prefix, or engine-managed backing index.
 
 Presets are valid by construction (unit-tested); validate hand-built or
 composed sets yourself.
 
 ## Presets
 
-| Capability | MySQL80 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | YugabyteDB25 | SQLite3 | SQLServer2022 | SpannerPG |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `drop_constraint_generic` | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `drop_index_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `check_constraints_enforced` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `drop_check_clause` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `sequences` | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
-| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Capability | MySQL84 | MySQL8019 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | YugabyteDB25 | SQLite3 | SQLServer2022 | SpannerPG |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `drop_constraint_generic` | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `drop_index_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `check_constraints_enforced` | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `drop_check_clause` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `foreign_keys_require_unique_reference` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `foreign_keys_require_indexed_reference` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `foreign_keys_create_backing_index` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `sequences` | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
+| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-Version lines: `MySQL80()` covers MySQL 8.0.19+ and 9.x; `MySQL8016()` covers
-8.0.16–8.0.18; `MySQLLegacy()` anything older. `MariaDB1011()` covers the
+Version lines: `MySQL84()` covers MySQL 8.4+ and 9.x; `MySQL8019()` covers
+8.0.19–8.3; `MySQL8016()` covers 8.0.16–8.0.18; `MySQLLegacy()` anything
+older. `MariaDB1011()` covers the
 supported MariaDB lines (10.6+/11.x); `MariaDBLegacy()` is the conservative
 floor `ForServerVersion` assigns to pre-10.2 servers. `Postgres17()` covers
 PostgreSQL 17+; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
@@ -177,7 +187,14 @@ planner := mysql.NewWithCapabilities(caps)
   `YugabyteDB`/`Yugabyte`, or `Spanner` resolve to their distributed-SQL
   presets. `dbschema.ConnectToDatabase` stores this resolved set in
   `conn.Info().Capabilities`, and live migration generation passes that same
-  set through planning, rendering, and safety assessment.
+  set through planning, rendering, and safety assessment. Root MySQL 8.4+
+  connections keep the conservative unique-key policy because a session value
+  sampled through a pool may not belong to the session that executes the SQL.
+  `DatabaseConnection.WithSession` reads
+  `restrict_fk_on_non_standard_key` on its pinned physical connection before
+  invoking the callback: `ON` keeps the unique-key policy, while `OFF` selects
+  the indexed-left-prefix policy for planning and execution on that same
+  session.
 
 Offline SQL generation has no server banner to inspect. Factories such as
 `planner.GetPlanner`, `renderer.NewRenderer`, and
@@ -188,6 +205,30 @@ value or wants to pin a specific server version in tests/CI.
 
 ## Current consumers
 
+- **Foreign key rendering.** Schema rendering validates every foreign key
+  before producing statements, including owner/target tables, local and
+  referenced columns, compatible column types, duplicate columns and names,
+  referential actions, and the target's referenced-key policy. Targets other
+  than SQLite create tables first and add foreign keys in a second phase, so
+  circular and composite cycles are executable. SQLite keeps constraints
+  inline and accepts only candidate keys whose collation semantics are present
+  in the schema IR. MySQL before 8.4 and MariaDB accept a full leftmost BTREE
+  index prefix on InnoDB tables; FULLTEXT, SPATIAL, HASH, parser-backed, prefix,
+  and expression indexes do not qualify. The portable MySQL-family path also
+  emits `ENGINE=InnoDB` explicitly for every table participating in a foreign
+  key when no engine was declared, so the session default cannot silently
+  disable referential integrity. It
+  rejects MariaDB generated FK columns, MySQL virtual generated FK columns,
+  invalid actions on MySQL stored generated columns, and mismatched signedness,
+  character sets, or collations. `SET NULL` requires every affected local
+  column to be nullable. Explicit foreign-key names must fit the target's
+  identifier limit: 63 bytes for the PostgreSQL family, 64 characters for the
+  MySQL family, and 128 characters for SQL Server and Spanner. Generated names
+  are shortened deterministically before collision checks. Standards-oriented targets require a declared candidate key;
+  Spanner creates its own backing index. A disabled `foreign_keys` capability
+  or any invalid constraint fails the complete render instead of omitting the
+  constraint or returning partial DDL. SQL Server also rejects cycles and
+  multiple paths for cascading actions before SQL emission.
 - **Constraint drops (MySQL family).** The MariaDB-preset planner requests
   `IF EXISTS` on `DROP CONSTRAINT` / `DROP FOREIGN KEY`; the mariadb renderer
   honors it, the mysql renderer strips it. On MySQL the exactly-once drop
@@ -232,8 +273,10 @@ value or wants to pin a specific server version in tests/CI.
   CockroachDB disables `CREATE INDEX CONCURRENTLY`, sequences, `XML`,
   advisory locks, role management, and RLS; YugabyteDB disables
   `CREATE INDEX CONCURRENTLY` because regular `CREATE INDEX` is already
-  asynchronous in YSQL; Spanner disables enums, foreign keys, sequences, RLS,
-  XML, advisory locks, and concurrent indexes.
+  asynchronous in YSQL; Spanner supports foreign keys, including circular and
+  composite relationships, while disabling enums, sequences, RLS, XML,
+  advisory locks, and concurrent indexes. Spanner accepts only `NO ACTION` and
+  `CASCADE` for `ON DELETE`; any `ON UPDATE` action fails before rendering.
   CockroachDB and YugabyteDB integration coverage uses opt-in common-subset
   scenarios that run against live OSS containers in CI. Spanner currently has
   capability, planning, rendering, URL, and detection coverage only; there is

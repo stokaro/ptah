@@ -65,7 +65,7 @@ type Planner struct {
 	// MySQL planner serves both MySQL and MariaDB (GetPlanner maps both here);
 	// the capability set is what tells them apart — e.g. MariaDB accepts the
 	// IF EXISTS guard on constraint drops, MySQL does not. The nil zero value
-	// defaults to the current MySQL line preset (capability.MySQL80) via the
+	// defaults to the current MySQL line preset (capability.MySQL84) via the
 	// capabilities accessor, so a bare &Planner{} — the construction shown in
 	// this type's own example — behaves exactly like New(). Pass an explicit
 	// preset (e.g. capability.MySQLLegacy()) to restrict emissions.
@@ -77,9 +77,9 @@ type Planner struct {
 }
 
 // New returns a planner configured with the current MySQL line preset
-// (capability.MySQL80: 8.0.19+ and 9.x).
+// (capability.MySQL84: 8.4+ and 9.x).
 func New() *Planner {
-	return NewWithCapabilities(capability.MySQL80())
+	return NewWithCapabilities(capability.MySQL84())
 }
 
 // NewWithCapabilities returns a planner for a specific capability set — e.g.
@@ -88,7 +88,7 @@ func New() *Planner {
 // The set is expected to be valid (capability.Capabilities.Validate); presets
 // from the capability package always are. The set is cloned, so later
 // mutations by the caller cannot affect the planner. A nil set defaults to
-// the capability.MySQL80 preset.
+// the capability.MySQL84 preset.
 func NewWithCapabilities(caps capability.Capabilities) *Planner {
 	return NewForDialect(DialectName, caps)
 }
