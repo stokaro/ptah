@@ -101,7 +101,7 @@
     {
       "name": "a leading component past the band is not refused",
       "file": "internal/atlasmigrateimport/importer.go",
-      "old": "\tif components[0] > flywayMaxLeadingComponent {",
+      "old": "\tif int64(components[0]) > flywayMaxLeadingComponent {",
       "new": "\tif false {"
     },
     {
