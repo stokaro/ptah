@@ -6,7 +6,6 @@ import (
 	"io"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -14,22 +13,14 @@ import (
 	migrationlint "github.com/stokaro/ptah/migration/lint"
 )
 
-// atlasLintWrapWidth is the number of columns a diagnostic or suggested-fix
-// line is wrapped to, excluding the fixed nine-column reporting prefix. It is
-// derived from the Atlas migrate lint text fixtures: the longest diagnostic
-// that fits on one line is 88 content columns and the shortest word that wraps
-// to a continuation line pushes past 90, so 90 is the exact Atlas budget.
-const atlasLintWrapWidth = 90
-
-// atlasLintAnalyzerBaseURL is the documentation anchor prefix Atlas appends to
-// every diagnostic message.
-const atlasLintAnalyzerBaseURL = "https://atlasgo.io/lint/analyzers#"
+// lintWrapWidth keeps diagnostics readable without coupling Ptah's prose to
+// another tool's presentation details.
+const lintWrapWidth = 100
 
 // WriteMigrateLintText renders the default Atlas-compatible migration-analysis
-// text report. It reproduces Atlas's `migrate lint` stdout for the no-custom-
-// format path: a per-version analysis block followed by a summary. The report
-// is written even when findings fail; the caller is responsible for the exit
-// code.
+// text report. It preserves the compatibility surface's per-version analysis
+// blocks and summary while using Ptah-owned diagnostic prose. The report is
+// written even when findings fail; the caller is responsible for the exit code.
 func WriteMigrateLintText(w io.Writer, opts MigrateLintOptions) error {
 	return writeMigrateLintText(w, opts, time.Now)
 }
@@ -44,8 +35,7 @@ func writeMigrateLintText(w io.Writer, opts MigrateLintOptions, now func() time.
 	}
 	model := buildMigrateLintText(*opts.Analysis)
 	if model.analyzedCount == 0 {
-		// No analyzed versions (empty changeset or a wholly ignored directory):
-		// Atlas emits nothing.
+		// No analyzed versions means there is no report to render.
 		return nil
 	}
 
@@ -85,24 +75,9 @@ func writeMigrateLintTextGroup(w io.Writer, group migrateLintTextGroup) error {
 	if _, err := fmt.Fprintf(w, "    -- %s detected:\n", group.label); err != nil {
 		return err
 	}
-	var fixes []string
 	for _, diag := range group.diags {
-		content := fmt.Sprintf("L%d: %s %s", diag.line, diag.message, diag.url)
+		content := fmt.Sprintf("L%d [%s]: %s", diag.line, diag.code, diag.message)
 		if err := writeWrapped(w, "      -- ", "         ", content); err != nil {
-			return err
-		}
-		if diag.fix != "" {
-			fixes = append(fixes, diag.fix)
-		}
-	}
-	if len(fixes) == 0 {
-		return nil
-	}
-	if _, err := fmt.Fprintln(w, "    -- suggested fix:"); err != nil {
-		return err
-	}
-	for _, fix := range fixes {
-		if err := writeWrapped(w, "      -> ", "         ", fix); err != nil {
 			return err
 		}
 	}
@@ -126,11 +101,11 @@ func writeMigrateLintTextSummary(w io.Writer, model migrateLintText, elapsed str
 	return err
 }
 
-// writeWrapped renders text word-wrapped to [atlasLintWrapWidth] content
+// writeWrapped renders text word-wrapped to [lintWrapWidth] content
 // columns, prefixing the first line with firstPrefix and every continuation
 // line with contPrefix.
 func writeWrapped(w io.Writer, firstPrefix, contPrefix, text string) error {
-	lines := wrapContent(text, atlasLintWrapWidth)
+	lines := wrapContent(text, lintWrapWidth)
 	for i, line := range lines {
 		prefix := contPrefix
 		if i == 0 {
@@ -186,9 +161,8 @@ type migrateLintTextGroup struct {
 
 type migrateLintTextDiag struct {
 	line     int
+	code     string
 	message  string
-	url      string
-	fix      string
 	group    string
 	severity migrationlint.Severity
 }
@@ -256,96 +230,28 @@ func sortedUpFiles(files []migrationlint.File) []migrationlint.File {
 	return upFiles
 }
 
-// diagnosticsByFile expands every finding into Atlas-shaped diagnostics keyed
+// diagnosticsByFile maps findings into compatibility diagnostics keyed
 // by the cleaned reporting path of the file that owns them.
 func diagnosticsByFile(findings []migrationlint.Finding) map[string][]migrateLintTextDiag {
 	byFile := map[string][]migrateLintTextDiag{}
 	for _, finding := range findings {
 		key := path.Clean(finding.File)
-		byFile[key] = append(byFile[key], atlasDiagnostics(finding)...)
+		byFile[key] = append(byFile[key], compatibilityDiagnostic(finding))
 	}
 	return byFile
 }
 
-// atlasDiagnostics synthesizes the Atlas diagnostic message(s) for one native
-// finding. Codes whose Atlas wording is pinned by the conformance fixtures are
-// reproduced exactly from the finding's subjects; any other code falls back to
-// the native message so the renderer never drops a finding.
-func atlasDiagnostics(finding migrationlint.Finding) []migrateLintTextDiag {
+// compatibilityDiagnostic keeps the documented analyzer and rule-code mapping
+// but uses the native Ptah finding as the sole source of human-readable prose.
+func compatibilityDiagnostic(finding migrationlint.Finding) migrateLintTextDiag {
 	rule := atlaslint.RuleForNativeCode(finding.Rule)
-	url := atlasLintAnalyzerBaseURL + rule.Code
-	group := analyzerGroupLabel(rule.Analyzer)
-
-	subjects := findingSubjects(finding)
-	switch finding.Rule {
-	case "DS101": // table dropped -> Atlas DS102
-		if diags := tableDropDiagnostics(finding.Line, url, group, subjects); len(diags) > 0 {
-			return diags
-		}
-	case "DD101": // non-nullable column added -> Atlas MF103
-		if diags := nonNullableAddDiagnostics(finding.Line, url, group, subjects); len(diags) > 0 {
-			return diags
-		}
-	}
-	return []migrateLintTextDiag{{
+	return migrateLintTextDiag{
 		line:     finding.Line,
+		code:     rule.Code,
 		message:  finding.Message,
-		url:      url,
-		group:    group,
+		group:    analyzerGroupLabel(rule.Analyzer),
 		severity: finding.Severity,
-	}}
-}
-
-func tableDropDiagnostics(line int, url, group string, subjects []migrationlint.Subject) []migrateLintTextDiag {
-	var diags []migrateLintTextDiag
-	for _, subject := range subjects {
-		if subject.Kind != migrationlint.SubjectTable {
-			continue
-		}
-		name := atlasQuote(subject.Name)
-		diags = append(diags, migrateLintTextDiag{
-			line:     line,
-			message:  fmt.Sprintf("Dropping table %s", name),
-			url:      url,
-			fix:      fmt.Sprintf("Add a pre-migration check to ensure table %s is empty before dropping it", name),
-			group:    group,
-			severity: migrationlint.SeverityError,
-		})
 	}
-	return diags
-}
-
-func nonNullableAddDiagnostics(line int, url, group string, subjects []migrationlint.Subject) []migrateLintTextDiag {
-	var diags []migrateLintTextDiag
-	for _, subject := range subjects {
-		if subject.Kind != migrationlint.SubjectColumn {
-			continue
-		}
-		diags = append(diags, migrateLintTextDiag{
-			line: line,
-			message: fmt.Sprintf(
-				"Adding a non-nullable %s column %s will fail in case table %s is not empty",
-				atlasQuote(subject.DataType), atlasQuote(subject.Name), atlasQuote(subject.Parent),
-			),
-			url:      url,
-			group:    group,
-			severity: migrationlint.SeverityWarning,
-		})
-	}
-	return diags
-}
-
-func findingSubjects(finding migrationlint.Finding) []migrationlint.Subject {
-	if finding.Context == nil {
-		return nil
-	}
-	return finding.Context.Subjects
-}
-
-// atlasQuote renders an identifier or type the way Atlas does in diagnostics:
-// stripped of any source quoting, then double-quoted.
-func atlasQuote(name string) string {
-	return strconv.Quote(strings.Trim(name, "`\"[]"))
 }
 
 func analyzerGroupLabel(analyzer string) string {

@@ -13,7 +13,7 @@ import (
 
 // Qualifier is the typed model for Atlas's `migrate diff --qualifier` value.
 //
-// Atlas OSS semantics (pinned at ariga/atlas v1.2.0): when the dev connection
+// The compatibility contract pins this behavior: when the dev connection
 // is bound to a single schema, `--qualifier` sets a custom schema qualifier
 // for every object named by the generated migration statements, so the file
 // can be applied to a schema other than the one it was planned against. The

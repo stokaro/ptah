@@ -218,10 +218,8 @@ func TestNewCompatCommand_MigrateTestResolvesAtRoot(t *testing.T) {
 
 	err := cmd.Execute()
 
-	// The verb resolves as a working forward through the compat binary too; it
-	// no longer prints the Atlas CE community-version unsupported boundary.
+	// The verb resolves as a working forward through the compatibility binary.
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "atlas migrate test [flags] [paths]")
 	c.Assert(out.String(), qt.Contains, "--dev-url")
-	c.Assert(out.String(), qt.Not(qt.Contains), "not supported by the community version")
 }

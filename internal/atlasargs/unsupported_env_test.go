@@ -32,10 +32,10 @@ func TestMap_UnsupportedFlagsAreStillSynthesizedFromTheEnvironment(t *testing.T)
 	}{
 		{
 			name:  "bool with a rationale",
-			flag:  atlasargs.UnsupportedBoolReason("plan", "", "Force dynamic down planning", "bound to Atlas Cloud"),
+			flag:  atlasargs.UnsupportedBoolReason("plan", "", "Force dynamic down planning", "requires a hosted planner"),
 			env:   "PTAH_PLAN",
 			value: "1",
-			want:  "atlas migrate down accepts --plan, but Ptah does not implement its behavior: bound to Atlas Cloud",
+			want:  "atlas migrate down accepts --plan, but Ptah does not implement its behavior: requires a hosted planner",
 		},
 		{
 			name:  "bool without a rationale",
@@ -46,10 +46,10 @@ func TestMap_UnsupportedFlagsAreStillSynthesizedFromTheEnvironment(t *testing.T)
 		},
 		{
 			name:  "string with a rationale",
-			flag:  atlasargs.UnsupportedStringReason("to-tag", "", "Target tag", "tags exist only in Atlas Registry"),
+			flag:  atlasargs.UnsupportedStringReason("to-tag", "", "Target tag", "tags require a hosted registry"),
 			env:   "PTAH_TO_TAG",
 			value: "release-v1",
-			want:  "atlas migrate down accepts --to-tag, but Ptah does not implement its behavior: tags exist only in Atlas Registry",
+			want:  "atlas migrate down accepts --to-tag, but Ptah does not implement its behavior: tags require a hosted registry",
 		},
 		{
 			name:  "string without a rationale",

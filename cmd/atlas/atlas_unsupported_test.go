@@ -11,10 +11,10 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
-func TestCompatCommand_UnsupportedCommunityCommands(t *testing.T) {
+func TestCompatCommand_UnsupportedCommands(t *testing.T) {
 	c := qt.New(t)
 
-	tests := unsupportedCommunityCommandTests()
+	tests := unsupportedCommandTests()
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
@@ -28,15 +28,15 @@ func TestCompatCommand_UnsupportedCommunityCommands(t *testing.T) {
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-			c.Assert(out.String(), qt.Equals, unsupportedCommunityAbortOutput(test.path))
+			c.Assert(out.String(), qt.Equals, unsupportedCommandErrorOutput(test.path))
 		})
 	}
 }
 
-func TestCompatCommand_UnsupportedCommunityCommandsHelp(t *testing.T) {
+func TestCompatCommand_UnsupportedCommandsHelp(t *testing.T) {
 	c := qt.New(t)
 
-	tests := unsupportedCommunityCommandTests()
+	tests := unsupportedCommandTests()
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
@@ -49,69 +49,26 @@ func TestCompatCommand_UnsupportedCommunityCommandsHelp(t *testing.T) {
 			err := cmd.Execute()
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(out.String(), qt.Equals, unsupportedCommunityHelpOutput(test.path))
+			c.Assert(out.String(), qt.Equals, unsupportedCommandHelpOutput(test.path))
 		})
 	}
 }
 
-func TestNewCompatCommand_UnsupportedCommunityCommands(t *testing.T) {
-	c := qt.New(t)
-
-	tests := unsupportedCommunityCommandTests()
-
-	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			cmd := atlas.NewCompatCommand("atlas")
-			var out bytes.Buffer
-			cmd.SetOut(&out)
-			cmd.SetErr(&out)
-			cmd.SetArgs(test.path)
-
-			err := cmd.Execute()
-
-			c.Assert(err, qt.IsNotNil)
-			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-			c.Assert(out.String(), qt.Equals, unsupportedCommunityAbortOutput(test.path))
-		})
-	}
-}
-
-func TestNewCompatCommand_UnsupportedCommunityCommandsHelp(t *testing.T) {
-	c := qt.New(t)
-
-	tests := unsupportedCommunityCommandTests()
-
-	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			cmd := atlas.NewCompatCommand("atlas")
-			var out bytes.Buffer
-			cmd.SetOut(&out)
-			cmd.SetErr(&out)
-			cmd.SetArgs(append(append([]string{}, test.path...), "--help"))
-
-			err := cmd.Execute()
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(out.String(), qt.Equals, unsupportedCommunityHelpOutput(test.path))
-		})
-	}
-}
-
-type unsupportedCommunityCommandTest struct {
+type unsupportedCommandTest struct {
 	name string
 	path []string
 }
 
-// unsupportedCommunityCommandTests lists the Atlas verbs that remain
-// deliberate Atlas CE unsupported-boundary stubs. `migrate test`,
+// unsupportedCommandTests lists the compatibility verbs that remain
+// deliberate unsupported-boundary stubs. `migrate test`,
 // `schema test`, `migrate edit`, `migrate rebase`, `migrate rm`, and
 // `schema plan` are no longer here: they forward to or implement native Ptah
 // behavior (see migrate_test_forward_test.go, schema_test_forward_test.go,
 // migrate_maint_forward_test.go, and schema_plan_test.go). The registry
 // sub-verbs under `schema plan` stay stubs: they operate on plans stored in
-// the Atlas Registry, which Ptah's local plan-file workflow replaces.
-func unsupportedCommunityCommandTests() []unsupportedCommunityCommandTest {
-	return []unsupportedCommunityCommandTest{
+// a remote registry, which Ptah's local plan-file workflow replaces.
+func unsupportedCommandTests() []unsupportedCommandTest {
+	return []unsupportedCommandTest{
 		{name: "migrate_push", path: []string{"migrate", "push"}},
 		{name: "schema_plan_approve", path: []string{"schema", "plan", "approve"}},
 		{name: "schema_plan_lint", path: []string{"schema", "plan", "lint"}},
@@ -126,34 +83,14 @@ func unsupportedCommunityCommandTests() []unsupportedCommunityCommandTest {
 	}
 }
 
-func unsupportedCommunityHelpOutput(path []string) string {
-	return unsupportedCommunityNoticeOutput(path, "")
+func unsupportedCommandHelpOutput(path []string) string {
+	return compatibilityCommandPath(path) + " is not implemented by Ptah.\n"
 }
 
-func unsupportedCommunityAbortOutput(path []string) string {
-	return unsupportedCommunityNoticeOutput(path, "Abort: ") + `
-You're running the community build of Atlas, which differs from the official version.
-If this error persists, try installing the official version as a troubleshooting step:
-
-  curl -sSf https://atlasgo.sh | sh
-
-More installation options: https://atlasgo.io/docs#installation
-`
+func unsupportedCommandErrorOutput(path []string) string {
+	return "Error: " + compatibilityCommandPath(path) + " is not implemented by Ptah\n"
 }
 
-func unsupportedCommunityNoticeOutput(path []string, prefix string) string {
-	return prefix + unsupportedCommunityMessage(path) + `
-
-To install the non-community version of Atlas, use the following command:
-
-	curl -sSf https://atlasgo.sh | sh
-
-Or, visit the website to see all installation options:
-
-	https://atlasgo.io/docs#installation
-`
-}
-
-func unsupportedCommunityMessage(path []string) string {
-	return "'" + strings.Join(append([]string{"atlas"}, path...), " ") + "' is not supported by the community version."
+func compatibilityCommandPath(path []string) string {
+	return strings.Join(append([]string{"atlas"}, path...), " ")
 }

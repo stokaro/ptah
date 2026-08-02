@@ -239,8 +239,9 @@ lint` output. It is parsed into the same format IR as `format.migrate.lint`, so
 the two share one precedence chain: an explicit CLI `--format` overrides the
 project template, and a selected `--env` `lint.log` overrides a global one. When
 neither a CLI `--format` nor a project template is set, `ptah-compat migrate lint`
-prints Atlas's default migration-analysis text report (per-version diagnostics
-and a summary), while the native `ptah migrations lint` output is unchanged.
+prints Ptah's compatibility report with per-version diagnostics, mapped rule
+IDs, and a summary. Diagnostic prose is Ptah-owned. The native `ptah migrations
+lint` output is unchanged.
 
 `migration.tx_mode` accepts `file`, `all`, and `none`, matching
 `ptah-compat migrate apply --tx-mode`. `all` is limited to dialects where Ptah

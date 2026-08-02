@@ -3,9 +3,7 @@ package atlas
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 
@@ -138,8 +136,8 @@ func newAtlasSchemaCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
 	cmd.AddCommand(newAtlasSchemaPlanCommand())
 	cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaTestVerb()))
-	addAtlasUnsupportedCommunityCommands(cmd, "schema", []atlasUnsupportedCommunityVerb{
-		{use: "push", short: "Push schema state to Atlas Cloud"},
+	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
+		{use: "push", short: "Push schema state to a remote registry"},
 	})
 	return cmd
 }
@@ -210,8 +208,8 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasMigrateValidateCommand())
 	cmd.AddCommand(newAtlasMigrateDiffCommand())
 	cmd.AddCommand(newAtlasMigrateImportCommand())
-	addAtlasUnsupportedCommunityCommands(cmd, "migrate", []atlasUnsupportedCommunityVerb{
-		{use: "push", short: "Push migration directory to Atlas Cloud"},
+	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
+		{use: "push", short: "Push migration directory to a remote registry"},
 	})
 	return cmd
 }
@@ -276,65 +274,36 @@ func atlasCompletionShellArgs(cmd *cobra.Command, args []string) error {
 	return exitcode.New(atlasErrorExitCode, unknownErr)
 }
 
-type atlasUnsupportedCommunityVerb struct {
+type atlasUnsupportedVerb struct {
 	use   string
 	short string
 }
 
-func addAtlasUnsupportedCommunityCommands(parent *cobra.Command, group string, verbs []atlasUnsupportedCommunityVerb) {
+func addAtlasUnsupportedCommands(parent *cobra.Command, verbs []atlasUnsupportedVerb) {
 	for _, verb := range verbs {
-		parent.AddCommand(newAtlasUnsupportedCommunityCommand(group, verb))
+		parent.AddCommand(newAtlasUnsupportedCommand(verb))
 	}
 }
 
-func newAtlasUnsupportedCommunityCommand(group string, verb atlasUnsupportedCommunityVerb) *cobra.Command {
+func newAtlasUnsupportedCommand(verb atlasUnsupportedVerb) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   verb.use,
 		Short: verb.short,
-		Long:  fmt.Sprintf("Atlas CE `%s` command boundary.", atlasUnsupportedCommunityCommand(group, verb.use)),
+		Long:  "This compatibility command is not implemented by Ptah.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			writeAtlasUnsupportedCommunityCommandAbort(cmd, group, verb.use)
-			return exitcode.New(1, errors.New("atlas community-version unsupported command"))
+			err := fmt.Errorf("%s is not implemented by Ptah", cmd.CommandPath())
+			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", err); writeErr != nil {
+				return exitcode.New(1, fmt.Errorf("%w: write diagnostic: %w", err, writeErr))
+			}
+			return exitcode.New(1, err)
 		},
 	}
 	cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
-		writeAtlasUnsupportedCommunityCommandHelp(cmd, group, verb.use)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s is not implemented by Ptah.\n", cmd.CommandPath())
 	})
 	cmd.Annotations = map[string]string{atlasPreserveHelpAnnotation: "true"}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
-}
-
-func writeAtlasUnsupportedCommunityCommandHelp(cmd *cobra.Command, group, use string) {
-	out := cmd.OutOrStdout()
-	writeAtlasUnsupportedCommunityNotice(out, atlasUnsupportedCommunityCommand(group, use), "")
-}
-
-func writeAtlasUnsupportedCommunityCommandAbort(cmd *cobra.Command, group, use string) {
-	out := cmd.ErrOrStderr()
-	writeAtlasUnsupportedCommunityNotice(out, atlasUnsupportedCommunityCommand(group, use), "Abort: ")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "You're running the community build of Atlas, which differs from the official version.")
-	fmt.Fprintln(out, "If this error persists, try installing the official version as a troubleshooting step:")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "  curl -sSf https://atlasgo.sh | sh")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "More installation options: https://atlasgo.io/docs#installation")
-}
-
-func writeAtlasUnsupportedCommunityNotice(out io.Writer, command, prefix string) {
-	fmt.Fprintf(out, "%s'%s' is not supported by the community version.\n\n", prefix, command)
-	fmt.Fprintln(out, "To install the non-community version of Atlas, use the following command:")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "\tcurl -sSf https://atlasgo.sh | sh")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Or, visit the website to see all installation options:")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "\thttps://atlasgo.io/docs#installation")
-}
-
-func atlasUnsupportedCommunityCommand(group, use string) string {
-	return "atlas " + group + " " + use
 }
 
 func atlasMigrateDownVerb() atlasVerb {
@@ -359,11 +328,10 @@ func atlasMigrateDownVerb() atlasVerb {
 			// before touching the target (native --shadow-db).
 			atlasargs.NativeString("dev-url", "", "Dev database URL the rollback plan is verified on before applying it", "shadow-db"),
 			atlasargs.NativeString("to-version", "", "Target version to roll back to", "target"),
-			// --to-tag targets a registry tag, which only exists in the Atlas
-			// Registry — a cloud service Ptah intentionally has no counterpart
-			// for (see docs/site/src/content/docs/reference/atlas-commands.md).
+			// --to-tag targets a hosted registry tag, for which Ptah intentionally
+			// has no counterpart (see docs/site/src/content/docs/reference/atlas-commands.md).
 			atlasargs.UnsupportedStringReason("to-tag", "", "Target migration tag to roll back to",
-				"migration tags exist only in Atlas Registry (Atlas Cloud); use --to-version with a migration version instead"),
+				"migration tags require a hosted registry; use --to-version with a migration version instead"),
 			atlasargs.NativeBool("dry-run", "", "Show rollback plan without applying it", "dry-run"),
 			// --format is implemented by newAtlasMigrateDownCommand, which
 			// intercepts it before the arg mapper runs. The Unsupported marker
@@ -373,22 +341,22 @@ func atlasMigrateDownVerb() atlasVerb {
 			atlasargs.UnsupportedString("format", "", "Atlas Go template output format"),
 			atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
 			atlasargs.NativeString("lock-timeout", "", "Timeout for acquiring migration locks", "migration-lock-timeout"),
-			// --skip-checks skips the checks of an Atlas Cloud pre-planned down
+			// --skip-checks skips the checks of a hosted pre-planned down
 			// migration; Ptah reverts through locally reviewed down files and
 			// has no generated checks to skip.
 			//
 			// Explicit-only, unlike the waivers around it, because `migrate
 			// apply` reads PTAH_SKIP_CHECKS as its pre-migration check bypass.
-			// An ambient value meant for an apply is not a request for Atlas
-			// Cloud down checks, and must not refuse a rollback.
-			atlasargs.ExplicitUnsupportedBoolReason("skip-checks", "", "Skip Atlas down migration safety checks",
-				"Atlas down checks are part of the Atlas Cloud plan-approval flow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip"),
+			// An ambient value meant for an apply is not a request for hosted down
+			// checks, and must not refuse a rollback.
+			atlasargs.ExplicitUnsupportedBoolReason("skip-checks", "", "Skip down migration safety checks",
+				"down checks require a hosted plan-approval workflow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip"),
 			// --plan forces Atlas's registry-bound dynamic down planning.
 			// Ptah's local plan files (the `schema plan` workflow) are
 			// declarative apply plans, not down plans, so forcing a down plan
 			// has no local meaning and is rejected rather than faked.
-			atlasargs.UnsupportedBoolReason("plan", "", "Force Atlas dynamic down planning",
-				"dynamic down planning is bound to the Atlas Cloud plan-approval flow; use --dev-url to verify the pre-planned rollback on a dev database instead"),
+			atlasargs.UnsupportedBoolReason("plan", "", "Force dynamic down planning",
+				"dynamic down planning requires a hosted plan-approval workflow; use --dev-url to verify the pre-planned rollback on a dev database instead"),
 		},
 	}
 }

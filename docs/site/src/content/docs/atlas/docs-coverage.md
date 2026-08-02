@@ -340,7 +340,7 @@ writes Atlas-style migration files. It:
 
 **Implementation status.** Partial.
 
-Ptah ships native linting, SARIF, inline suppression, severity config, and `ptah-compat migrate lint`; `--dir-format` defaults to `atlas`, `--latest`, `--git-base`, `--git-dir`, and matching `atlas.hcl` defaults select the linted changeset; `--dev-url` infers lint dialect and treats directly connectable dev databases as scratch databases by cleaning and replaying migrations; `--format`, `format.migrate.lint`, and Atlas `lint { log = "…" }` render Atlas-style Go templates over `.Env`, `.Steps`, and `.Files`, and the no-template default reproduces Atlas's migration-analysis text report; supported `atlas.hcl` analyzer policy maps severity for matching Ptah lint rule families.
+Ptah ships native linting, SARIF, inline suppression, severity config, and `ptah-compat migrate lint`; `--dir-format` defaults to `atlas`, `--latest`, `--git-base`, `--git-dir`, and matching `atlas.hcl` defaults select the linted changeset; `--dev-url` infers lint dialect and treats directly connectable dev databases as scratch databases by cleaning and replaying migrations; `--format`, `format.migrate.lint`, and Atlas `lint { log = "…" }` render Atlas-style Go templates over `.Env`, `.Steps`, and `.Files`, and the no-template default renders Ptah's compatibility report with per-version groups, mapped rule IDs, and Ptah-owned diagnostic prose; supported `atlas.hcl` analyzer policy maps severity for matching Ptah lint rule families.
 
 Atlas check-level policy, custom rules, force/allow-list analyzer options, Docker dev databases, web reports, and external migration-tool `--dir-format` execution remain gaps.
 
@@ -411,7 +411,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver rejected loudly, because the checkpoint engine does not emit Atlas-format checkpoint files yet. The read side honors Atlas's `-- atlas:checkpoint` directive: externally produced Atlas checkpoint directories bootstrap fresh databases from the latest checkpoint and are silently skipped on databases that already applied pre-checkpoint history, matching measured Atlas behavior.
 
-**Conformance status.** Measured by native command and Atlas-compatibility tests, not as a community-version unsupported boundary.
+**Conformance status.** Measured by native command tests and Atlas-compatibility tests that verify `ptah-compat migrate checkpoint` forwards to the native implementation.
 
 **Follow-up.** [`stokaro/ptah#660`](https://github.com/stokaro/ptah/issues/660), [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758).
 
@@ -439,7 +439,7 @@ Checkpoint output is ptah-format only: `--dir-format=atlas` is a recorded waiver
 
 The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` verbs forward to the native runners with Atlas-shaped flags (`--dir`/`-u --url`, `--dev-url`, `--run`, project flags) and the native exit-code contract; Ptah-native YAML/Go test files are the executable payload, and Atlas `.test.hcl` ingestion remains a separate gap.
 
-**Conformance status.** Measured by native command and Atlas-compatibility tests, not as a community-version unsupported boundary.
+**Conformance status.** Measured by native command tests and Atlas-compatibility tests that exercise these forwards.
 
 **Follow-up.** [`stokaro/ptah#659`](https://github.com/stokaro/ptah/issues/659), [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758).
 
@@ -452,7 +452,7 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Implementation status.** Implemented natively and free. `ptah migrations data` diffs declarative reference rows against a live table and writes a reversible data migration (`INSERT`/`UPDATE`/`DELETE`) with an exact inverse `down` — a workflow Atlas keeps in its Pro build and Atlas CE cannot inspect declaratively.
 
-**Conformance status.** Measured by native command and round-trip reversibility tests, not as a community-version unsupported boundary.
+**Conformance status.** Measured by native command and round-trip reversibility tests.
 
 **Follow-up.** [`stokaro/ptah#663`](https://github.com/stokaro/ptah/issues/663).
 
@@ -491,7 +491,7 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Implementation status.** Atlas Registry remains out of scope: Ptah has no Atlas Cloud dependency, account model, `atlas://` resolver, hosted UI, or Atlas deployment API. Ptah independently provides native `ptah migrations push/pull`, `ptah schema push/pull`, and `ptah oci referrers` commands for bring-your-own OCI registries, plus direct native consumers and best-effort deployment-report referrers.
 
-The referrers command lists descriptor metadata but does not pull report payloads. The Atlas-compatible `migrate push` and `schema push` paths still mirror the Atlas CE unsupported boundary.
+The referrers command lists descriptor metadata but does not pull report payloads. The Atlas-compatible `migrate push` and `schema push` paths remain registered but not implemented and use Ptah-owned diagnostics.
 
 **Conformance status.** Atlas-compatible push stubs remain measured by CLI-surface conformance. Native OCI behavior is tested in Ptah and is not evidence of Atlas Cloud parity.
 

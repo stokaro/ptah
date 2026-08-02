@@ -628,17 +628,17 @@ func TestCompatCommand_MigrateDownWaivedFlagsRejectWithRationale(t *testing.T) {
 		{
 			name: "to_tag",
 			args: []string{"--to-tag", "release-v1"},
-			want: `atlas migrate down accepts --to-tag, but Ptah does not implement its behavior: migration tags exist only in Atlas Registry \(Atlas Cloud\); use --to-version with a migration version instead`,
+			want: `atlas migrate down accepts --to-tag, but Ptah does not implement its behavior: migration tags require a hosted registry; use --to-version with a migration version instead`,
 		},
 		{
 			name: "skip_checks",
 			args: []string{"--skip-checks"},
-			want: `atlas migrate down accepts --skip-checks, but Ptah does not implement its behavior: Atlas down checks are part of the Atlas Cloud plan-approval flow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip`,
+			want: `atlas migrate down accepts --skip-checks, but Ptah does not implement its behavior: down checks require a hosted plan-approval workflow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip`,
 		},
 		{
 			name: "plan",
 			args: []string{"--plan"},
-			want: `atlas migrate down accepts --plan, but Ptah does not implement its behavior: dynamic down planning is bound to the Atlas Cloud plan-approval flow; use --dev-url to verify the pre-planned rollback on a dev database instead`,
+			want: `atlas migrate down accepts --plan, but Ptah does not implement its behavior: dynamic down planning requires a hosted plan-approval workflow; use --dev-url to verify the pre-planned rollback on a dev database instead`,
 		},
 	}
 

@@ -124,9 +124,9 @@ func TestClassify_Errors(t *testing.T) {
 			want: `ptah-external-schema:// is a reserved internal marker scheme; reference data\.external_schema\.<name>\.url from an atlas\.hcl env src instead`,
 		},
 		{
-			name: "atlas registry",
+			name: "hosted registry URL",
 			url:  "atlas://remote/app",
-			want: `atlas:// registry URLs are not supported: Ptah has no Atlas Cloud registry; use a local schema file, a migration directory, a database URL, or an env:// reference`,
+			want: `atlas:// registry URLs are not supported; use oci:// with a native Ptah command, or use a local schema file, a migration directory, a database URL, or an env:// reference`,
 		},
 		{
 			name: "ent",
@@ -187,7 +187,7 @@ func TestClassifySet_UnsupportedSchemeIsWrapped(t *testing.T) {
 
 	_, err := atlassource.ClassifySet("--from", []string{"atlas://remote/app"}, atlassource.ProjectEnv{})
 
-	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/app": atlas:// registry URLs are not supported: .*`)
+	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/app": atlas:// registry URLs are not supported; use oci://.*`)
 }
 
 func TestClassifySet_EnvRequiresLoadedConfig(t *testing.T) {

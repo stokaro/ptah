@@ -395,17 +395,17 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 		{
 			name: "push",
 			args: []string{"--push"},
-			want: `atlas schema plan accepts --push, but plan push targets the Atlas Registry \(Atlas Cloud\); Ptah's local plan workflow saves plan files with --save or --output instead`,
+			want: `atlas schema plan accepts --push, but plan push requires a hosted registry; Ptah's local plan workflow saves plan files with --save or --output instead`,
 		},
 		{
 			name: "pending",
 			args: []string{"--pending"},
-			want: `atlas schema plan accepts --pending, but pending plans are an Atlas Registry approval state; a locally saved plan file is approved by operator review`,
+			want: `atlas schema plan accepts --pending, but pending plans require a hosted approval state; a locally saved plan file is approved by operator review`,
 		},
 		{
 			name: "repo",
 			args: []string{"--repo", "atlas://plans"},
-			want: `atlas schema plan accepts --repo, but schema repositories exist only in the Atlas Registry \(Atlas Cloud\); Ptah plans are local files`,
+			want: `atlas schema plan accepts --repo, but schema repositories require a hosted registry; Ptah plans are local files`,
 		},
 		{
 			name: "format",
