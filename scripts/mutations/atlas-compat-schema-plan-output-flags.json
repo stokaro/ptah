@@ -33,13 +33,6 @@
       "comment": "strings.Clone rather than a bare out.String() so the package still imports strings; dropping the import is a build failure, which is not a result."
     },
     {
-      "name": "an unknown template field renders as empty instead of failing",
-      "file": "internal/atlasreport/schema_plan_name.go",
-      "old": "template.New(\"atlas-schema-plan-name-format\").Option(\"missingkey=error\").Parse(format)",
-      "new": "template.New(\"atlas-schema-plan-name-format\").Parse(format)",
-      "comment": "Struct field lookups fail regardless of missingkey, so this is expected to SURVIVE against a struct payload; it is here to record that the option is not load-bearing today and would become so if the payload ever became a map."
-    },
-    {
       "name": "the empty rendered name is accepted",
       "file": "cmd/atlas/schema_plan.go",
       "old": "\tif name == \"\" {\n\t\treturn fmt.Errorf(\"%s rendered an empty plan name\", source)\n\t}",

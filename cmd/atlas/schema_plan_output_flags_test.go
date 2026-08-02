@@ -344,6 +344,58 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 	}
 }
 
+func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
+	c := qt.New(t)
+
+	// Each case names the layer that refuses it, so the test cannot pass
+	// because planning failed for some unrelated reason. The backslash is
+	// caught earlier than the others: it is a path separator on the name
+	// rules, and never reaches the writer.
+	tests := []struct {
+		name     string
+		template string
+		want     string
+	}{
+		{
+			name:     "double_quote",
+			template: `plan"name`,
+			want:     `plan name "plan\\"name" contains characters that cannot be written verbatim into an Atlas \.plan\.hcl quoted string`,
+		},
+		{
+			name:     "backslash",
+			template: `plan\name`,
+			want:     `--name-format rendered the plan name "plan\\\\name", which contains a path separator.*`,
+		},
+		{
+			name:     "hcl_interpolation",
+			template: "plan${x}name",
+			want:     `plan name "plan\$\{x\}name" contains characters that cannot be written verbatim into an Atlas \.plan\.hcl quoted string`,
+		},
+		{
+			name:     "hcl_directive",
+			template: "plan%{x}name",
+			want:     `plan name "plan%\{x\}name" contains characters that cannot be written verbatim into an Atlas \.plan\.hcl quoted string`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			chdirToScratch(c.TB.(*testing.T))
+			fixture := newPlanFixture(c, "label", "", `CREATE TABLE label_users (id INTEGER PRIMARY KEY);`)
+
+			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
+				fixture.args("--save", "--name-format", tt.template)...)
+
+			// A templated name reaches the `plan "<label>"` block label, so a
+			// quote or an HCL interpolation sequence in it would produce a
+			// document that no longer parses as the plan it claims to be. The
+			// writer refuses rather than escaping, and nothing lands on disk.
+			c.Assert(err, qt.ErrorMatches, tt.want)
+			assertNoPlanFileWritten(c, fixture.dir)
+		})
+	}
+}
+
 func TestSchemaPlanNameFormatIsParsedBeforeAnyDatabaseWork(t *testing.T) {
 	c := qt.New(t)
 	chdirToScratch(t)

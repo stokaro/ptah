@@ -53,8 +53,13 @@ func RenderSchemaPlanName(format string, data SchemaPlanName) (string, error) {
 // installed: the one template Atlas documents uses only text/template
 // builtins (`slice`), and inventing helper functions the official binary may
 // not have would make a template that works here fail there.
+//
+// No "missingkey" option is set. The payload is a struct, and a struct field
+// lookup that misses is already an execution error whatever the option says —
+// a mutation removing the option left the suite green, which is what proved it
+// inert. A map payload would need the option back.
 func newSchemaPlanNameTemplate(format string) (*template.Template, error) {
-	tmpl, err := template.New("atlas-schema-plan-name-format").Option("missingkey=error").Parse(format)
+	tmpl, err := template.New("atlas-schema-plan-name-format").Parse(format)
 	if err != nil {
 		return nil, fmt.Errorf("parse --name-format template: %w", err)
 	}
