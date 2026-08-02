@@ -778,12 +778,12 @@
     "feature": "Embeddable test runner (Go package)",
     "ptah": "yes",
     "atlas_oss": "unknown",
-    "atlas_pro": "unknown",
+    "atlas_pro": "no",
     "note": "migration/dbtest exports RunMigrationTest and RunSchemaTest. Nothing cited establishes an Atlas Go test-runner package.",
     "evidence": "migration/dbtest/engine.go:247 RunMigrationTest and migration/dbtest/schema.go:53 RunSchemaTest; conformance cli-surface.md measures CLI commands only, and gaps.md lines 167-172 show the corpus imports atlasexec fixtures, so Atlas does have an observable Go package surface \u2014 the previous \u274c/\u274c cells asserted an Atlas distribution fact no cited source establishes"
   },
   {
-    "area": "Lint analyzers",
+    "area": "Lint analyzers Atlas schema testing docs (atlasgo.io/testing/schema), retrieved 2026-08-03: the page states `Schema testing works only for Atlas Pro users, free and paid`, and documents the framework exclusively through the `atlas schema test` CLI -- test block syntax and command flags, with no Go library entry point. `Go package`, `embed` and `import` are each absent from the page, as is the control term `tttnotarealterm`, while `Pro` returns the quote above. So Atlas Pro has schema testing but not as an embeddable Go package.",
     "feature": "Native migration lint rule set",
     "ptah": "yes",
     "atlas_oss": "partial",
@@ -850,12 +850,12 @@
     "feature": "CI integration (GitHub Action, annotations)",
     "ptah": "yes",
     "atlas_oss": "unknown",
-    "atlas_pro": "unknown",
+    "atlas_pro": "yes",
     "note": "stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. Atlas features page omits CI integrations.",
     "evidence": "`ptah migrations lint --help` registers `--format ... github-actions`. Atlas side: docs/site/src/content/docs/atlas/docs-coverage.md:533 \"Atlas integration parity is unmeasured\"; the Atlas feature availability page does not address GitHub Actions integration, and cli-surface.md inventories no action. Nothing cited settles either Atlas column. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: the Atlas Pipelines section lists 'CI/CD integrations (K8s, TF, GH, GitLab, BitBucket)' as Basic on the free tier and checked on Pipelines Pro \u2014 a separately priced product ($59/mo per project requiring Atlas Pro seats), so it does not settle either CLI-plan column."
   },
   {
-    "area": "Safety gates",
+    "area": "Safety gates Atlas GitHub Actions docs (atlasgo.io/integrations/github-actions), retrieved 2026-08-03: `Atlas provides a number of GitHub Actions that can be used to automate database schema management tasks`, with no Pro marker attached, so the capability is present on Pro. Control on the same query: `vvvnotarealterm` returns not-found. The annotations half is unconfirmed -- `annotation` does not appear on that page.",
     "feature": "Apply-time destructive-change gate",
     "ptah": "yes",
     "atlas_oss": "no",
