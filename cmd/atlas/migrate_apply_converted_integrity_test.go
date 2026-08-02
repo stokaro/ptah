@@ -262,14 +262,16 @@ func TestCompatMigrateApply_ConvertedDirDriftRefuses(t *testing.T) {
 // is self-consistently wrong in both Ptah's hasher and Ptah's verifier still
 // fails here.
 //
-// The three layouts are chosen because each one separates the per-format rule
-// from the plausible alternative of globbing every *.sql:
+// Each layout is chosen because it separates the per-format rule from the
+// plausible alternative of globbing every *.sql:
 //
 //   - golang-migrate: a down file sits beside the up file and is not in the sum.
 //     A glob would hash it, compute a different digest, and refuse.
 //   - flyway with an undo file: U1__undo.sql is not in the sum, same reasoning.
 //   - flyway with a nested file: sub/V2__nested.sql IS in the sum, so a verifier
 //     that only ever looks at the top level cannot even read what it must hash.
+//   - flyway with a baseline: V1__one.sql is squashed away by B2__base.sql and
+//     drops out of the sum entirely, which no suffix rule reproduces.
 func TestCompatMigrateApply_ConvertedDirVerifiesOracleWrittenSum(t *testing.T) {
 	tests := []struct {
 		name    string
