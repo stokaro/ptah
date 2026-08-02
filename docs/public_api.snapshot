@@ -162,6 +162,7 @@ type DiffConfig struct{ ... }
 type DiffSkipConfig struct{ ... }
 type ExternalSchemaConfig struct{ ... }
 type FormatConfig struct{ ... }
+type IgnoredAtlasConstruct struct{ ... }
 type LintConfig struct{ ... }
 type LintRuleConfig struct{ ... }
 type LoadOptions struct{ ... }
@@ -191,6 +192,15 @@ type AtlasLoadOptions struct {
 package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type Config struct {
+    // IgnoredConstructs lists the atlas.hcl names that were accepted and not
+    // acted on, under Atlas CE's unknown-name policy.
+    //
+    // It exists so a caller can say something. CE reports nothing at all, and
+    // that silence is a footgun: a typo'd block name does nothing and looks
+    // fine. Everything the conformance tiers measure -- exit code, stdout, the
+    // text of every error -- is unchanged whether or not a caller reports
+    // these, so drop-in fidelity does not depend on it.
+    IgnoredConstructs []IgnoredAtlasConstruct
     // EnvName is the selected project env name, when the source had one.
     EnvName string
     // DatabaseURL is the target database URL used by migration commands.
@@ -326,6 +336,30 @@ type FormatConfig struct {
     Schema  SchemaFormatConfig
 }
     FormatConfig holds Atlas env.format command templates.
+
+
+### go.5x5.cz/ptah/config/projectconfig.IgnoredAtlasConstruct
+
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
+
+type IgnoredAtlasConstruct struct {
+    // Name is the construct's name as written.
+    Name string
+    // Kind is "block" or "attribute".
+    Kind string
+    // Filename and Line locate it. The position matters because the same name
+    // is tolerated in one place and fatal in another.
+    Filename string
+    Line     int
+}
+    IgnoredAtlasConstruct is an atlas.hcl name that was accepted and not acted
+    on, matching what Atlas CE does with a name it does not recognize.
+
+    CE reports nothing at all. Ptah records them so the caller can say one line
+    per construct on stderr: CE's silence is a footgun -- a typo'd block name
+    does nothing and looks fine -- and stdout, the exit code, and every error
+    diagnostic stay byte-identical, so nothing that reads those can tell the
+    difference.
 
 
 ### go.5x5.cz/ptah/config/projectconfig.LintConfig

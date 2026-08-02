@@ -126,7 +126,7 @@ func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
 		{
 			name:    "hosted service block",
 			input:   "unsupported-cloud.hcl",
-			wantErr: `unsupported atlas\.hcl construct "atlas" at atlas\.hcl:1`,
+			wantErr: `atlas block is not supported by the community version of Atlas`,
 		},
 		{
 			name:    "unknown environment attribute",
@@ -1534,7 +1534,7 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
   cloud {}
 }
 `,
-			err: `unsupported atlas\.hcl construct "atlas" at atlas\.hcl:1`,
+			err: `atlas block is not supported by the community version of Atlas`,
 		},
 		{
 			name: "unsupported data source",
@@ -1871,9 +1871,13 @@ func TestAtlasParserDistinguishesFailureClasses(t *testing.T) {
 		})
 	}
 
-	// The third class, for contrast: an unknown NAME keeps the original
-	// message, and must not be reported as either of the two above.
-	unknown := "frobnicate = \"yes\"\nenv \"local\" {\n  url = \"sqlite://m.db\"" + envBody
+	// The third class, for contrast: an unknown NAME still has its own message
+	// and must not be reported as either of the two above.
+	//
+	// The position matters. A top-level unknown name is now TOLERATED, so this
+	// uses a nested one, which is the surface the next increment relaxes --
+	// when it does, this fixture moves rather than the assertion being deleted.
+	unknown := "env \"local\" {\n  frobnicate = \"yes\"\n  url = \"sqlite://m.db\"" + envBody
 	_, err := projectconfig.ParseAtlas([]byte(unknown), "atlas.hcl", "local")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "frobnicate" .*`)
@@ -1930,4 +1934,69 @@ env "local" {
 	_, err = projectconfig.ParseAtlas(rawOpen, "atlas.hcl", "local")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "VISIBLE_PATH_VALUE")
+}
+
+// TestAtlasToleratesUnknownTopLevelNames pins Atlas CE's unknown-name policy at
+// the top level of atlas.hcl, measured on the pinned CE v1.3.0 binary.
+//
+// Every position here was measured rather than assumed, and three of them
+// contradict the obvious reading:
+//
+//   - unknown ATTRIBUTES are tolerated too, not only blocks;
+//   - the body of a tolerated construct is still EVALUATED, so a bad reference
+//     inside one is fatal -- tolerance is name-level, not subtree-level;
+//   - `atlas` is the one top-level name CE knows and refuses, so it must not
+//     be folded into the tolerated path.
+func TestAtlasToleratesUnknownTopLevelNames(t *testing.T) {
+	const env = `
+env "local" {
+  url = "sqlite://m.db"
+  dev = "sqlite://d.db"
+}
+`
+	tolerated := []struct{ name, construct string }{
+		{"unknown block with one label", "check \"migrate_apply\" {\n  drift {\n    on_error = \"FAIL\"\n  }\n}"},
+		{"nonsense control, same shape", "frobnicate_nonsense \"zzz\" {\n  totally_made_up = \"yes\"\n}"},
+		{"unknown block with no label", "frobnicate {\n  x = 1\n}"},
+		{"unknown block with two labels", "frobnicate \"a\" \"b\" {\n  x = 1\n}"},
+		{"unknown attribute", "frobnicate = \"yes\""},
+	}
+	for _, tt := range tolerated {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cfg, err := projectconfig.ParseAtlas([]byte(tt.construct+env), "atlas.hcl", "local")
+			c.Assert(err, qt.IsNil)
+			// Tolerated means recorded, not invisible: the caller must be able
+			// to say something, because CE's silence is the footgun.
+			c.Assert(len(cfg.IgnoredConstructs) > 0, qt.IsTrue)
+		})
+	}
+
+	refused := []struct{ name, construct, wantErr string }{
+		{
+			// The discriminator for the whole rule. Same block as the
+			// tolerated rows, only the value differs.
+			name:      "bad reference inside a tolerated block",
+			construct: "frobnicate \"z\" {\n  v = var.undefined_ref\n}",
+			wantErr:   `cannot evaluate atlas\.hcl "v" .*`,
+		},
+		{
+			name:      "atlas block is known and gated, not unknown",
+			construct: "atlas {\n  cloud {\n    token = \"t\"\n  }\n}",
+			wantErr:   `atlas block is not supported by the community version of Atlas`,
+		},
+		{
+			name:      "atlas block with a label",
+			construct: "atlas \"x\" {\n  k = \"v\"\n}",
+			wantErr:   `init block "atlas" cannot have labels`,
+		},
+	}
+	for _, tt := range refused {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := projectconfig.ParseAtlas([]byte(tt.construct+env), "atlas.hcl", "local")
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+		})
+	}
 }
