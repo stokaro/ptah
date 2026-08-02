@@ -54,6 +54,13 @@
       "new": "\tcase len(names) == 0:\n\t\treturn nil\n\tcase !hashed:"
     },
     {
+      "name": "a hashed empty covered set reads as drift",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tcase !hashed:\n\t\treturn migratevalidate.FailAtlasChecksumFileNotFound(cmd)\n\tcase !result.OK():\n\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())\n\t}\n\treturn nil\n}\n\n// failUnhashedAtlasApplyDir",
+      "new": "\tcase !hashed:\n\t\treturn migratevalidate.FailAtlasChecksumFileNotFound(cmd)\n\tcase !result.OK() || len(names) == 0:\n\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())\n\t}\n\treturn nil\n}\n\n// failUnhashedAtlasApplyDir",
+      "comment": "Only TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetIsNotRefused separates this from the real rule: every drift row whose covered set is empty is already refused, with the same output."
+    },
+    {
       "name": "the converted mismatch drops its L<line> pointer",
       "file": "cmd/atlas/migrate_apply.go",
       "old": "\tcase !result.OK():\n\t\treturn migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())\n\t}\n\treturn nil\n}\n\n// failUnhashedAtlasApplyDir",

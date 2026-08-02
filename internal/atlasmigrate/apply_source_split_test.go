@@ -178,6 +178,15 @@ func TestCaptureApplySourceCoversEverySumFileName(t *testing.T) {
 				_, err := fs.ReadFile(captured, name)
 				c.Assert(err, qt.IsNil, qt.Commentf("covered file %q is missing from the capture", name))
 			}
+
+			// Selecting over the capture must also give the same names in the
+			// same order. Order is part of the Atlas hash, and the capture drops
+			// files the live directory has, so "every covered file is readable"
+			// alone would not catch a capture that changed Flyway's walk order
+			// or introduced a name the live selection never produced.
+			fromSnapshot, err := atlasmigrateimport.SumFileNames(captured, format)
+			c.Assert(err, qt.IsNil)
+			c.Assert(fromSnapshot, qt.DeepEquals, names)
 		})
 	}
 }

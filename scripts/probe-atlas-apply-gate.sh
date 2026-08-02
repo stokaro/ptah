@@ -230,6 +230,24 @@ for f in goose dbmate liquibase golang-migrate; do
 	printf 'migrations live here\n' >"$pt/README.md"
 	exempt "$f, no SQL files" "$ce" "$pt" "$f"
 done
+# The .sql suffix match is case-sensitive on both tools, so an uppercase name
+# leaves the covered set empty rather than making it unverifiable.
+ce=ce-upper; pt=pt-upper
+rm -rf "$ce" "$pt"; mkdir -p "$ce" "$pt"
+printf -- '-- +goose Up\nCREATE TABLE t1 (id int);\n' >"$ce/1_INIT.SQL"
+printf -- '-- +goose Up\nCREATE TABLE t1 (id int);\n' >"$pt/1_INIT.SQL"
+exempt "goose, only 1_INIT.SQL" "$ce" "$pt" goose
+# An empty covered set that WAS hashed: the sum is the single-line empty-set
+# digest, and verifying it must come out clean rather than reading as drift.
+for pair in "golang-migrate:1_init.down.sql" "flyway:U1__undo.sql"; do
+	f="${pair%%:*}"; name="${pair##*:}"
+	ce="ce-hashed-empty-$f"; pt="pt-hashed-empty-$f"
+	rm -rf "$ce" "$pt"; mkdir -p "$ce" "$pt"
+	printf -- 'DROP TABLE t1;\n' >"$ce/$name"
+	printf -- 'DROP TABLE t1;\n' >"$pt/$name"
+	hash_both "$ce" "$pt" "$f"
+	exempt "$f, empty covered set, hashed" "$ce" "$pt" "$f"
+done
 # Editing a file the covered set excludes is invisible to CE, so it must stay
 # invisible here: the golang-migrate down file, the Flyway undo file, and a
 # versioned Flyway file squashed away by a higher baseline.
@@ -399,21 +417,24 @@ for state in unhashed clean tampered; do
 done
 
 echo
-echo "===== 9. divergences the gate passes through (stokaro/ptah#980, #981)"
-# Both are exit-1 refusals where CE exits 0, both predate this change, and both
-# are reached only AFTER the gate passes. The second is why #980 is not fixed
-# here: its covered set is NOT empty and Atlas CE really does execute foo.sql
-# (as version "foo"), so reporting "No migration files to execute" there would
-# replace a loud refusal with a silent no-op. A correct #980 fix has to tell
-# "the covered set is empty" apart from "the covered set is non-empty and
-# Ptah's importer refused it", which is a decision for that issue.
-for spec in "golang-migrate:1_init.down.sql:down-only, empty covered set" "goose:foo.sql:foo.sql hashed, non-empty covered set"; do
+echo "===== 9. divergences the gate passes through (stokaro/ptah#980, #981, #982)"
+# All three are exit-1 refusals where CE exits 0, all predate this change, and
+# all are reached only AFTER the gate passes. The second is why #980 is not
+# fixed here: its covered set is NOT empty and Atlas CE really does execute
+# foo.sql (as version "foo"), so reporting "No migration files to execute" there
+# would replace a loud refusal with a silent no-op. A correct #980 fix has to
+# tell "the covered set is empty" apart from "the covered set is non-empty and
+# Ptah's importer refused it", which is a decision for that issue. The third is
+# the same shape for Flyway repeatables: CE hashes R__ files and executes them,
+# Ptah hashes them (so the sum matches) and then refuses to import them.
+for spec in "golang-migrate:1_init.down.sql:down-only, empty covered set" "goose:foo.sql:foo.sql hashed, non-empty covered set" "flyway:R__view.sql:R__ repeatable hashed, importer refuses"; do
 	f="${spec%%:*}"; rest="${spec#*:}"; name="${rest%%:*}"; label="${rest##*:}"
 	ce="ce-open-$f-$name"; pt="pt-open-$f-$name"
 	rm -rf "$ce" "$pt"; mkdir -p "$ce" "$pt"
 	printf 'CREATE TABLE t1 (id int);\n' >"$ce/$name"
 	printf 'CREATE TABLE t1 (id int);\n' >"$pt/$name"
 	[ "$name" = foo.sql ] && hash_both "$ce" "$pt" "$f"
+	[ "$name" = R__view.sql ] && hash_both "$ce" "$pt" "$f"
 	ceout=$("$ATLAS" migrate apply --url "sqlite://$ce.db" --dir "file://$ce?format=$f" 2>&1); cerc=$?
 	ptout=$("$COMPAT" migrate apply --url "sqlite://$pt.db" --dir "file://$pt?format=$f" 2>&1); ptrc=$?
 	printf '  %-46s CE exit=%s | ptah exit=%s [%s]\n' "$f, $label" "$cerc" "$ptrc" \

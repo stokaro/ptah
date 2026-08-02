@@ -464,6 +464,14 @@ func TestCompatMigrateApply_ConvertedDirEmptyCoveredSetIsNotRefused(t *testing.T
 			format: "goose",
 			files:  map[string]string{"README.md": "migrations live here\n", ".gitkeep": ""},
 		},
+		{
+			// The .sql suffix match is case-sensitive on both tools, so an
+			// uppercase name leaves the covered set empty rather than making it
+			// unverifiable.
+			name:   "goose with only an uppercase .SQL file",
+			format: "goose",
+			files:  map[string]string{"1_INIT.SQL": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -476,6 +484,50 @@ func TestCompatMigrateApply_ConvertedDirEmptyCoveredSetIsNotRefused(t *testing.T
 			dbPath := filepath.Join(tempDir, "converted.db")
 
 			stdout, stderr, err := compatApplyConverted(dir, tt.format, dbPath)
+
+			c.Assert(stdout, qt.Not(qt.Contains), "checksum")
+			c.Assert(stderr, qt.Not(qt.Contains), "checksum")
+			c.Assert(errorText(err), qt.Not(qt.Contains), "checksum")
+		})
+	}
+}
+
+// TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetIsNotRefused is the
+// other side of the exemption, and it does not go through it: a directory whose
+// covered set is empty and which WAS hashed carries the single-line empty-set
+// sum `h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=` — the digest the pinned
+// oracle writes for it — and verifying that must come out clean rather than
+// reading as drift. A verifier that treated a sum with no entry lines as
+// malformed would refuse a directory Atlas CE applies.
+func TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetIsNotRefused(t *testing.T) {
+	tests := []struct {
+		name   string
+		format string
+		files  map[string]string
+	}{
+		{
+			name:   "golang-migrate with only a down file",
+			format: "golang-migrate",
+			files:  map[string]string{"1_init.down.sql": "DROP TABLE widgets;\n"},
+		},
+		{
+			name:   "flyway with only an undo file",
+			format: "flyway",
+			files:  map[string]string{"U1__undo.sql": "DROP TABLE widgets;\n"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			tempDir := c.TempDir()
+			files := map[string]string{
+				"atlas.sum": "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n",
+			}
+			maps.Copy(files, tt.files)
+			dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), files)
+
+			stdout, stderr, err := compatApplyConverted(dir, tt.format, filepath.Join(tempDir, "converted.db"))
 
 			c.Assert(stdout, qt.Not(qt.Contains), "checksum")
 			c.Assert(stderr, qt.Not(qt.Contains), "checksum")
