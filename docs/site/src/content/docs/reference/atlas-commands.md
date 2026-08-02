@@ -273,27 +273,66 @@ Ptah-native migrations instead.
 ### `ptah-compat migrate checkpoint [name]`
 
 Forwards to `ptah migrations checkpoint`, replaying the migration directory on
-the `--dev-url` dev database and writing a ptah-format cumulative-schema
-checkpoint pair with `ptah.sum` refreshed.
+the `--dev-url` dev database and writing a cumulative-schema checkpoint.
 
 | Argument | Maps to |
 | --- | --- |
 | `--dir` | The native migrations directory. |
-| Positional name (optional) | The checkpoint description. |
-| `--dir-format=ptah` | Passes through. |
-| `--dir-format=atlas` | A recorded waiver, rejected loudly. |
+| Positional name (optional) | The checkpoint description, used as the file-name stem. |
+| `--dir-format=atlas` | Writes the Atlas single-file checkpoint (default). |
+| `--dir-format=ptah` | Writes the ptah reversible checkpoint pair. |
 
-Checkpoint output is ptah-format only, so this verb operates on ptah-format
-directories: Ptah marks the checkpoints it writes via the ptah file-name
-convention and does not emit Atlas-format checkpoint files yet. The read side
-does honor Atlas's `-- atlas:checkpoint` directive: applying an externally
-produced Atlas checkpoint directory bootstraps a fresh database from the
-latest checkpoint and silently skips the checkpoint on a database that
-already applied the pre-checkpoint history, matching measured Atlas
-behavior.
+`--dir-format` selects the checkpoint convention, and **on this verb it
+defaults to `atlas`**, matching the default Atlas registers and every other
+compat migrate verb:
 
-Atlas keeps `migrate checkpoint` in its Pro build, so this is a free Ptah
-capability rather than an Atlas CE stub.
+- **`atlas`** writes one up-only file, `<version>_<name>.sql`, whose first line
+  is the `-- atlas:checkpoint` directive, and refreshes `atlas.sum`. The version
+  is a UTC timestamp, raised to one above the newest migration in the directory
+  when that is higher — including migrations in subdirectories, which the replay
+  and the reader both see but a bare timestamp would sort below. There is no
+  down file: the Atlas format is up-only, so an Atlas checkpoint is not
+  reversible.
+- **`ptah`** writes the reversible pair
+  `NNNNNNNNNN_<name>.checkpoint.up.sql` / `.checkpoint.down.sql` and refreshes
+  `ptah.sum`.
+
+The native `ptah migrations checkpoint` keeps `ptah` as its default; only the
+compat surface defaults to `atlas`. Native accepts `--dir-format=auto` as a
+spelling and refuses it with a named message, because writing under it would
+have to guess the file convention and which integrity file to refresh. On the
+compat surface `auto` is not an Atlas directory format at all, so it draws the
+ordinary unknown-format rejection instead.
+
+A directory must end up with one integrity file and one file convention, so two
+shapes are refused before anything is written:
+
+- a checkpoint that would leave both `ptah.sum` and `atlas.sum` behind, which
+  `--dir-format auto` cannot read; and
+- an Atlas-format checkpoint into a directory holding ptah-convention
+  migrations, hashed or not. There the checkpoint would be permanently
+  invisible: discovery reads the ptah files and never sees it, while
+  verification finds the `atlas.sum` and reports the directory as valid.
+
+Re-hash or convert the directory into one format first.
+
+The read side honors the `-- atlas:checkpoint` directive either way: applying a
+checkpoint directory bootstraps a fresh database from the latest checkpoint and
+silently skips the checkpoint on a database that already applied the
+pre-checkpoint history, matching measured Atlas behavior.
+
+Atlas keeps `migrate checkpoint` in its Pro build — the pinned CE binary
+registers the verb but aborts with "not supported by the community version" and
+registers none of its own flags — so this is a free Ptah capability rather than
+an Atlas CE stub.
+
+`?format=` on this verb's `--dir` URL is still refused; use `--dir-format`. CE
+aborts every `migrate checkpoint` invocation, so there is no CE behavior to
+diverge from here and refusing an unimplemented spelling loudly is the intended
+outcome. That is **not** true of the other verbs that share the refusal —
+`migrate lint`, `new`, `diff`, `set` and `status` — where CE exits 0 and honors
+the parameter; those are parity defects, tracked in the feature matrix and its
+linked issues, not deliberate.
 
 ### `ptah-compat migrate test [paths]`
 

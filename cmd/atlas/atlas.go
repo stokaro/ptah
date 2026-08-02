@@ -169,19 +169,14 @@ func newAtlasMigrateCommand() *cobra.Command {
 			flags: []atlasargs.Flag{
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasargs.NativeString("dev-url", "", "URL of the dev database the directory is replayed into", "shadow-db"),
-				// Checkpoint output is ptah-format only: the checkpoint engine
-				// marks the checkpoints it WRITES with the `.checkpoint.`
-				// file-name pair plus ptah.sum, while Atlas marks them with an
-				// `-- atlas:checkpoint` file directive. The READ side honors
-				// that directive (#954) — externally produced Atlas checkpoint
-				// directories bootstrap/skip correctly on apply — but the
-				// producing engine does not emit Atlas-format checkpoint files
-				// yet, so any non-ptah value stays a recorded waiver, rejected
-				// loudly (see
-				// docs/site/src/content/docs/reference/atlas-commands.md). No
-				// default is registered: the
-				// directory is read and written with the native ptah default
-				// rather than the atlas default the other migrate verbs use.
+				// Checkpoint writes both conventions: `atlas` emits the single
+				// up-only file whose first line is `-- atlas:checkpoint` plus
+				// atlas.sum, `ptah` emits the reversible `.checkpoint.` pair
+				// plus ptah.sum. The READ side has honored the directive since
+				// #954, so an Atlas checkpoint Ptah writes bootstraps and skips
+				// identically under Atlas and under Ptah. Every other Atlas
+				// directory format is still rejected loudly (see
+				// docs/site/src/content/docs/reference/atlas-commands.md).
 				atlasCheckpointDirFormatFlag(),
 			},
 		},
@@ -536,13 +531,24 @@ func atlasSchemaTestVerb() atlasVerb {
 	}
 }
 
-// atlasCheckpointDirFormatFlag registers checkpoint's --dir-format for Atlas
-// help parity while keeping the ptah two-file checkpoint convention the only
-// writable output format. `ptah` (the native default) passes through; `atlas`
-// is the recorded waiver; every other Atlas directory format keeps the shared
-// "not implemented" rejection.
+// atlasCheckpointDirFormatFlag registers checkpoint's --dir-format. Both
+// writable conventions pass through: `atlas` writes the single-file
+// `-- atlas:checkpoint` convention plus atlas.sum, `ptah` writes the reversible
+// two-file pair plus ptah.sum. Every other Atlas directory format keeps the
+// shared "not implemented" rejection.
+//
+// The default is `atlas`, matching the default the Atlas Pro trial registers on
+// this verb and every other compat migrate verb — an unflagged Atlas pipeline
+// runs against an Atlas-format directory and must get an Atlas checkpoint back.
+// The native `ptah migrations checkpoint` default stays `ptah`.
 func atlasCheckpointDirFormatFlag() atlasargs.Flag {
-	flag := atlasargs.NativeString("dir-format", "", "Migration directory format", "dir-format")
+	flag := atlasargs.NativeStringDefault(
+		"dir-format",
+		"",
+		"Migration directory format",
+		"dir-format",
+		atlasDirFormatDefault,
+	)
 	flag.MapValue = atlasCheckpointDirFormatValue
 	return flag
 }
@@ -550,11 +556,10 @@ func atlasCheckpointDirFormatFlag() atlasargs.Flag {
 func atlasCheckpointDirFormatValue(value string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	switch normalized {
-	case "", "ptah":
+	case "ptah":
 		return "ptah", nil
-	case atlasDirFormatDefault:
-		return "", fmt.Errorf("Atlas accepts --dir-format=atlas, but Ptah writes checkpoint files only in the ptah two-file convention " +
-			"(NNNNNNNNNN_name.checkpoint.up.sql/.down.sql plus ptah.sum); Atlas-format checkpoint output is a recorded waiver, not pending work")
+	case "", atlasDirFormatDefault:
+		return atlasDirFormatDefault, nil
 	default:
 		if slices.Contains(unsupportedAtlasDirFormats, normalized) {
 			return "", fmt.Errorf("Atlas accepts --dir-format=%s, but Ptah does not implement that directory format yet", normalized)

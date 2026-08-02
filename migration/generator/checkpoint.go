@@ -2,7 +2,11 @@ package generator
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
@@ -10,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
+	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	schemadifftypes "github.com/stokaro/ptah/migration/schemadiff/types"
@@ -100,6 +105,105 @@ func generateCheckpointFromDiff(
 // two written paths.
 func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error) {
 	return writeMigrationPair(outputDir, version, description, upSQL, downSQL, "checkpoint", migrator.GenerateCheckpointMigrationFileName)
+}
+
+// AtlasCheckpointDirective is the file directive that marks an Atlas-format
+// migration as a checkpoint.
+//
+// Measured against Atlas: the directive is honored only as the file's FIRST
+// line — the same text further down is ordinary comment content. The reader
+// enforces that (see migration/migrator/atlas_checkpoint.go), so the writer
+// must place it first and must not prepend a provenance header before it.
+const AtlasCheckpointDirective = "-- atlas:checkpoint"
+
+// ResolveAtlasCheckpointVersion returns the version an Atlas-format checkpoint
+// written into outputDir should carry: the current UTC timestamp in Atlas's
+// 20060102150405 layout, bumped past the newest migration at the TOP LEVEL of
+// outputDir.
+//
+// This mirrors the version policy Atlas itself was measured to use and the one
+// `migrate new --dir-format atlas` already applies, rather than the ptah
+// format's "newest + 1" counter.
+//
+// The scan is deliberately shallow, matching Atlas's own reader, which does not
+// recurse. Ptah's reader and its checkpoint replay DO recurse, so this value
+// alone does not guarantee the checkpoint sorts above everything its body
+// covers: a nested migration dated after the timestamp still outranks it, and a
+// fresh database would then run the checkpoint and replay that migration on top
+// of it. Callers writing into a directory Ptah will read must take the maximum
+// of this and the newest version from a recursive walk — see
+// resolveCheckpointVersion in cmd/migratecheckpoint. The signature is kept free
+// of that bound on purpose; supplying it is the caller's job.
+func ResolveAtlasCheckpointVersion(outputDir string) int64 {
+	return nextAvailableAtlasMigrationVersion(outputDir, nextAtlasMigrationVersion())
+}
+
+// WriteAtlasCheckpointFile writes an Atlas-format checkpoint migration
+// (<version>_<description>.sql whose first line is [AtlasCheckpointDirective])
+// into outputDir and rewrites the directory's atlas.sum so the new file is
+// integrity-protected. It returns the written path.
+//
+// Unlike the ptah two-file convention there is no down body: the Atlas format
+// is up-only, and measured Atlas checkpoints are a single file. Callers that
+// need a reversible checkpoint must use [WriteCheckpointFiles].
+//
+// The file is created exclusively. A collision means the resolved version is
+// not above the existing history after all, which would produce a checkpoint
+// that does not cover it, so the write fails rather than silently choosing a
+// different version.
+//
+// atlas.sum is written unconditionally. This does not check whether outputDir
+// also carries a ptah.sum; a directory holding both integrity files is
+// ambiguous to `--dir-format auto`, so callers that accept a user-chosen
+// directory should reject that combination first, as
+// `ptah migrations checkpoint` does.
+func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error) {
+	if version <= 0 {
+		return "", fmt.Errorf("checkpoint version must be greater than zero, got %d", version)
+	}
+	if err := ensureMigrationOutputDir(outputDir); err != nil {
+		return "", fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	name, contents := AtlasCheckpointArtifact(version, description, upSQL)
+	filePath := filepath.Join(outputDir, name)
+	if err := writeNewMigrationFile(filePath, contents); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", fmt.Errorf("checkpoint file %s already exists", filePath)
+		}
+		return "", fmt.Errorf("failed to write atlas checkpoint file: %w", err)
+	}
+	if _, err := migratesum.WriteWithFormat(outputDir, migrator.MigrationDirFormatAtlas); err != nil {
+		// The checkpoint is only safe to leave behind once atlas.sum covers it;
+		// an uncovered file makes the whole directory fail verification.
+		_ = os.Remove(filePath)
+		return "", fmt.Errorf("failed to write atlas checkpoint checksum: %w", err)
+	}
+	return filePath, nil
+}
+
+// AtlasCheckpointArtifact returns the file name and contents that
+// [WriteAtlasCheckpointFile] writes for the given version, description and
+// cumulative up body, without touching the filesystem. Dry runs render it, and
+// the writer uses it too, so the previewed artifact is the written one.
+//
+// The name is <version>_<description>.sql; Atlas was measured to write
+// <version>_checkpoint.sql for an unnamed checkpoint, so an empty description
+// falls back to "checkpoint" rather than to the bare <version>.sql that
+// `migrate new` uses. The contents are the measured Atlas layout: the
+// directive on the first line, a blank separator line, then the SQL.
+func AtlasCheckpointArtifact(version int64, description, upSQL string) (name, contents string) {
+	stem := atlasEmptyMigrationName(description)
+	if stem == "" {
+		stem = "checkpoint"
+	}
+	name = fmt.Sprintf("%d_%s.sql", version, stem)
+
+	body := strings.Trim(upSQL, "\n")
+	if body == "" {
+		return name, AtlasCheckpointDirective + "\n"
+	}
+	return name, AtlasCheckpointDirective + "\n\n" + body + "\n"
 }
 
 // CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
