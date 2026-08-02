@@ -671,7 +671,7 @@
   "ptah": "yes",
   "atlas_oss": "no",
   "atlas_pro": "no",
-  "note": "Neither CE nor the licensed build registers --skip-checks on migrate apply, so the compat bypass is an environment variable and the flag surface stays at parity. Explicit-only on migrate down.",
+  "note": "Neither CE nor the licensed build registers `--skip-checks` on migrate apply, so the compat bypass is an environment variable and the flag surface stays at parity. Explicit-only on migrate down.",
   "evidence": "Measured 2026-08-02: pinned CE v1.2.0 answers `migrate apply --skip-checks` with `unknown flag: --skip-checks`, identical to the control `--skip-chxxxx`; the licensed v1.2.4 help surface registers --skip-checks on `migrate down` only. Implemented in cmd/atlas/migrate_apply.go (atlasApplySkipChecksFromEnv) and internal/atlasmigrate ApplyOptions.SkipChecks. The variable is the PTAH_<FLAG> twin of native `ptah migrations up --skip-checks`, so one name means one thing on both binaries; it parses as a boolean and refuses a non-boolean value outright. It bypasses pre-migration checks only: TestMigrateApplySkipChecksEnvDoesNotBypassChecksumVerification pins that atlas.sum verification still refuses a tampered directory, and TestMigrateApplySkipChecksEnvStillRecordsRevisions pins unchanged bookkeeping. Unsupported Atlas flags are now explicit-only (internal/atlasargs appendEnvArgs, cmd/atlas atlasMigrateDownUnsupportedFlags): before this, PTAH_SKIP_CHECKS=1 made every `ptah-compat migrate down` fail with `accepts --skip-checks, but Ptah does not implement its behavior` on both the default and --format paths (measured on both, 2026-08-02)."
  },
  {

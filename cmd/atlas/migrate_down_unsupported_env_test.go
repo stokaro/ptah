@@ -26,6 +26,11 @@ import (
 
 const downUnsupportedFlagRefusal = "but Ptah does not implement its behavior"
 
+// formatPathArgs routes a down invocation through the dedicated --format path,
+// which parses flags in parseAtlasMigrateDownFormatArgs rather than through the
+// atlasargs mapper.
+var formatPathArgs = []string{"--format", "{{ .Current }}"}
+
 // writeDownableMigrationsDir builds an Atlas txtar directory whose second
 // migration has a down.sql section, so `migrate down` reaches real rollback
 // machinery instead of stopping at the missing-down-body waiver.
@@ -54,15 +59,16 @@ func TestMigrateDownIgnoresUnsupportedFlagEnvironmentTwins(t *testing.T) {
 		env string
 		// value is what that variable is set to.
 		value string
-		// format selects the dedicated --format path instead of the default one.
-		format bool
+		// pathArgs selects the down path: empty for the default one, --format
+		// for the dedicated format path.
+		pathArgs []string
 	}{
 		{name: "skip-checks on the default path", env: "PTAH_SKIP_CHECKS", value: "1"},
-		{name: "skip-checks on the format path", env: "PTAH_SKIP_CHECKS", value: "1", format: true},
+		{name: "skip-checks on the format path", env: "PTAH_SKIP_CHECKS", value: "1", pathArgs: formatPathArgs},
 		{name: "plan on the default path", env: "PTAH_PLAN", value: "1"},
-		{name: "plan on the format path", env: "PTAH_PLAN", value: "1", format: true},
+		{name: "plan on the format path", env: "PTAH_PLAN", value: "1", pathArgs: formatPathArgs},
 		{name: "to-tag on the default path", env: "PTAH_TO_TAG", value: "v1"},
-		{name: "to-tag on the format path", env: "PTAH_TO_TAG", value: "v1", format: true},
+		{name: "to-tag on the format path", env: "PTAH_TO_TAG", value: "v1", pathArgs: formatPathArgs},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -78,16 +84,13 @@ func TestMigrateDownIgnoresUnsupportedFlagEnvironmentTwins(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			t.Setenv(tc.env, tc.value)
-			args := []string{
+			args := append([]string{
 				"migrate", "down",
 				"--url", "sqlite://" + dbPath,
 				"--dir", "file://" + migrationsDir,
 				"--to-version", "20260801000001",
 				"--confirm",
-			}
-			if tc.format {
-				args = append(args, "--format", "{{ .Current }}")
-			}
+			}, tc.pathArgs...)
 
 			out, err := executeAtlasProjectCommand(args...)
 
@@ -103,14 +106,15 @@ func TestMigrateDownIgnoresUnsupportedFlagEnvironmentTwins(t *testing.T) {
 // could be implemented by dropping the waiver altogether.
 func TestMigrateDownStillRefusesExplicitUnsupportedFlags(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		flag   string
-		format bool
+		name string
+		flag string
+		// pathArgs selects the down path, as above.
+		pathArgs []string
 	}{
 		{name: "skip-checks on the default path", flag: "--skip-checks"},
-		{name: "skip-checks on the format path", flag: "--skip-checks", format: true},
+		{name: "skip-checks on the format path", flag: "--skip-checks", pathArgs: formatPathArgs},
 		{name: "plan on the default path", flag: "--plan"},
-		{name: "plan on the format path", flag: "--plan", format: true},
+		{name: "plan on the format path", flag: "--plan", pathArgs: formatPathArgs},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -125,17 +129,14 @@ func TestMigrateDownStillRefusesExplicitUnsupportedFlags(t *testing.T) {
 			)
 			c.Assert(err, qt.IsNil)
 
-			args := []string{
+			args := append([]string{
 				"migrate", "down",
 				"--url", "sqlite://" + dbPath,
 				"--dir", "file://" + migrationsDir,
 				"--to-version", "20260801000001",
 				"--confirm",
 				tc.flag,
-			}
-			if tc.format {
-				args = append(args, "--format", "{{ .Current }}")
-			}
+			}, tc.pathArgs...)
 
 			out, err := executeAtlasProjectCommand(args...)
 

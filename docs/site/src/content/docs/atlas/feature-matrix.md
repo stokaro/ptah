@@ -196,7 +196,7 @@ seven of them as open capabilities regardless.
 | Apply-time destructive-change gate | ✅ | ❌ | ➖ | migrations up refuses destructive pending files; .ptah-lint.yaml disabled-rules reopens the gate and ptah.sum does not hash that file. |
 | Atlas Pro analyzer code coverage | 🟡 | ➖ | ✅ | OW101/OW102 have no rule; PG301, PG304, MY130, MY133, MY136 fire under broader codes (DS103, PG104, CD103, MY101), not dedicated ones. |
 | Atlas web reports (`--web`) | ❌ | ❌ | ✅ | Not registered on migrate lint or schema diff; rejected as an unknown flag. Pinned Atlas CE v1.2.0 does not register it either. |
-| Check bypass on the Atlas surface (PTAH_SKIP_CHECKS) | ✅ | ❌ | ❌ | Neither CE nor the licensed build registers --skip-checks on migrate apply, so the compat bypass is an environment variable and the flag surface stays at parity. Explicit-only on migrate down. |
+| Check bypass on the Atlas surface (PTAH_SKIP_CHECKS) | ✅ | ❌ | ❌ | Neither CE nor the licensed build registers `--skip-checks` on migrate apply, so the compat bypass is an environment variable and the flag surface stays at parity. Explicit-only on migrate down. |
 | CI integration (GitHub Action, annotations) | ✅ | ❔ | ❔ | stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. Atlas features page omits CI integrations. |
 | Custom lint rules and check-level policy | 🟡 | ❌ | ✅ | Custom rules only from Go (lint.Register, Options.ExtraRules); atlas.hcl rule, review, naming, non_linear blocks and force all fail. |
 | Default-firing Atlas analyzer concern mapping | ✅ | ➖ | ➖ | lint-analyzer-catalog maps every default-firing Atlas concern to a covering Ptah rule, severity and line; 0 gap on the committed corpus. |

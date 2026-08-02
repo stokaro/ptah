@@ -95,58 +95,42 @@ func TestMigrateApplySkipChecksEnvBypassesFailingPtahCheckDirective(t *testing.T
 	c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
 }
 
-// TestMigrateApplySkipChecksEnvValues separates "the variable is set" from "the
-// variable parses as true": an unset variable, an explicit false and a
-// malformed value must all leave checks enforcing, and only the malformed one
-// must fail before the database is touched.
+// setSkipChecksEnv returns a per-case environment setup for the tables below.
+// Passing the setup in makes "no variable at all" a case like any other instead
+// of a branch inside the table body.
+func setSkipChecksEnv(value string) func(t *testing.T) {
+	return func(t *testing.T) {
+		t.Helper()
+		t.Setenv("PTAH_SKIP_CHECKS", value)
+	}
+}
+
+const txtarCheckRefusal = "pre-migration check checks.sql#1 for migration 20260801000002 was not satisfied"
+
+// TestMigrateApplySkipChecksEnvEnforcesChecks separates "the variable is set"
+// from "the variable parses as true". An absent variable, an empty one and the
+// two false spellings must all leave checks enforcing, and a value that is not
+// a boolean must be refused outright rather than read as false.
 //
 // Each case builds its own directory and database. A shared fixture would let a
 // case pass on another case's state instead of on its own input.
-func TestMigrateApplySkipChecksEnvValues(t *testing.T) {
+func TestMigrateApplySkipChecksEnvEnforcesChecks(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		// value is the PTAH_SKIP_CHECKS value; unset selects no variable at all.
-		value string
-		unset bool
+		// setEnv installs this case's PTAH_SKIP_CHECKS state.
+		setEnv func(t *testing.T)
 		// wantErr is the substring the refusal must contain.
 		wantErr string
-		// wantApplied reports whether migration 2's body must have run.
-		wantApplied bool
 	}{
-		{
-			name:    "unset enforces checks",
-			unset:   true,
-			wantErr: "pre-migration check checks.sql#1 for migration 20260801000002 was not satisfied",
-		},
-		{
-			name:    "empty value enforces checks",
-			value:   "",
-			wantErr: "pre-migration check checks.sql#1 for migration 20260801000002 was not satisfied",
-		},
-		{
-			name:    "zero enforces checks",
-			value:   "0",
-			wantErr: "pre-migration check checks.sql#1 for migration 20260801000002 was not satisfied",
-		},
-		{
-			name:    "false enforces checks",
-			value:   "false",
-			wantErr: "pre-migration check checks.sql#1 for migration 20260801000002 was not satisfied",
-		},
+		{name: "absent enforces checks", setEnv: unsetSkipChecksEnv, wantErr: txtarCheckRefusal},
+		{name: "empty enforces checks", setEnv: setSkipChecksEnv(""), wantErr: txtarCheckRefusal},
+		{name: "zero enforces checks", setEnv: setSkipChecksEnv("0"), wantErr: txtarCheckRefusal},
+		{name: "false enforces checks", setEnv: setSkipChecksEnv("false"), wantErr: txtarCheckRefusal},
+		{name: "f enforces checks", setEnv: setSkipChecksEnv("f"), wantErr: txtarCheckRefusal},
 		{
 			name:    "malformed value is refused, not treated as false",
-			value:   "notabool",
+			setEnv:  setSkipChecksEnv("notabool"),
 			wantErr: `invalid boolean value "notabool" for PTAH_SKIP_CHECKS`,
-		},
-		{
-			name:        "true bypasses checks",
-			value:       "true",
-			wantApplied: true,
-		},
-		{
-			name:        "t bypasses checks",
-			value:       "t",
-			wantApplied: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -154,11 +138,7 @@ func TestMigrateApplySkipChecksEnvValues(t *testing.T) {
 			dir := t.TempDir()
 			migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
 			dbPath := filepath.Join(dir, "apply.db")
-			if tc.unset {
-				unsetSkipChecksEnv(t)
-			} else {
-				t.Setenv("PTAH_SKIP_CHECKS", tc.value)
-			}
+			tc.setEnv(t)
 
 			out, err := executeAtlasProjectCommand(
 				"migrate", "apply",
@@ -166,14 +146,40 @@ func TestMigrateApplySkipChecksEnvValues(t *testing.T) {
 				"--dir", "file://"+migrationsDir,
 			)
 
-			if tc.wantApplied {
-				c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-				c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
-				return
-			}
 			c.Assert(err, qt.IsNotNil, qt.Commentf("command output:\n%s", out))
 			c.Assert(err.Error(), qt.Contains, tc.wantErr)
 			c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 0)
+		})
+	}
+}
+
+// The true spellings strconv.ParseBool accepts all bypass the check, so the
+// gate is a parsed boolean rather than a match against one literal.
+func TestMigrateApplySkipChecksEnvBypassesChecks(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+	}{
+		{name: "one", value: "1"},
+		{name: "true", value: "true"},
+		{name: "t", value: "t"},
+		{name: "uppercase TRUE", value: "TRUE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+			dbPath := filepath.Join(dir, "apply.db")
+			t.Setenv("PTAH_SKIP_CHECKS", tc.value)
+
+			out, err := executeAtlasProjectCommand(
+				"migrate", "apply",
+				"--url", "sqlite://"+dbPath,
+				"--dir", "file://"+migrationsDir,
+			)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
+			c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
 		})
 	}
 }
@@ -274,6 +280,46 @@ func TestMigrateApplySkipChecksEnvLeavesUncheckedDirectoryUnchanged(t *testing.T
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
 	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+}
+
+// --dry-run is the branch where the bypass earns its keep against the oracle.
+// Checks execute against the live database even in dry-run, so on a fresh
+// database an assertion that reads a table an earlier pending migration creates
+// cannot run at all, and the preview fails. Atlas CE prints the SQL and exits 0
+// for the same directory (measured 2026-08-02 on the pinned v1.2.0 binary),
+// which makes the enforcing dry-run a divergence in the direction that is easy
+// to miss: ours errors where CE succeeds. The bypass restores the preview.
+//
+// This test pins both halves, because the workaround is only meaningful if the
+// unbypassed failure is real.
+func TestMigrateApplySkipChecksEnvRestoresDryRunOnCheckedDirectory(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+
+	unsetSkipChecksEnv(t)
+	_, err := executeAtlasProjectCommand(
+		"migrate", "apply",
+		"--url", "sqlite://"+filepath.Join(dir, "enforced.db"),
+		"--dir", "file://"+migrationsDir,
+		"--dry-run",
+	)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "pre-migration check")
+
+	t.Setenv("PTAH_SKIP_CHECKS", "1")
+	previewDB := filepath.Join(dir, "preview.db")
+	out, err := executeAtlasProjectCommand(
+		"migrate", "apply",
+		"--url", "sqlite://"+previewDB,
+		"--dir", "file://"+migrationsDir,
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
+	c.Assert(out, qt.Contains, "Would have applied 2 migrations.")
+	// Dry run stays a dry run: the bypass must not turn a preview into an apply.
+	c.Assert(sqliteTableCount(c, previewDB, "users"), qt.Equals, 0)
 }
 
 // sqliteMigrationRowCount counts revision rows, so a bypassed run can be shown
