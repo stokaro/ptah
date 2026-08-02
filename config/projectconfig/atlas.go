@@ -134,6 +134,29 @@ type atlasParser struct {
 	// value, so a plain slice field would be appended to on a copy and the
 	// values would never reach the scrubber.
 	sensitiveValues *[]string
+	// ignored records the constructs tolerated under Atlas CE's
+	// unknown-name policy, so the caller can report them. Pointer for the same
+	// reason as sensitiveValues: the parser is passed by value.
+	ignored *[]IgnoredAtlasConstruct
+}
+
+// IgnoredAtlasConstruct is an atlas.hcl name that was accepted and not acted
+// on, matching what Atlas CE does with a name it does not recognize.
+//
+// CE reports nothing at all. Ptah records them so the caller can say one line
+// per construct on stderr: CE's silence is a footgun -- a typo'd block name
+// does nothing and looks fine -- and stdout, the exit code, and every error
+// diagnostic stay byte-identical, so nothing that reads those can tell the
+// difference.
+type IgnoredAtlasConstruct struct {
+	// Name is the construct's name as written.
+	Name string
+	// Kind is "block" or "attribute".
+	Kind string
+	// Filename and Line locate it. The position matters because the same name
+	// is tolerated in one place and fatal in another.
+	Filename string
+	Line     int
 }
 
 func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser, error) {
@@ -143,6 +166,7 @@ func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser,
 	}
 	return atlasParser{
 		sensitiveValues: &[]string{},
+		ignored:         &[]IgnoredAtlasConstruct{},
 		ctx: &hcl.EvalContext{
 			Variables: map[string]cty.Value{},
 			Functions: map[string]function.Function{
@@ -160,14 +184,19 @@ func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser,
 }
 
 func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error) {
-	if len(body.Attributes) > 0 {
-		for name, attr := range body.Attributes {
-			return Config{}, unsupportedAttr(name, attr)
+	// CE's tolerance covers unknown ATTRIBUTES as well as blocks -- measured,
+	// and the point stokaro/ptah#1014 left open. The expression is still
+	// evaluated, so a bad reference in one is still fatal.
+	for _, name := range sortedAttributeNames(body.Attributes) {
+		attr := body.Attributes[name]
+		if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
+			return Config{}, p.evaluationFailed(name, attr, diags)
 		}
+		p.noteIgnored("attribute", name, attr.NameRange)
 	}
 
 	base := Config{}
-	blocks, err := collectAtlasTopBlocks(body.Blocks)
+	blocks, err := p.collectAtlasTopBlocks(body.Blocks)
 	if err != nil {
 		return Config{}, err
 	}
@@ -185,6 +214,7 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 		return Config{}, err
 	}
 	if len(blocks.envs) == 0 {
+		base.IgnoredConstructs = p.ignoredConstructs()
 		return base, nil
 	}
 
@@ -200,6 +230,9 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 	if err := p.resolveExternalSchemaMarkers(&merged); err != nil {
 		return Config{}, err
 	}
+	// Set after Merge, not inside parseEnv: Merge carries only the fields it
+	// knows about, so an assignment upstream of it is silently dropped.
+	merged.IgnoredConstructs = p.ignoredConstructs()
 	return merged, nil
 }
 
@@ -212,17 +245,77 @@ type atlasTopBlocks struct {
 	variables  []*hclsyntax.Block
 }
 
-func collectAtlasTopBlocks(blocks []*hclsyntax.Block) (atlasTopBlocks, error) {
+func (p atlasParser) collectAtlasTopBlocks(blocks []*hclsyntax.Block) (atlasTopBlocks, error) {
 	collected := atlasTopBlocks{}
 	for _, block := range blocks {
-		if err := collectAtlasTopBlock(block, &collected); err != nil {
+		if err := p.collectAtlasTopBlock(block, &collected); err != nil {
 			return atlasTopBlocks{}, err
 		}
 	}
 	return collected, nil
 }
 
-func collectAtlasTopBlock(block *hclsyntax.Block, collected *atlasTopBlocks) error {
+// atlasBlockNotSupported reproduces CE's refusal of the `atlas` init block. Its
+// two spellings fail differently, and both are measured.
+func atlasBlockNotSupported(block *hclsyntax.Block) error {
+	if len(block.Labels) > 0 {
+		return fmt.Errorf("init block %q cannot have labels", block.Type)
+	}
+	return fmt.Errorf("atlas block is not supported by the community version of Atlas")
+}
+
+// ignoredConstructs returns the tolerated constructs recorded so far.
+func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
+	if p.ignored == nil || len(*p.ignored) == 0 {
+		return nil
+	}
+	out := make([]IgnoredAtlasConstruct, len(*p.ignored))
+	copy(out, *p.ignored)
+	return out
+}
+
+// noteIgnored records a construct tolerated under the unknown-name policy.
+func (p atlasParser) noteIgnored(kind, name string, rng hcl.Range) {
+	if p.ignored == nil {
+		return
+	}
+	*p.ignored = append(*p.ignored, IgnoredAtlasConstruct{
+		Name: name, Kind: kind, Filename: rng.Filename, Line: rng.Start.Line,
+	})
+}
+
+// evaluateIgnoredBody evaluates every expression inside a construct whose NAME
+// is being ignored, discarding the values and returning the first failure.
+//
+// This is what makes the tolerance name-level rather than subtree-level, which
+// is how Atlas CE behaves: it drops the decoded result of an unrecognized name
+// but still evaluates the body, so an unresolvable reference inside an ignored
+// block is fatal. Measured on the pinned CE binary:
+//
+//	frobnicate { v = "literal" }         -> exit 0, 0 bytes on stderr
+//	frobnicate { v = var.undefined_ref } -> exit 1, "Unsupported attribute"
+//
+// Skipping the subtree instead would accept the second file, which CE rejects,
+// making this implementation LOOSER than CE -- the more dangerous direction.
+func (p atlasParser) evaluateIgnoredBody(body *hclsyntax.Body) error {
+	if body == nil {
+		return nil
+	}
+	for _, name := range sortedAttributeNames(body.Attributes) {
+		attr := body.Attributes[name]
+		if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
+			return p.evaluationFailed(name, attr, diags)
+		}
+	}
+	for _, block := range body.Blocks {
+		if err := p.evaluateIgnoredBody(block.Body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p atlasParser) collectAtlasTopBlock(block *hclsyntax.Block, collected *atlasTopBlocks) error {
 	switch block.Type {
 	case "data":
 		collected.data = append(collected.data, block)
@@ -240,8 +333,21 @@ func collectAtlasTopBlock(block *hclsyntax.Block, collected *atlasTopBlocks) err
 		collected.locals = append(collected.locals, block)
 	case "variable":
 		collected.variables = append(collected.variables, block)
+	case "atlas":
+		// The one top-level name CE KNOWS and refuses, rather than not
+		// recognizing. Measured across nine candidate names on the pinned CE
+		// binary -- `cloud`, `docker`, `remote_dir`, `project`, `check`,
+		// `exporter`, `script` and `test` are all tolerated; only `atlas` is
+		// gated. Folding it into the unknown-name path would accept a config
+		// CE rejects, making this surface LOOSER than CE.
+		return atlasBlockNotSupported(block)
 	default:
-		return unsupportedBlock(block)
+		// Atlas CE accepts an unrecognized top-level name and drops it. The
+		// body is still evaluated -- see evaluateIgnoredBody.
+		if err := p.evaluateIgnoredBody(block.Body); err != nil {
+			return err
+		}
+		p.noteIgnored("block", block.Type, block.TypeRange)
 	}
 	return nil
 }

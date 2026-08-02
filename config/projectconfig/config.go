@@ -39,6 +39,15 @@ const (
 // file formats into this shape; command code should consume this type instead
 // of branching on the original file format.
 type Config struct {
+	// IgnoredConstructs lists the atlas.hcl names that were accepted and not
+	// acted on, under Atlas CE's unknown-name policy.
+	//
+	// It exists so a caller can say something. CE reports nothing at all, and
+	// that silence is a footgun: a typo'd block name does nothing and looks
+	// fine. Everything the conformance tiers measure -- exit code, stdout, the
+	// text of every error -- is unchanged whether or not a caller reports
+	// these, so drop-in fidelity does not depend on it.
+	IgnoredConstructs []IgnoredAtlasConstruct
 	// EnvName is the selected project env name, when the source had one.
 	EnvName string
 	// DatabaseURL is the target database URL used by migration commands.
