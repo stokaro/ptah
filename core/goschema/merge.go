@@ -4,27 +4,31 @@ package goschema
 // initialized, ready to accumulate schema objects from one or more sources.
 func newDatabase() *Database {
 	return &Database{
-		Schemas:                    []Schema{},
-		Tables:                     []Table{},
-		Fields:                     []Field{},
-		Indexes:                    []Index{},
-		Constraints:                []Constraint{},
-		Enums:                      []Enum{},
-		EmbeddedFields:             []EmbeddedField{},
-		Extensions:                 []Extension{},
-		Functions:                  []Function{},
-		Sequences:                  []Sequence{},
-		Domains:                    []Domain{},
-		CompositeTypes:             []CompositeType{},
-		Ranges:                     []Range{},
-		Views:                      []View{},
-		MaterializedViews:          []MaterializedView{},
-		Triggers:                   []Trigger{},
-		RLSPolicies:                []RLSPolicy{},
-		RLSEnabledTables:           []RLSEnabledTable{},
-		Roles:                      []Role{},
-		Grants:                     []Grant{},
-		ManagedData:                []ManagedData{},
+		Schemas:           []Schema{},
+		Tables:            []Table{},
+		Fields:            []Field{},
+		Indexes:           []Index{},
+		Constraints:       []Constraint{},
+		Enums:             []Enum{},
+		EmbeddedFields:    []EmbeddedField{},
+		Extensions:        []Extension{},
+		Functions:         []Function{},
+		Sequences:         []Sequence{},
+		Domains:           []Domain{},
+		CompositeTypes:    []CompositeType{},
+		Ranges:            []Range{},
+		Views:             []View{},
+		MaterializedViews: []MaterializedView{},
+		Triggers:          []Trigger{},
+		RLSPolicies:       []RLSPolicy{},
+		RLSEnabledTables:  []RLSEnabledTable{},
+		Roles:             []Role{},
+		Grants:            []Grant{},
+		ManagedData:       []ManagedData{},
+		EmbeddedSources: EmbeddedSources{
+			Fields:      []Field{},
+			Definitions: []EmbeddedField{},
+		},
 		Dependencies:               make(map[string][]string),
 		FunctionDependencies:       make(map[string][]string),
 		SelfReferencingForeignKeys: make(map[string][]SelfReferencingFK),
@@ -39,10 +43,12 @@ func appendDatabase(dst, src *Database) {
 	dst.Schemas = append(dst.Schemas, src.Schemas...)
 	dst.Tables = append(dst.Tables, src.Tables...)
 	dst.Fields = append(dst.Fields, src.Fields...)
+	dst.Fields = append(dst.Fields, src.EmbeddedSources.Fields...)
 	dst.Indexes = append(dst.Indexes, src.Indexes...)
 	dst.Constraints = append(dst.Constraints, src.Constraints...)
 	dst.Enums = append(dst.Enums, src.Enums...)
 	dst.EmbeddedFields = append(dst.EmbeddedFields, src.EmbeddedFields...)
+	dst.EmbeddedFields = append(dst.EmbeddedFields, src.EmbeddedSources.Definitions...)
 	dst.Extensions = append(dst.Extensions, src.Extensions...)
 	dst.Functions = append(dst.Functions, src.Functions...)
 	dst.Sequences = append(dst.Sequences, src.Sequences...)
@@ -77,7 +83,7 @@ func finalizeDatabase(result *Database) error {
 		validator.resolver,
 		compositeDeduplicationScope,
 	)
-	removeCompositeHelperDefinitions(result)
+	stashCompositeHelperDefinitions(result)
 
 	// Build dependency graph for foreign key ordering.
 	buildDependencyGraph(result)
@@ -88,30 +94,63 @@ func finalizeDatabase(result *Database) error {
 	return nil
 }
 
-// removeCompositeHelperDefinitions keeps source provenance inside the merge
-// pipeline. Embedded helper types are expansion inputs, not database columns;
-// once their concrete table fields have been generated they must not reach
-// renderers, planners, exporters, or schema comparison.
-func removeCompositeHelperDefinitions(result *Database) {
+// stashCompositeHelperDefinitions removes source-only composite helpers from
+// the public schema surface while retaining them for repeated finalization.
+func stashCompositeHelperDefinitions(result *Database) {
+	helperStructs := embeddedSourceStructNames(result)
+	result.EmbeddedSources.Fields = result.EmbeddedSources.Fields[:0]
 	fields := result.Fields[:0]
 	for _, field := range result.Fields {
-		if isCompositeHelperType(field.StructName) {
-			continue
+		if helperStructs[field.StructName] {
+			result.EmbeddedSources.Fields = append(result.EmbeddedSources.Fields, field)
+			if isCompositeHelperType(field.StructName) {
+				continue
+			}
 		}
 		field.FieldName = unscopedGoTypeIdentity(field.FieldName)
 		fields = append(fields, field)
 	}
 	result.Fields = fields
 
+	result.EmbeddedSources.Definitions = result.EmbeddedSources.Definitions[:0]
 	embeddedFields := result.EmbeddedFields[:0]
 	for _, field := range result.EmbeddedFields {
-		if isCompositeHelperType(field.StructName) {
-			continue
+		if helperStructs[field.StructName] {
+			result.EmbeddedSources.Definitions = append(result.EmbeddedSources.Definitions, field)
+			if isCompositeHelperType(field.StructName) {
+				continue
+			}
 		}
-		field.EmbeddedTypeName = unscopedGoTypeIdentity(field.EmbeddedTypeName)
 		embeddedFields = append(embeddedFields, field)
 	}
 	result.EmbeddedFields = embeddedFields
+}
+
+func embeddedSourceStructNames(result *Database) map[string]bool {
+	tableStructs := make(map[string]bool, len(result.Tables))
+	for _, table := range result.Tables {
+		tableStructs[table.StructName] = true
+	}
+	helperStructs := make(map[string]bool)
+	for _, embedded := range result.EmbeddedFields {
+		if !tableStructs[embedded.StructName] {
+			helperStructs[embedded.StructName] = true
+		}
+		if !tableStructs[embedded.EmbeddedTypeName] {
+			helperStructs[embedded.EmbeddedTypeName] = true
+		}
+	}
+	return helperStructs
+}
+
+func restoreCompositeHelperDefinitions(result *Database) {
+	result.Fields = append(result.Fields, result.EmbeddedSources.Fields...)
+	result.EmbeddedFields = append(
+		result.EmbeddedFields,
+		result.EmbeddedSources.Definitions...,
+	)
+	result.EmbeddedSources.Fields = nil
+	result.EmbeddedSources.Definitions = nil
 }
 
 func finalizeAccumulatedDatabase(result *Database) error {

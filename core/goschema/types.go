@@ -52,6 +52,10 @@ type Database struct {
 	Dependencies               map[string][]string            // table -> list of tables it depends on
 	FunctionDependencies       map[string][]string            // function -> list of functions it depends on
 	SelfReferencingForeignKeys map[string][]SelfReferencingFK // table -> list of self-referencing foreign keys
+
+	// EmbeddedSources retains source-only helper declarations needed to
+	// materialize embedded columns again after a schema is merged or finalized.
+	EmbeddedSources EmbeddedSources
 }
 
 // Schema represents a database schema/namespace.
@@ -99,6 +103,13 @@ type EmbeddedField struct {
 	Comment          string                       // Comment for the field/column
 	EmbeddedTypeName string                       // The name of the embedded type (e.g., "Timestamps")
 	Overrides        map[string]map[string]string // Platform-specific overrides
+}
+
+// EmbeddedSources preserves helper declarations separately from materialized
+// database columns so Finalize and Merge remain idempotent.
+type EmbeddedSources struct {
+	Fields      []Field
+	Definitions []EmbeddedField
 }
 
 // Field represents a database column/field definition parsed from Go struct field annotations.
@@ -168,6 +179,10 @@ type Field struct {
 	Collate   string
 	Comment   string                       // Column comment
 	Overrides map[string]map[string]string // Platform-specific overrides (e.g., platform.mysql.type)
+
+	// GeneratedFromEmbedded distinguishes materialized embedded columns from
+	// source declarations so Finalize can rebuild them after schema mutation.
+	GeneratedFromEmbedded bool
 }
 
 // IndexPart represents one column or expression inside an index definition.
@@ -1087,16 +1102,17 @@ type ManagedData struct {
 	SourceDir string
 }
 
-// SelfReferencingFK represents a self-referencing foreign key that needs to be
-// handled separately from regular foreign keys to avoid circular dependencies.
+// SelfReferencingFK represents a field-level self-referencing foreign key that
+// migration planners emit after creating its table.
 //
 // Self-referencing foreign keys occur when a table has a foreign key that references
 // its own primary key, such as a "parent_id" field in a hierarchical structure.
-// These cannot be created as part of the initial CREATE TABLE statement because
-// the table doesn't exist yet when the constraint is being defined.
-//
-// Instead, these foreign keys are tracked separately and added as ALTER TABLE
-// ADD CONSTRAINT statements after the table has been created.
+// Ptah tracks these references separately because PostgreSQL-family and MySQL-
+// family planners use a table-first, foreign-key-second creation strategy.
+// SQL permits a self reference inside CREATE TABLE, and SQLite renderers use
+// that inline form because SQLite cannot add a foreign key with ALTER TABLE.
+// Table-level foreign keys remain in Database.Constraints so composite column
+// lists are never collapsed into this single-field representation.
 //
 // Example:
 //

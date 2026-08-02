@@ -22,7 +22,7 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 			{Name: "users", StructName: "User", Strict: true},
 		},
 		Fields: []goschema.Field{
-			{Name: "id", Type: "INTEGER", StructName: "accounts", Primary: true},
+			{Name: "id", Type: "INTEGER", StructName: "Account", Primary: true},
 			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
 			{Name: "account_id", Type: "INTEGER", StructName: "User", Nullable: false},
 			{Name: "email", Type: "TEXT", StructName: "User", Nullable: false},
@@ -238,7 +238,12 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 					{Name: "users", StructName: "User"},
 					{Name: "memberships", StructName: "Membership"},
 				},
-				Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+				Fields: []goschema.Field{
+					{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+					{Name: "tenant_id", Type: "INTEGER", StructName: "User", Primary: true},
+					{Name: "user_id", Type: "INTEGER", StructName: "Membership"},
+					{Name: "tenant_id", Type: "INTEGER", StructName: "Membership"},
+				},
 				Constraints: []goschema.Constraint{{
 					Type:           "FOREIGN KEY",
 					Table:          "memberships",
@@ -342,8 +347,14 @@ func TestPlannerRejectsAddColumnShapesThatNeedRebuild(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			generated := &goschema.Database{
-				Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-				Fields: []goschema.Field{tt.field},
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+					{Name: "accounts", StructName: "Account"},
+				},
+				Fields: []goschema.Field{
+					{Name: "id", Type: "INTEGER", StructName: "Account", Primary: true},
+					tt.field,
+				},
 			}
 			diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
 				TableName:    "users",

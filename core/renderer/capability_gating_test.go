@@ -95,7 +95,7 @@ func TestMySQLRendererWithCapabilities_UsesPassedCapabilitySet(t *testing.T) {
 
 	node := ast.NewDropIndex("idx_users_email").SetIfExists().SetTable("users")
 
-	sql, err := renderer.RenderSQLWithCapabilities("mysql", capability.MySQL80(), node)
+	sql, err := renderer.RenderSQLWithCapabilities("mysql", capability.MySQL84(), node)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "DROP INDEX idx_users_email ON users;")
@@ -110,7 +110,7 @@ func TestMySQLRendererWithCapabilities_UsesPassedCapabilitySet(t *testing.T) {
 func TestMySQLRendererWithCapabilities_ClonesCapabilitySet(t *testing.T) {
 	c := qt.New(t)
 
-	caps := capability.MySQL80()
+	caps := capability.MySQL84()
 	mysqlRenderer := mysql.NewWithCapabilities(caps)
 	caps[capability.DropIndexIfExists] = true
 

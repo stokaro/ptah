@@ -2620,6 +2620,11 @@ func (n *OpaqueRoutineNode) Accept(visitor Visitor) error {
 // This method visits each statement in the list in order. If any statement
 // fails to be visited, the process stops and returns the error.
 func (sl *StatementList) Accept(visitor Visitor) error {
+	if listVisitor, ok := visitor.(interface {
+		VisitStatementList(*StatementList) error
+	}); ok {
+		return listVisitor.VisitStatementList(sl)
+	}
 	for _, stmt := range sl.Statements {
 		if err := stmt.Accept(visitor); err != nil {
 			return fmt.Errorf("error visiting statement: %w", err)

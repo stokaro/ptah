@@ -81,6 +81,7 @@ import (
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
+	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/planner/dialects/clickhouse"
 	"github.com/stokaro/ptah/internal/planner/dialects/mssql"
 	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
@@ -222,7 +223,7 @@ func RegisteredDialects() []string {
 //     SERIAL columns, and PostgreSQL-specific constraints
 //   - "mysql": Returns a MySQL-specific planner with support for AUTO_INCREMENT,
 //     ENGINE specifications, and MySQL-specific features, configured with the
-//     capability.MySQL80 preset (no IF EXISTS guards — exactly-once drops)
+//     capability.MySQL84 preset (no IF EXISTS guards — exactly-once drops)
 //   - "mariadb": Returns the same MySQL planner configured with the
 //     capability.MariaDB1011 preset, which additionally requests IF EXISTS
 //     guards on constraint drops (issue #226)
@@ -466,7 +467,9 @@ func GenerateSchemaDiffASTWithOptions(
 	dialect string,
 	opts Options,
 ) ([]ast.Node, error) {
+	caps := opts.CapabilitiesFor(dialect)
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	preparedGenerated := fromschema.AssignDefaultForeignKeyNames(generated, dialect)
 	if diff != nil &&
 		diff.IdentifierSemantics != nil &&
 		!diff.IdentifierSemantics.IsZero() &&
@@ -480,17 +483,22 @@ func GenerateSchemaDiffASTWithOptions(
 		)
 	}
 	if err := identifiervalidation.ValidateTarget(
-		generated,
+		preparedGenerated,
 		dialect,
 		semantics,
 	); err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
+	if preparedGenerated != nil {
+		if err := renderer.ValidateSchemaWithCapabilities(preparedGenerated, dialect, caps); err != nil {
+			return nil, wrapPlanError(dialect, err)
+		}
+	}
 	planner, err := GetPlannerWithOptions(dialect, opts)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, preparedGenerated)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}

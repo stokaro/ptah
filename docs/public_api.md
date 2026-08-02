@@ -52,6 +52,37 @@ execution without a second configuration-file read.
 already anchored or immutable `fs.FS`; `file()` and `fileset()` resolve only
 through that filesystem.
 
+`core/renderer.GetOrderedCreateStatements` and its capability-aware variant
+render complete schema DDL fail-closed. Non-SQLite targets return all table
+creation statements before phase-two foreign keys; SQLite keeps foreign keys
+inline. Invalid or unsupported foreign keys return typed errors and no partial
+statement list. Foreign-key-capable capability sets select exactly one
+referenced-key policy: `ForeignKeysRequireUniqueReference`,
+`ForeignKeysRequireIndexedReference`, or `ForeignKeysCreateBackingIndex`.
+`ValidateSchema` and `ValidateSchemaWithCapabilities` run the same complete
+schema validation without rendering SQL. Migration planning calls this path
+before producing AST nodes.
+
+`goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
+every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a
+caller can mutate the source fields or embedded declarations and finalize the
+database again without retaining stale or duplicate columns. Treat the flag as
+derived metadata: source declarations should leave it false.
+
+`Database.EmbeddedSources` retains source-only field and embedding declarations
+that are needed to rebuild nested embedded fields after `Finalize` or `Merge`.
+Callers normally should not modify this bookkeeping directly. A caller that
+copies a finalized `Database` and expects to finalize or merge the copy again
+must preserve `EmbeddedSources`; dropping it can discard the source declarations
+behind materialized `GeneratedFromEmbedded` fields.
+
+`core/platform/capability.MySQL80` was intentionally removed after `v0.1.2`.
+The name implied one capability set for every MySQL 8.0 release even though
+generic `DROP CONSTRAINT` support starts at MySQL 8.0.19, and MySQL 8.4 changes
+the default foreign-key referenced-key policy. Pre-GA callers must select the
+explicit `MySQL8016`, `MySQL8019`, or `MySQL84` preset that matches their server
+instead of relying on an ambiguous compatibility alias.
+
 `migration/lint` provides the compact `LintFS` findings API and the richer
 `AnalyzeFS` API. `AnalyzeFS` captures each migration input once: SQL files,
 integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
@@ -93,7 +124,10 @@ an external executor must take over accepted statements.
 for a callback and rebinds the dialect reader, writer, and SQL runner to it.
 Use it when session-local state must remain consistent across cleanup, replay,
 introspection, and verification. The scoped connection must not escape the
-callback.
+callback. Root MySQL capability metadata remains conservative; on MySQL 8.4+
+the scoped connection refines its referenced-key policy from
+`restrict_fk_on_non_standard_key` on the pinned session before the callback,
+so planning and execution can safely use that same effective policy.
 
 `dbschema.DatabaseConnection.WithUntrustedSQLSession` pins a session that will
 execute SQL the caller does not trust and applies every engine-level

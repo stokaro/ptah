@@ -848,7 +848,7 @@ table "posts" {
 	c.Assert(db.Dependencies["posts"], qt.DeepEquals, []string{"accounts"})
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
-	c.Assert(sql, qt.Contains, `CONSTRAINT owner_ref FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE ON UPDATE NO_ACTION`)
+	c.Assert(sql, qt.Contains, `CONSTRAINT owner_ref FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE ON UPDATE NO ACTION`)
 }
 
 func TestParseDefaultsAndChecks(t *testing.T) {

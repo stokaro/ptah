@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/dbschema/types"
@@ -86,9 +87,11 @@ func GetDynamicScenarios() []TestScenario {
 
 		// Complex schema change scenarios
 		{
-			Name:             "dynamic_circular_dependencies",
-			Description:      "Test handling of circular foreign key dependencies",
-			EnhancedTestFunc: testDynamicCircularDependencies,
+			Name:                          "dynamic_circular_dependencies",
+			Description:                   "Render, apply, and introspect mutually dependent foreign keys",
+			EnhancedTestFunc:              testDynamicCircularDependencies,
+			PostgresDistributedCompatible: true,
+			SQLServerCompatible:           true,
 		},
 		{
 			Name:             "dynamic_data_migration",
@@ -1290,68 +1293,53 @@ func testDynamicConcurrentMigrations(ctx context.Context, conn *dbschema.Databas
 // ============================================================================
 
 // testDynamicCircularDependencies tests handling of circular foreign key dependencies
-func testDynamicCircularDependencies(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
-	vem, err := NewVersionedEntityManager(fixtures)
-	if err != nil {
-		return fmt.Errorf("failed to create versioned entity manager: %w", err)
-	}
-	defer vem.Cleanup()
-
+func testDynamicCircularDependencies(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	_ fs.FS,
+	recorder *StepRecorder,
+) error {
 	return recorder.RecordStep("Test Circular Dependencies", "Create tables with circular foreign key references", func() error {
-		dialect := conn.Info().Dialect
-		// Create migrations that establish circular dependencies
-
-		// First, create tables without foreign keys
-		var createSQL string
-		if dialect == "mysql" || dialect == "mariadb" {
-			createSQL = `CREATE TABLE departments (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255));
-			 CREATE TABLE employees (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), department_id INTEGER);`
-		} else {
-			createSQL = `CREATE TABLE departments (id SERIAL PRIMARY KEY, name VARCHAR(255));
-			 CREATE TABLE employees (id SERIAL PRIMARY KEY, name VARCHAR(255), department_id INTEGER);`
+		database := &goschema.Database{
+			Tables: []goschema.Table{
+				{StructName: "Department", Name: "departments"},
+				{StructName: "Employee", Name: "employees"},
+			},
+			Fields: []goschema.Field{
+				{StructName: "Department", Name: "id", Type: "BIGINT", Primary: true},
+				{StructName: "Department", Name: "manager_id", Type: "BIGINT", Foreign: "employees(id)", ForeignKeyName: "fk_dept_manager"},
+				{StructName: "Employee", Name: "id", Type: "BIGINT", Primary: true},
+				{StructName: "Employee", Name: "department_id", Type: "BIGINT", Foreign: "departments(id)", ForeignKeyName: "fk_emp_dept"},
+			},
+		}
+		info := conn.Info()
+		statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(database, info.Dialect, info.Capabilities)
+		if err != nil {
+			return fmt.Errorf("render circular foreign keys: %w", err)
+		}
+		for _, statement := range statements {
+			if _, err := conn.ExecContext(ctx, statement); err != nil {
+				return fmt.Errorf("execute circular foreign-key statement: %w", err)
+			}
 		}
 
-		migration1 := migrator.CreateMigrationFromSQL(
-			1,
-			"Create tables without FK",
-			createSQL,
-			`DROP TABLE employees; DROP TABLE departments;`,
-		)
-		// Create a migrator and register all migrations with both up and down
-		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration1))
-
-		if err := m.MigrateUp(ctx); err != nil {
-			return fmt.Errorf("failed to create initial tables: %w", err)
-		}
-
-		// Then add foreign keys that create circular dependency
-		migration2 := migrator.CreateMigrationFromSQL(
-			2,
-			"Add circular foreign keys",
-			`ALTER TABLE departments ADD COLUMN manager_id INTEGER;
-			 ALTER TABLE employees ADD CONSTRAINT fk_emp_dept FOREIGN KEY (department_id) REFERENCES departments(id);
-			 ALTER TABLE departments ADD CONSTRAINT fk_dept_manager FOREIGN KEY (manager_id) REFERENCES employees(id);`,
-			`ALTER TABLE departments DROP CONSTRAINT fk_dept_manager;
-			 ALTER TABLE employees DROP CONSTRAINT fk_emp_dept;
-			 ALTER TABLE departments DROP COLUMN manager_id;`,
-		)
-		// Create a migrator and register all migrations with both up and down
-		m2 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration2))
-
-		// This should succeed - most databases handle circular FKs if created properly
-		if err := m2.MigrateUp(ctx); err != nil {
-			return fmt.Errorf("failed to add circular foreign keys: %w", err)
-		}
-
-		// Verify the schema has both tables with foreign keys
 		schema, err := conn.Reader().ReadSchema()
 		if err != nil {
-			return fmt.Errorf("failed to read schema: %w", err)
+			return fmt.Errorf("read circular foreign-key schema: %w", err)
 		}
-
-		// Should have 2 tables plus schema_migrations
-		if len(schema.Tables) < 2 {
-			return fmt.Errorf("expected at least 2 tables, got %d", len(schema.Tables))
+		expected := map[string]bool{
+			"fk_dept_manager": false,
+			"fk_emp_dept":     false,
+		}
+		for _, constraint := range schema.Constraints {
+			if _, tracked := expected[constraint.Name]; tracked && constraint.Type == "FOREIGN KEY" {
+				expected[constraint.Name] = true
+			}
+		}
+		for name, found := range expected {
+			if !found {
+				return fmt.Errorf("introspection did not return foreign key %q", name)
+			}
 		}
 
 		return nil

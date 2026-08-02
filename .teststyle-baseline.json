@@ -757,12 +757,6 @@
       "count": 2
     },
     {
-      "path": "migration/generator/multihost_fk_down_test.go",
-      "function": "TestGenerateDownMigration_MultiHostMixinFKModify_RestoresPriorActionPerHost",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "migration/generator/reverse_diff_test.go",
       "function": "TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily",
       "kind": "if",

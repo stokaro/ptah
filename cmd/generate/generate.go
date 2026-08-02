@@ -4,8 +4,8 @@
 package generate
 
 import (
+	"bytes"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -13,7 +13,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
 	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
 )
 
@@ -62,18 +61,25 @@ source can provide the desired schema too.`,
 }
 
 func registerFlags(cmd *cobra.Command, opts *options) {
+	const dialectUsage = "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, " +
+		"cockroachdb, yugabytedb, sqlserver, spanner). If empty, attempts the built-in " +
+		"review targets and emits output only if every target succeeds"
+
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate from instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", schemaCmdUsage)
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
-	flags.StringVar(&opts.dialect, dialectFlag, "", "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects")
+	flags.StringVar(&opts.dialect, dialectFlag, "", dialectUsage)
 	flags.StringVar(&opts.configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 }
 
 func generateCommand(cmd *cobra.Command, opts *options) error {
+	stdout := cmd.OutOrStdout()
+	stderr := cmd.ErrOrStderr()
+
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return err
@@ -95,20 +101,17 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		SchemaFiles: opts.schemaFiles,
 		Commands:    commands,
 		Dialect:     opts.dialect,
-		Logf:        func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
+		Logf:        func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
 	})
 	if err != nil {
 		return err
 	}
 
-	// Print summary
-	fmt.Printf("Found %d tables, %d fields, %d indexes, %d enums, %d embedded fields\n",
+	fmt.Fprintf(stderr, "Found %d tables, %d fields, %d indexes, %d enums, %d embedded fields\n",
 		len(result.Tables), len(result.Fields), len(result.Indexes), len(result.Enums), len(result.EmbeddedFields))
-	fmt.Println()
-
-	// Print dependency information
-	fmt.Println(goschema.GetDependencyInfo(result))
-	fmt.Println()
+	fmt.Fprintln(stderr)
+	fmt.Fprintln(stderr, goschema.GetDependencyInfo(result))
+	fmt.Fprintln(stderr)
 
 	// Determine which dialects to generate
 	dialects := []string{"postgres", "mysql", "mariadb", "sqlite", "clickhouse", "cockroachdb", "yugabytedb", "spanner"}
@@ -116,45 +119,23 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		dialects = []string{opts.dialect}
 	}
 
-	// Generate SQL for each dialect
+	var rendered bytes.Buffer
 	for _, d := range dialects {
-		fmt.Printf("=== %s SCHEMA ===\n", strings.ToUpper(d))
-		fmt.Println()
-
-		// Generate enum statements first (only once per dialect)
-		if len(result.Enums) > 0 {
-			fmt.Println("-- ENUMS --")
-			for _, enum := range result.Enums {
-				switch platform.NormalizeDialect(d) {
-				case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-					fmt.Printf("CREATE TYPE %s AS ENUM (%s);\n", enum.Name,
-						strings.Join(func() []string {
-							quoted := make([]string, len(enum.Values))
-							for i, v := range enum.Values {
-								quoted[i] = "'" + v + "'"
-							}
-							return quoted
-						}(), ", "))
-				default:
-					fmt.Printf("-- Enum %s: %v (handled in table definitions)\n", enum.Name, enum.Values)
-				}
-			}
-			fmt.Println()
-		}
-
-		// Generate table statements
 		statements, err := renderer.GetOrderedCreateStatements(result, d)
 		if err != nil {
 			return fmt.Errorf("error rendering %s schema: %w", d, err)
 		}
 
-		for i, statement := range statements {
-			fmt.Printf("-- Statement %d/%d\n", i+1, len(statements))
-			fmt.Println(statement)
-			fmt.Println()
+		if len(dialects) > 1 {
+			fmt.Fprintf(&rendered, "-- %s schema\n\n", d)
 		}
+		for i, statement := range statements {
+			fmt.Fprintf(&rendered, "-- Statement %d/%d\n%s\n\n", i+1, len(statements), statement)
+		}
+	}
 
-		fmt.Println()
+	if _, err := rendered.WriteTo(stdout); err != nil {
+		return fmt.Errorf("write rendered schema: %w", err)
 	}
 
 	return nil

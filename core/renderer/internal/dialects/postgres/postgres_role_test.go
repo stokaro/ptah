@@ -19,7 +19,8 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 		sql, err := renderer.Render(role)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(legacyPostgresSQL(sql), qt.Equals, "CREATE ROLE test_role WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;\n")
+		c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE ROLE test_role WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;")
+		c.Assert(sql, qt.Not(qt.Contains), "duplicate_object")
 	})
 
 	t.Run("role with login and password", func(t *testing.T) {
@@ -72,14 +73,25 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 		renderer := postgres.New()
 
 		role := ast.NewCreateRole("documented_role").
-			SetComment("This is a test role")
+			SetComment("Owner's test role")
 		sql, err := renderer.Render(role)
 
 		c.Assert(err, qt.IsNil)
-		lines := strings.Split(strings.TrimSpace(legacyPostgresSQL(sql)), "\n")
-		c.Assert(lines[0], qt.Equals, "-- This is a test role")
-		c.Assert(lines[1], qt.Contains, "CREATE ROLE documented_role")
+		c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE ROLE documented_role")
+		c.Assert(legacyPostgresSQL(sql), qt.Contains, "COMMENT ON ROLE documented_role IS 'Owner''s test role';")
 	})
+}
+
+func TestPostgreSQLRenderer_VisitCreateRoleKeepsPasswordDollarTagLiteral(t *testing.T) {
+	c := qt.New(t)
+	renderer := postgres.New()
+	role := ast.NewCreateRole("app_user").SetPassword("SCRAM-SHA-256$ptah_role$collision")
+
+	sql, err := renderer.Render(role)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "PASSWORD 'SCRAM-SHA-256$ptah_role$collision'")
+	c.Assert(sql, qt.Not(qt.Contains), "DO $ptah_role$")
 }
 
 func TestPostgreSQLRenderer_VisitDropRole(t *testing.T) {

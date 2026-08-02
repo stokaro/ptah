@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -31,25 +30,18 @@ func TestGenerateHelperProcess(t *testing.T) {
 	runGenerateHelperProcess()
 }
 
-func captureGenerateStdout(c *qt.C, run func() error) (string, error) {
+func executeGenerate(c *qt.C, cmd interface {
+	SetOut(io.Writer)
+	SetErr(io.Writer)
+	Execute() error
+}) (stdoutText, stderrText string, executeErr error) {
 	c.Helper()
-
-	oldStdout := os.Stdout
-	outR, outW, err := os.Pipe()
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() {
-		os.Stdout = oldStdout
-		c.Assert(outR.Close(), qt.IsNil)
-	})
-
-	os.Stdout = outW
-	runErr := run()
-	c.Assert(outW.Close(), qt.IsNil)
-	os.Stdout = oldStdout
-
-	output, err := io.ReadAll(outR)
-	c.Assert(err, qt.IsNil)
-	return string(output), runErr
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	err := cmd.Execute()
+	return stdout.String(), stderr.String(), err
 }
 
 func outputStatementContaining(output, marker string) string {
@@ -83,11 +75,12 @@ func TestGenerateCommand_UsesExternalSchemaFromPtahConfigEnv(t *testing.T) {
 		"--dialect", "postgres",
 	})
 
-	output, err := captureGenerateStdout(c, cmd.Execute)
+	stdout, stderr, err := executeGenerate(c, cmd)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(output, qt.Contains, "Found 1 tables")
-	c.Assert(output, qt.Contains, `CREATE TABLE "configured_widgets"`)
+	c.Assert(stdout, qt.Contains, `CREATE TABLE "configured_widgets"`)
+	c.Assert(stdout, qt.Not(qt.Contains), "Found 1 tables")
+	c.Assert(stderr, qt.Contains, "Found 1 tables")
 }
 
 func TestGenerateCommand_RejectsImplicitExternalSchemaFromConfig(t *testing.T) {
@@ -136,11 +129,12 @@ func TestGenerateCommand_MutualForeignKeysAreTwoPhase(t *testing.T) {
 	c := qt.New(t)
 
 	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "029-roundtrip-mutual-cycle")
-	cmd := exec.Command("go", "run", "../main.go", "schema", "render", "--root-dir", fixtureDir, "--dialect", "postgres")
-	output, err := cmd.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("generate output:\n%s", output))
+	cmd := generate.NewGenerateCommand()
+	cmd.SetArgs([]string{"--root-dir", fixtureDir, "--dialect", "postgres"})
+	stdout, stderr, err := executeGenerate(c, cmd)
+	c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
 
-	sql := string(output)
+	sql := stdout
 	leftCreate := outputStatementContaining(sql, `CREATE TABLE "left_nodes"`)
 	rightCreate := outputStatementContaining(sql, `CREATE TABLE "right_nodes"`)
 	c.Assert(leftCreate, qt.Not(qt.Equals), "")
@@ -155,11 +149,52 @@ func TestGenerateCommand_JsonEmbeddedFieldRendersOnce(t *testing.T) {
 	c := qt.New(t)
 
 	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "023-go-annotations-objects")
-	cmd := exec.Command("go", "run", "../main.go", "schema", "render", "--root-dir", fixtureDir, "--dialect", "postgres")
-	output, err := cmd.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("generate output:\n%s", output))
+	cmd := generate.NewGenerateCommand()
+	cmd.SetArgs([]string{"--root-dir", fixtureDir, "--dialect", "postgres"})
+	stdout, stderr, err := executeGenerate(c, cmd)
+	c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
 
-	usersCreate := outputStatementContaining(string(output), `CREATE TABLE "users"`)
+	usersCreate := outputStatementContaining(stdout, `CREATE TABLE "users"`)
 	c.Assert(usersCreate, qt.Not(qt.Equals), "")
 	c.Assert(strings.Count(usersCreate, `"metadata" JSONB NOT NULL`), qt.Equals, 1)
+}
+
+func TestGenerateCommand_StdoutIsExecutableSQL(t *testing.T) {
+	c := qt.New(t)
+
+	schemaPath := filepath.Join(t.TempDir(), "schema.yaml")
+	c.Assert(os.WriteFile(schemaPath, []byte(`enums:
+  account_status: [active, suspended]
+tables:
+  accounts:
+    columns:
+      id: {type: INTEGER, primary: true}
+      status: {type: account_status, not_null: true}
+`), 0o600), qt.IsNil)
+
+	cmd := generate.NewGenerateCommand()
+	cmd.SetArgs([]string{"--schema-file", schemaPath, "--dialect", "postgres"})
+	stdout, stderr, err := executeGenerate(c, cmd)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Count(stdout, `CREATE TYPE "account_status"`), qt.Equals, 1)
+	c.Assert(stdout, qt.Contains, `CREATE TABLE "accounts"`)
+	c.Assert(stdout, qt.Not(qt.Contains), "Found 1 tables")
+	c.Assert(stdout, qt.Not(qt.Contains), "Table Dependencies:")
+	c.Assert(stdout, qt.Not(qt.Contains), "=== POSTGRES SCHEMA ===")
+	c.Assert(stderr, qt.Contains, "Found 1 tables")
+	c.Assert(stderr, qt.Contains, "Table Dependencies:")
+}
+
+func TestGenerateCommand_OmittedDialectForeignKeyFailureKeepsStdoutEmpty(t *testing.T) {
+	c := qt.New(t)
+
+	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "029-roundtrip-mutual-cycle")
+	cmd := generate.NewGenerateCommand()
+	cmd.SetArgs([]string{"--root-dir", fixtureDir})
+	stdout, stderr, err := executeGenerate(c, cmd)
+
+	c.Assert(err, qt.ErrorMatches, "error rendering clickhouse schema: clickhouse does not support foreign keys")
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Contains, "Found 2 tables")
 }

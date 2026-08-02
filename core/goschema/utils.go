@@ -43,116 +43,164 @@ func getCachedRegex(functionName string) *regexp.Regexp {
 	return regex
 }
 
-func sortTablesProcessQueue(queue *[]string, sorted *[]Table, dependencies map[string][]string, inDegree map[string]int, tableMap map[string]Table) {
-	for len(*queue) > 0 {
-		// Remove first element from queue
-		current := (*queue)[0]
-		*queue = (*queue)[1:]
-
-		// Add to sorted result if table exists
-		if table, exists := tableMap[current]; exists {
-			*sorted = append(*sorted, table)
-		}
-
-		// Reduce in-degree of tables that depend on the current table
-		for tableName, deps := range dependencies {
-			for _, dep := range deps {
-				if dep != current {
-					continue
-				}
-				inDegree[tableName]--
-				if inDegree[tableName] == 0 {
-					*queue = insertSortedString(*queue, tableName)
-				}
-			}
-		}
-	}
-}
-
-func checkForCircularDependencies(r *Database, sorted *[]Table) {
-	if len(*sorted) == len(r.Tables) {
-		// No circular dependencies
-		return
-	}
-
-	slog.Warn("Circular dependency detected in foreign key relationships; emit foreign keys after table creation to keep DDL executable.")
-	// Add remaining tables to the end
-	for _, table := range r.Tables {
-		found := false
-		for _, sortedTable := range *sorted {
-			if sortedTable.QualifiedName() == table.QualifiedName() {
-				found = true
-				break
-			}
-		}
-		if !found {
-			*sorted = append(*sorted, table)
-		}
-	}
-}
-
 // sortTablesByDependencies performs topological sort to order tables by their dependencies.
 //
-// This method implements Kahn's algorithm for topological sorting to determine the correct
-// order for creating database tables. Tables with no dependencies are created first,
-// followed by tables that depend on them, ensuring that foreign key constraints can be
-// satisfied during migration execution.
-//
-// Algorithm steps:
-//  1. Calculate in-degrees (number of dependencies) for each table
-//  2. Initialize queue with tables that have no dependencies (in-degree 0)
-//  3. Process queue: remove table, add to sorted result, reduce in-degrees of dependent tables
-//  4. Continue until all tables are processed or circular dependency is detected
-//
-// Circular dependency handling:
-//   - If circular dependencies are detected, a warning is logged
-//   - Remaining tables are appended to the end of the sorted list
-//   - Schema rendering emits foreign keys after table creation, so the resulting
-//     DDL remains executable for supported dialects
-//
-// The method modifies the Tables slice in-place, reordering it according to dependency
-// requirements. Renderers that support post-create foreign keys emit those
-// constraints in a separate phase after all tables exist.
+// Strongly connected components are collapsed into a condensation graph before
+// sorting. This keeps every cycle contiguous while still honoring dependencies
+// into and out of the cycle. Component members and ready components are ordered
+// by qualified table name so source declaration order cannot affect the result.
 func sortTablesByDependencies(r *Database) {
-	// Create a map for quick table lookup
-	tableMap := make(map[string]Table)
+	tableMap := make(map[string]Table, len(r.Tables))
 	for _, table := range r.Tables {
 		tableMap[table.QualifiedName()] = table
 	}
+	adjacency := internalTableDependencies(tableMap, r.Dependencies)
+	components := stronglyConnectedTableComponents(adjacency)
+	componentDependencies, componentDependents := tableComponentEdges(components, adjacency)
+	r.Tables = orderTableComponents(tableMap, components, componentDependencies, componentDependents)
+}
 
-	// Perform topological sort using Kahn's algorithm
-	var sorted []Table
-	inDegree := make(map[string]int)
-
-	// Calculate in-degrees from dependencies present in this source. A parsed
-	// source may reference a table supplied by another source and finalized only
-	// after composition; that is an unresolved external edge, not a cycle.
+func internalTableDependencies(tableMap map[string]Table, dependencies map[string][]string) map[string][]string {
+	adjacency := make(map[string][]string, len(tableMap))
 	for tableName := range tableMap {
-		inDegree[tableName] = 0
-		for _, dependency := range r.Dependencies[tableName] {
+		internal := make(map[string]struct{})
+		for _, dependency := range dependencies[tableName] {
 			if _, exists := tableMap[dependency]; exists {
-				inDegree[tableName]++
+				internal[dependency] = struct{}{}
+			}
+		}
+		adjacency[tableName] = slices.Sorted(maps.Keys(internal))
+	}
+	return adjacency
+}
+
+func stronglyConnectedTableComponents(adjacency map[string][]string) [][]string {
+	visited := make(map[string]bool, len(adjacency))
+	postorder := make([]string, 0, len(adjacency))
+	for _, tableName := range slices.Sorted(maps.Keys(adjacency)) {
+		appendTableDependencyPostorder(tableName, adjacency, visited, &postorder)
+	}
+
+	clear(visited)
+	reversed := reverseTableDependencies(adjacency)
+	components := make([][]string, 0, len(adjacency))
+	for _, tableName := range slices.Backward(postorder) {
+		component := collectTableDependencyComponent(tableName, reversed, visited)
+		if len(component) == 0 {
+			continue
+		}
+		sort.Strings(component)
+		components = append(components, component)
+	}
+	return components
+}
+
+func appendTableDependencyPostorder(tableName string, adjacency map[string][]string, visited map[string]bool, postorder *[]string) {
+	if visited[tableName] {
+		return
+	}
+	visited[tableName] = true
+	for _, dependency := range adjacency[tableName] {
+		appendTableDependencyPostorder(dependency, adjacency, visited, postorder)
+	}
+	*postorder = append(*postorder, tableName)
+}
+
+func reverseTableDependencies(adjacency map[string][]string) map[string][]string {
+	reversed := make(map[string][]string, len(adjacency))
+	for tableName := range adjacency {
+		reversed[tableName] = nil
+	}
+	for tableName, dependencies := range adjacency {
+		for _, dependency := range dependencies {
+			reversed[dependency] = append(reversed[dependency], tableName)
+		}
+	}
+	for tableName := range reversed {
+		sort.Strings(reversed[tableName])
+	}
+	return reversed
+}
+
+func collectTableDependencyComponent(tableName string, adjacency map[string][]string, visited map[string]bool) []string {
+	if visited[tableName] {
+		return nil
+	}
+	visited[tableName] = true
+	component := []string{tableName}
+	for _, dependency := range adjacency[tableName] {
+		component = append(component, collectTableDependencyComponent(dependency, adjacency, visited)...)
+	}
+	return component
+}
+
+func tableComponentEdges(
+	components [][]string,
+	adjacency map[string][]string,
+) (componentDependencies, componentDependents []map[int]struct{}) {
+	componentByTable := make(map[string]int, len(adjacency))
+	componentDependencies = make([]map[int]struct{}, len(components))
+	componentDependents = make([]map[int]struct{}, len(components))
+	for componentIndex, component := range components {
+		componentDependencies[componentIndex] = make(map[int]struct{})
+		componentDependents[componentIndex] = make(map[int]struct{})
+		for _, tableName := range component {
+			componentByTable[tableName] = componentIndex
+		}
+	}
+
+	for tableName, dependencies := range adjacency {
+		componentIndex := componentByTable[tableName]
+		for _, dependency := range dependencies {
+			dependencyComponent := componentByTable[dependency]
+			if componentIndex == dependencyComponent {
+				continue
+			}
+			componentDependencies[componentIndex][dependencyComponent] = struct{}{}
+			componentDependents[dependencyComponent][componentIndex] = struct{}{}
+		}
+	}
+	return componentDependencies, componentDependents
+}
+
+func orderTableComponents(
+	tableMap map[string]Table,
+	components [][]string,
+	componentDependencies []map[int]struct{},
+	componentDependents []map[int]struct{},
+) []Table {
+	remainingDependencies := make([]int, len(components))
+	queue := make([]int, 0, len(components))
+	for componentIndex, dependencies := range componentDependencies {
+		remainingDependencies[componentIndex] = len(dependencies)
+		if len(dependencies) == 0 {
+			queue = insertSortedTableComponent(queue, componentIndex, components)
+		}
+	}
+
+	ordered := make([]Table, 0, len(tableMap))
+	for len(queue) > 0 {
+		componentIndex := queue[0]
+		queue = queue[1:]
+		for _, tableName := range components[componentIndex] {
+			ordered = append(ordered, tableMap[tableName])
+		}
+		for dependentComponent := range componentDependents[componentIndex] {
+			remainingDependencies[dependentComponent]--
+			if remainingDependencies[dependentComponent] == 0 {
+				queue = insertSortedTableComponent(queue, dependentComponent, components)
 			}
 		}
 	}
+	return ordered
+}
 
-	// Find tables with no dependencies (in-degree 0)
-	var queue []string
-	for tableName, degree := range inDegree {
-		if degree == 0 {
-			queue = append(queue, tableName)
-		}
-	}
-	sort.Strings(queue)
-
-	// Process queue
-	sortTablesProcessQueue(&queue, &sorted, r.Dependencies, inDegree, tableMap)
-
-	// Check for circular dependencies
-	checkForCircularDependencies(r, &sorted)
-
-	// Update the tables slice with sorted order
-	r.Tables = sorted
+func insertSortedTableComponent(queue []int, componentIndex int, components [][]string) []int {
+	componentName := components[componentIndex][0]
+	position := sort.Search(len(queue), func(i int) bool {
+		return components[queue[i]][0] >= componentName
+	})
+	return slices.Insert(queue, position, componentIndex)
 }
 
 // buildDependencyGraph analyzes foreign key relationships to build a dependency graph.
@@ -177,7 +225,7 @@ func sortTablesByDependencies(r *Database) {
 // The resulting dependency graph is stored in the Dependencies field and used by
 // sortTablesByDependencies() to perform topological sorting.
 func buildDependencyGraph(r *Database) {
-	initializeDependencyMaps(r)
+	resetDependencyMaps(r)
 	analyzeFieldForeignKeys(r)
 	analyzeEmbeddedFieldRelations(r)
 	analyzeConstraintForeignKeys(r)
@@ -190,18 +238,11 @@ func buildDependencyGraph(r *Database) {
 // as Go annotations: deduplicated declarations, dependency maps, self-referencing
 // foreign keys, and dependency-ordered tables/functions.
 func Finalize(r *Database) {
-	if r.Dependencies == nil {
-		r.Dependencies = make(map[string][]string)
-	}
-	if r.FunctionDependencies == nil {
-		r.FunctionDependencies = make(map[string][]string)
-	}
-	if r.SelfReferencingForeignKeys == nil {
-		r.SelfReferencingForeignKeys = make(map[string][]SelfReferencingFK)
-	}
-
-	Deduplicate(r)
+	restoreCompositeHelperDefinitions(r)
+	r.Fields = processEmbeddedFields(r.EmbeddedFields, r.Fields)
 	normalizeTableScopedNames(r)
+	Deduplicate(r)
+	stashCompositeHelperDefinitions(r)
 	buildDependencyGraph(r)
 	sortTablesByDependencies(r)
 	sortFunctionsByDependencies(r)
@@ -408,16 +449,15 @@ func ResolveIndexTableNames(indexes []Index, tables []Table) []string {
 	return owners
 }
 
-// initializeDependencyMaps initializes the dependency tracking maps
-func initializeDependencyMaps(r *Database) {
-	// Initialize dependencies map for all tables
+// resetDependencyMaps discards derived state before rebuilding it from the
+// current schema declarations. Finalization is intentionally idempotent.
+func resetDependencyMaps(r *Database) {
+	r.Dependencies = make(map[string][]string, len(r.Tables))
+	r.FunctionDependencies = make(map[string][]string, len(r.Functions))
+	r.SelfReferencingForeignKeys = make(map[string][]SelfReferencingFK)
+
 	for _, table := range r.Tables {
 		r.Dependencies[table.QualifiedName()] = []string{}
-	}
-
-	// Initialize self-referencing foreign keys tracking
-	if r.SelfReferencingForeignKeys == nil {
-		r.SelfReferencingForeignKeys = make(map[string][]SelfReferencingFK)
 	}
 }
 
@@ -434,7 +474,7 @@ func analyzeFieldForeignKeys(r *Database) {
 			continue
 		}
 
-		processForeignKeyDependency(r, *table, refTable, SelfReferencingFK{
+		processForeignKeyDependency(r, *table, refTable, &SelfReferencingFK{
 			FieldName:      field.Name,
 			Foreign:        field.Foreign,
 			ForeignKeyName: field.ForeignKeyName,
@@ -457,7 +497,7 @@ func analyzeEmbeddedFieldRelations(r *Database) {
 			continue
 		}
 
-		processForeignKeyDependency(r, *table, refTable, SelfReferencingFK{
+		processForeignKeyDependency(r, *table, refTable, &SelfReferencingFK{
 			FieldName:      embedded.Field,
 			Foreign:        embedded.Ref,
 			ForeignKeyName: generateForeignKeyName(table.Name, embedded.Field),
@@ -476,21 +516,11 @@ func analyzeConstraintForeignKeys(r *Database) {
 		if table == nil {
 			continue
 		}
-		processForeignKeyDependency(r, *table, constraint.ForeignTable, SelfReferencingFK{
-			FieldName:      strings.Join(constraint.Columns, ","),
-			Foreign:        foreignKeyReferenceString(constraint.ForeignTable, constraint.ForeignColumnsOrDefault()),
-			ForeignKeyName: constraint.Name,
-			OnDelete:       constraint.OnDelete,
-			OnUpdate:       constraint.OnUpdate,
-		})
+		// Table-level constraints retain their structured local and referenced
+		// column lists. They must not be projected into SelfReferencingFK, whose
+		// field-level shape is intentionally single-column and lossy.
+		processForeignKeyDependency(r, *table, constraint.ForeignTable, nil)
 	}
-}
-
-func foreignKeyReferenceString(table string, columns []string) string {
-	if len(columns) == 0 {
-		return table
-	}
-	return table + "(" + strings.Join(columns, ",") + ")"
 }
 
 // findTableByStructName finds a table by its struct name
@@ -504,16 +534,29 @@ func findTableByStructName(tables []Table, structName string) *Table {
 }
 
 // processForeignKeyDependency processes a foreign key dependency, handling self-references appropriately
-func processForeignKeyDependency(r *Database, table Table, refTable string, selfRefFK SelfReferencingFK) {
+func processForeignKeyDependency(r *Database, table Table, refTable string, selfRefFK *SelfReferencingFK) {
 	tableName := table.QualifiedName()
 	refTable = resolveReferenceTableName(r.Tables, table, refTable)
 	if tableName == refTable {
-		// Track self-referencing foreign key for deferred constraint creation
-		r.SelfReferencingForeignKeys[tableName] = append(r.SelfReferencingForeignKeys[tableName], selfRefFK)
+		if selfRefFK != nil && !containsSelfReferencingForeignKey(r.SelfReferencingForeignKeys[tableName], *selfRefFK) {
+			r.SelfReferencingForeignKeys[tableName] = append(r.SelfReferencingForeignKeys[tableName], *selfRefFK)
+		}
 	} else if !slices.Contains(r.Dependencies[tableName], refTable) {
 		// Add dependency: table depends on refTable (only for non-self-referencing FKs)
 		r.Dependencies[tableName] = append(r.Dependencies[tableName], refTable)
 	}
+}
+
+func containsSelfReferencingForeignKey(foreignKeys []SelfReferencingFK, candidate SelfReferencingFK) bool {
+	for _, foreignKey := range foreignKeys {
+		if foreignKey.FieldName == candidate.FieldName &&
+			foreignKey.Foreign == candidate.Foreign &&
+			foreignKey.OnDelete == candidate.OnDelete &&
+			foreignKey.OnUpdate == candidate.OnUpdate {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveReferenceTableName(tables []Table, current Table, refTable string) string {
@@ -570,19 +613,26 @@ func generateForeignKeyName(tableName, fieldName string) string {
 // Returns:
 //   - Combined slice of Field containing both original fields and generated fields from embedded processing
 func processEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Field) []Field {
+	sourceFields := make([]Field, 0, len(originalFields))
+	for _, field := range originalFields {
+		if !field.GeneratedFromEmbedded {
+			sourceFields = append(sourceFields, field)
+		}
+	}
+
 	// Estimate capacity: original fields + estimated embedded fields
 	// Each embedded field could potentially generate multiple fields
 	estimatedEmbeddedFields := len(embeddedFields) * 2 // Conservative estimate
-	estimatedCapacity := len(originalFields) + estimatedEmbeddedFields
+	estimatedCapacity := len(sourceFields) + estimatedEmbeddedFields
 
 	// Pre-allocate slice with estimated capacity for better performance
-	allFields := make([]Field, len(originalFields), estimatedCapacity)
-	copy(allFields, originalFields)
+	allFields := make([]Field, len(sourceFields), estimatedCapacity)
+	copy(allFields, sourceFields)
 
 	// Process embedded fields for each struct
 	structNames := UniqueStructNames(embeddedFields)
 	for _, structName := range structNames {
-		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, originalFields, structName)
+		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, sourceFields, structName)
 		allFields = append(allFields, generatedFields...)
 	}
 
@@ -649,14 +699,34 @@ func processEmbeddedFieldsForStruct(embeddedFields []EmbeddedField, allFields []
 // This function now supports recursive embedded field processing to handle nested embedded structs.
 func processEmbeddedInlineMode(generatedFields []Field, embedded EmbeddedField, allFields []Field, allEmbeddedFields []EmbeddedField, structName string) []Field {
 	// INLINE MODE: Expand embedded struct fields as individual table columns
-	generatedFields = processEmbeddedInlineModeRecursive(generatedFields, embedded, allFields, allEmbeddedFields, structName)
+	generatedFields = processEmbeddedInlineModeRecursive(
+		generatedFields,
+		embedded,
+		allFields,
+		allEmbeddedFields,
+		structName,
+		make(map[string]bool),
+	)
 
 	return generatedFields
 }
 
 // processEmbeddedInlineModeRecursive recursively processes embedded fields in inline mode.
 // This handles nested embedded structs by recursively expanding embedded fields within embedded types.
-func processEmbeddedInlineModeRecursive(generatedFields []Field, embedded EmbeddedField, allFields []Field, allEmbeddedFields []EmbeddedField, structName string) []Field {
+func processEmbeddedInlineModeRecursive(
+	generatedFields []Field,
+	embedded EmbeddedField,
+	allFields []Field,
+	allEmbeddedFields []EmbeddedField,
+	structName string,
+	activeTypes map[string]bool,
+) []Field {
+	if embedded.EmbeddedTypeName == "" || activeTypes[embedded.EmbeddedTypeName] {
+		return generatedFields
+	}
+	activeTypes[embedded.EmbeddedTypeName] = true
+	defer delete(activeTypes, embedded.EmbeddedTypeName)
+
 	// Step 1: Add direct fields from the embedded type
 	for _, field := range allFields {
 		if field.StructName != embedded.EmbeddedTypeName {
@@ -666,6 +736,7 @@ func processEmbeddedInlineModeRecursive(generatedFields []Field, embedded Embedd
 		newField := field
 		newField.StructName = structName
 		newField.Overrides = mergePlatformOverrides(field.Overrides, embedded.Overrides)
+		newField.GeneratedFromEmbedded = true
 
 		// Apply prefix to column name if specified
 		if embedded.Prefix != "" {
@@ -681,27 +752,30 @@ func processEmbeddedInlineModeRecursive(generatedFields []Field, embedded Embedd
 			continue
 		}
 
-		// Only process inline mode embedded fields recursively
-		if nestedEmbedded.Mode == "inline" {
-			// Create a new embedded field with the target struct name and combined prefix
-			recursiveEmbedded := nestedEmbedded
-			recursiveEmbedded.StructName = structName
-			recursiveEmbedded.Overrides = mergePlatformOverrides(
-				nestedEmbedded.Overrides,
-				embedded.Overrides,
+		recursiveEmbedded := nestedEmbedded
+		recursiveEmbedded.StructName = structName
+		recursiveEmbedded.Overrides = mergePlatformOverrides(
+			nestedEmbedded.Overrides,
+			embedded.Overrides,
+		)
+		recursiveEmbedded.Prefix = embedded.Prefix + nestedEmbedded.Prefix
+
+		switch nestedEmbedded.Mode {
+		case "json":
+			generatedFields = processEmbeddedJSONMode(generatedFields, recursiveEmbedded, structName)
+		case "relation":
+			generatedFields = processEmbeddedRelationMode(generatedFields, recursiveEmbedded, structName)
+		case "skip":
+			continue
+		default:
+			generatedFields = processEmbeddedInlineModeRecursive(
+				generatedFields,
+				recursiveEmbedded,
+				allFields,
+				allEmbeddedFields,
+				structName,
+				activeTypes,
 			)
-
-			// Combine prefixes: if the parent has a prefix, prepend it to the nested prefix
-			if embedded.Prefix != "" {
-				if recursiveEmbedded.Prefix != "" {
-					recursiveEmbedded.Prefix = embedded.Prefix + recursiveEmbedded.Prefix
-				} else {
-					recursiveEmbedded.Prefix = embedded.Prefix
-				}
-			}
-
-			// Recursively process the nested embedded field
-			generatedFields = processEmbeddedInlineModeRecursive(generatedFields, recursiveEmbedded, allFields, allEmbeddedFields, structName)
 		}
 	}
 
@@ -716,6 +790,7 @@ func processEmbeddedJSONMode(generatedFields []Field, embedded EmbeddedField, st
 		// Auto-generate column name: "Meta" -> "meta_data"
 		columnName = strings.ToLower(embedded.EmbeddedTypeName) + "_data"
 	}
+	columnName = embedded.Prefix + columnName
 
 	columnType := embedded.Type
 	if columnType == "" {
@@ -731,6 +806,8 @@ func processEmbeddedJSONMode(generatedFields []Field, embedded EmbeddedField, st
 		Nullable:   embedded.Nullable,
 		Comment:    embedded.Comment,
 		Overrides:  mergePlatformOverrides(nil, embedded.Overrides),
+
+		GeneratedFromEmbedded: true,
 	})
 
 	return generatedFields
@@ -752,8 +829,10 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 		refType = "VARCHAR(36)" // Standard UUID length
 	}
 
+	fieldName := embedded.Prefix + embedded.Field
+
 	// Generate automatic foreign key constraint name following convention
-	foreignKeyName := generateForeignKeyName(structName, embedded.Field)
+	foreignKeyName := generateForeignKeyName(structName, fieldName)
 
 	// Create platform-specific overrides for MySQL/MariaDB compatibility
 	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
@@ -768,7 +847,7 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 	generatedFields = append(generatedFields, Field{
 		StructName:     structName,
 		FieldName:      embedded.EmbeddedTypeName,
-		Name:           embedded.Field,    // e.g., "user_id"
+		Name:           fieldName,         // e.g., "user_id"
 		Type:           refType,           // INTEGER or VARCHAR(36)
 		Nullable:       embedded.Nullable, // Can the relationship be optional?
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
@@ -777,6 +856,8 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 		OnUpdate:       embedded.OnUpdate,
 		Comment:        embedded.Comment, // Documentation for the relationship
 		Overrides:      overrides,        // Platform-specific type overrides
+
+		GeneratedFromEmbedded: true,
 	})
 
 	return generatedFields
@@ -1247,7 +1328,34 @@ func constraintDedupKey(c Constraint) string {
 	if strings.TrimSpace(c.Table) != "" {
 		scope = strings.TrimSpace(c.Table)
 	}
-	return scope + "." + c.Name
+	return constraintIdentity(scope, c)
+}
+
+func constraintIdentity(scope string, constraint Constraint) string {
+	if name := strings.TrimSpace(constraint.Name); name != "" {
+		return scope + "\x00named\x00" + name
+	}
+
+	nullsDistinct := "unset"
+	if constraint.NullsDistinct != nil {
+		nullsDistinct = strconv.FormatBool(*constraint.NullsDistinct)
+	}
+	return strings.Join([]string{
+		scope,
+		"unnamed",
+		strings.ToUpper(strings.TrimSpace(constraint.Type)),
+		strings.Join(constraint.Columns, "\x01"),
+		strings.Join(constraint.IncludeColumns, "\x01"),
+		nullsDistinct,
+		constraint.UsingMethod,
+		constraint.ExcludeElements,
+		constraint.WhereCondition,
+		constraint.CheckExpression,
+		constraint.ForeignTable,
+		strings.Join(constraint.ForeignColumnsOrDefault(), "\x01"),
+		constraint.OnDelete,
+		constraint.OnUpdate,
+	}, "\x00")
 }
 
 // deduplicateGrants dedups by role + privileges + target (table, schema, or

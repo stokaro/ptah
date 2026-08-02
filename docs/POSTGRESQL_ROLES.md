@@ -115,15 +115,15 @@ Ptah generates appropriate PostgreSQL SQL statements for role management:
 ### CREATE ROLE Statements
 
 ```sql
--- Application user role
 CREATE ROLE app_user WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;
-
--- Administrator role with full privileges
-CREATE ROLE admin_user WITH LOGIN SUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;
-
--- Service user for automated processes
-CREATE ROLE service_user WITH LOGIN NOSUPERUSER CREATEDB NOCREATEROLE INHERIT NOREPLICATION;
+COMMENT ON ROLE app_user IS 'Application user role';
 ```
+
+PostgreSQL has no `CREATE ROLE IF NOT EXISTS`. Ptah deliberately fails when a
+role already exists instead of suppressing the collision and applying later
+comments or grants to a role whose security attributes Ptah did not create.
+Apply an inspected cluster-role dump to a clean target, or reconcile existing
+roles explicitly before applying it.
 
 ### Role Modifications
 

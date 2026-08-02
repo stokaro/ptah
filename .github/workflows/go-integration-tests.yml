@@ -227,11 +227,11 @@ jobs:
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_OCI_TEST_REGISTRY: "127.0.0.1:5000"
         run: |
-          go test -v ./integration -tags=integration -timeout 15m
-          go test -v ./integration/gonative -tags=integration -timeout 15m
-          go test -v ./dbschema -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)' -timeout 3m
-          go test -v ./migration/migrator -run 'TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestAtlasRevisionMetadata_SQLServerIntegration|TestAtlasTxtarChecks_SQLServer(SequenceDoesNotAdvance)?Integration|TestDryRunRevisionState_SQLServerIntegration' -timeout 3m
-          go test -v ./migration/generator -run 'TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive' -timeout 5m
+          go test -v -count=1 ./integration -tags=integration -timeout 15m
+          go test -v -count=1 ./integration/gonative -tags=integration -timeout 15m
+          go test -v -count=1 ./dbschema -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)' -timeout 3m
+          go test -v -count=1 ./migration/migrator -run 'TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestAtlasRevisionMetadata_SQLServerIntegration|TestAtlasTxtarChecks_SQLServer(SequenceDoesNotAdvance)?Integration|TestDryRunRevisionState_SQLServerIntegration' -timeout 3m
+          go test -v -count=1 ./migration/generator -run 'TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive' -timeout 5m
 
       - name: Run database-realm cleanup and replay tests
         env:
@@ -284,7 +284,7 @@ jobs:
           COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
           YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
         run: |
-          go test -v ./migration/migrator -run 'TestMigrateUp_PostgresLockTimeoutIntegration|TestOutOfOrderMigrationsPostgresIntegration|TestMigrationAdvisoryLock_PostgresConcurrentRunners|TestMigrationAdvisoryLock_PostgresTimeoutIntegration|TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration|TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration|TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry|TestDirtyMigrationState_MySQLRepairReachesHead|TestDirtyMigrationState_MariaDBRepairReachesHead|TestMigrationChecksumMismatch_PostgresIntegration|TestBaseline_|TestAtlasRevisionMetadata_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouseRejectsSet)Integration|TestAtlasDotMetadata_(Postgres|MySQL)Integration|TestAtlasTxtarChecks_((Postgres|MySQL|MariaDB)(SessionLockReleased|CommentSemantics|EscapeString|ExecutableCommentEscape|ShortNumericPrefixRejectsNonSelect)?|ClickHouse|CockroachDB|YugabyteDB)Integration|TestAtlasRevisionTable_(Postgres|CockroachDB|YugabyteDB)UsesTimestamptzIntegration|TestAtlasSetSerializable_PostgresConcurrentInsertIntegration|TestDryRunRevisionState_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouse)Integration' -timeout 3m
+          go test -v -count=1 ./migration/migrator -run 'TestMigrateUp_PostgresLockTimeoutIntegration|TestOutOfOrderMigrationsPostgresIntegration|TestMigrationAdvisoryLock_PostgresConcurrentRunners|TestMigrationAdvisoryLock_PostgresTimeoutIntegration|TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration|TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration|TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry|TestDirtyMigrationState_MySQLRepairReachesHead|TestDirtyMigrationState_MariaDBRepairReachesHead|TestMigrationChecksumMismatch_PostgresIntegration|TestBaseline_|TestAtlasRevisionMetadata_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouseRejectsSet)Integration|TestAtlasDotMetadata_(Postgres|MySQL)Integration|TestAtlasTxtarChecks_((Postgres|MySQL|MariaDB)(SessionLockReleased|CommentSemantics|EscapeString|ExecutableCommentEscape|ShortNumericPrefixRejectsNonSelect)?|ClickHouse|CockroachDB|YugabyteDB)Integration|TestAtlasRevisionTable_(Postgres|CockroachDB|YugabyteDB)UsesTimestamptzIntegration|TestAtlasSetSerializable_PostgresConcurrentInsertIntegration|TestDryRunRevisionState_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouse)Integration' -timeout 3m
 
       - name: Run no-transaction and shadow generator integration tests
         env:
@@ -308,7 +308,7 @@ jobs:
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
-          go test -v ./cmd/migratebaseline -run 'TestVerifyBaselineShadowPostgres|TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL' -timeout 3m
+          go test -v -count=1 ./cmd/migratebaseline -run 'TestVerifyBaselineShadowPostgres|TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL' -timeout 3m
 
       - name: Run all databases comprehensive test
         env:
@@ -335,7 +335,7 @@ jobs:
         env:
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
-          ./integration-test --databases=sqlserver --scenarios=apply_incremental_migrations,rollback_migrations,upgrade_to_specific_version,check_current_version,read_actual_db_schema,dry_run_support,operation_planning,failure_diagnostics,idempotency_reapply,idempotency_up_to_date,parallel_migrate_smoke,cleanup_support,dynamic_sqlserver_identity_schema_bracket_reserved_words --report=stdout,txt,json,html --verbose --output=./reports
+          ./integration-test --databases=sqlserver --scenarios=apply_incremental_migrations,rollback_migrations,upgrade_to_specific_version,check_current_version,read_actual_db_schema,dry_run_support,operation_planning,failure_diagnostics,idempotency_reapply,idempotency_up_to_date,parallel_migrate_smoke,cleanup_support,dynamic_circular_dependencies,dynamic_sqlserver_identity_schema_bracket_reserved_words --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Upload integration test reports
         uses: actions/upload-artifact@v7
@@ -361,4 +361,4 @@ jobs:
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
-          go test -v -race ./integration -tags=integration -timeout 30m
+          go test -v -race -count=1 ./integration -tags=integration -timeout 30m

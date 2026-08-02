@@ -10,7 +10,7 @@ representation:
 
 | Command | Output | Reach for it when |
 | --- | --- | --- |
-| `ptah db read` | SQL `CREATE` statements with a status banner | You want a readable snapshot in the terminal |
+| `ptah db read` | Executable SQL on stdout; connection status on stderr | You want a SQL snapshot you can review or redirect |
 | `ptah introspect` | Annotated Go model files | You want the live schema to become your desired schema |
 | `ptah schema inspect` | HCL, SQL, or JSON without banners | You want machine-readable output for files and scripts |
 
@@ -32,13 +32,9 @@ SQL:
 ptah db read --db-url "sqlite://$PWD/app.db"
 ```
 
-Expected output includes:
+Standard output contains SQL only:
 
-```text
-=== DATABASE SCHEMA ===
-
-Connected to sqlite database successfully!
-
+```sql
 CREATE TABLE "users" (
   "id" INTEGER PRIMARY KEY AUTOINCREMENT,
   "email" TEXT NOT NULL UNIQUE,
@@ -46,9 +42,22 @@ CREATE TABLE "users" (
 );
 ```
 
+Connection progress and diagnostics go to standard error. You can redirect the
+SQL without filtering the command output:
+
+```bash
+ptah db read --db-url "sqlite://$PWD/app.db" >schema.sql
+sqlite3 restored.db <schema.sql
+```
+
 On PostgreSQL-family databases, `--schemas` accepts a comma-separated list of
 database schemas to read; when empty, Ptah reads the connection's default
-schema.
+schema. Cluster-role creation statements in PostgreSQL output are intended for
+a clean target. If a role already exists, applying the SQL
+fails before its description or grants are changed; this prevents privileges
+from being attached to a role with unverified security attributes. Role
+descriptions are restored with `COMMENT ON ROLE`; schema and table grants are
+still emitted after successful role creation.
 
 ## Turn the schema into Go models
 
@@ -154,8 +163,8 @@ custom Go templates, Mermaid output, and template-driven split exports; see
 ## Failure modes
 
 An unreachable database fails with exit code `2` on every native command. The
-`ptah db read` output ends with a connection checklist and the underlying
-error:
+The `ptah db read` standard error stream ends with a connection checklist and
+the underlying error:
 
 ```text
 Make sure:

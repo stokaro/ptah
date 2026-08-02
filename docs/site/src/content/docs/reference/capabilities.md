@@ -24,6 +24,42 @@ Capabilities answer questions that a dialect name alone cannot answer:
   `create_index_concurrently`
 - Does the target support roles, RLS, XML, or advisory locks?
   `role_management`, `row_level_security`, `xml_type`, `advisory_locks`
+- Does the target support foreign keys, and how is the referenced key backed?
+  `foreign_keys`, `foreign_keys_require_unique_reference`,
+  `foreign_keys_require_indexed_reference`,
+  `foreign_keys_create_backing_index`
+
+Schema rendering validates foreign keys before emitting any SQL. A malformed
+constraint, incompatible column types, an unsupported referential action, or a
+target without `foreign_keys` fails the complete render instead of producing
+partial DDL or a comment that silently omits referential integrity.
+
+Exactly one referenced-key policy is enabled for every foreign-key-capable
+preset. PostgreSQL, CockroachDB, YugabyteDB, SQLite, SQL Server, and MySQL 8.4+
+require a declared candidate key. MySQL before 8.4 and MariaDB accept the
+referenced columns as a full leftmost index prefix. Spanner creates and manages
+the backing index. A root MySQL 8.4+ connection keeps the conservative
+unique-key policy because a pooled session probe cannot describe a later
+execution session. `DatabaseConnection.WithSession` refines the policy from
+`restrict_fk_on_non_standard_key` on the pinned physical connection, so the
+callback plans and executes with one consistent session policy.
+
+The referenced-key policy is only one part of validation. MySQL and MariaDB
+require InnoDB tables in Ptah's portable schema path. Their nonunique-key
+policy accepts a complete leftmost BTREE prefix, not FULLTEXT, SPATIAL, HASH,
+parser-backed, expression, or prefix indexes. The same path rejects generated
+FK columns on MariaDB, virtual generated FK columns on MySQL, invalid actions
+on MySQL stored generated columns, and mismatched signedness, character sets,
+or collations. SQLite accepts standalone candidate keys only when their
+collation semantics are represented in the schema IR; otherwise declare the
+primary or unique key inline.
+
+Ptah emits `ENGINE=InnoDB` for participating tables when the schema leaves the
+engine blank, so a session default cannot silently disable foreign keys.
+`SET NULL` requires nullable local columns. Explicit foreign-key names must fit
+the target identifier limit: 63 bytes for the PostgreSQL family, 64 characters
+for the MySQL family, and 128 characters for SQL Server and Spanner. Generated
+names are shortened deterministically before collision checks.
 
 ## Declarative database testing
 

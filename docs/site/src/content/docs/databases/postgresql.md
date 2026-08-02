@@ -56,7 +56,10 @@ privileges next to your entities. Ptah emits `CREATE ROLE` for new roles,
 `ALTER ROLE` for attribute changes, and `GRANT`/`REVOKE` as declared grants
 change. Grants target a table, a schema, or a sequence, and table grants are
 compared per individual privilege, so a `privilege="SELECT,INSERT"` list
-round-trips cleanly through introspection.
+round-trips cleanly through introspection. New-role SQL fails closed when the
+role already exists, so later comments and grants cannot be applied to a role
+with unverified security attributes. Role descriptions are applied with
+`COMMENT ON ROLE` after successful creation.
 
 Ordering is dependency-aware: roles are created before the functions and
 policies that reference them, and grants are emitted after the roles and

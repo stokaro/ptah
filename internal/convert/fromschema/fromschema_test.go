@@ -1,7 +1,9 @@
 package fromschema_test
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	qt "github.com/frankban/quicktest"
 
@@ -160,6 +162,45 @@ func foreignKeyAlterStatementIndexByName(statements *ast.StatementList, constrai
 		}
 	}
 	return -1
+}
+
+func foreignKeyConstraintNames(statements *ast.StatementList) []string {
+	var names []string
+	for _, statement := range statements.Statements {
+		alter, ok := statement.(*ast.AlterTableNode)
+		if !ok {
+			continue
+		}
+		for _, operation := range alter.Operations {
+			add, ok := operation.(*ast.AddConstraintOperation)
+			if ok && add.Constraint.Type == ast.ForeignKeyConstraint {
+				names = append(names, add.Constraint.Name)
+			}
+		}
+	}
+	return names
+}
+
+func databaseWithGeneratedForeignKeys(tableName string, fieldNames ...string) goschema.Database {
+	fields := []goschema.Field{
+		{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+		{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+	}
+	for _, fieldName := range fieldNames {
+		fields = append(fields, goschema.Field{
+			StructName: "Child",
+			Name:       fieldName,
+			Type:       "INTEGER",
+			Foreign:    "parents(id)",
+		})
+	}
+	return goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: tableName},
+		},
+		Fields: fields,
+	}
 }
 
 func TestFromField_BasicProperties(t *testing.T) {
@@ -1081,6 +1122,328 @@ func TestFromDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
 	c.Assert(function < uniqueIndex, qt.IsTrue)
 	c.Assert(uniqueIndex < foreignKey, qt.IsTrue)
 	c.Assert(foreignKey < nonUniqueIndex, qt.IsTrue)
+}
+
+func TestFromDatabase_DefaultForeignKeyNamesDoNotCollideAcrossSources(t *testing.T) {
+	c := qt.New(t)
+
+	database := goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+		},
+		Constraints: []goschema.Constraint{{
+			StructName:    "Child",
+			Type:          "FOREIGN KEY",
+			Columns:       []string{"parent_id"},
+			ForeignTable:  "parents",
+			ForeignColumn: "id",
+		}},
+	}
+
+	statements := fromschema.FromDatabase(database, "postgres")
+	fieldAlter := statements.Statements[2].(*ast.AlterTableNode)
+	fieldOperation := fieldAlter.Operations[0].(*ast.AddConstraintOperation)
+	tableAlter := statements.Statements[3].(*ast.AlterTableNode)
+	tableOperation := tableAlter.Operations[0].(*ast.AddConstraintOperation)
+
+	c.Assert(fieldOperation.Constraint.Name, qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+	c.Assert(tableOperation.Constraint.Name, qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+	c.Assert(fieldOperation.Constraint.Name, qt.Not(qt.Equals), tableOperation.Constraint.Name)
+}
+
+func TestFromDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) {
+	c := qt.New(t)
+
+	database := goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+		},
+		Constraints: []goschema.Constraint{{
+			StructName:    "Child",
+			Name:          "fk_children_parent_id",
+			Type:          "FOREIGN KEY",
+			Columns:       []string{"parent_id"},
+			ForeignTable:  "parents",
+			ForeignColumn: "id",
+		}},
+	}
+
+	statements := fromschema.FromDatabase(database, "postgres")
+	fieldAlter := statements.Statements[2].(*ast.AlterTableNode)
+	fieldOperation := fieldAlter.Operations[0].(*ast.AddConstraintOperation)
+	tableAlter := statements.Statements[3].(*ast.AlterTableNode)
+	tableOperation := tableAlter.Operations[0].(*ast.AddConstraintOperation)
+
+	c.Assert(fieldOperation.Constraint.Name, qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+	c.Assert(tableOperation.Constraint.Name, qt.Equals, "fk_children_parent_id")
+}
+
+func TestFromDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAutomaticName(t *testing.T) {
+	c := qt.New(t)
+
+	database := goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+			{StructName: "Audit", Name: "audit_entries"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+			{StructName: "Audit", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Audit", Name: "parent_id", Type: "INTEGER"},
+		},
+		Constraints: []goschema.Constraint{{
+			StructName:    "Audit",
+			Name:          "FK_CHILDREN_PARENT_ID",
+			Type:          "FOREIGN KEY",
+			Columns:       []string{"parent_id"},
+			ForeignTable:  "parents",
+			ForeignColumn: "id",
+		}},
+	}
+
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "MySQL", dialect: platform.MySQL},
+		{name: "MariaDB", dialect: platform.MariaDB},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+
+			c.Assert(names, qt.HasLen, 2)
+			c.Assert(names[0], qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+			c.Assert(names[1], qt.Equals, "FK_CHILDREN_PARENT_ID")
+		})
+	}
+}
+
+func TestFromDatabase_GeneratedForeignKeyNamesRespectPostgreSQLByteLimit(t *testing.T) {
+	c := qt.New(t)
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("shared_table_prefix_", 4),
+		strings.Repeat("shared_column_prefix_", 4)+"alpha",
+		strings.Repeat("shared_column_prefix_", 4)+"beta",
+	)
+
+	names := foreignKeyConstraintNames(fromschema.FromDatabase(database, platform.Postgres))
+
+	c.Assert(names, qt.HasLen, 2)
+	c.Assert([]byte(names[0]), qt.HasLen, 63)
+	c.Assert([]byte(names[1]), qt.HasLen, 63)
+	c.Assert(names[0], qt.Matches, `.*_[0-9a-f]{8}`)
+	c.Assert(names[1], qt.Matches, `.*_[0-9a-f]{8}`)
+	c.Assert(names[0], qt.Not(qt.Equals), names[1])
+}
+
+func TestFromDatabase_GeneratedForeignKeyNamesPreservePostgreSQLUTF8(t *testing.T) {
+	c := qt.New(t)
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("界", 30),
+		strings.Repeat("列", 20),
+	)
+
+	names := foreignKeyConstraintNames(fromschema.FromDatabase(database, platform.Postgres))
+
+	c.Assert(names, qt.HasLen, 1)
+	c.Assert(utf8.ValidString(names[0]), qt.IsTrue)
+	c.Assert([]byte(names[0]), qt.HasLen, 63)
+	c.Assert(names[0], qt.Matches, `.*_[0-9a-f]{8}`)
+}
+
+func TestFromDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimit(t *testing.T) {
+	c := qt.New(t)
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("資料", 40),
+		strings.Repeat("欄位", 20),
+	)
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "MySQL", dialect: platform.MySQL},
+		{name: "MariaDB", dialect: platform.MariaDB},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+
+			c.Assert(names, qt.HasLen, 1)
+			c.Assert(utf8.RuneCountInString(names[0]), qt.Equals, 64)
+			c.Assert(len(names[0]) > 64, qt.IsTrue)
+			c.Assert(names[0], qt.Matches, `.*_[0-9a-f]{8}`)
+		})
+	}
+}
+
+func TestFromDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacterLimit(t *testing.T) {
+	c := qt.New(t)
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("資料", 70),
+		strings.Repeat("欄位", 40),
+	)
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "SQL Server", dialect: platform.SQLServer},
+		{name: "Spanner", dialect: platform.Spanner},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+
+			c.Assert(names, qt.HasLen, 1)
+			c.Assert(utf8.RuneCountInString(names[0]), qt.Equals, 128)
+			c.Assert(len(names[0]) > 128, qt.IsTrue)
+			c.Assert(names[0], qt.Matches, `.*_[0-9a-f]{8}`)
+		})
+	}
+}
+
+func TestFromDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name           string
+		dialect        string
+		explicitSchema string
+	}{
+		{name: "SQL Server default dbo", dialect: platform.SQLServer, explicitSchema: "dbo"},
+		{name: "Spanner default public", dialect: platform.Spanner, explicitSchema: "public"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			database := goschema.Database{
+				Tables: []goschema.Table{
+					{StructName: "Parent", Name: "parents"},
+					{StructName: "Child", Name: "children"},
+					{StructName: "Audit", Schema: test.explicitSchema, Name: "audit_entries"},
+				},
+				Fields: []goschema.Field{
+					{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+					{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+					{
+						StructName:     "Audit",
+						Name:           "parent_id",
+						Type:           "INTEGER",
+						Foreign:        "parents(id)",
+						ForeignKeyName: "FK_CHILDREN_PARENT_ID",
+					},
+				},
+			}
+
+			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+
+			c.Assert(names, qt.HasLen, 2)
+			c.Assert(names[0], qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+			c.Assert(names[1], qt.Equals, "FK_CHILDREN_PARENT_ID")
+		})
+	}
+}
+
+func TestFromDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "SQL Server", dialect: platform.SQLServer},
+		{name: "Spanner", dialect: platform.Spanner},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			database := goschema.Database{
+				Tables: []goschema.Table{
+					{StructName: "Parent", Name: "parents"},
+					{StructName: "TenantChild", Schema: "tenant", Name: "children"},
+					{StructName: "ArchiveChild", Schema: "archive", Name: "children"},
+				},
+				Fields: []goschema.Field{
+					{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+					{StructName: "TenantChild", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+					{StructName: "ArchiveChild", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+				},
+			}
+
+			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+
+			c.Assert(names, qt.DeepEquals, []string{"fk_children_parent_id", "fk_children_parent_id"})
+		})
+	}
+}
+
+func TestAssignDefaultForeignKeyNames_IsIdempotentAndCloneOnly(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Location", Name: "locations"},
+			{StructName: "Area", Name: "areas"},
+		},
+		Fields: []goschema.Field{{
+			StructName:     "Ownable",
+			Name:           "tenant_id",
+			Type:           "INTEGER",
+			Foreign:        "tenants(id)",
+			ForeignKeyName: "fk_entity_tenant",
+		}},
+		EmbeddedFields: []goschema.EmbeddedField{
+			{StructName: "Location", Mode: "inline", EmbeddedTypeName: "Ownable"},
+			{StructName: "Area", Mode: "inline", EmbeddedTypeName: "Ownable"},
+		},
+	}
+
+	first := fromschema.AssignDefaultForeignKeyNames(database, platform.MySQL)
+	second := fromschema.AssignDefaultForeignKeyNames(first, platform.MySQL)
+
+	c.Assert(second, qt.DeepEquals, first)
+	c.Assert(database.Fields, qt.DeepEquals, []goschema.Field{{
+		StructName:     "Ownable",
+		Name:           "tenant_id",
+		Type:           "INTEGER",
+		Foreign:        "tenants(id)",
+		ForeignKeyName: "fk_entity_tenant",
+	}})
+	c.Assert(database.EmbeddedFields, qt.HasLen, 2)
+}
+
+func TestFromDatabase_GeneratedForeignKeyNamesAreDeterministic(t *testing.T) {
+	c := qt.New(t)
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("deterministic_table_", 4),
+		strings.Repeat("deterministic_column_", 4)+"alpha",
+		strings.Repeat("deterministic_column_", 4)+"beta",
+	)
+
+	first := foreignKeyConstraintNames(fromschema.FromDatabase(database, platform.Postgres))
+	second := foreignKeyConstraintNames(fromschema.FromDatabase(database, platform.Postgres))
+
+	c.Assert(first, qt.HasLen, 2)
+	c.Assert(second, qt.DeepEquals, first)
+	c.Assert(first, qt.DeepEquals, []string{
+		"fk_deterministic_table_deterministic_table_determinist_89ec4fc1",
+		"fk_deterministic_table_deterministic_table_determinist_cf1cecb2",
+	})
 }
 
 func TestFromDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
@@ -2372,6 +2735,56 @@ func TestFromDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessedFie
 	table := tableStatementByName(statements, "users")
 	c.Assert(table, qt.IsNotNil)
 	c.Assert(countColumns(table, "metadata"), qt.Equals, 1)
+}
+
+func TestProcessEmbeddedFields_PropagatesNestedPlatformOverrides(t *testing.T) {
+	c := qt.New(t)
+	fields := []goschema.Field{{
+		StructName: "Ownership",
+		Name:       "label",
+		Type:       "TEXT",
+		Overrides: map[string]map[string]string{
+			"postgres": {"type": "CITEXT"},
+		},
+	}}
+	embeddedFields := []goschema.EmbeddedField{
+		{
+			StructName:       "Order",
+			EmbeddedTypeName: "Ownership",
+			Mode:             "inline",
+			Prefix:           "owner_",
+			Overrides: map[string]map[string]string{
+				"mysql": {"type": "BIGINT"},
+			},
+		},
+		{
+			StructName:       "Ownership",
+			EmbeddedTypeName: "Tenant",
+			Mode:             "relation",
+			Field:            "tenant_id",
+			Ref:              "tenants(id)",
+			Overrides: map[string]map[string]string{
+				"postgres": {"type": "BIGINT"},
+			},
+		},
+	}
+
+	got := fromschema.ProcessEmbeddedFields(embeddedFields, fields)
+
+	c.Assert(got, qt.HasLen, 4)
+	c.Assert(got[1].Name, qt.Equals, "owner_label")
+	c.Assert(got[1].GeneratedFromEmbedded, qt.IsTrue)
+	c.Assert(got[1].Overrides, qt.DeepEquals, map[string]map[string]string{
+		"mysql":    {"type": "BIGINT"},
+		"postgres": {"type": "CITEXT"},
+	})
+	c.Assert(got[2].Name, qt.Equals, "owner_tenant_id")
+	c.Assert(got[2].GeneratedFromEmbedded, qt.IsTrue)
+	c.Assert(got[2].Overrides, qt.DeepEquals, map[string]map[string]string{
+		"mysql":    {"type": "BIGINT"},
+		"mariadb":  {"type": "INT"},
+		"postgres": {"type": "BIGINT"},
+	})
 }
 
 func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
