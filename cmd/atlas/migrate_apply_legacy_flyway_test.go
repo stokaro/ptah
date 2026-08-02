@@ -409,6 +409,66 @@ func TestCompatMigrateApply_FlywayOutOfOrderStillRefused(t *testing.T) {
 	})
 }
 
+// TestCompatMigrateApply_FlywayExemptionIsOneVersion checks the exemption
+// narrows to the baseline even when there IS a baseline to exempt.
+//
+// The subtests above cannot see a loosened exemption: with no baseline in the
+// directory the exempt list is empty and the filter returns early, so a mutation
+// inside it is unreachable. This shape has both — B0__base.sql, whose token "0"
+// squashes nothing, plus V2__b.sql inserted below the high-water mark. The
+// baseline must be exempted and the ordinary migration must not.
+func TestCompatMigrateApply_FlywayExemptionIsOneVersion(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dir := filepath.Join(root, "migrations")
+	dbPath := filepath.Join(root, "both.db")
+	writeAtlasApplyProjectMigration(c, dir, "V1__a.sql", "CREATE TABLE ea (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, dir, "V3__c.sql", "CREATE TABLE ec (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "flyway")
+	_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+	c.Assert(err, qt.IsNil)
+
+	writeAtlasApplyProjectMigration(c, dir, "B0__base.sql", "CREATE TABLE ebase (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, dir, "V2__b.sql", "CREATE TABLE eb (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "flyway")
+	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+
+	// V2 is still out of order; exempting it as well would apply it silently.
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations below current version")
+	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"ea", "ec"})
+}
+
+// TestCompatMigrateApply_GooseKeepsTheOutOfOrderGuard checks the exemption is
+// computed only for the Flyway layout.
+//
+// The separating input needs a collision, because a stray B-prefixed file in a
+// non-Flyway directory is otherwise inert: goose skips it and the exempt version
+// matches no goose migration. B0__base.sql converts to Atlas version 40804, so a
+// goose directory holding a real 40804_b.sql inserted below the high-water mark
+// is the shape where answering for every layout would exempt a migration that
+// has nothing to do with any baseline.
+func TestCompatMigrateApply_GooseKeepsTheOutOfOrderGuard(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dir := filepath.Join(root, "migrations")
+	dbPath := filepath.Join(root, "goose.db")
+	writeAtlasApplyProjectMigration(c, dir, "10000_a.sql", "-- +goose Up\nCREATE TABLE ga (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, dir, "50000_c.sql", "-- +goose Up\nCREATE TABLE gc (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "goose")
+	_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=goose")
+	c.Assert(err, qt.IsNil)
+
+	writeAtlasApplyProjectMigration(c, dir, "40804_b.sql", "-- +goose Up\nCREATE TABLE gb (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, dir, "B0__base.sql", "CREATE TABLE gbase (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "goose")
+	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=goose")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations below current version")
+	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"ga", "gc"})
+}
+
 // TestCompatMigrateApply_FlywayBaselineBelowHighWaterMark_KnownDivergence pins
 // the two shapes where Ptah is LOUDER than Atlas CE, deliberately.
 //
