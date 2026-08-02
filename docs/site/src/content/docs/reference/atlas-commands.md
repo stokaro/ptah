@@ -68,6 +68,22 @@ superseded baseline or a lowercase prefix executes outside the checksum
 **Rejected on this verb, matching Atlas OSS:** `--dir-format`, `--to-version`,
 and `--lock-name`.
 
+Pre-migration checks — `-- +ptah check` directives and Atlas txtar
+`checks.sql` / `checks/*.sql` sections — are enforced here as they are natively.
+Atlas registers no `--skip-checks` on `migrate apply` (measured: CE v1.2.0
+answers with `unknown flag`, and the licensed v1.2.4 surface registers it only
+on `migrate down`), so the emergency bypass is the `PTAH_SKIP_CHECKS`
+environment variable rather than a flag this surface must not grow:
+
+```bash
+PTAH_SKIP_CHECKS=1 ptah-compat migrate apply --url "$DB" --dir file://migrations
+```
+
+It parses as a boolean, rejects a non-boolean value outright, warns on stderr
+while active, and bypasses checks only — `atlas.sum` verification and revision
+bookkeeping are unaffected. See
+[Pre-migration checks](../../versioned/integrity-and-safety/).
+
 Native twin: [`ptah migrations up`](../native-commands/).
 
 ### `ptah-compat migrate status`
@@ -184,7 +200,10 @@ Because the forward defaults to Atlas revision bookkeeping, a bare invocation
 reverts the revisions `ptah-compat migrate apply` wrote.
 
 The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded
-waivers that fail loudly with their rationale.
+waivers that fail loudly with their rationale. They are explicit-only: unlike
+the supported flags above they are never filled from a `PTAH_<FLAG>`
+environment twin, so `PTAH_SKIP_CHECKS` — which `migrate apply` reads as its
+pre-migration check bypass — does not refuse a rollback.
 
 ### `ptah-compat migrate diff`
 

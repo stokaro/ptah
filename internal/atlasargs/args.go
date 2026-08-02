@@ -294,11 +294,21 @@ func nativeEnvironmentPresent(flag Flag) bool {
 	return ok && value != ""
 }
 
+// appendEnvArgs fills unset flags from their PTAH_<FLAG> environment twins.
+//
+// Unsupported flags are deliberately excluded. Their only behavior is a loud
+// refusal, so synthesizing one from the environment converts an ambient
+// variable into a hard failure on a verb the operator never asked it of. That
+// is not hypothetical: PTAH_SKIP_CHECKS is the sanctioned bypass for
+// pre-migration checks on `migrate apply` (see cmd/atlas/migrate_apply.go), and
+// while `migrate down` synthesized its unsupported --skip-checks from the same
+// variable, exporting it for an apply broke every down in the same shell.
+// A refusal must mean "you asked for this", so it stays explicit-only.
 func appendEnvArgs(flags []Flag, args []string) []string {
 	out := args
 	cloned := false
 	for _, flag := range flags {
-		if flag.EnvDisabled {
+		if flag.EnvDisabled || flag.Unsupported {
 			continue
 		}
 		if flagPresent(args, flag) {

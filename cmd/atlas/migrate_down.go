@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -262,7 +263,7 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 	if err := applyAtlasMigrateDownEnvFallback(flagSet); err != nil {
 		return nil, err
 	}
-	for _, name := range []string{"to-tag", "skip-checks", "plan"} {
+	for _, name := range atlasMigrateDownUnsupportedFlags {
 		if !flagSet.Changed(name) {
 			continue
 		}
@@ -284,13 +285,26 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 	return opts, nil
 }
 
+// atlasMigrateDownUnsupportedFlags are the Atlas down flags this command
+// accepts for help parity but refuses at runtime. They are explicit-only: the
+// refusal loop above and the environment fallback below share this list so the
+// two paths cannot drift on which flags an ambient PTAH_<FLAG> may set.
+var atlasMigrateDownUnsupportedFlags = []string{"to-tag", "skip-checks", "plan"}
+
 // applyAtlasMigrateDownEnvFallback fills unset flags from PTAH_<FLAG>
 // environment values, mirroring the env convention the forward path's arg
-// mapper applies.
+// mapper applies — including its exclusion of unsupported flags
+// (atlasargs.appendEnvArgs). Synthesizing an unsupported flag from the
+// environment would turn PTAH_SKIP_CHECKS, which `migrate apply` reads as its
+// pre-migration check bypass, into a hard refusal of every `migrate down` run
+// in the same shell.
 func applyAtlasMigrateDownEnvFallback(flagSet *pflag.FlagSet) error {
 	var envErr error
 	flagSet.VisitAll(func(flag *pflag.Flag) {
 		if envErr != nil || flag.Changed {
+			return
+		}
+		if slices.Contains(atlasMigrateDownUnsupportedFlags, flag.Name) {
 			return
 		}
 		value, ok := os.LookupEnv(atlasFlagEnvName(flag.Name))

@@ -77,12 +77,13 @@ next run applies it with no bypass flag and no `migrations repair`. It matches
 Atlas, which also records nothing when its own checks fail.
 
 This matters most on `ptah-compat migrate apply`, which registers no
-`--skip-checks` (neither does Atlas). It does register `--allow-dirty`, but
+`--skip-checks` flag (neither does Atlas). It does register `--allow-dirty`, but
 that flag cannot currently clear a dirty row: the retry fails on the revision
 re-insert with a `UNIQUE constraint failed` error
 ([`stokaro/ptah#966`](https://github.com/stokaro/ptah/issues/966)). A recorded
 check failure would therefore have left no working in-band recovery on that
-surface.
+surface. The `PTAH_SKIP_CHECKS` bypass is an emergency override, not that
+recovery path: correcting the guarded data is, and it needs no bypass at all.
 
 ## Assertion result shape
 
@@ -147,9 +148,10 @@ ALTER TABLE users ADD COLUMN email TEXT;
 
 Txtar checks follow every rule on this page: truthiness interpretation,
 up-direction only, the `--tx-mode all` refusal, and the `--skip-checks`
-bypass on native `ptah migrations up`. The compat `ptah-compat migrate apply`
-has no `--skip-checks` flag (parity with Atlas), so checks always enforce
-there.
+bypass on native `ptah migrations up`. `ptah-compat migrate apply` has no
+`--skip-checks` flag (parity with Atlas, which has none either); it reads the
+`PTAH_SKIP_CHECKS` environment variable instead — see
+[Bypassing checks](#bypassing-checks).
 
 The `#N` suffix counts only non-empty statements, so comment-only spans and
 stray separators (`;;`) do not consume a number: the third assertion you can
@@ -175,6 +177,40 @@ Checks are an additive, finer-grained safety gate that composes with the coarse
 `ptah migrations up --skip-checks` skips all pre-migration checks — both
 `-- +ptah check` directives and all Atlas txtar check files — mirroring the
 `--allow-destructive` bypass. Use it only after review.
+
+On the Atlas-compatible surface the same bypass is spelled as an environment
+variable, `PTAH_SKIP_CHECKS`:
+
+```bash
+PTAH_SKIP_CHECKS=1 ptah-compat migrate apply --url "$DB" --dir file://migrations
+```
+
+The name is not a second convention. Ptah binds every native flag to a
+`PTAH_<FLAG>` environment twin, so `ptah migrations up --skip-checks` already
+answers to `PTAH_SKIP_CHECKS`; `ptah-compat migrate apply` reads the same
+variable. Values are parsed as booleans (`1`, `true`, `t`, and their negations);
+an unset or empty value enforces checks, and a value that is not a boolean is a
+hard error rather than a silent "enforce", so a typo in a CI environment file
+cannot read as a bypass that silently was not one. A run with the bypass active
+prints a warning on stderr, because unlike a flag it leaves no trace in the
+command line.
+
+It is an environment variable rather than a flag because Atlas registers no
+`--skip-checks` on `migrate apply` and `ptah-compat` does not add flags Atlas
+does not have. Measured, not assumed: Atlas CE v1.2.0 answers
+`migrate apply --skip-checks` with `unknown flag: --skip-checks`, identically to
+a nonsense flag, and the licensed v1.2.4 help surface registers `--skip-checks`
+only on `migrate down`. This is the same mechanism `PTAH_ALLOW_EXTERNAL_SCHEMA`
+uses for `atlas.hcl` `data "external_schema"`.
+
+`PTAH_SKIP_CHECKS` bypasses pre-migration checks and nothing else. In particular
+`atlas.sum` verification still refuses a tampered or unhashed migration
+directory, and revision bookkeeping is unchanged.
+
+`ptah-compat migrate down` accepts an Atlas `--skip-checks` flag it does not
+implement and refuses it loudly. That refusal is deliberately explicit-only:
+`PTAH_SKIP_CHECKS` does not trigger it, so exporting the variable for an apply
+does not break rollbacks in the same shell.
 
 ## Integrity
 
