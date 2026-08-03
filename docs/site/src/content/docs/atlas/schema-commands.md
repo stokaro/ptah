@@ -254,12 +254,13 @@ held through simulation, confirmation, and execution, and released on every
 exit path including cancellation.
 
 An empty value waits indefinitely; an elapsed timeout fails the apply before
-the target is inspected. PostgreSQL (`pg_advisory_lock`), MySQL and MariaDB
-(`GET_LOCK`), and SQL Server (`sp_getapplock`) use real database locks.
+the target is inspected. PostgreSQL and YugabyteDB (`pg_advisory_lock`), MySQL
+and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real database
+locks.
 
-SQLite, ClickHouse, CockroachDB, YugabyteDB, and Spanner have no advisory-lock
-semantics: the apply proceeds without a lock, and an explicitly passed
-`--lock-timeout` prints a note on stderr.
+SQLite, ClickHouse, CockroachDB, and Spanner have no advisory-lock semantics:
+the apply proceeds without a lock, and an explicitly passed `--lock-timeout`
+prints a note on stderr.
 
 `--lock-name` replaces the lock name for the run. Two runs serialize only when
 they name the same lock, so this is how a Ptah apply coordinates with another

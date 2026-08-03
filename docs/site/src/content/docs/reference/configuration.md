@@ -50,6 +50,26 @@ configuration once and map supported values to explicit native command
 arguments. An explicit `--config` path must exist; the conventional
 `./ptah.yaml` is optional.
 
+`--config` takes a `ptah.yaml` file. Pointing it at an `atlas.hcl` is refused by
+name rather than reported as a YAML parse failure: the Atlas project config is
+discovered as `./atlas.hcl` and selected with `--env`.
+
+Every native command that accepts `--env` also accepts `--var name=value`, which
+supplies a value for an `atlas.hcl` `variable` block that declares no default.
+The flag is repeatable, and repeating one name builds a `list(string)`. This is
+the flag the evaluator names when a variable cannot be resolved:
+
+```text
+$ ptah schema compare --env local --schema-file schema.sql
+error: atlas.hcl variable "dburl" requires a default or --var dburl=value
+$ ptah schema compare --env local --schema-file schema.sql --var dburl=sqlite://app.db
+```
+
+`env://` references resolve on the `ptah-compat` `--to` and `--from` flags. The
+native `--schema-file` does not resolve them and says so, naming `env://` and,
+for an attribute outside `src`, `schema.src`, `url`, `dev`, `migration`, and
+`migration.dir`, naming the attribute.
+
 For Atlas-compatible commands, plain local schema paths, relative `file://`
 schema URLs, and relative `migration.dir` values declared in `atlas.hcl` resolve
 relative to the directory containing that `atlas.hcl` file. Explicit CLI path
@@ -149,5 +169,5 @@ Continue with [Atlas project config](../../atlas/project-config/) for the suppor
 `atlas.hcl` subset.
 
 :::note
-Ptah config parsing is intentionally strict. Unknown `ptah.yaml` keys and unsupported `atlas.hcl` constructs fail instead of being ignored.
+Ptah config parsing is intentionally strict. Unknown `ptah.yaml` keys and unsupported `atlas.hcl` constructs fail instead of being ignored. A rejected `ptah.yaml` key is reported by name, with its line and the keys that section accepts — never by the Go type the decoder was filling.
 :::

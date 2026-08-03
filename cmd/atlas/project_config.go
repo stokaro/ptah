@@ -135,11 +135,16 @@ func registerAtlasProjectFlags(flags *pflag.FlagSet, target *atlasProjectFlagVal
 	if flags.Lookup(atlasConfigFlagName) == nil {
 		flags.StringVarP(&target.configPath, atlasConfigFlagName, "c", "file://"+projectconfig.AtlasFileName, "select config (project) file using URL format")
 	}
-	if flags.Lookup(dbcli.EnvFlagName) == nil {
-		dbcli.RegisterEnvFlag(flags, &target.envName)
-	}
+	// --var is registered before --env, and the order is load-bearing:
+	// dbcli.RegisterEnvFlag also registers --var (idempotently), so letting it
+	// run first would leave this surface with the native flag — unbound to
+	// target.vars and carrying the native help text where Atlas's belongs.
+	// TestCompatVarFlagKeepsAtlasUsage fails if this order is swapped.
 	if flags.Lookup(atlasVarFlagName) == nil {
 		flags.StringArrayVar(&target.vars, atlasVarFlagName, nil, "input variables")
+	}
+	if flags.Lookup(dbcli.EnvFlagName) == nil {
+		dbcli.RegisterEnvFlag(flags, &target.envName)
 	}
 }
 
