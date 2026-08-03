@@ -149,14 +149,13 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 }
 
 // TestCompatMigrateDirQuery_FailurePathForeignFormat pins the part of the query
-// that is NOT ignored on the verbs that read only a native Atlas directory.
+// that is NOT ignored on the two verbs that WRITE into the directory.
 //
 // The community binary honors `?format=` on these verbs. Ptah converts a
-// foreign layout for the verbs that only read one — status and set joined that
-// set in #1002 — and still refuses it on `migrate lint`, which reads the
-// directory into a dev-database replay, and on `migrate new` and `migrate diff`,
-// which WRITE into it. Refusing is the strict side of the divergence:
-// stokaro/ptah#1013 section 1 tracks closing it for lint.
+// foreign layout for every verb that only READS one — hash and validate since
+// #992, status and set since #1002, lint since #1133 — and refuses it on
+// `migrate new` and `migrate diff`, which WRITE into the directory. Refusing is
+// the strict side of the divergence: it never exits 0 where that binary exits 1.
 //
 // The refusal has to survive the relaxation above, which is why it is pinned:
 // once unknown keys are ignored, nothing else stops a `?format=goose` from
@@ -176,16 +175,6 @@ func TestCompatMigrateDirQuery_FailurePathForeignFormat(t *testing.T) {
 		name string
 		run  func(c *qt.C, dir string) error
 	}{
-		{
-			name: "lint",
-			run: func(c *qt.C, dir string) error {
-				_, _, err := runCompat("migrate", "lint",
-					"--dir", "file://"+dir+"?format=goose",
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--latest", "1")
-				return err
-			},
-		},
 		{
 			name: "new",
 			run: func(_ *qt.C, dir string) error {

@@ -142,7 +142,7 @@ func runAtlasMigrateDiff(
 	// already accept them; a ?format= naming a foreign layout stays refused,
 	// because this verb WRITES and Ptah does not compute that layout's covered
 	// file set (stokaro/ptah#1013 section 1).
-	if err := checkNativeAtlasDirQuery(localDir.Query); err != nil {
+	if err := checkWritingVerbDirQuery(localDir.Query); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
 	if err := verifyAtlasWriteDirChecksum(cmd, project, localDir); err != nil {
