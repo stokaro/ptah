@@ -269,6 +269,12 @@ func TestCompatMigrateValidateConvertedDevURL_FailurePath(t *testing.T) {
 	})
 }
 
+// atlasChecksumPreamble is the guidance block Atlas CE writes to STDOUT before
+// refusing a directory over its integrity file, with no `L<n>:` line because
+// nothing mismatched — the directory could not be hashed at all.
+const atlasChecksumPreamble = "You have a checksum error in your migration directory.\n" +
+	"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n"
+
 // directoryNamedSQLRefusal is the message every verb reports for a covered
 // entry that turns out to be a directory. Ptah's wording is deliberately not
 // the community binary's: see migratesum's coveredDirectoryError.
@@ -420,4 +426,112 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 			tt.assert(c, dir, err)
 		})
 	}
+}
+
+// TestCompatMigrateNativeDirectoryNamedSQL pins the four NATIVE verbs that
+// verify a captured snapshot rather than the live directory.
+//
+// This is the half a fix confined to the file-set selection does not reach, and
+// it was measured to be exactly that: with the selection corrected and the
+// snapshot untouched, `migrate apply` still exited 0 here. Those verbs verify an
+// fsnapshot.Snapshot, which recorded only files, so a directory holding no
+// captured file vanished between the capture and the check and the recomputed
+// sum still matched.
+//
+// Every row is seeded by hashing the directory while it is clean, so the sum
+// under test is one Atlas CE itself would have written; the directory appears
+// afterwards. Measured against the pinned binary v1.3.0 on 2026-08-03, that
+// binary exits 1 on all four verbs, printing the checksum preamble on stdout
+// and the read failure on stderr. Nothing unverified executes — a directory
+// holds no SQL — so this is a loss of tamper DETECTION rather than of execution
+// safety, and it is still exit 0 where the community binary exits 1.
+//
+// The second shape (a non-SQL file inside the directory) is not decoration: the
+// capture predicate admits *.sql and the metadata names, so a note.txt was
+// filtered out and, with nothing left underneath, the directory disappeared
+// again.
+func TestCompatMigrateNativeDirectoryNamedSQL(t *testing.T) {
+	c := qt.New(t)
+
+	shapes := []struct {
+		name  string
+		files map[string]string
+		dirs  []string
+	}{{
+		name: "empty directory",
+		dirs: []string{"2_evil.sql"},
+	}, {
+		name:  "directory holding an uncaptured file",
+		files: map[string]string{"2_evil.sql/note.txt": "hello\n"},
+	}}
+
+	verbs := []struct {
+		name string
+		args func(dir, dbPath string) []string
+		// assertStreams pins where each verb writes its refusal. apply, status
+		// and set reproduce the community binary's layout exactly; lint reports
+		// through its own integrity surface, a divergence that predates #991 and
+		// shows identically on an ordinary tampered directory.
+		assertStreams func(c *qt.C, stdout, stderr string)
+	}{{
+		name: "apply",
+		args: func(dir, dbPath string) []string {
+			return []string{"migrate", "apply", "--dir", "file://" + dir, "--url", "sqlite://" + dbPath}
+		},
+		assertStreams: assertAtlasChecksumStreams,
+	}, {
+		name: "status",
+		args: func(dir, dbPath string) []string {
+			return []string{"migrate", "status", "--dir", "file://" + dir, "--url", "sqlite://" + dbPath}
+		},
+		assertStreams: assertAtlasChecksumStreams,
+	}, {
+		name: "set",
+		args: func(dir, dbPath string) []string {
+			return []string{"migrate", "set", "1", "--dir", "file://" + dir, "--url", "sqlite://" + dbPath}
+		},
+		assertStreams: assertAtlasChecksumStreams,
+	}, {
+		name: "lint",
+		args: func(dir, dbPath string) []string {
+			return []string{
+				"migrate", "lint", "--dir", "file://" + dir,
+				"--dev-url", "sqlite://" + dbPath + "?mode=memory", "--latest", "1",
+			}
+		},
+		assertStreams: func(c *qt.C, _, stderr string) {
+			c.Assert(stderr, qt.Contains, fmt.Sprintf(directoryNamedSQLRefusal, "2_evil.sql"))
+		},
+	}}
+
+	for _, shape := range shapes {
+		for _, verb := range verbs {
+			c.Run(shape.name+"/"+verb.name, func(c *qt.C) {
+				dir := writeDirectoryNamedSQLFixture(c,
+					map[string]string{"1_init.sql": "CREATE TABLE w (id INTEGER PRIMARY KEY);\n"}, nil)
+				hashOut, _, hashErr := runCompatExit("migrate", "hash", "--dir", "file://"+dir)
+				c.Assert(hashErr, qt.IsNil, qt.Commentf("seed:\n%s", hashOut))
+
+				// The sum above covers only 1_init.sql, exactly as the community
+				// binary's would; the directory appears afterwards.
+				writeDirectoryNamedSQLEntries(c, dir, shape.files, shape.dirs)
+
+				stdout, stderr, err := runCompatExit(
+					verb.args(dir, filepath.Join(c.TempDir(), "evil.db"))...)
+
+				c.Assert(exitcode.Code(err, 0), qt.Equals, 1,
+					qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+				verb.assertStreams(c, stdout, stderr)
+			})
+		}
+	}
+}
+
+// assertAtlasChecksumStreams pins the stream layout the community binary uses
+// for a checksum refusal: guidance on stdout, the reason on stderr.
+func assertAtlasChecksumStreams(c *qt.C, stdout, stderr string) {
+	c.Helper()
+	c.Assert(stdout, qt.Equals, atlasChecksumPreamble)
+	c.Assert(stderr, qt.Equals,
+		"Error: "+fmt.Sprintf(directoryNamedSQLRefusal, "2_evil.sql")+"\n")
 }
