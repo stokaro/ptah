@@ -352,7 +352,28 @@ Multiple ordered checks per migration; `ptah migrations up --skip-checks` is an 
 
 In a dry run, a check is evaluated only for the first migration executed in the run — the one position whose observed state is the state a real apply would give it. Later migrations' assertions are parsed and statically validated but not evaluated, and the run names them on stderr. See [Checks in a dry run](../../versioned/integrity-and-safety/#checks-in-a-dry-run).
 
-**Retained divergence on dry runs.** The community binary implements no check semantics, so it flattens the archive and runs `checks.sql` as an ordinary migration statement; in a dry run it executes no SQL at all and exits `0` for every checked directory. `ptah-compat` deliberately exits `1` where the guard's verdict is knowable and negative: an assertion that is malformed or is not a read-only `SELECT` (decidable from the text alone), and a failing assertion on the first migration executed in the run (decidable against the live database, and confirmed by the real apply failing the same way). Matching the community binary on those inputs would make the preview report success for a run that cannot succeed. Where the old failure was an artifact of the preview rather than a finding — a later migration's guard asking about state the dry run refused to create — `ptah-compat` now exits `0`, which both matches the community binary and matches what applying the directory actually does.
+**Retained divergence on dry runs.** The community binary implements no check
+semantics, so it flattens the archive and runs `checks.sql` as an ordinary
+migration statement; in a dry run it executes no SQL at all and exits `0` for
+every checked directory.
+
+`ptah-compat` deliberately exits `1` where the guard's verdict is knowable and
+negative:
+
+- an assertion that is malformed or is not a read-only `SELECT`, decidable from
+  the text alone
+- a failing assertion on the first migration executed in the run, decidable
+  against the live database and confirmed by the real apply failing the same way
+- a checked directory under `--tx-mode all`, which the real apply refuses
+  outright
+
+Matching the community binary on those inputs would make the preview report
+success for a run that cannot succeed.
+
+Where the old failure was an artifact of the preview rather than a finding — a
+later migration's guard asking about state the dry run refused to create —
+`ptah-compat` now exits `0`, which both matches the community binary and matches
+what applying the directory actually does.
 
 **Atlas OSS.** Atlas keeps pre-migration checks in its proprietary Pro build (free-with-login, then paid), requiring the closed-source binary and an Atlas account; not embeddable.
 
