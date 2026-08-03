@@ -49,6 +49,24 @@ func FailAtlasChecksumMismatch(cmd *cobra.Command, mismatch *migratesum.Mismatch
 	return failAtlasChecksum(cmd, mismatch, errAtlasChecksumMismatch)
 }
 
+// FailAtlasChecksumUnreadableEntry writes the Atlas CE checksum guidance for a
+// directory holding a covered entry that cannot be read, and returns the exit-1
+// error carrying cause's own message.
+//
+// The community binary treats this as a checksum error and not as an ordinary
+// command failure: it prints the same stdout guidance block it prints for
+// drift, then the read failure on stderr, on `migrate validate`, `apply`,
+// `status` and `set` alike. Measured against the pinned v1.3.0 binary, that is
+// the shape reproduced here (stokaro/ptah#991). There is no `L<n>:` line
+// because no entry mismatched — the directory could not be hashed at all.
+//
+// `migrate hash` is the one verb that does NOT get the preamble, on that binary
+// and here: there is no recorded sum to be in error with, so the read failure
+// is reported bare.
+func FailAtlasChecksumUnreadableEntry(cmd *cobra.Command, cause error) error {
+	return failAtlasChecksum(cmd, nil, cause)
+}
+
 // FailAtlasChecksumFileNotFound writes the Atlas CE checksum guidance for a
 // directory that carries no integrity file and returns the exit-1 "checksum
 // file not found" error. Apply-time integrity gates use it so refusing an
@@ -114,6 +132,11 @@ func runAtlasValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) er
 	case errors.Is(err, migratesum.ErrSumFileMalformed):
 		// A malformed sum file has no entry-level mismatch to point at.
 		return FailAtlasChecksumMismatch(cmd, nil)
+	case errors.Is(err, migratesum.ErrCoveredEntryUnreadable):
+		// A covered entry that is a directory (#991). The community binary
+		// prints the checksum preamble for it, so this is a checksum refusal
+		// and not a usage failure.
+		return FailAtlasChecksumUnreadableEntry(cmd, err)
 	case err != nil:
 		return cmdutil.Fail(cmd, err)
 	}

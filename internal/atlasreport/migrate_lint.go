@@ -102,6 +102,12 @@ func InspectMigrateLintIntegrity(fsys fs.FS) (MigrateLintIntegrity, error) {
 		return MigrateLintIntegrity{}, fmt.Errorf("stat %s: %w", migratesum.AtlasFileName, err)
 	}
 	result, err := migratesum.VerifyWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	if errors.Is(err, migratesum.ErrCoveredEntryUnreadable) {
+		// A covered entry that is a directory (#991). The directory could not be
+		// hashed at all, so calling it a mismatch would name the wrong fault and
+		// send the reader looking for an edited migration that does not exist.
+		return MigrateLintIntegrity{Checked: true, Error: err.Error()}, nil
+	}
 	if err != nil {
 		return MigrateLintIntegrity{Checked: true, Error: "checksum mismatch"}, nil
 	}

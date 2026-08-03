@@ -86,6 +86,36 @@ seal() {
 	printf '  %-52s %s\n' "${case_dir#"$HERE"/}" "$(head -1 "$case_dir/atlas.sum")"
 }
 
+# seal_refused records a shape the oracle DECLINES to hash.
+#
+# seal() cannot express one. `set -e` aborts the whole regeneration on a
+# non-zero oracle exit, and the corpus format -- a committed atlas.sum per case
+# -- has no way to say "no sum exists for this shape". That gap is why the
+# directory-named-*.sql family (stokaro/ptah#991) went unrecorded: the only
+# outcome the corpus could hold was agreement.
+#
+# The refusal is stored as atlas.refused holding the oracle's own message with
+# the machine-specific case path replaced by a placeholder. That file is inert
+# for every format under test: it carries no .sql suffix, so no glob matches it
+# and the Flyway walk does not parse it.
+seal_refused() {
+	local format="$1" out ec
+	set +e
+	out="$("$ATLAS" migrate hash --dir "file://$case_dir?format=$format" 2>&1)"
+	ec=$?
+	set -e
+	if [ "$ec" -eq 0 ]; then
+		echo "regenerate: expected a refusal for ${case_dir#"$HERE"/}, oracle exited 0" >&2
+		exit 1
+	fi
+	if [ -e "$case_dir/atlas.sum" ]; then
+		echo "regenerate: oracle refused ${case_dir#"$HERE"/} but still wrote atlas.sum" >&2
+		exit 1
+	fi
+	printf '%s\n' "$out" | sed "s|$case_dir|<case-dir>|g" >"$case_dir/atlas.refused"
+	printf '  %-52s %s\n' "${case_dir#"$HERE"/}" "REFUSED (exit $ec)"
+}
+
 echo "regenerating Atlas CE corpus with $actual_version"
 
 # --- atlas (native) -------------------------------------------------------
@@ -609,6 +639,68 @@ new_case flyway/baseline-ordinary-project
 put B1__baseline.sql "$SQL_PLAIN"
 put V2__init.sql "$SQL_SECOND"
 put views/V3__view.sql "$SQL_PLAIN"
+seal flyway
+
+# --- a DIRECTORY whose name the layout's glob matches (#991) ---------------
+# The four globbing formats select covered entries by name, so a directory
+# called weird.sql is a member and the read that follows fails: the oracle
+# refuses the whole directory and writes nothing. Every case carries a real file
+# inside the directory because git does not track empty ones -- and note.txt
+# also proves the refusal keys on the directory itself rather than on anything
+# it holds.
+new_case atlas/directory-named-sql
+put 1_init.sql "$SQL_PLAIN"
+put weird.sql/note.txt 'not a migration
+'
+seal_refused atlas
+
+new_case goose/directory-named-sql
+put 1_init.sql "$SQL_GOOSE"
+put weird.sql/note.txt 'not a migration
+'
+seal_refused goose
+
+new_case dbmate/directory-named-sql
+put 1_init.sql "$SQL_DBMATE"
+put weird.sql/note.txt 'not a migration
+'
+seal_refused dbmate
+
+new_case liquibase/directory-named-sql
+put 1_init.sql "$SQL_LIQUIBASE"
+put weird.sql/note.txt 'not a migration
+'
+seal_refused liquibase
+
+# golang-migrate globs *.up.sql, so the pair below separates the SUFFIX FILTER
+# from the read: the same directory name is ignored under one suffix and refused
+# under the other. A fix expressed as "reject any .sql directory" reddens the
+# first of these.
+new_case golang-migrate/directory-named-sql
+put 1_init.up.sql "$SQL_PLAIN"
+put weird.sql/note.txt 'not a migration
+'
+seal golang-migrate
+
+new_case golang-migrate/directory-named-up-sql
+put 1_init.up.sql "$SQL_PLAIN"
+put weird.up.sql/note.txt 'not a migration
+'
+seal_refused golang-migrate
+
+# Flyway is exempt in BOTH tools, and not by special-casing: the oracle WALKS a
+# Flyway tree rather than globbing it, so a directory is a node it descends into
+# and never reads. The nested case pins that the recursion still covers what is
+# inside such a directory.
+new_case flyway/directory-named-sql
+put V1__init.sql "$SQL_PLAIN"
+put weird.sql/note.txt 'not a migration
+'
+seal flyway
+
+new_case flyway/directory-named-sql-nested
+put V1__init.sql "$SQL_PLAIN"
+put weird.sql/V2__nested.sql "$SQL_SECOND"
 seal flyway
 
 echo "done"

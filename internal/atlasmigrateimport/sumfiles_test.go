@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -15,11 +16,22 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 )
 
-// ceSumCorpusCases is the number of directory shapes in testdata/ce-sums. The
-// corpus test walks the tree, so a corpus that failed to load would otherwise
-// pass vacuously; asserting the count makes an empty or partial walk fail.
-// Adding a shape is expected to change this number.
-const ceSumCorpusCases = 89
+// ceSumCorpusCases is the number of directory shapes in testdata/ce-sums the
+// oracle SEALED with an atlas.sum. The corpus test walks the tree, so a corpus
+// that failed to load would otherwise pass vacuously; asserting the count makes
+// an empty or partial walk fail. Adding a shape is expected to change this
+// number.
+const ceSumCorpusCases = 92
+
+// ceRefusedCorpusCases is the number of shapes the oracle DECLINED to hash,
+// recorded as an atlas.refused marker instead of an atlas.sum.
+//
+// The two counts are separate on purpose. Until #991 the corpus had no way to
+// represent a refusal at all — regenerate.sh ran under `set -e` and any
+// non-zero oracle exit aborted the whole regeneration — so the only outcome it
+// could hold was agreement, and the shape Atlas CE refuses was structurally
+// unrecordable.
+const ceRefusedCorpusCases = 5
 
 const sqlBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
 
@@ -65,6 +77,64 @@ func TestSumFileNamesMatchesAtlasCE(t *testing.T) {
 			want, err := fs.ReadFile(os.DirFS(root), sumPath)
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(sum.Bytes()), qt.Equals, string(want))
+		})
+	}
+}
+
+// oracleRefusedEntry returns the entry name the oracle's recorded refusal
+// blames, so the assertion below compares the two tools' answers rather than
+// merely observing that both said no.
+func oracleRefusedEntry(c *qt.C, marker string) string {
+	c.Helper()
+	matches := regexp.MustCompile(`read file "([^"]+)"`).FindStringSubmatch(marker)
+	c.Assert(matches, qt.HasLen, 2, qt.Commentf("unparsed oracle refusal: %s", marker))
+	return matches[1]
+}
+
+// TestSumFileNamesMatchesAtlasCERefusals replays the shapes the pinned oracle
+// DECLINED to hash: a directory whose name the layout's glob matches
+// (stokaro/ptah#991).
+//
+// Membership and readability are separate questions, and this test keeps them
+// that way. SumFileNames must still return the directory's name — dropping it,
+// which is what Ptah did before #991, is precisely the defect: it produced a sum
+// over the remainder that the community binary then refused to read. The
+// refusal has to come from the READ, so the assertion is that selection
+// succeeds and hashing fails, and that the entry Ptah blames is the one the
+// oracle blamed.
+func TestSumFileNamesMatchesAtlasCERefusals(t *testing.T) {
+	c := qt.New(t)
+
+	root := filepath.Join("testdata", "ce-sums")
+	refused, err := fs.Glob(os.DirFS(root), "*/*/atlas.refused")
+	c.Assert(err, qt.IsNil)
+	c.Assert(refused, qt.HasLen, ceRefusedCorpusCases)
+
+	for _, markerPath := range refused {
+		caseDir := path.Dir(markerPath)
+		formatName, _, _ := strings.Cut(caseDir, "/")
+
+		c.Run(caseDir, func(c *qt.C) {
+			fsys := os.DirFS(filepath.Join(root, filepath.FromSlash(caseDir)))
+
+			names, err := atlasmigrateimport.SumFileNames(
+				fsys,
+				atlasmigrateimport.Format(formatName),
+			)
+			c.Assert(err, qt.IsNil)
+
+			marker, err := fs.ReadFile(os.DirFS(root), markerPath)
+			c.Assert(err, qt.IsNil)
+			blamed := oracleRefusedEntry(c, string(marker))
+			c.Assert(names, qt.Contains, blamed)
+
+			_, err = migratesum.ComputeAtlasFiles(fsys, names)
+			c.Assert(err, qt.ErrorIs, migratesum.ErrCoveredEntryUnreadable)
+			c.Assert(err, qt.ErrorMatches, `read file "`+regexp.QuoteMeta(blamed)+`": is a directory.*`)
+
+			// The oracle wrote no atlas.sum, and neither may the corpus hold one.
+			_, statErr := fs.Stat(fsys, migratesum.AtlasFileName)
+			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 		})
 	}
 }

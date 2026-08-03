@@ -1,0 +1,1 @@
+Error: sql/migrate: read file "weird.up.sql": read <case-dir>/weird.up.sql: is a directory

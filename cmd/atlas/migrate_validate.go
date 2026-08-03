@@ -68,6 +68,10 @@ func runAtlasMigrateValidate(cmd *cobra.Command, source atlasMigrateSource) erro
 	case errors.Is(err, migratesum.ErrSumFileMalformed):
 		// A malformed atlas.sum has no entry-level mismatch to point at.
 		return migratevalidate.FailAtlasChecksumMismatch(cmd, nil)
+	case errors.Is(err, migratesum.ErrCoveredEntryUnreadable):
+		// A covered entry that is a directory (#991): a checksum refusal with
+		// the guidance preamble, not a bare command failure.
+		return migratevalidate.FailAtlasChecksumUnreadableEntry(cmd, err)
 	case err != nil:
 		return cmdutil.Fail(cmd, err)
 	case !hashed:
