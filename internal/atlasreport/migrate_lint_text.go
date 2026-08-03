@@ -77,40 +77,40 @@ func writeMigrateLintTextVersion(w io.Writer, version migrateLintTextVersion, el
 	return err
 }
 
+// writeMigrateLintTextGroup renders one analyzer group.
+//
+// It encodes a deliberate, standing divergence: the diagnostic prose and the
+// layout around it on this surface are Ptah's own. Ptah is an independent
+// implementation, and its output is written for its own readers rather than
+// shaped to match another tool's phrasing.
+//
+// The decision, and why it is not an oversight:
+//
+//   - Ptah's message says more. "DROP TABLE permanently deletes the table and
+//     every row in it; take a verified backup first and consider a
+//     rename-and-retire window instead" tells a reader what to do. The terse
+//     equivalent, "Dropping table \"pets\"" plus a link, does not. Trading the
+//     first for the second is a downgrade for every human who reads it.
+//   - The rule code stays inline as `L<n> [CODE]:`. It is legible on its own and
+//     needs no external documentation link to be understood.
+//   - Suggested remediation belongs with the diagnostic it belongs to, not
+//     collected under a trailing header away from its subject.
+//
+// This costs byte-for-byte agreement on `migrate lint` text output, and that is
+// accepted: anything consuming this programmatically should use a structured
+// format, not scrape prose. Four imported txtar fixtures diverge as a result,
+// measured rather than assumed -- see stokaro/ptah#1062.
+//
+// A change that reshapes this output to match another tool is reverting a
+// decision, not fixing a defect. Read stokaro/ptah#1062 first;
+// TestMigrateLintProseIsOurs guards it.
 func writeMigrateLintTextGroup(w io.Writer, group migrateLintTextGroup) error {
 	if _, err := fmt.Fprintf(w, "    -- %s detected:\n", group.label); err != nil {
 		return err
 	}
-	// Atlas prints every diagnostic in the group first, then collects the
-	// suggested fixes under ONE header at the end -- pluralised when there is
-	// more than one. Interleaving fix-after-diagnostic produces identical
-	// output for a single diagnostic, which is why that layout has to be
-	// checked against a group with two.
-	var fixes []string
 	for _, diag := range group.diags {
-		content := fmt.Sprintf("L%d: %s", diag.line, diag.message)
-		if diag.code != "" {
-			content += " " + atlasAnalyzerDocsURL + diag.code
-		}
+		content := fmt.Sprintf("L%d [%s]: %s", diag.line, diag.code, diag.message)
 		if err := writeWrapped(w, "      -- ", "         ", content); err != nil {
-			return err
-		}
-		if diag.fix != "" {
-			fixes = append(fixes, diag.fix)
-		}
-	}
-	if len(fixes) == 0 {
-		return nil
-	}
-	header := "    -- suggested fix:"
-	if len(fixes) > 1 {
-		header = "    -- suggested fixes:"
-	}
-	if _, err := fmt.Fprintln(w, header); err != nil {
-		return err
-	}
-	for _, fix := range fixes {
-		if err := writeWrapped(w, "      -> ", "         ", fix); err != nil {
 			return err
 		}
 	}
@@ -193,12 +193,9 @@ type migrateLintTextGroup struct {
 }
 
 type migrateLintTextDiag struct {
-	line    int
-	code    string
-	message string
-	// fix is the Atlas-shaped suggested fix, printed under its own header.
-	// Empty for analyzers where Atlas prints none.
-	fix      string
+	line     int
+	code     string
+	message  string
 	group    string
 	severity migrationlint.Severity
 }
@@ -281,12 +278,10 @@ func diagnosticsByFile(findings []migrationlint.Finding) map[string][]migrateLin
 // but uses the native Ptah finding as the sole source of human-readable prose.
 func compatibilityDiagnostic(finding migrationlint.Finding) migrateLintTextDiag {
 	rule := atlaslint.RuleForNativeCode(finding.Rule)
-	message, fix := atlasDiagnosticText(rule.Code, finding)
 	return migrateLintTextDiag{
 		line:     finding.Line,
 		code:     rule.Code,
-		message:  message,
-		fix:      fix,
+		message:  finding.Message,
 		group:    analyzerGroupLabel(rule.Analyzer),
 		severity: finding.Severity,
 	}

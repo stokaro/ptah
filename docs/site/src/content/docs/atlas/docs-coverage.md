@@ -552,7 +552,7 @@ The referrers command lists descriptor metadata but does not pull report payload
 
 ### License and implementation boundary
 
-**Atlas availability.** Atlas source is a separate upstream project; Ptah compatibility must stay license-clean
+**Atlas availability.** Atlas source is a separate third-party project; Ptah compatibility must stay license-clean
 
 **Ptah documentation.** [License boundary](../license-boundary/), [Comparison](../comparison/)
 

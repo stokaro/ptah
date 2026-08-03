@@ -618,7 +618,7 @@
     "atlas_oss": "partial",
     "atlas_pro": "yes",
     "note": "CE registers `migrate lint` with a basic Open rule set; Atlas's features page marks the lint CLI Pro. Ptah loads custom rules only through the Go API at compile time.",
-    "evidence": "Executed: `ptah-compat migrate lint --dir file://migrations --latest 1` reports \"destructive changes detected -- L1: DROP COLUMN ... #DS103\" and exits 1; `--format '{{ range .Files }}{{ .Name }}{{ end }}'` renders the Atlas template. No rule-loading flag in `ptah migrations lint --help`; custom rules come from migration/lint/rules.go:20 (Register) and lint.Options.ExtraRules (migration/lint/lint.go:107). Atlas CE registers migrate lint (conformance cli-surface.md:33). Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate lint --dir file://m --dev-url sqlite --latest 1` analyzed and reported 'destructive changes detected', exit 1 - the pinned CE binary lints. The pricing page places 'Migration linting' outside Starter; that classifies the plan, not the binary. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' listed Starter \u2717 / Pro \u2713, corroborating the features-page Pro classification; the measured pinned CE binary still registers `migrate lint` with the basic rule set, so oss stays partial rather than flipping to no. Current upstream `migrate lint` aborts 'Starting with v0.38, atlas migrate lint is available only to Atlas Pro users' - the pinned CE v1.2.0 behavior no longer matches current upstream (measured; observation study, scenario, lint-test-pro)"
+    "evidence": "Executed: `ptah-compat migrate lint --dir file://migrations --latest 1` reports \"destructive changes detected -- L1: DROP COLUMN ... #DS103\" and exits 1; `--format '{{ range .Files }}{{ .Name }}{{ end }}'` renders the Atlas template. No rule-loading flag in `ptah migrations lint --help`; custom rules come from migration/lint/rules.go:20 (Register) and lint.Options.ExtraRules (migration/lint/lint.go:107). Atlas CE registers migrate lint (conformance cli-surface.md:33). Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate lint --dir file://m --dev-url sqlite --latest 1` analyzed and reported 'destructive changes detected', exit 1 - the pinned CE binary lints. The pricing page places 'Migration linting' outside Starter; that classifies the plan, not the binary. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' listed Starter \u2717 / Pro \u2713, corroborating the features-page Pro classification; the measured pinned CE binary still registers `migrate lint` with the basic rule set, so oss stays partial rather than flipping to no. Current Atlas releases abort `migrate lint` with 'Starting with v0.38, atlas migrate lint is available only to Atlas Pro users' - the pinned CE v1.2.0 behavior no longer matches current Atlas releases (measured; observation study, scenario, lint-test-pro)"
   },
   {
     "area": "Versioned migrations \u2014 directory",
@@ -1333,34 +1333,34 @@
   },
   {
     "area": "Versioned migrations",
-    "feature": "Upstream verb `migrate ls`",
+    "feature": "Verb `migrate ls`",
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Beyond the CE pin: works in Atlas against a local directory; ptah-compat rejects it as unknown command; native `ptah migrations status` lists versions and states.",
-    "evidence": "Verified: /tmp/c-compat migrate ls -> 'unknown command'; /tmp/c-ptah migrations status --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin' records it absent from pinned CE v1.2.0 (unknown command, not an abort stub) while present in current Atlas docs. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate ls` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas migrate ls` works against a local migration directory (measured; observation study, scenario, verbs-and-flags)"
+    "evidence": "Verified: /tmp/c-compat migrate ls -> 'unknown command'; /tmp/c-ptah migrations status --help exists; comparison.md gap register 'Verbs beyond the CE pin' records it absent from pinned CE v1.2.0 (unknown command, not an abort stub) while present in current Atlas docs. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate ls` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas migrate ls` works against a local migration directory (measured; observation study, scenario, verbs-and-flags)"
   },
   {
     "area": "Versioned migrations",
-    "feature": "Upstream verb `migrate show`",
+    "feature": "Verb `migrate show`",
     "ptah": "no",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Beyond the CE pin: prints a migration's SQL upstream; no compat or native Ptah verb exists, and the gap register triages it as future work.",
+    "note": "Beyond the CE pin: prints a migration's SQL in Atlas; no compat or native Ptah verb exists, and the gap register triages it as future work.",
     "evidence": "Verified: /tmp/c-compat migrate show -> 'unknown command'; comparison.md:699-701 triage 'migrate show (print a migration's SQL) is future work with no native verb today'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate show` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas migrate show` prints local migration file contents (measured; observation study, scenario, verbs-and-flags)"
   },
   {
     "area": "Declarative and direct schema changes",
-    "feature": "Upstream verb `schema validate`",
+    "feature": "Verb `schema validate`",
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Beyond the CE pin: no validate verb; the gap register triage covers it with native schema render parse/load validation plus schema test and schema apply `--dry-run`.",
-    "evidence": "Verified: /tmp/c-compat schema validate -> 'unknown command'; /tmp/c-ptah schema render --help exists; comparison.md gap register 'Upstream Atlas verbs beyond the CE pin'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema validate` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas schema validate` exists in Atlas (measured; observation study, scenario, verbs-and-flags)"
+    "evidence": "Verified: /tmp/c-compat schema validate -> 'unknown command'; /tmp/c-ptah schema render --help exists; comparison.md gap register 'Verbs beyond the CE pin'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema validate` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas schema validate` exists in Atlas (measured; observation study, scenario, verbs-and-flags)"
   },
   {
     "area": "Declarative and direct schema changes",
-    "feature": "Upstream verb `schema stats`",
+    "feature": "Verb `schema stats`",
     "ptah": "no",
     "atlas_oss": "no",
     "atlas_pro": "yes",

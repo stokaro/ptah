@@ -546,7 +546,7 @@ compatibility report: an `Analyzing changes …` header, a per-version block
 listing each analyzer group's diagnostics and mapped rule IDs, a `-- ok (…)`
 line per version, and a summary of version statuses, semantic schema changes,
 and diagnostics. Diagnostic messages are written by Ptah and do not include
-upstream documentation links or copied suggested-fix prose.
+external documentation links or copied suggested-fix prose.
 
 The report is written to stdout even when findings fail, and error-severity
 findings still exit with code 1. The native `ptah migrations lint` output is

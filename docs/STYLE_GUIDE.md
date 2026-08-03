@@ -190,7 +190,7 @@ cell, not where it stops being good.
   `check-links.mjs`); never root-relative.
 - Site pages never link to root docs on GitHub and never mention the protected
   `docs/*.md` paths (enforced by `check-core-doc-links.mjs`).
-- External links go only to stable upstream pages: Atlas documentation for
+- External links go only to stable external pages: Atlas documentation for
   Atlas's own claims, the conformance repository for evidence.
 - "Next steps" sections contain at most three links, each phrased as a
   decision, not a generic list.

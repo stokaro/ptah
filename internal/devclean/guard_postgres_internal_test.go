@@ -146,7 +146,7 @@ func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 		{
 			name:      "foreign schema import into pg catalog",
 			dialect:   platform.Postgres,
-			statement: `IMPORT FOREIGN SCHEMA remote FROM SERVER upstream INTO pg_catalog`,
+			statement: `IMPORT FOREIGN SCHEMA remote FROM SERVER remote_srv INTO pg_catalog`,
 			wantErr:   `postgres migration replay rejects protected namespace "pg_catalog" mutation .*`,
 		},
 		{
@@ -386,13 +386,13 @@ func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 		{
 			name:      "foreign table",
 			dialect:   platform.Postgres,
-			statement: `CREATE FOREIGN TABLE app.remote_users (id bigint) SERVER upstream`,
+			statement: `CREATE FOREIGN TABLE app.remote_users (id bigint) SERVER remote_srv`,
 			wantErr:   `postgres migration replay rejects CREATE FOREIGN .*`,
 		},
 		{
 			name:      "foreign schema import",
 			dialect:   platform.Postgres,
-			statement: `IMPORT FOREIGN SCHEMA remote FROM SERVER upstream INTO app`,
+			statement: `IMPORT FOREIGN SCHEMA remote FROM SERVER remote_srv INTO app`,
 			wantErr:   `postgres migration replay rejects IMPORT FOREIGN SCHEMA .*`,
 		},
 	}
