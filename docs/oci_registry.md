@@ -67,7 +67,7 @@ oci://ghcr.io/acme/app-migrations:release@sha256:0123456789abcdef0123456789abcde
 The digest decides which bytes are fetched, exactly as with every other OCI
 client when the two disagree. The tag is carried for readability and is echoed
 back in the canonical form; it never selects content and never softens the pin.
-Because the reference is digest-pinned, pushing to it is rejected just like
+Because the reference is digest-pinned, pushing to it is rejected exactly as
 pushing to a bare `@sha256:` reference.
 
 A sum file carries different weight depending on which of those you applied. A
@@ -221,7 +221,7 @@ ptah migrations down \
 For `up`, `status`, and `down`, the artifact is pulled into an immutable
 in-memory filesystem and passed to the existing migration engine. An explicit
 `--dir-format` must match the format recorded in the artifact. The
-`up --verify-sum` gate verifies the pulled files against the sum that travelled
+`up --verify-sum` gate verifies the pulled files against the sum that traveled
 with them, before opening the database. Applied to a digest reference, that
 gate covers exactly the bytes named on the command line. Applied to a tag, it
 covers whatever the tag resolved to at pull time, and `up` prints that digest
