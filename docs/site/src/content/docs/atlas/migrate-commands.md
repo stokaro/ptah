@@ -241,6 +241,9 @@ before the affected migration body or revision row changes. Validation follows
 the selected plan: global `all` validates the complete selected batch first;
 global `file` and `none` validate each file as execution reaches it. An amount
 or baseline that excludes a malformed file does not validate that file.
+On `ptah-compat`, these failures use Atlas's leaf diagnostic without Ptah's
+internal `error applying migrations:` wrapper. The native command keeps its
+`error running migrations:` context.
 
 Inside a Ptah-supported txtar migration, `migration.sql` and `down.sql` carry
 independent modes. Ptah rejects a transaction-mode header placed before

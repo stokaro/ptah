@@ -189,6 +189,10 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		result.Applied = executionStarted && !p.DryRun
 		result.ApplyError = err
 		result.ErrorText = err.Error()
+		var txModeErr *migrator.AtlasTxModeDirectiveError
+		if errors.As(err, &txModeErr) {
+			return result, txModeErr
+		}
 		return result, fmt.Errorf("error applying migrations: %w", err)
 	}
 	if !executionStarted {

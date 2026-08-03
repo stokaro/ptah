@@ -416,25 +416,48 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
-	dir := malformedAtlasTxModeDir(c)
-	run := newCompatProcess(
-		binPath,
-		"migrate", "apply",
-		"--url", "sqlite://"+filepath.Join(c.TempDir(), "state.db"),
-		"--dir", "file://"+dir,
-	)
-	var stdout, stderr bytes.Buffer
-	run.Stdout = &stdout
-	run.Stderr = &stderr
+	tests := []struct {
+		name      string
+		filename  string
+		directive string
+		want      string
+	}{
+		{
+			name:      "unknown directive",
+			filename:  "1_unknown.sql",
+			directive: "-- atlas:txmode bogus\n\n",
+			want:      "Error: unknown txmode \"bogus\" found in file directive \"1_unknown.sql\"\n",
+		},
+		{
+			name:      "duplicate directive",
+			filename:  "1_duplicate.sql",
+			directive: "-- atlas:txmode none\n-- atlas:txmode file\n\n",
+			want:      "Error: multiple txmode values found in file \"1_duplicate.sql\": [\"none\" \"file\"]\n",
+		},
+	}
 
-	err := run.Run()
-	var exitErr *exec.ExitError
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dir := malformedAtlasTxModeDir(c, test.filename, test.directive)
+			run := newCompatProcess(
+				binPath,
+				"migrate", "apply",
+				"--url", "sqlite://"+filepath.Join(c.TempDir(), "state.db"),
+				"--dir", "file://"+dir,
+			)
+			var stdout, stderr bytes.Buffer
+			run.Stdout = &stdout
+			run.Stderr = &stderr
 
-	c.Assert(err, qt.ErrorAs, &exitErr)
-	c.Assert(exitErr.ExitCode(), qt.Equals, 1)
-	c.Assert(stderr.String(), qt.Equals,
-		"Error: error applying migrations: unknown txmode \"bogus\" found in file directive \"1_invalid.sql\"\n")
-	c.Assert(stdout.String(), qt.Equals, "")
+			err := run.Run()
+			var exitErr *exec.ExitError
+
+			c.Assert(err, qt.ErrorAs, &exitErr)
+			c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+			c.Assert(stderr.String(), qt.Equals, test.want)
+			c.Assert(stdout.String(), qt.Equals, "")
+		})
+	}
 }
 
 func buildCompatBinary(c *qt.C) string {
@@ -475,11 +498,11 @@ func atlasDirWithoutSum(c *qt.C) string {
 	return dir
 }
 
-func malformedAtlasTxModeDir(c *qt.C) string {
+func malformedAtlasTxModeDir(c *qt.C, filename, directive string) string {
 	c.Helper()
 	dir := c.TempDir()
-	c.Assert(os.WriteFile(filepath.Join(dir, "1_invalid.sql"), []byte(
-		"-- atlas:txmode bogus\n\nCREATE TABLE invalid_txmode (id INTEGER PRIMARY KEY);\n",
+	c.Assert(os.WriteFile(filepath.Join(dir, filename), []byte(
+		directive+"CREATE TABLE invalid_txmode (id INTEGER PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)

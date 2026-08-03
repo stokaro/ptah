@@ -767,7 +767,9 @@ Per-file `atlas:txmode` precedence and validation match the measured Atlas CE
 none overrides and validate files as execution reaches them. Global `all`
 rejects every explicit file mode before starting the selected batch. Unknown,
 duplicate, and file-level all values fail before the affected migration body
-or revision row changes.
+or revision row changes. The compatibility surface prints Atlas's leaf
+transaction-mode diagnostic; native commands retain Ptah's broader apply
+context.
 
 Ptah also applies those modes independently to `migration.sql` and `down.sql`
 inside txtar files. Atlas CE `v1.3.0` ignores section-local modes. Ptah rejects

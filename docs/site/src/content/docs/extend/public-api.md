@@ -105,6 +105,10 @@ with `MigrationFileTxModeUnspecified`, `MigrationFileTxModeFile`, or
 executable up-direction SQL, explicit mode, and source-line offset from plain
 SQL or Atlas txtar content. Up and down values remain independent.
 
+Atlas transaction-mode directive validation errors expose
+`migrator.AtlasTxModeDirectiveError` through `errors.As`; the leaf error keeps
+the source file and transaction-mode details in its message.
+
 This pre-GA API replaces the former Boolean transaction fields. Use
 `NewMigrationFromSQLFiles` or its interceptor variant to load an up/down pair:
 they return a complete `Migration` with transaction modes, timeouts, source
