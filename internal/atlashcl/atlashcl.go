@@ -58,6 +58,13 @@ func Parse(data []byte, filename string) (*goschema.Database, error) {
 	if err := classifyProjectFile(body, filename); err != nil {
 		return nil, err
 	}
+	// Refuse malformed sql() calls before the body walk, not during it. Every
+	// value helper below falls back to an attribute's source text when the
+	// expression will not evaluate, so a call this guard let through would be
+	// rendered into DDL verbatim -- issue #1106.
+	if err := p.rejectMalformedSQLRawExprs(body); err != nil {
+		return nil, err
+	}
 	if err := p.parseBody(body); err != nil {
 		return nil, err
 	}
@@ -1468,6 +1475,9 @@ func (p *parser) optionalRefName(attr *hclsyntax.Attribute) string {
 	if attr == nil {
 		return ""
 	}
+	if value, ok := p.sqlRawExprValue(attr.Expr); ok {
+		return value
+	}
 	return refName(p.rawExpr(attr))
 }
 
@@ -1542,6 +1552,9 @@ func (p *parser) optionalRawExpr(attr *hclsyntax.Attribute) string {
 	if attr == nil {
 		return ""
 	}
+	if value, ok := p.sqlRawExprValue(attr.Expr); ok {
+		return value
+	}
 	return p.rawExpr(attr)
 }
 
@@ -1555,19 +1568,26 @@ func (p *parser) optionalSQLExpression(attr *hclsyntax.Attribute) string {
 	return p.exprString(attr)
 }
 
+// sqlExpression reports whether the attribute is Atlas's sql() raw expression,
+// and reduces it to the SQL it carries. Callers that branch on ok distinguish a
+// SQL expression from a literal value -- a column default, for instance.
+//
+// The match is structural, on the parsed call. It used to be textual, on the
+// attribute's source: a `sql(` prefix and a `)` suffix. That accepted anything
+// those two bytes bracketed, so `default = sql("1") + sql("2")` was read as the
+// SQL text `"1") + sql("2` and planned as `DEFAULT "1") + sql("2"`.
 func (p *parser) sqlExpression(attr *hclsyntax.Attribute) (string, bool) {
-	raw := p.rawExpr(attr)
-	if value, ok := strings.CutPrefix(raw, "sql("); ok && strings.HasSuffix(value, ")") {
-		value = strings.TrimSuffix(value, ")")
-		if unquoted, err := strconv.Unquote(value); err == nil {
-			return unquoted, true
-		}
-		return value, true
-	}
-	return "", false
+	return p.sqlRawExprValue(attr.Expr)
 }
 
 func (p *parser) exprString(attr *hclsyntax.Attribute) string {
+	// sql() lands here from every attribute Ptah reads as a plain string, which
+	// is most of the grammar. Reduce it: the fallback below hands the
+	// attribute's SOURCE TEXT to the renderer, and that is what put
+	// `CHECK (sql("n > 0"))` into a plan -- issue #1106.
+	if value, ok := p.sqlRawExprValue(attr.Expr); ok {
+		return value
+	}
 	value, diags := attr.Expr.Value(nil)
 	if !diags.HasErrors() && value.Type() == cty.String {
 		return value.AsString()
