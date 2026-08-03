@@ -3,6 +3,7 @@ package migrator_test
 import (
 	"context"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"testing/fstest"
 
@@ -246,6 +247,60 @@ func TestDirectionalRepair_RefusesUpResumeOverLegacyRollbackRow(t *testing.T) {
 		qt.IsNil,
 	)
 	c.Assert(directionalRepairLogRows(c, conn), qt.Equals, 2)
+}
+
+// TestDirectionalRepair_ResumedRollbackMarksEachStatementInFlight proves the
+// resumed rollback keeps the same crash contract the original rollback has:
+// before each statement the revision durably says which statement is running
+// and that its outcome is unknown, so a process death mid-resume cannot be
+// mistaken for a clean stop after the previous statement.
+//
+// The probe is the database itself. A down statement copies the revision row
+// into a side table as it runs, which is the only vantage point from which the
+// in-flight marker is visible -- every way the resume can end overwrites it.
+// Without the marker the captured row is the previous failure instead:
+// "failed:down", applied 1, and the old error text.
+func TestDirectionalRepair_ResumedRollbackMarksEachStatementInFlight(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TempDir(), "in-flight.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	const capture = "INSERT INTO probe SELECT state, applied, COALESCE(error, '') FROM schema_migrations WHERE version = 1;\n"
+	mig, err := migrator.NewFSMigrator(conn, fstest.MapFS{
+		"000001_setup.up.sql": {Data: []byte(
+			"CREATE TABLE parent (id INTEGER PRIMARY KEY);\n" +
+				"CREATE TABLE probe (state TEXT, applied INTEGER, err TEXT);\n",
+		)},
+		"000001_setup.down.sql": {Data: []byte(
+			"-- +ptah no_transaction\n" +
+				capture +
+				"DROP TABLE definitely_missing_table;\n" +
+				capture +
+				"DROP TABLE parent;\n",
+		)},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
+	c.Assert(mig.MigrateDownTo(c.Context(), 0), qt.IsNotNil)
+
+	c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3}), qt.IsNil)
+
+	rows, err := conn.QueryContext(c.Context(), "SELECT state, applied, err FROM probe ORDER BY rowid")
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+	var captured []string
+	for rows.Next() {
+		var state, failure string
+		var applied int
+		c.Assert(rows.Scan(&state, &applied, &failure), qt.IsNil)
+		captured = append(captured, state+"/"+strconv.Itoa(applied)+"/"+failure)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	c.Assert(captured, qt.HasLen, 2)
+	// Statement 1 of the original rollback, and statement 3 of the resume.
+	c.Assert(captured[0], qt.Matches, `pending:down/0/statement execution outcome is unknown.*`)
+	c.Assert(captured[1], qt.Matches, `pending:down/2/statement execution outcome is unknown.*`)
 }
 
 // TestDirectionalRepair_UpResumeSurvivesEqualLengthBodies is the fixture that
