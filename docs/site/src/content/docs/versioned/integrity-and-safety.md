@@ -190,6 +190,19 @@ over a directory whose previous contents were never verified, which turns drift
 into apparent cleanliness. Verify with `ptah-compat migrate validate` before
 generating into a directory you did not hash yourself.
 
+**`migrate import` is gated on the source directory, with one exemption.** A
+source that carries an `atlas.sum` must verify against it before anything is
+converted or written; a source that carries no `atlas.sum` at all is imported,
+because a directory another tool wrote has never been hashed and importing it is
+what the verb is for. That is the one place the rule differs from `apply`,
+`status` and `set`, which refuse an unhashed directory outright, and it matches
+Atlas on both halves. Until
+[#1095](https://github.com/stokaro/ptah/issues/1095) the source was not checked
+at all: a directory `migrate apply` refused was converted anyway, and the
+destination was hashed over whatever the conversion produced — so a tampered
+source came out as a directory `migrate validate` calls clean. Nothing is
+written when the check fails; the destination directory is not created.
+
 **Directories read through `?format=` are gated too.** A goose, flyway,
 liquibase, dbmate or golang-migrate directory is converted in memory and the
 converted filesystem carries no integrity file — but the directory it was read
@@ -218,8 +231,9 @@ Membership in the covered set is decided by the name, so a *directory* called
 `weird.sql` is a member for `atlas`, `goose`, `dbmate` and `liquibase`, and one
 called `weird.up.sql` is a member for `golang-migrate`. Reading it fails, so
 there is no sum to write and no sum to verify: `hash`, `validate`, `apply`,
-`status`, `set` and `lint` all refuse the directory and exit `1`, matching
-Atlas. Rename the directory or move it out of the migrations directory.
+`status`, `set`, `lint` and `import` all refuse the directory and exit `1`,
+matching Atlas. Rename the directory or move it out of the migrations
+directory.
 
 ```text
 $ ptah-compat migrate hash --dir 'file://migrations?format=goose'

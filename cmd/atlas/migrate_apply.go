@@ -14,7 +14,6 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
@@ -23,7 +22,6 @@ import (
 	"go.5x5.cz/ptah/internal/atlasmigratereport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/dblock"
-	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -499,54 +497,16 @@ func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, format atlasmigrat
 // tool's convention against the atlas.sum that directory carries, over exactly
 // the file set Atlas CE covers for that layout.
 //
-// It is the same computation `ptah-compat migrate hash` writes and
-// `migrate validate` checks (#984, #992), so a directory this gate refuses is
-// one those two verbs also refuse, and one they call clean applies here.
-//
-// What this gate verifies is also what apply executes, for every layout. That
-// holds structurally rather than by agreement: the importer selects the file
-// set it converts with the same [atlasmigrateimport.SumFileNames] rule this
-// gate hashes. It was not always true — until #982 the Flyway importer ran a
-// wider selection than the checksum covered, so a superseded baseline and a
-// lowercase-prefixed file executed on a directory both tools called clean.
-//
-// An empty covered set is exempt from the missing-sum refusal, and that
-// predicate is measured rather than assumed. CE's refusal keys on the covered
-// set being non-empty, NOT on the directory holding any *.sql: an unhashed
-// golang-migrate directory holding only 1_init.down.sql, and an unhashed Flyway
-// directory holding only U1__init.sql, both exit 0 with "No migration files to
-// execute", while an unhashed Goose directory holding only foo.sql exits 1.
-// SumFileNames returning an empty slice is exactly that predicate. The
-// exemption is deliberately limited to the unhashed branch: a hashed directory
-// whose covered files were all deleted is drift, and CE reports it as one.
+// It is [verifyCoveredAtlasDirChecksum] under the apply-side policy: an
+// unhashed directory whose covered set is non-empty is refused, because apply
+// would otherwise execute migrations nothing verified. `migrate import` shares
+// the same verifier under the other policy; see migrate_integrity_gate.go.
 func verifyConvertedAtlasApplyChecksum(
 	cmd *cobra.Command,
 	fsys fs.FS,
 	format atlasmigrateimport.Format,
 ) error {
-	names, err := atlasmigrateimport.SumFileNames(fsys, format)
-	if err != nil {
-		return err
-	}
-	result, hashed, err := migratesum.VerifyAtlasFilesHashed(fsys, names)
-	switch {
-	case errors.Is(err, migratesum.ErrSumFileMalformed):
-		return migratevalidate.FailAtlasChecksumMismatch(cmd, nil)
-	case errors.Is(err, migratesum.ErrCoveredEntryUnreadable):
-		// A covered entry that is a directory (#991). It reaches here on the
-		// converted path too, because SumFileNames selects by name and the
-		// captured snapshot now records such a directory instead of dropping it.
-		return migratevalidate.FailAtlasChecksumUnreadableEntry(cmd, err)
-	case err != nil:
-		return err
-	case !hashed && len(names) == 0:
-		return nil
-	case !hashed:
-		return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
-	case !result.OK():
-		return migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())
-	}
-	return nil
+	return verifyCoveredAtlasDirChecksum(cmd, fsys, format, requireAtlasSum)
 }
 
 // applySkipChecksEnvVar gates pre-migration checks on the compat apply path.
