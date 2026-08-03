@@ -513,7 +513,7 @@ func loadEntries(fsys fs.FS, display string, format Format) ([]Entry, error) {
 	case FormatGoose:
 		return loadGooseEntries(fsys, files)
 	case FormatDBMate:
-		return loadDirectiveSectionEntries(fsys, files, "-- migrate:up", dbmateUpSQL)
+		return loadDirectiveSectionEntries(fsys, files, dbmateUpSQL)
 	case FormatLiquibase:
 		return loadLiquibaseEntries(fsys, files)
 	case FormatFlyway:
@@ -532,7 +532,7 @@ func loadGooseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
 			return nil, fmt.Errorf("Go-based Goose migration %q is not supported (SQL migrations only)", file.Name())
 		}
 	}
-	return loadDirectiveSectionEntries(fsys, files, "-- +goose Up", gooseUpSQL)
+	return loadDirectiveSectionEntries(fsys, files, gooseUpSQL)
 }
 
 func loadLiquibaseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
@@ -556,7 +556,7 @@ func loadLiquibaseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
 			strings.Join(changelogFiles, ", "),
 		)
 	}
-	return loadDirectiveSectionEntries(fsys, files, "", liquibaseSQL)
+	return loadDirectiveSectionEntries(fsys, files, liquibaseSQL)
 }
 
 func loadAtlasEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
@@ -602,33 +602,41 @@ func loadGolangMigrateEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) 
 }
 
 // loadDirectiveSectionEntries reads directive-sectioned migration files (goose,
-// dbmate, liquibase) and keeps only their up SQL. extract reports found=false
-// when a required up directive is absent; that is a hard error rather than a
-// fall back to executing the raw file, so a malformed directive can never cause
-// the down/rollback section to run against a live database. directive names the
-// expected marker for the error message (empty when the format has no required
-// up directive, such as liquibase).
+// dbmate, liquibase) and keeps only their up SQL. extract owns the whole
+// decision: it returns the up SQL, or an error naming why the file cannot be
+// converted. Each format's rules differ enough that a shared "is the marker
+// present" flag could not express them — see [gooseUpSQL] and [dbmateUpSQL].
+//
+// extract receives the file's RAW bytes, not normalized ones. That matters for
+// the one case where the community binary preserves a file verbatim (a goose
+// file carrying no directives): normalizing before extraction would drop blank
+// lines between statements, changing the converted bytes and therefore the
+// atlas.sum entry, so the two tools would disagree about a directory both call
+// clean. Every extractor normalizes what it returns.
+//
+// An empty up section is an entry, not a skip. An intentionally empty migration
+// is a legitimate thing to write, and the community binary records it as an
+// applied revision with 0 statements; dropping it here removed it from the
+// converted directory AND from atlas_schema_revisions while still exiting 0,
+// so a later run would never apply it. Measured on goose, dbmate and liquibase
+// alike (community binary v1.3.0).
 func loadDirectiveSectionEntries(
 	fsys fs.FS,
 	files []fs.DirEntry,
-	directive string,
-	extract func([]byte) ([]byte, bool),
+	extract func(name string, data []byte) ([]byte, error),
 ) ([]Entry, error) {
 	var entries []Entry
 	for _, file := range files {
 		if file.IsDir() || !numberedSQLFileRe.MatchString(file.Name()) {
 			continue
 		}
-		data, err := readImportSQLFile(fsys, file.Name())
+		data, err := readRawImportSQLFile(fsys, file.Name())
 		if err != nil {
 			return nil, err
 		}
-		up, found := extract(data)
-		if !found {
-			return nil, fmt.Errorf("migration file %s has no %q section", file.Name(), directive)
-		}
-		if len(up) == 0 {
-			continue
+		up, err := extract(file.Name(), data)
+		if err != nil {
+			return nil, err
 		}
 		entries = append(entries, Entry{Name: file.Name(), Data: up})
 	}
@@ -872,72 +880,260 @@ func flywayOrderingKey(file flywaySumFile) (int64, error) {
 }
 
 func readImportSQLFile(fsys fs.FS, name string) ([]byte, error) {
-	data, err := fs.ReadFile(fsys, name)
+	data, err := readRawImportSQLFile(fsys, name)
 	if err != nil {
-		return nil, fmt.Errorf("read source migration %s: %w", name, err)
+		return nil, err
 	}
 	return normalizeSQL(data), nil
 }
 
-// gooseUpSQL extracts the up section of a goose migration. It tracks
-// StatementBegin/StatementEnd blocks: inside a block goose suspends annotation
-// parsing, so only StatementEnd is honored and every other line (including a
-// stray -- +goose Up/Down that appears inside a function body) is passed through
-// verbatim. found is false when the file has no -- +goose Up marker; the caller
-// must treat that as an error rather than execute the raw file, so a malformed
-// directive can never leak the down section onto the apply path.
-func gooseUpSQL(data []byte) ([]byte, bool) {
-	var out []string
-	inUp := false
-	foundUp := false
+// readRawImportSQLFile reads a source migration without normalizing it, for the
+// callers that must decide normalization for themselves. See
+// [loadDirectiveSectionEntries].
+func readRawImportSQLFile(fsys fs.FS, name string) ([]byte, error) {
+	data, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return nil, fmt.Errorf("read source migration %s: %w", name, err)
+	}
+	return data, nil
+}
+
+// goosePragma is one of the four goose directives that change which section the
+// parser is in.
+//
+// "NO TRANSACTION" is deliberately absent, and so is every other "-- +goose ..."
+// line. Goose leaves them in the migration body, and because they cannot open or
+// close a section, recognizing them would change nothing: measured on the
+// community binary v1.3.0, both "-- +goose NO TRANSACTION" and the meaningless
+// "-- +goose Frobnicate" survive into the SQL it executes, whether they sit above
+// the Up directive or inside the up section.
+type goosePragma string
+
+const (
+	goosePragmaUp             goosePragma = "Up"
+	goosePragmaDown           goosePragma = "Down"
+	goosePragmaStatementBegin goosePragma = "StatementBegin"
+	goosePragmaStatementEnd   goosePragma = "StatementEnd"
+)
+
+// goosePragmaPrefix is matched case-sensitively, including its single trailing
+// space. See [goosePragmaOf] for why the spacing is load-bearing.
+const goosePragmaPrefix = "-- +goose "
+
+var goosePragmas = []goosePragma{
+	goosePragmaUp,
+	goosePragmaDown,
+	goosePragmaStatementBegin,
+	goosePragmaStatementEnd,
+}
+
+// gooseSection is which directive section the parser is currently inside.
+type gooseSection int
+
+const (
+	gooseSectionNone gooseSection = iota
+	gooseSectionUp
+	gooseSectionDown
+)
+
+// goosePragmaOf reports the section-changing goose directive a line carries.
+//
+// The spelling rules are the community binary's, and each was measured rather
+// than assumed, because every one of them decides whether a line is a directive
+// or executable SQL:
+//
+//   - surrounding whitespace is ignored, so "  -- +goose Up  " is the Up directive;
+//   - the prefix is case-sensitive, so "-- +Goose Up" is NOT a directive;
+//   - the name runs to the first space, so "-- +goose Up extra" IS the Up directive;
+//   - exactly one space follows "+goose", so "-- +goose  Up" is NOT a directive;
+//   - the name itself is case-sensitive, so "-- +goose up" is NOT a directive.
+//
+// The last two are the dangerous ones: the community binary silently treats such
+// a line as a comment and folds the SQL under it into the up migration. See
+// [gooseNearMissPragma].
+func goosePragmaOf(line string) (goosePragma, bool) {
+	rest, ok := gooseDirectiveRemainder(strings.TrimSpace(line))
+	if !ok {
+		return "", false
+	}
+	name, _, _ := strings.Cut(rest, " ")
+	name = strings.TrimSpace(name)
+	for _, pragma := range goosePragmas {
+		if string(pragma) == name {
+			return pragma, true
+		}
+	}
+	return "", false
+}
+
+// gooseNearMissPragma reports the section directive a line was evidently meant to
+// be but misspells — "-- +goose down" for Down, "-- +goose  Up" for Up.
+//
+// This is a DELIBERATE DIVERGENCE, and the reason is that the community binary's
+// handling of these lines is a defect rather than a decision. It does not
+// recognize the typo, folds the line into the migration body as a comment, and
+// then executes everything below it. Measured on v1.3.0: a file whose only fault
+// is a lowercase "-- +goose down" has its table created and then DROPPED by its
+// own rollback section, and the migration is recorded as successfully applied.
+// A case error in a directive should not silently roll back a migration, so Ptah
+// refuses. Refusing is stricter than the community binary, which exits 0 here, so
+// this cannot make ptah-compat accept anything the community binary rejects.
+//
+// The guard is scoped to the four section-changing names, and requires the
+// remainder to be exactly the name: "-- +goose Frobnicate" stays a comment
+// because it cannot change sections, and "-- +goose up to date" stays a comment
+// because it reads as prose rather than a mistyped directive. Refusing those
+// would reject files the community binary runs safely, for no benefit.
+func gooseNearMissPragma(line string) (goosePragma, bool) {
+	rest, ok := gooseDirectiveRemainderFold(strings.TrimSpace(line))
+	if !ok {
+		return "", false
+	}
+	name := strings.TrimSpace(rest)
+	for _, pragma := range goosePragmas {
+		if strings.EqualFold(string(pragma), name) {
+			return pragma, true
+		}
+	}
+	return "", false
+}
+
+// gooseUpSQL extracts the up section of a goose migration.
+//
+// It is a state machine over the directive set above, not a line filter, because
+// the community binary is one too and the difference is observable in both
+// directions. Its accept/reject set was measured on v1.3.0 and is reproduced
+// here:
+//
+//   - Up is rejected while already inside an up section (a second Up), but
+//     accepted after a Down — "Up, Down, Up" is a file the community binary runs.
+//   - Down is rejected before any Up has opened a section, but accepted after
+//     another Down.
+//   - StatementBegin is rejected outside a section; an unterminated block is fine.
+//   - StatementEnd is rejected unless a StatementBegin is open.
+//   - Inside a StatementBegin block only StatementEnd is accepted; a directive of
+//     any other kind there is an error rather than passed-through body text.
+//
+// Each of those rejections is a file ptah-compat used to accept and execute, so
+// this is where the never-looser half of the parity rule is paid.
+//
+// The up body runs from the FILE START through the first Down, minus the
+// directive lines themselves. Starting at the file start is what stops SQL
+// written above the Up directive from being silently dropped; stopping at the
+// first Down is the community binary's own reading, so the second up section of
+// an "Up, Down, Up" file is not executed.
+//
+// A file carrying no section directive at all is NOT an error: its whole body is
+// the migration, byte for byte. That is #981. Such a file has no rollback section
+// that could leak onto the apply path, so the caution that governs a MALFORMED
+// directive set does not apply to a file that simply has none, and the community
+// binary executes it, records it honestly, and drops nothing.
+func gooseUpSQL(name string, data []byte) ([]byte, error) {
+	var body []string
+	section := gooseSectionNone
 	inStatement := false
-	for line := range strings.SplitSeq(string(data), "\n") {
-		trimmed := strings.TrimSpace(strings.ToLower(line))
+	collecting := true
+
+	for i, line := range strings.Split(string(data), "\n") {
+		lineNo := i + 1
+		pragma, ok := goosePragmaOf(line)
+		if !ok {
+			if near, isNear := gooseNearMissPragma(line); isNear {
+				return nil, fmt.Errorf(
+					"migration file %s line %d: %q is not a goose directive because directive names are case- and space-sensitive; "+
+						"as written it is an ordinary comment and the SQL below it would be executed as part of the up migration. Write %q instead",
+					name, lineNo, strings.TrimSpace(line), goosePragmaPrefix+string(near),
+				)
+			}
+			if collecting {
+				body = append(body, line)
+			}
+			continue
+		}
 		if inStatement {
-			if trimmed == "-- +goose statementend" {
-				inStatement = false
-				continue
+			// A StatementBegin block ends only at StatementEnd. Any other
+			// directive inside one is an error, not body text.
+			if pragma != goosePragmaStatementEnd {
+				return nil, gooseUnexpectedPragma(name, lineNo, pragma, "it appears inside a \"-- +goose StatementBegin\" block")
 			}
-			if inUp {
-				out = append(out, line)
-			}
+			inStatement = false
 			continue
 		}
-		switch trimmed {
-		case "-- +goose up":
-			inUp = true
-			foundUp = true
-			continue
-		case "-- +goose down":
-			inUp = false
-			continue
-		case "-- +goose statementbegin":
+		switch pragma {
+		case goosePragmaUp:
+			if section == gooseSectionUp {
+				return nil, gooseUnexpectedPragma(name, lineNo, pragma, "an up section is already open")
+			}
+			section = gooseSectionUp
+		case goosePragmaDown:
+			if section == gooseSectionNone {
+				return nil, gooseUnexpectedPragma(name, lineNo, pragma, "no up section has been opened yet")
+			}
+			section = gooseSectionDown
+			collecting = false
+		case goosePragmaStatementBegin:
+			if section == gooseSectionNone {
+				return nil, gooseUnexpectedPragma(name, lineNo, pragma, "no up section has been opened yet")
+			}
 			inStatement = true
-			continue
-		case "-- +goose statementend":
-			continue
-		}
-		if inUp {
-			out = append(out, line)
+		case goosePragmaStatementEnd:
+			return nil, gooseUnexpectedPragma(name, lineNo, pragma, "no \"-- +goose StatementBegin\" block is open")
 		}
 	}
-	if !foundUp {
-		return nil, false
+
+	if section == gooseSectionNone {
+		// No section directive appeared anywhere: the file IS the migration.
+		// Reached only when nothing errored above, and Down, StatementBegin and
+		// StatementEnd all error while the section is None, so this really does
+		// mean "carries no goose directives" rather than "carries a broken set".
+		return trimSQL(data), nil
 	}
-	return normalizeSQL([]byte(strings.Join(out, "\n"))), true
+	return normalizeSQL([]byte(strings.Join(body, "\n"))), nil
+}
+
+// gooseUnexpectedPragma reports a directive that cannot appear where it does.
+// The community binary refuses each of these too; naming the line and the reason
+// is the only difference.
+func gooseUnexpectedPragma(name string, line int, pragma goosePragma, reason string) error {
+	return fmt.Errorf(
+		"migration file %s line %d: unexpected %q directive because %s",
+		name, line, goosePragmaPrefix+string(pragma), reason,
+	)
 }
 
 // dbmateUpSQL extracts the up section of a dbmate migration. Directive lines are
 // matched whole and dropped entirely, so trailing options such as
-// "-- migrate:up transaction:false" never leak into the executable SQL. found is
-// false when there is no -- migrate:up directive.
-func dbmateUpSQL(data []byte) ([]byte, bool) {
+// "-- migrate:up transaction:false" never leak into the executable SQL.
+//
+// A file with no "-- migrate:up" directive is refused. This is a DELIBERATE
+// DIVERGENCE and it is the mirror image of the goose decision above: there,
+// matching the community binary was right; here, matching it would be wrong.
+//
+// Measured on v1.3.0, a dbmate file that carries no "-- migrate:up":
+//
+//   - migrate apply exits 0, records revision 1 with 0 of 0 statements, and
+//     creates nothing. The table is permanently absent AND the migration is
+//     marked done, so no later apply will ever run it.
+//   - migrate import exits 0 and writes a ZERO-BYTE file where 47 authored bytes
+//     were, then hashes the empty file into atlas.sum as if it were the migration.
+//
+// That is silently discarding what the author wrote and corrupting recorded state
+// in one behavior, so Ptah keeps refusing. Note the direction: the community
+// binary exits 0 and ptah-compat exits 1, so the never-looser half of the parity
+// rule would PERMIT copying this — nothing forces the refusal except that
+// reproducing a defect to be identical to it is the wrong answer.
+//
+// Unlike goose, a dbmate file cannot be read as "the body is the migration":
+// dbmate's own format requires the directive, and a file that has one but leaves
+// its section empty is a different, legitimate thing that IS converted (to an
+// empty migration, exactly as the community binary records it).
+func dbmateUpSQL(name string, data []byte) ([]byte, error) {
 	var out []string
 	inUp := false
 	foundUp := false
 	for line := range strings.SplitSeq(string(data), "\n") {
-		if name, ok := dbmateDirective(line); ok {
-			inUp = name == "up"
+		if directive, ok := dbmateDirective(line); ok {
+			inUp = directive == "up"
 			if inUp {
 				foundUp = true
 			}
@@ -948,9 +1144,13 @@ func dbmateUpSQL(data []byte) ([]byte, bool) {
 		}
 	}
 	if !foundUp {
-		return nil, false
+		return nil, fmt.Errorf(
+			"migration file %s carries no %q directive, so none of its SQL would be executed; "+
+				"Ptah refuses rather than recording an empty migration that can never be re-run",
+			name, "-- migrate:up",
+		)
 	}
-	return normalizeSQL([]byte(strings.Join(out, "\n"))), true
+	return normalizeSQL([]byte(strings.Join(out, "\n"))), nil
 }
 
 // dbmateDirective reports whether line is a dbmate "-- migrate:<name>" directive
@@ -972,8 +1172,8 @@ func dbmateDirective(line string) (string, bool) {
 
 // liquibaseSQL keeps a Liquibase formatted-SQL body, dropping the header and any
 // --rollback directive lines. Liquibase has no up/down section marker, so the
-// remainder is the up SQL; found is always true.
-func liquibaseSQL(data []byte) ([]byte, bool) {
+// remainder is the up SQL and there is nothing here that can fail.
+func liquibaseSQL(_ string, data []byte) ([]byte, error) {
 	var out []string
 	for line := range strings.SplitSeq(string(data), "\n") {
 		trimmed := strings.TrimSpace(strings.ToLower(line))
@@ -982,7 +1182,27 @@ func liquibaseSQL(data []byte) ([]byte, bool) {
 		}
 		out = append(out, line)
 	}
-	return normalizeSQL([]byte(strings.Join(out, "\n"))), true
+	return normalizeSQL([]byte(strings.Join(out, "\n"))), nil
+}
+
+// trimSQL normalizes a body the way the community binary normalizes a goose file
+// it found no directives in: surrounding whitespace goes, a single trailing
+// newline is added, and interior blank lines are KEPT.
+//
+// [normalizeSQL] cannot be used for that case. It also drops blank lines between
+// statements, which for a verbatim-preserved file would change the converted
+// bytes and therefore its atlas.sum entry — leaving `atlas migrate import` and
+// `ptah-compat migrate import` to disagree about a directory both call clean.
+// Measured: a directive-free file of 83 bytes with one interior blank line is
+// converted to 83 bytes by the community binary and would be 82 through
+// normalizeSQL. Trailing blank lines and a missing final newline ARE normalized
+// by both, which is why trimming is right and copying the bytes untouched is not.
+func trimSQL(data []byte) []byte {
+	sql := strings.TrimSpace(string(data))
+	if sql == "" {
+		return nil
+	}
+	return []byte(sql + "\n")
 }
 
 func normalizeSQL(data []byte) []byte {
@@ -1103,4 +1323,40 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// gooseDirectiveRemainder returns what follows a `-- +goose` marker, or reports
+// that the line does not carry one.
+//
+// The separator is ANY run of whitespace, not one literal space. Requiring the
+// space made a tab-separated directive invisible: the file then looked
+// directive-free, and the raw-SQL path executed it whole. Measured on
+// `-- +goose Up / CREATE TABLE t / -- +goose<TAB>Down / DROP TABLE t`, the
+// community binary parses the Down and keeps the table at exit 0, while Ptah
+// exited 0 having DROPPED it -- the same silent-rollback harm the near-miss
+// guard exists to prevent, one keystroke away from it.
+func gooseDirectiveRemainder(line string) (string, bool) {
+	return gooseDirectiveRest(line, strings.HasPrefix)
+}
+
+// gooseDirectiveRemainderFold is [gooseDirectiveRemainder] for the near-miss
+// guard, which matches the marker case-insensitively.
+func gooseDirectiveRemainderFold(line string) (string, bool) {
+	return gooseDirectiveRest(line, func(s, prefix string) bool {
+		return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+	})
+}
+
+func gooseDirectiveRest(line string, hasPrefix func(string, string) bool) (string, bool) {
+	marker := strings.TrimRight(goosePragmaPrefix, " ")
+	if !hasPrefix(line, marker) {
+		return "", false
+	}
+	rest := line[len(marker):]
+	trimmed := strings.TrimLeft(rest, " \t")
+	if trimmed == rest {
+		// No separator at all: `-- +gooseUp` is not a directive.
+		return "", false
+	}
+	return trimmed, true
 }

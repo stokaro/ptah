@@ -270,17 +270,25 @@ func TestMigrateApplyRejectsDuplicateConvertedVersionBeforeOpeningDatabase(t *te
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
+// TestMigrateApplyRejectsMissingUpDirectiveBeforeOpeningDatabase covers dbmate
+// only. It used to cover goose too, asserting that a goose file with no
+// directives was refused; stokaro/ptah#981 is that refusal being wrong. Atlas
+// executes such a file's bytes verbatim and records the revision honestly, and a
+// file with no directives has no rollback section that could leak onto the apply
+// path — measured, including on the goose fixture this test used to carry, which
+// Atlas runs to completion and converts to a byte-identical atlas.sum. The goose
+// behavior now lives in TestMigrateApplyGooseDirectiveParsing, which asserts both
+// that directive-free files execute and that BROKEN directive sets are still
+// refused.
+//
+// The dbmate refusal stays, and stays deliberately: see the divergence table in
+// docs/conformance.md and the doc comment on dbmateUpSQL.
 func TestMigrateApplyRejectsMissingUpDirectiveBeforeOpeningDatabase(t *testing.T) {
 	tests := []struct {
 		name    string
 		format  string
 		content string
 	}{
-		{
-			name:    "goose",
-			format:  "goose",
-			content: "CREATE TABLE never_created (id INTEGER PRIMARY KEY);\nDROP TABLE never_created;",
-		},
 		{
 			name:    "dbmate",
 			format:  "dbmate",
@@ -309,7 +317,7 @@ func TestMigrateApplyRejectsMissingUpDirectiveBeforeOpeningDatabase(t *testing.T
 
 			err := cmd.Execute()
 
-			c.Assert(err, qt.ErrorMatches, `atlas migrate apply --dir: migration file 1_init\.sql has no ".*" section`)
+			c.Assert(err, qt.ErrorMatches, `atlas migrate apply --dir: migration file 1_init\.sql carries no "-- migrate:up" directive.*`)
 			_, statErr := os.Stat(dbPath)
 			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 		})
