@@ -108,12 +108,21 @@ func parseAtlasFileTxMode(filename, sql string) (MigrationFileTxMode, bool, erro
 	headerComplete := false
 	for sql != "" {
 		line, rest, hasNewline := strings.Cut(sql, "\n")
-		if strings.TrimSpace(line) == "" {
+		// The directive header ends at the first line that is not a comment.
+		// A blank line ends it, and so does the first statement: requiring a
+		// blank line means `-- atlas:txmode none` immediately above the
+		// statement it applies to is silently dropped, and the statement then
+		// runs inside a transaction it asked to stay out of.
+		//
+		// Measured on the pinned community binary: with the blank line the
+		// directive is honored, without it the same file fails with
+		// `CREATE INDEX CONCURRENTLY cannot run inside a transaction block`.
+		// Ptah honored both until it was changed to follow that shape, and
+		// honoring both is the behavior restored here -- a directive the author
+		// wrote and we can read is not made meaningless by the line after it.
+		if strings.TrimSpace(line) == "" || !strings.HasPrefix(line, "--") {
 			headerComplete = true
 			break
-		}
-		if !hasNewline || !strings.HasPrefix(line, "--") {
-			return MigrationFileTxModeUnspecified, false, nil
 		}
 
 		for search := line; ; {
@@ -127,6 +136,11 @@ func parseAtlasFileTxMode(filename, sql string) (MigrationFileTxMode, bool, erro
 			}
 			values = append(values, value)
 			search = after
+		}
+		if !hasNewline {
+			// The file is nothing but its header, with no trailing newline.
+			headerComplete = true
+			break
 		}
 		sql = rest
 	}
