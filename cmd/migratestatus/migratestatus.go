@@ -289,9 +289,10 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	if status.DirtyRevision != nil {
 		emit.Println("Status: ❌ Dirty migration state detected")
 		emit.Printf(
-			"Dirty Migration: version=%d state=%s applied=%d/%d\n",
+			"Dirty Migration: version=%d state=%s direction=%s applied=%d/%d\n",
 			status.DirtyRevision.Version,
 			status.DirtyRevision.State,
+			status.DirtyRevision.Direction,
 			status.DirtyRevision.Applied,
 			status.DirtyRevision.Total,
 		)
@@ -301,7 +302,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 		if status.DirtyRevision.ErrorStatement != "" {
 			emit.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
 		}
-		emit.Println("\nRun 'ptah migrations repair --version <version>' after fixing the database state.")
+		emit.Printf("\n%s\n", dirtyRevisionRecoveryHint(status.DirtyRevision))
 		return nil
 	}
 
@@ -341,4 +342,21 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	}
 
 	return nil
+}
+
+// dirtyRevisionRecoveryHint names the command that ends this particular dirty
+// state. A rollback that stopped partway is not repaired by recording the
+// migration applied -- that would sign it off over a schema whose objects the
+// rollback already dropped -- so it points at the resume that finishes the
+// rollback instead, at the statement the revision says comes next.
+func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
+	if revision.Direction != migrator.MigrationDirectionDown {
+		return "Run 'ptah migrations repair --version <version>' after fixing the database state."
+	}
+	return fmt.Sprintf(
+		"This rollback stopped partway. Run 'ptah migrations repair --version %d --resume-from %d' "+
+			"to run the remaining down statements and remove the revision.",
+		revision.Version,
+		revision.Applied+1,
+	)
 }

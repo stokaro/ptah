@@ -147,24 +147,57 @@ restore from a backup.
 The two surfaces answer "my down failed, what state am I in?" differently, and
 the difference is deliberate.
 
-**Native `ptah migrations down` records the failure.** The revision row for the
-failing version is marked failed with `error=<message>`, and `applied` becomes
-the number of down statements that completed — `0` when the first one fails, or
-when the dialect rolled the whole body back. So:
+**Native `ptah migrations down` records the failure, and records that it was a
+rollback.** The revision row for the failing version is marked failed with
+`error=<message>`, `applied` becomes the number of down statements that
+completed — `0` when the first one fails, or when the dialect rolled the whole
+body back — and the row carries `direction=down`. So:
 
-- `ptah migrations status` reports `Status: ❌ Dirty migration state detected`
-  and names the version.
-- `ptah migrations repair --version <version>` has a row to act on and clears
-  it once you have fixed the database by hand.
+- `ptah migrations status` reports `Status: ❌ Dirty migration state detected`,
+  names the version, and prints `direction=down` on the
+  `Dirty Migration:` line.
+- `ptah migrations repair` has a row to act on, and follows its direction.
 - A later `ptah migrations up` refuses to run over the unfinished rollback
   instead of stacking new work on unknown state.
 
-:::caution
-`repair --resume-from` is an **up**-direction tool: it executes the remaining
-statements of the migration's *up* SQL. Do not reach for it after a failed
-down — on a down-failure row it replays the up body and typically fails again
-(`table ... already exists`). Fix the database state yourself, then clear the
-row with `ptah migrations repair --version <version>`.
+### Finishing an interrupted rollback
+
+`repair --resume-from <n>` runs the remaining statements of **the body that
+failed**, and finishes the way that body's success finishes:
+
+| Row               | `--resume-from` runs | On success                     |
+| ----------------- | -------------------- | ------------------------------ |
+| `direction=up`    | the up SQL           | the revision is marked applied |
+| `direction=down`  | the down SQL         | the revision is **removed**    |
+
+A finished rollback means the migration is no longer applied, and Ptah records
+that by deleting its row — the same thing a rollback that never failed does.
+The statement numbers are the ones the row reports, so `--resume-from` accepts
+any statement of the down body, and a resume that fails again leaves the row
+pointing at the new failure so you can fix it and resume once more.
+
+Without `--resume-from`, a rollback that already committed a statement is
+**refused** rather than recorded applied: recording it applied would sign off
+the migration over a schema whose objects the rollback already dropped. The
+error names every way out.
+
+- `--resume-from <n>` — finish the rollback and remove the revision.
+- `--force` — record it applied, for when you restored by hand the schema the
+  rollback had started to undo.
+- `ptah migrations set --version <previous>` — move the revision boundary when
+  you finished the rollback by hand.
+
+A rollback that committed nothing needs none of this: a transactional down whose
+body was rolled back, or a non-transactional one whose very first statement
+failed, still has the migration fully applied, and plain
+`ptah migrations repair --version <version>` clears it as it always has.
+
+:::note
+Rows written by a Ptah that did not yet record the direction read as up rows.
+When the up and down bodies differ in statement count, `--resume-from` still
+refuses them rather than replay the wrong body, naming both counts; when the two
+bodies happen to be the same length such a row cannot be told apart, and
+`--force` is the override in either case.
 :::
 
 **`ptah-compat migrate down` reproduces Atlas's bookkeeping.** The revision row

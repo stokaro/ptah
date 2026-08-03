@@ -228,10 +228,13 @@ func TestMigrateDown_PtahFormatFailedDownStillRecordsDirtyState(t *testing.T) {
 	c.Assert(m.MigrateDownTo(ctx, 1), qt.IsNotNil)
 
 	// Native keeps the failure visible: this is what repair and resume act on.
+	// The stored state carries the direction that wrote it, so the row a
+	// rollback leaves behind is distinguishable from the one a failed apply
+	// leaves behind.
 	var state, errText string
 	c.Assert(conn.QueryRow(
 		"SELECT state, COALESCE(error, '') FROM schema_migrations WHERE version = 2").Scan(&state, &errText), qt.IsNil)
-	c.Assert(state, qt.Equals, "failed")
+	c.Assert(state, qt.Equals, "failed:down")
 	c.Assert(errText, qt.Not(qt.Equals), "")
 
 	status, err := m.GetMigrationStatus(ctx)
@@ -239,6 +242,8 @@ func TestMigrateDown_PtahFormatFailedDownStillRecordsDirtyState(t *testing.T) {
 	c.Assert(status.DirtyRevision, qt.IsNotNil,
 		qt.Commentf("native status must surface the half-finished rollback"))
 	c.Assert(status.DirtyRevision.Version, qt.Equals, int64(2))
+	c.Assert(status.DirtyRevision.State, qt.Equals, "failed")
+	c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
 }
 
 // TestMigrateDown_PtahFormatDirtyDownBlocksUntilRepaired proves the native

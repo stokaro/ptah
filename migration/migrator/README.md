@@ -572,6 +572,17 @@ continue until `RepairMigration` or the `migrations repair` CLI resolves it.
 Applied rows store an up-SQL checksum, so editing an already-applied migration
 file is detected before new work starts.
 
+A row written while rolling back stores its direction alongside the state, as
+`pending:down` or `failed:down`. The `state` column is free-form text and is
+only ever compared against `'applied'` in SQL, so the suffix needs no DDL and
+changes no predicate; an up-direction row is stored with exactly the bytes it
+has always been stored with, and a row written before directions were recorded
+reads as an up row. `MigrationRevision.Direction` reports the decoded value
+while `MigrationRevision.State` keeps reporting `pending` or `failed`.
+`RepairMigration` follows the direction: `ResumeFrom` runs the remaining
+statements of the body that failed, and a rollback that reaches its last
+statement has its revision deleted rather than recorded applied.
+
 ## Best Practices
 
 1. **Always create both up and down migrations**: Every migration should be reversible

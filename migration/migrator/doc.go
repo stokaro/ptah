@@ -125,7 +125,9 @@
 //   - GetAppliedMigrations(): List all applied migration versions
 //   - GetPendingMigrations(): List all pending migration versions
 //   - GetMigrationStatus(): Get comprehensive migration status information
-//   - RepairMigration(opts): Clear a dirty migration after manual repair, or resume remaining up statements
+//   - RepairMigration(opts): Clear a dirty migration after manual repair, or resume the remaining
+//     statements of the direction that left it dirty -- up statements before recording the migration
+//     applied, down statements before removing its revision
 //
 // # Migration Providers
 //

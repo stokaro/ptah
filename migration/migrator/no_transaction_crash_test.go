@@ -57,6 +57,10 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(failure, qt.Equals, "")
 	})
 
+	// The down crash records the same progress numbers as the up crash above --
+	// applied=1, total=2 -- and used to record the same state, so nothing could
+	// tell the two rows apart. The recorded state now carries the direction, and
+	// the operator can finish the interrupted rollback from where it stopped.
 	c.Run("Ptah down revision", func(c *qt.C) {
 		databasePath := filepath.Join(c.TempDir(), "ptah-down-crash.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "down", "after-checkpoint")
@@ -71,9 +75,22 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 			conn.QueryRow("SELECT state, applied, total FROM schema_migrations WHERE version = 1").Scan(&state, &applied, &total),
 			qt.IsNil,
 		)
-		c.Assert(state, qt.Equals, "pending")
+		c.Assert(state, qt.Equals, "pending:down")
 		c.Assert(applied, qt.Equals, 1)
 		c.Assert(total, qt.Equals, 2)
+
+		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c))
+		status, err := mig.GetMigrationStatus(c.Context())
+		c.Assert(err, qt.IsNil)
+		c.Assert(status.DirtyRevision, qt.IsNotNil)
+		c.Assert(status.DirtyRevision.State, qt.Equals, "pending")
+		c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+
+		// Resuming runs only the down statement the crash never reached, and the
+		// finished rollback removes the revision instead of recording it applied.
+		c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2}), qt.IsNil)
+		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsFalse)
+		c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
 	})
 
 	c.Run("Ptah in-flight statement", func(c *qt.C) {

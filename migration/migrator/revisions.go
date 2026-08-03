@@ -30,20 +30,26 @@ const (
 
 // MigrationRevision records one row from the migration metadata table.
 type MigrationRevision struct {
-	Version         int64             `json:"version"`
-	Description     string            `json:"description"`
-	State           string            `json:"state"`
-	AtlasType       AtlasRevisionType `json:"atlas_type,omitempty"`
-	Applied         int               `json:"applied"`
-	Total           int               `json:"total"`
-	Error           string            `json:"error,omitempty"`
-	ErrorStatement  string            `json:"error_stmt,omitempty"`
-	ExecutionTime   time.Duration     `json:"execution_time"`
-	Checksum        string            `json:"checksum,omitempty"`
-	AppliedAt       time.Time         `json:"applied_at"`
-	OperatorVersion string            `json:"operator_version,omitempty"`
-	Dirty           bool              `json:"dirty"`
-	ChecksumCurrent string            `json:"checksum_current,omitempty"`
+	Version     int64  `json:"version"`
+	Description string `json:"description"`
+	State       string `json:"state"`
+	// Direction is the direction that recorded this row. A row left behind by
+	// a rollback that stopped halfway reads MigrationDirectionDown, which is
+	// what routes `migrations repair --resume-from` to the down body instead of
+	// the up body. Rows written before Ptah recorded the direction, and every
+	// row in the Atlas layout, read MigrationDirectionUp.
+	Direction       MigrationDirection `json:"direction,omitempty"`
+	AtlasType       AtlasRevisionType  `json:"atlas_type,omitempty"`
+	Applied         int                `json:"applied"`
+	Total           int                `json:"total"`
+	Error           string             `json:"error,omitempty"`
+	ErrorStatement  string             `json:"error_stmt,omitempty"`
+	ExecutionTime   time.Duration      `json:"execution_time"`
+	Checksum        string             `json:"checksum,omitempty"`
+	AppliedAt       time.Time          `json:"applied_at"`
+	OperatorVersion string             `json:"operator_version,omitempty"`
+	Dirty           bool               `json:"dirty"`
+	ChecksumCurrent string             `json:"checksum_current,omitempty"`
 }
 
 // DirtyMigrationError reports that a previous migration run left a dirty row.
@@ -741,10 +747,11 @@ func (m *Migrator) scanRevisionRow(row rowScanner) (MigrationRevision, error) {
 	var revision MigrationRevision
 	var executionTimeMs int64
 	var appliedAt any
+	var storedState string
 	if err := row.Scan(
 		&revision.Version,
 		&revision.Description,
-		&revision.State,
+		&storedState,
 		&revision.Applied,
 		&revision.Total,
 		&revision.Error,
@@ -755,6 +762,7 @@ func (m *Migrator) scanRevisionRow(row rowScanner) (MigrationRevision, error) {
 	); err != nil {
 		return MigrationRevision{}, err
 	}
+	revision.State, revision.Direction = decodeRevisionState(storedState)
 	parsedAppliedAt, err := parseRevisionAppliedAt(appliedAt)
 	if err != nil {
 		return MigrationRevision{}, err
@@ -795,6 +803,11 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	}
 	revision.Version = parsedVersion
 	revision.State = atlasRevisionState(revision)
+	// The Atlas layout has no column that could carry a direction, and a
+	// rollback on that layout records nothing at all -- see
+	// [Migrator.reproducesAtlasDownBookkeeping]. Every dirty row it can produce
+	// is therefore an up-direction row.
+	revision.Direction = MigrationDirectionUp
 	revision.AppliedAt = parsedExecutedAt
 	revision.ExecutionTime = time.Duration(executionTime)
 	revision.Dirty = revision.State != migrationStateApplied
@@ -1117,6 +1130,7 @@ func (m *Migrator) checkpointMigrationRevision(
 	migration *Migration,
 	startedAt time.Time,
 	event StatementEvent,
+	direction MigrationDirection,
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
@@ -1140,7 +1154,7 @@ func (m *Migrator) checkpointMigrationRevision(
 		recordCtx,
 		m.conn,
 		query,
-		migrationStatePending,
+		encodeRevisionState(migrationStatePending, direction),
 		event.Index,
 		event.Total,
 		time.Since(startedAt).Milliseconds(),
@@ -1153,6 +1167,7 @@ func (m *Migrator) markMigrationStatementInFlight(
 	migration *Migration,
 	startedAt time.Time,
 	event StatementEvent,
+	direction MigrationDirection,
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
@@ -1178,7 +1193,7 @@ func (m *Migrator) markMigrationStatementInFlight(
 		recordCtx,
 		m.conn,
 		query,
-		migrationStatePending,
+		encodeRevisionState(migrationStatePending, direction),
 		event.Index-1,
 		event.Total,
 		unknownStatementOutcomeError,
@@ -1204,7 +1219,7 @@ func (m *Migrator) beginRollbackRevision(
 		ctx,
 		m.conn,
 		query,
-		migrationStatePending,
+		encodeRevisionState(migrationStatePending, MigrationDirectionDown),
 		0,
 		m.migrationStatementCount(migration.DownSQL),
 		0,
@@ -1247,6 +1262,7 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	failure error,
 	sqlText string,
 	txMode MigrationTxMode,
+	direction MigrationDirection,
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
@@ -1257,6 +1273,19 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if total == 0 {
 		total = m.migrationStatementCount(sqlText)
 	}
+	// migrationExecutionProgress reports a plain execution error as
+	// StatementIndex-1 statements applied, and only zeroes that for tx-mode all
+	// and the PostgreSQL family -- so on SQLite and SQL Server, whose DDL is
+	// transactional too, a rolled-back body still counts its failing statement's
+	// predecessors as committed. Recovery from a rollback reads that number to
+	// decide whether the schema was changed at all, so the down direction
+	// corrects it here, using the same rule the observation path already uses.
+	// The up direction is left alone deliberately: it is the number the
+	// Atlas-shaped surface reports, and a rollback never reaches this line on
+	// that surface (see [Migrator.reproducesAtlasDownBookkeeping]).
+	if direction == MigrationDirectionDown && migrationProgressRolledBack(m.conn.Info().Dialect, txMode) {
+		applied = 0
+	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.failAtlasMigrationRevision(recordCtx, migration, startedAt, failure, applied, total, stmt)
 	}
@@ -1265,7 +1294,7 @@ func (m *Migrator) failMigrationRevisionWithMode(
 		recordCtx,
 		m.conn,
 		query,
-		migrationStateFailed,
+		encodeRevisionState(migrationStateFailed, direction),
 		applied,
 		total,
 		strings.TrimSpace(failure.Error()),
@@ -1783,7 +1812,14 @@ func (m *Migrator) setPtahRevisionAppliedSQL() string {
 }
 
 // RepairMigration clears dirty migration metadata after an operator has fixed
-// the database manually, or resumes the up migration from a specific statement.
+// the database manually, or resumes the migration from a specific statement.
+//
+// The revision's recorded direction decides which body --resume-from runs and
+// what a finished resume leaves behind. A row an up migration left dirty
+// resumes the up body and is then recorded applied; a row a rollback left
+// dirty resumes the down body and the revision is deleted, because a completed
+// rollback means the migration is no longer applied. See
+// [Migrator.repairRolledBackMigration].
 //
 // On PostgreSQL the revision is not recorded while an index the migration
 // creates is still unusable -- the residue a failed CREATE INDEX CONCURRENTLY
@@ -1811,13 +1847,15 @@ func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOpti
 	if revision != nil && !revision.Dirty && !opts.Force {
 		return fmt.Errorf("migration %d is not dirty; rerun with --force to rewrite it", opts.Version)
 	}
+	if revision != nil && revision.Direction == MigrationDirectionDown {
+		return m.repairRolledBackMigration(ctx, migration, revision, opts)
+	}
 	if opts.ResumeFrom > 0 {
-		if revision != nil && revision.Error == unknownStatementOutcomeError {
-			return fmt.Errorf(
-				"migration %d has an unknown statement outcome for %q; inspect the database before repair and omit --resume-from to avoid repeating committed SQL",
-				migration.Version,
-				revision.ErrorStatement,
-			)
+		if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
+			return err
+		}
+		if err := m.refuseUpResumeOverRecordedRollback(migration, revision, opts); err != nil {
+			return err
 		}
 		if err := m.resumeMigration(ctx, migration, opts.ResumeFrom); err != nil {
 			return err
@@ -1827,6 +1865,21 @@ func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOpti
 		return err
 	}
 	return m.forceAppliedMigration(ctx, migration)
+}
+
+// refuseUnknownStatementOutcomeResume refuses a --resume-from over a revision
+// whose last statement was interrupted before its outcome could be recorded.
+// Resuming would either repeat SQL that already committed or skip SQL that
+// never ran, and the row cannot say which.
+func refuseUnknownStatementOutcomeResume(migration *Migration, revision *MigrationRevision) error {
+	if revision == nil || revision.Error != unknownStatementOutcomeError {
+		return nil
+	}
+	return fmt.Errorf(
+		"migration %d has an unknown statement outcome for %q; inspect the database before repair and omit --resume-from to avoid repeating committed SQL",
+		migration.Version,
+		revision.ErrorStatement,
+	)
 }
 
 func (m *Migrator) migrationByVersion(version int64) *Migration {
