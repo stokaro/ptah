@@ -483,6 +483,72 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 				"  -- 1 version ok\n" +
 				"  -- 2 schema changes\n",
 		},
+		{
+			// #1074: several column renames in one statement. Measured on
+			// MySQL, whose grammar accepts the multi-clause form -- one
+			// diagnostic naming both columns in clause order, one suggested fix
+			// with the plural nouns and pronoun, both wrapped at the measured
+			// boundary. Rendered here rather than through a command because no
+			// SQLite dev database can replay this statement.
+			name: "several column renames in one statement are one diagnostic",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE users (id int, nick text, email text);\n",
+				"2.sql": "ALTER TABLE users RENAME COLUMN nick TO handle, RENAME COLUMN email TO mail;\n",
+			},
+			latest: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping non-virtual columns \"nick\" and \"email\"\n" +
+				"         https://atlasgo.io/lint/analyzers#DS103\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add pre-migration checks to ensure columns \"nick\" and \"email\" are NULL before dropping\n" +
+				"         them\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 2 schema changes\n" +
+				"  -- 1 diagnostic\n",
+		},
+		{
+			// #1074: several table renames in one statement are the opposite
+			// shape -- one diagnostic each, ordered by logical name rather than
+			// by the order the pairs are written, so the fix header pluralizes
+			// and the diagnostic count rises. Written users first, reported pets
+			// first.
+			//
+			// The `0 schema changes` line is a known divergence, not parity:
+			// Ptah's parser does not model the standalone RENAME TABLE
+			// statement, so it contributes no semantic change, where the
+			// analyzer this tool matches counts four. It is pre-existing --
+			// master reports 0 here too -- and dialect-specific to the MySQL
+			// grammar; the diagnostics above are what #1074 aligned.
+			name: "several table renames in one statement are ordered by name",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE users (id int);\nCREATE TABLE pets (id int);\n",
+				"2.sql": "RENAME TABLE users TO accounts, pets TO animals;\n",
+			},
+			latest: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping table \"pets\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- suggested fixes:\n" +
+				"      -> Add a pre-migration check to ensure table \"pets\" is empty before dropping it\n" +
+				"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 0 schema changes\n" +
+				"  -- 2 diagnostics\n",
+		},
 	}
 
 	for _, tc := range tests {
@@ -531,4 +597,37 @@ func TestMigrateLintProseIsAtlasCompatible(t *testing.T) {
 	c.Assert(rendered, qt.Contains, `ensure table "pets" is empty before dropping it`)
 	c.Assert(rendered, qt.Not(qt.Contains), "L1 [DS102]")
 	c.Assert(rendered, qt.Not(qt.Contains), "rename-and-retire window")
+}
+
+// TestWriteMigrateLintText_KeepsNativeProseForUnmappedRules pins what the
+// compatibility surface does with a rule that has no measured Atlas identity:
+// it keeps Ptah's own sentence, keeps the native rule code visible in the
+// `[CODE]` label form, and invents no analyzer link. Being wordier and clearly
+// labeled is a smaller divergence than printing a URL for an analyzer that
+// never emitted the finding.
+//
+// TRUNCATE is the fixture because DS108 has no Atlas counterpart. The property
+// arrived here from cmd/atlas, where it was pinned on a rename until #1074 gave
+// renames a measured Atlas identity; the renderer can analyze TRUNCATE without
+// a dev-database replay, which no SQLite-backed command test can.
+//
+// Reverting #1074 keeps this green -- it is a non-interference control for the
+// fallback path. The inverse mutant that kills it is setting atlas: true on the
+// unmapped branch of compatibilityDiagnostic, which drops the `[DS108]` label
+// and appends an analyzer link for copy that was never measured.
+func TestWriteMigrateLintText_KeepsNativeProseForUnmappedRules(t *testing.T) {
+	c := qt.New(t)
+	analysis := analyzeMigrations(t, map[string]string{
+		"1.sql": "CREATE TABLE pets (id int);\n",
+		"2.sql": "TRUNCATE pets;\n",
+	}, 1)
+	var out bytes.Buffer
+
+	err := writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+	c.Assert(err, qt.IsNil)
+	rendered := out.String()
+
+	c.Assert(rendered, qt.Contains, "L1 [DS108]: TRUNCATE deletes all rows from the table")
+	c.Assert(rendered, qt.Not(qt.Contains), "https://atlasgo.io/lint/analyzers#DS108")
+	c.Assert(rendered, qt.Not(qt.Contains), "-- suggested fix")
 }

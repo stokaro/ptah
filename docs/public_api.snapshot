@@ -6510,6 +6510,7 @@ type File struct {
     // statement count. Ordered by statement, then by the order changes appear
     // within each statement.
     Changes []SchemaChange
+
     // Has unexported fields.
 }
     File is one migration file prepared for linting.

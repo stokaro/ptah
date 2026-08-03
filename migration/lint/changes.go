@@ -21,7 +21,11 @@ const (
 	// SchemaChangeDrop removes a schema object or an element of a table (DROP
 	// TABLE/INDEX/TYPE/…, ALTER TABLE … DROP COLUMN/CONSTRAINT).
 	SchemaChangeDrop SchemaChangeKind = "drop"
-	// SchemaChangeRename renames a table or a column (ALTER TABLE … RENAME …).
+	// SchemaChangeRename renames a column in place (ALTER TABLE … RENAME
+	// COLUMN …): the table survives as the same object under the same name. A
+	// table rename is not this kind — it retires one object name and
+	// introduces another, so it is modeled as a drop plus an add, which is
+	// also why it is a destructive change to the old name.
 	SchemaChangeRename SchemaChangeKind = "rename"
 )
 
@@ -114,6 +118,18 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node) []SchemaChange
 	case *ast.AlterTableNode:
 		out := make([]SchemaChange, 0, len(n.Operations))
 		for _, op := range n.Operations {
+			// A table rename is two changes, not one: the old name stops
+			// naming anything and the new name starts. Measured -- one
+			// `ALTER TABLE t RENAME TO u` counts as two schema changes, and two
+			// such statements as four, where one `ALTER TABLE t RENAME COLUMN a
+			// TO b` counts as one.
+			if rename, ok := op.(*ast.RenameTableOperation); ok {
+				out = append(out,
+					change(SchemaChangeDrop, n.Name),
+					change(SchemaChangeAdd, rename.NewName),
+				)
+				continue
+			}
 			kind, object := alterOperationChange(n, op)
 			out = append(out, change(kind, object))
 		}
@@ -248,8 +264,6 @@ func alterOperationChange(alter *ast.AlterTableNode, op ast.AlterOperation) (Sch
 		return SchemaChangeDrop, o.ConstraintName
 	case *ast.RenameColumnOperation:
 		return SchemaChangeRename, o.OldName
-	case *ast.RenameTableOperation:
-		return SchemaChangeRename, alter.Name
 	case *ast.AddSkippingIndexOperation:
 		return SchemaChangeAdd, o.Name
 	case *ast.ModifyTTLOperation:

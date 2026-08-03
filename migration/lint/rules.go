@@ -175,9 +175,51 @@ func tableDroppedRule() Rule {
 				}
 				findings = append(findings, tableDroppedFindings(file.Path, stmt.Line, i, unsafeTables)...)
 			}
-			return findings
+			return append(findings, tableRenamedFindings(file)...)
 		},
 	}
+}
+
+// tableRenamedFindings reports the table names a file retires by renaming them,
+// on the compatibility surface only. See [renamedNames] for why a rename is
+// classified as destructive there and as BC101 natively, and why the
+// destructive form has to carry a DS code.
+//
+// One finding per retired table, ordered by logical name within the statement,
+// exactly as [tableDroppedFindings] orders a DROP TABLE target list -- measured
+// on `RENAME TABLE users TO accounts, pets TO animals`, which reports "pets"
+// before "users". Across statements the source order is kept: two consecutive
+// `ALTER TABLE ... RENAME TO` statements report in the order they are written,
+// so the sort is per statement rather than per file.
+func tableRenamedFindings(file *File) []Finding {
+	if file.compatibility != CompatibilityProfileAtlas {
+		return nil
+	}
+	var findings []Finding
+	for _, rename := range renamesOfKind(fileRenames(file), SubjectTable) {
+		ordered := slices.Clone(rename.names)
+		slices.SortStableFunc(ordered, func(a, b renamedName) int {
+			return strings.Compare(logicalObjectName(a.name), logicalObjectName(b.name))
+		})
+		for _, name := range ordered {
+			message := "RENAME retires the table name; " + renameRetiredNameAdvice
+			var subjects []Subject
+			if name.name != "" {
+				message = fmt.Sprintf("RENAME retires the table name %s; %s", name.name, renameRetiredNameAdvice)
+				subjects = []Subject{{Kind: SubjectTable, Name: name.name}}
+			}
+			findings = append(findings, Finding{
+				Rule:     "DS101",
+				Title:    "table dropped",
+				Severity: SeverityError,
+				File:     file.Path,
+				Line:     rename.line,
+				Message:  message,
+				Context:  statementFindingContext(rename.statementIndex, subjects...),
+			})
+		}
+	}
+	return findings
 }
 
 // tableDroppedFindings reports one finding per table a single DROP TABLE
@@ -244,18 +286,113 @@ func logicalObjectName(ref string) string {
 	return parsed.Name
 }
 
+// columnDroppedAdvice is the remediation every DROP COLUMN finding carries.
+const columnDroppedAdvice = "deploy readers that no longer use the column first, then drop it in a later release"
+
+// renameRetiredNameAdvice is the remediation every rename-derived DS finding
+// carries. It is BC101's advice, so the two classifications of one rename (see
+// [renamedNames]) cannot drift into prescribing different remediations.
+const renameRetiredNameAdvice = "application versions deployed against the old name fail instantly; prefer add-new/backfill/drop-old across releases"
+
+// columnDroppedRule is file-level rather than statement-level only so that the
+// rename form can consult the tables this file created; a plain DROP COLUMN is
+// reported exactly as before, with no create-then-drop exemption of its own.
+// Whether DROP COLUMN should gain that exemption is a separate question -- the
+// analyzer this tool is compatible with does exempt it, so Ptah is stricter
+// there today -- and relaxing a destructive check is not something to do as a
+// side effect of a rename change.
 func columnDroppedRule() Rule {
 	return Rule{
 		Code:     "DS102",
 		Title:    "column dropped",
 		Severity: SeverityError,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !isAlterTable(stmt.Words) || !scanDropColumn(stmt.Words) {
-				return false, ""
+		CheckFile: func(file *File) []Finding {
+			if !file.IsUp {
+				return nil
 			}
-			return true, "DROP COLUMN permanently deletes the column's data; deploy readers that no longer use the column first, then drop it in a later release"
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				if !isAlterTable(stmt.Words) {
+					continue
+				}
+				subjects := droppedColumnSubjects(stmt.Words, stmt.sourceWords)
+				if len(subjects) == 0 {
+					continue
+				}
+				findings = append(findings, Finding{
+					Rule:     "DS102",
+					Title:    "column dropped",
+					Severity: SeverityError,
+					File:     file.Path,
+					Line:     stmt.Line,
+					Message:  "DROP COLUMN permanently deletes the column's data; " + columnDroppedAdvice,
+					Context:  statementFindingContext(i, subjects...),
+				})
+			}
+			return append(findings, columnRenamedFindings(file)...)
 		},
 	}
+}
+
+// columnRenamedFindings reports the column names a file retires by renaming
+// them, on the compatibility surface only. See [tableRenamedFindings].
+//
+// One finding per statement carrying every column it renames, in clause order
+// -- the opposite shape from the table form above, and measured rather than
+// assumed. `ALTER TABLE users RENAME COLUMN nick TO handle, RENAME COLUMN email
+// TO mail` (MySQL grammar) is one diagnostic naming both columns, under a
+// single suggested fix, in the order the clauses are written. That is the same
+// shape a multi-clause DROP COLUMN produces, which is what the compatibility
+// renderer's plural DS103 wording was measured and built for.
+func columnRenamedFindings(file *File) []Finding {
+	if file.compatibility != CompatibilityProfileAtlas {
+		return nil
+	}
+	var findings []Finding
+	for _, rename := range renamesOfKind(fileRenames(file), SubjectColumn) {
+		findings = append(findings, Finding{
+			Rule:     "DS102",
+			Title:    "column dropped",
+			Severity: SeverityError,
+			File:     file.Path,
+			Line:     rename.line,
+			Message:  columnRenamedMessage(rename.names),
+			Context:  statementFindingContext(rename.statementIndex, renamedColumnSubjects(rename.names)...),
+		})
+	}
+	return findings
+}
+
+// columnRenamedMessage names every column the statement retires, or none when
+// the statement is recognizably a rename whose retired names could not be read.
+// A partial list is never rendered: naming some of the retired columns reads as
+// a complete answer and is not one.
+func columnRenamedMessage(names []renamedName) string {
+	spelled := make([]string, 0, len(names))
+	for _, name := range names {
+		if name.name == "" {
+			return "RENAME retires the column name; " + renameRetiredNameAdvice
+		}
+		spelled = append(spelled, name.name)
+	}
+	if len(spelled) == 1 {
+		return fmt.Sprintf("RENAME retires the column name %s; %s", spelled[0], renameRetiredNameAdvice)
+	}
+	return fmt.Sprintf("RENAME retires the column names %s; %s", strings.Join(spelled, ", "), renameRetiredNameAdvice)
+}
+
+// renamedColumnSubjects builds the finding's subjects, failing as a unit for the
+// same reason [columnRenamedMessage] does.
+func renamedColumnSubjects(names []renamedName) []Subject {
+	subjects := make([]Subject, 0, len(names))
+	for _, name := range names {
+		if name.name == "" {
+			return nil
+		}
+		subjects = append(subjects, Subject{Kind: SubjectColumn, Name: name.name, Parent: name.parent})
+	}
+	return subjects
 }
 
 func columnTypeChangedRule() Rule {
@@ -543,12 +680,30 @@ func compatibilityRules() []Rule {
 			Code:     "BC101",
 			Title:    "rename breaks deployed code",
 			Severity: SeverityWarning,
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				standalone := hasWordPrefix(stmt.Words, "RENAME", "TABLE")
-				if !standalone && (!isAlterTable(stmt.Words) || !scanAlterRename(stmt.Words)) {
-					return false, ""
+			// File-level so the same-file-created exemption in [fileRenames]
+			// applies: renaming an object this migration itself introduced
+			// breaks no deployed reader. One finding per statement regardless of
+			// how many names the statement renames -- the advice is the same for
+			// all of them and is about the statement, not about each name.
+			CheckFile: func(file *File) []Finding {
+				if file.compatibility == CompatibilityProfileAtlas {
+					// The compatibility surface classifies the same event as a
+					// destructive change instead; see [renamedNames].
+					return nil
 				}
-				return true, "renames are not backwards compatible: application versions deployed against the old name fail instantly; prefer add-new/backfill/drop-old across releases"
+				var findings []Finding
+				for _, rename := range fileRenames(file) {
+					findings = append(findings, Finding{
+						Rule:     "BC101",
+						Title:    "rename breaks deployed code",
+						Severity: SeverityWarning,
+						File:     file.Path,
+						Line:     rename.line,
+						Message:  "renames are not backwards compatible: " + renameRetiredNameAdvice,
+						Context:  statementFindingContext(rename.statementIndex),
+					})
+				}
+				return findings
 			},
 		},
 	}
@@ -1039,14 +1194,10 @@ func clauseStarts(w []string) []int {
 	return starts
 }
 
-// scanDropColumn reports whether an ALTER TABLE statement drops a column.
+// droppedColumnSubjects returns the columns an ALTER TABLE statement drops.
 // The COLUMN keyword is optional in PostgreSQL and the MySQL family, so a
 // clause-head DROP followed by an identifier counts unless the identifier is
 // a known non-column DROP target (DROP CONSTRAINT, DROP PRIMARY KEY, ...).
-func scanDropColumn(w []string) bool {
-	return len(droppedColumnSubjects(w, w)) > 0
-}
-
 func droppedColumnSubjects(w, sourceWords []string) []Subject {
 	table := alterTableReference(w, sourceWords)
 	var subjects []Subject
@@ -1626,15 +1777,6 @@ func alterTableReference(w, sourceWords []string) tableReference {
 	return ref
 }
 
-func statementSubjects(code string, words, sourceWords []string) []Subject {
-	switch code {
-	case "DS102":
-		return droppedColumnSubjects(words, sourceWords)
-	default:
-		return nil
-	}
-}
-
 func sourceWordAt(words, sourceWords []string, index int) string {
 	if index < len(sourceWords) {
 		return sourceWords[index]
@@ -1734,29 +1876,6 @@ func scanPinnedOnlineDDL(w []string) bool {
 			return true
 		}
 		if w[i] == "LOCK" && w[j] == "NONE" {
-			return true
-		}
-	}
-	return false
-}
-
-// scanAlterRename reports whether an ALTER TABLE statement renames the table
-// or a column. Handles RENAME TO/AS (table), RENAME COLUMN a TO b, the
-// PostgreSQL form without the COLUMN keyword, and MySQL's bare RENAME
-// new_name. Index, key, and constraint renames are invisible to applications
-// and are deliberately skipped.
-func scanAlterRename(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		if i+1 >= len(w) || w[i] != "RENAME" {
-			continue
-		}
-		switch w[i+1] {
-		case "INDEX", "KEY", "CONSTRAINT":
-			continue
-		case "TO", "AS", "COLUMN":
-			return true
-		}
-		if identLike(w[i+1]) {
 			return true
 		}
 	}

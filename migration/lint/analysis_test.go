@@ -536,13 +536,21 @@ ALTER TABLE accounts DROP COLUMN legacy;
 	c.Assert(atlas.Findings(), qt.HasLen, 0)
 }
 
+// TestAnalyzeFS_AtlasAnalyzerSuppressionsAreCompatibilityScoped checks that an
+// Atlas analyzer name silences the native rules that analyzer owns.
+//
+// The rename is suppressed with `destructive`, not `incompatible`: measured
+// against the pinned community binary, `-- atlas:nolint destructive` above a
+// column rename silences it while `-- atlas:nolint incompatible` above the same
+// rename leaves DS103 reported. The per-selector behavior itself is pinned in
+// TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly.
 func TestAnalyzeFS_AtlasAnalyzerSuppressionsAreCompatibilityScoped(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
 		"1_index.sql": `-- atlas:nolint concurrent_index
 CREATE INDEX idx_users_id ON users (id);
 `,
-		"2_rename.sql": `-- atlas:nolint incompatible
+		"2_rename.sql": `-- atlas:nolint destructive
 ALTER TABLE users RENAME COLUMN old_name TO new_name;
 `,
 		"3_transaction.sql": `-- atlas:nolint nestedtx
@@ -569,7 +577,7 @@ BEGIN;
 func TestAnalyzeFS_AtlasAnalyzerFileHeaderSuppressesMappedFamilies(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
-		"1_suppressed.sql": `-- atlas:nolint concurrent_index,incompatible,nestedtx
+		"1_suppressed.sql": `-- atlas:nolint concurrent_index,destructive,nestedtx
 
 CREATE INDEX idx_users_id ON users (id);
 ALTER TABLE users RENAME COLUMN old_name TO new_name;
