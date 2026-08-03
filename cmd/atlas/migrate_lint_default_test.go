@@ -247,18 +247,119 @@ func TestCompatCommand_MigrateLintDefaultTextWrapsAnalyzerURLAtMeasuredBoundary(
 			"  -- 1 diagnostic\n")
 }
 
-func TestCompatCommand_MigrateLintDefaultTextDoesNotFabricateAtlasLinks(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	devDB := "sqlite://" + filepath.Join(t.TempDir(), "unmapped.db")
-	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
-	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users RENAME COLUMN id TO oid;\n")
+// The rename fixture that used to live here as
+// TestCompatCommand_MigrateLintDefaultTextDoesNotFabricateAtlasLinks no longer
+// demonstrates an unmapped rule: #1074 gave renames a measured Atlas identity.
+// After that, every statement rule a SQLite dev database can reach has one, so
+// the fixture moved to the renderer, where a rule with no Atlas identity can be
+// analyzed without a dev-database replay --
+// TestWriteMigrateLintText_KeepsNativeProseForUnmappedRules in
+// internal/atlasreport. The command-level rendering of a diagnostic with no
+// Atlas copy stays covered here by
+// TestCompatCommand_MigrateLintDefaultTextLabelsUnmeasuredTypeCopy.
 
-	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", dir, "--dev-url", devDB, "--latest", "1")
+// TestCompatCommand_MigrateLintDefaultTextClassifiesRenames covers issue #1074
+// part 1 on the surface that has to match. A rename retires a logical name, so
+// the compatibility surface reports it as a destructive change to that name,
+// error-grade, with the pre-migration-check fix and exit 1 -- where before it
+// printed a BC101 warning and exited 0.
+//
+// Each want below is the measured output of the pinned community binary on the
+// same fixture, on PostgreSQL 16, byte for byte apart from the elapsed
+// durations. The two rename forms are separate rows because they differ in more
+// than wording: the column form is DS103 with a NULL precheck and one schema
+// change, the table form is DS102 with an emptiness precheck and two.
+//
+// The third row is the control that keeps the first two honest. Renaming an
+// object this same file created reports nothing on either tool, so a change
+// that classified every rename as destructive regardless of provenance would
+// fail there while the first two rows still passed.
+//
+// Reverting the change prints `L1 [BC101]: renames are not backwards
+// compatible: ...`, `1 version with warnings`, no suggested fix and exit 0 on
+// the first two rows, and the same BC101 line instead of nothing on the third.
+func TestCompatCommand_MigrateLintDefaultTextClassifiesRenames(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     string
+		rename   string
+		exitCode int
+		want     string
+	}{
+		{
+			name:     "column rename",
+			base:     "CREATE TABLE users (id int);\n",
+			rename:   "ALTER TABLE users RENAME COLUMN id TO oid;\n",
+			exitCode: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping non-virtual column \"id\" https://atlasgo.io/lint/analyzers#DS103\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure column \"id\" is NULL before dropping it\n" +
+				"  -- ok (DUR)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- DUR\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 1 schema change\n" +
+				"  -- 1 diagnostic\n",
+		},
+		{
+			name:     "table rename",
+			base:     "CREATE TABLE users (id int);\n",
+			rename:   "ALTER TABLE users RENAME TO accounts;\n",
+			exitCode: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n" +
+				"  -- ok (DUR)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- DUR\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 2 schema changes\n" +
+				"  -- 1 diagnostic\n",
+		},
+		{
+			name:     "control: rename of an object created in the same file",
+			base:     "CREATE TABLE seed (x int);\n",
+			rename:   "CREATE TABLE users (id int);\nALTER TABLE users RENAME COLUMN id TO oid;\n",
+			exitCode: 0,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- no diagnostics found\n" +
+				"  -- ok (DUR)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- DUR\n" +
+				"  -- 1 version ok\n" +
+				"  -- 2 schema changes\n",
+		},
+	}
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "L1 [BC101]:")
-	c.Assert(stdout, qt.Not(qt.Contains), "https://atlasgo.io/lint/analyzers#BC101")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			devDB := "sqlite://" + filepath.Join(t.TempDir(), "rename.db")
+			writeAtlasLintFile(c, dir, "1.sql", test.base)
+			writeAtlasLintFile(c, dir, "2.sql", test.rename)
+
+			stdout, stderr, err := runAtlasMigrateLint(
+				c, "migrate", "lint", "--dir", dir, "--dev-url", devDB, "--latest", "1")
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, test.exitCode)
+			c.Assert(stderr, qt.Equals, "")
+			c.Assert(redactAtlasLintDurations(stdout), qt.Equals, test.want)
+		})
+	}
 }
 
 func TestCompatCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T) {

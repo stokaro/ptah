@@ -155,6 +155,10 @@ type File struct {
 	// within each statement.
 	Changes         []SchemaChange
 	suppressedRules []string
+	// compatibility is the profile this run was started with. A rule reads it
+	// when the two command surfaces model the same statement differently; see
+	// [renamedNames] for the one construct where they do.
+	compatibility CompatibilityProfile
 }
 
 // VersionSelection selects migration versions while preserving the difference
@@ -484,6 +488,7 @@ func prepareFile(
 		// .up.sql files whose version prefix is malformed.
 		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql"),
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
+		compatibility:  compatibility,
 	}
 	if compatibility == CompatibilityProfileAtlas {
 		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw)

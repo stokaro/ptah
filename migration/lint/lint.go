@@ -160,14 +160,10 @@ func runRules(file *File, opts Options, rules []Rule) []Finding {
 					File:     file.Path,
 					Line:     file.Statements[i].Line,
 					Message:  message,
-					Context: statementFindingContext(
-						i,
-						statementSubjects(
-							rule.Code,
-							file.Statements[i].Words,
-							file.Statements[i].sourceWords,
-						)...,
-					),
+					// Statement rules report the statement, not the objects in
+					// it: a rule that needs subjects needs file scope to build
+					// them (see columnDroppedRule) and is written as CheckFile.
+					Context: statementFindingContext(i),
 				})
 			}
 		}
