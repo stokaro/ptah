@@ -80,6 +80,20 @@ func runAtlasMigrateSet(
 	if err != nil {
 		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
 	}
+	// Integrity gate (#974). `migrate set` writes revision rows that declare a
+	// directory's history applied, so running it against a directory nothing has
+	// verified records a state derived from files that may have drifted.
+	// Measured against the pinned community binary v1.3.0, an unhashed or
+	// tampered directory is refused here exactly as on `migrate validate`.
+	//
+	// The refusal deliberately precedes both the database connection and the
+	// positional-arity check below: on the community binary a `migrate set` with
+	// zero or two positionals against an unhashed directory prints the checksum
+	// refusal, not an arity error. Returned bare so the stdout guidance block
+	// and the `Error: ...` line land where that binary puts them.
+	if err := verifyNativeAtlasDirChecksum(cmd, source.FileSystem); err != nil {
+		return err
+	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()

@@ -65,8 +65,12 @@ migration directory does not match ptah.sum:
   changed: 0000000002_add_posts.up.sql
 ```
 
-`ptah-compat migrate apply` enforces the same gate on `atlas.sum` directories
-with Atlas's own checksum output, matching official Atlas behavior.
+`ptah-compat migrate apply`, `migrate status`, and `migrate set` enforce the
+same gate on `atlas.sum` directories with Atlas's own checksum output, matching
+official Atlas behavior. Reporting is not exempt: on a hashed directory whose
+only migration was deleted, an ungated `migrate status` announced
+"Database is up to date"
+([#974](https://github.com/stokaro/ptah/issues/974)).
 
 Recovery is a decision, not a command: if the change is intentional, review
 it and re-run `ptah migrations hash`; if it is not, restore the file from
@@ -100,10 +104,10 @@ error: migration sum verification failed: ptah.sum not found; run `ptah migratio
 That flag is the only thing on the native surface that rejects a never-hashed
 directory; a hashed one is always verified with or without it.
 
-**`ptah-compat migrate apply` refuses an unhashed directory.** Atlas treats a
-missing `atlas.sum` as a checksum error, so the compatibility surface does
-too — measured against Atlas CE v1.2.0, which exits `1` and never creates the
-target database:
+**`ptah-compat migrate apply`, `migrate status` and `migrate set` refuse an
+unhashed directory.** Atlas treats a missing `atlas.sum` as a checksum error, so
+the compatibility surface does too — measured against the pinned community
+binary, which exits `1` and never creates the target database:
 
 ```text
 You have a checksum error in your migration directory.
@@ -119,11 +123,21 @@ created or `.gitkeep`-only migrations directory — is not a checksum error: it
 reports `No migration files to execute` and exits `0`, matching Atlas.
 
 That scan is recursive, because Ptah executes migrations in subdirectories.
-Atlas CE does not read subdirectories at all, so a directory whose only
+Atlas does not read subdirectories at all, so a directory whose only
 migration sits one level down is "nothing to execute" for Atlas while Ptah
 would run it — Ptah refuses it when unhashed rather than executing an unverified
 migration, which is exit `1` where Atlas exits `0`
-([#976](https://github.com/stokaro/ptah/issues/976)).
+([#976](https://github.com/stokaro/ptah/issues/976)). One predicate serves all
+three verbs, so `status` and `set` inherit that divergence; the alternative was
+a second, shallower rule for the read-only verbs, and two rules answering one
+question drift.
+
+**`migrate lint` is deliberately not gated**, on either tool: inspecting a
+directory that has drifted is the point of linting it. `migrate new` and
+`migrate diff` are gated on Atlas but not yet here — they write an `atlas.sum`
+over a directory whose previous contents were never verified, which turns drift
+into apparent cleanliness. Verify with `ptah-compat migrate validate` before
+generating into a directory you did not hash yourself.
 
 **Directories read through `?format=` are gated too.** A goose, flyway,
 liquibase, dbmate or golang-migrate directory is converted in memory and the

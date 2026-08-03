@@ -139,6 +139,24 @@ func runAtlasMigrateStatus(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
 	}
+	// Integrity gate (#974). Reporting status on a directory whose atlas.sum is
+	// missing or stale is the most misleading failure of the set: a removed
+	// migration reports "Database is up to date". Measured against the pinned
+	// community binary v1.3.0, `migrate status` refuses such a directory exactly
+	// as `migrate validate` and `migrate apply` do.
+	//
+	// Placement is measured, not stylistic. The refusal precedes the database
+	// connection (it is emitted even when --url is unreachable) and it covers a
+	// directory resolved from atlas.hcl as well as one named by --dir, which is
+	// why it sits here rather than beside the flag parsing. Only the native
+	// branch of the gate is reachable: a `?format=` query and a non-atlas
+	// --dir-format are both rejected above.
+	//
+	// Returned bare on purpose — cmdutil.Fail would prepend `error: ` and move
+	// the message off the stream the community binary writes it to.
+	if err := verifyNativeAtlasDirChecksum(cmd, source.FileSystem); err != nil {
+		return err
+	}
 	dir := source.Display
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
