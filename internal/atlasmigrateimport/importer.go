@@ -991,6 +991,129 @@ func flywayMigrationVersions(files []flywaySumFile, versions []int64) []FlywayMi
 	return out
 }
 
+// FlywaySourceVersions reports the Flyway version TOKEN every converted
+// migration was projected from, keyed by the int64 Atlas version it executes
+// and is recorded under. It returns nil for every other layout.
+//
+// It exists because two different comparisons decide two different questions
+// about the same directory, and Ptah answered both with the first
+// (stokaro/ptah#1098):
+//
+//   - ORDER, for atlas.sum and for execution, is NUMERIC on the version
+//     components: V2 runs before V10. [flywayOrderingKey] reproduces exactly
+//     that, and it is measured to match — a fresh apply of a directory holding
+//     V2__a.sql and V10__b.sql runs version 2 then version 10 on the pinned
+//     community binary v1.3.0.
+//   - LINEARITY, "was this file added after everything already applied", is
+//     decided on the version token as a STRING. `"10" < "2"`, so a V10 added
+//     beside an applied V2 is refused on the same binary with
+//     `migration file V10__y.sql was added out of order`.
+//
+// Keying the linear guard on the ordering int64 answers the second question
+// with the first one's answer, which is how a Flyway project's tenth migration
+// came to apply here at exit 0 where the oracle exits 1. The token is therefore
+// carried ALONGSIDE the executed version rather than replacing it: renumbering
+// would strand every revision row already recorded, which is a cost
+// [LegacyFlywayAtlasVersions] exists to document.
+//
+// The value is Atlas CE's version string for the file, so a repeatable reports
+// the empty string whatever its own token — see [flywayCEVersion]. That is not
+// a gap in the map: CE compares the empty string like any other token, which is
+// why it refuses an `R__r.sql` added to a database that has already applied
+// `V2__x.sql`, and reproducing the token faithfully reproduces that answer too.
+//
+// The map also carries the tokens of the migrations a surviving baseline has
+// SQUASHED out of this directory, because the caller's question is about a
+// database's recorded history and those rows are still in it. See
+// flywaySquashedSourceVersions.
+//
+// It shares flywayCoveredFiles and flywayConvertedVersions with the importer,
+// so the token reported for a version belongs to the entry actually executed
+// under it.
+func FlywaySourceVersions(fsys fs.FS, format Format) (map[int64]string, error) {
+	if format != FormatFlyway {
+		return nil, nil
+	}
+	names, err := treeNames(fsys, skipHiddenDir)
+	if err != nil {
+		return nil, err
+	}
+	covered := flywaySumFiles(names)
+	versions, err := flywayConvertedVersions(covered)
+	if err != nil {
+		return nil, err
+	}
+	sources := make(map[int64]string, len(covered))
+	for i, file := range covered {
+		sources[versions[i]] = flywayCEVersion(file)
+	}
+	// The executed mapping is authoritative and is written first, so a version
+	// this directory still executes never takes a squashed file's token.
+	for version, source := range flywaySquashedSourceVersions(names, covered) {
+		if _, ok := sources[version]; !ok {
+			sources[version] = source
+		}
+	}
+	return sources, nil
+}
+
+// flywaySquashedSourceVersions reports the tokens of the migrations a surviving
+// baseline has retired from this directory's covered set, keyed by the Atlas
+// version a database that ran them recorded.
+//
+// Without them the linear comparison switches ITSELF off on exactly the
+// directories a baseline has just landed in. Its mark is the highest token
+// among the APPLIED versions, and once the baseline squashes their files out of
+// the covered set none of those versions has a token, so the lookup reports
+// "no mark" and every pending file passes. Measured on the pinned community
+// binary v1.3.0, sqlite: with `V2__a2.sql` applied and `B3__nb3.sql` plus
+// `R__nr.sql` added, the binary exits 1 with `migration files B3__nb3.sql,
+// R__nr.sql were added out of order` while compat exited 0 and executed both —
+// compat looser than the oracle, which is the one direction that is never
+// allowed. Nine such cells were measured across baseline-plus-repeatable
+// shapes; every one of them is a repeatable whose empty version token sorts
+// below the mark that the squash had hidden.
+//
+// The domain is this directory WITHOUT the surviving baseline, which is the
+// same domain and the same argument flywaySameVersionMigrations uses: it is the
+// only shape a revision row for a squashed file can have come from, and
+// re-running the selection with the baseline removed puts each file back at the
+// tie slot it was recorded under rather than assuming slot 0.
+//
+// It only ever FILLS GAPS, so it cannot change an answer the caller already
+// had. Adding a token can raise the mark and refuse more; it can never lower
+// the mark, because the mark is a maximum, and it can never clear one, because
+// the executed mapping is written first. Refusing more is the safe direction
+// here — a file whose token does not sort strictly above the highest APPLIED
+// token is one Atlas CE never executes.
+//
+// One removal, not a transitive reconstruction: a directory holding several
+// baselines yields the tokens of the files the SURVIVING one squashed, not
+// those a superseded baseline had squashed before it. That is the conservative
+// half again — it can only fail to flag.
+func flywaySquashedSourceVersions(names []string, covered []flywaySumFile) map[int64]string {
+	// flywaySumFiles emits at most one baseline, and always first.
+	if len(covered) == 0 || covered[0].kind != flywaySumBaseline {
+		return nil
+	}
+	baseline := covered[0]
+	before := flywaySumFiles(slices.DeleteFunc(slices.Clone(names), func(name string) bool {
+		return name == baseline.name
+	}))
+	versions, err := flywayConvertedVersions(before)
+	if err != nil {
+		// A pre-baseline directory this build cannot convert yields nothing,
+		// because no build could have applied it either, so no revision row of
+		// its making exists.
+		return nil
+	}
+	recorded := make(map[int64]string, len(before))
+	for i, file := range before {
+		recorded[versions[i]] = flywayCEVersion(file)
+	}
+	return recorded
+}
+
 // flywayEntryName renders the converted Atlas single-file name. A Flyway file
 // need not carry a description at all — V1.sql and Video.sql are both ordinary
 // migrations to Atlas CE — so the name degrades to the bare version rather than

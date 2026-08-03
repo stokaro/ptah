@@ -274,21 +274,9 @@ func runAtlasMigrateApply(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	// A surviving Flyway baseline is converted into the band BELOW every
-	// survivor, because Atlas CE emits and executes it first whatever its own
-	// version — measured, and measured to hold across runs, not only within one
-	// conversion. On a database that already has migrations recorded it
-	// therefore sorts below all of them, which the linear guard would read as
-	// "authored earlier". It is not: the position encodes sum order, not
-	// chronology. Exempting exactly that one version keeps every other
-	// out-of-order migration refused, which is what Atlas CE does too.
-	flywayBaseline, err := atlasmigrateimport.FlywaySurvivingBaseline(captured, resolvedDirFormat)
+	linearity, err := flywayLinearityOperands(captured, resolvedDirFormat)
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
-	}
-	var outOfOrderExempt []int64
-	if flywayBaseline != nil {
-		outOfOrderExempt = []int64{flywayBaseline.AtlasVersion}
 	}
 
 	plan, err := atlasmigrate.PrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
@@ -296,7 +284,8 @@ func runAtlasMigrateApply(
 		FS:                   migrationFS,
 		DryRun:               opts.dryRun,
 		ExecOrder:            execOrder,
-		OutOfOrderExempt:     outOfOrderExempt,
+		OutOfOrderExempt:     linearity.outOfOrderExempt,
+		SourceVersions:       linearity.sourceVersions,
 		TxMode:               txMode,
 		RevisionsSchema:      opts.revisionsSchema,
 		MigrationLockTimeout: migrationLockTimeout,
@@ -325,7 +314,7 @@ func runAtlasMigrateApply(
 	// baseline's band position as "authored earlier". Whether a baseline may
 	// run against a database that already has history is a separate question,
 	// and one Atlas CE answers three incompatible ways (stokaro/ptah#1003).
-	if err := checkFlywayBaselineHistory(flywayBaseline, execOrder, plan); err != nil {
+	if err := checkFlywayBaselineHistory(linearity.baseline, execOrder, plan); err != nil {
 		return err
 	}
 
@@ -597,4 +586,58 @@ func writeAtlasMigrateApplyFormat(
 		URL:    opts.url,
 		Result: result,
 	})
+}
+
+// flywayLinearityOperands returns everything the linear guard needs from a
+// converted Flyway directory: the surviving baseline, the versions whose
+// position below the current high-water mark is an artifact of the layout
+// projection rather than a claim about authoring order, and the source version
+// token each converted version came from.
+//
+// They are resolved together because they answer one question between them —
+// "was this file authored out of order?" — and it must be answered on the
+// operands the source tool decides it with.
+//
+// A surviving baseline is converted into the band BELOW every survivor, because
+// Atlas CE emits and executes it first whatever its own version — measured, and
+// measured to hold across runs, not only within one conversion. On a database
+// that already has migrations recorded it therefore sorts below all of them,
+// which the linear guard would read as "authored earlier". It is not: the
+// position encodes sum order, not chronology. Exempting exactly that one
+// version keeps every other out-of-order migration refused, which is what Atlas
+// CE does too.
+//
+// The tokens are the guard's other operand (#1098). A converted Flyway
+// directory is ORDERED numerically — V2 executes before V10, which is what the
+// int64 version encodes and what atlas.sum is written against — but the tool it
+// came from decides whether a file "was added out of order" by comparing the
+// version TOKEN as a string, where "10" sorts below "2". Carrying the token
+// alongside the executed version lets the guard ask that question the way the
+// source tool asks it, without renumbering anything already recorded. The
+// comparison itself happens inside the migration lock, on the applied set the
+// migrator reads there, so a concurrent writer cannot move the mark between the
+// check and the run.
+type flywayLinearity struct {
+	baseline         *atlasmigrateimport.FlywayBaseline
+	outOfOrderExempt []int64
+	sourceVersions   map[int64]string
+}
+
+func flywayLinearityOperands(
+	captured fs.FS,
+	format atlasmigrateimport.Format,
+) (flywayLinearity, error) {
+	baseline, err := atlasmigrateimport.FlywaySurvivingBaseline(captured, format)
+	if err != nil {
+		return flywayLinearity{}, err
+	}
+	operands := flywayLinearity{baseline: baseline}
+	if baseline != nil {
+		operands.outOfOrderExempt = []int64{baseline.AtlasVersion}
+	}
+	operands.sourceVersions, err = atlasmigrateimport.FlywaySourceVersions(captured, format)
+	if err != nil {
+		return flywayLinearity{}, err
+	}
+	return operands, nil
 }
