@@ -14,6 +14,34 @@ ptah-atlas-conformance -> ptah
 ptah                  !-> ptah-atlas-conformance
 ```
 
+## What Conformance Means Here
+
+A green scoreboard means Ptah does not diverge from the community binary in the
+direction that costs a user something. It does not mean Ptah reproduces every
+behavior the community binary has.
+
+Two rules, and the second one is the reason this section exists:
+
+1. **Never looser.** Anything the community binary refuses must not succeed on
+   Ptah. A construct Ptah cannot yet implement is refused loudly rather than
+   accepted and ignored.
+2. **Never a copied defect.** Where the measured behavior is a defect -- it
+   silently drops a directive the author wrote, corrupts state, or fails for a
+   reason unrelated to the request -- Ptah does not reproduce it. Matching is
+   the floor, not the ceiling.
+
+A fixture that fails because Ptah is *better* is not a conformance failure. It
+is recorded as a deliberate divergence, with the measurement that establishes
+which behavior is the defective one, and the report says which of the two rules
+it falls under.
+
+The distinction is not academic. `-- atlas:txmode none` written directly above
+its statement, with no blank line between them, is silently dropped by the
+community binary; the statement then runs inside the transaction it asked to
+stay out of and the migration fails partway through. Ptah honors it. A change
+that once removed that capability in the name of parity was reverted -- see
+`AGENTS.md`, "Compatibility Policy".
+
 ## Current Scoreboard
 
 As of Ptah `18ae5f9d4d63136248986263732524e2314f9d7c`:
