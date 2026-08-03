@@ -214,12 +214,11 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name: "schema_apply",
 			path: []string{"schema", "apply"},
-			// --lock-name and --skip-lock are Pro-surface flags the pinned
-			// Atlas CE binary does not register; Atlas's published CLI
-			// reference does register them on this verb, so compat implements
-			// them. --skip-lint stays unregistered.
-			flags:     []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode", "--plan", "--edit", "--lock-timeout", "--lock-name", "--skip-lock"},
-			forbidden: []string{"--skip-lint"},
+			// --lock-name, --skip-lock and --skip-lint are Pro-surface flags the
+			// pinned Atlas CE binary does not register; Atlas's published CLI
+			// reference does register all three on this verb, so compat
+			// implements them.
+			flags: []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode", "--plan", "--edit", "--lock-timeout", "--lock-name", "--skip-lock", "--skip-lint"},
 		},
 		{
 			name:      "schema_diff",
