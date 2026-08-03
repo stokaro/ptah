@@ -37,6 +37,17 @@ import (
 // file — that is the defect, and it is what those rows print if the change is
 // reverted. The executing rows are green either way: their job is to fail if
 // the new comparison starts refusing ordinary sequences.
+//
+// The last two rows are the surviving-baseline pair, and they are the one place
+// this file diverges from the pinned binary rather than matching it:
+//
+//	applied      added            pinned v1.3.0                       here
+//	V2           B10              0, skipped silently                 refused (#1003)
+//	V2           B10 (skip)       0, skipped silently                 executed (#1003)
+//
+// Both are stokaro/ptah#1003's decisions, measured again for this change and
+// unchanged by it. Neither is a parity-rule violation: the first is stricter
+// than the oracle, and the second exits 0 as the oracle does.
 
 type flywaySourceOrderOutput struct {
 	stdout string
@@ -257,17 +268,96 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			assert:  refused([]string{"sq2"}, "2", "10"),
 		},
 		{
-			// NON-INTERFERENCE with the surviving-baseline exemption. B10's
-			// token sorts below the applied "2" exactly like V10's does, so a
-			// source comparison applied outside the exemption would refuse a
-			// baseline this build runs. This row is green before and after the
-			// change; it goes red if the exemption is applied to only one half
-			// of the union. It is NOT a claim about the pinned binary, which
-			// skips this baseline silently — that divergence is stokaro/ptah#1003
-			// and is not decided here.
-			name:    "a surviving baseline below the mark stays exempt",
+			// THE MARK SURVIVES THE SQUASH. B3 retires V2__sq2.sql from the
+			// covered set, and with it the only token any applied version had.
+			// The comparison then has no mark at all and passes everything —
+			// which is how this exact input exited 0 here while the pinned
+			// binary exits 1 with `migration files B3__sqb3.sql, R__sqr.sql
+			// were added out of order`. Nine such cells were measured across
+			// baseline-plus-repeatable shapes, all of them compat looser than
+			// the oracle.
+			//
+			// Reverted (the recovery removed): exit 0, "Migrating to version
+			// 9223372036854775807 from 2 pending migrations.", tables sq2,
+			// sqb3 and sqr.
+			//
+			// The pinned binary names both added files; this names only the
+			// repeatable, because B3 is a surviving baseline and exempt. Exit
+			// code and executed set match; the named set is narrower.
+			name:    "a repeatable added beside a baseline that squashes the applied migration",
+			applied: []string{"V2__sq2.sql"},
+			added:   []string{"B3__sqb3.sql", "R__sqr.sql"},
+			assert:  refused([]string{"sq2"}, "2", ""),
+		},
+		{
+			// The control for the row above, and the one that keeps the
+			// recovery from becoming a blanket refusal: same squash, and the
+			// added migration's token "4" sorts above the recovered mark "2",
+			// so it runs. The pinned binary runs both files here too. Green
+			// before and after; it goes red if the recovered mark is the
+			// BASELINE's token rather than the squashed file's.
+			name:    "a forward migration beside a baseline that squashes the applied migration",
+			applied: []string{"V2__sq2.sql"},
+			added:   []string{"B3__sqb3.sql", "V4__sq4.sql"},
+			assert:  executed("sq2", "sq4", "sqb3"),
+		},
+		{
+			// WHICH GUARD SPEAKS. B10's token sorts below the applied "2"
+			// exactly like V10's does, so the source comparison would refuse it
+			// — but a surviving baseline is exempt from the union, and the
+			// refusal that answers this shape is #1003's, which fires first and
+			// names the file, the squash and the way out. That is not an
+			// accident of ordering: for a directory whose applied files are all
+			// still present, a surviving baseline whose token sorts at or below
+			// the highest applied token ALWAYS trips #1003's guard, because an
+			// applied file with a token above the baseline's survives into
+			// Covered and one carrying the baseline's own token lands in
+			// SameVersion. The exemption therefore never grants a baseline
+			// permission to run; it only keeps the linear guard from answering
+			// with the worse message.
+			//
+			// Reverted — that is, with #1003's refusal removed for this shape —
+			// this row prints exit 0, "Migrating to version 4611686018427469511
+			// from 1 pending migrations." and tables sq2 AND sqbase: the squash
+			// executed on top of the history it squashes. That was this row's
+			// expectation before the rebase, and #1003 decided against it.
+			//
+			// The pinned binary answers this input with "No migration files to
+			// execute" at exit 0, running nothing. Refusing is the strict
+			// direction and is stokaro/ptah#1003's decision, not this one.
+			name:    "a surviving baseline below the mark is refused as a baseline, not as out of order",
 			applied: []string{"V2__sq2.sql"},
 			added:   []string{"B10__sqbase.sql"},
+			assert: func(c *qt.C, dbPath string, out flywaySourceOrderOutput) {
+				c.Assert(out.err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
+				c.Assert(out.text(), qt.Contains, "is a Flyway baseline and this database already has migration history")
+				c.Assert(out.text(), qt.Not(qt.Contains), "out-of-order pending migrations")
+				c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"sq2"})
+			},
+		},
+		{
+			// NON-INTERFERENCE with the surviving-baseline exemption, and the
+			// only shape where the exemption is observable at all now that
+			// #1003's guard answers the linear case. Under linear-skip that
+			// guard deliberately abstains — the operator has made the decision
+			// explicitly — so the linear verdict is the only thing left, and the
+			// exempt baseline runs.
+			//
+			// It goes red if the exemption is applied to only the numeric half
+			// of the union: the source half would then flag the baseline, and
+			// linear-skip, which now leaves unapplied exactly what the linear
+			// verdict names, would print exit 0 with tables sq2 alone — the
+			// baseline silently dropped.
+			//
+			// "linear-skip leaves unapplied what linear refuses" is a statement
+			// about the LINEAR GUARD's verdict, not about every refusal in the
+			// apply path. The pinned binary skips this baseline here; compat
+			// runs it. Both exit 0, so no parity rule is broken, and the
+			// divergence belongs to stokaro/ptah#1003's abstention list.
+			name:    "linear-skip runs the exempt baseline rather than skipping it",
+			applied: []string{"V2__sq2.sql"},
+			added:   []string{"B10__sqbase.sql"},
+			args:    []string{"--exec-order=linear-skip"},
 			assert:  executed("sq2", "sqbase"),
 		},
 	}

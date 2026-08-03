@@ -751,7 +751,13 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 		added: []flywayMigration{{"V1__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
 		assert: func(c *qt.C, run flywayBaselineRun) {
 			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
-			c.Assert(run.message(), qt.Contains, "out-of-order pending migrations below current version")
+			// A converted directory names the SOURCE tokens (#1098). The int64
+			// appears in no file name and in no Atlas output, so printing it
+			// alone does not say which file to move. Reverting #1098's message
+			// change prints "below current version" and no source version here.
+			c.Assert(run.message(), qt.Contains, "out-of-order pending migrations for current version")
+			c.Assert(run.message(), qt.Contains, `(source version "2")`)
+			c.Assert(run.message(), qt.Contains, `(source version "1")`)
 			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"s2"})
 		},
 	}, {
@@ -769,7 +775,9 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 		},
 		assert: func(c *qt.C, run flywayBaselineRun) {
 			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
-			c.Assert(run.message(), qt.Contains, "out-of-order pending migrations below current version")
+			c.Assert(run.message(), qt.Contains, "out-of-order pending migrations for current version")
+			c.Assert(run.message(), qt.Contains, `(source version "3")`)
+			c.Assert(run.message(), qt.Contains, `(source version "2")`)
 			c.Assert(run.message(), qt.Not(qt.Contains), "Flyway baseline")
 			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"ea", "ec"})
 		},
