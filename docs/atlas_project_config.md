@@ -328,6 +328,32 @@ and a list of `file://...` URLs when `paths` is used. `fileset` returns stable
 slash-separated relative paths sorted lexicographically and supports recursive
 `**` path segments.
 
+### The file() and fileset() sandbox
+
+Both functions are confined to the directory holding `atlas.hcl`. An absolute
+path, a parent-traversal path, and a symbolic link whose target leaves the
+directory are refused, and the error names the rule and points at `getenv()`
+for a value that lives elsewhere. A `fileset` glob whose match leaves the
+directory fails the whole call rather than dropping the entry, because the
+returned paths become schema-source URLs that another reader opens. A symbolic
+link that stays inside the directory is read normally.
+
+The refusal is enforced twice on purpose. The loader resolves what it can
+itself, so the message names the offending link instead of leaving an
+`openat: path escapes from parent` to interpret; the directory is also opened
+through a rooted handle, which is what catches a link chain the resolver stops
+following and a path swapped for a link between the check and the read.
+`ParseAtlasFSWithOptions` takes the filesystem from its caller, so a caller that
+supplies one without that protection has chosen a weaker boundary; the loaders
+in this package and in `cmd/atlas` supply a rooted one.
+
+This is deliberately stricter than Atlas. The pinned community v1.3.0 binary
+reads all three shapes and exits 0, and the contents land somewhere observable,
+so matching it would give any author of a repository-controlled `atlas.hcl` an
+arbitrary-file read wherever the tool runs. The divergence is measured by the
+`TestOracle*` runs in `config/projectconfig` under the Atlas CE Oracle
+workflow. See [`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042).
+
 Atlas-compatible commands under `ptah-compat schema ...` and
 `ptah-compat migrate ...` accept Atlas project flags:
 

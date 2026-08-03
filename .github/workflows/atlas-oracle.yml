@@ -84,6 +84,32 @@ jobs:
           # mode this job exists to prevent, so a skip fails the job.
           ! grep -q 'SKIPPED' "$RUNNER_TEMP/atlas-schema-hcl-run"
 
+      # The atlas.hcl file() sandbox (stokaro/ptah#1042) is a deliberate
+      # divergence, so the community side of it has to stay measured: if a later
+      # build starts refusing these reads, the divergence is over and this run
+      # is what says so. Listed before it is run, for the same reason as above.
+      - name: Verify atlas.hcl file() conformance selection
+        run: |
+          GOWORK=off go test -list '^TestOracle' \
+            ./config/projectconfig > "$RUNNER_TEMP/atlas-file-sandbox-tests"
+          cat "$RUNNER_TEMP/atlas-file-sandbox-tests"
+          grep -Fx 'TestOracleReadsFilesOutsideTheAtlasHCLDirectory' "$RUNNER_TEMP/atlas-file-sandbox-tests"
+          grep -Fx 'TestOracleEvaluatesTheFileCallItIsGiven' "$RUNNER_TEMP/atlas-file-sandbox-tests"
+          grep -Fx 'TestOraclePlacesOutsideFileContentsWhereTheCallerCanSeeThem' "$RUNNER_TEMP/atlas-file-sandbox-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-file-sandbox-tests")" -eq 3
+
+      - name: Run atlas.hcl file() conformance tests
+        run: |
+          GOWORK=off go test -count=1 -v -run '^TestOracle' ./config/projectconfig \
+            > "$RUNNER_TEMP/atlas-file-sandbox-run" 2>&1 || {
+              cat "$RUNNER_TEMP/atlas-file-sandbox-run"
+              exit 1
+            }
+          cat "$RUNNER_TEMP/atlas-file-sandbox-run"
+          # A missing oracle skips these silently. That is the exact failure
+          # mode this job exists to prevent, so a skip fails the job.
+          ! grep -q 'SKIPPED' "$RUNNER_TEMP/atlas-file-sandbox-run"
+
       - name: Regenerate Atlas CE corpus
         run: >-
           internal/atlasmigrateimport/testdata/ce-sums/regenerate.sh
