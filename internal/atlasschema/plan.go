@@ -72,6 +72,9 @@ type PlanFileOptions struct {
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired]. When set, ToURLs are ignored.
 	Desired *goschema.Database
+	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
+	// policy; see [ApplyOptions.IgnoreUnknownHCLNames].
+	IgnoreUnknownHCLNames bool
 }
 
 // StalePlanError reports that the target database no longer matches the
@@ -113,6 +116,8 @@ func PreparePlanFile(
 		// stay a `schema plan` follow-up gap.
 		LocalFilesOnly: true,
 		Desired:        opts.Desired,
+
+		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 	})
 	if err != nil {
 		return PlanFile{}, err

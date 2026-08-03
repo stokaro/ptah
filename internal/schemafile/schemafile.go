@@ -23,6 +23,28 @@ import (
 // Options configures schema file loading.
 type Options struct {
 	Dialect string
+	// IgnoreUnknownHCLNames accepts and drops HCL names Ptah's schema HCL
+	// parser does not model instead of refusing the file.
+	//
+	// The split is by COMMAND TREE, not by file format. It is set only by
+	// cmd/atlas -- `schema apply`, `schema inspect`, `schema diff`,
+	// `schema plan`, `schema plan validate` and `migrate diff` on the
+	// Atlas-compatible binary -- which consumes files written for another tool
+	// and must not refuse a construct that tool accepts and ignores.
+	//
+	// It is left off everywhere else, including the native `ptah schema`
+	// commands that share this loader through internal/atlassource: there the
+	// file is read by Ptah's own CLI, where an unmodeled name is a user error
+	// worth naming rather than dropping. Every shared option struct on that
+	// path carries the flag explicitly rather than defaulting it on, because
+	// defaulting it on is exactly how the native commands became tolerant
+	// without anyone intending it.
+	//
+	// There is deliberately no companion hook for reporting what was dropped.
+	// [atlashcl.Options.RecordIgnored] offers one, but nothing on this path
+	// consumes it, and a forwarding field with no producer is a field no test
+	// can hold to account.
+	IgnoreUnknownHCLNames bool
 }
 
 // Load reads one local schema file from either a plain path or file:// URL.
@@ -54,7 +76,9 @@ func LoadPath(path string, opts Options) (*goschema.Database, error) {
 
 	switch strings.ToLower(filepath.Ext(resolved)) {
 	case ".hcl":
-		return atlashcl.ParseFile(resolved)
+		return atlashcl.ParseFileWithOptions(resolved, atlashcl.Options{
+			IgnoreUnknownNames: opts.IgnoreUnknownHCLNames,
+		})
 	case ".yaml", ".yml":
 		return yamlschema.ParseFile(resolved)
 	case ".sql":

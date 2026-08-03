@@ -85,6 +85,105 @@ current schema IR:
 Unsupported schema semantics are rejected with an explicit parse error instead
 of being silently dropped from the generated Ptah IR.
 
+### Unknown names: strict on Ptah's own commands, tolerant on the Atlas surface
+
+Whether an unmodeled name is a parse error depends on which surface reads the
+file, because the two surfaces answer to different contracts.
+
+**Strict — an unmodeled name is a parse error.** This covers `--schema-file`,
+every other path through Ptah's own schema loading, the schema artifact reader,
+the Go-annotation exporter's render-then-reparse fidelity check, **and the
+native `ptah schema apply`, `ptah schema diff`, `ptah schema inspect` and
+`ptah schema plan` commands**. Here the file is read by Ptah's own CLI, an
+unmodeled name is almost always a typo, and naming it is more useful than
+dropping it. The exporter check is the sharper reason: it re-parses HCL that
+Ptah itself rendered, so tolerance there would let a renderer that emits a
+misspelled attribute pass unnoticed.
+
+**Tolerant — an unmodeled name is dropped.** This covers the Atlas-compatible
+command tree only: `ptah-compat schema apply`, `schema inspect`, `schema diff`,
+`schema plan`, `schema plan validate` and `migrate diff` reading a `file://`
+HCL source. Those files are written for another tool, which accepts constructs
+Ptah does not model and drops them without a word; refusing the whole file where
+that tool proceeds makes Ptah a non-starter as a replacement.
+
+The split is the one stokaro/ptah#1016 left open, and it is a split in the
+command tree, not in the file format: the same `schema.hcl` is refused by
+`ptah schema inspect` and accepted by `ptah-compat schema inspect`.
+
+Measured on the community Atlas binary with `schema inspect -u file://...`,
+each time comparing the emitted DDL of a schema carrying the construct against
+the same schema with it deleted: a top-level `annotation` block, a table-nested
+`annotation` block, an unknown block nested in a `column` or an `index` body, an
+`invisible = true` column attribute, and an unknown attribute in the `column`,
+`table`, `index`, `schema`, `primary_key`, `foreign_key`, `check`, `enum` and
+`view` positions all come back exit 0 with byte-identical DDL. Nonsense controls
+(`frobnicate_nonsense`, `zzz_nonsense_attr`, `zzz_nonsense_block`) behave the
+same as the real names in every one of those positions, which is what makes this
+a general "drop names I do not model" policy rather than support for any
+particular name. The tolerance therefore covers every position, not a shortlist.
+
+Three limits are deliberate.
+
+Tolerance is name-level, never subtree-level. The body of a dropped construct is
+still *evaluated*, so `annotation { gql = "Thing" }` is accepted while each of
+these is refused, exactly as the community binary refuses them:
+
+| inside a dropped construct | diagnostic |
+| --- | --- |
+| `ref = not_a_real_identifier` | unknown variable |
+| `ref = variable.v` (the root is `var`, never `variable`) | unknown variable |
+| `ref = frobnicate_nonsense("a")` | call to unknown function |
+| `ref = 1 + "abc"` | invalid operand |
+| `ref = 1 + string` | invalid operand |
+
+Tolerance never repairs structure. A construct whose only nested block was
+dropped is still incomplete: `partition { type = "HASH"  zzz_nonsense {} }`
+fails with `partition requires columns attribute or by blocks`.
+
+The scope a dropped body is evaluated in is *closed*. It holds three names —
+`string`, `int` and `bool`, the only bare identifiers measured to resolve inside
+a dropped body on every dialect — plus a measured function table (`format`,
+`join`, `jsonencode`, `lower`, `split`, `title`, `trimspace`, `upper`). Nothing
+in it is derived from the file being parsed, so a reference to the file's own
+blocks or variables does not resolve:
+
+| inside a dropped construct | community binary | Ptah |
+| --- | --- | --- |
+| `ref = table.t`, `ref = table.t.column.id` | exit 0 | refused, unknown variable `table` |
+| `ref = column.id` inside a table body | exit 0 | refused, unknown variable `column` |
+| `ref = var.v` with `variable "v"` declared | exit 0 | refused, unknown variable `var` |
+| `ref = attr.name` naming a block nested in the dropped one | exit 0 | refused, unknown variable `attr` |
+| a call to a function outside the table above | exit 0 | refused, call to unknown function |
+
+Each of those refuses a file the community binary accepts, which is the safe
+direction — it costs a user an error message, where the opposite direction would
+load a schema the real tool would have rejected. It is the direction this parser
+takes on purpose, because the alternative is to model the file's blocks and
+variables as reference roots, and every attempt to do that has had to stand in
+for something it could not enumerate — an unlabeled block, a variable of unknown
+type. Each such stand-in turned into an *accept*-where-the-binary-refuses
+divergence: `var.v.nope` on a string variable, `1 + var.v`, `primary_key.nope`,
+`inner["typo"]`, `table.t.column` and eight more, all measured. A closed scope
+cannot have that failure mode, because there is nothing in it whose members are
+guessed.
+
+`partition` is dialect-split on the community binary and cannot be pinned to one
+verdict by a dialect-agnostic parser: `type = HASH` unquoted is exit 1 on MySQL
+(`There is no variable named "HASH"`) and exit 0 on PostgreSQL, which models
+partitions. `type = "HASH"` quoted is exit 0 on both, and on MySQL the whole
+`partition` block is dropped from the emitted DDL. What is dialect-independent,
+and is pinned, is that `HASH` is not a reference root: `annotation { ref = HASH }`
+is exit 1 on both dialects and here.
+
+Dropping an unknown column attribute changes the DDL Ptah emits, so a
+misspelled attribute (`nul = false`, `uniqe = true`) becomes an inert no-op on
+the tolerant surface rather than a diagnostic. That is the behavior the
+Atlas-compatible surface has to reproduce, and it is the reason the strict
+default is kept on Ptah's own commands. Callers that want to say something about
+what was dropped can pass `atlashcl.Options.RecordIgnored`, the schema-HCL
+counterpart of the atlas.hcl parser's `Config.IgnoredConstructs`.
+
 ## Ptah Go-annotation parity extensions
 
 Ptah accepts the Atlas-compatible subset above and a small set of explicitly
