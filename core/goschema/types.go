@@ -144,9 +144,16 @@ type Field struct {
 	FieldName  string // Name of the Go struct field
 	Name       string // Database column name
 	Type       string // Database column type (e.g., "VARCHAR(255)", "INTEGER")
-	Nullable   bool   // Whether the column allows NULL values
-	Primary    bool   // Whether this is a primary key column
-	AutoInc    bool   // Whether this column auto-increments
+	// TypeRawSQL records that Type was written with Atlas HCL's sql() raw
+	// expression -- `type = sql("USER_DEFINED")` -- rather than as a type the
+	// grammar names. Type still holds the reduced SQL text so rendered DDL is
+	// valid, but a writer that emits Atlas HCL must put the call back: the
+	// pinned Atlas community binary v1.3.0 refuses the bare identifier
+	// (`There is no type named "USER_DEFINED"`) and accepts only the call.
+	TypeRawSQL bool
+	Nullable   bool // Whether the column allows NULL values
+	Primary    bool // Whether this is a primary key column
+	AutoInc    bool // Whether this column auto-increments
 	// IdentityGeneration stores PostgreSQL identity generation mode: ALWAYS or BY_DEFAULT.
 	IdentityGeneration string
 	// IdentityStart stores the optional PostgreSQL identity START WITH value.

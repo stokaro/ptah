@@ -502,11 +502,14 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 		return goschema.Field{}, err
 	}
 
+	columnType, typeRawSQL := p.columnTypeName(block, typeAttr)
+
 	field := goschema.Field{
 		StructName:          structName,
 		FieldName:           name,
 		Name:                name,
-		Type:                p.columnTypeName(block, typeAttr),
+		Type:                columnType,
+		TypeRawSQL:          typeRawSQL,
 		Nullable:            p.optionalBool(block.Body.Attributes["null"], false),
 		AutoInc:             p.optionalBool(block.Body.Attributes["auto_increment"], false) || identity.generation != "",
 		IdentityGeneration:  identity.generation,
@@ -1747,16 +1750,28 @@ func (p *parser) exprString(attr *hclsyntax.Attribute) string {
 	return p.rawExpr(attr)
 }
 
-func (p *parser) columnTypeName(block *hclsyntax.Block, attr *hclsyntax.Attribute) string {
+// columnTypeName returns the column's type and whether it was written with
+// Atlas's sql() escape hatch.
+//
+// The type itself is always the reduced SQL text, so the DDL Ptah renders stays
+// valid -- issue #1106. The second result is what a writer needs to put the
+// call back: `sql("USER_DEFINED")` is the only spelling of an engine type Atlas
+// does not model that the pinned Atlas community binary v1.3.0 accepts, and it
+// refuses the bare identifier Ptah would otherwise write back
+// ("Unknown column.type; There is no type named \"USER_DEFINED\"").
+func (p *parser) columnTypeName(block *hclsyntax.Block, attr *hclsyntax.Attribute) (string, bool) {
 	rawType := p.rawExpr(attr)
 	if enumName, ok := strings.CutPrefix(rawType, "enum."); ok {
-		return enumName
+		return enumName, false
 	}
+	_, rawSQL := p.sqlRawExprValue(attr.Expr)
 	typ := p.exprString(attr)
 	if p.optionalBool(block.Body.Attributes["unsigned"], false) && !strings.Contains(strings.ToLower(typ), "unsigned") {
-		return typ + " unsigned"
+		// `unsigned = true` is a Ptah-side edit to the type, so the source call
+		// no longer spells what the column holds and must not be written back.
+		return typ + " unsigned", false
 	}
-	return typ
+	return typ, rawSQL
 }
 
 func (p *parser) stringListAttr(block *hclsyntax.Block, attrName string) ([]string, error) {
