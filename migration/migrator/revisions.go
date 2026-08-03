@@ -168,8 +168,14 @@ func migrationExecutionProgress(err error, dialect string, txMode MigrationTxMod
 
 	total = execErr.Total
 	applied = execErr.StatementIndex - 1
-	if txMode == MigrationTxModeAll ||
-		(txMode == MigrationTxModeFile && (dialect == "postgres" || dialect == "cockroachdb" || dialect == "yugabytedb")) {
+	// The recorded counter is not decoration: a retry resumes at applied+1, so
+	// overstating it skips a statement that never ran. Whether the earlier
+	// statements survived the failure is a property of the transaction mode and
+	// the dialect, which is what migrationProgressRolledBack answers — this
+	// branch used to carry its own shorter, unnormalized list that omitted SQLite
+	// and SQL Server and so recorded applied=1 for a file whose transaction had
+	// rolled the whole body back (#966).
+	if migrationProgressRolledBack(dialect, txMode) {
 		applied = 0
 	}
 	if applied < 0 {
@@ -310,6 +316,31 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.qualifiedMigrationsTable())
 	}
 	return fmt.Sprintf(`INSERT INTO %s (version, description, applied_at, state, applied, total, error, error_stmt, execution_time_ms, checksum)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.qualifiedMigrationsTable())
+}
+
+// restartMigrationSQL rewrites an existing revision row so a retry of the same
+// version reuses it instead of inserting a second one.
+//
+// beginMigrationSQL is a bare INSERT, and the up path used to run it
+// unconditionally. Once a failed body had recorded a dirty row, every retry —
+// including the one the operator asked for with --allow-dirty after fixing the
+// migration — died on `UNIQUE constraint failed` on the version column instead
+// of running, with `migrations repair` the only way out (#966). This is the
+// up-direction counterpart of beginRollbackSQL, which has always rewritten the
+// row in place for the down direction.
+func (m *Migrator) restartMigrationSQL() string {
+	if m.revisionTableFormat.isAtlas() {
+		return revisionUpdateSQL(
+			m.connectionDialect(),
+			m.qualifiedMigrationsTable(),
+			"description = ?, type = ?, applied = ?, total = ?, executed_at = ?, execution_time = ?, error = '', error_stmt = '', hash = ?, partial_hashes = ?, operator_version = ?",
+		)
+	}
+	return revisionUpdateSQL(
+		m.connectionDialect(),
+		m.qualifiedMigrationsTable(),
+		"description = ?, applied_at = ?, state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, checksum = ?",
+	)
 }
 
 func (m *Migrator) completeMigrationSQL() string {
@@ -662,13 +693,24 @@ checksum = VALUES(checksum)`
 	}
 }
 
+// dirtyRevision reads the lowest revision row that is not cleanly applied.
+//
+// Only the ptah layout's predicate takes an argument; the Atlas layout compares
+// applied against total and needs none. This used to issue the ptah query first
+// and then overwrite the result for the Atlas layout, which left a *sql.Row that
+// nothing ever scanned — and an unscanned Row keeps its connection, and its open
+// read cursor, checked out for the life of the process. On SQLite that read lock
+// blocks the next write against the same file, so a dirty-guard refusal poisoned
+// every later write in the same process with `database is locked (SQLITE_BUSY)`:
+// exactly the recovery run this guard exists to send the operator towards
+// (#966).
 func (m *Migrator) dirtyRevision(ctx context.Context) (*MigrationRevision, error) {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.getDirtyRevisionSQL())
-	row := m.conn.QueryRowContext(ctx, query, migrationStateApplied)
+	args := []any{migrationStateApplied}
 	if m.revisionTableFormat.isAtlas() {
-		row = m.conn.QueryRowContext(ctx, query)
+		args = nil
 	}
-	revision, err := m.scanRevisionRow(row)
+	revision, err := m.scanRevisionRow(m.conn.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -813,12 +855,154 @@ func (m *Migrator) failIfDirty(ctx context.Context) error {
 	return nil
 }
 
-func (m *Migrator) beginMigrationRevision(
+// upRetryPlan says how an up attempt relates to an earlier attempt at the same
+// version. The zero value is not usable: build it with [Migrator.planUpRetry],
+// which always sets resumeFrom to at least 1.
+type upRetryPlan struct {
+	// reuseRevision says a dirty revision row for this version already exists,
+	// so the attempt must rewrite that row instead of inserting a second one.
+	reuseRevision bool
+	// resumeFrom is the 1-based index of the first statement this attempt runs.
+	// Everything below it was committed by the earlier attempt.
+	resumeFrom int
+}
+
+// planUpRetry reads the revision row for migration, if any, and decides whether
+// this attempt reuses it and where in the body it restarts.
+//
+// The read has to happen here — before the caller opens the migration's
+// transaction — because on a single-connection pool a query issued while the
+// transaction holds the only connection deadlocks. See the note in
+// [Migrator.applyUpMigrationTransactional].
+func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRetryPlan, error) {
+	plan := upRetryPlan{resumeFrom: 1}
+	if m.conn.Writer().IsDryRun() || !m.metadataAvailable || m.legacyRevisionTable {
+		return plan, nil
+	}
+	revision, err := m.getRevision(ctx, migration.Version)
+	if err != nil {
+		return upRetryPlan{}, err
+	}
+	// A row that is present and clean means an applied migration is being
+	// applied again, which no up path should have selected. Leave it to the
+	// INSERT so the contradiction surfaces instead of being overwritten.
+	if revision == nil || !revision.Dirty {
+		return plan, nil
+	}
+	resumeFrom, err := resumeStatementFor(*revision, m.migrationStatementCount(migration.UpSQL))
+	if err != nil {
+		return upRetryPlan{}, err
+	}
+	return upRetryPlan{reuseRevision: true, resumeFrom: resumeFrom}, nil
+}
+
+// resumeStatementFor returns the 1-based statement index a retry restarts at,
+// given the dirty row the previous attempt left and the statement count the
+// migration file has now.
+//
+// It refuses rather than guesses in the two cases where the recorded counter
+// cannot be trusted to index into the current file. Refusing costs a retry that
+// the community Atlas binary would have run — it resumes at applied+1 by index
+// with no such check — but resuming by a stale index executes the wrong
+// statements, so this is one place where matching would mean reproducing a
+// defect.
+func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
+	if revision.Applied <= 0 {
+		return 1, nil
+	}
+	if revision.Error == unknownStatementOutcomeError {
+		return 0, fmt.Errorf(
+			"migration %d cannot resume automatically: the outcome of statement %d is unknown after an interrupted run; inspect the database, then use 'ptah migrations repair --version %d'",
+			revision.Version,
+			revision.Applied+1,
+			revision.Version,
+		)
+	}
+	if revision.Total != total {
+		return 0, fmt.Errorf(
+			"migration %d cannot resume automatically: the previous attempt applied %d of %d statements but the file now has %d; inspect the database, then use 'ptah migrations repair --version %d'",
+			revision.Version,
+			revision.Applied,
+			revision.Total,
+			total,
+			revision.Version,
+		)
+	}
+	return revision.Applied + 1, nil
+}
+
+// recordPendingMigrationRevisionOn writes the row that says "this version is
+// being applied right now", inserting it or reusing the dirty row a previous
+// attempt left, as plan says.
+func (m *Migrator) recordPendingMigrationRevisionOn(
 	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
 	migration *Migration,
 	startedAt time.Time,
+	plan upRetryPlan,
 ) error {
-	return m.beginMigrationRevisionOn(ctx, m.conn, migration, startedAt)
+	if plan.reuseRevision {
+		return m.restartMigrationRevisionOn(ctx, conn, migration, startedAt, plan.resumeFrom-1)
+	}
+	return m.beginMigrationRevisionOn(ctx, conn, migration, startedAt)
+}
+
+// restartMigrationRevisionOn rewrites an existing revision row back to pending
+// for a fresh attempt, recording alreadyApplied as the progress this attempt
+// starts from so an interruption before the first executed statement does not
+// understate what is committed.
+func (m *Migrator) restartMigrationRevisionOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+	alreadyApplied int,
+) error {
+	if m.conn.Writer().IsDryRun() {
+		return nil
+	}
+	if m.revisionTableFormat.isAtlas() {
+		return m.restartAtlasMigrationRevisionOn(ctx, conn, migration, startedAt, alreadyApplied)
+	}
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.restartMigrationSQL())
+	return executeSQLOn(
+		ctx,
+		conn,
+		query,
+		migration.Description,
+		startedAt,
+		migrationStatePending,
+		alreadyApplied,
+		m.migrationStatementCount(migration.UpSQL),
+		0,
+		migrationRevisionHash(migration),
+		migration.Version,
+	)
+}
+
+func (m *Migrator) restartAtlasMigrationRevisionOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+	alreadyApplied int,
+) error {
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.restartMigrationSQL())
+	return executeSQLOn(
+		ctx,
+		conn,
+		query,
+		migration.atlasFilenameDescription(),
+		int64(AtlasRevisionTypeApplied),
+		alreadyApplied,
+		m.migrationStatementCount(migration.UpSQL),
+		m.atlasRevisionTimestamp(startedAt),
+		int64(0),
+		migrationRevisionHash(migration),
+		m.atlasNullJSONValue(),
+		ptahOperatorVersion,
+		strconv.FormatInt(migration.Version, 10),
+	)
 }
 
 func (m *Migrator) beginMigrationRevisionOn(

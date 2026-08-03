@@ -1675,6 +1675,18 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		return nil, err
 	}
 
+	// Every revision row this batch touches is decided before the transaction
+	// opens: once it holds the only connection of a single-connection pool, a
+	// read would deadlock. See [Migrator.planUpRetry].
+	plans := make(map[int64]upRetryPlan, len(migrations))
+	for _, migration := range migrations {
+		plan, err := m.planUpRetry(ctx, migration)
+		if err != nil {
+			return nil, err
+		}
+		plans[migration.Version] = plan
+	}
+
 	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
@@ -1683,11 +1695,13 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 	startedAt := make(map[int64]time.Time, len(migrations))
 	for _, migration := range migrations {
 		startedAt[migration.Version] = time.Now()
-		if err := m.applyUpMigrationInExistingTransaction(ctx, txConn, migration, startedAt[migration.Version]); err != nil {
+		plan := plans[migration.Version]
+		migrationCtx := withMigrationResume(ctx, plan.resumeFrom)
+		if err := m.applyUpMigrationInExistingTransaction(migrationCtx, txConn, migration, startedAt[migration.Version]); err != nil {
 			_ = tx.Rollback()
-			return nil, m.recordRolledBackBatchFailure(ctx, migration, startedAt[migration.Version], err)
+			return nil, m.recordRolledBackBatchFailure(ctx, migration, startedAt[migration.Version], err, plan)
 		}
-		if err := m.recordAppliedMigrationOn(ctx, txConn, migration, startedAt[migration.Version]); err != nil {
+		if err := m.recordAppliedMigrationOn(ctx, txConn, migration, startedAt[migration.Version], plan); err != nil {
 			_ = tx.Rollback()
 			return nil, fmt.Errorf("failed to record migration %d in tx-mode all transaction: %w", migration.Version, err)
 		}
@@ -1804,9 +1818,21 @@ func (m *Migrator) applyUpMigrationObserved(
 	if err != nil {
 		return false, err
 	}
-	if err := m.beginMigrationRevision(ctx, migration, startedAt); err != nil {
+	plan, err := m.planUpRetry(ctx, migration)
+	if err != nil {
+		return false, err
+	}
+	if err := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); err != nil {
 		return false, fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}
+	if plan.resumeFrom > 1 {
+		m.logger.Info(
+			"Resuming migration after a partially applied attempt",
+			"version", migration.Version,
+			"resumeFromStatement", plan.resumeFrom,
+		)
+	}
+	ctx = withMigrationResume(ctx, plan.resumeFrom)
 	if txMode == MigrationTxModeNone {
 		return checksDeferred, m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
 	}
@@ -1821,13 +1847,14 @@ func (m *Migrator) applyUpMigrationObserved(
 // pre-migration state, so running them before the pending-revision insert means
 // a failed check leaves the revision table byte-identical: the migration was
 // never started, rather than started and marked dirty. Recording the failure
-// instead would wedge the Atlas-compatible surface: `ptah-compat migrate apply`
-// registers no --skip-checks (Atlas has none either), and while it does
-// register --allow-dirty, that flag currently fails on the re-insert with a
-// UNIQUE violation on the revision table (#966, measured on both surfaces), so
-// after fixing the data that tripped the check every later apply aborted on the
-// dirty row with no working in-band recovery. Atlas itself writes no row when
-// its checks fail, and the retry simply works (#956).
+// instead would still cost the Atlas-compatible surface a flag it does not
+// have: `ptah-compat migrate apply` registers no --skip-checks (Atlas has none
+// either), so a check failure that recorded a dirty row would force every
+// subsequent apply through --allow-dirty even after the data that tripped the
+// check was fixed. (It would no longer wedge outright — since #966 that flag
+// reuses the dirty row instead of failing on a re-insert — but a gate that
+// leaves nothing behind needs no recovery at all.) Atlas itself writes no row
+// when its checks fail, and the retry simply works (#956).
 // observesApplyState says whether this migration observes the state a real
 // apply would evaluate its assertions against — true for the first migration
 // executed in the run, and always true outside a dry run. When it is false the
@@ -1886,8 +1913,9 @@ func (m *Migrator) recordRolledBackBatchFailure(
 	migration *Migration,
 	startedAt time.Time,
 	failure error,
+	plan upRetryPlan,
 ) error {
-	if beginErr := m.beginMigrationRevision(ctx, migration, startedAt); beginErr != nil {
+	if beginErr := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); beginErr != nil {
 		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %v", failure, migration.Version, beginErr)
 	}
 	return m.failMigrationWithDirtyStateWithMode(
@@ -1906,8 +1934,9 @@ func (m *Migrator) recordAppliedMigrationOn(
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
 	startedAt time.Time,
+	plan upRetryPlan,
 ) error {
-	if err := m.beginMigrationRevisionOn(ctx, conn, migration, startedAt); err != nil {
+	if err := m.recordPendingMigrationRevisionOn(ctx, conn, migration, startedAt, plan); err != nil {
 		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}
 	if err := m.completeMigrationRevisionOn(ctx, conn, migration, startedAt); err != nil {

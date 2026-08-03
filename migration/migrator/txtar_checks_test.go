@@ -375,9 +375,9 @@ func revisionVersions(t *testing.T, conn *dbschema.DatabaseConnection) []string 
 // TestMigrateUp_TxtarFailingCheckWritesNoRevisionRow pins the recovery contract
 // behind the check gate: because checks run before any bookkeeping write, a
 // failed check leaves the revision table exactly as it was. Recording the
-// failure instead would strand the Atlas-compatible surface, which has neither
-// --skip-checks, and whose --allow-dirty cannot clear the row because it fails
-// on the re-insert (#966), to recover (#956).
+// failure instead would push the Atlas-compatible surface, which registers no
+// --skip-checks, through --allow-dirty on every later apply — recoverable since
+// #966, but a gate that writes nothing needs no recovery at all (#956).
 func TestMigrateUp_TxtarFailingCheckWritesNoRevisionRow(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()

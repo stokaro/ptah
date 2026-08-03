@@ -118,6 +118,39 @@ Pending Migrations: 0
 Status: Database is up to date
 ```
 
+## Recovering from a migration body that failed part-way
+
+Unlike Atlas, Ptah records a revision row for a migration whose body failed, so
+the failure survives the run that caused it. `migrate status` names that row
+explicitly, because `Current Version` counts it:
+
+```text
+=== MIGRATION STATUS ===
+Current Version: 20260721120100
+Total Migrations: 2
+Applied Migrations: 1
+Pending Migrations: 1
+Dirty Migration: version=20260721120100 applied=1/2
+Error Statement: ALTER TABLE users ADD COLUMN email TEXT
+Error: failed to execute migration SQL: ...
+Status: Pending migrations available
+```
+
+Fix the migration, rerun `ptah-compat migrate hash`, and rerun the apply with
+`--allow-dirty`. The retry reuses the dirty row instead of recording a second
+one and skips the statements the earlier attempt committed — under
+`--tx-mode none` above, statement 1 — so it resumes rather than repeating SQL.
+Atlas needs no flag here; `--allow-dirty` stays required so a half-applied
+migration is never resumed by accident.
+
+Two cases refuse to resume automatically and say so, naming
+`ptah migrations repair --version <v>`: a run interrupted mid-statement, whose
+last statement's outcome was never observed, and an edit that changed the
+migration's statement count, after which the recorded progress no longer indexes
+into the file.
+
+## Rolling back
+
 Roll back using the `down.sql` section. A bare `ptah-compat migrate down` reads
 the Atlas revision rows `migrate apply` wrote and starts the rollback without
 reading stdin:
