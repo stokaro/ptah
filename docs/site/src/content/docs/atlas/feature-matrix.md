@@ -79,9 +79,9 @@ Across the 159 capabilities below:
 | Ptah does not implement it | 24 |
 | Ptah and Atlas CE both support it | 24 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 37 |
-| Ptah has it and neither Atlas edition does | 15 |
+| Ptah has it and neither Atlas edition does | 16 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
-| An Atlas column is ❔ — not established by this page's evidence | 23 |
+| An Atlas column is ❔ — not established by this page's evidence | 21 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
 binary built from this repository; Atlas-column verdicts rest on the cited
@@ -205,7 +205,7 @@ seven of them as open capabilities regardless.
 | Per-rule severity policy | 🟡 | ❔ | 🟡 | Severity vocabulary is warning\|error only (info errors out). Measured, Atlas is no richer: analyzer and rule blocks reject a `severity` attribute; only boolean error toggles exist. |
 | Pre-migration assertion checks | 🟡 | ❌ | ✅ | Scalar SELECTs; txtar checks.sql and checks/*.sql support all-of/oneof groups. CE ignores checks. Compat bypass is PTAH_SKIP_CHECKS. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
-| Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❔ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not. |
+| Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❌ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |
 
 ## Testing
@@ -293,7 +293,7 @@ control — come from the registry, not from Ptah. The full workflow is on
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| Artifact integrity check (`--verify-sum`) | 🟡 | ➖ | ❔ | On migrations push and up only. It checks the directory against the ptah.sum inside the same artifact, so content rewritten with its sum passes. |
+| Artifact integrity check (`--verify-sum`) | 🟡 | ➖ | ❌ | On migrations push and up only. It checks the directory against the ptah.sum inside the same artifact, so content rewritten with its sum passes. |
 | Declarative reference data | ✅ | ❌ | ✅ | //ptah:schema:data rows diffed by key into a reversible data migration. Atlas lists declarative data management as a Pro feature. |
 | Digest pinning and write-once version tags | ✅ | ➖ | ❔ | Pushing to an @sha256 reference is refused; `--version` is write-once and a conflict exits 2. The reference tag, `--tag` values and latest all move. |
 | Environment-scoped SQL seed runner | ✅ | ❌ | ❌ | NNN_desc.env.sql files recorded in schema_seeds with protected-env gates. No seed verb in the CE inventory or the cited Pro list. |
