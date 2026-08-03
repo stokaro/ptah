@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -53,7 +54,7 @@ func GenerateCheckpointWithDatabaseInfo(
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
-	return generateCheckpointFromDiff(schema, empty, info, diff)
+	return generateCheckpointFromDiff(schema, empty, info, diff, "")
 }
 
 // GenerateCheckpointWithDatabase renders a checkpoint after resolving the
@@ -63,6 +64,18 @@ func GenerateCheckpointWithDatabase(
 	conn *dbschema.DatabaseConnection,
 	schema *goschema.Database,
 ) (upSQL, downSQL string, err error) {
+	return generateCheckpointWithDatabaseQualified(ctx, conn, schema, "")
+}
+
+// generateCheckpointWithDatabaseQualified is GenerateCheckpointWithDatabase
+// with the schema qualifier the shadow-replay entry point carries. The public
+// signature above stays qualifier-free so existing callers are unaffected.
+func generateCheckpointWithDatabaseQualified(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	schema *goschema.Database,
+	qualifier string,
+) (upSQL, downSQL string, err error) {
 	if schema == nil {
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
@@ -71,7 +84,7 @@ func GenerateCheckpointWithDatabase(
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
-	return generateCheckpointFromDiff(schema, empty, conn.Info(), diff)
+	return generateCheckpointFromDiff(schema, empty, conn.Info(), diff, qualifier)
 }
 
 func generateCheckpointFromDiff(
@@ -79,10 +92,15 @@ func generateCheckpointFromDiff(
 	empty *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	diff *schemadifftypes.SchemaDiff,
+	qualifierValue string,
 ) (upSQL, downSQL string, err error) {
 	capabilities := info.Capabilities
 	if capabilities == nil {
 		capabilities = capability.ForDialect(info.Dialect)
+	}
+	qualifier, err := atlasmigrate.ParseQualifier(qualifierValue)
+	if err != nil {
+		return "", "", err
 	}
 	spec, _, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
 		Diff:         diff,
@@ -90,6 +108,7 @@ func generateCheckpointFromDiff(
 		DBSchema:     empty,
 		Dialect:      info.Dialect,
 		Capabilities: capabilities,
+		Qualifier:    qualifier,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
@@ -222,6 +241,16 @@ type CheckpointFromShadowOptions struct {
 	ProviderOptions []migrator.FSProviderOption
 	// ConnectTimeout bounds the shadow database connection attempt.
 	ConnectTimeout time.Duration
+	// MigrationLockTimeout bounds how long the replay waits for the shadow
+	// database's migration advisory lock. Zero waits indefinitely, which is the
+	// migrator's own default. It only has an effect on dialects that implement
+	// advisory locking.
+	MigrationLockTimeout time.Duration
+	// SchemaQualifier, when non-empty, prefixes every object the checkpoint
+	// creates with a schema qualifier, exactly as the same-named option does on
+	// a generated migration. It applies to a single-schema checkpoint only, and
+	// an unqualifiable statement kind is refused rather than emitted unqualified.
+	SchemaQualifier string
 }
 
 // GenerateCheckpointFromShadow replays the entire migration directory on a fresh
@@ -269,7 +298,8 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		return "", "", fmt.Errorf("checkpoint generation failed: no migrations found in %s", opts.MigrationsDir)
 	}
 
-	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...))
+	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
+		WithMigrationLockTimeout(opts.MigrationLockTimeout)
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := describeReplayError(err); description != "" {
 			return "", "", fmt.Errorf("checkpoint generation failed: %s", description)
@@ -284,9 +314,10 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: read shadow schema: %w", err)
 	}
-	return GenerateCheckpointWithDatabase(
+	return generateCheckpointWithDatabaseQualified(
 		ctx,
 		shadowConn,
 		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema),
+		opts.SchemaQualifier,
 	)
 }
