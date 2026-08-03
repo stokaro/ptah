@@ -96,6 +96,26 @@ func TestNewLintCommand_Creation(t *testing.T) {
 	c.Assert(cmd.Short, qt.Contains, "Lint")
 }
 
+func TestRunLint_DefaultTextKeepsNativePtahDiagnostics(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeLintTestFile(c, dir, "0000000001_drop.up.sql", "DROP TABLE users;\n")
+	writeLintTestFile(c, dir, "0000000001_drop.down.sql", "CREATE TABLE users (id INT);\n")
+
+	stdout, stderr, err := execute(
+		"--dir", dir,
+		"--dir-format", "ptah",
+		"--fail-on", "none",
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(stdout, qt.Contains, "DROP TABLE permanently deletes the table and every row in it")
+	c.Assert(stdout, qt.Contains, "verified backup first and consider a rename-and-retire window instead")
+	c.Assert(stdout, qt.Not(qt.Contains), `Dropping table "users"`)
+	c.Assert(stdout, qt.Not(qt.Contains), "https://atlasgo.io/lint/analyzers")
+}
+
 func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
 	c := qt.New(t)
 
