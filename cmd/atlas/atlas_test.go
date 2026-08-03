@@ -4670,3 +4670,48 @@ func atlasMigrateDiffLockPath(migrationsDir string) string {
 		"."+filepath.Base(cleanDir)+".ptah-migrate-diff.lock",
 	)
 }
+
+// TestCompatCommand_RootRejectsVersionFlag pins that the compat root does not
+// carry a --version flag.
+//
+// The surface this binary mirrors answers `--version` and `-v` with an unknown
+// flag at exit 1, and lists neither in --help. Accepting them here would make
+// this binary exit 0 where that surface exits 1.
+//
+// It is pinned at the ROOT because that is where the regression appears:
+// setting cobra's Version field anywhere on the tree auto-registers both
+// spellings, and a comment claiming this was covered survived while a one-line
+// mutation shipped green.
+func TestCompatCommand_RootRejectsVersionFlag(t *testing.T) {
+	tests := []struct {
+		name    string
+		argv    []string
+		wantErr string
+	}{
+		{
+			name:    "long spelling",
+			argv:    []string{"--version"},
+			wantErr: "unknown flag: --version",
+		},
+		{
+			name:    "short spelling",
+			argv:    []string{"-v"},
+			wantErr: "unknown shorthand flag: 'v' in -v",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(tt.argv)
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+		})
+	}
+}

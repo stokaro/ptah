@@ -55,17 +55,22 @@ for command in "${commands[@]}"; do
 	# Installing is not enough: a vanity-host or module problem can still leave a
 	# binary that cannot run, so the installed program has to say something.
 	#
-	# No single spelling works for all of them, measured on v0.2.0:
+	# No single spelling worked for all of them, measured on v0.2.0:
 	#
 	#   ptah          version -> "Version: ..."   --version -> "ptah version ..."
 	#   ptah-compat   version -> "Version: ..."   --version -> unknown flag
 	#   ptah-ls       version -> empty, exit 0    --version -> "Version: ..."
 	#
-	# So both are tried and the answer must be NON-EMPTY. Exit status alone would
-	# pass ptah-ls without it having said anything, which is the exact shape of
-	# failure this script exists to catch. The inconsistency itself is tracked
-	# separately in stokaro/ptah#1064; this check does not depend on it being
-	# resolved.
+	# stokaro/ptah#1064 fixed that: `version` now answers on all three binaries,
+	# and on ptah every spelling prints identical bytes. This script keeps trying
+	# both anyway, because it installs the PUBLISHED module rather than the
+	# checkout and will keep meeting pre-fix releases for as long as they are the
+	# latest tag. For the same reason it is not evidence that the fix landed --
+	# cmd/ptah-ls/main_test.go is what gates that.
+	#
+	# The answer must be NON-EMPTY. Exit status alone would pass the pre-fix
+	# ptah-ls without it having said anything, which is the exact shape of
+	# failure this script exists to catch.
 	#
 	# stdin is closed because one of these binaries is a language server, and a
 	# check that can block forever is not a check. The `|| true` keeps a failing
