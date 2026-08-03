@@ -282,8 +282,10 @@ Imports local `file://` migration directories from `atlas`, `golang-migrate`,
 `goose`, `flyway`, `liquibase`, or `dbmate` format into a separate Atlas
 single-file directory and writes `atlas.sum`. Flyway repeatable migrations
 fail explicitly until Ptah can execute Atlas R-suffixed imported migrations.
-The native `ptah migrations import` converts the same source formats into
-Ptah-native migrations instead.
+A successful compatibility import is silent; inspect the destination directory
+and its `atlas.sum` instead of relying on a progress message. Failures are still
+reported on stderr. The native `ptah migrations import` converts the same source
+formats into Ptah-native migrations instead, and reports what it wrote.
 
 ### `ptah-compat migrate checkpoint [name]`
 
