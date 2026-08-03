@@ -484,14 +484,44 @@ DROP TABLE users;
 
 Each check is a separate read against committed state that runs before the
 migration's statements, so a failing assertion leaves nothing applied and
-exits non-zero. Checks are rejected under `--tx-mode all` (a pooled read
-cannot see the batch's uncommitted state), and
+exits non-zero. Checks are rejected under `--tx-mode all` on a real apply (a
+pooled read cannot see the batch's uncommitted state), and
 `ptah migrations up --skip-checks` is an emergency bypass. On the
 Atlas-compatible surface that bypass is spelled `PTAH_SKIP_CHECKS=1`, because
 Atlas registers no `--skip-checks` on `migrate apply` and `ptah-compat` adds no
 flags Atlas does not have. This is the open, local half of Atlas Pro's
 pre-migration checks; the Cloud approval-policy half is intentionally out of
 scope.
+
+### Checks in a dry run
+
+A check is a read, and a dry run intercepts only writes. Evaluating every
+check in a preview would therefore ask each migration's guard about state that
+only exists once its predecessors apply — state the dry run has, by
+construction, refused to produce. The answer would be a fact about the preview,
+not about the migrations.
+
+So a dry run evaluates a migration's assertions only where the state it
+observes is the state a real apply would evaluate them against: **the first
+migration executed in the run**. That is a position in the run, not a version
+and not a place in the directory — a migration sitting second in its directory
+is first in the run once its predecessor is applied, and its checks are
+evaluated normally from then on.
+
+Every check is still parsed and statically validated wherever it sits. A
+malformed `-- +ptah check` directive, or an assertion that is not a single
+read-only `SELECT`, is decided by its text alone and is reported in a dry run
+exactly as on a real apply. Only the database evaluation is deferred, and the
+run names what it deferred on stderr:
+
+```text
+Deferred pre-migration checks for 1 migration (20260101000002): a dry run does
+not create the state they assert on, so they are evaluated on apply.
+```
+
+A dry run under `--tx-mode all` follows the same rule rather than refusing the
+directory: it opens no batch transaction, so the uncommitted-state problem that
+motivates the refusal on a real apply does not arise.
 
 ## Exit codes are the contract
 

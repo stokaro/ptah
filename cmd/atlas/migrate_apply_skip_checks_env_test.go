@@ -285,25 +285,43 @@ func TestMigrateApplySkipChecksEnvLeavesUncheckedDirectoryUnchanged(t *testing.T
 	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 }
 
-// --dry-run is the branch where the bypass earns its keep against the oracle.
-// Checks execute against the live database even in dry-run, so on a fresh
-// database an assertion that reads a table an earlier pending migration creates
-// cannot run at all, and the preview fails. Atlas CE prints the SQL and exits 0
-// for the same directory (measured 2026-08-02 on the pinned v1.2.0 binary),
-// which makes the enforcing dry-run a divergence in the direction that is easy
-// to miss: ours errors where CE succeeds. The bypass restores the preview.
+// The bypass still earns its keep in a dry run, but only where the check is
+// really evaluated. Since #1005 a dry run evaluates a migration's assertions
+// only when that migration is FIRST in the run — the one position whose
+// observed state is the state a real apply would give it. So the fixture here
+// applies migration 1 for real first, which makes the checked migration 2 first
+// in the run and its assertion a genuine, accurate failure: the operator has
+// not yet cleaned up the row the guard forbids, and the real apply fails the
+// same way. That is the case where a preview is legitimately blocked and the
+// operator wants it back.
 //
-// This test pins both halves, because the workaround is only meaningful if the
+// This is deliberately NOT the fresh-database case any more. There, migration
+// 2's guard asks about state migration 1 would have created, the dry run
+// refuses to create it, and the failure was an artifact of the preview rather
+// than a finding — that is the #1005 bug, now fixed, so the bypass is no longer
+// needed to get a preview out of such a directory.
+//
+// Both halves are pinned, because the workaround is only meaningful if the
 // unbypassed failure is real.
-func TestMigrateApplySkipChecksEnvRestoresDryRunOnCheckedDirectory(t *testing.T) {
+func TestMigrateApplySkipChecksEnvRestoresDryRunOnEvaluatedCheck(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
 
 	unsetSkipChecksEnv(t)
+	// Apply migration 1 for real so the checked migration leads the next run.
+	enforcedDB := filepath.Join(dir, "enforced.db")
 	_, err := executeAtlasProjectCommand(
 		"migrate", "apply",
-		"--url", "sqlite://"+filepath.Join(dir, "enforced.db"),
+		"--url", "sqlite://"+enforcedDB,
+		"--dir", "file://"+migrationsDir,
+		"1",
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, err = executeAtlasProjectCommand(
+		"migrate", "apply",
+		"--url", "sqlite://"+enforcedDB,
 		"--dir", "file://"+migrationsDir,
 		"--dry-run",
 	)
@@ -311,18 +329,17 @@ func TestMigrateApplySkipChecksEnvRestoresDryRunOnCheckedDirectory(t *testing.T)
 	c.Assert(err.Error(), qt.Contains, "pre-migration check")
 
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
-	previewDB := filepath.Join(dir, "preview.db")
 	out, err := executeAtlasProjectCommand(
 		"migrate", "apply",
-		"--url", "sqlite://"+previewDB,
+		"--url", "sqlite://"+enforcedDB,
 		"--dir", "file://"+migrationsDir,
 		"--dry-run",
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(out, qt.Contains, "Would have applied 2 migrations.")
+	c.Assert(out, qt.Contains, "Would have applied 1 migrations.")
 	// Dry run stays a dry run: the bypass must not turn a preview into an apply.
-	c.Assert(sqliteTableCount(c, previewDB, "users"), qt.Equals, 0)
+	c.Assert(sqliteUsersEmailColumnCount(c, enforcedDB), qt.Equals, 0)
 }
 
 // The warning belongs on stderr, and the shared test helper cannot show that
