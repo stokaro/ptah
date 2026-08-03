@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/migratevalidate"
+	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -150,6 +151,42 @@ func checkCoveredAtlasEntriesReadable(cmd *cobra.Command, fsys fs.FS, names []st
 		return migratevalidate.FailAtlasChecksumUnreadableEntry(cmd, err)
 	}
 	return err
+}
+
+// verifyAtlasWriteDirChecksum runs the native Atlas integrity gate over the
+// directory a WRITING verb is about to write into, before it writes anything.
+//
+// `migrate new` and `migrate diff` are the two verbs that create a migration
+// file and a fresh atlas.sum, and until stokaro/ptah#1086 they were the two
+// that never checked the one they were about to overwrite. That is the worst
+// place to leave the gate out: every other verb reports on a drifted directory,
+// while these two rewrite the checksum over it, so the drift stops being
+// visible to `migrate validate` afterwards. Measured against the pinned
+// community binary v1.3.0, an unhashed one-migration directory and a
+// hashed-then-edited one are both refused by `migrate new` and `migrate diff`
+// with the same stdout guidance block and the same `Error: checksum file not
+// found` / `Error: checksum mismatch` on stderr that `migrate apply` prints.
+//
+// The refusal has to precede the write rather than accompany it, which is why
+// this is a preflight on the compat surface instead of a check inside the
+// writer: a gate that fires once the file exists has already left the mess it
+// was there to prevent.
+//
+// A directory that does not exist yet is not an integrity error. Both verbs
+// create their directory, and the community binary exits 0 on `migrate new
+// --dir file://does-not-exist` and on `migrate diff` into one, so the gate has
+// nothing to verify and says so by returning nil. The remaining exemptions —
+// an empty directory, one holding no top-level *.sql — belong to
+// [failUnhashedAtlasDir] and are shared with every other verb.
+func verifyAtlasWriteDirChecksum(cmd *cobra.Command, project atlasProject, dir atlasargs.LocalDir) error {
+	source, err := project.captureLocal(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return verifyNativeAtlasDirChecksum(cmd, source.FileSystem)
 }
 
 // verifyNativeAtlasDirChecksum enforces the atlas.sum integrity gate on a

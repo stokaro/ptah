@@ -18,7 +18,6 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/cmd/internal/licensetext"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/cmd/migrate"
 	"go.5x5.cz/ptah/cmd/migratecheckpoint"
 	"go.5x5.cz/ptah/cmd/migratedown"
 	"go.5x5.cz/ptah/cmd/migrateedit"
@@ -181,6 +180,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newAtlasMigrateHashCommand())
 	cmd.AddCommand(newAtlasMigrateValidateCommand())
+	cmd.AddCommand(newAtlasMigrateNewCommand())
 	cmd.AddCommand(newAtlasMigrateDiffCommand())
 	cmd.AddCommand(newAtlasMigrateImportCommand())
 	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
@@ -235,26 +235,6 @@ func atlasMigrateForwardVerbs() []atlasVerb {
 			},
 		},
 		atlasMigrateEditVerb(),
-		{
-			use:        "new",
-			displayUse: "new [flags] [name]",
-			short:      "Create a new migration file",
-			native:     "migrations create",
-			factory:    migrate.NewMigrateCreateCommand,
-			flags: []atlasargs.Flag{
-				// `new` keeps the strict mapper, which refuses a query, while
-				// the verbs above accept one. That asymmetry is deliberate and
-				// temporary: this verb runs no atlas.sum integrity gate, so
-				// accepting the query here would turn a refusal into a write
-				// over a directory nothing verified -- measured, the pinned
-				// community binary exits 1 on an unhashed directory and this
-				// surface exits 0 and writes. The relaxation lands once the
-				// gate does. See stokaro/ptah#1086.
-				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
-				atlasMigrateDirFormatFlag("dir-format"),
-				atlasargs.NativeBool("edit", "", "Edit the created migration files", "edit"),
-			},
-		},
 		atlasMigrateRebaseVerb(),
 		atlasMigrateRmVerb(),
 		atlasMigrateTestVerb(),
@@ -907,6 +887,12 @@ type atlasVerbArgs struct {
 	// context carries the project's rooted migration directory and, for verbs
 	// that ask for it, the merged native project config.
 	context context.Context
+	// project is the loaded atlas.hcl, zero when none was selected. It stays
+	// open for the caller's cleanup scope, so a caller that has to read the
+	// migration directory itself -- the atlas.sum gate on the writing verbs --
+	// can read it through the same rooted boundary the forwarded native command
+	// gets, instead of reopening the path unbounded.
+	project atlasProject
 }
 
 // resolveAtlasVerbProject merges the Atlas project selection flags reachable
@@ -953,6 +939,7 @@ func resolveAtlasVerbProject(
 	if err := loadedProject.resolveMigrationDirForArgs(verb.flags, resolved.args); err != nil {
 		return atlasVerbArgs{}, err
 	}
+	resolved.project = loadedProject
 	applyProjectConfig := verb.projectConfig
 	if applyProjectConfig == nil {
 		applyProjectConfig = applyAtlasProjectConfigToArgs

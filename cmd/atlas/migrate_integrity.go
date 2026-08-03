@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 
@@ -11,12 +12,18 @@ import (
 	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
+	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 )
+
+// atlasNativeEnvPrefix is the environment prefix cmdadapter installs on every
+// forwarded native target (installForwardedTargetEnv). It is restated here
+// because the resolver below has to read the same variables the target will.
+const atlasNativeEnvPrefix = "PTAH"
 
 // atlasMigrateIntegrityRunner reads or writes the Atlas integrity file of a
 // migration directory laid out in a foreign tool's convention.
@@ -38,6 +45,17 @@ type atlasMigrateSource struct {
 	// forwardArgs are the Atlas-form arguments to forward when format selects a
 	// native Atlas directory.
 	forwardArgs []string
+	// localDir is dir with the URL query it was named by and the root it is
+	// confined to, so a caller that opens the directory itself opens it through
+	// the same boundary the forwarded native command uses.
+	localDir atlasargs.LocalDir
+	// project is the loaded atlas.hcl, zero when none was selected. It owns the
+	// directory handle localDir may be confined to.
+	project atlasProject
+	// projectArgs are the Atlas-form arguments with the project selection flags
+	// removed and the selected env's values merged in: what a caller that
+	// executes directly, rather than forwarding, has to validate itself.
+	projectArgs []string
 }
 
 // newAtlasMigrateIntegrityCommand wraps the table-driven adapter command for an
@@ -80,6 +98,16 @@ func newAtlasMigrateIntegrityCommand(
 		if atlasmigrate.ReadsNativeAtlasDir(source.format) {
 			return forward(cmd, source.forwardArgs)
 		}
+		// The forwarding path above lets the native command reject an unknown
+		// flag or a stray positional. This path executes directly, so it has to
+		// reject them itself instead of silently dropping them. It belongs to
+		// this wrapper rather than to the resolver because a caller that
+		// forwards on BOTH branches -- `migrate new`, which refuses a foreign
+		// layout instead of converting it -- would otherwise have its positional
+		// migration name rejected before the refusal it was owed.
+		if err := checkAtlasMigrateSourceArgs(cmd, verb, source.projectArgs); err != nil {
+			return err
+		}
 		return run(cmd, source)
 	}
 	return cmd
@@ -109,17 +137,18 @@ func resolveAtlasMigrateSource(
 		return atlasMigrateSource{}, err
 	}
 
-	rawDir, found := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dir"))
-	if !found {
-		// The Atlas --dir flag registers no default on these verbs, so an
-		// omitted directory is whatever the forwarded native command defaults
-		// to. Reading it from the native command keeps one default rather than
-		// a copy that can drift.
-		rawDir = atlasNativeFlagDefault(verb, "dir")
-	}
+	rawDir := resolveAtlasMigrateSourceDir(verb, mapped)
 	localDir, err := atlasargs.ParseLocalDir(rawDir)
 	if err != nil {
 		return atlasMigrateSource{}, fmt.Errorf("atlas migrate %s --dir: %w", verb.use, err)
+	}
+	// A directory named through atlas.hcl is confined to the project root, and
+	// the raw value the mapper carries is the path that resolution already
+	// produced. Re-attaching the root here is what lets a caller reading the
+	// directory read it through the same boundary rather than reopening the
+	// resolved path unbounded.
+	if project.project.migrationDirResolved && localDir.Path == project.project.migrationDir.Path {
+		localDir.AllowedRoot = project.project.migrationDir.AllowedRoot
 	}
 	configured, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dir-format"))
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)
@@ -141,6 +170,9 @@ func resolveAtlasMigrateSource(
 		format:      format,
 		devURL:      devURL,
 		forwardArgs: args,
+		localDir:    localDir,
+		project:     project.project,
+		projectArgs: project.args,
 	}
 	// Any query at all is dropped before forwarding, not just one carrying
 	// ?format=. The forwarded native command's --dir mapper is query-free by
@@ -150,16 +182,46 @@ func resolveAtlasMigrateSource(
 	if len(localDir.Query) > 0 {
 		source.forwardArgs = rewriteAtlasMigrateSourceArgs(verb, args, atlasDirWithoutQuery(rawDir), string(format))
 	}
-	if atlasmigrate.ReadsNativeAtlasDir(format) {
-		return source, nil
-	}
-	// The forwarding path lets the native command reject an unknown flag or a
-	// stray positional. This path executes directly, so it has to reject them
-	// itself instead of silently dropping them.
-	if err := checkAtlasMigrateSourceArgs(cmd, verb, project.args); err != nil {
-		return atlasMigrateSource{}, err
-	}
 	return source, nil
+}
+
+// resolveAtlasMigrateSourceDir returns the migration directory the forwarded
+// native command will actually read, from every layer that can supply one.
+//
+// The layers are the forwarded command's own precedence, in its order:
+//
+//  1. the mapped native flag, which already carries an explicit --dir, the
+//     Atlas-facing PTAH_DIR that [atlasargs.Map] folds in, and any value the
+//     selected atlas.hcl env contributed;
+//  2. the NATIVE flag's own PTAH_<NATIVE_FLAG> environment twin, which
+//     cmdadapter installs on the target for every forwarded execution
+//     (installForwardedTargetEnv) and which pflag applies to any flag the
+//     mapper left unset;
+//  3. the native flag's default.
+//
+// Layer 2 is the one that is easy to miss and the reason this is a named
+// function. On `migrate new` the Atlas --dir maps to the native
+// --migrations-dir, so PTAH_DIR and PTAH_MIGRATIONS_DIR are different
+// variables naming the same directory, and only the first reaches
+// atlasargs.Map. Reading layer 1 alone would leave the atlas.sum gate
+// verifying `migrations` while the forwarded command wrote into
+// $PTAH_MIGRATIONS_DIR -- a gate that verifies a directory nobody touches is
+// not a gate. Verbs whose Atlas and native spellings coincide (`migrate hash`,
+// `migrate validate`) see the same value from layers 1 and 2 and are
+// unaffected.
+func resolveAtlasMigrateSourceDir(verb atlasVerb, mapped []string) string {
+	nativeName := atlasVerbNativeName(verb, "dir")
+	if dir, found := atlasNativeArgValue(mapped, nativeName); found {
+		return dir
+	}
+	if dir, found := os.LookupEnv(cmdflags.EnvName(atlasNativeEnvPrefix, nativeName)); found && dir != "" {
+		return dir
+	}
+	// The Atlas --dir flag registers no default on these verbs, so an omitted
+	// directory is whatever the forwarded native command defaults to. Reading
+	// it from the native command keeps one default rather than a copy that can
+	// drift.
+	return atlasNativeFlagDefault(verb, "dir")
 }
 
 // atlasMigrateSourceFlags returns flags with the two flags the source

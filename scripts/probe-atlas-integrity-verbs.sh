@@ -25,7 +25,7 @@
 # Exits non-zero if any comparison diverges. Scratch directories are created
 # under the system temp directory and removed on exit.
 #
-# Refs stokaro/ptah#973, #974, #983, #990, #991, #1095.
+# Refs stokaro/ptah#973, #974, #983, #990, #991, #1086, #1095.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -608,6 +608,114 @@ for state in hashed unhashed; do
   printf '    CE   %-9s exit=%s [%s]\n' "$state" "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-70)"
   out=$("$COMPAT" migrate import --from "file://$d?format=goose" --to "file://$d.dst2" 2>&1); rc=$?
   printf '    ptah %-9s exit=%s [%s]\n' "$state" "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-70)"
+done
+
+echo
+echo "===== 14. the gate reaches the two verbs that WRITE: new and diff (#1086)"
+# Section 12 walks the verbs that read. These two create a migration file and
+# rewrite atlas.sum, so an ungated run does not merely misreport a drifted
+# directory -- it replaces the checksum that would have reported it. The rows
+# therefore compare what the directory HOLDS afterwards as well as the exit
+# code: a gate that fires after the writer would match on exit and differ here.
+#
+# The desired state is a superset of the seeded migration, so an accepted run
+# has something to write on both tools.
+printf 'CREATE TABLE t1 (id INTEGER PRIMARY KEY);\nCREATE TABLE t9 (id INTEGER PRIMARY KEY);\n' \
+  > "$BASE/write-target.sql"
+
+# write_fingerprint <dir> — every file the directory holds and its content hash.
+write_fingerprint() {
+  local d="$1"
+  [ -d "$d" ] || { echo "<absent>"; return; }
+  (cd "$d" && find . -type f | LC_ALL=C sort | while read -r f; do
+    printf '%s:%s ' "${f#./}" "$(shasum -a 256 "$f" | cut -c1-16)"
+  done)
+}
+
+# write_row <verb> <state> <mode> — mode is streams or exit, as in section 12.
+write_row() {
+  local verb="$1" state="$2" mode="$3"
+  local ce ptah ceout cerr cerc ptout pterr ptrc verdict cewrote ptwrote
+  ce=$(native_seed "w-ce-$verb-$state" "$state")
+  ptah=$(native_seed "w-pt-$verb-$state" "$state")
+  local ceargs=() ptargs=()
+  case "$verb" in
+    new) ceargs=(migrate new demo --dir "file://$ce")
+         ptargs=(migrate new demo --dir "file://$ptah") ;;
+    diff) ceargs=(migrate diff demo --dir "file://$ce"
+                  --dev-url "sqlite://$ce.dev.db" --to "file://$BASE/write-target.sql")
+          ptargs=(migrate diff demo --dir "file://$ptah"
+                  --dev-url "sqlite://$ptah.dev.db" --to "file://$BASE/write-target.sql") ;;
+  esac
+  local cebefore ptbefore
+  cebefore=$(write_fingerprint "$ce"); ptbefore=$(write_fingerprint "$ptah")
+  ceout=$("$ATLAS"  "${ceargs[@]}" 2>"$BASE/w.err"); cerc=$?; cerr=$(cat "$BASE/w.err")
+  ptout=$("$COMPAT" "${ptargs[@]}" 2>"$BASE/w.err"); ptrc=$?; pterr=$(cat "$BASE/w.err")
+  cewrote=no; [ "$(write_fingerprint "$ce")"   != "$cebefore" ] && cewrote=YES
+  ptwrote=no; [ "$(write_fingerprint "$ptah")" != "$ptbefore" ] && ptwrote=YES
+  case "$mode" in
+    streams) [ "$cerc" = "$ptrc" ] && [ "$ceout" = "$ptout" ] && [ "$cerr" = "$pterr" ] \
+               && [ "$cewrote" = "$ptwrote" ] && verdict=MATCH || { verdict=DIFFER; fail=1; } ;;
+    exit)    [ "$cerc" = "$ptrc" ] && [ "$cewrote" = "$ptwrote" ] \
+               && verdict="MATCH(exit+write)" || { verdict=DIFFER; fail=1; } ;;
+  esac
+  printf '  %-5s %-13s %-18s CE exit=%s wrote=%-3s  ptah exit=%s wrote=%-3s\n' \
+    "$verb" "$state" "$verdict" "$cerc" "$cewrote" "$ptrc" "$ptwrote"
+  if [ "$verdict" = DIFFER ]; then
+    printf '       CE   out=[%s] err=[%s]\n' "$(echo "$ceout" | tr '\n' '|')" "$(echo "$cerr" | tr '\n' '|')"
+    printf '       ptah out=[%s] err=[%s]\n' "$(echo "$ptout" | tr '\n' '|')" "$(echo "$pterr" | tr '\n' '|')"
+  fi
+}
+
+for verb in new diff; do
+  for state in unhashed edited added removed; do
+    write_row "$verb" "$state" streams
+  done
+  # The accepting half. Both tools write here, and their success output differs
+  # by design ("Generated empty migration file:" against silence), so these
+  # compare the exit code and whether the directory changed. They are the
+  # non-interference control: a gate that refused unconditionally reddens every
+  # one of them, which is the half reverting the gate can never show.
+  for state in clean empty nonsql nested nestedhash uppercase; do
+    write_row "$verb" "$state" exit
+  done
+done
+
+echo
+echo "  the unknown-key relaxation reached these two with the gate (#1013, #1086)"
+for verb in new diff; do
+  ced=$(native_seed "wq-ce-$verb" clean); ptd=$(native_seed "wq-pt-$verb" clean)
+  case "$verb" in
+    new)  out=$("$ATLAS"  migrate new demo --dir "file://$ced?nonsense=1" 2>&1); rc=$?
+          pout=$("$COMPAT" migrate new demo --dir "file://$ptd?nonsense=1" 2>&1); prc=$? ;;
+    diff) out=$("$ATLAS"  migrate diff demo --dir "file://$ced?nonsense=1" \
+                 --dev-url "sqlite://$ced.q.db" --to "file://$BASE/write-target.sql" 2>&1); rc=$?
+          pout=$("$COMPAT" migrate diff demo --dir "file://$ptd?nonsense=1" \
+                 --dev-url "sqlite://$ptd.q.db" --to "file://$BASE/write-target.sql" 2>&1); prc=$? ;;
+  esac
+  if [ "$rc" = "$prc" ]; then verdict=MATCH; else verdict=DIFFER; fail=1; fi
+  printf '  %-5s ?nonsense=1  %-18s CE exit=%s  ptah exit=%s\n' "$verb" "$verdict" "$rc" "$prc"
+  [ "$verdict" = DIFFER ] && printf '       CE [%s]  ptah [%s]\n' \
+    "$(echo "$out" | tr '\n' '|' | cut -c1-70)" "$(echo "$pout" | tr '\n' '|' | cut -c1-70)"
+done
+
+echo
+echo "  STILL DIVERGENT by choice: a ?format= naming a foreign layout. The"
+echo "  community binary honors it on both verbs; refusing is the strict side,"
+echo "  because writing a layout whose covered file set Ptah does not compute"
+echo "  would gate the wrong set. Tracked by stokaro/ptah#1013 and #1002."
+for verb in new diff; do
+  ced=$(native_seed "wf-ce-$verb" clean); ptd=$(native_seed "wf-pt-$verb" clean)
+  case "$verb" in
+    new)  out=$("$ATLAS"  migrate new demo --dir "file://$ced?format=goose" 2>&1); rc=$?
+          pout=$("$COMPAT" migrate new demo --dir "file://$ptd?format=goose" 2>&1); prc=$? ;;
+    diff) out=$("$ATLAS"  migrate diff demo --dir "file://$ced?format=goose" \
+                 --dev-url "sqlite://$ced.f.db" --to "file://$BASE/write-target.sql" 2>&1); rc=$?
+          pout=$("$COMPAT" migrate diff demo --dir "file://$ptd?format=goose" \
+                 --dev-url "sqlite://$ptd.f.db" --to "file://$BASE/write-target.sql" 2>&1); prc=$? ;;
+  esac
+  printf '  %-5s ?format=goose  CE exit=%s  ptah exit=%s [%s]\n' \
+    "$verb" "$rc" "$prc" "$(echo "$pout" | tr '\n' '|' | cut -c1-70)"
 done
 
 echo

@@ -184,11 +184,20 @@ and covers every file it finds. The declined-file warning is currently printed
 by the `ptah-compat` verbs only.
 
 **`migrate lint` is deliberately not gated**, on either tool: inspecting a
-directory that has drifted is the point of linting it. `migrate new` and
-`migrate diff` are gated on Atlas but not yet here — they write an `atlas.sum`
-over a directory whose previous contents were never verified, which turns drift
-into apparent cleanliness. Verify with `ptah-compat migrate validate` before
-generating into a directory you did not hash yourself.
+directory that has drifted is the point of linting it. That exemption covers a
+*missing* integrity file only — on a hashed directory that has since drifted,
+both `lint` implementations exit 1.
+
+**`migrate new` and `migrate diff` are gated before they write.** Both create a
+migration file and rewrite `atlas.sum`, so an ungated run turned drift into
+apparent cleanliness: the tampering survived and the checksum that would have
+reported it was replaced. Since
+[#1086](https://github.com/stokaro/ptah/issues/1086) the refusal is a preflight
+— it happens before the migration file is created, before `atlas.sum` is
+rewritten, and on `diff` before the dev database is connected to and before
+`--to` and `--dev-url` are required at all, which is the order Atlas uses. A
+`--dir` that does not exist yet is not a checksum error on either tool: both
+verbs create it, which is how a project's first migration gets written.
 
 **`migrate import` is gated on the source directory, with one exemption.** A
 source that carries an `atlas.sum` must verify against it before anything is

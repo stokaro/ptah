@@ -1164,3 +1164,71 @@ func assertDiffDirectoryLockReleased(c *qt.C, dir string) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(lock.release(), qt.IsNil)
 }
+
+// TestDiffOptionsVerifyDirRoutesThroughTheCallersPredicate pins the seam
+// stokaro/ptah#1086 added.
+//
+// `migrate diff` re-checks the directory's integrity file once the migration
+// directory lock is held, and until #1086 that recheck was a private verifier
+// with rules of its own: it accepted a directory carrying no atlas.sum at all,
+// and reported a stale one in wording no other verb uses. The compatibility
+// surface now supplies the same predicate its preflight refused with, so a
+// directory edited between the two is refused with the community binary's bytes
+// instead of a second verifier's.
+//
+// Reverting the routing -- calling verifyDirSum unconditionally -- prints
+// `got nil error but want non-nil` on the "caller's predicate refuses" row,
+// because the default accepts exactly what the caller rejects. The nil row is
+// the control: it must keep answering nil, so the seam cannot be "always
+// refuse".
+func TestDiffOptionsVerifyDirRoutesThroughTheCallersPredicate(t *testing.T) {
+	errCallerRefused := errors.New("caller refused")
+
+	tests := []struct {
+		name string
+		// opts carries the hook under test.
+		opts DiffOptions
+		// check states what the returned error must be.
+		check func(c *qt.C, err error)
+	}{
+		{
+			name: "nil hook keeps the permissive default",
+			opts: DiffOptions{},
+			check: func(c *qt.C, err error) {
+				c.Assert(err, qt.IsNil)
+			},
+		},
+		{
+			name: "caller's predicate refuses",
+			opts: DiffOptions{VerifyDir: func(fs.FS) error { return errCallerRefused }},
+			check: func(c *qt.C, err error) {
+				c.Assert(err, qt.ErrorIs, errCallerRefused)
+			},
+		},
+		{
+			name: "caller's predicate accepts",
+			opts: DiffOptions{VerifyDir: func(fs.FS) error { return nil }},
+			check: func(c *qt.C, err error) {
+				c.Assert(err, qt.IsNil)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			// A directory holding one migration and no atlas.sum: the state the
+			// default accepts and the compatibility gate refuses.
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(
+				filepath.Join(dir, "1_init.sql"),
+				[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+				0o600,
+			), qt.IsNil)
+			snapshot, captureErr := migrationsnapshot.CaptureStable(os.DirFS(dir))
+			c.Assert(captureErr, qt.IsNil)
+
+			tt.check(c, tt.opts.verifyDir(snapshot))
+		})
+	}
+}
