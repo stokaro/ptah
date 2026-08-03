@@ -19,6 +19,20 @@ const (
 
 const atlasFileTxModeKey = "atlas:txmode"
 
+// AtlasTxModeDirectiveError reports an invalid or conflicting Atlas
+// transaction-mode file directive.
+type AtlasTxModeDirectiveError struct {
+	message string
+}
+
+func (e *AtlasTxModeDirectiveError) Error() string {
+	return e.message
+}
+
+func newAtlasTxModeDirectiveError(format string, args ...any) *AtlasTxModeDirectiveError {
+	return &AtlasTxModeDirectiveError{message: fmt.Sprintf(format, args...)}
+}
+
 // ParsedMigrationUp is the executable up-direction view of a plain SQL or
 // Atlas txtar migration file.
 type ParsedMigrationUp struct {
@@ -152,7 +166,7 @@ func parseAtlasFileTxMode(filename, sql string) (MigrationFileTxMode, bool, erro
 		return MigrationFileTxModeUnspecified, false, nil
 	}
 	if len(values) > 1 {
-		return MigrationFileTxModeUnspecified, true, fmt.Errorf(
+		return MigrationFileTxModeUnspecified, true, newAtlasTxModeDirectiveError(
 			"multiple txmode values found in file %q: %q", filename, values,
 		)
 	}
@@ -162,14 +176,14 @@ func parseAtlasFileTxMode(filename, sql string) (MigrationFileTxMode, bool, erro
 	case MigrationFileTxModeFile, MigrationFileTxModeNone:
 		return mode, true, nil
 	case "all":
-		return MigrationFileTxModeUnspecified, true, fmt.Errorf(
+		return MigrationFileTxModeUnspecified, true, newAtlasTxModeDirectiveError(
 			"txmode %q is not allowed in file directive %q. Use %q instead",
 			mode,
 			filename,
 			MigrationFileTxModeFile,
 		)
 	default:
-		return MigrationFileTxModeUnspecified, true, fmt.Errorf(
+		return MigrationFileTxModeUnspecified, true, newAtlasTxModeDirectiveError(
 			"unknown txmode %q found in file directive %q", mode, filename,
 		)
 	}

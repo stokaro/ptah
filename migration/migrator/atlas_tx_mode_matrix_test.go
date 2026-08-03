@@ -109,6 +109,8 @@ func assertAtlasTxModeRejectedBeforeWrites(
 ) {
 	err := mig.MigrateUp(c.Context())
 	c.Assert(err, qt.IsNotNil)
+	var txModeErr *migrator.AtlasTxModeDirectiveError
+	c.Assert(err, qt.ErrorAs, &txModeErr)
 	c.Assert(err.Error(), qt.Equals, wantErr)
 	c.Assert(atlasTxModeTableExists(c, conn), qt.IsFalse)
 	c.Assert(atlasTxModeRevisionCount(c, conn), qt.Equals, 0)
