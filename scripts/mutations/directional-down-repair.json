@@ -1,0 +1,97 @@
+{
+  "packages": [
+    "./migration/migrator/"
+  ],
+  "mutations": [
+    {
+      "name": "no direction is recorded, so a rollback row is a failed apply again",
+      "file": "migration/migrator/revision_direction.go",
+      "old": "\tif direction != MigrationDirectionDown {\n\t\treturn state\n\t}\n\treturn state + revisionDirectionSeparator + string(MigrationDirectionDown)",
+      "new": "\treturn state"
+    },
+    {
+      "name": "the up direction is suffixed too, so state = 'applied' stops matching",
+      "file": "migration/migrator/revision_direction.go",
+      "old": "\tif direction != MigrationDirectionDown {\n\t\treturn state\n\t}\n\treturn state + revisionDirectionSeparator + string(MigrationDirectionDown)",
+      "new": "\treturn state + revisionDirectionSeparator + string(direction)"
+    },
+    {
+      "name": "a recorded direction never reaches the read side",
+      "file": "migration/migrator/revision_direction.go",
+      "old": "\tstate, suffix, found := strings.Cut(stored, revisionDirectionSeparator)\n\tif !found {\n\t\treturn stored, MigrationDirectionUp\n\t}",
+      "new": "\tstate, suffix, _ := strings.Cut(stored, revisionDirectionSeparator)\n\tif true {\n\t\treturn stored, MigrationDirectionUp\n\t}\n\t_ = state\n\t_ = suffix"
+    },
+    {
+      "name": "repair ignores the direction and takes the up path for every row",
+      "file": "migration/migrator/revisions.go",
+      "old": "\tif revision != nil && revision.Direction == MigrationDirectionDown {\n\t\treturn m.repairRolledBackMigration(ctx, migration, revision, opts)\n\t}",
+      "new": ""
+    },
+    {
+      "name": "the resumed rollback runs the up body",
+      "file": "migration/migrator/revision_repair_down.go",
+      "old": "\tstatements := splitSQLStatementsForConnection(m.conn, migration.DownSQL)",
+      "new": "\tstatements := splitSQLStatementsForConnection(m.conn, migration.UpSQL)"
+    },
+    {
+      "name": "a finished rollback is recorded applied instead of removed",
+      "file": "migration/migrator/revision_repair_down.go",
+      "old": "\treturn m.deleteRolledBackRevision(ctx, migration)",
+      "new": "\treturn m.forceAppliedMigration(ctx, migration)"
+    },
+    {
+      "name": "a partial rollback is recorded applied without asking",
+      "file": "migration/migrator/revision_repair_down.go",
+      "old": "\treturn revision.Applied > 0 || revision.Error == unknownStatementOutcomeError",
+      "new": "\treturn false"
+    },
+    {
+      "name": "every rollback is refused, including one that committed nothing",
+      "file": "migration/migrator/revision_repair_down.go",
+      "old": "\treturn revision.Applied > 0 || revision.Error == unknownStatementOutcomeError",
+      "new": "\treturn true"
+    },
+    {
+      "name": "an interrupted rollback counts as having changed nothing",
+      "file": "migration/migrator/revision_repair_down.go",
+      "old": "\treturn revision.Applied > 0 || revision.Error == unknownStatementOutcomeError",
+      "new": "\treturn revision.Applied > 0"
+    },
+    {
+      "name": "a legacy rollback row is replayed through the up body",
+      "file": "migration/migrator/revision_repair_down.go",
+      "old": "\tif revision.Total == upCount || revision.Total != downCount {\n\t\treturn nil\n\t}",
+      "new": "\treturn nil"
+    },
+    {
+      "name": "the legacy guard fires on rows that match the up body it would replay",
+      "file": "migration/migrator/revision_repair_down.go",
+      "old": "\tif revision.Total == upCount || revision.Total != downCount {\n\t\treturn nil\n\t}",
+      "new": "\tif revision.Total != downCount {\n\t\treturn nil\n\t}"
+    },
+    {
+      "name": "--force no longer overrides the legacy guard",
+      "file": "migration/migrator/revision_repair_down.go",
+      "old": "\tif opts.Force || revision == nil || !revision.Dirty || revision.Total <= 0 {",
+      "new": "\tif revision == nil || !revision.Dirty || revision.Total <= 0 {"
+    },
+    {
+      "name": "a rolled-back down body still counts its predecessors as committed",
+      "file": "migration/migrator/revisions.go",
+      "old": "\tif direction == MigrationDirectionDown && migrationProgressRolledBack(m.conn.Info().Dialect, txMode) {\n\t\tapplied = 0\n\t}",
+      "new": ""
+    },
+    {
+      "name": "the rolled-back correction is applied to the up direction as well",
+      "file": "migration/migrator/revisions.go",
+      "old": "\tif direction == MigrationDirectionDown && migrationProgressRolledBack(m.conn.Info().Dialect, txMode) {\n\t\tapplied = 0\n\t}",
+      "new": "\tif migrationProgressRolledBack(m.conn.Info().Dialect, txMode) {\n\t\tapplied = 0\n\t}"
+    },
+    {
+      "name": "the resumed rollback records no progress around its statements",
+      "file": "migration/migrator/revision_repair_down.go",
+      "old": "\t\tif err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionDown); err != nil {\n\t\t\treturn fmt.Errorf(\"failed to record resumed rollback %d at statement %d: %w\", migration.Version, event.Index, err)\n\t\t}",
+      "new": ""
+    }
+  ]
+}

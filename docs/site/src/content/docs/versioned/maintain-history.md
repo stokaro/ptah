@@ -136,11 +136,17 @@ failing statement:
 
 ```text
 Status: ❌ Dirty migration state detected
-Dirty Migration: version=5 state=failed applied=1/2
+Dirty Migration: version=5 state=failed direction=up applied=1/2
 Error Statement: INSERT INTO missing_table (id) VALUES (1)
 
 Run 'ptah migrations repair --version <version>' after fixing the database state.
 ```
+
+`direction` says which body left the row dirty, and repair follows it. Every
+example on this page is `direction=up`; for `direction=down` see
+[Finishing an interrupted rollback](../rollback/#finishing-an-interrupted-rollback),
+where `--resume-from` runs the remaining *down* statements and a finished
+rollback removes the revision instead of marking it applied.
 
 An abrupt process exit during a `no_transaction` statement is more ambiguous.
 Before each SQL-backed statement, Ptah durably records the last known completed
@@ -154,8 +160,9 @@ replay could duplicate committed SQL. Repair without `--resume-from` only after
 you have reconciled the schema by hand.
 
 Fix the migration file (it is unapplied, so `edit` applies), re-hash, and
-repair. `--resume-from` executes the remaining up statements — here starting
-at the second — before marking the migration applied:
+repair. On a `direction=up` row, `--resume-from` executes the remaining up
+statements — here starting at the second — before marking the migration
+applied:
 
 ```bash
 ptah migrations repair \

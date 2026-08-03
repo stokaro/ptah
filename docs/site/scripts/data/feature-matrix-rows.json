@@ -707,8 +707,8 @@
     "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "no",
-    "note": "`ptah migrations repair` `--resume-from` finishes remaining statements. No repair verb in the pinned CE inventory or reviewed Atlas evidence.",
-    "evidence": "/tmp/ptah migrations repair --help (--resume-from executes remaining up statements before marking applied); conformance cli-surface.md Atlas CE inventory (no `atlas migrate repair` row)"
+    "note": "`--resume-from` finishes the failed body: up statements before marking applied, down statements before removing the revision. No repair verb in the pinned CE inventory or reviewed Atlas evidence.",
+    "evidence": "/tmp/ptah migrations repair --help (--resume-from executes the remaining statements of the body that failed); ptah migrations status prints direction=down on a rollback that stopped partway; conformance cli-surface.md Atlas CE inventory (no `atlas migrate repair` row)"
   },
   {
     "area": "Versioned migrations — directory",
