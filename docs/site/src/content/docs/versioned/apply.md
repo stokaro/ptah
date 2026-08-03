@@ -283,6 +283,13 @@ statement's outcome as unknown. Inspect the database before repair. Ptah
 rejects `repair --resume-from` while this marker is present because the SQL may
 already have committed.
 
+**A concurrent index build failed on PostgreSQL.** The invalid index left
+behind keeps the name, so retrying the generated `IF NOT EXISTS` statement is
+skipped rather than retried and reports no error. Ptah refuses to repair the
+migration while the index is unusable and names the `REINDEX INDEX
+CONCURRENTLY` that rebuilds it — `--force` does not bypass that refusal. See
+[Maintain migration history](../maintain-history/).
+
 **A pre-migration check blocked the migration.** Nothing is applied and no
 revision row is written, so the run is recorded as never started. Fix the data
 the check guarded and re-run; no repair step and no bypass flag is involved.

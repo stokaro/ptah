@@ -1600,6 +1600,12 @@ func (m *Migrator) setPtahRevisionAppliedSQL() string {
 
 // RepairMigration clears dirty migration metadata after an operator has fixed
 // the database manually, or resumes the up migration from a specific statement.
+//
+// On PostgreSQL the revision is not recorded while an index the migration
+// creates is still unusable -- the residue a failed CREATE INDEX CONCURRENTLY
+// leaves behind. The repair is refused instead, so an unenforced constraint
+// cannot be signed off as applied. See refuseRepairOverUnusableIndex, including
+// why Force does not relax it.
 func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOptions) error {
 	if opts.Version <= 0 {
 		return fmt.Errorf("repair version must be greater than zero")
@@ -1632,6 +1638,9 @@ func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOpti
 		if err := m.resumeMigration(ctx, migration, opts.ResumeFrom); err != nil {
 			return err
 		}
+	}
+	if err := m.refuseRepairOverUnusableIndex(ctx, migration); err != nil {
+		return err
 	}
 	return m.forceAppliedMigration(ctx, migration)
 }
