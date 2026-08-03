@@ -263,20 +263,18 @@ claim success while quietly degrading. Valid circular foreign keys are rendered
 in two phases and do not produce a warning. Neither diagnostic appears on a
 clean run.
 
-:::caution
-`ptah-compat migrate down` is the exception. Without `--format` it forwards to
-the native `ptah migrations down`, which starts its own run log and writes it to
-stderr — eight lines on a successful dry run, four on a successful rollback.
-The Atlas surface exposes no `--log-level` to quiet it. Use `--format` when you
-need a clean stderr from `migrate down`; that path renders the report directly
-and stays quiet. Tracked in
-[`stokaro/ptah#969`](https://github.com/stokaro/ptah/issues/969).
-:::
+`ptah-compat migrate down` holds the same contract, with or without `--format`.
+Without `--format` it forwards to the native `ptah migrations down`, which
+starts its own run log; the Atlas surface pins that log to the same Warn
+threshold the rest of this binary uses, so a successful dry run and a successful
+rollback both leave stderr empty (stokaro/ptah#969).
 
 The equivalent native command, `ptah migrations up --dry-run`, does narrate each
 statement it would execute through its run log; that narration is selected by
-the native `--log-level` and `--log-format` flags, which the Atlas surface does
-not expose. See [Apply migrations](../../versioned/apply/).
+the native `--log-level` and `--log-format` flags. The Atlas surface does not
+model those flags, but a forwarded verb passes through any flag its native
+target registers, so `ptah-compat migrate down --log-level info` is accepted and
+restores the full narration. See [Apply migrations](../../versioned/apply/).
 
 The apply path executes every Atlas OSS migration directory format selected by
 `migration.format` or the directory URL `?format=` parameter: `atlas`,

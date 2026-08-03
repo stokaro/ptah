@@ -169,7 +169,26 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasMigrateStatusCommand())
 	cmd.AddCommand(newAtlasMigrateDownCommand())
 	cmd.AddCommand(newAtlasMigrateSetCommand())
-	for _, verb := range []atlasVerb{
+	for _, verb := range atlasMigrateForwardVerbs() {
+		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
+	}
+	cmd.AddCommand(newAtlasMigrateHashCommand())
+	cmd.AddCommand(newAtlasMigrateValidateCommand())
+	cmd.AddCommand(newAtlasMigrateDiffCommand())
+	cmd.AddCommand(newAtlasMigrateImportCommand())
+	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
+		{use: "push", short: "Push migration directory to a remote registry"},
+	})
+	return cmd
+}
+
+// atlasMigrateForwardVerbs returns the `migrate` verbs that are plain
+// table-driven forwards, in registration order. It is a named function rather
+// than a literal inside newAtlasMigrateCommand so that a test can enumerate
+// every forwarded verb — see TestAtlasVerbsCarryLogLevelExactlyWhereTargetTakesIt,
+// which measures each one instead of only the verb an issue happened to name.
+func atlasMigrateForwardVerbs() []atlasVerb {
+	return []atlasVerb{
 		{
 			use:                "checkpoint",
 			displayUse:         "checkpoint [flags] [name]",
@@ -208,17 +227,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		atlasMigrateRebaseVerb(),
 		atlasMigrateRmVerb(),
 		atlasMigrateTestVerb(),
-	} {
-		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
 	}
-	cmd.AddCommand(newAtlasMigrateHashCommand())
-	cmd.AddCommand(newAtlasMigrateValidateCommand())
-	cmd.AddCommand(newAtlasMigrateDiffCommand())
-	cmd.AddCommand(newAtlasMigrateImportCommand())
-	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
-		{use: "push", short: "Push migration directory to a remote registry"},
-	})
-	return cmd
 }
 
 func atlasRootArgs(cmd *cobra.Command, args []string) error {
@@ -324,10 +333,25 @@ func atlasMigrateDownVerb() atlasVerb {
 		// default of "ptah" silently no-ops against the atlas_schema_revisions
 		// rows `atlas migrate apply` writes. --confirm suppresses the native
 		// safety prompt because Atlas migrate down executes non-interactively.
+		//
+		// --log-level warn is what keeps this verb as quiet as the rest of the
+		// binary. The Atlas-compatible surface is quiet by construction
+		// (cmd/ptah-compat/main.go installs cliobs.QuietDefaultLogger), but that
+		// only lowers what the *default* logger accepts. This is the one
+		// forwarded verb whose native target starts its own observability
+		// runtime (cliobs.Start), and that runtime installs a fresh logger over
+		// the quiet default at the native --log-level default of "info" — so the
+		// migrator's lifecycle log and the dialect writers' "[DRY RUN] Would ..."
+		// narration land on the compat command's stderr (stokaro/ptah#969).
+		// warn, not error: it reproduces the #968 threshold exactly, so a
+		// Warn-level diagnostic that exists on no other channel (a migration
+		// lock that would not release, a skipped out-of-order migration, a
+		// connection that would not close) still reaches the user.
+		//
 		// User args are appended after the prefix, so an explicit native
-		// `--revision-format ptah` pass-through still overrides the format
-		// default (pflag keeps the last value).
-		prefixArgs:          []string{"--revision-format", "atlas", "--confirm"},
+		// `--revision-format ptah` or `--log-level info` pass-through still
+		// overrides the default (pflag keeps the last value).
+		prefixArgs:          []string{"--revision-format", "atlas", "--confirm", "--log-level", "warn"},
 		nativeOnlyFlags:     []string{"confirm"},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{

@@ -83,7 +83,12 @@ func TestCompatBinaryMigrateDownRunsWithEOFStdin(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", stdout.String(), stderr.String()))
 	c.Assert(stdout.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")
-	c.Assert(stderr.String(), qt.Contains, "All migrations rolled back successfully")
+	// The rollback-succeeded proof is read from stdout, the command's own
+	// report. It used to be read from the run log on stderr, which only ever
+	// appeared there because the forwarded verb reinstalled an INFO logger over
+	// the binary's quiet default (stokaro/ptah#969). This test is about EOF
+	// stdin, not about the log, so it must not pin the noise.
+	c.Assert(stdout.String(), qt.Contains, "✅ Migration rollback completed successfully!")
 	c.Assert(stderr.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")
 	c.Assert(stderr.String(), qt.Not(qt.Contains), "read rollback confirmation")
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
@@ -213,6 +218,76 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", stderr.String()))
 			c.Assert(stderr.String(), qt.Equals, "")
 			c.Assert(stdout.String(), qt.Equals, tt.wantStdout)
+		})
+	}
+}
+
+// TestCompatBinaryMigrateDownDefaultFormatKeepsStderrEmpty is the pin for
+// stokaro/ptah#969. `migrate down` without --format is the one Atlas verb that
+// forwards into a native command which starts its own observability runtime,
+// and that runtime installed a fresh INFO logger over the compat binary's quiet
+// default — eight lines of narration on a dry run, four on a rollback.
+//
+// TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty above cannot cover this:
+// it asserts stdout EQUALS its expectation, and a down report embeds the
+// database and migrations paths. The stdout marker each row asserts is what
+// stops the stderr assertion from holding vacuously — without it, a run that
+// never reached the rollback would satisfy an empty stderr too.
+func TestCompatBinaryMigrateDownDefaultFormatKeepsStderrEmpty(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
+
+	tests := []struct {
+		name string
+		args func(dbPath string) []string
+		// wantStdout proves the run reached the rollback the row is about.
+		wantStdout string
+	}{
+		{
+			name: "dry run",
+			args: func(dbPath string) []string {
+				return []string{
+					"migrate", "down",
+					"--url", "sqlite://" + dbPath,
+					"--dir", "file://" + migrationsDir,
+					"--to-version", "0",
+					"--dry-run",
+				}
+			},
+			wantStdout: "Would have rolled back to version: 0",
+		},
+		{
+			name: "rollback",
+			args: func(dbPath string) []string {
+				return []string{
+					"migrate", "down",
+					"--url", "sqlite://" + dbPath,
+					"--dir", "file://" + migrationsDir,
+					"--to-version", "0",
+				}
+			},
+			wantStdout: "Database is now at version: 0",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			// Each row needs its own revision to roll back. Sharing one
+			// database would make the second row a no-op, and an empty stderr
+			// would then prove nothing.
+			dbPath := filepath.Join(c.TempDir(), "down-quiet.db")
+			applyForReal(c, binPath, dbPath, migrationsDir)
+			run := newCompatProcess(binPath, tt.args(dbPath)...)
+			var stdout, stderr bytes.Buffer
+			run.Stdout = &stdout
+			run.Stderr = &stderr
+
+			err := run.Run()
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", stderr.String()))
+			c.Assert(stdout.String(), qt.Contains, tt.wantStdout)
+			c.Assert(stderr.String(), qt.Equals, "")
 		})
 	}
 }
