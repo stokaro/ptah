@@ -73,11 +73,16 @@ jobs:
           node-version: '24'
 
       # check-style.mjs has no npm dependencies, so this needs no install step.
+      # check-limitations.mjs has none either, and it governs a page under
+      # docs/site, so it runs here rather than in the site build: the fast job
+      # is the one that sees every documentation change.
       - name: Check documentation style
         run: |
           set -euo pipefail
           node docs/site/scripts/check-style.mjs --selftest
           node docs/site/scripts/check-style.mjs
+          node docs/site/scripts/check-limitations.mjs --selftest
+          node docs/site/scripts/check-limitations.mjs
           node docs/site/scripts/build-feature-matrix.mjs --check
 
   build:
