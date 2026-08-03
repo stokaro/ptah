@@ -126,6 +126,38 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 			wantFile:   "1_init.sql",
 			wantSQL:    "CREATE TABLE goose_url (id int);\n",
 		},
+		// The three rows below pin the relaxed query parsing (stokaro/ptah#990
+		// items 2 and 3). Each is separable because a goose source converts to
+		// its up half only, while the same bytes read as the atlas layout pass
+		// through verbatim with the directives intact — so the SQL, not just the
+		// exit path, says which format won.
+		{
+			name:       "an ignored key beside format keeps the format",
+			configured: "atlas",
+			query:      url.Values{"format": []string{"goose"}, "other": []string{"1"}},
+			file:       "1_init.sql",
+			source:     "-- +goose Up\nCREATE TABLE goose_kept (id int);\n-- +goose Down\nDROP TABLE goose_kept;\n",
+			wantFile:   "1_init.sql",
+			wantSQL:    "CREATE TABLE goose_kept (id int);\n",
+		},
+		{
+			name:       "an ignored key alone reads the atlas layout",
+			configured: "atlas",
+			query:      url.Values{"other": []string{"1"}},
+			file:       "1_init.sql",
+			source:     "-- +goose Up\nCREATE TABLE goose_raw (id int);\n-- +goose Down\nDROP TABLE goose_raw;\n",
+			wantFile:   "1_init.sql",
+			wantSQL:    "-- +goose Up\nCREATE TABLE goose_raw (id int);\n-- +goose Down\nDROP TABLE goose_raw;\n",
+		},
+		{
+			name:       "repeated format takes the first value",
+			configured: "flyway",
+			query:      url.Values{"format": []string{"goose", "atlas"}},
+			file:       "1_init.sql",
+			source:     "-- +goose Up\nCREATE TABLE goose_first (id int);\n-- +goose Down\nDROP TABLE goose_first;\n",
+			wantFile:   "1_init.sql",
+			wantSQL:    "CREATE TABLE goose_first (id int);\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -186,22 +218,16 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 			want:       `unknown Atlas migration directory format " atlas ": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`,
 		},
 		{
-			name:       "unknown query parameter",
+			name:       "an ignored key does not rescue an unknown format value",
 			configured: "atlas",
-			query:      url.Values{"version": []string{"1"}},
-			want:       `unsupported migration directory URL query parameter "version"`,
+			query:      url.Values{"format": []string{"custom"}, "version": []string{"1"}},
+			want:       `unknown Atlas migration directory format "custom": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`,
 		},
 		{
-			name:       "unknown query parameters are reported deterministically",
+			name:       "the FIRST repeated format is the one validated",
 			configured: "atlas",
-			query:      url.Values{"version": []string{"1"}, "checksum": []string{"required"}},
-			want:       `unsupported migration directory URL query parameter "checksum"`,
-		},
-		{
-			name:       "multiple format query parameters",
-			configured: "atlas",
-			query:      url.Values{"format": []string{"atlas", "goose"}},
-			want:       "migration directory URL contains multiple format parameters",
+			query:      url.Values{"format": []string{"custom", "goose"}},
+			want:       `unknown Atlas migration directory format "custom": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`,
 		},
 	}
 
@@ -235,8 +261,17 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
 
-	c.Run("empty external directory", func(c *qt.C) {
+	// An external directory whose COVERED SET is non-empty but whose files the
+	// converter produces no entry for keeps its refusal (stokaro/ptah#980). The
+	// community binary really does execute this one — a Goose directory holding
+	// only foo.sql runs it as version "foo" — so reporting "nothing to execute"
+	// here would silently skip a migration rather than diverge loudly. Its twin,
+	// the empty covered set that now converts cleanly, is
+	// TestResolveApplyDir_EmptyCoveredSetConvertsToNothingToExecute.
+	c.Run("non-empty covered set the converter cannot read", func(c *qt.C) {
 		dir := c.TempDir()
+		writeFormatFile(c, dir, "foo.sql", "CREATE TABLE foo (id int);\n")
+
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "goose", nil)
 
 		c.Assert(err, qt.ErrorMatches, `no importable migration files found in .* for format "goose"`)

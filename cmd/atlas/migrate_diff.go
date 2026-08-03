@@ -167,6 +167,10 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
+	// Same reasoning as `migrate new`: this verb writes a migration and a fresh
+	// atlas.sum without running the integrity gate, so accepting a query here
+	// would relax a refusal into a write over a directory nothing verified.
+	// See stokaro/ptah#1086.
 	if len(localDir.Query) > 0 {
 		return cmdutil.Fail(cmd, fmt.Errorf(
 			"atlas migrate diff --dir: migration directory URL query parameters are not supported for this command",

@@ -200,6 +200,14 @@ func newAtlasMigrateCommand() *cobra.Command {
 			native:     "migrations create",
 			factory:    migrate.NewMigrateCreateCommand,
 			flags: []atlasargs.Flag{
+				// `new` keeps the strict mapper, which refuses a query, while
+				// the verbs above accept one. That asymmetry is deliberate and
+				// temporary: this verb runs no atlas.sum integrity gate, so
+				// accepting the query here would turn a refusal into a write
+				// over a directory nothing verified -- measured, the pinned
+				// community binary exits 1 on an unhashed directory and this
+				// surface exits 0 and writes. The relaxation lands once the
+				// gate does. See stokaro/ptah#1086.
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasMigrateDirFormatFlag("dir-format"),
 				atlasargs.NativeBool("edit", "", "Edit the created migration files", "edit"),
@@ -595,12 +603,22 @@ func atlasMigrateDirFormatFlag(nativeName string) atlasargs.Flag {
 	return flag
 }
 
+// atlasMigrateDirFormatValue maps the Atlas --dir-format value onto the native
+// directory format.
+//
+// An EMPTY value selects the native Atlas layout rather than being refused.
+// Measured against the pinned community binary v1.3.0, `--dir-format ""` exits 0
+// and reads the directory as Atlas on every verb that registers the flag —
+// hash, validate, lint, new, status and set were each checked, not just the one
+// stokaro/ptah#990 named — and `migrate checkpoint` already agreed with that
+// through atlasCheckpointDirFormatValue. Refusing it here was the odd one out.
+//
+// This is the flag spelling. The query spelling of the same choice, `?format=`
+// with an empty value, already resolves to the Atlas layout in
+// atlasmigrate.ResolveApplyDirFormat, so the two spellings now agree.
 func atlasMigrateDirFormatValue(value string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(value))
-	if normalized == "" {
-		return "", fmt.Errorf("migration directory format must not be empty")
-	}
-	if normalized == atlasDirFormatDefault {
+	if normalized == "" || normalized == atlasDirFormatDefault {
 		return atlasDirFormatDefault, nil
 	}
 	if slices.Contains(unsupportedAtlasDirFormats, normalized) {

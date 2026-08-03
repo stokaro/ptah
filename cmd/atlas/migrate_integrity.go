@@ -124,11 +124,12 @@ func resolveAtlasMigrateSource(
 	configured, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dir-format"))
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)
 	if err != nil {
-		// A non-empty query is the only thing that can carry a format value
-		// other than the configured one, and it is also the only source of the
-		// unknown-parameter and repeated-parameter errors, so it names --dir.
+		// A ?format= query is the only thing that can carry a format value other
+		// than the configured one, so it is the only thing that can be blamed
+		// for a rejected one. A query carrying only ignored keys selects
+		// nothing, and the blame stays on --dir-format.
 		spelling := "--dir-format"
-		if len(localDir.Query) > 0 {
+		if atlasmigrate.DirFormatFromQuery(localDir.Query) {
 			spelling = "--dir"
 		}
 		return atlasMigrateSource{}, fmt.Errorf("atlas migrate %s %s: %w", verb.use, spelling, err)
@@ -141,7 +142,12 @@ func resolveAtlasMigrateSource(
 		devURL:      devURL,
 		forwardArgs: args,
 	}
-	if _, queried := localDir.Query["format"]; queried {
+	// Any query at all is dropped before forwarding, not just one carrying
+	// ?format=. The forwarded native command's --dir mapper is query-free by
+	// construction, so leaving an ignored key such as ?nonsense=1 on the URL
+	// would resurrect the blanket refusal one layer down — exit 1 where the
+	// community binary exits 0 (stokaro/ptah#1013 section 2).
+	if len(localDir.Query) > 0 {
 		source.forwardArgs = rewriteAtlasMigrateSourceArgs(verb, args, atlasDirWithoutQuery(rawDir), string(format))
 	}
 	if atlasmigrate.ReadsNativeAtlasDir(format) {
@@ -222,8 +228,10 @@ func atlasNativeArgValue(args []string, name string) (string, bool) {
 }
 
 // atlasDirWithoutQuery drops the URL query from a migration directory value.
-// ResolveApplyDirFormat has already rejected every query parameter other than
-// format, so nothing but the format selection is being discarded.
+// The format selection it carried has already been resolved and is forwarded as
+// --dir-format instead; every other key is one the community binary ignores, so
+// dropping it here is what makes the forwarded invocation identical to the one
+// the same directory gets with no query at all.
 func atlasDirWithoutQuery(raw string) string {
 	before, _, _ := strings.Cut(raw, "?")
 	return before
