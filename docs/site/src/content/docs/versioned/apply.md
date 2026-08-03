@@ -180,8 +180,14 @@ people and pipelines share a directory:
 - **Batch limit** (`--limit`): apply only the first N pending migrations —
   useful for staged rollouts and verifying one step at a time. `--allow-dirty`
   is the explicit recovery escape hatch that proceeds past a dirty revision
-  row (for example one left by a crashed migration whose file was later
-  rebased); prefer `ptah migrations repair` for the dirty row itself.
+  row. When the dirty row belongs to a migration that is still pending — the
+  usual case, a body that failed part-way — the retry reuses that row rather
+  than recording a second one, and skips the statements the earlier attempt
+  committed, so fixing the migration and rerunning with `--allow-dirty` is the
+  recovery. Use `ptah migrations repair` when the row cannot be resumed
+  automatically: an interrupted process whose last statement has an unknown
+  outcome, an edit that changed the file's statement count, or a dirty row for
+  a migration whose file was rebased away.
 - **Execution order** (`--exec-order`): `linear` (default) fails when a merge
   landed a pending migration below the current version; `linear-skip` warns
   and leaves it pending; `non-linear` applies it. Status reports such

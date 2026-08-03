@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 type atlasMigrateStatusOptions struct {
@@ -232,11 +234,41 @@ func writeAtlasMigrateStatusDefault(cmd *cobra.Command, result atlasmigrate.Stat
 	fmt.Fprintf(out, "Total Migrations: %d\n", status.TotalMigrations)
 	fmt.Fprintf(out, "Applied Migrations: %d\n", len(status.AppliedMigrations))
 	fmt.Fprintf(out, "Pending Migrations: %d\n", len(status.PendingMigrations))
+	writeAtlasMigrateStatusDirty(out, status.DirtyRevision)
 	if status.HasPendingChanges {
 		fmt.Fprintln(out, "Status: Pending migrations available")
 		return
 	}
 	fmt.Fprintln(out, "Status: Database is up to date")
+}
+
+// writeAtlasMigrateStatusDirty reports a half-applied migration.
+//
+// Current Version above is the highest recorded version, which includes a
+// version whose body failed part-way; without this block the output named that
+// version and then said only "Pending migrations available", so a wedged
+// database was indistinguishable from a healthy one with work outstanding
+// (#966). The community Atlas binary annotates the same state on its own
+// Current Version line and prints the failing statement afterwards; this keeps
+// ptah-compat's own status layout and adds the same facts rather than
+// restructuring the block.
+func writeAtlasMigrateStatusDirty(out io.Writer, revision *migrator.MigrationRevision) {
+	if revision == nil {
+		return
+	}
+	fmt.Fprintf(
+		out,
+		"Dirty Migration: version=%d applied=%d/%d\n",
+		revision.Version,
+		revision.Applied,
+		revision.Total,
+	)
+	if revision.ErrorStatement != "" {
+		fmt.Fprintf(out, "Error Statement: %s\n", revision.ErrorStatement)
+	}
+	if revision.Error != "" {
+		fmt.Fprintf(out, "Error: %s\n", revision.Error)
+	}
 }
 
 func atlasStatusDirURL(raw string) string {
