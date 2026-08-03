@@ -179,12 +179,22 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		// binary accepts it, EVALUATES var.X references against it, and fails
 		// with `missing value for required variable %q` only when a typed
 		// variable has neither a default nor a --var override. Measured on the
-		// pinned binary: a schema file with `variable "status" { default =
-		// "active" }` and a column default of var.status inspects successfully.
+		// pinned binary, a schema file whose column default is var.status:
+		//
+		//   variable "status" { type = string, default = "active" }
+		//     -> exit 0, renders `default = "active"`
+		//
+		// The `type` argument carries the example. Drop it and the same file
+		// exits 1 with `The argument "type" is required`, which would argue for
+		// refusing `variable` -- the exact conclusion this comment exists to
+		// prevent. Quote the typed spelling or the measurement says the opposite
+		// of what it is cited for.
 		//
 		// Ptah has no schema-file variable evaluation, so accepting and ignoring
-		// is knowingly looser than that binary on the no-default case, and it
-		// renders var.X into DDL as literal text. Both are real defects. Moving
+		// is knowingly looser than that binary on BOTH spellings it refuses --
+		// a variable missing `type`, and a typed variable with no default and no
+		// --var -- and it renders var.X into DDL as literal text. Real defects,
+		// all three, and all of them predate this arm's split. Moving
 		// this name to the default arm would "fix" them by refusing files the
 		// community binary fully supports -- a new stricter break, not parity.
 		// The fix is evaluation plus --var plumbing, tracked in issue #926

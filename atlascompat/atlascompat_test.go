@@ -37,6 +37,35 @@ table "users" {
 	c.Assert(db.Fields, qt.HasLen, 1)
 }
 
+// projectFileWithEnv is a genuine atlas.hcl: an env block and not one schema
+// object. It is the exported-surface twin of the internal classification
+// fixture, kept here because ParseAtlasHCL is public API and its refusal is part
+// of the contract callers compile against.
+const projectFileWithEnv = `env "local" {
+  url = "sqlite://local.db"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`
+
+// TestParseAtlasHCLRefusesProjectFile pins the refusal on the exported wrapper,
+// not only on the internal parser. Without the change this returns a nil error
+// and an EMPTY Database, so a red run prints that empty IR rather than a bare
+// "wanted an error" -- the erasure itself is the failure message.
+func TestParseAtlasHCLRefusesProjectFile(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlascompat.ParseAtlasHCL([]byte(projectFileWithEnv), "atlas.hcl")
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf(
+		"project file parsed as a schema: err=nil and the returned IR is %+v -- an empty desired state, which a diff cannot tell apart from a request to drop every table",
+		db))
+	c.Assert(db, qt.IsNil)
+	c.Assert(err.Error(), qt.Contains, `cannot parse project file "atlas.hcl" as a schema file`)
+	c.Assert(err.Error(), qt.Contains, `"env"`)
+}
+
 func TestParseSQL(t *testing.T) {
 	c := qt.New(t)
 	list, err := atlascompat.ParseSQL("CREATE TABLE users (id int PRIMARY KEY);", atlascompat.ParseSQLOptions{})
