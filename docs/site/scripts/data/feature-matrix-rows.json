@@ -167,8 +167,8 @@
     "ptah": "partial",
     "atlas_oss": "na",
     "atlas_pro": "na",
-    "note": "Joins, DISTINCT, GROUP BY, HAVING and RETURNING work; no subqueries, CTEs, LIKE or upsert; SQL Server, ClickHouse, Spanner error.",
-    "evidence": "core/query/query.go (InnerJoin/LeftJoin/RightJoin/FullJoin, Distinct, GroupBy, Having) and core/query/write.go (InsertInto/Update/DeleteFrom, Returning); core/ast/select.go:17-18 records arithmetic, LIKE, subqueries and window functions as follow-ups; core/ast/write.go:13-16 records upsert, INSERT..SELECT, CTEs and multi-table UPDATE/DELETE as out of scope; core/renderer/select.go:84-89 maps placeholders for postgres/cockroachdb/yugabytedb/mysql/mariadb/sqlite only; executed probe over renderer.RenderInsert confirms sqlserver, mssql, clickhouse and spanner return \"renderer: INSERT rendering is not supported for dialect ...\""
+    "note": "Joins, DISTINCT, GROUP BY, HAVING and RETURNING work; no subqueries, CTEs, LIKE or upsert; SQL Server and ClickHouse error.",
+    "evidence": "core/query/query.go (InnerJoin/LeftJoin/RightJoin/FullJoin, Distinct, GroupBy, Having) and core/query/write.go (InsertInto/Update/DeleteFrom, Returning); core/ast/select.go:17-18 records arithmetic, LIKE, subqueries and window functions as follow-ups; core/ast/write.go:13-16 records upsert, INSERT..SELECT, CTEs and multi-table UPDATE/DELETE as out of scope; core/renderer/select.go selectPlaceholderStyle admits the platform.IsPostgresFamily set (postgres, cockroachdb, yugabytedb, spanner) plus mysql/mariadb/sqlite; core/renderer/dml_dialect_matrix_test.go walks renderer.SupportedDialects() x SELECT/INSERT/UPDATE/DELETE and pins all 48 cells, with 12 of them - sqlserver, mssql and clickhouse - still answering \"renderer: INSERT rendering is not supported for dialect ...\""
   },
   {
     "area": "Schema visualization",
