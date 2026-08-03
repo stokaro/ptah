@@ -18,7 +18,7 @@ OCI artifact distribution is a cross-cutting Ptah capability, not a database
 dialect capability key in `core/platform/capability`.
 
 - **Bring-your-own OCI registry** — native migration and desired-schema push/pull against OCI-compliant registries, authenticated through the Docker credential store.
-- **Reference semantics** — unqualified references resolve to `latest`; tags are movable; `@sha256:` digest pins are immutable; pushes to digest references are rejected.
+- **Reference semantics** — unqualified references resolve to `latest`; tags are movable; `@sha256:` digest pins are immutable; a `:tag@sha256:` reference is accepted and resolves by the digest while keeping the tag in the canonical form; pushes to any digest-carrying reference are rejected.
 - **Direct migration consumption** — `ptah migrations up`, `status`, and `down` accept `oci://` through `--migrations-dir`; `up --verify-sum` verifies the pulled directory against the sum that travelled inside it, and `up` prints the resolved digest and its `@sha256:` pin whenever that check ran over a movable tag.
 - **Direct schema consumption** — `ptah schema compare` and `drift` accept `oci://` through `--schema-file`.
 - **Canonical desired schema** — schema publication emits exactly one lossless canonical `schema.hcl` and fails closed on managed data, lossy diagnostics, or unstable HCL round trips.
