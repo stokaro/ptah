@@ -545,8 +545,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Plan and `--dry-run` list tables (plus PostgreSQL enums/sequences, SQL Server FKs), but the apply drops views too via DropAllTables.",
-    "evidence": "internal/schemaclean/clean.go:109-147 enumerates only foreign keys, tables and enums; :75-81 executes conn.SchemaWriter().DropAllTables(ctx). Reproduced on a SQLite database holding one table and one standalone view: `pc schema clean --url sqlite://cl3.db --dry-run --format '{{ range .Changes }}{{ .Cmd }}{{ end }}'` printed only `DROP TABLE IF EXISTS \"users\"`, then `--auto-approve` left sqlite_master empty \u2014 the unreported view v_const was dropped as well. CE registers schema clean per cli-surface.md:44"
+    "note": "Plan and `--dry-run` list every object kind that dialect's cleanup destroys. The revision table is still dropped unreported everywhere except SQLite.",
+    "evidence": "internal/schemaclean/clean.go coverageFor maps each dialect onto its writer's coverage; internal/schemaclean/clean_live_test.go compares the plan against the objects that actually disappeared on a live PostgreSQL. Measured on PostgreSQL 18 with a table, view, materialized view, enum, domain, composite, range, sequence, function and FK: the plan named 11 objects and the catalog census showed exactly those 11 destroyed, while a control schema `keepme` appeared in neither set. SQLite case from the original report now prints `DROP TABLE IF EXISTS \"users\"` and `DROP VIEW IF EXISTS \"v_const\"`. Remaining gap: `schema_migrations` is dropped by the PostgreSQL, MySQL, SQL Server and ClickHouse writers but excluded by their readers, so it never reaches the plan. CE registers schema clean per cli-surface.md:44"
   },
   {
     "area": "Declarative / direct schema workflow",
