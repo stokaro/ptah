@@ -79,7 +79,7 @@ Across the 159 capabilities below:
 | Ptah supports it fully | 86 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 24 |
-| Ptah and Atlas CE both support it | 23 |
+| Ptah and Atlas CE both support it | 21 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 40 |
 | Ptah has it and neither Atlas edition does | 19 |
 | Atlas CE has it and Ptah does not, or only in part | 26 |
