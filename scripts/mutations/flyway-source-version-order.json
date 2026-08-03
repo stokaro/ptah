@@ -55,6 +55,12 @@
       "new": "\t\t_ = file\n\t\tsources[versions[i]] = fmt.Sprint(versions[i])"
     },
     {
+      "name": "INVERSE: the source comparison refuses every pending migration",
+      "file": "migration/migrator/exec_order.go",
+      "old": "\t\tif source, found := sourceVersions[version]; found && source <= highest {",
+      "new": "\t\t_ = highest\n\t\tif _, found := sourceVersions[version]; found {"
+    },
+    {
       "name": "a repeatable reports its own token instead of Atlas CE's empty version",
       "file": "internal/atlasmigrateimport/importer.go",
       "old": "\t\tsources[versions[i]] = flywayCEVersion(file)",
