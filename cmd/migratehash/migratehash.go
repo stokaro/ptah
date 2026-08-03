@@ -4,11 +4,13 @@ package migratehash
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -39,7 +41,31 @@ an already-committed migration.`,
 	return cmd
 }
 
+// refuseOCIDir refuses an oci:// migration directory by name.
+//
+// Every read verb resolves oci:// references, including the digest-pinned
+// oci://registry/repository:tag@sha256:D form (stokaro/ptah#1094). hash is the
+// one verb that cannot: it writes the integrity file into the directory it
+// hashed, and a registry artifact is immutable content addressed by its own
+// digest, so the result has nowhere to go. Falling through to os.Stat reported
+// "no such file or directory" for a reference that was never a path, which
+// reads as "this tool does not know oci://" rather than "this verb writes".
+func refuseOCIDir(dir string) error {
+	if !strings.HasPrefix(dir, ociartifact.Scheme) {
+		return nil
+	}
+	return fmt.Errorf(
+		"cannot hash %s: an OCI artifact is immutable, so there is nowhere to write the integrity "+
+			"file; hash the local migration directory instead and publish the result with "+
+			"'ptah migrations push'",
+		dir,
+	)
+}
+
 func runHash(cmd *cobra.Command, dir, dirFormatValue string) error {
+	if err := refuseOCIDir(dir); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := cmdutil.StatDir(dir); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
