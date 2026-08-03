@@ -105,9 +105,18 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 			want: []changeProjection{},
 		},
 		{
+			// GRANT used to sit here, as a statement the parser refused. It
+			// parses now (issue #932) and counts as the one change it is, so
+			// the "outside the grammar" case needs a statement that is still
+			// outside it.
 			name: "statement outside the DDL grammar is zero changes",
-			sql:  "GRANT SELECT ON users TO app;",
+			sql:  "CLUSTER users USING idx_users_id;",
 			want: []changeProjection{},
+		},
+		{
+			name: "grant is one change",
+			sql:  "GRANT SELECT ON users TO app;",
+			want: []changeProjection{{lint.SchemaChangeAdd, "users"}},
 		},
 	}
 	for _, tc := range tests {

@@ -1533,8 +1533,15 @@ type CreateTriggerNode struct {
 	ForEach      string
 	Body         string
 	FunctionName string
-	Replace      bool
-	Comment      string
+	// ExternalFunction reports that FunctionName refers to a function that
+	// already exists rather than one rendered from Body. PostgreSQL keeps
+	// trigger code in a function, so renderers normally emit that function
+	// alongside the trigger; when this is set they must not, because
+	// redefining a function they were only asked to reference would discard
+	// its body.
+	ExternalFunction bool
+	Replace          bool
+	Comment          string
 }
 
 func NewCreateTrigger(name, table string) *CreateTriggerNode {
@@ -1563,6 +1570,13 @@ func (n *CreateTriggerNode) SetBody(body string) *CreateTriggerNode {
 
 func (n *CreateTriggerNode) SetFunctionName(functionName string) *CreateTriggerNode {
 	n.FunctionName = functionName
+	return n
+}
+
+// SetExternalFunction marks FunctionName as an already-existing function that
+// the renderer must reference without defining.
+func (n *CreateTriggerNode) SetExternalFunction() *CreateTriggerNode {
+	n.ExternalFunction = true
 	return n
 }
 

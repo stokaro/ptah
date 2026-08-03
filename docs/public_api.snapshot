@@ -1599,8 +1599,15 @@ type CreateTriggerNode struct {
     ForEach      string
     Body         string
     FunctionName string
-    Replace      bool
-    Comment      string
+    // ExternalFunction reports that FunctionName refers to a function that
+    // already exists rather than one rendered from Body. PostgreSQL keeps
+    // trigger code in a function, so renderers normally emit that function
+    // alongside the trigger; when this is set they must not, because
+    // redefining a function they were only asked to reference would discard
+    // its body.
+    ExternalFunction bool
+    Replace          bool
+    Comment          string
 }
     CreateTriggerNode represents a CREATE TRIGGER statement.
 
@@ -1609,6 +1616,7 @@ func (n *CreateTriggerNode) Accept(visitor Visitor) error
 func (n *CreateTriggerNode) SetBody(body string) *CreateTriggerNode
 func (n *CreateTriggerNode) SetComment(comment string) *CreateTriggerNode
 func (n *CreateTriggerNode) SetEvent(event string) *CreateTriggerNode
+func (n *CreateTriggerNode) SetExternalFunction() *CreateTriggerNode
 func (n *CreateTriggerNode) SetForEach(forEach string) *CreateTriggerNode
 func (n *CreateTriggerNode) SetFunctionName(functionName string) *CreateTriggerNode
 func (n *CreateTriggerNode) SetReplace() *CreateTriggerNode
@@ -4540,6 +4548,15 @@ type Trigger struct {
     ForEach    string // ROW or STATEMENT
     Body       string // Trigger body
     Comment    string // Optional comment for documentation
+
+    // ExecuteFunction names an already-existing function the trigger executes
+    // instead of a body Ptah owns. It is set when a SQL schema file spells
+    // EXECUTE FUNCTION with a name that is not this trigger's own
+    // FunctionName(), so reading such SQL back does not silently rebind the
+    // trigger to a Ptah-generated function. Body and ExecuteFunction are
+    // alternatives: when ExecuteFunction is set, Ptah does not render a
+    // function definition for the trigger.
+    ExecuteFunction string
 }
     Trigger represents a database trigger definition parsed from Go annotations.
 

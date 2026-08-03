@@ -23,8 +23,8 @@
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Accepted by native `--schema-file` and by `ptah-compat schema apply`/diff `--to`/`--from`; unsupported DDL fails instead of being skipped.",
-    "evidence": "ptah schema render --help; ptah-compat schema diff --help (.sql accepted on --from/--to); docs/site/src/content/docs/atlas/docs-coverage.md:202 (Atlas: 'Open sources include SQL, HCL, and external schema')"
+    "note": "Accepted by native `--schema-file` and compat `--to`/`--from`. Reads back every object kind Ptah renders; DO blocks, COMMENT ON and raw routine bodies still parse and are dropped.",
+    "evidence": "ptah schema render --help; ptah-compat schema diff --help (.sql accepted on --from/--to). Round-trip measured by internal/schemafile.TestLoadAll_RenderedPostgresSQLReadsBackAsAFixedPoint: the 16 statements rendered from the docs/atlas_hcl_schema.md PostgreSQL-objects example load again and re-render identically apart from object comments emitted as bare `--` lines. Silent drops that remain: ast.RawSQLNode and ast.CommentNode (other than COMMENT ON ROLE) have no case in internal/convert/toschema.appendStatement. docs/site/src/content/docs/atlas/docs-coverage.md:202 (Atlas: 'Open sources include SQL, HCL, and external schema')"
   },
   {
     "area": "Schema sources",
@@ -1022,8 +1022,8 @@
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Matviews render on PostgreSQL only. Elsewhere behavior differs by engine: MySQL/MariaDB apply errors, YugabyteDB live apply plans them, ClickHouse drops them silently.",
-    "evidence": "internal/convert/fromschema/fromschema.go:1758-1764 appends only Views (never MaterializedViews) for the non-PostgreSQL path; `ptah schema render --dialect mysql` emitted no matview statement, while `ptah schema apply` against live MySQL 9.7 failed with \"materialized views are not supported by MySQL or MariaDB\""
+    "note": "Matviews render on PostgreSQL only; SQL schema files read both. Elsewhere behavior differs by engine: MySQL/MariaDB apply errors, YugabyteDB live apply plans them, ClickHouse drops them silently.",
+    "evidence": "internal/convert/fromschema/fromschema.go:1758-1764 appends only Views (never MaterializedViews) for the non-PostgreSQL path; `ptah schema render --dialect mysql` emitted no matview statement, while `ptah schema apply` against live MySQL 9.7 failed with \"materialized views are not supported by MySQL or MariaDB\". SQL schema files: CREATE VIEW used to parse and then vanish and CREATE MATERIALIZED VIEW was refused outright; both now render back (issue #932; internal/schemafile.TestLoadAll_PostgresObjectKindsSurviveSQLSchemaFiles/view and /materialized_view)"
   },
   {
     "area": "Schema object kinds",
@@ -1049,8 +1049,8 @@
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "PostgreSQL only in `schema render`; `schema apply` emits it on YugabyteDB too. SQL schema files reject CREATE SEQUENCE as unsupported.",
-    "evidence": "internal/convert/fromschema/fromschema.go:1593 gates CREATE SEQUENCE on isPostgreSQLPlatform; live YugabyteDB apply planned CREATE SEQUENCE \"yb_seq\" START WITH 1; SQL source: \"unsupported CREATE target: SEQUENCE\". Atlas columns from PARITY.md Pro-gated-object sentence"
+    "note": "PostgreSQL only in `schema render`; `schema apply` emits it on YugabyteDB too. SQL schema files read CREATE SEQUENCE.",
+    "evidence": "internal/convert/fromschema/fromschema.go:1593 gates CREATE SEQUENCE on isPostgreSQLPlatform; live YugabyteDB apply planned CREATE SEQUENCE \"yb_seq\" START WITH 1. SQL source: `CREATE SEQUENCE s1 START WITH 1;` in a --schema-file exits 0 and renders `CREATE SEQUENCE \"s1\" START WITH 1;` (issue #932; internal/schemafile.TestLoadAll_PostgresObjectKindsSurviveSQLSchemaFiles/sequence). Atlas columns from PARITY.md Pro-gated-object sentence"
   },
   {
     "area": "Schema object kinds",
@@ -1067,8 +1067,8 @@
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files reject ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops a `role` block silently.",
-    "evidence": "internal/convert/fromschema/fromschema.go:1710-1745 (roles/grants/RLS behind isPostgreSQLPlatform); live YugabyteDB apply planned CREATE ROLE \"yb_role\"; `ptah schema render --schema-file` rejects CREATE ROLE / GRANT / CREATE POLICY / ALTER TABLE ... ENABLE ROW LEVEL SECURITY. Measured 2026-08-01, CE v1.2.0 (scratch env): `schema apply` with `role \"app\" { }` on sqlite -> exit 0 'Schema is synced, no changes to be made' (silent no-op). Atlas pricing page (atlasgo.io/pricing, retrieved 2026-08-01): 'Database Security as Code' is Pro, not Starter"
+    "note": "PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files read ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops a `role` block silently.",
+    "evidence": "internal/convert/fromschema/fromschema.go:1710-1745 (roles/grants/RLS behind isPostgreSQLPlatform); live YugabyteDB apply planned CREATE ROLE \"yb_role\"; `ptah schema render --schema-file` reads CREATE ROLE / GRANT / CREATE POLICY / ALTER TABLE ... ENABLE ROW LEVEL SECURITY and renders each back (issue #932; internal/schemafile.TestLoadAll_PostgresObjectKindsSurviveSQLSchemaFiles). Measured 2026-08-01, CE v1.2.0 (scratch env): `schema apply` with `role \"app\" { }` on sqlite -> exit 0 'Schema is synced, no changes to be made' (silent no-op). Atlas pricing page (atlasgo.io/pricing, retrieved 2026-08-01): 'Database Security as Code' is Pro, not Starter"
   },
   {
     "area": "Schema object kinds",

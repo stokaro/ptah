@@ -1009,9 +1009,19 @@ EXECUTE FUNCTION public.touch_updated_at();`
 		ast.PostgresRoutineStatementReturn,
 	})
 
-	rawTrigger, ok := statements.Statements[1].(*ast.RawSQLNode)
+	// An argument-free EXECUTE FUNCTION is a trigger node that references the
+	// named function, so the SQL frontend can read back the trigger Ptah
+	// renders (issue #932). The function is external: the renderer must not
+	// redefine it.
+	trigger, ok := statements.Statements[1].(*ast.CreateTriggerNode)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(rawTrigger.SQL, qt.Contains, "EXECUTE FUNCTION public.touch_updated_at()")
+	c.Assert(trigger.Name, qt.Equals, "set_updated_at")
+	c.Assert(trigger.Table, qt.Equals, "users")
+	c.Assert(trigger.Timing, qt.Equals, "BEFORE")
+	c.Assert(trigger.Event, qt.Equals, "UPDATE")
+	c.Assert(trigger.FunctionName, qt.Equals, "public.touch_updated_at")
+	c.Assert(trigger.ExternalFunction, qt.IsTrue)
+	c.Assert(trigger.Body, qt.Equals, "")
 }
 
 func TestParser_ParsePostgresDialectProcedureRoutineBodyMetadata(t *testing.T) {
