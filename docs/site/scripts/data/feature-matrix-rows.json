@@ -816,7 +816,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Custom rules only from Go (lint.Register, Options.ExtraRules); atlas.hcl rule, review, naming, non_linear blocks and force all fail.",
-    "evidence": "migration/lint/rules.go:20 Register, migration/lint/lint.go:107 Options.ExtraRules; migration/lint/config.go Config has only Dialect/DisabledRules/Rules{severity,exclude} \u2014 no rule definition. config/projectconfig/atlas.go:536 parseLintPolicyBlocks accepts only concurrent_index, data_depend, destructive, git, nestedtx, incompatible; atlas.go:613 rejects `force`. Atlas features page classifies \"Custom linting rules\" as Pro. `lint { rule \"hcl\" \"custom\" { src = [...] } }` accepted and the rules execute during migrate lint; rule severity is only `error=true/false` (measured; observation study, scenario, lint-test-pro)"
+    "evidence": "migration/lint/rules.go:20 Register, migration/lint/lint.go:107 Options.ExtraRules; migration/lint/config.go Config has only Dialect/DisabledRules/Rules{severity,exclude} \u2014 no rule definition. config/projectconfig/atlas.go parseLintPolicyBlocks accepts only concurrent_index, condrop, data_depend, destructive, git, nestedtx, incompatible; parseLintAnalyzer tolerates `force` without acting on it. Atlas features page classifies \"Custom linting rules\" as Pro. `lint { rule \"hcl\" \"custom\" { src = [...] } }` accepted and the rules execute during migrate lint; rule severity is only `error=true/false` (measured; observation study, scenario, lint-test-pro)"
   },
   {
     "area": "Lint policy and suppression",

@@ -177,6 +177,7 @@ const (
 	fieldExternalSchemaFormat      configField = "external_schema.format"
 	fieldExternalSchemaWorkingDir  configField = "external_schema.working_dir"
 	fieldExternalSchemaEnv         configField = "external_schema.env"
+	fieldSchemaRepoName            configField = "schema.repo.name"
 	lintRuleConfigFieldPrefix                  = "lint.rules."
 )
 
@@ -500,6 +501,25 @@ type ConfigBool struct {
 // SchemaConfig holds Atlas env.schema settings.
 type SchemaConfig struct {
 	Mode SchemaModeConfig
+	Repo SchemaRepoConfig
+}
+
+// SchemaRepoConfig holds Atlas env.schema.repo settings: the name of the schema
+// repository a hosted registry would store the desired state under.
+//
+// The name is decoded and type-checked because the pinned community binary
+// decodes it -- `repo { name = 1 }` is refused with `value of attr "name"
+// cannot be read as string` on a command as cheap as `schema inspect`. Nothing
+// reads the value afterwards, and that is also measured: with the community
+// binary, `schema inspect`, `schema apply --dry-run`, and `schema apply
+// --auto-approve` (both on an empty database and incrementally) produce
+// byte-identical output with and without the block, and an `atlas://` URL is
+// refused identically either way ("atlas remote state is not supported by the
+// community version of Atlas"). Ptah likewise has no hosted registry --
+// `schema plan --repo` already says so -- so accepting the name and acting on
+// nothing is exact parity, not silent non-enforcement.
+type SchemaRepoConfig struct {
+	Name string
 }
 
 // SchemaModeConfig holds Atlas env.schema.mode settings.
@@ -587,6 +607,24 @@ type DiffSkipConfig struct {
 	DropColumn ConfigBool
 	DropIndex  ConfigBool
 	DropEnum   ConfigBool
+	// DropSchema mirrors Atlas diff.skip.drop_schema. It is decoded and
+	// type-checked because the pinned community binary decodes it eagerly --
+	// `drop_schema = "x"` is refused with `value of attr "drop_schema" cannot be
+	// read as bool` even on `schema inspect`.
+	//
+	// It has no entry in SkipChangeKinds because Ptah's planner has no
+	// schema-removal change kind to omit: migration/schemadiff/types.SchemaDiff
+	// carries no removed-schema list and no code path renders DROP SCHEMA into a
+	// plan. Measured on the community binary, `schema apply --dry-run` against a
+	// realm URL holding a schema the desired state omits prints
+	// `DROP SCHEMA "extra" CASCADE;` by default and `Schema is synced, no changes
+	// to be made` with drop_schema = true; Ptah prints the synced line either way,
+	// so honoring the suppression costs nothing and can never make Ptah emit a
+	// drop the community binary would have withheld. Cleanup is unaffected on
+	// both sides: `schema clean` on the community binary drops every schema with
+	// the setting on -- measured -- and no Ptah code path reads this field at
+	// all.
+	DropSchema ConfigBool
 }
 
 // SkipChangeKinds returns the change kinds this policy skips, in the canonical
@@ -690,7 +728,7 @@ func Merge(base, override Config) Config {
 		override.presence,
 		&result.presence,
 	)
-	result.Schema = mergeSchema(result.Schema, override.Schema)
+	result.Schema = mergeSchema(result.Schema, override.Schema, override.presence, &result.presence)
 	result.Migration = mergeMigration(
 		result.Migration,
 		override.Migration,
@@ -854,8 +892,19 @@ func mergeExternalSchema(
 	return result
 }
 
-func mergeSchema(base, override SchemaConfig) SchemaConfig {
+func mergeSchema(
+	base, override SchemaConfig,
+	overridePresence configPresence,
+	resultPresence *configPresence,
+) SchemaConfig {
 	result := base
+	result.Repo.Name = mergeStringValue(
+		base.Repo.Name,
+		override.Repo.Name,
+		fieldSchemaRepoName,
+		overridePresence,
+		resultPresence,
+	)
 	result.Mode.Funcs = mergeBool(result.Mode.Funcs, override.Mode.Funcs)
 	result.Mode.Objects = mergeBool(result.Mode.Objects, override.Mode.Objects)
 	result.Mode.Permissions = mergeBool(result.Mode.Permissions, override.Mode.Permissions)
@@ -1168,6 +1217,7 @@ func mergeDiff(base, override DiffConfig) DiffConfig {
 	result.Skip.DropColumn = mergeBool(result.Skip.DropColumn, override.Skip.DropColumn)
 	result.Skip.DropIndex = mergeBool(result.Skip.DropIndex, override.Skip.DropIndex)
 	result.Skip.DropEnum = mergeBool(result.Skip.DropEnum, override.Skip.DropEnum)
+	result.Skip.DropSchema = mergeBool(result.Skip.DropSchema, override.Skip.DropSchema)
 	result.ConcurrentIndex.Create = mergeBool(result.ConcurrentIndex.Create, override.ConcurrentIndex.Create)
 	result.ConcurrentIndex.Drop = mergeBool(result.ConcurrentIndex.Drop, override.ConcurrentIndex.Drop)
 	return result

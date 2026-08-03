@@ -172,6 +172,7 @@ type OnlineDDLConfig struct{ ... }
 type SchemaConfig struct{ ... }
 type SchemaFormatConfig struct{ ... }
 type SchemaModeConfig struct{ ... }
+type SchemaRepoConfig struct{ ... }
 type StringField uint8
     const StringEnvName StringField = iota ...
 type Value[T any] struct{ ... }
@@ -294,6 +295,24 @@ type DiffSkipConfig struct {
     DropColumn ConfigBool
     DropIndex  ConfigBool
     DropEnum   ConfigBool
+    // DropSchema mirrors Atlas diff.skip.drop_schema. It is decoded and
+    // type-checked because the pinned community binary decodes it eagerly --
+    // `drop_schema = "x"` is refused with `value of attr "drop_schema" cannot be
+    // read as bool` even on `schema inspect`.
+    //
+    // It has no entry in SkipChangeKinds because Ptah's planner has no
+    // schema-removal change kind to omit: migration/schemadiff/types.SchemaDiff
+    // carries no removed-schema list and no code path renders DROP SCHEMA into a
+    // plan. Measured on the community binary, `schema apply --dry-run` against a
+    // realm URL holding a schema the desired state omits prints
+    // `DROP SCHEMA "extra" CASCADE;` by default and `Schema is synced, no changes
+    // to be made` with drop_schema = true; Ptah prints the synced line either way,
+    // so honoring the suppression costs nothing and can never make Ptah emit a
+    // drop the community binary would have withheld. Cleanup is unaffected on
+    // both sides: `schema clean` on the community binary drops every schema with
+    // the setting on -- measured -- and no Ptah code path reads this field at
+    // all.
+    DropSchema ConfigBool
 }
     DiffSkipConfig holds the diff.skip policy: the destructive change kinds a
     project omits from generated migrations. Each field is a tri-state so an
@@ -471,6 +490,7 @@ package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type SchemaConfig struct {
     Mode SchemaModeConfig
+    Repo SchemaRepoConfig
 }
     SchemaConfig holds Atlas env.schema settings.
 
@@ -505,6 +525,29 @@ type SchemaModeConfig struct {
     SchemaModeConfig holds Atlas env.schema.mode settings.
 
 func (m SchemaModeConfig) ExcludePatterns() []string
+
+### go.5x5.cz/ptah/config/projectconfig.SchemaRepoConfig
+
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
+
+type SchemaRepoConfig struct {
+    Name string
+}
+    SchemaRepoConfig holds Atlas env.schema.repo settings: the name of the
+    schema repository a hosted registry would store the desired state under.
+
+    The name is decoded and type-checked because the pinned community binary
+    decodes it -- `repo { name = 1 }` is refused with `value of attr "name"
+    cannot be read as string` on a command as cheap as `schema inspect`.
+    Nothing reads the value afterwards, and that is also measured: with the
+    community binary, `schema inspect`, `schema apply --dry-run`, and `schema
+    apply --auto-approve` (both on an empty database and incrementally) produce
+    byte-identical output with and without the block, and an `atlas://` URL is
+    refused identically either way ("atlas remote state is not supported by
+    the community version of Atlas"). Ptah likewise has no hosted registry --
+    `schema plan --repo` already says so -- so accepting the name and acting on
+    nothing is exact parity, not silent non-enforcement.
+
 
 ### go.5x5.cz/ptah/config/projectconfig.StringField
 

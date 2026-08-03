@@ -26,7 +26,7 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 						body: atlasBodyStructure{attributes: []string{"create", "drop"}},
 					},
 					"skip": {
-						body: atlasBodyStructure{attributes: []string{"drop_table"}},
+						body: atlasBodyStructure{attributes: []string{"drop_schema", "drop_table"}},
 					},
 				}},
 			},
@@ -45,6 +45,7 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 					attributes: []string{"latest", "log"},
 					blocks: map[string]atlasBlockStructure{
 						"concurrent_index": {body: atlasBodyStructure{attributes: []string{"error"}}},
+						"condrop":          {body: atlasBodyStructure{attributes: []string{"error"}}},
 						"data_depend":      {body: atlasBodyStructure{attributes: []string{"error"}}},
 						"destructive":      {body: atlasBodyStructure{attributes: []string{"error"}}},
 						"git":              {body: atlasBodyStructure{attributes: []string{"base", "dir"}}},
@@ -79,6 +80,9 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 								"types",
 								"views",
 							}},
+						},
+						"repo": {
+							body: atlasBodyStructure{attributes: []string{"name"}},
 						},
 					},
 				},

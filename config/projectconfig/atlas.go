@@ -300,11 +300,16 @@ func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
 // `migrate diff` purely because that command never reads baseline.
 // lint.destructive is decoded by CE too, but Ptah already implements it, so it
 // never reaches the tolerance path and is not listed here.
-var ceEnforcedConstructs = map[string]struct{}{
-	"lint.condrop":          {},
-	"diff.skip.drop_schema": {},
-	"schema.repo":           {},
-}
+//
+// The map is empty. lint.condrop, diff.skip.drop_schema and schema.repo were
+// its three entries until stokaro/ptah#1048 gave each a parser arm of its own,
+// which puts them in the same position as lint.destructive: decoded, so never
+// reaching the tolerance path, so nothing to hold back here. The map and
+// enforcedByCE stay because the criterion above is the standing rule for the
+// next name a probe catches -- an entry here is the holding pen for a construct
+// CE acts on that Ptah has not implemented yet, and refusing is where such a
+// construct waits.
+var ceEnforcedConstructs = map[string]struct{}{}
 
 // enforcedByCE reports whether a scope-qualified name is one CE acts on.
 //
@@ -525,15 +530,23 @@ func (p atlasParser) parseSchema(block *hclsyntax.Block, cfg *Config) error {
 			}
 		}
 	}
-	seenMode := false
+	seen := map[string]struct{}{}
 	for _, nested := range block.Body.Blocks {
 		switch nested.Type {
 		case "mode":
-			if seenMode {
+			if _, duplicate := seen[nested.Type]; duplicate {
 				return unsupportedBlock(nested)
 			}
-			seenMode = true
+			seen[nested.Type] = struct{}{}
 			if err := p.parseSchemaMode(nested, cfg); err != nil {
+				return err
+			}
+		case "repo":
+			if _, duplicate := seen[nested.Type]; duplicate {
+				return unsupportedBlock(nested)
+			}
+			seen[nested.Type] = struct{}{}
+			if err := p.parseSchemaRepo(nested, cfg); err != nil {
 				return err
 			}
 		default:
@@ -543,6 +556,35 @@ func (p atlasParser) parseSchema(block *hclsyntax.Block, cfg *Config) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// parseSchemaRepo decodes env.schema.repo, whose only decoded attribute is a
+// string `name`. See SchemaRepoConfig for what the pinned community binary was
+// measured to do with the value: type-check it, and nothing else.
+func (p atlasParser) parseSchemaRepo(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
+		switch attrName {
+		case "name":
+			value, err := p.stringAttr(attrName, attr)
+			if err != nil {
+				return err
+			}
+			cfg.Schema.Repo.Name = value
+			cfg.presence.mark(fieldSchemaRepoName)
+		default:
+			if err := p.tolerateUnknownAttr("env.schema.repo", attrName, attr); err != nil {
+				return err
+			}
+		}
+	}
+	if len(block.Body.Blocks) > 0 {
+		return unsupportedBlock(block.Body.Blocks[0])
 	}
 	return nil
 }
@@ -768,6 +810,29 @@ func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) 
 		case "concurrent_index":
 			if err := p.parseSingleLintBlock(nested, seen, func() error {
 				return p.parseLintAnalyzer(nested, cfg, "PG101", "PG103")
+			}); err != nil {
+				return err
+			}
+		case "condrop":
+			// Atlas's condrop analyzer owns the constraint-deletion family, and
+			// it is a distinct analyzer from data_depend despite CE's decode
+			// error naming datadepend's option struct. Measured on the pinned
+			// community binary against a migration that drops a foreign key:
+			//
+			//	no lint block          -> exit 0, "1 version with warnings"
+			//	condrop     error=true -> exit 1, "1 version with errors"
+			//	destructive error=true -> exit 0, "1 version with warnings"
+			//
+			// so condrop, not destructive, escalates the diagnostic CE reports
+			// as CD101. Ptah's CD family (CD101 foreign key, CD102 check, CD103
+			// primary key) is the same family. DS105 rides with it because it is
+			// Ptah's untyped fallback for the ANSI `DROP CONSTRAINT <name>` form
+			// whose type the SQL does not reveal -- and that is precisely the
+			// statement CE attributed to CD101 in the measurement above, so
+			// leaving it out would let `condrop { error = false }` be accepted
+			// and change nothing for the most common spelling.
+			if err := p.parseSingleLintBlock(nested, seen, func() error {
+				return p.parseLintAnalyzer(nested, cfg, "CD", "DS105")
 			}); err != nil {
 				return err
 			}
@@ -1032,9 +1097,7 @@ func (p atlasParser) parseDiffSkip(block *hclsyntax.Block, cfg *Config) error {
 		case "drop_table":
 			cfg.Diff.Skip.DropTable = value
 		case "drop_schema":
-			if err := p.tolerateUnknownAttr("diff.skip", attrName, attr); err != nil {
-				return err
-			}
+			cfg.Diff.Skip.DropSchema = value
 		default:
 			if err := p.tolerateUnknownAttr("diff.skip", attrName, attr); err != nil {
 				return err
