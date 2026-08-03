@@ -80,8 +80,9 @@ func TestCompatCommand_MigrateLintDefaultTextDestructive(t *testing.T) {
 			"\n"+
 			"  -- analyzing version 2\n"+
 			"    -- destructive changes detected:\n"+
-			"      -- L1 [DS102]: DROP TABLE permanently deletes the table and every row in it; take a\n"+
-			"         verified backup first and consider a rename-and-retire window instead\n"+
+			"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n"+
+			"    -- suggested fix:\n"+
+			"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n"+
 			"  -- ok (DUR)\n"+
 			"\n"+
 			"  -------------------------\n"+
@@ -89,6 +90,131 @@ func TestCompatCommand_MigrateLintDefaultTextDestructive(t *testing.T) {
 			"  -- 1 version with errors\n"+
 			"  -- 1 schema change\n"+
 			"  -- 1 diagnostic\n")
+}
+
+func TestCompatCommand_MigrateLintDefaultTextDropColumn(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	devDB := "sqlite://" + filepath.Join(t.TempDir(), "drop-column.db")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE \"Users\" (id int PRIMARY KEY, \"Legacy\" text);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE \"Users\" DROP COLUMN \"Legacy\";\n")
+
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", dir, "--dev-url", devDB, "--latest", "1")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
+		"Analyzing changes from version 1 to 2 (1 migration in total):\n"+
+			"\n"+
+			"  -- analyzing version 2\n"+
+			"    -- destructive changes detected:\n"+
+			"      -- L1: Dropping non-virtual column \"Legacy\" https://atlasgo.io/lint/analyzers#DS103\n"+
+			"    -- suggested fix:\n"+
+			"      -> Add a pre-migration check to ensure column \"Legacy\" is NULL before dropping it\n"+
+			"  -- ok (DUR)\n"+
+			"\n"+
+			"  -------------------------\n"+
+			"  -- DUR\n"+
+			"  -- 1 version with errors\n"+
+			"  -- 1 schema change\n"+
+			"  -- 1 diagnostic\n")
+}
+
+func TestCompatCommand_MigrateLintDefaultTextWrapsDropColumnAtMeasuredBoundary(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	devDB := "sqlite://" + filepath.Join(t.TempDir(), "drop-column-wrap.db")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int PRIMARY KEY, c1234567890123456 text);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users DROP COLUMN c1234567890123456;\n")
+
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", dir, "--dev-url", devDB, "--latest", "1")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
+		"Analyzing changes from version 1 to 2 (1 migration in total):\n"+
+			"\n"+
+			"  -- analyzing version 2\n"+
+			"    -- destructive changes detected:\n"+
+			"      -- L1: Dropping non-virtual column \"c1234567890123456\"\n"+
+			"         https://atlasgo.io/lint/analyzers#DS103\n"+
+			"    -- suggested fix:\n"+
+			"      -> Add a pre-migration check to ensure column \"c1234567890123456\" is NULL before dropping\n"+
+			"         it\n"+
+			"  -- ok (DUR)\n"+
+			"\n"+
+			"  -------------------------\n"+
+			"  -- DUR\n"+
+			"  -- 1 version with errors\n"+
+			"  -- 1 schema change\n"+
+			"  -- 1 diagnostic\n")
+}
+
+func TestCompatCommand_MigrateLintDefaultTextNormalizesTypeAndIdentifiers(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	devDB := "sqlite://" + filepath.Join(t.TempDir(), "normalize.db")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE \"Users\" (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE \"Users\" ADD COLUMN \"Display Name\" VARCHAR(255) NOT NULL;\n")
+
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", dir, "--dev-url", devDB, "--latest", "1")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
+		"Analyzing changes from version 1 to 2 (1 migration in total):\n"+
+			"\n"+
+			"  -- analyzing version 2\n"+
+			"    -- data dependent changes detected:\n"+
+			"      -- L1: Adding a non-nullable \"varchar\" column \"Display Name\" will fail in case table\n"+
+			"         \"Users\" is not empty https://atlasgo.io/lint/analyzers#MF103\n"+
+			"  -- ok (DUR)\n"+
+			"\n"+
+			"  -------------------------\n"+
+			"  -- DUR\n"+
+			"  -- 1 version with warnings\n"+
+			"  -- 1 schema change\n"+
+			"  -- 1 diagnostic\n")
+}
+
+func TestCompatCommand_MigrateLintDefaultTextWrapsAnalyzerURLAtMeasuredBoundary(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	devDB := "sqlite://" + filepath.Join(t.TempDir(), "wrap.db")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE abcdefghijklmnopqrs (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "DROP TABLE abcdefghijklmnopqrs;\n")
+
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", dir, "--dev-url", devDB, "--latest", "1")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
+		"Analyzing changes from version 1 to 2 (1 migration in total):\n"+
+			"\n"+
+			"  -- analyzing version 2\n"+
+			"    -- destructive changes detected:\n"+
+			"      -- L1: Dropping table \"abcdefghijklmnopqrs\"\n"+
+			"         https://atlasgo.io/lint/analyzers#DS102\n"+
+			"    -- suggested fix:\n"+
+			"      -> Add a pre-migration check to ensure table \"abcdefghijklmnopqrs\" is empty before\n"+
+			"         dropping it\n"+
+			"  -- ok (DUR)\n"+
+			"\n"+
+			"  -------------------------\n"+
+			"  -- DUR\n"+
+			"  -- 1 version with errors\n"+
+			"  -- 1 schema change\n"+
+			"  -- 1 diagnostic\n")
+}
+
+func TestCompatCommand_MigrateLintDefaultTextDoesNotFabricateAtlasLinks(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	devDB := "sqlite://" + filepath.Join(t.TempDir(), "unmapped.db")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users RENAME COLUMN id TO oid;\n")
+
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", dir, "--dev-url", devDB, "--latest", "1")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Contains, "L1 [BC101]:")
+	c.Assert(stdout, qt.Not(qt.Contains), "https://atlasgo.io/lint/analyzers#BC101")
 }
 
 func TestCompatCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T) {
@@ -106,8 +232,8 @@ func TestCompatCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T) 
 			"\n"+
 			"  -- analyzing version 2\n"+
 			"    -- data dependent changes detected:\n"+
-			"      -- L1 [MF103]: adding a NOT NULL column without a DEFAULT fails or blocks on populated\n"+
-			"         tables; add it nullable, backfill, then enforce NOT NULL in a later migration\n"+
+			"      -- L1: Adding a non-nullable \"int\" column \"c2\" will fail in case table \"users\" is not empty\n"+
+			"         https://atlasgo.io/lint/analyzers#MF103\n"+
 			"  -- ok (DUR)\n"+
 			"\n"+
 			"  -------------------------\n"+
@@ -118,7 +244,7 @@ func TestCompatCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T) 
 }
 
 // TestCompatCommand_MigrateLintDefaultTextAddNotNullFixture reproduces the
-// imported cli-migrate-lint-add-notnull txtar fixture byte-for-byte: version 1
+// imported Atlas cli-migrate-lint-add-notnull txtar fixture byte-for-byte: version 1
 // adds a NOT NULL column to a table created in the same file (exempt), version 2
 // adds one to the now-pre-existing table (MF103) and one with a DEFAULT (no
 // report).
@@ -141,8 +267,8 @@ func TestCompatCommand_MigrateLintDefaultTextAddNotNullFixture(t *testing.T) {
 			"\n"+
 			"  -- analyzing version 2\n"+
 			"    -- data dependent changes detected:\n"+
-			"      -- L1 [MF103]: adding a NOT NULL column without a DEFAULT fails or blocks on populated\n"+
-			"         tables; add it nullable, backfill, then enforce NOT NULL in a later migration\n"+
+			"      -- L1: Adding a non-nullable \"int\" column \"c2\" will fail in case table \"users\" is not empty\n"+
+			"         https://atlasgo.io/lint/analyzers#MF103\n"+
 			"  -- ok (DUR)\n"+
 			"\n"+
 			"  -------------------------\n"+
@@ -175,7 +301,7 @@ func TestCompatCommand_MigrateLintDefaultTextInlineSuppressed(t *testing.T) {
 			"  -- 2 schema changes\n")
 }
 
-// atlasProjectLintLogConfig mirrors the imported cli-migrate-lint-project
+// atlasProjectLintLogConfig mirrors the imported Atlas cli-migrate-lint-project
 // fixture: a global lint.log-free analysis policy plus per-env lint.log
 // templates that render the migrate lint output.
 const atlasProjectLintLogConfig = `lint {
