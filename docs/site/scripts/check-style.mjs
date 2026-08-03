@@ -436,6 +436,58 @@ function contradictionViolations(lines) {
   return findings;
 }
 
+// A claim that a gap is tracked somewhere else. "Tracked" is a promise that an
+// owner exists; these are the spellings that make it without naming one.
+const trackingClaim = /\btracked\s+(?:separately|elsewhere|in\s+a\s+separate\b)/i;
+
+// An issue reference, in either spelling the documentation uses: a bare #1234
+// or a link to the issues tracker.
+const issueReference = /#\d+|\/issues\/\d+/;
+
+// trackingClaimViolations reports prose that says a gap is tracked separately
+// without naming the tracker.
+//
+// A reader who meets "that is tracked separately" concludes the gap has an
+// owner and stops worrying about it. When no issue exists, the sentence has
+// upgraded an open hole into apparent process, and nothing in the repository
+// disagrees with it — which is exactly how one shipped on the atlas.sum
+// enumeration in this page. Naming the issue keeps the claim checkable; saying
+// plainly that nothing tracks it yet is the honest alternative and passes here
+// too, because it makes no tracking claim at all.
+//
+// Scoped to the paragraph so a table cell or a sentence can carry its own
+// reference rather than relying on one elsewhere on the page.
+function trackingClaimViolations(lines) {
+  const findings = [];
+  let buffer = [];
+  let start = 0;
+
+  const flush = () => {
+    if (buffer.length === 0) return;
+    const paragraph = buffer.join(' ');
+    if (trackingClaim.test(paragraph) && !issueReference.test(paragraph)) {
+      findings.push({
+        line: start,
+        message:
+          'claims a gap is "tracked separately" without naming an issue; ' +
+          'cite the issue or say plainly that nothing tracks it yet',
+      });
+    }
+    buffer = [];
+  };
+
+  for (const [index, line] of lines.entries()) {
+    if (line.trim() === '') {
+      flush();
+      continue;
+    }
+    if (buffer.length === 0) start = index + 1;
+    buffer.push(line.trim());
+  }
+  flush();
+  return findings;
+}
+
 // bareFlagViolations reports a --flag written outside a code span. Astro's
 // smartypants pass renders a bare double hyphen as an en dash, so the reader
 // sees a typographic dash where a flag was meant and copies a broken token.
@@ -524,6 +576,7 @@ export function analyze(source, options = {}) {
   findings.push(...tableViolations(text));
   findings.push(...paragraphViolations(text));
   findings.push(...contradictionViolations(text));
+  findings.push(...trackingClaimViolations(text));
   if (siteContent) findings.push(...bareFlagViolations(text));
   findings.push(...fenceErrors);
   return findings.sort((a, b) => a.line - b.line);
@@ -606,6 +659,10 @@ function selftest() {
     '',
     // A bare flag outside any code span.
     'Pass --dry-run to preview the plan.',
+    '',
+    // A gap declared tracked with no issue named anywhere in the paragraph.
+    'Gating the two verbs is deferred. That is tracked separately, because it',
+    'interacts with the bootstrap flow.',
   ].join('\n');
 
   const expected = [
@@ -624,6 +681,7 @@ function selftest() {
     { line: 47, needle: 'over the 350 limit' },
     { line: 49, needle: 'over the 900 limit' },
     { line: 66, needle: 'bare flag "--dry-run"' },
+    { line: 68, needle: 'without naming an issue' },
   ];
 
   const findings = analyze(violating);
@@ -729,6 +787,14 @@ function selftest() {
     '| --- | --- |',
     '| `migrate rebase {name \\| version}` | Re-timestamp one migration. |',
     `| Evidence | See [the report](https://example.com/${'p'.repeat(400)}). |`,
+    '',
+    // Both honest shapes of the tracking rule: one names its issue, the other
+    // says outright that nothing tracks the gap. Without this pair the rule
+    // could be reduced to "never write the word tracked" and still selftest.
+    'Gating the two verbs is tracked separately in',
+    '[#1234](https://github.com/stokaro/ptah/issues/1234).',
+    '',
+    'The two verbs stay divergent. No issue tracks closing that gap yet.',
   ].join('\n');
 
   for (const finding of analyze(clean)) {

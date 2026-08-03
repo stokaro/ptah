@@ -281,5 +281,122 @@ for d in nosql subonly; do
 done
 
 echo
+echo "===== 12. the integrity gate reaches status and set, not only hash/validate (#974)"
+# Sections 1-11 only ever ask hash and validate about atlas.sum. That is exactly
+# how #974 survived: `migrate status` and `migrate set` read the same directory
+# through the same capture step and reported normally on one the community
+# binary refuses. This section walks the five directory states plus the two
+# exemptions across both verbs.
+#
+# Refusal rows compare the exit code AND both streams separately, because three
+# of the interesting inputs already exit 1 for an unrelated reason and an
+# exit-code-only comparison would coincide.
+#
+# Exempt rows compare the exit code only: on a directory both tools accept, the
+# two report formats differ by design ("Migration Status: OK" against
+# "=== MIGRATION STATUS ==="), which is a reporting divergence outside this
+# gate's scope.
+
+# native_seed <dir> <state> — one Atlas migration in the requested drift state.
+native_seed() {
+  local d="$BASE/$1" state="$2"
+  rm -rf "$d"; mkdir -p "$d"
+  printf 'CREATE TABLE t1 (id INTEGER PRIMARY KEY);\n' > "$d/20260101000000_init.sql"
+  case "$state" in
+    unhashed) : ;;
+    clean)    "$ATLAS" migrate hash --dir "file://$d" >/dev/null 2>&1 ;;
+    edited)   "$ATLAS" migrate hash --dir "file://$d" >/dev/null 2>&1
+              printf '\n-- edited after hashing\n' >> "$d/20260101000000_init.sql" ;;
+    added)    "$ATLAS" migrate hash --dir "file://$d" >/dev/null 2>&1
+              printf 'CREATE TABLE t2 (id INTEGER PRIMARY KEY);\n' > "$d/20260102000000_two.sql" ;;
+    removed)  "$ATLAS" migrate hash --dir "file://$d" >/dev/null 2>&1
+              rm -f "$d/20260101000000_init.sql" ;;
+    empty)    rm -f "$d/20260101000000_init.sql" ;;
+    nonsql)   rm -f "$d/20260101000000_init.sql"
+              printf 'migrations live here\n' > "$d/README.md" ;;
+    nested)   rm -f "$d/20260101000000_init.sql"; mkdir -p "$d/sub"
+              printf 'CREATE TABLE n (id INTEGER PRIMARY KEY);\n' > "$d/sub/20260101000000_init.sql" ;;
+  esac
+  echo "$d"
+}
+
+# gate_row <verb> <state> <mode> [extra args...]
+#   mode=streams  compare exit code and both streams (a refusal is expected)
+#   mode=exit     compare exit code only (the state is exempt on both tools)
+#   mode=report   print both, never fail (a recorded known divergence)
+gate_row() {
+  local verb="$1" state="$2" mode="$3"; shift 3
+  local ce ptah ceout cerr cerc ptout pterr ptrc verdict
+  ce=$(native_seed "g-ce-$verb-$state" "$state")
+  ptah=$(native_seed "g-pt-$verb-$state" "$state")
+  local ceargs=() ptargs=()
+  case "$verb" in
+    status) ceargs=(migrate status --url "sqlite://$ce.db"   --dir "file://$ce")
+            ptargs=(migrate status --url "sqlite://$ptah.db" --dir "file://$ptah") ;;
+    set)    ceargs=(migrate set 20260101000000 --url "sqlite://$ce.db"   --dir "file://$ce")
+            ptargs=(migrate set 20260101000000 --url "sqlite://$ptah.db" --dir "file://$ptah") ;;
+  esac
+  ceout=$("$ATLAS"  "${ceargs[@]}" "$@" 2>"$BASE/g.err"); cerc=$?; cerr=$(cat "$BASE/g.err")
+  ptout=$("$COMPAT" "${ptargs[@]}" "$@" 2>"$BASE/g.err"); ptrc=$?; pterr=$(cat "$BASE/g.err")
+  case "$mode" in
+    streams) [ "$cerc" = "$ptrc" ] && [ "$ceout" = "$ptout" ] && [ "$cerr" = "$pterr" ] \
+               && verdict=MATCH || { verdict=DIFFER; fail=1; } ;;
+    exit)    [ "$cerc" = "$ptrc" ] && verdict="MATCH(exit)" || { verdict=DIFFER; fail=1; } ;;
+    report)  verdict=KNOWN-DIVERGENCE ;;
+  esac
+  printf '  %-6s %-8s %-16s CE exit=%s  ptah exit=%s\n' "$verb" "$state" "$verdict" "$cerc" "$ptrc"
+  if [ "$verdict" != MATCH ] && [ "$verdict" != "MATCH(exit)" ]; then
+    printf '       CE   out=[%s] err=[%s]\n' "$(echo "$ceout" | tr '\n' '|')" "$(echo "$cerr" | tr '\n' '|')"
+    printf '       ptah out=[%s] err=[%s]\n' "$(echo "$ptout" | tr '\n' '|')" "$(echo "$pterr" | tr '\n' '|')"
+  fi
+}
+
+for verb in status set; do
+  for state in unhashed edited added removed; do
+    gate_row "$verb" "$state" streams
+  done
+  for state in clean empty nonsql; do
+    gate_row "$verb" "$state" exit
+  done
+  # The community binary ignores subdirectories; Ptah's registrar recurses, so
+  # the shared recursive predicate refuses here where that binary exits 0. A
+  # deliberate, pinned divergence (#976), recorded rather than enforced.
+  gate_row "$verb" nested report
+done
+
+echo
+echo "  ordering: the refusal precedes the connection and the arity check"
+ordr=$(native_seed "g-order" unhashed)
+out=$("$COMPAT" migrate status --url "postgres://u:p@127.0.0.1:1/db?sslmode=disable" --dir "file://$ordr" 2>&1); rc=$?
+printf '    ptah status unreachable --url  exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|')"
+out=$("$ATLAS" migrate status --url "postgres://u:p@127.0.0.1:1/db?sslmode=disable" --dir "file://$ordr" 2>&1); rc=$?
+printf '    CE   status unreachable --url  exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|')"
+out=$("$COMPAT" migrate set --url "sqlite://$ordr.arity.db" --dir "file://$ordr" 2>&1); rc=$?
+printf '    ptah set zero positionals      exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|')"
+out=$("$ATLAS" migrate set --url "sqlite://$ordr.arity.db" --dir "file://$ordr" 2>&1); rc=$?
+printf '    CE   set zero positionals      exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|')"
+
+echo
+echo "  still ungated on both sides: migrate lint reads an unhashed directory"
+lintd=$(native_seed "g-lint" unhashed)
+out=$("$COMPAT" migrate lint --dir "file://$lintd" --dev-url "sqlite://$lintd.lint.db" --latest 1 2>&1); rc=$?
+printf '    ptah lint  exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-90)"
+out=$("$ATLAS" migrate lint --dir "file://$lintd" --dev-url "sqlite://$lintd.lint2.db" --latest 1 2>&1); rc=$?
+printf '    CE   lint  exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-90)"
+
+echo
+echo "  STILL DIVERGENT, and no issue tracks it yet: migrate new and migrate diff"
+echo "  write an atlas.sum over a directory nothing verified, turning drift into"
+echo "  apparent cleanliness. Deliberately out of scope for #974 — gating them"
+echo "  interacts with the empty-directory bootstrap flow and needs its own"
+echo "  predicate measurement."
+newd=$(native_seed "g-new" unhashed)
+out=$("$COMPAT" migrate new addcol --dir "file://$newd" 2>&1); rc=$?
+printf '    ptah new   exit=%s sum=%s\n' "$rc" "$([ -f "$newd/atlas.sum" ] && echo WRITTEN || echo none)"
+cend=$(native_seed "g-new-ce" unhashed)
+out=$("$ATLAS" migrate new addcol --dir "file://$cend" 2>&1); rc=$?
+printf '    CE   new   exit=%s sum=%s [%s]\n' "$rc" "$([ -f "$cend/atlas.sum" ] && echo WRITTEN || echo none)" "$(echo "$out" | tr '\n' '|' | cut -c1-60)"
+
+echo
 [ "$fail" = 0 ] && echo "ALL DIFFERENTIAL CHECKS MATCHED" || echo "SOME DIFFERENTIAL CHECKS FAILED"
 exit "$fail"

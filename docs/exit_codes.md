@@ -117,17 +117,25 @@ the first mismatched `atlas.sum` line, file, and reason. The native
 malformed or missing sum files are usage failures with exit `2`, while valid
 integrity drift exits `1` with Ptah's native drift report.
 
-`migrate apply` refuses the same two directory states with the same exit code
-and the same output, before it opens the target database: a mismatched
-`atlas.sum` and a missing one. The missing-file refusal requires at least one
-`.sql` file anywhere in the directory tree; an empty or `.gitkeep`-only
-directory exits `0`
-with `No migration files to execute`. Directories read through `?format=` are
-gated the same way, over the file set Atlas covers for that layout, so a
-golang-migrate down file and a Flyway undo file are outside the check and a
-layout that carries no `atlas.sum` and whose covered set is empty is not
-refused. A hashed directory whose covered set is empty is still verified, and a
-drifted one exits `1`. Native
-`ptah migrations up` verifies a hashed directory the same way (exit `2` with
-Ptah's drift report) but applies a never-hashed directory unless `--verify-sum`
-is passed.
+`migrate apply`, `migrate status`, and `migrate set` refuse the same two
+directory states with the same exit code and the same output, before they open
+the target database: a mismatched `atlas.sum` and a missing one
+([#974](https://github.com/stokaro/ptah/issues/974) extended the gate from
+`apply` alone to all three).
+
+- On `migrate set` the refusal also precedes the positional-version check, so a
+  wrong argument count on an unverified directory still reports the checksum
+  error.
+- The missing-file refusal requires at least one `.sql` file anywhere in the
+  directory tree; an empty or `.gitkeep`-only directory exits `0` with
+  `No migration files to execute`.
+- Directories read through `?format=` are gated the same way on `migrate apply`,
+  over the file set Atlas covers for that layout, so a golang-migrate down file
+  and a Flyway undo file are outside the check and a layout that carries no
+  `atlas.sum` and whose covered set is empty is not refused. A hashed directory
+  whose covered set is empty is still verified, and a drifted one exits `1`.
+- `migrate lint` is deliberately not gated, on either tool.
+
+Native `ptah migrations up` verifies a hashed directory the same way (exit `2`
+with Ptah's drift report) but applies a never-hashed directory unless
+`--verify-sum` is passed.

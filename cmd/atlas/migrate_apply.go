@@ -365,28 +365,16 @@ func runAtlasMigrateApply(
 // hasher, while a converted one is hashed over the per-format file set Atlas CE
 // selects, which for golang-migrate excludes the down file and for Flyway drops
 // undo files, squashes baselines, and reaches into subdirectories (#984).
+//
+// The native branch lives in migrate_integrity_gate.go, shared verbatim with
+// `migrate status` and `migrate set`, which read native Atlas directories only
+// (#974). Apply keeps the dispatcher because it is the one verb that can also
+// reach a converted directory.
 func verifyAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS, format atlasmigrateimport.Format) error {
 	if atlasmigrate.ReadsNativeAtlasDir(format) {
-		return verifyNativeAtlasApplyChecksum(cmd, fsys)
+		return verifyNativeAtlasDirChecksum(cmd, fsys)
 	}
 	return verifyConvertedAtlasApplyChecksum(cmd, fsys, format)
-}
-
-func verifyNativeAtlasApplyChecksum(cmd *cobra.Command, fsys fs.FS) error {
-	result, hashed, err := migratesum.VerifyHashed(fsys, migrator.MigrationDirFormatAtlas)
-	switch {
-	case errors.Is(err, migratesum.ErrSumFileMalformed):
-		// A malformed atlas.sum has no entry-level mismatch to point at; the
-		// validate surface reports it as a plain checksum mismatch.
-		return migratevalidate.FailAtlasChecksumMismatch(cmd, nil)
-	case err != nil:
-		return err
-	case !hashed:
-		return failUnhashedAtlasApplyDir(cmd, fsys)
-	case !result.OK():
-		return migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())
-	}
-	return nil
 }
 
 // verifyConvertedAtlasApplyChecksum verifies a directory laid out in a foreign
@@ -436,55 +424,6 @@ func verifyConvertedAtlasApplyChecksum(
 		return migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())
 	}
 	return nil
-}
-
-// failUnhashedAtlasApplyDir refuses a NATIVE Atlas directory that carries no
-// atlas.sum, unless it holds no SQL file anywhere in its tree.
-//
-// The exemption exists because a directory with nothing to execute is not a
-// checksum error: Atlas CE v1.2.0 reports "No migration files to execute" and
-// exits 0 on an empty directory and on one holding only non-SQL files, so a CI
-// bootstrap that creates an empty migrations directory keeps working (#970).
-// The gate fires on the presence of a SQL file, not on parseable versioned
-// migrations — CE refuses an unhashed directory holding only `foo.sql`, and so
-// does this.
-//
-// The scan is recursive even though CE's is not. CE ignores subdirectories
-// entirely, so a migration one level down is nothing-to-execute for CE but is
-// executed by Ptah's registrar, which recurses. Keying the exemption on CE's
-// shallower view would let exactly the unhashed migrations this gate exists to
-// stop run unverified. The result is exit 1 where CE exits 0 for that layout —
-// the safe side of a pre-existing divergence in what the two tools consider a
-// migration (#976).
-//
-// That asymmetry is why a converted directory uses a different predicate
-// instead of reusing this one. It is the same asymmetry that produced the #972
-// commit-2 regression tracked as #976, so it is worth stating in both places:
-// on the converted path Ptah's own loader reads only top-level files, so the
-// shallow per-format covered set is both correct and precise there, and
-// recursing would refuse layouts CE and Ptah agree have nothing to execute.
-// Flyway is the exception that proves it is about the covered set rather than
-// about depth — CE hashes sub/V2__nested.sql, so an unhashed Flyway directory
-// whose only migration sits one level down is refused on both tools.
-func failUnhashedAtlasApplyDir(cmd *cobra.Command, fsys fs.FS) error {
-	var foundSQL bool
-	err := fs.WalkDir(fsys, ".", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || !strings.HasSuffix(path, ".sql") {
-			return nil
-		}
-		foundSQL = true
-		return fs.SkipAll
-	})
-	if err != nil {
-		return fmt.Errorf("scan migration directory for SQL files: %w", err)
-	}
-	if !foundSQL {
-		return nil
-	}
-	return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
 }
 
 // applySkipChecksEnvVar gates pre-migration checks on the compat apply path.
