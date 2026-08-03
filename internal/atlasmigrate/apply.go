@@ -26,7 +26,7 @@ type ApplyOptions struct {
 	// OutOfOrderExempt lists converted versions whose position below the
 	// current high-water mark is an artifact of the layout projection rather
 	// than a claim about authoring order. Only the Flyway converted path sets
-	// it; see atlasmigrateimport.FlywayBaselineAtlasVersion.
+	// it; see atlasmigrateimport.FlywaySurvivingBaseline.
 	OutOfOrderExempt     []int64
 	TxMode               migrator.MigrationTxMode
 	RevisionsSchema      string

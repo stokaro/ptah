@@ -333,7 +333,7 @@ func TestCompatMigrateApply_LegacyFlywayRefusalPrecedesExecutionOnDDL(t *testing
 // The converted baseline lands in the LOW band, below every recorded version,
 // which the linear guard used to read as an out-of-order migration. That
 // position encodes Atlas CE's sum order, not authoring order, so the version is
-// exempted from the guard. See atlasmigrateimport.FlywayBaselineAtlasVersion.
+// exempted from the guard. See atlasmigrateimport.FlywaySurvivingBaseline.
 func TestCompatMigrateApply_FlywayBaselineAfterApply(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
@@ -469,44 +469,312 @@ func TestCompatMigrateApply_GooseKeepsTheOutOfOrderGuard(t *testing.T) {
 	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"ga", "gc"})
 }
 
-// TestCompatMigrateApply_FlywayBaselineBelowHighWaterMark_KnownDivergence pins
-// the two shapes where Ptah is LOUDER than Atlas CE, deliberately.
+// flywayMigration is one file written into the directory under test.
+type flywayMigration struct {
+	name string
+	sql  string
+}
+
+// flywayBaselineRun is the measured result of the apply under test.
+type flywayBaselineRun struct {
+	stdout string
+	stderr string
+	err    error
+	dir    string
+	dbPath string
+}
+
+// message is everything the caller could have seen: the refusal reaches a
+// caller both as the returned error and on stderr.
+func (r flywayBaselineRun) message() string {
+	return errorText(r.err) + r.stderr
+}
+
+// writeFlywayMigrations writes files into the directory under test.
+func writeFlywayMigrations(c *qt.C, dir string, files []flywayMigration) {
+	c.Helper()
+	for _, file := range files {
+		writeAtlasApplyProjectMigration(c, dir, file.name, file.sql)
+	}
+}
+
+// seedFlyway applies files first, leaving the database with recorded migration
+// history — the precondition every refusing row below depends on.
+func seedFlyway(files ...flywayMigration) func(c *qt.C, dir, dbPath string) {
+	return func(c *qt.C, dir, dbPath string) {
+		c.Helper()
+		writeFlywayMigrations(c, dir, files)
+		hashConvertedApplyDir(c, dir, "flyway")
+		stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+		// A seed that recorded nothing would make the row below vacuous: the
+		// check under test returns early on a database with no history.
+		c.Assert(revisionVersions(c, dbPath), qt.HasLen, len(files))
+	}
+}
+
+// TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory replaces
+// TestCompatMigrateApply_FlywayBaselineBelowHighWaterMark_KnownDivergence,
+// which pinned the divergence this decides (stokaro/ptah#1003).
 //
-// CE decides pending-ness by comparing the version token as a STRING against the
-// current high-water mark, so a baseline whose token does not sort above it is
-// silently considered applied and never runs. Measured:
+// That test used V1,V2,V3 + B2, a shape that separates nothing: B2's token "2"
+// is already a recorded revision there, so "skipped because that version is
+// recorded" and "skipped because it sorts below the mark" both predict what was
+// observed. V2 applied + B10__base.sql is the input that tells them apart —
+// "10" is in no revision row and is numerically above the mark — and the pinned
+// Atlas CE v1.3.0 still skips it, silently, at exit 0.
 //
-//	V2 applied, B10 added   -> CE "No migration files to execute", table base absent
-//	V1,V2,V3 applied, B2 added -> CE "No migration files to execute", base absent
-//
-// Ptah keys pending-ness on the recorded set instead, so it runs the baseline.
-// Whether ptah-compat should reproduce the silent skip for drop-in fidelity is
-// stokaro/ptah#1003; it is a decision, not a defect, and neither side is
-// implemented here.
-func TestCompatMigrateApply_FlywayBaselineBelowHighWaterMark_KnownDivergence(t *testing.T) {
+// Ptah refuses instead of reproducing that skip, and refuses instead of running
+// the baseline blindly. See checkFlywayBaselineHistory for why, and for the
+// three incompatible answers CE gives files of this one class. Each row below
+// is a measured cell of that matrix; the CE column is stated per row so a
+// future change to either side is comparable against something.
+func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("a baseline whose token does not sort above the high-water mark", func(c *qt.C) {
-		root := c.TempDir()
-		dir := filepath.Join(root, "migrations")
-		dbPath := filepath.Join(root, "skip.db")
-		writeAtlasApplyProjectMigration(c, dir, "V1__p.sql", "CREATE TABLE kp (id INTEGER PRIMARY KEY);")
-		writeAtlasApplyProjectMigration(c, dir, "V2__q.sql", "CREATE TABLE kq (id INTEGER PRIMARY KEY);")
-		writeAtlasApplyProjectMigration(c, dir, "V3__t.sql", "CREATE TABLE kt (id INTEGER PRIMARY KEY);")
-		hashConvertedApplyDir(c, dir, "flyway")
-		_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
-		c.Assert(err, qt.IsNil)
+	tests := []struct {
+		name   string
+		seed   func(c *qt.C, dir, dbPath string)
+		added  []flywayMigration
+		args   []string
+		assert func(c *qt.C, run flywayBaselineRun)
+	}{{
+		// The discriminating cell. CE: `No migration files to execute`, exit 0,
+		// table base absent and no output saying so.
+		name:  "a baseline the recorded history does not reach",
+		seed:  seedFlyway(flywayMigration{"V2__s2.sql", "CREATE TABLE s2 (id INTEGER PRIMARY KEY);"}),
+		added: []flywayMigration{{"B10__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
+			// Naming the source file is the whole difference from the silent
+			// skip: exit status alone cannot tell a reported outcome from an
+			// unreported one, and a no-op baseline body would leave the same
+			// tables either way.
+			c.Assert(run.message(), qt.Contains, "B10__base.sql")
+			c.Assert(run.message(), qt.Contains, "Flyway baseline")
+			// The blocking migration is named by its file, not by the int64 the
+			// token projects to. Atlas CE calls this migration `2`; a message
+			// asserting that 4611686018427510315 is in the way names a number
+			// the operator can find in neither their directory nor CE's output.
+			c.Assert(run.message(), qt.Contains, "V2__s2.sql")
+			// The route the refusal offers, spelled the way the row below runs
+			// it, so a message that starts naming some other flag cannot drift
+			// away from the one that was measured to work.
+			c.Assert(run.message(), qt.Contains, "--exec-order=non-linear")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"s2"})
+		},
+	}, {
+		// One digit apart from the row above, opposite outcome, which is what
+		// proves the rule is not "refuse every baseline". B3 squashes V2 out of
+		// the covered set, so nothing recorded here survives it. CE: executes
+		// the baseline, exit 0.
+		name:  "a baseline that squashes the whole recorded history",
+		seed:  seedFlyway(flywayMigration{"V2__s2.sql", "CREATE TABLE s2 (id INTEGER PRIMARY KEY);"}),
+		added: []flywayMigration{{"B3__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "s2"})
+		},
+	}, {
+		// The same relation with the numbers reversed: "2" outranks "10" as a
+		// string, so B2 squashes V10 and CE executes it, exit 0. Without this
+		// row a rule keyed on the numeric high-water mark would pass.
+		name:  "a baseline that squashes a two-digit recorded version",
+		seed:  seedFlyway(flywayMigration{"V10__s10.sql", "CREATE TABLE s10 (id INTEGER PRIMARY KEY);"}),
+		added: []flywayMigration{{"B2__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "s10"})
+		},
+	}, {
+		// The fresh-install path, which is what makes a converted Flyway
+		// directory usable for new environments at all. Same final directory as
+		// the discriminating row, empty database. CE: executes both, exit 0.
+		name: "the same directory against a database with no history",
+		seed: seedNothing,
+		added: []flywayMigration{
+			{"V2__s2.sql", "CREATE TABLE s2 (id INTEGER PRIMARY KEY);"},
+			{"B10__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"},
+		},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "s2"})
+		},
+	}, {
+		// Half (a): CE exits 1 here, `migration file B2.5__base.sql was added
+		// out of order`, while ptah-compat applied it at exit 0 before this
+		// change. The baseline's own token lands between two applied versions.
+		name: "a baseline whose token lands between two applied versions",
+		seed: seedFlyway(
+			flywayMigration{"V1__p.sql", "CREATE TABLE p (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V2__q.sql", "CREATE TABLE q (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V3__t.sql", "CREATE TABLE t (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{{"B2.5__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
+			c.Assert(run.message(), qt.Contains, "B2.5__base.sql")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"p", "q", "t"})
+		},
+	}, {
+		// Half (a) again, with two-digit versions: CE exits 1 naming
+		// B15__base.sql, ptah-compat applied it at exit 0 before this change.
+		name: "a two-digit baseline between two applied versions",
+		seed: seedFlyway(
+			flywayMigration{"V10__p.sql", "CREATE TABLE p (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V20__q.sql", "CREATE TABLE q (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{{"B15__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
+			c.Assert(run.message(), qt.Contains, "B15__base.sql")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"p", "q"})
+		},
+	}, {
+		// The ordinary squash: B2 retires V1 and V2, and version 2 is already
+		// applied here under the file that was retired. Nothing recorded
+		// survives in the covered set, so only the second clause of the rule
+		// sees this one. CE: silent skip, exit 0.
+		name: "a baseline carrying a version already applied",
+		seed: seedFlyway(
+			flywayMigration{"V1__p.sql", "CREATE TABLE p (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V2__q.sql", "CREATE TABLE q (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{{"B2__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
+			c.Assert(run.message(), qt.Contains, "B2__base.sql")
+			// The already-applied migration of the same version is named by the
+			// file it is, which is what the operator can look at. It is also the
+			// file the rows below prove is NOT found by a numeric comparison.
+			c.Assert(run.message(), qt.Contains, "V2__q.sql")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"p", "q"})
+		},
+	}, {
+		// Zero padding is ordinary Flyway practice, and flywayOrderingKey scores
+		// "2" and "02" identically ON PURPOSE — the two must run in the same
+		// position. Identity is the other question, and Atlas CE answers it on
+		// the token: measured, its stdout here is `Migrating to version 2 from
+		// 02` and it executes the baseline at exit 0, as did Ptah before the
+		// refusal landed. Answering identity with the ordering key instead
+		// refused this directory; reverting the fix prints `B2__base.sql is a
+		// Flyway baseline and this database already has migration history ...
+		// version 4611686018427510315 — a migration of the same version — is
+		// already applied` at exit 1, leaving tables p and q without base.
+		name: "a baseline beside two-digit zero-padded versions",
+		seed: seedFlyway(
+			flywayMigration{"V01__p.sql", "CREATE TABLE p (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V02__q.sql", "CREATE TABLE q (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{{"B2__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "p", "q"})
+		},
+	}, {
+		// The padding on the BASELINE's own token, against versions padded one
+		// digit further, so neither side of the comparison is the bare number.
+		// CE: `Migrating to version 02 from 002`, exit 0. Reverting the fix
+		// prints `B02__base.sql is a Flyway baseline ... version
+		// 4611686018427510315 — a migration of the same version — is already
+		// applied` at exit 1, leaving tables p and q without base.
+		name: "a zero-padded baseline beside three-digit zero-padded versions",
+		seed: seedFlyway(
+			flywayMigration{"V001__p.sql", "CREATE TABLE p (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V002__q.sql", "CREATE TABLE q (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{{"B02__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "p", "q"})
+		},
+	}, {
+		// A baseline landing in the MIDDLE of a padded run, so the collided
+		// version is neither the first nor the last revision — the ordering key
+		// picks it out of the middle of the recorded set just as readily. CE:
+		// `Migrating to version 6 from 07`, exit 0. Reverting the fix prints
+		// `B6__base.sql is a Flyway baseline ... version 4611686018427673531 — a
+		// migration of the same version — is already applied` at exit 1, leaving
+		// tables p, q and t without base.
+		name: "a baseline matching the middle of a zero-padded run",
+		seed: seedFlyway(
+			flywayMigration{"V05__p.sql", "CREATE TABLE p (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V06__q.sql", "CREATE TABLE q (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V07__t.sql", "CREATE TABLE t (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{{"B6__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "p", "q", "t"})
+		},
+	}, {
+		// The way forward the refusal prints, executed verbatim, and then the
+		// ordinary run that follows it. A refusal offering a route nobody ran is
+		// one failure mode; a route that leaves the directory refused forever is
+		// the other. CE applies a below-mark baseline under this flag too —
+		// measured on B2.5.
+		name:  "the printed escape hatch runs the baseline and settles the directory",
+		seed:  seedFlyway(flywayMigration{"V2__s2.sql", "CREATE TABLE s2 (id INTEGER PRIMARY KEY);"}),
+		added: []flywayMigration{{"B10__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		args:  []string{"--exec-order", "non-linear"},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "s2"})
 
-		// B2 supersedes V1 and V2 in the covered set. Its token "2" does not
-		// sort above CE's current "3", so CE never runs it.
-		writeAtlasApplyProjectMigration(c, dir, "B2__base.sql", "CREATE TABLE kbase (id INTEGER PRIMARY KEY);")
-		hashConvertedApplyDir(c, dir, "flyway")
-		stdout, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+			// The baseline is recorded now, so the next linear apply must be a
+			// quiet no-op rather than the same refusal a second time.
+			stdout, stderr, err := compatApplyConverted(run.dir, "flyway", run.dbPath)
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Contains, "No migration files to execute.")
+		},
+	}, {
+		// The prefix control: identical token, identical database, only B -> V.
+		// The new check must not have become a blanket "anything below the mark
+		// is refused", and the out-of-order guard must still be the one that
+		// speaks for an ordinary migration.
+		name:  "an ordinary migration below the mark keeps the out-of-order refusal",
+		seed:  seedFlyway(flywayMigration{"V2__s2.sql", "CREATE TABLE s2 (id INTEGER PRIMARY KEY);"}),
+		added: []flywayMigration{{"V1__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
+			c.Assert(run.message(), qt.Contains, "out-of-order pending migrations below current version")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"s2"})
+		},
+	}, {
+		// Both refusals apply to this directory, and the out-of-order one wins:
+		// it is the refusal CE reports for the same shape (measured, naming
+		// V2__b.sql) and the one whose flags resolve it.
+		name: "an out-of-order migration beside a baseline reports the guard",
+		seed: seedFlyway(
+			flywayMigration{"V1__a.sql", "CREATE TABLE ea (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V3__c.sql", "CREATE TABLE ec (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{
+			{"B0__base.sql", "CREATE TABLE ebase (id INTEGER PRIMARY KEY);"},
+			{"V2__b.sql", "CREATE TABLE eb (id INTEGER PRIMARY KEY);"},
+		},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
+			c.Assert(run.message(), qt.Contains, "out-of-order pending migrations below current version")
+			c.Assert(run.message(), qt.Not(qt.Contains), "Flyway baseline")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"ea", "ec"})
+		},
+	}}
 
-		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-		// Ptah runs it; Atlas CE leaves kbase absent.
-		c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"kbase", "kp", "kq", "kt"})
-	})
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			root := c.TempDir()
+			dir := filepath.Join(root, "migrations")
+			dbPath := filepath.Join(root, "baseline.db")
+			test.seed(c, dir, dbPath)
+			writeFlywayMigrations(c, dir, test.added)
+			hashConvertedApplyDir(c, dir, "flyway")
+
+			stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath, test.args...)
+
+			test.assert(c, flywayBaselineRun{stdout: stdout, stderr: stderr, err: err, dir: dir, dbPath: dbPath})
+		})
+	}
 }
 
 // userTables lists the non-Atlas tables in a sqlite database, sorted.
