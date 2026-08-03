@@ -2,6 +2,7 @@ package main_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -12,11 +13,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-// The Atlas-compatible binary is quiet: the pinned Atlas CE v1.2.0 binary
+// The Atlas-compatible binary is quiet: the pinned Atlas CE v1.3.0 binary
 // writes nothing to stderr for a dry run, and `--format` consumers redirect
 // stderr into stdout (`2>&1 | jq`), which the conformance harness's
 // atlas-cli-report-format probe does. The dry-run revision-state fix
@@ -56,6 +58,46 @@ func applyForReal(c *qt.C, binPath, dbPath, migrationsDir string) {
 	)
 	out, err := run.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+}
+
+func TestCompatBinaryMigrateDownRunsWithEOFStdin(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
+	dbPath := filepath.Join(c.TempDir(), "down-eof.db")
+	applyForReal(c, binPath, dbPath, migrationsDir)
+	t.Setenv("PTAH_CONFIRM", "not-a-boolean")
+
+	run := newCompatProcess(binPath,
+		"migrate", "down",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+		"--to-version", "0",
+	)
+	var stdout, stderr bytes.Buffer
+	run.Stdin = bytes.NewReader(nil)
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+
+	err := run.Run()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", stdout.String(), stderr.String()))
+	c.Assert(stdout.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")
+	c.Assert(stderr.String(), qt.Contains, "All migrations rolled back successfully")
+	c.Assert(stderr.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")
+	c.Assert(stderr.String(), qt.Not(qt.Contains), "read rollback confirmation")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	row := conn.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'quiet_users'`)
+	var tableCount int
+	c.Assert(row.Scan(&tableCount), qt.IsNil)
+	c.Assert(tableCount, qt.Equals, 0)
+	row = conn.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM atlas_schema_revisions`)
+	var revisionCount int
+	c.Assert(row.Scan(&revisionCount), qt.IsNil)
+	c.Assert(revisionCount, qt.Equals, 0)
 }
 
 // assertSingleJSONDocument asserts that combined holds exactly one JSON

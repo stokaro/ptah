@@ -124,7 +124,6 @@ func TestMigrateDownIgnoresTheSkipChecksEnvironmentTwin(t *testing.T) {
 				"--url", "sqlite://" + dbPath,
 				"--dir", "file://" + migrationsDir,
 				"--to-version", "20260801000001",
-				"--confirm",
 			}, tc.pathArgs...)
 
 			out, err := executeAtlasProjectCommand(args...)
@@ -178,7 +177,6 @@ func TestMigrateDownRefusesUnsupportedFlagEnvironmentTwins(t *testing.T) {
 				"migrate", "down",
 				"--url", "sqlite://" + dbPath,
 				"--dir", "file://" + migrationsDir,
-				"--confirm",
 			}, tc.pathArgs...)
 
 			out, err := executeAtlasProjectCommand(args...)
@@ -292,7 +290,6 @@ func TestMigrateDownStillRefusesExplicitUnsupportedFlags(t *testing.T) {
 				"--url", "sqlite://" + dbPath,
 				"--dir", "file://" + migrationsDir,
 				"--to-version", "20260801000001",
-				"--confirm",
 				tc.flag,
 			}, tc.pathArgs...)
 

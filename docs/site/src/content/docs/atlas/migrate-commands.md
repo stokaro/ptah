@@ -119,8 +119,8 @@ Status: Database is up to date
 ```
 
 Roll back using the `down.sql` section. A bare `ptah-compat migrate down` reads
-the Atlas revision rows `migrate apply` wrote, and asks for a `YES`
-confirmation before touching the database (`--dry-run` skips both):
+the Atlas revision rows `migrate apply` wrote and starts the rollback without
+reading stdin:
 
 ```bash
 ptah-compat migrate down \
@@ -135,6 +135,10 @@ Expected output ends with:
 ✅ Migration rollback completed successfully!
 Database is now at version: 0
 ```
+
+Review the URL, migration directory, and target before running the command.
+The Atlas-compatible surface has no confirmation prompt and does not accept
+the native `--confirm` flag. Native `ptah migrations down` keeps its prompt.
 
 Ptah validates every selected down body before rollback starts. If one is
 missing, the command leaves both the schema and Atlas revision rows unchanged.
