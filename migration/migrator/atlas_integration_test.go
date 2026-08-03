@@ -162,8 +162,12 @@ func TestAtlasTxtarChecks_MariaDBShortNumericPrefixRejectsNonSelectIntegration(t
 	runAtlasTxtarChecksShortNumericPrefixRejectsNonSelectIntegration(t, mariaDBAtlasTestURL(t))
 }
 
+// ClickHouse is measured on RevisionTableFormatAtlas like every other dialect.
+// It used to pass RevisionTableFormatPtah, which is the format ptah-compat never
+// selects, so the row stayed green while the Atlas revision path was completely
+// broken on this dialect (#950).
 func TestAtlasTxtarChecks_ClickHouseIntegration(t *testing.T) {
-	runAtlasTxtarChecksIntegration(t, clickHouseAtlasTestURL(t), migrator.RevisionTableFormatPtah)
+	runAtlasTxtarChecksIntegration(t, clickHouseAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
 }
 
 func TestAtlasTxtarChecks_SQLServerIntegration(t *testing.T) {
@@ -375,8 +379,11 @@ func TestDryRunRevisionState_YugabyteDBIntegration(t *testing.T) {
 	runDryRunRevisionStateIntegration(t, yugabyteDBAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
 }
 
+// This is the row #937 added and the one that surfaced #950. It measured
+// RevisionTableFormatPtah, so it never exercised the Atlas revision DDL the
+// failure lives in; it now measures the same format as every other dialect.
 func TestDryRunRevisionState_ClickHouseIntegration(t *testing.T) {
-	runDryRunRevisionStateIntegration(t, clickHouseAtlasTestURL(t), migrator.RevisionTableFormatPtah)
+	runDryRunRevisionStateIntegration(t, clickHouseAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
 }
 
 func runDryRunRevisionStateIntegration(
@@ -522,6 +529,68 @@ VALUES ('3', 'external', 2, 1, 1, NOW(), 0, NULL, NULL, 'external', 'null'::json
 			OperatorVersion:   "Ptah",
 		},
 	})
+}
+
+// TestAtlasRevisionMetadata_ClickHouseIntegration is the apply-and-read subset of
+// runAtlasRevisionMetadataIntegration. The full helper cannot be reused because it
+// calls SetAtlasRevision, which ClickHouse refuses by design (see
+// TestAtlasRevisionMetadata_ClickHouseRejectsSetIntegration).
+//
+// It pins both halves of #950 and fails for a different reason on each server
+// version. On ClickHouse 24.x, `partial_hashes JSON NULL` is read as
+// Nullable(JSON) and rejected during type analysis, so MigrateUp never gets past
+// creating the revision table (code: 43, "Nested type JSON cannot be inside
+// Nullable type"). On 25.x/26.x the same DDL is accepted, the Atlas JSON null is
+// coerced into the JSON type and stored as `{}`, and the column can no longer be
+// scanned into a string at all ("unsupported Scan, storing driver.Value type
+// *chcol.JSON into type *string"). Asserting the whole row -- including
+// PartialHashes, which Ptah itself never selects back -- is what makes the second
+// half visible; an exit-code-only check passes on 26.x against the broken DDL.
+func TestAtlasRevisionMetadata_ClickHouseIntegration(t *testing.T) {
+	c := qt.New(t)
+	ctx := t.Context()
+	conn, err := dbschema.ConnectToDatabase(ctx, clickHouseAtlasTestURL(t))
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+
+	const firstSQL = "SELECT 1;\n"
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_create_accounts.sql": &fstest.MapFile{Data: []byte(firstSQL)},
+			"2_create_users.sql":    &fstest.MapFile{Data: []byte("SELECT 2;\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+
+	err = mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{Amount: 1})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
+		{
+			Version:               "1",
+			Description:           "create_accounts",
+			RevisionType:          2,
+			Applied:               1,
+			Total:                 1,
+			ExecutedAtNonZero:     true,
+			ExecutionTimePositive: true,
+			Error:                 sql.NullString{Valid: true},
+			ErrorStatement:        sql.NullString{Valid: true},
+			Hash:                  issue819SQLHash(firstSQL),
+			PartialHashes:         sql.NullString{String: "null", Valid: true},
+			OperatorVersion:       "Ptah",
+		},
+	})
+
+	version, err := mig.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(version, qt.Equals, int64(1))
 }
 
 func TestAtlasRevisionMetadata_ClickHouseRejectsSetIntegration(t *testing.T) {

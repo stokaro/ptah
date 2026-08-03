@@ -494,7 +494,46 @@ func atlasVersionNumberExpressionFor(dialect string) string {
 }
 
 func (m *Migrator) createAtlasRevisionsTableSQL() string {
-	if m.isSQLServer() {
+	// connectionDialect keeps this usable on a zero-value Migrator, so the
+	// generated-SQL guard tests can assert every dialect branch without a live
+	// database. The method used to dereference m.conn.Info() directly, which
+	// panicked before any assertion could run.
+	return atlasRevisionsTableDDL(
+		m.connectionDialect(),
+		m.qualifiedMigrationsTable(),
+		sqlStringLiteral(m.sqlServerObjectName()),
+	)
+}
+
+// atlasRevisionsTableDDL renders the Atlas revision table for one dialect.
+//
+// partial_hashes is the column that forces a per-dialect decision. Atlas stores
+// a JSON document there, and Ptah writes the JSON null; the dialects that have a
+// real JSON type get one, and the dialects that do not store the same value as
+// text. SQL Server has always taken the text side (NVARCHAR(MAX)), and
+// atlasNullJSONValue binds a plain string rather than a []byte JSON document for
+// both SQL Server and ClickHouse, so the value side of ClickHouse was already
+// text before this function had a ClickHouse branch.
+//
+// ClickHouse must not reach the trailing default. It reads a trailing NULL on a
+// column definition as Nullable(T), so `partial_hashes JSON NULL` is asked for as
+// Nullable(JSON). ClickHouse 24.x rejects that outright during type analysis --
+// code 43, "Nested type JSON cannot be inside Nullable type" -- before the
+// IF NOT EXISTS existence check, so no already-provisioned database escapes it.
+// Later servers accept Nullable(JSON) and the failure changes shape instead of
+// disappearing: the 4-character string `null` is coerced into the JSON type and
+// reads back as `{}`, and the column can no longer be scanned into a string by
+// any Atlas-compatible consumer. TEXT NULL renders as Nullable(String) on both,
+// which stores exactly the value every other dialect stores (#950).
+//
+// The dialect is normalized here rather than matched raw. dbschema.ConnectToDatabase
+// normalizes before the connection exists, so conn.Info().Dialect is already one
+// of the platform constants; normalizing is a no-op in production and lets the
+// guard tests drive this function with a bare dialect string. A zero-value
+// Migrator (dialect "") takes the default branch by design.
+func atlasRevisionsTableDDL(dialect, qualifiedTable, sqlServerObjectLiteral string) string {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLServer:
 		return fmt.Sprintf(`IF OBJECT_ID(%s, N'U') IS NULL
 BEGIN
     CREATE TABLE %s (
@@ -511,9 +550,7 @@ BEGIN
         partial_hashes NVARCHAR(MAX) NULL,
         operator_version NVARCHAR(255) NOT NULL
     )
-END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
-	}
-	switch platform.NormalizeDialect(m.conn.Info().Dialect) {
+END`, sqlServerObjectLiteral, qualifiedTable)
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version VARCHAR PRIMARY KEY,
@@ -528,7 +565,22 @@ END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
     hash VARCHAR NOT NULL,
     partial_hashes JSONB NULL,
     operator_version VARCHAR NOT NULL
-)`, m.qualifiedMigrationsTable())
+)`, qualifiedTable)
+	case platform.ClickHouse:
+		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+    version VARCHAR(255) PRIMARY KEY,
+    description TEXT NOT NULL,
+    type BIGINT NOT NULL DEFAULT 2,
+    applied BIGINT NOT NULL DEFAULT 0,
+    total BIGINT NOT NULL DEFAULT 0,
+    executed_at TIMESTAMP NOT NULL,
+    execution_time BIGINT NOT NULL,
+    error TEXT NULL,
+    error_stmt TEXT NULL,
+    hash VARCHAR(255) NOT NULL,
+    partial_hashes TEXT NULL,
+    operator_version VARCHAR(255) NOT NULL
+)`, qualifiedTable)
 	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version VARCHAR(255) PRIMARY KEY,
@@ -543,7 +595,7 @@ END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
     hash VARCHAR(255) NOT NULL,
     partial_hashes JSON NULL,
     operator_version VARCHAR(255) NOT NULL
-)`, m.qualifiedMigrationsTable())
+)`, qualifiedTable)
 }
 
 func (m *Migrator) isClickHouse() bool {
