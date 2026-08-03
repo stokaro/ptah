@@ -292,6 +292,60 @@ func TestCompatBinaryMigrateDownDefaultFormatKeepsStderrEmpty(t *testing.T) {
 	}
 }
 
+// TestCompatBinaryMigrateDownJSONKeepsItsReport covers what the quieting must
+// not take with it.
+//
+// The narration is silenced by lowering the native log threshold. Under a
+// machine-readable format that is the wrong knob: the emitter turns the whole
+// report into Info-level records, so the threshold and the output are the same
+// thing, and lowering it produced a completely silent rollback -- exit 0, zero
+// bytes, database changed.
+//
+// Asserting bytes rather than exit status is the point. A silent success has
+// the same exit code as a reported one, so an exit-only fixture passes on the
+// broken binary.
+func TestCompatBinaryMigrateDownJSONKeepsItsReport(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
+
+	tests := []struct {
+		name  string
+		extra []string
+	}{
+		{
+			name:  "format selected on the command line",
+			extra: []string{"--log-format", "json"},
+		},
+		{
+			name:  "format and an explicit level",
+			extra: []string{"--log-format", "json", "--log-level", "info"},
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "down-json.db")
+			applyForReal(c, binPath, dbPath, migrationsDir)
+			args := append([]string{
+				"migrate", "down",
+				"--url", "sqlite://" + dbPath,
+				"--dir", "file://" + migrationsDir,
+				"--to-version", "0",
+			}, tt.extra...)
+			run := newCompatProcess(binPath, args...)
+			var stdout, stderr bytes.Buffer
+			run.Stdout = &stdout
+			run.Stderr = &stderr
+
+			err := run.Run()
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", stderr.String()))
+			c.Assert(stdout.String(), qt.Contains, "Database is now at version")
+		})
+	}
+}
+
 // TestCompatBinaryDryRunPinNoWriterNarration is the direct pin for
 // stokaro/ptah#963: the dialect writers' "[DRY RUN] Would ..." narration must
 // never reach the Atlas-compatible binary's streams, whatever mechanism keeps

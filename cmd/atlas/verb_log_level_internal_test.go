@@ -43,9 +43,18 @@ type verbLogLevelObservation struct {
 	// into accepts --log-level at all. Only such a target can start its own
 	// observability runtime, and only such a target tolerates the prefix.
 	TargetRegistersFlag bool
-	// PrefixLevel is the value the verb's prefixArgs pin --log-level to, or ""
-	// when the prefix does not carry the flag.
+	// PrefixLevel is the value the verb pins --log-level to under the DEFAULT
+	// log format, or "" when it pins nothing.
+	//
+	// It is read from quietingLogLevelArgs rather than from prefixArgs,
+	// because the level cannot be unconditional: under a machine-readable
+	// format the report itself is log records, so lowering the threshold
+	// deletes the output rather than the narration.
 	PrefixLevel string
+	// JSONLevel is the same observation under `--log-format json`. It must be
+	// empty everywhere: a verb that quiets itself there silences its own
+	// report.
+	JSONLevel string
 }
 
 // allAtlasTableVerbs returns every verb the Atlas surface builds through the
@@ -79,7 +88,8 @@ func observeVerbLogLevel(verb atlasVerb) verbLogLevelObservation {
 	target := verb.factory()
 	return verbLogLevelObservation{
 		TargetRegistersFlag: target.Flags().Lookup(cliobs.LogLevelFlagName) != nil,
-		PrefixLevel:         prefixLogLevel(verb.prefixArgs),
+		PrefixLevel:         prefixLogLevel(quietingLogLevelArgs(verb, nil)),
+		JSONLevel:           prefixLogLevel(quietingLogLevelArgs(verb, []string{"--log-format", "json"})),
 	}
 }
 
