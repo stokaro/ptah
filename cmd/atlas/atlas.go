@@ -623,7 +623,9 @@ func atlasMigrateDirFormatValue(value string) (string, error) {
 // and neither surface's --help lists a --version row; both list only the
 // `version` command. Adding the flag here would make this binary exit 0 where
 // the surface it mirrors exits 1, which is a compatibility regression, not a
-// fix. cmd/atlas/atlas_test.go pins --version as an unknown flag.
+// fix. TestCompatCommand_RootRejectsVersionFlag pins that on the root command,
+// which is where the regression would appear: setting cobra's Version field
+// anywhere on this tree is all it takes to auto-register --version and -v.
 func newAtlasVersionCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",

@@ -100,7 +100,19 @@ func TestPtahLSArgumentHandling(t *testing.T) {
 			stdin:    noStdin,
 			wantExit: 2,
 			assert: assertUsageError(
-				`ptah-ls: unknown argument "definitely-not-a-command"\n`),
+				`ptah-ls: unexpected positional arguments \["definitely-not-a-command"\]\n`),
+		},
+		{
+			// The surplus starts AFTER the version query. Naming args[0] here
+			// would report `version` -- the one word that is supported -- as
+			// the unknown argument, and send a reader looking in the wrong
+			// place. The native binary words the same case the same way.
+			name:     "surplus after the version subcommand names the surplus",
+			args:     []string{"version", "extra"},
+			stdin:    noStdin,
+			wantExit: 2,
+			assert: assertUsageError(
+				`ptah-ls: unexpected positional arguments \["extra"\]\n`),
 		},
 		{
 			// A leftover positional is rejected even when the version flag
@@ -112,7 +124,7 @@ func TestPtahLSArgumentHandling(t *testing.T) {
 			stdin:    noStdin,
 			wantExit: 2,
 			assert: assertUsageError(
-				`ptah-ls: unknown argument "definitely-not-a-command"\n`),
+				`ptah-ls: unexpected positional arguments \["definitely-not-a-command"\]\n`),
 		},
 		{
 			// Unchanged by this fix, and the reason the positional rejection

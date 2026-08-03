@@ -41,7 +41,16 @@ func main() {
 		args = nil
 	}
 	if len(args) > 0 {
-		fmt.Fprintf(os.Stderr, "ptah-ls: unknown argument %q\n", args[0])
+		// Name the argument that is actually wrong. Reporting args[0] tells a
+		// reader `ptah-ls version extra` has an unknown argument "version" --
+		// the one word that IS supported -- and sends them looking in the wrong
+		// place. When the first positional is the version query, the surplus
+		// starts after it.
+		surplus := args
+		if args[0] == versionCommand {
+			surplus = args[1:]
+		}
+		fmt.Fprintf(os.Stderr, "ptah-ls: unexpected positional arguments %q\n", surplus)
 		flags.Usage()
 		os.Exit(usageExitCode)
 	}
