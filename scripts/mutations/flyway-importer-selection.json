@@ -12,8 +12,8 @@
     {
       "name": "the importer keeps its own selection instead of the covered set",
       "file": "internal/atlasmigrateimport/importer.go",
-      "old": "\tcovered, err := flywayCoveredFiles(fsys)\n\tif err != nil {\n\t\treturn nil, err\n\t}",
-      "new": "\tnames, err := treeNames(fsys, skipHiddenDir)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tcovered := make([]flywaySumFile, 0, len(names))\n\tfor _, name := range names {\n\t\tif file, ok := parseFlywaySumFile(name); ok && file.kind != flywaySumUndo {\n\t\t\tcovered = append(covered, file)\n\t\t}\n\t}"
+      "old": "func loadFlywayEntries(fsys fs.FS) ([]Entry, error) {\n\tcovered, err := flywayCoveredFiles(fsys)\n\tif err != nil {\n\t\treturn nil, err\n\t}",
+      "new": "func loadFlywayEntries(fsys fs.FS) ([]Entry, error) {\n\tnames, err := treeNames(fsys, skipHiddenDir)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tcovered := make([]flywaySumFile, 0, len(names))\n\tfor _, name := range names {\n\t\tif file, ok := parseFlywaySumFile(name); ok && file.kind != flywaySumUndo {\n\t\t\tcovered = append(covered, file)\n\t\t}\n\t}"
     },
     {
       "name": "the importer reads only the top level, as it did before",
@@ -150,8 +150,8 @@
     {
       "name": "the surviving baseline is not exempt from the out-of-order guard",
       "file": "cmd/atlas/migrate_apply.go",
-      "old": "\tif baselineVersionExempt > 0 {\n\t\toutOfOrderExempt = []int64{baselineVersionExempt}\n\t}",
-      "new": "\t_ = baselineVersionExempt"
+      "old": "\tif flywayBaseline != nil {\n\t\toutOfOrderExempt = []int64{flywayBaseline.AtlasVersion}\n\t}",
+      "new": "\t_ = flywayBaseline"
     },
     {
       "name": "the exemption is loosened to every out-of-order version",
@@ -162,14 +162,14 @@
     {
       "name": "the exempted version is the last covered file, not the baseline",
       "file": "internal/atlasmigrateimport/importer.go",
-      "old": "\t\tif file.kind == flywaySumBaseline {\n\t\t\t// flywaySumFiles emits at most one baseline, and always first.\n\t\t\treturn versions[i], nil\n\t\t}",
-      "new": "\t\tif file.kind != flywaySumBaseline {\n\t\t\treturn versions[i], nil\n\t\t}"
+      "old": "\t\tif file.kind != flywaySumBaseline {\n\t\t\tcontinue\n\t\t}",
+      "new": "\t\tif file.kind == flywaySumBaseline {\n\t\t\tcontinue\n\t\t}"
     },
     {
-      "name": "FlywayBaselineAtlasVersion answers for every layout, not only flyway",
+      "name": "FlywaySurvivingBaseline answers for every layout, not only flyway",
       "file": "internal/atlasmigrateimport/importer.go",
-      "old": "\tif format != FormatFlyway {\n\t\treturn 0, nil\n\t}\n\tcovered, err := flywayCoveredFiles(fsys)",
-      "new": "\tcovered, err := flywayCoveredFiles(fsys)"
+      "old": "\tif format != FormatFlyway {\n\t\treturn nil, nil\n\t}\n\tnames, err := treeNames(fsys, skipHiddenDir)",
+      "new": "\tnames, err := treeNames(fsys, skipHiddenDir)"
     }
   ]
 }
