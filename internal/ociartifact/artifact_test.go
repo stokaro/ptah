@@ -610,6 +610,10 @@ func pushManifest(
 	c.Assert(err, qt.IsNil)
 }
 
+// TestPush_DigestReferenceFailsBeforeNetworkAccess pins that every reference
+// carrying a digest is refused by the push gate, including the tag@digest form
+// ParseRef now accepts (stokaro/ptah#944). Accepting that shape must not let a
+// push through: the tag beside the digest is a label, not a push target.
 func TestPush_DigestReferenceFailsBeforeNetworkAccess(t *testing.T) {
 	c := qt.New(t)
 	configDir := t.TempDir()
@@ -618,12 +622,22 @@ func TestPush_DigestReferenceFailsBeforeNetworkAccess(t *testing.T) {
 	t.Setenv("DOCKER_CONFIG", configDir)
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{})
 	c.Assert(err, qt.IsNil)
-	digestRef := "oci://registry.invalid/acme/migrations@sha256:" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	digest := "sha256:" + strings.Repeat("a", 64)
+	tests := []struct {
+		name string
+		ref  string
+	}{
+		{name: "digest only", ref: "oci://registry.invalid/acme/migrations@" + digest},
+		{name: "tag and digest", ref: "oci://registry.invalid/acme/migrations:stable@" + digest},
+	}
 
-	_, err = client.Push(context.Background(), digestRef, fstest.MapFS{
-		"migration.sql": {Data: []byte("SELECT 1;")},
-	}, ociartifact.PushOptions{ArtifactType: ociartifact.MigrationArtifactType})
-	c.Assert(err, qt.ErrorIs, ociartifact.ErrDigestPush)
-	c.Assert(err, qt.Not(qt.ErrorIs), ociartifact.ErrInvalidReference)
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			_, err := client.Push(context.Background(), tt.ref, fstest.MapFS{
+				"migration.sql": {Data: []byte("SELECT 1;")},
+			}, ociartifact.PushOptions{ArtifactType: ociartifact.MigrationArtifactType})
+			c.Assert(err, qt.ErrorIs, ociartifact.ErrDigestPush)
+			c.Assert(err, qt.Not(qt.ErrorIs), ociartifact.ErrInvalidReference)
+		})
+	}
 }

@@ -110,6 +110,11 @@ must be hashed. `ptah-compat migrate apply` refuses a never-hashed Atlas
 directory outright, because Atlas does; see
 [Integrity and safety](../integrity-and-safety/).
 
+Either check compares the directory against the sum stored beside it, so what
+it establishes depends on where the directory came from. See
+[Apply from an OCI registry](#apply-from-an-oci-registry) for what that means
+when the directory is a registry artifact.
+
 Applied versions land in the revision table. Rerunning the same command is a
 safe no-op:
 
@@ -233,6 +238,13 @@ ptah migrations up \
   --migrations-dir oci://ghcr.io/acme/app-migrations@sha256:<digest> \
   --verify-sum
 ```
+
+Pin the digest deliberately: `--verify-sum` checks the pulled directory against
+the sum shipped inside the same artifact, so over a movable tag it proves the
+files are internally consistent, not that they are the reviewed ones. `up`
+prints that qualification, along with the digest the tag resolved to and the
+reference that pins it, whenever a sum verifies over a tag-resolved artifact.
+The run still succeeds; a digest reference gets no such line.
 
 See [OCI registry artifacts](../../operate/oci-registry/) for
 authentication, tag and digest semantics, referrer reports, and CI wiring.
