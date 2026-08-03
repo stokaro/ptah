@@ -516,18 +516,37 @@ flyway_parity "baseline outranking its survivor executes" build_baseline_outrank
 
 echo
 echo "===== 9b. a DIRECTORY named *.sql appears after hashing (stokaro/ptah#991)"
-# CE's shallow glob matches the directory and then hard-errors; SumFileNames
-# skips it, so the recomputed sum still verifies. Nothing unverified executes —
-# a directory holds no SQL — so this is loss of tamper DETECTION, not of
-# execution safety. It is still CE refusing where we apply.
-ce="ce-evildir"; pt="pt-evildir"
-seed "$ce" goose; seed "$pt" goose
-hash_both "$ce" "$pt" goose
-mkdir -p "$ce/2_evil.sql" "$pt/2_evil.sql"
-ceout=$("$ATLAS" migrate apply --url "sqlite://$ce.db" --dir "file://$ce?format=goose" 2>&1); cerc=$?
-ptout=$("$COMPAT" migrate apply --url "sqlite://$pt.db" --dir "file://$pt?format=goose" 2>&1); ptrc=$?
-printf '  %-46s ce exit=%s | ptah exit=%s [%s]\n' "goose + 2_evil.sql/ after hashing" "$cerc" "$ptrc" \
-	"$(echo "$ptout" | tr '\n' '|' | cut -c1-70)"
+# CE's per-format glob matches on the name, so the directory is a member of the
+# covered set and the read that follows fails: CE refuses. Ptah used to skip the
+# entry and verify the remainder, and this section merely REPORTED that gap --
+# it printed both exit codes and asserted nothing, so it stayed green while the
+# two tools disagreed. It asserts now, on both the empty shape and the one
+# holding a file the capture predicate filters out (the shape that kept the
+# directory invisible to the snapshot even after the selection was fixed).
+for evilinner in "" "note.txt"; do
+	label="goose + 2_evil.sql/ after hashing"
+	[ -n "$evilinner" ] && label="goose + 2_evil.sql/$evilinner after hashing"
+	ce="ce-evildir"; pt="pt-evildir"
+	seed "$ce" goose; seed "$pt" goose
+	hash_both "$ce" "$pt" goose
+	mkdir -p "$ce/2_evil.sql" "$pt/2_evil.sql"
+	if [ -n "$evilinner" ]; then
+		printf 'x\n' >"$ce/2_evil.sql/$evilinner"
+		printf 'x\n' >"$pt/2_evil.sql/$evilinner"
+	fi
+	ceout=$("$ATLAS" migrate apply --url "sqlite://$ce.db" --dir "file://$ce?format=goose" 2>&1); cerc=$?
+	ptout=$("$COMPAT" migrate apply --url "sqlite://$pt.db" --dir "file://$pt?format=goose" 2>&1); ptrc=$?
+	printf '  %-46s ce exit=%s | ptah exit=%s [%s]\n' "$label" "$cerc" "$ptrc" \
+		"$(echo "$ptout" | tr '\n' '|' | cut -c1-70)"
+	if [ "$cerc" != "$ptrc" ]; then
+		fail=1
+		echo "       UNEXPECTED: the two tools no longer agree on the exit code"
+	fi
+	if [ "$cerc" != 1 ]; then
+		fail=1
+		echo "       UNEXPECTED: the oracle no longer refuses this shape, so the row proves nothing"
+	fi
+done
 
 echo
 echo "===== 9c. an unreadable source file (dangling symlink under sub/)"
