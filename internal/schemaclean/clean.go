@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
 
@@ -104,6 +105,11 @@ type dialectCoverage struct {
 	// Inspect queries the live catalog for them. See inspectRuntimeObjects.
 	postgresSequences  bool
 	mysqlStoredObjects bool
+
+	// revisionTables records that this dialect's writer destroys Ptah's own
+	// migration bookkeeping tables while its reader hides them by name, so
+	// Inspect has to find them in the live catalog. See inspectRevisionTables.
+	revisionTables bool
 }
 
 func Inspect(conn *dbschema.DatabaseConnection) (Plan, error) {
@@ -118,6 +124,11 @@ func Inspect(conn *dbschema.DatabaseConnection) (Plan, error) {
 		return Plan{}, err
 	}
 	objects = append(objects, runtimeObjects...)
+	revisionObjects, err := inspectRevisionTables(conn)
+	if err != nil {
+		return Plan{}, err
+	}
+	objects = append(objects, unlistedObjects(objects, revisionObjects)...)
 	return PlanFromObjects(objects, dialect), nil
 }
 
@@ -216,6 +227,24 @@ func PlanFromObjects(objects []Object, dialect string) Plan {
 // ClickHouse — internal/dbschema/clickhouse/writer.go, DropAllTables selects
 // from system.tables filtered to persistent table engines with
 // `engine NOT LIKE '%View'`, so it drops base tables only.
+//
+// The revisionTables field below is not about kinds but about names: the
+// PostgreSQL, MySQL and SQL Server readers exclude Ptah's own revision tables
+// from every snapshot by name, while those dialects' writers drop them as
+// ordinary tables. Measured for issue #1111 by censusing each catalog before
+// and after a real cleanup:
+//
+//	PostgreSQL 18   reader hides schema_migrations         planned 2, destroyed 3
+//	MariaDB 11      reader hides schema_migrations         planned 3, destroyed 4
+//	SQL Server 2022 reader hides both revision tables      planned 1, destroyed 3
+//	ClickHouse 24   reader hides nothing                   planned 3, destroyed 3
+//	SQLite          reader hides schema_migrations and the
+//	                writer keeps it (dropAllTables passes
+//	                includeRevisionTable=false)            planned 3, destroyed 3
+//
+// So ClickHouse and SQLite must stay false: ClickHouse already reports both
+// tables through the reader, and SQLite would be reporting a table that
+// survives the cleanup.
 func coverageFor(dialect string) dialectCoverage {
 	normalized := normalizeDialect(dialect)
 	switch normalized {
@@ -235,17 +264,19 @@ func coverageFor(dialect string) dialectCoverage {
 			// change's subject. The CockroachDB and YugabyteDB writers do drop
 			// sequences, so their plans still understate cleanup by that kind.
 			postgresSequences: normalized == "postgres" || normalized == "postgresql",
+			revisionTables:    true,
 		}
 	case "mysql", "mariadb":
 		return dialectCoverage{
 			foreignKeys:        true,
 			views:              true,
 			mysqlStoredObjects: true,
+			revisionTables:     true,
 		}
 	case "sqlite", "sqlite3":
 		return dialectCoverage{views: true}
 	case "sqlserver", "mssql":
-		return dialectCoverage{foreignKeys: true}
+		return dialectCoverage{foreignKeys: true, revisionTables: true}
 	default:
 		// ClickHouse, and any dialect this package has not measured: report
 		// tables only, which every writer drops.
@@ -521,6 +552,168 @@ func inspectMySQLStoredObjects(conn *dbschema.DatabaseConnection) ([]Object, err
 	return objects, nil
 }
 
+// inspectRevisionTables reports the migration bookkeeping tables that this
+// dialect's writer destroys but its reader hides.
+//
+// The dbschema readers exclude Ptah's revision tables from every schema
+// snapshot by name. That is right for schema comparison — a diff must not pit
+// Ptah's own bookkeeping against a user's model — and wrong for the single
+// consumer that is enumerating what it is about to destroy rather than
+// comparing. Widening the plan's object kinds cannot reach these tables,
+// because they are filtered before kinds are considered.
+//
+// The names come from internal/revisiontable, which is also where
+// migration/migrator derives its own defaults, so the two cannot drift. A
+// second literal here would report nothing on any setup whose revision table is
+// not the one the literal was written against — the same silent under-report
+// this function exists to fix.
+func inspectRevisionTables(conn *dbschema.DatabaseConnection) ([]Object, error) {
+	dialect := conn.Info().Dialect
+	if !coverageFor(dialect).revisionTables {
+		return nil, nil
+	}
+	names := revisiontable.DefaultNames()
+	query, args := revisionTableProbe(dialect, strings.TrimSpace(conn.Info().Schema), names)
+	if query == "" {
+		// A dialect marked as covered above but given no probe below. Reporting
+		// nothing restores the old under-report rather than running some other
+		// dialect's catalog query against it.
+		return nil, fmt.Errorf("inspect cleanup revision tables: no catalog probe for dialect %q", dialect)
+	}
+	rows, err := conn.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("inspect cleanup revision tables: %w", err)
+	}
+	defer rows.Close()
+
+	objects := []Object{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scan cleanup revision table: %w", err)
+		}
+		// Schema is deliberately left empty, matching what every measured
+		// reader records for a table inside the connection's own schema. The
+		// rendered command then reads like the plan's other table rows, and the
+		// duplicate check below compares like against like.
+		objects = append(objects, Object{Type: ObjectTypeTable, Name: name})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate cleanup revision tables: %w", err)
+	}
+	return objects, nil
+}
+
+// revisionTableProbe builds the catalog query that finds which of the
+// migrator's bookkeeping tables exist inside the cleanup scope.
+//
+// The scope mirrors each writer's own, because the plan may only name what the
+// writer really destroys: the connection's schema for PostgreSQL and SQL Server
+// — defaulting to the same "public" and "dbo" those writers default to — and
+// the session database for MySQL. A revision table sitting in some other schema
+// is out of the writer's reach, so it must stay out of the plan.
+//
+// An unrecognized dialect yields an empty query rather than falling through to
+// somebody else's catalog: marking a dialect covered without teaching this
+// function how to read its catalog is a mistake that should surface, not one
+// that should send pg_class to a database that has none.
+func revisionTableProbe(dialect, schema string, names []string) (string, []any) {
+	switch {
+	case isSQLServer(dialect):
+		if schema == "" {
+			schema = "dbo"
+		}
+		args := append([]any{schema}, namesAsArgs(names)...)
+		return `
+			SELECT t.name
+			FROM sys.tables AS t
+			JOIN sys.schemas AS s ON s.schema_id = t.schema_id
+			WHERE t.is_ms_shipped = 0
+			  AND s.name = @p1
+			  AND t.name IN (` + revisionTablePlaceholders(dialect, 2, len(names)) + `)
+			ORDER BY t.name`, args
+	case isMySQLFamily(dialect):
+		// COALESCE mirrors mysql.Writer.cleanupSchema: the configured schema
+		// when the connection pins one, otherwise the session's database.
+		args := append([]any{schema}, namesAsArgs(names)...)
+		return `
+			SELECT table_name
+			FROM information_schema.tables
+			WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())
+			  AND table_type = 'BASE TABLE'
+			  AND table_name IN (` + revisionTablePlaceholders(dialect, 2, len(names)) + `)
+			ORDER BY table_name`, args
+	case isPostgresFamily(dialect):
+		if schema == "" {
+			schema = "public"
+		}
+		args := append([]any{schema}, namesAsArgs(names)...)
+		// relkind 'r' and 'p' are ordinary and partitioned tables. Anything the
+		// writer would drop under a different statement is excluded, so a
+		// same-named view or sequence cannot enter the plan as a table.
+		return `
+			SELECT c.relname
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = $1
+			  AND c.relkind IN ('r', 'p')
+			  AND c.relname IN (` + revisionTablePlaceholders(dialect, 2, len(names)) + `)
+			ORDER BY c.relname`, args
+	default:
+		return "", nil
+	}
+}
+
+func namesAsArgs(names []string) []any {
+	args := make([]any, len(names))
+	for i, name := range names {
+		args[i] = name
+	}
+	return args
+}
+
+func revisionTablePlaceholders(dialect string, start, count int) string {
+	parts := make([]string, count)
+	for i := range parts {
+		switch {
+		case isSQLServer(dialect):
+			parts[i] = fmt.Sprintf("@p%d", start+i)
+		case isPostgresFamily(dialect):
+			parts[i] = fmt.Sprintf("$%d", start+i)
+		default:
+			parts[i] = "?"
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// unlistedObjects returns the entries of candidates that listed does not
+// already name, comparing on kind and name only.
+//
+// Ignoring the schema is what makes the revision-table probe safe to run on a
+// dialect whose reader already surfaces one of the two names — PostgreSQL
+// reports atlas_schema_revisions but hides schema_migrations — without the plan
+// listing that table twice. Dropping the schema from the comparison can only
+// suppress an addition, never invent one, so the worst case is the pre-existing
+// behavior rather than a new line on a destructive plan.
+func unlistedObjects(listed, candidates []Object) []Object {
+	type key struct{ objectType, name string }
+	seen := make(map[key]struct{}, len(listed))
+	for _, object := range listed {
+		seen[key{object.Type, object.Name}] = struct{}{}
+	}
+	missing := make([]Object, 0, len(candidates))
+	for _, candidate := range candidates {
+		identity := key{candidate.Type, candidate.Name}
+		if _, ok := seen[identity]; ok {
+			continue
+		}
+		seen[identity] = struct{}{}
+		missing = append(missing, candidate)
+	}
+	return missing
+}
+
 func mysqlStoredObjectType(kind string) (string, bool) {
 	switch strings.ToUpper(strings.TrimSpace(kind)) {
 	case "EVENT":
@@ -665,6 +858,15 @@ func isPostgresFamily(dialect string) bool {
 func isMySQLFamily(dialect string) bool {
 	switch normalizeDialect(dialect) {
 	case "mysql", "mariadb":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSQLServer(dialect string) bool {
+	switch normalizeDialect(dialect) {
+	case "sqlserver", "mssql":
 		return true
 	default:
 		return false

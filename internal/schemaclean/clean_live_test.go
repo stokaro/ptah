@@ -22,6 +22,17 @@ import (
 
 // postgresCleanupFixture creates one object of every kind the PostgreSQL writer
 // destroys, plus a control schema the schema-scoped cleanup never touches.
+//
+// Both revision-table layouts are present, which is what makes this fixture
+// cover issue #1111 as well as #940 item 1. The PostgreSQL reader hides
+// schema_migrations by name but surfaces atlas_schema_revisions, so the two
+// rows exercise opposite halves of the same fix: one must be added to the plan
+// by the catalog probe, and the other must NOT be added a second time on top of
+// the row the reader already produced.
+//
+// The keepme copies carry the same two names on purpose. The cleanup is schema
+// scoped, so a probe that ignored scope would plan two schema_migrations rows
+// against one destroyed, and the plan/destroyed comparison would fail.
 var postgresCleanupFixture = []string{
 	`CREATE TYPE mood AS ENUM ('happy', 'sad')`,
 	`CREATE DOMAIN d_email AS text CHECK (VALUE LIKE '%@%')`,
@@ -35,12 +46,16 @@ var postgresCleanupFixture = []string{
 	`CREATE FUNCTION f_touch() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NEW; END;'`,
 	`CREATE TRIGGER trg_users BEFORE INSERT ON users FOR EACH ROW EXECUTE FUNCTION f_touch()`,
 	`CREATE INDEX idx_users_email ON users (email)`,
+	`CREATE TABLE schema_migrations (version bigint PRIMARY KEY, dirty boolean)`,
+	`CREATE TABLE atlas_schema_revisions (version varchar PRIMARY KEY, description varchar)`,
 
 	`CREATE SCHEMA keepme`,
 	`CREATE TYPE keepme.control_mood AS ENUM ('kept')`,
 	`CREATE TABLE keepme.control_table (id integer PRIMARY KEY)`,
 	`CREATE VIEW keepme.control_view AS SELECT id FROM keepme.control_table`,
 	`CREATE FUNCTION keepme.control_fn() RETURNS integer LANGUAGE sql AS 'SELECT 1'`,
+	`CREATE TABLE keepme.schema_migrations (version bigint PRIMARY KEY)`,
+	`CREATE TABLE keepme.atlas_schema_revisions (version varchar PRIMARY KEY)`,
 }
 
 // postgresCleanupCensusQuery enumerates, straight from pg_catalog, every object
@@ -104,13 +119,19 @@ const postgresCleanupCensusQuery = `
 `
 
 // TestInspectNamesEveryObjectApplyDestroys_PostgresLive is the anti-drift gate
-// for issue #940 item 1: it compares the plan schemaclean.Inspect produced
-// against the set of objects that really disappeared when schemaclean.Apply
-// ran, on a throwaway PostgreSQL database.
+// for issue #940 item 1 and issue #1111: it compares the plan
+// schemaclean.Inspect produced against the set of objects that really
+// disappeared when schemaclean.Apply ran, on a throwaway PostgreSQL database.
 //
 // Widening internal/dbschema/postgres/writer.go without widening
 // schemaclean.coverageFor makes the destroyed set larger than the planned set
 // and fails here, which is the property a duplicated constant list cannot give.
+//
+// The same comparison covers the revision tables, which no reader puts in a
+// schema snapshot: dropping the catalog probe leaves schema_migrations
+// destroyed but unplanned, and dropping the duplicate check leaves
+// atlas_schema_revisions planned twice but destroyed once. Both are a
+// planned/destroyed mismatch, so neither can regress silently.
 func TestInspectNamesEveryObjectApplyDestroys_PostgresLive(t *testing.T) {
 	c := qt.New(t)
 	ctx := c.Context()
@@ -133,14 +154,25 @@ func TestInspectNamesEveryObjectApplyDestroys_PostgresLive(t *testing.T) {
 	c.Assert(len(planned) >= 10, qt.IsTrue, qt.Commentf("planned set is too small: %v", planned))
 
 	// Control: the cleanup is schema scoped, so nothing in "keepme" is
-	// destroyed, and nothing in "keepme" may appear in the plan either.
+	// destroyed, and nothing in "keepme" may appear in the plan either. The two
+	// keepme revision tables are the scope control for the #1111 probe: they
+	// survive, so the plan may name each revision table only once.
 	c.Assert(after, qt.DeepEquals, []string{
 		"enum|control_mood",
 		"function|control_fn",
+		"table|atlas_schema_revisions",
 		"table|control_table",
+		"table|schema_migrations",
 		"view|control_view",
 	})
 	c.Assert(planned, qt.Not(qt.Any(qt.Contains)), "control")
+
+	// Stated separately from the set comparison above so a regression says
+	// which table went missing rather than printing two long lists. Both are
+	// destroyed, so both must be named; neither reader nor probe alone
+	// produces both.
+	c.Assert(planned, qt.Contains, "table|schema_migrations")
+	c.Assert(planned, qt.Contains, "table|atlas_schema_revisions")
 }
 
 func plannedObjectKeys(plan schemaclean.Plan) []string {
