@@ -143,6 +143,33 @@ type statementProgressHooks struct {
 
 type statementProgressRecorderContextKey struct{}
 
+type migrationResumeContextKey struct{}
+
+// withMigrationResume declares that statements before resumeFrom (1-based) were
+// already committed by an earlier attempt at the same migration, so this attempt
+// must skip them rather than execute them a second time.
+//
+// The floor travels in the context rather than as an execution-path parameter
+// because the two statement loops that need it, [executeSQLStatements] and
+// [executeMigrationFileSQL], are reached through the caller-supplied
+// sqlMigrationFunc indirection, which has no room for a new argument.
+//
+// resumeFrom <= 1 means "run everything", which is the value every first attempt
+// installs, so an absent key and a fresh run behave identically.
+func withMigrationResume(ctx context.Context, resumeFrom int) context.Context {
+	if resumeFrom <= 1 {
+		return ctx
+	}
+	return context.WithValue(ctx, migrationResumeContextKey{}, resumeFrom)
+}
+
+// migrationStatementAlreadyApplied reports whether the 1-based statement index
+// was committed by an earlier attempt and must not run again.
+func migrationStatementAlreadyApplied(ctx context.Context, index int) bool {
+	resumeFrom, _ := ctx.Value(migrationResumeContextKey{}).(int)
+	return index < resumeFrom
+}
+
 type statementProgressError struct {
 	err     error
 	event   StatementEvent
@@ -785,6 +812,9 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 			Index:     i + 1,
 			Total:     len(statements),
 		}
+		if migrationStatementAlreadyApplied(ctx, event.Index) {
+			continue
+		}
 		if err := recordStatementProgressBefore(ctx, event); err != nil {
 			return err
 		}
@@ -842,6 +872,9 @@ func executeMigrationFileSQL(
 			Index:      i + 1,
 			Total:      len(statements),
 			Directives: maps.Clone(fileDirectives),
+		}
+		if migrationStatementAlreadyApplied(ctx, event.Index) {
+			continue
 		}
 		if err := recordStatementProgressBefore(ctx, event); err != nil {
 			return err

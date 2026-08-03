@@ -126,9 +126,14 @@ func assertAtlasTxModeRejectedBeforeWrites(
 
 func TestAtlasTxModeMatrix_BodyFailurePath(t *testing.T) {
 	c := qt.New(t)
-	// Per-file transaction failures currently retain applied=1/2 even though
-	// SQLite rolls back the body (#887). This matrix pins effective mode
-	// selection for #998, not Atlas revision-bookkeeping parity.
+	// This matrix pins effective mode selection for #998.
+	//
+	// wantApplied and wantTable now agree in every row, and that agreement is
+	// the point: the first statement creates the table, so applied is 1 exactly
+	// when the table survived the failure and 0 when the body was rolled back.
+	// Before #966 the four rolled-back rows still recorded applied=1, which a
+	// retry would have read as "statement 1 is committed, resume at 2" and so
+	// skipped a CREATE TABLE that never ran.
 	tests := []struct {
 		name        string
 		globalMode  migrator.MigrationTxMode
@@ -139,13 +144,13 @@ func TestAtlasTxModeMatrix_BodyFailurePath(t *testing.T) {
 		{
 			name:        "global file directive absent",
 			globalMode:  migrator.MigrationTxModeFile,
-			wantApplied: 1,
+			wantApplied: 0,
 		},
 		{
 			name:        "global file directive file",
 			globalMode:  migrator.MigrationTxModeFile,
 			directive:   "-- atlas:txmode file\n\n",
-			wantApplied: 1,
+			wantApplied: 0,
 		},
 		{
 			name:        "global file directive none",
@@ -158,7 +163,7 @@ func TestAtlasTxModeMatrix_BodyFailurePath(t *testing.T) {
 			name:        "global file misplaced directive is ignored",
 			globalMode:  migrator.MigrationTxModeFile,
 			directive:   "-- generated migration\n\n-- atlas:txmode none\n",
-			wantApplied: 1,
+			wantApplied: 0,
 		},
 		{
 			name:       "global all directive absent",
@@ -174,7 +179,7 @@ func TestAtlasTxModeMatrix_BodyFailurePath(t *testing.T) {
 			name:        "global none directive file",
 			globalMode:  migrator.MigrationTxModeNone,
 			directive:   "-- atlas:txmode file\n\n",
-			wantApplied: 1,
+			wantApplied: 0,
 		},
 		{
 			name:        "global none directive none",
