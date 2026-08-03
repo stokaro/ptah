@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -867,10 +868,45 @@ func requireSchemaOracle(t *testing.T) string {
 	return oracle
 }
 
+// schemaOracleWarmup absorbs a once-per-environment notice before the first
+// measurement.
+//
+// The binary prints an edition notice on its first `schema inspect` in a fresh
+// environment -- a CI runner -- and on that run only. Every comparison here runs
+// the oracle twice and asserts the two captures are equal, so a notice attached
+// to the first of the pair but not the second makes a row unequal whose DDL is
+// in fact identical. That is exactly how this failed on its first CI run: the
+// first subtest failed and every later one passed, because the notice was spent
+// on the first invocation of the job.
+//
+// A throwaway inspect is preferred over matching the notice by its wording. The
+// text is not part of any contract the oracle owes us, so a matcher for it would
+// rot silently the next time it is reworded, and this run would go green while
+// comparing whatever the new text happened to be. `requireSchemaOracle` cannot
+// serve as the warm-up either: it runs `version`, whose stdout it parses, and
+// the notice does not appear there.
+var schemaOracleWarmup sync.Once
+
+func warmUpSchemaOracle(c *qt.C, oracle string) {
+	c.Helper()
+
+	schemaOracleWarmup.Do(func() {
+		path := filepath.Join(c.TempDir(), "warmup.hcl")
+		//nolint:errcheck // best effort: a failed write still runs the oracle, which is all the warm-up needs
+		_ = os.WriteFile(path, []byte("schema \"main\" {\n}\n"), 0o600)
+		//nolint:gosec // operator-provided oracle path, and path is a test temp dir
+		cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", oracleDevURL)
+		//nolint:errcheck // output and status are both discarded; this run exists only to spend the notice
+		_, _ = cmd.CombinedOutput()
+	})
+}
+
 // runSchemaOracle inspects one schema source with the pinned binary and returns
 // its combined output and exit code.
 func runSchemaOracle(c *qt.C, oracle, source string) (string, int) {
 	c.Helper()
+
+	warmUpSchemaOracle(c, oracle)
 
 	path := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
