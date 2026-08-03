@@ -48,6 +48,14 @@ import (
 //     A fresh database satisfies neither, so it still runs the baseline, which
 //     is the whole point of shipping one.
 //
+// The second clause is an IDENTITY question and must not be answered with the
+// int64 ordering key, which collapses "2", "02" and "002" on purpose. Asking it
+// that way refused twelve directories that Atlas CE, and Ptah's previous
+// release, both apply — zero-padded versions being ordinary Flyway practice.
+// atlasmigrateimport.FlywaySurvivingBaseline answers it on the version TOKEN
+// instead and hands back the migrations, not the numbers; see
+// flywaySameVersionMigrations there.
+//
 // Two deliberate abstentions. Under --exec-order=non-linear or linear-skip the
 // operator has already made this decision explicitly, and non-linear is the
 // escape hatch the refusal points at — measured, CE applies a below-mark
@@ -67,17 +75,11 @@ func checkFlywayBaselineHistory(
 		return nil
 	}
 	applied := plan.Status.AppliedMigrations
-	var covered []int64
-	for _, version := range baseline.CoveredVersions {
-		if slices.Contains(applied, version) {
-			covered = append(covered, version)
-		}
-	}
 	conflict := flywayBaselineConflict{
-		covered:            covered,
-		sameVersionApplied: slices.Contains(applied, baseline.SequenceVersion),
+		covered:     appliedFlywayMigrations(baseline.Covered, applied),
+		sameVersion: appliedFlywayMigrations(baseline.SameVersion, applied),
 	}
-	if len(conflict.covered) == 0 && !conflict.sameVersionApplied {
+	if len(conflict.covered) == 0 && len(conflict.sameVersion) == 0 {
 		return nil
 	}
 	for _, version := range plan.Status.OutOfOrderMigrations {
@@ -89,11 +91,31 @@ func checkFlywayBaselineHistory(
 }
 
 // flywayBaselineConflict is why one baseline was refused: the already-applied
-// migrations this directory still covers, and whether the baseline's own
-// version is one the database has already applied. Either alone is enough.
+// migrations this directory still covers, and the already-applied migrations
+// carrying the baseline's own version token. Either alone is enough.
+//
+// Both are file lists rather than version lists because the refusal has to name
+// something the operator can find. The int64 versions are Ptah's projection of
+// Atlas CE's version strings, and Atlas CE reports the very same migrations as
+// `2` and `02`; a message asserting that "version 4611686018427510315 is already
+// applied" names a number that appears in no file name and in no Atlas output.
 type flywayBaselineConflict struct {
-	covered            []int64
-	sameVersionApplied bool
+	covered     []atlasmigrateimport.FlywayMigrationVersion
+	sameVersion []atlasmigrateimport.FlywayMigrationVersion
+}
+
+// appliedFlywayMigrations keeps the migrations a database has already recorded.
+func appliedFlywayMigrations(
+	migrations []atlasmigrateimport.FlywayMigrationVersion,
+	applied []int64,
+) []atlasmigrateimport.FlywayMigrationVersion {
+	var out []atlasmigrateimport.FlywayMigrationVersion
+	for _, migration := range migrations {
+		if slices.Contains(applied, migration.Version) {
+			out = append(out, migration)
+		}
+	}
+	return out
 }
 
 // flywayBaselineRefusal renders the refusal, including the way through.
@@ -112,19 +134,13 @@ func flywayBaselineRefusal(baseline *atlasmigrateimport.FlywayBaseline, conflict
 	fmt.Fprintf(&b, "%s is a Flyway baseline and this database already has migration history, "+
 		"so it will not be treated as a fresh install; nothing has been applied", baseline.Source)
 
-	fmt.Fprintf(&b, "\n\nthe baseline carries version %q and converts to Atlas version %d, which no revision records",
-		baseline.Version, baseline.AtlasVersion)
-	if conflict.sameVersionApplied {
-		fmt.Fprintf(&b, ", while version %d — a migration of the same version — is already applied",
-			baseline.SequenceVersion)
+	fmt.Fprintf(&b, "\n\nthe baseline carries version %q and no revision here records it, "+
+		"but this database has already applied:\n", baseline.Version)
+	for _, migration := range conflict.sameVersion {
+		fmt.Fprintf(&b, "  %s — a migration carrying the same version %q\n", migration.Source, baseline.Version)
 	}
-	if len(conflict.covered) > 0 {
-		fmt.Fprintf(&b, ", while %d already-applied migration(s) are still covered by this directory:\n", len(conflict.covered))
-		for _, version := range conflict.covered {
-			fmt.Fprintf(&b, "  %d\n", version)
-		}
-	} else {
-		b.WriteString("\n")
+	for _, migration := range conflict.covered {
+		fmt.Fprintf(&b, "  %s — still covered by this directory\n", migration.Source)
 	}
 
 	b.WriteString("\nexecuting it would run a squashed schema on top of that history, and skipping it would leave " +

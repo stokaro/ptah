@@ -279,9 +279,19 @@ deliberately left open:
   have history, which is what the refusal points at. Atlas CE applies a
   below-mark baseline under that flag too.
 
-A baseline that squashes away everything the database has applied still runs on
-both tools, and both execute its SQL rather than merely recording it — so a
-baseline restating DDL that is already there fails loudly on both.
+A baseline that squashes away the whole recorded history still runs on both
+tools — `B3__base.sql` on a database at `V2`, `B2__base.sql` on one at `V10` —
+and both execute its SQL rather than merely recording it, so a baseline
+restating DDL that is already there fails loudly on both. The exception is a
+baseline whose own version is one the database has already applied
+(`B2__base.sql` on a database at `V1`, `V2`): Atlas CE skips that one silently,
+and `ptah-compat` refuses it under the second half of the rule above.
+
+That last comparison is on the version **token**, the way Atlas CE makes it, and
+not on the number the token parses to. Zero padding is ordinary Flyway practice
+and does not trigger the refusal: `V01`, `V02` plus `B2__base.sql` is a
+directory both tools apply — Atlas CE reports it as `Migrating to version 2 from
+02`.
 :::
 
 :::danger[Upgrading a Flyway directory applied by Ptah v0.1.0–v0.1.2]

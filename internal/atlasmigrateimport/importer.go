@@ -756,6 +756,20 @@ func flywayCEVersion(file flywaySumFile) string {
 	return file.version
 }
 
+// FlywayMigrationVersion pairs a Flyway source file with the int64 Atlas
+// version it converts to.
+//
+// Both halves are needed by every caller: the version is what a revision row
+// can be tested against, and the file name is the only one of the two an
+// operator can find in their directory. A refusal that names 4611686018427510315
+// tells them nothing they can act on.
+type FlywayMigrationVersion struct {
+	// Source is the file name, relative to the migration directory.
+	Source string
+	// Version is the Atlas version that file converts to.
+	Version int64
+}
+
 // FlywayBaseline describes the surviving baseline of a Flyway directory.
 type FlywayBaseline struct {
 	// Source is the baseline file name, relative to the migration directory.
@@ -767,14 +781,15 @@ type FlywayBaseline struct {
 	// AtlasVersion is the converted version the entry executes and records
 	// under. It sits in the band below every survivor.
 	AtlasVersion int64
-	// SequenceVersion is the version this baseline's token converts to when an
-	// ORDINARY versioned file carries it — that is, the version already
-	// recorded for a V file of the same version. It is not what the baseline
-	// executes under; it answers "has a migration with this version already
-	// been applied here?", which the band position cannot.
-	SequenceVersion int64
-	// CoveredVersions are the converted versions of every OTHER covered file,
-	// so a caller can ask which of them a database has already recorded.
+	// SameVersion are the migrations in this directory whose version TOKEN is
+	// the baseline's own, byte for byte, each paired with the Atlas version a
+	// database that ran it recorded. It answers "has a migration of this very
+	// version already been applied here?", which the baseline's own band
+	// position cannot. See flywaySameVersionMigrations for why the operand is
+	// the token and not the ordering key.
+	SameVersion []FlywayMigrationVersion
+	// Covered are every OTHER covered file and its converted version, so a
+	// caller can ask which of them a database has already recorded.
 	//
 	// Leaving the baseline itself out is a statement of the contract rather
 	// than something a caller can currently observe, and no mutation covers it:
@@ -782,7 +797,7 @@ type FlywayBaseline struct {
 	// it asks only when the baseline is still pending, so including it would
 	// answer the same either way. It becomes observable the moment a caller
 	// asks about a baseline that has already run.
-	CoveredVersions []int64
+	Covered []FlywayMigrationVersion
 }
 
 // FlywaySurvivingBaseline returns the surviving baseline of a Flyway directory,
@@ -799,16 +814,19 @@ type FlywayBaseline struct {
 // linear guard. Whether the baseline may then run at all is a second question,
 // answered by checkFlywayBaselineHistory in cmd/atlas.
 //
-// It shares flywayCoveredFiles and flywayConvertedVersions with the importer, so
-// the version reported here is the one the entry is actually executed under.
+// It shares flywaySumFiles and flywayConvertedVersions with the importer, so
+// the version reported here is the one the entry is actually executed under. The
+// walk is done here rather than through flywayCoveredFiles because the raw names
+// are needed a second time, to re-run the selection without this baseline.
 func FlywaySurvivingBaseline(fsys fs.FS, format Format) (*FlywayBaseline, error) {
 	if format != FormatFlyway {
 		return nil, nil
 	}
-	covered, err := flywayCoveredFiles(fsys)
+	names, err := treeNames(fsys, skipHiddenDir)
 	if err != nil {
 		return nil, err
 	}
+	covered := flywaySumFiles(names)
 	versions, err := flywayConvertedVersions(covered)
 	if err != nil {
 		return nil, err
@@ -818,32 +836,77 @@ func FlywaySurvivingBaseline(fsys fs.FS, format Format) (*FlywayBaseline, error)
 			continue
 		}
 		// flywaySumFiles emits at most one baseline, and always first.
-		sequence, err := flywaySequenceVersion(file)
-		if err != nil {
-			return nil, err
-		}
 		return &FlywayBaseline{
-			Source:          file.name,
-			Version:         file.version,
-			AtlasVersion:    versions[i],
-			SequenceVersion: sequence,
-			CoveredVersions: append(slices.Clone(versions[:i]), versions[i+1:]...),
+			Source:       file.name,
+			Version:      file.version,
+			AtlasVersion: versions[i],
+			SameVersion:  flywaySameVersionMigrations(names, file),
+			Covered:      flywayMigrationVersions(slices.Concat(covered[:i], covered[i+1:]), slices.Concat(versions[:i], versions[i+1:])),
 		}, nil
 	}
 	return nil, nil
 }
 
-// flywaySequenceVersion projects a baseline's token the way an ordinary
-// versioned file carrying the same token is projected.
+// flywaySameVersionMigrations reports the migrations in this directory that
+// carry the baseline's OWN version token, and the Atlas version each converts to
+// when the baseline is not there to squash it.
 //
-// The tie index is 0 because at most one baseline survives, so a baseline never
-// shares a run with another file of its own kind — and the versioned file this
-// answers about is one the baseline squashed, which is no longer in the covered
-// set to be tied against.
-func flywaySequenceVersion(file flywaySumFile) (int64, error) {
-	versioned := file
-	versioned.kind = flywaySumVersioned
-	return flywayAtlasVersion(versioned, 0)
+// IDENTITY AND ORDER ARE DIFFERENT QUESTIONS, and this is the identity one. Do
+// not answer it with flywayOrderingKey. That key deliberately collapses tokens
+// that must ORDER together — "2", "02" and "002" all score to components {2},
+// which is correct, because Atlas CE runs them in that one position, and the tie
+// budget in flywayAtlasVersion exists precisely because tokens that score
+// identically still have to be told apart by walk position. Projecting the
+// baseline's token through that key and comparing the result to a revision row
+// asks "does this sort where something applied sorts?" while the caller needs
+// "is this the same migration?". Atlas CE answers identity by comparing the
+// version TOKENS as strings — measured, its own stdout for V02 applied plus
+// B2__base.sql is `Migrating to version 2 from 02`, and it executes the baseline
+// — and so does the comparison below.
+//
+// The domain is this directory WITHOUT the surviving baseline, because that is
+// the only shape a revision row can have come from. A versioned file carrying
+// the baseline's exact token is squashed out of the covered set by construction
+// (flywaySumFiles drops it on `file.version <= baseline.version`, which holds on
+// equality), so its converted version is not among the covered ones; re-running
+// the selection with the baseline removed puts it back at the tie slot it was
+// recorded under, rather than assuming slot 0.
+//
+// A pre-baseline directory this build cannot convert yields nothing, because no
+// build could have applied it either and so no revision row of its making
+// exists. Reporting the conversion error instead would fail an apply over a file
+// set that is not the one being executed.
+func flywaySameVersionMigrations(names []string, baseline flywaySumFile) []FlywayMigrationVersion {
+	before := flywaySumFiles(slices.DeleteFunc(slices.Clone(names), func(name string) bool {
+		return name == baseline.name
+	}))
+	sameVersion := func(file flywaySumFile) bool {
+		return file.kind == flywaySumVersioned && file.version == baseline.version
+	}
+	if !slices.ContainsFunc(before, sameVersion) {
+		return nil
+	}
+	versions, err := flywayConvertedVersions(before)
+	if err != nil {
+		return nil
+	}
+
+	var out []FlywayMigrationVersion
+	for i, file := range before {
+		if sameVersion(file) {
+			out = append(out, FlywayMigrationVersion{Source: file.name, Version: versions[i]})
+		}
+	}
+	return out
+}
+
+// flywayMigrationVersions zips a covered selection with its converted versions.
+func flywayMigrationVersions(files []flywaySumFile, versions []int64) []FlywayMigrationVersion {
+	out := make([]FlywayMigrationVersion, len(files))
+	for i, file := range files {
+		out[i] = FlywayMigrationVersion{Source: file.name, Version: versions[i]}
+	}
+	return out
 }
 
 // flywayEntryName renders the converted Atlas single-file name. A Flyway file

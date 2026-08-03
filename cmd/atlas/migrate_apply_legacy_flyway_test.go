@@ -552,6 +552,11 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 			// tables either way.
 			c.Assert(run.message(), qt.Contains, "B10__base.sql")
 			c.Assert(run.message(), qt.Contains, "Flyway baseline")
+			// The blocking migration is named by its file, not by the int64 the
+			// token projects to. Atlas CE calls this migration `2`; a message
+			// asserting that 4611686018427510315 is in the way names a number
+			// the operator can find in neither their directory nor CE's output.
+			c.Assert(run.message(), qt.Contains, "V2__s2.sql")
 			// The route the refusal offers, spelled the way the row below runs
 			// it, so a message that starts naming some other flag cannot drift
 			// away from the one that was measured to work.
@@ -639,7 +644,68 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 		assert: func(c *qt.C, run flywayBaselineRun) {
 			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
 			c.Assert(run.message(), qt.Contains, "B2__base.sql")
+			// The already-applied migration of the same version is named by the
+			// file it is, which is what the operator can look at. It is also the
+			// file the rows below prove is NOT found by a numeric comparison.
+			c.Assert(run.message(), qt.Contains, "V2__q.sql")
 			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"p", "q"})
+		},
+	}, {
+		// Zero padding is ordinary Flyway practice, and flywayOrderingKey scores
+		// "2" and "02" identically ON PURPOSE — the two must run in the same
+		// position. Identity is the other question, and Atlas CE answers it on
+		// the token: measured, its stdout here is `Migrating to version 2 from
+		// 02` and it executes the baseline at exit 0, as did Ptah before the
+		// refusal landed. Answering identity with the ordering key instead
+		// refused this directory; reverting the fix prints `B2__base.sql is a
+		// Flyway baseline and this database already has migration history ...
+		// version 4611686018427510315 — a migration of the same version — is
+		// already applied` at exit 1, leaving tables p and q without base.
+		name: "a baseline beside two-digit zero-padded versions",
+		seed: seedFlyway(
+			flywayMigration{"V01__p.sql", "CREATE TABLE p (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V02__q.sql", "CREATE TABLE q (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{{"B2__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "p", "q"})
+		},
+	}, {
+		// The padding on the BASELINE's own token, against versions padded one
+		// digit further, so neither side of the comparison is the bare number.
+		// CE: `Migrating to version 02 from 002`, exit 0. Reverting the fix
+		// prints `B02__base.sql is a Flyway baseline ... version
+		// 4611686018427510315 — a migration of the same version — is already
+		// applied` at exit 1, leaving tables p and q without base.
+		name: "a zero-padded baseline beside three-digit zero-padded versions",
+		seed: seedFlyway(
+			flywayMigration{"V001__p.sql", "CREATE TABLE p (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V002__q.sql", "CREATE TABLE q (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{{"B02__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "p", "q"})
+		},
+	}, {
+		// A baseline landing in the MIDDLE of a padded run, so the collided
+		// version is neither the first nor the last revision — the ordering key
+		// picks it out of the middle of the recorded set just as readily. CE:
+		// `Migrating to version 6 from 07`, exit 0. Reverting the fix prints
+		// `B6__base.sql is a Flyway baseline ... version 4611686018427673531 — a
+		// migration of the same version — is already applied` at exit 1, leaving
+		// tables p, q and t without base.
+		name: "a baseline matching the middle of a zero-padded run",
+		seed: seedFlyway(
+			flywayMigration{"V05__p.sql", "CREATE TABLE p (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V06__q.sql", "CREATE TABLE q (id INTEGER PRIMARY KEY);"},
+			flywayMigration{"V07__t.sql", "CREATE TABLE t (id INTEGER PRIMARY KEY);"},
+		),
+		added: []flywayMigration{{"B6__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "p", "q", "t"})
 		},
 	}, {
 		// The way forward the refusal prints, executed verbatim, and then the

@@ -168,8 +168,8 @@
     {
       "name": "FlywaySurvivingBaseline answers for every layout, not only flyway",
       "file": "internal/atlasmigrateimport/importer.go",
-      "old": "\tif format != FormatFlyway {\n\t\treturn nil, nil\n\t}\n\tcovered, err := flywayCoveredFiles(fsys)",
-      "new": "\tcovered, err := flywayCoveredFiles(fsys)"
+      "old": "\tif format != FormatFlyway {\n\t\treturn nil, nil\n\t}\n\tnames, err := treeNames(fsys, skipHiddenDir)",
+      "new": "\tnames, err := treeNames(fsys, skipHiddenDir)"
     }
   ]
 }
