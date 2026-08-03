@@ -27,7 +27,12 @@ type ApplyOptions struct {
 	// current high-water mark is an artifact of the layout projection rather
 	// than a claim about authoring order. Only the Flyway converted path sets
 	// it; see atlasmigrateimport.FlywaySurvivingBaseline.
-	OutOfOrderExempt     []int64
+	OutOfOrderExempt []int64
+	// SourceVersions maps each converted version to the source tool's own
+	// version token, so the linear guard can ask "was this added out of order"
+	// on the operand that tool decides it with. Only the Flyway converted path
+	// sets it; see atlasmigrateimport.FlywaySourceVersions.
+	SourceVersions       map[int64]string
 	TxMode               migrator.MigrationTxMode
 	RevisionsSchema      string
 	MigrationLockTimeout time.Duration
@@ -103,6 +108,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 	mig, err := newApplyMigrator(conn, opts.FS, applyMigratorOptions{
 		execOrder:            opts.ExecOrder,
 		outOfOrderExempt:     opts.OutOfOrderExempt,
+		sourceVersions:       opts.SourceVersions,
 		txMode:               opts.TxMode,
 		revisionsSchema:      opts.RevisionsSchema,
 		migrationLockTimeout: opts.MigrationLockTimeout,
@@ -329,6 +335,7 @@ func validateApplyOptions(conn *dbschema.DatabaseConnection, opts ApplyOptions) 
 type applyMigratorOptions struct {
 	execOrder            migrator.ExecOrder
 	outOfOrderExempt     []int64
+	sourceVersions       map[int64]string
 	txMode               migrator.MigrationTxMode
 	revisionsSchema      string
 	migrationLockTimeout time.Duration
@@ -354,6 +361,7 @@ func newApplyMigrator(
 		WithMigrationsTable(opts.revisionsSchema, "").
 		WithExecOrder(opts.execOrder).
 		WithOutOfOrderExempt(opts.outOfOrderExempt).
+		WithSourceVersions(opts.sourceVersions).
 		WithTransactionMode(opts.txMode).
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
 		WithMigrationLockName(opts.migrationLockName).

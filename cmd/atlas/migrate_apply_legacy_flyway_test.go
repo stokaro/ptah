@@ -383,7 +383,11 @@ func TestCompatMigrateApply_FlywayOutOfOrderStillRefused(t *testing.T) {
 		_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 
 		c.Assert(err, qt.IsNotNil)
-		c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations below current version")
+		// The refusal names the source token, not only the projected int64:
+		// 4611686018427510315 appears in no file name and in no Atlas output,
+		// so on its own it does not say which file to move (#1098).
+		c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations for current version")
+		c.Assert(errorText(err)+stderr, qt.Contains, `(source version "2")`)
 		c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"oa", "oc"})
 	})
 
@@ -405,7 +409,11 @@ func TestCompatMigrateApply_FlywayOutOfOrderStillRefused(t *testing.T) {
 		_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 
 		c.Assert(err, qt.IsNotNil)
-		c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations below current version")
+		c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations for current version")
+		// Atlas CE gives every repeatable the empty version string, so the
+		// current mark here has an empty source version and V2 is refused
+		// against it. Printing the reserved int64 alone would say nothing.
+		c.Assert(errorText(err)+stderr, qt.Contains, `(source version "")`)
 	})
 }
 
@@ -435,7 +443,8 @@ func TestCompatMigrateApply_FlywayExemptionIsOneVersion(t *testing.T) {
 
 	// V2 is still out of order; exempting it as well would apply it silently.
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations below current version")
+	c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations for current version")
+	c.Assert(errorText(err)+stderr, qt.Contains, `(source version "2")`)
 	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"ea", "ec"})
 }
 
@@ -465,7 +474,12 @@ func TestCompatMigrateApply_GooseKeepsTheOutOfOrderGuard(t *testing.T) {
 	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=goose")
 
 	c.Assert(err, qt.IsNotNil)
+	// "below current version" is the NATIVE wording, and this row is the one
+	// that holds it. A goose directory carries no source version tokens, so the
+	// refusal keeps the message and the operand it always had; only a converted
+	// Flyway directory reports source versions (#1098).
 	c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations below current version")
+	c.Assert(errorText(err)+stderr, qt.Not(qt.Contains), "source version")
 	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"ga", "gc"})
 }
 

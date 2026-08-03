@@ -336,13 +336,35 @@ covers semantic and `yyyyMMddHHmmss` timestamp schemes. A version with more than
 three components, or a minor/patch of `100` or more, cannot be represented in an
 int64 and is rejected before the database is opened.
 
+That numeric order governs `atlas.sum` and execution, and it is **not** the
+comparison that decides whether a migration was added out of order. Flyway
+answers that on the version token as text, where `"10"` sorts below `"2"`, so a
+project's tenth migration added beside an already-applied `V2__x.sql` is refused
+rather than executed:
+
+```text
+Error: error applying migrations: out-of-order pending migrations for current
+version 4611686018427510315 (source version "2"): 4611686018427836747
+(source version "10") (use --exec-order=non-linear to apply or
+--exec-order=linear-skip to ignore)
+```
+
+The refusal names the **source version** because the int64 beside it appears in
+no file name. `--exec-order=non-linear` runs the migration, `--exec-order=linear-skip`
+leaves it pending, and a directory with no recorded history is unaffected —
+applying `V2__x.sql` and `V10__y.sql` together for the first time runs both, in
+that order. A repeatable (`R__`) is version `""` to Atlas, which sorts below
+every token, so one added to a database that already has history is refused by
+the same rule.
+
 Several inputs still fail before Ptah opens the target database rather than guess
 at semantics: unknown formats; goose files whose directives are out of order;
-dbmate files missing their up directive; Flyway repeatable (`R__`)
-migrations, which Ptah cannot yet execute as versioned migrations (matching how
-`ptah-compat migrate import` handles them); and two source files that resolve to
-the same version. See
-[`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
+dbmate files missing their up directive; and two source files that resolve to the
+same version. Flyway repeatable migrations are **not** in that list — they are
+converted and executed, on a reserved version slot above every versioned
+migration, which is where Atlas emits them. See
+[`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742) and
+[`stokaro/ptah#1098`](https://github.com/stokaro/ptah/issues/1098).
 
 ### Goose directive parsing
 

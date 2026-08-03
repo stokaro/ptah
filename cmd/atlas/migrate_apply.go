@@ -293,12 +293,28 @@ func runAtlasMigrateApply(
 		outOfOrderExempt = []int64{flywayBaseline.AtlasVersion}
 	}
 
+	// The linear guard's other operand (#1098). A converted Flyway directory is
+	// ORDERED numerically — V2 executes before V10, which is what the int64
+	// version encodes and what atlas.sum is written against — but the tool it
+	// came from decides whether a file "was added out of order" by comparing
+	// the version TOKEN as a string, where "10" sorts below "2". Carrying the
+	// token alongside the executed version lets the guard ask that question the
+	// way the source tool asks it, without renumbering anything already
+	// recorded. The comparison itself happens inside the migration lock, on the
+	// applied set the migrator reads there, so a concurrent writer cannot move
+	// the mark between the check and the run.
+	sourceVersions, err := atlasmigrateimport.FlywaySourceVersions(captured, resolvedDirFormat)
+	if err != nil {
+		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+
 	plan, err := atlasmigrate.PrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
 		Dir:                  dir,
 		FS:                   migrationFS,
 		DryRun:               opts.dryRun,
 		ExecOrder:            execOrder,
 		OutOfOrderExempt:     outOfOrderExempt,
+		SourceVersions:       sourceVersions,
 		TxMode:               txMode,
 		RevisionsSchema:      opts.revisionsSchema,
 		MigrationLockTimeout: migrationLockTimeout,

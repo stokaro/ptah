@@ -909,6 +909,59 @@ func flywayMigrationVersions(files []flywaySumFile, versions []int64) []FlywayMi
 	return out
 }
 
+// FlywaySourceVersions reports the Flyway version TOKEN every converted
+// migration was projected from, keyed by the int64 Atlas version it executes
+// and is recorded under. It returns nil for every other layout.
+//
+// It exists because two different comparisons decide two different questions
+// about the same directory, and Ptah answered both with the first
+// (stokaro/ptah#1098):
+//
+//   - ORDER, for atlas.sum and for execution, is NUMERIC on the version
+//     components: V2 runs before V10. [flywayOrderingKey] reproduces exactly
+//     that, and it is measured to match — a fresh apply of a directory holding
+//     V2__a.sql and V10__b.sql runs version 2 then version 10 on the pinned
+//     community binary v1.3.0.
+//   - LINEARITY, "was this file added after everything already applied", is
+//     decided on the version token as a STRING. `"10" < "2"`, so a V10 added
+//     beside an applied V2 is refused on the same binary with
+//     `migration file V10__y.sql was added out of order`.
+//
+// Keying the linear guard on the ordering int64 answers the second question
+// with the first one's answer, which is how a Flyway project's tenth migration
+// came to apply here at exit 0 where the oracle exits 1. The token is therefore
+// carried ALONGSIDE the executed version rather than replacing it: renumbering
+// would strand every revision row already recorded, which is a cost
+// [LegacyFlywayAtlasVersions] exists to document.
+//
+// The value is Atlas CE's version string for the file, so a repeatable reports
+// the empty string whatever its own token — see [flywayCEVersion]. That is not
+// a gap in the map: CE compares the empty string like any other token, which is
+// why it refuses an `R__r.sql` added to a database that has already applied
+// `V2__x.sql`, and reproducing the token faithfully reproduces that answer too.
+//
+// It shares flywayCoveredFiles and flywayConvertedVersions with the importer,
+// so the token reported for a version belongs to the entry actually executed
+// under it.
+func FlywaySourceVersions(fsys fs.FS, format Format) (map[int64]string, error) {
+	if format != FormatFlyway {
+		return nil, nil
+	}
+	covered, err := flywayCoveredFiles(fsys)
+	if err != nil {
+		return nil, err
+	}
+	versions, err := flywayConvertedVersions(covered)
+	if err != nil {
+		return nil, err
+	}
+	sources := make(map[int64]string, len(covered))
+	for i, file := range covered {
+		sources[versions[i]] = flywayCEVersion(file)
+	}
+	return sources, nil
+}
+
 // flywayEntryName renders the converted Atlas single-file name. A Flyway file
 // need not carry a description at all — V1.sql and Video.sql are both ordinary
 // migrations to Atlas CE — so the name degrades to the bare version rather than

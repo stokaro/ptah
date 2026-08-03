@@ -1,0 +1,64 @@
+{
+  "packages": [
+    "./internal/atlasmigrateimport/",
+    "./internal/atlasmigrate/",
+    "./migration/migrator/",
+    "./cmd/atlas/"
+  ],
+  "mutations": [
+    {
+      "name": "the source version tokens are never handed to the migrator",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\t\tSourceVersions:       sourceVersions,\n",
+      "new": ""
+    },
+    {
+      "name": "the source comparison replaces the numeric one instead of joining it",
+      "file": "migration/migrator/migrator.go",
+      "old": "\t\tmergeOutOfOrderVersions(\n\t\t\toutOfOrderMigrationVersions(pendingVersions, currentVersion),\n\t\t\toutOfOrderSourceVersions(pendingVersions, applied, m.sourceVersions),\n\t\t),",
+      "new": "\t\toutOfOrderSourceVersions(pendingVersions, applied, m.sourceVersions),"
+    },
+    {
+      "name": "the numeric comparison replaces the source one instead of joining it",
+      "file": "migration/migrator/migrator.go",
+      "old": "\t\tmergeOutOfOrderVersions(\n\t\t\toutOfOrderMigrationVersions(pendingVersions, currentVersion),\n\t\t\toutOfOrderSourceVersions(pendingVersions, applied, m.sourceVersions),\n\t\t),",
+      "new": "\t\toutOfOrderMigrationVersions(pendingVersions, currentVersion),"
+    },
+    {
+      "name": "the out-of-order exemption reaches only the numeric half of the verdict",
+      "file": "migration/migrator/migrator.go",
+      "old": "\toutOfOrderVersions := outOfOrderExempt(\n\t\tmergeOutOfOrderVersions(\n\t\t\toutOfOrderMigrationVersions(pendingVersions, currentVersion),\n\t\t\toutOfOrderSourceVersions(pendingVersions, applied, m.sourceVersions),\n\t\t),\n\t\tm.outOfOrderExempt,\n\t)",
+      "new": "\toutOfOrderVersions := mergeOutOfOrderVersions(\n\t\toutOfOrderExempt(outOfOrderMigrationVersions(pendingVersions, currentVersion), m.outOfOrderExempt),\n\t\toutOfOrderSourceVersions(pendingVersions, applied, m.sourceVersions),\n\t)"
+    },
+    {
+      "name": "linear-skip re-derives the verdict from the numeric comparison alone",
+      "file": "migration/migrator/migrator.go",
+      "old": "\t\tif execOrder == ExecOrderLinearSkip && slices.Contains(outOfOrderVersions, migration.Version) {",
+      "new": "\t\tif execOrder == ExecOrderLinearSkip && migration.Version < currentVersion &&\n\t\t\t!slices.Contains(m.outOfOrderExempt, migration.Version) {"
+    },
+    {
+      "name": "the mark is the token of the highest applied version, not the highest applied token",
+      "file": "migration/migrator/exec_order.go",
+      "old": "\tvar highest string\n\tfound := false\n\tfor _, version := range applied {\n\t\tsource, ok := sourceVersions[version]\n\t\tif !ok {\n\t\t\tcontinue\n\t\t}\n\t\tif !found || source > highest {\n\t\t\thighest, found = source, true\n\t\t}\n\t}\n\treturn highest, found",
+      "new": "\tvar highest string\n\tvar highestVersion int64\n\tfound := false\n\tfor _, version := range applied {\n\t\tsource, ok := sourceVersions[version]\n\t\tif !ok {\n\t\t\tcontinue\n\t\t}\n\t\tif !found || version > highestVersion {\n\t\t\thighest, highestVersion, found = source, version, true\n\t\t}\n\t}\n\treturn highest, found"
+    },
+    {
+      "name": "the source comparison is asked of every version, not only the pending ones",
+      "file": "migration/migrator/migrator.go",
+      "old": "\t\t\toutOfOrderSourceVersions(pendingVersions, applied, m.sourceVersions),",
+      "new": "\t\t\toutOfOrderSourceVersions(append(slices.Clone(pendingVersions), applied...), applied, m.sourceVersions),"
+    },
+    {
+      "name": "the token map records the projected int64 instead of the source version",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\tsources[versions[i]] = flywayCEVersion(file)",
+      "new": "\t\tsources[versions[i]] = fmt.Sprint(versions[i])"
+    },
+    {
+      "name": "a repeatable reports its own token instead of Atlas CE's empty version",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\tsources[versions[i]] = flywayCEVersion(file)",
+      "new": "\t\tsources[versions[i]] = file.version"
+    }
+  ]
+}
