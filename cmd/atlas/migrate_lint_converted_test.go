@@ -201,12 +201,18 @@ func writeLintNativeAtlasDir(c *qt.C) string {
 // TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet pins
 // which files lint's checksum step hashes once a foreign layout is selected.
 //
-// This is the row set that separates the fix from three cheaper ones that would
-// also make the flip test pass: hashing the whole directory under the Atlas
-// rule (the uncovered-down row would go red), hashing the CAPTURED snapshot
-// under the Atlas rule (the Flyway nested rows would go red), and skipping the
-// checksum step on a converted directory altogether (the edited-covered rows
-// would go red).
+// This is the row set that separates the fix from two cheaper ones that would
+// also make the flip test above pass. Both were run as mutants against this
+// file, and each row named below is one that went red:
+//
+//   - Resolving the covered set under the Atlas rule instead of the source
+//     layout's — SumFileNames(gateFS, FormatAtlas) — takes down
+//     editing_an_uncovered_down_file_is_not (the down file becomes covered) and
+//     a_nested_flyway_migration_is_covered_and_analyzed (the nested file stops
+//     being covered and reads as removed).
+//   - Dropping the checksum outcome on the way to the report takes down
+//     editing_a_covered_up_file_is_a_mismatch and
+//     editing_a_nested_flyway_migration_is_a_mismatch.
 //
 // Reverted, every row prints `Ptah does not implement that directory format`.
 func TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet(t *testing.T) {
@@ -306,7 +312,9 @@ func TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet(t *te
 // atlasMigrateDirFormatValue's lower-and-trim normalization. Routing lint
 // through the shared verbatim resolver removes the normalization.
 //
-// Reverted, both rows print the lint report and a nil error.
+// Reverted, both rows print the lint report and a nil error. Restoring the
+// normalization inside the shared resolver instead — the only place it could
+// come back now — takes down exactly these two rows and nothing else.
 func TestCompatMigrateLint_RejectsNonVerbatimDirFormat(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -336,7 +344,12 @@ func TestCompatMigrateLint_RejectsNonVerbatimDirFormat(t *testing.T) {
 // resolver must not treat it as an unknown value.
 //
 // Reverted, this prints the same lint report; it is a non-interference control
-// for the strictness change, not a behavior change of its own.
+// for the strictness change, not a behavior change of its own. Reverting proves
+// nothing about a control — removing a guard never makes it fire — so it was
+// checked with the INVERSE mutant instead: making the resolver refuse an empty
+// value as well takes this row and
+// TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout red, and nothing
+// else.
 func TestCompatMigrateLint_EmptyDirFormatStillReadsAtlas(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
