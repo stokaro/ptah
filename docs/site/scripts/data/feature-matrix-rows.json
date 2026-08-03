@@ -366,7 +366,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Not registered on migrate lint or schema diff; rejected as an unknown flag. Pinned Atlas CE v1.2.0 does not register it either.",
-    "evidence": "Reproduced on all three surfaces: `ptah-compat migrate lint --web`, `ptah-compat schema diff --web`, `ptah migrations lint --web` each print `error: unknown flag: --web`. cli-surface.md:33 lists the full CE `atlas migrate lint` flag set with no --web."
+    "evidence": "Reproduced on all three surfaces: `ptah-compat migrate lint --web` and `ptah-compat schema diff --web` print `Error: unknown flag: --web` (exit 1), `ptah migrations lint --web` prints `error: unknown flag: --web` (exit 2); the prefix and code follow the surface, per #1019. cli-surface.md:33 lists the full CE `atlas migrate lint` flag set with no --web."
   },
   {
     "area": "Testing framework",

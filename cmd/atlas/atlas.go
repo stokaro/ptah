@@ -61,10 +61,16 @@ type atlasPositionalArg struct {
 const (
 	atlasDirFormatDefault = "atlas"
 	atlasErrorExitCode    = 1
+	// atlasErrorPrefix is the diagnostic prefix of the whole compat surface.
+	// It is declared once on the root command (see NewCompatCommand) and
+	// resolved from the command tree at print time, so every diagnostic below
+	// the root carries it whether it is printed here or by shared cmdutil
+	// machinery.
+	atlasErrorPrefix = "Error"
 )
 
 func failAtlasCommand(cmd *cobra.Command, err error) error {
-	if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", err); writeErr != nil {
+	if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", cmdutil.ErrorPrefix(cmd), err); writeErr != nil {
 		return exitcode.New(
 			atlasErrorExitCode,
 			fmt.Errorf("%w: write Atlas diagnostic: %w", err, writeErr),
@@ -94,6 +100,12 @@ expect commands such as migrate apply or schema inspect. Commands that have an
 existing Ptah equivalent forward to that native command.`)
 	cmdflags.InstallEnvBinding("PTAH", cmd)
 	cmdutil.SetErrorCodePolicy(cmd, atlasErrorExitCode)
+	// The prefix is a property of the surface, exactly like the exit code
+	// above: declaring it on the root is what makes every diagnostic below it
+	// -- including the ones cobra routes through cmdutil's shared printers --
+	// answer with the same prefix, instead of it depending on which file
+	// happened to override a printer.
+	cmdutil.SetErrorPrefixPolicy(cmd, atlasErrorPrefix)
 	return cmd
 }
 
@@ -216,7 +228,7 @@ func atlasRootArgs(cmd *cobra.Command, args []string) error {
 
 	unknownErr := fmt.Errorf("unknown command %q for %q", args[0], "atlas")
 	var diagnostic strings.Builder
-	fmt.Fprintf(&diagnostic, "Error: %s\n", unknownErr)
+	fmt.Fprintf(&diagnostic, "%s: %s\n", cmdutil.ErrorPrefix(cmd), unknownErr)
 
 	suggestions := cmd.SuggestionsFor(args[0])
 	if len(suggestions) > 0 {
@@ -263,7 +275,7 @@ func atlasCompletionShellArgs(cmd *cobra.Command, args []string) error {
 	}
 
 	unknownErr := fmt.Errorf("unknown command %q for %q", args[0], "atlas completion "+cmd.Name())
-	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", unknownErr); err != nil {
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", cmdutil.ErrorPrefix(cmd), unknownErr); err != nil {
 		return exitcode.New(atlasErrorExitCode, fmt.Errorf("%w: write diagnostic: %w", unknownErr, err))
 	}
 	return exitcode.New(atlasErrorExitCode, unknownErr)
@@ -287,7 +299,7 @@ func newAtlasUnsupportedCommand(verb atlasUnsupportedVerb) *cobra.Command {
 		Long:  "This compatibility command is not implemented by Ptah.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			err := fmt.Errorf("%s is not implemented by Ptah", cmd.CommandPath())
-			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", err); writeErr != nil {
+			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", cmdutil.ErrorPrefix(cmd), err); writeErr != nil {
 				return exitcode.New(1, fmt.Errorf("%w: write diagnostic: %w", err, writeErr))
 			}
 			return exitcode.New(1, err)

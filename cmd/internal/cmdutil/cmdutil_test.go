@@ -167,6 +167,147 @@ func TestExactArgs_FailurePath(t *testing.T) {
 	}
 }
 
+// TestErrorPrefixPolicyGovernsEveryPrinter pins that the diagnostic prefix is
+// resolved from the command tree rather than hardcoded at each print site
+// (stokaro/ptah#1019). Every printer in this package is covered, because the
+// defect being prevented is a surface whose prefix depends on which route a
+// given failure happens to take: before the policy existed, one command
+// overriding one printer was enough to give a single binary two prefixes for
+// the same class of failure.
+//
+// The "inherited by a descendant" rows are the load-bearing ones: a surface
+// declares the prefix once on its root, and hundreds of call sites below it
+// answer with it without naming it.
+func TestErrorPrefixPolicyGovernsEveryPrinter(t *testing.T) {
+	tests := []struct {
+		name string
+		// emit exercises one printer against a command tree whose root has
+		// already had the policy under test applied.
+		emit func(root, leaf *cobra.Command) error
+	}{
+		{
+			name: "Fail",
+			emit: func(_, leaf *cobra.Command) error {
+				return cmdutil.Fail(leaf, errors.New("boom"))
+			},
+		},
+		{
+			name: "FlagErrorFunc",
+			emit: func(_, leaf *cobra.Command) error {
+				return cmdutil.FlagErrorFunc(leaf, errors.New("boom"))
+			},
+		},
+		{
+			name: "WrapRunE",
+			emit: func(_, leaf *cobra.Command) error {
+				return cmdutil.WrapRunE(commandError("boom"))(leaf, nil)
+			},
+		},
+		{
+			// NormalizeCommandError's configured-policy branch.
+			name: "NormalizeCommandError under an exit-code policy",
+			emit: func(root, leaf *cobra.Command) error {
+				cmdutil.SetErrorCodePolicy(root, 1)
+				return cmdutil.NormalizeCommandError(leaf, errors.New("boom"), 2)
+			},
+		},
+		{
+			// NormalizeCommandError's fallback branch, reached when no
+			// ancestor declares an exit code.
+			name: "NormalizeCommandError without an exit-code policy",
+			emit: func(_, leaf *cobra.Command) error {
+				return cmdutil.NormalizeCommandError(leaf, errors.New("boom"), 2)
+			},
+		},
+	}
+
+	policies := []struct {
+		name  string
+		apply func(*cobra.Command)
+		want  string
+	}{
+		{
+			name:  "no declared policy prints the native prefix",
+			apply: func(*cobra.Command) {},
+			want:  "error: boom\n",
+		},
+		{
+			name:  "a declared policy replaces the native prefix",
+			apply: func(root *cobra.Command) { cmdutil.SetErrorPrefixPolicy(root, "Error") },
+			want:  "Error: boom\n",
+		},
+	}
+
+	for _, tt := range tests {
+		for _, policy := range policies {
+			t.Run(tt.name+"/"+policy.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				var stderr bytes.Buffer
+				root := &cobra.Command{Use: "root"}
+				leaf := &cobra.Command{Use: "leaf"}
+				root.AddCommand(leaf)
+				root.SetErr(&stderr)
+				policy.apply(root)
+
+				err := tt.emit(root, leaf)
+
+				c.Assert(err, qt.ErrorMatches, "boom")
+				c.Assert(stderr.String(), qt.Equals, policy.want)
+			})
+		}
+	}
+}
+
+// TestAdoptErrorPrefixPolicyRestoresTheTargetPolicy pins the restore discipline
+// forwarding adapters depend on. Command factories hand back package-level
+// singletons, so a target that adopts the compat prefix and never gives it back
+// leaks "Error: " into the next native execution in the same process.
+func TestAdoptErrorPrefixPolicyRestoresTheTargetPolicy(t *testing.T) {
+	tests := []struct {
+		name          string
+		configure     func(*cobra.Command)
+		wantRestored  string
+		wantWhileHeld string
+	}{
+		{
+			name:          "target without a policy of its own",
+			configure:     func(*cobra.Command) {},
+			wantWhileHeld: "Error: boom\n",
+			wantRestored:  "error: boom\n",
+		},
+		{
+			name:          "target with a policy of its own",
+			configure:     func(target *cobra.Command) { cmdutil.SetErrorPrefixPolicy(target, "target") },
+			wantWhileHeld: "Error: boom\n",
+			wantRestored:  "target: boom\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			var stderr bytes.Buffer
+			source := &cobra.Command{Use: "source"}
+			cmdutil.SetErrorPrefixPolicy(source, "Error")
+			target := &cobra.Command{Use: "target"}
+			target.SetErr(&stderr)
+			tt.configure(target)
+
+			restore := cmdutil.AdoptErrorPrefixPolicy(target, source)
+			cmdutil.Fail(target, errors.New("boom"))
+			held := stderr.String()
+			stderr.Reset()
+			restore()
+			cmdutil.Fail(target, errors.New("boom"))
+
+			c.Assert(held, qt.Equals, tt.wantWhileHeld)
+			c.Assert(stderr.String(), qt.Equals, tt.wantRestored)
+		})
+	}
+}
+
 func commandError(message string) func(*cobra.Command, []string) error {
 	return func(_ *cobra.Command, _ []string) error {
 		return errors.New(message)

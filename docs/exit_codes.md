@@ -14,6 +14,37 @@ surfaces intentionally use Atlas CE's narrower process contract: `0` for
 success and help, and `1` for command, usage, validation, and runtime failures.
 An internal panic recovered by Ptah's process boundary still exits `2`.
 
+## Diagnostic Prefix
+
+The prefix on a process-level diagnostic is punctuation owned by the surface,
+not by the message. There is exactly one rule, and the only input is which
+binary printed the line:
+
+| Surface | Prefix | Exit code |
+| --- | --- | --- |
+| Native `ptah` | `error: ` | `2` |
+| Compatibility `ptah-compat` | `Error: ` | `1` |
+
+This holds for every process-level diagnostic the binary emits, regardless of
+which package produced the underlying error. In particular, a `ptah-compat`
+verb that delegates to a native command still prints `Error: `, because the
+user invoked the compatibility surface.
+
+The rule covers the prefix only. The message text after it stays Ptah-owned
+prose, so `ptah-compat schema inspect` with no `--url` reports Ptah's own
+`--url is required` rather than any wording copied from another tool.
+
+Report bodies are not process-level diagnostics and are unaffected: the
+`Error:` field inside a `migrate status` dirty-revision block or a
+`migrate validate` checksum report is part of that report's format on both
+surfaces.
+
+Implementation: the prefix is an inherited command-tree policy
+(`cmdutil.SetErrorPrefixPolicy`), declared once on a surface's root command
+next to its exit-code policy and resolved at print time by walking to the
+nearest ancestor that declares one. Adding a command or a diagnostic requires no
+prefix decision, and no individual command may override it.
+
 ## Native Commands
 
 The grouped command tree is the native Ptah surface. Ptah is pre-GA, so old

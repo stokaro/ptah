@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 )
 
 const envPrefix = "PTAH"
@@ -169,6 +170,20 @@ func newForwardCommandWithArgsMapper(
 			target.SetOut(cmd.OutOrStdout())
 			target.SetErr(cmd.ErrOrStderr())
 			defer resetCommandIO(target)
+			// The target runs detached from the calling surface's tree, so it
+			// cannot reach that surface's diagnostic prefix through
+			// cmdutil.ErrorPrefix's parent walk. Adopt it explicitly, or a
+			// diagnostic printed by the native implementation keeps the native
+			// prefix while everything around it uses the caller's.
+			//
+			// Restored on the way out for the same reason as the contexts,
+			// flags and IO above: a factory is free to hand back a command that
+			// outlives this execution (the parent re-attach a few lines up
+			// exists precisely because some already do), and a target that
+			// keeps a borrowed prefix would carry it into a later run on
+			// another surface.
+			restorePrefix := cmdutil.AdoptErrorPrefixPolicy(target, cmd)
+			defer restorePrefix()
 			return target.Execute()
 		},
 	}
