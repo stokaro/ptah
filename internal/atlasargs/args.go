@@ -27,6 +27,14 @@ const (
 	BoolFlag
 	// UintFlag describes an Atlas unsigned integer flag.
 	UintFlag
+	// StringArrayFlag describes a repeatable Atlas string flag (pflag prints
+	// these as `strings`). Every occurrence contributes a value, and the whole
+	// set is forwarded to the native flag as one comma-separated value.
+	//
+	// It exists because forwarding each occurrence separately would silently
+	// drop all but the last one against a native flag that takes a single
+	// string, which is the failure shape a repeatable Atlas flag must not have.
+	StringArrayFlag
 )
 
 // Flag describes one Atlas-compatible CLI flag and how it maps to Ptah.
@@ -82,6 +90,14 @@ func NativeString(name, shorthand, usage, nativeName string) Flag {
 func NativeStringDefault(name, shorthand, usage, nativeName, defaultValue string) Flag {
 	flag := NativeString(name, shorthand, usage, nativeName)
 	flag.Default = defaultValue
+	return flag
+}
+
+// NativeStringArray creates a repeatable Atlas string flag that forwards every
+// occurrence to a single native Ptah flag as one comma-separated value.
+func NativeStringArray(name, shorthand, usage, nativeName string) Flag {
+	flag := Flag{Name: name, Shorthand: shorthand, Usage: usage, Kind: StringArrayFlag}
+	flag.NativeName = nativeName
 	return flag
 }
 
@@ -234,61 +250,177 @@ func Map(group, use string, flags []Flag, args []string) ([]string, error) {
 	}
 	args = appendDefaultArgs(flags, args)
 	out := make([]string, 0, len(args))
+	// Repeatable flags are accumulated instead of emitted in place: their
+	// native counterpart takes one value, so the occurrences have to be joined
+	// rather than forwarded one by one.
+	arrays := newStringArrayValues(flags)
 	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if arg == "--" {
+		if args[i] == "--" {
 			out = append(out, args[i:]...)
 			break
 		}
-		parsed := splitFlag(arg)
-		if !parsed.ok {
-			out = append(out, arg)
+		emitted, consumed, err := mapOneArg(group, use, flags, arrays, args, i)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, emitted...)
+		i += consumed - 1
+	}
+	return arrays.appendTo(out), nil
+}
+
+// mapOneArg translates the argument at index and reports how many arguments it
+// consumed (1 for a flag carrying its value inline or none, 2 when the value is
+// the following argument). A repeatable flag emits nothing here: its value is
+// recorded in arrays and joined once at the end.
+func mapOneArg(
+	group, use string,
+	flags []Flag,
+	arrays *stringArrayValues,
+	args []string,
+	index int,
+) (emitted []string, consumed int, err error) {
+	arg := args[index]
+	parsed := splitFlag(arg)
+	if !parsed.ok {
+		return []string{arg}, 1, nil
+	}
+	flag, found := findFlag(flags, parsed.name)
+	if !found {
+		return []string{arg}, 1, nil
+	}
+	displayName := "--" + flag.Name
+	if len(parsed.name) == 1 {
+		displayName = "-" + parsed.name
+	}
+	if flag.Unsupported {
+		return nil, 0, UnsupportedFlagError(group, use, flag, displayName)
+	}
+	nativeFlag := "--" + nativeFlagName(flag)
+	emitted, consumed, err = mapFlagOccurrence(flag, parsed, arrays, nativeFlag, args, index)
+	if err != nil {
+		return nil, 0, fmt.Errorf("atlas %s %s %s: %w", group, use, displayName, err)
+	}
+	return emitted, consumed, nil
+}
+
+// mapFlagOccurrence emits the native spelling of one recognized flag.
+func mapFlagOccurrence(
+	flag Flag,
+	parsed parsedFlag,
+	arrays *stringArrayValues,
+	nativeFlag string,
+	args []string,
+	index int,
+) (emitted []string, consumed int, err error) {
+	switch {
+	case flag.Kind == StringArrayFlag:
+		consumed, err = collectStringArrayValue(arrays, flag, parsed, args, index)
+		if err != nil {
+			return nil, 0, err
+		}
+		if consumed == 0 {
+			// A trailing occurrence with no value: forward it unchanged and let
+			// the native command report the missing value.
+			return []string{nativeFlag}, 1, nil
+		}
+		return nil, consumed, nil
+	case flag.Kind == BoolFlag && parsed.hasValue:
+		return []string{nativeFlag + "=" + parsed.value}, 1, nil
+	case flag.Kind == BoolFlag:
+		return []string{nativeFlag}, 1, nil
+	case parsed.hasValue:
+		value, err := mapFlagValue(flag, parsed.value)
+		if err != nil {
+			return nil, 0, err
+		}
+		return []string{nativeFlag + "=" + value}, 1, nil
+	case index+1 >= len(args):
+		return []string{nativeFlag}, 1, nil
+	default:
+		value, err := mapFlagValue(flag, args[index+1])
+		if err != nil {
+			return nil, 0, err
+		}
+		return []string{nativeFlag, value}, 2, nil
+	}
+}
+
+func nativeFlagName(flag Flag) string {
+	if flag.NativeName != "" {
+		return flag.NativeName
+	}
+	return flag.Name
+}
+
+// collectStringArrayValue records one occurrence of a repeatable flag and
+// reports how many args it consumed: 1 for an inline `--flag=value`, 2 when the
+// value is the next arg, and 0 when the occurrence is trailing and has no value
+// at all, which the caller forwards unchanged so the native command produces
+// the diagnostic.
+func collectStringArrayValue(
+	arrays *stringArrayValues,
+	flag Flag,
+	parsed parsedFlag,
+	args []string,
+	index int,
+) (consumed int, err error) {
+	value := parsed.value
+	consumed = 1
+	if !parsed.hasValue {
+		if index+1 >= len(args) {
+			return 0, nil
+		}
+		value = args[index+1]
+		consumed = 2
+	}
+	mapped, err := mapFlagValue(flag, value)
+	if err != nil {
+		return 0, err
+	}
+	arrays.add(flag.Name, mapped)
+	return consumed, nil
+}
+
+// stringArrayValues accumulates the values of repeatable flags in flag
+// declaration order, so the forwarded args are deterministic whatever order the
+// occurrences arrived in.
+type stringArrayValues struct {
+	order  []Flag
+	values map[string][]string
+}
+
+func newStringArrayValues(flags []Flag) *stringArrayValues {
+	acc := &stringArrayValues{values: map[string][]string{}}
+	for _, flag := range flags {
+		if flag.Kind == StringArrayFlag {
+			acc.order = append(acc.order, flag)
+		}
+	}
+	return acc
+}
+
+func (a *stringArrayValues) add(name, value string) {
+	a.values[name] = append(a.values[name], value)
+}
+
+// appendTo emits one native flag per repeatable flag that was used, carrying
+// every occurrence's value. Empty values are dropped rather than forwarded as
+// empty list members, matching what the native comma-separated parsers do with
+// them.
+func (a *stringArrayValues) appendTo(out []string) []string {
+	for _, flag := range a.order {
+		values := a.values[flag.Name]
+		if len(values) == 0 {
 			continue
-		}
-		flag, found := findFlag(flags, parsed.name)
-		if !found {
-			out = append(out, arg)
-			continue
-		}
-		displayName := "--" + flag.Name
-		if len(parsed.name) == 1 {
-			displayName = "-" + parsed.name
-		}
-		if flag.Unsupported {
-			return nil, UnsupportedFlagError(group, use, flag, displayName)
 		}
 		nativeName := flag.Name
 		if flag.NativeName != "" {
 			nativeName = flag.NativeName
 		}
-		nativeFlag := "--" + nativeName
-		if flag.Kind == BoolFlag {
-			if parsed.hasValue {
-				out = append(out, nativeFlag+"="+parsed.value)
-			} else {
-				out = append(out, nativeFlag)
-			}
-			continue
-		}
-		if parsed.hasValue {
-			value, err := mapFlagValue(flag, parsed.value)
-			if err != nil {
-				return nil, fmt.Errorf("atlas %s %s %s: %w", group, use, displayName, err)
-			}
-			out = append(out, nativeFlag+"="+value)
-			continue
-		}
-		out = append(out, nativeFlag)
-		if i+1 < len(args) {
-			i++
-			value, err := mapFlagValue(flag, args[i])
-			if err != nil {
-				return nil, fmt.Errorf("atlas %s %s %s: %w", group, use, displayName, err)
-			}
-			out = append(out, value)
-		}
+		out = append(out, "--"+nativeName+"="+strings.Join(values, ","))
 	}
-	return out, nil
+	return out
 }
 
 func appendDefaultArgs(flags []Flag, args []string) []string {

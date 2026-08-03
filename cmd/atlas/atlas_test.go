@@ -242,8 +242,13 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 				"--revisions-schema",
 				"--lock-timeout",
 				"--format",
+				// Atlas's published CLI reference registers --to-version on
+				// this verb; the pinned community binary does not, which is
+				// what makes it a Pro-surface addition rather than a CE parity
+				// row (stokaro/ptah#951).
+				"--to-version",
 			},
-			forbidden: []string{"--to-version", "--lock-name"},
+			forbidden: []string{"--lock-name"},
 		},
 		{
 			name: "migrate_down",
@@ -263,9 +268,10 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			},
 		},
 		{
-			name:  "migrate_checkpoint",
-			path:  []string{"migrate", "checkpoint"},
-			flags: []string{"--dir", "--dev-url", "--dir-format"},
+			name:      "migrate_checkpoint",
+			path:      []string{"migrate", "checkpoint"},
+			flags:     []string{"--dir", "--dev-url", "--dir-format", "--schema", "--qualifier", "--lock-timeout", "--edit"},
+			forbidden: []string{"--editor"},
 		},
 		{
 			name:  "migrate_lint",
@@ -290,7 +296,7 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_test",
 			path:  []string{"migrate", "test"},
-			flags: []string{"--dir", "--dir-format", "--dev-url", "--run"},
+			flags: []string{"--dir", "--dir-format", "--dev-url", "--run", "--revisions-schema"},
 		},
 		{
 			name:  "schema_test",
@@ -3075,20 +3081,15 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 	assertSQLiteTableMissing(c, dbPath, "error_before")
 }
 
+// TestCompatCommand_MigrateApplyRejectsNonAtlasFlags keeps the spellings this
+// verb must NOT answer to.
+//
+// --to-version used to be one of them and no longer is: Atlas's published CLI
+// reference registers it on `migrate apply`, so refusing it broke a Pro
+// pipeline for no parity gain (stokaro/ptah#951). Its behavior is pinned in
+// migrate_apply_to_version_test.go instead.
 func TestCompatCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
 	c := qt.New(t)
-
-	c.Run("to_version", func(c *qt.C) {
-		cmd := NewCompatCommand("atlas")
-		var out bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"migrate", "apply", "--to-version", "1"})
-
-		err := cmd.Execute()
-
-		c.Assert(err, qt.ErrorMatches, `unknown flag: --to-version`)
-	})
 
 	c.Run("lock_name", func(c *qt.C) {
 		cmd := NewCompatCommand("atlas")

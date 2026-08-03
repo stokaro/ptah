@@ -41,6 +41,12 @@ type Options struct {
 	// the Ptah directory format (not the migrator's own "auto" default), so a
 	// direct caller that wants format auto-detection must set it explicitly.
 	DirFormat migrator.MigrationDirFormat
+	// RevisionsSchema places the revision table a migrate_to step writes in a
+	// named schema instead of the connection's default one. It matters when the
+	// throwaway database already holds a revision table the run must not touch,
+	// or when the tests exist to prove that a deployment's revision schema is
+	// the one the migrations expect. Empty keeps the connection default.
+	RevisionsSchema string
 }
 
 // Report is the outcome of a [RunMigrationTest] or [RunSchemaTest] run.
@@ -264,11 +270,12 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 
 	run := func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error) {
 		r := &runner{
-			conn:          conn,
-			migrationsDir: opts.MigrationsDir,
-			dirFormat:     dirFormat,
-			desiredSchema: desiredSchema,
-			seedDir:       opts.SeedDir,
+			conn:            conn,
+			migrationsDir:   opts.MigrationsDir,
+			dirFormat:       dirFormat,
+			desiredSchema:   desiredSchema,
+			seedDir:         opts.SeedDir,
+			revisionsSchema: opts.RevisionsSchema,
 		}
 		r.migrateTo = r.runMigrateTo
 		r.applySchema = r.runApplySchema
@@ -399,6 +406,9 @@ type runner struct {
 	dirFormat     migrator.MigrationDirFormat
 	desiredSchema *goschema.Database
 	seedDir       string
+	// revisionsSchema is the schema the migrate_to migrator records revisions
+	// in. Empty keeps the connection default.
+	revisionsSchema string
 	// migrateTo handles a migrate_to step. Migration tests wire it to
 	// [runner.runMigrateTo]; schema tests wire it to a rejection because a schema
 	// test applies a desired schema directly and has no migrations to move
@@ -501,7 +511,14 @@ func (r *runner) newMigrator() (*migrator.Migrator, error) {
 	if err != nil {
 		return nil, err
 	}
-	return migrator.NewMigrator(r.conn, provider).WithLogger(slog.New(slog.DiscardHandler)), nil
+	m := migrator.NewMigrator(r.conn, provider).WithLogger(slog.New(slog.DiscardHandler))
+	if r.revisionsSchema != "" {
+		// The table name stays the revision format's own default; only the
+		// schema moves, which is the single axis Atlas's --revisions-schema
+		// names.
+		m = m.WithMigrationsTable(r.revisionsSchema, "")
+	}
+	return m, nil
 }
 
 func (r *runner) runExec(ctx context.Context, sql string) (passed bool, detail string) {

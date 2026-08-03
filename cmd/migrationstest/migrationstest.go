@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/migration/dbtest"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -34,14 +35,15 @@ const (
 var reportFormats = []string{"text", "json", "html"}
 
 type options struct {
-	dir           string
-	migrationsDir string
-	rootDir       string
-	seedDir       string
-	dbURL         string
-	dirFormat     string
-	report        string
-	runPattern    string
+	dir              string
+	migrationsDir    string
+	rootDir          string
+	seedDir          string
+	dbURL            string
+	dirFormat        string
+	report           string
+	runPattern       string
+	migrationsSchema string
 }
 
 // NewMigrationsTestCommand returns the "test" command for the migrations
@@ -87,6 +89,7 @@ The command exits non-zero if any case fails.`,
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatPtah), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.report, reportFlag, reportFormatText, "Report format: text, json, or html")
 	flags.StringVar(&opts.runPattern, runFlag, "", "Run only case names matching this Go regular expression")
+	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -118,12 +121,13 @@ func run(ctx context.Context, out io.Writer, opts options) error {
 	}
 
 	report, err := dbtest.RunMigrationTest(ctx, dbtest.Options{
-		Cases:         cases,
-		MigrationsDir: opts.migrationsDir,
-		RootDir:       opts.rootDir,
-		SeedDir:       opts.seedDir,
-		DBURL:         opts.dbURL,
-		DirFormat:     dirFormat,
+		Cases:           cases,
+		MigrationsDir:   opts.migrationsDir,
+		RootDir:         opts.rootDir,
+		SeedDir:         opts.seedDir,
+		DBURL:           opts.dbURL,
+		DirFormat:       dirFormat,
+		RevisionsSchema: opts.migrationsSchema,
 	})
 	if err != nil {
 		return err
