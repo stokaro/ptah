@@ -49,6 +49,12 @@ type ResolveOptions struct {
 	// DevLockHeld tells migration-directory resolution that the caller already
 	// holds the dev database realm lock across a larger operation.
 	DevLockHeld bool
+	// IgnoreUnknownHCLNames accepts and drops schema-HCL names Ptah does not
+	// model instead of refusing the file. Off by default: it belongs to the
+	// Atlas-compatible command tree, which reads files written for another
+	// tool, and not to Ptah's own commands, where an unmodeled name is a typo
+	// worth naming. See [go.5x5.cz/ptah/internal/schemafile.Options].
+	IgnoreUnknownHCLNames bool
 }
 
 // State is one resolved desired-state. Resolution closes every connection it
@@ -77,7 +83,10 @@ type State struct {
 func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 	switch s.Kind {
 	case KindLocalFile:
-		schema, err := schemafile.LoadAll(s.rawURLs(), schemafile.Options{Dialect: opts.Dialect})
+		schema, err := schemafile.LoadAll(s.rawURLs(), schemafile.Options{
+			Dialect:               opts.Dialect,
+			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+		})
 		if err != nil {
 			return State{}, err
 		}

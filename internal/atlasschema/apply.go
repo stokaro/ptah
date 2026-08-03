@@ -43,6 +43,9 @@ type ApplyOptions struct {
 	// roots and native schema files loaded through the shared desired-source
 	// loader. The Atlas-compatible callers never set it.
 	Desired *goschema.Database
+	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
+	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	IgnoreUnknownHCLNames bool
 }
 
 type ApplyPlan struct {
@@ -67,6 +70,9 @@ type ApplyRuntimeOptions struct {
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired].
 	Desired *goschema.Database
+	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
+	// policy; see [ApplyOptions.IgnoreUnknownHCLNames].
+	IgnoreUnknownHCLNames bool
 }
 
 // ApplyRuntimePlan is a prepared Atlas schema apply operation for one open
@@ -185,16 +191,20 @@ func loadDesiredApplySchema(
 		return opts.Desired, nil
 	}
 	if opts.LocalFilesOnly {
-		return schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: conn.Info().Dialect})
+		return schemafile.LoadAll(opts.ToURLs, schemafile.Options{
+			Dialect:               conn.Info().Dialect,
+			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+		})
 	}
 	set, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
 	if err != nil {
 		return nil, err
 	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
-		Dialect:     conn.Info().Dialect,
-		DialectFlag: "--url",
-		DevURL:      opts.DevURL,
+		Dialect:               conn.Info().Dialect,
+		DialectFlag:           "--url",
+		DevURL:                opts.DevURL,
+		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 	})
 	if err != nil {
 		return nil, err
@@ -225,6 +235,8 @@ func PrepareApply(
 		DevURL:     opts.DevURL,
 		ProjectEnv: opts.ProjectEnv,
 		Desired:    opts.Desired,
+
+		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 	})
 	if err != nil {
 		return ApplyRuntimePlan{}, err

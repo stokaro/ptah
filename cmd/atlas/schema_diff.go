@@ -130,6 +130,9 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		Include:    opts.include,
 		Policy:     policy,
 		ProjectEnv: projectEnv,
+
+		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
+		IgnoreUnknownHCLNames: true,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

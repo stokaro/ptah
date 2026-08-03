@@ -33,6 +33,9 @@ type DiffOptions struct {
 	// dev database) and reading their initial connection metadata. A zero
 	// value leaves the caller's context deadline unchanged.
 	ConnectTimeout time.Duration
+	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
+	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	IgnoreUnknownHCLNames bool
 }
 
 // Diff computes the Atlas schema diff between two desired-state sources.
@@ -64,10 +67,11 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	}
 
 	resolveOpts := atlassource.ResolveOptions{
-		Dialect:        dialect,
-		DialectFlag:    dialectFlag,
-		DevURL:         opts.DevURL,
-		ConnectTimeout: opts.ConnectTimeout,
+		Dialect:               dialect,
+		DialectFlag:           dialectFlag,
+		DevURL:                opts.DevURL,
+		ConnectTimeout:        opts.ConnectTimeout,
+		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 	}
 	fromState, err := fromSet.Resolve(ctx, resolveOpts)
 	if err != nil {

@@ -3,6 +3,7 @@ package atlashcl
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,20 +18,52 @@ import (
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
+// Options configures HCL schema parsing.
+type Options struct {
+	// IgnoreUnknownNames accepts and drops HCL names this parser does not
+	// model instead of refusing the whole file.
+	//
+	// Off by default. It is opt-in because three callers depend on the
+	// refusal: Ptah's own schema loading and the native `ptah schema`
+	// commands, where an unmodeled name is a user error worth naming, and
+	// internal/goannotationexport, which re-parses HCL Ptah itself rendered as
+	// a round-trip fidelity check -- tolerance there would let a renderer typo
+	// pass unnoticed.
+	//
+	// Turning it on does not make the body of a dropped name unchecked: see
+	// tolerateUnknownBlock.
+	IgnoreUnknownNames bool
+
+	// RecordIgnored receives every name dropped under IgnoreUnknownNames, in
+	// the order the parser reached them. Optional; nil discards them, which is
+	// what the community binary does.
+	RecordIgnored func(IgnoredName)
+}
+
 // ParseFile parses an HCL schema file into the same Database IR used by
 // Go annotations and YAML schema files.
 func ParseFile(path string) (*goschema.Database, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read HCL schema file: %w", err)
-	}
-
-	return Parse(data, path)
+	return ParseFileWithOptions(path, Options{})
 }
 
 // Parse parses HCL schema text into the same Database IR used by Go
 // annotations and YAML schema files.
 func Parse(data []byte, filename string) (*goschema.Database, error) {
+	return ParseWithOptions(data, filename, Options{})
+}
+
+// ParseFileWithOptions parses an HCL schema file under the given options.
+func ParseFileWithOptions(path string, opts Options) (*goschema.Database, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read HCL schema file: %w", err)
+	}
+
+	return ParseWithOptions(data, path, opts)
+}
+
+// ParseWithOptions parses HCL schema text under the given options.
+func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Database, error) {
 	if filename == "" {
 		filename = "schema.hcl"
 	}
@@ -44,9 +77,11 @@ func Parse(data []byte, filename string) (*goschema.Database, error) {
 	}
 
 	p := parser{
-		src:       data,
-		sourceDir: filepath.Dir(filename),
-		db:        &goschema.Database{},
+		src:           data,
+		sourceDir:     filepath.Dir(filename),
+		db:            &goschema.Database{},
+		tolerant:      opts.IgnoreUnknownNames,
+		recordIgnored: opts.RecordIgnored,
 	}
 	if err := p.parseBody(body); err != nil {
 		return nil, err
@@ -59,6 +94,12 @@ type parser struct {
 	src       []byte
 	sourceDir string
 	db        *goschema.Database
+
+	// tolerant enables the unknown-name policy described on Options.
+	tolerant bool
+	// recordIgnored receives the names dropped under that policy. Nil discards
+	// them.
+	recordIgnored func(IgnoredName)
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -109,7 +150,7 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		// They do not define schema objects directly.
 		return nil
 	default:
-		return p.blockError(block, "unsupported top-level block %q", block.Type)
+		return p.rejectUnsupportedBlock(block, "top-level")
 	}
 }
 
@@ -319,7 +360,7 @@ func (p *parser) parseAdditionalTableBlock(table *goschema.Table, block *hclsynt
 		// Parsed before the child walk so duplicate dialect/key pairs are
 		// detected across all platform blocks on the table.
 	default:
-		return p.blockError(block, "unsupported table block %q", block.Type)
+		return p.rejectUnsupportedBlock(block, "table")
 	}
 	return nil
 }
@@ -334,6 +375,12 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 		return goschema.Field{}, p.blockError(block, "column %q requires type", name)
 	}
 	if err := p.rejectUnsupportedColumnAttrs(block); err != nil {
+		return goschema.Field{}, err
+	}
+	// Once, here, rather than in each of the two body walks below: they both
+	// iterate the same blocks, so leaving the gate in their default arms would
+	// report a dropped name twice.
+	if err := p.rejectUnsupportedColumnBlocks(block); err != nil {
 		return goschema.Field{}, err
 	}
 	generated, err := p.parseGeneratedColumn(block)
@@ -401,7 +448,8 @@ func (p *parser) parseGeneratedColumn(block *hclsyntax.Block) (generatedColumnSp
 		case "identity", "platform":
 			continue
 		default:
-			return generatedColumnSpec{}, p.blockError(nested, "unsupported column block %q", nested.Type)
+			// Already gated by rejectUnsupportedColumnBlocks.
+			continue
 		}
 	}
 	if attr != nil && len(asBlocks) > 0 {
@@ -447,7 +495,8 @@ func (p *parser) parseIdentityColumn(block *hclsyntax.Block) (identityColumnSpec
 		case "as", "platform":
 			continue
 		default:
-			return identityColumnSpec{}, p.blockError(nested, "unsupported column block %q", nested.Type)
+			// Already gated by rejectUnsupportedColumnBlocks.
+			continue
 		}
 	}
 	if len(identityBlocks) == 0 {
@@ -481,8 +530,14 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if len(block.Labels) != 1 {
 		return goschema.Index{}, p.blockError(block, "index block requires exactly one label")
 	}
-	if block.Body.Attributes["columns"] != nil && len(block.Body.Blocks) > 0 {
-		return goschema.Index{}, p.blockError(block.Body.Blocks[0], "index cannot mix columns attribute with on blocks")
+	// Gated before the mix check so a dropped block name does not read as an
+	// `on` block and turn tolerance into "cannot mix columns with on blocks".
+	onBlocks, err := p.indexOnBlocks(block)
+	if err != nil {
+		return goschema.Index{}, err
+	}
+	if block.Body.Attributes["columns"] != nil && len(onBlocks) > 0 {
+		return goschema.Index{}, p.blockError(onBlocks[0], "index cannot mix columns attribute with on blocks")
 	}
 	columns, err := p.parseColumnsAttr(block, "columns")
 	if err != nil {
@@ -494,7 +549,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	}
 	var parts []goschema.IndexPart
 	if len(columns) == 0 {
-		columns, parts, err = p.parseIndexParts(block)
+		columns, parts, err = p.parseIndexParts(onBlocks)
 		if err != nil {
 			return goschema.Index{}, err
 		}
@@ -553,8 +608,8 @@ func (p *parser) parseConstraint(table *goschema.Table, block *hclsyntax.Block) 
 	if len(block.Labels) != 1 {
 		return goschema.Constraint{}, p.blockError(block, "constraint block requires exactly one label")
 	}
-	if len(block.Body.Blocks) > 0 {
-		return goschema.Constraint{}, p.blockError(block.Body.Blocks[0], "unsupported constraint block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "constraint"); err != nil {
+		return goschema.Constraint{}, err
 	}
 	if err := p.rejectUnsupportedConstraintAttrs(block); err != nil {
 		return goschema.Constraint{}, err
@@ -666,6 +721,12 @@ func (p *parser) parsePlatformBlock(
 		overrides[dialect] = make(map[string]string)
 	}
 	for _, overrideBlock := range block.Body.Blocks {
+		if overrideBlock.Type != "override" {
+			if err := p.rejectUnsupportedBlock(overrideBlock, owner+" platform"); err != nil {
+				return err
+			}
+			continue
+		}
 		override, err := p.parsePlatformOverride(overrideBlock, owner)
 		if err != nil {
 			return err
@@ -689,20 +750,14 @@ type platformOverride struct {
 	value string
 }
 
+// parsePlatformOverride parses one `override` block. The caller has already
+// gated any other block type through the unknown-name policy.
 func (p *parser) parsePlatformOverride(block *hclsyntax.Block, owner string) (platformOverride, error) {
-	if block.Type != "override" {
-		return platformOverride{}, p.blockError(block, "unsupported %s platform block %q", owner, block.Type)
-	}
 	if len(block.Labels) != 1 || strings.TrimSpace(block.Labels[0]) == "" {
 		return platformOverride{}, p.blockError(block, "%s platform override requires exactly one key label", owner)
 	}
-	if len(block.Body.Blocks) > 0 {
-		return platformOverride{}, p.blockError(
-			block.Body.Blocks[0],
-			"unsupported %s platform override block %q",
-			owner,
-			block.Body.Blocks[0].Type,
-		)
+	if err := p.rejectNestedBlocks(block, owner+" platform override"); err != nil {
+		return platformOverride{}, err
 	}
 	if err := p.rejectUnsupportedAttrs(
 		block,
@@ -793,13 +848,26 @@ func (p *parser) parseIndexStorageParams(block *hclsyntax.Block) (map[string]str
 	return params, nil
 }
 
-func (p *parser) parseIndexParts(block *hclsyntax.Block) ([]string, []goschema.IndexPart, error) {
-	var columns []string
-	var parts []goschema.IndexPart
+// indexOnBlocks returns the index body's `on` blocks, sending every other
+// block type through the unknown-name gate.
+func (p *parser) indexOnBlocks(block *hclsyntax.Block) ([]*hclsyntax.Block, error) {
+	onBlocks := make([]*hclsyntax.Block, 0, len(block.Body.Blocks))
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "on" {
-			return nil, nil, p.blockError(nested, "unsupported index block %q", nested.Type)
+			if err := p.rejectUnsupportedBlock(nested, "index"); err != nil {
+				return nil, err
+			}
+			continue
 		}
+		onBlocks = append(onBlocks, nested)
+	}
+	return onBlocks, nil
+}
+
+func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []goschema.IndexPart, error) {
+	var columns []string
+	var parts []goschema.IndexPart
+	for _, nested := range onBlocks {
 		if err := p.rejectUnsupportedIndexOnAttrs(nested); err != nil {
 			return nil, nil, err
 		}
@@ -883,9 +951,15 @@ func (p *parser) parsePartition(block *hclsyntax.Block) (*goschema.PartitionSpec
 	if partitionType == "" {
 		return nil, p.blockError(block, "partition requires type")
 	}
+	// Gated before the mix check so a dropped block name does not read as a
+	// `by` block and turn tolerance into "cannot mix columns with by blocks".
+	byBlocks, err := p.partitionByBlocks(block)
+	if err != nil {
+		return nil, err
+	}
 	if block.Body.Attributes["columns"] != nil {
-		if len(block.Body.Blocks) > 0 {
-			return nil, p.blockError(block.Body.Blocks[0], "partition cannot mix columns attribute with by blocks")
+		if len(byBlocks) > 0 {
+			return nil, p.blockError(byBlocks[0], "partition cannot mix columns attribute with by blocks")
 		}
 		columns, err := p.parseColumnsAttr(block, "columns")
 		if err != nil {
@@ -897,22 +971,32 @@ func (p *parser) parsePartition(block *hclsyntax.Block) (*goschema.PartitionSpec
 		return &goschema.PartitionSpec{Type: partitionType, Parts: partitionColumnParts(columns)}, nil
 	}
 
-	parts, err := p.parsePartitionParts(block)
+	parts, err := p.parsePartitionParts(block, byBlocks)
 	if err != nil {
 		return nil, err
 	}
 	return &goschema.PartitionSpec{Type: partitionType, Parts: parts}, nil
 }
 
-func (p *parser) parsePartitionParts(block *hclsyntax.Block) ([]goschema.PartitionPart, error) {
-	if len(block.Body.Blocks) == 0 {
-		return nil, p.blockError(block, "partition requires columns attribute or by blocks")
-	}
-	parts := make([]goschema.PartitionPart, 0, len(block.Body.Blocks))
+// partitionByBlocks returns the partition body's `by` blocks, sending every
+// other block type through the unknown-name gate.
+func (p *parser) partitionByBlocks(block *hclsyntax.Block) ([]*hclsyntax.Block, error) {
+	byBlocks := make([]*hclsyntax.Block, 0, len(block.Body.Blocks))
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "by" {
-			return nil, p.blockError(nested, "unsupported partition block %q", nested.Type)
+			if err := p.rejectUnsupportedBlock(nested, "partition"); err != nil {
+				return nil, err
+			}
+			continue
 		}
+		byBlocks = append(byBlocks, nested)
+	}
+	return byBlocks, nil
+}
+
+func (p *parser) parsePartitionParts(block *hclsyntax.Block, byBlocks []*hclsyntax.Block) ([]goschema.PartitionPart, error) {
+	parts := make([]goschema.PartitionPart, 0, len(byBlocks))
+	for _, nested := range byBlocks {
 		if err := p.rejectUnsupportedPartitionByAttrs(nested); err != nil {
 			return nil, err
 		}
@@ -929,6 +1013,12 @@ func (p *parser) parsePartitionParts(block *hclsyntax.Block) ([]goschema.Partiti
 			continue
 		}
 		parts = append(parts, goschema.PartitionPart{Expr: p.exprString(exprAttr)})
+	}
+	// Checked after the walk, not before it: under the unknown-name policy a
+	// body holding nothing but dropped block names leaves no parts behind, and
+	// that is the same structural gap as an empty body.
+	if len(parts) == 0 {
+		return nil, p.blockError(block, "partition requires columns attribute or by blocks")
 	}
 	return parts, nil
 }
@@ -952,13 +1042,13 @@ func (p *parser) validatePrimaryKeyType(block *hclsyntax.Block) error {
 }
 
 func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]goschema.PrimaryKeyPart, error) {
-	if len(block.Body.Blocks) == 0 {
-		return nil, p.blockError(block, "primary_key requires columns attribute or on blocks")
-	}
 	parts := make([]goschema.PrimaryKeyPart, 0, len(block.Body.Blocks))
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "on" {
-			return nil, p.blockError(nested, "unsupported primary_key block %q", nested.Type)
+			if err := p.rejectUnsupportedBlock(nested, "primary_key"); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		if err := p.rejectUnsupportedPrimaryKeyOnAttrs(nested); err != nil {
 			return nil, err
@@ -972,6 +1062,10 @@ func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]goschema.Primar
 			Prefix: p.optionalRawExpr(nested.Body.Attributes["prefix"]),
 			Desc:   p.optionalBool(nested.Body.Attributes["desc"], false),
 		})
+	}
+	// See parsePartitionParts: dropped block names leave no parts behind.
+	if len(parts) == 0 {
+		return nil, p.blockError(block, "primary_key requires columns attribute or on blocks")
 	}
 	return parts, nil
 }
@@ -1161,8 +1255,8 @@ func (p *parser) parseColumnRefsAttr(block *hclsyntax.Block, attrName string) ([
 }
 
 func (p *parser) rejectUnsupportedSchemaBody(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported schema block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "schema"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"comment": true,
@@ -1172,8 +1266,8 @@ func (p *parser) rejectUnsupportedSchemaBody(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedEnumAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported enum block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "enum"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema": true,
@@ -1247,8 +1341,8 @@ func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedGeneratedColumnAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported column as block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "column as"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"expr": true,
@@ -1257,8 +1351,8 @@ func (p *parser) rejectUnsupportedGeneratedColumnAttrs(block *hclsyntax.Block) e
 }
 
 func (p *parser) rejectUnsupportedIdentityColumnAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported column identity block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "column identity"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"generated": true,
@@ -1336,18 +1430,76 @@ func (p *parser) rejectUnsupportedCheckAttrs(block *hclsyntax.Block) error {
 	}, "check")
 }
 
+// rejectUnsupportedAttrs is the single gate every attribute allow-list in this
+// package goes through, so the unknown-name policy is one branch rather than a
+// copy per construct.
+//
+// The tolerance covers every scope routed through here, not a shortlist. The
+// community binary drops an unmodeled attribute in each of them -- measured
+// with a nonsense control in the column, table, index, schema, primary_key,
+// foreign_key, check, enum and view positions, each time comparing the emitted
+// DDL against the same schema with the attribute deleted and getting an exact
+// match at exit 0. A shortlist would leave a real ent- or gqlgen-authored file
+// refused in the positions that were left out, which is the defect
+// stokaro/ptah#1016 describes.
 func (p *parser) rejectUnsupportedAttrs(block *hclsyntax.Block, supported map[string]bool, label string) error {
-	var unsupported []string
-	for name := range block.Body.Attributes {
-		if !supported[name] {
-			unsupported = append(unsupported, name)
+	// Sorted so both the tolerated and the refused path pick the same
+	// attribute out of a body carrying several unknown names; map order would
+	// otherwise make the reported error non-deterministic.
+	for _, name := range slices.Sorted(maps.Keys(block.Body.Attributes)) {
+		if supported[name] {
+			continue
+		}
+		if !p.tolerant {
+			return p.blockError(block, "unsupported %s attribute %q", label, name)
+		}
+		if err := p.tolerateUnknownAttr(label, block.Body.Attributes[name]); err != nil {
+			return err
 		}
 	}
-	if len(unsupported) == 0 {
-		return nil
+	return nil
+}
+
+// rejectUnsupportedColumnBlocks gates the nested blocks a column body may
+// carry. `as`, `identity` and `platform` are modeled; anything else goes
+// through the unknown-name gate.
+func (p *parser) rejectUnsupportedColumnBlocks(block *hclsyntax.Block) error {
+	for _, nested := range block.Body.Blocks {
+		switch nested.Type {
+		case "as", "identity", "platform":
+			continue
+		default:
+			if err := p.rejectUnsupportedBlock(nested, "column"); err != nil {
+				return err
+			}
+		}
 	}
-	slices.Sort(unsupported)
-	return p.blockError(block, "unsupported %s attribute %q", label, unsupported[0])
+	return nil
+}
+
+// rejectUnsupportedBlock is the block-side counterpart of
+// rejectUnsupportedAttrs: one gate, so a construct that grows a nested-block
+// allow-list cannot quietly get its own policy.
+func (p *parser) rejectUnsupportedBlock(block *hclsyntax.Block, label string) error {
+	if p.tolerant {
+		return p.tolerateUnknownBlock(label, block)
+	}
+	return p.blockError(block, "unsupported %s block %q", label, block.Type)
+}
+
+// rejectNestedBlocks applies that gate to every block nested in a construct
+// that models no nested blocks at all.
+//
+// Every one of them is checked, not just the first: under the tolerance the
+// first is dropped rather than fatal, so stopping there would leave the rest
+// of the subtree unevaluated.
+func (p *parser) rejectNestedBlocks(block *hclsyntax.Block, label string) error {
+	for _, nested := range block.Body.Blocks {
+		if err := p.rejectUnsupportedBlock(nested, label); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func markPrimaryFields(fields []goschema.Field, columns []string) {

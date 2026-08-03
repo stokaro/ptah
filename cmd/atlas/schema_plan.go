@@ -171,6 +171,9 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		ToURLs:  opts.toURLs,
 		Exclude: opts.exclude,
 		Policy:  policy,
+
+		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
+		IgnoreUnknownHCLNames: true,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

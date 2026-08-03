@@ -226,6 +226,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		TxMode:     txMode,
 		DryRun:     opts.dryRun,
 		ProjectEnv: projectEnv,
+
+		// Atlas-compatible surface: a schema file written for another tool
+		// must not be refused over a name this parser does not model.
+		IgnoreUnknownHCLNames: true,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -372,7 +376,10 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 
 	var desired *goschema.Database
 	if len(opts.toURLs) > 0 {
-		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{Dialect: conn.Info().Dialect})
+		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{
+			Dialect:               conn.Info().Dialect,
+			IgnoreUnknownHCLNames: true,
+		})
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 		}
