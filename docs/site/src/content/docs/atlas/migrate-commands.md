@@ -633,6 +633,43 @@ per-object finding names its object in the native message, which is also what
 keeps each SARIF result's fingerprint distinct when several of them share a
 rule, a file, and a line.
 
+### Renames
+
+A rename retires one logical name and introduces another. The two surfaces
+describe that single event at different altitudes:
+
+- `ptah-compat migrate lint` reports it as a destructive change to the retired
+  name — `DS102` for `ALTER TABLE … RENAME TO`, `RENAME TABLE …` and MySQL's
+  bare `ALTER TABLE … RENAME new_name`; `DS103` for `RENAME COLUMN` and its form
+  without the `COLUMN` keyword. The diagnostic names the old name rather than the
+  new one, carries the matching pre-migration-check suggested fix, is
+  error-severity, and exits 1.
+- Native `ptah migrations lint` reports `BC101`, which explains the operational
+  hazard and prescribes add-new/backfill/drop-old across releases. It stays a
+  warning there.
+
+Exactly one of the two is emitted per rename, so neither surface reports one
+statement twice.
+
+A statement renaming several objects follows the same two shapes the destructive
+drops do. One `ALTER TABLE` renaming several columns — the MySQL multi-clause
+form — produces one diagnostic naming every renamed column in clause order,
+under a single suggested fix. One `RENAME TABLE` naming several pairs produces
+one diagnostic and one suggested fix per renamed table, ordered by table name
+compared byte-wise. Ordering is per statement: consecutive `ALTER TABLE … RENAME
+TO` statements report in the order they are written.
+
+Renaming an object the same migration file created reports nothing on either
+surface: no deployed application version ever saw a name this migration itself
+introduced.
+
+Because the retired name is a destructive change, `-- atlas:nolint destructive`
+suppresses a rename on the compatibility surface and `-- atlas:nolint
+incompatible` does not.
+
+Index, key and constraint renames are not reported at all: deployed application
+code does not name them.
+
 The report is written to stdout even when findings fail, and error-severity
 findings still exit with code 1. The native `ptah migrations lint` output is
 unchanged. Custom output is selected by `--format`, by `format.migrate.lint`,
@@ -652,7 +689,9 @@ statements or files. One statement can contribute zero changes (an operational
 `INSERT`/`SELECT` or a construct outside the DDL grammar), exactly one (a single
 `CREATE`), or several (a multi-action `ALTER TABLE`, or a `DROP TABLE` naming
 several tables), so this change count and the new-migration-file count differ in
-general.
+general. A table rename counts as two changes — the old name stops naming an
+object and the new one starts — while a column rename counts as one, because the
+table it modifies stays the same object.
 
 Ptah also validates and fully loads the migration provider, including Atlas
 templates, before dropping any objects from the dev database. A malformed
