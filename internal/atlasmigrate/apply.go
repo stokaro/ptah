@@ -31,9 +31,17 @@ type ApplyOptions struct {
 	TxMode               migrator.MigrationTxMode
 	RevisionsSchema      string
 	MigrationLockTimeout time.Duration
-	Amount               uint64
-	AllowDirty           bool
-	BaselineVersion      int64
+	// MigrationLockName overrides the session advisory lock name the migration
+	// run coordinates on. Empty keeps the migrator default. It carries Atlas's
+	// `migrate apply --lock-name`.
+	MigrationLockName string
+	// SkipMigrationLock runs without the session advisory lock entirely. It
+	// carries Atlas's `migrate apply --skip-lock`, and is the only way this
+	// path executes migrations without serializing against another runner.
+	SkipMigrationLock bool
+	Amount            uint64
+	AllowDirty        bool
+	BaselineVersion   int64
 	// SkipChecks bypasses pre-migration check evaluation. Atlas registers no
 	// flag for this on `migrate apply` (measured on CE v1.2.0 and on
 	// Atlas's own help surface), so the compat command resolves it from
@@ -91,6 +99,8 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		txMode:               opts.TxMode,
 		revisionsSchema:      opts.RevisionsSchema,
 		migrationLockTimeout: opts.MigrationLockTimeout,
+		migrationLockName:    opts.MigrationLockName,
+		skipMigrationLock:    opts.SkipMigrationLock,
 		skipChecks:           opts.SkipChecks,
 	})
 	if err != nil {
@@ -136,6 +146,22 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 // dirty revision requiring recovery.
 func (p ApplyPlan) Noop() bool {
 	return len(p.SelectedVersions) == 0 && p.Status != nil && p.Status.DirtyRevision == nil
+}
+
+// MigrationLockName reports the advisory lock name the prepared migrator will
+// acquire, read back from the migrator rather than from the request, so a
+// caller reporting the lock names what the machinery resolved.
+func (p ApplyPlan) MigrationLockName() string {
+	if p.mig == nil {
+		return ""
+	}
+	return p.mig.MigrationLockName()
+}
+
+// MigrationLockSkipped reports whether the prepared migrator will run without
+// the advisory lock.
+func (p ApplyPlan) MigrationLockSkipped() bool {
+	return p.mig != nil && p.mig.MigrationLockSkipped()
 }
 
 // Execute applies the selected plan. Dry-run and no-op plans return metadata
@@ -288,6 +314,8 @@ type applyMigratorOptions struct {
 	txMode               migrator.MigrationTxMode
 	revisionsSchema      string
 	migrationLockTimeout time.Duration
+	migrationLockName    string
+	skipMigrationLock    bool
 	skipChecks           bool
 }
 
@@ -304,14 +332,19 @@ func newApplyMigrator(
 	if err != nil {
 		return nil, fmt.Errorf("error registering migrations: %w", err)
 	}
-	return mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
 		WithMigrationsTable(opts.revisionsSchema, "").
 		WithExecOrder(opts.execOrder).
 		WithOutOfOrderExempt(opts.outOfOrderExempt).
 		WithTransactionMode(opts.txMode).
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
+		WithMigrationLockName(opts.migrationLockName).
 		WithSkipChecks(opts.skipChecks).
-		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))), nil
+		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if opts.skipMigrationLock {
+		mig = mig.WithoutMigrationLock()
+	}
+	return mig, nil
 }
 
 func applyBaselineVersions(mig *migrator.Migrator, baselineVersion int64) ([]int64, error) {

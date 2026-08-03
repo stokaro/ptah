@@ -216,15 +216,30 @@ ptah-compat migrate apply 2 \
 ```
 
 Supported Atlas apply flags include `--dry-run`, `--tx-mode`, `--exec-order`,
-`--allow-dirty`, `--baseline`, `--revisions-schema`, `--lock-timeout`, and
-`--format`. `--format` executes a Go template against a Ptah apply result that
-mirrors Atlas's public apply-template fields: `Pending`, `Applied`, `Current`,
-`Target`, `Start`, `End`, `Driver`, `URL`, and `Dir`; `{{ json . }}` emits the
-same result as JSON with database credentials redacted. With `--env`, Ptah can
-read `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`.
-Dry-run plans read the stored Atlas revision rows and include only migrations
-that a real apply would select. They also run the same dirty-state, checksum,
-execution-order, and transaction-mode validations as a real apply.
+`--allow-dirty`, `--baseline`, `--revisions-schema`, `--lock-timeout`,
+`--lock-name`, `--skip-lock`, and `--format`. `--format` executes a Go template
+against a Ptah apply result that mirrors Atlas's public apply-template fields:
+`Pending`, `Applied`, `Current`, `Target`, `Start`, `End`, `Driver`, `URL`, and
+`Dir`; `{{ json . }}` emits the same result as JSON with database credentials
+redacted. With `--env`, Ptah can read `env.url`, `migration`, and
+`format.migrate.apply` from `atlas.hcl`. Dry-run plans read the stored Atlas
+revision rows and include only migrations that a real apply would select. They
+also run the same dirty-state, checksum, execution-order, and transaction-mode
+validations as a real apply.
+
+`--lock-name` replaces the name of the session advisory lock that serializes
+migration runs (`ptah_migrate` by default). Two runs serialize only when they
+name the same lock, so this is how a Ptah run coordinates with another tool on
+the same database. A lock another process holds makes the run wait, bounded by
+`--lock-timeout`; an elapsed timeout fails the run before any migration
+executes. An empty value is refused rather than falling back to the default
+name.
+
+`--skip-lock` acquires no lock at all: no wait, no timeout, and no
+serialization against another runner. It cannot be combined with `--lock-name`,
+because there is no lock to name. On dialects with no advisory-lock semantics —
+SQLite, ClickHouse, CockroachDB, and Spanner — an explicit `--lock-name` prints
+a note on stderr naming the lock that was not acquired.
 
 Atlas migration files may override global `file` or `none` with a leading
 header followed by a blank line:

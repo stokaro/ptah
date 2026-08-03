@@ -207,9 +207,14 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			forbidden: []string{"--output", "--web", "--export"},
 		},
 		{
-			name:  "schema_apply",
-			path:  []string{"schema", "apply"},
-			flags: []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode", "--plan", "--edit", "--lock-timeout"},
+			name: "schema_apply",
+			path: []string{"schema", "apply"},
+			// --lock-name and --skip-lock are Pro-surface flags the pinned
+			// Atlas CE binary does not register; Atlas's published CLI
+			// reference does register them on this verb, so compat implements
+			// them. --skip-lint stays unregistered.
+			flags:     []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode", "--plan", "--edit", "--lock-timeout", "--lock-name", "--skip-lock"},
+			forbidden: []string{"--skip-lint"},
 		},
 		{
 			name:      "schema_diff",
@@ -242,8 +247,12 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 				"--revisions-schema",
 				"--lock-timeout",
 				"--format",
+				// Pro-surface flags Atlas's published CLI reference registers
+				// on this verb; the pinned CE binary registers neither.
+				"--lock-name",
+				"--skip-lock",
 			},
-			forbidden: []string{"--to-version", "--lock-name"},
+			forbidden: []string{"--to-version"},
 		},
 		{
 			name: "migrate_down",
@@ -3088,18 +3097,6 @@ func TestCompatCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
 		err := cmd.Execute()
 
 		c.Assert(err, qt.ErrorMatches, `unknown flag: --to-version`)
-	})
-
-	c.Run("lock_name", func(c *qt.C) {
-		cmd := NewCompatCommand("atlas")
-		var out bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"migrate", "apply", "--lock-name", "custom-lock"})
-
-		err := cmd.Execute()
-
-		c.Assert(err, qt.ErrorMatches, `unknown flag: --lock-name`)
 	})
 }
 

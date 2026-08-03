@@ -22,6 +22,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasmigratereport"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/dblock"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -37,6 +38,7 @@ type atlasMigrateApplyOptions struct {
 	baseline        string
 	revisionsSchema string
 	lockTimeout     string
+	lock            atlasLockOptions
 	format          string
 }
 
@@ -70,6 +72,8 @@ Native Ptah equivalent: ptah migrations up.`,
 	flags.StringVar(&opts.baseline, "baseline", "", "Baseline version to mark applied before running pending migrations")
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the Atlas revisions table")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the migration lock, such as 10s or 2m")
+	registerAtlasLockNameFlag(flags, &opts.lock)
+	registerAtlasSkipLockFlag(flags, &opts.lock)
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 
 	cmdutil.ConfigureCommandArgs(cmd, atlasMigrateApplyArgs)
@@ -199,6 +203,10 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
+	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
+	if err != nil {
+		return err
+	}
 	skipChecks, err := resolveAtlasApplySkipChecks(cmd)
 	if err != nil {
 		return err
@@ -283,6 +291,8 @@ func runAtlasMigrateApply(
 		TxMode:               txMode,
 		RevisionsSchema:      opts.revisionsSchema,
 		MigrationLockTimeout: migrationLockTimeout,
+		MigrationLockName:    lockRequest.Name,
+		SkipMigrationLock:    lockRequest.Skip,
 		Amount:               amount,
 		AllowDirty:           opts.allowDirty,
 		BaselineVersion:      baselineVersion,
@@ -291,6 +301,7 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
+	noteAtlasMigrateApplyLockUnsupported(cmd, opts.lock, plan, conn.Info().Dialect)
 
 	// #982 changed the Atlas version a Flyway file converts to, which is the
 	// key `atlas_schema_revisions` stores. A database migrated by an older Ptah
@@ -340,6 +351,35 @@ func runAtlasMigrateApply(
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
 	return nil
+}
+
+// noteAtlasMigrateApplyLockUnsupported surfaces the capability decision behind
+// an explicitly named migration lock on a dialect that has no advisory locks:
+// the name is accepted and then has nothing to name, so the run says so rather
+// than letting `--lock-name` read as serialization it did not get.
+//
+// It fires only when --lock-name was passed, so output for every existing
+// invocation is byte-identical. --skip-lock never reaches here: it is mutually
+// exclusive with --lock-name, and a caller who asked for no lock does not need
+// to be told the dialect has none.
+//
+// The name comes from the prepared plan's migrator rather than from the flag
+// value, so the note reports the lock the machinery resolved.
+func noteAtlasMigrateApplyLockUnsupported(
+	cmd *cobra.Command,
+	lockOpts atlasLockOptions,
+	plan atlasmigrate.ApplyPlan,
+	dialect string,
+) {
+	if strings.TrimSpace(lockOpts.name) == "" || plan.MigrationLockSkipped() {
+		return
+	}
+	if dblock.Supported(dialect) {
+		return
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"note: migration locking is not supported for dialect %q; the advisory lock %q is not acquired and the migrations run without a database lock\n",
+		dialect, plan.MigrationLockName())
 }
 
 // emitAtlasMigrateApplyDeferredChecks names the pre-migration checks a dry run

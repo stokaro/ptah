@@ -71,8 +71,20 @@ golang-migrate down file and a Flyway undo file are not covered, and a layout
 that carries no `atlas.sum` and whose covered set is empty is not a checksum
 error. What executes is what the verified checksum covers, for every layout.
 
-**Rejected on this verb, matching Atlas OSS:** `--dir-format`, `--to-version`,
-and `--lock-name`.
+**Rejected on this verb, matching Atlas OSS:** `--dir-format` and
+`--to-version`.
+
+**`--lock-name`** replaces the name of the session advisory lock that
+serializes migration runs (`ptah_migrate` by default). Runs serialize only
+against other runs naming the same lock. A lock another process holds makes the
+run wait, bounded by `--lock-timeout`; an elapsed timeout fails the run before
+any migration executes. An empty value is refused rather than silently falling
+back to the default. On a dialect with no advisory-lock semantics the run
+prints a stderr note naming the lock it did not acquire.
+
+**`--skip-lock`** takes no lock at all, so a lock another process holds is
+ignored rather than waited on and concurrent runs can interleave. It cannot be
+combined with `--lock-name`.
 
 Pre-migration checks — `-- +ptah check` directives and Atlas txtar
 `checks.sql` / `checks/*.sql` sections — are enforced here as they are natively.
@@ -564,6 +576,16 @@ and execution, and released on every exit path. Empty waits indefinitely, an
 elapsed timeout fails before the target is inspected, and dialects without
 advisory locks (SQLite, ClickHouse, CockroachDB, YugabyteDB, Spanner) proceed
 unlocked with a stderr note.
+
+**`--lock-name`** replaces the lock name for the run (`ptah_schema_apply` by
+default). Runs serialize only against other runs naming the same lock, which is
+both how a run coordinates with a different tool and how it opts out of the
+default. An empty value is refused; on a dialect without advisory locks the
+stderr note names the lock that was not acquired.
+
+**`--skip-lock`** takes no lock at all: a lock another process holds is ignored
+rather than waited on, so concurrent applies can interleave. It cannot be
+combined with `--lock-name`.
 
 **`--dev-url` rehearsal.** Before a non-dry-run apply, `--dev-url` rehearses the
 exact ordered plan on the dev database — reset, the target's current schema

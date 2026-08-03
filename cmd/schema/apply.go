@@ -216,7 +216,7 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 	// The apply lock is held across inspection, planning, simulation,
 	// confirmation, and execution, so the plan cannot go stale between
 	// planning and applying. The deferred release covers every exit path.
-	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, lockTimeout)
+	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, "", lockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -332,7 +332,7 @@ func runSchemaApplyPlanFile(cmd *cobra.Command, opts schemaApplyOptions) error {
 	// The fingerprint verification is the serialized target inspection of the
 	// pre-approved plan path, so the lock is held before it and released on
 	// every exit path.
-	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, lockTimeout)
+	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, "", lockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

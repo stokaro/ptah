@@ -113,6 +113,7 @@ type Migrator struct {
 	txMode               MigrationTxMode
 	migrationLockName    string
 	migrationLockTimeout time.Duration
+	migrationLockSkipped bool
 	initialized          bool
 	// initializedDryRun records the writer's dry-run mode at the time
 	// initialized was set, so the memoized state is never reused across a

@@ -77,7 +77,7 @@ Across the 159 capabilities below:
 | Ptah supports it fully | 86 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 24 |
-| Ptah and Atlas CE both support it | 23 |
+| Ptah and Atlas CE both support it | 21 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 37 |
 | Ptah has it and neither Atlas edition does | 16 |
 | Atlas CE has it and Ptah does not, or only in part | 25 |
@@ -132,7 +132,7 @@ seven of them as open capabilities regardless.
 | `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics. |
 | `--schema` / -s scoping of both sides | ✅ | ✅ | ✅ | Names define the schema universe for apply and diff; repeated and comma-separated values union deterministically. |
 | `schema inspect --include` filtering | ✅ | ❌ | ✅ | Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. Child-depth patterns fail closed instead of emitting partial objects. |
-| Apply advisory lock and `--lock-timeout` | ✅ | ✅ | ✅ | Real locks on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server; SQLite, ClickHouse, CockroachDB, Spanner run unlocked with a note. |
+| Apply advisory lock, `--lock-timeout`, `--lock-name`, `--skip-lock` | ✅ | 🟡 | ✅ | Real locks on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server; others run unlocked with a note. `--lock-name` and `--skip-lock` are Pro surface adopted openly; CE registers only `--lock-timeout`. |
 | Desired-state sources for `--to` and `--from` | 🟡 | ✅ | ✅ | Files, one DB URL, one atlas.sum dir, or env://. A plain file:// schema directory without atlas.sum is rejected; atlas:// fails early. |
 | Dev-database rehearsal before apply | ✅ | ✅ | ✅ | Dev DB reset, target schema recreated, exact plan rehearsed; dev==target and failed rehearsal abort. docker:// dev URLs have their own row. |
 | Drift detection against desired schema | ✅ | ❌ | ✅ | Native `ptah schema drift`: `--severity`, `--exit-code`, `--ignore`, text/json/github-actions. Atlas Cloud drift monitoring is out of scope. |
@@ -173,7 +173,7 @@ seven of them as open capabilities regardless.
 | Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint: the ptah reversible pair, or Atlas's single `-- atlas:checkpoint` file under `--dir-format atlas`. CE gates the verb. |
 | Migration import from other tools | 🟡 | ✅ | ✅ | Native import converts golang-migrate/Goose/Flyway/Liquibase-SQL to ptah format (`R__` becomes one-time); the compat path writes atlas format and rejects `R__`. Liquibase XML/YAML/JSON not parsed. |
 | Migration linting | ✅ | 🟡 | ✅ | CE registers `migrate lint` with a basic Open rule set; Atlas's features page marks the lint CLI Pro. Ptah loads custom rules only through the Go API at compile time. |
-| Migration lock and lock timeout | ✅ | ✅ | ✅ | Compat `--lock-timeout` bounds directory and dev-db locks; native splits per-migration `--lock-timeout` from `--migration-lock-timeout`. |
+| Migration lock, lock timeout, `--lock-name`, `--skip-lock` | ✅ | 🟡 | ✅ | Compat `--lock-timeout` bounds directory and dev-db locks. `--lock-name` and `--skip-lock` on `migrate apply` are Pro surface adopted openly; CE registers only `--lock-timeout`. |
 | Migration status report | ✅ | ✅ | ✅ | Compat status reads Atlas revision metadata and renders Go templates over .Env, .Available, .Applied, .Pending, .Current, .Next. |
 | Online DDL routing via gh-ost or pt-osc | ✅ | ❔ | ❌ | ptah.yaml online_ddl.tool (ghost\|pt-osc), threshold_rows, args, and fallback (error\|plain) route large-table ALTERs through an online-DDL tool during migrations up/down. |
 | Pre-migration database backups (`--pg-dump-to`) | ✅ | ❌ | ❌ | `--pg-dump-to` writes a pg_dump custom-format backup and `--mysqldump-to` a SQL backup before applying or rolling back; ptah.yaml key migration.pg_dump_to. |
