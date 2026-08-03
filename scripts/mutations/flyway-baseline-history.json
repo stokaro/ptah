@@ -1,0 +1,74 @@
+{
+  "packages": [
+    "./cmd/atlas/",
+    "./internal/atlasmigrateimport/"
+  ],
+  "mutations": [
+    {
+      "name": "the baseline refusal is never reached",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif err := checkFlywayBaselineHistory(flywayBaseline, execOrder, plan); err != nil {\n\t\treturn err\n\t}",
+      "new": "\t_, _ = checkFlywayBaselineHistory, flywayBaseline"
+    },
+    {
+      "name": "the check fires whether or not this run would execute the baseline",
+      "file": "cmd/atlas/migrate_apply_flyway_baseline.go",
+      "old": "\tif !slices.Contains(plan.SelectedVersions, baseline.AtlasVersion) {\n\t\treturn nil\n\t}",
+      "new": ""
+    },
+    {
+      "name": "surviving applied migrations no longer make a baseline suspect",
+      "file": "cmd/atlas/migrate_apply_flyway_baseline.go",
+      "old": "\t\tcovered:     appliedFlywayMigrations(baseline.Covered, applied),",
+      "new": "\t\tcovered:     nil,"
+    },
+    {
+      "name": "a baseline carrying an already-applied version is waved through",
+      "file": "cmd/atlas/migrate_apply_flyway_baseline.go",
+      "old": "\t\tsameVersion: appliedFlywayMigrations(baseline.SameVersion, applied),",
+      "new": "\t\tsameVersion: nil,"
+    },
+    {
+      "name": "the refusal preempts the out-of-order guard instead of deferring to it",
+      "file": "cmd/atlas/migrate_apply_flyway_baseline.go",
+      "old": "\tfor _, version := range plan.Status.OutOfOrderMigrations {\n\t\tif version != baseline.AtlasVersion {\n\t\t\treturn nil\n\t\t}\n\t}",
+      "new": ""
+    },
+    {
+      "name": "the refusal answers under every exec order, escape hatch included",
+      "file": "cmd/atlas/migrate_apply_flyway_baseline.go",
+      "old": "\tif baseline == nil || plan.Status == nil || execOrder != migrator.ExecOrderLinear {",
+      "new": "\tif baseline == nil || plan.Status == nil {"
+    },
+    {
+      "name": "the refused file is never named",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\t\tSource:       file.name,",
+      "new": "\t\t\tSource:       \"\","
+    },
+    {
+      "name": "the same-version test is answered by the ordering key, not the token",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\treturn file.kind == flywaySumVersioned && file.version == baseline.version",
+      "new": "\t\treturn file.kind == flywaySumVersioned && slices.Equal(file.components, baseline.components)"
+    },
+    {
+      "name": "every versioned migration answers the same-version test",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\treturn file.kind == flywaySumVersioned && file.version == baseline.version",
+      "new": "\t\treturn file.kind == flywaySumVersioned"
+    },
+    {
+      "name": "the same-version migration blocking the run is never named",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\t\tout = append(out, FlywayMigrationVersion{Source: file.name, Version: versions[i]})",
+      "new": "\t\t\tout = append(out, FlywayMigrationVersion{Source: \"\", Version: versions[i]})"
+    },
+    {
+      "name": "the covered migration blocking the run is never named",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\tout[i] = FlywayMigrationVersion{Source: file.name, Version: versions[i]}",
+      "new": "\t\tout[i] = FlywayMigrationVersion{Source: file.name[:0], Version: versions[i]}"
+    }
+  ]
+}

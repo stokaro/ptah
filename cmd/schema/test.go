@@ -15,8 +15,10 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/schemaload"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/dbtest"
 )
 
@@ -27,6 +29,7 @@ const (
 	testDBURLFlag   = "db-url"
 	testReportFlag  = "report"
 	testRunFlag     = "run"
+	testSchemaFlag  = "schema"
 
 	testReportFormatText = "text"
 )
@@ -41,6 +44,7 @@ type testOptions struct {
 	dbURL   string
 	report  string
 	run     string
+	schemas []string
 }
 
 // NewSchemaTestCommand returns the "test" command for the schema namespace. It
@@ -69,6 +73,12 @@ each step performs exactly one action:
 Seed steps may specify their own dir. When omitted, --seed-dir supplies the
 default directory for the run.
 
+--schema restricts the desired schema to the named schemas before it is applied,
+so the cases run against that subset only. Repeated and comma-separated values
+union. A selection that keeps nothing is refused rather than run, because an
+empty desired schema makes every case fail on a missing object instead of
+reporting the selection as the cause.
+
 A migrate_to step is not valid in a schema test (use "ptah migrations test").
 
 When --db-url is omitted, an ephemeral SQLite database is provisioned in a
@@ -95,6 +105,7 @@ The command exits non-zero if any case fails.`,
 	flags.StringVar(&opts.dbURL, testDBURLFlag, "", "Throwaway database URL (optional). An ephemeral SQLite database is used when empty.")
 	flags.StringVar(&opts.report, testReportFlag, testReportFormatText, "Report format: text, json, or html")
 	flags.StringVar(&opts.run, testRunFlag, "", "Run only case names matching this Go regular expression")
+	flags.StringArrayVar(&opts.schemas, testSchemaFlag, nil, "Restrict the desired schema to these schema names")
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -153,7 +164,8 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 	return nil
 }
 
-// resolveTestDesiredSchema classifies the desired-schema source and resolves it.
+// resolveTestDesiredSchema classifies the desired-schema source, resolves it,
+// and restricts it to the selected schemas when a selection is present.
 //
 // A directory keeps the historical Go-annotation path and is left to the runner
 // so its error wording does not change. A .sql or .hcl file goes through the
@@ -162,36 +174,90 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 // is introspected live through the same resolver `schema apply`, `schema diff`,
 // `schema inspect` and `migrate diff` already route their desired state through.
 //
-// Only the database branch is new. Classification deliberately does not govern
-// the other two: it calls a plain directory a local schema file and would hand
-// it to the schema-file loader, which is why `schema diff --to file://models`
-// fails with "schema file is a directory". A Go-annotation directory must keep
-// reaching goschema.ParseDir inside the runner.
+// Classification deliberately does not govern the file and directory branches:
+// it calls a plain directory a local schema file and would hand it to the
+// schema-file loader, which is why `schema diff --to file://models` fails with
+// "schema file is a directory". A Go-annotation directory must keep reaching
+// goschema.ParseDir.
+//
+// A schema selection has to be applied here rather than inside the runner,
+// because the runner's own parse produces the schema it immediately provisions.
+// That is why the directory branch, which would otherwise defer to the runner,
+// resolves eagerly as soon as a selection is present; the parse is the same
+// [goschema.ParseDir] the runner would have run. Every branch funnels through
+// scopeTestDesiredSchema so the selection cannot apply to some sources and be
+// silently ignored on others.
 func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOptions) (*goschema.Database, error) {
+	selection := schemascope.SplitNames(opts.schemas)
 	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{})
 	if err == nil && set.Kind == atlassource.KindDatabase {
-		return resolveTestDesiredDatabase(ctx, diag, opts, set)
+		return resolveTestDesiredDatabase(ctx, diag, opts, set, selection)
 	}
 	info, statErr := os.Stat(opts.rootDir)
 	if statErr != nil || info.IsDir() {
-		// Leave a missing path to the runner, which names it in its own error.
-		return nil, nil //nolint:nilerr // the runner reports this source
+		if len(selection) == 0 {
+			// Leave a missing path to the runner, which names it in its own error.
+			return nil, nil //nolint:nilerr // the runner reports this source
+		}
+		parsed, parseErr := goschema.ParseDir(opts.rootDir)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse desired schema from %s: %w", opts.rootDir, parseErr)
+		}
+		return scopeTestDesiredSchema(parsed, selection, "")
 	}
 	database, err := schemaload.LoadContext(ctx, schemaload.Options{SchemaFiles: []string{opts.rootDir}})
 	if err != nil {
 		return nil, fmt.Errorf("load desired schema from %s: %w", opts.rootDir, err)
 	}
-	return database, nil
+	return scopeTestDesiredSchema(database, selection, "")
+}
+
+// scopeTestDesiredSchema restricts database to the selected schemas through the
+// same allow-list every other schema-scoped verb uses.
+//
+// defaultSchema names the schema that unqualified objects belong to. Objects
+// parsed from Go annotations or a schema file carry their own schema name and
+// pass "", but a live introspection leaves the default schema's objects
+// unqualified, so matching them against `--schema main` (or `public`, or `dbo`)
+// requires naming that default -- the same pairing internal/atlasmigrate/diff.go
+// makes for `migrate diff`. Without it every selection over a database source
+// would filter everything out and report the zero-match refusal below, turning
+// a supported combination into a refusal.
+//
+// A selection that keeps no tables out of a schema that had some is refused. The
+// alternative is provisioning an empty database and letting every case fail on a
+// missing relation, which reports the symptom and hides the cause -- the
+// zero-match false green that stokaro/ptah#979 exists to prevent.
+func scopeTestDesiredSchema(
+	database *goschema.Database,
+	selection []string,
+	defaultSchema string,
+) (*goschema.Database, error) {
+	if len(selection) == 0 || database == nil {
+		return database, nil
+	}
+	scoped := schemascope.FilterGeneratedWithDefaultSchema(database, selection, defaultSchema)
+	if len(database.Tables) > 0 && len(scoped.Tables) == 0 {
+		return nil, fmt.Errorf(
+			"--%s %s selects no tables out of the desired schema",
+			testSchemaFlag, strings.Join(selection, ","))
+	}
+	return scoped, nil
 }
 
 // resolveTestDesiredDatabase introspects a database desired-state source. The
 // dialect gate runs before any connection is opened, so a mismatched source
 // fails on the mismatch rather than on whatever the connection would have done.
+//
+// The schema selection is applied here rather than by the caller because only
+// this branch knows the dialect, and the dialect is what names the default
+// schema an introspection leaves objects unqualified in.
 func resolveTestDesiredDatabase(
 	ctx context.Context,
 	diag io.Writer,
 	opts testOptions,
 	set atlassource.Set,
+	selection []string,
 ) (*goschema.Database, error) {
 	devDialect, err := ensureTestDevDialect(set, opts.dbURL)
 	if err != nil {
@@ -207,7 +273,7 @@ func resolveTestDesiredDatabase(
 	if err := dropClusterScopedTestState(diag, state.Schema); err != nil {
 		return nil, err
 	}
-	return state.Schema, nil
+	return scopeTestDesiredSchema(state.Schema, selection, identifier.ForDialect(devDialect).DefaultSchema)
 }
 
 // ensureTestDevDialect refuses a database desired-state source whose dialect

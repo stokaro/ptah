@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -22,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/schemafile"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -39,10 +41,16 @@ type atlasSchemaApplyOptions struct {
 	include     []string
 	planURL     string
 	lockTimeout string
+	lock        atlasLockOptions
 	edit        bool
+	skipLint    bool
 	// formatOutput is derived at run time: true when --format was passed or
 	// atlas.hcl provides format.schema.apply.
 	formatOutput bool
+	// lintPolicy is the atlas.hcl lint block, resolved at run time. It decides
+	// both which rules the plan is linted against and whether there is a lint
+	// pass at all.
+	lintPolicy projectconfig.LintConfig
 }
 
 func newAtlasSchemaApplyCommand() *cobra.Command {
@@ -90,7 +98,13 @@ env.schema.mode subtract from the result. A selected object that depends on
 an unselected object refuses the plan with an explicit diagnostic instead of
 emitting incomplete SQL. An --include selection that matches neither the
 target nor the desired state refuses the apply: there is nothing to apply, and
-reporting a synced schema would claim success for work that did not happen.`,
+reporting a synced schema would claim success for work that did not happen.
+
+When the selected atlas.hcl env declares a ` + "`lint`" + ` policy, the planned
+SQL is linted against exactly the rules that policy names before anything is
+executed, and a finding the policy rates as an error refuses the apply.
+--skip-lint runs the apply without that check. A project with no lint policy
+has no lint pass to skip, so --skip-lint changes nothing there.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -110,6 +124,9 @@ reporting a synced schema would claim success for work that did not happen.`,
 	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffixHCL+" or file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
+	registerAtlasLockNameFlag(flags, &opts.lock)
+	registerAtlasSkipLockFlag(flags, &opts.lock)
+	flags.BoolVar(&opts.skipLint, "skip-lint", false, "Skip linting the planned migration")
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
@@ -153,6 +170,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+		opts.lintPolicy = projectCfg.Lint
 	}
 	opts.formatOutput = formatOutput
 	if strings.TrimSpace(opts.planURL) != "" {
@@ -198,6 +216,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
@@ -210,12 +232,12 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	// The apply lock is held across inspection, planning, simulation,
 	// confirmation, and execution, so the plan cannot go stale between
 	// planning and applying. The deferred release covers every exit path.
-	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, lockTimeout)
+	applyLock, err := acquireAtlasSchemaApplyLock(cmd, conn, lockRequest, lockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
-	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
+	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, opts.lock, applyLock, conn.Info().Dialect)
 
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL:     opts.devURL,
@@ -227,6 +249,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		TxMode:     txMode,
 		DryRun:     opts.dryRun,
 		ProjectEnv: projectEnv,
+
+		// Atlas-compatible surface: a schema file written for another tool
+		// must not be refused over a name this parser does not model.
+		IgnoreUnknownHCLNames: true,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -259,6 +285,12 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
 	} else {
 		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), sqlText)
+	}
+	// The lint verdict covers the statements that would run, edits included,
+	// and lands before the --dry-run exit so a dry run reports the same refusal
+	// the real apply would.
+	if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if opts.dryRun {
 		return nil
@@ -343,6 +375,10 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	path, err := atlasSchemaApplyPlanFilePath(opts.planURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -373,7 +409,10 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 
 	var desired *goschema.Database
 	if len(opts.toURLs) > 0 {
-		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{Dialect: conn.Info().Dialect})
+		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{
+			Dialect:               conn.Info().Dialect,
+			IgnoreUnknownHCLNames: true,
+		})
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 		}
@@ -382,12 +421,12 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	// The plan verification is the serialized target inspection of the
 	// pre-approved plan path, so the lock is held before it and released on
 	// every exit path.
-	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, lockTimeout)
+	applyLock, err := acquireAtlasSchemaApplyLock(cmd, conn, lockRequest, lockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
-	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
+	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, opts.lock, applyLock, conn.Info().Dialect)
 
 	// A JSON plan always carries a fingerprint contract; a Ptah-written
 	// `.plan.hcl` carries one too (round-trip). Foreign Atlas hashes cannot be
@@ -415,6 +454,13 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
 	} else {
 		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+	}
+	// A pre-approved plan file is still SQL this command is about to run
+	// against the target, so the project's lint policy applies to it too.
+	// Exempting it would make --skip-lint inert on the one path an operator is
+	// most likely to be scripting.
+	if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -677,6 +723,46 @@ func confirmAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions, f
 	return promptAtlasSchemaApplyConfirmation(cmd.OutOrStdout(), cmd.InOrStdin())
 }
 
+// lintAtlasSchemaApplyPlan refuses a plan the project's lint policy rates as an
+// error, unless --skip-lint was passed.
+//
+// The pass exists only where a policy does. Atlas CE's `schema apply` neither
+// lints nor registers --skip-lint (measured on the pinned community binary), so
+// a project without a `lint` block keeps byte-identical CE behavior and
+// --skip-lint has nothing to skip there. Where the block is present, the same
+// severities that decide `migrate lint` decide this, which is the point: one
+// policy, applied wherever SQL is about to reach a database.
+func lintAtlasSchemaApplyPlan(opts atlasSchemaApplyOptions, dialect string, statements []string) error {
+	if opts.skipLint || len(statements) == 0 {
+		return nil
+	}
+	findings, err := atlasschema.LintPlan(statements, atlasSchemaApplyLintOptions(opts, dialect))
+	if err != nil {
+		return err
+	}
+	if len(findings) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"the planned changes are refused by the atlas.hcl lint policy:%s\nreview the plan, or rerun with --skip-lint to apply it anyway",
+		atlasschema.FormatPlanLintFindings(findings))
+}
+
+func atlasSchemaApplyLintOptions(opts atlasSchemaApplyOptions, dialect string) atlasschema.PlanLintOptions {
+	rules := make(map[string]migrationlint.RuleConfig, len(opts.lintPolicy.RuleConfigs))
+	for code, rule := range opts.lintPolicy.RuleConfigs {
+		rules[code] = migrationlint.RuleConfig{
+			Severity: migrationlint.Severity(rule.Severity),
+			Exclude:  slices.Clone(rule.Exclude),
+		}
+	}
+	return atlasschema.PlanLintOptions{
+		Dialect:     dialect,
+		RuleConfigs: rules,
+		Disabled:    slices.Clone(opts.lintPolicy.DisabledRules),
+	}
+}
+
 func validateAtlasSchemaApplyDiffPolicy(
 	txMode migrator.MigrationTxMode,
 	conn *dbschema.DatabaseConnection,
@@ -763,6 +849,25 @@ func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, statements []str
 	return out.String(), nil
 }
 
+// acquireAtlasSchemaApplyLock takes the schema apply lock the request selects,
+// or takes nothing at all when --skip-lock asked for no lock.
+//
+// A skipped acquisition returns a nil lock rather than a held no-op one, so
+// the difference between "this dialect cannot lock" and "the caller declined
+// to lock" stays visible to everything downstream: a nil lock reports no name
+// and releases as a no-op.
+func acquireAtlasSchemaApplyLock(
+	cmd *cobra.Command,
+	conn *dbschema.DatabaseConnection,
+	request atlasLockRequest,
+	timeout time.Duration,
+) (*atlasschema.ApplyLock, error) {
+	if request.Skip {
+		return nil, nil
+	}
+	return atlasschema.AcquireApplyLock(cmd.Context(), conn, request.Name, timeout)
+}
+
 // releaseAtlasSchemaApplyLock releases the schema apply lock on every exit
 // path. Release runs on its own bounded background context, so it also works
 // when the command context has already been canceled.
@@ -774,15 +879,36 @@ func releaseAtlasSchemaApplyLock(cmd *cobra.Command, lock *atlasschema.ApplyLock
 
 // noteAtlasSchemaApplyLockUnsupported surfaces the capability decision for
 // dialects without advisory-lock semantics: an explicitly requested
-// --lock-timeout is ignored and the apply proceeds without a database lock.
-// The note goes to stderr so --format output on stdout stays machine-clean.
+// --lock-timeout or --lock-name is ignored and the apply proceeds without a
+// database lock. The note goes to stderr so --format output on stdout stays
+// machine-clean.
+//
+// --lock-name gets its own wording because the two flags fail differently: an
+// ignored timeout only means "no wait", while an ignored name means the run is
+// not coordinating with whatever else holds that name. The name printed is
+// read back from the acquired lock, so it is the name the machinery resolved
+// rather than the flag string.
+//
+// --skip-lock produces no note in either wording. It leaves a nil lock behind,
+// and a caller who asked for no lock does not need to be told the dialect has
+// none.
 func noteAtlasSchemaApplyLockUnsupported(
 	cmd *cobra.Command,
 	requestedTimeout string,
+	lockOpts atlasLockOptions,
 	lock *atlasschema.ApplyLock,
 	dialect string,
 ) {
-	if strings.TrimSpace(requestedTimeout) == "" || lock.Supported() {
+	if lock == nil || lock.Supported() {
+		return
+	}
+	if strings.TrimSpace(lockOpts.name) != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"note: schema apply locking is not supported for dialect %q; the advisory lock %q is not acquired and the apply proceeds without a database lock\n",
+			dialect, lock.Name())
+		return
+	}
+	if strings.TrimSpace(requestedTimeout) == "" {
 		return
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(),

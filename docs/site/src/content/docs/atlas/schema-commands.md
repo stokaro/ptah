@@ -261,6 +261,19 @@ SQLite, ClickHouse, CockroachDB, YugabyteDB, and Spanner have no advisory-lock
 semantics: the apply proceeds without a lock, and an explicitly passed
 `--lock-timeout` prints a note on stderr.
 
+`--lock-name` replaces the lock name for the run. Two runs serialize only when
+they name the same lock, so this is how a Ptah apply coordinates with another
+tool on the same database — and equally how it deliberately stops coordinating
+with the default. Passing an empty value is refused rather than silently
+falling back to `ptah_schema_apply`. On dialects without advisory locks the
+note on stderr names the lock that was not acquired.
+
+`--skip-lock` acquires no lock at all: no wait, no timeout, and no
+serialization against another runner holding the same name. A lock another
+process holds is ignored rather than waited on, so concurrent applies can
+interleave. It cannot be combined with `--lock-name`, because there is no lock
+to name.
+
 `--exclude` accepts repeated or comma-separated Atlas-style glob patterns,
 including `[type=...]` selectors. Ptah applies the filter to both the current
 live schema and the desired local schema files before planning, so excluded

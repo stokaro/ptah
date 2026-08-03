@@ -63,8 +63,36 @@ func (m *Migrator) WithMigrationLockName(name string) *Migrator {
 	return &tmp
 }
 
+// WithoutMigrationLock returns a copy of the migrator that runs without the
+// session-level migration advisory lock: no lock is requested, no wait is
+// observed, and concurrent runners are not serialized against each other.
+//
+// This is a deliberate loss of safety, not a capability decision like the
+// no-op lock returned on dialects that have no advisory locks — there the
+// database cannot serialize, here the caller has asked not to. Callers must
+// surface the choice; the migrator does not warn on its own.
+func (m *Migrator) WithoutMigrationLock() *Migrator {
+	tmp := *m
+	tmp.migrationLockSkipped = true
+	return &tmp
+}
+
+// MigrationLockName returns the advisory lock name this migrator acquires,
+// after the trimming and defaulting [Migrator.WithMigrationLockName] applies.
+// It reports the name even when locking is skipped, so a caller can name the
+// lock it chose not to take.
+func (m *Migrator) MigrationLockName() string {
+	return m.effectiveMigrationLockName()
+}
+
+// MigrationLockSkipped reports whether [Migrator.WithoutMigrationLock] turned
+// the session-level migration advisory lock off.
+func (m *Migrator) MigrationLockSkipped() bool {
+	return m != nil && m.migrationLockSkipped
+}
+
 func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn func(context.Context) error) error {
-	if m.conn == nil || m.conn.Writer().IsDryRun() {
+	if m.conn == nil || m.conn.Writer().IsDryRun() || m.migrationLockSkipped {
 		return fn(ctx)
 	}
 

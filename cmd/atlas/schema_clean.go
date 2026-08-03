@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/schemaclean"
 )
@@ -23,6 +24,14 @@ type atlasSchemaCleanOptions struct {
 	dryRun      bool
 	format      string
 	autoApprove bool
+	include     []string
+	exclude     []string
+}
+
+// scoped reports whether a selector narrowed the cleanup plan. A scoped run
+// executes the plan itself; an unscoped run keeps the whole-database drop.
+func (o atlasSchemaCleanOptions) scoped() bool {
+	return len(o.include) > 0 || len(o.exclude) > 0
 }
 
 func newAtlasSchemaCleanCommand() *cobra.Command {
@@ -34,7 +43,17 @@ func newAtlasSchemaCleanCommand() *cobra.Command {
 
 Cleans user-owned schema objects through Ptah's destructive database cleanup
 runtime. The implementation supports direct database URLs, dry-run planning,
-explicit auto-approval, and Atlas Go-template output over the cleanup plan.`,
+explicit auto-approval, and Atlas Go-template output over the cleanup plan.
+
+--include and --exclude narrow the cleanup to part of the database, using the
+same selectors as ` + "`schema apply`" + `, ` + "`schema diff`" + ` and
+` + "`schema inspect`" + `: --include positively selects top-level objects and
+--exclude subtracts from the result. Child objects (a table's foreign keys)
+ride along with their parent. A narrowed run executes exactly the changes it
+printed, one statement at a time, instead of the whole-database drop an
+unflagged run performs — so what the plan lists is what is destroyed. Drop
+statements still carry the dialect's cascade behavior, so removing a selected
+object can take dependent objects with it whether or not they were selected.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaClean(cmd, opts)
 		},
@@ -44,6 +63,8 @@ explicit auto-approval, and Atlas Go-template output over the cleanup plan.`,
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show planned cleanup without applying it")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.BoolVar(&opts.autoApprove, "auto-approve", false, "Skip interactive approval")
+	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in the cleanup")
+	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from the cleanup")
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
@@ -67,6 +88,11 @@ func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaClean)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatOutput = formatOutput || formatValue.Present
+		// An atlas.hcl exclude that every other schema verb honors must reach
+		// the destructive one too. Ignoring it here is the dangerous direction:
+		// an operator who excluded a table from their schema workflow would
+		// still watch this command drop it.
+		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
@@ -75,6 +101,14 @@ func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error
 		if err := atlasreport.ValidateSchemaCleanTemplate(opts.format); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	}
+	// Selector syntax is checked before the database is contacted, so a
+	// malformed pattern cannot half-clean a database on its way to failing.
+	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := atlasfilter.ValidateExcludeSelectors(opts.exclude); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if strings.TrimSpace(opts.url) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--url is required"))
@@ -91,6 +125,16 @@ func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error
 	plan, err := schemaclean.Inspect(conn)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	if opts.scoped() {
+		plan, err = scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+			Include:       opts.include,
+			Exclude:       opts.exclude,
+			DefaultSchema: conn.Info().Schema,
+		}, conn.Info().Dialect)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if formatOutput && !opts.dryRun {
 		if err := validateAtlasSchemaCleanActualFormat(opts, conn, plan); err != nil {
@@ -135,7 +179,7 @@ func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error
 		return nil
 	}
 
-	if err := schemaclean.Apply(cmd.Context(), conn); err != nil {
+	if err := applyAtlasSchemaClean(cmd, opts, conn, plan); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if formatOutput {
@@ -148,6 +192,25 @@ func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Schema clean completed successfully.")
 	return nil
+}
+
+// applyAtlasSchemaClean destroys what the plan describes.
+//
+// An unscoped run keeps the whole-database drop, which is what it has always
+// been and what the writer's DropAllTables implements. A scoped run executes the
+// plan's own statements instead: the printed plan is the contract --include and
+// --exclude changed, and handing a narrowed plan to a routine that drops
+// everything would make both flags cosmetic.
+func applyAtlasSchemaClean(
+	cmd *cobra.Command,
+	opts atlasSchemaCleanOptions,
+	conn *dbschema.DatabaseConnection,
+	plan schemaclean.Plan,
+) error {
+	if opts.scoped() {
+		return schemaclean.ApplyPlan(cmd.Context(), conn, plan)
+	}
+	return schemaclean.Apply(cmd.Context(), conn)
 }
 
 func printAtlasSchemaCleanPlan(

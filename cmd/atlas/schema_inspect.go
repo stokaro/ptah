@@ -20,6 +20,7 @@ type atlasSchemaInspectOptions struct {
 	include []string
 	exclude []string
 	format  string
+	output  string
 }
 
 func newAtlasSchemaInspectCommand() *cobra.Command {
@@ -65,7 +66,15 @@ description of an empty selection is a legitimate answer — but it reports the
 empty selection on standard error. A selection that keeps an object whose
 dependency it dropped is refused rather than rendered, so inspected output
 never references an object it omitted. The flag is absent from Atlas CE, which rejects it as an
-unknown flag on this command.`,
+unknown flag on this command.
+
+-o/--output writes the rendered schema to a file instead of stdout. The file is
+staged beside its destination and published atomically, so a reader either sees
+the previous contents or the complete new document, never a partial one. Nothing
+is written to stdout on the --output path.
+
+-w/--web is registered and refused: opening a viewer has no local counterpart,
+and the ERD itself is available as data through --format '{{ mermaid . }}'.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaInspect(cmd, opts)
 		},
@@ -77,11 +86,18 @@ unknown flag on this command.`,
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
 	flags.StringVar(&opts.format, "format", "", "Output format or Go template: hcl, sql, json, or custom template")
+	flags.StringVarP(&opts.output, "output", "o", "", "Write the inspected schema to this file instead of stdout")
+	registerAtlasUIFlag(cmd, atlasSchemaWebFlag())
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
+	// The refusal lands before any config or database work: a flag Ptah does
+	// not implement must not be answered with an inspection that ignored it.
+	if err := refuseAtlasUIFlag(cmd, "schema", "inspect", atlasSchemaWebFlag()); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatConfigured := cmd.Flags().Changed("format")
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasSchemaInspectConfig(cmd) {
@@ -133,9 +149,18 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		Diagnostics:    cmd.ErrOrStderr(),
 		ProjectEnv:     projectEnv,
 		ConnectTimeout: dbcli.DefaultConnectTimeout,
+
+		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
+		IgnoreUnknownHCLNames: true,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	if path := strings.TrimSpace(opts.output); path != "" {
+		if err := writeAtlasOutputFile(path, []byte(rendered)); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		return nil
 	}
 	fmt.Fprint(cmd.OutOrStdout(), rendered)
 	return nil
