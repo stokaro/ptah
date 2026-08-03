@@ -122,6 +122,8 @@ jobs:
           npm run check:exit-codes
           npm run check:style:selftest
           npm run check:style
+          npm run check:limitations:selftest
+          npm run check:limitations
           npx playwright install --with-deps chromium
           npm run check:responsive:selftest
           npm run build
@@ -155,6 +157,10 @@ jobs:
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:style:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:style
+            if [ -f scripts/check-limitations.mjs ]; then
+              DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:limitations:selftest
+              DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:limitations
+            fi
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
           )
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
