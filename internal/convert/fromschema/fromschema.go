@@ -1705,13 +1705,24 @@ func appendTableForeignKeyConstraintStatements(
 // FromTrigger converts a goschema.Trigger to an ast.CreateTriggerNode.
 func FromTrigger(trigger goschema.Trigger) *ast.CreateTriggerNode {
 	trigger.Canonicalize()
+	// A trigger that names an existing function keeps that name; the renderer
+	// then emits only the CREATE TRIGGER, because the function is not Ptah's to
+	// define. Otherwise the deterministic Ptah function name is used and the
+	// renderer emits the function alongside the trigger.
+	functionName := trigger.FunctionName()
+	if trigger.ExecuteFunction != "" {
+		functionName = trigger.ExecuteFunction
+	}
 	triggerNode := ast.NewCreateTrigger(trigger.Name, trigger.Table).
 		SetTiming(trigger.Timing).
 		SetEvent(trigger.Event).
 		SetForEach(trigger.ForEach).
 		SetBody(trigger.Body).
-		SetFunctionName(trigger.FunctionName()).
+		SetFunctionName(functionName).
 		SetComment(trigger.Comment)
+	if trigger.ExecuteFunction != "" {
+		triggerNode.SetExternalFunction()
+	}
 	return triggerNode
 }
 
