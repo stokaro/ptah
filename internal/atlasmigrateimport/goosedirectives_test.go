@@ -111,13 +111,31 @@ func TestLoadFSDirectiveSectionParsing(t *testing.T) {
 			assert: body(widgets),
 		},
 		{
-			// Exactly one space follows "+goose"; a second one breaks the
-			// directive, so the community binary runs the whole file. Ptah
-			// refuses instead — the near-miss guard, see below.
-			name:   "goose refuses a second space before the directive name",
+			// The separator is any run of whitespace, not one literal space.
+			// Measured on the community binary: `-- +goose  Down` and
+			// `-- +goose<TAB>Down` behave identically to the single-space form
+			// -- same statement count, same resulting tables -- so the section
+			// is parsed in all three.
+			//
+			// This row used to assert a refusal. That was the near-miss guard
+			// firing outside its own stated scope: it exists for a directive
+			// the community binary FAILS to parse and then silently rolls back
+			// (a lowercase "down"), not for one it parses correctly. Refusing
+			// here rejected a file that runs safely, for no benefit.
+			name:   "goose accepts extra whitespace before the directive name",
 			format: atlasmigrateimport.FormatGoose,
 			file:   "-- +goose  Up\n" + widgets,
-			assert: refuses(`(?s)migration file 1_init\.sql line 1: .* is not a goose directive .*Write "-- \+goose Up" instead`),
+			assert: body(widgets),
+		},
+		{
+			// The variant that made this worth fixing rather than tolerating.
+			// A tab-separated directive was invisible, so the file looked
+			// directive-free and the raw-SQL path executed it whole -- table
+			// created by Up, then DROPPED by a Down section Ptah never saw.
+			name:   "goose accepts a tab before the directive name",
+			format: atlasmigrateimport.FormatGoose,
+			file:   "-- +goose\tUp\n" + widgets,
+			assert: body(widgets),
 		},
 		{
 			// An intentionally empty migration is legitimate. The community

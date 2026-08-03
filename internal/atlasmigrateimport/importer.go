@@ -952,11 +952,12 @@ const (
 // a line as a comment and folds the SQL under it into the up migration. See
 // [gooseNearMissPragma].
 func goosePragmaOf(line string) (goosePragma, bool) {
-	rest, ok := strings.CutPrefix(strings.TrimSpace(line), goosePragmaPrefix)
+	rest, ok := gooseDirectiveRemainder(strings.TrimSpace(line))
 	if !ok {
 		return "", false
 	}
 	name, _, _ := strings.Cut(rest, " ")
+	name = strings.TrimSpace(name)
 	for _, pragma := range goosePragmas {
 		if string(pragma) == name {
 			return pragma, true
@@ -984,12 +985,11 @@ func goosePragmaOf(line string) (goosePragma, bool) {
 // because it reads as prose rather than a mistyped directive. Refusing those
 // would reject files the community binary runs safely, for no benefit.
 func gooseNearMissPragma(line string) (goosePragma, bool) {
-	trimmed := strings.TrimSpace(line)
-	if len(trimmed) < len(goosePragmaPrefix) ||
-		!strings.EqualFold(trimmed[:len(goosePragmaPrefix)], goosePragmaPrefix) {
+	rest, ok := gooseDirectiveRemainderFold(strings.TrimSpace(line))
+	if !ok {
 		return "", false
 	}
-	name := strings.TrimSpace(trimmed[len(goosePragmaPrefix):])
+	name := strings.TrimSpace(rest)
 	for _, pragma := range goosePragmas {
 		if strings.EqualFold(string(pragma), name) {
 			return pragma, true
@@ -1323,4 +1323,40 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// gooseDirectiveRemainder returns what follows a `-- +goose` marker, or reports
+// that the line does not carry one.
+//
+// The separator is ANY run of whitespace, not one literal space. Requiring the
+// space made a tab-separated directive invisible: the file then looked
+// directive-free, and the raw-SQL path executed it whole. Measured on
+// `-- +goose Up / CREATE TABLE t / -- +goose<TAB>Down / DROP TABLE t`, the
+// community binary parses the Down and keeps the table at exit 0, while Ptah
+// exited 0 having DROPPED it -- the same silent-rollback harm the near-miss
+// guard exists to prevent, one keystroke away from it.
+func gooseDirectiveRemainder(line string) (string, bool) {
+	return gooseDirectiveRest(line, strings.HasPrefix)
+}
+
+// gooseDirectiveRemainderFold is [gooseDirectiveRemainder] for the near-miss
+// guard, which matches the marker case-insensitively.
+func gooseDirectiveRemainderFold(line string) (string, bool) {
+	return gooseDirectiveRest(line, func(s, prefix string) bool {
+		return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+	})
+}
+
+func gooseDirectiveRest(line string, hasPrefix func(string, string) bool) (string, bool) {
+	marker := strings.TrimRight(goosePragmaPrefix, " ")
+	if !hasPrefix(line, marker) {
+		return "", false
+	}
+	rest := line[len(marker):]
+	trimmed := strings.TrimLeft(rest, " \t")
+	if trimmed == rest {
+		// No separator at all: `-- +gooseUp` is not a directive.
+		return "", false
+	}
+	return trimmed, true
 }
