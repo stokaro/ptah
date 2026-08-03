@@ -41,6 +41,28 @@ func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
 			sql:  "-- atlas:txmode none\n \t\r\nSELECT 1;",
 			want: MigrationFileTxModeNone,
 		},
+		{
+			// The header ends at the first statement, not only at a blank line.
+			// Requiring the blank line drops a directive the author wrote
+			// directly above the statement it applies to, which is where an
+			// author is most likely to write it.
+			name: "statement immediately after the directive",
+			sql:  "-- atlas:txmode none\nCREATE INDEX CONCURRENTLY i ON t (c);",
+			want: MigrationFileTxModeNone,
+		},
+		{
+			name: "statement immediately after a multi-line header",
+			sql:  "-- generated migration\n-- atlas:txmode none\nSELECT 1;",
+			want: MigrationFileTxModeNone,
+		},
+		{
+			// Same rule from the other side: the directive was already read
+			// when the indented line ended the header, so the indentation of a
+			// LATER line cannot un-write it.
+			name: "indented line after the directive",
+			sql:  "-- atlas:txmode none\n  -- generated migration\n\nSELECT 1;",
+			want: MigrationFileTxModeNone,
+		},
 	}
 
 	for _, test := range tests {
@@ -132,10 +154,6 @@ func Test_parseAtlasFileTxMode_Ignored(t *testing.T) {
 			sql:  "  -- atlas:txmode none\n\nSELECT 1;",
 		},
 		{
-			name: "non-comment before blank separator",
-			sql:  "-- atlas:txmode none\nSELECT 1;\n\n",
-		},
-		{
 			name: "missing blank separator",
 			sql:  "-- atlas:txmode none\n",
 		},
@@ -154,10 +172,6 @@ func Test_parseAtlasFileTxMode_Ignored(t *testing.T) {
 		{
 			name: "uppercase key",
 			sql:  "-- ATLAS:TXMODE none\n\nSELECT 1;",
-		},
-		{
-			name: "indented header line",
-			sql:  "-- atlas:txmode none\n  -- generated migration\n\nSELECT 1;",
 		},
 		{
 			name: "leading header without occurrence",
