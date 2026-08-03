@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/pathguard"
 )
 
@@ -109,6 +110,8 @@ func TestOpenedDirectoryPublication_HappyPath(t *testing.T) {
 	dir := c.TempDir()
 	publishedPath := filepath.Join(dir, "published")
 	c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
+	originalInfo, err := os.Stat(publishedPath)
+	c.Assert(err, qt.IsNil)
 	opened, err := pathguard.OpenDirectory(dir)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
@@ -136,7 +139,13 @@ func TestOpenedDirectoryPublication_HappyPath(t *testing.T) {
 		c.Check(os.Chmod(backupPath, 0o600), qt.IsNil)
 	})
 
-	c.Assert(opened.PublishFile(stagedName, "published", stagedInfo, 0o400), qt.IsNil)
+	c.Assert(opened.PublishFile(
+		stagedName,
+		"published",
+		stagedInfo,
+		0o400,
+		fsdurable.ExpectFile(originalInfo),
+	), qt.IsNil)
 	c.Assert(opened.FinalizeFile(backupName, backupInfo, 0o400), qt.IsNil)
 	c.Assert(opened.Revalidate(), qt.IsNil)
 

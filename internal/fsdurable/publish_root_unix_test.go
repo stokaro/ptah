@@ -26,7 +26,14 @@ func TestPublishFileAt_HappyPath_AppliesExactUnixMode(t *testing.T) {
 		c.Check(root.Close(), qt.IsNil)
 	})
 
-	err = fsdurable.PublishFileAt(root, "staged", "published", stagedInfo, 0o640)
+	err = fsdurable.PublishFileAt(
+		root,
+		"staged",
+		"published",
+		stagedInfo,
+		0o640,
+		fsdurable.ExpectAbsent(),
+	)
 
 	c.Assert(err, qt.IsNil)
 	publishedInfo, err := os.Stat(publishedPath)

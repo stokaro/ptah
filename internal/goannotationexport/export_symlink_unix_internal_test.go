@@ -38,10 +38,10 @@ type Country struct {
 		RootDir:    root,
 		OutputPath: output,
 		Cleanup:    true,
-	}, func() {
+	}, exportHooks{afterOutputStage: func() {
 		c.Assert(os.Remove(output), qt.IsNil)
 		c.Assert(os.Link(dataPath, output), qt.IsNil)
-	})
+	}})
 
 	c.Assert(err, qt.ErrorIs, ErrOutputAliasesManagedData)
 	c.Assert(result, qt.DeepEquals, Result{})

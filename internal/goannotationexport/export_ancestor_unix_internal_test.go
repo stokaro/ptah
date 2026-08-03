@@ -35,10 +35,10 @@ func TestExport_FailurePath_AncestorSwapAbortsHCLPublication(t *testing.T) {
 	result, err := export(Options{
 		RootDir:    root,
 		OutputPath: output,
-	}, func() {
+	}, exportHooks{afterOutputStage: func() {
 		c.Assert(os.Rename(outputDir, capturedDir), qt.IsNil)
 		c.Assert(os.Symlink(outsideDir, outputDir), qt.IsNil)
-	})
+	}})
 
 	c.Assert(err, qt.ErrorIs, ErrOutputChanged)
 	c.Assert(result, qt.DeepEquals, Result{})
