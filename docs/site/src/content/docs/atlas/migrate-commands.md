@@ -223,6 +223,29 @@ Dry-run plans read the stored Atlas revision rows and include only migrations
 that a real apply would select. They also run the same dirty-state, checksum,
 execution-order, and transaction-mode validations as a real apply.
 
+Atlas migration files may override global `file` or `none` with a leading
+header followed by a blank line:
+
+```sql
+-- atlas:txmode file
+
+ALTER TABLE users ADD COLUMN email TEXT;
+```
+
+The accepted file values are `file` and `none`. File-level `all`, unknown
+values, duplicate values, and any explicit file mode under global `all` fail
+before the affected migration body or revision row changes. Validation follows
+the selected plan: global `all` validates the complete selected batch first;
+global `file` and `none` validate each file as execution reaches it. An amount
+or baseline that excludes a malformed file does not validate that file.
+
+Inside a Ptah-supported txtar migration, `migration.sql` and `down.sql` carry
+independent modes. Ptah rejects a transaction-mode header placed before
+`-- atlas:txtar`; this safety check prevents the archive from being executed as
+one plain SQL stream. Atlas CE `v1.3.0` instead ignores section-local modes and
+can classify that malformed outer-header shape as plain SQL, so this contour is
+an intentional safety difference rather than a parity claim.
+
 A successful `ptah-compat migrate apply` writes nothing to stderr, matching
 Atlas CE: there is no progress narration, in a dry run or otherwise, so
 `--format` output survives the usual CI idiom of folding both streams together.

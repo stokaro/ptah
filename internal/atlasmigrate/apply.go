@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -136,6 +137,19 @@ func (p ApplyPlan) Noop() bool {
 // Execute applies the selected plan. Dry-run and no-op plans return metadata
 // without modifying schema state.
 func (p ApplyPlan) Execute(ctx context.Context) (ApplyResult, error) {
+	return p.execute(ctx, nil)
+}
+
+// ExecuteWithPreflight applies the selected plan after running hook inside the
+// migration lock, after transaction-mode validation and before execution.
+func (p ApplyPlan) ExecuteWithPreflight(
+	ctx context.Context,
+	hook migrator.PreMigrationHook,
+) (ApplyResult, error) {
+	return p.execute(ctx, hook)
+}
+
+func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) (ApplyResult, error) {
 	result := ApplyResult{
 		Status:           p.Status,
 		Migrations:       p.Migrations,
@@ -145,11 +159,20 @@ func (p ApplyPlan) Execute(ctx context.Context) (ApplyResult, error) {
 		StartedAt:        p.StartedAt,
 	}
 	executionStarted := false
+	lockedPlanObserved := false
 	err := p.mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{
 		Amount:                 p.opts.Amount,
 		AllowDirty:             p.opts.AllowDirty,
 		AssumedAppliedVersions: p.assumedAppliedVersions,
-		Preflight: func(_ context.Context, plan migrator.MigrationPlan) error {
+		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
+			lockedPlanObserved = true
+			result.SelectedVersions = slices.Clone(plan.Versions)
+			result.CurrentVersion = plan.CurrentVersion
+		},
+		Preflight: func(ctx context.Context, plan migrator.MigrationPlan) error {
+			if err := runApplyPreflight(ctx, hook, plan); err != nil {
+				return err
+			}
 			executionStarted = len(plan.Versions) > 0
 			return nil
 		},
@@ -161,7 +184,20 @@ func (p ApplyPlan) Execute(ctx context.Context) (ApplyResult, error) {
 		result.ErrorText = err.Error()
 		return result, fmt.Errorf("error applying migrations: %w", err)
 	}
-	if p.DryRun || !executionStarted {
+	if !executionStarted {
+		finalStatus, statusErr := p.mig.GetMigrationStatus(ctx)
+		if statusErr != nil {
+			result.ErrorText = statusErr.Error()
+			return result, fmt.Errorf("error getting final migration status: %w", statusErr)
+		}
+		result.FinalStatus = finalStatus
+		result.CurrentVersion = finalStatus.CurrentVersion
+		if !lockedPlanObserved {
+			result.SelectedVersions = nil
+		}
+		return result, nil
+	}
+	if p.DryRun {
 		return result, nil
 	}
 
@@ -174,6 +210,17 @@ func (p ApplyPlan) Execute(ctx context.Context) (ApplyResult, error) {
 	result.FinalStatus = finalStatus
 	result.Applied = true
 	return result, nil
+}
+
+func runApplyPreflight(
+	ctx context.Context,
+	hook migrator.PreMigrationHook,
+	plan migrator.MigrationPlan,
+) error {
+	if hook == nil {
+		return nil
+	}
+	return hook(ctx, plan)
 }
 
 // ParseApplyAmount parses the optional Atlas migrate apply amount argument.

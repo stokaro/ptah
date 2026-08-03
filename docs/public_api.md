@@ -113,6 +113,26 @@ calling the observer. Atlas-format down execution is excluded because it
 preserves Atlas's unchanged-row bookkeeping. A custom `MigrationFunc` remains
 opaque and has no statement-level checkpointing.
 
+Programmatic migrations use `Migration.UpTxMode` and `Migration.DownTxMode`
+with `MigrationFileTxModeUnspecified`, `MigrationFileTxModeFile`, or
+`MigrationFileTxModeNone`. `ParseMigrationUp` gives tools the executable
+up-direction SQL, explicit mode, and source-line offset from plain SQL or Atlas
+txtar content. The two directions remain independent; the migrator resolves
+the up value against its global transaction mode and treats an unspecified
+down value as `file`.
+
+This pre-GA API replaces the former `UpNoTransaction` and
+`DownNoTransaction` Boolean fields. `NewMigrationFromSQLFiles` and its
+interceptor variant return a complete `Migration`, preserving both directions'
+transaction modes, timeouts, source paths, and execution functions as one
+coherent value.
+
+`MigrateUpOptions.PlanObserver` receives the plan recalculated under the
+migration lock before transaction-mode validation, including empty plans. It
+is a metadata-only observer and cannot abort execution. `Preflight` remains the
+abort-capable hook after validation, so user-facing start output is not emitted
+for a statically invalid migration.
+
 `migration/migrator.WithStatementValidator` installs a pre-execution safety
 gate on a filesystem provider. Ptah splits and validates every statement in one
 migration before executing its first statement, so a rejected later statement

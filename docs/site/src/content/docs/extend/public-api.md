@@ -99,6 +99,24 @@ to the migrator and does not receive statement-level checkpointing.
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.
 
+Programmatic migrations set `Migration.UpTxMode` and `Migration.DownTxMode`
+with `MigrationFileTxModeUnspecified`, `MigrationFileTxModeFile`, or
+`MigrationFileTxModeNone`. Use `ParseMigrationUp` when a tool needs the
+executable up-direction SQL, explicit mode, and source-line offset from plain
+SQL or Atlas txtar content. Up and down values remain independent.
+
+This pre-GA API replaces the former Boolean transaction fields. Use
+`NewMigrationFromSQLFiles` or its interceptor variant to load an up/down pair:
+they return a complete `Migration` with transaction modes, timeouts, source
+paths, and functions attached, so execution policy cannot be discarded while
+assembling a registered provider.
+
+`MigrateUpOptions.PlanObserver` receives the plan recalculated under the
+migration lock before transaction-mode validation, including an empty plan. It
+captures metadata but cannot abort execution. Use the abort-capable `Preflight`
+hook for work that must run after static validation and before any schema or
+revision change.
+
 ## Pinned database sessions
 
 `dbschema.DatabaseConnection.WithSession` pins one physical database session

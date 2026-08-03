@@ -556,7 +556,9 @@ func (vem *VersionedEntityManager) ApplyMigrationFromEntities(ctx context.Contex
 	downSQL := "-- Auto-generated down migration\n-- Manual review required\n"
 
 	migration := migrator.CreateMigrationFromSQL(int64(vem.version), description, upSQL.String(), downSQL)
-	migration.UpNoTransaction = noTransaction
+	if noTransaction {
+		migration.UpTxMode = migrator.MigrationFileTxModeNone
+	}
 
 	p := migrator.NewRegisteredMigrationProvider(migration)
 	m := migrator.NewMigrator(conn, p)

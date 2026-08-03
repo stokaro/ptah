@@ -74,13 +74,13 @@ Across the 159 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 87 |
-| Ptah supports it with a stated limitation | 48 |
+| Ptah supports it fully | 86 |
+| Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 24 |
-| Ptah and Atlas CE both support it | 24 |
+| Ptah and Atlas CE both support it | 23 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 37 |
 | Ptah has it and neither Atlas edition does | 16 |
-| Atlas CE has it and Ptah does not, or only in part | 24 |
+| Atlas CE has it and Ptah does not, or only in part | 25 |
 | An Atlas column is ❔ — not established by this page's evidence | 21 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -184,7 +184,7 @@ seven of them as open capabilities regardless.
 | Roll back applied migrations (down) | 🟡 | ❌ | ✅ | Ptah validates all selected down bodies before changing state. Dry-run reports distinguish preflight rejection from attempted rollback. Registry flags remain waivers. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❌ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |
-| Transaction modes (`--tx-mode` file/all/none) | ✅ | ✅ | ✅ | all is limited to transactional-DDL dialects and rejects no_transaction files, per-file timeouts, and pre-migration checks. |
+| Transaction modes (`--tx-mode` file/all/none) | 🟡 | ✅ | ✅ | Targets Atlas CE v1.3.0 per-file behavior; conformance evidence is pending. Txtar section modes are a Ptah extension; #887 tracks revision bookkeeping. |
 | Verb `migrate ls` | 🟡 | ❌ | ✅ | Beyond the CE pin: works in Atlas against a local directory; ptah-compat rejects it as unknown command; native `ptah migrations status` lists versions and states. |
 | Verb `migrate show` | ❌ | ❌ | ✅ | Beyond the CE pin: prints a migration's SQL in Atlas; no compat or native Ptah verb exists, and the gap register triages it as future work. |
 

@@ -244,11 +244,18 @@ IDs, and a summary. Diagnostic prose is Ptah-owned. The native `ptah migrations
 lint` output is unchanged.
 
 `migration.tx_mode` accepts `file`, `all`, and `none`, matching
-`ptah-compat migrate apply --tx-mode`. `all` is limited to dialects where Ptah
-can safely wrap DDL in a single transaction and conflicts with file-level
-`no_transaction` directives. `none` intentionally rejects migration timeouts
-because Ptah does not yet apply timeout setup and restore through a dedicated
-single-session executor.
+`ptah-compat migrate apply --tx-mode`. A leading `-- atlas:txmode file` or
+`-- atlas:txmode none` header overrides global `file` or `none` for that file.
+`all` is limited to dialects where Ptah can safely wrap data definition
+language (DDL) in a single transaction and rejects every explicit file mode,
+per-migration timeout, and pre-migration check in the selected batch. Under
+global `none`, an explicit file mode restores a per-file transaction and may
+use migration timeouts.
+
+The Atlas header must be in the initial line-comment block and followed by a
+blank line. Unknown, duplicate, and file-level `all` values fail before the
+affected migration body or revision row changes. Validation applies only to
+the migrations selected after amount and baseline processing.
 
 When an `atlas.hcl` `migration` block is present, Ptah also defaults
 `revision-format` to `atlas`, so migration commands use

@@ -48,8 +48,8 @@ func TestCreateMigrationFromSQL(t *testing.T) {
 	c.Assert(migration.Description, qt.Equals, "Create test table")
 	c.Assert(migration.Up, qt.IsNotNil)
 	c.Assert(migration.Down, qt.IsNotNil)
-	c.Assert(migration.UpNoTransaction, qt.IsFalse)
-	c.Assert(migration.DownNoTransaction, qt.IsFalse)
+	c.Assert(migration.UpTxMode, qt.Equals, MigrationFileTxModeUnspecified)
+	c.Assert(migration.DownTxMode, qt.Equals, MigrationFileTxModeUnspecified)
 
 	// Test that the functions don't panic (we can't test execution without a real DB)
 	c.Assert(migration.Up, qt.IsNotNil)
@@ -64,8 +64,8 @@ func TestCreateMigrationFromSQL_NoTransactionDirective(t *testing.T) {
 		"-- manual down migration required",
 	)
 
-	c.Assert(migration.UpNoTransaction, qt.IsTrue)
-	c.Assert(migration.DownNoTransaction, qt.IsFalse)
+	c.Assert(migration.UpTxMode, qt.Equals, MigrationFileTxModeNone)
+	c.Assert(migration.DownTxMode, qt.Equals, MigrationFileTxModeUnspecified)
 }
 
 func TestCreateMigrationFromSQL_DownNoTransactionDirective(t *testing.T) {
@@ -76,26 +76,26 @@ func TestCreateMigrationFromSQL_DownNoTransactionDirective(t *testing.T) {
 		"-- +ptah no_transaction\nDROP INDEX CONCURRENTLY users_email_idx;",
 	)
 
-	c.Assert(migration.UpNoTransaction, qt.IsFalse)
-	c.Assert(migration.DownNoTransaction, qt.IsTrue)
+	c.Assert(migration.UpTxMode, qt.Equals, MigrationFileTxModeUnspecified)
+	c.Assert(migration.DownTxMode, qt.Equals, MigrationFileTxModeNone)
 }
 
 func TestCreateMigrationFromSQL_AtlasTxModeNoneDirective(t *testing.T) {
 	c := qt.New(t)
 
 	migration := CreateMigrationFromSQL(1, "Add concurrent index",
-		"-- atlas:txmode none\nCREATE INDEX CONCURRENTLY users_email_idx ON users (email);",
+		"-- atlas:txmode none\n\nCREATE INDEX CONCURRENTLY users_email_idx ON users (email);",
 		"DROP INDEX users_email_idx;",
 	)
 
-	c.Assert(migration.UpNoTransaction, qt.IsTrue)
-	c.Assert(migration.DownNoTransaction, qt.IsFalse)
+	c.Assert(migration.UpTxMode, qt.Equals, MigrationFileTxModeNone)
+	c.Assert(migration.DownTxMode, qt.Equals, MigrationFileTxModeUnspecified)
 }
 
 func TestMigration_ExplicitDirectionalNoTransactionFieldsControlManualMigrations(t *testing.T) {
 	c := qt.New(t)
 
-	migration := &Migration{UpNoTransaction: true, DownNoTransaction: true}
+	migration := &Migration{UpTxMode: MigrationFileTxModeNone, DownTxMode: MigrationFileTxModeNone}
 
 	c.Assert(migration.upExecutionMode(), qt.Equals, migrationExecutionNoTransaction)
 	c.Assert(migration.downExecutionMode(), qt.Equals, migrationExecutionNoTransaction)
@@ -283,36 +283,31 @@ GO 3
 	c.Assert(migrationStatementCountForDialect(sql, platform.SQLServer), qt.Equals, 3)
 }
 
-func TestMigrationFuncFromSQLFilename_Success(t *testing.T) {
+func TestNewMigrationFromSQLFiles_Success(t *testing.T) {
 	c := qt.New(t)
 
-	// Create a test filesystem with SQL content
 	fsys := fstest.MapFS{
-		"test.sql": &fstest.MapFile{
+		"test.up.sql": &fstest.MapFile{
 			Data: []byte("CREATE TABLE test (id SERIAL PRIMARY KEY);"),
 		},
+		"test.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE test;")},
 	}
 
-	migrationFunc := MigrationFuncFromSQLFilename("test.sql", fsys)
-	c.Assert(migrationFunc, qt.IsNotNil)
-
-	// We can't easily test execution without a real database connection,
-	// but we can test that the function was created successfully
+	migration, err := NewMigrationFromSQLFiles(1, "test", "test.up.sql", "test.down.sql", fsys)
+	c.Assert(err, qt.IsNil)
+	c.Assert(migration, qt.IsNotNil)
+	c.Assert(migration.Up, qt.IsNotNil)
+	c.Assert(migration.Down, qt.IsNotNil)
 }
 
-func TestMigrationFuncFromSQLFilename_FileNotFound(t *testing.T) {
+func TestNewMigrationFromSQLFiles_FileNotFound(t *testing.T) {
 	c := qt.New(t)
 
-	// Create an empty filesystem
 	fsys := fstest.MapFS{}
 
-	migrationFunc := MigrationFuncFromSQLFilename("nonexistent.sql", fsys)
-	c.Assert(migrationFunc, qt.IsNotNil)
-
-	// Test that the function returns an error when executed
-	err := migrationFunc(context.Background(), nil)
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "failed to read migration file")
+	migration, err := NewMigrationFromSQLFiles(1, "missing", "missing.up.sql", "missing.down.sql", fsys)
+	c.Assert(err, qt.ErrorMatches, "failed to load up migration missing.up.sql: failed to read migration file.*")
+	c.Assert(migration, qt.IsNil)
 }
 
 func TestParseAtlasTxtarSQL(t *testing.T) {
@@ -512,18 +507,18 @@ DROP TABLE users;`,
 	}
 }
 
-func TestMigrationFuncFromSQLFilenameWithTimeouts(t *testing.T) {
+func TestNewMigrationFromSQLFiles_PreservesTimeouts(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
-		"test.sql": &fstest.MapFile{
+		"test.up.sql": &fstest.MapFile{
 			Data: []byte("-- +ptah lock_timeout=3s\nCREATE TABLE test (id SERIAL PRIMARY KEY);"),
 		},
+		"test.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE test;")},
 	}
 
-	migrationFunc, timeouts, err := MigrationFuncFromSQLFilenameWithTimeouts("test.sql", fsys)
+	migration, err := NewMigrationFromSQLFiles(1, "test", "test.up.sql", "test.down.sql", fsys)
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationFunc, qt.IsNotNil)
-	c.Assert(timeouts.HasLockTimeout, qt.IsTrue)
-	c.Assert(timeouts.LockTimeout, qt.Equals, 3*time.Second)
+	c.Assert(migration.UpTimeouts.HasLockTimeout, qt.IsTrue)
+	c.Assert(migration.UpTimeouts.LockTimeout, qt.Equals, 3*time.Second)
 }

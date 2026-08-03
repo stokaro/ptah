@@ -76,8 +76,8 @@ func TestNewFSMigrator_LoadsNoTransactionDirective(t *testing.T) {
 	m, err := migrator.NewFSMigrator(nil, fsys)
 	c.Assert(err, qt.IsNil)
 	migration := m.MigrationProvider().Migrations()[0]
-	c.Assert(migration.UpNoTransaction, qt.IsTrue)
-	c.Assert(migration.DownNoTransaction, qt.IsFalse)
+	c.Assert(migration.UpTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
+	c.Assert(migration.DownTxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
 }
 
 func TestNewFSMigrator_LoadsDirectionalDownNoTransactionDirective(t *testing.T) {
@@ -95,8 +95,8 @@ func TestNewFSMigrator_LoadsDirectionalDownNoTransactionDirective(t *testing.T) 
 	m, err := migrator.NewFSMigrator(nil, fsys)
 	c.Assert(err, qt.IsNil)
 	migration := m.MigrationProvider().Migrations()[0]
-	c.Assert(migration.UpNoTransaction, qt.IsFalse)
-	c.Assert(migration.DownNoTransaction, qt.IsTrue)
+	c.Assert(migration.UpTxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
+	c.Assert(migration.DownTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
 }
 
 func TestNewFSMigrator_InvalidNoTransactionDirective(t *testing.T) {

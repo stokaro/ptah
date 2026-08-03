@@ -10,7 +10,6 @@ import (
 
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/lexer"
 )
 
 // MigrationFunc represents a migration function that operates on a database connection
@@ -212,10 +211,13 @@ const (
 type sqlMigrationFunc func(context.Context, *dbschema.DatabaseConnection, migrationExecutionMode) error
 
 type sqlMigrationFile struct {
-	fn            sqlMigrationFunc
-	sql           string
-	timeouts      MigrationTimeouts
-	noTransaction bool
+	fn           sqlMigrationFunc
+	sql          string
+	sourcePath   string
+	timeouts     MigrationTimeouts
+	txMode       MigrationFileTxMode
+	txModeSource migrationFileTxModeSource
+	txModeErr    error
 	// checkFiles are the raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They remain unsplit until execution, when the target dialect is known.
 	checkFiles []atlasTxtarCheckFile
@@ -228,10 +230,11 @@ type atlasSQLMigrationFile struct {
 }
 
 type atlasTxtarSQL struct {
-	migrationSQL string
-	downSQL      string
-	checkFiles   []atlasTxtarCheckFile
-	hasDown      bool
+	migrationSQL        string
+	migrationLineOffset int
+	downSQL             string
+	checkFiles          []atlasTxtarCheckFile
+	hasDown             bool
 }
 
 type atlasTxtarCheckFile struct {
@@ -239,11 +242,17 @@ type atlasTxtarCheckFile struct {
 	sql  string
 }
 
-func (f sqlMigrationFile) executionMode() migrationExecutionMode {
-	if f.noTransaction {
-		return migrationExecutionNoTransaction
-	}
-	return migrationExecutionTransactional
+type migrationFileTxModeSource uint8
+
+const (
+	migrationFileTxModeSourcePtah migrationFileTxModeSource = iota + 1
+	migrationFileTxModeSourceAtlas
+)
+
+type parsedMigrationFileTxMode struct {
+	mode   MigrationFileTxMode
+	source migrationFileTxModeSource
+	err    error
 }
 
 // DirectiveNoTransaction opts a SQL migration file out of the per-migration
@@ -289,48 +298,47 @@ func (e *CheckpointRollbackError) Error() string {
 	)
 }
 
-// MigrationFuncFromSQLFilename returns a migration function that reads SQL from a file
-// in the provided filesystem and executes it using the database connection
-func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
-	return MigrationFuncFromSQLFilenameWithInterceptor(filename, fsys, nil)
+// NewMigrationFromSQLFiles reads an up/down SQL pair into a complete Migration.
+// Transaction modes, timeouts, source paths, and executable functions remain
+// attached to the returned value so callers cannot accidentally discard file
+// metadata that affects execution policy.
+func NewMigrationFromSQLFiles(
+	version int64,
+	description, upFilename, downFilename string,
+	fsys fs.FS,
+) (*Migration, error) {
+	return NewMigrationFromSQLFilesWithInterceptor(
+		version,
+		description,
+		upFilename,
+		downFilename,
+		fsys,
+		nil,
+	)
 }
 
-// MigrationFuncFromSQLFilenameWithInterceptor is MigrationFuncFromSQLFilename
-// with an optional StatementInterceptor consulted for every statement; nil
-// behaves exactly like MigrationFuncFromSQLFilename.
-func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) MigrationFunc {
-	return func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		hooks := statementExecutionHooks{interceptor: interceptor}
-		migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, hooks, nil)
-		if err != nil {
-			return err
-		}
-		return migrationFile.fn(ctx, conn, migrationFile.executionMode())
-	}
-}
-
-// MigrationFuncFromSQLFilenameWithTimeouts returns a migration function and any
-// file-level +ptah timeout directives parsed from the top of the SQL file.
-func MigrationFuncFromSQLFilenameWithTimeouts(filename string, fsys fs.FS) (MigrationFunc, MigrationTimeouts, error) {
-	return MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(filename, fsys, nil)
-}
-
-// MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor returns a migration
-// function, file-level timeout directives, and optional statement-interceptor
-// support for the SQL file.
-func MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(
-	filename string,
+// NewMigrationFromSQLFilesWithInterceptor is NewMigrationFromSQLFiles with an
+// optional StatementInterceptor consulted for every statement in both files.
+func NewMigrationFromSQLFilesWithInterceptor(
+	version int64,
+	description, upFilename, downFilename string,
 	fsys fs.FS,
 	interceptor StatementInterceptor,
-) (MigrationFunc, MigrationTimeouts, error) {
+) (*Migration, error) {
 	hooks := statementExecutionHooks{interceptor: interceptor}
-	migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, hooks, nil)
+	up, err := migrationFuncFromSQLFilenameWithMetadata(upFilename, fsys, hooks, nil)
 	if err != nil {
-		return nil, MigrationTimeouts{}, err
+		return nil, fmt.Errorf("failed to load up migration %s: %w", upFilename, err)
 	}
-	return func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		return migrationFile.fn(ctx, conn, migrationFile.executionMode())
-	}, migrationFile.timeouts, nil
+	down, err := migrationFuncFromSQLFilenameWithMetadata(downFilename, fsys, hooks, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load down migration %s: %w", downFilename, err)
+	}
+
+	migration := &Migration{Version: version, Description: description}
+	setMigrationUp(migration, up)
+	setMigrationDown(migration, down)
+	return migration, nil
 }
 
 func migrationFuncFromSQLFilenameWithMetadata(
@@ -421,30 +429,42 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statemen
 		return sqlMigrationFile{}, err
 	}
 
-	noTransaction, err := parseNoTransactionDirectiveFromSQL(sql)
-	if err != nil {
-		return sqlMigrationFile{}, fmt.Errorf("invalid migration directives in %s: %w", filename, err)
+	txMode := parseMigrationFileTxMode(filename, sql)
+	if txMode.err != nil && txMode.source == migrationFileTxModeSourcePtah {
+		return sqlMigrationFile{}, fmt.Errorf("invalid migration directives in %s: %w", filename, txMode.err)
 	}
 	return sqlMigrationFile{
 		fn: func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
 			return executeMigrationFileSQL(ctx, conn, filename, sql, hooks, mode)
 		},
-		sql:           sql,
-		timeouts:      timeouts,
-		noTransaction: noTransaction,
+		sql:          sql,
+		sourcePath:   filename,
+		timeouts:     timeouts,
+		txMode:       txMode.mode,
+		txModeSource: txMode.source,
+		txModeErr:    txMode.err,
 	}, nil
 }
 
 func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
-	if !hasAtlasTxtarDirective(sql) {
+	isTxtar, misplacedTxtar := classifyAtlasTxtarDirective(sql)
+	if misplacedTxtar {
+		return atlasTxtarSQL{}, true, fmt.Errorf(
+			"invalid Atlas txtar migration %s: %s must be the first non-empty line",
+			filename,
+			atlasTxtarDirective,
+		)
+	}
+	if !isTxtar {
 		return atlasTxtarSQL{}, false, nil
 	}
 
 	sections := make(map[string]*strings.Builder)
 	var checkSectionNames []string
 	var currentSection string
+	var migrationLineOffset int
 	sawSection := false
-	for _, line := range strings.SplitAfter(sql, "\n") {
+	for lineNumber, line := range strings.SplitAfter(sql, "\n") {
 		section, isMarker := parseAtlasTxtarSectionMarker(line)
 		if !isMarker {
 			if !sawSection {
@@ -471,6 +491,9 @@ func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
 		}
 		sections[section] = &strings.Builder{}
 		currentSection = section
+		if section == atlasTxtarMigrationSection {
+			migrationLineOffset = lineNumber + 1
+		}
 		if isAtlasTxtarCheckSection(section) {
 			checkSectionNames = append(checkSectionNames, section)
 		}
@@ -480,7 +503,10 @@ func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
 	if migrationSection == nil {
 		return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: missing migration.sql section", filename)
 	}
-	parsed := atlasTxtarSQL{migrationSQL: migrationSection.String()}
+	parsed := atlasTxtarSQL{
+		migrationSQL:        migrationSection.String(),
+		migrationLineOffset: migrationLineOffset,
+	}
 	for _, section := range checkSectionNames {
 		parsed.checkFiles = append(parsed.checkFiles, atlasTxtarCheckFile{
 			name: section,
@@ -521,15 +547,37 @@ func parseAtlasTxtarChecks(filename, checksSQL, dialect string) []Check {
 	return checks
 }
 
-func hasAtlasTxtarDirective(sql string) bool {
+func classifyAtlasTxtarDirective(sql string) (isTxtar, misplaced bool) {
+	sawContent := false
+	sawDirective := false
+	sawSection := false
 	for line := range strings.SplitSeq(sql, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
-		return trimmed == atlasTxtarDirective
+		if !sawContent {
+			sawContent = true
+			if trimmed == atlasTxtarDirective {
+				return true, false
+			}
+		}
+		if trimmed == atlasTxtarDirective {
+			sawDirective = true
+			if sawSection {
+				return false, true
+			}
+			continue
+		}
+		_, isMarker := parseAtlasTxtarSectionMarker(line)
+		if isMarker {
+			sawSection = true
+		}
+		if sawDirective && sawSection {
+			return false, true
+		}
 	}
-	return false
+	return false, false
 }
 
 func parseAtlasTxtarSectionMarker(line string) (string, bool) {
@@ -582,12 +630,21 @@ type Migration struct {
 	UpTimeouts             MigrationTimeouts
 	DownTimeouts           MigrationTimeouts
 	downUnavailable        bool
-	// UpNoTransaction runs the up body and metadata update outside the normal
-	// per-migration transaction. Use this only for statements that cannot run
-	// transactionally.
-	UpNoTransaction bool
-	// DownNoTransaction is the down-direction counterpart to UpNoTransaction.
-	DownNoTransaction bool
+	// UpTxMode is the up file's explicit transaction mode. The zero value uses
+	// the migrator's global mode. File and none override global file or none;
+	// any explicit file mode conflicts with global all.
+	UpTxMode MigrationFileTxMode
+	// DownTxMode is the down-direction counterpart to UpTxMode. Rollback has no
+	// global transaction-mode flag, so the zero value behaves like file.
+	DownTxMode       MigrationFileTxMode
+	upTxModeSource   migrationFileTxModeSource
+	downTxModeSource migrationFileTxModeSource
+	upTxModeErr      error
+	downTxModeErr    error
+	upSourcePath     string
+	downSourcePath   string
+	upSQLFunc        sqlMigrationFunc
+	downSQLFunc      sqlMigrationFunc
 	// atlasCheckFiles are raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They are parsed with the live connection dialect before `-- +ptah check`
 	// directives in UpSQL, preventing dialect-blind boundary decisions.
@@ -613,50 +670,79 @@ func (m *Migration) atlasFilenameDescription() string {
 }
 
 func (m *Migration) upExecutionMode() migrationExecutionMode {
-	if m.UpNoTransaction {
+	if m.UpTxMode == MigrationFileTxModeNone {
 		return migrationExecutionNoTransaction
 	}
 	return migrationExecutionTransactional
 }
 
 func (m *Migration) downExecutionMode() migrationExecutionMode {
-	if m.DownNoTransaction {
+	if m.DownTxMode == MigrationFileTxModeNone {
 		return migrationExecutionNoTransaction
 	}
 	return migrationExecutionTransactional
 }
 
+func (m *Migration) executeUp(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
+	if m.upTxModeErr != nil {
+		return m.upTxModeErr
+	}
+	if m.upSQLFunc != nil {
+		return m.upSQLFunc(ctx, conn, mode)
+	}
+	return m.Up(ctx, conn)
+}
+
+func (m *Migration) executeDown(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
+	if m.downTxModeErr != nil {
+		return m.downTxModeErr
+	}
+	if m.downSQLFunc != nil {
+		return m.downSQLFunc(ctx, conn, mode)
+	}
+	return m.Down(ctx, conn)
+}
+
 // CreateMigrationFromSQL creates a migration from SQL strings
 // This is useful for programmatically creating migrations
 func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration {
-	upNoTransaction, upDirectiveErr := parseNoTransactionDirectiveFromSQL(upSQL)
-	downNoTransaction, downDirectiveErr := parseNoTransactionDirectiveFromSQL(downSQL)
+	upTxMode := parseMigrationFileTxMode(description, upSQL)
+	downTxMode := parseMigrationFileTxMode(description, downSQL)
 
 	migration := &Migration{
-		Version:           version,
-		Description:       description,
-		UpSQL:             upSQL,
-		DownSQL:           downSQL,
-		UpNoTransaction:   upNoTransaction,
-		DownNoTransaction: downNoTransaction,
+		Version:          version,
+		Description:      description,
+		UpSQL:            upSQL,
+		DownSQL:          downSQL,
+		UpTxMode:         upTxMode.mode,
+		DownTxMode:       downTxMode.mode,
+		upTxModeSource:   upTxMode.source,
+		downTxModeSource: downTxMode.source,
+		upTxModeErr:      upTxMode.err,
+		downTxModeErr:    downTxMode.err,
+		upSourcePath:     description,
+		downSourcePath:   description,
 	}
 
-	upFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		if upDirectiveErr != nil {
-			return fmt.Errorf("invalid up migration directives: %w", upDirectiveErr)
+	migration.upSQLFunc = func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
+		return executeSQLStatements(ctx, conn, upSQL, mode)
+	}
+	migration.downSQLFunc = func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
+		return executeSQLStatements(ctx, conn, downSQL, mode)
+	}
+
+	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		if migration.upTxModeErr != nil {
+			return fmt.Errorf("invalid up migration directives: %w", migration.upTxModeErr)
 		}
-		return executeSQLStatements(ctx, conn, upSQL, migration.upExecutionMode())
+		return migration.upSQLFunc(ctx, conn, migration.upExecutionMode())
 	}
-
-	downFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		if downDirectiveErr != nil {
-			return fmt.Errorf("invalid down migration directives: %w", downDirectiveErr)
+	migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		if migration.downTxModeErr != nil {
+			return fmt.Errorf("invalid down migration directives: %w", migration.downTxModeErr)
 		}
-		return executeSQLStatements(ctx, conn, downSQL, migration.downExecutionMode())
+		return migration.downSQLFunc(ctx, conn, migration.downExecutionMode())
 	}
-
-	migration.Up = upFunc
-	migration.Down = downFunc
 	return migration
 }
 
@@ -873,37 +959,30 @@ func parseNoTransactionDirective(directives map[string]string) (bool, error) {
 	return noTransaction, nil
 }
 
-func parseNoTransactionDirectiveFromSQL(sql string) (bool, error) {
-	noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(sql))
-	if err != nil || noTransaction {
-		return noTransaction, err
+func parseMigrationFileTxMode(filename, sql string) parsedMigrationFileTxMode {
+	atlasMode, hasAtlasMode, atlasErr := parseAtlasFileTxMode(filename, sql)
+	if atlasErr != nil {
+		return parsedMigrationFileTxMode{source: migrationFileTxModeSourceAtlas, err: atlasErr}
 	}
-	return hasAtlasTxModeNoneDirective(sql), nil
-}
 
-func hasAtlasTxModeNoneDirective(sql string) bool {
-	// Match the dialect-blind SplitSQLStatements string handling so a
-	// `-- atlas:txmode none` sequence inside a string literal is not mistaken
-	// for the directive.
-	lexr := lexer.NewLexerWithOptions(sql, lexer.Options{StandardStrings: true})
-	for {
-		tok := lexr.NextToken()
-		if tok.Type == lexer.TokenEOF {
-			break
-		}
-		if tok.Type != lexer.TokenComment {
-			continue
-		}
-		comment, ok := strings.CutPrefix(tok.Value, "--")
-		if !ok {
-			continue
-		}
-		if !commentStartsLine(sql, tok.Start) {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(comment), "atlas:txmode none") {
-			return true
+	noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(sql))
+	if err != nil {
+		return parsedMigrationFileTxMode{
+			source: migrationFileTxModeSourcePtah,
+			err:    err,
 		}
 	}
-	return false
+	if noTransaction {
+		return parsedMigrationFileTxMode{
+			mode:   MigrationFileTxModeNone,
+			source: migrationFileTxModeSourcePtah,
+		}
+	}
+	if hasAtlasMode {
+		return parsedMigrationFileTxMode{
+			mode:   atlasMode,
+			source: migrationFileTxModeSourceAtlas,
+		}
+	}
+	return parsedMigrationFileTxMode{}
 }

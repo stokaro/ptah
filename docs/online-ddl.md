@@ -141,9 +141,11 @@ enabling:
 ## Interaction with migration transactions
 
 With the default `tx-mode=file`, the migrator wraps each migration file in its
-own transaction unless the file opts out with `-- +ptah no_transaction`.
+own transaction unless the file selects `none` with
+`-- +ptah no_transaction` or `-- atlas:txmode none`.
 `tx-mode=all` wraps the pending up batch in one transaction on supported
-dialects, and `tx-mode=none` disables migration transaction wrapping.
+dialects and rejects explicit file modes. `tx-mode=none` disables migration
+transaction wrapping unless a file selects `-- atlas:txmode file`.
 
 MySQL DDL commits implicitly regardless of Ptah's wrapper, and online tools run
 on their own connections. A tool-routed migration is therefore **not atomic**:

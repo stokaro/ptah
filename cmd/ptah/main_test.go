@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // TestPtahAtlasNamespaceRemoved pins the removal of the ptah atlas command
@@ -61,6 +64,32 @@ func TestPtahNativeSchemaApplyHelpResolves(t *testing.T) {
 	c.Assert(stderr.String(), qt.Equals, "")
 }
 
+func TestPtahNativeMigrationsUpRejectsMalformedAtlasTxMode(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildPtahBinary(c)
+	dir := malformedAtlasTxModeDir(c)
+	run := newPtahProcess(
+		binPath,
+		"migrations", "up",
+		"--db-url", "sqlite://"+filepath.Join(c.TempDir(), "state.db"),
+		"--migrations-dir", dir,
+		"--dir-format", "atlas",
+	)
+	var stdout, stderr bytes.Buffer
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+
+	err := run.Run()
+	var exitErr *exec.ExitError
+
+	c.Assert(err, qt.ErrorAs, &exitErr)
+	c.Assert(exitErr.ExitCode(), qt.Equals, 2)
+	c.Assert(stderr.String(), qt.Equals,
+		"error: error running migrations: "+
+			"unknown txmode \"bogus\" found in file directive \"1_invalid.sql\"\n")
+	c.Assert(stdout.String(), qt.Equals, "")
+}
+
 func buildPtahBinary(c *qt.C) string {
 	c.Helper()
 	binPath := filepath.Join(c.TempDir(), "ptah")
@@ -73,4 +102,15 @@ func buildPtahBinary(c *qt.C) string {
 
 func newPtahProcess(binPath string, args ...string) *exec.Cmd {
 	return exec.Command(binPath, args...)
+}
+
+func malformedAtlasTxModeDir(c *qt.C) string {
+	c.Helper()
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "1_invalid.sql"), []byte(
+		"-- atlas:txmode bogus\n\nCREATE TABLE invalid_txmode (id INTEGER PRIMARY KEY);\n",
+	), 0o600), qt.IsNil)
+	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	return dir
 }

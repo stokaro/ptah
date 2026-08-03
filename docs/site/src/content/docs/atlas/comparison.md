@@ -714,7 +714,20 @@ databases remain a follow-up gap.
 
 `ptah-compat migrate apply` now supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--dry-run`, `--format`, and matching `atlas.hcl` env defaults against Atlas-format migration directories and Atlas revision metadata; Atlas OSS does not register `migrate apply --dir-format`, and Ptah rejects it there.
 
-`--tx-mode=all` is limited to dialects with transactional DDL support and conflicts with file-level no-transaction directives.
+Per-file `atlas:txmode` precedence and validation match the measured Atlas CE
+`v1.3.0` plain-file matrix. Global `file` and `none` accept explicit file or
+none overrides and validate files as execution reaches them. Global `all`
+rejects every explicit file mode before starting the selected batch. Unknown,
+duplicate, and file-level all values fail before the affected migration body
+or revision row changes.
+
+Ptah also applies those modes independently to `migration.sql` and `down.sql`
+inside txtar files. Atlas CE `v1.3.0` ignores section-local modes. Ptah rejects
+a transaction-mode header before the `atlas:txtar` marker instead of treating
+the archive as plain SQL, because plain execution could run both directions.
+This is an intentional safety difference. Transactional failure revision
+bookkeeping remains tracked separately in
+[`stokaro/ptah#887`](https://github.com/stokaro/ptah/issues/887).
 
 **Tracking.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#622`](https://github.com/stokaro/ptah/issues/622), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640)
 

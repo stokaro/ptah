@@ -334,10 +334,11 @@ type Product struct {
 
 ### Transaction Semantics
 - Default `tx-mode=file` wraps each migration file in its own transaction unless
-  a migration opts out with `-- +ptah no_transaction`
+  it selects `none` with a native or Atlas file directive
 - `tx-mode=all` wraps all pending up migrations in one transaction on supported
-  dialects; `tx-mode=none` disables migration transaction wrapping and can
-  leave partial statement effects behind a dirty revision
+  dialects and rejects explicit file modes; `tx-mode=none` disables wrapping
+  unless a file selects `file`, and non-transactional failures can leave
+  partial statement effects behind a dirty revision
 - MySQL/MariaDB DDL implicitly commits; failed migrations can leave partial DDL applied and must be inspected before repair
 - ClickHouse transaction methods are no-ops in Ptah
 - Dry-run mode is available for validation
