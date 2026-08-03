@@ -535,3 +535,123 @@ SELECT 3;
 	)
 	c.Assert(err, qt.ErrorMatches, `.*duplicate checks/users.sql section.*`)
 }
+
+// newSQLiteDryRunMigrator builds a two-migration Atlas-format directory against
+// a fresh database and puts the writer in dry-run mode, which is the exact
+// configuration #1005 is about: writes are intercepted, reads are not.
+func newSQLiteDryRunMigrator(t *testing.T, first, second string) (*dbschema.DatabaseConnection, *migrator.Migrator) {
+	t.Helper()
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "dry-run-checks.db")
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+path)
+	qt.Assert(t, err, qt.IsNil)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	m, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql":    &fstest.MapFile{Data: []byte(first)},
+			"2_add_users_email.sql": &fstest.MapFile{Data: []byte(second)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	qt.Assert(t, err, qt.IsNil)
+	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	qt.Assert(t, m.Initialize(ctx), qt.IsNil)
+	conn.SchemaWriter().SetDryRun(true)
+	return conn, m
+}
+
+const dryRunCreateUsers = "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n"
+
+const dryRunTxtarFalseCheck = `-- atlas:txtar
+
+-- checks.sql --
+SELECT 0;
+
+-- migration.sql --
+CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);
+`
+
+const dryRunTxtarWriteAssertion = `-- atlas:txtar
+
+-- checks.sql --
+UPDATE users SET name = 'x';
+
+-- migration.sql --
+ALTER TABLE users ADD COLUMN email TEXT;
+`
+
+// A dry run evaluates a migration's assertions only where the state it observes
+// is the state a real apply would evaluate them against — the first migration
+// executed in the run. Later migrations' assertions are parsed and statically
+// validated but not evaluated, and the run reports which ones it deferred.
+//
+// Without the split, the first row fails with "no such table: users" even
+// though applying the directory for real succeeds; and a fix that merely
+// skipped the checks would take the static-validation row down with it.
+func TestMigrateUp_DryRunChecksObserveApplyState(t *testing.T) {
+	tests := []struct {
+		name   string
+		first  string
+		second string
+		assert func(c *qt.C, err error, deferred []int64)
+	}{
+		{
+			name:   "later migration's check is deferred, not evaluated",
+			first:  dryRunCreateUsers,
+			second: txtarCheckedAddEmail,
+			assert: func(c *qt.C, err error, deferred []int64) {
+				c.Assert(err, qt.IsNil)
+				c.Assert(deferred, qt.DeepEquals, []int64{2})
+			},
+		},
+		{
+			name:   "first migration's check is evaluated and can fail",
+			first:  dryRunTxtarFalseCheck,
+			second: "ALTER TABLE users ADD COLUMN email TEXT;\n",
+			assert: func(c *qt.C, err error, deferred []int64) {
+				c.Assert(err, qt.IsNotNil)
+				var checkErr *migrator.CheckFailedError
+				c.Assert(err, qt.ErrorAs, &checkErr, qt.Commentf("want CheckFailedError, got %v", err))
+				c.Assert(checkErr.Version, qt.Equals, int64(1))
+				c.Assert(deferred, qt.IsNil)
+			},
+		},
+		{
+			name:   "a deferred migration's assertion is still statically validated",
+			first:  dryRunCreateUsers,
+			second: dryRunTxtarWriteAssertion,
+			assert: func(c *qt.C, err error, deferred []int64) {
+				c.Assert(err, qt.IsNotNil)
+				c.Assert(err.Error(), qt.Contains, "check assertion must be a read-only SELECT statement")
+				c.Assert(deferred, qt.IsNil)
+			},
+		},
+		{
+			name:   "a directory without checks defers nothing",
+			first:  dryRunCreateUsers,
+			second: txtarUncheckedAddEmail,
+			assert: func(c *qt.C, err error, deferred []int64) {
+				c.Assert(err, qt.IsNil)
+				c.Assert(deferred, qt.IsNil)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, m := newSQLiteDryRunMigrator(t, test.first, test.second)
+
+			var deferred []int64
+			err := m.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{
+				ChecksDeferredObserver: func(_ context.Context, versions []int64) {
+					deferred = versions
+				},
+			})
+
+			test.assert(c, err, deferred)
+		})
+	}
+}

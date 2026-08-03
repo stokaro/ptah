@@ -328,6 +328,7 @@ func runAtlasMigrateApply(
 	}
 
 	if opts.dryRun {
+		emitAtlasMigrateApplyDeferredChecks(cmd, result.ChecksDeferred)
 		if formatOutput {
 			return writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 		}
@@ -339,6 +340,33 @@ func runAtlasMigrateApply(
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
 	return nil
+}
+
+// emitAtlasMigrateApplyDeferredChecks names the pre-migration checks a dry run
+// validated but did not evaluate, so a preview never drops a guard silently.
+//
+// It writes to stderr on purpose. Stdout carries the machine-readable --format
+// document, and Atlas emits no field for this, so putting the note there would
+// invent one and corrupt a caller's parse.
+func emitAtlasMigrateApplyDeferredChecks(cmd *cobra.Command, versions []int64) {
+	if len(versions) == 0 {
+		return
+	}
+	labels := make([]string, 0, len(versions))
+	for _, version := range versions {
+		labels = append(labels, strconv.FormatInt(version, 10))
+	}
+	noun := "migrations"
+	if len(versions) == 1 {
+		noun = "migration"
+	}
+	fmt.Fprintf(
+		cmd.ErrOrStderr(),
+		"Deferred pre-migration checks for %d %s (%s): a dry run does not create the state they assert on, so they are evaluated on apply.\n",
+		len(versions),
+		noun,
+		strings.Join(labels, ", "),
+	)
 }
 
 func finishAtlasMigrateApplyFreshNoop(

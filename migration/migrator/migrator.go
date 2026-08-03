@@ -86,7 +86,19 @@ type MigrateUpOptions struct {
 	// transaction-mode validation. It runs even for an empty plan so callers
 	// can replace metadata captured before lock acquisition.
 	PlanObserver MigrationPlanObserver
+	// ChecksDeferredObserver receives the versions whose pre-migration checks
+	// were parsed and statically validated but not evaluated against the
+	// database, because a dry run cannot produce the state they are about. It
+	// runs after a successful run and only when the list is non-empty, so a
+	// preview can say how much of the guard it did not answer instead of
+	// dropping it silently.
+	ChecksDeferredObserver ChecksDeferredObserver
 }
+
+// ChecksDeferredObserver is notified with the migration versions whose
+// pre-migration checks a run declined to evaluate. The slice is owned by the
+// caller and must not be retained.
+type ChecksDeferredObserver func(ctx context.Context, versions []int64)
 
 // Migrator handles database migrations for ptah
 type Migrator struct {
@@ -217,14 +229,65 @@ func (m *Migrator) runMigrationChecks(ctx context.Context, conn *dbschema.Databa
 	return runCheckGroups(ctx, conn, info.Dialect, info.Version, migration.Version, groups)
 }
 
+// validateDeferredMigrationChecks statically validates the checks of a
+// migration whose assertions a dry run is about to defer, and reports whether
+// the migration declared any. It never queries the database.
+//
+// Deferring evaluation must not mean dropping the check from the report
+// entirely: whether an assertion is malformed or write-shaped is decided by its
+// text, so that verdict is as available in a dry run as in a real apply and is
+// still worth failing on. Only the part of the verdict that needs state — does
+// the predicate hold? — is deferred.
+func (m *Migrator) validateDeferredMigrationChecks(migration *Migration) (bool, error) {
+	if m.skipChecks {
+		return false, nil
+	}
+	groups, err := m.migrationCheckGroups(migration)
+	if err != nil {
+		return false, err
+	}
+	if len(groups) == 0 {
+		return false, nil
+	}
+	info := m.conn.Info()
+	if err := validateCheckGroups(groups, info.Dialect, info.Version, migration.Version); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// deferPreMigrationChecks reports whether a migration's assertions must not be
+// evaluated against the live database.
+//
+// A pre-migration check is a read, and a dry run intercepts only writes, so
+// every check in a dry run is evaluated for real against a database the dry run
+// has refused to change. That is sound for exactly one migration: the first one
+// executed in the run observes precisely the state a real apply would give it.
+// Every later migration's precondition is asked about state that only exists
+// once its predecessors apply — state the dry run has, by construction, refused
+// to produce — so a failure there is an artifact of the preview rather than a
+// finding about the migrations (#1005).
+//
+// Position in the RUN decides this, not version and not file order: a migration
+// sitting second in its directory is first in the run once its predecessor is
+// already applied, and its checks are accurate again.
+func (m *Migrator) deferPreMigrationChecks(observesApplyState bool) bool {
+	return !observesApplyState && m.conn.Writer().IsDryRun()
+}
+
 // rejectChecksUnderTxModeAll refuses a migration that declares pre-migration
 // checks when running with tx-mode all. Under a single shared transaction a
 // check reads committed pre-batch state on the pool connection and cannot see
 // earlier batched migrations' uncommitted changes, so it would silently
 // evaluate a precondition against stale state. Bypassing checks lifts the
 // restriction.
+//
+// A dry run is exempt: no batch transaction ever executes, so there is no
+// uncommitted batch state for a check to miss and the rationale above does not
+// apply. Such a run evaluates checks under the same rule as every other up
+// path — see [Migrator.deferPreMigrationChecks].
 func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration) error {
-	if m.skipChecks {
+	if m.skipChecks || m.conn.Writer().IsDryRun() {
 		return nil
 	}
 	groups, err := m.migrationCheckGroups(migration)
@@ -1177,9 +1240,11 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	}
 
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "totalMigrations", len(migrations))
-	if err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
+	checksDeferred, err := m.applyUpMigrations(ctx, migrationsToApply)
+	if err != nil {
 		return err
 	}
+	notifyChecksDeferredObserver(ctx, opts.ChecksDeferredObserver, checksDeferred)
 
 	m.logger.Info("All migrations applied successfully")
 	return nil
@@ -1456,7 +1521,7 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	}
 
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "targetVersion", targetVersion, "totalMigrations", len(migrations))
-	if err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
+	if _, err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
 		return err
 	}
 
@@ -1470,6 +1535,13 @@ func notifyMigrationPlanObserver(ctx context.Context, observer MigrationPlanObse
 	}
 	plan.Versions = slices.Clone(plan.Versions)
 	observer(ctx, plan)
+}
+
+func notifyChecksDeferredObserver(ctx context.Context, observer ChecksDeferredObserver, versions []int64) {
+	if observer == nil || len(versions) == 0 {
+		return
+	}
+	observer(ctx, slices.Clone(versions))
 }
 
 func runPreMigrationHook(ctx context.Context, hook PreMigrationHook, plan MigrationPlan) error {
@@ -1512,7 +1584,10 @@ func downTargetVersion(applied []int64, targetVersion int64) int64 {
 	return finalVersion
 }
 
-func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) error {
+// applyUpMigrations executes the run and returns the versions whose
+// pre-migration checks were parsed and statically validated but not evaluated
+// against the database. That list is empty outside a dry run.
+func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) ([]int64, error) {
 	switch m.txMode {
 	case MigrationTxModeAll:
 		return m.applyUpMigrationsInSingleTransaction(ctx, migrations)
@@ -1521,31 +1596,43 @@ func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migratio
 	}
 }
 
-func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*Migration) error {
-	for _, migration := range migrations {
+func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*Migration) ([]int64, error) {
+	var checksDeferred []int64
+	// The loop index is the migration's position in the RUN, which is what
+	// decides whether its checks observe apply state — see
+	// [Migrator.deferPreMigrationChecks].
+	for i, migration := range migrations {
 		txMode, err := m.resolveUpMigrationTxMode(migration)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if err := m.applyUpMigrationObserved(ctx, migration, txMode); err != nil {
-			return err
+		deferred, err := m.applyUpMigrationObserved(ctx, migration, txMode, i == 0)
+		if err != nil {
+			return nil, err
+		}
+		if deferred {
+			checksDeferred = append(checksDeferred, migration.Version)
 		}
 	}
 
-	return nil
+	return checksDeferred, nil
 }
 
-func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, migrations []*Migration) error {
+func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, migrations []*Migration) ([]int64, error) {
 	if len(migrations) == 0 {
-		return nil
+		return nil, nil
 	}
 	if err := m.validateUpTransactionMode(migrations); err != nil {
-		return err
+		return nil, err
+	}
+	checksDeferred, err := m.runBatchPreMigrationChecks(ctx, migrations)
+	if err != nil {
+		return nil, err
 	}
 
 	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
+		return nil, fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
 	}
 	txConn := m.conn.WithExecutor(tx)
 	startedAt := make(map[int64]time.Time, len(migrations))
@@ -1553,18 +1640,43 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		startedAt[migration.Version] = time.Now()
 		if err := m.applyUpMigrationInExistingTransaction(ctx, txConn, migration, startedAt[migration.Version]); err != nil {
 			_ = tx.Rollback()
-			return m.recordRolledBackBatchFailure(ctx, migration, startedAt[migration.Version], err)
+			return nil, m.recordRolledBackBatchFailure(ctx, migration, startedAt[migration.Version], err)
 		}
 		if err := m.recordAppliedMigrationOn(ctx, txConn, migration, startedAt[migration.Version]); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("failed to record migration %d in tx-mode all transaction: %w", migration.Version, err)
+			return nil, fmt.Errorf("failed to record migration %d in tx-mode all transaction: %w", migration.Version, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
+		return nil, fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
 	}
 	m.logger.Info("Applied migrations in one transaction", "count", len(migrations))
-	return nil
+	return checksDeferred, nil
+}
+
+// runBatchPreMigrationChecks evaluates pre-migration checks for a tx-mode all
+// run under the same rule as every other up path.
+//
+// It has work to do only in a dry run. A real batch never reaches here with
+// checks, because [Migrator.rejectChecksUnderTxModeAll] refuses a checked
+// directory before any migration is examined; a dry run is exempt from that
+// refusal, because it opens no batch transaction whose uncommitted state a
+// check could miss.
+func (m *Migrator) runBatchPreMigrationChecks(ctx context.Context, migrations []*Migration) ([]int64, error) {
+	if !m.conn.Writer().IsDryRun() {
+		return nil, nil
+	}
+	var checksDeferred []int64
+	for i, migration := range migrations {
+		deferred, err := m.runPreMigrationChecks(ctx, migration, i == 0)
+		if err != nil {
+			return nil, err
+		}
+		if deferred {
+			checksDeferred = append(checksDeferred, migration.Version)
+		}
+	}
+	return checksDeferred, nil
 }
 
 func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
@@ -1617,7 +1729,8 @@ func (m *Migrator) applyUpMigrationObserved(
 	ctx context.Context,
 	migration *Migration,
 	txMode MigrationTxMode,
-) (err error) {
+	observesApplyState bool,
+) (checksDeferred bool, err error) {
 	observer := m.migrationObserver()
 	ctx, span := observer.StartSpan(ctx, "ptah.migrate.apply", m.migrationAttributes(MigrationDirectionUp, migration)...)
 	startedAt := time.Now()
@@ -1639,19 +1752,20 @@ func (m *Migrator) applyUpMigrationObserved(
 			migration.Version,
 			mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts),
 		); err != nil {
-			return err
+			return false, err
 		}
 	}
-	if err := m.runPreMigrationChecks(ctx, migration); err != nil {
-		return err
+	checksDeferred, err = m.runPreMigrationChecks(ctx, migration, observesApplyState)
+	if err != nil {
+		return false, err
 	}
 	if err := m.beginMigrationRevision(ctx, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+		return false, fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}
 	if txMode == MigrationTxModeNone {
-		return m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
+		return checksDeferred, m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
 	}
-	return m.applyUpMigrationTransactional(ctx, migration, startedAt)
+	return checksDeferred, m.applyUpMigrationTransactional(ctx, migration, startedAt)
 }
 
 // runPreMigrationChecks evaluates a migration's pre-migration assertions before
@@ -1669,11 +1783,31 @@ func (m *Migrator) applyUpMigrationObserved(
 // after fixing the data that tripped the check every later apply aborted on the
 // dirty row with no working in-band recovery. Atlas itself writes no row when
 // its checks fail, and the retry simply works (#956).
-func (m *Migrator) runPreMigrationChecks(ctx context.Context, migration *Migration) error {
-	if err := m.runMigrationChecks(ctx, m.conn, migration); err != nil {
-		return fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
+// observesApplyState says whether this migration observes the state a real
+// apply would evaluate its assertions against — true for the first migration
+// executed in the run, and always true outside a dry run. When it is false the
+// assertions are still parsed and statically validated, but not evaluated, and
+// the migration's version is reported back as deferred so the run can say so
+// out loud. See [Migrator.deferPreMigrationChecks].
+// observesApplyState travels as a parameter rather than as a Migrator field on
+// purpose: every With* builder copies the Migrator by value, so a field would
+// leak one run's position into every derived migrator.
+func (m *Migrator) runPreMigrationChecks( //revive:disable-line:flag-parameter // see above: a field would leak across derived migrators
+	ctx context.Context,
+	migration *Migration,
+	observesApplyState bool,
+) (bool, error) {
+	if m.deferPreMigrationChecks(observesApplyState) {
+		declaresChecks, err := m.validateDeferredMigrationChecks(migration)
+		if err != nil {
+			return false, fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
+		}
+		return declaresChecks, nil
 	}
-	return nil
+	if err := m.runMigrationChecks(ctx, m.conn, migration); err != nil {
+		return false, fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
+	}
+	return false, nil
 }
 
 func (m *Migrator) applyUpMigrationInExistingTransaction(
