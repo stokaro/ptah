@@ -220,3 +220,106 @@ func TestLoadCases_MissingDir(t *testing.T) {
 	_, err := dbtest.LoadCases(filepath.Join(t.TempDir(), "does-not-exist"))
 	c.Assert(err, qt.IsNotNil)
 }
+
+// TestLoadCases_RejectsDuplicateNameAcrossFiles is the issue's primary
+// reproduction: a name unique within each file but repeated across the
+// directory. Before the union check, this loaded clean and returned two cases
+// both named "dup", which --run then matched twice.
+func TestLoadCases_RejectsDuplicateNameAcrossFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.yaml"),
+		[]byte("cases:\n  - name: dup\n    steps:\n      - exec: SELECT 1\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "b.yaml"),
+		[]byte("cases:\n  - name: dup\n    steps:\n      - exec: SELECT 2\n"), 0o600), qt.IsNil)
+
+	// The message names both files, because the name alone does not say where
+	// the duplicate came from. No per-file prefix: `b.yaml: duplicate ... in
+	// a.yaml and b.yaml` would name b.yaml twice.
+	_, err := dbtest.LoadCases(dir)
+	c.Assert(err, qt.ErrorMatches, `duplicate test case "dup" in a\.yaml and b\.yaml`)
+}
+
+// TestLoadCases_AllowsDistinctNamesAcrossFiles is the negative half of the pair
+// above. The directory shape is identical -- two YAML files, one case each --
+// and only the names differ. Without it the union check is indistinguishable
+// from one that simply rejects any multi-file directory.
+func TestLoadCases_AllowsDistinctNamesAcrossFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.yaml"),
+		[]byte("cases:\n  - name: alpha\n    steps:\n      - exec: SELECT 1\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "b.yaml"),
+		[]byte("cases:\n  - name: beta\n    steps:\n      - exec: SELECT 2\n"), 0o600), qt.IsNil)
+
+	cases, err := dbtest.LoadCases(dir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(cases, qt.HasLen, 2)
+	c.Assert(cases[0].Name, qt.Equals, "alpha")
+	c.Assert(cases[1].Name, qt.Equals, "beta")
+}
+
+// TestParseCases_RejectsDuplicateNameInOneDocument covers the single-document
+// collision. The issue attributes the gap to validateCases running per document
+// and only the union escaping, which implies this case was already handled; it
+// was not, so the check had to be written rather than relocated. With no file
+// names to report, the message carries the case name alone.
+func TestParseCases_RejectsDuplicateNameInOneDocument(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "same name twice in one cases list",
+			yaml: "cases:\n" +
+				"  - name: dup\n" +
+				"    steps:\n" +
+				"      - exec: SELECT 1\n" +
+				"  - name: dup\n" +
+				"    steps:\n" +
+				"      - exec: SELECT 2\n",
+			want: `duplicate test case "dup"`,
+		},
+		{
+			name: "same name across two documents in one file",
+			yaml: "cases:\n" +
+				"  - name: dup\n" +
+				"    steps:\n" +
+				"      - exec: SELECT 1\n" +
+				"---\n" +
+				"cases:\n" +
+				"  - name: dup\n" +
+				"    steps:\n" +
+				"      - exec: SELECT 2\n",
+			want: `duplicate test case "dup"`,
+		},
+		{
+			// Names are compared exactly. FilterCases matches the raw name with
+			// a Go regexp, so folding case here would reject a pair that --run
+			// still selects separately.
+			name: "names differing only by case are distinct",
+			yaml: "cases:\n" +
+				"  - name: dup\n" +
+				"    steps:\n" +
+				"      - exec: SELECT 1\n" +
+				"  - name: DUP\n" +
+				"    steps:\n" +
+				"      - exec: SELECT 2\n" +
+				"  - name: dup\n" +
+				"    steps:\n" +
+				"      - exec: SELECT 3\n",
+			want: `duplicate test case "dup"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := dbtest.ParseCases([]byte(tt.yaml))
+			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
+}

@@ -196,3 +196,42 @@ func TestLoadCasesKeepsItsYAMLOnlyContract(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(cases, qt.HasLen, 0)
 }
+
+// TestLoadCasesOfKind_RejectsDuplicateAcrossFormats is the cross-format half of
+// issue #1038. It is a separate code path from the YAML/YAML case: a different
+// parser, reached through the other branch of the isAtlasCaseFile switch, so
+// the YAML/YAML test passing does not imply this one does. Converting a YAML
+// case to `.test.hcl` and leaving the original in place is exactly the mid-
+// migration mistake that made this worth closing.
+func TestLoadCasesOfKind_RejectsDuplicateAcrossFormats(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.yaml"),
+		[]byte("cases:\n  - name: dup\n    steps:\n      - exec: SELECT 1\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "b.test.hcl"),
+		[]byte("test \"schema\" \"dup\" {\n  exec {\n    sql = \"SELECT 2\"\n  }\n}\n"), 0o600), qt.IsNil)
+
+	_, err := dbtest.LoadCasesOfKind(dir, dbtest.AtlasTestKindSchema)
+	c.Assert(err, qt.ErrorMatches, `duplicate test case "dup" in a\.yaml and b\.test\.hcl`)
+}
+
+// TestLoadCasesOfKind_KindFilterPrecedesUniqueness pins the check to the
+// post-filter set. ParseAtlasTestCases drops blocks of the other kind before
+// returning, so a schema-kind load never sees the `test "migrate"` case and
+// must not report a collision. A fix that scanned raw names out of the files
+// would pass every other test here and fail only this one.
+func TestLoadCasesOfKind_KindFilterPrecedesUniqueness(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.yaml"),
+		[]byte("cases:\n  - name: dup\n    steps:\n      - exec: SELECT 1\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "b.test.hcl"),
+		[]byte("test \"migrate\" \"dup\" {\n  migrate {\n    to = \"latest\"\n  }\n}\n"), 0o600), qt.IsNil)
+
+	cases, err := dbtest.LoadCasesOfKind(dir, dbtest.AtlasTestKindSchema)
+	c.Assert(err, qt.IsNil)
+	c.Assert(cases, qt.HasLen, 1)
+	c.Assert(cases[0].Name, qt.Equals, "dup")
+}
