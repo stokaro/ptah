@@ -200,11 +200,16 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name: "schema_inspect",
 			path: []string{"schema", "inspect"},
-			// --include is a Pro-surface flag the pinned Atlas CE binary does
-			// not register on inspect; compat implements it so Pro pipelines
-			// port. --output, --web, and --export stay unregistered.
-			flags:     []string{"--url", "--dev-url", "--env", "--schema", "--exclude", "--format", "--include"},
-			forbidden: []string{"--output", "--web", "--export"},
+			// --include and --output are Pro-surface flags the pinned Atlas CE
+			// binary does not register on inspect; compat implements both so
+			// Pro pipelines port. --web is registered as a named refusal
+			// (see schema_ui_flags.go). --export stays unregistered: it is a
+			// separate item of stokaro/ptah#951.
+			flags: []string{
+				"--url", "--dev-url", "--env", "--schema", "--exclude",
+				"--format", "--include", "--output", "--web",
+			},
+			forbidden: []string{"--export"},
 		},
 		{
 			name: "schema_apply",
@@ -1302,13 +1307,18 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 }
 
 // TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags pins the inspect
-// flags Atlas registers that compat deliberately does not:
-// --output, --web, and --export are separate items of stokaro/ptah#951.
-// --include is registered and covered by schema_inspect_include_test.go.
+// flags Atlas registers that compat deliberately does not.
+//
+// The list has shrunk to --export. --output is implemented
+// (schema_inspect_output_test.go) and --web is a registered refusal
+// (schema_ui_flags_test.go); --export on inspect is the twin of the
+// `schema diff --export` decision and stays a separate item of
+// stokaro/ptah#951. --include is registered and covered by
+// schema_inspect_include_test.go.
 func TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags(t *testing.T) {
 	c := qt.New(t)
 
-	for _, flag := range []string{"--output", "--web", "--export"} {
+	for _, flag := range []string{"--export"} {
 		c.Run(flag, func(c *qt.C) {
 			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
