@@ -624,14 +624,20 @@ schema objects. Preview first:
 ptah-compat schema clean --url "$DATABASE_URL" --dry-run
 ```
 
-Against a SQLite database containing one `users` table, expected output
-includes:
+Against a SQLite database containing one `users` table and one `v_const` view,
+expected output includes:
 
 ```text
-Planned cleanup changes: 1
+Planned cleanup changes: 2
 - DROP TABLE IF EXISTS "users"
+- DROP VIEW IF EXISTS "v_const"
 [DRY RUN] No changes were applied.
 ```
+
+The plan lists the object kinds the target dialect's cleanup really destroys —
+see the [per-dialect coverage table](../../reference/atlas-commands/#ptah-compat-schema-clean).
+Rows are ordered alphabetically by object kind; that is a report order, not the
+order the statements run in.
 
 :::danger
 Without `--dry-run`, cleanup drops the listed objects after confirmation

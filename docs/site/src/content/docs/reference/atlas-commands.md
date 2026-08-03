@@ -803,9 +803,22 @@ runtime.
 | `--format` | Renders Atlas-style templates over the cleanup plan. |
 | `--env` | Reads `env.url` and `format.schema.clean` from `atlas.hcl`. |
 
-Cleanup covers the object types Ptah cleanly models and drops today: user
-tables across supported dialects, PostgreSQL enum types and sequences, and SQL
-Server foreign-key constraints that must be dropped before tables.
+The plan reports the object kinds the target dialect's cleanup really destroys,
+so a `--dry-run` or `--format` report is not narrower than the apply:
+
+| Dialect | Reported and destroyed |
+| --- | --- |
+| PostgreSQL family | Foreign keys, tables, views, materialized views, enum, domain, composite and range types, and functions; standalone sequences on PostgreSQL itself. |
+| MySQL, MariaDB | Foreign keys, tables, views, stored functions and procedures, events, and MariaDB sequences. |
+| SQLite | Tables and views. |
+| SQL Server | Foreign keys and tables. Views are not dropped, so they are not reported. |
+| ClickHouse | Base tables. Views are not dropped, so they are not reported. |
+
+Objects that vanish as collateral of a listed drop are not listed separately:
+indexes, triggers, non-foreign-key constraints, RLS policies, and comments. The
+rendered `Cmd` describes the object being destroyed; it is not the exact
+statement the cleanup runtime executes, and the report order is alphabetical by
+object kind rather than an execution order.
 
 Native twin: [`ptah schema clean`](../native-commands/).
 
