@@ -122,7 +122,9 @@ pin these exact bytes.
 ```
 
 The run still succeeds — the check did what it claims. A digest reference and
-a local directory produce no such line.
+a local directory produce no such line, and
+`oci://ghcr.io/acme/app-migrations:release@sha256:<digest>` is a digest
+reference: the digest selects and is verified, the tag is only a label.
 
 **`ptah-compat migrate apply`, `migrate status` and `migrate set` refuse an
 unhashed directory.** Atlas treats a missing `atlas.sum` as a checksum error, so
