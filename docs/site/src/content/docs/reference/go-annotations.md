@@ -439,6 +439,12 @@ A Visual Studio Code extension that starts `ptah-ls` for Go files lives in
 its `ptah.languageServer.path` setting points at the built binary. Any other
 LSP-capable editor can run `ptah-ls` directly as a stdio language server.
 
+Serve mode takes no arguments. `ptah-ls version` and `ptah-ls --version` print
+build metadata and exit; anything else on the command line is a usage error and
+exits `2`. Earlier releases silently discarded arguments and started serving
+anyway, so an editor configuration that passes a document or workspace path now
+fails loudly instead of appearing to work.
+
 ## Next steps
 
 - Modeling a schema with these directives: [Go annotations](../../schema/go-annotations/).

@@ -104,18 +104,45 @@ func TestNewRootCommand_NativeCommandTreeIsRegistered(t *testing.T) {
 	}
 }
 
-func TestNewRootCommand_VersionFlagWorks(t *testing.T) {
+// TestNewRootCommand_VersionSpellingsPrintTheSameBlock replaces the former
+// TestNewRootCommand_VersionFlagWorks, which asserted the substring
+// "ptah version" -- cobra's built-in template, and the second of the two
+// formats stokaro/ptah#1064 reported. The flag spellings now render the same
+// block as the `version` subcommand, so this asserts mutual equality instead of
+// a literal: which format the flags produce is the whole point, and pinning the
+// old one is what let the two drift apart in the first place.
+func TestNewRootCommand_VersionSpellingsPrintTheSameBlock(t *testing.T) {
 	c := qt.New(t)
+
+	want := runRootCommandOutput(c, "version")
+	c.Assert(want, qt.Contains, "Version: ")
+	c.Assert(want, qt.Not(qt.Contains), "ptah version")
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "long flag", args: []string{"--version"}},
+		{name: "short flag", args: []string{"-v"}},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			c.Assert(runRootCommandOutput(c, tt.args...), qt.Equals, want)
+		})
+	}
+}
+
+func runRootCommandOutput(c *qt.C, args ...string) string {
+	c.Helper()
 	cmd := root.NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--version"})
+	cmd.SetArgs(args)
 
-	err := cmd.Execute()
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "ptah version")
+	c.Assert(cmd.Execute(), qt.IsNil)
+	return out.String()
 }
 
 func TestNewRootCommand_PTAHDBURLFeedsCommandFlag(t *testing.T) {

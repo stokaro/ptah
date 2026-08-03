@@ -609,6 +609,23 @@ func atlasMigrateDirFormatValue(value string) (string, error) {
 	return "", fmt.Errorf("unknown Atlas migration directory format %q: expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate", value)
 }
 
+// newAtlasVersionCommand exposes `version` as a subcommand and deliberately no
+// --version/-v flag. That asymmetry with the native ptah binary -- which
+// answers to all three spellings (stokaro/ptah#1064) -- is the point: this
+// surface mirrors a command set that carries neither flag, and the mirrored
+// command set is what scripts pointed at this binary are written against.
+//
+// Measured on this tree, same argv, against the command set being mirrored:
+//
+//	--version -> "Error: unknown flag: --version\n", exit 1
+//	-v        -> "Error: unknown shorthand flag: 'v' in -v\n", exit 1
+//
+// and neither surface's --help lists a --version row; both list only the
+// `version` command. Adding the flag here would make this binary exit 0 where
+// the surface it mirrors exits 1, which is a compatibility regression, not a
+// fix. TestCompatCommand_RootRejectsVersionFlag pins that on the root command,
+// which is where the regression would appear: setting cobra's Version field
+// anywhere on this tree is all it takes to auto-register --version and -v.
 func newAtlasVersionCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
