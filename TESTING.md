@@ -244,5 +244,13 @@ line after the package clause.
 Cleanup PRs should reduce `.teststyle-baseline.json` with:
 
 ```bash
-GOWORK=off go tool teststyle -write-baseline
+scripts/check-test-style.sh --write-baseline
 ```
+
+The script scans the files git reports for this checkout rather than walking the
+filesystem, so both the check and the regeneration ignore linked git worktrees
+parked under the repository. `go tool teststyle -write-baseline` run directly
+does walk them, and records their tests into the tracked baseline.
+
+`scripts/check-test-style.sh --list-scan-paths` prints the exact set of files the
+gate will judge, which is the quickest way to confirm a file is in scope.

@@ -206,8 +206,13 @@ New tests must not add entries. Cleanup PRs that intentionally remove entries
 should refresh the baseline with:
 
 ```bash
-GOWORK=off go tool teststyle -write-baseline
+scripts/check-test-style.sh --write-baseline
 ```
+
+Regenerate through the script, not through `go tool teststyle -write-baseline`
+directly: the bare tool walks the filesystem and cannot tell a linked git
+worktree parked under the repository from the repository itself, so it records
+tests that are not in the working tree.
 
 Never use `testify` in Ptah code, tests, examples, or documentation snippets.
 Use `quicktest` imported as `qt`, the Go standard library `testing` package, or
