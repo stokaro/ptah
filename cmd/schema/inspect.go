@@ -65,13 +65,14 @@ object by default, or grouped with --split schema|type.
 --schemas names the schema universe, --include picks top-level resources
 inside it with Atlas-style selectors, and --exclude subtracts from the result.
 Child resources ride along with their parent and cannot be selected on their
-own: the [type=column] and literal-dot table.column spellings both fail before
-the database is contacted, while glob metacharacters (*, ?, and character
-classes) match a dot and escape that check. An identifier holding a dot is
-selected as main."my.table" or a\.b\.c; the bare a.b.c spelling is refused as
-ambiguous. A selection that keeps an object whose dependency it dropped is
-refused rather than rendered, so inspected output never references an object
-it omitted.`,
+own: the [type=column] spelling fails before the database is contacted. A
+positional spelling such as table.column is not refused on its shape, because
+it is indistinguishable from a table literally named that; an identifier
+holding a dot can also be named as main."my.table" or a\.b\.c. An --include
+selection that matches nothing renders no objects and keeps exit status 0, but
+reports the empty selection on standard error. A selection that keeps an
+object whose dependency it dropped is refused rather than rendered, so
+inspected output never references an object it omitted.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaInspect(cmd, opts)

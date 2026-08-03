@@ -56,8 +56,10 @@ CI checks like "do these two schema files differ?" or "does this migration
 directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison
 sides see; --exclude subtracts from the result. A selected object that
-depends on an unselected object refuses the diff with an explicit diagnostic,
-and a selection that matches nothing reports synced schemas.`,
+depends on an unselected object refuses the diff with an explicit diagnostic.
+An --include selection that matches nothing on either side keeps the exit
+status and the standard-output bytes it would have had, and reports the empty
+selection on standard error.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaDiff(cmd, opts)
@@ -122,6 +124,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		Include:        opts.include,
 		Policy:         policy,
 		ConnectTimeout: connectTimeout,
+		Diagnostics:    cmd.ErrOrStderr(),
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

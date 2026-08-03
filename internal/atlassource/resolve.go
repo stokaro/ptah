@@ -21,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -49,6 +50,15 @@ type ResolveOptions struct {
 	// DevLockHeld tells migration-directory resolution that the caller already
 	// holds the dev database realm lock across a larger operation.
 	DevLockHeld bool
+	// Schemas restricts introspection of database-backed sources (live database
+	// URLs and replayed migration directories) to the named schema scopes.
+	// Repeated and comma-separated values union deterministically; empty reads
+	// the connection's default scope.
+	//
+	// Resolution must read what the caller asked for: a post-hoc filter over a
+	// universe that was never introspected selects nothing, and nothing is
+	// indistinguishable from an empty database.
+	Schemas []string
 }
 
 // State is one resolved desired-state. Resolution closes every connection it
@@ -126,7 +136,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	schema, err := dbschema.ReadSchemaWithSchemas(conn, schemascope.SplitNames(opts.Schemas))
 	if err != nil {
 		return State{}, fmt.Errorf("read %s database schema: %w", s.Flag, err)
 	}
@@ -189,7 +199,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 		snapshot,
 		migrator.MigrationDirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection) error {
-			schema, err := dbschema.ReadSchemaWithSchemas(replayConn, nil)
+			schema, err := dbschema.ReadSchemaWithSchemas(replayConn, schemascope.SplitNames(opts.Schemas))
 			if err != nil {
 				return fmt.Errorf("read dev database schema: %w", err)
 			}

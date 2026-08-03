@@ -88,8 +88,9 @@ what both comparison sides see: --schema names define the schema universe,
 --include selectors pick top-level resources inside it, and --exclude plus
 env.schema.mode subtract from the result. A selected object that depends on
 an unselected object refuses the plan with an explicit diagnostic instead of
-emitting incomplete SQL, and a selection that matches nothing reports a
-synced schema.`,
+emitting incomplete SQL. An --include selection that matches neither the
+target nor the desired state refuses the apply: there is nothing to apply, and
+reporting a synced schema would claim success for work that did not happen.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
