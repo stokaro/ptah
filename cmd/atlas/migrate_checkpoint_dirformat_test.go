@@ -315,21 +315,38 @@ func sqliteCheckpointColumnCount(c *qt.C, dbPath, table, column string) int {
 	return count
 }
 
-// TestCompatCommand_MigrateCheckpointNestedMigrationOutranksTimestamp pins the
-// blocker fix: the replay and the reader recurse, but the Atlas timestamp
-// resolver scans only the top level. A nested migration dated after the
-// timestamp is therefore replayed INTO the checkpoint body while still sorting
-// AFTER it, so a fresh database runs the checkpoint and then replays that
-// migration on top of it — stokaro/ptah#954's double-apply, produced by our own
-// writer. It is also a divergence in the direction the PR body called
-// impossible: the pinned CE reader is shallow, so CE applies the same directory
-// at exit 0 with one clean row while Ptah exits 1 and leaves a dirty row.
-func TestCompatCommand_MigrateCheckpointNestedMigrationOutranksTimestamp(t *testing.T) {
+// TestCompatCommand_MigrateCheckpointNestedMigrationIsNotHistory re-expresses
+// TestCompatCommand_MigrateCheckpointNestedMigrationOutranksTimestamp.
+//
+// That test pinned a compensator for the recursion. The replay and the reader
+// recursed while the Atlas timestamp resolver scanned only the top level, so a
+// nested future-dated migration was replayed INTO the checkpoint body while
+// still sorting AFTER it, and a fresh database ran the checkpoint and then
+// replayed that migration on top — stokaro/ptah#954's double-apply, produced by
+// our own writer. The remedy then was to raise the version bound above the
+// nested file.
+//
+// Since stokaro/ptah#976 the nested file is not a migration at all: atlas.sum
+// covers only the top level, so it is neither replayed nor executed nor
+// counted. The post-condition below is therefore strictly stronger than the one
+// it replaces, and each clause rules out a different way of "fixing" this by
+// loosening it:
+//
+//   - the version is the plain timestamp, NOT stepped past 29990101000000 — a
+//     recursive bound would still be reaching into the subdirectory;
+//   - `ckpt_future` does NOT exist after a fresh apply — the old test asserted
+//     it DID, via the cumulative body, which is the clause that would silently
+//     survive if the file were still being replayed;
+//   - exactly one revision row, so the double-apply #954 named cannot return
+//     through a different route;
+//   - the file is named on stderr, so "not history" never means "not mentioned".
+func TestCompatCommand_MigrateCheckpointNestedMigrationIsNotHistory(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")
 	writeCheckpointAtlasFixture(c, dir)
 	c.Assert(os.MkdirAll(filepath.Join(dir, "sub"), 0o755), qt.IsNil)
-	// Dated far beyond any real timestamp, so only a recursive bound can beat it.
+	// Dated far beyond any real timestamp: a version above it can only come from
+	// a bound that still reads subdirectories.
 	c.Assert(os.WriteFile(filepath.Join(dir, "sub", "29990101000000_future.sql"),
 		[]byte("CREATE TABLE ckpt_future (id INTEGER);\n"), 0o600), qt.IsNil)
 	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
@@ -346,33 +363,39 @@ func TestCompatCommand_MigrateCheckpointNestedMigrationOutranksTimestamp(t *test
 	name := assertAtlasCheckpointWritten(c, dir, "checkpoint")
 	version, err := strconv.ParseInt(strings.TrimSuffix(name, "_checkpoint.sql"), 10, 64)
 	c.Assert(err, qt.IsNil)
-	// A bare timestamp would be ~2026xxxxxxxxxx here and lose to the nested file.
-	c.Assert(version > 29990101000000, qt.IsTrue, qt.Commentf("version=%d", version))
+	c.Assert(version < 29990101000000, qt.IsTrue, qt.Commentf("version=%d", version))
 
-	// The decisive assertion is the apply, not the number: a fresh database must
-	// run the checkpoint alone and record one clean row.
 	freshDB := filepath.Join(c.TempDir(), "fresh.db")
-	applyOut, _, err := compatApply(dir, freshDB)
+	applyOut, applyErrOut, err := compatApply(dir, freshDB)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", applyOut))
 	rows := compatRevisionRows(c, freshDB)
 	c.Assert(rows, qt.HasLen, 1)
 	c.Assert(rows[0].Applied, qt.Equals, int64(rows[0].Total))
-	// The nested migration's table exists via the cumulative body, and its own
-	// file never ran — the two facts that together mean no double-apply.
-	c.Assert(sqliteTableCount(c, freshDB, "ckpt_future"), qt.Equals, 1)
 	c.Assert(rows[0].Version, qt.Equals, strings.TrimSuffix(name, "_checkpoint.sql"))
+	// Never replayed into the body, never executed from its own file.
+	c.Assert(sqliteTableCount(c, freshDB, "ckpt_future"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, freshDB, "ckpt_users"), qt.Equals, 1)
+	c.Assert(applyErrOut, qt.Equals,
+		"warning: sub/29990101000000_future.sql is not covered by atlas.sum and will not run; "+
+			"Atlas migrations are top-level files named *.sql\n")
 }
 
-// TestCompatCommand_MigrateCheckpointNestedTieDoesNotCollide covers the
-// equality boundary of the recursive bound, which a strict-vs-non-strict
-// comparison cannot be told apart on any other input.
+// TestCompatCommand_MigrateCheckpointNestedTieCannotCollide re-expresses
+// TestCompatCommand_MigrateCheckpointNestedTieDoesNotCollide.
 //
-// The top-level history is dated 29990101000000, so the shallow resolver
-// returns 29990101000001; a NESTED migration sits at exactly that version, so
-// the recursive bound equals the resolved value. Accepting it (`>=`) writes a
-// checkpoint carrying the same version as an existing migration — two files,
-// one version — instead of stepping past it.
-func TestCompatCommand_MigrateCheckpointNestedTieDoesNotCollide(t *testing.T) {
+// The original covered the equality boundary of the recursive bound: a nested
+// migration sitting at exactly the version the shallow resolver returned, where
+// `>=` and `>` differ and nothing else can tell them apart. That boundary no
+// longer exists — the nested file is outside the covered set, so it cannot tie
+// with anything — but the state it protected does, and it is asserted here
+// against the file that CAN collide.
+//
+// The top-level history is dated 29990101000000, so the checkpoint takes
+// 29990101000001 and the nested file at that same version is not a second
+// holder of it. The decisive clause is the fresh apply: exactly one revision
+// row and no `tie` column, so neither file ran twice and the nested one did not
+// run at all.
+func TestCompatCommand_MigrateCheckpointNestedTieCannotCollide(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")
 	c.Assert(os.MkdirAll(filepath.Join(dir, "sub"), 0o755), qt.IsNil)
@@ -392,18 +415,16 @@ func TestCompatCommand_MigrateCheckpointNestedTieDoesNotCollide(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
 	name := assertAtlasCheckpointWritten(c, dir, "checkpoint")
-	version := strings.TrimSuffix(name, "_checkpoint.sql")
-	// Strictly above the nested migration, not equal to it.
-	c.Assert(version, qt.Equals, "29990101000002")
+	// One past the top-level history, which is now the whole history.
+	c.Assert(strings.TrimSuffix(name, "_checkpoint.sql"), qt.Equals, "29990101000001")
 
-	// The protected state is that no two migrations share a version: a fresh
-	// apply must still record exactly one row, for the checkpoint.
 	freshDB := filepath.Join(c.TempDir(), "fresh.db")
 	applyOut, _, err := compatApply(dir, freshDB)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", applyOut))
 	rows := compatRevisionRows(c, freshDB)
 	c.Assert(rows, qt.HasLen, 1)
-	c.Assert(rows[0].Version, qt.Equals, "29990101000002")
+	c.Assert(rows[0].Version, qt.Equals, "29990101000001")
+	c.Assert(sqliteCheckpointColumnCount(c, freshDB, "ckpt_users", "tie"), qt.Equals, 0)
 }
 
 func TestCompatCommand_MigrateCheckpointDirFormatIsCaseFolded(t *testing.T) {

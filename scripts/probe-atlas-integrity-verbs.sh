@@ -316,8 +316,41 @@ native_seed() {
               printf 'migrations live here\n' > "$d/README.md" ;;
     nested)   rm -f "$d/20260101000000_init.sql"; mkdir -p "$d/sub"
               printf 'CREATE TABLE n (id INTEGER PRIMARY KEY);\n' > "$d/sub/20260101000000_init.sql" ;;
+    # The three shapes #976 was about. `nested` above covers the unhashed half
+    # that #974 already pinned; these cover the hashed half, which was open.
+    nestedhash)
+              mkdir -p "$d/sub"
+              printf 'CREATE TABLE n (id INTEGER PRIMARY KEY);\n' > "$d/sub/20260102000000_nested.sql"
+              "$ATLAS" migrate hash --dir "file://$d" >/dev/null 2>&1 ;;
+    nestedtamper)
+              mkdir -p "$d/sub"
+              printf 'CREATE TABLE n (id INTEGER PRIMARY KEY);\n' > "$d/sub/20260102000000_nested.sql"
+              "$ATLAS" migrate hash --dir "file://$d" >/dev/null 2>&1
+              # Edited AFTER hashing, and no entry in atlas.sum covers it: the
+              # file whose contents can change what runs without changing a hash.
+              printf 'CREATE TABLE pwned (id INTEGER PRIMARY KEY);\n' >> "$d/sub/20260102000000_nested.sql" ;;
+    uppercase)
+              rm -f "$d/20260101000000_init.sql"
+              printf 'CREATE TABLE u (id INTEGER PRIMARY KEY);\n' > "$d/20260101000000_init.SQL"
+              "$ATLAS" migrate hash --dir "file://$d" >/dev/null 2>&1 ;;
+    uppermixed)
+              printf 'CREATE TABLE u (id INTEGER PRIMARY KEY);\n' > "$d/20260102000000_upper.SQL"
+              "$ATLAS" migrate hash --dir "file://$d" >/dev/null 2>&1 ;;
   esac
   echo "$d"
+}
+
+# apply_tables <binary> <dir> <db> — apply and echo "<exit>|<non-atlas tables>".
+# The executed table set is the property #976 is about; exit codes agree on the
+# hashed shapes even when what ran does not, so comparing exit alone is blind
+# to exactly this bug.
+apply_tables() {
+  local bin="$1" dir="$2" db="$3" rc
+  "$bin" migrate apply --dir "file://$dir" --url "sqlite://$db" >/dev/null 2>&1
+  rc=$?
+  printf '%s|%s' "$rc" "$(sqlite3 "$db" \
+    "select name from sqlite_master where type='table' and name not like 'atlas_%' order by name;" \
+    2>/dev/null | tr '\n' ' ')"
 }
 
 # gate_row <verb> <state> <mode> [extra args...]
@@ -355,14 +388,40 @@ for verb in status set; do
   for state in unhashed edited added removed; do
     gate_row "$verb" "$state" streams
   done
-  for state in clean empty nonsql; do
+  # Since #976 both tools read the top level only, so every nested and
+  # case-variant shape is exempt on both and compares by exit code — the same
+  # mode the other agreed-on states use, no longer a recorded divergence.
+  # ptah-compat additionally names the declined file on stderr, which is why
+  # these are not streams rows; that line is asserted in the apply section below.
+  for state in clean empty nonsql nested nestedhash nestedtamper uppercase uppermixed; do
     gate_row "$verb" "$state" exit
   done
-  # The community binary ignores subdirectories; Ptah's registrar recurses, so
-  # the shared recursive predicate refuses here where that binary exits 0. A
-  # deliberate, pinned divergence (#976), recorded rather than enforced.
-  gate_row "$verb" nested report
 done
+
+echo
+echo "  #976: what EXECUTES, not just what exits — the covered set is the run set"
+for state in nestedtamper uppermixed clean; do
+  ced=$(native_seed "a-ce-$state" "$state")
+  ptd=$(native_seed "a-pt-$state" "$state")
+  ceres=$(apply_tables "$ATLAS"  "$ced" "$ced.db")
+  ptres=$(apply_tables "$COMPAT" "$ptd" "$ptd.db")
+  if [ "$ceres" = "$ptres" ]; then
+    verdict=MATCH
+  else
+    verdict=DIFFER; fail=1
+  fi
+  printf '  %-14s %-8s CE [%s]  ptah [%s]\n' "$state" "$verdict" "$ceres" "$ptres"
+done
+echo "  (a 'pwned' table under nestedtamper means SQL ran that no checksum covered)"
+
+echo
+echo "  #976: the declined file is named on stderr, which the community binary does not do"
+decl=$(native_seed "a-decl" nestedtamper)
+"$COMPAT" migrate apply --dir "file://$decl" --url "sqlite://$decl.decl.db" >/dev/null 2>"$BASE/d.err"
+printf '    ptah stderr [%s]\n' "$(tr '\n' '|' < "$BASE/d.err")"
+cedecl=$(native_seed "a-decl-ce" nestedtamper)
+"$ATLAS" migrate apply --dir "file://$cedecl" --url "sqlite://$cedecl.decl.db" >/dev/null 2>"$BASE/d.err"
+printf '    CE   stderr [%s]\n' "$(tr '\n' '|' < "$BASE/d.err")"
 
 echo
 echo "  ordering: the refusal precedes the connection and the arity check"

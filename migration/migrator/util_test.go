@@ -478,6 +478,115 @@ func TestDiscoverMigrationFilesAutoPrefersPtahWhenPresent(t *testing.T) {
 	}
 }
 
+// discoveryAtlasSpreadFS holds one file in each of the three positions the
+// Atlas covered set distinguishes: top level spelled `.sql` (covered), one
+// level down (not covered), and top level spelled `.SQL` (not covered).
+func discoveryAtlasSpreadFS(extra map[string]string) fstest.MapFS {
+	fsys := fstest.MapFS{
+		"1_a.sql":     &fstest.MapFile{Data: []byte("CREATE TABLE a (id INT);\n")},
+		"sub/2_b.sql": &fstest.MapFile{Data: []byte("CREATE TABLE b (id INT);\n")},
+		"3_c.SQL":     &fstest.MapFile{Data: []byte("CREATE TABLE c (id INT);\n")},
+	}
+	for name, body := range extra {
+		fsys[name] = &fstest.MapFile{Data: []byte(body)}
+	}
+	return fsys
+}
+
+// discoveryPtahSpreadFS is the same spread in ptah's naming convention, whose
+// integrity file is computed FROM discovery and therefore never constrains it.
+func discoveryPtahSpreadFS(extra map[string]string) fstest.MapFS {
+	fsys := fstest.MapFS{
+		"0000000001_init.up.sql":       &fstest.MapFile{Data: []byte("CREATE TABLE a (id INT);\n")},
+		"sub/0000000002_more.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE b (id INT);\n")},
+		"0000000003_third.up.sql":      &fstest.MapFile{Data: []byte("CREATE TABLE c (id INT);\n")},
+		"0000000001_init.down.sql":     &fstest.MapFile{Data: []byte("DROP TABLE a;\n")},
+		"sub/0000000002_more.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE b;\n")},
+		"0000000003_third.down.sql":    &fstest.MapFile{Data: []byte("DROP TABLE c;\n")},
+	}
+	for name, body := range extra {
+		fsys[name] = &fstest.MapFile{Data: []byte(body)}
+	}
+	return fsys
+}
+
+// TestDiscoverMigrationFilesAtlasSumGovernsSelection enumerates every branch of
+// the format x integrity-file matrix, not only the one stokaro/ptah#976 was
+// reported against.
+//
+// The narrowing is keyed on which integrity file governs the directory, which
+// is not the same question as which format was requested: `--dir-format auto`
+// over a directory that already carries an atlas.sum resolves to the Atlas
+// hasher, so it must resolve to the Atlas file set too. A first attempt at this
+// fix gated on the explicit format alone and left that branch recursing, with
+// the hole fully open on the native surface — so the auto-with-sum row is the
+// one this table exists for, and the auto-without-sum row is what proves the
+// narrowing did not leak into the branch whose sum does cover the whole tree.
+func TestDiscoverMigrationFilesAtlasSumGovernsSelection(t *testing.T) {
+	const sumBody = "h1:fake\n1_a.sql h1:fake\n"
+
+	tests := []struct {
+		name      string
+		fsys      func() fstest.MapFS
+		format    MigrationDirFormat
+		wantPaths []string
+	}{
+		{
+			name:      "explicit atlas narrows to the covered set",
+			fsys:      func() fstest.MapFS { return discoveryAtlasSpreadFS(nil) },
+			format:    MigrationDirFormatAtlas,
+			wantPaths: []string{"1_a.sql"},
+		},
+		{
+			name:      "auto with atlas.sum narrows to the covered set",
+			fsys:      func() fstest.MapFS { return discoveryAtlasSpreadFS(map[string]string{"atlas.sum": sumBody}) },
+			format:    MigrationDirFormatAuto,
+			wantPaths: []string{"1_a.sql"},
+		},
+		{
+			name:      "auto without atlas.sum keeps the whole tree",
+			fsys:      func() fstest.MapFS { return discoveryAtlasSpreadFS(nil) },
+			format:    MigrationDirFormatAuto,
+			wantPaths: []string{"1_a.sql", "sub/2_b.sql"},
+		},
+		{
+			name:   "ptah keeps the whole tree",
+			fsys:   func() fstest.MapFS { return discoveryPtahSpreadFS(nil) },
+			format: MigrationDirFormatPtah,
+			wantPaths: []string{
+				"0000000001_init.up.sql", "0000000001_init.down.sql",
+				"sub/0000000002_more.up.sql", "sub/0000000002_more.down.sql",
+				"0000000003_third.up.sql", "0000000003_third.down.sql",
+			},
+		},
+		{
+			name:   "ptah beside an atlas.sum keeps the whole tree",
+			fsys:   func() fstest.MapFS { return discoveryPtahSpreadFS(map[string]string{"atlas.sum": sumBody}) },
+			format: MigrationDirFormatPtah,
+			wantPaths: []string{
+				"0000000001_init.up.sql", "0000000001_init.down.sql",
+				"sub/0000000002_more.up.sql", "sub/0000000002_more.down.sql",
+				"0000000003_third.up.sql", "0000000003_third.down.sql",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			files, err := DiscoverMigrationFiles(tt.fsys(), tt.format)
+			c.Assert(err, qt.IsNil)
+
+			paths := make([]string, 0, len(files))
+			for _, file := range files {
+				paths = append(paths, file.Path)
+			}
+			c.Assert(paths, qt.ContentEquals, tt.wantPaths)
+		})
+	}
+}
+
 func TestDiscoverMigrationFilesUnknownOnlySQLErrors(t *testing.T) {
 	c := qt.New(t)
 
@@ -724,4 +833,59 @@ func TestGetNextMigrationVersion(t *testing.T) {
 	c.Assert(version2, qt.Not(qt.Equals), 0)
 	// Version2 should be >= version1 (timestamps should be monotonic or equal)
 	c.Assert(version2 >= version1, qt.IsTrue)
+}
+
+// TestDiscoverMigrationFilesNestedAtlasSumDoesNotGovern covers the predicate
+// that decides which integrity file governs a directory.
+//
+// The scan walks recursively, so a nested `sub/atlas.sum` would set the flag,
+// while the function that actually picks the hasher looks at the root only.
+// When the two disagreed, a directory holding a top-level pair, a nested pair
+// and `sub/atlas.sum` applied version 1 and stopped — exit 0, success banner,
+// no warning, and the author's second migration silently never ran.
+//
+// The assertion is on the discovered set rather than on an error, because that
+// failure had no error to assert: it succeeded, quietly, with less work done.
+func TestDiscoverMigrationFilesNestedAtlasSumDoesNotGovern(t *testing.T) {
+	tests := []struct {
+		name string
+		fsys fstest.MapFS
+		want int
+	}{
+		{
+			name: "nested atlas.sum leaves the ptah pair discoverable",
+			fsys: fstest.MapFS{
+				"0000000001_init.up.sql":       &fstest.MapFile{Data: []byte("CREATE TABLE a (id int);")},
+				"0000000001_init.down.sql":     &fstest.MapFile{Data: []byte("DROP TABLE a;")},
+				"sub/0000000002_more.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE b (id int);")},
+				"sub/0000000002_more.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE b;")},
+				"sub/atlas.sum":                &fstest.MapFile{Data: []byte("h1:xxx=\n")},
+			},
+			// Four files, not two migrations: the discovery returns each
+			// direction separately.
+			want: 4,
+		},
+		{
+			name: "a top-level atlas.sum still governs",
+			fsys: fstest.MapFS{
+				"20240101000000_init.sql": &fstest.MapFile{Data: []byte("CREATE TABLE a (id int);")},
+				"sub/20240102000000_more.sql": &fstest.MapFile{
+					Data: []byte("CREATE TABLE b (id int);"),
+				},
+				"atlas.sum": &fstest.MapFile{Data: []byte("h1:xxx=\n20240101000000_init.sql h1:yyy=\n")},
+			},
+			want: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			files, err := DiscoverMigrationFiles(tt.fsys, MigrationDirFormatAuto)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(files, qt.HasLen, tt.want)
+		})
+	}
 }

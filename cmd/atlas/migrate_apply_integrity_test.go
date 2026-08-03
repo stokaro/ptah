@@ -332,14 +332,22 @@ func TestCompatMigrateApply_UnhashedDirWithNonVersionedSQLRefuses(t *testing.T) 
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
-// TestCompatMigrateApply_UnhashedDirWithNestedSQLRefuses pins that the no-SQL
-// exemption scans the whole tree, not just the top level. Ptah's registrar
-// recurses into subdirectories, so a migration one level down executes here
-// even though Atlas CE — which ignores subdirectories — reports "No migration
-// files to execute" and exits 0. A top-level-only scan would therefore let an
-// unhashed migration run unverified, which is the failure this gate exists to
-// prevent. Refusing is the safe side of that pre-existing divergence (#976).
-func TestCompatMigrateApply_UnhashedDirWithNestedSQLRefuses(t *testing.T) {
+// TestCompatMigrateApply_UnhashedDirWithNestedSQLIsNothingToExecute re-expresses
+// what used to be TestCompatMigrateApply_UnhashedDirWithNestedSQLRefuses.
+//
+// That test pinned a compensator, not a behavior worth keeping: the exemption
+// scan recursed because the registrar recursed, so refusing was the only way to
+// stop an unhashed nested migration running unverified. Since #976 the
+// registrar selects exactly the set atlas.sum covers, so a nested file is not a
+// migration on either tool — the directory has nothing to execute and the
+// community binary's exit 0 is now reachable without giving anything up.
+//
+// The post-condition is strictly stronger than the old one. Refusing only
+// proved the file did not run in THIS invocation; asserting the table is absent
+// after a successful apply proves it is not a migration at all. The stderr
+// notice is asserted with it, because "did not run" and "nobody was told" is
+// the failure mode this fix exists to avoid, not a lesser version of it.
+func TestCompatMigrateApply_UnhashedDirWithNestedSQLIsNothingToExecute(t *testing.T) {
 	tests := []struct {
 		name  string
 		files map[string]string
@@ -369,12 +377,14 @@ func TestCompatMigrateApply_UnhashedDirWithNestedSQLRefuses(t *testing.T) {
 			}
 			dbPath := filepath.Join(tempDir, "nested.db")
 
-			_, stderr, err := compatApply(dir, dbPath)
+			stdout, stderr, err := compatApply(dir, dbPath)
 
-			c.Assert(err, qt.IsNotNil)
-			c.Assert(stderr, qt.Equals, "Error: checksum file not found\n")
-			_, statErr := os.Stat(dbPath)
-			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Contains, "No migration files to execute.")
+			c.Assert(stderr, qt.Equals,
+				"warning: sub/20260801100335_init.sql is not covered by atlas.sum and will not run; "+
+					"Atlas migrations are top-level files named *.sql\n")
+			c.Assert(sqliteTableCount(c, dbPath, "nested"), qt.Equals, 0)
 		})
 	}
 }
