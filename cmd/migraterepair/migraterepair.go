@@ -46,7 +46,14 @@ func NewMigrateRepairCommand() *cobra.Command {
 		Short: "Repair dirty migration metadata",
 		Long: `Repair dirty migration metadata after an operator has fixed a
 half-applied migration manually, or resume the migration from a specific
-statement.`,
+statement.
+
+The revision records which direction left it dirty, and repair follows it. A
+migration that failed on the way up resumes its up statements and is recorded
+applied. A rollback that stopped partway resumes its down statements and its
+revision is removed, because a finished rollback means the migration is no
+longer applied; without --resume-from, a rollback that already committed a
+statement is refused rather than recorded applied over a schema it changed.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateRepairCommand(cmd, &opts)
 		},
@@ -65,7 +72,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.force, forceFlag, false, "Rewrite or create the revision row even when it is not dirty")
-	flags.StringVar(&opts.resumeFrom, resumeFromFlag, "", "Execute remaining up statements starting from this 1-based statement number before marking applied")
+	flags.StringVar(&opts.resumeFrom, resumeFromFlag, "", "Execute the remaining statements of the body that failed, starting from this 1-based statement number. An up migration is then marked applied; a rollback's revision is removed")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)

@@ -1926,6 +1926,7 @@ func (m *Migrator) recordRolledBackBatchFailure(
 		migration.UpSQL,
 		"",
 		MigrationTxModeAll,
+		MigrationDirectionUp,
 	)
 }
 
@@ -2026,10 +2027,10 @@ func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration 
 	executionCtx := withStatementProgressRecorder(
 		ctx,
 		func(ctx context.Context, event StatementEvent) error {
-			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event)
+			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionUp)
 		},
 		func(ctx context.Context, event StatementEvent) error {
-			return m.checkpointMigrationRevision(ctx, migration, startedAt, event)
+			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionUp)
 		},
 	)
 	if err := migration.executeUp(executionCtx, m.conn, migrationExecutionNoTransaction); err != nil {
@@ -2041,6 +2042,7 @@ func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration 
 			migration.UpSQL,
 			fmt.Sprintf("failed to apply migration %d", migration.Version),
 			MigrationTxModeNone,
+			MigrationDirectionUp,
 		)
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
@@ -2199,10 +2201,10 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 		executionCtx = withStatementProgressRecorder(
 			ctx,
 			func(ctx context.Context, event StatementEvent) error {
-				return m.markMigrationStatementInFlight(ctx, migration, startedAt, event)
+				return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionDown)
 			},
 			func(ctx context.Context, event StatementEvent) error {
-				return m.checkpointMigrationRevision(ctx, migration, startedAt, event)
+				return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionDown)
 			},
 		)
 	}
@@ -2234,7 +2236,16 @@ func (m *Migrator) failMigrationWithDirtyState(
 	sqlText string,
 	prefix string,
 ) error {
-	return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, failure, sqlText, prefix, MigrationTxModeFile)
+	return m.failMigrationWithDirtyStateWithMode(
+		ctx,
+		migration,
+		startedAt,
+		failure,
+		sqlText,
+		prefix,
+		MigrationTxModeFile,
+		MigrationDirectionUp,
+	)
 }
 
 // reproducesAtlasDownBookkeeping reports whether this migrator must leave
@@ -2295,7 +2306,16 @@ func (m *Migrator) failRollbackWithDirtyStateWithMode(
 		}
 		return fmt.Errorf("%s: %w", prefix, failure)
 	}
-	return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, failure, sqlText, prefix, txMode)
+	return m.failMigrationWithDirtyStateWithMode(
+		ctx,
+		migration,
+		startedAt,
+		failure,
+		sqlText,
+		prefix,
+		txMode,
+		MigrationDirectionDown,
+	)
 }
 
 func (m *Migrator) failMigrationWithDirtyStateWithMode(
@@ -2306,8 +2326,10 @@ func (m *Migrator) failMigrationWithDirtyStateWithMode(
 	sqlText string,
 	prefix string,
 	txMode MigrationTxMode,
+	direction MigrationDirection,
 ) error {
-	if revisionErr := m.failMigrationRevisionWithMode(ctx, migration, startedAt, failure, sqlText, txMode); revisionErr != nil {
+	revisionErr := m.failMigrationRevisionWithMode(ctx, migration, startedAt, failure, sqlText, txMode, direction)
+	if revisionErr != nil {
 		if prefix == "" {
 			return fmt.Errorf("%w; additionally failed to record dirty migration state: %v", failure, revisionErr)
 		}

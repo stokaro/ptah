@@ -46,7 +46,7 @@ review artifact, not one executable SQL script.
 | `ptah migrations up` | Run pending migrations; a hashed directory (`ptah.sum` or `atlas.sum`) verifies before anything executes, `--limit N` applies only the first N, and `--allow-dirty` is the explicit recovery escape hatch past a dirty revision row. |
 | `ptah migrations down` | Roll back migrations. |
 | `ptah migrations status` | Show migration status. |
-| `ptah migrations repair` | Repair migration revision metadata after a dirty or partial migration state; `--resume-from` executes the remaining up statements before marking the version applied. |
+| `ptah migrations repair` | Repair migration revision metadata after a dirty or partial migration state; `--resume-from` executes the remaining statements of whichever body left the row dirty — up statements before marking the version applied, or down statements before removing the revision. |
 | `ptah migrations hash` | Write or update migration-directory integrity. |
 | `ptah migrations validate` | Validate migration-directory integrity and, optionally, SQL execution by cleaning and replaying migrations on `--dev-url`. |
 | `ptah migrations lint` | Lint migration files and, with `--dev-url`, clean and replay migrations on a directly connectable dev database before static reporting. |
