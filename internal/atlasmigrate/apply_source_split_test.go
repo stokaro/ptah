@@ -219,8 +219,13 @@ func TestConvertApplySourceReadsOnlyTheCapture(t *testing.T) {
 // cannot be read, so the gate gets to speak first.
 func TestConvertApplySourceReportsSourceParseFailures(t *testing.T) {
 	c := qt.New(t)
+	// A Down section with no Up before it. The fixture used to be a file with no
+	// directives at all, which stopped being a parse failure in stokaro/ptah#981:
+	// Atlas executes such a file verbatim and so does Ptah now, so it could no
+	// longer show that conversion is where parsing happens. A broken directive
+	// ORDER still cannot be read, which is what this test needs.
 	dir := writeSplitFixture(c, map[string]string{
-		"1_init.sql": "CREATE TABLE seam (id int);\n",
+		"1_init.sql": "-- +goose Down\nDROP TABLE seam;\n",
 	})
 
 	captured, err := atlasmigrate.CaptureApplySource(os.DirFS(dir), atlasmigrateimport.FormatGoose)
@@ -228,7 +233,7 @@ func TestConvertApplySourceReportsSourceParseFailures(t *testing.T) {
 
 	_, err = atlasmigrate.ConvertApplySource(captured, dir, atlasmigrateimport.FormatGoose)
 
-	c.Assert(err, qt.ErrorMatches, `migration file 1_init\.sql has no "-- \+goose Up" section`)
+	c.Assert(err, qt.ErrorMatches, `migration file 1_init\.sql line 1: unexpected "-- \+goose Down" directive because no up section has been opened yet`)
 }
 
 // TestResolveApplySourceForFormatStillComposesTheHalves keeps the composed
