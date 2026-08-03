@@ -193,6 +193,48 @@ external schema program. `env://url` and `env://dev` resolve the corresponding
 database URL; `env://migration.dir` resolves the configured local migration
 directory. Nested `env://` references fail explicitly.
 
+## Reading files with file() and fileset()
+
+`file("path")` inlines a file's contents into a config value, and
+`fileset("glob")` expands to a list of paths. Both resolve relative to the
+directory holding `atlas.hcl`, and both are confined to it. These are refused,
+with the reason named:
+
+| Argument | Refused because |
+| --- | --- |
+| `file("/run/secrets/db")` | absolute path |
+| `file("../secrets/db")` | parent traversal |
+| `file("link.txt")` where `link.txt` points outside the directory | symbolic link leaving the directory |
+| `fileset("*.hcl")` where one match points outside the directory | the whole call fails; escaping entries are never dropped silently |
+
+A symbolic link that stays inside the directory is read normally, including one
+that walks up and back down inside it. The rule is about where the path goes,
+not about links.
+
+Pass a value that genuinely lives elsewhere through the environment instead:
+
+```hcl
+env "local" {
+  url = getenv("DATABASE_URL")
+}
+```
+
+This is stricter than the community binary, deliberately. Measured against the
+pinned community v1.3.0 build: an `atlas.hcl` calling `file("/etc/passwd")` or
+`file("../../../../etc/passwd")` exits 0 there with the file read, and the
+contents reach an observable place — a database URL, an error message on
+standard error. An `atlas.hcl` is repository-controlled and evaluated before
+anything is applied, so matching that would hand any config author an
+arbitrary-file read on the machine running the migration. The exit code is 1
+either way today, so no working configuration changes; what changes is that the
+refusal now names its reason. See
+[`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042).
+
+The confinement covers what `file()` and `fileset()` read. It is not a claim
+that `atlas.hcl` cannot name a path outside its directory at all: a schema
+source such as `src = "../shared/schema.hcl"` is a path the author points the
+tool at deliberately, and it still resolves.
+
 ## External schema data source
 
 `data "external_schema"` declares a program whose standard output is the

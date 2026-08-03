@@ -72,16 +72,16 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 162 capabilities below:
+Across the 163 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 88 |
+| Ptah supports it fully | 89 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 25 |
 | Ptah and Atlas CE both support it | 21 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
-| Ptah has it and neither Atlas edition does | 19 |
+| Ptah has it and neither Atlas edition does | 20 |
 | Atlas CE has it and Ptah does not, or only in part | 26 |
 | An Atlas column is ❔ — not established by this page's evidence | 5 |
 
@@ -230,6 +230,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Rejects atlas, script, exporter, deployment; env for_each and schemas; migration baseline, skip_report, repo; data blocks but hcl_schema and external_schema. |
+| atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl only: no `--var` flag, and `--config` takes ptah.yaml, so a variable without a default cannot be resolved. |
 | data "hcl_schema" reference | 🟡 | ✅ | ✅ | Takes path or paths and exports .url; the Atlas vars input, absolute paths, and any non-file:// value are rejected. |
 | Docker dev databases (`docker://` `--dev-url`) | ❌ | ✅ | ✅ | migrate diff, lint and validate refuse docker:// and require a directly connectable dev database URL. |

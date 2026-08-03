@@ -109,6 +109,15 @@
   },
   {
     "area": "Project config",
+    "feature": "atlas.hcl file() and fileset() path confinement",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "no",
+    "note": "Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today.",
+    "evidence": "config/projectconfig/atlas.go atlasSandboxedFSPath/atlasCheckSandboxedFSPath. Measured against the pinned community v1.3.0 binary: an atlas.hcl with `probe_value = file(\"<abs>/secret.txt\")` plus `atlas migrate status --env local` -> exit 0; the same read in env.url puts the file's contents in `Error: sql/sqlclient: unknown driver \"...\"`; `../../secret.txt` and a symlink out of the directory behave identically. ptah-compat exits 1 naming the rule. Pinned by TestOracleReadsFilesOutsideTheAtlasHCLDirectory and TestAtlasFileSandboxRefusesReadsOutsideTheConfigDirectory (config/projectconfig), TestCompatCommand_AtlasHCLFileSandbox (cmd/atlas)"
+  },
+  {
+    "area": "Project config",
     "feature": "data \"hcl_schema\" reference",
     "ptah": "partial",
     "atlas_oss": "yes",

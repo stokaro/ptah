@@ -35,7 +35,16 @@ func TestParseAtlasFSWithOptionsRejectsFileSymlinkEscape(t *testing.T) {
 		projectconfig.AtlasLoadOptions{EnvName: "local"},
 	)
 
-	c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" at atlas\.hcl:2: .*path escapes from parent.*`)
+	// The refusal is the same one this test was written for. Its wording moved
+	// from the filesystem's ("openat database-url.txt: path escapes from
+	// parent") to the sandbox's own, which names the link and the rule --
+	// stokaro/ptah#1042. The rooted filesystem still refuses whatever the
+	// sandbox cannot resolve for itself; that path is pinned by the
+	// "chain longer than the sandbox resolves" row in
+	// TestAtlasFileSandboxRefusesReadsOutsideTheConfigDirectory.
+	c.Assert(err, qt.ErrorMatches,
+		`cannot evaluate atlas\.hcl "url" at atlas\.hcl:2: .*path escapes atlas\.hcl directory: database-url\.txt: `+
+			`database-url\.txt is a symbolic link pointing outside it.*`)
 }
 
 func TestParseAtlasFSWithOptionsRejectsFilesetSymlinkEscape(t *testing.T) {

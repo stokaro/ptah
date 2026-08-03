@@ -43,6 +43,26 @@ grounds that it matched. That traded a place where Ptah was better for a place
 where it was merely identical, and it was reverted. The directive is honored in
 both forms, and the divergence is documented rather than hidden.
 
+### A second worked example
+
+`file()` in an `atlas.hcl` inlines a file's contents into a config value.
+Measured on the pinned community v1.3.0 build:
+
+| argument | community binary | Ptah |
+| --- | --- | --- |
+| `file("local.txt")` | reads it, exit 0 | reads it, exit 0 |
+| `file("/etc/passwd")` | **reads it, exit 0** | refused, exit 1 |
+| `file("../../../../etc/passwd")` | **reads it, exit 0** | refused, exit 1 |
+| `file("link.txt")`, a link out of the directory | **reads it, exit 0** | refused, exit 1 |
+
+An `atlas.hcl` is repository-controlled and evaluated before anything is
+applied, and the value lands somewhere observable: put the read in `env.url` and
+the file's contents come back in `Error: sql/sqlclient: unknown driver "..."`.
+Matching would turn config authorship into an arbitrary-file read on the machine
+running the migration, which is the second half of the policy, not the first.
+Ptah keeps the confinement on both binaries and names the rule in the refusal.
+See [`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042).
+
 ### Deciding which you are doing
 
 Before matching a measured behavior, ask what it costs the user. If the answer

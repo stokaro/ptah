@@ -78,16 +78,49 @@ func ParseAtlas(data []byte, filename, envName string) (Config, error) {
 
 // ParseAtlasWithOptions parses the supported subset of an Atlas project config
 // file with Atlas-compatible evaluation options.
+//
+// file() and fileset() resolve through a rooted handle on the directory that
+// holds filename, so a symbolic link inside that directory cannot be used to
+// read a file outside it. os.DirFS is deliberately not used here: it follows
+// such a link out of the directory and hands back the target's contents.
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error) {
 	if filename == "" {
 		filename = AtlasFileName
 	}
-	return ParseAtlasFSWithOptions(data, filename, os.DirFS(filepath.Dir(filename)), opts)
+	root, err := os.OpenRoot(filepath.Dir(filename))
+	if err != nil {
+		// The directory is only reached by file() and fileset(). A config that
+		// calls neither parses from an unreadable directory exactly as it did
+		// before the sandbox was rooted, so the failure is reported by the
+		// first read instead of by the parse.
+		return ParseAtlasFSWithOptions(data, filename, unreadableFS{err: err}, opts)
+	}
+	// Closed here rather than in a defer, so the exported signature keeps its
+	// unnamed results and the public API snapshot stays byte-identical.
+	cfg, parseErr := ParseAtlasFSWithOptions(data, filename, root.FS(), opts)
+	return cfg, errors.Join(parseErr, root.Close())
+}
+
+// unreadableFS reports the same error from every open. It stands in for a
+// directory that could not be opened, so the error surfaces at the read that
+// needs it rather than at the parse that may never read anything.
+type unreadableFS struct {
+	err error
+}
+
+func (f unreadableFS) Open(name string) (fs.File, error) {
+	return nil, &fs.PathError{Op: "open", Path: name, Err: f.err}
 }
 
 // ParseAtlasFSWithOptions parses an Atlas project config while resolving
 // file() and fileset() through fsys. fsys must be rooted at the directory that
 // contains filename.
+//
+// fsys is the outer boundary of the file() sandbox: pass an escape-resistant
+// filesystem such as os.Root.FS(). The sandbox refuses absolute paths, parent
+// traversal, and the symbolic-link escapes it can resolve itself, but only the
+// filesystem can refuse the rest -- a link chain it cannot follow, or a path
+// swapped for a link between the check and the read.
 func ParseAtlasFSWithOptions(
 	data []byte,
 	filename string,
@@ -1996,7 +2029,8 @@ func atlasFileFunc(fsys fs.FS) function.Function {
 		},
 		Type: function.StaticReturnType(cty.String),
 		Impl: func(args []cty.Value, _ cty.Type) (cty.Value, error) {
-			path, err := atlasLocalFSPath(args[0].AsString())
+			value := args[0].AsString()
+			path, err := atlasSandboxedFSPath(fsys, value)
 			if err != nil {
 				return cty.NilVal, err
 			}
@@ -2045,6 +2079,9 @@ func atlasFileset(fsys fs.FS, pattern string) ([]string, error) {
 	}
 	values := make([]string, 0, len(matches))
 	for _, match := range matches {
+		if err := atlasCheckSandboxedFSPath(fsys, match); err != nil {
+			return nil, err
+		}
 		info, err := fs.Stat(fsys, match)
 		if err != nil {
 			return nil, err
@@ -2077,6 +2114,9 @@ func atlasRecursiveFileset(fsys fs.FS, pattern string) ([]string, error) {
 			return err
 		}
 		if matched {
+			if err := atlasCheckSandboxedFSPath(fsys, name); err != nil {
+				return err
+			}
 			if _, err := fs.Stat(fsys, name); err != nil {
 				return err
 			}
@@ -2119,6 +2159,117 @@ func atlasMatchSegments(patternParts, nameParts []string) (bool, error) {
 	return atlasMatchSegments(patternParts[1:], nameParts[1:])
 }
 
+// atlasFileSandboxHint names what to do instead, so a refusal is a redirection
+// rather than a dead end. A value that genuinely lives outside the config
+// directory -- a mounted secret, a shared CA bundle -- reaches atlas.hcl
+// through the environment, which is what getenv() is for.
+const atlasFileSandboxHint = "atlas.hcl file() and fileset() read only inside the directory holding atlas.hcl; " +
+	"pass a value from outside it through getenv()"
+
+// atlasSymlinkHopLimit is where this walk stops resolving and leaves the rest
+// to the filesystem. A config argument that needs more than a few chained links
+// to resolve is not something an author writes, and following further buys
+// nothing: a rooted filesystem still refuses whatever leaves it, and a caller
+// that supplied a filesystem without that protection has already chosen who
+// enforces the boundary.
+const atlasSymlinkHopLimit = 4
+
+// atlasSandboxedFSPath resolves an atlas.hcl file()/fileset() argument to a
+// path inside fsys, refusing every shape that reads outside the directory that
+// holds atlas.hcl: an absolute path, parent traversal, and a symbolic link
+// whose target leaves the directory.
+func atlasSandboxedFSPath(fsys fs.FS, value string) (string, error) {
+	path, err := atlasLocalFSPath(value)
+	if err != nil {
+		return "", err
+	}
+	if err := atlasCheckSandboxedFSPath(fsys, path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// atlasCheckSandboxedFSPath refuses name when a symbolic link on the way to it
+// points out of fsys.
+//
+// A rooted filesystem (os.Root.FS()) refuses these reads on its own, and it,
+// not this walk, is what makes the refusal reliable: it resolves each component
+// in the kernel, so nothing can be swapped for a link between this check and
+// the read. This walk exists for two other reasons -- it names the offending
+// link and the sandbox rule in the error instead of leaving an "openat: path
+// escapes from parent" for the user to interpret, and it holds the line for a
+// caller that passes ParseAtlasFSWithOptions a filesystem with no such
+// protection. Whatever it cannot resolve it leaves alone: the read that follows
+// reports the real error.
+func atlasCheckSandboxedFSPath(fsys fs.FS, name string) error {
+	links, ok := fsys.(fs.ReadLinkFS)
+	if !ok {
+		return nil
+	}
+	pending := atlasPathComponents(name)
+	resolved := "."
+	via := ""
+	for hops := 0; len(pending) > 0; {
+		next := pathpkg.Join(resolved, pending[0])
+		if next == ".." || strings.HasPrefix(next, "../") {
+			return atlasSymlinkEscapeError(name, via)
+		}
+		info, err := links.Lstat(next)
+		if err != nil {
+			return nil
+		}
+		if info.Mode()&fs.ModeSymlink == 0 {
+			resolved, pending = next, pending[1:]
+			continue
+		}
+		hops++
+		if hops > atlasSymlinkHopLimit {
+			return nil
+		}
+		target, err := links.ReadLink(next)
+		if err != nil {
+			return nil
+		}
+		if atlasTargetIsAbsolute(target) {
+			return atlasSymlinkEscapeError(name, next)
+		}
+		resolved, via = pathpkg.Dir(next), next
+		pending = append(atlasPathComponents(target), pending[1:]...)
+	}
+	return nil
+}
+
+// atlasPathComponents splits a slash path into the components a resolution walk
+// consumes one at a time. Targets read back from a link may be spelled with
+// either separator on Windows, so both are honored.
+func atlasPathComponents(name string) []string {
+	parts := strings.FieldsFunc(filepath.ToSlash(name), func(r rune) bool { return r == '/' })
+	components := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part == "." {
+			continue
+		}
+		components = append(components, part)
+	}
+	return components
+}
+
+// atlasTargetIsAbsolute reports whether a link target names a location from the
+// filesystem root rather than from the link's own directory. A rooted
+// filesystem refuses an absolute target outright -- even one that points back
+// inside the root -- so this agrees with it rather than second-guessing it.
+func atlasTargetIsAbsolute(target string) bool {
+	return filepath.IsAbs(target) || strings.HasPrefix(filepath.ToSlash(target), "/")
+}
+
+func atlasSymlinkEscapeError(name, via string) error {
+	if via == "" {
+		return fmt.Errorf("path escapes atlas.hcl directory: %s: %s", name, atlasFileSandboxHint)
+	}
+	return fmt.Errorf("path escapes atlas.hcl directory: %s: %s is a symbolic link pointing outside it: %s",
+		name, via, atlasFileSandboxHint)
+}
+
 func atlasLocalFSPath(value string) (string, error) {
 	if err := validateAtlasLocalPathValue(value); err != nil {
 		return "", err
@@ -2126,7 +2277,7 @@ func atlasLocalFSPath(value string) (string, error) {
 	rawPath := strings.TrimPrefix(value, "file://")
 	localPath := filepath.Clean(filepath.FromSlash(rawPath))
 	if localPath == ".." || strings.HasPrefix(localPath, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path escapes atlas.hcl directory: %s", value)
+		return "", fmt.Errorf("path escapes atlas.hcl directory: %s: %s", value, atlasFileSandboxHint)
 	}
 	return filepath.ToSlash(localPath), nil
 }
@@ -2134,7 +2285,7 @@ func atlasLocalFSPath(value string) (string, error) {
 func validateAtlasLocalPathValue(value string) error {
 	switch {
 	case filepath.IsAbs(strings.TrimPrefix(value, "file://")):
-		return fmt.Errorf("absolute paths are not supported: %s", value)
+		return fmt.Errorf("absolute paths are not supported: %s: %s", value, atlasFileSandboxHint)
 	case strings.Contains(value, "://") && !strings.HasPrefix(value, "file://"):
 		return fmt.Errorf("unsupported URL scheme: %s", value)
 	default:
