@@ -76,12 +76,17 @@ func (d *OpenedDirectory) ReplaceFile(oldName, newName string) error {
 // by expectedInfo from os.Stat or os.File.Stat. The final mode is applied before
 // rename. Both names must identify direct children. An error wrapping
 // fsdurable.ErrReplacementCommitted means the rename succeeded.
+//
+// The commit is conditional on dest, so a destination that changed after the
+// caller's own validation is reported through fsdurable.ErrDestinationChanged
+// and left untouched instead of being overwritten.
 func (d *OpenedDirectory) PublishFile(
 	oldName, newName string,
 	expectedInfo fs.FileInfo,
 	finalMode fs.FileMode,
+	dest fsdurable.Destination,
 ) error {
-	return fsdurable.PublishFileAt(d.root, oldName, newName, expectedInfo, finalMode)
+	return fsdurable.PublishFileAt(d.root, oldName, newName, expectedInfo, finalMode, dest)
 }
 
 // FinalizeFile applies finalMode to a staged regular file with the supplied
