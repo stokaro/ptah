@@ -20,6 +20,8 @@
     "check:redirects:selftest": "node scripts/check-redirects.mjs --selftest",
     "check:style": "node scripts/check-style.mjs",
     "check:style:selftest": "node scripts/check-style.mjs --selftest",
+    "check:limitations": "node scripts/check-limitations.mjs",
+    "check:limitations:selftest": "node scripts/check-limitations.mjs --selftest",
     "check:responsive": "node scripts/check-responsive.mjs",
     "check:responsive:selftest": "node scripts/check-responsive.mjs --selftest",
     "versions:selftest": "node scripts/gen-versions.mjs --selftest"

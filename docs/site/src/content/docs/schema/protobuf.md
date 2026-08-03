@@ -461,41 +461,64 @@ Every check below runs before anything is written, and each exits with code
 
 ## Limitations
 
+Every bullet below ends with either the issue that tracks it or the reason it is
+permanent, so nothing on this list is an unowned gap.
+
 - The source is Go annotations only. There is no `--schema-file` or database
   URL for this target; run [`ptah introspect`](../../start/adopt-an-existing-database/)
-  first to generate annotated models from an existing database.
+  first to generate annotated models from an existing database. Tracked by
+  [#1144](https://github.com/stokaro/ptah/issues/1144).
 - Table selection is the narrowest available projection. There are no
   field-level allowlists, read/write visibility rules, sensitive-field markers,
   or API-specific aliases. Use a curated annotation source or wrapper messages
-  when a public contract must expose only part of a table.
+  when a public contract must expose only part of a table. Tracked by
+  [#904](https://github.com/stokaro/ptah/issues/904).
 - Database identifiers determine generated API identifiers after Protobuf name
   normalization. Renaming a table or column can therefore rename a public
-  symbol even when its wire number remains stable.
+  symbol even when its wire number remains stable. A column rename is the quiet
+  one: the export exits `0` with no diagnostic, reserves the old number and the
+  old name, and allocates a new number for the new name. Tracked by
+  [#905](https://github.com/stokaro/ptah/issues/905).
 - Additive compatibility is not the same as intentional exposure. Adding a
   column to a selected table adds a field on the next export unless the whole
-  table is excluded.
+  table is excluded. Tracked by
+  [#904](https://github.com/stokaro/ptah/issues/904).
 - The generated definition contains no authorization or tenant-isolation
   semantics. RLS policies are not emitted, and their presence in the database
-  does not define who may use a message field.
-- Table and field comments are copied into the generated definition. Review them
-  for internal implementation details or sensitive operational information
-  before publishing the file.
+  does not define who may use a message field. Inferring API authorization from
+  row-level security is an explicit non-goal of
+  [#904](https://github.com/stokaro/ptah/issues/904). This is permanent because
+  a policy is evaluated by the database against a session, and a published
+  `.proto` has no session to evaluate it against.
+- Table and field comments are copied into the generated definition, and from
+  there into whatever `protoc-gen-go` produces. Review them for internal
+  implementation details or sensitive operational information before publishing
+  the file. Tracked by [#1145](https://github.com/stokaro/ptah/issues/1145).
 - One file per run. Ptah writes a single compilation unit, so splitting a
   schema across `.proto` files means several exports with disjoint
-  `--include-tables` sets and separate packages.
+  `--include-tables` sets and separate packages. Tracked by
+  [#1146](https://github.com/stokaro/ptah/issues/1146).
 - Two tables that map to the same message name fail the export naming both.
-  Give one a distinct `schema=` or exclude it; Ptah will not disambiguate with
-  a numeric suffix, because the result would depend on table order. A table and
-  an enum that produce the same name fail the same way.
+  Give one a distinct `schema=` or exclude it. A table and an enum that produce
+  the same name fail the same way. The refusal is permanent because any
+  automatic disambiguation, a numeric suffix included, would depend on table
+  order; a declarative alias that spares you renaming a database object is
+  tracked by [#905](https://github.com/stokaro/ptah/issues/905).
 - A table with no exportable columns is skipped with
   `table has no exportable columns; message omitted`. Protobuf has no way to
   tell an empty message apart from a type retained only for its reservations.
+  This is permanent because writing the empty message instead would make the
+  next run read it as a type that left the schema: a previous file carrying
+  `message AuditMarker {}` for a table still present in the source is refused
+  with `types removed from the source schema: AuditMarker`.
 - A previous type whose `reserved` ranges expand past 1,048,576 individual
   numbers is refused instead of being loaded partially. Partial loading could
   reallocate a number that remains reserved in the published wire contract.
+  Tracked by [#1147](https://github.com/stokaro/ptah/issues/1147).
 - The three header comment lines are copied into whatever `protoc-gen-go`
   generates, so the content digest appears at the top of the `.pb.go` files
-  too. It changes only when the schema changes.
+  too. It changes only when the schema changes. Tracked by
+  [#1148](https://github.com/stokaro/ptah/issues/1148).
 
 ## Next steps
 
