@@ -711,6 +711,10 @@ ptah-compat migrate import \
   --to "file://migrations"
 ```
 
+A successful compatibility import is silent. Inspect the destination directory
+and its `atlas.sum` to see what was written, rather than reading a progress
+message off stdout. Rejections stay loud on stderr.
+
 The command is intentionally fail-closed: use a destination directory different
 from the source directory, and start with a destination that does not already
 contain `.sql` migration files or `atlas.sum`. Flyway repeatable migrations

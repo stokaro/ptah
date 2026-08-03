@@ -4551,12 +4551,17 @@ func TestCompatCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Imported migration files:")
+	c.Assert(out.String(), qt.Equals, "")
 	// The surviving baseline B1 lands in the low band and V2 in the versioned
-	// band, so the baseline executes first whatever its own version.
-	c.Assert(out.String(), qt.Contains, filepath.Join(target, "81608_baseline.sql"))
-	c.Assert(out.String(), qt.Contains, filepath.Join(target, "4611686018427510315_add_posts.sql"))
-	c.Assert(out.String(), qt.Contains, filepath.Join(target, "atlas.sum"))
+	// band, so the baseline executes first whatever its own version. A silent
+	// import reports itself through the destination directory, so the names are
+	// asserted on disk rather than in the progress listing that used to exist.
+	_, statErr := os.Stat(filepath.Join(target, "81608_baseline.sql"))
+	c.Assert(statErr, qt.IsNil)
+	_, statErr = os.Stat(filepath.Join(target, "4611686018427510315_add_posts.sql"))
+	c.Assert(statErr, qt.IsNil)
+	_, statErr = os.Stat(filepath.Join(target, "atlas.sum"))
+	c.Assert(statErr, qt.IsNil)
 	c.Assert(readAtlasTestFile(c, target, "81608_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
 	c.Assert(readAtlasTestFile(c, target, "4611686018427510315_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
 	c.Assert(readAtlasTestFile(c, target, "atlas.sum"), qt.Contains, "4611686018427510315_add_posts.sql h1:")
@@ -4578,7 +4583,9 @@ func TestNewCompatCommand_MigrateImportResolvesAtRoot(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, filepath.Join(target, "1_initial.sql"))
+	c.Assert(out.String(), qt.Equals, "")
+	_, statErr := os.Stat(filepath.Join(target, "1_initial.sql"))
+	c.Assert(statErr, qt.IsNil)
 	c.Assert(readAtlasTestFile(c, target, "1_initial.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
 	c.Assert(readAtlasTestFile(c, target, "atlas.sum"), qt.Contains, "1_initial.sql h1:")
 }

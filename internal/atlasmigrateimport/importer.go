@@ -179,6 +179,17 @@ func Import(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Importing a directory that is already in the target format is a no-op
+	// dressed as work: it copies files and writes a fresh sum over a directory
+	// whose previous contents nothing verified.
+	//
+	// Measured on the pinned community binary, which refuses it with this
+	// wording. Both spellings that resolve to atlas -- the default with no
+	// format given, and an explicit `?format=atlas` -- exit 1 there and exited
+	// 0 here, which is the direction that lets a mistake pass silently.
+	if format == FormatAtlas {
+		return nil, fmt.Errorf("cannot import a migration directory already in %q format", string(FormatAtlas))
+	}
 
 	loaded, err := LoadDir(from.Dir, format)
 	if err != nil {
