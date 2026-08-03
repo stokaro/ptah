@@ -683,6 +683,30 @@ func (m *Migration) downExecutionMode() migrationExecutionMode {
 	return migrationExecutionTransactional
 }
 
+// UpForReplay executes the up direction against a THROWAWAY dev database,
+// ignoring an unreadable transaction-mode directive.
+//
+// Replay exists to reconstruct a schema so something else can be computed from
+// it -- a lint analysis, a diff. The transaction mode decides how statements are
+// wrapped when a real database is migrated; on a database that is dropped
+// immediately afterwards it changes nothing anyone can observe, so a directive
+// we cannot read is not a reason to refuse the whole operation.
+//
+// The apply path keeps refusing, and that matches: measured on the pinned
+// community binary, `migrate apply` over a directory carrying
+// `-- atlas:txmode unknown` exits 1 with the same complaint, while
+// `migrate lint` over the same directory exits 0 and analyzes it.
+//
+// A migration with no SQL function falls back to [Migration.Up], which still
+// refuses. That path is for programmatic migrations, which carry no file
+// directive to be unreadable in the first place.
+func (m *Migration) UpForReplay(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	if m.upSQLFunc != nil {
+		return m.upSQLFunc(ctx, conn, m.upExecutionMode())
+	}
+	return m.Up(ctx, conn)
+}
+
 func (m *Migration) executeUp(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
 	if m.upTxModeErr != nil {
 		return m.upTxModeErr

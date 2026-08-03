@@ -398,3 +398,30 @@ func TestCompatCommand_MigrateLintProjectEnvLintLog(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Equals, "2\n")
 }
+
+// TestCompatCommand_MigrateLintTolerAtesUnreadableTxMode covers a directory
+// carrying a transaction-mode directive nothing can read.
+//
+// `migrate lint` analyzes and reports; it executes nothing on the target, and
+// its dev-database replay is dropped immediately afterwards. A directive that
+// only decides how the file would be APPLIED therefore cannot make the analysis
+// wrong, and refusing left a user unable to lint a directory at all.
+//
+// Measured on the pinned community binary over the same fixture: `migrate lint`
+// exits 0 and analyzes, while `migrate apply` exits 1 with the same complaint
+// Ptah makes. Both halves are asserted here, because tolerating it everywhere
+// would be the opposite defect.
+func TestCompatCommand_MigrateLintToleratesUnreadableTxMode(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	devDB := "sqlite://" + filepath.Join(t.TempDir(), "txmode.db")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql",
+		"-- atlas:txmode unknown\n\nCREATE TABLE pets (id int);\n")
+
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", dir, "--dev-url", devDB, "--latest", "1")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 0)
+	c.Assert(stdout, qt.Contains, "analyzing version 2")
+	c.Assert(stdout, qt.Not(qt.Contains), "unknown txmode")
+}
