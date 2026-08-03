@@ -64,9 +64,15 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	}
 
 	resolveOpts := atlassource.ResolveOptions{
-		Dialect:        dialect,
-		DialectFlag:    dialectFlag,
-		DevURL:         opts.DevURL,
+		Dialect:     dialect,
+		DialectFlag: dialectFlag,
+		DevURL:      opts.DevURL,
+		// Both sides introspect exactly the schemas --schema asked for. Without
+		// this the read is scoped to the connection default and the scope
+		// projection below filters a universe that never contained the
+		// requested schema, so the diff answers "synced" for a database it
+		// never looked at.
+		Schemas:        opts.Schemas,
 		ConnectTimeout: opts.ConnectTimeout,
 	}
 	fromState, err := fromSet.Resolve(ctx, resolveOpts)
