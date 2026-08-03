@@ -91,6 +91,50 @@ func TestAtlasDiagnosticText_FallsBackForUnmeasuredSubjects(t *testing.T) {
 	}
 }
 
+// TestAtlasDiagnosticText_FallsBackForMultiSubjectSingleObjectCodes pins the
+// fail-closed direction for the two codes that are one diagnostic per object.
+// A finding carrying several objects is a shape this wording cannot render, and
+// the safe answer is Ptah's own labeled prose naming all of them -- NOT the
+// first subject. Rendering the first is precisely how the other dropped tables
+// went missing: narrowing a destructive finding to one of its objects reads as
+// complete output and is not.
+func TestAtlasDiagnosticText_FallsBackForMultiSubjectSingleObjectCodes(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name     string
+		code     string
+		subjects []migrationlint.Subject
+	}{
+		{
+			name: "two dropped tables in one finding",
+			code: "DS102",
+			subjects: []migrationlint.Subject{
+				{Kind: migrationlint.SubjectTable, Name: "users"},
+				{Kind: migrationlint.SubjectTable, Name: "audit_log"},
+			},
+		},
+		{
+			name: "two added non-nullable columns in one finding",
+			code: "MF103",
+			subjects: []migrationlint.Subject{
+				{Kind: migrationlint.SubjectColumn, Name: "a", Parent: "t", DataType: "int"},
+				{Kind: migrationlint.SubjectColumn, Name: "b", Parent: "t", DataType: "int"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			diagnostic, mapped := atlasDiagnosticText(test.code, migrationlint.Finding{
+				Context: &migrationlint.FindingContext{Subjects: test.subjects},
+			})
+
+			c.Assert(mapped, qt.IsFalse)
+			c.Assert(diagnostic, qt.Equals, atlasDiagnosticCopy{})
+		})
+	}
+}
+
 // analyzeMigrations builds a lint analysis for the given migration files,
 // selecting the latest N versions exactly as the migrate lint command does.
 func analyzeMigrations(t *testing.T, files map[string]string, latest int) migrationlint.Analysis {
@@ -170,6 +214,119 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 				"  -- 1 version with errors\n" +
 				"  -- 2 schema changes\n" +
 				"  -- 2 diagnostics\n",
+		},
+		{
+			// Measured, not derived. Three tables created mid/zeta/alpha and
+			// dropped zeta/alpha/mid: source order, creation order and reverse
+			// creation order each give a different answer, so this is the
+			// smallest fixture that shows the order is the table name. The fix
+			// header pluralizes with the count, which a one-diagnostic fixture
+			// cannot show.
+			name: "multi-target drop is one diagnostic per table",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE mid (id int);\nCREATE TABLE zeta (id int);\nCREATE TABLE alpha (id int);\n",
+				"2.sql": "DROP TABLE zeta, alpha, mid;\n",
+			},
+			latest: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping table \"alpha\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"      -- L1: Dropping table \"mid\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"      -- L1: Dropping table \"zeta\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- suggested fixes:\n" +
+				"      -> Add a pre-migration check to ensure table \"alpha\" is empty before dropping it\n" +
+				"      -> Add a pre-migration check to ensure table \"mid\" is empty before dropping it\n" +
+				"      -> Add a pre-migration check to ensure table \"zeta\" is empty before dropping it\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 3 schema changes\n" +
+				"  -- 3 diagnostics\n",
+		},
+		{
+			// Dropped COLUMNS go the other way from dropped tables: ONE
+			// diagnostic naming all of them, in clause order, with one fix.
+			// Measured, because it cannot be inferred from the table case --
+			// the two shapes are opposites.
+			name: "multi-column drop is one diagnostic naming every column",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE t (id int, zeta int, alpha int, mid int);\n",
+				"2.sql": "ALTER TABLE t DROP COLUMN zeta, DROP COLUMN alpha, DROP COLUMN mid;\n",
+			},
+			latest: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping non-virtual columns \"zeta\", \"alpha\" and \"mid\"\n" +
+				"         https://atlasgo.io/lint/analyzers#DS103\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add pre-migration checks to ensure columns \"zeta\", \"alpha\" and \"mid\" are NULL before\n" +
+				"         dropping them\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 3 schema changes\n" +
+				"  -- 1 diagnostic\n",
+		},
+		{
+			// Two columns separate the list separator from the conjunction: at
+			// three the list carries both a comma and an "and", at two only the
+			// "and". A three-column fixture alone cannot tell a ", "-joined
+			// list from one that also puts "and" before the last element.
+			name: "two-column drop joins the pair with and",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE t (id int, zeta int, alpha int);\n",
+				"2.sql": "ALTER TABLE t DROP COLUMN zeta, DROP COLUMN alpha;\n",
+			},
+			latest: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping non-virtual columns \"zeta\" and \"alpha\"\n" +
+				"         https://atlasgo.io/lint/analyzers#DS103\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add pre-migration checks to ensure columns \"zeta\" and \"alpha\" are NULL before dropping\n" +
+				"         them\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 2 schema changes\n" +
+				"  -- 1 diagnostic\n",
+		},
+		{
+			// The single-column control: the nouns and the trailing pronoun are
+			// singular, which is what shows the plural forms above are keyed to
+			// the count rather than always printed.
+			name: "single-column drop keeps the singular wording",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE t (id int, zeta int);\n",
+				"2.sql": "ALTER TABLE t DROP COLUMN zeta;\n",
+			},
+			latest: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping non-virtual column \"zeta\" https://atlasgo.io/lint/analyzers#DS103\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure column \"zeta\" is NULL before dropping it\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 1 schema change\n" +
+				"  -- 1 diagnostic\n",
 		},
 		{
 			name:   "destructive latest 1",

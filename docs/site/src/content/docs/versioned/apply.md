@@ -264,7 +264,7 @@ with `--allow-destructive` after review:
 
 ```text
 error: error running migrations: pending migrations contain destructive statements; rerun with --allow-destructive after review:
-- 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes the table and every row in it; ...
+- 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes table users and every row in it; ...
 ```
 
 Both gates are covered in depth in
