@@ -51,10 +51,11 @@ diagnostic — with `--format` the same content is rendered into the report on
 stdout — so the prefix rule does not reach it. Its stream is a known
 divergence, not an endorsed format.
 
-Implementation: the prefix is an inherited command-tree policy
-(`cmdutil.SetErrorPrefixPolicy`), declared once on a surface's root command
-next to its exit-code policy and resolved at print time by walking from the
-printing command up to the nearest ancestor that declares one. Adding a command
+Implementation: the prefix is an inherited command-tree policy resolved at
+print time by walking from the printing command up to the nearest ancestor that
+declares one. Only the Atlas-compatible surface declares anything
+(`cmdutil.SetErrorPrefixPolicy`, on its root command next to its exit-code
+policy); the native tree declares nothing and falls through to the default. Adding a command
 or a diagnostic therefore requires no prefix decision.
 
 The walk starts at the printing command, so the nearest declaration wins and a

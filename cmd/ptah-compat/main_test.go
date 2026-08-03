@@ -433,7 +433,7 @@ func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &exitErr)
 	c.Assert(exitErr.ExitCode(), qt.Equals, 1)
 	c.Assert(stderr.String(), qt.Equals,
-		"error: error applying migrations: unknown txmode \"bogus\" found in file directive \"1_invalid.sql\"\n")
+		"Error: error applying migrations: unknown txmode \"bogus\" found in file directive \"1_invalid.sql\"\n")
 	c.Assert(stdout.String(), qt.Equals, "")
 }
 

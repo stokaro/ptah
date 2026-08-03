@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 )
 
@@ -112,23 +113,56 @@ func TestNativeDiagnosticsKeepTheNativePrefix(t *testing.T) {
 	}
 }
 
+// TestExecuteWithRecovery_ConvertsCommandPanicToError covers the recovered
+// panic at the process boundary, which the exit-code documentation names as a
+// member of the process-level diagnostic class.
+//
+// It has two rows because one is not a discriminator. With only the default
+// root, reverting the prefix lookup to a hardcoded "error: " leaves the whole
+// suite green -- this is the one printer in the documented class that no other
+// gate watches, so a later simplification back to the literal would silently
+// reintroduce the split the policy exists to close.
 func TestExecuteWithRecovery_ConvertsCommandPanicToError(t *testing.T) {
-	c := qt.New(t)
-
-	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use: "panic",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			panic("bad annotation")
+	tests := []struct {
+		name string
+		// declare wires the surface's prefix policy. The native row leaves it
+		// alone rather than passing an empty prefix, because
+		// [cmdutil.SetErrorPrefixPolicy] rejects that by design.
+		declare    func(*cobra.Command)
+		wantStderr string
+	}{
+		{
+			name:       "native default",
+			declare:    func(*cobra.Command) {},
+			wantStderr: "error: internal error: bad annotation",
+		},
+		{
+			name:       "surface declaring its own prefix",
+			declare:    func(cmd *cobra.Command) { cmdutil.SetErrorPrefixPolicy(cmd, "Error") },
+			wantStderr: "Error: internal error: bad annotation",
 		},
 	}
-	cmd.SetErr(&stderr)
 
-	err := executeWithRecovery(cmd)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			var stderr bytes.Buffer
+			cmd := &cobra.Command{
+				Use: "panic",
+				RunE: func(_ *cobra.Command, _ []string) error {
+					panic("bad annotation")
+				},
+			}
+			cmd.SetErr(&stderr)
+			tt.declare(cmd)
 
-	c.Assert(err, qt.ErrorMatches, "internal error: bad annotation")
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-	c.Assert(stderr.String(), qt.Contains, "error: internal error: bad annotation")
+			err := executeWithRecovery(cmd)
+
+			c.Assert(err, qt.ErrorMatches, "internal error: bad annotation")
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stderr.String(), qt.Contains, tt.wantStderr)
+		})
+	}
 }
 
 func TestZZZRootUnknownSubcommandExits2WithoutUsage(t *testing.T) {
