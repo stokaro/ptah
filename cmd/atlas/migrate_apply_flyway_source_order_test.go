@@ -317,8 +317,9 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			// with the worse message.
 			//
 			// Reverted — that is, with #1003's refusal removed for this shape —
-			// this row prints exit 0, "Migrating to version 4611686018427469511
-			// from 1 pending migrations." and tables sq2 AND sqbase: the squash
+			// this row prints exit 0, "Migrating to version 448844 from 1
+			// pending migrations." / "Migration complete. Current version:
+			// 4611686018427510315", and tables sq2 AND sqbase: the squash
 			// executed on top of the history it squashes. That was this row's
 			// expectation before the rebase, and #1003 decided against it.
 			//
