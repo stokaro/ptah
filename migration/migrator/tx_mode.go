@@ -71,7 +71,7 @@ func (m *Migrator) resolveUpMigrationTxMode(migration *Migration) (MigrationTxMo
 				migration.UpTxMode,
 			)
 		}
-		return "", fmt.Errorf(
+		return "", newAtlasTxModeDirectiveError(
 			"cannot set txmode directive to %q in %q when txmode %q is set globally",
 			migration.UpTxMode,
 			migrationTxModeSourceName(migration.upSourcePath, migration.Description),

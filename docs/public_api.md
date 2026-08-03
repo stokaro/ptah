@@ -121,6 +121,10 @@ txtar content. The two directions remain independent; the migrator resolves
 the up value against its global transaction mode and treats an unspecified
 down value as `file`.
 
+Atlas transaction-mode directive validation errors expose
+`migrator.AtlasTxModeDirectiveError` through `errors.As`. The leaf error keeps
+the source file and transaction-mode details in its message.
+
 This pre-GA API replaces the former `UpNoTransaction` and
 `DownNoTransaction` Boolean fields. `NewMigrationFromSQLFiles` and its
 interceptor variant return a complete `Migration`, preserving both directions'

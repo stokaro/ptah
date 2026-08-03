@@ -562,7 +562,9 @@ func TestPrepareApplyExecute_ValidationErrorUsesLockedPlan(t *testing.T) {
 		},
 	)
 
-	c.Assert(err, qt.ErrorMatches, `error applying migrations: unknown txmode "bogus" found in file directive "2_invalid.sql"`)
+	var txModeErr *migrator.AtlasTxModeDirectiveError
+	c.Assert(err, qt.ErrorAs, &txModeErr)
+	c.Assert(err, qt.ErrorMatches, `unknown txmode "bogus" found in file directive "2_invalid.sql"`)
 	c.Assert(result.Applied, qt.IsFalse)
 	c.Assert(result.CurrentVersion, qt.Equals, int64(1))
 	c.Assert(result.SelectedVersions, qt.DeepEquals, []int64{2})
