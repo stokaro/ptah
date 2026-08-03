@@ -568,8 +568,11 @@ With no `--format` and no project template, `ptah-compat migrate lint` prints a
 compatibility report: an `Analyzing changes …` header, a per-version block
 listing each analyzer group's diagnostics and mapped rule IDs, a `-- ok (…)`
 line per version, and a summary of version statuses, semantic schema changes,
-and diagnostics. Diagnostic messages are written by Ptah and do not include
-external documentation links or copied suggested-fix prose.
+and diagnostics. For mapped Atlas diagnostics, the compatibility renderer
+reproduces the measured wording, analyzer documentation links, wrapping, and
+suggested-fix layout. Ptah-only diagnostics remain visibly labeled and do not
+link to unproven Atlas analyzer codes. Native `ptah migrations lint` keeps
+Ptah's more detailed diagnostic prose and remediation guidance.
 
 The report is written to stdout even when findings fail, and error-severity
 findings still exit with code 1. The native `ptah migrations lint` output is

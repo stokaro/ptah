@@ -23,9 +23,9 @@ import (
 // identically and the constant would have been unpinned.
 const lintWrapWidth = 88
 
-// WriteMigrateLintText renders the default Atlas-compatible migration-analysis
-// text report. It preserves the compatibility surface's per-version analysis
-// blocks and summary while using Ptah-owned diagnostic prose. The report is
+// WriteMigrateLintText renders the measured Atlas-compatible migration-analysis
+// text report. The native `ptah migrations lint` command uses its own report
+// renderer and retains Ptah's more detailed diagnostic prose. The report is
 // written even when findings fail; the caller is responsible for the exit code.
 func WriteMigrateLintText(w io.Writer, opts MigrateLintOptions) error {
 	return writeMigrateLintText(w, opts, time.Now)
@@ -68,53 +68,75 @@ func writeMigrateLintTextVersion(w io.Writer, version migrateLintTextVersion, el
 			return err
 		}
 	}
+	var fixes []migrateLintTextFix
 	for _, group := range version.groups {
-		if err := writeMigrateLintTextGroup(w, group); err != nil {
+		groupFixes, err := writeMigrateLintTextGroup(w, group)
+		if err != nil {
 			return err
 		}
+		fixes = append(fixes, groupFixes...)
+	}
+	if err := writeMigrateLintTextFixes(w, fixes); err != nil {
+		return err
 	}
 	_, err := fmt.Fprintf(w, "  -- ok (%s)\n", elapsed)
 	return err
 }
 
-// writeMigrateLintTextGroup renders one analyzer group.
-//
-// It encodes a deliberate, standing divergence: the diagnostic prose and the
-// layout around it on this surface are Ptah's own. Ptah is an independent
-// implementation, and its output is written for its own readers rather than
-// shaped to match another tool's phrasing.
-//
-// The decision, and why it is not an oversight:
-//
-//   - Ptah's message says more. "DROP TABLE permanently deletes the table and
-//     every row in it; take a verified backup first and consider a
-//     rename-and-retire window instead" tells a reader what to do. The terse
-//     equivalent, "Dropping table \"pets\"" plus a link, does not. Trading the
-//     first for the second is a downgrade for every human who reads it.
-//   - The rule code stays inline as `L<n> [CODE]:`. It is legible on its own and
-//     needs no external documentation link to be understood.
-//   - Suggested remediation belongs with the diagnostic it belongs to, not
-//     collected under a trailing header away from its subject.
-//
-// This costs byte-for-byte agreement on `migrate lint` text output, and that is
-// accepted: anything consuming this programmatically should use a structured
-// format, not scrape prose. Four imported txtar fixtures diverge as a result,
-// measured rather than assumed -- see stokaro/ptah#1062.
-//
-// A change that reshapes this output to match another tool is reverting a
-// decision, not fixing a defect. Read stokaro/ptah#1062 first;
-// TestMigrateLintProseIsOurs guards it.
-func writeMigrateLintTextGroup(w io.Writer, group migrateLintTextGroup) error {
+func writeMigrateLintTextGroup(w io.Writer, group migrateLintTextGroup) ([]migrateLintTextFix, error) {
 	if _, err := fmt.Fprintf(w, "    -- %s detected:\n", group.label); err != nil {
+		return nil, err
+	}
+	// Atlas prints every diagnostic in the group first, then collects the
+	// suggested fixes under ONE header at the end -- pluralized when there is
+	// more than one. Interleaving fix-after-diagnostic produces identical
+	// output for a single diagnostic, which is why that layout has to be
+	// checked against a group with two.
+	var fixes []migrateLintTextFix
+	for _, diag := range group.diags {
+		if err := writeMigrateLintTextDiagnostic(w, diag); err != nil {
+			return nil, err
+		}
+		if diag.fix.text != "" {
+			fixes = append(fixes, diag.fix)
+		}
+	}
+	return fixes, nil
+}
+
+func writeMigrateLintTextFixes(w io.Writer, fixes []migrateLintTextFix) error {
+	if len(fixes) == 0 {
+		return nil
+	}
+	header := "    -- suggested fix:"
+	if len(fixes) > 1 {
+		header = "    -- suggested fixes:"
+	}
+	if _, err := fmt.Fprintln(w, header); err != nil {
 		return err
 	}
-	for _, diag := range group.diags {
-		content := fmt.Sprintf("L%d [%s]: %s", diag.line, diag.code, diag.message)
-		if err := writeWrapped(w, "      -- ", "         ", content); err != nil {
+	for _, fix := range fixes {
+		if err := writeWrappedAt(w, "      -> ", "         ", fix.text, fix.width); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func writeMigrateLintTextDiagnostic(w io.Writer, diag migrateLintTextDiag) error {
+	if !diag.atlas {
+		return writeWrapped(
+			w,
+			"      -- ",
+			"         ",
+			fmt.Sprintf("L%d [%s]: %s", diag.line, diag.code, diag.message),
+		)
+	}
+	content := fmt.Sprintf("L%d: %s", diag.line, diag.message)
+	if diag.code != "" {
+		content += " " + atlasAnalyzerDocsURL + diag.code
+	}
+	return writeWrappedAt(w, "      -- ", "         ", content, diag.messageWidth)
 }
 
 func writeMigrateLintTextSummary(w io.Writer, model migrateLintText, elapsed string) error {
@@ -138,7 +160,14 @@ func writeMigrateLintTextSummary(w io.Writer, model migrateLintText, elapsed str
 // columns, prefixing the first line with firstPrefix and every continuation
 // line with contPrefix.
 func writeWrapped(w io.Writer, firstPrefix, contPrefix, text string) error {
-	lines := wrapContent(text, lintWrapWidth)
+	return writeWrappedAt(w, firstPrefix, contPrefix, text, lintWrapWidth)
+}
+
+func writeWrappedAt(w io.Writer, firstPrefix, contPrefix, text string, width int) error {
+	return writePrefixedLines(w, firstPrefix, contPrefix, wrapContent(text, width))
+}
+
+func writePrefixedLines(w io.Writer, firstPrefix, contPrefix string, lines []string) error {
 	for i, line := range lines {
 		prefix := contPrefix
 		if i == 0 {
@@ -193,11 +222,21 @@ type migrateLintTextGroup struct {
 }
 
 type migrateLintTextDiag struct {
-	line     int
-	code     string
-	message  string
+	line         int
+	code         string
+	message      string
+	messageWidth int
+	atlas        bool
+	// fix is the Atlas-shaped suggested fix, printed under its own header.
+	// Empty for analyzers where Atlas prints none.
+	fix      migrateLintTextFix
 	group    string
 	severity migrationlint.Severity
+}
+
+type migrateLintTextFix struct {
+	text  string
+	width int
 }
 
 // buildMigrateLintText derives the intermediate text-report model from the lint
@@ -274,16 +313,30 @@ func diagnosticsByFile(findings []migrationlint.Finding) map[string][]migrateLin
 	return byFile
 }
 
-// compatibilityDiagnostic keeps the documented analyzer and rule-code mapping
-// but uses the native Ptah finding as the sole source of human-readable prose.
+// compatibilityDiagnostic maps a structured native finding to the measured
+// Atlas analyzer code, wording, and suggested-fix shape used by ptah-compat.
 func compatibilityDiagnostic(finding migrationlint.Finding) migrateLintTextDiag {
 	rule := atlaslint.RuleForNativeCode(finding.Rule)
+	diagnostic, mapped := atlasDiagnosticText(rule.Code, finding)
+	if !mapped {
+		return migrateLintTextDiag{
+			line:         finding.Line,
+			code:         rule.Code,
+			message:      finding.Message,
+			messageWidth: lintWrapWidth,
+			group:        analyzerGroupLabel(rule.Analyzer),
+			severity:     finding.Severity,
+		}
+	}
 	return migrateLintTextDiag{
-		line:     finding.Line,
-		code:     rule.Code,
-		message:  finding.Message,
-		group:    analyzerGroupLabel(rule.Analyzer),
-		severity: finding.Severity,
+		line:         finding.Line,
+		code:         rule.Code,
+		message:      diagnostic.message,
+		messageWidth: diagnostic.messageWidth,
+		atlas:        true,
+		fix:          migrateLintTextFix{text: diagnostic.fix, width: diagnostic.fixWidth},
+		group:        analyzerGroupLabel(rule.Analyzer),
+		severity:     finding.Severity,
 	}
 }
 
