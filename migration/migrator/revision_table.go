@@ -3,11 +3,18 @@ package migrator
 import (
 	"fmt"
 	"strings"
+
+	"go.5x5.cz/ptah/internal/revisiontable"
 )
 
+// The migrator's defaults are derived from internal/revisiontable rather than
+// spelled out here, so that consumers which must enumerate Ptah's bookkeeping
+// tables — internal/schemaclean, which names what a destructive cleanup
+// destroys — read the same definition the migrator does instead of a copy that
+// can drift away from it.
 const (
-	defaultPtahMigrationsTable = "schema_migrations"
-	defaultAtlasRevisionsTable = "atlas_schema_revisions"
+	defaultPtahMigrationsTable = revisiontable.Ptah
+	defaultAtlasRevisionsTable = revisiontable.Atlas
 )
 
 // RevisionTableFormat selects the database table layout used for migration
