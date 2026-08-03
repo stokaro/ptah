@@ -9,9 +9,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/atlascompat"
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/migrateset"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // writePtahMigrations writes a two-migration ptah-format directory.
@@ -30,7 +32,12 @@ func writePtahMigrations(t *testing.T) string {
 	return dir
 }
 
-// writeAtlasMigrations writes a two-migration atlas-format directory.
+// writeAtlasMigrations writes a two-migration atlas-format directory, hashed.
+//
+// The atlas.sum is not decoration: `ptah-compat migrate set` verifies it before
+// writing revision rows (#974), so an unhashed fixture would be refused the way
+// the community binary refuses one. Hashing the fixture is the fix; weakening
+// the gate to accept it would re-open the bug.
 func writeAtlasMigrations(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -41,6 +48,9 @@ func writeAtlasMigrations(t *testing.T) string {
 	for name, content := range files {
 		qt.Assert(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
+	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, os.WriteFile(filepath.Join(dir, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
 	return dir
 }
 

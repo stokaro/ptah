@@ -17,12 +17,12 @@ plus the flag translation rules are on the
 | --- | --- |
 | `ptah-compat migrate apply` | Atlas-format apply path equivalent to `ptah migrations up`; executes every Atlas OSS directory format and refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and Atlas revision bookkeeping by default; `--dev-url` verifies the rollback plan first. |
-| `ptah-compat migrate status` | Atlas-format migration status with Atlas revision-table metadata. |
+| `ptah-compat migrate status` | Atlas-format migration status with Atlas revision-table metadata; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate hash` | Forwards to `ptah migrations hash`; writes `atlas.sum` by default. |
 | `ptah-compat migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
 | `ptah-compat migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
 | `ptah-compat migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
-| `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL. |
+| `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs them against the desired state, and writes Atlas-style migration files with `atlas.sum` updated atomically. |
 | `ptah-compat migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
 | `ptah-compat migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a cumulative-schema checkpoint, Atlas single-file format by default or the ptah pair under `--dir-format ptah`. |
@@ -623,6 +623,25 @@ selected boundary without executing migration SQL. It preserves existing clean
 rows through the target, inserts missing rows as manually set, keeps dirty-row
 diagnostics with the combined applied and manually-set type, and removes rows
 above the target.
+
+### Which verbs enforce `atlas.sum`
+
+`apply`, `status`, `set`, and `validate` all verify the directory's integrity
+file before doing anything else, with the same output on all four
+([#974](https://github.com/stokaro/ptah/issues/974)). The refusal precedes the
+database connection, so an unreachable `--url` does not hide it, and on `set` it
+precedes the positional-version check too. The empty-directory and
+non-SQL-directory exemptions described under
+[Apply a migration directory](#apply-a-migration-directory) apply identically,
+so a CI bootstrap that creates an empty `migrations/` keeps working.
+
+`lint` deliberately does not enforce it: linting a directory is how you inspect
+one that has drifted.
+
+`new` and `diff` remain divergent — they write an `atlas.sum` over a directory
+whose previous contents were never verified, turning drift into apparent
+cleanliness. That is tracked separately, because gating them interacts with the
+empty-directory bootstrap flow.
 
 With `--env`, it reads `env.url`, `migration.dir`, and
 `migration.revisions_schema` from `atlas.hcl`; explicit `--url`, `--dir`, and

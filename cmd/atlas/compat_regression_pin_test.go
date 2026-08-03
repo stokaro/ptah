@@ -51,6 +51,10 @@ func TestCompatPinAtlasMigrateSetOutput(t *testing.T) {
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(migrationsDir, name), []byte(content), 0o600), qt.IsNil)
 	}
+	// `migrate set` verifies atlas.sum before it writes revision rows (#974),
+	// so the fixture is hashed. Hashing is the fix; loosening the gate to keep
+	// an unhashed fixture green would re-open the bug.
+	writeAtlasApplyProjectSum(c, migrationsDir)
 	dbPath := filepath.Join(t.TempDir(), "pin.db")
 
 	out, err := runAtlasArgs("migrate", "set", "2",

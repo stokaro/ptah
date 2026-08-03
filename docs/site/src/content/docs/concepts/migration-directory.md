@@ -68,6 +68,14 @@ in-memory snapshot before connecting to a database. Their reports and rollback
 verification reuse that snapshot. It contains migration SQL,
 `.ptah-lint.yaml`, `ptah.sum`, and `atlas.sum`; unrelated files are excluded.
 
+The snapshot is also what the integrity gate reads. On `migrate apply`,
+`migrate status`, and `migrate set` the captured `atlas.sum` is verified
+immediately after capture and before the database connection, so all three
+refuse a directory that carries no integrity file or whose integrity file is
+stale ([#974](https://github.com/stokaro/ptah/issues/974)). Verifying the
+snapshot rather than the live directory is what makes the check and the work it
+guards read the same bytes.
+
 Relative CLI paths are rooted at the process working directory. Traversal and
 symlink escapes outside that root are rejected. Explicit absolute paths remain
 supported. A relative `migration.dir` in `atlas.hcl` resolves from the project
