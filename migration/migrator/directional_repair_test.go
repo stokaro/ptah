@@ -164,8 +164,8 @@ func TestDirectionalRepair_ForceRecordsPartialRollbackApplied(t *testing.T) {
 // TestDirectionalRepair_ResumedRollbackFailureKeepsAbsoluteProgress proves a
 // resumed rollback that fails again is resumable in turn: the row counts in the
 // same numbers --resume-from speaks, not in offsets into the resumed tail.
-// Reverted, the first call runs the up body and execution never reaches
-	// the check below.
+// Reverted, the first call runs the up body and execution never reaches the
+// check below.
 func TestDirectionalRepair_ResumedRollbackFailureKeepsAbsoluteProgress(t *testing.T) {
 	c := qt.New(t)
 	mig, conn := directionalRepairMigrator(c, "resume-refail.db")
