@@ -261,6 +261,18 @@ func TestLoadDir_FlywayConvertsThroughTheRealFilesystem(t *testing.T) {
 	})
 }
 
+// TestLoadDir_RejectsMissingUpDirective covers dbmate only.
+//
+// It used to carry two goose rows — a file with no directives, and one whose
+// only marker was the malformed "--+goose Up". stokaro/ptah#981 is those
+// refusals being wrong: Atlas recognizes neither line as a directive, so both
+// files simply have none, and it executes each one's bytes verbatim and records
+// the revision. Measured on both fixtures. A file with no directives has no
+// rollback section that could leak onto the apply path, so the caution that
+// justifies refusing a BROKEN directive set does not reach them.
+//
+// Goose parsing — the directive-free path and the out-of-order refusals that
+// replaced this over-refusal — is pinned in goosedirectives_test.go.
 func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
 	c := qt.New(t)
 
@@ -269,16 +281,6 @@ func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
 		format  atlasmigrateimport.Format
 		content string
 	}{
-		{
-			name:    "goose without up marker",
-			format:  atlasmigrateimport.FormatGoose,
-			content: "CREATE TABLE t (id int);\nDROP TABLE t;\n",
-		},
-		{
-			name:    "goose malformed up marker",
-			format:  atlasmigrateimport.FormatGoose,
-			content: "--+goose Up\nCREATE TABLE t (id int);\n",
-		},
 		{
 			name:    "dbmate without up directive",
 			format:  atlasmigrateimport.FormatDBMate,
@@ -293,7 +295,7 @@ func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
 
 			loaded, err := atlasmigrateimport.LoadDir(dir, tt.format)
 
-			c.Assert(err, qt.ErrorMatches, `migration file 1_x\.sql has no ".*" section`)
+			c.Assert(err, qt.ErrorMatches, `migration file 1_x\.sql carries no "-- migrate:up" directive.*`)
 			c.Assert(loaded, qt.IsNil)
 		})
 	}

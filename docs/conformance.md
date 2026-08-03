@@ -145,6 +145,29 @@ conformance Atlas pin advances past v1.3.0:
 | `schema stats` | Inspect database schema statistics in OpenMetrics format. | Out of scope: statistics monitoring is a metrics/observability surface, not schema management; Ptah's schema-state surface is `ptah schema compare` and `ptah schema drift`. |
 | `schema validate` | Check that a schema definition parses and loads, optionally against `--dev-url`. | Covered by native: `ptah schema render` parses and loads the desired schema and fails on invalid input; `ptah schema test` and `schema apply --dry-run` exercise it against a throwaway database. |
 
+## Never a Copied Defect
+
+Matching the pinned Atlas CE binary is the floor, not the ceiling. Where its
+behavior is a defect — it silently discards something the author wrote, corrupts
+recorded state, or fails for a reason unrelated to the user's intent — Ptah does
+not reproduce it. Every entry below is stricter than Atlas CE, never looser, so
+none of them can make `ptah-compat` accept input Atlas CE rejects.
+
+Measured against the pinned Atlas CE v1.3.0 binary on SQLite targets. Each
+reproduces on `migrate apply`, `migrate validate` and `migrate import`, under
+both the `?format=` query and the `atlas.hcl` `migration { format = ... }`
+spelling.
+
+| Input | Atlas CE v1.3.0 | Ptah | Why not matched |
+| --- | --- | --- | --- |
+| Goose near-miss section directive, for example `-- +goose down` for `Down` | Exits 0. The misspelled name is not recognized, so it folds into the migration body as a comment and the rollback SQL beneath it executes: the table is created, then dropped, and the migration is recorded as successfully applied. | Refused, naming the offending line and the correct spelling. | A case error in a directive silently rolling back the migration it belongs to is a data-loss defect, not a semantic choice. Scoped to exact near-miss spellings of the four section directives, so `-- +goose Frobnicate` and prose such as `-- +goose up to date` still pass through as comments exactly as Atlas CE treats them. |
+| dbmate migration with no `-- migrate:up` directive | Exits 0. `migrate apply` records the revision with 0 of 0 statements and creates nothing, so the migration is permanently marked done and no later apply will run it. `migrate import` writes a **zero-byte** file over the authored SQL and hashes the empty file into `atlas.sum` as if it were the migration. | Refused, stating that the file carries no `-- migrate:up` so none of its SQL would execute. | Discarding authored SQL and corrupting recorded state in one behavior. A file that *has* the directive with an empty section is a different, legitimate input and is converted and recorded normally. |
+
+Not every difference is deliberate. Goose files carrying no directives at all are
+matched rather than refused, because there Atlas CE is right: it executes the
+file's bytes verbatim, drops nothing, and records the revision honestly. See
+[`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
+
 ## Reports
 
 - Offline corpus report:

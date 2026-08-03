@@ -319,12 +319,49 @@ three components, or a minor/patch of `100` or more, cannot be represented in an
 int64 and is rejected before the database is opened.
 
 Several inputs still fail before Ptah opens the target database rather than guess
-at semantics: unknown formats; goose/dbmate files missing their up directive
-(never falling back to executing the whole file); Flyway repeatable (`R__`)
+at semantics: unknown formats; goose files whose directives are out of order;
+dbmate files missing their up directive; Flyway repeatable (`R__`)
 migrations, which Ptah cannot yet execute as versioned migrations (matching how
 `ptah-compat migrate import` handles them); and two source files that resolve to
 the same version. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
+
+### Goose directive parsing
+
+Goose directives are parsed as a state machine, not filtered line by line, and
+the accepted set matches Atlas. Directive names are case- and space-sensitive
+exactly as Atlas matches them: `-- +goose Up` is a directive, `-- +goose up`,
+`-- +goose  Up` and `-- +Goose Up` are not. A name may carry trailing text
+(`-- +goose Up extra` is still `Up`). Lines Atlas does not recognize as
+section directives — including `-- +goose NO TRANSACTION` — stay in the
+migration body and are executed with it.
+
+A goose file that contains **no** section directive at all is executed in full:
+the whole file is the migration. Such a file has no rollback section that could
+leak onto the apply path, so there is nothing to protect against. A file with a
+**broken** directive set is a different thing and is still refused — `Down`
+before any `Up`, a second `Up`, `StatementBegin` outside a section, an
+unmatched `StatementEnd`, or any section directive inside a `StatementBegin`
+block. See [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
+
+The up section runs from the **start of the file** through the first `Down`, so
+SQL written above the `Up` directive is executed rather than silently dropped.
+An intentionally empty up section is recorded as an applied revision with zero
+statements rather than being skipped.
+
+### Deliberate divergences
+
+Two behaviors differ from Atlas on purpose. Both are cases where matching would
+mean reproducing a defect, so Ptah is stricter — never looser — than Atlas.
+
+| Input | Atlas | Ptah |
+| --- | --- | --- |
+| Goose near-miss directive, for example `-- +goose down` | Exits 0. The typo is not recognized, folds into the body as a comment, and the rollback SQL under it executes — the migration is created, dropped, and recorded as successful. | Refused, naming the line and the correct spelling. A case error in a directive must not silently roll back a migration. |
+| dbmate file with no `-- migrate:up` | Exits 0, records the revision with 0 of 0 statements and creates nothing, so the migration is marked done and never runs. `migrate import` writes a zero-byte file over the authored SQL and hashes it into `atlas.sum`. | Refused, because nothing in the file would execute. |
+
+Ptah refuses only exact near-miss spellings of the four section directives.
+Prose that merely begins with one (`-- +goose up to date`) and unrecognized
+names (`-- +goose Frobnicate`) stay comments, as they do in Atlas.
 Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
 `--lock-name`; Ptah follows that surface and rejects those flags on
 `migrate apply`.
