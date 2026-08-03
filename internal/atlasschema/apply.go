@@ -138,17 +138,27 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("read database schema: %w", err)
 	}
-	current, err = scopeDatabaseSide(current, scope, "current schema")
-	if err != nil {
-		return applyComputation{}, err
+	current, currentErr := scopeDatabaseSide(current, scope, "current schema")
+	if currentErr != nil && !emptySelection(currentErr) {
+		return applyComputation{}, currentErr
 	}
 	desired, err := loadDesiredApplySchema(ctx, conn, opts)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
-	desired, err = scopeGeneratedSide(desired, scope, "desired schema")
-	if err != nil {
-		return applyComputation{}, err
+	desired, desiredErr := scopeGeneratedSide(desired, scope, "desired schema")
+	if desiredErr != nil && !emptySelection(desiredErr) {
+		return applyComputation{}, desiredErr
+	}
+	// An --include selection that matched neither the database nor the desired
+	// state leaves nothing to apply. Reported as a synced schema it is a verb
+	// claiming success for work it did not do, with the target untouched, so
+	// schema apply refuses instead. One empty side is left alone: that is what
+	// a pure create or a pure drop looks like.
+	if emptySelection(currentErr) && emptySelection(desiredErr) {
+		return applyComputation{}, fmt.Errorf(
+			"%w; schema apply would change nothing",
+			currentErr)
 	}
 
 	computation := applyComputation{current: current, desired: desired}

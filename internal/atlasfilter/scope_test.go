@@ -47,30 +47,36 @@ func TestValidateIncludeSelectors_HappyPath(t *testing.T) {
 		{name: "type selector", values: []string{"users[type=table]"}},
 		{name: "type union", values: []string{"*[type=view|materialized_view]"}},
 		{name: "blank entries", values: []string{" ", ","}},
-		// One separator is the deepest a top-level selector reaches, so the
-		// schema-wildcard spelling of a qualified name stays valid.
 		{name: "wildcard schema qualifier", values: []string{"*.users"}},
 		{name: "qualified type selector", values: []string{"public.users[type=table]"}},
-		// Capability: a dotted identifier is quoted in the qualified candidate
+		// A dotted identifier is quoted in the qualified candidate
 		// (`main."my.table"`), so the selector that matches it carries two dot
-		// characters but only one separator. Counting characters rejected it
-		// and made the qualified spelling of a dotted table inexpressible.
-		// These two spellings really do select such a table.
+		// characters but only one separator. These two spellings really do
+		// select such a table.
 		{name: "qualified dotted identifier", values: []string{`main."my.table"`}},
 		{name: "wildcard schema dotted identifier", values: []string{`*."my.table"`}},
-		// Permissiveness only: tableref.Canonical emits double quotes and
-		// never these forms, and path.Match reads `[my.table]` as a character
-		// class rather than a quoted identifier, so neither spelling can
-		// actually select a table named "my.table". They are here to pin that
-		// the scanner treats backtick and bracket runs as identifier quoting
-		// and does not count the dot inside them.
+		// tableref.Canonical emits double quotes and never these forms, and
+		// path.Match reads `[my.table]` as a character class rather than a
+		// quoted identifier, so neither spelling selects a table named
+		// "my.table". They are kept because both were arms of the deleted
+		// shape check and each must stay parseable.
 		{name: "backtick dotted identifier", values: []string{"main.`my.table`"}},
 		{name: "bracket dotted identifier", values: []string{"main.[my.table]"}},
 		// path.Match reads "\." as a literal dot, so this selects the single
-		// bare name "a.b.c" rather than reaching child depth. It is also the
-		// documented workaround for the bare `a.b.c` spelling, which stays
-		// refused as ambiguous with schema.table.column.
+		// bare name "a.b.c".
 		{name: "escaped dots", values: []string{`a\.b\.c`}},
+		// The bare spelling of the same name. The deleted shape check refused
+		// it as "child depth" even though a table can be literally named
+		// a.b.c, and a shape check cannot tell the two apart. Whether it
+		// selects anything is now decided by the projection, which is the only
+		// place the answer exists.
+		{name: "bare dotted name", values: []string{"a.b.c"}},
+		{name: "bare dotted wildcard", values: []string{"main.t1.*"}},
+		{name: "bare dotted name with type selector", values: []string{"main.t1.*[type=table]"}},
+		{name: "bare dotted name past a quoted identifier", values: []string{`main."my.table".id`}},
+		{name: "bare dotted name past a bracketed identifier", values: []string{"main.[ab].id"}},
+		{name: "bare dotted name past a backticked identifier", values: []string{"main.`ab`.id"}},
+		{name: "bare dotted name in a comma separated list", values: []string{"users,main.t1.id"}},
 	}
 
 	for _, test := range tests {
@@ -133,51 +139,6 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 			values:  []string{"*[type=]"},
 			wantErr: `empty Atlas include type selector "type="`,
 		},
-		// Child depth is the positional spelling of the [type=column] form
-		// above: the selection matches "name" and "schema.name" only, so a
-		// deeper pattern can never match and is rejected instead of silently
-		// selecting nothing. Atlas also refuses this input
-		// ("too many parts in pattern").
-		{
-			name:    "child depth",
-			values:  []string{"main.t1.id"},
-			wantErr: `unsupported Atlas include selector "main\.t1\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
-		},
-		{
-			name:    "child depth wildcard",
-			values:  []string{"main.t1.*"},
-			wantErr: `unsupported Atlas include selector "main\.t1\.\*": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
-		},
-		{
-			name:    "child depth with type selector",
-			values:  []string{"main.t1.*[type=table]"},
-			wantErr: `unsupported Atlas include selector "main\.t1\.\*\[type=table\]": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
-		},
-		{
-			name:    "child depth in comma separated list",
-			values:  []string{"users,main.t1.id"},
-			wantErr: `unsupported Atlas include selector "main\.t1\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
-		},
-		// Quoting an identifier does not buy extra depth: the separators
-		// outside the quotes still count. One case per quoting form, so each
-		// arm of the scanner's close-delimiter mapping is pinned — a bracket
-		// run that never terminates would swallow the trailing separator and
-		// wrongly accept.
-		{
-			name:    "child depth past a quoted identifier",
-			values:  []string{`main."my.table".id`},
-			wantErr: `unsupported Atlas include selector "main\.\\"my\.table\\"\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
-		},
-		{
-			name:    "child depth past a bracketed identifier",
-			values:  []string{"main.[ab].id"},
-			wantErr: `unsupported Atlas include selector "main\.\[ab\]\.id": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
-		},
-		{
-			name:    "child depth past a backticked identifier",
-			values:  []string{"main.`ab`.id"},
-			wantErr: "unsupported Atlas include selector \"main\\.`ab`\\.id\": selectors name top-level resources as \"name\" or \"schema\\.name\", and a deeper pattern names a child resource that rides along with its parent",
-		},
 	}
 
 	for _, test := range tests {
@@ -187,13 +148,12 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 	}
 }
 
-// TestIncludeSelectorDepthRuleIsIncludeOnly pins that the child-depth
-// rejection is scoped to --include. Exclusion legitimately reaches child
-// resources, so its "table.child" and "schema.table.child" spellings must keep
-// parsing. This asserts parsing only: whether a given exclude spelling then
-// matches is a separate, pre-existing question — "table.child" matches on the
-// default schema while "schema.table.child" does not.
-func TestIncludeSelectorDepthRuleIsIncludeOnly(t *testing.T) {
+// TestExcludeSelectorsReachChildResources pins that exclusion keeps parsing
+// the child-resource spellings it legitimately reaches. This asserts parsing
+// only: whether a given exclude spelling then matches is a separate,
+// pre-existing question — "table.child" matches on the default schema while
+// "schema.table.child" does not.
+func TestExcludeSelectorsReachChildResources(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
@@ -328,7 +288,10 @@ func TestScopeGenerated_IncludeSelectsInsideSchemaUniverse(t *testing.T) {
 			Include:       []string{"invoices"},
 			DefaultSchema: "public",
 		})
-		c.Assert(err, qt.IsNil)
+		// The projection is empty and says so. billing.invoices exists in the
+		// fixture but sits outside the schema universe, so the selector is
+		// evaluated against nothing and never counts as a match.
+		c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: "invoices"`)
 		c.Assert(got.Tables, qt.HasLen, 0)
 	})
 }
@@ -372,7 +335,9 @@ func TestScopeGenerated_EmptyMatchProjectsNothing(t *testing.T) {
 		DefaultSchema: "public",
 	})
 
-	c.Assert(err, qt.IsNil)
+	// The empty projection is still returned, and it is still empty in every
+	// object kind — callers that tolerate an empty selection keep using it.
+	c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: "does_not_exist"`)
 	c.Assert(got.Tables, qt.HasLen, 0)
 	c.Assert(got.Fields, qt.HasLen, 0)
 	c.Assert(got.Enums, qt.HasLen, 0)
@@ -587,7 +552,7 @@ func TestScopeDatabase_EmptyMatchProjectsNothing(t *testing.T) {
 		DefaultSchema: "public",
 	})
 
-	c.Assert(err, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: "does_not_exist"`)
 	c.Assert(got.Tables, qt.HasLen, 0)
 	c.Assert(got.Enums, qt.HasLen, 0)
 	c.Assert(got.Sequences, qt.HasLen, 0)

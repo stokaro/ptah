@@ -132,7 +132,7 @@ func TestSchemaInspectIncludeSelectsResources(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), `table "archive"`)
 }
 
-func TestSchemaInspectIncludeRejectsChildSelectors(t *testing.T) {
+func TestSchemaInspectIncludeValidatesSelectors(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
@@ -146,9 +146,12 @@ func TestSchemaInspectIncludeRejectsChildSelectors(t *testing.T) {
 			wantErr: `unsupported Atlas include selector .*column resources ride along with their parent.*`,
 		},
 		{
-			name:    "positional spelling",
+			// The dotted spelling is not refused on its shape: it is
+			// indistinguishable from a table literally named "users.email", so
+			// it reaches the projection and the closed port is what fails.
+			name:    "positional spelling reaches the connection",
 			pattern: "main.users.email",
-			wantErr: `unsupported Atlas include selector .*a deeper pattern names a child resource.*`,
+			wantErr: `(?s).*failed to connect.*`,
 		},
 	}
 

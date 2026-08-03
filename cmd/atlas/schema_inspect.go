@@ -53,16 +53,18 @@ keeps, using the same selectors as ` + "`schema apply`" + ` and
 ` + "`schema diff`" + `: --schema names the schema universe, --include picks
 resources inside it, and --exclude subtracts from the result. Child resources
 (columns, indexes, constraints, triggers, policies, grants) ride along with
-their parent and cannot be selected on their own, in either the
-` + "`[type=column]`" + ` or the literal-dot ` + "`table.column`" + ` spelling;
-glob metacharacters (*, ?, and character classes) match a dot too, so
-` + "`table*column`" + ` and ` + "`table[.]column`" + ` are not caught and
-select nothing instead. Selector depth counts separators outside quotes, so an
-identifier holding a dot is selected as ` + "`main.\"my.table\"`" + ` or
-` + "`a\\.b\\.c`" + `; the bare ` + "`a.b.c`" + ` spelling is refused as
-ambiguous with schema.table.column. A selection that keeps an object whose dependency it
-dropped is refused rather than rendered, so inspected output never references
-an object it omitted. The flag is absent from Atlas CE, which rejects it as an
+their parent and cannot be selected on their own; the
+` + "`[type=column]`" + ` spelling is refused before the database is
+contacted. A positional spelling such as ` + "`table.column`" + ` is not
+refused on its shape, because it is indistinguishable from a table literally
+named that; it is carried to the selection, where an identifier holding a dot
+can also be named as ` + "`main.\"my.table\"`" + ` or
+` + "`a\\.b\\.c`" + `. An --include selection that matches nothing renders no
+objects and keeps exit status 0 — inspection is read-only, and an empty
+description of an empty selection is a legitimate answer — but it reports the
+empty selection on standard error. A selection that keeps an object whose
+dependency it dropped is refused rather than rendered, so inspected output
+never references an object it omitted. The flag is absent from Atlas CE, which rejects it as an
 unknown flag on this command.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaInspect(cmd, opts)
