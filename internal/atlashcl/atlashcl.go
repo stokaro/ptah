@@ -45,8 +45,18 @@ func Parse(data []byte, filename string) (*goschema.Database, error) {
 
 	p := parser{
 		src:       data,
+		filename:  filename,
 		sourceDir: filepath.Dir(filename),
 		db:        &goschema.Database{},
+	}
+	// Classify before validating the schema body. A file carrying a project-file
+	// marker is the wrong kind of file, and that verdict must not depend on
+	// whether some unrelated block later in the file also happens to be invalid.
+	// Measured on a fixture holding both an env block and a bogus table block:
+	// the pinned Atlas community binary reports the project-file error, not the
+	// block error, so the classification has to run ahead of the body walk.
+	if err := classifyProjectFile(body, filename); err != nil {
+		return nil, err
 	}
 	if err := p.parseBody(body); err != nil {
 		return nil, err
@@ -55,8 +65,60 @@ func Parse(data []byte, filename string) (*goschema.Database, error) {
 	return p.db, nil
 }
 
+// projectFileBlocks names the top-level blocks that mark an HCL file as an Atlas
+// project file (atlas.hcl) rather than a schema file. Handing a project file to a
+// schema source is a wrong-kind-of-file mistake: it has no schema objects, so
+// parsing it as a schema silently yields an EMPTY desired state, and the caller
+// plans to drop everything the real schema contains.
+//
+// The set is deliberately exactly one name. It comes from a measurement, not a
+// guess: each of ten top-level block names was prepended to a valid schema file
+// and run through `schema inspect` on the pinned Atlas community binary (v1.3.0).
+// Only `env` made it refuse the file. `atlas`, `lint`, `diff`, `format`,
+// `docker`, `run` and `locals` are accepted and silently dropped there; Ptah
+// already rejects those as unsupported top-level blocks, which is stricter and
+// safe, so they are not added here. `variable` is a legitimate schema-file
+// construct -- see the case arm in parseTopLevelBlock.
+//
+// Extend this set only from a new measurement against the pinned binary.
+var projectFileBlocks = map[string]bool{"env": true}
+
+// classifyProjectFile refuses a schema file that carries a project-file marker.
+//
+// It inspects TOP-LEVEL blocks only, which is what makes the three neighboring
+// shapes behave correctly: a nested `env` block inside a table keeps its existing
+// "unsupported table block" error, an `env = "x"` ATTRIBUTE is not a block at all
+// and never triggers, and only a file-scope `env` block is classified. Contents
+// and labels are irrelevant -- an unlabeled env, an empty body and a body full of
+// nonsense all mark the file, matching the measured trigger.
+func classifyProjectFile(body *hclsyntax.Body, filename string) error {
+	for _, block := range body.Blocks {
+		if projectFileBlocks[block.Type] {
+			return projectFileError(filename, block)
+		}
+	}
+	return nil
+}
+
+// projectFileError builds the refusal. The leading sentence is the one the Atlas
+// community binary emits, kept verbatim so existing scripts that match on it keep
+// working; the clause after the colon is Ptah going past that binary, which names
+// the file but never the construct, leaving a user who pasted a fragment with
+// nothing to act on. Naming the offending block and its position is additive.
+//
+// The quoted path is spelled the way the caller handed it to Parse. Ptah's
+// schema-file loader resolves paths before parsing, so in practice this prints an
+// absolute path where the community binary prints the path as typed.
+func projectFileError(filename string, block *hclsyntax.Block) error {
+	return fmt.Errorf(
+		"cannot parse project file %q as a schema file: top-level %q block at %s is a project-file construct",
+		filename, block.Type, block.TypeRange.String(),
+	)
+}
+
 type parser struct {
 	src       []byte
+	filename  string
 	sourceDir string
 	db        *goschema.Database
 }
@@ -104,9 +166,39 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		return p.parsePermission(block)
 	case "data":
 		return p.parseManagedData(block)
-	case "env", "variable":
-		// Project-level HCL can carry env/variable blocks next to schema blocks.
-		// They do not define schema objects directly.
+	case "env":
+		// Parse classifies a file carrying a top-level env block before the body
+		// walk begins, so this arm is a guard rather than the usual path. It
+		// returns the identical error so the message cannot drift between the
+		// two routes.
+		return projectFileError(p.filename, block)
+	case "variable":
+		// Left accepted on purpose; do not fold this into the env arm.
+		//
+		// `variable` is a genuine schema-file construct in Atlas: the community
+		// binary accepts it, EVALUATES var.X references against it, and fails
+		// with `missing value for required variable %q` only when a typed
+		// variable has neither a default nor a --var override. Measured on the
+		// pinned binary, a schema file whose column default is var.status:
+		//
+		//   variable "status" { type = string, default = "active" }
+		//     -> exit 0, renders `default = "active"`
+		//
+		// The `type` argument carries the example. Drop it and the same file
+		// exits 1 with `The argument "type" is required`, which would argue for
+		// refusing `variable` -- the exact conclusion this comment exists to
+		// prevent. Quote the typed spelling or the measurement says the opposite
+		// of what it is cited for.
+		//
+		// Ptah has no schema-file variable evaluation, so accepting and ignoring
+		// is knowingly looser than that binary on BOTH spellings it refuses --
+		// a variable missing `type`, and a typed variable with no default and no
+		// --var -- and it renders var.X into DDL as literal text. Real defects,
+		// all three, and all of them predate this arm's split. Moving
+		// this name to the default arm would "fix" them by refusing files the
+		// community binary fully supports -- a new stricter break, not parity.
+		// The fix is evaluation plus --var plumbing, tracked in issue #926
+		// ("HCL schema files: expressions are not evaluated").
 		return nil
 	default:
 		return p.blockError(block, "unsupported top-level block %q", block.Type)
