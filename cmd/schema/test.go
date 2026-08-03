@@ -79,11 +79,11 @@ A database --root-dir must share the dialect of the throwaway database the cases
 run against, so a non-SQLite source requires an explicit --db-url. Roles and
 grants introspected from a database source are dropped before the schema is
 applied, because a schema test must not mutate cluster-scoped security state;
-the omission is reported on stdout.
+the omission is reported on stderr, so stdout carries only the report.
 
 The command exits non-zero if any case fails.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSchemaTest(cmd.Context(), cmd.OutOrStdout(), opts)
+			return runSchemaTest(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
 		},
 	}
 
@@ -100,7 +100,11 @@ The command exits non-zero if any case fails.`,
 	return cmd
 }
 
-func runSchemaTest(ctx context.Context, out io.Writer, opts testOptions) error {
+// runSchemaTest writes the rendered report to out and every diagnostic to diag.
+// The two must stay separate: --report json and --report html are consumed by
+// machines, and a note interleaved with them makes a passing run unparseable
+// while still exiting 0.
+func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) error {
 	if opts.report != "" && !slices.Contains(testReportFormats, opts.report) {
 		return fmt.Errorf("unsupported report format %q: want text, json, or html", opts.report)
 	}
@@ -120,7 +124,7 @@ func runSchemaTest(ctx context.Context, out io.Writer, opts testOptions) error {
 		return fmt.Errorf("no test cases found in %s", opts.dir)
 	}
 
-	desired, err := resolveTestDesiredSchema(ctx, out, opts)
+	desired, err := resolveTestDesiredSchema(ctx, diag, opts)
 	if err != nil {
 		return err
 	}
@@ -163,10 +167,10 @@ func runSchemaTest(ctx context.Context, out io.Writer, opts testOptions) error {
 // it to the schema-file loader, which is why `schema diff --to file://models`
 // fails with "schema file is a directory". A Go-annotation directory must keep
 // reaching goschema.ParseDir inside the runner.
-func resolveTestDesiredSchema(ctx context.Context, out io.Writer, opts testOptions) (*goschema.Database, error) {
+func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOptions) (*goschema.Database, error) {
 	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{})
 	if err == nil && set.Kind == atlassource.KindDatabase {
-		return resolveTestDesiredDatabase(ctx, out, opts, set)
+		return resolveTestDesiredDatabase(ctx, diag, opts, set)
 	}
 	info, statErr := os.Stat(opts.rootDir)
 	if statErr != nil || info.IsDir() {
@@ -185,7 +189,7 @@ func resolveTestDesiredSchema(ctx context.Context, out io.Writer, opts testOptio
 // fails on the mismatch rather than on whatever the connection would have done.
 func resolveTestDesiredDatabase(
 	ctx context.Context,
-	out io.Writer,
+	diag io.Writer,
 	opts testOptions,
 	set atlassource.Set,
 ) (*goschema.Database, error) {
@@ -200,7 +204,7 @@ func resolveTestDesiredDatabase(
 	if err != nil {
 		return nil, err
 	}
-	if err := dropClusterScopedTestState(out, state.Schema); err != nil {
+	if err := dropClusterScopedTestState(diag, state.Schema); err != nil {
 		return nil, err
 	}
 	return state.Schema, nil
@@ -248,14 +252,18 @@ func ensureTestDevDialect(set atlassource.Set, dbURL string) (string, error) {
 // over security state the author never wrote. Dropping them silently would be
 // the opposite defect -- an author who did write grants would get a green test
 // that never applied them -- so the omission is reported, never silent.
-func dropClusterScopedTestState(out io.Writer, schema *goschema.Database) error {
+//
+// It is reported on diag, never on the report stream. --report json and
+// --report html are consumed by machines, and a note printed alongside them
+// leaves a passing run unparseable while still exiting 0.
+func dropClusterScopedTestState(diag io.Writer, schema *goschema.Database) error {
 	roles, grants := len(schema.Roles), len(schema.Grants)
 	if roles == 0 && grants == 0 {
 		return nil
 	}
 	schema.Roles = nil
 	schema.Grants = nil
-	if _, err := fmt.Fprintf(out,
+	if _, err := fmt.Fprintf(diag,
 		"note: dropped %s and %s introspected from the desired-state database;"+
 			" schema tests do not apply cluster-scoped security state\n",
 		countedNoun(roles, "role"), countedNoun(grants, "grant"),
