@@ -635,13 +635,28 @@ non-SQL-directory exemptions described under
 [Apply a migration directory](#apply-a-migration-directory) apply identically,
 so a CI bootstrap that creates an empty `migrations/` keeps working.
 
-`lint` deliberately does not enforce it: linting a directory is how you inspect
-one that has drifted.
+`lint` deliberately does not enforce it, but only for a *missing* integrity
+file: linting a directory that has never been hashed is how you inspect one
+before adopting it. It does not tolerate drift. On a hashed directory whose
+migration was edited, added to, or removed from, both `lint` implementations
+exit 1 on the checksum mismatch, so this is not a route for inspecting a
+directory that has already drifted.
 
-`new` and `diff` remain divergent — they write an `atlas.sum` over a directory
-whose previous contents were never verified, turning drift into apparent
-cleanliness. That is tracked separately, because gating them interacts with the
-empty-directory bootstrap flow.
+`down` does not enforce it either, for a different reason than `lint`: the
+community binary refuses that verb outright, so there is no behavior to match.
+It still reads a native Atlas directory and executes rollback SQL, so on a
+hashed directory whose migration was edited, `status` exits 1 while `down`
+reports normally and exits 0. No issue tracks gating it yet.
+
+`new`, `diff`, `rm`, `rebase`, `checkpoint` and `edit` remain divergent — they
+write an `atlas.sum` over a directory whose previous contents were never
+verified, turning drift into apparent cleanliness. The last four are verbs the
+community binary refuses outright, so like `down` they have no behavior to
+match; they are listed because the hazard is the same one, not because a
+comparison exists. Measured on an unhashed one-migration directory, both exit 0 and
+write the file where the community binary exits 1 and writes nothing. No issue
+tracks closing that gap yet; gating them interacts with the empty-directory
+bootstrap flow and needs its own predicate measurement first.
 
 With `--env`, it reads `env.url`, `migration.dir`, and
 `migration.revisions_schema` from `atlas.hcl`; explicit `--url`, `--dir`, and

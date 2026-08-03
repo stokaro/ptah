@@ -385,8 +385,8 @@ out=$("$ATLAS" migrate lint --dir "file://$lintd" --dev-url "sqlite://$lintd.lin
 printf '    CE   lint  exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-90)"
 
 echo
-echo "  STILL DIVERGENT, tracked separately: migrate new and migrate diff write"
-echo "  an atlas.sum over a directory nothing verified, turning drift into"
+echo "  STILL DIVERGENT, and no issue tracks it yet: migrate new and migrate diff"
+echo "  write an atlas.sum over a directory nothing verified, turning drift into"
 echo "  apparent cleanliness. Deliberately out of scope for #974 — gating them"
 echo "  interacts with the empty-directory bootstrap flow and needs its own"
 echo "  predicate measurement."

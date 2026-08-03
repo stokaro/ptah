@@ -27,6 +27,12 @@ Companion documents:
 - **Evidence-backed.** Every support, behavior, or parity claim must be
   traceable to code, `--help` output, tests, runnable examples, or current
   `stokaro/ptah-atlas-conformance` reports.
+- **No unowned tracking claims.** "Tracked separately", "tracked elsewhere" and
+  the like promise a reader that a gap has an owner. Name the issue in the same
+  paragraph, or say plainly that nothing tracks it yet. The second is honest and
+  costs nothing; the first without a number upgrades an open hole into apparent
+  process, and nothing in the repository disagrees with it. Enforced by
+  `check-style.mjs`.
 - **License-clean.** Never describe Atlas internals; describe only observable
   behavior. Never copy Atlas prose, examples, diagrams, assets, taxonomy, or
   page sequence.
