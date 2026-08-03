@@ -3157,6 +3157,11 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
+	// The atlas.sum integrity gate refuses a directory that already holds a
+	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
+	// caller could diff against.
+	hashAtlasApplyDir(c, migrationsDir)
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE users (
@@ -3225,6 +3230,13 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
+	// The atlas.sum integrity gate refuses a directory that already holds a
+	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
+	// caller could diff against.
+	hashAtlasApplyDir(c, migrationsDir)
+	sumBefore, readErr := os.ReadFile(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(readErr, qt.IsNil)
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE users (
@@ -3247,7 +3259,7 @@ CREATE TABLE users (
 	})
 
 	err := cmd.Execute()
-	_, statErr := os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	sumAfter, sumErr := os.ReadFile(filepath.Join(migrationsDir, "atlas.sum"))
 	lockInfo, lockStatErr := os.Stat(atlasMigrateDiffLockPath(migrationsDir))
 	releaseLock, lockErr := testutils.AcquireExclusiveFileLock(
 		atlasMigrateDiffLockPath(migrationsDir),
@@ -3259,7 +3271,12 @@ CREATE TABLE users (
 	c.Assert(out.String(), qt.Contains, "email")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Created migration file:")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
-	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+	// The directory the gate verified is now hashed, so "wrote nothing" is
+	// asserted as "atlas.sum is byte-identical" rather than as its absence.
+	// That is the stronger statement anyway: a dry run that re-hashed the
+	// directory would still leave exactly one SQL file behind.
+	c.Assert(sumErr, qt.IsNil)
+	c.Assert(string(sumAfter), qt.Equals, string(sumBefore))
 	c.Assert(lockStatErr, qt.IsNil)
 	c.Assert(lockInfo.Mode().IsRegular(), qt.IsTrue)
 	c.Assert(lockErr, qt.IsNil)
@@ -3276,6 +3293,11 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
+	// The atlas.sum integrity gate refuses a directory that already holds a
+	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
+	// caller could diff against.
+	hashAtlasApplyDir(c, migrationsDir)
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE users (
@@ -3321,6 +3343,11 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
+	// The atlas.sum integrity gate refuses a directory that already holds a
+	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
+	// caller could diff against.
+	hashAtlasApplyDir(c, migrationsDir)
 	c.Assert(os.WriteFile("schema.sql", []byte(`
 CREATE TABLE users (
   id INTEGER PRIMARY KEY,
@@ -3378,6 +3405,11 @@ CREATE TABLE old_users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
+	// The atlas.sum integrity gate refuses a directory that already holds a
+	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
+	// caller could diff against.
+	hashAtlasApplyDir(c, migrationsDir)
 	c.Assert(os.WriteFile("schema.hcl", []byte(`schema "main" {}
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
@@ -3424,6 +3456,11 @@ CREATE TABLE old_users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
+	// The atlas.sum integrity gate refuses a directory that already holds a
+	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
+	// caller could diff against.
+	hashAtlasApplyDir(c, migrationsDir)
 	schemaPath := filepath.Join(dir, "schema.hcl")
 	c.Assert(os.WriteFile(schemaPath, []byte(`schema "main" {}
 `), 0o600), qt.IsNil)
@@ -3588,8 +3625,17 @@ CREATE TABLE users (
 
 	err = cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `(?s)migration directory checksum verification failed:.*migration directory does not match atlas\.sum:.*changed: 1_init\.sql.*`)
-	c.Assert(out.String(), qt.Contains, "migration directory checksum verification failed:")
+	// Since stokaro/ptah#1086 the refusal comes from the shared atlas.sum gate
+	// running BEFORE the dev database is touched, so it is byte-identical to
+	// what `migrate apply`, `migrate status` and `migrate validate` print on
+	// the same directory -- and to what the pinned community binary v1.3.0
+	// prints, which puts the guidance block on stdout and `Error: checksum
+	// mismatch` on stderr. Reverting the gate returns the library verifier's
+	// "migration directory checksum verification failed" wording, which reaches
+	// the user only after the dev database has been connected to and replayed.
+	c.Assert(err, qt.ErrorMatches, `checksum mismatch`)
+	c.Assert(out.String(), qt.Contains, "You have a checksum error in your migration directory.")
+	c.Assert(out.String(), qt.Contains, "L2: 1_init.sql was edited")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 

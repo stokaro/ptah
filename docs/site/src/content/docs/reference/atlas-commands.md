@@ -230,6 +230,14 @@ default; the native equivalent is `ptah migrations create`. Supports
 `--dir-format atlas`, and `--edit` opens the created file in
 `$VISUAL`/`$EDITOR` before `atlas.sum` is refreshed.
 
+The directory's existing `atlas.sum` is verified first, with the same output
+`migrate apply` and `migrate validate` produce, and nothing is created when the
+check fails — see
+[Which verbs enforce `atlas.sum`](../../atlas/migrate-commands/#which-verbs-enforce-atlassum).
+An unrecognized `--dir` query key is ignored, as it is on every other verb; a
+`?format=` naming a foreign layout is still refused, because writing one means
+computing that layout's covered file set.
+
 ### `ptah-compat migrate set [version]`
 
 Moves Atlas revision history to the positional version without executing
@@ -270,10 +278,17 @@ refuses a rollback nor appears as an `[env: ...]` suffix in `--help`.
 
 ### `ptah-compat migrate diff`
 
-Validates an existing `atlas.sum`, replays a local Atlas migration directory on
-`--dev-url`, diffs it against `--to`, and writes new Atlas-style migration
+Verifies the directory's `atlas.sum`, replays a local Atlas migration directory
+on `--dev-url`, diffs it against `--to`, and writes new Atlas-style migration
 files. `atlas.sum` updates only after every file was written; a failed write
 rolls the whole generation back.
+
+The checksum refusal comes first — before the dev database is connected to and
+before `--to` and `--dev-url` are required at all, which is the order Atlas uses
+— so nothing is created on a directory it refuses. A directory that has never
+been hashed and already holds a migration is refused; one that does not exist
+yet, or holds no top-level `*.sql`, is not, which is how a project's first
+migration gets written. Same query rules as `migrate new` above.
 
 **Desired state (`--to`)** accepts one of: local `.hcl`, `.yaml`, `.yml`, or
 `.sql` files; one directly connectable database URL; one local Atlas migration

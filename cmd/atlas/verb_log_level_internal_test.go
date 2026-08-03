@@ -63,6 +63,7 @@ func allAtlasTableVerbs() map[string]atlasVerb {
 	verbs := map[string]atlasVerb{
 		"migrate down":     atlasMigrateDownVerb(),
 		"migrate hash":     atlasMigrateHashVerb(),
+		"migrate new":      atlasMigrateNewVerb(),
 		"migrate validate": atlasMigrateValidateVerb(),
 		"schema test":      atlasSchemaTestVerb(),
 	}
