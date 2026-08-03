@@ -57,10 +57,23 @@ upgrading its layout. A partially upgraded table is rejected with a missing
 column diagnostic and is not modified.
 :::
 
+:::note
+A dry run predicts, it does not evaluate everything. Pre-migration checks are
+reads, so a preview evaluates a migration's assertions only where the state it
+observes is the state a real apply would give it — the first migration executed
+in the run. Later migrations' assertions are still parsed and statically
+validated, but their database evaluation is deferred and the run says so on
+stderr. See
+[Checks in a dry run](../integrity-and-safety/#checks-in-a-dry-run).
+:::
+
 :::caution
-This narration is native-only. `ptah-compat migrate apply --dry-run` stays quiet
-on stderr to match Atlas CE, so `ptah-compat ... --format '{{ json . }}' 2>&1 | jq`
-always sees exactly one JSON document. See
+The per-statement narration is native-only: `ptah-compat migrate apply
+--dry-run` does not emit it, matching Atlas CE. Compat still writes
+safety-relevant notes to stderr — an active `PTAH_SKIP_CHECKS` bypass, and any
+deferred pre-migration checks — so keep the streams apart rather than folding
+them together: `ptah-compat ... --format '{{ json . }}' | jq` sees exactly one
+JSON document, while `2>&1` would mix those notes into it. See
 [Atlas migrate commands](../../atlas/migrate-commands/).
 :::
 

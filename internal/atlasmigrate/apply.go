@@ -70,6 +70,10 @@ type ApplyResult struct {
 	EndedAt          time.Time
 	ErrorText        string
 	ApplyError       error
+	// ChecksDeferred lists versions whose pre-migration checks were parsed and
+	// statically validated but not evaluated, because a dry run cannot produce
+	// the state they assert on. Empty outside a dry run.
+	ChecksDeferred []int64
 }
 
 // PrepareApply builds the Atlas-format migrator, applies real baseline
@@ -175,6 +179,9 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 			}
 			executionStarted = len(plan.Versions) > 0
 			return nil
+		},
+		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
+			result.ChecksDeferred = versions
 		},
 	})
 	result.EndedAt = time.Now()

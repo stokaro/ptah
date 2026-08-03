@@ -325,12 +325,8 @@ func runCheckAssertion(
 	serverVersion string,
 	assertion string,
 ) (any, error) {
-	if err := validateCheckAssertion(assertion, dialect, serverVersion); err != nil {
+	if err := validateCheckAssertionStatically(assertion, dialect, serverVersion); err != nil {
 		return nil, err
-	}
-	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
-		containsIdentifierSequence(assertion, dialect, "NEXT", "VALUE", "FOR") {
-		return nil, fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
 	}
 
 	rows, err := queryer.QueryContext(ctx, assertion)
@@ -364,6 +360,46 @@ func runCheckAssertion(
 		return nil, err
 	}
 	return result, nil
+}
+
+// validateCheckAssertionStatically proves an assertion is well-formed from its
+// text alone: a single read-only SELECT that does not advance a SQL Server
+// sequence. It needs a dialect and a server version string, never a query, so
+// it is the whole of what can be decided about a check without a database.
+//
+// Both callers go through here so there is exactly one implementation of "is
+// this assertion well-formed": [runCheckAssertion] on the evaluation path, and
+// [validateCheckGroups] for checks a dry run defers.
+func validateCheckAssertionStatically(assertion, dialect, serverVersion string) error {
+	if err := validateCheckAssertion(assertion, dialect, serverVersion); err != nil {
+		return err
+	}
+	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
+		containsIdentifierSequence(assertion, dialect, "NEXT", "VALUE", "FOR") {
+		return fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
+	}
+	return nil
+}
+
+// validateCheckGroups statically validates every assertion in groups without
+// touching the database, reporting the first offender wrapped exactly as the
+// evaluation path would report it. A dry run that defers a check still runs
+// this, so an assertion that is malformed or write-shaped is reported whatever
+// state the database is in — that verdict never depended on state.
+func validateCheckGroups(groups []checkGroup, dialect, serverVersion string, version int64) error {
+	for _, group := range groups {
+		for _, check := range group.checks {
+			if err := validateCheckAssertionStatically(check.Assert, dialect, serverVersion); err != nil {
+				return &CheckFailedError{
+					Version: version,
+					Name:    check.Name,
+					Assert:  check.Assert,
+					Err:     err,
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func validateCheckAssertion(assertion, dialect, serverVersion string) error {

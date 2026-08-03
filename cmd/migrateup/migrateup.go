@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -471,10 +472,14 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 
 	// Run migrations
 	startedAt := time.Now()
+	var checksDeferred []int64
 	err = mig.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{
 		Amount:     opts.limit,
 		AllowDirty: opts.allowDirty,
 		Preflight:  preflightHook,
+		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
+			checksDeferred = versions
+		},
 	})
 	if err != nil {
 		var checkErr *migrator.CheckFailedError
@@ -501,7 +506,31 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	})
 
 	emitMigrateUpSummary(emit, opts, status, finalStatus)
+	emitMigrateUpDeferredChecks(emit, checksDeferred)
 	return nil
+}
+
+// emitMigrateUpDeferredChecks names the pre-migration checks a dry run
+// validated but did not evaluate. A preview that quietly answers fewer
+// questions than it was asked is worse than one that says so.
+func emitMigrateUpDeferredChecks(emit cliobs.Emitter, versions []int64) {
+	if len(versions) == 0 {
+		return
+	}
+	labels := make([]string, 0, len(versions))
+	for _, version := range versions {
+		labels = append(labels, strconv.FormatInt(version, 10))
+	}
+	noun := "migrations"
+	if len(versions) == 1 {
+		noun = "migration"
+	}
+	emit.Printf(
+		"Deferred pre-migration checks for %d %s (%s): a dry run does not create the state they assert on, so they are evaluated on apply.\n",
+		len(versions),
+		noun,
+		strings.Join(labels, ", "),
+	)
 }
 
 // emitMigrateUpSummary prints the closing run summary. Dry runs report how
