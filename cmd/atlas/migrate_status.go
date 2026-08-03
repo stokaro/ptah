@@ -130,10 +130,8 @@ func runAtlasMigrateStatus(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
 	}
-	if len(localDir.Query) > 0 {
-		return cmdutil.Fail(cmd, fmt.Errorf(
-			"atlas migrate status --dir: migration directory URL query parameters are not supported for this command",
-		))
+	if err := checkNativeAtlasDirQuery(localDir.Query); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
 	}
 	source, err := project.captureLocal(localDir)
 	if err != nil {
@@ -149,8 +147,9 @@ func runAtlasMigrateStatus(
 	// connection (it is emitted even when --url is unreachable) and it covers a
 	// directory resolved from atlas.hcl as well as one named by --dir, which is
 	// why it sits here rather than beside the flag parsing. Only the native
-	// branch of the gate is reachable: a `?format=` query and a non-atlas
-	// --dir-format are both rejected above.
+	// branch of the gate is reachable: checkNativeAtlasDirQuery above admits a
+	// `?format=` only when it resolves to the Atlas layout, and a non-atlas
+	// --dir-format is rejected above too.
 	//
 	// Returned bare on purpose — cmdutil.Fail would prepend `error: ` and move
 	// the message off the stream the community binary writes it to.

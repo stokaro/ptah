@@ -167,10 +167,8 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
-	if len(localDir.Query) > 0 {
-		return cmdutil.Fail(cmd, fmt.Errorf(
-			"atlas migrate diff --dir: migration directory URL query parameters are not supported for this command",
-		))
+	if err := checkNativeAtlasDirQuery(localDir.Query); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
 	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
 	if err != nil {

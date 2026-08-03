@@ -815,29 +815,91 @@ func TestCompatMigrateApply_ConvertedDirFromProjectConfigIsGated(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateApply_ConvertedEmptyDirReportsImportError_KnownDivergence
-// pins behavior, NOT parity. On every shape whose covered set is empty the gate
-// exempts the directory and Atlas CE exits 0 with "No migration files to
-// execute", but ptah-compat's converter then reports "no importable migration
-// files found" and exits 1.
+// TestCompatMigrateApply_ConvertedEmptyCoveredSetReportsNothingToExecute closes
+// stokaro/ptah#980. A converted directory with nothing to execute now exits 0
+// with "No migration files to execute" instead of the converter's "no
+// importable migration files found", matching the pinned community binary
+// v1.3.0 on all six rows below.
 //
-// That divergence predates this gate — it is what master already did, before
-// and after the restructure — and it is deliberately not fixed here.
-// stokaro/ptah#980 has to distinguish two cases this error currently conflates:
-// an empty covered set, where reporting nothing to execute is right, and a
-// NON-empty covered set whose files Ptah's importer refuses, where Atlas CE
-// really does execute something (an unhashed-then-hashed goose directory
-// holding only `foo.sql` runs on CE as version "foo"). Collapsing both to exit
-// 0 would replace a loud refusal with a silent no-op. atlasmigrateimport.SumFileNames
-// is what makes telling them apart possible; spending it is that issue's call.
-func TestCompatMigrateApply_ConvertedEmptyDirReportsImportError_KnownDivergence(t *testing.T) {
+// The table spans the two axes the issue names — three directory shapes, each
+// with and without atlas.sum — because hashing first is what would implicate
+// the integrity gate rather than the converter, and it does not: all six
+// diverged before the fix and all six agree after it.
+//
+// This is the half of the split #980 asked for. Its twin, a NON-empty covered
+// set whose files the converter produces no entry for, deliberately keeps the
+// loud refusal and is pinned by
+// TestCompatMigrateApply_ConvertedUnreadableCoveredSetStillRefuses below.
+func TestCompatMigrateApply_ConvertedEmptyCoveredSetReportsNothingToExecute(t *testing.T) {
+	subdirOnly := map[string]string{
+		"sub/1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
+	}
+	readmeOnly := map[string]string{"README.md": "notes\n"}
+	// hash is the {no atlas.sum, hashed} axis, carried as per-row wiring rather
+	// than a branch in the body. The hashed rows go through the same
+	// `migrate hash` a user runs, so they exercise the hash-then-apply round
+	// trip the issue measured.
+	leaveUnhashed := func(*qt.C, string) {}
+	writeSum := func(c *qt.C, dir string) {
+		c.Helper()
+		_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
+		c.Assert(err, qt.IsNil)
+	}
+
+	tests := []struct {
+		name  string
+		files map[string]string
+		hash  func(*qt.C, string)
+	}{
+		{name: "empty directory", files: nil, hash: leaveUnhashed},
+		{name: "empty directory hashed", files: nil, hash: writeSum},
+		{name: "README only", files: readmeOnly, hash: leaveUnhashed},
+		{name: "README only hashed", files: readmeOnly, hash: writeSum},
+		{name: "SQL in a subdirectory only", files: subdirOnly, hash: leaveUnhashed},
+		{name: "SQL in a subdirectory only hashed", files: subdirOnly, hash: writeSum},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			tempDir := c.TempDir()
+			dir := filepath.Join(tempDir, "m")
+			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+			writeConvertedApplyDir(c, dir, tt.files)
+			tt.hash(c, dir)
+			dbPath := filepath.Join(tempDir, "converted.db")
+
+			stdout, stderr, err := compatApplyConverted(dir, "goose", dbPath)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Contains, "No migration files to execute")
+			// Nothing executed means nothing executed: a subdirectory migration
+			// the community binary skips must not have created its table.
+			c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 0)
+		})
+	}
+}
+
+// TestCompatMigrateApply_ConvertedUnreadableCoveredSetStillRefuses is the guard
+// that keeps #980's relaxation from becoming a silent no-op.
+//
+// A Goose directory holding only `foo.sql` has a NON-empty covered set — the
+// community binary applies it, as version "foo" — while Ptah's converter
+// produces no entry for it. Reporting "nothing to execute" here would exit 0
+// having skipped a migration the source tool runs, which is worse than the
+// refusal it replaced. So the covered set, not the converted entry count, is
+// what decides, and this directory keeps exiting 1.
+func TestCompatMigrateApply_ConvertedUnreadableCoveredSetStillRefuses(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-	writeConvertedApplyDir(c, dir, map[string]string{"1_init.down.sql": "DROP TABLE widgets;\n"})
+	writeConvertedApplyDir(c, dir, map[string]string{"foo.sql": "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"})
+	_, _, hashErr := runCompat("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
+	c.Assert(hashErr, qt.IsNil)
+	dbPath := filepath.Join(tempDir, "converted.db")
 
-	_, _, err := compatApplyConverted(dir, "golang-migrate", filepath.Join(tempDir, "converted.db"))
+	_, _, err := compatApplyConverted(dir, "goose", dbPath)
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate apply --dir: no importable migration files found in .* for format "golang-migrate"`)
+	c.Assert(err, qt.ErrorMatches, `atlas migrate apply --dir: no importable migration files found in .* for format "goose"`)
 }

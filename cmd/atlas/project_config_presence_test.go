@@ -32,9 +32,19 @@ func TestCompatCommand_ProjectConfigExplicitEmptyMigrationDirFails(t *testing.T)
 	c.Assert(err, qt.ErrorMatches, `atlas\.hcl migration\.dir: migration directories URL is required`)
 }
 
-func TestCompatCommand_ProjectConfigExplicitEmptyMigrationFormatFails(t *testing.T) {
+func TestCompatCommand_ProjectConfigExplicitEmptyMigrationFormatReadsAtlasLayout(t *testing.T) {
 	c := qt.New(t)
 	t.Chdir(t.TempDir())
+	c.Assert(os.Mkdir("migrations", 0o750), qt.IsNil)
+	// A layout the atlas and goose readers disagree about: read as atlas the
+	// directive lines are part of the migration, read as goose they are stripped
+	// and only the up half survives. atlas.sum then covers both files under the
+	// atlas layout and would cover a different set under any other, so the
+	// assertion below cannot pass for the wrong format.
+	c.Assert(os.WriteFile(filepath.Join("migrations", "1_init.sql"),
+		[]byte("-- +goose Up\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join("migrations", "V1__x.sql"),
+		[]byte("CREATE TABLE v (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   migration {
     format = ""
@@ -50,7 +60,11 @@ func TestCompatCommand_ProjectConfigExplicitEmptyMigrationFormatFails(t *testing
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate hash --dir-format: migration directory format must not be empty`)
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out.String()))
+	sum, readErr := os.ReadFile(filepath.Join("migrations", "atlas.sum"))
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(sum), qt.Contains, "1_init.sql")
+	c.Assert(string(sum), qt.Contains, "V1__x.sql")
 }
 
 func TestCompatCommand_ProjectConfigEmptyGitBaseKeepsLatestSelector(t *testing.T) {

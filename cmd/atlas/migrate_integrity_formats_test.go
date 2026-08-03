@@ -92,6 +92,15 @@ func writeIntegrityFixture(c *qt.C) string {
 	return dir
 }
 
+// sumFileExists reports whether the directory carries an atlas.sum, so a
+// refusal can be checked to have written nothing rather than only to have
+// returned an error.
+func sumFileExists(c *qt.C, dir string) bool {
+	c.Helper()
+	_, err := os.Stat(filepath.Join(dir, migratesum.AtlasFileName))
+	return err == nil
+}
+
 func readSumFile(c *qt.C, dir string) *migratesum.SumFile {
 	c.Helper()
 	raw, err := os.ReadFile(filepath.Join(dir, migratesum.AtlasFileName))
@@ -541,13 +550,76 @@ func TestCompatMigrateSourceFormat_FailurePathUnknownFormat(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery pins the query
-// shapes Ptah refuses and Atlas CE accepts. Both are measured divergences kept
-// deliberately: the resolver is shared with `migrate apply`, where relaxing
-// them would silently widen what an integrity gate accepts.
+// TestCompatMigrateSourceFormatQuery_HappyPath pins the two query-parsing rules
+// that used to be refusals (stokaro/ptah#990 items 2 and 3, stokaro/ptah#1013
+// section 2). Both were measured on the pinned community binary v1.3.0:
 //
-//	$ atlas migrate hash --dir 'file://d?format=goose&other=1'      exit=0
-//	$ atlas migrate hash --dir 'file://d?format=goose&format=flyway' exit=0 (goose)
+//	$ atlas migrate hash --dir 'file://d?format=flyway&other=1'      exit=0, flyway set
+//	$ atlas migrate hash --dir 'file://d?other=1'                    exit=0, atlas set
+//	$ atlas migrate hash --dir 'file://d?format=flyway&format=goose' exit=0, flyway set
+//	$ atlas migrate hash --dir 'file://d?format=goose&format=flyway' exit=0, goose set
+//
+// Every row asserts the COVERED SET, not just the exit code. That is what makes
+// them separable: integrityFixture reads differently under every format, so an
+// implementation that merely ignored the whole query would write the atlas set
+// and fail rows 1, 3 and 4, and one that took the last repeated value rather
+// than the first would swap rows 3 and 4.
+func TestCompatMigrateSourceFormatQuery_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{
+			name:  "ignored parameter beside format keeps the format",
+			query: "?format=flyway&other=1",
+			want:  flywayCoveredSet,
+		},
+		{
+			name:  "ignored parameter alone reads the atlas layout",
+			query: "?other=1",
+			want:  sqlSuffixCoveredSet,
+		},
+		{
+			name:  "repeated format takes the first value",
+			query: "?format=flyway&format=goose",
+			want:  flywayCoveredSet,
+		},
+		{
+			name:  "repeated format takes the first value in the other order",
+			query: "?format=goose&format=flyway",
+			want:  sqlSuffixCoveredSet,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := writeIntegrityFixture(c)
+
+			stdout, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+tt.query)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+// TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery pins the query
+// shapes that stay refused once the two above were relaxed.
+//
+// The semicolon is a deliberate, recorded divergence rather than an oversight.
+// Measured, `?format=flyway;x=1` exits 0 on the community binary but silently
+// drops the WHOLE pair and reads the directory as the atlas layout — covering
+// nine files where the caller asked for the five flyway covers. A semicolon
+// there costs you the format you asked for, so refusing is the safe side
+// (stokaro/ptah#990 item 6).
+//
+// The bogus value is the control that keeps the relaxation honest: query keys
+// are ignored, but the format VALUE still goes through the strict verbatim
+// parser, so an unknown layout is refused whether or not an ignored key rides
+// along with it.
 func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
 	c := qt.New(t)
 
@@ -557,19 +629,19 @@ func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
 		want  string
 	}{
 		{
-			name:  "unknown parameter beside format",
-			query: "?format=goose&other=1",
-			want:  `atlas migrate hash --dir: unsupported migration directory URL query parameter "other"`,
+			name:  "semicolon separator",
+			query: "?format=flyway;x=1",
+			want:  "atlas migrate hash --dir: parse migration directory URL query: invalid semicolon separator in query",
 		},
 		{
-			name:  "unknown parameter alone",
-			query: "?other=1",
-			want:  `atlas migrate hash --dir: unsupported migration directory URL query parameter "other"`,
+			name:  "unknown format value",
+			query: "?format=totally-bogus",
+			want:  `atlas migrate hash --dir: unknown Atlas migration directory format "totally-bogus": expected .*`,
 		},
 		{
-			name:  "repeated format parameter",
-			query: "?format=goose&format=flyway",
-			want:  "atlas migrate hash --dir: migration directory URL contains multiple format parameters",
+			name:  "unknown format value beside an ignored key",
+			query: "?format=totally-bogus&other=1",
+			want:  `atlas migrate hash --dir: unknown Atlas migration directory format "totally-bogus": expected .*`,
 		},
 	}
 
@@ -581,6 +653,7 @@ func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			c.Assert(sumFileExists(c, dir), qt.IsFalse)
 		})
 	}
 }
@@ -632,33 +705,36 @@ func TestCompatMigrateIntegrityRepeatedDir_FailurePath(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 }
 
-// TestCompatMigrateIntegrity_FailurePathEmptyDirFormat pins the one
-// --dir-format value Atlas CE accepts and Ptah still refuses. CE treats an
-// empty value as the atlas layout and exits 0. Ptah rejects it on all nine
-// metadata verbs through one shared mapper; fixing it on two of them would
-// leave the surface less consistent than it is now.
-func TestCompatMigrateIntegrity_FailurePathEmptyDirFormat(t *testing.T) {
+// TestCompatMigrateIntegrityEmptyDirFormat_HappyPath pins an empty
+// --dir-format as the atlas layout (stokaro/ptah#990 item 1). The community
+// binary exits 0 and reads the directory as Atlas; Ptah refused it on all nine
+// metadata verbs through one shared mapper, so it is relaxed on all of them at
+// once.
+//
+// hash asserts the covered set rather than only the exit code: the empty value
+// has to resolve to the ATLAS layout specifically, and on integrityFixture that
+// set differs from every other format's.
+func TestCompatMigrateIntegrityEmptyDirFormat_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	tests := []struct {
-		name string
-		verb string
-	}{
-		{name: "hash", verb: "hash"},
-		{name: "validate", verb: "validate"},
-	}
+	c.Run("hash writes the atlas covered set", func(c *qt.C) {
+		dir := writeIntegrityFixture(c)
 
-	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			dir := writeIntegrityFixture(c)
+		stdout, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", "")
 
-			_, _, err := runCompatExit("migrate", tt.verb, "--dir", "file://"+dir, "--dir-format", "")
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
+		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, sqlSuffixCoveredSet)
+	})
 
-			c.Assert(err, qt.ErrorMatches,
-				"atlas migrate "+tt.verb+" --dir-format: migration directory format must not be empty")
-			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-		})
-	}
+	c.Run("validate accepts the directory hash wrote", func(c *qt.C) {
+		dir := writeIntegrityFixture(c)
+		_, _, hashErr := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", "")
+		c.Assert(hashErr, qt.IsNil)
+
+		stdout, stderr, err := runCompatExit("migrate", "validate", "--dir", "file://"+dir, "--dir-format", "")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
+	})
 }
 
 // TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs holds the converted
