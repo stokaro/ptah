@@ -371,6 +371,205 @@ func TestPrepareApplyExecute_NoopReturnsResult(t *testing.T) {
 	c.Assert(result.SelectedVersions, qt.HasLen, 0)
 }
 
+func TestPrepareApplyExecute_StalePlanUsesLockedState(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_stale.sql", "CREATE TABLE apply_stale (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "stale.db"))
+	defer dbschema.CloseAndWarn(conn)
+	opts := atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	}
+
+	stalePlan, err := atlasmigrate.PrepareApply(ctx, conn, opts)
+	c.Assert(err, qt.IsNil)
+	freshPlan, err := atlasmigrate.PrepareApply(ctx, conn, opts)
+	c.Assert(err, qt.IsNil)
+	_, err = freshPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+
+	result, err := stalePlan.ExecuteWithPreflight(
+		ctx,
+		func(context.Context, migrator.MigrationPlan) error {
+			c.Fatal("preflight must not run for a fresh no-op plan")
+			return nil
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Applied, qt.IsFalse)
+	c.Assert(result.SelectedVersions, qt.HasLen, 0)
+	c.Assert(result.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(result.FinalStatus, qt.IsNotNil)
+	c.Assert(result.FinalStatus.CurrentVersion, qt.Equals, int64(1))
+}
+
+func TestPrepareApplyExecute_StaleDryRunUsesLockedState(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_stale.sql", "CREATE TABLE apply_stale_dry (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "stale-dry.db"))
+	defer dbschema.CloseAndWarn(conn)
+	dryOpts := atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		DryRun:    true,
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	}
+
+	staleDryPlan, err := atlasmigrate.PrepareApply(ctx, conn, dryOpts)
+	c.Assert(err, qt.IsNil)
+	applyOpts := dryOpts
+	applyOpts.DryRun = false
+	freshPlan, err := atlasmigrate.PrepareApply(ctx, conn, applyOpts)
+	c.Assert(err, qt.IsNil)
+	_, err = freshPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+
+	result, err := staleDryPlan.Execute(ctx)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Applied, qt.IsFalse)
+	c.Assert(result.SelectedVersions, qt.HasLen, 0)
+	c.Assert(result.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(result.FinalStatus, qt.IsNotNil)
+	c.Assert(result.FinalStatus.CurrentVersion, qt.Equals, int64(1))
+}
+
+func TestPrepareApplyExecute_StaleNoopBecomesWork(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_reapply.sql", "CREATE TABLE apply_reappeared (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "reappeared.db"))
+	defer dbschema.CloseAndWarn(conn)
+	opts := atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	}
+
+	firstPlan, err := atlasmigrate.PrepareApply(ctx, conn, opts)
+	c.Assert(err, qt.IsNil)
+	_, err = firstPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+	staleNoopPlan, err := atlasmigrate.PrepareApply(ctx, conn, opts)
+	c.Assert(err, qt.IsNil)
+	c.Assert(staleNoopPlan.Noop(), qt.IsTrue)
+	_, err = conn.ExecContext(ctx, "DROP TABLE apply_reappeared")
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, "DELETE FROM atlas_schema_revisions WHERE version = '1'")
+	c.Assert(err, qt.IsNil)
+	var observed migrator.MigrationPlan
+
+	result, err := staleNoopPlan.ExecuteWithPreflight(
+		ctx,
+		func(_ context.Context, plan migrator.MigrationPlan) error {
+			observed = plan
+			return nil
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(observed.CurrentVersion, qt.Equals, int64(0))
+	c.Assert(observed.Versions, qt.DeepEquals, []int64{1})
+	c.Assert(result.Applied, qt.IsTrue)
+	c.Assert(result.CurrentVersion, qt.Equals, int64(0))
+	c.Assert(result.SelectedVersions, qt.DeepEquals, []int64{1})
+	c.Assert(result.FinalStatus.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(sqliteTableExists(c, conn, "apply_reappeared"), qt.IsTrue)
+}
+
+func TestPrepareApplyExecute_StaleNoopDryRunBecomesWork(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_reapply.sql", "CREATE TABLE apply_reappeared_dry (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "reappeared-dry.db"))
+	defer dbschema.CloseAndWarn(conn)
+	opts := atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	}
+
+	firstPlan, err := atlasmigrate.PrepareApply(ctx, conn, opts)
+	c.Assert(err, qt.IsNil)
+	_, err = firstPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+	dryOpts := opts
+	dryOpts.DryRun = true
+	staleNoopPlan, err := atlasmigrate.PrepareApply(ctx, conn, dryOpts)
+	c.Assert(err, qt.IsNil)
+	c.Assert(staleNoopPlan.Noop(), qt.IsTrue)
+	_, err = conn.ExecContext(ctx, "DROP TABLE apply_reappeared_dry")
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, "DELETE FROM atlas_schema_revisions WHERE version = '1'")
+	c.Assert(err, qt.IsNil)
+
+	result, err := staleNoopPlan.Execute(ctx)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Applied, qt.IsFalse)
+	c.Assert(result.CurrentVersion, qt.Equals, int64(0))
+	c.Assert(result.SelectedVersions, qt.DeepEquals, []int64{1})
+	c.Assert(result.FinalStatus, qt.IsNil)
+	c.Assert(sqliteTableExists(c, conn, "apply_reappeared_dry"), qt.IsFalse)
+}
+
+func TestPrepareApplyExecute_ValidationErrorUsesLockedPlan(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_valid.sql", "CREATE TABLE apply_valid (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "2_invalid.sql", "-- atlas:txmode bogus\n\nCREATE TABLE apply_invalid (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "validation-plan.db"))
+	defer dbschema.CloseAndWarn(conn)
+	opts := atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+		Amount:    1,
+	}
+
+	stalePlan, err := atlasmigrate.PrepareApply(ctx, conn, opts)
+	c.Assert(err, qt.IsNil)
+	c.Assert(stalePlan.SelectedVersions, qt.DeepEquals, []int64{1})
+	freshPlan, err := atlasmigrate.PrepareApply(ctx, conn, opts)
+	c.Assert(err, qt.IsNil)
+	_, err = freshPlan.Execute(ctx)
+	c.Assert(err, qt.IsNil)
+
+	result, err := stalePlan.ExecuteWithPreflight(
+		ctx,
+		func(context.Context, migrator.MigrationPlan) error {
+			c.Fatal("preflight must not run after transaction-mode validation fails")
+			return nil
+		},
+	)
+
+	c.Assert(err, qt.ErrorMatches, `error applying migrations: unknown txmode "bogus" found in file directive "2_invalid.sql"`)
+	c.Assert(result.Applied, qt.IsFalse)
+	c.Assert(result.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(result.SelectedVersions, qt.DeepEquals, []int64{2})
+	c.Assert(result.ApplyError, qt.IsNotNil)
+	c.Assert(sqliteTableExists(c, conn, "apply_invalid"), qt.IsFalse)
+}
+
 func TestPrepareApplyExecute_ReturnsPlannedResultOnApplyError(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()

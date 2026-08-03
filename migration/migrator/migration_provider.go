@@ -195,24 +195,13 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 			if err != nil {
 				return fmt.Errorf("failed to load up migration %s: %w", migrationFile.Path, err)
 			}
-			migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-				return up.fn(ctx, conn, migration.upExecutionMode())
-			}
-			migration.UpSQL = up.sql
-			migration.atlasCheckFiles = up.checkFiles
-			migration.UpTimeouts = up.timeouts
-			migration.UpNoTransaction = up.noTransaction
+			setMigrationUp(migration, up)
 		case "down":
 			down, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.hooks, nil)
 			if err != nil {
 				return fmt.Errorf("failed to load down migration %s: %w", migrationFile.Path, err)
 			}
-			migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-				return down.fn(ctx, conn, migration.downExecutionMode())
-			}
-			migration.DownSQL = down.sql
-			migration.DownTimeouts = down.timeouts
-			migration.DownNoTransaction = down.noTransaction
+			setMigrationDown(migration, down)
 		default:
 			return fmt.Errorf("invalid migration direction: %s", migrationFile.Direction)
 		}
@@ -358,26 +347,46 @@ func (p *FSMigrationProvider) loadAtlasDown(parts *atlasParts, migrationFile Mig
 }
 
 func setAtlasUp(parts *atlasParts, up sqlMigrationFile) {
-	migration := parts.migration
-	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		return up.fn(ctx, conn, migration.upExecutionMode())
-	}
-	migration.UpSQL = up.sql
-	migration.atlasCheckFiles = up.checkFiles
-	migration.UpTimeouts = up.timeouts
-	migration.UpNoTransaction = up.noTransaction
+	setMigrationUp(parts.migration, up)
 	parts.hasUp = true
 }
 
+func setMigrationUp(migration *Migration, up sqlMigrationFile) {
+	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		if migration.upTxModeErr != nil {
+			return migration.upTxModeErr
+		}
+		return up.fn(ctx, conn, migration.upExecutionMode())
+	}
+	migration.upSQLFunc = up.fn
+	migration.UpSQL = up.sql
+	migration.atlasCheckFiles = up.checkFiles
+	migration.UpTimeouts = up.timeouts
+	migration.UpTxMode = up.txMode
+	migration.upTxModeSource = up.txModeSource
+	migration.upTxModeErr = up.txModeErr
+	migration.upSourcePath = up.sourcePath
+}
+
 func setAtlasDown(parts *atlasParts, down sqlMigrationFile) {
-	migration := parts.migration
+	setMigrationDown(parts.migration, down)
+	parts.hasDown = true
+}
+
+func setMigrationDown(migration *Migration, down sqlMigrationFile) {
 	migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		if migration.downTxModeErr != nil {
+			return migration.downTxModeErr
+		}
 		return down.fn(ctx, conn, migration.downExecutionMode())
 	}
+	migration.downSQLFunc = down.fn
 	migration.DownSQL = down.sql
 	migration.DownTimeouts = down.timeouts
-	migration.DownNoTransaction = down.noTransaction
-	parts.hasDown = true
+	migration.DownTxMode = down.txMode
+	migration.downTxModeSource = down.txModeSource
+	migration.downTxModeErr = down.txModeErr
+	migration.downSourcePath = down.sourcePath
 }
 
 func isAtlasDirectionalMigrationFile(file MigrationFile) bool {

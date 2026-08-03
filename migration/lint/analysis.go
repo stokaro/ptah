@@ -108,7 +108,9 @@ type File struct {
 	// filesystem.
 	Source string
 	// SQL is the executable SQL analyzed by the linter. It differs from Source
-	// only when an Atlas SQL template is rendered.
+	// when an Atlas SQL template is rendered or when a txtar migration.sql
+	// section is extracted. Statement spans index SQL; reported line numbers
+	// are translated back to Source.
 	SQL string
 	// Version is the parsed migration version, or zero when the name is not
 	// recognized.
@@ -482,7 +484,6 @@ func prepareFile(
 		// .up.sql files whose version prefix is malformed.
 		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql"),
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
-		NoTransaction:  fileNoTransactionDirective(raw),
 	}
 	if compatibility == CompatibilityProfileAtlas {
 		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw)
@@ -514,15 +515,20 @@ func prepareFile(
 			}
 			sql = rendered
 		}
-		file.SQL = sql
-		for index, rawStmt := range splitStatementsWithLines(sql, mode, compatibility) {
+		up, err := migrator.ParseMigrationUp(name, sql)
+		if err != nil {
+			return File{}, err
+		}
+		file.SQL = up.SQL
+		file.NoTransaction = up.TxMode == migrator.MigrationFileTxModeNone
+		for index, rawStmt := range splitStatementsWithLines(up.SQL, mode, compatibility) {
 			file.Statements = append(file.Statements, Statement{
 				Index:           index,
 				Span:            SourceSpan{Start: rawStmt.start, End: rawStmt.end},
 				SQL:             rawStmt.text,
 				Canonical:       canonicalize(rawStmt.text, mode),
 				Words:           tokenizeWords(rawStmt.text, mode),
-				Line:            rawStmt.line,
+				Line:            rawStmt.line + up.SourceLineOffset,
 				sourceWords:     tokenizeSourceWords(rawStmt.text, mode),
 				suppressedRules: rawStmt.suppressedRules,
 			})

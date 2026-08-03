@@ -6,7 +6,7 @@ The Ptah Migrator provides versioned database migration capabilities with up/dow
 
 - **Versioned Migrations**: Each migration has a unique version number and description
 - **Up/Down Migrations**: Support for both applying and rolling back migrations
-- **Transaction Safety**: Each migration runs in its own transaction unless it explicitly opts out with `no_transaction`
+- **Transaction Safety**: Global and per-file modes resolve before a migration changes schema or revision state
 - **SQL File Support**: Migrations can be defined as SQL files
 - **Go Function Support**: Migrations can also be defined as Go functions for complex logic
 - **Multiple Database Support**: Works with PostgreSQL and MySQL through Ptah's executor package
@@ -179,8 +179,14 @@ an in-progress failure, Ptah paired `.down.sql` files and Atlas txtar
 section for timeout, validation, and transaction handling. `no_transaction`
 applies only to the direction whose SQL section contains it, so a
 non-transactional `down.sql` does not force `migration.sql` to run outside a
-transaction. Atlas `-- atlas:txmode none` comments are accepted as the Atlas
-equivalent for the section where they appear.
+transaction. Atlas `-- atlas:txmode file` and `-- atlas:txmode none` comments
+are accepted in each section. A file-level `all` value is invalid.
+
+Ptah requires `-- atlas:txtar` to be the first non-empty line. A transaction
+mode before that marker is rejected instead of reclassifying the archive as
+plain SQL, which could otherwise execute both `migration.sql` and `down.sql`
+during apply. Unknown txtar file sections do not contribute SQL or transaction
+metadata.
 
 ### Migrate Up
 Apply all pending migrations:
@@ -618,13 +624,28 @@ PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` insid
 Atlas-compatible values:
 
 - `file` wraps each pending migration file in its own transaction unless the
-  file opts out with `no_transaction`.
+  file selects `none`.
 - `all` wraps the pending migration SQL bodies in one transaction. It is
   limited to dialects where Ptah can safely run DDL transactionally and rejects
-  file-level `no_transaction` directives and migration timeouts.
-- `none` applies pending migrations without creating migration transactions.
-  Failed runs record statement-level dirty progress. Timeouts are rejected
-  until Ptah has a dedicated single-session timeout setup and restore path.
+  every explicit file mode, migration timeout, and pre-migration check in the
+  selected batch.
+- `none` applies pending migrations without creating migration transactions
+  unless a file explicitly selects `file`. A file that restores its own
+  transaction may use migration timeouts. Failed non-transactional runs record
+  statement-level dirty progress.
+
+Atlas file modes use a leading line-comment header followed by a blank line:
+
+```sql
+-- atlas:txmode file
+
+ALTER TABLE users ADD COLUMN email TEXT;
+```
+
+Only `file` and `none` are valid file values. Unknown and duplicate values fail
+before the affected migration body or revision row changes. Global `all`
+validates the complete selected batch before opening its transaction; global
+`file` and `none` validate each selected file when execution reaches it.
 
 ### Non-Transactional Migrations
 
@@ -641,9 +662,9 @@ ALTER TABLE users ALTER COLUMN status SET DEFAULT 'archived';
 normal per-migration transaction. This is intended for narrow database
 requirements such as PostgreSQL enum value additions that must be used by a
 later statement in the same migration, or PostgreSQL `CREATE INDEX
-CONCURRENTLY` operations. Programmatic migrations set `UpNoTransaction` or
-`DownNoTransaction` explicitly; the two directions never share an execution-mode
-flag.
+CONCURRENTLY` operations. Programmatic migrations set `UpTxMode` or
+`DownTxMode` to `MigrationFileTxModeNone`; the two directions never share an
+execution-mode value.
 
 Migration timeouts are rejected for `no_transaction` migrations because Ptah
 cannot safely apply writer/session timeouts to raw autocommit statements. Ptah
@@ -675,8 +696,8 @@ matters.
 
 ## Safety Features
 
-- **Transaction Wrapping**: Each migration runs in its own transaction unless marked `no_transaction`
-- **Rollback on Failure**: If a migration fails, the transaction is rolled back
+- **Transaction Wrapping**: Global and per-file modes resolve before each selected migration runs
+- **Rollback on Failure**: Transactional modes roll back their transaction; `none` preserves statements committed before the failure
 - **Confirmation Prompts**: Down migrations require confirmation (unless `--confirm` is used)
 - **Dry Run Mode**: Preview migrations without applying them
 - **Migration Timeouts**: File-level directives and CLI defaults can cap lock waits and statement runtime for safer production rollouts

@@ -56,6 +56,14 @@ subdirectories. Atlas CE ignores subdirectories, so for that layout CE reports
 nothing to execute while Ptah refuses an unhashed directory rather than running
 migrations it has not verified — see [#976](https://github.com/stokaro/ptah/issues/976).
 
+A leading `-- atlas:txmode file` or `-- atlas:txmode none` header overrides
+global `file` or `none` for that migration. File-level `all`, unknown values,
+duplicates, and explicit file modes under global `all` fail before the affected
+body or revision row changes. The directive belongs to the initial line-comment
+header and requires a following blank line. Txtar `migration.sql` and
+`down.sql` sections carry independent modes; a mode before the
+`-- atlas:txtar` marker is rejected as an unsafe archive classification.
+
 Directories in an external tool's format are gated on the `atlas.sum` the source
 directory carries, verified before the source layout is parsed and before the
 database is opened. The covered file set is Atlas's for that layout, so a

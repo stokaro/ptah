@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // fixture builds an in-memory migrations directory.
@@ -425,6 +426,7 @@ ALTER TABLE t ADD COLUMN c INT;`,
 		{
 			name: "atlas directive",
 			sql: `-- atlas:txmode none
+
 CREATE INDEX CONCURRENTLY idx ON t (id);
 ALTER TABLE t ADD COLUMN c INT;`,
 		},
@@ -442,6 +444,81 @@ ALTER TABLE t ADD COLUMN c INT;`,
 			c.Assert(rulesOf(findings), qt.HasLen, 0)
 		})
 	}
+}
+
+func TestLintFS_AtlasTxtarTxModeIsDirectional(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		sql  string
+		want []string
+	}{
+		{
+			name: "down none does not suppress up findings",
+			sql: `-- atlas:txtar
+
+-- migration.sql --
+CREATE INDEX CONCURRENTLY idx ON t (id);
+ALTER TABLE t ADD COLUMN c INT;
+
+-- down.sql --
+-- atlas:txmode none
+
+DROP INDEX CONCURRENTLY idx;
+`,
+			want: []string{"PG103", "TX101"},
+		},
+		{
+			name: "up none suppresses up findings",
+			sql: `-- atlas:txtar
+
+-- migration.sql --
+-- atlas:txmode none
+
+CREATE INDEX CONCURRENTLY idx ON t (id);
+ALTER TABLE t ADD COLUMN c INT;
+
+-- down.sql --
+DROP INDEX idx;
+`,
+			want: []string{},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			findings, err := lint.LintFS(
+				fixture(map[string]string{"1_txmode.sql": test.sql}),
+				lint.Options{
+					Dialect:   "postgres",
+					DirFormat: migrator.MigrationDirFormatAtlas,
+				},
+			)
+			c.Assert(err, qt.IsNil)
+			c.Assert(rulesOf(findings), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestLintFS_AtlasTxtarFindingUsesSourceLine(t *testing.T) {
+	c := qt.New(t)
+	findings, err := lint.LintFS(
+		fixture(map[string]string{
+			"1_drop.sql": `-- atlas:txtar
+
+-- migration.sql --
+DROP TABLE users;
+
+-- down.sql --
+CREATE TABLE users (id INTEGER PRIMARY KEY);
+`,
+		}),
+		lint.Options{DirFormat: migrator.MigrationDirFormatAtlas},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101"})
+	c.Assert(findings[0].Line, qt.Equals, 4)
 }
 
 func TestLintFS_AtlasTxModeNoneDirectiveRequiresLineComment(t *testing.T) {

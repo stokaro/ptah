@@ -722,11 +722,11 @@
   {
     "area": "Versioned migrations \u2014 runtime policy",
     "feature": "Transaction modes (`--tx-mode` file/all/none)",
-    "ptah": "yes",
+    "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "all is limited to transactional-DDL dialects and rejects no_transaction files, per-file timeouts, and pre-migration checks.",
-    "evidence": "migration/migrator/migrator.go validateTxModeAllDialect and rejectChecksUnderTxModeAll (also rejects no_transaction and per-migration timeouts); conformance gaps-migrate-runtime.md `sqlite/tx-mode-all|file|none`; /tmp/ptah migrations up --help"
+    "note": "Targets Atlas CE v1.3.0 per-file behavior; conformance evidence is pending. Txtar section modes are a Ptah extension; #887 tracks revision bookkeeping.",
+    "evidence": "migration/migrator atlas_tx_mode_matrix_test.go and atlas_tx_mode_selection_test.go; pending ptah-atlas-conformance coverage; stokaro/ptah#998 and #887"
   },
   {
     "area": "Versioned migrations \u2014 runtime policy",

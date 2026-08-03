@@ -6405,7 +6405,9 @@ type File struct {
     // filesystem.
     Source string
     // SQL is the executable SQL analyzed by the linter. It differs from Source
-    // only when an Atlas SQL template is rendered.
+    // when an Atlas SQL template is rendered or when a txtar migration.sql
+    // section is extracted. Statement spans index SQL; reported line numbers
+    // are translated back to Source.
     SQL string
     // Version is the parsed migration version, or zero when the name is not
     // recognized.
@@ -6705,8 +6707,6 @@ func GroupMigrationFiles(files []MigrationFile) map[int64]MigrationPair
 func IsDirtyMigration(err error) bool
 func IsMigrationLockTimeout(err error) bool
 func LooksAtlasTemplateSQL(sql string) bool
-func MigrationFuncFromSQLFilenameWithTimeouts(filename string, fsys fs.FS) (MigrationFunc, MigrationTimeouts, error)
-func MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) (MigrationFunc, MigrationTimeouts, error)
 func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection) error
 func ParseFileDirectives(sql string) map[string]string
 func ParseMigrationLockTimeout(value string) (time.Duration, error)
@@ -6744,6 +6744,8 @@ type FSProviderOption func(*FSMigrationProvider)
 type MigrateUpOptions struct{ ... }
 type Migration struct{ ... }
     func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration
+    func NewMigrationFromSQLFiles(version int64, description, upFilename, downFilename string, fsys fs.FS) (*Migration, error)
+    func NewMigrationFromSQLFilesWithInterceptor(version int64, description, upFilename, downFilename string, fsys fs.FS, ...) (*Migration, error)
 type MigrationDirFormat string
     const MigrationDirFormatAuto MigrationDirFormat = "auto" ...
     func ParseMigrationDirFormat(value string) (MigrationDirFormat, error)
@@ -6755,12 +6757,13 @@ type MigrationFile struct{ ... }
     func ParseAtlasMigrationFileName(filename string) (*MigrationFile, error)
     func ParseAtlasMigrationFileNameForAutoDetection(filename string) (*MigrationFile, error)
     func ParseMigrationFileName(filename string) (*MigrationFile, error)
+type MigrationFileTxMode string
+    const MigrationFileTxModeUnspecified MigrationFileTxMode = "" ...
 type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
-    func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc
-    func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) MigrationFunc
 type MigrationLockTimeoutError struct{ ... }
 type MigrationPair struct{ ... }
 type MigrationPlan struct{ ... }
+type MigrationPlanObserver func(ctx context.Context, plan MigrationPlan)
 type MigrationProvider interface{ ... }
 type MigrationRevision struct{ ... }
 type MigrationStatus struct{ ... }
@@ -6781,6 +6784,8 @@ type OnFail string
     const OnFailAbort OnFail = "abort"
 type OutOfOrderError struct{ ... }
     func NewOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError
+type ParsedMigrationUp struct{ ... }
+    func ParseMigrationUp(filename, sql string) (ParsedMigrationUp, error)
 type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
 type RegisteredMigrationProvider struct{ ... }
     func NewRegisteredMigrationProvider(migrations ...*Migration) *RegisteredMigrationProvider
@@ -7033,6 +7038,10 @@ type MigrateUpOptions struct {
     // Preflight runs after the migration lock is acquired and the final plan is
     // selected, but before any schema or revision changes.
     Preflight PreMigrationHook
+    // PlanObserver sees the selected plan under the migration lock before
+    // transaction-mode validation. It runs even for an empty plan so callers
+    // can replace metadata captured before lock acquisition.
+    PlanObserver MigrationPlanObserver
 }
     MigrateUpOptions selects the pending up migration plan.
 
@@ -7053,12 +7062,13 @@ type Migration struct {
     UpTimeouts   MigrationTimeouts
     DownTimeouts MigrationTimeouts
 
-    // UpNoTransaction runs the up body and metadata update outside the normal
-    // per-migration transaction. Use this only for statements that cannot run
-    // transactionally.
-    UpNoTransaction bool
-    // DownNoTransaction is the down-direction counterpart to UpNoTransaction.
-    DownNoTransaction bool
+    // UpTxMode is the up file's explicit transaction mode. The zero value uses
+    // the migrator's global mode. File and none override global file or none;
+    // any explicit file mode conflicts with global all.
+    UpTxMode MigrationFileTxMode
+    // DownTxMode is the down-direction counterpart to UpTxMode. Rollback has no
+    // global transaction-mode flag, so the zero value behaves like file.
+    DownTxMode MigrationFileTxMode
 
     // IsCheckpoint marks a checkpoint migration whose up body is the full
     // cumulative schema at its version. On a fresh database the migrator
@@ -7074,6 +7084,8 @@ type Migration struct {
     Migration represents a database migration
 
 func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration
+func NewMigrationFromSQLFiles(version int64, description, upFilename, downFilename string, fsys fs.FS) (*Migration, error)
+func NewMigrationFromSQLFilesWithInterceptor(version int64, description, upFilename, downFilename string, fsys fs.FS, ...) (*Migration, error)
 
 ### go.5x5.cz/ptah/migration/migrator.MigrationDirFormat
 
@@ -7145,6 +7157,15 @@ func ParseAtlasMigrationFileName(filename string) (*MigrationFile, error)
 func ParseAtlasMigrationFileNameForAutoDetection(filename string) (*MigrationFile, error)
 func ParseMigrationFileName(filename string) (*MigrationFile, error)
 
+### go.5x5.cz/ptah/migration/migrator.MigrationFileTxMode
+
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
+
+type MigrationFileTxMode string
+    MigrationFileTxMode controls transaction handling for one migration file.
+
+const MigrationFileTxModeUnspecified MigrationFileTxMode = "" ...
+
 ### go.5x5.cz/ptah/migration/migrator.MigrationFunc
 
 package migrator // import "go.5x5.cz/ptah/migration/migrator"
@@ -7153,8 +7174,6 @@ type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
     MigrationFunc represents a migration function that operates on a database
     connection
 
-func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc
-func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) MigrationFunc
 
 ### go.5x5.cz/ptah/migration/migrator.MigrationLockTimeoutError
 
@@ -7198,6 +7217,16 @@ type MigrationPlan struct {
 }
     MigrationPlan describes the migration work selected while holding the
     migration lock.
+
+
+### go.5x5.cz/ptah/migration/migrator.MigrationPlanObserver
+
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
+
+type MigrationPlanObserver func(ctx context.Context, plan MigrationPlan)
+    MigrationPlanObserver sees the final migration plan while the migration
+    lock is held, before static transaction-mode validation. It is intended for
+    metadata capture only; unlike PreMigrationHook, it cannot abort execution.
 
 
 ### go.5x5.cz/ptah/migration/migrator.MigrationProvider
@@ -7405,6 +7434,23 @@ type OutOfOrderError struct {
 
 func NewOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError
 func (e *OutOfOrderError) Error() string
+
+### go.5x5.cz/ptah/migration/migrator.ParsedMigrationUp
+
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
+
+type ParsedMigrationUp struct {
+    // SQL is the plain file or the migration.sql section of a txtar file.
+    SQL string
+    // TxMode is the explicit transaction mode found in SQL.
+    TxMode MigrationFileTxMode
+    // SourceLineOffset maps line numbers in SQL back to the source file.
+    SourceLineOffset int
+}
+    ParsedMigrationUp is the executable up-direction view of a plain SQL or
+    Atlas txtar migration file.
+
+func ParseMigrationUp(filename, sql string) (ParsedMigrationUp, error)
 
 ### go.5x5.cz/ptah/migration/migrator.PreMigrationHook
 

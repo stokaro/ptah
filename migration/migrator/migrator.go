@@ -59,6 +59,11 @@ type MigrationPlan struct {
 // state.
 type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
 
+// MigrationPlanObserver sees the final migration plan while the migration lock
+// is held, before static transaction-mode validation. It is intended for
+// metadata capture only; unlike PreMigrationHook, it cannot abort execution.
+type MigrationPlanObserver func(ctx context.Context, plan MigrationPlan)
+
 // MigrateUpOptions selects the pending up migration plan.
 type MigrateUpOptions struct {
 	// TargetVersion limits the run to pending migrations at or below this
@@ -77,6 +82,10 @@ type MigrateUpOptions struct {
 	// Preflight runs after the migration lock is acquired and the final plan is
 	// selected, but before any schema or revision changes.
 	Preflight PreMigrationHook
+	// PlanObserver sees the selected plan under the migration lock before
+	// transaction-mode validation. It runs even for an empty plan so callers
+	// can replace metadata captured before lock acquisition.
+	PlanObserver MigrationPlanObserver
 }
 
 // Migrator handles database migrations for ptah
@@ -1146,15 +1155,17 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		return err
 	}
 	migrationsToApply = limitMigrationsToApply(migrationsToApply, opts.Amount)
-	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
-		return err
-	}
-	if err := runPreMigrationHook(ctx, opts.Preflight, MigrationPlan{
+	plan := MigrationPlan{
 		Direction:      MigrationDirectionUp,
 		CurrentVersion: currentVersion,
 		TargetVersion:  upTargetVersion(currentVersion, migrationsToApply),
 		Versions:       migrationVersions(migrationsToApply),
-	}); err != nil {
+	}
+	notifyMigrationPlanObserver(ctx, opts.PlanObserver, plan)
+	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
+		return err
+	}
+	if err := runPreMigrationHook(ctx, opts.Preflight, plan); err != nil {
 		return err
 	}
 	if span := rootSpanFromContext(ctx); span != nil {
@@ -1329,7 +1340,7 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 	if err != nil {
 		return err
 	}
-	if err := validateDownMigrations(migrationsToRollback); err != nil {
+	if err := m.validateDownMigrations(migrationsToRollback); err != nil {
 		return err
 	}
 	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
@@ -1453,6 +1464,14 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	return nil
 }
 
+func notifyMigrationPlanObserver(ctx context.Context, observer MigrationPlanObserver, plan MigrationPlan) {
+	if observer == nil {
+		return
+	}
+	plan.Versions = slices.Clone(plan.Versions)
+	observer(ctx, plan)
+}
+
 func runPreMigrationHook(ctx context.Context, hook PreMigrationHook, plan MigrationPlan) error {
 	if hook == nil || len(plan.Versions) == 0 {
 		return nil
@@ -1495,8 +1514,6 @@ func downTargetVersion(applied []int64, targetVersion int64) int64 {
 
 func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) error {
 	switch m.txMode {
-	case MigrationTxModeNone:
-		return m.applyUpMigrationsNoTransaction(ctx, migrations)
 	case MigrationTxModeAll:
 		return m.applyUpMigrationsInSingleTransaction(ctx, migrations)
 	default:
@@ -1506,20 +1523,11 @@ func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migratio
 
 func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*Migration) error {
 	for _, migration := range migrations {
-		if err := m.applyUpMigrationObserved(ctx, migration); err != nil {
+		txMode, err := m.resolveUpMigrationTxMode(migration)
+		if err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-func (m *Migrator) applyUpMigrationsNoTransaction(ctx context.Context, migrations []*Migration) error {
-	if err := m.validateUpTransactionMode(migrations); err != nil {
-		return err
-	}
-	for _, migration := range migrations {
-		if err := m.applyUpMigrationForcedNoTransactionObserved(ctx, migration); err != nil {
+		if err := m.applyUpMigrationObserved(ctx, migration, txMode); err != nil {
 			return err
 		}
 	}
@@ -1560,14 +1568,20 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 }
 
 func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
+	if len(migrations) > 0 && m.txMode != MigrationTxModeAll {
+		if _, err := m.resolveUpMigrationTxMode(migrations[0]); err != nil {
+			return err
+		}
+	}
+
 	switch m.txMode {
 	case MigrationTxModeAll:
 		if err := m.validateTxModeAllDialect(); err != nil {
 			return err
 		}
 		for _, migration := range migrations {
-			if migration.upExecutionMode() == migrationExecutionNoTransaction {
-				return fmt.Errorf("migration %d is marked no_transaction and cannot run with tx-mode all", migration.Version)
+			if _, err := m.resolveUpMigrationTxMode(migration); err != nil {
+				return err
 			}
 			if !mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts).IsZero() {
 				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode all", migration.Version)
@@ -1578,6 +1592,9 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 		}
 	case MigrationTxModeNone:
 		for _, migration := range migrations {
+			if migration.UpTxMode == MigrationFileTxModeFile || migration.upTxModeErr != nil {
+				continue
+			}
 			if !mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts).IsZero() {
 				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode none", migration.Version)
 			}
@@ -1596,7 +1613,11 @@ func (m *Migrator) validateTxModeAllDialect() error {
 	}
 }
 
-func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migration) (err error) {
+func (m *Migrator) applyUpMigrationObserved(
+	ctx context.Context,
+	migration *Migration,
+	txMode MigrationTxMode,
+) (err error) {
 	observer := m.migrationObserver()
 	ctx, span := observer.StartSpan(ctx, "ptah.migrate.apply", m.migrationAttributes(MigrationDirectionUp, migration)...)
 	startedAt := time.Now()
@@ -1613,7 +1634,7 @@ func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migr
 	}()
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
-	if migration.upExecutionMode() == migrationExecutionNoTransaction {
+	if txMode == MigrationTxModeNone {
 		if err := ensureNoTransactionHasNoTimeouts(
 			migration.Version,
 			mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts),
@@ -1627,7 +1648,7 @@ func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migr
 	if err := m.beginMigrationRevision(ctx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}
-	if migration.upExecutionMode() == migrationExecutionNoTransaction {
+	if txMode == MigrationTxModeNone {
 		return m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
 	}
 	return m.applyUpMigrationTransactional(ctx, migration, startedAt)
@@ -1655,41 +1676,6 @@ func (m *Migrator) runPreMigrationChecks(ctx context.Context, migration *Migrati
 	return nil
 }
 
-func (m *Migrator) applyUpMigrationForcedNoTransactionObserved(ctx context.Context, migration *Migration) (err error) {
-	observer := m.migrationObserver()
-	ctx, span := observer.StartSpan(ctx, "ptah.migrate.apply", m.migrationAttributes(MigrationDirectionUp, migration)...)
-	startedAt := time.Now()
-	defer func() {
-		duration := time.Since(startedAt)
-		span.End(err)
-		metricAttrs := m.migrationMetricAttributes(MigrationDirectionUp, migration)
-		observer.RecordDuration(ctx, "ptah_migration_duration_seconds", duration, metricAttrs...)
-		if err != nil {
-			observer.AddCounter(ctx, "ptah_migrations_failed_total", 1, metricAttrs...)
-			return
-		}
-		observer.AddCounter(ctx, "ptah_migrations_applied_total", 1, metricAttrs...)
-	}()
-
-	return m.applyUpMigrationForcedNoTransactionAt(ctx, migration, startedAt)
-}
-
-func (m *Migrator) applyUpMigrationForcedNoTransactionAt(ctx context.Context, migration *Migration, startedAt time.Time) error {
-	if err := ensureNoTransactionHasNoTimeouts(
-		migration.Version,
-		mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts),
-	); err != nil {
-		return err
-	}
-	if err := m.runPreMigrationChecks(ctx, migration); err != nil {
-		return err
-	}
-	if err := m.beginMigrationRevision(ctx, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
-	}
-	return m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
-}
-
 func (m *Migrator) applyUpMigrationInExistingTransaction(
 	ctx context.Context,
 	txConn *dbschema.DatabaseConnection,
@@ -1705,7 +1691,7 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	if err != nil {
 		return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
 	}
-	if err := migration.Up(ctx, txConn); err != nil {
+	if err := migration.executeUp(ctx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
 	}
@@ -1783,7 +1769,7 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 		)
 	}
 
-	if err := migration.Up(ctx, txConn); err != nil {
+	if err := migration.executeUp(ctx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(
@@ -1838,7 +1824,7 @@ func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration 
 			return m.checkpointMigrationRevision(ctx, migration, startedAt, event)
 		},
 	)
-	if err := migration.Up(executionCtx, m.conn); err != nil {
+	if err := migration.executeUp(executionCtx, m.conn, migrationExecutionNoTransaction); err != nil {
 		return m.failMigrationWithDirtyStateWithMode(
 			ctx,
 			migration,
@@ -1879,13 +1865,9 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	}()
 
 	m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
-	if migration.downExecutionMode() == migrationExecutionNoTransaction {
-		if err := ensureNoTransactionHasNoTimeouts(
-			migration.Version,
-			mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts),
-		); err != nil {
-			return err
-		}
+	txMode, err := m.resolveDownMigrationTxMode(migration)
+	if err != nil {
+		return err
 	}
 	// The Atlas-shaped surface records nothing before the down body: Atlas marks
 	// a reverted migration only by deleting its row on success. See
@@ -1895,7 +1877,7 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
 		}
 	}
-	if migration.downExecutionMode() == migrationExecutionNoTransaction {
+	if txMode == MigrationTxModeNone {
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
 	}
 	return m.rollbackMigrationTransactional(ctx, migration, startedAt, deleteSQL)
@@ -1960,7 +1942,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 		)
 	}
 
-	if err := migration.Down(ctx, txConn); err != nil {
+	if err := migration.executeDown(ctx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		_ = tx.Rollback()
 		return m.failRollbackWithDirtyState(
@@ -2016,7 +1998,7 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 			},
 		)
 	}
-	if err := migration.Down(executionCtx, m.conn); err != nil {
+	if err := migration.executeDown(executionCtx, m.conn, migrationExecutionNoTransaction); err != nil {
 		return m.failRollbackWithDirtyStateWithMode(
 			ctx,
 			migration,
@@ -2325,12 +2307,24 @@ func migrationsToRollback(migrationsByVersion map[int64]*Migration, applied []in
 	return rollbackMigrations, nil
 }
 
-func validateDownMigrations(migrations []*Migration) error {
+func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
 	for _, migration := range migrations {
 		if migration.downUnavailable {
 			return &AtlasDownNotImplementedError{
 				Version:     migration.Version,
 				Description: migration.Description,
+			}
+		}
+		txMode, err := m.resolveDownMigrationTxMode(migration)
+		if err != nil {
+			return err
+		}
+		if txMode == MigrationTxModeNone {
+			if err := ensureNoTransactionHasNoTimeouts(
+				migration.Version,
+				mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts),
+			); err != nil {
+				return err
 			}
 		}
 	}

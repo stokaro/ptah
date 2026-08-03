@@ -548,8 +548,8 @@ DROP TABLE users;
 
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].UpNoTransaction, qt.IsFalse)
-	c.Assert(migrations[0].DownNoTransaction, qt.IsTrue)
+	c.Assert(migrations[0].UpTxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
+	c.Assert(migrations[0].DownTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
 }
 
 func TestNewFSMigrationProvider_AtlasTxModeNoneIsNoTransaction(t *testing.T) {
@@ -560,6 +560,7 @@ func TestNewFSMigrationProvider_AtlasTxModeNoneIsNoTransaction(t *testing.T) {
 
 -- migration.sql --
 -- atlas:txmode none
+
 CREATE INDEX CONCURRENTLY users_email_idx ON users (email);
 
 -- down.sql --
@@ -571,8 +572,8 @@ DROP INDEX users_email_idx;
 
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].UpNoTransaction, qt.IsTrue)
-	c.Assert(migrations[0].DownNoTransaction, qt.IsFalse)
+	c.Assert(migrations[0].UpTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
+	c.Assert(migrations[0].DownTxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
 }
 
 func TestNewFSMigrationProvider_UnknownOnlySQLFilesError(t *testing.T) {

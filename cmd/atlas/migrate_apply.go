@@ -1,8 +1,10 @@
 package atlas
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"strconv"
@@ -299,31 +301,19 @@ func runAtlasMigrateApply(
 	}
 
 	out := cmd.OutOrStdout()
-	if opts.dryRun && !formatOutput {
-		fmt.Fprintln(out, "Dry run mode: no changes will be made.")
-	}
-	if opts.dryRun && baselineVersion > 0 && !formatOutput {
-		fmt.Fprintf(out, "Would baseline migrations at version %d.\n", baselineVersion)
-	}
-	if plan.Noop() {
-		result, err := plan.Execute(cmd.Context())
-		if err != nil {
-			return err
+	emitApplyStart := func([]int64) {}
+	if !formatOutput {
+		emitApplyStart = func(selectedVersions []int64) {
+			emitAtlasMigrateApplyStart(out, opts, baselineVersion, selectedVersions)
 		}
-		if formatOutput {
-			return writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
-		}
-		fmt.Fprintln(out, "No migration files to execute.")
-		return nil
 	}
-	if len(plan.SelectedVersions) > 0 && !formatOutput {
-		fmt.Fprintf(out, "Migrating to version %d from %d pending migrations.\n",
-			plan.SelectedVersions[len(plan.SelectedVersions)-1],
-			len(plan.SelectedVersions),
-		)
-	}
-
-	result, err := plan.Execute(cmd.Context())
+	result, err := plan.ExecuteWithPreflight(
+		cmd.Context(),
+		func(_ context.Context, lockedPlan migrator.MigrationPlan) error {
+			emitApplyStart(lockedPlan.Versions)
+			return nil
+		},
+	)
 	if err != nil {
 		if formatOutput && result.ApplyError != nil {
 			writeErr := writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
@@ -333,12 +323,15 @@ func runAtlasMigrateApply(
 		}
 		return err
 	}
+	if handled, err := finishAtlasMigrateApplyFreshNoop(cmd, opts, migrationFS, conn, result); handled || err != nil {
+		return err
+	}
 
 	if opts.dryRun {
 		if formatOutput {
 			return writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 		}
-		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(plan.SelectedVersions))
+		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(result.SelectedVersions))
 		return nil
 	}
 	if formatOutput {
@@ -346,6 +339,43 @@ func runAtlasMigrateApply(
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
 	return nil
+}
+
+func finishAtlasMigrateApplyFreshNoop(
+	cmd *cobra.Command,
+	opts atlasMigrateApplyOptions,
+	migrationFS fs.FS,
+	conn *dbschema.DatabaseConnection,
+	result atlasmigrate.ApplyResult,
+) (bool, error) {
+	if len(result.SelectedVersions) != 0 || result.Applied {
+		return false, nil
+	}
+	if opts.format != "" {
+		return true, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "No migration files to execute.")
+	return true, nil
+}
+
+func emitAtlasMigrateApplyStart(
+	out io.Writer,
+	opts atlasMigrateApplyOptions,
+	baselineVersion int64,
+	selectedVersions []int64,
+) {
+	if opts.dryRun {
+		fmt.Fprintln(out, "Dry run mode: no changes will be made.")
+	}
+	if opts.dryRun && baselineVersion > 0 {
+		fmt.Fprintf(out, "Would baseline migrations at version %d.\n", baselineVersion)
+	}
+	if len(selectedVersions) > 0 {
+		fmt.Fprintf(out, "Migrating to version %d from %d pending migrations.\n",
+			selectedVersions[len(selectedVersions)-1],
+			len(selectedVersions),
+		)
+	}
 }
 
 // verifyAtlasApplyChecksum enforces the atlas.sum integrity gate on the
