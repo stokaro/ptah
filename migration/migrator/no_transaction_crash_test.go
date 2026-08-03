@@ -93,6 +93,39 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
 	})
 
+	// A rollback interrupted between the in-flight marker and the checkpoint
+	// cannot say whether its statement committed. Recording the migration
+	// applied over that is the one thing repair must not do quietly, and
+	// resuming it would repeat SQL that may already be committed.
+	c.Run("Ptah down in-flight statement", func(c *qt.C) {
+		databasePath := filepath.Join(c.TempDir(), "ptah-down-in-flight.db")
+		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "down", "after-execution")
+		conn := openNoTransactionCrashDatabase(c, databasePath)
+		defer dbschema.CloseAndWarn(conn)
+
+		var state, failure string
+		var applied, total int
+		c.Assert(conn.QueryRow(`
+			SELECT state, applied, total, COALESCE(error, '')
+			FROM schema_migrations WHERE version = 1
+		`).Scan(&state, &applied, &total, &failure), qt.IsNil)
+		c.Assert(state, qt.Equals, "pending:down")
+		c.Assert(applied, qt.Equals, 0)
+		c.Assert(total, qt.Equals, 2)
+		c.Assert(failure, qt.Contains, "statement execution outcome is unknown")
+
+		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c))
+		c.Assert(
+			mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1}),
+			qt.ErrorMatches, `migration 1 stopped while rolling back and the outcome of .* is unknown.*`,
+		)
+		c.Assert(
+			mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 1}),
+			qt.ErrorMatches, `migration 1 has an unknown statement outcome.*omit --resume-from.*`,
+		)
+		c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
+	})
+
 	c.Run("Ptah in-flight statement", func(c *qt.C) {
 		databasePath := filepath.Join(c.TempDir(), "ptah-in-flight.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "up", "after-execution")

@@ -248,6 +248,45 @@ func TestDirectionalRepair_RefusesUpResumeOverLegacyRollbackRow(t *testing.T) {
 	c.Assert(directionalRepairLogRows(c, conn), qt.Equals, 2)
 }
 
+// TestDirectionalRepair_UpResumeSurvivesEqualLengthBodies is the fixture that
+// separates the legacy-row guard from a guard that just fires on down-length
+// rows: here the two bodies are the same length, so the row's total matches the
+// down body as well, and the resume must still run. A guard that dropped the
+// "matches the up body" half prints
+// `migration 1 records 3 statements, which matches its down body (3)`.
+func TestDirectionalRepair_UpResumeSurvivesEqualLengthBodies(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TempDir(), "equal-bodies.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	mig, err := migrator.NewFSMigrator(conn, fstest.MapFS{
+		"000001_setup.up.sql": {Data: []byte(
+			"-- +ptah no_transaction\n" +
+				"CREATE TABLE parent (id INTEGER PRIMARY KEY);\n" +
+				"INSERT INTO definitely_missing_table (v) VALUES (1);\n" +
+				"CREATE TABLE child (id INTEGER PRIMARY KEY);\n",
+		)},
+		"000001_setup.down.sql": {Data: []byte(
+			"DROP TABLE IF EXISTS child;\nDROP TABLE IF EXISTS parent;\nDROP TABLE IF EXISTS extra;\n",
+		)},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNotNil)
+
+	state, applied, total := directionalRepairRevision(c, conn)
+	c.Assert(state, qt.Equals, "failed")
+	c.Assert(applied, qt.Equals, 1)
+	c.Assert(total, qt.Equals, 3)
+
+	c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3}), qt.IsNil)
+	c.Assert(noTransactionTableExists(c, conn, "child"), qt.IsTrue)
+	state, applied, total = directionalRepairRevision(c, conn)
+	c.Assert(state, qt.Equals, "applied")
+	c.Assert(applied, qt.Equals, 3)
+	c.Assert(total, qt.Equals, 3)
+}
+
 // TestDirectionalRepair_CancelledMidRollbackResumesFromCommittedStatement
 // covers the cancellation half of the durability requirement: the existing
 // cancellation coverage stops a single-statement down, which cannot show
