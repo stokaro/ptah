@@ -184,6 +184,29 @@ error: migration 1 is not dirty; rerun with --force to rewrite it
 `--force` rewrites (or creates) the revision row anyway — a last resort for
 reconciling revision metadata that no longer matches reality.
 
+### Repair over a half-built concurrent index
+
+On PostgreSQL, a `CREATE INDEX CONCURRENTLY` that fails partway leaves an
+**invalid** index behind. The leftover keeps the name, so the generated
+`IF NOT EXISTS` form of the same statement is skipped rather than retried and
+reports no error. Repair refuses to record such a migration (exit `2`):
+
+```text
+error: migration 5 cannot be repaired: PostgreSQL reports index "public"."idx_members_email" (indisvalid=false, indisready=false) unusable, so recording the migration applied would report a constraint that is not enforced; run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", or drop the index and rerun the migration, then repair again
+```
+
+Refusing leaves a dirty state you can still see, rather than a green one that
+is wrong: an invalid unique index enforces nothing, so duplicate rows keep
+being accepted while `status` reports the database up to date. Rebuild the
+index with the `REINDEX INDEX CONCURRENTLY` the message names — or drop it and
+rerun the migration — and repair again.
+
+`--force` does not bypass this. It relaxes a precondition about the revision
+row; the index being unusable is a fact about the database, and the fix for it
+is `REINDEX`. Only indexes the migration itself creates are checked, so an
+unrelated invalid index elsewhere never blocks a repair. Other dialects have no
+concurrent index build to leave half-finished and are unaffected.
+
 ## Set the revision boundary (set)
 
 `repair` fixes one dirty row and `baseline` only records existing history as

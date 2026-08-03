@@ -264,7 +264,7 @@ with `--allow-destructive` after review:
 
 ```text
 error: error running migrations: pending migrations contain destructive statements; rerun with --allow-destructive after review:
-- 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes the table and every row in it; ...
+- 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes table users and every row in it; ...
 ```
 
 Both gates are covered in depth in
@@ -282,6 +282,13 @@ records the last known completed statement and marks the interrupted
 statement's outcome as unknown. Inspect the database before repair. Ptah
 rejects `repair --resume-from` while this marker is present because the SQL may
 already have committed.
+
+**A concurrent index build failed on PostgreSQL.** The invalid index left
+behind keeps the name, so retrying the generated `IF NOT EXISTS` statement is
+skipped rather than retried and reports no error. Ptah refuses to repair the
+migration while the index is unusable and names the `REINDEX INDEX
+CONCURRENTLY` that rebuilds it — `--force` does not bypass that refusal. See
+[Maintain migration history](../maintain-history/).
 
 **A pre-migration check blocked the migration.** Nothing is applied and no
 revision row is written, so the run is recorded as never started. Fix the data

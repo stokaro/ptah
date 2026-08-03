@@ -101,32 +101,40 @@ var includeChildTypes = map[string]struct{}{
 	"grant":       {},
 }
 
-// includeSelectorMaxDots bounds how deep an --include selector may reach. The
-// selection matches top-level resources by their bare name and by their
-// effective-schema-qualified name, so a selector carries at most one "."
-// *separator*. A deeper selector is the positional spelling of the
-// child-resource selection [validateIncludeSelectorTypes] already rejects, and
-// it is rejected the same way instead of silently projecting an empty
-// selection.
+// EmptySelectionError reports that a non-empty --include selection matched no
+// top-level object in the state it was applied to.
 //
-// Depth is measured by [unquotedDots], not by counting "." characters: an
-// identifier may itself contain a dot, and [dbschematypes.QualifyTableName]
-// quotes any such part, so the candidate for table "my.table" in schema "main"
-// is `main."my.table"` — two dot characters, one separator. Counting
-// characters rejected the selector that matches it.
+// A selection that picks nothing and a state that holds nothing produce the
+// same projection, so without this signal the two are indistinguishable and
+// callers report the second. That conflation used to swallow every --include
+// spelling that reaches past a top-level resource: `path.Match` treats "." as
+// an ordinary character (only "/" separates), so `main.users*email`,
+// `main.users?email`, and `main.users[.]email` all matched nothing and were
+// reported as synced schemas.
 //
-// The rule closes the literal-separator spelling only. Because path.Match
-// treats "." as an ordinary character, every metacharacter that can stand for
-// it escapes the check: `main.users*email`, `main.users?email`, and the
-// character class `main.users[.]email` all reach past a top-level resource and
-// still select nothing. See stokaro/ptah#979 for the outcome-based check that
-// would cover the whole class.
-const includeSelectorMaxDots = 1
+// Emptiness is an outcome, not a shape, so it cannot be decided by inspecting
+// the selector text. Each verb decides its own exit from this error: apply
+// refuses (nothing would be applied and nothing would say so), while diff and
+// inspect keep their exit status and report the empty selection out of band.
+type EmptySelectionError struct {
+	// Selectors are the --include selectors as written, split and trimmed the
+	// way the parser splits them.
+	Selectors []string
+}
+
+func (e *EmptySelectionError) Error() string {
+	quoted := make([]string, 0, len(e.Selectors))
+	for _, selector := range e.Selectors {
+		quoted = append(quoted, fmt.Sprintf("%q", selector))
+	}
+	return "the --include selection matched no objects: " + strings.Join(quoted, ", ")
+}
 
 // ValidateIncludeSelectors parses Atlas-style --include selectors and rejects
 // forms Ptah cannot honor: malformed globs, field selectors, child resource
-// types, child-depth patterns, and unknown resource types. Commands run it
-// before any database work.
+// types, and unknown resource types. Commands run it before any database work,
+// so a selector that can never be honored fails without contacting a database
+// or resetting a dev database.
 func ValidateIncludeSelectors(values []string) error {
 	_, err := parseIncludeSelectors(values)
 	return err
@@ -160,68 +168,23 @@ func parseIncludeSelector(value string) (resourcePattern, error) {
 	if err := validateIncludeSelectorTypes(raw, pattern.types); err != nil {
 		return resourcePattern{}, err
 	}
-	if err := validateIncludeSelectorDepth(raw, pattern.glob); err != nil {
-		return resourcePattern{}, err
-	}
 	return pattern, nil
 }
 
-// validateIncludeSelectorDepth rejects include selectors that reach past the
-// "schema.name" qualification of a top-level resource.
-func validateIncludeSelectorDepth(raw, glob string) error {
-	if unquotedDots(glob) <= includeSelectorMaxDots {
-		return nil
-	}
-	return fmt.Errorf(
-		"unsupported Atlas include selector %q: selectors name top-level resources as \"name\" or \"schema.name\", and a deeper pattern names a child resource that rides along with its parent",
-		raw)
-}
-
-// unquotedDots counts the "." separators of a selector glob, skipping dots
-// that belong to an identifier rather than to the path.
-//
-// Dots are skipped inside the quoting forms the tableref parser accepts — SQL
-// standard double quotes, MySQL backticks, and SQL Server brackets — because a
-// qualified candidate quotes any part holding a dot, so `main."my.table"` is
-// one separator, not two. Dots are also skipped after a backslash, which
-// path.Match reads as an escape for the following character, so `a\.b\.c`
-// matches the single bare name "a.b.c" and stays a depth-one selector.
-//
-// An unterminated quote leaves the remainder uncounted, which is the
-// permissive direction for that input.
-//
-// The check is not conservative in general, though. The selection also offers
-// the bare name as a candidate, and a bare name is never quoted, so a table
-// literally named "a.b.c" is matched by the selector `a.b.c` — which this rule
-// refuses, because that spelling is indistinguishable from the
-// schema.table.column form it exists to reject. That ambiguity is why the
-// refusal is deliberate rather than a bug, and why the disambiguated spellings
-// `a\.b\.c` and `main."a.b.c"` are supported and documented. Resolving it
-// without an escape needs the outcome-based check in stokaro/ptah#979.
-func unquotedDots(glob string) int {
-	dots := 0
-	var closeQuote byte
-	for index := 0; index < len(glob); index++ {
-		character := glob[index]
-		if closeQuote != 0 {
-			if character == closeQuote {
-				closeQuote = 0
+// includeSelectorSpellings returns the --include selectors as written, split
+// and trimmed exactly the way [parseIncludeSelectors] splits them, so an
+// [EmptySelectionError] names what the user typed.
+func includeSelectorSpellings(values []string) []string {
+	var out []string
+	for _, value := range values {
+		for part := range strings.SplitSeq(value, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				out = append(out, part)
 			}
-			continue
-		}
-		switch character {
-		case '"', '`':
-			closeQuote = character
-		case '[':
-			closeQuote = ']'
-		case '\\':
-			// path.Match escape: the next byte is a literal, never a separator.
-			index++
-		case '.':
-			dots++
 		}
 	}
-	return dots
+	return out
 }
 
 func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
@@ -245,6 +208,11 @@ func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
 // selection: schema universe, include selectors, exclude subtraction, and
 // cross-scope dependency validation, in that order. A non-positive scope
 // degrades to plain exclusion.
+//
+// When include selectors were given and none of them matched a top-level
+// object, the projection is returned together with an [EmptySelectionError].
+// The projection is valid — it is empty — so callers that tolerate an empty
+// selection keep using it, and callers that refuse one have the error.
 func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, error) {
 	if !scope.Positive() {
 		return ExcludeGenerated(db, scope.Exclude)
@@ -265,12 +233,13 @@ func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, err
 	if err := validateGeneratedScope(db, final, selection); err != nil {
 		return nil, err
 	}
-	return final, nil
+	return final, selection.emptySelectionError(scope)
 }
 
 // ScopeDatabase projects the introspected database schema through the same
 // positive selection as [ScopeGenerated], so both sides of a comparison see
-// one projection. A non-positive scope degrades to plain exclusion.
+// one projection. A non-positive scope degrades to plain exclusion. It reports
+// an empty include selection the same way [ScopeGenerated] does.
 func ScopeDatabase(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSchema, error) {
 	if !scope.Positive() {
 		return ExcludeDatabase(db, scope.Exclude)
@@ -291,7 +260,7 @@ func ScopeDatabase(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSc
 	if err := validateDatabaseScope(db, final, selection); err != nil {
 		return nil, err
 	}
-	return final, nil
+	return final, selection.emptySelectionError(scope)
 }
 
 // scopeSelection carries the parsed positive selection during one projection.
@@ -299,6 +268,23 @@ type scopeSelection struct {
 	allowed   map[string]struct{}
 	selectors []resourcePattern
 	def       string
+	// matched records whether any include selector matched a top-level object
+	// during the projection. It is the outcome the emptiness check needs:
+	// counting the projected objects instead would also count the support
+	// objects and grants that ride along with a selection, and would miss a
+	// match the exclude subtraction later removed.
+	matched bool
+}
+
+// emptySelectionError reports an include selection that matched nothing.
+// Selectors that were given but never matched are the whole condition; a scope
+// carrying only --schema names stays silent, because narrowing to a schema
+// that holds nothing is an ordinary answer rather than a selection that failed.
+func (s *scopeSelection) emptySelectionError(scope Scope) error {
+	if len(s.selectors) == 0 || s.matched {
+		return nil
+	}
+	return &EmptySelectionError{Selectors: includeSelectorSpellings(scope.Include)}
 }
 
 func newScopeSelection(scope Scope, selectors []resourcePattern) *scopeSelection {
@@ -346,6 +332,11 @@ func (s *scopeSelection) nameCandidates(schema, name string) []string {
 // selectedNames reports whether the include selectors match one of the name
 // candidates for any of the resource types. Empty selectors select everything
 // in the schema universe.
+//
+// Every call is a top-level object asking whether a selector names it, so a
+// match here is exactly what [scopeSelection.emptySelectionError] needs to
+// know. Callers evaluate the schema universe first, so an object outside it
+// never reaches this point and never counts as a match.
 func (s *scopeSelection) selectedNames(resourceTypes []string, names ...string) bool {
 	if len(s.selectors) == 0 {
 		return true
@@ -353,6 +344,7 @@ func (s *scopeSelection) selectedNames(resourceTypes []string, names ...string) 
 	for _, selector := range s.selectors {
 		for _, resourceType := range resourceTypes {
 			if selector.matches(resourceType, names...) {
+				s.matched = true
 				return true
 			}
 		}

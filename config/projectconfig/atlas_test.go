@@ -1414,15 +1414,16 @@ env "prod" {
 // reports no decode failure, with a name it does decode used as the control in
 // the same command.
 //
-// Names the community binary DOES decode stay in the rejection table above --
-// tolerating those would accept a policy and silently not enforce it.
-// The names the community binary decodes are refused by scope-qualified path,
-// not by bare name: `repo` is refused under schema and tolerated anywhere else.
-// Without this the deny-list would over-refuse every unrelated `repo`.
+// Names the community binary DOES decode stay out of the tolerance --
+// sweeping those in would accept a policy and silently not enforce it. The
+// handling is by scope-qualified path, not by bare name: `repo` under
+// env.schema is the construct the community binary type-checks, so it is
+// decoded into the IR, while `repo` anywhere else is an unknown name and is
+// tolerated. Without the scope qualification one arm would swallow the other.
 func TestParseAtlasProjectConfigEnforcedNamesAreScopeQualified(t *testing.T) {
 	c := qt.New(t)
 
-	refused := `env "local" {
+	decoded := `env "local" {
   url = "sqlite://s.db"
   schema {
     repo {
@@ -1431,8 +1432,14 @@ func TestParseAtlasProjectConfigEnforcedNamesAreScopeQualified(t *testing.T) {
   }
 }
 `
-	_, err := projectconfig.ParseAtlas([]byte(refused), "atlas.hcl", "local")
-	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "repo" .*`)
+	cfg, err := projectconfig.ParseAtlas([]byte(decoded), "atlas.hcl", "local")
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Schema.Repo.Name, qt.Equals, "app")
+	decodedNames := make([]string, 0, len(cfg.IgnoredConstructs))
+	for _, ignored := range cfg.IgnoredConstructs {
+		decodedNames = append(decodedNames, ignored.Name)
+	}
+	c.Assert(decodedNames, qt.Not(qt.Contains), "repo")
 
 	elsewhere := `env "local" {
   url = "sqlite://s.db"
@@ -1442,8 +1449,9 @@ func TestParseAtlasProjectConfigEnforcedNamesAreScopeQualified(t *testing.T) {
   }
 }
 `
-	cfg, err := projectconfig.ParseAtlas([]byte(elsewhere), "atlas.hcl", "local")
+	cfg, err = projectconfig.ParseAtlas([]byte(elsewhere), "atlas.hcl", "local")
 	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Schema.Repo.Name, qt.Equals, "")
 	names := make([]string, 0, len(cfg.IgnoredConstructs))
 	for _, ignored := range cfg.IgnoredConstructs {
 		names = append(names, ignored.Name)
@@ -1597,28 +1605,6 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 			err: `cannot evaluate atlas\.hcl "sensitive" at atlas\.hcl:4: .*There is no variable named "ALLOW"\.`,
 		},
 		{
-			name: "schema repo block",
-			raw: `env "local" {
-  schema {
-    repo {
-      name = "app"
-    }
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "repo" at atlas\.hcl:3`,
-		},
-		{
-			name: "diff skip drop schema",
-			raw: `diff {
-  skip {
-    drop_schema = true
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "drop_schema" at atlas\.hcl:3`,
-		},
-		{
 			name: "lint destructive allow table",
 			raw: `lint {
   destructive {
@@ -1644,14 +1630,24 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 			err: `unsupported atlas\.hcl construct "destructive" at atlas\.hcl:5`,
 		},
 		{
-			name: "lint constraint drop block",
+			// Same duplicate-block policy the `destructive` row above pins,
+			// applied to the analyzer stokaro/ptah#1048 added. The community
+			// binary accepts the duplicate and honors the first block --
+			// measured, `condrop { error = true }` followed by
+			// `condrop { error = false }` still exits 1 -- so Ptah is stricter
+			// here. That is the safe direction, and it is a parser-wide rule
+			// rather than anything specific to condrop.
+			name: "lint duplicate constraint drop block",
 			raw: `lint {
   condrop {
     error = true
   }
+  condrop {
+    error = false
+  }
 }
 `,
-			err: `unsupported atlas\.hcl construct "condrop" at atlas\.hcl:2`,
+			err: `unsupported atlas\.hcl construct "condrop" at atlas\.hcl:5`,
 		},
 		{
 			name: "cloud block",
@@ -1990,13 +1986,13 @@ func TestAtlasParserDistinguishesFailureClasses(t *testing.T) {
 	// and must not be reported as either of the two above.
 	//
 	// The position matters. Unknown names are now tolerated at every level, so
-	// this uses `schema.repo` -- one of the few names the community binary
-	// genuinely decodes, which is why Ptah still refuses it rather than
-	// accepting a policy it does not enforce.
-	unknown := "env \"local\" {\n  schema {\n    repo {\n      name = \"app\"\n    }\n  }\n  url = \"sqlite://m.db\"" + envBody
+	// this uses a nested block inside a lint analyzer -- `destructive` decodes
+	// only `error`, and a block body under it is refused structurally rather
+	// than tolerated, which keeps a name-class refusal reachable.
+	unknown := "env \"local\" {\n  lint {\n    destructive {\n      allow_table {\n        match = \"x\"\n      }\n    }\n  }\n  url = \"sqlite://m.db\"" + envBody
 	_, err := projectconfig.ParseAtlas([]byte(unknown), "atlas.hcl", "local")
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "repo" .*`)
+	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "allow_table" .*`)
 }
 
 // TestAtlasParserScrubsSensitiveValuesFromDiagnostics is a regression test for

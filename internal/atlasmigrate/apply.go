@@ -32,8 +32,15 @@ type ApplyOptions struct {
 	RevisionsSchema      string
 	MigrationLockTimeout time.Duration
 	Amount               uint64
-	AllowDirty           bool
-	BaselineVersion      int64
+	// ToVersion bounds the apply at a migration version: every pending
+	// migration up to and including it runs, and nothing above it does. Zero
+	// means unbounded. It is the version bound Atlas spells --to-version, and
+	// it is enforced by the migrator inside the migration lock rather than by
+	// the preview below, so a run that races another writer applies the
+	// versions the bound names rather than a count computed before the lock.
+	ToVersion       int64
+	AllowDirty      bool
+	BaselineVersion int64
 	// SkipChecks bypasses pre-migration check evaluation. Atlas registers no
 	// flag for this on `migrate apply` (measured on CE v1.2.0 and on
 	// Atlas's own help surface), so the compat command resolves it from
@@ -122,7 +129,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 	return ApplyPlan{
 		Status:                 status,
 		Migrations:             mig.MigrationProvider().Migrations(),
-		SelectedVersions:       selectedApplyVersions(pending, opts.Amount),
+		SelectedVersions:       selectedApplyVersions(pending, opts.Amount, opts.ToVersion),
 		CurrentVersion:         plannedCurrentVersion,
 		DryRun:                 opts.DryRun,
 		StartedAt:              startedAt,
@@ -166,6 +173,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 	lockedPlanObserved := false
 	err := p.mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{
 		Amount:                 p.opts.Amount,
+		TargetVersion:          p.opts.ToVersion,
 		AllowDirty:             p.opts.AllowDirty,
 		AssumedAppliedVersions: p.assumedAppliedVersions,
 		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
@@ -279,6 +287,16 @@ func validateApplyOptions(conn *dbschema.DatabaseConnection, opts ApplyOptions) 
 	if opts.BaselineVersion < 0 {
 		return errors.New("migrate apply baseline version must be greater than or equal to zero")
 	}
+	if opts.ToVersion < 0 {
+		return errors.New("migrate apply target version must be greater than or equal to zero")
+	}
+	// Refused here rather than left to the migrator, which raises the same
+	// conflict only once it holds the migration lock. The two bounds select
+	// different prefixes and there is no defensible precedence between them, so
+	// the run must not start.
+	if opts.ToVersion > 0 && opts.Amount > 0 {
+		return errors.New("--to-version and the amount argument cannot both be set")
+	}
 	return nil
 }
 
@@ -345,9 +363,20 @@ func pendingAfterAssumedApplied(pending []int64, assumedApplied []int64) []int64
 	return filtered
 }
 
-func selectedApplyVersions(pending []int64, amount uint64) []int64 {
+// selectedApplyVersions previews the versions an apply will run, before the
+// migration lock is taken.
+//
+// The toVersion bound skips over a version above the bound rather than
+// stopping at it, because that is what the migrator does inside the lock
+// (migrationsToApply continues past an out-of-bound version). Stopping instead
+// would make the preview disagree with the execution on a directory whose
+// pending versions are not monotonically ordered.
+func selectedApplyVersions(pending []int64, amount uint64, toVersion int64) []int64 {
 	selected := make([]int64, 0, len(pending))
 	for _, version := range pending {
+		if toVersion > 0 && version > toVersion {
+			continue
+		}
 		selected = append(selected, version)
 		if amount > 0 && uint64(len(selected)) == amount {
 			break

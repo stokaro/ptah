@@ -9,35 +9,285 @@ import (
 	"go.5x5.cz/ptah/internal/schemaclean"
 )
 
-func TestPlanFromSchemaBuildsDeterministicSupportedObjectChanges(t *testing.T) {
-	c := qt.New(t)
-	schema := &dbschematypes.DBSchema{
+// schemaWithEveryReportableKind holds one object of every kind that any
+// dialect's reader can surface into a cleanup plan. Each dialect case below
+// asserts the exact subset its writer destroys, so a dialect that reported a
+// kind it does not drop shows up as an extra row rather than as a silent pass.
+func schemaWithEveryReportableKind() *dbschematypes.DBSchema {
+	return &dbschematypes.DBSchema{
 		Tables: []dbschematypes.DBTable{
 			{Name: "users", Schema: "public"},
-			{Name: "accounts", Schema: "tenant"},
+			{Name: "posts", Schema: "public"},
 		},
-		Enums: []dbschematypes.DBEnum{
-			{Name: "status"},
+		Constraints: []dbschematypes.DBConstraint{
+			{Name: "fk_posts_users", Schema: "public", TableName: "posts", Type: "FOREIGN KEY"},
+			{Name: "pk_posts", Schema: "public", TableName: "posts", Type: "PRIMARY KEY"},
 		},
-		Views: []dbschematypes.DBView{
-			{Name: "active_users", Schema: "public"},
+		Enums:      []dbschematypes.DBEnum{{Name: "mood"}},
+		Views:      []dbschematypes.DBView{{Name: "v_users", Schema: "public"}},
+		MatViews:   []dbschematypes.DBMatView{{Name: "mv_users", Schema: "public"}},
+		Functions:  []dbschematypes.DBFunction{{Name: "f_touch"}},
+		Domains:    []dbschematypes.DBDomain{{Name: "d_email", Schema: "public"}},
+		Composites: []dbschematypes.DBComposite{{Name: "c_addr", Schema: "public"}},
+		Ranges:     []dbschematypes.DBRange{{Name: "r_int", Schema: "public"}},
+	}
+}
+
+// TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys pins each dialect's
+// plan coverage to what that dialect's SchemaWriter.DropAllTables really drops.
+//
+// The sqlserver and clickhouse rows are the control: their readers do surface
+// views, and their writers do not drop them, so a change that simply listed
+// everything the reader returns would fail those two rows.
+func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		dialect string
+		want    []schemaclean.Object
+	}{
+		{
+			name:    "postgres drops relations, routines, types and foreign keys",
+			dialect: "postgres",
+			want: []schemaclean.Object{
+				{Type: "composite", Schema: "public", Name: "c_addr"},
+				{Type: "domain", Schema: "public", Name: "d_email"},
+				{Type: "enum", Name: "mood"},
+				{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
+				{Type: "function", Name: "f_touch"},
+				{Type: "materialized_view", Schema: "public", Name: "mv_users"},
+				{Type: "range", Schema: "public", Name: "r_int"},
+				{Type: "table", Schema: "public", Name: "posts"},
+				{Type: "table", Schema: "public", Name: "users"},
+				{Type: "view", Schema: "public", Name: "v_users"},
+			},
 		},
-		Functions: []dbschematypes.DBFunction{
-			{Name: "set_context"},
+		{
+			name:    "cockroachdb shares the postgres writer",
+			dialect: "cockroachdb",
+			want: []schemaclean.Object{
+				{Type: "composite", Schema: "public", Name: "c_addr"},
+				{Type: "domain", Schema: "public", Name: "d_email"},
+				{Type: "enum", Name: "mood"},
+				{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
+				{Type: "function", Name: "f_touch"},
+				{Type: "materialized_view", Schema: "public", Name: "mv_users"},
+				{Type: "range", Schema: "public", Name: "r_int"},
+				{Type: "table", Schema: "public", Name: "posts"},
+				{Type: "table", Schema: "public", Name: "users"},
+				{Type: "view", Schema: "public", Name: "v_users"},
+			},
+		},
+		{
+			name:    "mysql drops foreign keys, tables and views but has no standalone types",
+			dialect: "mysql",
+			want: []schemaclean.Object{
+				{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
+				{Type: "table", Schema: "public", Name: "posts"},
+				{Type: "table", Schema: "public", Name: "users"},
+				{Type: "view", Schema: "public", Name: "v_users"},
+			},
+		},
+		{
+			name:    "mariadb shares the mysql writer",
+			dialect: "mariadb",
+			want: []schemaclean.Object{
+				{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
+				{Type: "table", Schema: "public", Name: "posts"},
+				{Type: "table", Schema: "public", Name: "users"},
+				{Type: "view", Schema: "public", Name: "v_users"},
+			},
+		},
+		{
+			name:    "sqlite drops tables and views only",
+			dialect: "sqlite",
+			want: []schemaclean.Object{
+				{Type: "table", Schema: "public", Name: "posts"},
+				{Type: "table", Schema: "public", Name: "users"},
+				{Type: "view", Schema: "public", Name: "v_users"},
+			},
+		},
+		{
+			name:    "sqlserver drops foreign keys and tables but never views",
+			dialect: "sqlserver",
+			want: []schemaclean.Object{
+				{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
+				{Type: "table", Schema: "public", Name: "posts"},
+				{Type: "table", Schema: "public", Name: "users"},
+			},
+		},
+		{
+			name:    "clickhouse drops base tables only",
+			dialect: "clickhouse",
+			want: []schemaclean.Object{
+				{Type: "table", Schema: "public", Name: "posts"},
+				{Type: "table", Schema: "public", Name: "users"},
+			},
 		},
 	}
 
-	plan := schemaclean.PlanFromSchema(schema, "postgres")
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			plan := schemaclean.PlanFromSchema(schemaWithEveryReportableKind(), test.dialect)
+
+			c.Assert(plan.Objects, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestPlanFromObjectsRendersDialectSpecificDropCommands pins the rendered
+// report statement for every object kind a plan can name.
+func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		dialect string
+		object  schemaclean.Object
+		want    string
+	}{
+		{
+			name:    "postgres view",
+			dialect: "postgres",
+			object:  schemaclean.Object{Type: "view", Schema: "public", Name: "v_users"},
+			want:    `DROP VIEW IF EXISTS "public"."v_users" CASCADE`,
+		},
+		{
+			name:    "postgres materialized view",
+			dialect: "postgres",
+			object:  schemaclean.Object{Type: "materialized_view", Schema: "public", Name: "mv_users"},
+			want:    `DROP MATERIALIZED VIEW IF EXISTS "public"."mv_users" CASCADE`,
+		},
+		{
+			name:    "postgres function",
+			dialect: "postgres",
+			object:  schemaclean.Object{Type: "function", Name: "f_touch"},
+			want:    `DROP FUNCTION IF EXISTS "f_touch" CASCADE`,
+		},
+		{
+			name:    "postgres domain",
+			dialect: "postgres",
+			object:  schemaclean.Object{Type: "domain", Schema: "public", Name: "d_email"},
+			want:    `DROP DOMAIN IF EXISTS "public"."d_email" CASCADE`,
+		},
+		{
+			name:    "postgres composite type",
+			dialect: "postgres",
+			object:  schemaclean.Object{Type: "composite", Schema: "public", Name: "c_addr"},
+			want:    `DROP TYPE IF EXISTS "public"."c_addr" CASCADE`,
+		},
+		{
+			name:    "postgres range type",
+			dialect: "postgres",
+			object:  schemaclean.Object{Type: "range", Schema: "public", Name: "r_int"},
+			want:    `DROP TYPE IF EXISTS "public"."r_int" CASCADE`,
+		},
+		{
+			name:    "postgres foreign key",
+			dialect: "postgres",
+			object: schemaclean.Object{
+				Type:   "foreign_key",
+				Schema: "public",
+				Table:  "posts",
+				Name:   "fk_posts_users",
+			},
+			want: `ALTER TABLE "public"."posts" DROP CONSTRAINT "fk_posts_users"`,
+		},
+		{
+			name:    "mysql view",
+			dialect: "mysql",
+			object:  schemaclean.Object{Type: "view", Name: "v_users"},
+			want:    "DROP VIEW IF EXISTS `v_users`",
+		},
+		{
+			name:    "mysql function",
+			dialect: "mysql",
+			object:  schemaclean.Object{Type: "function", Name: "f_one"},
+			want:    "DROP FUNCTION IF EXISTS `f_one`",
+		},
+		{
+			name:    "mysql procedure",
+			dialect: "mysql",
+			object:  schemaclean.Object{Type: "procedure", Name: "p_noop"},
+			want:    "DROP PROCEDURE IF EXISTS `p_noop`",
+		},
+		{
+			name:    "mysql event",
+			dialect: "mysql",
+			object:  schemaclean.Object{Type: "event", Name: "e_noop"},
+			want:    "DROP EVENT IF EXISTS `e_noop`",
+		},
+		{
+			name:    "mysql foreign key uses DROP FOREIGN KEY",
+			dialect: "mysql",
+			object:  schemaclean.Object{Type: "foreign_key", Table: "posts", Name: "fk_posts_users"},
+			want:    "ALTER TABLE `posts` DROP FOREIGN KEY `fk_posts_users`",
+		},
+		{
+			name:    "mariadb sequence",
+			dialect: "mariadb",
+			object:  schemaclean.Object{Type: "sequence", Name: "s_counter"},
+			want:    "DROP SEQUENCE IF EXISTS `s_counter`",
+		},
+		{
+			name:    "postgres sequence keeps CASCADE",
+			dialect: "postgres",
+			object:  schemaclean.Object{Type: "sequence", Schema: "public", Name: "users_id_seq"},
+			want:    `DROP SEQUENCE IF EXISTS "public"."users_id_seq" CASCADE`,
+		},
+		{
+			name:    "sqlite view",
+			dialect: "sqlite",
+			object:  schemaclean.Object{Type: "view", Name: "v_const"},
+			want:    `DROP VIEW IF EXISTS "v_const"`,
+		},
+		{
+			name:    "sqlserver foreign key keeps DROP CONSTRAINT",
+			dialect: "sqlserver",
+			object: schemaclean.Object{
+				Type:   "foreign_key",
+				Schema: "dbo",
+				Table:  "posts",
+				Name:   "fk_posts_users",
+			},
+			want: "ALTER TABLE [dbo].[posts] DROP CONSTRAINT [fk_posts_users]",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			plan := schemaclean.PlanFromObjects([]schemaclean.Object{test.object}, test.dialect)
+
+			c.Assert(plan.Changes, qt.HasLen, 1)
+			c.Assert(plan.Changes[0].Cmd, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestPlanFromObjectsOrdersReportByKindThenLocation pins the documented report
+// order: kind alphabetically, then schema, table, and name. It is deliberately
+// not the order Apply executes in — "table" sorting before "view" puts a view's
+// backing table above the view even though the writer drops the view first.
+func TestPlanFromObjectsOrdersReportByKindThenLocation(t *testing.T) {
+	c := qt.New(t)
+
+	plan := schemaclean.PlanFromObjects([]schemaclean.Object{
+		{Type: "view", Schema: "public", Name: "v_users"},
+		{Type: "table", Schema: "tenant", Name: "accounts"},
+		{Type: "table", Schema: "public", Name: "users"},
+		{Type: "materialized_view", Schema: "public", Name: "mv_users"},
+		{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
+		{Type: "composite", Schema: "public", Name: "c_addr"},
+	}, "postgres")
 
 	c.Assert(plan.Objects, qt.DeepEquals, []schemaclean.Object{
-		{Type: "enum", Name: "status"},
+		{Type: "composite", Schema: "public", Name: "c_addr"},
+		{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
+		{Type: "materialized_view", Schema: "public", Name: "mv_users"},
 		{Type: "table", Schema: "public", Name: "users"},
 		{Type: "table", Schema: "tenant", Name: "accounts"},
-	})
-	c.Assert(plan.Changes, qt.DeepEquals, []schemaclean.Change{
-		{Type: "enum", Name: "status", Cmd: `DROP TYPE IF EXISTS "status" CASCADE`},
-		{Type: "table", Schema: "public", Name: "users", Cmd: `DROP TABLE IF EXISTS "public"."users" CASCADE`},
-		{Type: "table", Schema: "tenant", Name: "accounts", Cmd: `DROP TABLE IF EXISTS "tenant"."accounts" CASCADE`},
+		{Type: "view", Schema: "public", Name: "v_users"},
 	})
 }
 
@@ -62,56 +312,27 @@ func TestPlanFromSchemaIgnoresMySQLColumnEnums(t *testing.T) {
 	})
 }
 
-func TestPlanFromObjectsSupportsPostgreSQLSequences(t *testing.T) {
-	c := qt.New(t)
-
-	plan := schemaclean.PlanFromObjects([]schemaclean.Object{
-		{Type: "sequence", Schema: "public", Name: "users_id_seq"},
-	}, "postgres")
-
-	c.Assert(plan.Objects, qt.DeepEquals, []schemaclean.Object{
-		{Type: "sequence", Schema: "public", Name: "users_id_seq"},
-	})
-	c.Assert(plan.Changes, qt.DeepEquals, []schemaclean.Change{
-		{
-			Type:   "sequence",
-			Schema: "public",
-			Name:   "users_id_seq",
-			Cmd:    `DROP SEQUENCE IF EXISTS "public"."users_id_seq" CASCADE`,
-		},
-	})
-}
-
-func TestPlanFromSchemaReportsSQLServerForeignKeyCleanup(t *testing.T) {
+// TestPlanFromSchemaReportsViewsOnceForReadersThatAlsoListThemAsTables guards
+// the one double-count risk of reporting views: a reader that puts a view into
+// both DBSchema.Tables (with Type "VIEW") and DBSchema.Views must still yield a
+// single view row.
+func TestPlanFromSchemaReportsViewsOnceForReadersThatAlsoListThemAsTables(t *testing.T) {
 	c := qt.New(t)
 	schema := &dbschematypes.DBSchema{
 		Tables: []dbschematypes.DBTable{
-			{Name: "users", Schema: "dbo"},
-			{Name: "posts", Schema: "dbo"},
+			{Name: "users", Type: "BASE TABLE"},
+			{Name: "v_users", Type: "VIEW"},
 		},
-		Constraints: []dbschematypes.DBConstraint{
-			{Name: "fk_posts_users", Schema: "dbo", TableName: "posts", Type: "FOREIGN KEY"},
-			{Name: "pk_posts", Schema: "dbo", TableName: "posts", Type: "PRIMARY KEY"},
+		Views: []dbschematypes.DBView{
+			{Name: "v_users"},
 		},
 	}
 
-	plan := schemaclean.PlanFromSchema(schema, "sqlserver")
+	plan := schemaclean.PlanFromSchema(schema, "postgres")
 
 	c.Assert(plan.Objects, qt.DeepEquals, []schemaclean.Object{
-		{Type: "foreign_key", Schema: "dbo", Table: "posts", Name: "fk_posts_users"},
-		{Type: "table", Schema: "dbo", Name: "posts"},
-		{Type: "table", Schema: "dbo", Name: "users"},
-	})
-	c.Assert(plan.Changes, qt.DeepEquals, []schemaclean.Change{
-		{
-			Type:   "foreign_key",
-			Schema: "dbo",
-			Table:  "posts",
-			Name:   "fk_posts_users",
-			Cmd:    "ALTER TABLE [dbo].[posts] DROP CONSTRAINT [fk_posts_users]",
-		},
-		{Type: "table", Schema: "dbo", Name: "posts", Cmd: "DROP TABLE IF EXISTS [dbo].[posts]"},
-		{Type: "table", Schema: "dbo", Name: "users", Cmd: "DROP TABLE IF EXISTS [dbo].[users]"},
+		{Type: "table", Name: "users"},
+		{Type: "view", Name: "v_users"},
 	})
 }
 

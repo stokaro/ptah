@@ -122,16 +122,15 @@ ptah-compat schema inspect --url "postgres://localhost/app" \
 ```
 
 Child resources — columns, indexes, constraints, triggers, policies, grants —
-ride along with their parent and cannot be selected on their own, in either
-the `[type=column]` or the literal-dot `table.column` spelling; both fail
-before any database is contacted. Glob metacharacters — `*`, `?`, and
-character classes — still match a dot, so `table*column` and `table[.]column`
-are not caught by that check and select nothing instead
-([`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979)). An
-identifier that itself contains a dot is selected as `main."my.table"` or
-`a\.b\.c`; the bare `a.b.c` spelling is refused as ambiguous. A selection
-that keeps an object whose dependency it dropped is refused rather than
-rendered, so inspected output never references an object it omits:
+ride along with their parent and cannot be selected on their own; the
+`[type=column]` spelling fails before any database is contacted. A positional
+spelling such as `table.column` is not refused on its shape — it is
+indistinguishable from a table literally named that — so it is carried to the
+selection, where an identifier containing a dot can equally be named as
+`main."my.table"`, `a\.b\.c`, or bare. A selection that matches nothing
+renders no objects, keeps exit status 0, and reports itself on standard error.
+A selection that keeps an object whose dependency it dropped is refused rather
+than rendered, so inspected output never references an object it omits:
 
 ```text
 error: the --schema/--include selection drops objects that selected objects depend on:
@@ -272,7 +271,9 @@ for object kinds represented in Ptah's schema IR. `diff.skip.drop_table = true`
 removes table drops from supported local plans. For non-dry-run PostgreSQL
 `schema apply` plans that actually emit `CREATE INDEX CONCURRENTLY`,
 `diff.concurrent_index.create = true` requires `--tx-mode none`;
-`diff.concurrent_index.drop` and `diff.skip.drop_schema` fail explicitly.
+`diff.concurrent_index.drop` fails explicitly. `diff.skip.drop_schema` is
+accepted and type-checked, but changes no plan: Ptah's schema diff has no
+removed-schema list, so there is no `DROP SCHEMA` for the suppression to omit.
 
 ### Scope the comparison with `--schema` and `--include`
 
@@ -296,60 +297,60 @@ see, on `schema apply` and `schema diff` alike:
   tables, roles named by kept grants, owning schemas) are retained.
   Child-resource selectors such as `[type=column]` or `[type=index]`, field
   selectors, and unknown resource types are rejected loudly because Ptah
-  cannot project a partial parent faithfully. The literal-dot spelling of the
-  same thing is rejected too: a selector names a resource as `name` or
-  `schema.name`, so a pattern with a deeper path such as `main.users.email`
-  or `main.users.*` fails instead of silently selecting nothing.
+  cannot project a partial parent faithfully. A positional spelling such as
+  `main.users.email` is **not** rejected on its shape: it cannot be told apart
+  from a table literally named `users.email`, so it is carried to the
+  selection and answered there.
 
 #### Selecting an identifier that contains a dot
 
-Selector depth counts separators **outside quotes**, so a quoted identifier
-holding a dot stays a valid depth-one selector:
+All three spellings of a dotted name select a table named `a.b.c`:
 
 ```bash
-ptah-compat schema diff … --include 'main."my.table"'   # qualified
-ptah-compat schema diff … --include '*."my.table"'      # any schema
+ptah-compat schema diff … --include 'a.b.c'          # bare
+ptah-compat schema diff … --include 'a\.b\.c'        # escaped
+ptah-compat schema diff … --include 'main."a.b.c"'   # quoted and qualified
 ```
 
-The **bare** spelling of a dotted name is refused, because `a.b.c` cannot be
-told apart from the `schema.table.column` form the depth rule exists to
-reject:
+The bare spelling used to be refused as ambiguous with `schema.table.column`,
+and the other two were documented as the workaround. Both workarounds still
+parse and still select, so nothing written against them breaks; the bare form
+works again as well.
 
-```text
-$ ptah-compat schema diff … --include 'a.b.c'
-error: unsupported Atlas include selector "a.b.c": selectors name top-level
-resources as "name" or "schema.name", and a deeper pattern names a child
-resource that rides along with its parent
-```
+#### A selection that matches nothing
 
-Spell it one of two unambiguous ways instead — escape the dots, or quote the
-identifier:
+Whether a selector matched is an **outcome**, not a property of its text.
+`path.Match` treats `.` as an ordinary character — only `/` separates — so
+every metacharacter that can stand for a dot reaches past a top-level
+resource, and all four of these select nothing:
 
 ```bash
-ptah-compat schema diff … --include 'a\.b\.c'
-ptah-compat schema diff … --include 'main."a.b.c"'
-```
-
-This is a deliberate trade of one ambiguous spelling for two exact ones.
-Removing the need for it requires checking the selection's outcome rather than
-its shape, tracked in
-[`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979).
-
-#### What the depth check does not catch
-
-It covers the literal-dot spelling only. Every glob metacharacter that can
-stand for a dot escapes it — `*`, `?`, and a character class — so all three of
-these reach past a top-level resource and report a synced schema instead of
-failing:
-
-```bash
+ptah-compat schema diff … --include 'main.users.email'
 ptah-compat schema diff … --include 'main.users*email'
 ptah-compat schema diff … --include 'main.users?email'
 ptah-compat schema diff … --include 'main.users[.]email'
 ```
 
-Closing the whole class needs the outcome-based check in
-[`stokaro/ptah#979`](https://github.com/stokaro/ptah/issues/979).
+So does a plain typo. Each verb answers that condition differently, on
+purpose:
+
+| Verb | Exit status | Standard output | Standard error |
+| --- | --- | --- | --- |
+| `schema diff` | `0` | unchanged (`Schemas are synced, no changes to be made.`) | `Warning: the --include selection matched no objects: "…".` |
+| `schema inspect` | `0` | unchanged (no objects rendered) | same warning |
+| `schema apply` | `1` | empty | `Error: the --include selection matched no objects: "…"; schema apply would change nothing` |
+
+`diff` and `inspect` are read-only and their standard output is what CI
+compares, so their bytes and exit status are left alone and the notice goes
+out of band. `apply` is the verb where an empty selection meant an untouched
+target and a success message, so it refuses instead.
+
+This is a deliberate choice rather than a matched behavior. Atlas CE
+implements no `--include` flag at all, so there is no measurement to copy for
+it; its sibling positive selector `--schema` answers a zero match with exit
+status 0 and silence on every verb, which is where `diff` and `inspect` stay.
+`--schema` on its own is unaffected here: narrowing to a schema that holds
+nothing stays an ordinary answer.
 - `--exclude` and disabled `schema.mode` values subtract from the positive
   selection afterward. The composition order is fixed: schema universe first,
   include selection inside it, exclusion last.
@@ -368,9 +369,11 @@ error: apply --schema/--include to desired schema: the --schema/--include select
 add the missing objects to the selection or exclude the dependent objects
 ```
 
-A selection that matches nothing is not an error: the comparison sees two
-empty projections and reports a synced schema. Malformed selectors fail during
-validation, before any database is contacted.
+An `--include` selection that matches neither the target nor the desired state
+refuses the apply, because there is nothing to apply and a synced-schema
+message would claim success for work that did not happen. A `--schemas`
+selection that narrows to nothing is not an error. Malformed selectors fail
+during validation, before any database is contacted.
 
 `--format` accepts Atlas-style Go templates over the planned apply changes. The
 supported template surface includes the `sql` helper and `.MarshalSQL`:
@@ -624,14 +627,20 @@ schema objects. Preview first:
 ptah-compat schema clean --url "$DATABASE_URL" --dry-run
 ```
 
-Against a SQLite database containing one `users` table, expected output
-includes:
+Against a SQLite database containing one `users` table and one `v_const` view,
+expected output includes:
 
 ```text
-Planned cleanup changes: 1
+Planned cleanup changes: 2
 - DROP TABLE IF EXISTS "users"
+- DROP VIEW IF EXISTS "v_const"
 [DRY RUN] No changes were applied.
 ```
+
+The plan lists the object kinds the target dialect's cleanup really destroys —
+see the [per-dialect coverage table](../../reference/atlas-commands/#ptah-compat-schema-clean).
+Rows are ordered alphabetically by object kind; that is a report order, not the
+order the statements run in.
 
 :::danger
 Without `--dry-run`, cleanup drops the listed objects after confirmation

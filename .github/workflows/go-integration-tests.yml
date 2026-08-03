@@ -258,6 +258,7 @@ jobs:
           go test -v -count=1 ./internal/dbschema/clickhouse -run '^TestWriterDropDatabaseRealm_(Live|RejectsExternalDependencyLive|RejectsLegacyServerLive)$' -timeout 3m
           go test -v -count=1 ./internal/dbschema/mssql -run '^TestWriterDropDatabaseRealm_(Live|RejectsDatabaseScopedArtifactLive|RejectsPreservedSchemaPermissionLive)$' -timeout 3m
           go test -v -count=1 ./internal/dbschema/postgres -tags=integration -run '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|PostgresCleansLargeObjects|PostgresRejectsPublication|RejectsProtectedDatabase)$' -timeout 5m
+          go test -v -count=1 ./internal/schemaclean -tags=integration -run '^TestInspectNamesEveryObjectApplyDestroys_PostgresLive$' -timeout 5m
           go test -v -count=1 ./internal/migrationreplay -tags=integration -run '^TestWithReplayedSnapshot_(ClickHouse|SQLServer)Live$' -timeout 5m
           go test -v -count=1 ./integration -tags=integration -run '^TestAtlasMigrateDiff(MySQLFamilyDatabaseDesiredState|PostgresFamilyDevCleanup)E2E$' -timeout 12m
 

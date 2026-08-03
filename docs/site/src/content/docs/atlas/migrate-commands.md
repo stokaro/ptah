@@ -615,6 +615,24 @@ suggested-fix layout. Ptah-only diagnostics remain visibly labeled and do not
 link to unproven Atlas analyzer codes. Native `ptah migrations lint` keeps
 Ptah's more detailed diagnostic prose and remediation guidance.
 
+A statement affecting several objects reports per object, and the two
+destructive shapes are not the same:
+
+- A `DROP TABLE` naming several tables produces one diagnostic and one suggested
+  fix per dropped table, ordered by table name compared byte-wise, so the
+  suggested-fix header pluralizes and the diagnostic count rises with the number
+  of tables.
+- One `ALTER TABLE` dropping several columns produces one diagnostic naming
+  every dropped column in clause order, under a single suggested fix.
+- One `ALTER TABLE` adding several non-nullable columns without a default
+  produces one diagnostic per column, in clause order.
+
+Native `ptah migrations lint` splits its findings the same way, so the two
+surfaces never disagree about how many objects a statement affects. Each
+per-object finding names its object in the native message, which is also what
+keeps each SARIF result's fingerprint distinct when several of them share a
+rule, a file, and a line.
+
 The report is written to stdout even when findings fail, and error-severity
 findings still exit with code 1. The native `ptah migrations lint` output is
 unchanged. Custom output is selected by `--format`, by `format.migrate.lint`,

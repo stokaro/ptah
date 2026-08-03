@@ -47,7 +47,7 @@ const atlasAnalyzerDocsURL = "https://atlasgo.io/lint/analyzers#"
 // native message is used unchanged -- being wordier than Atlas is a smaller
 // divergence than inventing a sentence Atlas never prints.
 func atlasDiagnosticText(code string, finding migrationlint.Finding) (atlasDiagnosticCopy, bool) {
-	subject := atlasPrimarySubject(finding)
+	subject := atlasSoleSubject(finding)
 	switch code {
 	case "DS102":
 		if subject == nil || subject.Name == "" {
@@ -64,16 +64,27 @@ func atlasDiagnosticText(code string, finding migrationlint.Finding) (atlasDiagn
 			fixWidth:     atlasDS102FixWidth,
 		}, true
 	case "DS103":
-		if subject == nil || subject.Name == "" {
-			return atlasDiagnosticCopy{}, false
-		}
-		name, ok := atlasIdentifierName(subject.Name)
+		// One ALTER TABLE that drops several columns is ONE diagnostic naming
+		// all of them, not one per column -- the opposite of DS102, and
+		// measured that way rather than assumed. The nouns and the trailing
+		// pronoun move with the count, so both forms are spelled out here
+		// instead of being derived from the single-column string.
+		names, ok := atlasIdentifierNames(finding)
 		if !ok {
 			return atlasDiagnosticCopy{}, false
 		}
+		if len(names) == 1 {
+			return atlasDiagnosticCopy{
+				message:      fmt.Sprintf("Dropping non-virtual column %q", names[0]),
+				fix:          fmt.Sprintf("Add a pre-migration check to ensure column %q is NULL before dropping it", names[0]),
+				messageWidth: atlasDS103MessageWidth,
+				fixWidth:     lintWrapWidth,
+			}, true
+		}
+		list := atlasQuotedList(names)
 		return atlasDiagnosticCopy{
-			message:      fmt.Sprintf("Dropping non-virtual column %q", name),
-			fix:          fmt.Sprintf("Add a pre-migration check to ensure column %q is NULL before dropping it", name),
+			message:      fmt.Sprintf("Dropping non-virtual columns %s", list),
+			fix:          fmt.Sprintf("Add pre-migration checks to ensure columns %s are NULL before dropping them", list),
 			messageWidth: atlasDS103MessageWidth,
 			fixWidth:     lintWrapWidth,
 		}, true
@@ -134,10 +145,49 @@ func atlasDataType(value string) (string, bool) {
 	return "", false
 }
 
-// atlasPrimarySubject returns the schema object a diagnostic is about.
-func atlasPrimarySubject(finding migrationlint.Finding) *migrationlint.Subject {
-	if finding.Context == nil || len(finding.Context.Subjects) == 0 {
+// atlasSoleSubject returns the schema object a one-object diagnostic is about.
+//
+// DS102 and MF103 are one diagnostic per object, so the analyzers emit one
+// finding per object and a finding carrying several of them is a shape this
+// wording cannot render. It returns nil in that case, which drops the caller to
+// Ptah's own labeled prose. The alternative -- rendering the first subject --
+// is what hid the other dropped tables: silently narrowing a destructive
+// finding to one of its objects reads as complete output and is not.
+func atlasSoleSubject(finding migrationlint.Finding) *migrationlint.Subject {
+	if finding.Context == nil || len(finding.Context.Subjects) != 1 {
 		return nil
 	}
 	return &finding.Context.Subjects[0]
+}
+
+// atlasIdentifierNames returns every subject's logical name. It fails as a unit
+// so a diagnostic naming several objects can never render a partial list.
+func atlasIdentifierNames(finding migrationlint.Finding) ([]string, bool) {
+	if finding.Context == nil || len(finding.Context.Subjects) == 0 {
+		return nil, false
+	}
+	names := make([]string, 0, len(finding.Context.Subjects))
+	for _, subject := range finding.Context.Subjects {
+		if subject.Name == "" {
+			return nil, false
+		}
+		name, ok := atlasIdentifierName(subject.Name)
+		if !ok {
+			return nil, false
+		}
+		names = append(names, name)
+	}
+	return names, true
+}
+
+// atlasQuotedList renders two or more names as the measured prose list:
+// comma-separated, with "and" before the last. Callers handle the single-name
+// case, whose surrounding sentence differs by more than the separator.
+func atlasQuotedList(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, fmt.Sprintf("%q", name))
+	}
+	last := len(quoted) - 1
+	return strings.Join(quoted[:last], ", ") + " and " + quoted[last]
 }

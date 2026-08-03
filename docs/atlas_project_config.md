@@ -98,6 +98,7 @@ The supported attributes map to Ptah settings as follows:
 | `lint.git.dir` | `migrations lint --git-dir` default |
 | `lint.destructive.error` | `DS` lint rule-family severity |
 | `lint.concurrent_index.error` | `PG101` and `PG103` lint rule severity |
+| `lint.condrop.error` | `CD` lint rule-family and `DS105` lint rule severity |
 | `lint.data_depend.error` | `DD` lint rule-family severity |
 | `lint.incompatible.error` | `BC` lint rule-family severity |
 | `lint.nestedtx.error` | `TX201` lint rule severity |
@@ -111,7 +112,9 @@ The supported attributes map to Ptah settings as follows:
 | `format.migrate.lint` | `ptah-compat migrate lint --format` default |
 | `format.migrate.status` | `ptah-compat migrate status --format` default |
 | `diff.skip.drop_table` | Drop-table suppression for local schema diff/apply planning |
+| `diff.skip.drop_schema` | Accepted and type-checked; Ptah's planner emits no schema drop for it to suppress |
 | `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
+| `env.schema.repo.name` | Accepted and type-checked; no local behavior, matching the community binary |
 
 `env.src` and `env.schema.src` accept either one string or a list of strings.
 The nested `schema.src` form matches Atlas project config syntax. Ptah
@@ -194,6 +197,13 @@ schema IR. `sensitive = DENY` is accepted as a no-op because Ptah does not emit
 sensitive values through the supported local workflows. `sensitive = ALLOW` is
 rejected until Ptah has explicit sensitive-value semantics.
 
+`env.schema.repo` names a schema repository in a hosted registry. Its `name` is
+accepted and type-checked as a string, and nothing reads it afterwards — the
+same as the community binary, whose `schema inspect`, `schema apply --dry-run`
+and `schema apply --auto-approve` output is byte-identical with and without the
+block. Registry access itself stays refused on both: an `atlas://` URL fails,
+and `ptah-compat schema plan --repo` reports that Ptah plans are local files.
+
 `format` blocks configure the same Atlas Go-template output strings accepted by
 the matching commands. Ptah supports `schema.inspect`, `schema.apply`,
 `schema.diff`, `migrate.apply`, `migrate.diff`, `migrate.lint`, and
@@ -202,8 +212,13 @@ Atlas-compatible command reference.
 
 `diff.skip.drop_table = true` removes table drops from supported local
 declarative diff/apply plans and also removes index or constraint drops owned by
-those dropped tables. `diff.skip.drop_schema` is rejected because Ptah does not
-currently model schema dropping as an Atlas-compatible policy decision.
+those dropped tables. `diff.skip.drop_schema` is accepted and type-checked but
+changes no plan: Ptah's schema diff has no removed-schema list and no code path
+renders `DROP SCHEMA`, so the suppression has nothing to omit. Because the
+setting only ever removes a statement, honoring it vacuously can never make Ptah
+emit a schema drop Atlas would have withheld. A non-boolean value is refused,
+matching the community binary, which reports `value of attr "drop_schema" cannot
+be read as bool` even on commands that never plan a diff.
 
 `diff.concurrent_index.create = true` maps to PostgreSQL concurrent index
 creation in schema diff planning. For non-dry-run PostgreSQL `schema apply`
@@ -226,9 +241,18 @@ sets them to warning severity.
 
 The supported mappings are `destructive` to the `DS` family, `data_depend` to
 the `DD` family, `incompatible` to the `BC` family, `concurrent_index` to
-`PG101` and `PG103`, and `nestedtx` to `TX201`. Atlas `check` blocks are
-rejected for now because Atlas check IDs and Ptah rule IDs are not a stable
-one-to-one namespace.
+`PG101` and `PG103`, `nestedtx` to `TX201`, and `condrop` to the `CD` family
+plus `DS105`. Atlas `check` blocks are rejected for now because Atlas check IDs
+and Ptah rule IDs are not a stable one-to-one namespace.
+
+`condrop` is a separate analyzer from `destructive` and from `data_depend`, not
+an alias for either. On the community binary, a migration dropping a foreign key
+is reported as a warning by default; `condrop { error = true }` turns that run
+into an error while `destructive { error = true }` leaves it a warning. Ptah's
+`CD` family is the same constraint-deletion family, and `DS105` is included
+because it is Ptah's untyped fallback for the ANSI `ALTER TABLE ... DROP
+CONSTRAINT <name>` form — the exact statement the community binary attributes to
+`condrop`.
 
 Analyzer `force` options, allow-list blocks such as `allow_table` /
 `allow_column`, custom `rule` blocks, and policy families without a matching
@@ -430,7 +454,7 @@ supported `diff` policy.
 
 Ptah intentionally rejects everything outside the documented subset. Unsupported
 attributes, unsupported data sources, unsupported lint policy blocks or attributes,
-Cloud or registry sources such as `schema.repo`, unsupported format blocks,
+Cloud or registry URLs such as `atlas://`, unsupported format blocks,
 unsupported diff policy fields, duplicate `migration` or `lint` blocks,
 variables without defaults that are not supplied through `--var` fail with a
 location-aware error:

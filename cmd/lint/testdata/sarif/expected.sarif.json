@@ -32,7 +32,7 @@
           "ruleIndex": 0,
           "level": "error",
           "message": {
-            "text": "table dropped: DROP TABLE permanently deletes the table and every row in it; take a verified backup first and consider a rename-and-retire window instead"
+            "text": "table dropped: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead"
           },
           "locations": [
             {
@@ -48,7 +48,7 @@
             }
           ],
           "partialFingerprints": {
-            "primaryLocationLineHash": "0f47f9683f61183796e0c41055e31d99"
+            "primaryLocationLineHash": "618fc9eb376f3327f08df40af6c57535"
           }
         }
       ]

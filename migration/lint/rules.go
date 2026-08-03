@@ -7,6 +7,8 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
+
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 var registeredRules = struct {
@@ -140,6 +142,10 @@ func constraintDeletionRules() []Rule {
 	}
 }
 
+// tableDroppedAdvice is the remediation every DS101 finding carries, kept in one
+// place because the named and unnamed message forms must not drift apart.
+const tableDroppedAdvice = "take a verified backup first and consider a rename-and-retire window instead"
+
 func tableDroppedRule() Rule {
 	return Rule{
 		Code:     "DS101",
@@ -167,23 +173,75 @@ func tableDroppedRule() Rule {
 				if complete && len(unsafeTables) == 0 {
 					continue
 				}
-				subjects := make([]Subject, len(unsafeTables))
-				for j, table := range unsafeTables {
-					subjects[j] = Subject{Kind: SubjectTable, Name: table.name}
-				}
-				findings = append(findings, Finding{
-					Rule:     "DS101",
-					Title:    "table dropped",
-					Severity: SeverityError,
-					File:     file.Path,
-					Line:     stmt.Line,
-					Message:  "DROP TABLE permanently deletes the table and every row in it; take a verified backup first and consider a rename-and-retire window instead",
-					Context:  statementFindingContext(i, subjects...),
-				})
+				findings = append(findings, tableDroppedFindings(file.Path, stmt.Line, i, unsafeTables)...)
 			}
 			return findings
 		},
 	}
+}
+
+// tableDroppedFindings reports one finding per table a single DROP TABLE
+// destroys.
+//
+// `DROP TABLE a, b` destroys two tables independently, so it is two findings,
+// not one finding that happens to carry two subjects. The collapsed shape was
+// reported as one finding, and every renderer that reads a finding's primary
+// subject then showed only the first table -- on a destructive-change analyzer,
+// an operator reviewing a release was never told that `b` was going away
+// either. Per-target findings also give each table its own message, which is
+// what keeps the per-finding SARIF fingerprint (rule, file, line, message)
+// distinct so a code-scanning consumer cannot dedupe the other tables away.
+//
+// Targets are ordered by their logical name -- unqualified and unquoted --
+// compared byte-wise, which puts "Mid" and "Zeta" ahead of "alpha". The order a
+// comma list is written in carries no meaning, so a stable one makes the report
+// diffable, and this is the order measured from the destructive-change analyzer
+// this tool is compatible with.
+//
+// A target list that could not be parsed to the end yields one subject-less
+// finding: the statement is still destructive, and failing closed keeps it
+// reported rather than letting an unreadable target silence the rule.
+func tableDroppedFindings(filePath string, line, statementIndex int, tables []tableReference) []Finding {
+	finding := func(message string, subjects ...Subject) Finding {
+		return Finding{
+			Rule:     "DS101",
+			Title:    "table dropped",
+			Severity: SeverityError,
+			File:     filePath,
+			Line:     line,
+			Message:  message,
+			Context:  statementFindingContext(statementIndex, subjects...),
+		}
+	}
+	if len(tables) == 0 {
+		return []Finding{finding("DROP TABLE permanently deletes the table and every row in it; " + tableDroppedAdvice)}
+	}
+
+	ordered := slices.Clone(tables)
+	slices.SortStableFunc(ordered, func(a, b tableReference) int {
+		return strings.Compare(logicalObjectName(a.name), logicalObjectName(b.name))
+	})
+	findings := make([]Finding, 0, len(ordered))
+	for _, table := range ordered {
+		findings = append(findings, finding(
+			fmt.Sprintf("DROP TABLE permanently deletes table %s and every row in it; %s", table.name, tableDroppedAdvice),
+			Subject{Kind: SubjectTable, Name: table.name},
+		))
+	}
+	return findings
+}
+
+// logicalObjectName reduces a source-spelled reference to the bare object name
+// it denotes, so ordering compares what the reference means rather than how it
+// was written: `public."Users"` and `"Users"` both order as `Users`. A
+// reference that does not parse orders by its source text, which keeps the sort
+// total instead of collapsing unparsable references onto one key.
+func logicalObjectName(ref string) string {
+	parsed, ok := tableref.Parse(ref)
+	if !ok {
+		return ref
+	}
+	return parsed.Name
 }
 
 func columnDroppedRule() Rule {
@@ -338,7 +396,7 @@ func rlsDisabledRule() Rule {
 }
 
 // dataDependentRules covers changes whose safety depends on existing row data.
-const notNullWithoutDefaultMessage = "adding a NOT NULL column without a DEFAULT fails or blocks on populated tables; add it nullable, backfill, then enforce NOT NULL in a later migration"
+const notNullWithoutDefaultAdvice = "fails or blocks on populated tables; add it nullable, backfill, then enforce NOT NULL in a later migration"
 
 func dataDependentRules() []Rule {
 	return []Rule{
@@ -377,14 +435,36 @@ func notNullWithoutDefaultFindings(file *File) []Finding {
 		if refersToCreated(created, alterTableReference(stmt.Words, stmt.sourceWords).normalized) {
 			continue
 		}
+		findings = append(findings, notNullWithoutDefaultFindingsFor(file.Path, stmt.Line, i, subjects)...)
+	}
+	return findings
+}
+
+// notNullWithoutDefaultFindingsFor reports one finding per column an ALTER
+// TABLE adds, for the same reason [tableDroppedFindings] does: each added
+// column fails independently against existing rows, and a single finding
+// carrying several of them left every column past the first unreported.
+//
+// Source order is preserved rather than sorted. A DROP TABLE comma list names
+// tables whose written order means nothing, but ADD COLUMN clauses are the
+// column order the operator wrote and will read the failure in -- and it is the
+// order measured from the analyzer this tool is compatible with, which orders
+// these by clause and dropped tables by name.
+func notNullWithoutDefaultFindingsFor(filePath string, line, statementIndex int, subjects []Subject) []Finding {
+	findings := make([]Finding, 0, len(subjects))
+	for _, subject := range subjects {
 		findings = append(findings, Finding{
 			Rule:     "DD101",
 			Title:    "non-nullable column added without a default",
 			Severity: SeverityWarning,
-			File:     file.Path,
-			Line:     stmt.Line,
-			Message:  notNullWithoutDefaultMessage,
-			Context:  statementFindingContext(i, subjects...),
+			File:     filePath,
+			Line:     line,
+			Message: fmt.Sprintf(
+				"adding NOT NULL column %s without a DEFAULT %s",
+				subject.Name,
+				notNullWithoutDefaultAdvice,
+			),
+			Context: statementFindingContext(statementIndex, subject),
 		})
 	}
 	return findings

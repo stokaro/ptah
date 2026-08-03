@@ -687,6 +687,19 @@ statement could duplicate committed SQL. A custom `MigrationFunc` is opaque to
 Ptah and can only be recorded at function completion; use SQL-backed migrations
 when statement-level crash progress is required.
 
+On PostgreSQL, `RepairMigration` also refuses to record the revision while an
+index the migration creates is still unusable. A `CREATE INDEX CONCURRENTLY`
+that fails partway leaves an invalid index occupying the name, so re-issuing
+the same `IF NOT EXISTS` statement is skipped rather than retried and nothing
+errors; recording the migration applied would report a constraint the database
+is not enforcing. Ptah reads `pg_index.indisvalid` and `indisready` for the
+index names the migration's up SQL creates, resolving an unqualified name
+through the same search path the statement used, and returns an error naming
+each unusable index and the `REINDEX INDEX CONCURRENTLY` that rebuilds it.
+`Force` does not relax this refusal: it relaxes a precondition about the
+revision row, not a fact about the database. Other dialects have no concurrent
+index build to leave half-finished and run no probe.
+
 Atlas-format down execution is the deliberate exception. It leaves the
 revision row unchanged before and during the down body to reproduce Atlas's
 measured bookkeeping. A non-transactional Atlas-format down can therefore

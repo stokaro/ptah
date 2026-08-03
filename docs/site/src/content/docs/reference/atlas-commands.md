@@ -71,8 +71,21 @@ golang-migrate down file and a Flyway undo file are not covered, and a layout
 that carries no `atlas.sum` and whose covered set is empty is not a checksum
 error. What executes is what the verified checksum covers, for every layout.
 
-**Rejected on this verb, matching Atlas OSS:** `--dir-format`, `--to-version`,
-and `--lock-name`.
+**Rejected on this verb, matching Atlas OSS:** `--dir-format` and `--lock-name`.
+
+`--to-version` bounds the run at a migration version: every pending migration up
+to and including it runs, and nothing above it does. The bound is enforced where
+the apply plan is built, inside the migration lock, so a concurrent writer
+cannot turn it into a different set of migrations; a version the directory does
+not carry is refused rather than rounded to a neighbor, and the bound cannot be
+combined with the amount argument, because the two select different prefixes and
+neither outranks the other. The pinned community binary does not register the
+flag — Atlas's published CLI reference does, which is what makes this a
+Pro-surface addition rather than a CE parity row.
+
+```bash
+ptah-compat migrate apply --url "$DB" --dir file://migrations --to-version 20240101000002
+```
 
 Pre-migration checks — `-- +ptah check` directives and Atlas txtar
 `checks.sql` / `checks/*.sql` sections — are enforced here as they are natively.
@@ -298,6 +311,30 @@ the `--dev-url` dev database and writing a cumulative-schema checkpoint.
 | Positional name (optional) | The checkpoint description, used as the file-name stem. |
 | `--dir-format=atlas` | Writes the Atlas single-file checkpoint (default). |
 | `--dir-format=ptah` | Writes the ptah reversible checkpoint pair. |
+| `-s, --schema` | The native `--schemas` allow-list; repeat the flag or pass one comma-separated value. |
+| `--qualifier` | The native `--qualifier`: prefixes every object the checkpoint creates with a schema qualifier. |
+| `--lock-timeout` | The native `--migration-lock-timeout`, bounding the wait for the dev database's migration lock during the replay. |
+| `--edit` | The native `--edit`: opens the written checkpoint files in `$VISUAL`, then `$EDITOR`, and refreshes the directory checksum afterwards. |
+
+`--edit` refuses before it replays anything when the session could not finish:
+with no editor configured, and when standard input is not a terminal. The second
+refusal is the one that matters in CI, where an interactive editor launched
+without a terminal does not fail but waits. Set
+`PTAH_ALLOW_NONINTERACTIVE_EDIT=1` when `$EDITOR` is a script that edits and
+exits on its own; that is an environment variable rather than a flag because
+Atlas registers no flag for it. The native `--editor` selects a specific editor
+command and is deliberately not part of this verb's Atlas flag surface.
+
+`--lock-timeout` bounds a lock only on dialects that implement advisory locking.
+On one that does not — SQLite, ClickHouse — the run says so on stderr rather than
+accepting a bound that binds nothing.
+
+`--qualifier` is refused on a dialect Ptah cannot qualify, so a checkpoint is
+never written half-qualified.
+
+Not registered here: `--format`, whose Go-template report needs the compat
+formatting path this verb does not have yet, and `--lock-name`, which belongs to
+the named-lock family.
 
 `--dir-format` selects the checkpoint convention, and **on this verb it
 defaults to `atlas`**, matching the default Atlas registers and every other
@@ -360,6 +397,7 @@ Forwards to `ptah migrations test`.
 | `--dir` | The native migration directory, Atlas-format by default via `--dir-format`. |
 | `--dev-url` | The native throwaway database; an ephemeral SQLite database when omitted. |
 | `--run` | The native case-name filter. |
+| `--revisions-schema` | The native `--migrations-schema`: the schema a `migrate_to` step records revisions in. |
 | Positional path (optional) | The directory of Ptah-native YAML test cases, default `./tests`. |
 
 Exit codes match the native runner: 0 when all cases pass, 1 on test failure.
@@ -443,22 +481,25 @@ non-community template functions, so these exports are an open Ptah extension.
 - `--include` positively selects the top-level resources that survive, with
   Atlas-style globs and `[type=...]` selectors. Repeated and comma-separated
   values union. Composition order is `--schema`, then `--include`, then
-  `--exclude`. A selection that matches nothing renders no objects; an empty
-  value carries no selection and leaves inspection unfiltered.
+  `--exclude`. A selection that matches nothing renders no objects and keeps
+  exit status 0, and reports itself on standard error; an empty value carries
+  no selection and leaves inspection unfiltered.
 - The OSS `--exclude` flag filters inspected resources with Atlas-style globs
   and `[type=...]` selectors, including the Atlas-documented
   `*[type=extension].version` field selector with schema-qualified globs.
 - Child resources (columns, indexes, constraints, triggers, policies, grants)
-  cannot be included on their own, in either the `[type=column]` or the
-  literal-dot `table.column` spelling; both fail before any database is
-  contacted.
-- Depth counts separators outside quotes, so an identifier holding a dot is
-  selected as `main."my.table"` or `a\.b\.c`. The bare `a.b.c` spelling is
-  refused, because it cannot be told apart from `schema.table.column`.
-- Glob metacharacters — `*`, `?`, and character classes — match a dot, so
-  `table*column`, `table?column`, and `table[.]column` are not caught by the
-  depth check and select nothing
-  ([#979](https://github.com/stokaro/ptah/issues/979)).
+  cannot be included on their own with `[type=column]`, which fails before any
+  database is contacted.
+- A positional spelling such as `table.column` is not refused on its shape: it
+  is indistinguishable from a table literally named that. An identifier
+  holding a dot is therefore selectable as `main."my.table"`, `a\.b\.c`, or
+  bare `a.b.c`.
+- Whether a selector matched is decided by the projection, not by the selector
+  text: `path.Match` treats `.` as an ordinary character, so `table.column`,
+  `table*column`, `table?column`, and `table[.]column` all reach past a
+  top-level resource and select nothing. `schema apply` refuses an empty
+  `--include` selection; `schema diff` and `schema inspect` keep exit status 0
+  and report it on standard error.
 - A selection that drops a dependency of a selected object is refused rather
   than rendered.
 - Other field-level exclude selectors and type selectors on non-final pattern
@@ -803,9 +844,22 @@ runtime.
 | `--format` | Renders Atlas-style templates over the cleanup plan. |
 | `--env` | Reads `env.url` and `format.schema.clean` from `atlas.hcl`. |
 
-Cleanup covers the object types Ptah cleanly models and drops today: user
-tables across supported dialects, PostgreSQL enum types and sequences, and SQL
-Server foreign-key constraints that must be dropped before tables.
+The plan reports the object kinds the target dialect's cleanup really destroys,
+so a `--dry-run` or `--format` report is not narrower than the apply:
+
+| Dialect | Reported and destroyed |
+| --- | --- |
+| PostgreSQL family | Foreign keys, tables, views, materialized views, enum, domain, composite and range types, and functions; standalone sequences on PostgreSQL itself. |
+| MySQL, MariaDB | Foreign keys, tables, views, stored functions and procedures, events, and MariaDB sequences. |
+| SQLite | Tables and views. |
+| SQL Server | Foreign keys and tables. Views are not dropped, so they are not reported. |
+| ClickHouse | Base tables. Views are not dropped, so they are not reported. |
+
+Objects that vanish as collateral of a listed drop are not listed separately:
+indexes, triggers, non-foreign-key constraints, RLS policies, and comments. The
+rendered `Cmd` describes the object being destroyed; it is not the exact
+statement the cleanup runtime executes, and the report order is alphabetical by
+object kind rather than an execution order.
 
 Native twin: [`ptah schema clean`](../native-commands/).
 

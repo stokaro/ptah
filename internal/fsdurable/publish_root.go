@@ -15,11 +15,20 @@ import (
 // identify direct children of root. Errors after rename wrap
 // ErrReplacementCommitted. FinalMode follows os.Chmod semantics; on Windows,
 // its owner-write bit controls the read-only attribute.
+//
+// The publication is conditional on dest: the commit primitive itself binds the
+// state the caller expects at targetName, so a destination that changed after
+// the caller's own checks is reported through ErrDestinationChanged and left
+// byte-intact rather than replaced. A caller cannot opt out; the zero
+// Destination is rejected. Platforms and filesystems without a conditional
+// rename primitive fail with ErrConditionalPublicationUnsupported instead of
+// degrading to an unconditional rename.
 func PublishFileAt(
 	root *os.Root,
 	stagedName, targetName string,
 	stagedInfo fs.FileInfo,
 	finalMode fs.FileMode,
+	dest Destination,
 ) error {
 	return publishFileAt(
 		root,
@@ -27,8 +36,29 @@ func PublishFileAt(
 		targetName,
 		stagedInfo,
 		finalMode,
-		func() {},
+		dest,
+		publicationHooks{},
 	)
+}
+
+// publicationHooks injects deterministic waits into the commit sequence. The
+// window this package closes is a single syscall wide, so the tests that prove
+// it cannot reach it by polling from another goroutine.
+type publicationHooks struct {
+	beforeCommit func()
+	afterCommit  func()
+}
+
+func (h publicationHooks) runBeforeCommit() {
+	if h.beforeCommit != nil {
+		h.beforeCommit()
+	}
+}
+
+func (h publicationHooks) runAfterCommit() {
+	if h.afterCommit != nil {
+		h.afterCommit()
+	}
 }
 
 func publishFileAt(
@@ -36,12 +66,16 @@ func publishFileAt(
 	stagedName, targetName string,
 	stagedInfo fs.FileInfo,
 	finalMode fs.FileMode,
-	afterRename func(),
+	dest Destination,
+	hooks publicationHooks,
 ) error {
 	if err := validateDirectChildName("publishat", stagedName); err != nil {
 		return err
 	}
 	if err := validateDirectChildName("publishat", targetName); err != nil {
+		return err
+	}
+	if err := dest.validate(targetName); err != nil {
 		return err
 	}
 	staged, err := openExpectedWritableFile(root, stagedName, stagedInfo)
@@ -51,11 +85,11 @@ func publishFileAt(
 	if err := prepareOpenedFile(root, staged, stagedName, stagedInfo, finalMode); err != nil {
 		return errors.Join(err, staged.Close())
 	}
-	renamed, renameErr := renamePublicationFile(root, staged, stagedName, targetName)
+	renamed, renameErr := commitPublicationFile(root, staged, stagedName, targetName, dest, hooks)
 	if !renamed {
 		return errors.Join(renameErr, staged.Close())
 	}
-	afterRename()
+	hooks.runAfterCommit()
 
 	publishedInfo, verifyErr := root.Lstat(targetName)
 	if verifyErr != nil {

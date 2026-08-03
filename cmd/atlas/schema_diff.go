@@ -49,7 +49,10 @@ positively select what both comparison sides see: --schema names define the
 schema universe, --include selectors pick top-level resources inside it, and
 --exclude plus env.schema.mode subtract from the result. A selected object
 that depends on an unselected object refuses the diff with an explicit
-diagnostic, and a selection that matches nothing reports synced schemas.
+diagnostic. An --include selection that matches nothing on either side keeps
+the exit status and the standard-output bytes it would have had, and reports
+the empty selection on standard error, so a CI check comparing stdout is
+unaffected while a mistyped selector is no longer silent.
 Hosted report output is not implemented.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaDiff(cmd, opts)
@@ -122,14 +125,15 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	}
 
 	report, err := atlasschema.Diff(cmd.Context(), atlasschema.DiffOptions{
-		FromURLs:   opts.fromURLs,
-		ToURLs:     opts.toURLs,
-		DevURL:     opts.devURL,
-		Exclude:    opts.exclude,
-		Schemas:    opts.schemas,
-		Include:    opts.include,
-		Policy:     policy,
-		ProjectEnv: projectEnv,
+		FromURLs:    opts.fromURLs,
+		ToURLs:      opts.toURLs,
+		DevURL:      opts.devURL,
+		Exclude:     opts.exclude,
+		Schemas:     opts.schemas,
+		Include:     opts.include,
+		Policy:      policy,
+		ProjectEnv:  projectEnv,
+		Diagnostics: cmd.ErrOrStderr(),
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

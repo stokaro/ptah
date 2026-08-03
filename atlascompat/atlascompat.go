@@ -27,11 +27,17 @@ const PtahSumFileName = "ptah.sum"
 const AtlasSumFileName = "atlas.sum"
 
 // ParseAtlasHCL parses an Atlas schema HCL document into Ptah's Go schema IR.
+//
+// A document carrying a top-level env block is an atlas.hcl project file, not a
+// schema file, and is refused with an error naming the block and its position.
+// Parsing one as a schema would yield an empty IR, which a caller diffing
+// against a live database cannot tell apart from "drop everything".
 func ParseAtlasHCL(data []byte, filename string) (*goschema.Database, error) {
 	return atlashcl.Parse(data, filename)
 }
 
 // ParseAtlasHCLFile parses an Atlas schema HCL file into Ptah's Go schema IR.
+// It refuses project files on the same terms as [ParseAtlasHCL].
 func ParseAtlasHCLFile(path string) (*goschema.Database, error) {
 	return atlashcl.ParseFile(path)
 }

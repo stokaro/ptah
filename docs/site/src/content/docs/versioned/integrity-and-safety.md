@@ -376,7 +376,7 @@ ptah migrations lint --dir ./migrations --dialect sqlite
 A finding names the file, line, rule, and remediation (exit `1`):
 
 ```text
-migrations/0000000003_drop_users.up.sql:1 [error] DS101: DROP TABLE permanently deletes the table and every row in it; take a verified backup first and consider a rename-and-retire window instead (table dropped)
+migrations/0000000003_drop_users.up.sql:1 [error] DS101: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead (table dropped)
 
 1 finding(s).
 ```
@@ -486,7 +486,7 @@ Destructive statements require explicit policy at two points:
 
 ```text
 error: error running migrations: pending migrations contain destructive statements; rerun with --allow-destructive after review:
-- 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes the table and every row in it; take a verified backup first and consider a rename-and-retire window instead
+- 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead
 ```
 
 Use `--allow-destructive` only after the plan has been reviewed and the
