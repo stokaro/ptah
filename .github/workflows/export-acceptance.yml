@@ -32,7 +32,7 @@ jobs:
       # The tools are pinned on purpose. The membership of buf's STANDARD lint
       # category and the exact fixed point of `buf format` are version-sensitive,
       # and the renderer is written against these versions; floating them would
-      # turn an upstream release into a red build on an unrelated PR.
+      # turn a new toolchain release into a red build on an unrelated PR.
       BUF_VERSION: v1.72.0
       PROTOC_VERSION: '35.1'
       PROTOC_GEN_GO_VERSION: v1.36.11

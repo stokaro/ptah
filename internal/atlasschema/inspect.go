@@ -96,7 +96,7 @@ func renderInspectSchema(
 }
 
 // scopeInspectSchema applies the inspection selection to the introspected
-// schema. --schema is honored upstream, when the schema is read, so only
+// schema. --schema is honored earlier, when the schema is read, so only
 // --include and --exclude reach the projection here: with --include the full
 // positive projection runs (include selection, exclude subtraction, then
 // cross-scope dependency validation, so inspection never renders a reference

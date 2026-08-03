@@ -71,7 +71,7 @@ index; the sections carry the detail.
 
 | Area | Ptah | Atlas OSS | Atlas Pro / Cloud |
 | --- | --- | --- | --- |
-| [License and implementation](#license-and-implementation) | MIT, independent | Independent upstream product | Proprietary additions |
+| [License and implementation](#license-and-implementation) | MIT, independent | Independent product | Proprietary additions |
 | [Command compatibility](#command-compatibility) | Native tree plus `ptah-compat` | Open CLI surface | Not drop-in targets |
 | [Schema inspection](#schema-inspection) | Native plus Atlas-compatible | Open | Pro drivers and filters |
 | [Schema diff, apply, formatting, and cleanup](#schema-diff-apply-formatting-and-cleanup) | Native plus Atlas-compatible | Open | Registry plans and approvals |
@@ -97,7 +97,7 @@ index; the sections carry the detail.
 
 **Ptah.** MIT-licensed independent implementation. Ptah compatibility code is written in this repository and does not import or vendor Atlas source.
 
-**Atlas OSS.** Atlas is an independent upstream product. Ptah treats its public command names, flags, file formats, and observable behavior as compatibility inputs.
+**Atlas OSS.** Atlas is an independent product. Ptah treats its public command names, flags, file formats, and observable behavior as compatibility inputs.
 
 **Atlas Commercial / Cloud.** Same Atlas product family plus its commercial Pro and Cloud capabilities.
 
@@ -607,7 +607,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 | [Atlas-compatible hidden `migrate diff --dry-run`](#atlas-compatible-hidden-migrate-diff---dry-run) | Product behavior | [#618](https://github.com/stokaro/ptah/issues/618) |
 | [HCL schema and Atlas project config subset audit](#hcl-schema-and-atlas-project-config-subset-audit) | Product behavior and coverage | [#511](https://github.com/stokaro/ptah/issues/511) |
 | [Live and differential corpus breadth](#live-and-differential-corpus-breadth) | Conformance coverage | [ptah-atlas-conformance#167](https://github.com/stokaro/ptah-atlas-conformance/issues/167) |
-| [Upstream Atlas verbs beyond the CE pin](#upstream-atlas-verbs-beyond-the-ce-pin) | Triage record | [#758](https://github.com/stokaro/ptah/issues/758) |
+| [Verbs beyond the CE pin](#verbs-beyond-the-ce-pin) | Triage record | [#758](https://github.com/stokaro/ptah/issues/758) |
 
 ### Atlas-compatible command runtime placeholders
 
@@ -745,7 +745,7 @@ databases remain a follow-up gap.
 **Tracking.** [`stokaro/ptah-atlas-conformance#167`](https://github.com/stokaro/ptah-atlas-conformance/issues/167)
 
 
-### Upstream Atlas verbs beyond the CE pin
+### Verbs beyond the CE pin
 
 **Type.** Triage record
 

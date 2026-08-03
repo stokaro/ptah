@@ -231,7 +231,7 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 		return Config{}, err
 	}
 	// Set after Merge, not inside parseEnv: Merge carries only the fields it
-	// knows about, so an assignment upstream of it is silently dropped.
+	// knows about, so an assignment made before it is silently dropped.
 	merged.IgnoredConstructs = p.ignoredConstructs()
 	return merged, nil
 }
