@@ -1093,12 +1093,12 @@
     "feature": "Artifact integrity check (`--verify-sum`)",
     "ptah": "partial",
     "atlas_oss": "na",
-    "atlas_pro": "unknown",
+    "atlas_pro": "no",
     "note": "On migrations push and up only. It checks the directory against the ptah.sum inside the same artifact, so content rewritten with its sum passes.",
     "evidence": "tampered file, unchanged sum: push and up both exit 2 'migration directory does not match ptah.sum: changed: 1785514698_init.up.sql'; tampered file plus re-run migrations hash: up --verify-sum exits 0 and creates table 'evil'"
   },
   {
-    "area": "OCI artifacts",
+    "area": "OCI artifacts Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `--verify-sum` does not appear on the page, which enumerates every command and its flags. Scoped to the flag: Atlas's directory-integrity mechanism is atlas.sum with `migrate validate`, which checks a migration directory rather than an artifact against a sum embedded in it. Control as above.",
     "feature": "Referrer attachments: lint, plan, deployment reports",
     "ptah": "partial",
     "atlas_oss": "no",
@@ -1291,12 +1291,12 @@
     "feature": "Standalone SQL file linting (`ptah sql lint`)",
     "ptah": "yes",
     "atlas_oss": "no",
-    "atlas_pro": "unknown",
+    "atlas_pro": "no",
     "note": "Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not.",
     "evidence": "echo \"DROP TABLE users;\" | /tmp/c-ptah sql lint --stdin --dialect postgres --format json exits 0 with a JSON findings document. Atlas-side: cli-surface.md inventory has no standalone SQL lint verb; migrate lint (line 33) is directory-based. no standalone SQL-file lint verb; `atlas schema lint` exists but lints schema sources, a different mechanism (measured; observation study, scenario, lint-test-pro, ptah-extension-equivalents)"
   },
   {
-    "area": "Declarative and direct schema changes",
+    "area": "Declarative and direct schema changes Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: no `sql lint` command exists. The two lint verbs take other inputs -- `atlas schema lint` is documented as `Run schema linting` with `-u, --url strings  schema URL(s) to lint`, and `atlas migrate lint` analyzes a migration directory. Asked directly, no command on the reference accepts arbitrary SQL files or stdin for linting. Control on the same query: `rrrnotarealflag` returns not-found while `--exclude` returns its description verbatim.",
     "feature": "JSON output for native schema diff",
     "ptah": "yes",
     "atlas_oss": "unknown",
