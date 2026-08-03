@@ -57,6 +57,16 @@ oci://ghcr.io/acme/app-migrations:v20260728153000
 oci://ghcr.io/acme/app-migrations@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
+A sum file carries different weight depending on which of those you applied. A
+sum verifies a directory against the sum stored beside it; for an OCI artifact
+that sum travels inside the artifact. Anyone who can push to the repository can
+rewrite the migrations, rehash them, and repoint a tag, and the verification
+still passes. So a sum over a tag-resolved artifact proves internal
+consistency, not that the bytes are the reviewed ones. `ptah migrations up`
+says so out loud: when a sum verifies over a tag-resolved artifact it prints
+the digest the tag resolved to and the `@sha256:` reference that pins it. A
+digest reference already names exact bytes and gets no such line.
+
 Every push applies:
 
 - `latest`;
@@ -161,7 +171,11 @@ layer. `--dir-format` accepts `auto`, `ptah`, or `atlas`.
 
 `--verify-sum` is opt-in. When enabled, the push fails before registry upload if
 the required `ptah.sum` or `atlas.sum` is missing, changed, or otherwise
-invalid.
+invalid. On `push` the directory being verified is the local one the author
+controls, so the check has the full weight of a reviewed working tree behind
+it. On `up` the same flag verifies a pulled artifact against the sum shipped
+inside it; see the tag-versus-digest note above for what that does and does not
+establish.
 
 The command prints the canonical reference, manifest digest, version tag, and
 all applied tags. Pin the digest when promoting the exact bytes to another
@@ -194,7 +208,11 @@ ptah migrations down \
 For `up`, `status`, and `down`, the artifact is pulled into an immutable
 in-memory filesystem and passed to the existing migration engine. An explicit
 `--dir-format` must match the format recorded in the artifact. The
-`up --verify-sum` gate verifies the pulled files before opening the database.
+`up --verify-sum` gate verifies the pulled files against the sum that travelled
+with them, before opening the database. Applied to a digest reference, that
+gate covers exactly the bytes named on the command line. Applied to a tag, it
+covers whatever the tag resolved to at pull time, and `up` prints that digest
+alongside the `@sha256:` reference to pin it.
 
 To reconstruct the captured directory:
 

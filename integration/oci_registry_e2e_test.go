@@ -22,6 +22,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
+	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/ocireferrers"
@@ -596,6 +597,154 @@ func digestFromPushOutput(c *qt.C, output string) string {
 
 func digestReference(reference, digest string) string {
 	return strings.TrimSuffix(reference, ":latest") + "@" + digest
+}
+
+// tamperOCIMigrationAndRehash injects a statement nobody reviewed and rehashes,
+// which is exactly what a repository writer can do: the sum file travels inside
+// the artifact, so rehashing keeps every self-consistency check green.
+func tamperOCIMigrationAndRehash(c *qt.C, dir string, version int64, table string) {
+	path := filepath.Join(dir, fmt.Sprintf("%010d_create_%s.up.sql", version, table))
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	c.Assert(err, qt.IsNil)
+	_, err = file.WriteString("CREATE TABLE evil (id BIGINT PRIMARY KEY);\n")
+	c.Assert(err, qt.IsNil)
+	c.Assert(file.Close(), qt.IsNil)
+	_, err = migratesum.Write(dir)
+	c.Assert(err, qt.IsNil)
+}
+
+func sqliteTableCount(c *qt.C, ctx context.Context, dbPath, table string) int {
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var count int
+	err = conn.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
+		table,
+	).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+// TestOCIMigrationTagSumProvenanceE2E reproduces stokaro/ptah#944 against a
+// live registry. Measured on master: `ptah.sum verified: migrations directory
+// is intact` printed byte-identically for the reviewed artifact and for one
+// whose tag had been repointed at an injected `CREATE TABLE evil`, and `up`
+// printed the resolved digest nowhere, so no operator could learn after the
+// fact which bytes ran. The apply keeps exiting 0 — the flag's contract is
+// honest about what it checks — but a tag-resolved verification must now name
+// the tag, the digest it resolved to, and the pin, while a digest reference
+// must stay silent and must still run the reviewed bytes.
+func TestOCIMigrationTagSumProvenanceE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	registry := requiredOCIRegistry(t)
+	repoRoot := e2eRepoRoot(t)
+	binaryPath := filepath.Join(t.TempDir(), "ptah")
+	buildPtah(c, ctx, repoRoot, binaryPath)
+
+	suffix := time.Now().UnixNano()
+	migrationsDir := filepath.Join(t.TempDir(), "migrations")
+	writeOCIMigration(c, migrationsDir, ociMigrationVersion, "widgets")
+	base := fmt.Sprintf("oci://%s/ptah/oci-provenance-%d", registry, suffix)
+	tagReference := base + ":release"
+
+	pushOutput, err := runPtahInDir(
+		ctx,
+		repoRoot,
+		binaryPath,
+		"migrations", "push", tagReference,
+		"--migrations-dir", migrationsDir,
+		"--version", fmt.Sprintf("v%d", suffix),
+		"--verify-sum",
+		"--plain-http",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("push output:\n%s", pushOutput))
+	firstDigest := digestFromPushOutput(c, pushOutput)
+	firstDigestReference := base + "@" + firstDigest
+
+	reviewedDB := filepath.Join(t.TempDir(), "reviewed.db")
+	reviewedOutput, err := runPtahInDir(
+		ctx,
+		repoRoot,
+		binaryPath,
+		"migrations", "up",
+		"--db-url", "sqlite://"+reviewedDB,
+		"--migrations-dir", tagReference,
+		"--verify-sum",
+		"--skip-report",
+		"--plain-http",
+		"--verbose",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("reviewed up output:\n%s", reviewedOutput))
+	c.Assert(reviewedOutput, qt.Contains, "ptah.sum verified: migrations directory is intact")
+	c.Assert(reviewedOutput, qt.Contains, "Warning: "+tagReference+" is a movable tag")
+	c.Assert(reviewedOutput, qt.Contains, "This tag resolved to "+firstDigest)
+	c.Assert(reviewedOutput, qt.Contains, "pass "+firstDigestReference+" to pin these exact bytes.")
+	c.Assert(sqliteTableCount(c, ctx, reviewedDB, "widgets"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, ctx, reviewedDB, "evil"), qt.Equals, 0)
+
+	tamperOCIMigrationAndRehash(c, migrationsDir, ociMigrationVersion, "widgets")
+	repointOutput, err := runPtahInDir(
+		ctx,
+		repoRoot,
+		binaryPath,
+		"migrations", "push", tagReference,
+		"--migrations-dir", migrationsDir,
+		"--version", fmt.Sprintf("v%d", suffix+1),
+		"--verify-sum",
+		"--plain-http",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("repoint push output:\n%s", repointOutput))
+	secondDigest := digestFromPushOutput(c, repointOutput)
+	c.Assert(secondDigest, qt.Not(qt.Equals), firstDigest)
+
+	// Byte-identical command, repointed tag. The sum still verifies, because the
+	// rehashed sum travelled with the rewritten files; the provenance line is
+	// the only thing that reports which bytes that covered.
+	repointedDB := filepath.Join(t.TempDir(), "repointed.db")
+	repointedOutput, err := runPtahInDir(
+		ctx,
+		repoRoot,
+		binaryPath,
+		"migrations", "up",
+		"--db-url", "sqlite://"+repointedDB,
+		"--migrations-dir", tagReference,
+		"--verify-sum",
+		"--skip-report",
+		"--plain-http",
+		"--verbose",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("repointed up output:\n%s", repointedOutput))
+	c.Assert(repointedOutput, qt.Contains, "ptah.sum verified: migrations directory is intact")
+	c.Assert(repointedOutput, qt.Contains, "This tag resolved to "+secondDigest)
+	c.Assert(repointedOutput, qt.Not(qt.Contains), firstDigest)
+	c.Assert(sqliteTableCount(c, ctx, repointedDB, "evil"), qt.Equals, 1)
+
+	// The digest pin selects the reviewed bytes and says nothing extra: there is
+	// no tag left to qualify.
+	pinnedDB := filepath.Join(t.TempDir(), "pinned.db")
+	pinnedOutput, err := runPtahInDir(
+		ctx,
+		repoRoot,
+		binaryPath,
+		"migrations", "up",
+		"--db-url", "sqlite://"+pinnedDB,
+		"--migrations-dir", firstDigestReference,
+		"--verify-sum",
+		"--skip-report",
+		"--plain-http",
+		"--verbose",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("pinned up output:\n%s", pinnedOutput))
+	c.Assert(pinnedOutput, qt.Contains, "ptah.sum verified: migrations directory is intact")
+	c.Assert(pinnedOutput, qt.Not(qt.Contains), "movable tag")
+	c.Assert(pinnedOutput, qt.Not(qt.Contains), "Warning:")
+	c.Assert(sqliteTableCount(c, ctx, pinnedDB, "widgets"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, ctx, pinnedDB, "evil"), qt.Equals, 0)
 }
 
 func readReferrerRecords(c *qt.C, output string) []ocireferrers.Record {

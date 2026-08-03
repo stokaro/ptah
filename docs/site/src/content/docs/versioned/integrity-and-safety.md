@@ -104,6 +104,26 @@ error: migration sum verification failed: ptah.sum not found; run `ptah migratio
 That flag is the only thing on the native surface that rejects a never-hashed
 directory; a hashed one is always verified with or without it.
 
+**A sum check is worth what the sum's provenance is worth.** Either gate
+compares a directory against the sum stored beside it. For a local directory
+that sum was reviewed in version control next to the migrations. For an
+`oci://` artifact the sum travels inside the artifact, so anyone who can push
+to the repository can rewrite the migrations, rehash them, repoint a tag, and
+watch the check pass over bytes nobody reviewed. `ptah migrations up` therefore
+qualifies the claim when a sum verifies over a tag-resolved artifact, naming
+the digest the tag resolved to and the `@sha256:` reference that pins it:
+
+```text
+Warning: oci://ghcr.io/acme/app-migrations:release is a movable tag: ptah.sum
+travels inside the artifact, so verifying it proves the pulled files are
+internally consistent, not that they are the reviewed ones. This tag resolved
+to sha256:<digest>; pass oci://ghcr.io/acme/app-migrations@sha256:<digest> to
+pin these exact bytes.
+```
+
+The run still succeeds — the check did what it claims. A digest reference and
+a local directory produce no such line.
+
 **`ptah-compat migrate apply`, `migrate status` and `migrate set` refuse an
 unhashed directory.** Atlas treats a missing `atlas.sum` as a checksum error, so
 the compatibility surface does too — measured against the pinned community
