@@ -1,8 +1,6 @@
 package atlas
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
@@ -39,16 +37,23 @@ executable representation for Atlas R-suffixed imported migrations.`,
 	return cmd
 }
 
+// runAtlasMigrateImport writes the imported directory and says nothing about
+// it. Atlas CE reports a successful import only through the files on disk, so
+// the destination directory and its atlas.sum are the whole result; a progress
+// listing here is output the compatibility surface is not supposed to produce.
+//
+// Silence is achieved by not writing, never by pointing this command's writer
+// at io.Discard. Unlike the adapter verbs, `migrate import` is registered
+// directly on the compatibility tree, so the command this runs on is the
+// persistent child that survives every Execute on a reused root — not a native
+// target minted per execution. Cobra's getOut prefers a command's own non-nil
+// outWriter over its parent's, so assigning io.Discard here would pin it
+// forever and a later root SetOut would stop reaching `migrate import --help`.
+// Failures still route through cmdutil.Fail, which keeps every error loud.
 func runAtlasMigrateImport(cmd *cobra.Command, opts atlasmigrateimport.Options) error {
-	result, err := atlasmigrateimport.Import(opts)
-	if err != nil {
+	if _, err := atlasmigrateimport.Import(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "Imported migration files:")
-	for _, file := range result.Files {
-		fmt.Fprintln(out, file)
-	}
-	fmt.Fprintf(out, "Wrote %s\n", result.SumFile)
+
 	return nil
 }
