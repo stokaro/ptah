@@ -149,10 +149,19 @@ func LoadCasesOfKind(dir string, kind AtlasTestKind) ([]Case, error) {
 			origins = append(origins, name)
 		}
 	}
-	// Checked over the post-filter set: ParseAtlasTestCases has already dropped
-	// the blocks of the other kind, so a `test "migrate"` case never collides
-	// with a same-named YAML case in a schema-kind load. Emitted unwrapped for
-	// the reason given in LoadCases.
+	// Checked over the post-filter set, which makes directory validity depend on
+	// kind. One directory holding `a.yaml: dup` and `b.test.hcl: test "migrate"
+	// "dup"` loads clean for schema and is rejected for migrate:
+	//
+	//	LoadCasesOfKind(dir, AtlasTestKindSchema)  -> err=<nil>, 1 case
+	//	LoadCasesOfKind(dir, AtlasTestKindMigrate) -> duplicate test case "dup" in a.yaml and b.test.hcl
+	//
+	// That asymmetry is the point rather than an oversight. ParseAtlasTestCases
+	// drops the blocks of the other kind, so a schema run never loads the
+	// migrate case: --run selects one case, the report shows one row, and there
+	// is nothing to disambiguate. The migrate run does load both and is exactly
+	// the ambiguity this check exists to reject. Both directions are pinned by
+	// tests. Emitted unwrapped for the reason given in LoadCases.
 	if err := validateUniqueCaseNames(cases, origins); err != nil {
 		return nil, err
 	}
