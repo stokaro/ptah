@@ -157,6 +157,12 @@ behavior such as migration apply, the license notice, or schema formatting.
 | `ptah-compat migrate push` | Registered but not implemented boundary command |
 | `ptah-compat schema push` | Registered but not implemented boundary command |
 
+`ptah-compat` reports its version through the `version` command only. It
+deliberately carries no `--version`/`-v` flag — the command set it mirrors
+carries neither, and both spellings are rejected as unknown flags with exit 1.
+The native `ptah` binary does accept all three spellings and prints the same
+block for each.
+
 These registered boundary commands use Ptah-owned diagnostics: `--help` reports
 that the command is not implemented and exits `0`, while direct execution
 reports the same status and exits `1`. All other reported failures on

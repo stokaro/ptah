@@ -90,6 +90,52 @@ func TestPtahNativeMigrationsUpRejectsMalformedAtlasTxMode(t *testing.T) {
 	c.Assert(stdout.String(), qt.Equals, "")
 }
 
+// TestPtahVersionSpellingsPrintIdenticalBytes pins every spelling of a version
+// query on the native binary to the same bytes (stokaro/ptah#1064).
+//
+// Before this, `ptah version` printed buildinfo's five-line block while
+// `ptah --version` and `ptah -v` rendered cobra's built-in one-liner
+// "ptah version <v>" -- two code paths, two formats, neither aware of the
+// other, so a caller parsing the output had to know which spelling it had
+// used. The rows are compared against the `version` subcommand rather than
+// against a literal: the Version line differs between a stamped release build
+// and a `go build` from a checkout, and the property under test is mutual
+// equality, not any particular version string.
+func TestPtahVersionSpellingsPrintIdenticalBytes(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildPtahBinary(c)
+
+	want := capturePtahStdout(c, binPath, "version")
+	c.Assert(want, qt.Matches,
+		`Version: [^\n]+\nCommit: [^\n]+\nDate: [^\n]+\nGo: [^\n]+\nPlatform: [^\n]+\n`)
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "long flag", args: []string{"--version"}},
+		{name: "short flag", args: []string{"-v"}},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			c.Assert(capturePtahStdout(c, binPath, tt.args...), qt.Equals, want)
+		})
+	}
+}
+
+func capturePtahStdout(c *qt.C, binPath string, args ...string) string {
+	c.Helper()
+	run := newPtahProcess(binPath, args...)
+	var stdout, stderr bytes.Buffer
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+
+	c.Assert(run.Run(), qt.IsNil, qt.Commentf("stderr: %s", stderr.String()))
+	c.Assert(stderr.String(), qt.Equals, "")
+	return stdout.String()
+}
+
 func buildPtahBinary(c *qt.C) string {
 	c.Helper()
 	binPath := filepath.Join(c.TempDir(), "ptah")
