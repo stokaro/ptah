@@ -38,6 +38,9 @@ type DiffOptions struct {
 	// that matched nothing on either side. It never receives plan output, so
 	// the bytes on standard output stay unchanged.
 	Diagnostics io.Writer
+	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
+	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	IgnoreUnknownHCLNames bool
 }
 
 // Diff computes the Atlas schema diff between two desired-state sources.
@@ -77,8 +80,9 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		// projection below filters a universe that never contained the
 		// requested schema, so the diff answers "synced" for a database it
 		// never looked at.
-		Schemas:        opts.Schemas,
-		ConnectTimeout: opts.ConnectTimeout,
+		Schemas:               opts.Schemas,
+		ConnectTimeout:        opts.ConnectTimeout,
+		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 	}
 	fromState, err := fromSet.Resolve(ctx, resolveOpts)
 	if err != nil {
