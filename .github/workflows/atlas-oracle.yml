@@ -57,6 +57,33 @@ jobs:
           -run '^TestSumFileNamesDifferentialFuzz(RealisticFlyway|OtherFormats)?$'
           ./internal/atlasmigrateimport
 
+      # The schema-HCL unknown-name policy (stokaro/ptah#1016) is the only other
+      # thing in this repo whose contract IS the community binary's behavior. It
+      # is listed before it is run so an empty selection fails the job instead of
+      # reporting a green run that measured nothing.
+      - name: Verify schema-HCL conformance selection
+        run: |
+          GOWORK=off go test -list '^TestOracle' \
+            ./internal/atlashcl > "$RUNNER_TEMP/atlas-schema-hcl-tests"
+          cat "$RUNNER_TEMP/atlas-schema-hcl-tests"
+          grep -Fx 'TestOracleAcceptsAndDropsUnknownSchemaHCLNames' "$RUNNER_TEMP/atlas-schema-hcl-tests"
+          grep -Fx 'TestOracleRefusesUnevaluableDroppedBodies' "$RUNNER_TEMP/atlas-schema-hcl-tests"
+          grep -Fx 'TestOracleAcceptsReferencesPtahRefuses' "$RUNNER_TEMP/atlas-schema-hcl-tests"
+          grep -Fx 'TestOraclePartitionIsDialectSplit' "$RUNNER_TEMP/atlas-schema-hcl-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-schema-hcl-tests")" -eq 4
+
+      - name: Run schema-HCL conformance tests
+        run: |
+          GOWORK=off go test -count=1 -v -run '^TestOracle' ./internal/atlashcl \
+            > "$RUNNER_TEMP/atlas-schema-hcl-run" 2>&1 || {
+              cat "$RUNNER_TEMP/atlas-schema-hcl-run"
+              exit 1
+            }
+          cat "$RUNNER_TEMP/atlas-schema-hcl-run"
+          # A missing oracle skips these silently. That is the exact failure
+          # mode this job exists to prevent, so a skip fails the job.
+          ! grep -q 'SKIPPED' "$RUNNER_TEMP/atlas-schema-hcl-run"
+
       - name: Regenerate Atlas CE corpus
         run: >-
           internal/atlasmigrateimport/testdata/ce-sums/regenerate.sh

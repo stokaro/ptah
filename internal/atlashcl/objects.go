@@ -79,7 +79,10 @@ func (p *parser) parseFunctionArgs(block *hclsyntax.Block) ([]string, error) {
 	args := make([]string, 0, len(block.Body.Blocks))
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "arg" {
-			return nil, p.blockError(nested, "unsupported function block %q", nested.Type)
+			if err := p.rejectUnsupportedBlock(nested, "function"); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		if err := p.rejectUnsupportedFunctionArgAttrs(nested); err != nil {
 			return nil, err
@@ -188,7 +191,10 @@ func (p *parser) parseTriggerEvent(block *hclsyntax.Block) (triggerEventSpec, er
 	for _, nested := range block.Body.Blocks {
 		currentTiming := triggerTimingFromBlock(nested.Type)
 		if currentTiming == "" {
-			return triggerEventSpec{}, p.blockError(nested, "unsupported trigger block %q", nested.Type)
+			if err := p.rejectUnsupportedBlock(nested, "trigger"); err != nil {
+				return triggerEventSpec{}, err
+			}
+			continue
 		}
 		if timing != "" {
 			return triggerEventSpec{}, p.blockError(nested, "trigger contains multiple timing blocks")
@@ -377,8 +383,8 @@ func (p *parser) parseManagedData(block *hclsyntax.Block) error {
 	if len(block.Labels) != 0 {
 		return p.labeledDataBlockError(block)
 	}
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported data block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "data"); err != nil {
+		return err
 	}
 	if err := p.rejectUnsupportedAttrs(block, map[string]bool{
 		"table": true,
@@ -486,8 +492,8 @@ func (p *parser) rawListAttr(block *hclsyntax.Block, attrName string) ([]string,
 }
 
 func (p *parser) rejectUnsupportedExtensionAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported extension block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "extension"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"if_not_exists": true,
@@ -510,8 +516,8 @@ func (p *parser) rejectUnsupportedFunctionAttrs(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedFunctionArgAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported function arg block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "function arg"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"type": true,
@@ -519,8 +525,8 @@ func (p *parser) rejectUnsupportedFunctionArgAttrs(block *hclsyntax.Block) error
 }
 
 func (p *parser) rejectUnsupportedViewAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported view block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "view"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema":       true,
@@ -531,8 +537,8 @@ func (p *parser) rejectUnsupportedViewAttrs(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedMaterializedAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported materialized block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "materialized"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema":           true,
@@ -553,8 +559,8 @@ func (p *parser) rejectUnsupportedTriggerAttrs(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedTriggerEventAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported trigger event block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "trigger event"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"insert":   true,
@@ -565,8 +571,8 @@ func (p *parser) rejectUnsupportedTriggerEventAttrs(block *hclsyntax.Block) erro
 }
 
 func (p *parser) rejectUnsupportedPolicyAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported policy block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "policy"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"on":      true,
@@ -579,8 +585,8 @@ func (p *parser) rejectUnsupportedPolicyAttrs(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedRowSecurityAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported row_security block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "row_security"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"enabled": true,
@@ -589,8 +595,8 @@ func (p *parser) rejectUnsupportedRowSecurityAttrs(block *hclsyntax.Block) error
 }
 
 func (p *parser) rejectUnsupportedRoleAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported role block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "role"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"login":       true,
@@ -605,8 +611,8 @@ func (p *parser) rejectUnsupportedRoleAttrs(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedPermissionAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported permission block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "permission"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"to":         true,
@@ -833,8 +839,8 @@ func (p *parser) parseSequence(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedSequenceAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported sequence block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "sequence"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema":        true,
@@ -894,8 +900,8 @@ func (p *parser) parseDomain(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedDomainAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported domain block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "domain"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema":  true,
@@ -940,13 +946,16 @@ func (p *parser) parseCompositeFields(block *hclsyntax.Block) ([]goschema.Compos
 	var fields []goschema.CompositeTypeField
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "field" {
-			return nil, p.blockError(nested, "unsupported composite block %q", nested.Type)
+			if err := p.rejectUnsupportedBlock(nested, "composite"); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		if len(nested.Labels) != 1 {
 			return nil, p.blockError(nested, "composite field requires exactly one name label")
 		}
-		if len(nested.Body.Blocks) > 0 {
-			return nil, p.blockError(nested.Body.Blocks[0], "unsupported composite field block %q", nested.Body.Blocks[0].Type)
+		if err := p.rejectNestedBlocks(nested, "composite field"); err != nil {
+			return nil, err
 		}
 		if err := p.rejectUnsupportedAttrs(nested, map[string]bool{"type": true}, "composite field"); err != nil {
 			return nil, err
@@ -1004,8 +1013,8 @@ func (p *parser) parseRange(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedRangeAttrs(block *hclsyntax.Block) error {
-	if len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "unsupported range block %q", block.Body.Blocks[0].Type)
+	if err := p.rejectNestedBlocks(block, "range"); err != nil {
+		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema":          true,
