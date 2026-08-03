@@ -39,20 +39,37 @@ function sectionLines(source) {
   return collected;
 }
 
-// bullets groups the section into top-level list items. A nested bullet or an
-// indented continuation belongs to the item above it, so a bullet is measured
-// as the reader sees it rather than one source line at a time.
+// bullets groups the section into top-level list items. A nested bullet, an
+// indented continuation, and a lazy continuation — an unindented line directly
+// under a bullet, which Markdown folds into it — all belong to the item above,
+// so a bullet is measured as the reader sees it rather than one source line at
+// a time. A blank line followed by unindented prose ends the list instead:
+// attributing a trailing paragraph to the last bullet would let one page-level
+// sentence excuse a bullet that says nothing about its own status.
 function bullets(section) {
   const found = [];
+  let open = false;
+  let blankSeen = false;
+
   for (const { line, text } of section) {
-    if (/^[-*]\s/.test(text)) {
-      found.push({ line, parts: [text.replace(/^[-*]\s+/, '')] });
+    if (text.trim() === '') {
+      blankSeen = true;
       continue;
     }
-    if (text.trim() === '') continue;
-    if (found.length > 0 && /^\s+\S/.test(text)) {
-      found[found.length - 1].parts.push(text.trim());
+    if (/^[-*]\s/.test(text)) {
+      found.push({ line, parts: [text.replace(/^[-*]\s+/, '')] });
+      open = true;
+      blankSeen = false;
+      continue;
     }
+    const indented = /^\s+\S/.test(text);
+    if (open && (indented || !blankSeen)) {
+      found[found.length - 1].parts.push(text.trim());
+      blankSeen = false;
+      continue;
+    }
+    if (!indented) open = false;
+    blankSeen = false;
   }
   return found.map((bullet) => ({ line: bullet.line, text: bullet.parts.join(' ') }));
 }
@@ -127,10 +144,16 @@ function selftest() {
   const clean = [
     '## Limitations',
     '',
+    'Intro prose above the list is not a bullet and carries no disposition.',
+    '',
     '- The source is Go annotations only. Tracked by',
     '  [#1144](https://github.com/stokaro/ptah/issues/1144).',
     '- RLS policies are not emitted. This is permanent because a policy is',
     '  evaluated against a session and a file has none.',
+    // A lazy continuation: Markdown folds this into the bullet above, so the
+    // disposition on it counts.
+    '- One file per run.',
+    'Tracked by [#1146](https://github.com/stokaro/ptah/issues/1146).',
     '',
     '## Next steps',
     '',
@@ -149,6 +172,11 @@ function selftest() {
     '  Tracked by [#904](https://github.com/stokaro/ptah/issues/905).',
     '- Comments are copied, see [#1145](https://github.com/stokaro/ptah/issues/1145).',
     '  Review them before publishing the file.',
+    // A page-level sentence after a blank line is not this bullet's
+    // disposition, however many issues it names.
+    '- A bullet whose status is only stated for the page as a whole.',
+    '',
+    'Everything here is tracked by [#904](https://github.com/stokaro/ptah/issues/904).',
     '',
   ].join('\n');
 
@@ -156,6 +184,7 @@ function selftest() {
     { line: 3, needle: 'no disposition' },
     { line: 4, needle: 'cites #904 but links issue 905' },
     { line: 6, needle: 'no disposition' },
+    { line: 8, needle: 'no disposition' },
   ];
   const actual = analyze(violating);
   for (const [index, want] of expected.entries()) {
