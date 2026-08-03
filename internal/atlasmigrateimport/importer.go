@@ -164,9 +164,52 @@ var liquibaseChangelogExtensions = map[string]bool{
 	".yml":  true,
 }
 
+// CapturedImport is an import whose source directory has been resolved and
+// snapshotted, but not yet converted or written.
+//
+// It exists so a caller can verify the SOURCE directory's integrity file
+// between the read and the write. `ptah-compat migrate import` gates on
+// atlas.sum the way every other verb that reads a migration directory does
+// (stokaro/ptah#1095), and the gate is only worth anything if it runs before
+// [CapturedImport.Write] creates the target directory: a conversion that has
+// already written the destination and hashed it launders the tampered source
+// into a directory that verifies clean.
+//
+// Source is the immutable snapshot, so the bytes that are verified are the same
+// bytes that are converted. Re-reading the directory after the gate would leave
+// the window between the two reads open.
+type CapturedImport struct {
+	// Format is the resolved source layout, which decides both the files the
+	// source's atlas.sum covers and how they convert.
+	Format Format
+	// FromDir is the resolved local source directory.
+	FromDir string
+	// ToDir is the resolved local target directory.
+	ToDir string
+	// Source is the captured source directory: every file the format's Atlas
+	// integrity file covers, plus everything the converter reads.
+	Source fsnapshot.Snapshot
+}
+
 // Import converts a local source migration directory to Atlas single-file
 // migrations and writes atlas.sum in the target directory.
+//
+// It is [CaptureImport] followed immediately by [CapturedImport.Write], with
+// nothing in between. A caller that enforces source integrity must call the two
+// halves itself and gate between them; see [CapturedImport].
 func Import(opts Options) (*Result, error) {
+	captured, err := CaptureImport(opts)
+	if err != nil {
+		return nil, err
+	}
+	return captured.Write()
+}
+
+// CaptureImport resolves an import's source URL, target URL and source format,
+// then captures the source directory once. It opens no target directory and
+// writes nothing, so a caller may refuse the import after it returns without
+// having left anything behind.
+func CaptureImport(opts Options) (*CapturedImport, error) {
 	from, err := parseLocalDirURL(defaultString(opts.FromURL, "file://migrations"))
 	if err != nil {
 		return nil, fmt.Errorf("import --from: %w", err)
@@ -187,26 +230,48 @@ func Import(opts Options) (*Result, error) {
 	// wording. Both spellings that resolve to atlas -- the default with no
 	// format given, and an explicit `?format=atlas` -- exit 1 there and exited
 	// 0 here, which is the direction that lets a mistake pass silently.
+	//
+	// It stays AHEAD of the capture. The community binary opens the source
+	// first, so a tampered atlas-format source is refused there for its checksum
+	// and here for its format; both exit 1 and neither writes anything, and
+	// moving the capture ahead of this line would only trade one refusal message
+	// for another while changing what a nonexistent --from reports.
 	if format == FormatAtlas {
 		return nil, fmt.Errorf("cannot import a migration directory already in %q format", string(FormatAtlas))
 	}
 
-	loaded, err := LoadDir(from.Dir, format)
+	snapshot, err := captureDir(from.Dir, format)
+	if err != nil {
+		return nil, err
+	}
+	return &CapturedImport{
+		Format:  format,
+		FromDir: from.Dir,
+		ToDir:   to.Dir,
+		Source:  snapshot,
+	}, nil
+}
+
+// Write converts the captured source and writes the Atlas single-file
+// migrations plus atlas.sum into the target directory. It reads only the
+// captured bytes, never the source directory again.
+func (c *CapturedImport) Write() (*Result, error) {
+	loaded, err := loadCaptured(c.Source, c.FromDir, c.Format)
 	if err != nil {
 		return nil, err
 	}
 	entries := loaded.Entries
-	if err := os.MkdirAll(to.Dir, 0o755); err != nil {
-		return nil, fmt.Errorf("create target migration directory %s: %w", to.Dir, err)
+	if err := os.MkdirAll(c.ToDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create target migration directory %s: %w", c.ToDir, err)
 	}
 
-	if err := preflightTarget(from.Dir, to.Dir, format, entries); err != nil {
+	if err := preflightTarget(c.FromDir, c.ToDir, c.Format, entries); err != nil {
 		return nil, err
 	}
 
 	files := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		target := filepath.Join(to.Dir, entry.Name)
+		target := filepath.Join(c.ToDir, entry.Name)
 		// Migration files are committed and shared, so 0644 matches generated
 		// migration/sum files elsewhere in Ptah.
 		if err := os.WriteFile(target, entry.Data, 0o644); err != nil { //nolint:gosec // migration files are intended to be shared.
@@ -214,11 +279,11 @@ func Import(opts Options) (*Result, error) {
 		}
 		files = append(files, target)
 	}
-	sum, err := atlascompat.WriteSum(to.Dir, migrator.MigrationDirFormatAtlas)
+	sum, err := atlascompat.WriteSum(c.ToDir, migrator.MigrationDirFormatAtlas)
 	if err != nil {
 		return nil, err
 	}
-	sumFile := filepath.Join(to.Dir, atlascompat.AtlasSumFileName)
+	sumFile := filepath.Join(c.ToDir, atlascompat.AtlasSumFileName)
 	if len(sum.Entries) != len(entries) {
 		return nil, fmt.Errorf("atlas.sum contains %d entries, want %d", len(sum.Entries), len(entries))
 	}
@@ -231,9 +296,20 @@ func Import(opts Options) (*Result, error) {
 // (write) path: importing nothing would write an empty target directory and
 // report success.
 func LoadDir(dir string, format Format) (*Loaded, error) {
+	snapshot, err := captureDir(dir, format)
+	if err != nil {
+		return nil, err
+	}
+	return loadCaptured(snapshot, dir, format)
+}
+
+// captureDir securely snapshots the source migration directory at dir. It is
+// the read half of [LoadDir], split out so the import path can verify the
+// snapshot's integrity file before anything converts or writes it.
+func captureDir(dir string, format Format) (fsnapshot.Snapshot, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read source migration directory %s: %w", dir, err)
+		return fsnapshot.Snapshot{}, fmt.Errorf("read source migration directory %s: %w", dir, err)
 	}
 	snapshot, captureErr := CaptureFS(root.FS(), format)
 	closeErr := root.Close()
@@ -241,11 +317,17 @@ func LoadDir(dir string, format Format) (*Loaded, error) {
 		if closeErr != nil {
 			captureErr = errors.Join(captureErr, fmt.Errorf("close source migration directory: %w", closeErr))
 		}
-		return nil, fmt.Errorf("read source migration directory %s: %w", dir, captureErr)
+		return fsnapshot.Snapshot{}, fmt.Errorf("read source migration directory %s: %w", dir, captureErr)
 	}
 	if closeErr != nil {
-		return nil, fmt.Errorf("close source migration directory: %w", closeErr)
+		return fsnapshot.Snapshot{}, fmt.Errorf("close source migration directory: %w", closeErr)
 	}
+	return snapshot, nil
+}
+
+// loadCaptured converts an already-captured source snapshot, refusing a source
+// that yields no importable migration.
+func loadCaptured(snapshot fsnapshot.Snapshot, dir string, format Format) (*Loaded, error) {
 	loaded, err := LoadFS(snapshot, dir, format)
 	if err != nil {
 		return nil, err

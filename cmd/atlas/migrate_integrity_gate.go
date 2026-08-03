@@ -33,6 +33,124 @@ import (
 // migrate_apply.go. `migrate status` and `migrate set` reject both spellings
 // of a non-Atlas layout (`?format=` on --dir and a non-atlas --dir-format)
 // before they reach the gate, so only the native branch is reachable there.
+//
+// The foreign-layout half lives here too, as verifyCoveredAtlasDirChecksum.
+// It started inside `migrate apply` (#973), and keeping it there is what
+// produced #1095 in the same shape #974 had: `migrate import` reads the same
+// directories and the same atlas.sum through the same capture step, and
+// converted a directory apply refuses — writing the conversion out under a
+// fresh sum, so the tampering ended up laundered into a directory that
+// verifies clean.
+
+// atlasSumPolicy decides what an ABSENT atlas.sum means to the verb running the
+// gate. A PRESENT one always has to verify, whichever policy applies.
+//
+// The split between them is measured against the pinned community binary
+// v1.3.0, not a judgement call. On one Goose directory with its atlas.sum
+// deleted, `migrate apply` exits 1 with `checksum file not found` while
+// `migrate import` exits 0 and writes the conversion. That single row is the
+// whole difference between the two constants, and it is the right way round:
+// import exists to read a directory another tool wrote, which by construction
+// has never been hashed, so requiring a sum there would refuse the verb's own
+// purpose. Verifying one that IS present costs nothing and is what #1095 asks
+// for.
+type atlasSumPolicy int
+
+const (
+	// requireAtlasSum refuses a source that carries no atlas.sum whenever the
+	// covered set is non-empty. It is the policy for every verb that executes,
+	// reports on, or records the directory's migrations.
+	requireAtlasSum atlasSumPolicy = iota
+	// verifyAtlasSumWhenPresent accepts a source that carries no atlas.sum at
+	// all, and verifies one that does. It is the policy for `migrate import`.
+	verifyAtlasSumWhenPresent
+)
+
+// verifyCoveredAtlasDirChecksum verifies a directory laid out in a foreign
+// tool's convention against the atlas.sum that directory carries, over exactly
+// the file set Atlas CE covers for that layout.
+//
+// It is the same computation `ptah-compat migrate hash` writes and
+// `migrate validate` checks (#984, #992), so a directory this gate refuses is
+// one those two verbs also refuse, and one they call clean passes here.
+//
+// What this gate verifies is also what the caller consumes, for every layout.
+// That holds structurally rather than by agreement: the importer selects the
+// file set it converts with the same [atlasmigrateimport.SumFileNames] rule
+// this gate hashes. It was not always true — until #982 the Flyway importer ran
+// a wider selection than the checksum covered, so a superseded baseline and a
+// lowercase-prefixed file executed on a directory both tools called clean.
+//
+// Under requireAtlasSum an empty covered set is exempt from the missing-sum
+// refusal, and that predicate is measured rather than assumed. CE's refusal
+// keys on the covered set being non-empty, NOT on the directory holding any
+// *.sql: an unhashed golang-migrate directory holding only 1_init.down.sql, and
+// an unhashed Flyway directory holding only U1__init.sql, both exit 0 with "No
+// migration files to execute", while an unhashed Goose directory holding only
+// foo.sql exits 1. SumFileNames returning an empty slice is exactly that
+// predicate. The exemption is deliberately limited to the unhashed branch: a
+// hashed directory whose covered files were all deleted is drift, and CE
+// reports it as one — measured on `migrate import` too, where deleting the only
+// covered file of a hashed Goose directory gives `L2: 1_init.sql was removed`
+// rather than a nothing-to-import success.
+func verifyCoveredAtlasDirChecksum(
+	cmd *cobra.Command,
+	fsys fs.FS,
+	format atlasmigrateimport.Format,
+	policy atlasSumPolicy,
+) error {
+	names, err := atlasmigrateimport.SumFileNames(fsys, format)
+	if err != nil {
+		return err
+	}
+	result, hashed, err := migratesum.VerifyAtlasFilesHashed(fsys, names)
+	switch {
+	case errors.Is(err, migratesum.ErrSumFileMalformed):
+		return migratevalidate.FailAtlasChecksumMismatch(cmd, nil)
+	case errors.Is(err, migratesum.ErrCoveredEntryUnreadable):
+		// A covered entry that is a directory (#991). It reaches here on the
+		// converted path too, because SumFileNames selects by name and the
+		// captured snapshot now records such a directory instead of dropping it.
+		return migratevalidate.FailAtlasChecksumUnreadableEntry(cmd, err)
+	case err != nil:
+		return err
+	case !hashed && policy == verifyAtlasSumWhenPresent:
+		return checkCoveredAtlasEntriesReadable(cmd, fsys, names)
+	case !hashed && len(names) == 0:
+		return nil
+	case !hashed:
+		return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
+	case !result.OK():
+		return migratevalidate.FailAtlasChecksumMismatch(cmd, result.FirstMismatch())
+	}
+	return nil
+}
+
+// checkCoveredAtlasEntriesReadable refuses a directory holding a covered entry
+// that cannot be read, on the path where there is no atlas.sum to verify
+// against.
+//
+// Without it, verifyAtlasSumWhenPresent would return early on an unhashed
+// source and never attempt the read, which is not what the community binary
+// does: measured, `migrate import` on an UNHASHED Goose directory holding a
+// DIRECTORY named `weird.sql` exits 1 there with `read file "weird.sql": is a
+// directory`, exactly as it does on the hashed one. Membership of the covered
+// set is decided by the name, so the entry is a member whether or not anything
+// recorded a hash for it, and a gate that skipped the read would exit 0 and
+// convert — the direction parity must never take.
+//
+// It reuses [migratesum.ComputeAtlasFiles], the same computation the verify
+// path runs, so "which entries are read, and in what order" keeps one
+// definition. Flyway is unaffected: Atlas walks that tree instead of globbing
+// it, so a directory there is a node it descends into and never a covered
+// entry.
+func checkCoveredAtlasEntriesReadable(cmd *cobra.Command, fsys fs.FS, names []string) error {
+	_, err := migratesum.ComputeAtlasFiles(fsys, names)
+	if errors.Is(err, migratesum.ErrCoveredEntryUnreadable) {
+		return migratevalidate.FailAtlasChecksumUnreadableEntry(cmd, err)
+	}
+	return err
+}
 
 // verifyNativeAtlasDirChecksum enforces the atlas.sum integrity gate on a
 // captured NATIVE Atlas migration filesystem: a missing atlas.sum and a failed

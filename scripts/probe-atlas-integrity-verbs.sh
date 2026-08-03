@@ -25,7 +25,7 @@
 # Exits non-zero if any comparison diverges. Scratch directories are created
 # under the system temp directory and removed on exit.
 #
-# Refs stokaro/ptah#973, #983, #990, #991.
+# Refs stokaro/ptah#973, #974, #983, #990, #991, #1095.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -455,6 +455,160 @@ printf '    ptah new   exit=%s sum=%s\n' "$rc" "$([ -f "$newd/atlas.sum" ] && ec
 cend=$(native_seed "g-new-ce" unhashed)
 out=$("$ATLAS" migrate new addcol --dir "file://$cend" 2>&1); rc=$?
 printf '    CE   new   exit=%s sum=%s [%s]\n' "$rc" "$([ -f "$cend/atlas.sum" ] && echo WRITTEN || echo none)" "$(echo "$out" | tr '\n' '|' | cut -c1-60)"
+
+echo
+echo "===== 13. migrate import verifies the SOURCE atlas.sum (#1095)"
+# `migrate import` reads a migration directory and its atlas.sum through the
+# same capture step as every verb above, and verified neither: a directory
+# `migrate apply` refuses was converted, written out, and hashed over whatever
+# the conversion produced — so the tampering came out the other side as a
+# destination `migrate validate` calls clean.
+#
+# Import's missing-sum policy is its own, and measured: a source with atlas.sum
+# DELETED imports at exit 0 on both tools, where the same directory is refused
+# with `checksum file not found` by apply, status and set. Requiring a sum here
+# would refuse a directory another tool wrote, which is the verb's whole
+# purpose. The `nosum` row below is what holds that line.
+#
+# Every row also records whether a destination atlas.sum was written, because
+# the exit code alone cannot tell a refusal from a refusal that wrote first.
+
+# import_seed <dir> <format> <state> — a source in the requested drift state.
+import_seed() {
+  local d="$BASE/$1" format="$2" state="$3" first
+  rm -rf "$d"; mkdir -p "$d"
+  case "$format" in
+    goose)          first="$d/1_init.sql"
+                    printf -- '-- +goose Up\nCREATE TABLE a (id int);\n-- +goose Down\nDROP TABLE a;\n' > "$first" ;;
+    dbmate)         first="$d/20240101000000_init.sql"
+                    printf -- '-- migrate:up\nCREATE TABLE a (id int);\n-- migrate:down\nDROP TABLE a;\n' > "$first" ;;
+    liquibase)      first="$d/1_init.sql"
+                    printf -- '--liquibase formatted sql\n--changeset app:1\nCREATE TABLE a (id int);\n' > "$first" ;;
+    flyway)         first="$d/V1__init.sql"
+                    printf 'CREATE TABLE a (id int);\n' > "$first" ;;
+    golang-migrate) first="$d/1_init.up.sql"
+                    printf 'CREATE TABLE a (id int);\n' > "$first"
+                    printf 'DROP TABLE a;\n' > "$d/1_init.down.sql" ;;
+  esac
+  "$ATLAS" migrate hash --dir "file://$d?format=$format" >/dev/null 2>&1
+  case "$state" in
+    clean)     : ;;
+    nosum)     rm -f "$d/atlas.sum" ;;
+    edited)    printf -- '\n-- edited after hashing\n' >> "$first" ;;
+    added)     case "$format" in
+                 goose)          printf -- '-- +goose Up\nCREATE TABLE b (id int);\n' > "$d/2_more.sql" ;;
+                 dbmate)         printf -- '-- migrate:up\nCREATE TABLE b (id int);\n' > "$d/20240102000000_more.sql" ;;
+                 liquibase)      printf -- '--liquibase formatted sql\n--changeset app:2\nCREATE TABLE b (id int);\n' > "$d/2_more.sql" ;;
+                 flyway)         printf 'CREATE TABLE b (id int);\n' > "$d/V2__more.sql" ;;
+                 golang-migrate) printf 'CREATE TABLE b (id int);\n' > "$d/2_more.up.sql" ;;
+               esac ;;
+    removed)   rm -f "$first" ;;
+    malformed) printf 'not a sum file\n' > "$d/atlas.sum" ;;
+    evildir)   mkdir -p "$d/weird.sql" ;;
+    # The row that keeps the missing-sum exemption from swallowing the read: an
+    # unreadable covered entry refuses on both tools with NO atlas.sum present.
+    evildirnosum) rm -f "$d/atlas.sum"; mkdir -p "$d/weird.sql" ;;
+  esac
+  echo "$d"
+}
+
+# import_row <format> <state> <spelling> <mode>
+#   spelling=query  the format rides the --from URL
+#   spelling=flag   the format rides --dir-format
+#   mode=streams    compare exit code and both streams (a refusal is expected)
+#   mode=exit       compare exit code and whether a destination sum was written
+import_row() {
+  local format="$1" state="$2" spelling="$3" mode="$4"
+  local ce ptah ceout cerr cerc ptout pterr ptrc verdict cesum ptsum
+  ce=$(import_seed "i-ce-$format-$state-$spelling" "$format" "$state")
+  ptah=$(import_seed "i-pt-$format-$state-$spelling" "$format" "$state")
+  local ceargs=() ptargs=()
+  if [ "$spelling" = query ]; then
+    ceargs=(migrate import --from "file://$ce?format=$format"   --to "file://$ce.dst")
+    ptargs=(migrate import --from "file://$ptah?format=$format" --to "file://$ptah.dst")
+  else
+    ceargs=(migrate import --from "file://$ce"   --to "file://$ce.dst"   --dir-format "$format")
+    ptargs=(migrate import --from "file://$ptah" --to "file://$ptah.dst" --dir-format "$format")
+  fi
+  ceout=$("$ATLAS"  "${ceargs[@]}" 2>"$BASE/i.err"); cerc=$?; cerr=$(cat "$BASE/i.err")
+  ptout=$("$COMPAT" "${ptargs[@]}" 2>"$BASE/i.err"); ptrc=$?; pterr=$(cat "$BASE/i.err")
+  cesum=$([ -f "$ce.dst/atlas.sum" ] && echo WRITTEN || echo none)
+  ptsum=$([ -f "$ptah.dst/atlas.sum" ] && echo WRITTEN || echo none)
+  case "$mode" in
+    streams) [ "$cerc" = "$ptrc" ] && [ "$ceout" = "$ptout" ] && [ "$cerr" = "$pterr" ] \
+               && [ "$cesum" = "$ptsum" ] && verdict=MATCH || { verdict=DIFFER; fail=1; } ;;
+    # The stderr wording of an unreadable covered entry is Ptah's own on every
+    # verb (`... is a directory, not a migration file; rename it`), a recorded
+    # pre-existing divergence shared with apply/status/set, so this mode
+    # compares the exit code and what reached the destination.
+    exit)    [ "$cerc" = "$ptrc" ] && [ "$cesum" = "$ptsum" ] \
+               && verdict="MATCH(exit+dst)" || { verdict=DIFFER; fail=1; } ;;
+  esac
+  printf '  %-15s %-13s %-6s %-16s CE exit=%s dst=%-7s  ptah exit=%s dst=%s\n' \
+    "$format" "$state" "$spelling" "$verdict" "$cerc" "$cesum" "$ptrc" "$ptsum"
+  if [ "$verdict" = DIFFER ]; then
+    printf '       CE   out=[%s] err=[%s]\n' "$(echo "$ceout" | tr '\n' '|')" "$(echo "$cerr" | tr '\n' '|')"
+    printf '       ptah out=[%s] err=[%s]\n' "$(echo "$ptout" | tr '\n' '|')" "$(echo "$pterr" | tr '\n' '|')"
+  fi
+}
+
+for format in goose dbmate liquibase flyway golang-migrate; do
+  for spelling in query flag; do
+    for state in edited added removed malformed; do
+      import_row "$format" "$state" "$spelling" streams
+    done
+    for state in clean nosum; do
+      import_row "$format" "$state" "$spelling" exit
+    done
+  done
+done
+
+echo
+echo "  a covered entry that is a DIRECTORY refuses whether or not a sum exists"
+# golang-migrate is the negative control and is expected to exit 0 on both:
+# its covered set is *.up.sql, so a directory named weird.sql is not a member
+# and there is nothing to fail reading. That is what shows the refusal keys on
+# the covered set rather than on any directory whose name ends in .sql.
+#
+# flyway is deliberately absent: Atlas walks that tree instead of globbing it,
+# so a directory there is a node it descends into and never a covered entry.
+for format in goose dbmate liquibase golang-migrate; do
+  import_row "$format" evildir query exit
+  import_row "$format" evildirnosum query exit
+done
+
+echo
+echo "  the checksum refusal outranks import's own destination rules"
+# Both of these used to win here, because they ran before anything read the
+# source. They are the last checks standing between a tampered source and a
+# written directory, so either of them passing on an unverified source is the
+# bug rather than a message difference.
+ordce=$(import_seed "i-order-ce" goose edited)
+ordpt=$(import_seed "i-order-pt" goose edited)
+mkdir -p "$ordce.dst" "$ordpt.dst"
+printf 'SELECT 1;\n' > "$ordce.dst/9_existing.sql"
+printf 'SELECT 1;\n' > "$ordpt.dst/9_existing.sql"
+out=$("$ATLAS"  migrate import --from "file://$ordce?format=goose" --to "file://$ordce.dst" 2>&1); rc=$?
+printf '    CE   dst-not-empty  exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-80)"
+out=$("$COMPAT" migrate import --from "file://$ordpt?format=goose" --to "file://$ordpt.dst" 2>&1); rc=$?
+printf '    ptah dst-not-empty  exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-80)"
+out=$("$ATLAS"  migrate import --from "file://$ordce?format=goose" --to "file://$ordce" 2>&1); rc=$?
+printf '    CE   to-equals-from exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-80)"
+out=$("$COMPAT" migrate import --from "file://$ordpt?format=goose" --to "file://$ordpt" 2>&1); rc=$?
+printf '    ptah to-equals-from exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-80)"
+
+echo
+echo "  STILL DIVERGENT, out of scope for #1095: an empty source directory"
+echo "  reports 'nothing to import' at exit 0 on the community binary and"
+echo "  'no importable migration files found' at exit 1 here, hashed or not."
+for state in hashed unhashed; do
+  d="$BASE/i-empty-$state"; rm -rf "$d"; mkdir -p "$d"
+  [ "$state" = hashed ] && "$ATLAS" migrate hash --dir "file://$d?format=goose" >/dev/null 2>&1
+  out=$("$ATLAS"  migrate import --from "file://$d?format=goose" --to "file://$d.dst1" 2>&1); rc=$?
+  printf '    CE   %-9s exit=%s [%s]\n' "$state" "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-70)"
+  out=$("$COMPAT" migrate import --from "file://$d?format=goose" --to "file://$d.dst2" 2>&1); rc=$?
+  printf '    ptah %-9s exit=%s [%s]\n' "$state" "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-70)"
+done
 
 echo
 [ "$fail" = 0 ] && echo "ALL DIFFERENTIAL CHECKS MATCHED" || echo "SOME DIFFERENTIAL CHECKS FAILED"
