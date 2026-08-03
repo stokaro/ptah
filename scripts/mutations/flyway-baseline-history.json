@@ -68,7 +68,7 @@
       "name": "the covered migration blocking the run is never named",
       "file": "internal/atlasmigrateimport/importer.go",
       "old": "\t\tout[i] = FlywayMigrationVersion{Source: file.name, Version: versions[i]}",
-      "new": "\t\tout[i] = FlywayMigrationVersion{Source: \"\", Version: versions[i]}"
+      "new": "\t\tout[i] = FlywayMigrationVersion{Source: file.name[:0], Version: versions[i]}"
     }
   ]
 }
