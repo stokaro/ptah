@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -110,6 +111,7 @@ type Migrator struct {
 	revisionTableFormat  RevisionTableFormat
 	execOrder            ExecOrder
 	outOfOrderExempt     []int64
+	sourceVersions       map[int64]string
 	txMode               MigrationTxMode
 	migrationLockName    string
 	migrationLockTimeout time.Duration
@@ -352,6 +354,43 @@ func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator {
 func (m *Migrator) WithOutOfOrderExempt(versions []int64) *Migrator {
 	tmp := *m
 	tmp.outOfOrderExempt = slices.Clone(versions)
+	return &tmp
+}
+
+// WithSourceVersions supplies, for a migration directory converted from another
+// tool's layout, the SOURCE version token each executed version was projected
+// from. It makes the linear execution guard stricter; it never makes it looser.
+//
+// WHY A SECOND KEY EXISTS AT ALL. The int64 version a converted directory
+// executes under is a projection of the source tool's ORDER. For Flyway that
+// order is numeric on the version components — V2 executes before V10 — and
+// reproducing it is what lets Ptah write the same atlas.sum and run the same
+// sequence as the tool it is standing in for. But "was this migration added
+// after everything already applied" is not an ordering question, and the source
+// tool does not answer it with the ordering: Flyway's version token is compared
+// as a STRING, where "10" sorts below "2". Supplying the token lets the guard
+// ask the linearity question on the operand that decides it, while execution
+// order, atlas.sum and every recorded revision keep the int64 they already have
+// (stokaro/ptah#1098).
+//
+// The two comparisons are unioned. A pending migration is refused under
+// [ExecOrderLinear], and left unapplied under [ExecOrderLinearSkip], when its
+// version sorts below the current one OR its token does not sort above every
+// applied token. Neither half subsumes the other: V3 added to a database
+// holding V2 and V10 is caught only by the first, and V10 added to a database
+// holding V2 only by the second.
+//
+// Passing tokens for a NATIVE Atlas directory would be a mistake rather than a
+// no-op: there the int64 is the version, not a projection of one, and comparing
+// its decimal spelling as text would refuse ordinary sequences. Only the
+// converted apply path sets this; see
+// atlasmigrateimport.FlywaySourceVersions.
+//
+// Versions absent from the map are governed by the numeric comparison alone, so
+// a partial map narrows what the guard can see rather than corrupting it.
+func (m *Migrator) WithSourceVersions(sourceVersions map[int64]string) *Migrator {
+	tmp := *m
+	tmp.sourceVersions = maps.Clone(sourceVersions)
 	return &tmp
 }
 
@@ -2263,14 +2302,23 @@ func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, t
 	bootstrap := checkpointBootstrap(migrations, applied, targetVersion)
 	floor := checkpointFloor(migrations, applied, bootstrap)
 	pendingVersions := pendingMigrationVersionsFloored(migrations, applied, bootstrap, floor)
+	// Two comparisons, one verdict. The numeric one asks whether a pending
+	// version sorts below the mark; the source one asks whether the tool this
+	// directory belongs to would call the same file out of order. They
+	// disagree on real directories, so both are asked and the exemption is
+	// applied to the union rather than to either half — see
+	// [Migrator.WithSourceVersions].
 	outOfOrderVersions := outOfOrderExempt(
-		outOfOrderMigrationVersions(pendingVersions, currentVersion),
+		mergeOutOfOrderVersions(
+			outOfOrderMigrationVersions(pendingVersions, currentVersion),
+			outOfOrderSourceVersions(pendingVersions, applied, m.sourceVersions),
+		),
 		m.outOfOrderExempt,
 	)
 	execOrder := normalizeExecOrder(m.execOrder)
 
 	if execOrder == ExecOrderLinear && len(outOfOrderVersions) > 0 {
-		return nil, NewOutOfOrderError(currentVersion, outOfOrderVersions)
+		return nil, NewOutOfOrderSourceError(currentVersion, outOfOrderVersions, m.sourceVersions)
 	}
 
 	appliedSet := versionSet(applied)
@@ -2285,8 +2333,12 @@ func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, t
 		if targetVersion > 0 && migration.Version > targetVersion {
 			continue
 		}
-		if execOrder == ExecOrderLinearSkip && migration.Version < currentVersion &&
-			!slices.Contains(m.outOfOrderExempt, migration.Version) {
+		// linear-skip leaves unapplied exactly what linear refuses, so it reads
+		// the verdict computed above instead of re-deriving it. Re-deriving is
+		// what let a converted directory skip nothing under linear-skip while
+		// linear refused, and execute a migration the source tool leaves
+		// pending.
+		if execOrder == ExecOrderLinearSkip && slices.Contains(outOfOrderVersions, migration.Version) {
 			m.logger.Warn("Skipping out-of-order migration", "version", migration.Version, "currentVersion", currentVersion)
 			continue
 		}

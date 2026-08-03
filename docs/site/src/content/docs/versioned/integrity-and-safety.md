@@ -292,8 +292,20 @@ deliberately left open:
 - A database with **no recorded history** still runs the baseline. That is the
   fresh-install path a converted Flyway directory exists for.
 - `--exec-order=non-linear` executes the baseline against a database that does
-  have history, which is what the refusal points at. Atlas CE applies a
-  below-mark baseline under that flag too.
+  have history, which is what the refusal points at. So does
+  `--exec-order=linear-skip`: the refusal comes from the baseline check rather
+  than from the linear guard, and that check stands aside whenever the operator
+  has named an execution order explicitly.
+
+Atlas CE follows only halfway there. For a baseline it refuses as out of order
+it does the same thing — `B2.5__base.sql` on a database at `V1`, `V2`, `V3` is
+exit 1 without the flag and `Migrating to version 2.5 from 3` with it. For a
+baseline it *skips silently*, the first row of the table above, neither flag
+changes anything: `V2` plus `B10__base.sql` still prints
+`No migration files to execute` at exit 0 under `--exec-order=non-linear` and
+under `--exec-order=linear-skip`. `ptah-compat` runs the baseline in both, which
+is what makes the flag a way forward rather than a second dead end. Both tools
+exit 0 either way.
 
 A baseline that squashes away the whole recorded history still runs on both
 tools — `B3__base.sql` on a database at `V2`, `B2__base.sql` on one at `V10` —
