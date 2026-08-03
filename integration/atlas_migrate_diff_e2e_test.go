@@ -263,6 +263,15 @@ CREATE INDEX idx_users_email ON users (email);
 }
 `), 0o600), qt.IsNil)
 
+		// migrate diff refuses a directory nothing has verified (#1086), the
+		// same as the community binary, so the seeded 1_init.sql has to carry
+		// an atlas.sum before the diff runs. Hashing here rather than writing
+		// the sum by hand keeps the fixture honest: the gate below is checking
+		// a sum this binary produced.
+		hashOutput, err := runPtah(ctx, dir, binaryPath,
+			"migrate", "hash", "--dir", "file://"+migrationsDir)
+		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", hashOutput))
+
 		output, err := runPtah(ctx, dir, binaryPath, "migrate", "diff", "--env", "dev", "add_email_index")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))

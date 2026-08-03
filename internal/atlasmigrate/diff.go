@@ -48,6 +48,19 @@ type DiffOptions struct {
 	// durably published and included in atlas.sum. The callback runs while the
 	// migration-directory lock is held.
 	PreparePublication func([]string) error
+	// VerifyDir re-checks the directory's integrity file against the locked
+	// snapshot, after the migration-directory lock is held and before anything
+	// is planned. Leave it nil for [verifyDirSum], which accepts a directory
+	// carrying no atlas.sum at all.
+	//
+	// The caller supplies it so that ONE definition of "is this directory
+	// verified" answers both the preflight refusal and this recheck. The
+	// compatibility surface runs the shared atlas.sum gate before calling in --
+	// that is what makes a refusal precede the write (stokaro/ptah#1086) -- and
+	// passes the same predicate here so that a directory edited between the two
+	// is refused with the same bytes rather than with a second verifier's
+	// wording.
+	VerifyDir func(fs.FS) error
 }
 
 type DiffResult struct {
@@ -141,7 +154,7 @@ func generateDiff(
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("capture migration directory: %w", err)
 	}
-	if err := verifyDirSum(migrationSnapshot); err != nil {
+	if err := opts.verifyDir(migrationSnapshot); err != nil {
 		return DiffResult{}, err
 	}
 
@@ -322,6 +335,20 @@ func renderMigrationDiffSQL(statements []string, format string) (string, error) 
 	return out.String(), nil
 }
 
+// verifyDir returns the integrity predicate this run re-checks the locked
+// snapshot with: the caller's when it supplied one, otherwise [verifyDirSum].
+func (o DiffOptions) verifyDir(fsys fs.FS) error {
+	if o.VerifyDir != nil {
+		return o.VerifyDir(fsys)
+	}
+	return verifyDirSum(fsys)
+}
+
+// verifyDirSum is the default recheck. It deliberately accepts a directory
+// carrying no atlas.sum, because diffing into a directory that does not have
+// one yet is how the first migration is created; a caller that needs the
+// stricter rule -- an unhashed directory that already holds migrations is a
+// checksum error -- supplies it through [DiffOptions.VerifyDir].
 func verifyDirSum(fsys fs.FS) error {
 	result, err := migratesum.VerifyWithFormat(fsys, migrator.MigrationDirFormatAtlas)
 	if errors.Is(err, migratesum.ErrSumFileMissing) {

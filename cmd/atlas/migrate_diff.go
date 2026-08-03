@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"fmt"
+	"io/fs"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -125,6 +126,33 @@ func runAtlasMigrateDiff(
 			return cmdutil.Fail(cmd, err)
 		}
 	}
+	// The migration directory is resolved and gated before anything else this
+	// verb validates. The position is measured against the pinned community
+	// binary v1.3.0, not chosen: on an unhashed directory it prints the checksum
+	// refusal ahead of `--to` being absent, ahead of an unreachable --dev-url,
+	// ahead of a malformed --format template and ahead of `--dir-format goose`,
+	// while an unknown flag and a second positional still win over it. Atlas
+	// runs the gate in a pre-run hook, so everything cobra validates before
+	// RunE precedes it and everything the command body validates follows it.
+	localDir, err := resolveAtlasMigrateDiffDir(cmd, project, opts.dirURL)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
+	}
+	// Unknown query keys are ignored here exactly as they are on the verbs that
+	// already accept them; a ?format= naming a foreign layout stays refused,
+	// because this verb WRITES and Ptah does not compute that layout's covered
+	// file set (stokaro/ptah#1013 section 1).
+	if err := checkWritingVerbDirQuery(localDir.Query); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
+	}
+	if err := verifyAtlasWriteDirChecksum(cmd, project, localDir); err != nil {
+		return err
+	}
+	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
+	}
+
 	projectEnv := atlassource.ProjectEnv{}
 	if loaded {
 		projectEnv, err = atlasSourceProjectEnv(cmd, projectCfg)
@@ -156,31 +184,6 @@ func runAtlasMigrateDiff(
 		return cmdutil.Fail(cmd, err)
 	}
 
-	var localDir atlasargs.LocalDir
-	if loaded &&
-		!cmd.Flags().Changed("dir") &&
-		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		localDir, err = project.localDirWithQuery(opts.dirURL)
-	} else {
-		localDir, err = atlasargs.ParseLocalDir(opts.dirURL)
-	}
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
-	}
-	// Same reasoning as `migrate new`: this verb writes a migration and a fresh
-	// atlas.sum without running the integrity gate, so accepting a query here
-	// would relax a refusal into a write over a directory nothing verified.
-	// See stokaro/ptah#1086.
-	if len(localDir.Query) > 0 {
-		return cmdutil.Fail(cmd, fmt.Errorf(
-			"atlas migrate diff --dir: migration directory URL query parameters are not supported for this command",
-		))
-	}
-	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
-	}
-
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.devURL)
@@ -207,6 +210,15 @@ func runAtlasMigrateDiff(
 		Qualifier:            qualifier,
 		DryRun:               opts.dryRun,
 		PreparePublication:   preparePublication,
+		// The same predicate the preflight above already applied, re-applied to
+		// the locked snapshot. Passing it in is what keeps this verb from
+		// carrying a second definition of a verified directory: without it the
+		// library's own recheck accepts a missing atlas.sum, so a directory that
+		// lost its sum between the preflight and the lock would be written to
+		// and re-hashed.
+		VerifyDir: func(fsys fs.FS) error {
+			return checkNativeAtlasDirChecksum(cmd, fsys)
+		},
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -224,6 +236,27 @@ func runAtlasMigrateDiff(
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
+}
+
+// resolveAtlasMigrateDiffDir parses the --dir value into the directory this run
+// writes into, confining it to the atlas.hcl project root when that is where
+// the value came from.
+//
+// "Came from the project" is read off the project itself rather than passed in:
+// an unloaded atlas.hcl leaves the zero value, whose root is nil and whose
+// StringValue reports nothing present, so the two conditions below already
+// answer it.
+func resolveAtlasMigrateDiffDir(
+	cmd *cobra.Command,
+	project atlasProject,
+	dirURL string,
+) (atlasargs.LocalDir, error) {
+	if project.root != nil &&
+		!cmd.Flags().Changed("dir") &&
+		project.StringValue(projectconfig.StringMigrationDir).Present {
+		return project.localDirWithQuery(dirURL)
+	}
+	return atlasargs.ParseLocalDir(dirURL)
 }
 
 func resolveMigrateDiffDirectory(dir atlasargs.LocalDir) (string, error) {

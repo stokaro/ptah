@@ -36,15 +36,8 @@ func writeQueryFixtureDir(c *qt.C) string {
 	return dir
 }
 
-// TestCompatMigrateDirQuery_IgnoresUnknownKeysOnTheVerbsThatVerifyFirst closes
-// stokaro/ptah#1013 section 2 on six of the eight verbs that register --dir.
-//
-// Six, not eight, and the name says so: `migrate new` and `migrate diff` still
-// refuse every query and are pinned separately by
-// TestCompatMigrateDirQuery_NewAndDiffStillRefuseAQuery. This test used to be
-// called ...OnEveryVerb over the same six rows, which claimed a coverage it
-// never had — the two verbs the relaxation deliberately skips were exactly the
-// two a reader would have assumed were checked here.
+// TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb closes stokaro/ptah#1013
+// section 2 across all eight verbs that register --dir.
 //
 // Each row runs the verb twice on identical directories, once with
 // `?nonsense=1` and once without, and asserts the two runs agree. The control
@@ -52,7 +45,7 @@ func writeQueryFixtureDir(c *qt.C) string {
 // would also pass if the verb had started ignoring the whole --dir value, and a
 // verb that is broken for an unrelated reason fails both runs instead of
 // reporting a false pass.
-func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnTheVerbsThatVerifyFirst(t *testing.T) {
+func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 	tests := []struct {
 		name string
 		// run invokes the verb against dir, with query appended to the --dir
@@ -111,6 +104,35 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnTheVerbsThatVerifyFirst(t *te
 				return err
 			},
 		},
+		// new and diff joined the table in stokaro/ptah#1086, once they ran the
+		// atlas.sum gate. Until then they refused every query outright, because
+		// ignoring an unrecognized key on a verb that WRITES would have relaxed
+		// a refusal into a write over a directory nothing had verified. The
+		// fixture is hashed, so both rows turn on the query rather than on the
+		// gate.
+		{
+			name: "new",
+			run: func(_ *qt.C, dir, query string) error {
+				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir+query)
+				return err
+			},
+		},
+		{
+			name: "diff",
+			run: func(c *qt.C, dir, query string) error {
+				target := filepath.Join(c.TempDir(), "target.sql")
+				c.Assert(os.WriteFile(
+					target,
+					[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\nCREATE TABLE gadgets (id INTEGER PRIMARY KEY);\n"),
+					0o600,
+				), qt.IsNil)
+				_, _, err := runCompat("migrate", "diff", "dd",
+					"--dir", "file://"+dir+query,
+					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
+					"--to", "file://"+target)
+				return err
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -122,6 +144,65 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnTheVerbsThatVerifyFirst(t *te
 
 			c.Assert(control, qt.IsNil, qt.Commentf("control run without a query must succeed"))
 			c.Assert(withQuery, qt.IsNil)
+		})
+	}
+}
+
+// TestCompatMigrateDirQuery_FailurePathForeignFormat pins the part of the query
+// that is NOT ignored on the two verbs that WRITE into the directory.
+//
+// The community binary honors `?format=` on these verbs. Ptah converts a
+// foreign layout for every verb that only READS one — hash and validate since
+// #992, status and set since #1002, lint since #1133 — and refuses it on
+// `migrate new` and `migrate diff`, which WRITE into the directory. Refusing is
+// the strict side of the divergence: it never exits 0 where that binary exits 1.
+//
+// The refusal has to survive the relaxation above, which is why it is pinned:
+// once unknown keys are ignored, nothing else stops a `?format=goose` from
+// being ignored too and the directory being silently read as Atlas.
+//
+// For the two writing verbs that is not a style preference. Measured against
+// the pinned community binary v1.3.0, `migrate new --dir
+// 'file://goosedir?format=goose'` refuses an UNHASHED goose directory over
+// goose's own covered file set — so honoring the query means computing that
+// file set, not reading the directory as Atlas. Ignoring it here would gate the
+// wrong set and then write.
+func TestCompatMigrateDirQuery_FailurePathForeignFormat(t *testing.T) {
+	const want = `atlas migrate \w+ --dir: Atlas accepts \?format=goose, ` +
+		`but Ptah does not implement that directory format for this command yet`
+
+	tests := []struct {
+		name string
+		run  func(c *qt.C, dir string) error
+	}{
+		{
+			name: "new",
+			run: func(_ *qt.C, dir string) error {
+				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir+"?format=goose")
+				return err
+			},
+		},
+		{
+			name: "diff",
+			run: func(c *qt.C, dir string) error {
+				target := filepath.Join(c.TempDir(), "target.sql")
+				c.Assert(os.WriteFile(target, []byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+				_, _, err := runCompat("migrate", "diff", "dd",
+					"--dir", "file://"+dir+"?format=goose",
+					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
+					"--to", "file://"+target)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := tt.run(c, writeQueryFixtureDir(c))
+
+			c.Assert(err, qt.ErrorMatches, want)
 		})
 	}
 }
@@ -174,11 +255,10 @@ func TestCompatMigrateDirQuery_RejectsUnknownFormatValue(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout pins the `?format=`
-// value that names no layout at all. A PRESENT but empty value selects the
-// native Atlas layout on the community binary — it does not fall through to
-// `--dir-format` and it is not an unknown format — so refusing it would be a
-// divergence one character wide.
+// TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout pins the one
+// `?format=` value the five verbs above still accept. An empty value selects
+// the native Atlas layout on the community binary, so refusing it would turn
+// the relaxation into a new divergence one character wide.
 func TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout(t *testing.T) {
 	c := qt.New(t)
 	dir := writeQueryFixtureDir(c)
@@ -190,20 +270,23 @@ func TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-// TestCompatMigrateDirQuery_NewAndDiffStillRefuseAQuery pins the two verbs the
-// relaxation deliberately skips.
+// TestCompatMigrateDirQuery_NewAndDiffRefuseAnUnhashedDirectoryWithAQuery is
+// what replaced TestCompatMigrateDirQuery_NewAndDiffStillRefuseAQuery when
+// stokaro/ptah#1086 landed.
 //
-// Every verb that accepts a `--dir` query runs the atlas.sum integrity gate
-// first, so a converted directory is verified before anything reads it. These
-// two do not: they WRITE a migration and a fresh sum, and they do it over a
-// directory nothing checked. Measured on the pinned community binary, an
-// unhashed directory exits 1 there and 0 here, so accepting the query would
-// turn a refusal into a write.
+// The old test pinned a blanket refusal of any query on these two verbs. It was
+// not there for the query: it was standing in for the missing atlas.sum gate,
+// so that the relaxation could not be extended to a verb that WRITES before the
+// gate arrived. The gate is now what refuses, so the property to keep is that
+// an unhashed directory is still refused WITH the query present — the exact
+// shape a symmetric relaxation would have broken, and one the two rows added to
+// the ignore-unknown-keys table above cannot show, because those run on a
+// hashed fixture.
 //
-// The asymmetry is temporary and belongs to stokaro/ptah#1086, which adds the
-// gate. This test is here so the relaxation cannot be extended to these verbs
-// by symmetry alone, without the gate arriving with it.
-func TestCompatMigrateDirQuery_NewAndDiffStillRefuseAQuery(t *testing.T) {
+// Measured on the pinned community binary v1.3.0: `migrate new demo --dir
+// 'file://d?nonsense=1'` on a one-migration unhashed directory exits 1 with
+// `Error: checksum file not found`, the same as without the query.
+func TestCompatMigrateDirQuery_NewAndDiffRefuseAnUnhashedDirectoryWithAQuery(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(c *qt.C, dir string) error
@@ -238,7 +321,22 @@ func TestCompatMigrateDirQuery_NewAndDiffStillRefuseAQuery(t *testing.T) {
 
 			err := tt.run(c, dir)
 
-			c.Assert(err, qt.ErrorMatches, `.*query parameters are not supported.*`)
+			c.Assert(err, qt.ErrorMatches, `checksum file not found`)
+			c.Assert(atlasDirEntryNames(c, dir), qt.DeepEquals, []string{"20240101000000_init.sql"})
 		})
 	}
+}
+
+// atlasDirEntryNames lists the entries a migration directory holds, so a
+// refusal can be asserted to have written nothing rather than only to have
+// exited non-zero.
+func atlasDirEntryNames(c *qt.C, dir string) []string {
+	c.Helper()
+	entries, err := os.ReadDir(dir)
+	c.Assert(err, qt.IsNil)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
 }

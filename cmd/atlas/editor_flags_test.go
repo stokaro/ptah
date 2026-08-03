@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestCompatCommand_MigrateNewEditOpensEditor(t *testing.T) {
@@ -69,6 +70,12 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
+	// The atlas.sum integrity gate refuses a directory that already holds a
+	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
+	// caller could diff against.
+	_, hashErr := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	c.Assert(hashErr, qt.IsNil)
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE users (
