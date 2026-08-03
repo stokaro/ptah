@@ -90,7 +90,6 @@ func runAtlasMigrateApply(
 	args []string,
 ) (runErr error) {
 	formatOutput := cmd.Flags().Changed("format")
-	projectDirFormatPresent := false
 	mode := ignoreMissingEnvSelection
 	if needsAtlasMigrateApplyConfig(cmd) {
 		mode = reportMissingEnvSelection
@@ -115,7 +114,6 @@ func runAtlasMigrateApply(
 			projectCfg.StringValue(projectconfig.StringMigrationDir),
 		)
 		dirFormat := projectCfg.StringValue(projectconfig.StringMigrationFormat)
-		projectDirFormatPresent = dirFormat.Present
 		if dirFormat.Present {
 			opts.dirFormat = dirFormat.Value
 		}
@@ -173,11 +171,13 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
-	if projectDirFormatPresent && opts.dirFormat == "" {
-		if _, queryOverridesProjectFormat := localDir.Query["format"]; !queryOverridesProjectFormat {
-			return fmt.Errorf("atlas migrate apply --dir: migration directory format must not be empty")
-		}
-	}
+	// An atlas.hcl `migration { format = "" }` selects the native Atlas layout
+	// rather than being refused. `migrate apply` registers no --dir-format flag,
+	// so atlas.hcl is the only way to reach an empty configured format here, and
+	// measured against the pinned community binary v1.3.0 a hashed directory
+	// under that config applies cleanly and exits 0 (stokaro/ptah#990 item 1).
+	// ResolveApplyDirFormat below maps the empty value to the Atlas format, the
+	// same as the empty --dir-format the other verbs accept.
 
 	amount, err := atlasmigrate.ParseApplyAmount(args)
 	if err != nil {

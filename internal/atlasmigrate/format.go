@@ -3,9 +3,7 @@ package atlasmigrate
 import (
 	"fmt"
 	"io/fs"
-	"maps"
 	"net/url"
-	"slices"
 
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/fsnapshot"
@@ -116,17 +114,24 @@ func ReadsNativeAtlasDir(format atlasmigrateimport.Format) bool {
 
 // ResolveApplyDirFormat resolves the migration directory format an apply reads:
 // the ?format= URL query value when present (an empty value selects the native
-// Atlas format), otherwise the configured project format.
+// Atlas format), otherwise the configured project format. Query keys other than
+// format are ignored — see [applyDirURLFormat] for what that does and does not
+// widen.
 func ResolveApplyDirFormat(configured string, query url.Values) (atlasmigrateimport.Format, error) {
-	queryFormat, found, err := applyDirURLFormat(query)
-	if err != nil {
-		return "", err
-	}
 	value := configured
-	if found {
+	if queryFormat, found := applyDirURLFormat(query); found {
 		value = queryFormat
 	}
 	return parseApplyDirFormat(value)
+}
+
+// DirFormatFromQuery reports whether a migration directory URL query selects the
+// directory's format, so a caller can name the spelling — --dir or --dir-format
+// — that carried a value [ResolveApplyDirFormat] rejected. A query holding only
+// ignored keys selects nothing, so the blame stays on --dir-format.
+func DirFormatFromQuery(query url.Values) bool {
+	_, found := applyDirURLFormat(query)
+	return found
 }
 
 // parseApplyDirFormat maps a directory format string to a supported format. It
@@ -151,18 +156,43 @@ func parseApplyDirFormat(value string) (atlasmigrateimport.Format, error) {
 	}
 }
 
-func applyDirURLFormat(query url.Values) (string, bool, error) {
-	for _, key := range slices.Sorted(maps.Keys(query)) {
-		if key != "format" {
-			return "", false, fmt.Errorf("unsupported migration directory URL query parameter %q", key)
-		}
-	}
+// applyDirURLFormat reads the format selection out of a migration directory
+// URL query. Only the `format` key carries meaning; the return reports the
+// selected value and whether the key was present at all, because a present but
+// EMPTY value selects the native Atlas format and outranks the configured one.
+//
+// Two rules here look lax and are not. Both were measured against the pinned
+// community binary v1.3.0 on a directory holding 1_init.sql, V1__x.sql and
+// U1__undo.sql — a fixture whose covered set differs per format (atlas 3 files,
+// flyway 1, golang-migrate 0), so each row is separable rather than three
+// formats agreeing by accident (stokaro/ptah#990):
+//
+//   - A key other than `format` is IGNORED, not refused. `?format=flyway&other=1`
+//     exits 0 covering exactly V1__x.sql, so the foreign key is dropped while the
+//     format is still honored; `?other=1` alone exits 0 covering all three, i.e.
+//     it reads as the native Atlas format rather than as an error.
+//   - A repeated `format` takes the FIRST value. `?format=flyway&format=goose`
+//     covers V1__x.sql and `?format=goose&format=flyway` covers all three, so the
+//     winner tracks position and not the format name.
+//
+// Loosening this widens what the apply-time integrity gate (stokaro/ptah#973)
+// accepts, since the gate selects its covered file set from the format resolved
+// here. What it admits is one more spelling of the same three formats — the
+// value itself still goes through the strict, verbatim [parseApplyDirFormat],
+// so `?format=totally-bogus&x=1` is still refused. No directory becomes
+// ungated, and no file set becomes uncovered.
+//
+// A semicolon in the query stays refused, one step earlier, out of
+// url.ParseQuery inside atlasargs.ParseLocalDir. That is a deliberate, recorded
+// divergence: measured, `?format=flyway;x=1` exits 0 on the community binary but
+// silently drops the WHOLE pair and reads the directory as native Atlas — a
+// semicolon costs you the format you asked for, covering three files where you
+// asked for one. Refusing is the safe side of that, so it is kept
+// (stokaro/ptah#990 item 6).
+func applyDirURLFormat(query url.Values) (string, bool) {
 	formats := query["format"]
-	if len(formats) > 1 {
-		return "", false, fmt.Errorf("migration directory URL contains multiple format parameters")
+	if len(formats) > 0 {
+		return formats[0], true
 	}
-	if len(formats) == 1 {
-		return formats[0], true, nil
-	}
-	return "", false, nil
+	return "", false
 }

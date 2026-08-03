@@ -226,7 +226,10 @@ func Import(opts Options) (*Result, error) {
 }
 
 // LoadDir securely snapshots the source migration directory at dir and
-// converts it to in-memory Atlas single-file entries.
+// converts it to in-memory Atlas single-file entries. A source that yields no
+// importable migration is an error here, because the only caller is the import
+// (write) path: importing nothing would write an empty target directory and
+// report success.
 func LoadDir(dir string, format Format) (*Loaded, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -243,7 +246,14 @@ func LoadDir(dir string, format Format) (*Loaded, error) {
 	if closeErr != nil {
 		return nil, fmt.Errorf("close source migration directory: %w", closeErr)
 	}
-	return LoadFS(snapshot, dir, format)
+	loaded, err := LoadFS(snapshot, dir, format)
+	if err != nil {
+		return nil, err
+	}
+	if len(loaded.Entries) == 0 {
+		return nil, fmt.Errorf("no importable migration files found in %s for format %q", dir, format)
+	}
+	return loaded, nil
 }
 
 // CaptureFS captures the files that define a source directory in format:
@@ -336,7 +346,27 @@ func sourceExtensionIncluded(format Format, extension string) bool {
 // LoadFS converts one caller-owned migration filesystem into in-memory Atlas
 // single-file entries for the given format. It never opens a pathname, writes
 // to disk, or opens a database connection. Unknown formats, malformed layouts,
-// unsupported migrations, and empty results return an error.
+// and unsupported migrations return an error.
+//
+// A source with NOTHING TO CONVERT is not an error: it returns a Loaded with no
+// entries, which executes as "No migration files to execute", exit 0, matching
+// the pinned community binary v1.3.0 on an empty directory, one holding only a
+// README, and one whose only SQL sits in a subdirectory — with and without
+// atlas.sum, all six rows measured (stokaro/ptah#980).
+//
+// "Nothing to convert" is keyed on the COVERED SET being empty, not on the
+// converted entries being empty, and the difference is the whole point. The two
+// are not the same predicate: a Goose directory holding only `foo.sql` has a
+// covered set of exactly that file — the community binary applies it, as version
+// "foo" — while Ptah's converter produces no entry for it. Keying on the entries
+// would report "nothing to execute" and exit 0 for that directory, replacing a
+// loud refusal with a silent no-op that skips a migration the source tool runs.
+// Measured: on that directory the community binary creates the table and Ptah
+// must not claim there was nothing to do. So a covered set that is non-empty
+// keeps the refusal below.
+//
+// [LoadDir], which feeds the import (write) path, refuses an empty result
+// outright: importing nothing would write an empty target and report success.
 func LoadFS(fsys fs.FS, display string, format Format) (*Loaded, error) {
 	if fsys == nil {
 		return nil, fmt.Errorf("source migration filesystem is required")
@@ -346,7 +376,13 @@ func LoadFS(fsys fs.FS, display string, format Format) (*Loaded, error) {
 		return nil, err
 	}
 	if len(entries) == 0 {
-		return nil, fmt.Errorf("no importable migration files found in %s for format %q", display, format)
+		covered, err := SumFileNames(fsys, format)
+		if err != nil {
+			return nil, err
+		}
+		if len(covered) > 0 {
+			return nil, fmt.Errorf("no importable migration files found in %s for format %q", display, format)
+		}
 	}
 	// External formats convert each source file to a single up-only Atlas
 	// migration whose version is the leading number of the file name. Distinct

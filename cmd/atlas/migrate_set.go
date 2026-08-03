@@ -199,9 +199,8 @@ func prepareAtlasMigrateSet(
 	if err != nil {
 		return prepared, fmt.Errorf("atlas migrate set --dir: %w", err)
 	}
-	if len(localDir.Query) > 0 {
-		return prepared,
-			fmt.Errorf("atlas migrate set --dir: migration directory URL query parameters are not supported for this command")
+	if err := checkNativeAtlasDirQuery(localDir.Query); err != nil {
+		return prepared, fmt.Errorf("atlas migrate set --dir: %w", err)
 	}
 	// Preserve Atlas-compatible directory diagnostics; the subsequent
 	// CaptureLocal call remains the authoritative rooted read and rejects any

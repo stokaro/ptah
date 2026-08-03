@@ -139,10 +139,8 @@ func runAtlasMigrateLint(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
-	if len(localDir.Query) > 0 {
-		return cmdutil.Fail(cmd, fmt.Errorf(
-			"atlas migrate lint --dir: migration directory URL query parameters are not supported for this command",
-		))
+	if err := checkNativeAtlasDirQuery(localDir.Query); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
 	source, err := project.captureLocal(localDir)
 	if err != nil {
