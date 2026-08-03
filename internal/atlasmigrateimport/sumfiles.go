@@ -27,17 +27,34 @@ import (
 //
 // Formats differ in which files count and how deep Atlas looks:
 //
-//   - atlas, goose, dbmate, liquibase: every top-level *.sql file, ordered by
+//   - atlas, goose, dbmate, liquibase: every top-level *.sql ENTRY, ordered by
 //     name. File names carry no meaning to the hasher, so a non-versioned
 //     foo.sql counts while a sibling .go or .xml file does not.
-//   - golang-migrate: every top-level *.up.sql file, ordered by name. The down
+//   - golang-migrate: every top-level *.up.sql entry, ordered by name. The down
 //     file of a pair is not covered, so editing it is invisible to the
 //     integrity check — matching Atlas CE, which never reads it.
 //   - flyway: the whole tree, and not in name order. See flywaySumFileNames.
 //
+// "Entry", not "file", is deliberate. Atlas CE reaches those four formats and
+// golang-migrate through a per-format glob (*.sql, or *.up.sql for
+// golang-migrate) that matches on the NAME, so a DIRECTORY called weird.sql is
+// a member of the covered set. The read that follows fails with "is a
+// directory" and the oracle refuses the whole directory, writing no atlas.sum
+// at all. This returns the directory's name for exactly that reason: skipping
+// it, as Ptah did before stokaro/ptah#991, hashed the remainder and wrote a sum
+// Atlas CE then declines to read — the caller's read is what refuses, and it
+// must be given the chance to fail.
+//
 // Flyway is the sole format Atlas CE recurses into. Every other format sees
 // only the top level, so a migration one directory down is not covered by the
-// integrity file at all.
+// integrity file at all. That recursion is also why Flyway is exempt from the
+// paragraph above and why treeNames keeps skipping directories: Atlas CE walks
+// a Flyway tree instead of globbing it, so there a directory is a walk node it
+// descends into and never attempts to read. Both tools hash V1__init.sql beside
+// a directory named weird.sql without complaint, and produce byte-identical
+// sums. Expressing the #991 fix as "reject any .sql directory", or applying it
+// to treeNames, would refuse three measured-identical Flyway shapes and a
+// golang-migrate directory holding weird.sql.
 //
 // The .sql suffix match is case-sensitive: Atlas CE covers no file named
 // 1_init.SQL, and neither does this.
@@ -103,6 +120,20 @@ func sumCoversNestedFile(format Format, name string) bool {
 	return true
 }
 
+// topLevelNames returns every top-level entry name, DIRECTORIES INCLUDED.
+//
+// Atlas CE reaches the top level of a non-Flyway layout through a glob, and a
+// glob matches on the name alone. A directory called weird.sql is therefore a
+// member of the covered set, and the read that follows fails with "is a
+// directory", which is why the oracle refuses to hash the whole directory
+// rather than skipping the entry (stokaro/ptah#991). Filtering directories out
+// here produced the opposite: a sum over the remainder that Atlas CE then
+// declines to read.
+//
+// The filtering is left to the caller's suffix rule so that membership is
+// decided by the same test for a directory as for a file — golang-migrate globs
+// *.up.sql, so a directory named weird.sql is NOT a member there while
+// weird.up.sql is. Both measured against the pinned oracle.
 func topLevelNames(fsys fs.FS) ([]string, error) {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
@@ -110,9 +141,6 @@ func topLevelNames(fsys fs.FS) ([]string, error) {
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
 		names = append(names, entry.Name())
 	}
 	// fs.ReadDir is documented to sort, but the order decides the sum, so it is
@@ -131,6 +159,14 @@ func skipHiddenDir(base string) bool {
 // path: sorting would place "sub.sql" before "sub/V1__x.sql" ('.' sorts below
 // '/') while a walk visits the directory first, and Flyway selection depends on
 // visit order. skipDir, when non-nil, prunes a directory by its base name.
+//
+// Directories are visited but never emitted, and unlike topLevelNames that is
+// CORRECT here rather than the #991 bug: Flyway is the only format Atlas CE
+// walks, so a directory named V2__x.sql is a node it descends into, not a path
+// it tries to read. Measured on all three Flyway shapes — an empty .sql
+// directory, one holding a nested migration, and one holding neither — both
+// tools exit 0 and write byte-identical sums. Emitting directories here would
+// invent a refusal the oracle does not make.
 func treeNames(fsys fs.FS, skipDir func(base string) bool) ([]string, error) {
 	var names []string
 	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
