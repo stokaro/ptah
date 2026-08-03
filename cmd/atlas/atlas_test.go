@@ -207,9 +207,14 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			forbidden: []string{"--output", "--web", "--export"},
 		},
 		{
-			name:  "schema_apply",
-			path:  []string{"schema", "apply"},
-			flags: []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode", "--plan", "--edit", "--lock-timeout"},
+			name: "schema_apply",
+			path: []string{"schema", "apply"},
+			// --lock-name and --skip-lock are Pro-surface flags the pinned
+			// Atlas CE binary does not register; Atlas's published CLI
+			// reference does register them on this verb, so compat implements
+			// them. --skip-lint stays unregistered.
+			flags:     []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode", "--plan", "--edit", "--lock-timeout", "--lock-name", "--skip-lock"},
+			forbidden: []string{"--skip-lint"},
 		},
 		{
 			name:      "schema_diff",
@@ -247,8 +252,11 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 				// what makes it a Pro-surface addition rather than a CE parity
 				// row (stokaro/ptah#951).
 				"--to-version",
+				// Pro-surface flags Atlas's published CLI reference registers
+				// on this verb; the pinned CE binary registers neither.
+				"--lock-name",
+				"--skip-lock",
 			},
-			forbidden: []string{"--lock-name"},
 		},
 		{
 			name: "migrate_down",
@@ -3084,23 +3092,33 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 // TestCompatCommand_MigrateApplyRejectsNonAtlasFlags keeps the spellings this
 // verb must NOT answer to.
 //
-// --to-version used to be one of them and no longer is: Atlas's published CLI
-// reference registers it on `migrate apply`, so refusing it broke a Pro
-// pipeline for no parity gain (stokaro/ptah#951). Its behavior is pinned in
-// migrate_apply_to_version_test.go instead.
+// Both spellings this test originally carried have since become legitimate and
+// were removed as they landed, each with an Atlas-side source:
+//
+//   - --to-version is registered by Atlas's published CLI reference, so
+//     refusing it broke a Pro pipeline for no parity gain (stokaro/ptah#951).
+//     Its behavior is pinned in migrate_apply_to_version_test.go.
+//   - --lock-name is registered by the same reference on this verb, and is
+//     pinned in lock_flags_test.go.
+//
+// --skip-checks replaces them rather than leaving this function with no
+// subtest at all: a capability the compat surface deliberately resolves from
+// PTAH_SKIP_CHECKS instead of a flag, because no Atlas-side source registers a
+// flag for it on this verb (see ApplyOptions.SkipChecks). It is the remaining
+// member of the class this test exists to guard.
 func TestCompatCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("lock_name", func(c *qt.C) {
+	c.Run("skip_checks", func(c *qt.C) {
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"migrate", "apply", "--lock-name", "custom-lock"})
+		cmd.SetArgs([]string{"migrate", "apply", "--skip-checks"})
 
 		err := cmd.Execute()
 
-		c.Assert(err, qt.ErrorMatches, `unknown flag: --lock-name`)
+		c.Assert(err, qt.ErrorMatches, `unknown flag: --skip-checks`)
 	})
 }
 

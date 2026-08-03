@@ -29,7 +29,7 @@ func TestAcquireApplyLock_PostgresTimeoutLive(t *testing.T) {
 	blocked := connectPostgresForLock(c, dbURL)
 
 	start := time.Now()
-	lock, err := atlasschema.AcquireApplyLock(ctx, blocked, 200*time.Millisecond)
+	lock, err := atlasschema.AcquireApplyLock(ctx, blocked, "", 200*time.Millisecond)
 	elapsed := time.Since(start)
 
 	c.Assert(atlasschema.IsLockTimeout(err), qt.IsTrue, qt.Commentf("error: %v", err))
@@ -40,7 +40,7 @@ func TestAcquireApplyLock_PostgresTimeoutLive(t *testing.T) {
 	// Releasing the competing session unblocks a bounded retry, proving the
 	// lock is real, released, and re-acquirable.
 	releaseApplyLockSession(c, holderSession)
-	lock, err = atlasschema.AcquireApplyLock(ctx, blocked, 5*time.Second)
+	lock, err = atlasschema.AcquireApplyLock(ctx, blocked, "", 5*time.Second)
 	c.Assert(err, qt.IsNil)
 	c.Assert(lock.Supported(), qt.IsTrue)
 	c.Assert(lock.Release(), qt.IsNil)
@@ -62,7 +62,7 @@ func TestAcquireApplyLock_PostgresCancellationLive(t *testing.T) {
 	start := time.Now()
 	// A zero timeout waits indefinitely, so only the canceled context can
 	// interrupt the wait; the result must not be misreported as a timeout.
-	lock, err := atlasschema.AcquireApplyLock(ctx, blocked, 0)
+	lock, err := atlasschema.AcquireApplyLock(ctx, blocked, "", 0)
 	elapsed := time.Since(start)
 
 	c.Assert(err, qt.IsNotNil)
@@ -80,16 +80,16 @@ func TestAcquireApplyLock_PostgresSerializesRunsLive(t *testing.T) {
 	first := connectPostgresForLock(c, dbURL)
 	second := connectPostgresForLock(c, dbURL)
 
-	firstLock, err := atlasschema.AcquireApplyLock(ctx, first, 5*time.Second)
+	firstLock, err := atlasschema.AcquireApplyLock(ctx, first, "", 5*time.Second)
 	c.Assert(err, qt.IsNil)
 	c.Assert(firstLock.Supported(), qt.IsTrue)
 
-	_, err = atlasschema.AcquireApplyLock(ctx, second, 200*time.Millisecond)
+	_, err = atlasschema.AcquireApplyLock(ctx, second, "", 200*time.Millisecond)
 	c.Assert(atlasschema.IsLockTimeout(err), qt.IsTrue, qt.Commentf("error: %v", err))
 
 	c.Assert(firstLock.Release(), qt.IsNil)
 
-	secondLock, err := atlasschema.AcquireApplyLock(ctx, second, 5*time.Second)
+	secondLock, err := atlasschema.AcquireApplyLock(ctx, second, "", 5*time.Second)
 	c.Assert(err, qt.IsNil)
 	c.Assert(secondLock.Supported(), qt.IsTrue)
 	c.Assert(secondLock.Release(), qt.IsNil)
