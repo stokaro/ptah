@@ -759,10 +759,10 @@ Atlas-compatible migration metadata commands default to Atlas directory
 format. `ptah-compat migrate hash`, `lint`, `new`, `set`, `status`, and
 `validate` register `--dir-format` with Atlas's default value `atlas`.
 
-`hash` and `validate` read a directory rather than rewrite one, so they accept
-every Atlas source layout — `golang-migrate`, `goose`, `flyway`, `liquibase`,
-and `dbmate` — under either spelling Atlas accepts, and produce the same
-`atlas.sum` from both:
+`hash`, `validate`, `lint`, `status`, and `set` read a directory rather than
+rewrite one, so they accept every Atlas source layout — `golang-migrate`,
+`goose`, `flyway`, `liquibase`, and `dbmate` — under either spelling Atlas
+accepts, and produce the same `atlas.sum` from both:
 
 ```bash
 ptah-compat migrate hash --dir "file://migrations?format=goose"
@@ -773,11 +773,19 @@ Each layout covers a different set of source files, matching Atlas; see
 [the compat command reference](../../reference/atlas-commands/) for the
 per-layout rules and for the inputs that stay refused.
 
-On `lint`, `new`, `set`, and `status` the supported value is still `atlas`;
-the external migration-tool formats fail explicitly there until the directory
-is imported with `ptah-compat migrate import` or the format is implemented
-natively. `migrate apply` registers no `--dir-format` at all, matching Atlas,
-and selects a converted source directory through `?format=` on `--dir`.
+When both spellings are given, the `?format=` query wins, which is what Atlas
+does. Values are matched verbatim on every one of those verbs: `--dir-format
+ATLAS` and `--dir-format " atlas "` are refused rather than normalized, and an
+empty value selects the Atlas layout.
+
+On `migrate new` the supported value is still `atlas`, and `migrate new` and
+`migrate diff` refuse a `--dir` query outright. Both verbs write a migration
+file and a fresh `atlas.sum` without verifying the directory first, so reading
+a foreign layout there waits on
+[#1086](https://github.com/stokaro/ptah/issues/1086). Until then, import the
+directory with `ptah-compat migrate import` before writing into it.
+`migrate apply` registers no `--dir-format` at all, matching Atlas, and selects
+a converted source directory through `?format=` on `--dir`.
 
 `ptah-compat migrate set [version]` moves Atlas revision history to the
 selected boundary without executing migration SQL. It preserves existing clean

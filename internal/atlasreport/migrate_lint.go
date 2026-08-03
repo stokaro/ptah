@@ -14,7 +14,6 @@ import (
 	"go.5x5.cz/ptah/internal/atlaslint"
 	"go.5x5.cz/ptah/internal/migratesum"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
 )
 
 type MigrateLintOptions struct {
@@ -93,7 +92,22 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 	return result, nil
 }
 
-func InspectMigrateLintIntegrity(fsys fs.FS) (MigrateLintIntegrity, error) {
+// InspectMigrateLintIntegrity verifies the atlas.sum fsys carries over exactly
+// the file set covered names, in the order given, and reports the outcome as
+// report content rather than as a command error — `migrate lint` prints a
+// checksum failure inside its analysis report.
+//
+// The covered set is a parameter and not rediscovered here because it is not a
+// property of the filesystem alone: a directory read through `?format=` or
+// `--dir-format` covers the file set THAT layout's atlas.sum covers, which
+// differs per layout in both membership and order. Measured against the pinned
+// community binary v1.3.0 on a golang-migrate directory, editing the covered
+// `1_init.up.sql` exits 1 with `L2: 1_init.up.sql was edited` while editing the
+// uncovered `1_init.down.sql` exits 0 — a set rediscovered under the Atlas rule
+// would cover both and refuse the second (stokaro/ptah#1013 section 1).
+// Callers get the set from [atlasmigrateimport.SumFileNames], the same rule
+// `migrate hash` writes from and the apply-time gate verifies against.
+func InspectMigrateLintIntegrity(fsys fs.FS, covered []string) (MigrateLintIntegrity, error) {
 	_, err := fs.Stat(fsys, migratesum.AtlasFileName)
 	if errors.Is(err, fs.ErrNotExist) {
 		return MigrateLintIntegrity{}, nil
@@ -101,7 +115,7 @@ func InspectMigrateLintIntegrity(fsys fs.FS) (MigrateLintIntegrity, error) {
 	if err != nil {
 		return MigrateLintIntegrity{}, fmt.Errorf("stat %s: %w", migratesum.AtlasFileName, err)
 	}
-	result, err := migratesum.VerifyWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	result, err := migratesum.VerifyAtlasFiles(fsys, covered)
 	if errors.Is(err, migratesum.ErrCoveredEntryUnreadable) {
 		// A covered entry that is a directory (#991). The directory could not be
 		// hashed at all, so calling it a mismatch would name the wrong fault and

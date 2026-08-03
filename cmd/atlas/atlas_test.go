@@ -1862,12 +1862,13 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 // TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat covers the
 // metadata verbs that still accept only the atlas layout.
 //
-// Four verbs are deliberately absent, and the reason is the same for all four:
+// Five verbs are deliberately absent, and the reason is the same for all five:
 // they READ a directory rather than rewrite one, so a foreign layout can be
 // converted in memory and reported on. `migrate hash` and `migrate validate`
 // have been in that set since #992 (see migrate_integrity_formats_test.go);
 // `migrate status` and `migrate set` joined it in #1002 (see
-// migrate_revision_converted_test.go).
+// migrate_revision_converted_test.go); `migrate lint` joined it in #1013 (see
+// migrate_lint_converted_test.go).
 //
 // The verbs that remain here WRITE, and writing a layout is a larger change
 // than reading one: it needs the converted form emitted back in the source
@@ -1880,10 +1881,6 @@ func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testin
 		{
 			name: "edit",
 			args: []string{"migrate", "edit", "1", "--dir", t.TempDir(), "--dir-format", "goose"},
-		},
-		{
-			name: "lint",
-			args: []string{"migrate", "lint", "--dir", t.TempDir(), "--dir-format", "flyway"},
 		},
 		{
 			name: "new",

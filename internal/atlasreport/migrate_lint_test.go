@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
@@ -304,7 +305,9 @@ func TestWriteMigrateLintFormat_ValidAtlasSumAddsIntegrityStep(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	fsys["1_create_users.sql"].Data = []byte("DROP TABLE users;\n")
 
-	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot)
+	covered, err := atlasmigrateimport.SumFileNames(snapshot, atlasmigrateimport.FormatAtlas)
+	c.Assert(err, qt.IsNil)
+	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot, covered)
 	c.Assert(err, qt.IsNil)
 	analysis, err := migrationlint.AnalyzeFS(snapshot, migrationlint.Options{
 		DirFormat: migrator.MigrationDirFormatAtlas,
@@ -327,7 +330,9 @@ func TestWriteMigrateLintFormat_InvalidAtlasSumRendersIntegrityFailure(t *testin
 		"1_create_users.sql":     {Data: []byte("CREATE TABLE users (id integer);\n")},
 		migratesum.AtlasFileName: {Data: []byte("stale\n")},
 	}
-	integrity, err := atlasreport.InspectMigrateLintIntegrity(fsys)
+	covered, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatAtlas)
+	c.Assert(err, qt.IsNil)
+	integrity, err := atlasreport.InspectMigrateLintIntegrity(fsys, covered)
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 

@@ -141,11 +141,11 @@ the dev database and replays the migration directory to validate SQL
 execution. Native `ptah migrations validate` keeps its own banner and exit
 contract.
 
-### Source directory layouts on `hash` and `validate`
+### Source directory layouts on the verbs that read a directory
 
-Both verbs read a migration directory written by another tool. The layout is
-selected with either spelling Atlas accepts, and both produce the same
-`atlas.sum`:
+`hash`, `validate`, `lint`, `status`, and `set` read a migration directory
+written by another tool. The layout is selected with either spelling Atlas
+accepts, and `hash` and `validate` agree on the resulting `atlas.sum`:
 
 ```bash
 ptah-compat migrate hash --dir "file://migrations?format=goose"
@@ -170,11 +170,13 @@ formats rather than `goose`. A directory with nothing for the layout to cover â€
 an empty directory, or a `golang-migrate` directory holding only a down file â€”
 hashes to the empty-set checksum and validates clean.
 
+An empty `--dir-format`, a query parameter other than `format`, and a repeated
+`format` parameter are all accepted and read exactly as Atlas reads them: the
+empty value and the unknown key select the atlas layout, and a repeated key
+takes the first value.
+
 Inputs that stay refused where Atlas CE exits 0, all of them loudly:
 
-- an empty `--dir-format` value;
-- a query parameter other than `format`;
-- a repeated `format` parameter;
 - a semicolon in the query, such as `?format=flyway;x=1`, which Atlas drops
   whole and reads as the atlas layout;
 - a query on a `--dir` that a later `--dir` overrides;
@@ -182,16 +184,34 @@ Inputs that stay refused where Atlas CE exits 0, all of them loudly:
 
 None of them can produce a wrong checksum. They are tracked in
 [#990](https://github.com/stokaro/ptah/issues/990); the query rules are shared
-with `migrate apply`, so relaxing one widens what a future integrity gate
-accepts.
+with `migrate apply`, so relaxing one widens what the integrity gate accepts.
 
 `migrate apply` registers no `--dir-format` at all, matching Atlas. It gates a
-directory read through `?format=` over the same per-layout file set these two
-verbs hash, so what `migrate hash` writes is what `migrate apply` verifies.
+directory read through `?format=` over the same per-layout file set `hash`
+writes, so what `migrate hash` writes is what `migrate apply` verifies.
+
+`migrate new` and `migrate diff` are the two verbs that still refuse every
+`--dir` query and every non-`atlas` layout. Both write a migration file and a
+fresh `atlas.sum` without verifying the directory first, so accepting a
+`?format=` there would turn a refusal into a write over an unverified
+directory; the relaxation waits on the gate in
+[#1086](https://github.com/stokaro/ptah/issues/1086).
 
 ### `ptah-compat migrate lint`
 
 Runs Ptah migration linting with Atlas `--dir-format` defaulting to `atlas`.
+It reads every Atlas source layout under both spellings, so a directory
+another tool wrote can be linted without importing it first:
+
+```bash
+ptah-compat migrate lint --dir "file://migrations?format=golang-migrate" \
+  --dev-url "sqlite://dev.db" --latest 1
+```
+
+The checksum step covers the file set that layout's `atlas.sum` covers, not the
+Atlas one: on a `golang-migrate` directory, editing the covered `*.up.sql`
+fails the lint and editing the uncovered `*.down.sql` does not, and a Flyway
+`sub/V2__nested.sql` is covered.
 
 | Flag | Behavior |
 | --- | --- |

@@ -741,7 +741,7 @@ The pinned Atlas CE flag surface does not register `schema diff --web`, `migrate
 
 `ptah-compat migrate hash`, `lint`, `new`, `set`, `status`, and `validate` now register Atlas `--dir-format` with default `atlas`; `hash` writes `atlas.sum` by default, `new` creates a single Atlas `.sql` skeleton and updates `atlas.sum`, and `set`/`status` use Atlas revision-table metadata with `--revisions-schema` support.
 
-Atlas's external migration-tool `--dir-format` values currently fail explicitly on those commands unless they are first converted through `ptah-compat migrate import`.
+Atlas's external migration-tool `--dir-format` values are read directly by `hash`, `validate`, `lint`, `status`, and `set`, under both that spelling and `?format=` on `--dir`. On `migrate new` they still fail explicitly, and `migrate new` and `migrate diff` refuse a `--dir` query outright, because both write into the directory without verifying it first ([#1086](https://github.com/stokaro/ptah/issues/1086)); convert those through `ptah-compat migrate import` first.
 
 `ptah-compat migrate lint --dev-url` now infers dialect and cleans and replays migrations on directly connectable dev databases; `--latest`, `--git-base`, and `--git-dir` select the linted changeset; `--format` renders Atlas Go-template output over `.Env`, `.Steps`, and `.Files`; Docker dev databases and web reports remain gaps.
 
