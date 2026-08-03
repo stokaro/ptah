@@ -24,6 +24,29 @@ while also listing a basic Open lint-rule set. Checkpoints, visualization,
 interactive migrations, testing, deployment rollout, database security as code,
 and declarative data management are listed as Pro features.
 
+## What parity means, and what it does not
+
+Ptah aims to be a drop-in replacement, which means two commitments rather than
+one.
+
+Ptah does not accept what Atlas refuses. A configuration or invocation Atlas
+rejects is rejected here too, because accepting it would let a mistake pass
+silently and fail later. Where Ptah has not implemented something Atlas
+enforces, it refuses with a message rather than accepting and ignoring it.
+
+Ptah also does not reproduce defects for the sake of being identical. Where a
+measured behavior loses something the author asked for, Ptah does the better
+thing and documents the difference.
+
+One concrete case: a migration carrying `-- atlas:txmode none` directly above
+its statement, with no blank line between them. That directive marks a statement
+that must run outside a transaction, such as `CREATE INDEX CONCURRENTLY`. In
+that shape Atlas drops the directive, so the statement runs inside a transaction
+and the migration fails partway through. Ptah honors it.
+
+Differences of this kind are listed in the [gap register](#gap-register) with
+the measurement behind them, so you can see which way each one goes.
+
 ## Command parity
 
 | Task | Native Ptah | `ptah-compat` | Atlas OSS |

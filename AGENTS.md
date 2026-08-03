@@ -2,6 +2,54 @@
 
 This file gives coding agents repository-local guidance for working in Ptah.
 
+## Compatibility Policy
+
+Ptah aims to be a drop-in replacement for the Atlas CLI. That goal has two
+halves, and only stating the first one is how a capability gets thrown away.
+
+**Never be looser.** A configuration or invocation the community binary refuses
+must not succeed here. Accepting something it rejects means a user's mistake
+passes silently on Ptah and fails somewhere later, which is the worst outcome
+available. Where Ptah cannot yet implement a construct the community binary
+enforces, refuse loudly rather than accept and ignore.
+
+**Matching is the floor, not the ceiling. We do not copy defects.** Where the
+community binary's behavior is a defect -- it silently drops something the
+author wrote, corrupts state, or fails for a reason unrelated to what the user
+asked for -- reproducing it is a wrong answer. Be the same or better. A change
+whose only justification is "this is what the other implementation does" is not
+justified when what it does is broken.
+
+When the two halves pull apart, say so in the commit and in the issue rather
+than picking silently. "We are stricter here, deliberately, and here is the
+measurement" is a complete answer; quietly matching is not.
+
+### A worked example
+
+`-- atlas:txmode none` marks a migration that must run outside a transaction --
+`CREATE INDEX CONCURRENTLY`, for instance. Measured on PostgreSQL 18:
+
+| file shape | community binary | Ptah |
+| --- | --- | --- |
+| directive, blank line, statement | applies | applies |
+| directive, statement immediately below | **fails** | applies |
+
+The community binary requires a blank line after the directive and silently
+drops it otherwise, so the statement runs inside the transaction it asked to
+stay out of and the migration fails partway through. Ptah honored both forms.
+
+A change once "fixed" this by adopting the blank-line requirement, on the
+grounds that it matched. That traded a place where Ptah was better for a place
+where it was merely identical, and it was reverted. The directive is honored in
+both forms, and the divergence is documented rather than hidden.
+
+### Deciding which you are doing
+
+Before matching a measured behavior, ask what it costs the user. If the answer
+is "nothing, it is a different spelling of the same outcome", match it -- wording, exit codes,
+flag names and output shape are worth being identical on, because tooling reads
+them. If the answer is "they lose something they asked for", do not match it.
+
 ## Language And Spelling
 
 Use American English spelling in code, comments, documentation, issue/PR text,
