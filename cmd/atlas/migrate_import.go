@@ -1,6 +1,8 @@
 package atlas
 
 import (
+	"io/fs"
+
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
@@ -50,10 +52,55 @@ executable representation for Atlas R-suffixed imported migrations.`,
 // outWriter over its parent's, so assigning io.Discard here would pin it
 // forever and a later root SetOut would stop reaching `migrate import --help`.
 // Failures still route through cmdutil.Fail, which keeps every error loud.
+//
+// The three steps are capture, gate, write, in that order and with nothing
+// between them, for the reason `migrate apply` uses the same order (#973):
+// the source directory's atlas.sum has to be verified before its layout is
+// parsed, and before any byte is written. Writing first and refusing afterwards
+// would leave the converted directory — and the fresh atlas.sum computed over
+// it — behind, which is the laundering half of #1095 and survives any test that
+// only checks the exit code.
 func runAtlasMigrateImport(cmd *cobra.Command, opts atlasmigrateimport.Options) error {
-	if _, err := atlasmigrateimport.Import(opts); err != nil {
+	captured, err := atlasmigrateimport.CaptureImport(opts)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := verifyAtlasImportSourceChecksum(cmd, captured.Source, captured.Format); err != nil {
+		return err
+	}
+	if _, err := captured.Write(); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
 	return nil
+}
+
+// verifyAtlasImportSourceChecksum enforces the atlas.sum integrity gate on the
+// captured SOURCE directory of an import.
+//
+// It is the verb-neutral gate under the import policy — a present atlas.sum
+// must verify, an absent one is not an error — and it is a call site rather
+// than a second verifier on purpose. `migrate import` reads the same
+// directories, through the same capture, over the same per-format covered set
+// as the verbs that already refuse a drifted one (`migrate apply`, `status` and
+// `set`) and the two that compute that set (`hash` and `validate`). Expressing
+// the rule twice is how two views of one directory drift apart (#974, #976).
+//
+// The refusal is returned unwrapped, like every other caller of the gate: the
+// migratevalidate helpers have already written the checksum block to stdout and
+// return an exitcode.New(1, ...) error the root command prints as
+// `Error: checksum mismatch`. Routing it through cmdutil.Fail would prepend
+// `error: ` and move the text to the other stream, losing the byte parity with
+// the pinned community binary that is the point.
+//
+// The native Atlas branch of the gate is unreachable here: an atlas-format
+// source is refused by [atlasmigrateimport.CaptureImport] before the capture,
+// because importing a directory already in the target layout is refused by both
+// tools.
+func verifyAtlasImportSourceChecksum(
+	cmd *cobra.Command,
+	fsys fs.FS,
+	format atlasmigrateimport.Format,
+) error {
+	return verifyCoveredAtlasDirChecksum(cmd, fsys, format, verifyAtlasSumWhenPresent)
 }

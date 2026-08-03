@@ -834,6 +834,15 @@ contain `.sql` migration files or `atlas.sum`. Flyway repeatable migrations
 currently fail explicitly because Ptah does not yet execute Atlas R-suffixed
 imported migrations.
 
+**The source directory's `atlas.sum` is verified first.** If the source carries
+one, it must cover the source before anything is converted, and the source
+checksum is checked ahead of the destination rules above — a tampered source is
+refused whatever the destination looks like, and no destination directory is
+created. If the source carries no `atlas.sum` at all, the import proceeds: a
+directory another tool wrote has never been hashed, and importing it is what
+this verb is for. See
+[Integrity and safety](../../versioned/integrity-and-safety/).
+
 The native `ptah migrations import` converts the same source formats into
 Ptah-native migrations instead; see
 [Import from another tool](../../versioned/import/).
