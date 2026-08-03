@@ -16,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/schemasource"
+	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/schemaartifact"
 	"go.5x5.cz/ptah/internal/schemafile"
@@ -245,6 +246,9 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*gosche
 	if strings.HasPrefix(schemaFile, ociartifact.Scheme) {
 		return o.loadOCI(ctx, schemaFile)
 	}
+	if err := rejectEnvReference(schemaFile); err != nil {
+		return nil, err
+	}
 	absPath, err := filepath.Abs(schemaFile)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving schema file: %w", err)
@@ -266,6 +270,46 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*gosche
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}
 	return result, nil
+}
+
+// envScheme is the desired-state reference scheme that reads an attribute out
+// of the selected atlas.hcl env.
+const envScheme = "env://"
+
+// rejectEnvReference refuses an env:// --schema-file value with a diagnostic
+// that names env://.
+//
+// The native binary resolves no env:// reference: it has no route from the
+// selected atlas.hcl env to a desired-state source, so a value that reached
+// [filepath.Abs] was treated as a relative path and failed on its (empty)
+// extension. That message named neither env:// nor the attribute, and was
+// byte-identical for a valid attribute and a misspelled one.
+//
+// The two cases are separated here because they need different actions: a
+// misspelled attribute is fixed by spelling it correctly, while a correctly
+// spelled one is fixed by naming the file or by switching binaries. The
+// attribute vocabulary comes from atlassource so the two surfaces cannot
+// advertise different lists.
+func rejectEnvReference(schemaFile string) error {
+	trimmed := strings.TrimSpace(schemaFile)
+	if !strings.HasPrefix(strings.ToLower(trimmed), envScheme) {
+		return nil
+	}
+	source, err := atlassource.Classify(trimmed)
+	if err != nil {
+		return fmt.Errorf("--schema-file %q: %w", schemaFile, err)
+	}
+	if err := atlassource.ValidateEnvAttr(source.EnvAttr); err != nil {
+		return fmt.Errorf("--schema-file %q: %w", schemaFile, err)
+	}
+	return fmt.Errorf(
+		"--schema-file %q: %s references are not resolved by ptah; pass the schema file itself, "+
+			"or use ptah-compat, whose --to and --from accept %s%s",
+		schemaFile,
+		envScheme,
+		envScheme,
+		source.EnvAttr,
+	)
 }
 
 func (o Options) loadOCI(ctx context.Context, raw string) (*goschema.Database, error) {

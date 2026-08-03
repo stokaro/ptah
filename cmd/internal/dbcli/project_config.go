@@ -17,6 +17,13 @@ import (
 const (
 	// EnvFlagName selects an env block from project config.
 	EnvFlagName = "env"
+	// ProjectVarFlagName supplies a value for an atlas.hcl variable block that
+	// declares no default. It is the flag the evaluator's diagnostic names, so
+	// it is registered wherever EnvFlagName is: an atlas.hcl reached through
+	// --env can require a variable on any of those commands, and a command
+	// that can print the advice but cannot honor it is the defect this flag
+	// exists to close.
+	ProjectVarFlagName = "var"
 	// AllowExternalSchemaFlagName explicitly permits executing the
 	// external_schema program loaded from ptah.yaml or from an atlas.hcl
 	// data.external_schema source.
@@ -29,6 +36,16 @@ const (
 	AtlasProjectVarFlagName = "atlas-project-var"
 	schemaCommandFlagName   = "schema-cmd"
 )
+
+// ProjectConfigEnvAnnotation marks the --env flag that selects a ptah.yaml or
+// atlas.hcl env block. The flag name alone does not identify it: `ptah seed`
+// registers an unrelated --env naming the seed environment to apply, reads no
+// project config, and must not grow a --var it would never honor. The
+// annotation is what lets a test tell the two apart from the assembled command
+// tree instead of from a hand-kept list of packages.
+const ProjectConfigEnvAnnotation = "ptah_project_config_env"
+
+const projectEnvFlagUsage = "Project env name to read from ptah.yaml or atlas.hcl"
 
 type projectConfigContextKey struct{}
 
@@ -47,9 +64,47 @@ func WithProjectConfig(ctx context.Context, config projectconfig.Config) context
 	})
 }
 
-// RegisterEnvFlag registers the shared project env selection flag.
+// RegisterEnvFlag registers the shared project env selection flag, bound to
+// target, together with the variable-override flag its evaluator advises. The
+// two are registered by one call because every command that can select an env
+// can also hit an atlas.hcl variable with no default, and registering them
+// separately is how eleven of the fourteen commands came to advise a flag they
+// rejected.
 func RegisterEnvFlag(flags *pflag.FlagSet, target *string) {
-	flags.StringVar(target, EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
+	flags.StringVar(target, EnvFlagName, "", projectEnvFlagUsage)
+	markProjectEnvFlag(flags)
+}
+
+// RegisterProjectEnvFlag registers the same pair as [RegisterEnvFlag] without
+// binding --env to a variable, for commands that read the value back off the
+// flag set. It exists so no command has to spell EnvFlagName inline: five did,
+// which is why a search for the helper found nine of the fourteen commands
+// that can reach the variable diagnostic.
+func RegisterProjectEnvFlag(flags *pflag.FlagSet) {
+	flags.String(EnvFlagName, "", projectEnvFlagUsage)
+	markProjectEnvFlag(flags)
+}
+
+func markProjectEnvFlag(flags *pflag.FlagSet) {
+	RegisterProjectVarFlag(flags)
+	if err := flags.SetAnnotation(EnvFlagName, ProjectConfigEnvAnnotation, []string{"true"}); err != nil {
+		panic(err)
+	}
+}
+
+// RegisterProjectVarFlag registers the atlas.hcl variable override flag. It is
+// idempotent so a command that already carries the flag — from
+// [RegisterEnvFlag] or from an Atlas-compatible surface that spells it the
+// same way — keeps the binding it already has.
+func RegisterProjectVarFlag(flags *pflag.FlagSet) {
+	if flags.Lookup(ProjectVarFlagName) != nil {
+		return
+	}
+	flags.StringArray(
+		ProjectVarFlagName,
+		nil,
+		"Value for an atlas.hcl variable with no default, as name=value (repeatable)",
+	)
 }
 
 // RegisterExternalSchemaOptInFlag registers the safety gate for executing an
@@ -98,7 +153,7 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	if err != nil {
 		return projectconfig.Config{}, err
 	}
-	atlasVars, err := stringArrayFlag(cmd, AtlasProjectVarFlagName)
+	atlasVars, err := projectVars(cmd)
 	if err != nil {
 		return projectconfig.Config{}, err
 	}
@@ -108,6 +163,26 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 		EnvName:   envName,
 		AtlasVars: atlasVars,
 	})
+}
+
+// projectVars resolves the atlas.hcl variable overrides for a command. The
+// public --var wins when the user passed it; otherwise the hidden adapter-only
+// flag supplies whatever a forwarding command already routed. The two are not
+// concatenated: a repeated --var for one name is how a list(string) variable
+// is built, so merging both sources would turn a scalar override into a
+// two-element list.
+func projectVars(cmd *cobra.Command) ([]string, error) {
+	if flagChanged(cmd, ProjectVarFlagName) {
+		return cmd.Flags().GetStringArray(ProjectVarFlagName)
+	}
+	adapterVars, err := stringArrayFlag(cmd, AtlasProjectVarFlagName)
+	if err != nil {
+		return nil, err
+	}
+	if len(adapterVars) > 0 {
+		return adapterVars, nil
+	}
+	return stringArrayFlag(cmd, ProjectVarFlagName)
 }
 
 func projectConfigFromContext(ctx context.Context) (projectconfig.Config, bool) {

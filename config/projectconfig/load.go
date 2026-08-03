@@ -22,7 +22,12 @@ func Load(opts LoadOptions) (Config, error) {
 		atlasPath = AtlasFileName
 	}
 
-	ptah, err := loadPtahFile(ptahPath, opts.EnvName, opts.PtahPath != "")
+	ptahSource := discoveredPtahConfig
+	if opts.PtahPath != "" {
+		ptahSource = explicitPtahConfig
+	}
+
+	ptah, err := loadPtahFile(ptahPath, opts.EnvName, ptahSource)
 	if err != nil {
 		return Config{}, err
 	}

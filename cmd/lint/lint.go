@@ -99,7 +99,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+migrationlint.ConfigFileName+" when present)")
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
-	cmd.Flags().StringVar(&envName, dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
+	dbcli.RegisterEnvFlag(cmd.Flags(), &envName)
 	dbcli.RegisterAtlasProjectInternalFlags(cmd.Flags())
 	cmd.Flags().StringVar(&devURL, "dev-url", "", "Dev database URL used to clean and replay migrations and infer the lint dialect")
 	cmd.Flags().StringVar(&gitBase, gitBaseFlag, "", "Run analysis against the base Git branch")
