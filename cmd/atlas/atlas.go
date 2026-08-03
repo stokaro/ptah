@@ -28,6 +28,7 @@ import (
 	"go.5x5.cz/ptah/cmd/schema"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlassource"
 )
 
 type atlasVerb struct {
@@ -571,9 +572,9 @@ func atlasMigrateVersionValue(value string) (string, error) {
 
 // atlasSchemaTestVerb forwards `atlas schema test` to the native
 // `ptah schema test` runner. The desired schema URL (-u/--url) maps to the
-// native Go-annotation root directory, --dev-url selects the throwaway
-// database (ephemeral SQLite when omitted), and the optional [paths]
-// positional selects the directory of Ptah-native YAML test cases.
+// native desired-schema root, --dev-url selects the throwaway database
+// (ephemeral SQLite when omitted), and the optional [paths] positional selects
+// the directory of Ptah-native YAML test cases.
 func atlasSchemaTestVerb() atlasVerb {
 	return atlasVerb{
 		use:                "test",
@@ -585,11 +586,57 @@ func atlasSchemaTestVerb() atlasVerb {
 		positionalOptional: true,
 		projectConfig:      applyAtlasSchemaTestProjectConfig,
 		flags: []atlasargs.Flag{
-			atlasargs.NativeLocalDir("url", "u", "Desired schema URL: local file:// directory with Go schema annotations", "root-dir"),
+			atlasSchemaTestSourceFlag(),
 			atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url"),
 			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
 		},
 	}
+}
+
+// atlasSchemaTestSourceFlag registers `schema test`'s -u/--url desired-state
+// source.
+//
+// The flag was typed as a migration directory, so every database URL was
+// refused with "only local file:// migration directories are supported" -- a
+// message naming a concept the flag does not have, on a flag that has accepted
+// .sql and .hcl schema files since they were added. Database URLs now pass
+// through to the resolver the sibling desired-state verbs already use, and the
+// kinds that genuinely cannot be a desired state keep a loud refusal worded for
+// what the flag actually is.
+func atlasSchemaTestSourceFlag() atlasargs.Flag {
+	flag := atlasargs.NativeString(
+		"url",
+		"u",
+		"Desired schema source URL: a local file:// directory of Go schema annotations,"+
+			" a .sql or .hcl schema file, or a database URL",
+		"root-dir",
+	)
+	flag.MapValue = atlasSchemaTestSourceValue
+	return flag
+}
+
+// atlasSchemaTestSourceValue maps one desired-state source URL.
+//
+// Plain paths and file:// URLs keep the pre-existing local handling verbatim,
+// including its query-parameter and path-decoding errors, so a Go-annotation
+// directory reaches the native scan exactly as before.
+func atlasSchemaTestSourceValue(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if !strings.Contains(trimmed, "://") || strings.HasPrefix(trimmed, "file://") {
+		return atlasargs.LocalDirValue(value)
+	}
+	source, err := atlassource.Classify(trimmed)
+	if err != nil {
+		return "", err
+	}
+	if source.Kind == atlassource.KindDatabase {
+		return trimmed, nil
+	}
+	return "", fmt.Errorf(
+		"atlas schema test does not support %s desired-state sources;"+
+			" pass a directory of Go schema annotations, a .sql or .hcl schema file, or a database URL",
+		source.Kind,
+	)
 }
 
 // atlasCheckpointDirFormatFlag registers checkpoint's --dir-format. Both
