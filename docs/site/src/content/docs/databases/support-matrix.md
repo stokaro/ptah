@@ -156,6 +156,40 @@ complete catalog dependency metadata, cleanup also requires that other user
 databases contain no view-like or dictionary objects and no `Buffer`,
 `Distributed`, or `Merge` tables.
 
+### Atlas revision metadata on ClickHouse
+
+Ptah creates the Atlas revision table with `partial_hashes` declared as text.
+ClickHouse reads a trailing `NULL` on a column definition as `Nullable(T)`, so
+declaring that column `JSON` asks for `Nullable(JSON)`, and no ClickHouse server
+handles that the way the rest of the Atlas revision layout needs:
+
+- Servers that reject `Nullable(JSON)` refuse the `CREATE` during type analysis
+  (`code: 43, Nested type JSON cannot be inside Nullable type`). The rejection
+  happens before the `IF NOT EXISTS` existence check, so an already-provisioned
+  database does not escape it, and Atlas-format apply fails before any user
+  migration SQL runs.
+- Servers that accept `Nullable(JSON)` coerce the JSON null Ptah writes into the
+  JSON type and store `{}` instead. The value the author wrote is replaced, and
+  the column can no longer be scanned into a string by an Atlas-compatible
+  consumer.
+
+Declaring the column text resolves to `Nullable(String)` on both, which stores
+the same JSON null every other dialect stores. This is stated by behavior rather
+than by a version cut-off on purpose: the release that changed `Nullable(JSON)`
+from rejected to accepted was not measured, and the column type is correct on
+either side of it.
+
+`CREATE TABLE IF NOT EXISTS` does not alter a table that already exists, so a
+revision table created by an earlier Ptah against a server that accepted
+`Nullable(JSON)` keeps that column type and keeps storing `{}`. Writes continue
+to succeed and Ptah itself never reads `partial_hashes` back, so nothing in Ptah
+surfaces it. Ptah does not rewrite the column automatically; drop and recreate
+the revision table, or `ALTER` the column to `Nullable(String)`, if an external
+Atlas-compatible consumer needs to read it.
+
+Setting a revision directly (`SetAtlasRevision`) is still unsupported on
+ClickHouse, because revision history cannot be updated atomically there.
+
 ## Choosing behavior by capability, not by name
 
 The dialect name picks the parser and renderer family; whether an individual
