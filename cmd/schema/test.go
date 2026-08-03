@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/schemaload"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemascope"
@@ -190,11 +191,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 	selection := schemascope.SplitNames(opts.schemas)
 	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{})
 	if err == nil && set.Kind == atlassource.KindDatabase {
-		database, dbErr := resolveTestDesiredDatabase(ctx, diag, opts, set)
-		if dbErr != nil {
-			return nil, dbErr
-		}
-		return scopeTestDesiredSchema(database, selection)
+		return resolveTestDesiredDatabase(ctx, diag, opts, set, selection)
 	}
 	info, statErr := os.Stat(opts.rootDir)
 	if statErr != nil || info.IsDir() {
@@ -206,27 +203,40 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse desired schema from %s: %w", opts.rootDir, parseErr)
 		}
-		return scopeTestDesiredSchema(parsed, selection)
+		return scopeTestDesiredSchema(parsed, selection, "")
 	}
 	database, err := schemaload.LoadContext(ctx, schemaload.Options{SchemaFiles: []string{opts.rootDir}})
 	if err != nil {
 		return nil, fmt.Errorf("load desired schema from %s: %w", opts.rootDir, err)
 	}
-	return scopeTestDesiredSchema(database, selection)
+	return scopeTestDesiredSchema(database, selection, "")
 }
 
 // scopeTestDesiredSchema restricts database to the selected schemas through the
 // same allow-list every other schema-scoped verb uses.
 //
+// defaultSchema names the schema that unqualified objects belong to. Objects
+// parsed from Go annotations or a schema file carry their own schema name and
+// pass "", but a live introspection leaves the default schema's objects
+// unqualified, so matching them against `--schema main` (or `public`, or `dbo`)
+// requires naming that default -- the same pairing internal/atlasmigrate/diff.go
+// makes for `migrate diff`. Without it every selection over a database source
+// would filter everything out and report the zero-match refusal below, turning
+// a supported combination into a refusal.
+//
 // A selection that keeps no tables out of a schema that had some is refused. The
 // alternative is provisioning an empty database and letting every case fail on a
 // missing relation, which reports the symptom and hides the cause -- the
 // zero-match false green that stokaro/ptah#979 exists to prevent.
-func scopeTestDesiredSchema(database *goschema.Database, selection []string) (*goschema.Database, error) {
+func scopeTestDesiredSchema(
+	database *goschema.Database,
+	selection []string,
+	defaultSchema string,
+) (*goschema.Database, error) {
 	if len(selection) == 0 || database == nil {
 		return database, nil
 	}
-	scoped := schemascope.FilterGenerated(database, selection)
+	scoped := schemascope.FilterGeneratedWithDefaultSchema(database, selection, defaultSchema)
 	if len(database.Tables) > 0 && len(scoped.Tables) == 0 {
 		return nil, fmt.Errorf(
 			"--%s %s selects no tables out of the desired schema",
@@ -238,11 +248,16 @@ func scopeTestDesiredSchema(database *goschema.Database, selection []string) (*g
 // resolveTestDesiredDatabase introspects a database desired-state source. The
 // dialect gate runs before any connection is opened, so a mismatched source
 // fails on the mismatch rather than on whatever the connection would have done.
+//
+// The schema selection is applied here rather than by the caller because only
+// this branch knows the dialect, and the dialect is what names the default
+// schema an introspection leaves objects unqualified in.
 func resolveTestDesiredDatabase(
 	ctx context.Context,
 	diag io.Writer,
 	opts testOptions,
 	set atlassource.Set,
+	selection []string,
 ) (*goschema.Database, error) {
 	devDialect, err := ensureTestDevDialect(set, opts.dbURL)
 	if err != nil {
@@ -258,7 +273,7 @@ func resolveTestDesiredDatabase(
 	if err := dropClusterScopedTestState(diag, state.Schema); err != nil {
 		return nil, err
 	}
-	return state.Schema, nil
+	return scopeTestDesiredSchema(state.Schema, selection, identifier.ForDialect(devDialect).DefaultSchema)
 }
 
 // ensureTestDevDialect refuses a database desired-state source whose dialect

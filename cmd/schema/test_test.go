@@ -344,3 +344,57 @@ func TestSchemaTestCommand_RunPatternNoMatches(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `no test cases match --run "\^missing\$"`)
 }
+
+// TestSchemaTestCommand_SchemaSelectionAppliesToADatabaseSource pins that
+// --schema restricts a desired schema that came from a database URL, and not
+// only one parsed from a directory or a schema file.
+//
+// The source kinds resolve on different branches of resolveTestDesiredSchema:
+// the database branch arrived with stokaro/ptah#1110 and the schema selection
+// with stokaro/ptah#951, and the two met for the first time when those changes
+// were merged. A selection wired into only the file and directory branches
+// would leave a database source silently unscoped -- the accept-and-ignore
+// shape this flag exists to prevent -- and no test covered that combination.
+//
+// The zero-match row is the discriminating one. An unscoped database source
+// keeps its table and the run passes, so the refusal is reachable only when the
+// selection actually reached the database branch.
+func TestSchemaTestCommand_SchemaSelectionAppliesToADatabaseSource(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+		check  func(c *qt.C, out string, err error)
+	}{
+		{
+			name:   "the schema holding the table is kept",
+			schema: "main",
+			check: func(c *qt.C, out string, err error) {
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+				c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+			},
+		},
+		{
+			name:   "a selection that keeps nothing is refused",
+			schema: "nosuch",
+			check: func(c *qt.C, out string, err error) {
+				c.Assert(err, qt.IsNotNil)
+				c.Assert(err, qt.ErrorMatches, `--schema nosuch selects no tables out of the desired schema`)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := writeLiveSourceFixture(c)
+
+			out, err := runSchemaTestCommand(
+				"--dir", fixture.testsDir,
+				"--root-dir", fixture.liveURL,
+				"--schema", tt.schema,
+				"--db-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
+			)
+
+			tt.check(c, out, err)
+		})
+	}
+}
