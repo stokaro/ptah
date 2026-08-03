@@ -31,8 +31,11 @@ import (
 // A function name (COUNT, SUM, …) is a keyword emitted verbatim, never quoted;
 // the renderer rejects a name that is not a simple identifier rather than emit it.
 //
-// Supported dialects are PostgreSQL (including CockroachDB and YugabyteDB),
-// MySQL, MariaDB, and SQLite. Any other dialect returns an error, as does a nil
+// Supported dialects are the PostgreSQL family (PostgreSQL itself, CockroachDB,
+// YugabyteDB, and Cloud Spanner's PostgreSQL interface — the set
+// platform.IsPostgresFamily reports), plus MySQL, MariaDB, and SQLite. SQL
+// Server and ClickHouse are not supported yet and are refused by name; see
+// selectPlaceholderStyle. Any other dialect returns an error, as does a nil
 // statement, a statement without a FROM table, an empty IN list, a malformed
 // operator, a function call with an invalid name or a bad argument shape, a GROUP
 // BY term with an empty column, a join without a table or ON condition, or a
@@ -79,10 +82,28 @@ func newSelectRenderer(dialect string) (*selectRenderer, error) {
 	return &selectRenderer{dialect: normalized, placeholder: style}, nil
 }
 
+// selectPlaceholderStyle reports how a dialect numbers bound parameters, and
+// whether the query builder renders for it at all.
+//
+// The PostgreSQL family is resolved through platform.IsPostgresFamily rather
+// than by listing member names, so this table cannot disagree with the rest of
+// the repository about who is in that family. It used to list Postgres,
+// CockroachDB and YugabyteDB by name and so omitted Spanner, which every other
+// subsystem already treats as PostgreSQL: platform.IsPostgresFamily("spanner")
+// is true, sqlutil.Rebind gives it $n, NewRendererWithCapabilities routes its
+// DDL through the PostgreSQL renderer, and dbschema reads it over pgx.
+//
+// SQL Server and ClickHouse are deliberately absent. Neither is a missing map
+// entry: SQL Server needs a third placeholder style (@p1, @p2, … — what
+// sqlutil.Rebind already emits for it), T-SQL pagination in place of LIMIT, and
+// an OUTPUT-versus-RETURNING decision; ClickHouse needs a decided statement
+// shape for UPDATE and DELETE, whose mutation forms are not the portable
+// statements this renderer emits. Both are tracked on stokaro/ptah#941.
 func selectPlaceholderStyle(normalized string) (placeholderStyle, bool) {
-	switch normalized {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+	if platform.IsPostgresFamily(normalized) {
 		return placeholderDollar, true
+	}
+	switch normalized {
 	case platform.MySQL, platform.MariaDB, platform.SQLite:
 		return placeholderQuestion, true
 	default:

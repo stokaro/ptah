@@ -6,7 +6,9 @@ description: Build parameterized, dialect-aware SELECT statements with the core/
 Ptah's `core/query` package is a fluent builder for parameterized `SELECT`
 statements. It is the DML counterpart to the DDL AST: a builder produces an
 `*ast.SelectStatement`, and `renderer.RenderSelect` turns that into a SQL string
-plus its positional arguments for PostgreSQL, MySQL, MariaDB, and SQLite.
+plus its positional arguments for the PostgreSQL family, MySQL, MariaDB, and
+SQLite. See [Dialect coverage](#dialect-coverage) for the exact set and for the
+dialects that are refused.
 
 This is a bounded slice of the DML work in issue
 [`#98`](https://github.com/stokaro/ptah/issues/98). It exists so callers can stop
@@ -35,6 +37,35 @@ Implemented so far:
 Not yet implemented (follow-up phases): non-aggregate function calls, arithmetic,
 `LIKE`, subqueries, window functions, `ON CONFLICT` / upsert, `INSERT … SELECT`,
 and common table expressions.
+
+## Dialect coverage
+
+`RenderSelect`, `RenderInsert`, `RenderUpdate`, and `RenderDelete` render for the
+PostgreSQL family — PostgreSQL, CockroachDB, YugabyteDB, and Cloud Spanner's
+PostgreSQL interface, which all take `$1`, `$2`, … placeholders — and for MySQL,
+MariaDB, and SQLite, which take `?`. Spanner renders byte-identically to
+PostgreSQL, including `RETURNING`; it has no live coverage in this repository, so
+the [support matrix](../../databases/support-matrix/) caveat applies — review the
+generated SQL before relying on it.
+
+SQL Server (`sqlserver`, `mssql`) and ClickHouse are Ptah dialects for DDL and
+introspection, but the query builder refuses them:
+
+```text
+renderer: INSERT rendering is not supported for dialect "sqlserver"
+```
+
+Neither is a one-line addition. SQL Server needs a third placeholder style
+(`@p1`, `@p2`, …, which `sqlutil.Rebind` already emits for it), T-SQL pagination
+in place of `LIMIT`, and an `OUTPUT`-versus-`RETURNING` decision; ClickHouse needs
+a decided statement shape for `UPDATE` and `DELETE`, whose mutation forms are not
+the portable statements this renderer emits. Both are tracked on
+[`#941`](https://github.com/stokaro/ptah/issues/941).
+
+Every dialect name `renderer.SupportedDialects()` returns is pinned against all
+four render functions — 48 cells, each pinned to an exact SQL string or an exact
+error — in `core/renderer/dml_dialect_matrix_test.go`, so the builder cannot
+acquire or lose a dialect without that table saying so.
 
 ## Safety model
 
@@ -183,8 +214,8 @@ that fails at execution time against the database.
 - **MySQL and MariaDB** have no `FULL [OUTER] JOIN` in any version — it must be
   emulated with a `UNION` of a `LEFT` and a `RIGHT` join — so `FULL` is rejected
   (`renderer: mysql does not support FULL OUTER JOIN`). `RIGHT` renders normally.
-- The **PostgreSQL family** (including CockroachDB and YugabyteDB) supports all
-  four.
+- The **PostgreSQL family** (including CockroachDB, YugabyteDB, and Spanner)
+  supports all four.
 
 ## Aggregates, GROUP BY, and HAVING
 
@@ -363,7 +394,7 @@ that cannot execute it, rather than emit SQL that fails at execution time.
 
 | Dialect | `RETURNING` |
 | --- | --- |
-| PostgreSQL family (incl. CockroachDB, YugabyteDB) | yes |
+| PostgreSQL family (incl. CockroachDB, YugabyteDB, Spanner) | yes |
 | SQLite | yes (since 3.35, 2021) |
 | MySQL | no |
 | MariaDB | no (see note) |
