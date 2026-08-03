@@ -108,7 +108,11 @@
 // advisory lock around the planning and apply window. Use
 // WithMigrationLockName to coordinate on a custom lock name, and use
 // WithMigrationLockTimeout to bound the wait for that lock. Callers can detect
-// acquisition timeouts with IsMigrationLockTimeout.
+// acquisition timeouts with IsMigrationLockTimeout. WithoutMigrationLock turns
+// the lock off entirely for callers that serialize migration runs by some
+// other means; MigrationLockName and MigrationLockSkipped report the resulting
+// decision so a command can name what it acquires, or announce what it does
+// not.
 //
 // # Migration Operations
 //

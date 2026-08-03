@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -39,6 +40,7 @@ type atlasSchemaApplyOptions struct {
 	include     []string
 	planURL     string
 	lockTimeout string
+	lock        atlasLockOptions
 	edit        bool
 	// formatOutput is derived at run time: true when --format was passed or
 	// atlas.hcl provides format.schema.apply.
@@ -110,6 +112,8 @@ reporting a synced schema would claim success for work that did not happen.`,
 	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffixHCL+" or file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
+	registerAtlasLockNameFlag(flags, &opts.lock)
+	registerAtlasSkipLockFlag(flags, &opts.lock)
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
@@ -198,6 +202,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
@@ -210,12 +218,12 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	// The apply lock is held across inspection, planning, simulation,
 	// confirmation, and execution, so the plan cannot go stale between
 	// planning and applying. The deferred release covers every exit path.
-	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, lockTimeout)
+	applyLock, err := acquireAtlasSchemaApplyLock(cmd, conn, lockRequest, lockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
-	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
+	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, opts.lock, applyLock, conn.Info().Dialect)
 
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL:     opts.devURL,
@@ -343,6 +351,10 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	path, err := atlasSchemaApplyPlanFilePath(opts.planURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -382,12 +394,12 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	// The plan verification is the serialized target inspection of the
 	// pre-approved plan path, so the lock is held before it and released on
 	// every exit path.
-	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, lockTimeout)
+	applyLock, err := acquireAtlasSchemaApplyLock(cmd, conn, lockRequest, lockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
-	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
+	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, opts.lock, applyLock, conn.Info().Dialect)
 
 	// A JSON plan always carries a fingerprint contract; a Ptah-written
 	// `.plan.hcl` carries one too (round-trip). Foreign Atlas hashes cannot be
@@ -763,6 +775,25 @@ func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, statements []str
 	return out.String(), nil
 }
 
+// acquireAtlasSchemaApplyLock takes the schema apply lock the request selects,
+// or takes nothing at all when --skip-lock asked for no lock.
+//
+// A skipped acquisition returns a nil lock rather than a held no-op one, so
+// the difference between "this dialect cannot lock" and "the caller declined
+// to lock" stays visible to everything downstream: a nil lock reports no name
+// and releases as a no-op.
+func acquireAtlasSchemaApplyLock(
+	cmd *cobra.Command,
+	conn *dbschema.DatabaseConnection,
+	request atlasLockRequest,
+	timeout time.Duration,
+) (*atlasschema.ApplyLock, error) {
+	if request.Skip {
+		return nil, nil
+	}
+	return atlasschema.AcquireApplyLock(cmd.Context(), conn, request.Name, timeout)
+}
+
 // releaseAtlasSchemaApplyLock releases the schema apply lock on every exit
 // path. Release runs on its own bounded background context, so it also works
 // when the command context has already been canceled.
@@ -774,15 +805,36 @@ func releaseAtlasSchemaApplyLock(cmd *cobra.Command, lock *atlasschema.ApplyLock
 
 // noteAtlasSchemaApplyLockUnsupported surfaces the capability decision for
 // dialects without advisory-lock semantics: an explicitly requested
-// --lock-timeout is ignored and the apply proceeds without a database lock.
-// The note goes to stderr so --format output on stdout stays machine-clean.
+// --lock-timeout or --lock-name is ignored and the apply proceeds without a
+// database lock. The note goes to stderr so --format output on stdout stays
+// machine-clean.
+//
+// --lock-name gets its own wording because the two flags fail differently: an
+// ignored timeout only means "no wait", while an ignored name means the run is
+// not coordinating with whatever else holds that name. The name printed is
+// read back from the acquired lock, so it is the name the machinery resolved
+// rather than the flag string.
+//
+// --skip-lock produces no note in either wording. It leaves a nil lock behind,
+// and a caller who asked for no lock does not need to be told the dialect has
+// none.
 func noteAtlasSchemaApplyLockUnsupported(
 	cmd *cobra.Command,
 	requestedTimeout string,
+	lockOpts atlasLockOptions,
 	lock *atlasschema.ApplyLock,
 	dialect string,
 ) {
-	if strings.TrimSpace(requestedTimeout) == "" || lock.Supported() {
+	if lock == nil || lock.Supported() {
+		return
+	}
+	if strings.TrimSpace(lockOpts.name) != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"note: schema apply locking is not supported for dialect %q; the advisory lock %q is not acquired and the apply proceeds without a database lock\n",
+			dialect, lock.Name())
+		return
+	}
+	if strings.TrimSpace(requestedTimeout) == "" {
 		return
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(),

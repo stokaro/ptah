@@ -67,7 +67,7 @@ func TestAcquireApplyLock_HappyPath(t *testing.T) {
 		conn := connectSQLite(c, filepath.Join(c.TB.TempDir(), "lock.db"))
 		defer dbschema.CloseAndWarn(conn)
 
-		lock, err := atlasschema.AcquireApplyLock(c.Context(), conn, time.Second)
+		lock, err := atlasschema.AcquireApplyLock(c.Context(), conn, "", time.Second)
 		c.Assert(err, qt.IsNil)
 		c.Assert(lock.Supported(), qt.IsFalse)
 		c.Assert(lock.Release(), qt.IsNil)
@@ -77,7 +77,7 @@ func TestAcquireApplyLock_HappyPath(t *testing.T) {
 		conn := connectSQLite(c, filepath.Join(c.TB.TempDir(), "lock-idem.db"))
 		defer dbschema.CloseAndWarn(conn)
 
-		lock, err := atlasschema.AcquireApplyLock(c.Context(), conn, 0)
+		lock, err := atlasschema.AcquireApplyLock(c.Context(), conn, "", 0)
 		c.Assert(err, qt.IsNil)
 		c.Assert(lock.Release(), qt.IsNil)
 		c.Assert(lock.Release(), qt.IsNil)
@@ -94,7 +94,7 @@ func TestAcquireApplyLock_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	c.Run("nil connection", func(c *qt.C) {
-		lock, err := atlasschema.AcquireApplyLock(c.Context(), nil, time.Second)
+		lock, err := atlasschema.AcquireApplyLock(c.Context(), nil, "", time.Second)
 		c.Assert(err, qt.ErrorMatches, "schema apply locking requires database connection")
 		c.Assert(lock, qt.IsNil)
 	})

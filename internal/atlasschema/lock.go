@@ -53,19 +53,34 @@ type ApplyLock struct {
 // waits indefinitely; context cancellation always interrupts the wait, and an
 // elapsed timeout surfaces as a wrapped [dblock.TimeoutError] recognized by
 // [IsLockTimeout].
+//
+// An empty or whitespace-only name selects [ApplyLockName]. Naming the lock is
+// how a caller coordinates with a different tool on the same database: two
+// runners serialize only when they name the same lock, so passing a name is
+// also how a caller opts OUT of serializing against Ptah's default.
 func AcquireApplyLock(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	name string,
 	timeout time.Duration,
 ) (*ApplyLock, error) {
 	if conn == nil {
 		return nil, errors.New("schema apply locking requires database connection")
 	}
-	lock, err := dblock.Acquire(ctx, conn, ApplyLockName, timeout)
+	lock, err := dblock.Acquire(ctx, conn, EffectiveApplyLockName(name), timeout)
 	if err != nil {
 		return nil, fmt.Errorf("acquire schema apply lock: %w", err)
 	}
 	return &ApplyLock{lock: lock}, nil
+}
+
+// EffectiveApplyLockName resolves the schema apply lock name a request selects:
+// the trimmed name, or [ApplyLockName] when none was given.
+func EffectiveApplyLockName(name string) string {
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		return trimmed
+	}
+	return ApplyLockName
 }
 
 // Supported reports whether the lock is backed by a real database lock. It is
@@ -73,6 +88,17 @@ func AcquireApplyLock(
 // CockroachDB, YugabyteDB, and Spanner), where the apply proceeds unlocked.
 func (l *ApplyLock) Supported() bool {
 	return l != nil && l.lock.Supported()
+}
+
+// Name returns the advisory lock name this lock was acquired under. It is
+// recorded on the no-op path too, so a caller on a dialect without advisory
+// locks can still name the lock it would have taken. A nil lock — which is
+// what a skipped acquisition leaves behind — reports the empty string.
+func (l *ApplyLock) Name() string {
+	if l == nil {
+		return ""
+	}
+	return l.lock.Name()
 }
 
 // Release frees the schema apply lock on its own bounded background context,
