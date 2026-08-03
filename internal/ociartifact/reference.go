@@ -41,11 +41,18 @@ type Reference struct {
 	registry   string
 	repository string
 	selector   string
+	tag        string
 	digest     bool
 }
 
 // ParseRef parses an oci://registry/repository[:tag][@digest] reference.
 // An omitted selector resolves to :latest.
+//
+// A reference may name a tag and a digest together, which is the shape a
+// promotion pipeline emits: "the artifact we call :release, resolved to these
+// bytes". The digest always decides which bytes are fetched, exactly as every
+// other OCI client behaves when the two disagree; the tag is kept for display
+// only, because dropping what the author wrote is itself a silent discard.
 func ParseRef(raw string) (Reference, error) {
 	if raw == "" || strings.TrimSpace(raw) != raw {
 		return Reference{}, fmt.Errorf("%w: reference must not be empty or contain surrounding whitespace", ErrInvalidReference)
@@ -62,11 +69,19 @@ func ParseRef(raw string) (Reference, error) {
 		return Reference{}, fmt.Errorf("%w: %v", ErrInvalidReference, err)
 	}
 	selector := parsed.ReferenceOrDefault()
+	isDigest := strings.Contains(selector, ":")
+	tag := selector
+	if isDigest {
+		// oras-go resolves tag@digest by the digest and drops the tag from the
+		// parsed value, so recover the author's tag from the raw text.
+		tag = tagBeforeDigest(value)
+	}
 	return Reference{
 		registry:   parsed.Registry,
 		repository: parsed.Repository,
 		selector:   selector,
-		digest:     strings.Contains(selector, ":"),
+		tag:        tag,
+		digest:     isDigest,
 	}, nil
 }
 
@@ -80,8 +95,6 @@ func validateReferenceText(value string) error {
 		return fmt.Errorf("%w: escaped path separators are not supported", ErrInvalidReference)
 	case hasUserInfo(value):
 		return fmt.Errorf("%w: embedded credentials are not supported", ErrInvalidReference)
-	case hasTagAndDigest(value):
-		return fmt.Errorf("%w: a reference cannot contain both a tag and a digest", ErrInvalidReference)
 	default:
 		return nil
 	}
@@ -98,13 +111,20 @@ func hasUserInfo(value string) bool {
 	return firstAt >= 0 && (firstSlash < 0 || firstAt < firstSlash)
 }
 
-func hasTagAndDigest(value string) bool {
+// tagBeforeDigest returns the tag written alongside a digest, or the empty
+// string when the reference named no tag. hasUserInfo already rejected an "@"
+// before the first "/", so the first "@" here starts the digest.
+func tagBeforeDigest(value string) string {
 	beforeDigest, _, hasDigest := strings.Cut(value, "@")
 	if !hasDigest {
-		return false
+		return ""
 	}
 	lastSlash := strings.LastIndexByte(beforeDigest, '/')
-	return strings.Contains(beforeDigest[lastSlash+1:], ":")
+	_, tag, ok := strings.Cut(beforeDigest[lastSlash+1:], ":")
+	if !ok {
+		return ""
+	}
+	return tag
 }
 
 // Registry returns the registry host, with an optional port.
@@ -128,13 +148,12 @@ func (r Reference) IsDigest() bool {
 }
 
 // Tag returns the registry tag the author named, or the empty string when the
-// reference selected content by digest instead. A tag is a movable registry
-// pointer: whoever can push to the repository can repoint it at other bytes.
+// reference named none. A tag is a movable registry pointer: whoever can push
+// to the repository can repoint it at other bytes. A reference that names both
+// a tag and a digest keeps its tag here while resolving by the digest, so the
+// tag is a label, not a selector.
 func (r Reference) Tag() string {
-	if r.digest {
-		return ""
-	}
-	return r.selector
+	return r.tag
 }
 
 // PinnedString renders the canonical oci:// form that selects digest exactly,
@@ -143,13 +162,17 @@ func (r Reference) PinnedString(digest string) string {
 	return Scheme + r.repositoryName() + "@" + digest
 }
 
-// String returns the canonical oci:// form.
+// String returns the canonical oci:// form. A reference that named both a tag
+// and a digest renders both, so round-tripping through String preserves what
+// the author wrote rather than silently narrowing it to the digest.
 func (r Reference) String() string {
-	separator := ":"
-	if r.digest {
-		separator = "@"
+	if !r.digest {
+		return Scheme + r.repositoryName() + ":" + r.selector
 	}
-	return Scheme + r.repositoryName() + separator + r.selector
+	if r.tag == "" {
+		return Scheme + r.repositoryName() + "@" + r.selector
+	}
+	return Scheme + r.repositoryName() + ":" + r.tag + "@" + r.selector
 }
 
 func (r Reference) repositoryName() string {
