@@ -2,6 +2,7 @@ package atlas_test
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // writeSchemaTestFixture fills modelsDir with an annotated Go entity and
@@ -112,18 +114,55 @@ func TestCompatCommand_SchemaTestRunFilterSelectsCases(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `no test cases match --run "\^does-not-match\$"`)
 }
 
-func TestCompatCommand_SchemaTestRejectsRemoteSchemaURL(t *testing.T) {
-	c := qt.New(t)
+// TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly replaces a test
+// that pinned the refusal this change removes.
+//
+// A database URL used to be rejected outright as "only local file:// migration
+// directories are supported", so the old test asserted that message. Database
+// URLs are a supported desired-state source now, which makes the guarantee
+// worth pinning a different one: an unusable database source must still fail
+// loudly and non-zero, never report a green run it did not perform.
+func TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly(t *testing.T) {
+	tests := []struct {
+		name string
+		argv func(c *qt.C, fixture compatLiveSourceFixture) []string
+		want string
+	}{
+		{
+			name: "dialect mismatch is named before anything is contacted",
+			argv: func(c *qt.C, fixture compatLiveSourceFixture) []string {
+				return []string{
+					"schema", "test", fixture.testsDir,
+					"-u", "postgres://127.0.0.1:1/nope?sslmode=disable",
+					"--dev-url", freshDevURL(c),
+				}
+			},
+			want: `--db-url dialect "sqlite" does not match --root-dir database dialect "postgres"`,
+		},
+		{
+			name: "an unopenable database of the matching dialect fails on the connection",
+			argv: func(c *qt.C, fixture compatLiveSourceFixture) []string {
+				return []string{
+					"schema", "test", fixture.testsDir,
+					"-u", "sqlite://" + fixture.modelsDir,
+					"--dev-url", freshDevURL(c),
+				}
+			},
+			want: "connect to --root-dir database: failed to ping database: unable to open database file (14)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := writeCompatLiveSourceFixture(c)
 
-	cmd := atlas.NewCompatCommand("atlas")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"schema", "test", "--url", "postgres://localhost/db"})
+			out, err := runCompatArgs(tt.argv(c, fixture))
 
-	err := cmd.Execute()
-
-	c.Assert(err, qt.ErrorMatches, `atlas schema test --url: only local file:// migration directories are supported`)
+			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+			c.Assert(err.Error(), qt.Equals, tt.want)
+			c.Assert(out, qt.Not(qt.Contains), "1 passed")
+		})
+	}
 }
 
 func TestCompatCommand_SchemaTestUsesAtlasProjectConfig(t *testing.T) {
@@ -286,4 +325,211 @@ func TestCompatCommand_SchemaTestAcceptsHCLFileSource(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+}
+
+// compatLiveSourceFixture is the discriminating fixture for a database
+// desired-state source at the CLI.
+//
+// The asserted table exists in the live database and in NO other source. That
+// is the whole point: with every source declaring the same table a run passes
+// whether or not the source was read at all.
+type compatLiveSourceFixture struct {
+	liveURL   string
+	modelsDir string
+	sqlFile   string
+	testsDir  string
+}
+
+// writeCompatLiveSourceFixture builds the fixture, creating the live database
+// by executing DDL over a Ptah SQLite connection rather than committing a
+// binary database file.
+func writeCompatLiveSourceFixture(c *qt.C) compatLiveSourceFixture {
+	c.Helper()
+	dir := c.TempDir()
+	modelsDir := filepath.Join(dir, "models")
+	c.Assert(os.MkdirAll(modelsDir, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(modelsDir, "user.go"), []byte(`package models
+
+//ptah:schema:table name="users_from_go"
+type User struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int64
+}
+`), 0o600), qt.IsNil)
+
+	sqlFile := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(sqlFile,
+		[]byte("CREATE TABLE widgets_from_sql (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	testsDir := filepath.Join(dir, "tests")
+	c.Assert(os.MkdirAll(testsDir, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(testsDir, "db.yaml"), []byte(`cases:
+  - name: db-sourced table exists
+    steps:
+      - assert:
+          query: "SELECT count(*) FROM orders_from_db"
+          row_count: 1
+`), 0o600), qt.IsNil)
+
+	livePath := filepath.Join(dir, "live.db")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+livePath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(context.Background(),
+		"CREATE TABLE orders_from_db (id INTEGER PRIMARY KEY, note TEXT NOT NULL)")
+	c.Assert(err, qt.IsNil)
+
+	return compatLiveSourceFixture{
+		liveURL:   "sqlite://" + livePath,
+		modelsDir: modelsDir,
+		sqlFile:   sqlFile,
+		testsDir:  testsDir,
+	}
+}
+
+// freshDevURL returns a throwaway database URL no other invocation has used.
+//
+// A shared --dev-url is not reset between invocations, so a negative source run
+// against a database an earlier positive run populated reports "1 cases,
+// 1 passed, 0 failed" and exit 0 -- the fixture would stop discriminating.
+func freshDevURL(c *qt.C) string {
+	c.Helper()
+	return "sqlite://" + filepath.Join(c.TempDir(), "dev.db")
+}
+
+func runCompatArgs(args []string) (string, error) {
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return out.String(), err
+}
+
+// TestCompatCommand_SchemaTestDesiredStateSourceSpellings covers every spelling
+// that reaches the desired-state source, because the refusal had three
+// reachable gate branches with two different messages: -u and --url share the
+// flag mapper, and an atlas.hcl env src goes through a different site
+// altogether. Fixing one branch would look complete while leaving the others
+// refusing.
+func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
+	tests := []struct {
+		name  string
+		argv  func(c *qt.C, t *testing.T, fixture compatLiveSourceFixture) []string
+		check func(c *qt.C, out string, err error)
+	}{
+		{
+			name: "-u shorthand with a database URL",
+			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
+				return []string{
+					"schema", "test", fixture.testsDir,
+					"-u", fixture.liveURL, "--dev-url", freshDevURL(c),
+				}
+			},
+			check: assertDatabaseSourcePassed,
+		},
+		{
+			name: "--url long spelling with a database URL",
+			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
+				return []string{
+					"schema", "test", fixture.testsDir,
+					"--url", fixture.liveURL, "--dev-url", freshDevURL(c),
+				}
+			},
+			check: assertDatabaseSourcePassed,
+		},
+		{
+			name: "PTAH_URL environment twin",
+			argv: func(c *qt.C, t *testing.T, fixture compatLiveSourceFixture) []string {
+				t.Setenv("PTAH_URL", fixture.liveURL)
+				return []string{"schema", "test", fixture.testsDir, "--dev-url", freshDevURL(c)}
+			},
+			check: assertDatabaseSourcePassed,
+		},
+		{
+			name: "atlas.hcl env src",
+			argv: func(c *qt.C, t *testing.T, fixture compatLiveSourceFixture) []string {
+				dir := c.TempDir()
+				t.Chdir(dir)
+				c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "local" {
+  src = "`+fixture.liveURL+`"
+  dev = "`+freshDevURL(c)+`"
+}
+`), 0o600), qt.IsNil)
+				return []string{"schema", "test", fixture.testsDir, "--env", "local"}
+			},
+			check: assertDatabaseSourcePassed,
+		},
+		{
+			name: "Go annotation directory is the control",
+			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
+				return []string{
+					"schema", "test", fixture.testsDir,
+					"-u", "file://" + fixture.modelsDir, "--dev-url", freshDevURL(c),
+				}
+			},
+			check: assertDatabaseSourceNotRead,
+		},
+		{
+			name: "SQL schema file is the second control",
+			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
+				return []string{
+					"schema", "test", fixture.testsDir,
+					"-u", "file://" + fixture.sqlFile, "--dev-url", freshDevURL(c),
+				}
+			},
+			check: assertDatabaseSourceNotRead,
+		},
+		{
+			name: "atlas:// registry URLs stay refused",
+			argv: func(_ *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
+				return []string{"schema", "test", fixture.testsDir, "-u", "atlas://myschema"}
+			},
+			check: func(c *qt.C, out string, err error) {
+				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+				c.Assert(err.Error(), qt.Contains, "atlas:// registry URLs are not supported")
+				c.Assert(err.Error(), qt.Not(qt.Contains), "migration directories")
+			},
+		},
+		{
+			name: "docker:// as desired state stays refused",
+			argv: func(_ *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
+				return []string{"schema", "test", fixture.testsDir, "-u", "docker://postgres/16/dev"}
+			},
+			check: func(c *qt.C, out string, err error) {
+				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+				c.Assert(err.Error(), qt.Contains,
+					"docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source")
+				c.Assert(err.Error(), qt.Not(qt.Contains), "migration directories")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := writeCompatLiveSourceFixture(c)
+
+			out, err := runCompatArgs(tt.argv(c, t, fixture))
+
+			tt.check(c, out, err)
+		})
+	}
+}
+
+// assertDatabaseSourcePassed asserts the live database was actually read: the
+// asserted table exists nowhere else.
+func assertDatabaseSourcePassed(c *qt.C, out string, err error) {
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, `PASS  case "db-sourced table exists"`)
+	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+}
+
+// assertDatabaseSourceNotRead asserts the control sources still resolve to
+// themselves. Exit status alone cannot carry this: a refused URL and a source
+// that resolved to the wrong schema both exit 1, so the bytes decide.
+func assertDatabaseSourceNotRead(c *qt.C, out string, err error) {
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(out, qt.Contains, "no such table: orders_from_db")
 }

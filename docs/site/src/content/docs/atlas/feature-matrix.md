@@ -215,7 +215,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
-| Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | schema test -u takes only a Go-annotation directory; SQL/HCL files and DB URLs fail. Neither verb exposes `--report` or `--seed-dir`. |
+| Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | schema test -u takes a Go-annotation directory, a .sql or .hcl schema file, or a database URL; env:// and atlas:// are refused. Neither verb exposes `--report` or `--seed-dir`. |
 | Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused, and schema apply `--dry-run` skips the rehearsal entirely. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. CE stays unknown: a CLI probe cannot see a Go API; an Atlas-side source naming a test-runner entry point would settle it. |
 | Exit-code contract for CI gates | ✅ | ✅ | ➖ | Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2. |
