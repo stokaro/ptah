@@ -55,10 +55,12 @@ the two diverge in both directions. Both examples below were measured on
 
 Where the pricing page settles a Pro-side question, the Pro column cites it.
 Where plan marketing and measured binary behavior differ, the measured behavior
-wins the CE cell and the difference column records the tension. That is why the schema-object rows carry ❔
-in the Atlas columns: this page can show what Ptah emits for a domain or a
-trigger, but nothing it cites establishes what Atlas CE emits for the same
-object.
+wins the CE cell and the difference column records the tension. The
+schema-object rows are the clearest case: the HCL reference marks `partition` a
+Pro feature and the pinned community binary plans `PARTITION BY RANGE` anyway,
+while a live schema holding a domain, a composite type, a range type, a
+sequence and an extension inspects on the same binary to nothing but its one
+table. Both readings are in the row.
 
 :::caution
 A ✅ in the Ptah column means the capability works, not that it is
