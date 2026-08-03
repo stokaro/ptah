@@ -8,9 +8,9 @@
   "mutations": [
     {
       "name": "the source version tokens are never handed to the migrator",
-      "file": "cmd/atlas/migrate_apply.go",
-      "old": "\t\tSourceVersions:       sourceVersions,\n",
-      "new": ""
+      "file": "internal/atlasmigrate/apply.go",
+      "old": "\t\tWithSourceVersions(opts.sourceVersions).",
+      "new": "\t\tWithSourceVersions(nil)."
     },
     {
       "name": "the source comparison replaces the numeric one instead of joining it",
@@ -52,7 +52,7 @@
       "name": "the token map records the projected int64 instead of the source version",
       "file": "internal/atlasmigrateimport/importer.go",
       "old": "\t\tsources[versions[i]] = flywayCEVersion(file)",
-      "new": "\t\tsources[versions[i]] = fmt.Sprint(versions[i])"
+      "new": "\t\t_ = file\n\t\tsources[versions[i]] = fmt.Sprint(versions[i])"
     },
     {
       "name": "a repeatable reports its own token instead of Atlas CE's empty version",
