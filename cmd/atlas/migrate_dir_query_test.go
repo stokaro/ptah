@@ -36,8 +36,15 @@ func writeQueryFixtureDir(c *qt.C) string {
 	return dir
 }
 
-// TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb closes stokaro/ptah#1013
-// section 2 across all eight verbs that register --dir.
+// TestCompatMigrateDirQuery_IgnoresUnknownKeysOnTheVerbsThatVerifyFirst closes
+// stokaro/ptah#1013 section 2 on six of the eight verbs that register --dir.
+//
+// Six, not eight, and the name says so: `migrate new` and `migrate diff` still
+// refuse every query and are pinned separately by
+// TestCompatMigrateDirQuery_NewAndDiffStillRefuseAQuery. This test used to be
+// called ...OnEveryVerb over the same six rows, which claimed a coverage it
+// never had — the two verbs the relaxation deliberately skips were exactly the
+// two a reader would have assumed were checked here.
 //
 // Each row runs the verb twice on identical directories, once with
 // `?nonsense=1` and once without, and asserts the two runs agree. The control
@@ -45,7 +52,7 @@ func writeQueryFixtureDir(c *qt.C) string {
 // would also pass if the verb had started ignoring the whole --dir value, and a
 // verb that is broken for an unrelated reason fails both runs instead of
 // reporting a false pass.
-func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
+func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnTheVerbsThatVerifyFirst(t *testing.T) {
 	tests := []struct {
 		name string
 		// run invokes the verb against dir, with query appended to the --dir
@@ -119,22 +126,17 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateDirQuery_FailurePathForeignFormat pins the part of the query
-// that is NOT ignored on the verbs that read only a native Atlas directory.
+// TestCompatMigrateDirQuery_RejectsUnknownFormatValue pins the part of the
+// query that is NOT ignored: the `format` key's value.
 //
-// The community binary honors `?format=` on these verbs. Ptah converts a
-// foreign layout for the verbs that only read one — status and set joined that
-// set in #1002 — and still refuses it on `migrate lint`, which reads the
-// directory into a dev-database replay, and on `migrate new` and `migrate diff`,
-// which WRITE into it. Refusing is the strict side of the divergence:
-// stokaro/ptah#1013 section 1 tracks closing it for lint.
-//
-// The refusal has to survive the relaxation above, which is why it is pinned:
-// once unknown keys are ignored, nothing else stops a `?format=goose` from
-// being ignored too and the directory being silently read as Atlas.
-func TestCompatMigrateDirQuery_FailurePathForeignFormat(t *testing.T) {
-	const want = `atlas migrate \w+ --dir: Atlas accepts \?format=goose, ` +
-		`but Ptah does not implement that directory format for this command yet`
+// It is the guard on the relaxation above. Once an unrecognized KEY is dropped,
+// nothing else stops a misspelled `?format=atals` from being dropped with it and
+// the directory being read as native Atlas — which is exactly what the community
+// binary does NOT do: measured on v1.3.0, `?format=totally-bogus` exits 1 with
+// `unknown dir format "totally-bogus"` on every verb that reads the query.
+func TestCompatMigrateDirQuery_RejectsUnknownFormatValue(t *testing.T) {
+	const want = `atlas migrate \w+ --dir: unknown Atlas migration directory format ` +
+		`"totally-bogus": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`
 
 	tests := []struct {
 		name string
@@ -144,9 +146,18 @@ func TestCompatMigrateDirQuery_FailurePathForeignFormat(t *testing.T) {
 			name: "lint",
 			run: func(c *qt.C, dir string) error {
 				_, _, err := runCompat("migrate", "lint",
-					"--dir", "file://"+dir+"?format=goose",
+					"--dir", "file://"+dir+"?format=totally-bogus",
 					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
 					"--latest", "1")
+				return err
+			},
+		},
+		{
+			name: "status",
+			run: func(c *qt.C, dir string) error {
+				_, _, err := runCompat("migrate", "status",
+					"--dir", "file://"+dir+"?format=totally-bogus",
+					"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
 				return err
 			},
 		},
@@ -163,10 +174,11 @@ func TestCompatMigrateDirQuery_FailurePathForeignFormat(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout pins the one
-// `?format=` value the five verbs above still accept. An empty value selects
-// the native Atlas layout on the community binary, so refusing it would turn
-// the relaxation into a new divergence one character wide.
+// TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout pins the `?format=`
+// value that names no layout at all. A PRESENT but empty value selects the
+// native Atlas layout on the community binary — it does not fall through to
+// `--dir-format` and it is not an unknown format — so refusing it would be a
+// divergence one character wide.
 func TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout(t *testing.T) {
 	c := qt.New(t)
 	dir := writeQueryFixtureDir(c)
