@@ -69,6 +69,7 @@ func Supported(dialect string) bool {
 // never touches the database.
 type Lock struct {
 	conn    *sql.Conn
+	name    string
 	release func(context.Context) error
 }
 
@@ -88,6 +89,21 @@ func (e *ambiguousAcquisitionError) Unwrap() error {
 // opposed to the no-op lock acquired on dialects without advisory locks.
 func (l *Lock) Supported() bool {
 	return l != nil && l.conn != nil
+}
+
+// Name returns the advisory lock name this lock was acquired under, after the
+// trimming [Acquire] applies. It is recorded on the no-op path too, so a
+// caller on a dialect without advisory locks can still report which lock it
+// would have taken. A nil lock reports the empty string.
+//
+// This is the value the dialect-specific acquisition actually used: the
+// PostgreSQL-family key is [PostgresKey] of it, and MySQL, MariaDB and
+// SQL Server pass it to the server verbatim.
+func (l *Lock) Name() string {
+	if l == nil {
+		return ""
+	}
+	return l.name
 }
 
 // Release releases the advisory lock and closes its dedicated session
@@ -126,7 +142,7 @@ func Acquire(
 	}
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
 	if !Supported(dialect) {
-		return &Lock{}, nil
+		return &Lock{name: name}, nil
 	}
 
 	session, err := conn.Conn(ctx)
@@ -134,7 +150,7 @@ func Acquire(
 		return nil, err
 	}
 
-	lock := &Lock{conn: session}
+	lock := &Lock{conn: session, name: name}
 	var acquireErr error
 	switch dialect {
 	case platform.Postgres, platform.YugabyteDB:

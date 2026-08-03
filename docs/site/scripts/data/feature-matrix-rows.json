@@ -469,12 +469,12 @@
   },
   {
     "area": "Declarative / direct schema workflow",
-    "feature": "Apply advisory lock and `--lock-timeout`",
+    "feature": "Apply advisory lock, `--lock-timeout`, `--lock-name`, `--skip-lock`",
     "ptah": "yes",
-    "atlas_oss": "yes",
+    "atlas_oss": "partial",
     "atlas_pro": "yes",
-    "note": "Real locks on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server; SQLite, ClickHouse, CockroachDB, Spanner run unlocked with a note.",
-    "evidence": "internal/dblock/dblock.go:54-64 returns true for Postgres, YugabyteDB, MySQL, MariaDB, SQLServer \u2014 the previous note wrongly listed YugabyteDB as unlocked. cmd/atlas/schema_apply.go:578 emits the stderr note. Reproduced: `pc schema apply --url sqlite://t1.db --to file://b.sql --auto-approve --lock-timeout 10s` -> `note: schema apply locking is not supported for dialect \"sqlite\"; --lock-timeout is ignored and the apply proceeds without a database lock` then a successful apply (exit 0). CE registers --lock-timeout on schema apply per cli-surface.md:43"
+    "note": "Real locks on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server; others run unlocked with a note. `--lock-name` and `--skip-lock` are Pro surface adopted openly; CE registers only `--lock-timeout`.",
+    "evidence": "internal/dblock/dblock.go:54-64 returns true for Postgres, YugabyteDB, MySQL, MariaDB, SQLServer \u2014 the previous note wrongly listed YugabyteDB as unlocked. cmd/atlas/schema_apply.go emits the stderr note. Reproduced: `pc schema apply --url sqlite://t1.db --to file://b.sql --auto-approve --lock-timeout 10s` -> `note: schema apply locking is not supported for dialect \"sqlite\"; --lock-timeout is ignored and the apply proceeds without a database lock` then a successful apply (exit 0). CE registers --lock-timeout on schema apply per cli-surface.md:43. Updated 2026-08-03 (stokaro/ptah#951): --lock-name and --skip-lock added. Measured on the pinned community binary v1.3.0 by RUNNING each spelling: `atlas schema apply --lock-name x` and `--skip-lock` both answer `unknown flag`, with `--dry-run` answering present and `--frobnicate-nonsense` answering unknown on the same run, so CE registers neither. Atlas's published CLI reference (atlasgo.io/cli-reference, retrieved 2026-08-03) registers both on `atlas schema apply`, verbatim: `--lock-name string   set the name of the advisory lock to use. If not set, the default is used (atlas_migrate_execute)` and `--skip-lock   skip acquiring a database advisory lock`; controls on the same fetch: `atlas migrate apply` present 10 times, `frobnicate` 0 times, `--lock-name` exactly 2 occurrences across the whole page (migrate apply and schema apply). Ptah's default lock name stays ptah_schema_apply so an in-flight fleet does not de-serialize mid-upgrade; `--lock-name atlas_migrate_execute` is the explicit spelling for coordinating with Atlas. --skip-lock acquires nothing at all (nil lock, no wait, no timeout) and is refused together with --lock-name."
   },
   {
     "area": "Declarative / direct schema workflow",
@@ -739,12 +739,12 @@
   },
   {
     "area": "Versioned migrations \u2014 runtime policy",
-    "feature": "Migration lock and lock timeout",
+    "feature": "Migration lock, lock timeout, `--lock-name`, `--skip-lock`",
     "ptah": "yes",
-    "atlas_oss": "yes",
+    "atlas_oss": "partial",
     "atlas_pro": "yes",
-    "note": "Compat `--lock-timeout` bounds directory and dev-db locks; native splits per-migration `--lock-timeout` from `--migration-lock-timeout`.",
-    "evidence": "/tmp/ptah migrations up --help (--lock-timeout per-migration, --migration-lock-timeout advisory); docs/site/src/content/docs/atlas/migrate-commands.md line 356; conformance cli-surface.md `atlas migrate apply --lock-timeout`"
+    "note": "Compat `--lock-timeout` bounds directory and dev-db locks. `--lock-name` and `--skip-lock` on `migrate apply` are Pro surface adopted openly; CE registers only `--lock-timeout`.",
+    "evidence": "/tmp/ptah migrations up --help (--lock-timeout per-migration, --migration-lock-timeout advisory); docs/site/src/content/docs/atlas/migrate-commands.md; conformance cli-surface.md `atlas migrate apply --lock-timeout`. Updated 2026-08-03 (stokaro/ptah#951): --lock-name and --skip-lock added to `migrate apply`. Measured on the pinned community binary v1.3.0 by RUNNING each spelling: `atlas migrate apply --lock-name x` and `--skip-lock` both answer `unknown flag`, with `--dry-run` present and `--frobnicate-nonsense` unknown on the same run. Atlas's published CLI reference (atlasgo.io/cli-reference, retrieved 2026-08-03) registers both on `atlas migrate apply` verbatim: `--lock-name string   set the name of the advisory lock to use. If not set, the default is used (atlas_migrate_execute)` and `--skip-lock   skip acquiring a database advisory lock`. The same reference registers NEITHER on `migrate diff`, `migrate down` or `migrate checkpoint` — those three carry only `--lock-timeout duration` — so compat leaves `--lock-name` unregistered there; measured on the pinned binary, `migrate down` and `migrate checkpoint` are community-gated and register none of their own flags at all (only inherited --config/--env/--var reach the abort), so the binary is no oracle for them either. Ptah's default lock name stays ptah_migrate; `--lock-name atlas_migrate_execute` is the explicit spelling for coordinating with Atlas. --skip-lock requests no lock at all: migration/migrator.WithoutMigrationLock, proved by the absence of the ptah.lock.acquire observation span."
   },
   {
     "area": "Test frameworks",
