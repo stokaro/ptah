@@ -156,7 +156,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format table creation remains #950; Ptah-format is covered. |
-| Atlas SQL template migrations (`--atlas-env`) | ✅ | ❔ | ❔ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. Flag on 10 migrations verbs. |
+| Atlas SQL template migrations (`--atlas-env`) | ✅ | ❔ | ❌ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. Flag on 10 migrations verbs. |
 | Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❔ | ✅ | `-- atlas:txtar` executes migration.sql/down.sql and enforces checks.sql plus ordered checks/*.sql, including atlas:assert oneof; unrelated files are ignored. |
 | Atlas-format checkpoint output | ✅ | ❌ | ✅ | `migrate checkpoint --dir-format atlas` writes the single `-- atlas:checkpoint` file plus atlas.sum, and is compat's default; `--dir-format ptah` writes the reversible pair. Up-only, as Atlas is. |
 | Baseline an existing database | ✅ | ✅ | ✅ | Ptah adds a standalone baseline verb with `--shadow-db` verification and `--dry-run`; CE exposes baselining as migrate apply `--baseline`. |
