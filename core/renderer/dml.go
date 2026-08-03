@@ -254,6 +254,15 @@ func (r *selectRenderer) renderDelete(stmt *ast.DeleteStatement) error {
 // INSERT and DELETE, not UPDATE — so, to keep one rule across all three write
 // statements, both MySQL and MariaDB are treated as unsupported and a non-empty
 // RETURNING is rejected there rather than emitted as SQL the engine cannot run.
+//
+// "The PostgreSQL family" includes Cloud Spanner's PostgreSQL interface, which
+// is what Ptah targets when the dialect is spanner: RETURNING is emitted there
+// exactly as it is for PostgreSQL, rather than singled out for a refusal that
+// would make this the one place in the repository where Spanner is not
+// PostgreSQL. Spanner has no live coverage in this repository (stokaro/ptah#942)
+// and the databases support matrix already asks callers to review generated
+// Spanner SQL before relying on it; that caveat covers the whole statement, not
+// this clause in particular.
 func (r *selectRenderer) renderReturning(cols []ast.ColumnRef) error {
 	if len(cols) == 0 {
 		return nil
@@ -279,11 +288,10 @@ func (r *selectRenderer) renderReturning(cols []ast.ColumnRef) error {
 
 // supportsReturning reports whether the renderer's dialect can execute a
 // RETURNING clause. See renderReturning for the per-dialect rationale.
+//
+// Family membership is asked of platform.IsPostgresFamily rather than spelled
+// out, for the same reason as in selectPlaceholderStyle: a list of names here is
+// a list that drifts, and it had already drifted — it omitted Spanner.
 func (r *selectRenderer) supportsReturning() bool {
-	switch r.dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite:
-		return true
-	default:
-		return false
-	}
+	return platform.IsPostgresFamily(r.dialect) || r.dialect == platform.SQLite
 }
