@@ -3,7 +3,6 @@ package migratehash_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -92,7 +91,7 @@ func TestHash_OCIRefusalLeavesLocalDirectoriesAlone(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", stdout))
 			c.Assert(stdout, qt.Contains, "1 migration file(s) hashed")
-			c.Assert(strings.Contains(stdout, "immutable"), qt.IsFalse)
+			c.Assert(stdout, qt.Not(qt.Contains), "immutable")
 			result, err := migratesum.VerifyDir(dir)
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.OK(), qt.IsTrue)
