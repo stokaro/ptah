@@ -73,11 +73,16 @@ jobs:
           node-version: '24'
 
       # check-style.mjs has no npm dependencies, so this needs no install step.
+      # check-limitations.mjs has none either, and it governs a page under
+      # docs/site, so it runs here rather than in the site build: the fast job
+      # is the one that sees every documentation change.
       - name: Check documentation style
         run: |
           set -euo pipefail
           node docs/site/scripts/check-style.mjs --selftest
           node docs/site/scripts/check-style.mjs
+          node docs/site/scripts/check-limitations.mjs --selftest
+          node docs/site/scripts/check-limitations.mjs
           node docs/site/scripts/build-feature-matrix.mjs --check
 
   build:
@@ -122,8 +127,6 @@ jobs:
           npm run check:exit-codes
           npm run check:style:selftest
           npm run check:style
-          npm run check:limitations:selftest
-          npm run check:limitations
           npx playwright install --with-deps chromium
           npm run check:responsive:selftest
           npm run build
@@ -157,10 +160,6 @@ jobs:
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:style:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:style
-            if [ -f scripts/check-limitations.mjs ]; then
-              DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:limitations:selftest
-              DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:limitations
-            fi
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
           )
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
