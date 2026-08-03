@@ -81,9 +81,9 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 				RootDir:    root,
 				OutputPath: output,
 				Cleanup:    true,
-			}, func() {
+			}, exportHooks{afterOutputStage: func() {
 				test.mutate(c, root, source, original)
-			})
+			}})
 
 			c.Assert(err, qt.ErrorIs, goannotationsource.ErrChanged)
 			c.Assert(result, qt.DeepEquals, Result{})
@@ -129,9 +129,9 @@ func TestExport_FailurePath_PreservesConcurrentOutputChangeAfterStaging(t *testi
 				RootDir:    root,
 				OutputPath: output,
 				Cleanup:    true,
-			}, func() {
+			}, exportHooks{afterOutputStage: func() {
 				c.Assert(os.WriteFile(output, concurrentOutput, 0o600), qt.IsNil)
-			})
+			}})
 
 			c.Assert(err, qt.ErrorIs, ErrOutputChanged)
 			c.Assert(result, qt.DeepEquals, Result{})
@@ -163,13 +163,13 @@ func TestExport_FailurePath_RejectsReplacedStagedOutput(t *testing.T) {
 		RootDir:    root,
 		OutputPath: output,
 		Cleanup:    true,
-	}, func() {
+	}, exportHooks{afterOutputStage: func() {
 		staged, err := filepath.Glob(filepath.Join(root, ".schema.hcl.tmp-*"))
 		c.Assert(err, qt.IsNil)
 		c.Assert(staged, qt.HasLen, 1)
 		c.Assert(os.Remove(staged[0]), qt.IsNil)
 		c.Assert(os.WriteFile(staged[0], []byte("attacker-controlled\n"), 0o600), qt.IsNil)
-	})
+	}})
 
 	c.Assert(err, qt.ErrorIs, fsdurable.ErrStagedFileChanged)
 	c.Assert(result, qt.DeepEquals, Result{})
@@ -181,6 +181,110 @@ func TestExport_FailurePath_RejectsReplacedStagedOutput(t *testing.T) {
 		"model.go",
 		"schema.hcl",
 	})
+}
+
+// TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow measures
+// the gap between the last destination barrier and the rename. Before the
+// commit became conditional, every commit-window row returned a nil error and
+// left the staged HCL at the destination, so the CLI reported a successful
+// export while the other writer's file was gone. Each row therefore asserts the
+// rival's bytes, not merely a nonzero exit.
+//
+// The control rows run the identical mutation one step earlier, where
+// validateDestination already caught it. Same mutation, opposite side of the
+// last barrier: that is what makes this fixture measure the window rather than
+// "any concurrent write".
+func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testing.T) {
+	c := qt.New(t)
+	previousOutput := []byte("previous schema\n")
+	rival := []byte("concurrent writer bytes\n")
+	writePrevious := func(c *qt.C, output string) {
+		c.Assert(os.WriteFile(output, previousOutput, 0o600), qt.IsNil)
+	}
+	leaveAbsent := func(*qt.C, string) {}
+	editInPlace := func(c *qt.C, output string) {
+		c.Assert(os.WriteFile(output, rival, 0o600), qt.IsNil)
+	}
+	replaceByRename := func(c *qt.C, output string) {
+		replacement := output + ".rival"
+		c.Assert(os.WriteFile(replacement, rival, 0o600), qt.IsNil)
+		c.Assert(os.Rename(replacement, output), qt.IsNil)
+	}
+	commitWindow := func(inject func()) exportHooks {
+		return exportHooks{beforeCommit: inject}
+	}
+	stagingWindow := func(inject func()) exportHooks {
+		return exportHooks{afterOutputStage: inject}
+	}
+	tests := []struct {
+		name    string
+		prepare func(c *qt.C, output string)
+		inject  func(c *qt.C, output string)
+		hooks   func(inject func()) exportHooks
+	}{
+		{
+			name:    "existing destination edited in place inside the commit window",
+			prepare: writePrevious,
+			inject:  editInPlace,
+			hooks:   commitWindow,
+		},
+		{
+			name:    "existing destination replaced by rename inside the commit window",
+			prepare: writePrevious,
+			inject:  replaceByRename,
+			hooks:   commitWindow,
+		},
+		{
+			name:    "absent destination created inside the commit window",
+			prepare: leaveAbsent,
+			inject:  editInPlace,
+			hooks:   commitWindow,
+		},
+		{
+			name:    "control: existing destination edited before the last barrier",
+			prepare: writePrevious,
+			inject:  editInPlace,
+			hooks:   stagingWindow,
+		},
+		{
+			name:    "control: absent destination created before the last barrier",
+			prepare: leaveAbsent,
+			inject:  editInPlace,
+			hooks:   stagingWindow,
+		},
+	}
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			root := c.TempDir()
+			source := filepath.Join(root, "model.go")
+			output := filepath.Join(root, "schema.hcl")
+			sourceData := []byte(
+				"package models\n\n//ptah:schema:table name=\"users\"\ntype User struct{}\n",
+			)
+			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+			test.prepare(c, output)
+
+			result, err := export(Options{
+				RootDir:    root,
+				OutputPath: output,
+				Cleanup:    true,
+			}, test.hooks(func() {
+				test.inject(c, output)
+			}))
+
+			c.Assert(err, qt.ErrorIs, ErrOutputChanged)
+			c.Assert(err, qt.Not(qt.ErrorIs), fsdurable.ErrReplacementCommitted)
+			c.Assert(result, qt.DeepEquals, Result{})
+			assertExportInternalFileBytes(c, output, rival)
+			assertExportInternalFileBytes(c, source, sourceData)
+			entries, err := os.ReadDir(root)
+			c.Assert(err, qt.IsNil)
+			c.Assert(exportInternalEntryNames(entries), qt.DeepEquals, []string{
+				"model.go",
+				"schema.hcl",
+			})
+		})
+	}
 }
 
 func assertExportInternalFileBytes(c *qt.C, path string, want []byte) {

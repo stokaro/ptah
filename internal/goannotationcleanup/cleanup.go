@@ -57,9 +57,33 @@ type filePlan struct {
 	removed []removedLine
 }
 
+// applyHooks injects deterministic waits into the apply sequence.
+// beforeCommit and beforeRestore land after the last validation barrier and
+// before the forward and rollback commits, which is the only place a concurrent
+// writer can reach a source file undetected.
 type applyHooks struct {
-	revalidate  func() error
-	afterCommit func()
+	revalidate    func() error
+	afterCommit   func()
+	beforeCommit  func()
+	beforeRestore func()
+}
+
+func (h applyHooks) runAfterCommit() {
+	if h.afterCommit != nil {
+		h.afterCommit()
+	}
+}
+
+func (h applyHooks) runBeforeCommit() {
+	if h.beforeCommit != nil {
+		h.beforeCommit()
+	}
+}
+
+func (h applyHooks) runBeforeRestore() {
+	if h.beforeRestore != nil {
+		h.beforeRestore()
+	}
 }
 
 type openedPlan struct {
@@ -142,10 +166,7 @@ func (p *Plan) Apply() error {
 	if err := p.snapshot.Revalidate(); err != nil {
 		return fmt.Errorf("revalidate Go annotation sources before cleanup: %w", err)
 	}
-	return applyPlans(p.changes, applyHooks{
-		revalidate:  p.snapshot.Revalidate,
-		afterCommit: func() {},
-	})
+	return applyPlans(p.changes, applyHooks{revalidate: p.snapshot.Revalidate})
 }
 
 func planFile(source goannotationsource.File) (filePlan, error) {
@@ -192,7 +213,7 @@ func applyPlans(plans []filePlan, hooks applyHooks) error {
 			fmt.Errorf("revalidate Go annotation sources before cleanup commit: %w", err),
 		)
 	}
-	if err := commitStagedPlans(staged, hooks.afterCommit); err != nil {
+	if err := commitStagedPlans(staged, hooks); err != nil {
 		return finishApply(opened, staged, err)
 	}
 	return finishApply(opened, staged, nil)
@@ -334,12 +355,22 @@ func validateOpenPlanEntry(
 	return nil
 }
 
-func validatePlanPath(opened *openedPlan) error {
+// validatePlanPath revalidates the source about to be replaced and returns the
+// identity the conditional commit must still find there.
+func validatePlanPath(opened *openedPlan) (fs.FileInfo, error) {
 	file, err := openValidatedPlan(opened.parent, opened.targetName, opened.plan)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return file.Close()
+	info, statErr := file.Stat()
+	if err := errors.Join(statErr, file.Close()); err != nil {
+		return nil, fmt.Errorf(
+			"stat validated Go source %s: %w",
+			opened.plan.result.Path,
+			err,
+		)
+	}
+	return info, nil
 }
 
 func validatePlanContent(file *os.File, expected []byte, displayPath string) error {
@@ -435,21 +466,27 @@ func stageFile(opened *openedPlan, kind string, data []byte) (stagedFile, error)
 	return staged, nil
 }
 
-func commitStagedPlans(staged []stagedPlan, afterCommit func()) error {
+func commitStagedPlans(staged []stagedPlan, hooks applyHooks) error {
 	for i := range staged {
 		if err := staged[i].opened.parent.Revalidate(); err != nil {
 			return errors.Join(
 				fmt.Errorf("revalidate Go source parent before cleanup %s: %w", staged[i].opened.plan.result.Path, err),
-				rollbackStagedPlans(staged[:i]),
+				rollbackStagedPlans(staged[:i], hooks),
 			)
 		}
-		if err := validatePlanPath(staged[i].opened); err != nil {
-			return errors.Join(err, rollbackStagedPlans(staged[:i]))
+		sourceInfo, err := validatePlanPath(staged[i].opened)
+		if err != nil {
+			return errors.Join(err, rollbackStagedPlans(staged[:i], hooks))
 		}
-		committed, err := commitStagedFile(&staged[i], &staged[i].cleaned)
+		committed, err := commitStagedFile(
+			&staged[i],
+			&staged[i].cleaned,
+			fsdurable.ExpectFile(sourceInfo),
+			hooks.runBeforeCommit,
+		)
 		staged[i].committed = committed
 		if committed {
-			afterCommit()
+			hooks.runAfterCommit()
 		}
 		if err != nil {
 			rollbackEnd := i
@@ -458,22 +495,34 @@ func commitStagedPlans(staged []stagedPlan, afterCommit func()) error {
 			}
 			return errors.Join(
 				fmt.Errorf("commit cleaned Go source %s: %w", staged[i].opened.plan.result.Path, err),
-				rollbackStagedPlans(staged[:rollbackEnd]),
+				rollbackStagedPlans(staged[:rollbackEnd], hooks),
 			)
 		}
 	}
 	return nil
 }
 
-func commitStagedFile(plan *stagedPlan, staged *stagedFile) (bool, error) {
+// commitStagedFile publishes staged over the plan's source path, conditional on
+// dest still describing that path. The forward commit expects the source
+// identity validated a moment earlier; a rollback expects the cleaned file this
+// run committed. Either way the rename refuses rather than overwrites when a
+// third party got there first.
+func commitStagedFile(
+	plan *stagedPlan,
+	staged *stagedFile,
+	dest fsdurable.Destination,
+	beforeCommit func(),
+) (bool, error) {
 	if err := plan.opened.parent.Revalidate(); err != nil {
 		return false, err
 	}
+	beforeCommit()
 	replaceErr := plan.opened.parent.PublishFile(
 		staged.name,
 		plan.opened.targetName,
 		staged.info,
 		plan.opened.plan.source.Mode(),
+		dest,
 	)
 	committed := replaceErr == nil || errors.Is(replaceErr, fsdurable.ErrReplacementCommitted)
 	if !committed {
@@ -491,7 +540,7 @@ func replacementCommittedError(err error) error {
 	return fmt.Errorf("%w: %w", fsdurable.ErrReplacementCommitted, err)
 }
 
-func rollbackStagedPlans(staged []stagedPlan) error {
+func rollbackStagedPlans(staged []stagedPlan, hooks applyHooks) error {
 	var rollbackErr error
 	for i := range slices.Backward(staged) {
 		if !staged[i].committed {
@@ -513,7 +562,12 @@ func rollbackStagedPlans(staged []stagedPlan) error {
 			)
 			continue
 		}
-		committed, err := commitStagedFile(&staged[i], &staged[i].backup)
+		committed, err := commitStagedFile(
+			&staged[i],
+			&staged[i].backup,
+			fsdurable.ExpectFile(staged[i].cleaned.info),
+			hooks.runBeforeRestore,
+		)
 		if committed {
 			staged[i].committed = false
 		}
@@ -522,6 +576,10 @@ func rollbackStagedPlans(staged []stagedPlan) error {
 		}
 		if !committed {
 			staged[i].preserveBackup = true
+		}
+		if !committed && errors.Is(err, fsdurable.ErrDestinationChanged) {
+			rollbackErr = errors.Join(rollbackErr, rollbackConflictError(&staged[i], err))
+			continue
 		}
 		rollbackErr = errors.Join(
 			rollbackErr,

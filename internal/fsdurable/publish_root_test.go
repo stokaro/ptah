@@ -22,6 +22,8 @@ func TestPublishFileAt_HappyPath_AppliesReadOnlyMode(t *testing.T) {
 	c.Assert(os.Chmod(publishedPath, 0o400), qt.IsNil)
 	stagedInfo, err := os.Stat(stagedPath)
 	c.Assert(err, qt.IsNil)
+	originalInfo, err := os.Stat(publishedPath)
+	c.Assert(err, qt.IsNil)
 	root, err := os.OpenRoot(dir)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
@@ -29,7 +31,14 @@ func TestPublishFileAt_HappyPath_AppliesReadOnlyMode(t *testing.T) {
 		c.Check(root.Close(), qt.IsNil)
 	})
 
-	err = fsdurable.PublishFileAt(root, "staged", "published", stagedInfo, 0o400)
+	err = fsdurable.PublishFileAt(
+		root,
+		"staged",
+		"published",
+		stagedInfo,
+		0o400,
+		fsdurable.ExpectFile(originalInfo),
+	)
 
 	c.Assert(err, qt.IsNil)
 	contents, err := os.ReadFile(publishedPath)
@@ -83,7 +92,14 @@ func TestPublishFileAt_HappyPath_CreatesMissingDestination(t *testing.T) {
 		c.Check(root.Close(), qt.IsNil)
 	})
 
-	err = fsdurable.PublishFileAt(root, "staged", "published", stagedInfo, 0o600)
+	err = fsdurable.PublishFileAt(
+		root,
+		"staged",
+		"published",
+		stagedInfo,
+		0o600,
+		fsdurable.ExpectAbsent(),
+	)
 
 	c.Assert(err, qt.IsNil)
 	contents, err := os.ReadFile(publishedPath)
@@ -104,13 +120,22 @@ func TestPublishFileAt_FailurePath_RejectsReplacedStagedEntry(t *testing.T) {
 	c.Assert(os.Remove(stagedPath), qt.IsNil)
 	c.Assert(os.WriteFile(stagedPath, []byte("replacement"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
+	originalInfo, err := os.Stat(publishedPath)
+	c.Assert(err, qt.IsNil)
 	root, err := os.OpenRoot(dir)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		c.Check(root.Close(), qt.IsNil)
 	})
 
-	err = fsdurable.PublishFileAt(root, "staged", "published", expectedInfo, 0o640)
+	err = fsdurable.PublishFileAt(
+		root,
+		"staged",
+		"published",
+		expectedInfo,
+		0o640,
+		fsdurable.ExpectFile(originalInfo),
+	)
 
 	c.Assert(err, qt.ErrorIs, fsdurable.ErrStagedFileChanged)
 	contents, err := os.ReadFile(stagedPath)
@@ -131,13 +156,22 @@ func TestPublishFileAt_FailurePath_RejectsModifiedStagedFile(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(stagedPath, []byte("modified staged contents"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
+	originalInfo, err := os.Stat(publishedPath)
+	c.Assert(err, qt.IsNil)
 	root, err := os.OpenRoot(dir)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		c.Check(root.Close(), qt.IsNil)
 	})
 
-	err = fsdurable.PublishFileAt(root, "staged", "published", expectedInfo, 0o640)
+	err = fsdurable.PublishFileAt(
+		root,
+		"staged",
+		"published",
+		expectedInfo,
+		0o640,
+		fsdurable.ExpectFile(originalInfo),
+	)
 
 	c.Assert(err, qt.ErrorIs, fsdurable.ErrStagedFileChanged)
 	contents, err := os.ReadFile(stagedPath)
@@ -157,13 +191,22 @@ func TestPublishFileAt_FailurePath_RejectsMissingStagedEntry(t *testing.T) {
 	expectedInfo, err := os.Stat(expectedPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
+	originalInfo, err := os.Stat(publishedPath)
+	c.Assert(err, qt.IsNil)
 	root, err := os.OpenRoot(dir)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		c.Check(root.Close(), qt.IsNil)
 	})
 
-	err = fsdurable.PublishFileAt(root, "missing", "published", expectedInfo, 0o600)
+	err = fsdurable.PublishFileAt(
+		root,
+		"missing",
+		"published",
+		expectedInfo,
+		0o600,
+		fsdurable.ExpectFile(originalInfo),
+	)
 
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	contents, err := os.ReadFile(publishedPath)
@@ -181,6 +224,8 @@ func TestPublishFileAt_FailurePath_RejectsChangedStagedMode(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Chmod(stagedPath, 0o400), qt.IsNil)
 	c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
+	originalInfo, err := os.Stat(publishedPath)
+	c.Assert(err, qt.IsNil)
 	root, err := os.OpenRoot(dir)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
@@ -188,7 +233,14 @@ func TestPublishFileAt_FailurePath_RejectsChangedStagedMode(t *testing.T) {
 		c.Check(root.Close(), qt.IsNil)
 	})
 
-	err = fsdurable.PublishFileAt(root, "staged", "published", expectedInfo, 0o600)
+	err = fsdurable.PublishFileAt(
+		root,
+		"staged",
+		"published",
+		expectedInfo,
+		0o600,
+		fsdurable.ExpectFile(originalInfo),
+	)
 
 	c.Assert(err, qt.ErrorIs, fsdurable.ErrStagedFileChanged)
 	contents, err := os.ReadFile(publishedPath)
@@ -207,13 +259,22 @@ func TestPublishFileAt_FailurePath_RejectsChangedStagedModTime(t *testing.T) {
 	changedTime := expectedInfo.ModTime().Add(time.Hour)
 	c.Assert(os.Chtimes(stagedPath, changedTime, changedTime), qt.IsNil)
 	c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
+	originalInfo, err := os.Stat(publishedPath)
+	c.Assert(err, qt.IsNil)
 	root, err := os.OpenRoot(dir)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		c.Check(root.Close(), qt.IsNil)
 	})
 
-	err = fsdurable.PublishFileAt(root, "staged", "published", expectedInfo, 0o600)
+	err = fsdurable.PublishFileAt(
+		root,
+		"staged",
+		"published",
+		expectedInfo,
+		0o600,
+		fsdurable.ExpectFile(originalInfo),
+	)
 
 	c.Assert(err, qt.ErrorIs, fsdurable.ErrStagedFileChanged)
 	contents, err := os.ReadFile(publishedPath)
@@ -253,6 +314,7 @@ func TestPublishFileAt_FailurePath_RejectsPathComponents(t *testing.T) {
 				test.targetName,
 				expectedInfo,
 				0o600,
+				fsdurable.ExpectAbsent(),
 			)
 			c.Assert(err, qt.ErrorIs, fs.ErrInvalid)
 		})

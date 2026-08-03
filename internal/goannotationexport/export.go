@@ -102,10 +102,31 @@ type stagedOutput struct {
 // Export renders Go annotations to HCL and optionally applies one validated
 // cleanup plan after the output has been committed.
 func Export(opts Options) (Result, error) {
-	return export(opts, func() {})
+	return export(opts, exportHooks{})
 }
 
-func export(opts Options, afterOutputStage func()) (Result, error) {
+// exportHooks injects deterministic mutations into the publication sequence.
+// afterOutputStage lands before the destination barriers; beforeCommit lands
+// after the last barrier and before the commit, which is the only place a
+// concurrent writer can reach the destination undetected.
+type exportHooks struct {
+	afterOutputStage func()
+	beforeCommit     func()
+}
+
+func (h exportHooks) runAfterOutputStage() {
+	if h.afterOutputStage != nil {
+		h.afterOutputStage()
+	}
+}
+
+func (h exportHooks) runBeforeCommit() {
+	if h.beforeCommit != nil {
+		h.beforeCommit()
+	}
+}
+
+func export(opts Options, hooks exportHooks) (Result, error) {
 	plan, err := prepareExport(opts)
 	if err != nil {
 		return Result{}, err
@@ -118,14 +139,14 @@ func export(opts Options, afterOutputStage func()) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	afterOutputStage()
+	hooks.runAfterOutputStage()
 	if err := plan.validatePublication(rendered.database.ManagedData); err != nil {
 		return Result{}, errors.Join(err, staged.cleanup())
 	}
 	if err := staged.validateDestination(); err != nil {
 		return Result{}, errors.Join(err, staged.cleanup())
 	}
-	if err := staged.commit(); err != nil {
+	if err := staged.commit(hooks); err != nil {
 		return Result{}, errors.Join(err, staged.cleanup())
 	}
 	if err := staged.close(); err != nil {
@@ -637,7 +658,18 @@ func (s *stagedOutput) validateDestination() error {
 	return nil
 }
 
-func (s *stagedOutput) commit() error {
+// expectedDestination states what the commit is allowed to replace. The
+// pre-commit validateDestination call stays as the cheap early reject that also
+// compares bytes; this is the guarantee, because it is enforced by the rename
+// itself rather than by an earlier syscall.
+func (s *stagedOutput) expectedDestination() fsdurable.Destination {
+	if s.original.exists {
+		return fsdurable.ExpectFile(s.original.info)
+	}
+	return fsdurable.ExpectAbsent()
+}
+
+func (s *stagedOutput) commit(hooks exportHooks) error {
 	if err := s.validateDestination(); err != nil {
 		return err
 	}
@@ -648,9 +680,19 @@ func (s *stagedOutput) commit() error {
 			err,
 		)
 	}
-	replaceErr := s.parent.PublishFile(s.tempName, s.targetName, s.tempInfo, s.mode)
+	hooks.runBeforeCommit()
+	replaceErr := s.parent.PublishFile(
+		s.tempName,
+		s.targetName,
+		s.tempInfo,
+		s.mode,
+		s.expectedDestination(),
+	)
 	committed := replaceErr == nil || errors.Is(replaceErr, fsdurable.ErrReplacementCommitted)
 	if !committed {
+		if errors.Is(replaceErr, fsdurable.ErrDestinationChanged) {
+			return fmt.Errorf("%w: %s: %w", ErrOutputChanged, s.outputPath, replaceErr)
+		}
 		return fmt.Errorf("commit HCL output: %w", replaceErr)
 	}
 	s.tempName = ""
