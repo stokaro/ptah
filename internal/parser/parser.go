@@ -121,6 +121,8 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		return p.parseCommentStatement()
 	case "DROP":
 		return p.parseDropStatement()
+	case "GRANT":
+		return p.parseGrantStatement()
 	case "DO":
 		return p.parseDoStatement()
 	case "GO":
@@ -176,7 +178,8 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, PROCEDURE, PROC, TRIGGER, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION), got %s at position %d", p.current.Type, p.current.Start)
+		return nil, fmt.Errorf("expected CREATE target (%s), got %s at position %d",
+			createTargetList, p.current.Type, p.current.Start)
 	}
 
 	target := strings.ToUpper(p.current.Value)
@@ -222,6 +225,27 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateType()
 	case "DOMAIN":
 		return p.parseCreateDomain()
+	default:
+		return p.parseCreateSchemaObject(target)
+	}
+}
+
+// createTargetList names the CREATE targets the grammar recognizes.
+const createTargetList = "TABLE, VIEW, MATERIALIZED VIEW, FUNCTION, PROCEDURE, PROC, TRIGGER, " +
+	"INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION, SEQUENCE, ROLE, POLICY"
+
+// parseCreateSchemaObject parses the CREATE targets for standalone PostgreSQL
+// schema objects, which Ptah renders and, since issue #932, reads back.
+func (p *Parser) parseCreateSchemaObject(target string) (ast.Node, error) {
+	switch target {
+	case "SEQUENCE":
+		return p.parseCreateSequence()
+	case "ROLE":
+		return p.parseCreateRole()
+	case "POLICY":
+		return p.parseCreatePolicy()
+	case "MATERIALIZED":
+		return p.parseCreateMaterializedView()
 	default:
 		return nil, fmt.Errorf("unsupported CREATE target: %s at position %d", target, p.current.Start)
 	}
@@ -1145,24 +1169,59 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 	}
 	p.skipWhitespace()
 
+	trigger := ast.NewCreateTrigger(triggerName, tableName).
+		SetTiming(timing).
+		SetEvent(event).
+		SetForEach(forEach)
+
 	if p.current.MatchIdentifierValue("EXECUTE") {
-		sql, err := p.collectRawStatement(statementStart, "CREATE TRIGGER statement")
-		if err != nil {
-			return nil, err
-		}
-		return ast.NewRawSQL(sql), nil
+		return p.parseTriggerExecuteClause(trigger, statementStart)
 	}
 
 	body, err := p.collectTriggerBody()
 	if err != nil {
 		return nil, err
 	}
+	return trigger.SetBody(body), nil
+}
 
-	return ast.NewCreateTrigger(triggerName, tableName).
-		SetTiming(timing).
-		SetEvent(event).
-		SetForEach(forEach).
-		SetBody(body), nil
+// parseTriggerExecuteClause reads the PostgreSQL
+// EXECUTE FUNCTION|PROCEDURE name() tail of a CREATE TRIGGER.
+//
+// A call with no arguments becomes a CreateTriggerNode that references the
+// named function, which is what lets Ptah read back the trigger it renders
+// (issue #932). A call that passes arguments stays raw SQL: CreateTriggerNode
+// has nowhere to keep them, and dropping them would change what the trigger
+// does.
+func (p *Parser) parseTriggerExecuteClause(trigger *ast.CreateTriggerNode, statementStart int) (ast.Node, error) {
+	p.advance()
+	p.skipWhitespace()
+	if !p.current.MatchIdentifierValue("FUNCTION") && !p.current.MatchIdentifierValue("PROCEDURE") {
+		return nil, fmt.Errorf("expected FUNCTION or PROCEDURE after EXECUTE at position %d", p.current.Start)
+	}
+	p.advance()
+	p.skipWhitespace()
+
+	functionName, err := p.parseQualifiedIdentifier("trigger function name")
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	if !p.current.MatchOperatorValue("(") {
+		return nil, fmt.Errorf("expected '(' after trigger function name at position %d", p.current.Start)
+	}
+	p.advance()
+	p.skipWhitespace()
+	if !p.current.MatchOperatorValue(")") {
+		sql, err := p.collectRawStatement(statementStart, "CREATE TRIGGER statement")
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewRawSQL(sql), nil
+	}
+	p.advance()
+
+	return trigger.SetFunctionName(functionName).SetExternalFunction(), nil
 }
 
 func (p *Parser) parseTriggerIfNotExists() error {
@@ -3479,8 +3538,10 @@ func (p *Parser) parsePostgreSQLWithClause(table *ast.CreateTableNode) error {
 	return nil
 }
 
-// parseAlterStatement parses ALTER TABLE statements.
-func (p *Parser) parseAlterStatement() (*ast.AlterTableNode, error) {
+// parseAlterStatement parses ALTER TABLE statements. Most tails become an
+// AlterTableNode carrying operations; ENABLE ROW LEVEL SECURITY is its own
+// node kind, so the return type is the Node interface.
+func (p *Parser) parseAlterStatement() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "ALTER"); err != nil {
 		return nil, err
 	}
@@ -3502,6 +3563,10 @@ func (p *Parser) parseAlterStatement() (*ast.AlterTableNode, error) {
 	tableName, err := p.parseQualifiedIdentifier("table name")
 	if err != nil {
 		return nil, err
+	}
+
+	if rlsNode, handled, err := p.parseAlterTableRowSecurity(tableName); handled {
+		return rlsNode, err
 	}
 
 	alterNode := &ast.AlterTableNode{
@@ -4098,10 +4163,12 @@ func (p *Parser) parseCreateType() (ast.Node, error) {
 
 	p.skipWhitespace()
 
-	// Get type name
-	typeName, err := p.expectIdentifier()
+	// Get type name. A schema-qualified spelling is what Ptah's own renderer
+	// emits whenever a schema is declared, so it has to parse here exactly as
+	// it already does for CREATE DOMAIN and CREATE TABLE (issue #932).
+	typeName, err := p.parseQualifiedIdentifier("type name")
 	if err != nil {
-		return nil, fmt.Errorf("expected type name: %w", err)
+		return nil, err
 	}
 
 	p.skipWhitespace()
@@ -4409,11 +4476,12 @@ func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
 
 	p.skipWhitespace()
 
-	// Parse the object name (could be table.column for columns)
-	var objectName strings.Builder
-	for p.current.Type == lexer.TokenIdentifier || p.current.MatchOperatorValue(".") {
-		objectName.WriteString(p.current.Value)
-		p.advance()
+	// Parse the object name (could be table.column for columns). Quoted
+	// identifiers have to be accepted here because that is how Ptah's own
+	// renderer spells the role in COMMENT ON ROLE.
+	objectName, err := p.parseQualifiedIdentifier("comment object name")
+	if err != nil {
+		return nil, err
 	}
 
 	p.skipWhitespace()
@@ -4430,7 +4498,7 @@ func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
 	}
 
 	commentText := fmt.Sprintf("COMMENT ON %s %s IS %s",
-		strings.ToUpper(objectType), objectName.String(), p.current.Value)
+		strings.ToUpper(objectType), objectName, p.current.Value)
 	p.advance()
 
 	return ast.NewComment(commentText), nil

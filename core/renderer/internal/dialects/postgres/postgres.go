@@ -1585,10 +1585,14 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 		functionName = postgresTriggerFunctionName(node.Table, node.Name)
 	}
 
-	r.w.WriteLinef("CREATE OR REPLACE FUNCTION %s()", r.escapeQualifiedIdentifier(functionName))
-	r.w.WriteLine("RETURNS trigger AS $$")
-	r.w.WriteLine(renderPostgreSQLTriggerFunctionBody(node.Body))
-	r.w.WriteLine("$$ LANGUAGE plpgsql;")
+	// An external function is referenced, never defined: emitting a body for it
+	// would overwrite whatever it already contains.
+	if !node.ExternalFunction {
+		r.w.WriteLinef("CREATE OR REPLACE FUNCTION %s()", r.escapeQualifiedIdentifier(functionName))
+		r.w.WriteLine("RETURNS trigger AS $$")
+		r.w.WriteLine(renderPostgreSQLTriggerFunctionBody(node.Body))
+		r.w.WriteLine("$$ LANGUAGE plpgsql;")
+	}
 
 	if node.Replace && !r.capabilities().Has(capability.CreateOrReplaceTrigger) {
 		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s ON %s;", r.escapeIdentifier(node.Name), r.escapeQualifiedIdentifier(node.Table))

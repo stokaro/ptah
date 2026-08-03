@@ -122,7 +122,7 @@ seven of them as open capabilities regardless.
 | Live database to Go annotation source | ✅ | ❌ | ❌ | `ptah introspect` writes annotated Go models from a live DB; repo docs record Go annotations as a first-party Ptah workflow. |
 | Migration directory as a source | ✅ | ✅ | ✅ | Atlas-format directory with `atlas.sum`, replayed on a required `--dev-url`. Works on `ptah schema inspect` and compat apply/diff/migrate diff. |
 | Ptah-only HCL schema extensions | ✅ | ➖ | ➖ | platform/override per dialect, EXCLUDE constraint block, column enum, table checks/custom, index ops, ClickHouse granularity, seed data block. |
-| SQL DDL schema files | ✅ | ✅ | ✅ | Accepted by native `--schema-file` and by `ptah-compat schema apply`/diff `--to`/`--from`; unsupported DDL fails instead of being skipped. |
+| SQL DDL schema files | ✅ | ✅ | ✅ | Accepted by native `--schema-file` and compat `--to`/`--from`. Reads back every object kind Ptah renders; DO blocks, COMMENT ON and raw routine bodies still parse and are dropped. |
 | YAML schema files | ✅ | ❌ | ❌ | Strict parser; unknown keys fail. Repo docs list Atlas OSS data sources as SQL, HCL, external schema, and remote/template dirs. |
 
 ## Declarative and direct schema changes
@@ -253,14 +253,14 @@ seven of them as open capabilities regardless.
 | MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error; extensions, functions, domains, roles/grants, RLS and MariaDB SEQUENCE objects are dropped silently. DDL auto-commit blocks rollback. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Only engine where views, functions, sequences, roles, RLS and domains are emitted; presets 12-13, 14-16, 17+ from the server banner. |
-| Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files reject ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops a `role` block silently. |
+| Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files read ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops a `role` block silently. |
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums and FKs render as skip comments, SERIAL hard-errors, no dedicated driver (uses the PostgreSQL pgx path), and no live container or live test exists. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | The mssql and tsql aliases silently drop views and triggers that sqlserver emits; render's default dialect list and `--dialect` help omit SQL Server; no sequences, RLS, roles/grants or matviews. |
 | SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops do emit a full rebuild; type, nullability, default and uniqueness changes fail with "modifying columns ... requires a table rebuild plan". PG-only objects error one at a time. |
-| Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits it on YugabyteDB too. SQL schema files reject CREATE SEQUENCE as unsupported. |
+| Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits it on YugabyteDB too. SQL schema files read CREATE SEQUENCE. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. |
 | Triggers | 🟡 | ❌ | ✅ | `--dialect mssql`/`tsql` drop them while `sqlserver` renders them; MySQL forces FOR EACH ROW; SQL Server rewrites BEFORE to AFTER silently. |
-| Views and materialized views | 🟡 | ❌ | ✅ | Matviews render on PostgreSQL only. Elsewhere behavior differs by engine: MySQL/MariaDB apply errors, YugabyteDB live apply plans them, ClickHouse drops them silently. |
+| Views and materialized views | 🟡 | ❌ | ✅ | Matviews render on PostgreSQL only; SQL schema files read both. Elsewhere behavior differs by engine: MySQL/MariaDB apply errors, YugabyteDB live apply plans them, ClickHouse drops them silently. |
 | YugabyteDB (yugabytedb, ysql) | 🟡 | ❌ | ✅ | Live apply does plan roles, grants, sequences, domains, views, matviews, functions and triggers; only RLS and concurrent indexes are gated off. Offline render omits all of them. |
 
 ## Go embedding and developer tooling

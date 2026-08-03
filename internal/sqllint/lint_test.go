@@ -84,9 +84,12 @@ func TestLintSource_UnsupportedStatementLocationSkipsLeadingComments(t *testing.
 func TestLintSource_UnsupportedParserErrorIsExplicit(t *testing.T) {
 	c := qt.New(t)
 
+	// CREATE POLICY stood here while the parser refused it; it parses now
+	// (issue #932), so the unsupported-statement path needs a statement the
+	// grammar still has no rule for.
 	findings, err := LintSource(Source{
-		Name: "policy.sql",
-		SQL:  "CREATE POLICY p ON users USING (true);",
+		Name: "publication.sql",
+		SQL:  "CREATE PUBLICATION p FOR ALL TABLES;",
 	}, Options{Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
@@ -94,6 +97,18 @@ func TestLintSource_UnsupportedParserErrorIsExplicit(t *testing.T) {
 	c.Assert(findings[0].Rule, qt.Equals, RuleUnsupportedStatement)
 	c.Assert(findings[0].Severity, qt.Equals, SeverityError)
 	c.Assert(findings[0].Title, qt.Equals, "Unsupported SQL statement")
+}
+
+func TestLintSource_CreatePolicyIsSupported(t *testing.T) {
+	c := qt.New(t)
+
+	findings, err := LintSource(Source{
+		Name: "policy.sql",
+		SQL:  "CREATE POLICY p ON users USING (true);",
+	}, Options{Dialect: platform.Postgres})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 0)
 }
 
 func TestLintSource_RawSQLNodesAreExplicitUnsupportedFindings(t *testing.T) {
@@ -183,7 +198,7 @@ func TestLintSource_UnsupportedStatementDoesNotMaskLaterDDL(t *testing.T) {
 
 	findings, err := LintSource(Source{
 		Name: "mixed.sql",
-		SQL: `CREATE POLICY p ON users USING (true);
+		SQL: `CREATE PUBLICATION p FOR ALL TABLES;
 CREATE TABLE audit_log (message TEXT NOT NULL);`,
 	}, Options{Dialect: platform.Postgres})
 

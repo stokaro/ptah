@@ -798,6 +798,15 @@ type Trigger struct {
 	ForEach    string // ROW or STATEMENT
 	Body       string // Trigger body
 	Comment    string // Optional comment for documentation
+
+	// ExecuteFunction names an already-existing function the trigger executes
+	// instead of a body Ptah owns. It is set when a SQL schema file spells
+	// EXECUTE FUNCTION with a name that is not this trigger's own
+	// FunctionName(), so reading such SQL back does not silently rebind the
+	// trigger to a Ptah-generated function. Body and ExecuteFunction are
+	// alternatives: when ExecuteFunction is set, Ptah does not render a
+	// function definition for the trigger.
+	ExecuteFunction string
 }
 
 // Canonicalize fills in trigger defaults and case-folds attributes reported in
@@ -806,6 +815,7 @@ func (t *Trigger) Canonicalize() {
 	t.Timing = strings.ToUpper(strings.TrimSpace(t.Timing))
 	t.Event = strings.ToUpper(strings.TrimSpace(t.Event))
 	t.ForEach = strings.ToUpper(strings.TrimSpace(t.ForEach))
+	t.ExecuteFunction = strings.TrimSpace(t.ExecuteFunction)
 	if t.ForEach == "" {
 		t.ForEach = "ROW"
 	}

@@ -608,77 +608,114 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 
 	// Process all statements and categorize them
 	for _, stmt := range statements.Statements {
-		switch node := stmt.(type) {
-		case *ast.CreateSchemaNode:
-			database.Schemas = append(database.Schemas, goschema.Schema{
-				Name:    normalizeSQLIdentifier(node.Name),
-				Comment: node.Comment,
-				Charset: node.Charset,
-				Collate: node.Collate,
-			})
-
-		case *ast.EnumNode:
-			// Convert enum definitions
-			enumSchema := ToEnum(node)
-			database.Enums = append(database.Enums, enumSchema)
-
-		case *ast.CreateTableNode:
-			// Convert table definition
-			tableSchema := ToTable(node, "")
-			database.Tables = append(database.Tables, tableSchema)
-
-			// Extract fields from table columns
-			fieldsStart := len(database.Fields)
-			for _, column := range node.Columns {
-				fieldSchema := ToField(column, tableSchema.StructName, "")
-				database.Fields = append(database.Fields, fieldSchema)
-			}
-			// A single-column table-level PRIMARY KEY (col) renders inline on the
-			// column, matching how it is expressed as an inline primary key and how
-			// the HCL loader treats it; a composite key stays on Table.PrimaryKey and
-			// renders as a table constraint.
-			markPrimaryFields(database.Fields[fieldsStart:], tableSchema.PrimaryKey)
-			for _, constraint := range node.Constraints {
-				constraintSchema, ok := ToConstraint(
-					constraint,
-					tableSchema.StructName,
-					tableSchema.QualifiedName(),
-				)
-				if ok {
-					database.Constraints = append(database.Constraints, constraintSchema)
-				}
-			}
-
-		case *ast.IndexNode:
-			// Convert index definitions
-			indexSchema := ToIndex(node)
-			database.Indexes = append(database.Indexes, indexSchema)
-
-		case *ast.AlterTableNode:
-			// Capture constraints added by ALTER TABLE ... ADD CONSTRAINT, such
-			// as the foreign keys ORM schema exporters emit as separate
-			// statements after the CREATE TABLEs.
-			tableSchemaName, tableName := normalizeSQLTableIdentifier(node.Name)
-			qualifiedTableName := goschema.QualifyTableName(tableSchemaName, tableName)
-			structName := tableStructName(node.Name)
-			for _, op := range node.Operations {
-				add, ok := op.(*ast.AddConstraintOperation)
-				if !ok || add.Constraint == nil {
-					continue
-				}
-				constraintSchema, ok := ToConstraint(
-					add.Constraint,
-					structName,
-					qualifiedTableName,
-				)
-				if ok {
-					database.Constraints = append(database.Constraints, constraintSchema)
-				}
-			}
-		}
+		appendStatement(&database, stmt)
 	}
 
+	// A PostgreSQL trigger renders as a function plus a trigger; recombine the
+	// pair so the function is not also carried as a standalone object.
+	adoptTriggerFunctions(&database)
+
 	return database
+}
+
+// appendStatement folds one parsed statement into the database being built.
+//
+// Every AST node kind the SQL frontend can produce for a schema object needs a
+// case here: a node with no case is accepted by the parser and then silently
+// dropped, which is what issue #932 reported for views, domains, composite and
+// range types, extensions, functions and triggers.
+func appendStatement(database *goschema.Database, stmt ast.Node) {
+	switch node := stmt.(type) {
+	case *ast.CreateSchemaNode:
+		database.Schemas = append(database.Schemas, goschema.Schema{
+			Name:    normalizeSQLIdentifier(node.Name),
+			Comment: node.Comment,
+			Charset: node.Charset,
+			Collate: node.Collate,
+		})
+	case *ast.EnumNode:
+		database.Enums = append(database.Enums, ToEnum(node))
+	case *ast.CreateTableNode:
+		appendCreateTable(database, node)
+	case *ast.IndexNode:
+		database.Indexes = append(database.Indexes, ToIndex(node))
+	case *ast.AlterTableNode:
+		appendAlterTableConstraints(database, node)
+	case *ast.CreateTypeNode:
+		appendCreateType(database, node)
+	case *ast.ExtensionNode:
+		database.Extensions = append(database.Extensions, ToExtension(node))
+	case *ast.CreateViewNode:
+		database.Views = append(database.Views, toView(node))
+	case *ast.CreateMaterializedViewNode:
+		database.MaterializedViews = append(database.MaterializedViews, toMaterializedView(node))
+	case *ast.CreateFunctionNode:
+		database.Functions = append(database.Functions, toFunction(node))
+	case *ast.CreateTriggerNode:
+		database.Triggers = append(database.Triggers, toTrigger(node))
+	case *ast.CreateSequenceNode:
+		database.Sequences = append(database.Sequences, toSequence(node))
+	case *ast.CreateRoleNode:
+		database.Roles = append(database.Roles, toRole(node))
+	case *ast.GrantPrivilegeNode:
+		database.Grants = append(database.Grants, toGrant(node))
+	case *ast.CreatePolicyNode:
+		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node))
+	case *ast.AlterTableEnableRLSNode:
+		database.RLSEnabledTables = append(database.RLSEnabledTables, toRLSEnabledTable(node))
+	case *ast.CommentNode:
+		applyRoleComment(database, node)
+	}
+}
+
+func appendCreateTable(database *goschema.Database, node *ast.CreateTableNode) {
+	tableSchema := ToTable(node, "")
+	database.Tables = append(database.Tables, tableSchema)
+
+	// Extract fields from table columns
+	fieldsStart := len(database.Fields)
+	for _, column := range node.Columns {
+		fieldSchema := ToField(column, tableSchema.StructName, "")
+		database.Fields = append(database.Fields, fieldSchema)
+	}
+	// A single-column table-level PRIMARY KEY (col) renders inline on the
+	// column, matching how it is expressed as an inline primary key and how
+	// the HCL loader treats it; a composite key stays on Table.PrimaryKey and
+	// renders as a table constraint.
+	markPrimaryFields(database.Fields[fieldsStart:], tableSchema.PrimaryKey)
+	for _, constraint := range node.Constraints {
+		constraintSchema, ok := ToConstraint(
+			constraint,
+			tableSchema.StructName,
+			tableSchema.QualifiedName(),
+		)
+		if ok {
+			database.Constraints = append(database.Constraints, constraintSchema)
+		}
+	}
+}
+
+// appendAlterTableConstraints captures constraints added by
+// ALTER TABLE ... ADD CONSTRAINT, such as the foreign keys ORM schema exporters
+// emit as separate statements after the CREATE TABLEs.
+func appendAlterTableConstraints(database *goschema.Database, node *ast.AlterTableNode) {
+	tableSchemaName, tableName := normalizeSQLTableIdentifier(node.Name)
+	qualifiedTableName := goschema.QualifyTableName(tableSchemaName, tableName)
+	structName := tableStructName(node.Name)
+	for _, op := range node.Operations {
+		add, ok := op.(*ast.AddConstraintOperation)
+		if !ok || add.Constraint == nil {
+			continue
+		}
+		constraintSchema, ok := ToConstraint(
+			add.Constraint,
+			structName,
+			qualifiedTableName,
+		)
+		if ok {
+			database.Constraints = append(database.Constraints, constraintSchema)
+		}
+	}
 }
 
 // markPrimaryFields marks the field backing a single-column table-level primary
