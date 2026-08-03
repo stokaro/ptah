@@ -92,25 +92,23 @@ func TestSchemaDiffIncludeUnionsRepeatedValues(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), "scope_archive")
 }
 
-func TestSchemaDiffIncludeEmptyMatchReportsSynced(t *testing.T) {
+// TestSchemaDiffIncludeEmptyMatchKeepsSyncedOnStdout pins that the empty
+// selection notice is written out of band. Standard output is what a CI check
+// compares, so it must keep the bytes it always had.
+func TestSchemaDiffIncludeEmptyMatchKeepsSyncedOnStdout(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeScopeSchemaFiles(t)
-	cmd := atlas.NewCompatCommand("atlas")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{
-		"schema", "diff",
-		"--from", "file://" + fromPath,
-		"--to", "file://" + toPath,
-		"--dev-url", "sqlite://" + devPath,
-		"--include", "no_such_table",
-	})
 
-	err := cmd.Execute()
+	stdout, stderr, err := runCompat("schema", "diff",
+		"--from", "file://"+fromPath,
+		"--to", "file://"+toPath,
+		"--dev-url", "sqlite://"+devPath,
+		"--include", "no_such_table",
+	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Schemas are synced, no changes to be made.")
+	c.Assert(stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
+	c.Assert(stderr, qt.Equals, `Warning: the --include selection matched no objects: "no_such_table".`+"\n")
 }
 
 func TestSchemaDiffIncludeCrossScopeDependencyFails(t *testing.T) {

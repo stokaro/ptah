@@ -3,6 +3,7 @@ package atlasschema
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"go.5x5.cz/ptah/core/goschema"
@@ -33,6 +34,10 @@ type DiffOptions struct {
 	// dev database) and reading their initial connection metadata. A zero
 	// value leaves the caller's context deadline unchanged.
 	ConnectTimeout time.Duration
+	// Diagnostics receives non-fatal notices, such as an --include selection
+	// that matched nothing on either side. It never receives plan output, so
+	// the bytes on standard output stay unchanged.
+	Diagnostics io.Writer
 }
 
 // Diff computes the Atlas schema diff between two desired-state sources.
@@ -90,16 +95,24 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		Exclude:       opts.Exclude,
 		DefaultSchema: diffDefaultSchema(dialect, fromState, toState),
 	}
-	from, err := scopeGeneratedSide(fromState.Schema, scope, "--from schema")
-	if err != nil {
-		return atlasreport.SchemaDiff{}, err
+	from, fromErr := scopeGeneratedSide(fromState.Schema, scope, "--from schema")
+	if fromErr != nil && !emptySelection(fromErr) {
+		return atlasreport.SchemaDiff{}, fromErr
 	}
-	to, err := scopeGeneratedSide(toState.Schema, scope, "--to schema")
-	if err != nil {
-		return atlasreport.SchemaDiff{}, err
+	to, toErr := scopeGeneratedSide(toState.Schema, scope, "--to schema")
+	if toErr != nil && !emptySelection(toErr) {
+		return atlasreport.SchemaDiff{}, toErr
+	}
+	// One empty side is how a create or a drop looks; only a selection that
+	// matched nothing anywhere is worth reporting. `schema diff` keeps exit 0
+	// and leaves stdout untouched so the CI idiom "does this selection
+	// differ?" still works, but it says on stderr that the question was asked
+	// about nothing.
+	if emptySelection(fromErr) && emptySelection(toErr) {
+		reportEmptySelection(opts.Diagnostics, fromErr)
 	}
 	fromDB, err := diffFromDBState(fromState, from, scope)
-	if err != nil {
+	if err != nil && !emptySelection(err) {
 		return atlasreport.SchemaDiff{}, err
 	}
 

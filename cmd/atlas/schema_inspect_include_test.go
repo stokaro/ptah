@@ -225,7 +225,12 @@ func TestSchemaInspectIncludeDegenerateValues(t *testing.T) {
 	}{
 		{
 			// A selection that matches nothing renders no objects rather than
-			// failing, mirroring the empty-selection behavior of apply and diff.
+			// failing: inspection is read-only, so an empty description of an
+			// empty selection is a legitimate answer. It is no longer silent
+			// about it — see
+			// TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr for the
+			// notice, which this row deliberately does not assert because it
+			// is about the rendered output.
 			name:       "matches nothing",
 			args:       []string{"--include", "no_such_table"},
 			wantAbsent: allTables,
@@ -281,7 +286,7 @@ func TestSchemaInspectIncludeCrossScopeDependencyFails(t *testing.T) {
 	c.Assert(stdout, qt.Equals, "")
 }
 
-func TestSchemaInspectIncludeRejectsChildSelectorsBeforeConnecting(t *testing.T) {
+func TestSchemaInspectIncludeValidatesSelectorsBeforeConnecting(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
@@ -295,9 +300,13 @@ func TestSchemaInspectIncludeRejectsChildSelectorsBeforeConnecting(t *testing.T)
 			wantErr: `unsupported Atlas include selector "\*\[type=column\]": column resources ride along with their parent and cannot be included on their own`,
 		},
 		{
-			name:    "positional spelling",
+			// The dotted spelling is not one of them. It is indistinguishable
+			// from a table literally named "inspect_users.email", so it is
+			// carried to the projection, which is the only place the answer
+			// exists; the closed port is what fails.
+			name:    "positional spelling reaches the connection",
 			pattern: "main.inspect_users.email",
-			wantErr: `unsupported Atlas include selector "main\.inspect_users\.email": selectors name top-level resources as "name" or "schema\.name", and a deeper pattern names a child resource that rides along with its parent`,
+			wantErr: `(?s)connect to --url: .*`,
 		},
 		{
 			name:    "unknown resource type",

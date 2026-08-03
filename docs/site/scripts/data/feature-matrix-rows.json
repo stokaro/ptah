@@ -383,7 +383,7 @@
     "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. Child-depth patterns fail closed instead of emitting partial objects.",
+    "note": "Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. A selection matching nothing renders nothing, exits 0, and says so on stderr.",
     "evidence": "conformance cli-surface.md line 47 lists Atlas CE `schema inspect` flags as --config --dev-url --env --exclude --format --schema --url --var, with no --include; pinned Atlas CE v1.2.0 `schema inspect -u sqlite://app.db --include users` exits 1 with \"Error: unknown flag: --include\". Built ptah-compat after this change: `schema inspect -u sqlite://app.db --include t1` renders t1 with its columns and drops t2; `--include main.t1.*` exits 1 before connecting; `--include t2` refuses the projection because t2's foreign key targets unselected t1. `--include t1` matches Ptah, `--include '*.t1'` is read at child depth and renders t1 without columns plus an empty t2 shell, `--include 'main.t1.*'` exits 1 with \"too many parts in pattern\" (measured; observation study, scenario, verbs-and-flags)"
   },
   {

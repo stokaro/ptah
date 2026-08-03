@@ -443,22 +443,25 @@ non-community template functions, so these exports are an open Ptah extension.
 - `--include` positively selects the top-level resources that survive, with
   Atlas-style globs and `[type=...]` selectors. Repeated and comma-separated
   values union. Composition order is `--schema`, then `--include`, then
-  `--exclude`. A selection that matches nothing renders no objects; an empty
-  value carries no selection and leaves inspection unfiltered.
+  `--exclude`. A selection that matches nothing renders no objects and keeps
+  exit status 0, and reports itself on standard error; an empty value carries
+  no selection and leaves inspection unfiltered.
 - The OSS `--exclude` flag filters inspected resources with Atlas-style globs
   and `[type=...]` selectors, including the Atlas-documented
   `*[type=extension].version` field selector with schema-qualified globs.
 - Child resources (columns, indexes, constraints, triggers, policies, grants)
-  cannot be included on their own, in either the `[type=column]` or the
-  literal-dot `table.column` spelling; both fail before any database is
-  contacted.
-- Depth counts separators outside quotes, so an identifier holding a dot is
-  selected as `main."my.table"` or `a\.b\.c`. The bare `a.b.c` spelling is
-  refused, because it cannot be told apart from `schema.table.column`.
-- Glob metacharacters — `*`, `?`, and character classes — match a dot, so
-  `table*column`, `table?column`, and `table[.]column` are not caught by the
-  depth check and select nothing
-  ([#979](https://github.com/stokaro/ptah/issues/979)).
+  cannot be included on their own with `[type=column]`, which fails before any
+  database is contacted.
+- A positional spelling such as `table.column` is not refused on its shape: it
+  is indistinguishable from a table literally named that. An identifier
+  holding a dot is therefore selectable as `main."my.table"`, `a\.b\.c`, or
+  bare `a.b.c`.
+- Whether a selector matched is decided by the projection, not by the selector
+  text: `path.Match` treats `.` as an ordinary character, so `table.column`,
+  `table*column`, `table?column`, and `table[.]column` all reach past a
+  top-level resource and select nothing. `schema apply` refuses an empty
+  `--include` selection; `schema diff` and `schema inspect` keep exit status 0
+  and report it on standard error.
 - A selection that drops a dependency of a selected object is refused rather
   than rendered.
 - Other field-level exclude selectors and type selectors on non-final pattern

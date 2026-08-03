@@ -338,14 +338,18 @@ func TestInspectSource_FailurePath(t *testing.T) {
 			`unsupported Atlas include selector "\*\[type=column\]": column resources ride along with their parent and cannot be included on their own`)
 	})
 
-	c.Run("child-depth include selector before any connection", func(c *qt.C) {
+	c.Run("dotted include selector reaches the connection", func(c *qt.C) {
+		// A dotted selector is no longer refused on its shape. Whether
+		// "public.users.email" names a child resource or a table literally
+		// called that is not decidable from the text, so it is carried to the
+		// projection like any other selector and the unreachable URL is what
+		// fails here.
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:     "postgres://127.0.0.1:1/unreachable",
 			Include: []string{"public.users.email"},
 		})
 
-		c.Assert(err, qt.ErrorMatches,
-			`unsupported Atlas include selector "public\.users\.email": selectors name top-level resources as "name" or "schema\.name".*`)
+		c.Assert(err, qt.ErrorMatches, `(?s)connect to --url: .*`)
 	})
 
 	c.Run("invalid format before source resolution", func(c *qt.C) {

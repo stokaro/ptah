@@ -76,6 +76,13 @@ func renderInspectSchema(
 		return "", err
 	}
 	schema, err = scopeInspectSchema(schema, info, opts)
+	// Inspection is read-only and its documented answer for an empty selection
+	// is an empty rendering, so it keeps exit 0 and reports the empty selection
+	// on the diagnostics stream instead of failing.
+	if emptySelection(err) {
+		reportEmptySelection(opts.Diagnostics, err)
+		err = nil
+	}
 	if err != nil {
 		return "", err
 	}

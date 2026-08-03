@@ -87,7 +87,9 @@ $EDITOR before confirmation, and the edited SQL is what gets applied. With
 --plan <path>, a pre-approved plan file saved by "ptah schema plan" is
 executed instead of re-planning, after verifying the database still matches
 the plan's source fingerprint. --schemas and --include positively select what
-both comparison sides see; --exclude subtracts from the result.`,
+both comparison sides see; --exclude subtracts from the result. An --include
+selection that matches neither the target nor the desired state refuses the
+apply rather than reporting a synced schema for work that did not happen.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaApply(cmd, opts)
