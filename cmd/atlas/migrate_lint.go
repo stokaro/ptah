@@ -116,9 +116,14 @@ func runAtlasMigrateLint(
 	if err := validateAtlasMigrateLintOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	dirFormat, err := atlasMigrateDirFormatValue(opts.dirFormat)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir-format: %w", err))
+	// The flag value is validated here, before --format and before --dir is
+	// parsed, because that is where it was validated when only the Atlas layout
+	// was accepted: moving the whole resolution below --dir would change which
+	// diagnostic an invocation carrying two bad values prints. The query
+	// spelling cannot be resolved yet -- it lives in --dir -- so this pass sees
+	// the configured value alone and the two are combined below.
+	if _, err := resolveAtlasVerbDirFormat("lint", opts.dirFormat, nil); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if formatOutput {
 		if err := validateAtlasMigrateLintFormat(opts.format); err != nil {
@@ -139,16 +144,24 @@ func runAtlasMigrateLint(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
-	if err := checkNativeAtlasDirQuery(localDir.Query); err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
+	format, err := resolveAtlasVerbDirFormat("lint", opts.dirFormat, localDir.Query)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	source, err := project.captureLocal(localDir)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
 	dir := source.Display
-	snapshot := source.FileSystem
-	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot)
+	captured, err := captureAtlasDirSource(source.FileSystem, format)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
+	}
+	covered, err := captured.coveredNames()
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
+	}
+	integrity, err := atlasreport.InspectMigrateLintIntegrity(captured.gateFS(), covered)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -173,10 +186,17 @@ func runAtlasMigrateLint(
 		return exitcode.New(1, errors.New(integrity.Error))
 	}
 
+	// A foreign layout is rebuilt here as up-only Atlas migrations, so what the
+	// analyzers replay is the Atlas layout on either branch and the native
+	// directory format below stays atlas for both.
+	snapshot, err := captured.migrationFS(dir)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
+	}
 	report, err := migrationlintreport.Build(cmd.Context(), migrationlintreport.Options{
 		Dir:           dir,
 		FS:            snapshot,
-		DirFormat:     dirFormat,
+		DirFormat:     atlasDirFormatDefault,
 		AtlasEnv:      opts.atlasEnv,
 		DevURL:        opts.devURL,
 		GitBase:       opts.gitBase,
