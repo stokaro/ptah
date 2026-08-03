@@ -299,9 +299,39 @@ func classifyLocal(rawURL string) (Source, error) {
 	return Source{Raw: rawURL, Kind: KindLocalFile, Path: resolved}, nil
 }
 
+// EnvAttrs are the env:// attributes an env reference may name, in the order
+// they are listed to the user. It is the single source of truth for both the
+// expansion switch below and the native binary's refusal, so a surface that
+// grows an attribute cannot leave the other advertising the old list.
+var EnvAttrs = []string{"src", "schema.src", "url", "dev", "migration", "migration.dir"}
+
+// ValidateEnvAttr reports whether attr names a supported env:// attribute,
+// returning the shared diagnostic when it does not.
+func ValidateEnvAttr(attr string) error {
+	if slices.Contains(EnvAttrs, attr) {
+		return nil
+	}
+	return fmt.Errorf(
+		"unsupported env:// attribute %q: supported attributes are %s",
+		attr,
+		joinEnvAttrs(),
+	)
+}
+
+// joinEnvAttrs renders the attribute list as prose: "a, b, and c".
+func joinEnvAttrs() string {
+	if len(EnvAttrs) < 2 {
+		return strings.Join(EnvAttrs, "")
+	}
+	return strings.Join(EnvAttrs[:len(EnvAttrs)-1], ", ") + ", and " + EnvAttrs[len(EnvAttrs)-1]
+}
+
 func expandEnv(source Source, env ProjectEnv) ([]Source, error) {
 	if !env.Loaded {
 		return nil, errors.New("env:// desired-state references require an evaluated atlas.hcl project configuration; pass --config and --env to select one")
+	}
+	if err := ValidateEnvAttr(source.EnvAttr); err != nil {
+		return nil, err
 	}
 	switch source.EnvAttr {
 	case "src", "schema.src":
@@ -313,7 +343,10 @@ func expandEnv(source Source, env ProjectEnv) ([]Source, error) {
 	case "migration", "migration.dir":
 		return expandEnvMigrationDir(env)
 	default:
-		return nil, fmt.Errorf("unsupported env:// attribute %q: supported attributes are src, schema.src, url, dev, migration, and migration.dir", source.EnvAttr)
+		// Unreachable while EnvAttrs and this switch agree; ValidateEnvAttr has
+		// already rejected everything else. Kept fail-closed so an attribute
+		// added to EnvAttrs alone cannot silently expand to nothing.
+		return nil, ValidateEnvAttr(source.EnvAttr)
 	}
 }
 

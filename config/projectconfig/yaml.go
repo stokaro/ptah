@@ -95,23 +95,30 @@ type yamlMigrateGenerateConfig struct {
 // LoadPtahFile loads Ptah's project config file. A missing file returns an
 // empty config.
 func LoadPtahFile(path, envName string) (Config, error) {
-	return loadPtahFile(path, envName, false)
+	return loadPtahFile(path, envName, discoveredPtahConfig)
 }
 
-func loadPtahFile(path, envName string, required bool) (Config, error) {
+// loadPtahFile reads the config file at path. source carries how the path was
+// chosen: an explicit --config path must exist, and is the only case in which a
+// diagnostic may blame that flag; a discovered ./ptah.yaml is optional.
+func loadPtahFile(path, envName string, source ptahConfigSource) (Config, error) {
 	raw, err := os.ReadFile(path)
 	switch {
-	case errors.Is(err, fs.ErrNotExist) && !required:
+	case errors.Is(err, fs.ErrNotExist) && source == discoveredPtahConfig:
 		return Config{}, nil
 	case err != nil:
 		return Config{}, fmt.Errorf("failed to read ptah config %s: %w", path, err)
 	}
 
-	return ParsePtah(raw, path, envName)
+	return parsePtah(raw, path, envName, source)
 }
 
 // ParsePtah parses Ptah's strict YAML project config.
 func ParsePtah(data []byte, filename, envName string) (Config, error) {
+	return parsePtah(data, filename, envName, discoveredPtahConfig)
+}
+
+func parsePtah(data []byte, filename, envName string, source ptahConfigSource) (Config, error) {
 	if filename == "" {
 		filename = PtahFileName
 	}
@@ -119,7 +126,7 @@ func ParsePtah(data []byte, filename, envName string) (Config, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&doc); err != nil {
-		return Config{}, fmt.Errorf("failed to parse ptah config %s: %w", filename, err)
+		return Config{}, translatePtahYAMLError(err, filename, source)
 	}
 	cfg, err := selectPtahEnv(doc, envName)
 	if err != nil {

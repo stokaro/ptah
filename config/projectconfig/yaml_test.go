@@ -93,7 +93,11 @@ func TestParsePtahProjectConfigRejectsUnknownKeys(t *testing.T) {
 urll: postgres://typo/db
 `), "ptah.yaml", "")
 
-	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: yaml: unmarshal errors:\n  line 2: field urll not found in type projectconfig\.yamlDocument`)
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "urll"; supported keys are url, dev, schemas, exclude, migration, lint, migrate, online_ddl, diff, external_schema, env`)
+	// The decoder reports rejected keys against the Go type it decodes into.
+	// That name is not a thing the user can look up or act on, so no
+	// diagnostic may carry it.
+	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
 }
 
 func TestParsePtahProjectConfigRejectsUnknownOnlineDDLKeys(t *testing.T) {
@@ -102,14 +106,16 @@ func TestParsePtahProjectConfigRejectsUnknownOnlineDDLKeys(t *testing.T) {
 	_, err := projectconfig.ParsePtah([]byte(`online_ddl:
   threshhold_rows: 100
 `), "ptah.yaml", "")
-	c.Assert(err, qt.ErrorMatches, `(?s)failed to parse ptah config ptah\.yaml: .*field threshhold_rows not found.*`)
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "threshhold_rows" under online_ddl; supported keys are tool, threshold_rows, args, fallback`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
 
 	_, err = projectconfig.ParsePtah([]byte(`env:
   prod:
     online_ddl:
       tooll: ghost
 `), "ptah.yaml", "prod")
-	c.Assert(err, qt.ErrorMatches, `(?s)failed to parse ptah config ptah\.yaml: .*field tooll not found.*`)
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 4: unknown ptah\.yaml key "tooll" under online_ddl; supported keys are tool, threshold_rows, args, fallback`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
 }
 
 func TestParsePtahProjectConfigRejectsUnknownMigrationPreflightKeys(t *testing.T) {
@@ -119,7 +125,8 @@ func TestParsePtahProjectConfigRejectsUnknownMigrationPreflightKeys(t *testing.T
   pg_dumpto: ./backups
 `), "ptah.yaml", "")
 
-	c.Assert(err, qt.ErrorMatches, `(?s)failed to parse ptah config ptah\.yaml: .*field pg_dumpto not found.*`)
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "pg_dumpto" under migration; supported keys are dir, format, revisions_schema, revisions_table, revision_format, lock_timeout, statement_timeout, connect_timeout, migration_lock_timeout, exec_order, tx_mode, pre_up_hook, pre_down_hook, pg_dump_to, mysqldump_to, webhook`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
 }
 
 func TestParsePtahProjectConfigAllowsOnlineDDLSection(t *testing.T) {

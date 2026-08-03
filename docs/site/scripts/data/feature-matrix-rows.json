@@ -95,8 +95,8 @@
     "ptah": "yes",
     "atlas_oss": "na",
     "atlas_pro": "na",
-    "note": "Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. Unknown keys fail.",
-    "evidence": "config/projectconfig/yaml.go:17-92 (typed key set; the desired-source key is `schemas`, not `src`). Repro: `src: [\"s.sql\"]` in ptah.yaml -> `error: failed to parse ptah config ptah.yaml: yaml: unmarshal errors: line 2: field src not found in type projectconfig.yamlDocument`"
+    "note": "Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. An unknown key fails, naming the key, its line, and the accepted keys.",
+    "evidence": "config/projectconfig/yaml.go:17-92 (typed key set; the desired-source key is `schemas`, not `src`), config/projectconfig/yamlerror.go (the decoder's Go type names are translated into ptah.yaml sections by reflection over the same struct tags, so the reported key list cannot drift from the accepted one). Repro: `src: [\"s.sql\"]` in ptah.yaml -> `error: failed to parse ptah config ptah.yaml: line 2: unknown ptah.yaml key \"src\"; supported keys are url, dev, schemas, exclude, migration, lint, migrate, online_ddl, diff, external_schema, env`"
   },
   {
     "area": "Project config",
@@ -131,8 +131,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Resolves only on `--to`/`--from` and only src, schema.src, url, dev, migration.dir; elsewhere (`--exclude`) the literal string is used silently.",
-    "evidence": "internal/atlassource/atlassource.go:266-282 expandEnv attribute allowlist; env:// classification is reached only from --to/--from ClassifySet. Reproduced: `--exclude env://exclude` with env.exclude=[\"users\"] still emitted the users table"
+    "note": "Resolves only on `--to`/`--from` and only src, schema.src, url, dev, migration.dir; native `--schema-file` refuses it by name; elsewhere (`--exclude`) the literal string is used silently.",
+    "evidence": "internal/atlassource/atlassource.go EnvAttrs/ValidateEnvAttr is the one attribute allowlist, shared by expandEnv and by the native --schema-file refusal in cmd/internal/schemaload/schemaload.go rejectEnvReference; env:// expansion is still reached only from --to/--from ClassifySet. Reproduced: `--exclude env://exclude` with env.exclude=[\"users\"] still emitted the users table. Native repro: `ptah schema compare --env local --schema-file env://src` -> `--schema-file \"env://src\": env:// references are not resolved by ptah`, while `--schema-file env://bogus` -> `unsupported env:// attribute \"bogus\"`; the two were byte-identical extension errors before"
   },
   {
     "area": "Project config",
@@ -1238,8 +1238,8 @@
     "ptah": "partial",
     "atlas_oss": "na",
     "atlas_pro": "na",
-    "note": "ptah `--env` reads ./atlas.hcl only: no `--var` flag, and `--config` takes ptah.yaml, so a variable without a default cannot be resolved.",
-    "evidence": "cmd/internal/dbcli/project_config.go:66-80 (the atlas.hcl path and --var forwarding flags are hidden adapter-only), config/projectconfig/load.go:20-24 (AtlasPath defaults to AtlasFileName in the working directory). Repro: `ptah schema compare --env local --schema-file s.sql --var dburl=sqlite://file.db` -> `error: unknown flag: --var`; `ptah schema compare --config atlas.hcl --env local` -> `error: failed to parse ptah config atlas.hcl: yaml: unmarshal errors`"
+    "note": "ptah `--env` reads ./atlas.hcl in the working directory; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only.",
+    "evidence": "cmd/internal/dbcli/project_config.go RegisterEnvFlag/RegisterProjectEnvFlag register --var alongside --env, and LoadProjectConfig prefers it over the hidden adapter flag; config/projectconfig/load.go:20-24 (AtlasPath defaults to AtlasFileName in the working directory). cmd/root/project_var_flag_test.go pins the fourteen commands carrying the project env flag against the assembled command tree, with `ptah seed --env` as the negative control. Repro: `ptah schema compare --env local --schema-file s.sql` -> `error: atlas.hcl variable \"dburl\" requires a default or --var dburl=value`, and re-running with `--var dburl=sqlite://file.db` exits 0; `ptah schema compare --config atlas.hcl --env local` -> `error: --config takes a ptah.yaml file, and atlas.hcl is not a YAML mapping`"
   },
   {
     "area": "Schema inspection filters",

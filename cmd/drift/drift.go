@@ -90,7 +90,7 @@ func NewDriftCommand() *cobra.Command {
 		"Maximum time to wait when establishing the initial database connection (for example 5s or 1m). Use 0 to disable the timeout.",
 	)
 	cmd.Flags().StringVar(&configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
-	cmd.Flags().String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
+	dbcli.RegisterProjectEnvFlag(cmd.Flags())
 	cmd.Flags().BoolVar(&plainHTTP, "plain-http", false, "Use plain HTTP for OCI registry access")
 	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
 

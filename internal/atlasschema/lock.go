@@ -83,9 +83,14 @@ func EffectiveApplyLockName(name string) string {
 	return ApplyLockName
 }
 
-// Supported reports whether the lock is backed by a real database lock. It is
-// false on dialects without advisory-lock semantics (SQLite, ClickHouse,
-// CockroachDB, YugabyteDB, and Spanner), where the apply proceeds unlocked.
+// Supported reports whether the lock is backed by a real database lock. It
+// answers with [dblock.Supported], which is the single source of truth for the
+// list: PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server take a real
+// session advisory lock, and every other dialect (SQLite, ClickHouse,
+// CockroachDB, and Spanner) proceeds unlocked. Restating the list here rather
+// than deferring to that function is how it drifted before, so any change to
+// dblock.Supported must be repeated in this comment and in the two reference
+// pages that carry the same list.
 func (l *ApplyLock) Supported() bool {
 	return l != nil && l.lock.Supported()
 }

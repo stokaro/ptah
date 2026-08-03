@@ -76,7 +76,7 @@ repository alone.`,
 	flags.String(generateReportFormatFlag, "", `Safety report format next to the migration files: "", html, or json`)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
-	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
+	dbcli.RegisterProjectEnvFlag(flags)
 	flags.String(dbcli.SchemasFlagName, "", "Comma-separated schemas to introspect when supported")
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 
