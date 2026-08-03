@@ -54,8 +54,9 @@
 //
 // Case names must be unique across everything a single load returns, so a name
 // repeated within one document or across two files in a directory is an error
-// rather than two indistinguishable cases in the report. Names are compared
-// exactly, matching how [FilterCases] applies its pattern to the raw name.
+// rather than two indistinguishable cases in the report. Surrounding whitespace
+// is not significant to that comparison — `dup` and `dup ` collide — but case is,
+// so `dup` and `DUP` are two different cases.
 //
 // # Schema tests
 //
@@ -194,12 +195,22 @@ func validateCases(cases []Case) error {
 }
 
 // validateUniqueCaseNames rejects a repeated case name. origins[i] is the file
-// case i came from, or "" when the cases were authored in Go; a nil origins
-// slice omits the file names from the message entirely.
+// case i came from; a nil origins slice omits the file names from the message
+// entirely, which is how Go-authored cases report a collision.
 //
-// Names are compared exactly: no case folding and no trimming. [FilterCases]
-// matches the raw name with a Go regular expression, so normalizing here would
-// reject pairs that --run still selects separately.
+// Surrounding whitespace is removed before comparing, but case is not folded.
+// The two normalizations are not alike, and the difference is measurable rather
+// than a matter of taste:
+//
+//   - `dup` and `dup ` are the same case in every way that the report and the
+//     filter can see. [FilterCases] compiles --run as an unanchored Go regular
+//     expression, so `--run dup` selects both, and [Report.HTML] emits each name
+//     inside `case &ldquo;…&rdquo;`, where a browser collapses the trailing
+//     space and renders the two rows identically. Accepting that pair would
+//     reproduce the exact symptom this check exists to stop.
+//   - `dup` and `DUP` are not. `--run dup` selects only `dup`, and no report
+//     format renders the two alike, so folding here would reject a pair the
+//     filter and the reader both keep apart.
 //
 // Cases are scanned in slice order and the first collision returns, so the
 // reported pair is deterministic. Both loaders sort file names before reading,
@@ -207,21 +218,45 @@ func validateCases(cases []Case) error {
 func validateUniqueCaseNames(cases []Case, origins []string) error {
 	firstIndex := make(map[string]int, len(cases))
 	for i := range cases {
-		name := cases[i].Name
-		previous, seen := firstIndex[name]
+		key := strings.TrimSpace(cases[i].Name)
+		previous, seen := firstIndex[key]
 		if !seen {
-			firstIndex[name] = i
+			firstIndex[key] = i
 			continue
 		}
-		if previous >= len(origins) || i >= len(origins) {
-			return fmt.Errorf("duplicate test case %q", name)
-		}
-		if origins[previous] == origins[i] {
-			return fmt.Errorf("duplicate test case %q in %s", name, origins[i])
-		}
-		return fmt.Errorf("duplicate test case %q in %s and %s", name, origins[previous], origins[i])
+		return duplicateCaseNameError(cases[previous].Name, cases[i].Name, key, caseOriginClause(origins, previous, i))
 	}
 	return nil
+}
+
+// caseOriginClause renders the clause naming where the colliding pair came
+// from, or "" when origins does not cover them.
+//
+// Only the two-file shape exists. Both loaders validate each file through
+// [ParseCases] or [ParseAtlasTestCases] — each of which runs the same check
+// with nil origins — before concatenating, so a same-origin pair is reported by
+// the per-file path as `a.yaml: duplicate test case "dup"` and never reaches the
+// union check. The bounds guard tests current alone because previous is always
+// the earlier index, so a current within range implies previous is too.
+func caseOriginClause(origins []string, previous, current int) string {
+	if current >= len(origins) {
+		return ""
+	}
+	return fmt.Sprintf(" in %s and %s", origins[previous], origins[current])
+}
+
+// duplicateCaseNameError renders a collision between two case names that share
+// a key. When the raw names are not byte-equal the message quotes both, so a
+// pair that collides only after trimming never reports a name that appears
+// verbatim in neither file.
+func duplicateCaseNameError(first, second, key, origins string) error {
+	if first == second {
+		return fmt.Errorf("duplicate test case %q%s", second, origins)
+	}
+	return fmt.Errorf(
+		"duplicate test case %q%s: %q and %q differ only in surrounding whitespace",
+		key, origins, first, second,
+	)
 }
 
 // validateCasesForRun validates structural case data and run-level defaults.

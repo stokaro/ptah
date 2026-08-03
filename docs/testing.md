@@ -63,11 +63,24 @@ cases:
 Unknown YAML fields are rejected. Multi-document YAML files are supported, and
 all documents contribute cases.
 
-Case names must be unique across the whole test directory, in both formats: a
-name repeated in two files, in two documents of one file, or twice in one
-`cases` list fails the load and names the files that collide. Names are compared
-exactly, so `dup` and `DUP` are distinct — that matches how `--run` selects them,
-since the pattern is applied to the raw name.
+Case names must be unique across everything one run loads: a name repeated in
+two files, in two documents of one file, or twice in one `cases` list fails the
+load. A collision between two files names both of them; a collision inside one
+file names that one.
+
+Comparison removes surrounding whitespace but does not fold case, because that
+is the line the report and `--run` already draw. `dup` and `dup ` collide —
+`--run dup` selects both, and the HTML report renders the two rows identically —
+while `dup` and `DUP` are two distinct cases, since `--run dup` selects only the
+first.
+
+Both commands also read Atlas-format `*.test.hcl` files from `--dir` alongside
+the YAML above. Each `test` block there is labeled with the kind it belongs to,
+and a run loads only blocks of its own kind, so uniqueness is checked over what
+that run actually loads rather than over everything on disk. A directory pairing
+`dup` in `a.yaml` with a `test "migrate" "dup"` block therefore loads clean
+under `ptah schema test`, which never sees the migrate case, and is rejected by
+`ptah migrations test`, which loads both.
 
 ## Assertions
 

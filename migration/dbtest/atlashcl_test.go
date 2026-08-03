@@ -235,3 +235,57 @@ func TestLoadCasesOfKind_KindFilterPrecedesUniqueness(t *testing.T) {
 	c.Assert(cases, qt.HasLen, 1)
 	c.Assert(cases[0].Name, qt.Equals, "dup")
 }
+
+// TestLoadCasesOfKind_MigrateKindRejectsWhatSchemaKindAccepts is the other half
+// of the test above, on a byte-identical directory. Checking the post-filter set
+// makes directory validity depend on the kind being loaded, and only pinning the
+// accepting half would leave a reader believing this directory is simply valid.
+// `ptah schema test --dir X` loads it and `ptah migrations test --dir X` refuses
+// it, because only the migrate run loads both cases and only that run has an
+// ambiguity to report.
+func TestLoadCasesOfKind_MigrateKindRejectsWhatSchemaKindAccepts(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.yaml"),
+		[]byte("cases:\n  - name: dup\n    steps:\n      - exec: SELECT 1\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "b.test.hcl"),
+		[]byte("test \"migrate\" \"dup\" {\n  migrate {\n    to = \"latest\"\n  }\n}\n"), 0o600), qt.IsNil)
+
+	_, err := dbtest.LoadCasesOfKind(dir, dbtest.AtlasTestKindMigrate)
+	c.Assert(err, qt.ErrorMatches, `duplicate test case "dup" in a\.yaml and b\.test\.hcl`)
+}
+
+// TestLoadCasesOfKind_RejectsDuplicateAcrossTwoHCLFiles covers HCL/HCL, the one
+// pairing the issue's definition of done left out. It is the arrangement most
+// exposed to a change in the isAtlasCaseFile routing: were `.test.hcl` files to
+// stop being recognized, the YAML/HCL test would still fail loudly, but a
+// directory of only HCL would quietly load zero cases and report nothing.
+func TestLoadCasesOfKind_RejectsDuplicateAcrossTwoHCLFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.test.hcl"),
+		[]byte("test \"schema\" \"dup\" {\n  exec {\n    sql = \"SELECT 1\"\n  }\n}\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "b.test.hcl"),
+		[]byte("test \"schema\" \"dup\" {\n  exec {\n    sql = \"SELECT 2\"\n  }\n}\n"), 0o600), qt.IsNil)
+
+	_, err := dbtest.LoadCasesOfKind(dir, dbtest.AtlasTestKindSchema)
+	c.Assert(err, qt.ErrorMatches, `duplicate test case "dup" in a\.test\.hcl and b\.test\.hcl`)
+}
+
+// TestLoadCasesOfKind_RejectsDuplicateInOneHCLFile is the HCL counterpart of the
+// per-file path: two same-named blocks in one document are caught by
+// ParseAtlasTestCases and carry that file's prefix, so the union check only ever
+// compares cases that came from different files.
+func TestLoadCasesOfKind_RejectsDuplicateInOneHCLFile(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.test.hcl"),
+		[]byte("test \"schema\" \"dup\" {\n  exec {\n    sql = \"SELECT 1\"\n  }\n}\n"+
+			"test \"schema\" \"dup\" {\n  exec {\n    sql = \"SELECT 2\"\n  }\n}\n"), 0o600), qt.IsNil)
+
+	_, err := dbtest.LoadCasesOfKind(dir, dbtest.AtlasTestKindSchema)
+	c.Assert(err, qt.ErrorMatches, `a\.test\.hcl: duplicate test case "dup"`)
+}

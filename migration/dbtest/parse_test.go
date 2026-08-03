@@ -261,6 +261,68 @@ func TestLoadCases_AllowsDistinctNamesAcrossFiles(t *testing.T) {
 	c.Assert(cases[1].Name, qt.Equals, "beta")
 }
 
+// TestLoadCases_RejectsNamesDifferingOnlyBySurroundingWhitespace closes the
+// member of the class that a trailing space used to slip through. It is the
+// issue's first bullet verbatim: `--run dup` compiles unanchored, so it matched
+// `dup` and `dup ` alike and ran both, and Report.HTML renders each name inside
+// `case &ldquo;…&rdquo;`, where a browser collapses the trailing space into two
+// visually identical rows.
+func TestLoadCases_RejectsNamesDifferingOnlyBySurroundingWhitespace(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.yaml"),
+		[]byte("cases:\n  - name: \"dup\"\n    steps:\n      - exec: SELECT 1\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "b.yaml"),
+		[]byte("cases:\n  - name: \"dup \"\n    steps:\n      - exec: SELECT 2\n"), 0o600), qt.IsNil)
+
+	_, err := dbtest.LoadCases(dir)
+	c.Assert(err, qt.ErrorMatches,
+		`duplicate test case "dup" in a\.yaml and b\.yaml: "dup" and "dup " differ only in surrounding whitespace`)
+}
+
+// TestLoadCases_AllowsNamesDifferingInInteriorWhitespace is the negative half of
+// the test above, and it fixes how far the normalization goes. Only surrounding
+// whitespace is removed; a check that stripped whitespace everywhere, or one
+// that collapsed runs of it, would collide these two and pass every other test
+// in this file.
+func TestLoadCases_AllowsNamesDifferingInInteriorWhitespace(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.yaml"),
+		[]byte("cases:\n  - name: \"users load\"\n    steps:\n      - exec: SELECT 1\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "b.yaml"),
+		[]byte("cases:\n  - name: \"users  load\"\n    steps:\n      - exec: SELECT 2\n"), 0o600), qt.IsNil)
+
+	cases, err := dbtest.LoadCases(dir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(cases, qt.HasLen, 2)
+	c.Assert(cases[0].Name, qt.Equals, "users load")
+	c.Assert(cases[1].Name, qt.Equals, "users  load")
+}
+
+// TestLoadCases_ReportsWithinFileDuplicateFromThePerFilePath pins the invariant
+// that lets the union check assume its two origins always differ: each file is
+// validated by ParseCases before the concatenation, so a collision inside one
+// file is reported with that file's own prefix and never reaches the union.
+// Were that ordering to change, this message would become the union's
+// `duplicate test case "dup" in a.yaml and a.yaml`.
+func TestLoadCases_ReportsWithinFileDuplicateFromThePerFilePath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.yaml"),
+		[]byte("cases:\n"+
+			"  - name: dup\n    steps:\n      - exec: SELECT 1\n"+
+			"  - name: dup\n    steps:\n      - exec: SELECT 2\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "b.yaml"),
+		[]byte("cases:\n  - name: other\n    steps:\n      - exec: SELECT 3\n"), 0o600), qt.IsNil)
+
+	_, err := dbtest.LoadCases(dir)
+	c.Assert(err, qt.ErrorMatches, `a\.yaml: duplicate test case "dup"`)
+}
+
 // TestParseCases_RejectsDuplicateNameInOneDocument covers the single-document
 // collision. The issue attributes the gap to validateCases running per document
 // and only the union escaping, which implies this case was already handled; it
@@ -297,9 +359,12 @@ func TestParseCases_RejectsDuplicateNameInOneDocument(t *testing.T) {
 			want: `duplicate test case "dup"`,
 		},
 		{
-			// Names are compared exactly. FilterCases matches the raw name with
-			// a Go regexp, so folding case here would reject a pair that --run
-			// still selects separately.
+			// Case is not folded. FilterCases matches the raw name with a Go
+			// regexp, so `--run dup` selects `dup` and not `DUP`, and no report
+			// format renders the two alike; folding here would reject a pair
+			// the filter keeps apart. The third case supplies the collision, so
+			// this subtest still asserts an error and cannot pass by accident
+			// on a build where the whole check is gone.
 			name: "names differing only by case are distinct",
 			yaml: "cases:\n" +
 				"  - name: dup\n" +
@@ -312,6 +377,19 @@ func TestParseCases_RejectsDuplicateNameInOneDocument(t *testing.T) {
 				"    steps:\n" +
 				"      - exec: SELECT 3\n",
 			want: `duplicate test case "dup"`,
+		},
+		{
+			// Surrounding whitespace IS folded, and the message quotes both raw
+			// forms rather than a name that appears verbatim in neither entry.
+			name: "names differing only by trailing whitespace collide",
+			yaml: "cases:\n" +
+				"  - name: dup\n" +
+				"    steps:\n" +
+				"      - exec: SELECT 1\n" +
+				"  - name: \"dup \"\n" +
+				"    steps:\n" +
+				"      - exec: SELECT 2\n",
+			want: `duplicate test case "dup": "dup" and "dup " differ only in surrounding whitespace`,
 		},
 	}
 
