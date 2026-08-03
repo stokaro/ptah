@@ -68,6 +68,7 @@ func LoadCases(dir string) ([]Case, error) {
 	sort.Strings(names)
 
 	var cases []Case
+	var origins []string
 	for _, name := range names {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
@@ -79,6 +80,15 @@ func LoadCases(dir string) ([]Case, error) {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		cases = append(cases, parsed...)
+		for range parsed {
+			origins = append(origins, name)
+		}
+	}
+	// Deliberately not wrapped with the per-file prefix above: the union error
+	// already names both colliding files, and a prefix would read as
+	// `b.yaml: duplicate test case "dup" in a.yaml and b.yaml`.
+	if err := validateUniqueCaseNames(cases, origins); err != nil {
+		return nil, err
 	}
 	return cases, nil
 }
@@ -118,6 +128,7 @@ func LoadCasesOfKind(dir string, kind AtlasTestKind) ([]Case, error) {
 	sort.Strings(names)
 
 	var cases []Case
+	var origins []string
 	for _, name := range names {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
@@ -134,6 +145,16 @@ func LoadCasesOfKind(dir string, kind AtlasTestKind) ([]Case, error) {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		cases = append(cases, parsed...)
+		for range parsed {
+			origins = append(origins, name)
+		}
+	}
+	// Checked over the post-filter set: ParseAtlasTestCases has already dropped
+	// the blocks of the other kind, so a `test "migrate"` case never collides
+	// with a same-named YAML case in a schema-kind load. Emitted unwrapped for
+	// the reason given in LoadCases.
+	if err := validateUniqueCaseNames(cases, origins); err != nil {
+		return nil, err
 	}
 	return cases, nil
 }

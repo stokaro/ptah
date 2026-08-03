@@ -52,6 +52,11 @@
 //	          query: SELECT * FROM does_not_exist
 //	          error_contains: does_not_exist
 //
+// Case names must be unique across everything a single load returns, so a name
+// repeated within one document or across two files in a directory is an error
+// rather than two indistinguishable cases in the report. Names are compared
+// exactly, matching how [FilterCases] applies its pattern to the raw name.
+//
 // # Schema tests
 //
 // [RunSchemaTest] reuses the same step and assertion vocabulary but applies a
@@ -184,6 +189,37 @@ func validateCases(cases []Case) error {
 		if err := cases[i].validate(); err != nil {
 			return fmt.Errorf("case %d: %w", i+1, err)
 		}
+	}
+	return validateUniqueCaseNames(cases, nil)
+}
+
+// validateUniqueCaseNames rejects a repeated case name. origins[i] is the file
+// case i came from, or "" when the cases were authored in Go; a nil origins
+// slice omits the file names from the message entirely.
+//
+// Names are compared exactly: no case folding and no trimming. [FilterCases]
+// matches the raw name with a Go regular expression, so normalizing here would
+// reject pairs that --run still selects separately.
+//
+// Cases are scanned in slice order and the first collision returns, so the
+// reported pair is deterministic. Both loaders sort file names before reading,
+// which makes that order stable across runs.
+func validateUniqueCaseNames(cases []Case, origins []string) error {
+	firstIndex := make(map[string]int, len(cases))
+	for i := range cases {
+		name := cases[i].Name
+		previous, seen := firstIndex[name]
+		if !seen {
+			firstIndex[name] = i
+			continue
+		}
+		if previous >= len(origins) || i >= len(origins) {
+			return fmt.Errorf("duplicate test case %q", name)
+		}
+		if origins[previous] == origins[i] {
+			return fmt.Errorf("duplicate test case %q in %s", name, origins[i])
+		}
+		return fmt.Errorf("duplicate test case %q in %s and %s", name, origins[previous], origins[i])
 	}
 	return nil
 }
