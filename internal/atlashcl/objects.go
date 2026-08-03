@@ -94,7 +94,11 @@ func (p *parser) parseFunctionArgs(block *hclsyntax.Block) ([]string, error) {
 		if len(nested.Labels) != 1 {
 			return nil, p.blockError(nested, "function arg requires exactly one name label")
 		}
-		args = append(args, nested.Labels[0]+" "+p.rawExpr(typeAttr))
+		// optionalRawExpr, not rawExpr: an argument type is written as a bare
+		// keyword (`type = bigint`) so it has no string value to evaluate, but
+		// it can also be written with Atlas's sql() escape hatch, and the raw
+		// source of that call is not a type -- issue #1106.
+		args = append(args, nested.Labels[0]+" "+p.optionalRawExpr(typeAttr))
 	}
 	return args, nil
 }
