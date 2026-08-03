@@ -200,7 +200,15 @@ func newAtlasMigrateCommand() *cobra.Command {
 			native:     "migrations create",
 			factory:    migrate.NewMigrateCreateCommand,
 			flags: []atlasargs.Flag{
-				atlasNativeAtlasLocalDirFlag("dir", "", "Migration directory", "migrations-dir"),
+				// `new` keeps the strict mapper, which refuses a query, while
+				// the verbs above accept one. That asymmetry is deliberate and
+				// temporary: this verb runs no atlas.sum integrity gate, so
+				// accepting the query here would turn a refusal into a write
+				// over a directory nothing verified -- measured, the pinned
+				// community binary exits 1 on an unhashed directory and this
+				// surface exits 0 and writes. The relaxation lands once the
+				// gate does. See stokaro/ptah#1086.
+				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasMigrateDirFormatFlag("dir-format"),
 				atlasargs.NativeBool("edit", "", "Edit the created migration files", "edit"),
 			},

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 
-	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 )
 
@@ -45,27 +44,4 @@ func checkNativeAtlasDirQuery(query url.Values) error {
 		)
 	}
 	return nil
-}
-
-// nativeAtlasLocalDirValue converts a local Atlas file:// migration directory
-// URL to a native local path for a verb that reads only a native Atlas
-// directory, ignoring the query keys the community binary ignores and refusing
-// the foreign layouts Ptah cannot produce here. See [checkNativeAtlasDirQuery].
-func nativeAtlasLocalDirValue(value string) (string, error) {
-	dir, err := atlasargs.ParseLocalDir(value)
-	if err != nil {
-		return "", err
-	}
-	if err := checkNativeAtlasDirQuery(dir.Query); err != nil {
-		return "", err
-	}
-	return dir.Path, nil
-}
-
-// atlasNativeAtlasLocalDirFlag creates the Atlas --dir flag for a verb that
-// reads only a native Atlas directory.
-func atlasNativeAtlasLocalDirFlag(name, shorthand, usage, nativeName string) atlasargs.Flag {
-	flag := atlasargs.NativeString(name, shorthand, usage, nativeName)
-	flag.MapValue = nativeAtlasLocalDirValue
-	return flag
 }

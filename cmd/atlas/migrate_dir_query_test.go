@@ -104,25 +104,6 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 				return err
 			},
 		},
-		{
-			name: "new",
-			run: func(_ *qt.C, dir, query string) error {
-				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir+query)
-				return err
-			},
-		},
-		{
-			name: "diff",
-			run: func(c *qt.C, dir, query string) error {
-				target := filepath.Join(c.TempDir(), "target.sql")
-				c.Assert(os.WriteFile(target, []byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-				_, _, err := runCompat("migrate", "diff", "dd",
-					"--dir", "file://"+dir+query,
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--to", "file://"+target)
-				return err
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -187,25 +168,6 @@ func TestCompatMigrateDirQuery_FailurePathForeignFormat(t *testing.T) {
 				return err
 			},
 		},
-		{
-			name: "new",
-			run: func(_ *qt.C, dir string) error {
-				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir+"?format=goose")
-				return err
-			},
-		},
-		{
-			name: "diff",
-			run: func(c *qt.C, dir string) error {
-				target := filepath.Join(c.TempDir(), "target.sql")
-				c.Assert(os.WriteFile(target, []byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-				_, _, err := runCompat("migrate", "diff", "dd",
-					"--dir", "file://"+dir+"?format=goose",
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--to", "file://"+target)
-				return err
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -232,4 +194,57 @@ func TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout(t *testing.T) {
 		"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
 
 	c.Assert(err, qt.IsNil)
+}
+
+// TestCompatMigrateDirQuery_NewAndDiffStillRefuseAQuery pins the two verbs the
+// relaxation deliberately skips.
+//
+// Every verb that accepts a `--dir` query runs the atlas.sum integrity gate
+// first, so a converted directory is verified before anything reads it. These
+// two do not: they WRITE a migration and a fresh sum, and they do it over a
+// directory nothing checked. Measured on the pinned community binary, an
+// unhashed directory exits 1 there and 0 here, so accepting the query would
+// turn a refusal into a write.
+//
+// The asymmetry is temporary and belongs to stokaro/ptah#1086, which adds the
+// gate. This test is here so the relaxation cannot be extended to these verbs
+// by symmetry alone, without the gate arriving with it.
+func TestCompatMigrateDirQuery_NewAndDiffStillRefuseAQuery(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(c *qt.C, dir string) error
+	}{
+		{
+			name: "new",
+			run: func(_ *qt.C, dir string) error {
+				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir+"?nonsense=1")
+				return err
+			},
+		},
+		{
+			name: "diff",
+			run: func(c *qt.C, dir string) error {
+				target := filepath.Join(c.TempDir(), "target.sql")
+				c.Assert(os.WriteFile(target, []byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+				_, _, err := runCompat("migrate", "diff", "dd",
+					"--dir", "file://"+dir+"?nonsense=1",
+					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
+					"--to", "file://"+target)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "20240101000000_init.sql"),
+				[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+			err := tt.run(c, dir)
+
+			c.Assert(err, qt.ErrorMatches, `.*query parameters are not supported.*`)
+		})
+	}
 }
