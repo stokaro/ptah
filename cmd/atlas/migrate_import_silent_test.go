@@ -245,3 +245,58 @@ func TestCompatMigrateImportFailuresStayLoud(t *testing.T) {
 		})
 	}
 }
+
+// TestCompatMigrateImportRefusesADirectoryAlreadyInTargetFormat covers the
+// spelling that copies without converting anything.
+//
+// Importing a directory that is already in the target format is a no-op
+// dressed as work: it copies the files and writes a fresh sum over a directory
+// whose previous contents nothing verified. The pinned community binary refuses
+// it, and this surface exited 0 and copied — the direction that lets a mistake
+// pass silently.
+//
+// All three spellings that resolve to atlas are covered, because the format
+// arrives on three separate paths: omitted entirely, in the --from query, and
+// on --dir-format. Only checking the explicit ones would leave the default
+// invocation — the likeliest way to hit this — untested.
+func TestCompatMigrateImportRefusesADirectoryAlreadyInTargetFormat(t *testing.T) {
+	tests := []struct {
+		name string
+		args func(from, to string) []string
+	}{
+		{
+			name: "format omitted",
+			args: func(from, to string) []string {
+				return []string{"--from", "file://" + from, "--to", "file://" + to}
+			},
+		},
+		{
+			name: "format in the source query",
+			args: func(from, to string) []string {
+				return []string{"--from", "file://" + from + "?format=atlas", "--to", "file://" + to}
+			},
+		},
+		{
+			name: "format on the flag",
+			args: func(from, to string) []string {
+				return []string{"--from", "file://" + from, "--to", "file://" + to, "--dir-format", "atlas"}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			from := filepath.Join(t.TempDir(), "src")
+			to := filepath.Join(t.TempDir(), "dst")
+			writeMigrateImportFixture(c, from, "20240101010101_init.sql", "CREATE TABLE users (id int);\n")
+
+			_, err := runMigrateImport(c, tt.args(from, to))
+
+			c.Assert(err, qt.ErrorMatches, `cannot import a migration directory already in "atlas" format`)
+			_, statErr := os.Stat(to)
+			c.Assert(os.IsNotExist(statErr), qt.IsTrue,
+				qt.Commentf("the refusal must precede writing anything to the destination"))
+		})
+	}
+}
