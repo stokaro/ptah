@@ -179,6 +179,45 @@ func TestAnalyzeFS_SameLineStatementsHaveStableContexts(t *testing.T) {
 	c.Assert(findings[1].Context.StatementIndex, qt.Equals, 1)
 }
 
+// subjectsOf collects each finding's subjects, keeping finding order. Comparing
+// the nested slice in one assertion pins how many findings there are, how many
+// objects each carries, and their order together; a per-finding loop of
+// separate assertions can stay green while the findings are split the wrong way.
+func subjectsOf(findings []lint.Finding) [][]lint.Subject {
+	subjects := make([][]lint.Subject, 0, len(findings))
+	for _, finding := range findings {
+		subjects = append(subjects, finding.Context.Subjects)
+	}
+	return subjects
+}
+
+// messagesOf collects finding messages, keeping finding order.
+func messagesOf(findings []lint.Finding) []string {
+	messages := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		messages = append(messages, finding.Message)
+	}
+	return messages
+}
+
+// statementIndexesOf collects the analyzed statement each finding belongs to.
+func statementIndexesOf(findings []lint.Finding) []int {
+	indexes := make([]int, 0, len(findings))
+	for _, finding := range findings {
+		indexes = append(indexes, finding.Context.StatementIndex)
+	}
+	return indexes
+}
+
+// subjectNamesOf collects the name of each finding's first subject.
+func subjectNamesOf(findings []lint.Finding) []string {
+	names := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		names = append(names, finding.Context.Subjects[0].Name)
+	}
+	return names
+}
+
 func TestAnalyzeFS_MultiTargetDropReportsOnlyUnsafeTables(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
@@ -191,12 +230,11 @@ func TestAnalyzeFS_MultiTargetDropReportsOnlyUnsafeTables(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	findings := analysis.Findings()
-	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Rule, qt.Equals, "DS101")
-	c.Assert(findings[0].Context.StatementIndex, qt.Equals, 1)
-	c.Assert(findings[0].Context.Subjects, qt.DeepEquals, []lint.Subject{
-		{Kind: lint.SubjectTable, Name: "users"},
-		{Kind: lint.SubjectTable, Name: "audit_log"},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101", "DS101"})
+	c.Assert(statementIndexesOf(findings), qt.DeepEquals, []int{1, 1})
+	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{
+		{{Kind: lint.SubjectTable, Name: "audit_log"}},
+		{{Kind: lint.SubjectTable, Name: "users"}},
 	})
 }
 
@@ -212,11 +250,186 @@ func TestAnalyzeFS_DropTableSubjectsPreserveIdentifierSpelling(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
+	c.Assert(subjectsOf(analysis.Findings()), qt.DeepEquals, [][]lint.Subject{
+		{{Kind: lint.SubjectTable, Name: `"Users"`}},
+		{{Kind: lint.SubjectTable, Name: `public."users"`}},
+	})
+}
+
+// TestAnalyzeFS_MultiTargetDropReportsEveryDroppedTable pins what a DROP TABLE
+// with several targets analyzes into: one finding per destroyed table, each
+// carrying exactly the table it is about.
+//
+// The three tables are created in one order (mid, zeta, alpha), dropped in a
+// second (zeta, alpha, mid), and sort into a third (alpha, mid, zeta), so
+// source order, creation order and reverse creation order each give a different
+// answer here. Two tables cannot separate those three candidates; this is the
+// smallest fixture that can.
+//
+// The single-target row is the control. It is green both before and after this
+// behavior existed, which is what shows the multi-target row is measuring
+// target count rather than something the two fixtures share.
+func TestAnalyzeFS_MultiTargetDropReportsEveryDroppedTable(t *testing.T) {
+	tests := []struct {
+		name  string
+		drop  string
+		rules []string
+		want  [][]lint.Subject
+	}{
+		{
+			name:  "single target is one finding",
+			drop:  "DROP TABLE zeta;",
+			rules: []string{"DS101"},
+			want:  [][]lint.Subject{{{Kind: lint.SubjectTable, Name: "zeta"}}},
+		},
+		{
+			name:  "every target is its own finding, ordered by name",
+			drop:  "DROP TABLE zeta, alpha, mid;",
+			rules: []string{"DS101", "DS101", "DS101"},
+			want: [][]lint.Subject{
+				{{Kind: lint.SubjectTable, Name: "alpha"}},
+				{{Kind: lint.SubjectTable, Name: "mid"}},
+				{{Kind: lint.SubjectTable, Name: "zeta"}},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			fsys := fixture(map[string]string{
+				"1_init.sql": "CREATE TABLE mid (id INTEGER);\nCREATE TABLE zeta (id INTEGER);\nCREATE TABLE alpha (id INTEGER);",
+				"2_drop.sql": test.drop,
+			})
+
+			analysis, err := lint.AnalyzeFS(fsys, lint.Options{DirFormat: migrator.MigrationDirFormatAtlas})
+
+			c.Assert(err, qt.IsNil)
+			findings := analysis.Findings()
+			c.Assert(rulesOf(findings), qt.DeepEquals, test.rules)
+			c.Assert(subjectsOf(findings), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestAnalyzeFS_MultiTargetDropNamesEachTableInItsMessage pins that the
+// per-target findings are distinguishable by message alone. Renderers that read
+// only the message -- the native text report, GitHub annotations, and SARIF,
+// whose result fingerprint is derived from rule, file, line and message -- would
+// otherwise emit N indistinguishable copies of one statement, and a consumer
+// that de-duplicates by fingerprint would drop every table but one.
+func TestAnalyzeFS_MultiTargetDropNamesEachTableInItsMessage(t *testing.T) {
+	c := qt.New(t)
+	fsys := fixture(map[string]string{
+		"1_init.sql": "CREATE TABLE zeta (id INTEGER);\nCREATE TABLE alpha (id INTEGER);",
+		"2_drop.sql": `DROP TABLE zeta, public."Alpha";`,
+	})
+
+	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		Dialect:   "postgres",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(messagesOf(analysis.Findings()), qt.DeepEquals, []string{
+		`DROP TABLE permanently deletes table public."Alpha" and every row in it; ` +
+			"take a verified backup first and consider a rename-and-retire window instead",
+		"DROP TABLE permanently deletes table zeta and every row in it; " +
+			"take a verified backup first and consider a rename-and-retire window instead",
+	})
+}
+
+// TestAnalyzeFS_MultiTargetDropOrdersByLogicalName pins the sort key against the
+// two candidates that reproduce all-lowercase unqualified fixtures identically:
+// a case-folding comparison, and a comparison of the reference as written.
+func TestAnalyzeFS_MultiTargetDropOrdersByLogicalName(t *testing.T) {
+	tests := []struct {
+		name string
+		drop string
+		want []string
+	}{
+		{
+			// Byte-wise, "Mid" and "Zeta" lead. Case-folded, alpha leads.
+			name: "uppercase sorts ahead of lowercase",
+			drop: `DROP TABLE "Zeta", alpha, "Mid";`,
+			want: []string{`"Mid"`, `"Zeta"`, "alpha"},
+		},
+		{
+			// By logical name: aaa then bbb. By the reference as written,
+			// "public.aaa" would sort after "bbb".
+			name: "qualification is not part of the key",
+			drop: "DROP TABLE public.aaa, bbb;",
+			want: []string{"public.aaa", "bbb"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			fsys := fixture(map[string]string{"1_drop.sql": test.drop})
+
+			analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+				DirFormat: migrator.MigrationDirFormatAtlas,
+				Dialect:   "postgres",
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(subjectNamesOf(analysis.Findings()), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestAnalyzeFS_UnparsableDropTargetsStillReport keeps the fail-closed path
+// intact: a DROP TABLE whose target list cannot be read to the end still
+// reports, as one subject-less finding. Splitting per target must not turn "no
+// target recovered" into "nothing to report".
+func TestAnalyzeFS_UnparsableDropTargetsStillReport(t *testing.T) {
+	c := qt.New(t)
+	fsys := fixture(map[string]string{"1_drop.sql": "DROP TABLE IF EXISTS;"})
+
+	analysis, err := lint.AnalyzeFS(fsys, lint.Options{DirFormat: migrator.MigrationDirFormatAtlas})
+
+	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
-	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Context.Subjects, qt.DeepEquals, []lint.Subject{
-		{Kind: lint.SubjectTable, Name: `"Users"`},
-		{Kind: lint.SubjectTable, Name: `public."users"`},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101"})
+	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{nil})
+	c.Assert(messagesOf(findings), qt.DeepEquals, []string{
+		"DROP TABLE permanently deletes the table and every row in it; " +
+			"take a verified backup first and consider a rename-and-retire window instead",
+	})
+}
+
+// TestAnalyzeFS_MultiClauseAddNotNullReportsEveryColumn is the ADD-side analogue
+// of [TestAnalyzeFS_MultiTargetDropReportsEveryDroppedTable]: each added column
+// fails against existing rows independently, so each is its own finding. Unlike
+// dropped tables these keep clause order, which is why the fixture writes them
+// out of alphabetical order -- sorting them would fail this test.
+func TestAnalyzeFS_MultiClauseAddNotNullReportsEveryColumn(t *testing.T) {
+	c := qt.New(t)
+	fsys := fixture(map[string]string{
+		"1_init.sql": "CREATE TABLE t (id INTEGER);",
+		"2_add.sql":  "ALTER TABLE t ADD COLUMN zeta int NOT NULL, ADD COLUMN alpha int NOT NULL;",
+	})
+
+	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		Dialect:   "postgres",
+	})
+
+	c.Assert(err, qt.IsNil)
+	findings := analysis.Findings()
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DD101", "DD101"})
+	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{
+		{{Kind: lint.SubjectColumn, Name: "zeta", Parent: "t", DataType: "int"}},
+		{{Kind: lint.SubjectColumn, Name: "alpha", Parent: "t", DataType: "int"}},
+	})
+	c.Assert(messagesOf(findings), qt.DeepEquals, []string{
+		"adding NOT NULL column zeta without a DEFAULT fails or blocks on populated tables; " +
+			"add it nullable, backfill, then enforce NOT NULL in a later migration",
+		"adding NOT NULL column alpha without a DEFAULT fails or blocks on populated tables; " +
+			"add it nullable, backfill, then enforce NOT NULL in a later migration",
 	})
 }
 

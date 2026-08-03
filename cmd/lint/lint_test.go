@@ -110,10 +110,62 @@ func TestRunLint_DefaultTextKeepsNativePtahDiagnostics(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stderr, qt.Equals, "")
-	c.Assert(stdout, qt.Contains, "DROP TABLE permanently deletes the table and every row in it")
+	c.Assert(stdout, qt.Contains, "DROP TABLE permanently deletes table users and every row in it")
 	c.Assert(stdout, qt.Contains, "verified backup first and consider a rename-and-retire window instead")
 	c.Assert(stdout, qt.Not(qt.Contains), `Dropping table "users"`)
 	c.Assert(stdout, qt.Not(qt.Contains), "https://atlasgo.io/lint/analyzers")
+}
+
+// sarifResultMessagesOf collects each SARIF result's message text, in order.
+func sarifResultMessagesOf(results []sarifResultForTest) []string {
+	messages := make([]string, 0, len(results))
+	for _, result := range results {
+		messages = append(messages, result.Message.Text)
+	}
+	return messages
+}
+
+// distinctSARIFFingerprints collects the set of primary-location fingerprints
+// across results.
+func distinctSARIFFingerprints(results []sarifResultForTest) map[string]struct{} {
+	fingerprints := make(map[string]struct{}, len(results))
+	for _, result := range results {
+		fingerprints[result.PartialFingerprints["primaryLocationLineHash"]] = struct{}{}
+	}
+	return fingerprints
+}
+
+// TestRunLint_MultiTargetDropFingerprintsEveryTable pins the SARIF consequence
+// of reporting one finding per dropped table. All three results share a rule, a
+// file and a line, so their fingerprints can only differ through the message.
+// Were the three to carry one shared message, GitHub code scanning would fold
+// them into a single alert and two of the three destroyed tables would never
+// reach the security tab.
+func TestRunLint_MultiTargetDropFingerprintsEveryTable(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeLintTestFile(c, dir, "0000000001_init.up.sql",
+		"CREATE TABLE mid (id INT);\nCREATE TABLE zeta (id INT);\nCREATE TABLE alpha (id INT);\n")
+	writeLintTestFile(c, dir, "0000000001_init.down.sql", "DROP TABLE alpha;\n")
+	writeLintTestFile(c, dir, "0000000002_drop.up.sql", "DROP TABLE zeta, alpha, mid;\n")
+	writeLintTestFile(c, dir, "0000000002_drop.down.sql", "CREATE TABLE mid (id INT);\n")
+
+	stdout, _, err := execute("--dir", dir, "--dir-format", "ptah", "--format", "sarif", "--fail-on", "none")
+
+	c.Assert(err, qt.IsNil)
+	assertSARIFSchemaValid(c, stdout)
+	var report sarifForTest
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	results := report.Runs[0].Results
+	c.Assert(sarifResultMessagesOf(results), qt.DeepEquals, []string{
+		"table dropped: DROP TABLE permanently deletes table alpha and every row in it; " +
+			"take a verified backup first and consider a rename-and-retire window instead",
+		"table dropped: DROP TABLE permanently deletes table mid and every row in it; " +
+			"take a verified backup first and consider a rename-and-retire window instead",
+		"table dropped: DROP TABLE permanently deletes table zeta and every row in it; " +
+			"take a verified backup first and consider a rename-and-retire window instead",
+	})
+	c.Assert(distinctSARIFFingerprints(results), qt.HasLen, 3)
 }
 
 func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
