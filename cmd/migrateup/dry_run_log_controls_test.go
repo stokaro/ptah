@@ -20,9 +20,9 @@ import (
 // per run — the dry-run revision-state fix (stokaro/ptah#963) repeated it once
 // per metadata read.
 
-// runUpStreams runs `ptah migrations up` with stdout and the log stream kept
+// runUpCapturingStreams runs `ptah migrations up` with stdout and the log stream kept
 // apart, which is what the log-format contract is about.
-func runUpStreams(args ...string) (stdout, stderr string, err error) {
+func runUpCapturingStreams(args ...string) (stdout, stderr string, err error) {
 	cmd := migrateup.NewMigrateUpCommand()
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
@@ -45,7 +45,7 @@ func dryRunUpArgs(t *testing.T, extra ...string) []string {
 func TestMigrateUpDryRunNarratesThroughTheLogStream(t *testing.T) {
 	c := qt.New(t)
 
-	stdout, stderr, err := runUpStreams(dryRunUpArgs(t)...)
+	stdout, stderr, err := runUpCapturingStreams(dryRunUpArgs(t)...)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", stdout, stderr))
 	// The human report stays on stdout.
@@ -76,7 +76,7 @@ func TestMigrateUpDryRunNarrationHonorsLogLevel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			stdout, stderr, err := runUpStreams(dryRunUpArgs(t, "--log-level", tt.logLevel)...)
+			stdout, stderr, err := runUpCapturingStreams(dryRunUpArgs(t, "--log-level", tt.logLevel)...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", stdout, stderr))
 			// The stdout report is unaffected by the log level either way.
@@ -90,7 +90,7 @@ func TestMigrateUpDryRunNarrationHonorsLogLevel(t *testing.T) {
 func TestMigrateUpDryRunJSONLogFormatKeepsStdoutParseable(t *testing.T) {
 	c := qt.New(t)
 
-	stdout, stderr, err := runUpStreams(dryRunUpArgs(t, "--log-format", "json")...)
+	stdout, stderr, err := runUpCapturingStreams(dryRunUpArgs(t, "--log-format", "json")...)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", stdout, stderr))
 	// JSON mode folds the human report into the log stream, so stdout carries

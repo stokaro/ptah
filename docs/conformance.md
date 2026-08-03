@@ -101,7 +101,7 @@ to Atlas Pro schema-ownership annotations and an account model). The
 code-by-code table lives in
 [Atlas Pro analyzer coverage](./site/src/content/docs/atlas/comparison.md#atlas-pro-analyzer-coverage).
 
-## Upstream Atlas Verbs Beyond the CE Pin
+## Verbs Beyond the CE Pin
 
 `atlas migrate ls`, `atlas migrate show`, `atlas schema stats`, and
 `atlas schema validate` appear in current Atlas documentation but are entirely

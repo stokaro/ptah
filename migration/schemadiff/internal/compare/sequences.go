@@ -15,7 +15,7 @@ import (
 //
 // Only sequences the database reader classifies as standalone reach
 // database.Sequences: implicit sequences that back SERIAL / identity columns are
-// excluded upstream, so declaring a plain SERIAL column never produces a
+// excluded by the reader, so declaring a plain SERIAL column never produces a
 // spurious sequence diff here.
 //
 // Modification detection is intentionally asymmetric: only options the target

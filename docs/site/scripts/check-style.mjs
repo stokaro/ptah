@@ -379,7 +379,7 @@ function nameTokens(cell) {
 }
 
 // The code spans in a capability name are its identity: rows named
-// "Upstream verb \`migrate ls\`" and "Upstream verb \`migrate show\`" share
+// "Verb \`migrate ls\`" and "Verb \`migrate show\`" share
 // every prose word and are different capabilities. When both names carry code
 // and the code differs, the rows are not comparable.
 function codeIdentity(cell) {
@@ -688,8 +688,8 @@ function selftest() {
     // differing verdicts are legitimate.
     '| Capability | Ptah | CE |',
     '| --- | --- | --- |',
-    '| Upstream verb `migrate ls` | 🟡 | ❌ |',
-    '| Upstream verb `migrate show` | ❌ | ❌ |',
+    '| Verb `migrate ls` | 🟡 | ❌ |',
+    '| Verb `migrate show` | ❌ | ❌ |',
     '',
     // Names too short to compare: two-token labels under different sections.
     '| Capability | Ptah | CE |',

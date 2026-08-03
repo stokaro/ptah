@@ -119,12 +119,12 @@ func TestReplayGuardPostgresFamily_FailurePath(t *testing.T) {
 		},
 		{
 			name:      "foreign table",
-			statement: `CREATE FOREIGN TABLE public.remote_users (id bigint) SERVER upstream`,
+			statement: `CREATE FOREIGN TABLE public.remote_users (id bigint) SERVER remote_srv`,
 			wantErr:   `postgres migration replay rejects CREATE FOREIGN .*`,
 		},
 		{
 			name:      "foreign schema import",
-			statement: `IMPORT FOREIGN SCHEMA remote FROM SERVER upstream INTO public`,
+			statement: `IMPORT FOREIGN SCHEMA remote FROM SERVER remote_srv INTO public`,
 			wantErr:   `postgres migration replay rejects IMPORT FOREIGN SCHEMA .*`,
 		},
 		{
