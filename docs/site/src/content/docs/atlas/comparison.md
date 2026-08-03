@@ -513,7 +513,22 @@ Unsupported constructs fail explicitly rather than being silently ignored.
 
 **Atlas Commercial / Cloud.** Pro data sources and policy features include composite schema, blob directory, custom lint rules, and review workflows.
 
-**Evidence.** [HCL schema](../../reference/hcl-schema/), [Atlas project config](../project-config/), [Atlas feature availability](https://atlasgo.io/features), [`stokaro/ptah#582`](https://github.com/stokaro/ptah/issues/582), [`stokaro/ptah#511`](https://github.com/stokaro/ptah/issues/511)
+**Retained divergence on `file()` paths.** The community binary resolves a
+`file()` or `fileset()` argument against the whole filesystem. Measured on the
+pinned v1.3.0 build: `file("/etc/passwd")` and `file("../../../../etc/passwd")`
+in an `atlas.hcl` both exit `0` with the file read, and the contents reach an
+observable place — a database URL, an error message on standard error.
+
+Ptah confines both functions to the directory holding `atlas.hcl` on both
+binaries, and refuses an absolute path, parent traversal, or a symbolic link
+leaving that directory by name. An `atlas.hcl` is repository-controlled and
+evaluated before anything is applied, so matching here would turn config
+authorship into an arbitrary-file read on whatever machine runs the migration.
+The exit code is `1` either way today, so no working configuration changes; the
+refusal now names its reason and points at `getenv()`. See
+[`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042).
+
+**Evidence.** [HCL schema](../../reference/hcl-schema/), [Atlas project config](../project-config/), [Atlas feature availability](https://atlasgo.io/features), [`stokaro/ptah#582`](https://github.com/stokaro/ptah/issues/582), [`stokaro/ptah#511`](https://github.com/stokaro/ptah/issues/511), [`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042)
 
 
 ### Conformance status
