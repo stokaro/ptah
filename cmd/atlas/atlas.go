@@ -4,6 +4,7 @@ package atlas
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -30,12 +31,17 @@ import (
 )
 
 type atlasVerb struct {
-	use                 string
-	displayUse          string
-	short               string
-	native              string
-	factory             func() *cobra.Command
-	prefixArgs          []string
+	use        string
+	displayUse string
+	short      string
+	native     string
+	factory    func() *cobra.Command
+	prefixArgs []string
+	// quietNarration lowers the native log threshold so the target's own
+	// lifecycle narration stays off this surface's stderr. It is applied by
+	// quietingLogLevelArgs rather than through prefixArgs, because it must not
+	// apply under a machine-readable log format.
+	quietNarration      bool
 	positionals         []atlasPositionalArg
 	positionalOptional  bool
 	nativeOnlyFlags     []string
@@ -169,7 +175,26 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasMigrateStatusCommand())
 	cmd.AddCommand(newAtlasMigrateDownCommand())
 	cmd.AddCommand(newAtlasMigrateSetCommand())
-	for _, verb := range []atlasVerb{
+	for _, verb := range atlasMigrateForwardVerbs() {
+		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
+	}
+	cmd.AddCommand(newAtlasMigrateHashCommand())
+	cmd.AddCommand(newAtlasMigrateValidateCommand())
+	cmd.AddCommand(newAtlasMigrateDiffCommand())
+	cmd.AddCommand(newAtlasMigrateImportCommand())
+	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
+		{use: "push", short: "Push migration directory to a remote registry"},
+	})
+	return cmd
+}
+
+// atlasMigrateForwardVerbs returns the `migrate` verbs that are plain
+// table-driven forwards, in registration order. It is a named function rather
+// than a literal inside newAtlasMigrateCommand so that a test can enumerate
+// every forwarded verb — see TestAtlasVerbsCarryLogLevelExactlyWhereTargetTakesIt,
+// which measures each one instead of only the verb an issue happened to name.
+func atlasMigrateForwardVerbs() []atlasVerb {
+	return []atlasVerb{
 		{
 			use:                "checkpoint",
 			displayUse:         "checkpoint [flags] [name]",
@@ -216,17 +241,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		atlasMigrateRebaseVerb(),
 		atlasMigrateRmVerb(),
 		atlasMigrateTestVerb(),
-	} {
-		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
 	}
-	cmd.AddCommand(newAtlasMigrateHashCommand())
-	cmd.AddCommand(newAtlasMigrateValidateCommand())
-	cmd.AddCommand(newAtlasMigrateDiffCommand())
-	cmd.AddCommand(newAtlasMigrateImportCommand())
-	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
-		{use: "push", short: "Push migration directory to a remote registry"},
-	})
-	return cmd
 }
 
 func atlasRootArgs(cmd *cobra.Command, args []string) error {
@@ -332,10 +347,33 @@ func atlasMigrateDownVerb() atlasVerb {
 		// default of "ptah" silently no-ops against the atlas_schema_revisions
 		// rows `atlas migrate apply` writes. --confirm suppresses the native
 		// safety prompt because Atlas migrate down executes non-interactively.
+		//
+		// --log-level warn is what keeps this verb as quiet as the rest of the
+		// binary. The Atlas-compatible surface is quiet by construction
+		// (cmd/ptah-compat/main.go installs cliobs.QuietDefaultLogger), but that
+		// only lowers what the *default* logger accepts. This is the one
+		// forwarded verb whose native target starts its own observability
+		// runtime (cliobs.Start), and that runtime installs a fresh logger over
+		// the quiet default at the native --log-level default of "info" — so the
+		// migrator's lifecycle log and the dialect writers' "[DRY RUN] Would ..."
+		// narration land on the compat command's stderr (stokaro/ptah#969).
+		// warn, not error: it reproduces the #968 threshold exactly, so a
+		// Warn-level diagnostic that exists on no other channel (a migration
+		// lock that would not release, a skipped out-of-order migration, a
+		// connection that would not close) still reaches the user.
+		//
 		// User args are appended after the prefix, so an explicit native
-		// `--revision-format ptah` pass-through still overrides the format
-		// default (pflag keeps the last value).
+		// `--revision-format ptah` or `--log-level info` pass-through still
+		// overrides the default (pflag keeps the last value).
+		//
+		// The level is NOT in this list, because it cannot be unconditional.
+		// Under `--log-format json` the emitter turns the whole report into
+		// Info-level records, so lowering the threshold deletes the command's
+		// output rather than its narration -- measured, 2687 bytes became 0 on
+		// a rollback that still ran. quietingLogLevelArgs applies it only where
+		// the report reaches the writer directly.
 		prefixArgs:          []string{"--revision-format", "atlas", "--confirm"},
+		quietNarration:      true,
 		nativeOnlyFlags:     []string{"confirm"},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
@@ -768,6 +806,7 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err != nil {
 			return nil, nil, err
 		}
+		mapped = append(quietingLogLevelArgs(verb, args), mapped...)
 		return append(mapped, nativeTail...), project.context, nil
 	}
 }
@@ -991,4 +1030,57 @@ func atlasFlagName(arg string) (name string, inlineValue bool, ok bool) {
 	default:
 		return "", false, false
 	}
+}
+
+// quietingLogLevelArgs returns the native --log-level argument that keeps a
+// forwarded verb's own narration off this surface, or nothing when lowering the
+// threshold would delete the command's output instead.
+//
+// The distinction is the log format, and it is not cosmetic. In text mode the
+// report is written straight to the command's writer and no threshold reaches
+// it, so lowering the level removes exactly what this surface does not want:
+// the migrator's lifecycle records and the dialect writers' "[DRY RUN] Would
+// ..." narration.
+//
+// Under a machine-readable format the emitter turns that same report into
+// Info-level records, so the threshold and the output become one knob.
+// Measured on a one-migration rollback: 2687 bytes across 15 records became 0,
+// exit 0, with the rollback still performed. Silence on a destructive command
+// is a worse defect than the narration this was fixing.
+//
+// The format is read from the raw arguments rather than from cobra, because
+// this surface registers neither logging flag -- they are forwarded verbatim to
+// the native command, so a flag lookup here finds nothing and reports the
+// default for every invocation.
+//
+// The result is PREPENDED, so an explicit `--log-level` from the user still
+// wins: pflag keeps the last value.
+//
+// warn rather than error: it reproduces the #968 threshold exactly, so a
+// Warn-level diagnostic that exists on no other channel -- a migration lock
+// that would not release, a skipped out-of-order migration -- still arrives.
+func quietingLogLevelArgs(verb atlasVerb, args []string) []string {
+	if !verb.quietNarration {
+		return nil
+	}
+	if !logFormatWritesReportDirectly(args) {
+		return nil
+	}
+	return []string{"--log-level", "warn"}
+}
+
+// logFormatWritesReportDirectly reports whether the selected log format sends a
+// command's report to its writer rather than through the logger.
+func logFormatWritesReportDirectly(args []string) bool {
+	format := strings.TrimSpace(os.Getenv("PTAH_LOG_FORMAT"))
+	for index, arg := range args {
+		switch {
+		case arg == "--log-format" && index+1 < len(args):
+			format = args[index+1]
+		case strings.HasPrefix(arg, "--log-format="):
+			format = strings.TrimPrefix(arg, "--log-format=")
+		}
+	}
+	format = strings.ToLower(strings.TrimSpace(format))
+	return format == "" || format == "text"
 }
