@@ -738,6 +738,14 @@ func applyAtlasSchemaTestProjectConfig(
 	if len(sources.Value) > 1 {
 		return nil, fmt.Errorf("atlas schema test supports one atlas.hcl schema source, got %d", len(sources.Value))
 	}
+	// A database desired-state source has no local path to resolve against the
+	// atlas.hcl directory, and the shared local-file resolver refuses it with
+	// "only local file:// schema files are supported". That resolver is left
+	// exactly as it is because `schema diff`'s env path pins its wording; the
+	// schema-test accommodation belongs here, on the one verb that wants it.
+	if source, err := atlassource.Classify(sources.Value[0]); err == nil && source.Kind == atlassource.KindDatabase {
+		return append(args, "--url", strings.TrimSpace(sources.Value[0])), nil
+	}
 	urls, err := atlasProjectConfigSchemaURLsFromFlags(projectFlags, sources.Value)
 	if err != nil {
 		return nil, fmt.Errorf("atlas.hcl schema.src: %w", err)
