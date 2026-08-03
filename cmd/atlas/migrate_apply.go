@@ -35,6 +35,7 @@ type atlasMigrateApplyOptions struct {
 	execOrder       string
 	allowDirty      bool
 	baseline        string
+	toVersion       string
 	revisionsSchema string
 	lockTimeout     string
 	format          string
@@ -68,6 +69,12 @@ Native Ptah equivalent: ptah migrations up.`,
 	flags.StringVar(&opts.execOrder, "exec-order", opts.execOrder, "Execution order: linear, linear-skip, or non-linear")
 	flags.BoolVar(&opts.allowDirty, "allow-dirty", false, "Allow applying migrations when the revision table is dirty")
 	flags.StringVar(&opts.baseline, "baseline", "", "Baseline version to mark applied before running pending migrations")
+	// Atlas registers --to-version on `migrate apply` as a string
+	// ("migrate to this version, if set"), so the value is carried as text and
+	// parsed like --baseline instead of as a typed integer flag: a
+	// non-numeric value must fail with Ptah's version diagnostic, not with
+	// pflag's "invalid argument" for an int flag.
+	flags.StringVar(&opts.toVersion, "to-version", "", "Migrate to this version, if set")
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the Atlas revisions table")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the migration lock, such as 10s or 2m")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
@@ -187,6 +194,10 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
+	toVersion, err := atlasmigrate.ParseMigrationVersionFlag("to-version", opts.toVersion)
+	if err != nil {
+		return err
+	}
 	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return err
@@ -284,6 +295,7 @@ func runAtlasMigrateApply(
 		RevisionsSchema:      opts.revisionsSchema,
 		MigrationLockTimeout: migrationLockTimeout,
 		Amount:               amount,
+		ToVersion:            toVersion,
 		AllowDirty:           opts.allowDirty,
 		BaselineVersion:      baselineVersion,
 		SkipChecks:           skipChecks,

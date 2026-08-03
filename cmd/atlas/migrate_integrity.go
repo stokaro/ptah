@@ -318,6 +318,8 @@ func checkAtlasMigrateSourceArgs(cmd *cobra.Command, verb atlasVerb, args []stri
 			flagSet.UintP(flag.Name, flag.Shorthand, 0, flag.Usage)
 		case atlasargs.StringFlag:
 			flagSet.StringP(flag.Name, flag.Shorthand, flag.Default, flag.Usage)
+		case atlasargs.StringArrayFlag:
+			flagSet.StringSliceP(flag.Name, flag.Shorthand, nil, flag.Usage)
 		}
 	}
 	if err := flagSet.Parse(args); err != nil {

@@ -5777,6 +5777,12 @@ type Options struct {
     // the Ptah directory format (not the migrator's own "auto" default), so a
     // direct caller that wants format auto-detection must set it explicitly.
     DirFormat migrator.MigrationDirFormat
+    // RevisionsSchema places the revision table a migrate_to step writes in a
+    // named schema instead of the connection's default one. It matters when the
+    // throwaway database already holds a revision table the run must not touch,
+    // or when the tests exist to prove that a deployment's revision schema is
+    // the one the migrations expect. Empty keeps the connection default.
+    RevisionsSchema string
 }
     Options configures a single RunMigrationTest invocation.
 
@@ -6007,6 +6013,16 @@ type CheckpointFromShadowOptions struct {
     ProviderOptions []migrator.FSProviderOption
     // ConnectTimeout bounds the shadow database connection attempt.
     ConnectTimeout time.Duration
+    // MigrationLockTimeout bounds how long the replay waits for the shadow
+    // database's migration advisory lock. Zero waits indefinitely, which is the
+    // migrator's own default. It only has an effect on dialects that implement
+    // advisory locking.
+    MigrationLockTimeout time.Duration
+    // SchemaQualifier, when non-empty, prefixes every object the checkpoint
+    // creates with a schema qualifier, exactly as the same-named option does on
+    // a generated migration. It applies to a single-schema checkpoint only, and
+    // an unqualifiable statement kind is refused rather than emitted unqualified.
+    SchemaQualifier string
 }
     CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
 

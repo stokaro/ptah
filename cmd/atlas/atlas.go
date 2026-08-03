@@ -215,6 +215,22 @@ func atlasMigrateForwardVerbs() []atlasVerb {
 				// directory format is still rejected loudly (see
 				// docs/site/src/content/docs/reference/atlas-commands.md).
 				atlasCheckpointDirFormatFlag(),
+				// Atlas's published CLI reference registers these five on
+				// `migrate checkpoint`; the pinned community binary registers
+				// none of its own flags on this verb (every spelling answers
+				// `unknown flag`), so the reference is the oracle here.
+				//
+				// --lock-name is deliberately absent: the named-lock family is
+				// one feature across five verbs and lands as its own change.
+				atlasargs.NativeStringArray("schema", "s", "Schema names the checkpoint covers", "schemas"),
+				atlasargs.String("qualifier", "", "Qualify tables with a custom qualifier when working on a single schema"),
+				atlasargs.NativeString(
+					"lock-timeout",
+					"",
+					"How long to wait for the dev database's migration lock during the replay",
+					"migration-lock-timeout",
+				),
+				atlasargs.Bool("edit", "", "Edit the generated checkpoint file(s)"),
 			},
 		},
 		atlasMigrateEditVerb(),
@@ -438,6 +454,17 @@ func atlasMigrateTestVerb() atlasVerb {
 			atlasMigrateDirFormatFlag("dir-format"),
 			atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url"),
 			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
+			// Atlas's published CLI reference registers --revisions-schema on
+			// `migrate test` ("name of the schema the revisions table resides
+			// in"), the same spelling it carries on apply, status and set. It
+			// maps onto the native --migrations-schema, which places the
+			// revision table a migrate_to step writes.
+			atlasargs.NativeString(
+				"revisions-schema",
+				"",
+				"Schema the revision table written by a migrate_to step resides in",
+				"migrations-schema",
+			),
 		},
 	}
 }
@@ -769,6 +796,11 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 			cmd.Flags().BoolP(flag.Name, flag.Shorthand, false, flag.Usage)
 		case atlasargs.UintFlag:
 			cmd.Flags().UintP(flag.Name, flag.Shorthand, 0, flag.Usage)
+		case atlasargs.StringArrayFlag:
+			// StringSlice, not StringArray: Atlas prints these as `strings`
+			// and splits a comma-separated value, which is the behavior a
+			// pipeline passing `--schema a,b` expects.
+			cmd.Flags().StringSliceP(flag.Name, flag.Shorthand, nil, flag.Usage)
 		}
 		if !flag.EnvDisabled {
 			continue

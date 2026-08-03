@@ -14,31 +14,43 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/editor"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/dblock"
+	"go.5x5.cz/ptah/internal/migrateops"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const (
-	migrationsFlag  = "migrations-dir"
-	shadowDBFlag    = "shadow-db"
-	dialectFlag     = "dialect"
-	descriptionFlag = "description"
-	versionFlag     = "version"
-	dryRunFlag      = "dry-run"
-	dirFormatFlag   = "dir-format"
+	migrationsFlag           = "migrations-dir"
+	shadowDBFlag             = "shadow-db"
+	dialectFlag              = "dialect"
+	descriptionFlag          = "description"
+	versionFlag              = "version"
+	dryRunFlag               = "dry-run"
+	dirFormatFlag            = "dir-format"
+	qualifierFlag            = "qualifier"
+	editFlag                 = "edit"
+	editorFlag               = "editor"
+	migrationLockTimeoutFlag = "migration-lock-timeout"
 )
 
 type options struct {
-	migrationsDir  string
-	shadowDB       string
-	dialect        string
-	description    string
-	version        string
-	dryRun         bool
-	dirFormat      string
-	schemas        string
-	connectTimeout string
+	migrationsDir        string
+	shadowDB             string
+	dialect              string
+	description          string
+	version              string
+	dryRun               bool
+	dirFormat            string
+	schemas              string
+	connectTimeout       string
+	qualifier            string
+	edit                 bool
+	editor               string
+	migrationLockTimeout string
 }
 
 // NewMigrateCheckpointCommand returns the `checkpoint` command.
@@ -79,6 +91,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.version, versionFlag, "", "Checkpoint version; defaults to one above the newest migration")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Print the checkpoint SQL instead of writing files")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatPtah), "Migration directory format")
+	flags.StringVar(&opts.qualifier, qualifierFlag, "", "Qualify every object in the checkpoint with a custom schema qualifier (single-schema checkpoints only)")
+	flags.BoolVar(&opts.edit, editFlag, false, "Open the written checkpoint files in an editor before reporting them (the directory checksum is refreshed afterwards)")
+	flags.StringVar(&opts.editor, editorFlag, "", "Editor command used with --edit (defaults to $VISUAL, then $EDITOR)")
+	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Maximum time to wait for the shadow database's migration advisory lock during the replay (for example 10s). Empty waits indefinitely.")
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 }
@@ -120,18 +136,32 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(opts.migrationLockTimeout)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	warnUnlockableShadowDialect(cmd, opts)
+	// Both edit preconditions are checked before the replay, not after the
+	// files are written: the replay drops and rebuilds the shadow database, and
+	// a run that is going to refuse must not pay for that or leave a checkpoint
+	// behind that nobody could edit.
+	if err := checkEditPreconditions(cmd, opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	version, err := resolveCheckpointVersion(opts.version, opts.migrationsDir, dirFormat)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
 	upSQL, downSQL, err := generator.GenerateCheckpointFromShadow(ctx, generator.CheckpointFromShadowOptions{
-		ShadowDatabaseURL: opts.shadowDB,
-		MigrationsDir:     opts.migrationsDir,
-		Dialect:           opts.dialect,
-		Schemas:           dbcli.ParseSchemas(opts.schemas),
-		ProviderOptions:   []migrator.FSProviderOption{migrator.WithMigrationDirFormat(dirFormat)},
-		ConnectTimeout:    connectTimeout,
+		ShadowDatabaseURL:    opts.shadowDB,
+		MigrationsDir:        opts.migrationsDir,
+		Dialect:              opts.dialect,
+		Schemas:              dbcli.ParseSchemas(opts.schemas),
+		ProviderOptions:      []migrator.FSProviderOption{migrator.WithMigrationDirFormat(dirFormat)},
+		ConnectTimeout:       connectTimeout,
+		MigrationLockTimeout: migrationLockTimeout,
+		SchemaQualifier:      opts.qualifier,
 	})
 	if err != nil {
 		return err
@@ -153,8 +183,100 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if err := editWrittenCheckpoint(cmd, opts, dirFormat, upPath, downPath); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	fmt.Fprintf(out, "Wrote checkpoint version %d:\n  %s\n  %s\n", version, upPath, downPath)
 	return nil
+}
+
+// warnUnlockableShadowDialect says so when a lock timeout was asked for on a
+// shadow database whose dialect implements no advisory locking (SQLite, and
+// ClickHouse), where the replay takes no lock and the timeout therefore bounds
+// nothing.
+//
+// Silence would be the worse answer: an operator who set a bound would believe
+// concurrent replays against one shadow database are serialized. The same
+// disclosure exists on `schema apply` for the same reason.
+//
+// It is emitted only when the flag was set explicitly, so an ordinary SQLite
+// checkpoint stays quiet, and on stderr, so it never contaminates the
+// checkpoint SQL a --dry-run writes to stdout.
+func warnUnlockableShadowDialect(cmd *cobra.Command, opts *options) {
+	if !cmd.Flags().Changed(migrationLockTimeoutFlag) {
+		return
+	}
+	dialect := opts.dialect
+	if dialect == "" {
+		// A URL Ptah cannot classify is not evidence either way, so an error
+		// here means no claim is made rather than a wrong one.
+		dialect, _ = atlasurl.DialectFromURL(opts.shadowDB)
+	}
+	if dialect == "" || dblock.Supported(dialect) {
+		return
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"note: migration locking is not supported for dialect %q; --%s is ignored and the checkpoint replay proceeds without a lock\n",
+		dialect, migrationLockTimeoutFlag,
+	)
+}
+
+// checkEditPreconditions refuses an --edit run that could not finish, before
+// any database work happens.
+//
+// Two things can make an editor session impossible, and both are silent
+// failures if left to the editor itself: no editor is configured (the run would
+// write a checkpoint and then stop), and no terminal is attached (an
+// interactive editor started without one blocks forever, which in CI is
+// indistinguishable from a hang). Refusing up front turns both into an exit
+// code and a message.
+//
+// The sibling `ptah migrations create --edit` deliberately keeps its existing
+// behavior; changing it is a separate change with its own blast radius.
+func checkEditPreconditions(cmd *cobra.Command, opts *options) error {
+	if !opts.edit {
+		if opts.editor != "" {
+			return fmt.Errorf("--%s requires --%s", editorFlag, editFlag)
+		}
+		return nil
+	}
+	if _, err := editor.Resolve(opts.editor); err != nil {
+		if errors.Is(err, editor.ErrNoEditor) {
+			return fmt.Errorf("%w, or pass --%s", err, editorFlag)
+		}
+		return err
+	}
+	return editor.RequireInteractive(cmd.InOrStdin())
+}
+
+// editWrittenCheckpoint opens the checkpoint files just written and refreshes
+// the directory's integrity file, because editing changes bytes the write path
+// already hashed. Both conventions maintain a sum (ptah.sum, atlas.sum), so the
+// refresh is unconditional here, unlike on `migrations create`, where the ptah
+// path maintains none.
+func editWrittenCheckpoint(
+	cmd *cobra.Command,
+	opts *options,
+	dirFormat migrator.MigrationDirFormat,
+	paths ...string,
+) error {
+	if !opts.edit {
+		return nil
+	}
+	if err := editor.Open(cmd.Context(), opts.editor, paths...); err != nil {
+		return err
+	}
+	if _, err := migrateops.Rehash(opts.migrationsDir, dirFormat); err != nil {
+		return fmt.Errorf("refresh %s after editing: %w", integrityFileName(dirFormat), err)
+	}
+	return nil
+}
+
+func integrityFileName(dirFormat migrator.MigrationDirFormat) string {
+	if dirFormat == migrator.MigrationDirFormatAtlas {
+		return migratesum.AtlasFileName
+	}
+	return migratesum.FileName
 }
 
 // writeAtlasCheckpoint emits the Atlas single-file checkpoint convention. The
@@ -170,6 +292,9 @@ func writeAtlasCheckpoint(cmd *cobra.Command, out io.Writer, opts *options, vers
 
 	path, err := generator.WriteAtlasCheckpointFile(opts.migrationsDir, version, opts.description, upSQL)
 	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := editWrittenCheckpoint(cmd, opts, migrator.MigrationDirFormatAtlas, path); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	fmt.Fprintf(out, "Wrote checkpoint version %d:\n  %s\n", version, path)
