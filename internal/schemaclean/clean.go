@@ -80,6 +80,27 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	return nil
 }
 
+// ApplyPlan executes exactly the changes plan carries, in plan order.
+//
+// It is the execution half of a narrowed plan. [Apply] hands the whole database
+// to the writer's DropAllTables, which is correct only when the plan describes
+// the whole database; a caller that removed objects from the plan must not then
+// reach for a routine that ignores the plan, or the flag that narrowed it would
+// print one thing and destroy another.
+func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan) error {
+	conn.SchemaWriter().SetDryRun(false)
+	executor := conn.Writer()
+	for _, change := range plan.Changes {
+		if strings.TrimSpace(change.Cmd) == "" {
+			continue
+		}
+		if err := executor.ExecuteSQL(ctx, change.Cmd); err != nil {
+			return fmt.Errorf("drop schema object %s %q: %w", change.Type, change.Name, err)
+		}
+	}
+	return nil
+}
+
 func PlanFromSchema(schema *dbschematypes.DBSchema, dialect string) Plan {
 	if schema == nil {
 		return Plan{}

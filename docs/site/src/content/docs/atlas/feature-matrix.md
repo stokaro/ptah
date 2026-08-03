@@ -70,15 +70,15 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 159 capabilities below:
+Across the 162 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 86 |
+| Ptah supports it fully | 88 |
 | Ptah supports it with a stated limitation | 49 |
-| Ptah does not implement it | 24 |
+| Ptah does not implement it | 25 |
 | Ptah and Atlas CE both support it | 23 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 37 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 39 |
 | Ptah has it and neither Atlas edition does | 16 |
 | Atlas CE has it and Ptah does not, or only in part | 25 |
 | An Atlas column is ❔ — not established by this page's evidence | 21 |
@@ -131,7 +131,9 @@ seven of them as open capabilities regardless.
 | `--exclude` glob and type selectors | 🟡 | ✅ | ✅ | Resource globs plus one final-segment [type=...]; schema-qualified globs never match default-schema tables, functions or enums. |
 | `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics. |
 | `--schema` / -s scoping of both sides | ✅ | ✅ | ✅ | Names define the schema universe for apply and diff; repeated and comma-separated values union deterministically. |
+| `schema diff --export` | ❌ | ❌ | ✅ | Registered and refused by name. The flag selects an exporter declared by an atlas.hcl `exporter` block, and Ptah evaluates no such block, so there is nothing to select. |
 | `schema inspect --include` filtering | ✅ | ❌ | ✅ | Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. Child-depth patterns fail closed instead of emitting partial objects. |
+| `schema inspect --output` | ✅ | ❌ | ✅ | `-o/--output` writes the rendered schema to a file instead of stdout, published atomically so a reader never sees a partial document. |
 | Apply advisory lock and `--lock-timeout` | ✅ | ✅ | ✅ | Real locks on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server; SQLite, ClickHouse, CockroachDB, Spanner run unlocked with a note. |
 | Desired-state sources for `--to` and `--from` | 🟡 | ✅ | ✅ | Files, one DB URL, one atlas.sum dir, or env://. A plain file:// schema directory without atlas.sum is rejected; atlas:// fails early. |
 | Dev-database rehearsal before apply | ✅ | ✅ | ✅ | Dev DB reset, target schema recreated, exact plan rehearsed; dev==target and failed rehearsal abort. docker:// dev URLs have their own row. |
@@ -143,7 +145,7 @@ seven of them as open capabilities regardless.
 | JSON output for native schema diff | ✅ | ❔ | ➖ | Native ptah schema diff `--format` json emits a machine-readable statements document; the Go-template row only states that {{ json . }} fails on the compat diff, leaving native JSON unstated. |
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |
-| schema clean | 🟡 | ✅ | ✅ | Plan and `--dry-run` list tables (plus PostgreSQL enums/sequences, SQL Server FKs), but the apply drops views too via DropAllTables. |
+| schema clean | 🟡 | ✅ | ✅ | `--include`/`--exclude` narrow the cleanup through the apply/diff selector engine, and a narrowed run executes only what it printed. An unflagged run still drops views it never listed. |
 | schema diff between two schema states | 🟡 | ✅ | ✅ | SQLite refuses any change needing a table rebuild: column modify, NOT NULL change, constraint add/remove, enum CHECK change. Same on apply. |
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; `--format` sql\|json\|template. Native twin `ptah schema inspect` adds `--out-dir` and `--split` file export. |
@@ -192,9 +194,10 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
+| `schema apply --skip-lint` | ✅ | ❌ | ✅ | With an atlas.hcl `lint` policy, the planned SQL is linted against the rules it names and an error-rated finding refuses the apply; `--skip-lint` applies anyway. No policy, no lint pass, as in CE. |
 | Apply-time destructive-change gate | ✅ | ❌ | ➖ | migrations up refuses destructive pending files; .ptah-lint.yaml disabled-rules reopens the gate and ptah.sum does not hash that file. |
 | Atlas Pro analyzer code coverage | 🟡 | ➖ | ✅ | OW101/OW102 have no rule; PG301, PG304, MY130, MY133, MY136 fire under broader codes (DS103, PG104, CD103, MY101), not dedicated ones. |
-| Atlas web reports (`--web`) | ❌ | ❌ | ✅ | Not registered on migrate lint or schema diff; rejected as an unknown flag. Pinned Atlas CE v1.2.0 does not register it either. |
+| Atlas web reports (`--web`) | ❌ | ❌ | ✅ | `schema inspect --web` is a registered refusal naming the local ERD spelling; migrate lint and schema diff still reject it as unknown. Pinned Atlas CE registers it on none of them. |
 | Check bypass on the compat surface | ✅ | ❌ | ❌ | No Atlas build registers `--skip-checks` on migrate apply, so the compat bypass is PTAH_SKIP_CHECKS. Explicit-only on migrate down. |
 | CI integration (GitHub Action, annotations) | ✅ | ❔ | ✅ | stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. Atlas features page omits CI integrations. |
 | Custom lint rules and check-level policy | 🟡 | ❌ | ✅ | Custom rules only from Go (lint.Register, Options.ExtraRules); atlas.hcl rule, review, naming, non_linear blocks and force all fail. |
@@ -213,7 +216,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
-| Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | schema test -u takes only a Go-annotation directory; SQL/HCL files and DB URLs fail. Neither verb exposes `--report` or `--seed-dir`. |
+| Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | schema test carries `-s/--schema` and takes a .sql or .hcl file on `-u`; a live database URL still fails. `migrate test --revisions-schema` is missing. Neither verb exposes `--report`. |
 | Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused, and schema apply `--dry-run` skips the rehearsal entirely. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. Nothing cited establishes an Atlas Go test-runner package. |
 | Exit-code contract for CI gates | ✅ | ✅ | ➖ | Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2. |

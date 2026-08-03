@@ -361,12 +361,21 @@
   },
   {
     "area": "Migration linting",
+    "feature": "`schema apply --skip-lint`",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "yes",
+    "note": "With an atlas.hcl `lint` policy, the planned SQL is linted against the rules it names and an error-rated finding refuses the apply; `--skip-lint` applies anyway. No policy, no lint pass, as in CE.",
+    "evidence": "Added under #951; Atlas-side source atlasgo.io/cli-reference (`--skip-lint  skip linting migration plan` on schema apply). The pinned community binary v1.3.0 does not register it and does not lint on apply, measured by running the spelling: `schema apply --skip-lint` -> `unknown flag`, with `--dry-run` present and `--frobnicate-nonsense` missing as controls. Verified over a destructive fixture (live `users`, desired schema without it, so the plan is a DROP TABLE): with `lint { destructive { error = true } }` the dry run exits 1 naming DS101; with `--skip-lint` the same run exits 0 and prints the DROP; with `error = false` it exits 0; with no atlas.hcl at all it exits 0 and `--skip-lint` changes nothing (cmd/atlas/schema_apply_skip_lint_test.go). Only the rules the policy names run: the engine also ships rules a declarative plan cannot answer -- a plan is not a directory, so it has no paired down file -- and enabling the whole registry would refuse applies over findings nobody asked about. This is the opposite of the `schema plan --skip-lint` row, where the flag is still a no-op because that verb runs no lint step"
+  },
+  {
+    "area": "Migration linting",
     "feature": "Atlas web reports (`--web`)",
     "ptah": "no",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Not registered on migrate lint or schema diff; rejected as an unknown flag. Pinned Atlas CE v1.2.0 does not register it either.",
-    "evidence": "Reproduced on all three surfaces: `ptah-compat migrate lint --web` and `ptah-compat schema diff --web` print `Error: unknown flag: --web` (exit 1), `ptah migrations lint --web` prints `error: unknown flag: --web` (exit 2); the prefix and code follow the surface, per #1019. cli-surface.md:33 lists the full CE `atlas migrate lint` flag set with no --web."
+    "note": "`schema inspect --web` is a registered refusal naming the local ERD spelling; migrate lint and schema diff still reject it as unknown. Pinned Atlas CE registers it on none of them.",
+    "evidence": "Decided under #951: opening a viewer has no local counterpart, but the diagram does, so the refusal names it. Verified: `ptah-compat schema inspect --url sqlite://t.db --web` prints `atlas schema inspect accepts --web, but Ptah does not implement its behavior: opening a viewer is a UI action with no local counterpart; the ERD itself is local` (exit 1, cmd/atlas/schema_ui_flags_test.go). Still unknown flags elsewhere: `ptah-compat migrate lint --web` and `ptah-compat schema diff --web` print `Error: unknown flag: --web` (exit 1), `ptah migrations lint --web` prints `error: unknown flag: --web` (exit 2); the prefix and code follow the surface, per #1019. Atlas-side source for the spelling: atlasgo.io/cli-reference lists `-w, --web  open the schema ERD in the browser` on schema inspect. Measured 2026-08-03 on the pinned community binary v1.3.0, by running the spelling: `schema inspect --web` -> `unknown flag`, with `--format` present and `--frobnicate-nonsense` missing as controls. cli-surface.md:33 lists the full CE `atlas migrate lint` flag set with no --web."
   },
   {
     "area": "Testing framework",
@@ -545,8 +554,26 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Plan and `--dry-run` list tables (plus PostgreSQL enums/sequences, SQL Server FKs), but the apply drops views too via DropAllTables.",
-    "evidence": "internal/schemaclean/clean.go:109-147 enumerates only foreign keys, tables and enums; :75-81 executes conn.SchemaWriter().DropAllTables(ctx). Reproduced on a SQLite database holding one table and one standalone view: `pc schema clean --url sqlite://cl3.db --dry-run --format '{{ range .Changes }}{{ .Cmd }}{{ end }}'` printed only `DROP TABLE IF EXISTS \"users\"`, then `--auto-approve` left sqlite_master empty \u2014 the unreported view v_const was dropped as well. CE registers schema clean per cli-surface.md:44"
+    "note": "`--include`/`--exclude` narrow the cleanup through the apply/diff selector engine, and a narrowed run executes only what it printed. An unflagged run still drops views it never listed.",
+    "evidence": "Selectors added under #951 with the Atlas-side source atlasgo.io/cli-reference (`--exclude strings`, `--include strings` on schema clean); the pinned community binary v1.3.0 registers neither, measured by running the spelling (`--url` present, `--frobnicate-nonsense` missing as controls). Verified: on a SQLite database holding `users` and `audit_log`, `schema clean --include users --auto-approve` drops `users` and leaves `audit_log` in place, and `--exclude audit_log` does the same (cmd/atlas/schema_clean_scope_test.go). A narrowed plan is executed statement by statement via schemaclean.ApplyPlan rather than DropAllTables, so the printed plan is what runs. The unflagged path is unchanged and still over-drops: internal/schemaclean/clean.go enumerates only foreign keys, tables and enums, then executes conn.SchemaWriter().DropAllTables(ctx). Reproduced on a SQLite database holding one table and one standalone view: `pc schema clean --url sqlite://cl3.db --dry-run --format '{{ range .Changes }}{{ .Cmd }}{{ end }}'` printed only `DROP TABLE IF EXISTS \"users\"`, then `--auto-approve` left sqlite_master empty \u2014 the unreported view v_const was dropped as well; that half is #940. CE registers schema clean per cli-surface.md:44"
+  },
+  {
+    "area": "Declarative / direct schema workflow",
+    "feature": "`schema inspect --output`",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "yes",
+    "note": "`-o/--output` writes the rendered schema to a file instead of stdout, published atomically so a reader never sees a partial document.",
+    "evidence": "Added under #951; Atlas-side source atlasgo.io/cli-reference (`-o, --output string  output file path` on schema inspect). The pinned community binary v1.3.0 does not register it, measured by running the spelling: `schema inspect --output f.hcl` -> `unknown flag`, with `--format` present and `--frobnicate-nonsense` missing as controls. Verified: long flag and `-o` both write the file, `--format sql` decides what lands in it, stdout stays empty, an existing file is replaced rather than appended to, and an undirectory destination fails with `stage output file` instead of losing the inspection (cmd/atlas/schema_inspect_output_test.go)"
+  },
+  {
+    "area": "Declarative / direct schema workflow",
+    "feature": "`schema diff --export`",
+    "ptah": "no",
+    "atlas_oss": "no",
+    "atlas_pro": "yes",
+    "note": "Registered and refused by name. The flag selects an exporter declared by an atlas.hcl `exporter` block, and Ptah evaluates no such block, so there is nothing to select.",
+    "evidence": "Decided under #951 rather than implemented: accepting it would emit the default diff and report an export that never happened, and leaving it unregistered would give a script no way to learn why its spelling did nothing. Atlas-side source atlasgo.io/cli-reference (`--export  use exporter defined in env` on schema diff and schema inspect). The pinned community binary v1.3.0 registers it on neither, measured by running the spelling, with `--format` present and `--frobnicate-nonsense` missing as controls. Verified: `ptah-compat schema diff --from ... --to ... --export` exits 1 naming the missing `exporter` block, before any config or database work (cmd/atlas/schema_ui_flags_test.go). config/projectconfig tolerates an `exporter` block and evaluates nothing from it. The twin `schema inspect --export` carries the same verdict and is still unregistered, left to a later batch of #951"
   },
   {
     "area": "Declarative / direct schema workflow",
@@ -770,8 +797,8 @@
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "schema test -u takes only a Go-annotation directory; SQL/HCL files and DB URLs fail. Neither verb exposes `--report` or `--seed-dir`.",
-    "evidence": "Built ptah-compat `schema test --help` (flags: --dev-url, --run, -u only) and `migrate test --help` (--dev-url, --dir, --dir-format, --run only); `schema test -u file:///path/schema.sql` exits 1 with \"parse desired schema from ...: stat .: not a directory\"; `-u sqlite://target.db` and `-u env://src` exit 1 with \"only local file:// migration directories are supported\"; `migrate test --report json` is parsed as a positional path. Passing baseline: `migrate test --dir file://migrations --dev-url sqlite://dev.db tests` exits 0. Atlas side from cli-surface.md lines 40/59 (out-of-scope in CE) and lines 138-140/168-170. Atlas's `migrate test` and `schema test` also lack `--report` and `--seed-dir`; `schema test -u` accepts a SQL file and a live sqlite URL (both PASS) (measured; observation study, scenario, lint-test-pro, test-hcl)"
+    "note": "schema test carries `-s/--schema` and takes a .sql or .hcl file on `-u`; a live database URL still fails. `migrate test --revisions-schema` is missing. Neither verb exposes `--report`.",
+    "evidence": "`-s/--schema` added under #951; Atlas-side source atlasgo.io/cli-reference (`-s, --schema strings  set schema names` on schema test). Verified with a fixture whose two tables live in two schemas: unscoped the run fails on SQLite with `unknown database \"other\"`, `--schema main` passes, `-s main -s nosuch` also passes (so repeated values accumulate rather than the last one winning), and `--schema nosuch` is refused with `selects no tables out of the desired schema` instead of provisioning nothing (cmd/atlas/schema_test_schema_scope_test.go). File sources on -u landed in #1054: `schema test -u file://schema.sql` runs. Live database URLs on -u remain refused (#1055). `migrate test --revisions-schema` remains missing, measured by running the spelling. Atlas side from cli-surface.md lines 40/59 (out-of-scope in CE) and lines 138-140/168-170. Atlas's `migrate test` and `schema test` also lack `--report` and `--seed-dir` (measured; observation study, scenario, lint-test-pro, test-hcl)"
   },
   {
     "area": "Test frameworks",

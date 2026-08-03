@@ -50,7 +50,9 @@ schema universe, --include selectors pick top-level resources inside it, and
 --exclude plus env.schema.mode subtract from the result. A selected object
 that depends on an unselected object refuses the diff with an explicit
 diagnostic, and a selection that matches nothing reports synced schemas.
-Hosted report output is not implemented.`,
+Hosted report output is not implemented. --export is registered and refused:
+it selects an exporter declared by an atlas.hcl ` + "`exporter`" + ` block,
+which Ptah does not evaluate.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaDiff(cmd, opts)
 		},
@@ -63,11 +65,17 @@ Hosted report output is not implemented.`,
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in diffing")
+	registerAtlasUIFlag(cmd, atlasSchemaExportFlag())
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 
 func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
+	// The refusal lands before any config or database work: a flag Ptah does
+	// not implement must not be answered with a diff that ignored it.
+	if err := refuseAtlasUIFlag(cmd, "schema", "diff", atlasSchemaExportFlag()); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
