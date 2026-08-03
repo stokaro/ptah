@@ -834,3 +834,58 @@ func TestGetNextMigrationVersion(t *testing.T) {
 	// Version2 should be >= version1 (timestamps should be monotonic or equal)
 	c.Assert(version2 >= version1, qt.IsTrue)
 }
+
+// TestDiscoverMigrationFilesNestedAtlasSumDoesNotGovern covers the predicate
+// that decides which integrity file governs a directory.
+//
+// The scan walks recursively, so a nested `sub/atlas.sum` would set the flag,
+// while the function that actually picks the hasher looks at the root only.
+// When the two disagreed, a directory holding a top-level pair, a nested pair
+// and `sub/atlas.sum` applied version 1 and stopped — exit 0, success banner,
+// no warning, and the author's second migration silently never ran.
+//
+// The assertion is on the discovered set rather than on an error, because that
+// failure had no error to assert: it succeeded, quietly, with less work done.
+func TestDiscoverMigrationFilesNestedAtlasSumDoesNotGovern(t *testing.T) {
+	tests := []struct {
+		name string
+		fsys fstest.MapFS
+		want int
+	}{
+		{
+			name: "nested atlas.sum leaves the ptah pair discoverable",
+			fsys: fstest.MapFS{
+				"0000000001_init.up.sql":       &fstest.MapFile{Data: []byte("CREATE TABLE a (id int);")},
+				"0000000001_init.down.sql":     &fstest.MapFile{Data: []byte("DROP TABLE a;")},
+				"sub/0000000002_more.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE b (id int);")},
+				"sub/0000000002_more.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE b;")},
+				"sub/atlas.sum":                &fstest.MapFile{Data: []byte("h1:xxx=\n")},
+			},
+			// Four files, not two migrations: the discovery returns each
+			// direction separately.
+			want: 4,
+		},
+		{
+			name: "a top-level atlas.sum still governs",
+			fsys: fstest.MapFS{
+				"20240101000000_init.sql": &fstest.MapFile{Data: []byte("CREATE TABLE a (id int);")},
+				"sub/20240102000000_more.sql": &fstest.MapFile{
+					Data: []byte("CREATE TABLE b (id int);"),
+				},
+				"atlas.sum": &fstest.MapFile{Data: []byte("h1:xxx=\n20240101000000_init.sql h1:yyy=\n")},
+			},
+			want: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			files, err := DiscoverMigrationFiles(tt.fsys, MigrationDirFormatAuto)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(files, qt.HasLen, tt.want)
+		})
+	}
+}

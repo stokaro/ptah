@@ -433,8 +433,21 @@ func DiscoverMigrationFiles(fsys fs.FS, format MigrationDirFormat) ([]MigrationF
 			return nil
 		}
 
-		if path.Base(p) == "atlas.sum" {
+		// Top-level only, and deliberately so. The predicate that decides
+		// which integrity file governs a directory -- migratesum's hasFile --
+		// looks at the root, so accepting a nested sub/atlas.sum here would
+		// make the two disagree.
+		//
+		// Measured when they did: a directory holding a top-level ptah pair, a
+		// nested pair and sub/atlas.sum applied version 1 only, exit 0, with
+		// the success banner and no warning. The author's second migration
+		// silently never ran -- the same silent-drop shape this change exists
+		// to remove, pointed the other way.
+		if p == "atlas.sum" {
 			hasAtlasSum = true
+			return nil
+		}
+		if path.Base(p) == "atlas.sum" {
 			return nil
 		}
 		if !strings.EqualFold(path.Ext(p), ".sql") {
