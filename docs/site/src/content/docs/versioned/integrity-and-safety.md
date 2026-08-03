@@ -122,15 +122,44 @@ writes. A directory that holds no `.sql` file anywhere in its tree — a freshly
 created or `.gitkeep`-only migrations directory — is not a checksum error: it
 reports `No migration files to execute` and exits `0`, matching Atlas.
 
-That scan is recursive, because Ptah executes migrations in subdirectories.
-Atlas does not read subdirectories at all, so a directory whose only
-migration sits one level down is "nothing to execute" for Atlas while Ptah
-would run it — Ptah refuses it when unhashed rather than executing an unverified
-migration, which is exit `1` where Atlas exits `0`
-([#976](https://github.com/stokaro/ptah/issues/976)). One predicate serves all
-three verbs, so `status` and `set` inherit that divergence; the alternative was
-a second, shallower rule for the read-only verbs, and two rules answering one
-question drift.
+That scan reads the top level only, because an Atlas migration directory
+executes exactly what its `atlas.sum` covers: top-level files whose name ends in
+`.sql`, spelled in lower case. A `.sql` file in a subdirectory, or a top-level
+`.SQL`, is not a migration and is not run
+([#976](https://github.com/stokaro/ptah/issues/976)).
+
+That rule replaced a recursive one. Ptah used to discover and execute nested
+files while hashing only the top level, so a migration in a subdirectory ran
+with no checksum reaching it: `migrate validate` reported the directory clean,
+and editing that file afterwards changed what ran without changing any hash.
+Converging the executed set onto the covered set is what makes `atlas.sum` mean
+something; refusing such directories, which is what the previous release did for
+the unhashed half only, never closed the hashed half at all.
+
+Ptah names what it declined. A file it found but did not treat as a migration is
+reported on stderr:
+
+```text
+warning: sub/2_b.sql is not covered by atlas.sum and will not run; Atlas migrations are top-level files named *.sql
+```
+
+Atlas prints nothing here, and that silence is the reason Ptah does not copy it:
+a directory whose only migration sits one level down hashes zero files,
+validates clean, and applies nothing at exit `0`, so a migration you committed
+never runs and no output says so. Exit codes and stdout stay identical to Atlas;
+only this stderr line is added. Move the file to the top level to have it run.
+
+:::caution[Breaking change]
+A project that relies on Atlas-format migrations in subdirectories will stop
+executing them. The warning above names every affected file on each run.
+:::
+
+Native `ptah migrations` commands apply the same selection under
+`--dir-format atlas`, which writes an `atlas.sum` and so is bound by the same
+coverage. Auto mode without an `atlas.sum` keeps reading subdirectories and
+stays self-consistent, because `ptah.sum` is computed from the same discovery
+and covers every file it finds. The declined-file warning is currently printed
+by the `ptah-compat` verbs only.
 
 **`migrate lint` is deliberately not gated**, on either tool: inspecting a
 directory that has drifted is the point of linting it. `migrate new` and

@@ -295,23 +295,22 @@ func TestCompatMigrateStatus_AntiRegressionCleanDirsReportNormally(t *testing.T)
 	}
 }
 
-// TestCompatMigrateStatus_UnhashedNestedSQLRefuses_KnownDivergence records a
-// deliberate, measured divergence rather than an accident.
+// TestCompatMigrateStatus_UnhashedNestedSQLReportsNothingPending replaces the
+// _KnownDivergence pin this used to be.
 //
-// The community binary ignores subdirectories, so an unhashed directory whose
-// only migration sits one level down is nothing-to-execute for it and it exits
-// 0. Ptah's registrar recurses, so that migration IS pending here — before this
-// change both tools exited 0 while already disagreeing on the pending count
-// (0 there, 1 here). Wiring in the shared gate turns that disagreement into an
-// exit-code divergence on a read-only verb: Ptah now exits 1.
+// The divergence it recorded — exit 1 here against the community binary's 0 —
+// was the visible end of stokaro/ptah#976: the registrar recursed, so a nested
+// file was pending here and nothing-to-execute there, and the gate refused the
+// whole directory to keep an unhashed migration from running unverified. With
+// the selection narrowed to the set atlas.sum covers there is no such
+// migration, so there is nothing left to diverge about and the pin would have
+// been preserving the bug rather than the boundary.
 //
-// That is the chosen side. The alternative — a shallow scan for status only —
-// would give status a different predicate from apply and set, and two rules
-// covering one question drift. The recursive rule keeps one rule and errs
-// toward refusing to report on migrations no checksum covers. Tracked as
-// stokaro/ptah#976, which is the pre-existing disagreement about what counts as
-// a migration; this test is what makes the consequence visible.
-func TestCompatMigrateStatus_UnhashedNestedSQLRefuses_KnownDivergence(t *testing.T) {
+// Status is asserted rather than assumed to follow apply: the two verbs share
+// one gate precisely so a read-only verb cannot report on a directory apply
+// would refuse, and the reverse — reporting a refusal where apply now proceeds
+// — is the same drift from the other side.
+func TestCompatMigrateStatus_UnhashedNestedSQLReportsNothingPending(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_nested")
@@ -324,9 +323,11 @@ func TestCompatMigrateStatus_UnhashedNestedSQLRefuses_KnownDivergence(t *testing
 		"--dir", "file://"+dir,
 	)
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout, qt.Equals, atlasChecksumGuidance)
-	c.Assert(stderr, qt.Equals, atlasChecksumNotFoundErr)
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "Total Migrations: 0")
+	c.Assert(stderr, qt.Equals,
+		"warning: sub/"+statusIntegrityMigration+" is not covered by atlas.sum and will not run; "+
+			"Atlas migrations are top-level files named *.sql\n")
 }
 
 // TestCompatMigrateStatus_MatchesValidateOutput proves status shares one code
