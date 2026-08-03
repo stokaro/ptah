@@ -264,6 +264,43 @@ func TestMigrateUp_AllowDirtyRefusesToResumeAnUnknownStatementOutcome(t *testing
 	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
 }
 
+// TestMigrateUp_TxModeAllAllowDirtyRetryReusesTheDirtyRevisionRow covers the
+// third transaction mode, whose bookkeeping goes through its own callers
+// (recordRolledBackBatchFailure and recordAppliedMigrationOn) rather than the
+// per-file path the tests above exercise.
+//
+// Reverted, the retry fails with "failed to record pending migration 2: ...
+// UNIQUE constraint failed: schema_migrations.version" exactly as the per-file
+// path did.
+func TestMigrateUp_TxModeAllAllowDirtyRetryReusesTheDirtyRevisionRow(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "txall.db")
+
+	conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeAll, migrator.RevisionTableFormatPtah)
+	c.Assert(m.MigrateUp(c.Context()), qt.IsNotNil)
+
+	// The batch rolled back whole: version 1 has no row, version 2 has a dirty
+	// one recording that nothing was applied.
+	revisions, err := m.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 1)
+	c.Assert(revisions[0].Version, qt.Equals, int64(2))
+	c.Assert(revisions[0].Applied, qt.Equals, 0)
+	c.Assert(dirtyRetryTableExists(c, conn, "users"), qt.IsFalse)
+
+	_, fixed := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeAll, migrator.RevisionTableFormatPtah)
+	c.Assert(fixed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+
+	after, err := fixed.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(after, qt.HasLen, 2)
+	c.Assert(after[1].Version, qt.Equals, int64(2))
+	c.Assert(after[1].Dirty, qt.IsFalse)
+	c.Assert(after[1].Applied, qt.Equals, 2)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+}
+
 // newRegisteredDirtyRetryMigrator builds a migrator over programmatically
 // registered SQL, which executes through [executeSQLStatements] rather than the
 // file provider's loop. The two loops are separate gates: a resume floor
