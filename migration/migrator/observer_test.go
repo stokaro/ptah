@@ -830,7 +830,7 @@ func TestStatementObserver_NoTransactionExecutionIsObserved(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].UpNoTransaction, qt.IsTrue)
+	c.Assert(migrations[0].UpTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
 	conn := openStatementObserverSQLite(t)
 
 	c.Assert(migrations[0].Up(context.Background(), conn), qt.IsNil)

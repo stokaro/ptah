@@ -36,7 +36,6 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/internal/atlaslint"
-	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/risk"
 )
@@ -125,51 +124,6 @@ func parseKnownMigrationName(name string, dirFormat migrator.MigrationDirFormat)
 		return parsed, nil
 	}
 	return migrator.ParseAtlasMigrationFileNameForAutoDetection(name)
-}
-
-func fileNoTransactionDirective(sql string) bool {
-	if value := migrator.ParseFileDirectives(sql)[migrator.DirectiveNoTransaction]; value == "true" {
-		return true
-	}
-	return hasAtlasTxModeNoneDirective(sql)
-}
-
-func hasAtlasTxModeNoneDirective(sql string) bool {
-	lexr := lexer.NewLexer(sql)
-	for {
-		tok := lexr.NextToken()
-		if tok.Type == lexer.TokenEOF {
-			break
-		}
-		if tok.Type != lexer.TokenComment {
-			continue
-		}
-		comment, ok := strings.CutPrefix(tok.Value, "--")
-		if !ok {
-			continue
-		}
-		if !commentStartsLine(sql, tok.Start) {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(comment), "atlas:txmode none") {
-			return true
-		}
-	}
-	return false
-}
-
-func commentStartsLine(sql string, pos int) bool {
-	for i := pos - 1; i >= 0; i-- {
-		switch sql[i] {
-		case '\n':
-			return true
-		case ' ', '\t', '\r':
-			continue
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 // runRules applies every enabled rule to one prepared file.

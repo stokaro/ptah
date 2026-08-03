@@ -155,8 +155,10 @@ The defaults are safe for most runs; three controls matter once several
 people and pipelines share a directory:
 
 - **Transaction mode** (`--tx-mode`): `file` (default) wraps each migration
-  in its own transaction; `all` runs the whole batch in one; `none` disables
-  wrapping for statements that cannot run inside a transaction.
+  in its own transaction; `all` runs the selected batch in one; `none`
+  disables wrapping. A migration may select `file` or `none` with a leading
+  `-- atlas:txmode <mode>` header followed by a blank line. Explicit file modes
+  conflict with global `all`.
 - **Batch limit** (`--limit`): apply only the first N pending migrations —
   useful for staged rollouts and verifying one step at a time. `--allow-dirty`
   is the explicit recovery escape hatch that proceeds past a dirty revision
@@ -168,11 +170,13 @@ people and pipelines share a directory:
   versions as out-of-order.
 - **Timeouts and locks**: `--statement-timeout`, `--lock-timeout`, and
   `--migration-lock-timeout` bound long DDL and the session-level advisory
-  lock that keeps two migrators from racing. A `no_transaction` migration
-  cannot use statement or lock timeouts. Ptah rejects the combination before
-  executing SQL or changing the revision row. SQL-backed migrations record a
-  durable progress marker before and after each autocommit statement. A custom
-  Go `MigrationFunc` remains opaque and is recorded only when it returns.
+  lock that keeps two migrators from racing. A migration that resolves to
+  `none` cannot use statement or lock timeouts. Ptah rejects the combination
+  before executing SQL or changing the revision row. A file-level `file`
+  override under global `none` restores the transaction and may use timeouts.
+  SQL-backed non-transactional migrations record a durable progress marker
+  before and after each autocommit statement. A custom Go `MigrationFunc`
+  remains opaque and is recorded only when it returns.
 - **Run logging** (`--log-level`, `--log-format`): `--log-level`
   debug\|info\|warn\|error selects how much of the run is narrated —
   `warn` silences the per-statement dry-run narration — and `--log-format`

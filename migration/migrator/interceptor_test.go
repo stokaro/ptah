@@ -75,20 +75,22 @@ func TestFSMigrationProvider_StatementInterceptorSeesStatementsAndDirectives(t *
 	c.Assert(interceptor.directives[2], qt.DeepEquals, map[string]string{})
 }
 
-func TestMigrationFuncFromSQLFilenameWithInterceptor_ErrorAbortsMigration(t *testing.T) {
+func TestNewMigrationFromSQLFilesWithInterceptor_ErrorAbortsMigration(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
-		"m.sql": &fstest.MapFile{Data: []byte("ALTER TABLE users ADD COLUMN bio TEXT;")},
+		"m.up.sql":   &fstest.MapFile{Data: []byte("ALTER TABLE users ADD COLUMN bio TEXT;")},
+		"m.down.sql": &fstest.MapFile{Data: []byte("ALTER TABLE users DROP COLUMN bio;")},
 	}
 	interceptor := &recordingInterceptor{err: context.DeadlineExceeded}
 
-	fn := migrator.MigrationFuncFromSQLFilenameWithInterceptor("m.sql", fsys, interceptor)
-	err := fn(context.Background(), nil)
+	migration, err := migrator.NewMigrationFromSQLFilesWithInterceptor(1, "m", "m.up.sql", "m.down.sql", fsys, interceptor)
+	c.Assert(err, qt.IsNil)
+	err = migration.Up(context.Background(), nil)
 	c.Assert(err, qt.ErrorMatches, "(?s)failed to execute migration SQL: .*")
 }
 
-func TestMigrationFuncFromSQLFilenameWithInterceptor_AtlasTxtarExecutesMigrationSectionOnly(t *testing.T) {
+func TestNewMigrationFromSQLFilesWithInterceptor_AtlasTxtarExecutesMigrationSectionOnly(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
@@ -100,35 +102,41 @@ INSERT INTO users (id, name) VALUES (1, 'Alice');
 -- down.sql --
 DELETE FROM users WHERE id = 1;
 `)},
+		"down.sql": &fstest.MapFile{Data: []byte("SELECT 1;")},
 	}
 	interceptor := &recordingInterceptor{}
 
-	fn := migrator.MigrationFuncFromSQLFilenameWithInterceptor("20240305171146_seed.sql", fsys, interceptor)
-	err := fn(context.Background(), nil)
+	migration, err := migrator.NewMigrationFromSQLFilesWithInterceptor(
+		1, "seed", "20240305171146_seed.sql", "down.sql", fsys, interceptor,
+	)
+	c.Assert(err, qt.IsNil)
+	err = migration.Up(context.Background(), nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(interceptor.statements, qt.DeepEquals, []string{
 		"INSERT INTO users (id, name) VALUES (1, 'Alice')",
 	})
 }
 
-func TestMigrationFuncFromSQLFilenameWithInterceptor_ValidateDirectivesRunsBeforeAnyStatement(t *testing.T) {
+func TestNewMigrationFromSQLFilesWithInterceptor_ValidateDirectivesRunsBeforeAnyStatement(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
-		"m.sql": &fstest.MapFile{Data: []byte(
+		"m.up.sql": &fstest.MapFile{Data: []byte(
 			"CREATE TABLE t (id INT);\nALTER TABLE t ADD COLUMN a INT;\n")},
+		"m.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE t;")},
 	}
 	interceptor := &recordingInterceptor{validateErr: errors.New("bad directive value")}
 
-	fn := migrator.MigrationFuncFromSQLFilenameWithInterceptor("m.sql", fsys, interceptor)
-	err := fn(context.Background(), nil)
+	migration, err := migrator.NewMigrationFromSQLFilesWithInterceptor(1, "m", "m.up.sql", "m.down.sql", fsys, interceptor)
+	c.Assert(err, qt.IsNil)
+	err = migration.Up(context.Background(), nil)
 
-	c.Assert(err, qt.ErrorMatches, "invalid migration directives in m.sql: bad directive value")
+	c.Assert(err, qt.ErrorMatches, "invalid migration directives in m.up.sql: bad directive value")
 	c.Assert(interceptor.statements, qt.HasLen, 0,
 		qt.Commentf("no statement may execute once directive validation fails"))
 }
 
-func TestMigrationFuncFromSQLFilenameWithInterceptor_DeclinedStatementReachesWriter(t *testing.T) {
+func TestNewMigrationFromSQLFilesWithInterceptor_DeclinedStatementReachesWriter(t *testing.T) {
 	c := qt.New(t)
 
 	// When the interceptor declines a statement (handled=false), the
@@ -136,12 +144,14 @@ func TestMigrationFuncFromSQLFilenameWithInterceptor_DeclinedStatementReachesWri
 	// dispatch panics — which is exactly what proves the writer path is
 	// taken (a regression that skipped declined statements would not panic).
 	fsys := fstest.MapFS{
-		"m.sql": &fstest.MapFile{Data: []byte("ALTER TABLE t ADD COLUMN a INT;")},
+		"m.up.sql":   &fstest.MapFile{Data: []byte("ALTER TABLE t ADD COLUMN a INT;")},
+		"m.down.sql": &fstest.MapFile{Data: []byte("ALTER TABLE t DROP COLUMN a;")},
 	}
 	interceptor := &recordingInterceptor{handledSetup: true, handled: false}
 
-	fn := migrator.MigrationFuncFromSQLFilenameWithInterceptor("m.sql", fsys, interceptor)
-	c.Assert(func() { _ = fn(context.Background(), nil) }, qt.PanicMatches, ".*")
+	migration, err := migrator.NewMigrationFromSQLFilesWithInterceptor(1, "m", "m.up.sql", "m.down.sql", fsys, interceptor)
+	c.Assert(err, qt.IsNil)
+	c.Assert(func() { _ = migration.Up(context.Background(), nil) }, qt.PanicMatches, ".*")
 	c.Assert(interceptor.statements, qt.HasLen, 1,
 		qt.Commentf("the interceptor was still consulted before the writer dispatch"))
 }

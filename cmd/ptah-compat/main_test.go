@@ -352,6 +352,30 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 	})
 }
 
+func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildCompatBinary(c)
+	dir := malformedAtlasTxModeDir(c)
+	run := newCompatProcess(
+		binPath,
+		"migrate", "apply",
+		"--url", "sqlite://"+filepath.Join(c.TempDir(), "state.db"),
+		"--dir", "file://"+dir,
+	)
+	var stdout, stderr bytes.Buffer
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+
+	err := run.Run()
+	var exitErr *exec.ExitError
+
+	c.Assert(err, qt.ErrorAs, &exitErr)
+	c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+	c.Assert(stderr.String(), qt.Equals,
+		"error: error applying migrations: unknown txmode \"bogus\" found in file directive \"1_invalid.sql\"\n")
+	c.Assert(stdout.String(), qt.Equals, "")
+}
+
 func buildCompatBinary(c *qt.C) string {
 	c.Helper()
 	binPath := filepath.Join(c.TempDir(), "atlas")
@@ -387,5 +411,16 @@ func atlasDirWithoutSum(c *qt.C) string {
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
 		[]byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
+	return dir
+}
+
+func malformedAtlasTxModeDir(c *qt.C) string {
+	c.Helper()
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "1_invalid.sql"), []byte(
+		"-- atlas:txmode bogus\n\nCREATE TABLE invalid_txmode (id INTEGER PRIMARY KEY);\n",
+	), 0o600), qt.IsNil)
+	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
 	return dir
 }

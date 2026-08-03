@@ -121,6 +121,12 @@ env "local" {
 | `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 
+`migration.tx_mode` accepts `file`, `all`, or `none`. A migration's leading
+`atlas:txmode file` or `atlas:txmode none` header overrides global `file` or
+`none`; global `all` rejects every explicit file mode before the selected batch
+starts. An explicit file mode under global `none` restores a per-file
+transaction and permits migration timeouts.
+
 Project config precedence is explicit CLI flags, environment variables,
 `atlas.hcl`, `ptah.yaml`, then built-in defaults. Project-file merging
 preserves source presence. For a supported field, an explicitly present value

@@ -113,7 +113,7 @@ func TestProgrammaticMigration_UpNoTransactionUsesAutocommit(t *testing.T) {
 		"CREATE TABLE users (id INTEGER PRIMARY KEY); INSERT INTO missing_table (id) VALUES (1);",
 		"DROP TABLE users;",
 	)
-	migration.UpNoTransaction = true
+	migration.UpTxMode = migrator.MigrationFileTxModeNone
 	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 	err := mig.MigrateUp(ctx)

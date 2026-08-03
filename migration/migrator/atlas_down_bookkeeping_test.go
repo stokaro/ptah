@@ -47,6 +47,7 @@ CREATE TABLE child2 (id INTEGER PRIMARY KEY);
 
 -- down.sql --
 -- atlas:txmode none
+
 DROP TABLE child2;
 THIS IS A FAILING STATEMENT;
 `

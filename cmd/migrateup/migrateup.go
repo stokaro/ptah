@@ -364,27 +364,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// Set dry run mode if requested
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
-	if opts.dryRun {
-		emit.Println("=== DRY RUN MODE ===")
-		emit.Println("No actual changes will be made to the database")
-		emit.Println()
-	}
-
-	emit.Println("=== MIGRATE UP ===")
-	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
-	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
-	emit.Printf("Migrations directory: %s\n", migrationsDir)
-	emit.Printf("Migration directory format: %s\n", settings.dirFormat)
-	emit.Printf("Transaction mode: %s\n", settings.txMode)
-	emit.Println()
-
 	// Online-DDL routing: `-- +ptah online_ddl_tool=...` directives always
 	// work; the ptah.yaml online_ddl section adds automatic routing of
 	// ALTERs on tables above the configured row threshold.
 	onlineCfg := projectCfg.OnlineDDL
-	if onlineCfg.Enabled() {
-		emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
-	}
 	interceptor := onlineddl.New(onlineCfg).WithDryRun(opts.dryRun)
 
 	mig, err := migrator.NewFSMigrator(
@@ -413,14 +396,41 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
 
-	emit.Printf("Current version: %d\n", status.CurrentVersion)
-	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
-	emit.Printf("Pending migrations: %d\n", len(status.PendingMigrations))
-	if len(status.OutOfOrderMigrations) > 0 {
-		emit.Printf("Out-of-order migrations: %v\n", status.OutOfOrderMigrations)
+	emitPlanOutput := func() {
+		if opts.dryRun {
+			emit.Println("=== DRY RUN MODE ===")
+			emit.Println("No actual changes will be made to the database")
+			emit.Println()
+		}
+
+		emit.Println("=== MIGRATE UP ===")
+		emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+		emit.Printf("Dialect: %s\n", conn.Info().Dialect)
+		emit.Printf("Migrations directory: %s\n", migrationsDir)
+		emit.Printf("Migration directory format: %s\n", settings.dirFormat)
+		emit.Printf("Transaction mode: %s\n", settings.txMode)
+		emit.Println()
+
+		if onlineCfg.Enabled() {
+			emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
+		}
+		emit.Printf("Current version: %d\n", status.CurrentVersion)
+		emit.Printf("Total migrations: %d\n", status.TotalMigrations)
+		emit.Printf("Pending migrations: %d\n", len(status.PendingMigrations))
+		if len(status.OutOfOrderMigrations) > 0 {
+			emit.Printf("Out-of-order migrations: %v\n", status.OutOfOrderMigrations)
+		}
+		if opts.verbose {
+			emit.Printf("Pending migration versions: %v\n", status.PendingMigrations)
+			if len(status.OutOfOrderMigrations) > 0 {
+				emit.Printf("Out-of-order migration versions: %v\n", status.OutOfOrderMigrations)
+			}
+		}
+		emit.Println()
 	}
 
 	if !status.HasPendingChanges {
+		emitPlanOutput()
 		cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.up",
 			migrator.ObservationAttribute{Key: "db.system", Value: conn.Info().Dialect},
 			migrator.ObservationAttribute{Key: "migration.direction", Value: "up"},
@@ -432,17 +442,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return nil
 	}
 
-	if opts.verbose {
-		emit.Printf("Pending migration versions: %v\n", status.PendingMigrations)
-		if len(status.OutOfOrderMigrations) > 0 {
-			emit.Printf("Out-of-order migration versions: %v\n", status.OutOfOrderMigrations)
-		}
-	}
 	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
 		return migrator.NewOutOfOrderError(status.CurrentVersion, status.OutOfOrderMigrations)
 	}
-
-	emit.Println()
 	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
 		Direction:          preflight.DirectionUp,
 		DatabaseURL:        dbURL,
@@ -459,6 +461,13 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 			preflightHook,
 		)
 	}
+	preflightHook = dbcli.CombineMigrationHooks(
+		func(context.Context, migrator.MigrationPlan) error {
+			emitPlanOutput()
+			return nil
+		},
+		preflightHook,
+	)
 
 	// Run migrations
 	startedAt := time.Now()

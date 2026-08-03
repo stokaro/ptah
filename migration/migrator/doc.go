@@ -13,7 +13,7 @@
 // # Key Features
 //
 //   - Version-based migration tracking with timestamp support
-//   - Transaction-safe migration execution with automatic rollback on failure
+//   - Configurable file, batch, and nontransactional execution modes
 //   - Support for both up and down migrations
 //   - Migration to specific versions (forward or backward)
 //   - Comprehensive migration status reporting
@@ -58,14 +58,19 @@
 //		log.Fatal(err)
 //	}
 //
-//	// Option 2: Create migrator with registered migrations
+//	// Option 2: Create migrator with a registered SQL-file migration
+//	migration, err := migrator.NewMigrationFromSQLFiles(
+//		20240101120000,
+//		"Create users table",
+//		"001_create_users.up.sql",
+//		"001_create_users.down.sql",
+//		fsys,
+//	)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 //	provider := migrator.NewRegisteredMigrationProvider()
-//	provider.Register(&migrator.Migration{
-//		Version:     20240101120000,
-//		Description: "Create users table",
-//		Up:          migrator.MigrationFuncFromSQLFilename("001_create_users.up.sql", fsys),
-//		Down:        migrator.MigrationFuncFromSQLFilename("001_create_users.down.sql", fsys),
-//	})
+//	provider.Register(migration)
 //	m := migrator.NewMigrator(conn, provider)
 //
 //	// Apply all pending migrations
@@ -90,10 +95,11 @@
 //		checksum VARCHAR(64) NOT NULL DEFAULT ''
 //	);
 //
-// This table tracks which migrations have been applied and when. Failed or
-// interrupted migrations leave a dirty revision row with statement progress and
-// error details; later migration operations refuse to continue until the row is
-// repaired. Applied rows also store a checksum of the up SQL so edited
+// This table tracks which migrations have been applied and when. In
+// nontransactional mode, failed or interrupted migrations leave a dirty
+// revision row with statement progress and error details; later migration
+// operations refuse to continue until the row is repaired. Applied rows also
+// store a checksum of the up SQL so edited
 // migration files are detected before new work starts. Use
 // WithMigrationsTable(schema, table) to store migration history in a custom
 // schema or table, for example an `infra.ptah_migrations` table in PostgreSQL.
@@ -128,26 +134,32 @@
 //
 // # Transaction Safety
 //
-// Each migration is executed within its own database transaction:
+// Up migrations default to one transaction per file. The global transaction
+// mode can instead wrap the selected batch in one transaction (`all`) or run
+// without migration transactions (`none`); explicit per-file `file` and `none`
+// directives override global `file` or `none`. Down migrations resolve their
+// direction-specific file mode independently and default to `file`.
 //
-//   - If a migration succeeds, the transaction is committed
-//   - If a migration fails, the transaction is rolled back
-//   - Migration history is marked pending before execution and applied only after success
-//   - Partial failures leave dirty migration metadata that blocks later migration operations
+// Transactional execution rolls back schema statements on failure. A
+// nontransactional failure can leave earlier statements applied and records
+// dirty progress that blocks later migration operations until repaired. Atlas
+// revision-table mode intentionally keeps its own documented bookkeeping
+// semantics.
 //
 // # SQL File Support
 //
 // The package provides utilities for SQL file-based migrations:
 //
-//	// Create migration function from SQL file
-//	upFunc := migrator.MigrationFuncFromSQLFilename("migration.up.sql", fsys)
-//	downFunc := migrator.MigrationFuncFromSQLFilename("migration.down.sql", fsys)
-//
-//	migration := &migrator.Migration{
-//		Version:     20240101120000,
-//		Description: "Add user preferences",
-//		Up:          upFunc,
-//		Down:        downFunc,
+//	// Read both directions and preserve their execution metadata.
+//	migration, err := migrator.NewMigrationFromSQLFiles(
+//		20240101120000,
+//		"Add user preferences",
+//		"migration.up.sql",
+//		"migration.down.sql",
+//		fsys,
+//	)
+//	if err != nil {
+//		log.Fatal(err)
 //	}
 //
 // # SQL Statement Splitting
