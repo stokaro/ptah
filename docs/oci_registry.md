@@ -38,6 +38,7 @@ Ptah accepts these forms:
 oci://registry.example/team/repository
 oci://registry.example/team/repository:tag
 oci://registry.example/team/repository@sha256:<64-lowercase-hex-characters>
+oci://registry.example/team/repository:tag@sha256:<64-lowercase-hex-characters>
 ```
 
 An unqualified reference resolves to `:latest`:
@@ -69,6 +70,18 @@ client when the two disagree. The tag is carried for readability and is echoed
 back in the canonical form; it never selects content and never softens the pin.
 Because the reference is digest-pinned, pushing to it is rejected exactly as
 pushing to a bare `@sha256:` reference.
+
+The pin is enforced, not merely recorded. Ptah asks the registry for the
+manifest by digest and verifies the bytes it receives against that digest
+before anything is read out of the artifact, so a repointed tag cannot smuggle
+other content in behind a reference that names one. A digest the registry does
+not serve fails; it never falls back to the tag written beside it.
+
+`migrations up`, `migrations status`, `migrations down`, `migrations pull`, and
+`lint` accept every form above. `migrations hash` does not accept any `oci://`
+reference: it writes the integrity file back into the directory it hashed, and
+a registry artifact is immutable content addressed by its own digest. Hash the
+local directory and publish the result.
 
 A sum file carries different weight depending on which of those you applied. A
 sum verifies a directory against the sum stored beside it; for an OCI artifact

@@ -246,6 +246,20 @@ prints that qualification, along with the digest the tag resolved to and the
 reference that pins it, whenever a sum verifies over a tag-resolved artifact.
 The run still succeeds; a digest reference gets no such line.
 
+To keep the readable name and the pin together, write both:
+
+```bash
+ptah migrations up \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir oci://ghcr.io/acme/app-migrations:release@sha256:<digest> \
+  --verify-sum
+```
+
+The digest selects the bytes and is verified against what the registry returns;
+the tag is a label. Repointing `:release` afterwards changes nothing about what
+this command runs, and this reference counts as a digest pin, so it gets no
+movable-tag qualification.
+
 See [OCI registry artifacts](../../operate/oci-registry/) for
 authentication, tag and digest semantics, referrer reports, and CI wiring.
 
