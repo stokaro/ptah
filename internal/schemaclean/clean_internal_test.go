@@ -10,7 +10,6 @@ package schemaclean
 // the right driver; only the unexported builder's output distinguishes them.
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -98,14 +97,14 @@ func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T
 			c.Assert(args, qt.HasLen, len(names)+1)
 			c.Assert(args[0], qt.Equals, test.wantScopeArg)
 			c.Assert(args[1:], qt.DeepEquals, []any{revisiontable.Atlas, revisiontable.Ptah})
-			c.Assert(strings.Contains(query, test.wantCatalog), qt.IsTrue, qt.Commentf("query: %s", query))
+			c.Assert(query, qt.Contains, test.wantCatalog)
 			for _, token := range test.wantTokens {
-				c.Assert(strings.Contains(query, token), qt.IsTrue, qt.Commentf("missing %s in: %s", token, query))
+				c.Assert(query, qt.Contains, token)
 			}
 			// No revision table name may be interpolated into the SQL; they are
 			// bound, so a name carrying a quote cannot reshape the statement.
-			c.Assert(strings.Contains(query, revisiontable.Ptah), qt.IsFalse, qt.Commentf("query: %s", query))
-			c.Assert(strings.Contains(query, revisiontable.Atlas), qt.IsFalse, qt.Commentf("query: %s", query))
+			c.Assert(query, qt.Not(qt.Contains), revisiontable.Ptah)
+			c.Assert(query, qt.Not(qt.Contains), revisiontable.Atlas)
 		})
 	}
 }
