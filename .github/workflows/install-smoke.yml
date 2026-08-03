@@ -1,0 +1,44 @@
+name: Install Smoke
+
+# Runs the `go install` commands the documentation publishes, against the
+# published module, and fails when any of them stops producing a working binary.
+#
+# This exists because those commands were broken and nothing noticed: the vanity
+# host answered the Go toolchain with a redirect loop, every documented install
+# failed, and no job ran one. See stokaro/ptah#1024.
+#
+# It is deliberately NOT a pull-request gate. It resolves go.5x5.cz and the
+# module proxy, so a network or host problem would turn unrelated PRs red and
+# train people to ignore it. A schedule catches a broken host within the day,
+# which is what the failure it guards against actually needs.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - "scripts/check-documented-install.sh"
+      - ".github/workflows/install-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  documented-install:
+    name: Documented install commands
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # The published module is the subject, so the checkout is used only to
+      # discover which commands the documentation currently publishes.
+      - name: Run every documented install command
+        run: scripts/check-documented-install.sh
