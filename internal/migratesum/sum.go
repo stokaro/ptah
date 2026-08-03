@@ -237,6 +237,11 @@ func computeAtlas(fsys fs.FS) (*SumFile, error) {
 //
 // A file carrying an "atlas:sum ignore" directive contributes its name to the
 // running hash but neither its contents nor an entry, matching Atlas.
+//
+// A covered name that cannot be read fails the whole computation rather than
+// being skipped, so no sum is produced over a subset of what the caller
+// selected. A covered name that turns out to be a DIRECTORY is reported as
+// [ErrCoveredEntryUnreadable]; see readCoveredEntry.
 func ComputeAtlasFiles(fsys fs.FS, names []string) (*SumFile, error) {
 	if err := checkDuplicateNames(names); err != nil {
 		return nil, err
@@ -245,9 +250,9 @@ func ComputeAtlasFiles(fsys fs.FS, names []string) (*SumFile, error) {
 	entries := make([]Entry, 0, len(names))
 	h := sha256.New()
 	for _, name := range names {
-		data, err := fs.ReadFile(fsys, name)
+		data, err := readCoveredEntry(fsys, name)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read %s: %w", name, err)
+			return nil, err
 		}
 		_, _ = h.Write([]byte(name))
 		if atlasSumIgnored(data) {

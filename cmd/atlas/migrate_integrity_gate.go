@@ -55,6 +55,11 @@ func verifyNativeAtlasDirChecksum(cmd *cobra.Command, fsys fs.FS) error {
 		// A malformed atlas.sum has no entry-level mismatch to point at; the
 		// validate surface reports it as a plain checksum mismatch.
 		return migratevalidate.FailAtlasChecksumMismatch(cmd, nil)
+	case errors.Is(err, migratesum.ErrCoveredEntryUnreadable):
+		// A covered entry that is a directory (#991). The community binary
+		// prints the checksum preamble here, not a bare error, so routing it
+		// anywhere else would lose the stream layout this gate exists to match.
+		return migratevalidate.FailAtlasChecksumUnreadableEntry(cmd, err)
 	case err != nil:
 		return err
 	case !hashed:
