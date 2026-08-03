@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -28,6 +29,7 @@ type atlasMigrateSetOptions struct {
 type atlasMigrateSetPreparation struct {
 	options atlasMigrateSetOptions
 	dir     atlasargs.LocalDir
+	format  atlasmigrateimport.Format
 	project atlasProject
 }
 
@@ -79,6 +81,10 @@ func runAtlasMigrateSet(
 	if err != nil {
 		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
 	}
+	captured, err := captureAtlasRevisionSource(source.FileSystem, prepared.format)
+	if err != nil {
+		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
+	}
 	// Integrity gate (#974). `migrate set` writes revision rows that declare a
 	// directory's history applied, so running it against a directory nothing has
 	// verified records a state derived from files that may have drifted.
@@ -90,8 +96,12 @@ func runAtlasMigrateSet(
 	// zero or two positionals against an unhashed directory prints the checksum
 	// refusal, not an arity error. Returned bare so the stdout guidance block
 	// and the `Error: ...` line land where that binary puts them.
-	if err := verifyNativeAtlasDirChecksum(cmd, source.FileSystem); err != nil {
+	if err := verifyAtlasApplyChecksum(cmd, captured.gateFS(), prepared.format); err != nil {
 		return err
+	}
+	migrationFS, err := captured.migrationFS(source.Display)
+	if err != nil {
+		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
 	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
@@ -114,7 +124,7 @@ func runAtlasMigrateSet(
 	}
 	result, err := atlasmigrate.Set(cmd.Context(), conn, version, atlasmigrate.SetOptions{
 		Dir:             source.Display,
-		FS:              source.FileSystem,
+		FS:              migrationFS,
 		AtlasEnv:        opts.atlasEnv,
 		RevisionsSchema: opts.revisionsSchema,
 	})
@@ -180,12 +190,12 @@ func prepareAtlasMigrateSet(
 	if opts.dir == "" {
 		return prepared, fmt.Errorf("migrations directory is required")
 	}
-	format, err := atlasMigrateDirFormatValue(opts.dirFormat)
-	if err != nil {
-		return prepared, fmt.Errorf("atlas migrate set --dir-format: %w", err)
-	}
-	if format != atlasDirFormatDefault {
-		return prepared, fmt.Errorf("atlas migrate set --dir-format: expected atlas")
+	// The flag value is checked before --dir is parsed, where it was checked
+	// when only the Atlas layout was accepted, so an invocation carrying two bad
+	// values keeps printing the same one of them. The query spelling lives in
+	// --dir and joins the resolution below.
+	if _, err := resolveAtlasRevisionDirFormat("set", opts.dirFormat, nil); err != nil {
+		return prepared, err
 	}
 
 	var localDir atlasargs.LocalDir
@@ -199,8 +209,9 @@ func prepareAtlasMigrateSet(
 	if err != nil {
 		return prepared, fmt.Errorf("atlas migrate set --dir: %w", err)
 	}
-	if err := checkNativeAtlasDirQuery(localDir.Query); err != nil {
-		return prepared, fmt.Errorf("atlas migrate set --dir: %w", err)
+	format, err := resolveAtlasRevisionDirFormat("set", opts.dirFormat, localDir.Query)
+	if err != nil {
+		return prepared, err
 	}
 	// Preserve Atlas-compatible directory diagnostics; the subsequent
 	// CaptureLocal call remains the authoritative rooted read and rejects any
@@ -214,6 +225,7 @@ func prepareAtlasMigrateSet(
 	}
 	prepared.options = opts
 	prepared.dir = localDir
+	prepared.format = format
 	return prepared, nil
 }
 
