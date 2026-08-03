@@ -168,20 +168,31 @@ func checkFlywayLayout(c *qt.C, oracle string, layout []string) {
 	dir := c.TempDir()
 	writeLayout(c, dir, layout)
 
-	want := oracleSum(c, oracle, dir, "flyway")
+	outcome := oracleHash(c, oracle, dir, "flyway")
+	names, hashable := assertPtahMatchesOracle(c, dir, atlasmigrateimport.FormatFlyway, outcome, layout)
 
-	fsys := os.DirFS(dir)
-	names, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatFlyway)
-
-	c.Assert(err, qt.IsNil)
-
-	sum, err := migratesum.ComputeAtlasFiles(fsys, names)
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(string(sum.Bytes()), qt.Equals, want,
-		qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
+	// The capture cross-check applies either way: the gate must recompute the
+	// same covered set from the snapshot it verifies whether or not that set
+	// turns out to be hashable.
 	assertCaptureSelectsTheSame(c, dir, atlasmigrateimport.FormatFlyway, names, layout)
+	if !hashable {
+		return
+	}
 	assertImporterConsumesTheCoveredSet(c, dir, names, layout)
+}
+
+// checkPlainLayout is checkFlywayLayout for the suffix-filter formats. It is a
+// helper rather than an inline test body so the refusal branch does not count
+// against the repository's test-conditional ratchet.
+func checkPlainLayout(c *qt.C, oracle string, format atlasmigrateimport.Format, layout []string) {
+	c.Helper()
+
+	dir := c.TempDir()
+	writeLayout(c, dir, layout)
+
+	outcome := oracleHash(c, oracle, dir, string(format))
+	names, _ := assertPtahMatchesOracle(c, dir, format, outcome, layout)
+	assertCaptureSelectsTheSame(c, dir, format, names, layout)
 }
 
 // TestSumFileNamesDifferentialFuzzRealisticFlyway restricts generation to what
@@ -274,19 +285,7 @@ func TestSumFileNamesDifferentialFuzzOtherFormats(t *testing.T) {
 		for i := range 40 {
 			layout := randomPlainLayout(rng)
 			c.Run(fmt.Sprintf("%s-%02d", format, i), func(c *qt.C) {
-				dir := c.TempDir()
-				writeLayout(c, dir, layout)
-
-				want := oracleSum(c, oracle, dir, string(format))
-
-				fsys := os.DirFS(dir)
-				names, err := atlasmigrateimport.SumFileNames(fsys, format)
-				c.Assert(err, qt.IsNil)
-				sum, err := migratesum.ComputeAtlasFiles(fsys, names)
-				c.Assert(err, qt.IsNil)
-
-				c.Assert(string(sum.Bytes()), qt.Equals, want, qt.Commentf("layout:\n  %s", strings.Join(layout, "\n  ")))
-				assertCaptureSelectsTheSame(c, dir, format, names, layout)
+				checkPlainLayout(c, oracle, format, layout)
 			})
 		}
 	}
@@ -342,31 +341,122 @@ func requireOracle(t *testing.T) string {
 	return oracle
 }
 
-func oracleSum(c *qt.C, oracle, dir, format string) string {
+// oracleOutcome is what the pinned binary did with one generated directory.
+// A refusal is an OBSERVATION to compare against, not a harness failure.
+//
+// It used to be one. oracleSum asserted the oracle's exit was nil, so any shape
+// the oracle declined aborted the run instead of being recorded — and the shape
+// it declines is exactly the one #991 is about. A differential harness that can
+// only represent agreement certifies agreement.
+type oracleOutcome struct {
+	sum     string
+	refused bool
+	output  string
+}
+
+func oracleHash(c *qt.C, oracle, dir, format string) oracleOutcome {
 	c.Helper()
 
 	//nolint:gosec // operator-provided oracle path, and dir is a test temp dir
 	cmd := exec.Command(oracle, "migrate", "hash", "--dir", "file://"+dir+"?format="+format)
 	out, err := cmd.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("oracle hash failed: %s", out))
+	sumPath := filepath.Join(dir, migratesum.AtlasFileName)
+	if err != nil {
+		_, statErr := os.Stat(sumPath)
+		c.Assert(os.IsNotExist(statErr), qt.IsTrue,
+			qt.Commentf("the oracle refused but still wrote atlas.sum: %s", out))
+		return oracleOutcome{refused: true, output: string(out)}
+	}
 
-	recorded, err := os.ReadFile(filepath.Join(dir, migratesum.AtlasFileName))
+	recorded, err := os.ReadFile(sumPath)
 	c.Assert(err, qt.IsNil)
 
 	// The oracle's own sum file must not feed back into Ptah's computation.
-	c.Assert(os.Remove(filepath.Join(dir, migratesum.AtlasFileName)), qt.IsNil)
-	return string(recorded)
+	c.Assert(os.Remove(sumPath), qt.IsNil)
+	return oracleOutcome{sum: string(recorded)}
 }
 
+// oracleSum is oracleHash for populations where a refusal would itself be the
+// bug (see TestSumFileNamesDifferentialFuzzRealisticFlyway).
+func oracleSum(c *qt.C, oracle, dir, format string) string {
+	c.Helper()
+	outcome := oracleHash(c, oracle, dir, format)
+	c.Assert(outcome.refused, qt.IsFalse,
+		qt.Commentf("the oracle refused a shape it must accept:\n%s", outcome.output))
+	return outcome.sum
+}
+
+// assertPtahMatchesOracle compares Ptah against the oracle in BOTH directions
+// for one directory: the sum when the oracle wrote one, and the refusal when it
+// wrote none. It returns the covered set and whether the directory was hashable.
+//
+// Selection is asserted to succeed either way. Membership and readability are
+// separate questions, and #991 was Ptah answering the first one by silently
+// dropping an entry it could not answer the second for.
+func assertPtahMatchesOracle(
+	c *qt.C,
+	dir string,
+	format atlasmigrateimport.Format,
+	outcome oracleOutcome,
+	layout []string,
+) (names []string, hashable bool) {
+	c.Helper()
+	comment := qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ","))
+
+	fsys := os.DirFS(dir)
+	names, err := atlasmigrateimport.SumFileNames(fsys, format)
+	c.Assert(err, qt.IsNil, comment)
+
+	sum, sumErr := migratesum.ComputeAtlasFiles(fsys, names)
+	if outcome.refused {
+		c.Assert(sumErr, qt.ErrorIs, migratesum.ErrCoveredEntryUnreadable,
+			qt.Commentf("the oracle refused this directory and Ptah did not: PTAH_ATLAS_FUZZ_LAYOUT=%s\noracle said:\n%s",
+				strings.Join(layout, ","), outcome.output))
+		return names, false
+	}
+	c.Assert(sumErr, qt.IsNil, comment)
+	c.Assert(string(sum.Bytes()), qt.Equals, outcome.sum, comment)
+	return names, true
+}
+
+// writeLayout materializes one generated layout. An entry ending in "/" is a
+// LEAF DIRECTORY rather than a file.
+//
+// That spelling exists because the generator previously created directories
+// only as os.MkdirAll(filepath.Dir(...)) — parents of files it was about to
+// write — so a directory with nothing inside it was unreachable, and the
+// PTAH_ATLAS_FUZZ_LAYOUT round trip that makes a failure reducible had no way
+// to name one. Neither could the layout name a directory whose own name ends in
+// .sql, which is the shape #991 turns on.
 func writeLayout(c *qt.C, dir string, layout []string) {
 	c.Helper()
 	for i, name := range layout {
 		full := filepath.Join(dir, filepath.FromSlash(name))
+		if strings.HasSuffix(name, "/") {
+			c.Assert(os.MkdirAll(full, 0o750), qt.IsNil)
+			continue
+		}
 		c.Assert(os.MkdirAll(filepath.Dir(full), 0o750), qt.IsNil)
 		// Distinct bodies so a misordered sum cannot coincidentally match.
 		body := fmt.Sprintf("CREATE TABLE t%d (id INTEGER PRIMARY KEY);\n", i)
 		c.Assert(os.WriteFile(full, []byte(body), 0o600), qt.IsNil)
 	}
+}
+
+// randomLeafDirectories returns leaf-directory entries for a layout. The pool
+// leans on names a per-format glob matches, because those are the ones that
+// change the answer: *.sql for four formats, *.up.sql for golang-migrate, and
+// neither for Flyway, which walks.
+func randomLeafDirectories(rng *rand.Rand) []string {
+	pool := [...]string{
+		"weird.sql/", "2_evil.sql/", "V2__dir.sql/", "weird.up.sql/",
+		"1_x.up.sql/", "notes.SQL/", "plain/", "sub/nested.sql/",
+	}
+	out := make([]string, 0, 2)
+	for range rng.IntN(3) {
+		out = append(out, pool[rng.IntN(len(pool))])
+	}
+	return out
 }
 
 // randomFlywayLayout builds a realistic-to-adversarial Flyway directory: mostly
@@ -383,7 +473,12 @@ func randomFlywayLayout(rng *rand.Rand) []string {
 			"sub", "views", "a/b", ".archive", ".hidden/deep",
 			"0archive", "1old", "2tmp", "9z", "Archive", "Legacy",
 			"B3", "V", "a/0b", "-dash", "_under",
-		}[rng.IntN(16)])
+			// Directory names the other formats' globs would match. Flyway walks
+			// rather than globs, so these must stay invisible to the sum here —
+			// which is what makes them a control on the #991 rule rather than a
+			// restatement of it.
+			"weird.sql", "V2__dir.sql", "weird.up.sql",
+		}[rng.IntN(19)])
 	}
 
 	count := 1 + rng.IntN(7)
@@ -397,7 +492,7 @@ func randomFlywayLayout(rng *rand.Rand) []string {
 		seen[name] = true
 		layout = append(layout, name)
 	}
-	return layout
+	return append(layout, randomLeafDirectories(rng)...)
 }
 
 func randomFlywayName(rng *rand.Rand) string {
@@ -455,7 +550,7 @@ func randomPlainLayout(rng *rand.Rand) []string {
 		seen[name] = true
 		layout = append(layout, name)
 	}
-	return layout
+	return append(layout, randomLeafDirectories(rng)...)
 }
 
 func path4Join(dir, name string) string {

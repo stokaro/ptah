@@ -20,7 +20,16 @@ var metadataFiles = map[string]struct{}{
 }
 
 // Capture reads SQL migrations and their lint or integrity metadata exactly
-// once, excluding unrelated files from the immutable snapshot.
+// once, excluding unrelated entries from the immutable snapshot.
+//
+// The predicate deliberately looks at the NAME and ignores the fs.DirEntry, so
+// a DIRECTORY called 2_evil.sql is captured as a directory in its own right.
+// That is not incidental tidiness: Atlas's integrity file covers whatever its
+// glob matches, glob matching is by name, and a snapshot that recorded only
+// files let such a directory vanish between the capture and the verification —
+// so `migrate apply`, `status`, `set` and `lint` accepted a directory the
+// community binary refuses (stokaro/ptah#991). Narrowing this to entry.Type()
+// would reopen it.
 func Capture(fsys fs.FS) (fsnapshot.Snapshot, error) {
 	snapshot, err := fsnapshot.CaptureMatching(fsys, func(name string, _ fs.DirEntry) bool {
 		if strings.EqualFold(path.Ext(name), ".sql") {

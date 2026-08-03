@@ -472,6 +472,11 @@ func verifyConvertedAtlasApplyChecksum(
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMalformed):
 		return migratevalidate.FailAtlasChecksumMismatch(cmd, nil)
+	case errors.Is(err, migratesum.ErrCoveredEntryUnreadable):
+		// A covered entry that is a directory (#991). It reaches here on the
+		// converted path too, because SumFileNames selects by name and the
+		// captured snapshot now records such a directory instead of dropping it.
+		return migratevalidate.FailAtlasChecksumUnreadableEntry(cmd, err)
 	case err != nil:
 		return err
 	case !hashed && len(names) == 0:

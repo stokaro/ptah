@@ -211,6 +211,31 @@ check, exactly as it is in Atlas. A directory that carries no `atlas.sum` and
 whose covered set is empty — a golang-migrate directory holding only a down
 file, say — is not a checksum error and is not refused.
 
+:::caution[A **directory** whose name matches is covered too, and cannot be hashed]
+Membership in the covered set is decided by the name, so a *directory* called
+`weird.sql` is a member for `atlas`, `goose`, `dbmate` and `liquibase`, and one
+called `weird.up.sql` is a member for `golang-migrate`. Reading it fails, so
+there is no sum to write and no sum to verify: `hash`, `validate`, `apply`,
+`status`, `set` and `lint` all refuse the directory and exit `1`, matching
+Atlas. Rename the directory or move it out of the migrations directory.
+
+```text
+$ ptah-compat migrate hash --dir 'file://migrations?format=goose'
+Error: read file "weird.sql": is a directory, not a migration file; rename it or move it out of the migration directory
+```
+
+**This is a behavior change.** Releases up to v0.1.2 skipped such a directory
+and wrote an `atlas.sum` over the remaining files — a file Atlas itself then
+refused to read, so the directory looked hashed here and was rejected there
+([#991](https://github.com/stokaro/ptah/issues/991)). A project with a
+legitimately named `*.sql` directory that hashed cleanly before will now be
+refused.
+
+`flyway` is exempt on both tools, and not by special-casing: Atlas walks a
+Flyway tree instead of globbing it, so a directory is a node it descends into
+and never reads. A migration nested inside one is covered as usual.
+:::
+
 For every layout, "not covered by `atlas.sum`" also means "not executed": the
 set `migrate apply` runs is the set the checksum it verified covers. Flyway was
 the exception until [#982](https://github.com/stokaro/ptah/issues/982) — its
