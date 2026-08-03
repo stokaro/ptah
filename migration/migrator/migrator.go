@@ -282,12 +282,17 @@ func (m *Migrator) deferPreMigrationChecks(observesApplyState bool) bool {
 // evaluate a precondition against stale state. Bypassing checks lifts the
 // restriction.
 //
-// A dry run is exempt: no batch transaction ever executes, so there is no
-// uncommitted batch state for a check to miss and the rationale above does not
-// apply. Such a run evaluates checks under the same rule as every other up
-// path — see [Migrator.deferPreMigrationChecks].
+// A dry run is NOT exempt, and the reason is what a preview is for. The refusal
+// is decidable without touching the database -- tx-mode is all, the migration
+// declares checks, checks are not skipped -- so the real apply of the same
+// directory refuses deterministically. Exempting the preview made it report
+// "Would have applied 2 migrations." with an empty stderr for a run that cannot
+// succeed, which is worse than not previewing at all.
+//
+// "No batch transaction executes here" answers whether the check could be
+// evaluated. A preview answers what the real run will do.
 func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration) error {
-	if m.skipChecks || m.conn.Writer().IsDryRun() {
+	if m.skipChecks {
 		return nil
 	}
 	groups, err := m.migrationCheckGroups(migration)

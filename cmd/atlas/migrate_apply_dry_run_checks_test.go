@@ -301,16 +301,19 @@ func TestMigrateApplyDryRunChecksObserveApplyState(t *testing.T) {
 			},
 		},
 		{
-			// --tx-mode all had a separate root: it refused a checked directory
-			// outright, without consulting the dry-run flag.
+			// --tx-mode all refuses a checked directory whether or not the run
+			// is a preview, and the oracle for this row is the same as every
+			// other: the real apply of this directory. It refuses, so the
+			// preview refuses. Answering 0 here would be a preview reporting
+			// success for a run that cannot succeed.
 			name:      "C under --tx-mode all",
 			first:     dryRunChecksCreateUsers,
 			second:    dryRunChecksTxtarNeedsPrior,
 			seed:      seedNothing,
 			extraArgs: []string{"--tx-mode", "all"},
 			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-				c.Assert(stderr, qt.Contains, dryRunChecksDeferredNote)
+				c.Assert(err, qt.ErrorMatches, `.*cannot run with tx-mode all.*`,
+					qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 			},
 		},
 		{

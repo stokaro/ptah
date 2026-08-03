@@ -57,14 +57,16 @@ func TestMigrateApplyTxModeAllChecksHonorDryRun(t *testing.T) {
 			},
 		},
 		{
-			name: "dry run previews it instead of refusing",
+			// The dry run refuses too, and it has to. The verdict is decidable
+			// without the database -- tx-mode is all, the migration declares
+			// checks, checks are not skipped -- so the real apply above fails
+			// deterministically. A preview that answered 0 here would report
+			// "Would have applied 2 migrations." with an empty stderr for a run
+			// that cannot succeed, which is worse than not previewing at all.
+			name: "dry run refuses it the same way",
 			args: []string{"--dry-run"},
-			assert: func(c *qt.C, err error, output string) {
-				c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
-				c.Assert(output, qt.Not(qt.Contains), "cannot run with tx-mode all")
-				c.Assert(output, qt.Not(qt.Contains), "--skip-checks")
-				// The deferred guard is reported, never dropped in silence.
-				c.Assert(output, qt.Contains, "Deferred pre-migration checks for 1 migration (2)")
+			assert: func(c *qt.C, err error, _ string) {
+				c.Assert(err, qt.ErrorMatches, `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode`)
 			},
 		},
 	}
