@@ -127,6 +127,22 @@ func (r Reference) IsDigest() bool {
 	return r.digest
 }
 
+// Tag returns the registry tag the author named, or the empty string when the
+// reference selected content by digest instead. A tag is a movable registry
+// pointer: whoever can push to the repository can repoint it at other bytes.
+func (r Reference) Tag() string {
+	if r.digest {
+		return ""
+	}
+	return r.selector
+}
+
+// PinnedString renders the canonical oci:// form that selects digest exactly,
+// which is the reference an operator should adopt to stop depending on a tag.
+func (r Reference) PinnedString(digest string) string {
+	return Scheme + r.repositoryName() + "@" + digest
+}
+
 // String returns the canonical oci:// form.
 func (r Reference) String() string {
 	separator := ":"

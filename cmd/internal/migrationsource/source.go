@@ -28,6 +28,17 @@ type OCI struct {
 	Client     *ociartifact.Client
 	Reference  string
 	Descriptor ocispec.Descriptor
+	// Tag is the registry tag the operator named, or the empty string when the
+	// reference named none. A tag is a movable pointer, so it says nothing
+	// about which bytes it will select on the next pull.
+	Tag string
+	// PinnedByDigest reports whether the reference selected exact content by
+	// digest. This is the provenance bit callers need to tell an artifact whose
+	// bytes the operator chose from one whoever last moved Tag chose for them.
+	PinnedByDigest bool
+	// DigestReference is the canonical oci:// form pinning Descriptor's exact
+	// bytes, so a caller can print the reference that removes the tag's say.
+	DigestReference string
 }
 
 // Source is an immutable migration filesystem and its display metadata.
@@ -222,9 +233,12 @@ func resolveOCI(ctx context.Context, raw string, opts Options) (Source, error) {
 		Display:    ref.String(),
 		DirFormat:  artifact.DirFormat,
 		OCI: &OCI{
-			Client:     client,
-			Reference:  ref.String(),
-			Descriptor: artifact.Descriptor,
+			Client:          client,
+			Reference:       ref.String(),
+			Descriptor:      artifact.Descriptor,
+			Tag:             ref.Tag(),
+			PinnedByDigest:  ref.IsDigest(),
+			DigestReference: ref.PinnedString(artifact.Descriptor.Digest.String()),
 		},
 	}, nil
 }
