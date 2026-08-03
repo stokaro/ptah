@@ -779,11 +779,11 @@
     "ptah": "yes",
     "atlas_oss": "unknown",
     "atlas_pro": "no",
-    "note": "migration/dbtest exports RunMigrationTest and RunSchemaTest. Nothing cited establishes an Atlas Go test-runner package.",
-    "evidence": "migration/dbtest/engine.go:247 RunMigrationTest and migration/dbtest/schema.go:53 RunSchemaTest; conformance cli-surface.md measures CLI commands only, and gaps.md lines 167-172 show the corpus imports atlasexec fixtures, so Atlas does have an observable Go package surface \u2014 the previous \u274c/\u274c cells asserted an Atlas distribution fact no cited source establishes"
+    "note": "migration/dbtest exports RunMigrationTest and RunSchemaTest. CE stays unknown: a CLI probe cannot see a Go API; an Atlas-side source naming a test-runner entry point would settle it.",
+    "evidence": "Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. `atlas schema test --help` and `atlas migrate test --help` each print \"'atlas schema test' is not supported by the community version.\" (exit 0), so the community build exposes no test runner on its CLI. That bounds the CLI surface but not a Go library API, which no command can show. CE cell stays unknown; what would settle it: an Atlas-side source that names a Go entry point for the test runner, of the kind the schema-testing page fails to provide. Atlas schema testing docs (atlasgo.io/testing/schema), retrieved 2026-08-03: the page states `Schema testing works only for Atlas Pro users, free and paid`, and documents the framework exclusively through the `atlas schema test` CLI -- test block syntax and command flags, with no Go library entry point. `Go package`, `embed` and `import` are each absent from the page, as is the control term `tttnotarealterm`, while `Pro` returns the quote above. So Atlas Pro has schema testing but not as an embeddable Go package."
   },
   {
-    "area": "Lint analyzers Atlas schema testing docs (atlasgo.io/testing/schema), retrieved 2026-08-03: the page states `Schema testing works only for Atlas Pro users, free and paid`, and documents the framework exclusively through the `atlas schema test` CLI -- test block syntax and command flags, with no Go library entry point. `Go package`, `embed` and `import` are each absent from the page, as is the control term `tttnotarealterm`, while `Pro` returns the quote above. So Atlas Pro has schema testing but not as an embeddable Go package.",
+    "area": "Lint analyzers",
     "feature": "Native migration lint rule set",
     "ptah": "yes",
     "atlas_oss": "partial",
@@ -831,10 +831,10 @@
     "area": "Lint policy and suppression",
     "feature": "Per-rule severity policy",
     "ptah": "partial",
-    "atlas_oss": "unknown",
+    "atlas_oss": "no",
     "atlas_pro": "partial",
-    "note": "Severity vocabulary is warning|error only (info errors out). Measured, Atlas is no richer: analyzer and rule blocks reject a `severity` attribute; only boolean error toggles exist.",
-    "evidence": "migration/lint/config.go:78 validateConfig admits only SeverityWarning/SeverityError. Reproduced: `severity: info` -> `error: failed to parse lint config .ptah-lint.yaml: rule DS101 has unsupported severity \"info\"` (exit 2); `severity: warning` demotes DS101 from error. config/projectconfig/atlas.go:594 parseLintAnalyzer takes only `error` bool. No cited Atlas source establishes CE severity-policy behavior; the Atlas features page classifies the linting CLI as Pro. analyzer blocks and .rule.hcl reject a `severity` attribute; the only per-analyzer control is boolean error (measured; observation study, scenario, lint-test-pro)"
+    "note": "Severity vocabulary is warning|error only (info errors out). The community binary carries no severity attribute: it accepts one and ignores it, exactly as it treats an invented attribute.",
+    "evidence": "migration/lint/config.go:78 validateConfig admits only SeverityWarning/SeverityError. Reproduced: `severity: info` -> `error: failed to parse lint config .ptah-lint.yaml: rule DS101 has unsupported severity \"info\"` (exit 2); `severity: warning` demotes DS101 from error. config/projectconfig/atlas.go:594 parseLintAnalyzer takes only `error` bool. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Same directory (CREATE TABLE then DROP TABLE), same command shape `atlas migrate lint -c file://<cfg>.hcl --env dev --dir file://migrations --dev-url <pg> --latest 1`, three configs. destructive { error = true }: exit 1, \"1 version with errors\". Same block plus severity = \"warning\": exit 1, byte-identical report. Same block plus zzznotarealattrib = \"x\": exit 1, byte-identical again - so severity is indistinguishable from an attribute that does not exist. Positive control that the config is read at all: destructive { error = false } prints \"1 version with warnings\" and exits 0."
   },
   {
     "area": "Lint output and CI",
@@ -849,13 +849,13 @@
     "area": "Lint output and CI",
     "feature": "CI integration (GitHub Action, annotations)",
     "ptah": "yes",
-    "atlas_oss": "unknown",
+    "atlas_oss": "partial",
     "atlas_pro": "yes",
-    "note": "stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. Atlas features page omits CI integrations.",
-    "evidence": "`ptah migrations lint --help` registers `--format ... github-actions`. Atlas side: docs/site/src/content/docs/atlas/docs-coverage.md:533 \"Atlas integration parity is unmeasured\"; the Atlas feature availability page does not address GitHub Actions integration, and cli-surface.md inventories no action. Nothing cited settles either Atlas column. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: the Atlas Pipelines section lists 'CI/CD integrations (K8s, TF, GH, GitLab, BitBucket)' as Basic on the free tier and checked on Pipelines Pro \u2014 a separately priced product ($59/mo per project requiring Atlas Pro seats), so it does not settle either CLI-plan column."
+    "note": "stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. The community binary has no annotation mode; its lint `--format` takes a Go template only.",
+    "evidence": "Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. `atlas migrate lint --help` inventories every flag: --dev-url, --dir, --dir-format, --format (\"Go template to use to format the output\"), --latest, --git-base, --git-dir. No annotation format and no CI-specific output mode. The Action half rests on the cited GitHub Actions page, which carries no plan marker; the annotation half is measured absent from the binary, hence partial. Atlas GitHub Actions docs (atlasgo.io/integrations/github-actions), retrieved 2026-08-03: `Atlas provides a number of GitHub Actions that can be used to automate database schema management tasks`, with no Pro marker attached, so the capability is present on Pro. Control on the same query: `vvvnotarealterm` returns not-found. The annotations half is unconfirmed -- `annotation` does not appear on that page."
   },
   {
-    "area": "Safety gates Atlas GitHub Actions docs (atlasgo.io/integrations/github-actions), retrieved 2026-08-03: `Atlas provides a number of GitHub Actions that can be used to automate database schema management tasks`, with no Pro marker attached, so the capability is present on Pro. Control on the same query: `vvvnotarealterm` returns not-found. The annotations half is unconfirmed -- `annotation` does not appear on that page.",
+    "area": "Safety gates",
     "feature": "Apply-time destructive-change gate",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -1029,13 +1029,13 @@
     "area": "Schema object kinds",
     "feature": "Extensions",
     "ptah": "partial",
-    "atlas_oss": "unknown",
+    "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "PostgreSQL-family only; `plpgsql` ignored by default on compare. MySQL/MariaDB render an empty statement instead of the intended comment.",
-    "evidence": "core/renderer/internal/dialects/mysql/mysql.go:26-30 copies the bufwriter by value so VisitExtension (line 132) writes to a buffer Output() never reads; verified live: `ptah schema compare` against PostgreSQL 18 proposed DROP EXTENSION for pg_trgm and left plpgsql alone"
+    "note": "PostgreSQL-family only; `plpgsql` ignored by default on compare. MySQL/MariaDB render an empty statement instead of the intended comment. The community binary refuses extension blocks.",
+    "evidence": "Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Two directions. Writing: `atlas schema diff --from file://empty.hcl --to file://b_extension.hcl --dev-url <pg>` exits 1 with \"Error: postgres: extensions are not supported by this version.\" Reading: a live schema that really contains pg_trgm inspects to `table \"anchor\"` and `schema \"kinds\"` only, while ptah-compat on the same URL emits extension \"pg_trgm\" with version 1.6. If the cell were still ❔ the second run would have to be read as \"unmeasured\"; it is not, the object exists and one binary omits it. Atlas features page (atlasgo.io/features), retrieved 2026-08-03: `Extensions` is listed under the PostgreSQL Pro Plan features. Control on the same page and the same query: `Database Inspection` carries the tier label `Open`, and `deferrable` is absent entirely, so the page distinguishes tiers rather than labelling everything Pro."
   },
   {
-    "area": "Schema object kinds Atlas features page (atlasgo.io/features), retrieved 2026-08-03: `Extensions` is listed under the PostgreSQL Pro Plan features. Control on the same page and the same query: `Database Inspection` carries the tier label `Open`, and `deferrable` is absent entirely, so the page distinguishes tiers rather than labelling everything Pro.",
+    "area": "Schema object kinds",
     "feature": "Roles, grants, and row-level security",
     "ptah": "partial",
     "atlas_oss": "no",
@@ -1047,13 +1047,13 @@
     "area": "Schema object kinds",
     "feature": "Domains, composite types, and range types",
     "ptah": "partial",
-    "atlas_oss": "unknown",
+    "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. Range subtype changes produce no diff at all.",
-    "evidence": "internal/convert/fromschema/fromschema.go:1616 gates domain/range/composite emission on isPostgreSQLPlatform (postgres|postgresql only); migration/schemadiff/internal/compare/usertypes.go:158-174 compares ranges by name only; live YugabyteDB 2026.1.0.0 `ptah schema apply --dry-run` planned CREATE DOMAIN \"yb_domain\" AS TEXT"
+    "note": "PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. Range subtype changes produce no diff. The community binary reports none of the three when they exist.",
+    "evidence": "Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Fixture schema \"kinds\" holds CREATE DOMAIN us_postal, CREATE TYPE addr AS (city text, zip text), CREATE TYPE int_span AS RANGE, a sequence and pg_trgm. `atlas schema inspect --url <pg> -s kinds` returns exactly `table \"anchor\"` plus `schema \"kinds\"`; ptah-compat on the same URL returns domain, composite, range, sequence and extension blocks. In the writing direction a domain or composite block in a schema file leaves the community binary printing \"Schemas are synced, no changes to be made.\" - dropped in silence, not refused. Atlas features page (atlasgo.io/features), retrieved 2026-08-03: `Domain types`, `Composite types` and `Range types` are each listed under the PostgreSQL Pro Plan features. Same control as the extensions row."
   },
   {
-    "area": "Data and distribution Atlas features page (atlasgo.io/features), retrieved 2026-08-03: `Domain types`, `Composite types` and `Range types` are each listed under the PostgreSQL Pro Plan features. Same control as the extensions row.",
+    "area": "Data and distribution",
     "feature": "Registry-backed distribution: `oci://` vs `atlas://`",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -1086,25 +1086,25 @@
     "atlas_oss": "na",
     "atlas_pro": "unknown",
     "note": "Pushing to an @sha256 reference is refused; `--version` is write-once and a conflict exits 2. The reference tag, `--tag` values and latest all move.",
-    "evidence": "push to @sha256:2ebd84f9... -> exit 2 'cannot push to a digest reference'; re-push --version rel1 with changed content -> exit 2 'OCI write-once tag already exists'; tag v1 moved from sha256:869dd082 to sha256:70575f30 across pushes while rel1 stayed pinned"
+    "evidence": "push to @sha256:2ebd84f9... -> exit 2 'cannot push to a digest reference'; re-push --version rel1 with changed content -> exit 2 'OCI write-once tag already exists'; tag v1 moved from sha256:869dd082 to sha256:70575f30 across pushes while rel1 stayed pinned. Stays unknown deliberately, and here is how far the sources reach. Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `sha256`, `digest` and `immutable` are each absent, so digest pinning is unsupported by that source; but `--tag` (`tag to push the directory with`) and `--version` (`version of the schema to push. Defaults to the current timestamp`) are documented WITHOUT any statement about whether they can be overwritten, so the write-once half is unestablished. One cell cannot honestly read `no` for one half and `unknown` for the other. atlasgo.io/registry returns an empty body through this channel. Control: `jjjnotarealterm` returns not-found."
   },
   {
-    "area": "Data and distribution Stays unknown deliberately, and here is how far the sources reach. Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `sha256`, `digest` and `immutable` are each absent, so digest pinning is unsupported by that source; but `--tag` (`tag to push the directory with`) and `--version` (`version of the schema to push. Defaults to the current timestamp`) are documented WITHOUT any statement about whether they can be overwritten, so the write-once half is unestablished. One cell cannot honestly read `no` for one half and `unknown` for the other. atlasgo.io/registry returns an empty body through this channel. Control: `jjjnotarealterm` returns not-found.",
+    "area": "Data and distribution",
     "feature": "Artifact integrity check (`--verify-sum`)",
     "ptah": "partial",
     "atlas_oss": "na",
     "atlas_pro": "no",
     "note": "On migrations push and up only. It checks the directory against the ptah.sum inside the same artifact, so content rewritten with its sum passes.",
-    "evidence": "tampered file, unchanged sum: push and up both exit 2 'migration directory does not match ptah.sum: changed: 1785514698_init.up.sql'; tampered file plus re-run migrations hash: up --verify-sum exits 0 and creates table 'evil'"
+    "evidence": "tampered file, unchanged sum: push and up both exit 2 'migration directory does not match ptah.sum: changed: 1785514698_init.up.sql'; tampered file plus re-run migrations hash: up --verify-sum exits 0 and creates table 'evil'. Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `--verify-sum` does not appear on the page, which enumerates every command and its flags. Scoped to the flag: Atlas's directory-integrity mechanism is atlas.sum with `migrate validate`, which checks a migration directory rather than an artifact against a sum embedded in it. Control as above."
   },
   {
-    "area": "OCI artifacts Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `--verify-sum` does not appear on the page, which enumerates every command and its flags. Scoped to the flag: Atlas's directory-integrity mechanism is atlas.sum with `migrate validate`, which checks a migration directory rather than an artifact against a sum embedded in it. Control as above.",
+    "area": "OCI artifacts",
     "feature": "Referrer attachments: lint, plan, deployment reports",
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "unknown",
     "note": "lint `--attach`, migrations plan `--attach` and up attach reports to an exact digest. `oci referrers` lists descriptors only; no flag downloads the payload.",
-    "evidence": "oci referrers --format json returns digest/artifact_type/media_type/size/annotations only; flags are --format, --type, --plain-http; the manifest's deployment.json layer (362 bytes) is reachable only through the raw registry API; cmd/oci/oci.go:69 calls ocireferrers.List"
+    "evidence": "Pro cell stays unknown; what would settle it: an Atlas-side source stating whether reports are attached to an artifact as OCI referrers, which neither the CLI reference nor the registry page addresses. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. The community binary carries no referrer surface to compare against: `atlas` has no oci verb at all."
   },
   {
     "area": "Schema sources",
@@ -1119,22 +1119,22 @@
     "area": "Schema sources",
     "feature": "HCL top-level blocks Ptah parses",
     "ptah": "yes",
-    "atlas_oss": "unknown",
+    "atlas_oss": "partial",
     "atlas_pro": "yes",
-    "note": "schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data.",
-    "evidence": "internal/atlashcl/atlashcl.go:73-113; a fixture exercising all 16 renders 17 PostgreSQL statements via `ptah schema render --schema-file all.hcl --dialect postgres`. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Database Security as Code (linked /atlas-schema/hcl#roles-and-permissions) and Seed Data as Code are absent from Starter and Pro-gated \u2014 this bears on the role, permission and data blocks only, so both Atlas cells stay unknown"
+    "note": "schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data. The community binary plans DDL for table and enum.",
+    "evidence": "Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. One block per file, `atlas schema diff --from file://empty.hcl --to file://<probe>.hcl --dev-url <pg>`. Plans DDL: table (CREATE TABLE \"t\"), enum (CREATE TYPE \"mood\" AS ENUM). Refuses loudly, exit 1: extension, sequence (\"...are not supported by this version\"). Accepts and drops in silence, exit 0 with \"Schemas are synced, no changes to be made.\": view, domain, composite, role - and an invented block `zzzznotarealblock` behaves identically, which is why exit status alone cannot be the discriminator here and the planned bytes are. Atlas HCL schema reference (atlasgo.io/atlas-schema/hcl), retrieved 2026-08-03: schema, table, column, primary_key, foreign_key and index carry no tier marker, while views, materialized views, triggers, functions, procedures, domains, composite types, range types, policies, sequences, extensions and roles/permissions each carry an `Atlas Pro Feature` marker, so the Pro plan covers the whole set. Controls on the same page and query shape: the invented terms `zzzznotarealterm` and `qqqnotarealblock` return not-found while real blocks return verbatim quotes, so the page is being read rather than reconstructed."
   },
   {
-    "area": "Schema sources Atlas HCL schema reference (atlasgo.io/atlas-schema/hcl), retrieved 2026-08-03: schema, table, column, primary_key, foreign_key and index carry no tier marker, while views, materialized views, triggers, functions, procedures, domains, composite types, range types, policies, sequences, extensions and roles/permissions each carry an `Atlas Pro Feature` marker, so the Pro plan covers the whole set. Controls on the same page and query shape: the invented terms `zzzznotarealterm` and `qqqnotarealblock` return not-found while real blocks return verbatim quotes, so the page is being read rather than reconstructed.",
+    "area": "Schema sources",
     "feature": "HCL table and column child blocks",
     "ptah": "yes",
-    "atlas_oss": "unknown",
+    "atlas_oss": "partial",
     "atlas_pro": "yes",
-    "note": "column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform.",
-    "evidence": "internal/atlashcl/atlashcl.go:244-325 (table switch), 394-478 (as/identity); index `on { column= ops= desc= }` renders operator classes"
+    "note": "column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. The community binary drops row_security silently.",
+    "evidence": "internal/atlashcl/atlashcl.go:244-325 (table switch), 394-478 (as/identity); index `on { column= ops= desc= }` renders operator classes. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Per-child probes through `schema diff`: check -> CONSTRAINT \"n_positive\" CHECK (n > 0); index+unique -> CREATE UNIQUE INDEX; foreign_key -> CONSTRAINT ... REFERENCES; identity -> GENERATED ALWAYS AS IDENTITY; partition -> PARTITION BY RANGE (\"n\"), all on both binaries. row_security { enabled = true } produces no ENABLE ROW LEVEL SECURITY from either binary. Note the divergence worth recording: the HCL reference marks partition an Atlas Pro Feature, and the community binary plans it anyway. Atlas HCL schema reference (atlasgo.io/atlas-schema/hcl), retrieved 2026-08-03: `check`, `unique`, `index` and `row_security` are documented as table child resources with no tier marker, and `partition` is documented with an `Atlas Pro Feature` marker. Controls on the same page and query shape: the invented terms `zzzznotarealterm` and `qqqnotarealblock` return not-found while real blocks return verbatim quotes, so the page is being read rather than reconstructed."
   },
   {
-    "area": "Schema sources Atlas HCL schema reference (atlasgo.io/atlas-schema/hcl), retrieved 2026-08-03: `check`, `unique`, `index` and `row_security` are documented as table child resources with no tier marker, and `partition` is documented with an `Atlas Pro Feature` marker. Controls on the same page and query shape: the invented terms `zzzznotarealterm` and `qqqnotarealblock` return not-found while real blocks return verbatim quotes, so the page is being read rather than reconstructed.",
+    "area": "Schema sources",
     "feature": "HCL variable blocks and var.* references",
     "ptah": "no",
     "atlas_oss": "yes",
@@ -1146,55 +1146,55 @@
     "area": "Schema sources",
     "feature": "HCL function calls in schema files",
     "ptah": "partial",
-    "atlas_oss": "unknown",
+    "atlas_oss": "partial",
     "atlas_pro": "partial",
-    "note": "sql() unwraps in column default/on_update/unique_expr/check, index ops, domain check only; in type, check.expr, index.where it leaks literally.",
-    "evidence": "internal/atlashcl/atlashcl.go:1466-1476 (textual `sql(` prefix match, 6 call sites) and 1486-1496; render emits column type `sql(\"geometry(Point,4326)\")`. `sql(...)` as a column type works in Atlas; `sql(...)` inside an index where clause is rejected under the sqlite dialect (measured; observation study, scenario, hcl-semantics)"
+    "note": "sql() unwraps in column default/on_update/unique_expr/check, index ops, domain check only; in type, check.expr and index.where it leaks into the DDL where the community binary refuses the file.",
+    "evidence": "internal/atlashcl/atlashcl.go:1466-1476 (textual `sql(` prefix match, 6 call sites) and 1486-1496. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Column type: `type = sql(\"varchar(17)\")` -> community binary plans `\"s\" character varying(17)`, ptah-compat plans `\"s\" sql(\"varchar(17)\")`, which is not valid SQL. check.expr and index.where: `expr = sql(\"n > 0\")` with `where = sql(\"n > 5\")` -> community binary exits 1 with 'schemahcl: failed reading spec as *postgres.doc: value of attr \"expr\" cannot be read as string: incorrect type raw', ptah-compat exits 0 and emits CHECK (sql(\"n > 0\")) and WHERE sql(\"n > 5\"). Ptah accepting where the community binary refuses is the ordinary Pro-parity direction, but here it ships DDL no engine will execute; tracked as a follow-up, not fixed by this docs change."
   },
   {
     "area": "Schema sources",
     "feature": "HCL locals, lock, atlas, dynamic/for_each",
     "ptah": "no",
-    "atlas_oss": "unknown",
+    "atlas_oss": "partial",
     "atlas_pro": "partial",
-    "note": "Named rejections, rejected (`ptah-compat` exit 1, native `ptah` exit 2): unsupported top-level block \"locals\"/\"lock\"/\"atlas\"; unsupported table block \"dynamic\".",
-    "evidence": "internal/atlashcl/atlashcl.go:111-113 and 321-323; `ptah schema render --schema-file t_locals.hcl` prints each quoted error. `locals` works in a schema file in Atlas; `lock` and `atlas` top-level blocks are rejected under the sqlite dialect; `dynamic` was not probed in Atlas (measured; observation study, scenario, hcl-semantics)"
+    "note": "Named rejections, rejected (`ptah-compat` exit 1, native `ptah` exit 2): unsupported top-level block \"locals\"/\"lock\"/\"atlas\"; unsupported table block \"dynamic\". The community binary honors locals.",
+    "evidence": "internal/atlashcl/atlashcl.go:111-113 and 321-323; `ptah schema render --schema-file t_locals.hcl` prints each quoted error. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. locals { dflt = 7 } referenced as `default = local.dflt`: community binary plans `\"n\" integer NOT NULL DEFAULT 7` - the literal 7 is the discriminator, it can only appear if the local resolved - while ptah-compat exits 1 'unsupported top-level block \"locals\"'. lock {} and atlas {} in a schema file: community binary exits 0 and plans the table, so the blocks are accepted and ignored rather than refused. dynamic \"index\" with for_each: community binary exits 0 and plans no index at all, so no expansion happens; the marker name idx_dynamic_marker never appears."
   },
   {
     "area": "Schema sources",
     "feature": "HCL foreign_key deferrable",
     "ptah": "no",
-    "atlas_oss": "unknown",
+    "atlas_oss": "no",
     "atlas_pro": "no",
-    "note": "Errors: unsupported foreign_key attribute \"deferrable\". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too.",
-    "evidence": "internal/atlashcl/atlashcl.go:1324-1331; `grep -rin deferrable --include=*.go` outside tests returns only one code comment in migration/schemadiff. `deferrable = true` rejected under the sqlite dialect; engine-gated, so the Atlas cell stays unresolved for PostgreSQL (measured; observation study, scenario, hcl-semantics)"
+    "note": "Errors: unsupported foreign_key attribute \"deferrable\". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too. The community binary plans no DEFERRABLE either.",
+    "evidence": "internal/atlashcl/atlashcl.go:1324-1331; `grep -rin deferrable --include=*.go` outside tests returns only one code comment in migration/schemadiff. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Two files identical but for `deferrable = true` on the foreign_key. The community binary plans byte-identical DDL for both: CONSTRAINT \"fk_child_parent\" FOREIGN KEY (\"pid\") REFERENCES \"parent\" (\"id\") ON UPDATE NO ACTION ON DELETE NO ACTION, exit 0 either way. If the attribute were honored the deferrable file would carry DEFERRABLE; it does not, so the attribute is accepted and has no effect. ptah-compat exits 1 naming the attribute. Atlas HCL schema reference (atlasgo.io/atlas-schema/hcl), retrieved 2026-08-03: `foreign_key` is documented but `deferrable` does not appear anywhere on the page, so it is absent from Atlas's documented HCL rather than merely unmeasured. Controls on the same page and query shape: the invented terms `zzzznotarealterm` and `qqqnotarealblock` return not-found while real blocks return verbatim quotes, so the page is being read rather than reconstructed."
   },
   {
-    "area": "Schema sources Atlas HCL schema reference (atlasgo.io/atlas-schema/hcl), retrieved 2026-08-03: `foreign_key` is documented but `deferrable` does not appear anywhere on the page, so it is absent from Atlas's documented HCL rather than merely unmeasured. Controls on the same page and query shape: the invented terms `zzzznotarealterm` and `qqqnotarealblock` return not-found while real blocks return verbatim quotes, so the page is being read rather than reconstructed.",
+    "area": "Schema sources",
     "feature": "Ptah-only HCL schema extensions",
     "ptah": "yes",
-    "atlas_oss": "unknown",
+    "atlas_oss": "na",
     "atlas_pro": "na",
     "note": "platform/override per dialect, EXCLUDE constraint block, column enum, table checks/custom, index ops, ClickHouse granularity, seed data block.",
-    "evidence": "docs/site/src/content/docs/reference/hcl-schema.md:87-136; mysql render of a platform override emits TYPE=BIGINT UNSIGNED; the data block populates db.ManagedData. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Seed Data as Code (/guides/seed-data-as-code) is absent from Starter and Pro-gated, so Atlas Pro covers the seed-data job at job level; whether it uses an HCL data-block mechanism is not stated"
+    "evidence": "docs/site/src/content/docs/reference/hcl-schema.md:87-136; mysql render of a platform override emits TYPE=BIGINT UNSIGNED; the data block populates db.ManagedData. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Seed Data as Code (/guides/seed-data-as-code) is absent from Starter and Pro-gated, so Atlas Pro covers the seed-data job at job level; whether it uses an HCL data-block mechanism is not stated. Not applicable: the capability is defined as Ptah's own HCL extensions, so there is no Atlas counterpart to classify."
   },
   {
-    "area": "Schema sources Not applicable: the capability is defined as Ptah's own HCL extensions, so there is no Atlas counterpart to classify.",
+    "area": "Schema sources",
     "feature": "Directory of .hcl files as one schema source",
     "ptah": "no",
-    "atlas_oss": "unknown",
+    "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "`--schema-file dir` and `--to file://dir` are refused (schema file is a directory); globs are not expanded. Multi-file needs one flag per file.",
-    "evidence": "cmd/internal/schemaload/schemaload.go:257-259; `ptah-compat schema diff --to file://dir` prints \"load --to schema: schema file is a directory\". a directory of .hcl files as `--url file://dir` works on schema inspect (measured; observation study, scenario, hcl-semantics)"
+    "note": "`--schema-file dir` and `--to file://dir` are refused (schema file is a directory); globs are not expanded. Multi-file needs one flag per file. The community binary reads such a directory.",
+    "evidence": "cmd/internal/schemaload/schemaload.go:257-259. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. A directory holding part_a.hcl (schema + table \"ta\") and part_b.hcl (table \"tb\"): `atlas schema diff --from file://empty.hcl --to file://<dir> --dev-url <pg>` exits 0 and plans both CREATE TABLE \"ta\" and CREATE TABLE \"tb\", so the two files are read as one schema. ptah-compat on the same directory exits 1 with \"load --to schema: schema file is a directory\"."
   },
   {
     "area": "Schema inspection filters",
     "feature": "Schema-qualified exclude globs for enums and functions",
     "ptah": "partial",
-    "atlas_oss": "unknown",
+    "atlas_oss": "partial",
     "atlas_pro": "unknown",
-    "note": "Tables, views and extensions match schema-qualified exclude globs; enum and function filters compare the bare name only.",
-    "evidence": "internal/atlasfilter/filter.go:299-303 (filterEnums matches value.Name) and :342-346 (filterFunctions matches function.Name) versus :348-356 and :327-340 which build qualifiedNameCandidates for views and extensions. docs/site/src/content/docs/atlas/schema-commands.md:96-98 records the same limitation. Nothing in cli-surface.md, gaps.md, gaps-live.md, or gaps-diff.md establishes Atlas CE's qualification semantics for enum and function exclude globs, so both Atlas columns are \u2754"
+    "note": "Tables, views and extensions match schema-qualified exclude globs; enum and function filters compare the bare name only. The community binary matches `app.mood`; it reports no functions.",
+    "evidence": "internal/atlasfilter/filter.go:299-303 (filterEnums matches value.Name) and :342-346 (filterFunctions matches function.Name) versus :348-356 and :327-340 which build qualifiedNameCandidates for views and extensions. docs/site/src/content/docs/atlas/schema-commands.md:96-98 records the same limitation. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Fixture schema \"app\" holds enum mood, function add_one, table t. Community binary at database scope: --exclude 'app.mood' removes the enum, --exclude 'app.t' removes the table. ptah-compat with -s app: --exclude 'mood' removes the enum and --exclude 'add_one' removes the function, while --exclude 'app.mood' and --exclude 'app.add_one' leave both in place - the bare-name-only rule, reproduced. The function half cannot be compared: functions never appear in the community binary's inspect output, even when one exists. Pro cell stays unknown; what would settle it: an Atlas-side source stating the qualification rule for enum and function exclude patterns."
   },
   {
     "area": "Project config",
@@ -1209,10 +1209,10 @@
     "area": "Schema inspection filters",
     "feature": "Inspect `--exclude` field selectors",
     "ptah": "partial",
-    "atlas_oss": "unknown",
+    "atlas_oss": "no",
     "atlas_pro": "unknown",
-    "note": "Only [type=extension].version is honored; other .field suffixes and non-final [type=...] fail before any database is contacted.",
-    "evidence": "internal/atlasfilter/filter.go:188-200 parseFieldSelector accepts only field==\"version\" with hasOnlyType(types,\"extension\"), and :132-135 rejects a second [type= segment; built ptah-compat on live PostgreSQL: `--exclude '*[type=extension].version'` blanks the version, `--exclude '*[type=table].comment'` exits 1 \"unsupported Atlas exclude field selector \\\".comment\\\"\", `--exclude '*[type=table]*'` exits 1 \"unsupported Atlas exclude field selector suffix \\\"*\\\"\". Atlas columns downgraded to unknown: conformance cli-surface.md line 47 establishes that --exclude exists on Atlas CE schema inspect but nothing cited establishes which field-selector forms Atlas honors, and no cited source defines an \"exporter block\" at all. `--exclude '*[type=table].comment'` parses and runs on sqlite (exit 0), but sqlite has no comment support, so filtering is unobserved - syntactic acceptance only (measured; observation study, scenario verbs-and-flags)"
+    "note": "Only [type=extension].version is honored; other .field suffixes and non-final [type=...] fail before any database is contacted. The community binary accepts a .field suffix and ignores it.",
+    "evidence": "internal/atlasfilter/filter.go:188-200 parseFieldSelector accepts only field==\"version\" with hasOnlyType(types,\"extension\"), and :132-135 rejects a second [type= segment; on live PostgreSQL `--exclude '*[type=extension].version'` blanks the version while `--exclude '*[type=table]*'` exits 1 'unsupported Atlas exclude field selector suffix \"*\"'. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Table app.t carries COMMENT 'COMMENT_MARKER_HERE'. Community binary: --exclude 'app.t[type=table]' removes the table (so the pattern shape matches), --exclude 'app.t.comment' and --exclude '*.*[type=table].comment' change nothing at all - table present, marker present, exit 0. Honoring the selector would have kept the table and dropped the comment; the field suffix instead makes the pattern inert in silence. ptah-compat refuses the same pattern, exit 1 'unsupported Atlas exclude field selector \".comment\"'. Pro cell stays unknown; what would settle it: an Atlas-side source enumerating the field selectors --exclude accepts. Note the gap in the other direction: the community binary honors --exclude '*[type=table]*' and ptah-compat exits 1 on the trailing star."
   },
   {
     "area": "Versioned migrations",
@@ -1254,31 +1254,31 @@
     "area": "Versioned migrations",
     "feature": "Online DDL routing via gh-ost or pt-osc",
     "ptah": "yes",
-    "atlas_oss": "unknown",
+    "atlas_oss": "no",
     "atlas_pro": "no",
-    "note": "ptah.yaml online_ddl.tool (ghost|pt-osc), threshold_rows, args, and fallback (error|plain) route large-table ALTERs through an online-DDL tool during migrations up/down.",
-    "evidence": "config/projectconfig/config.go:22-35,407-447 defines the config; cmd/migrateup/migrateup.go:374 consumes it; config/projectconfig/online_ddl_test.go. docs/site/src/content/docs/reference/configuration.md:89 documents the four keys. Matrix mentions online_ddl only as a ptah.yaml key name. no gh-ost/pt-osc routing on Atlas's own help surface (measured; observation study, scenario, ptah-extension-equivalents)"
+    "note": "ptah.yaml online_ddl.tool (ghost|pt-osc), threshold_rows, args, and fallback (error|plain) route large-table ALTERs through an online-DDL tool during migrations up/down. CE has no such routing.",
+    "evidence": "config/projectconfig/config.go:22-35,407-447 defines the config; cmd/migrateup/migrateup.go:374 consumes it; config/projectconfig/online_ddl_test.go. docs/site/src/content/docs/reference/configuration.md:89 documents the four keys. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. `atlas migrate apply --help` inventories the full flag set: --url, --dir, --format, --revisions-schema, --dry-run, --lock-timeout, --baseline, --tx-mode, --exec-order, --allow-dirty. No gh-ost or pt-osc routing, and no flag that would select an external DDL tool."
   },
   {
     "area": "Versioned migrations",
     "feature": "Atlas txtar migration sections (-- atlas:txtar)",
     "ptah": "yes",
-    "atlas_oss": "unknown",
+    "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "`-- atlas:txtar` executes migration.sql/down.sql and enforces checks.sql plus ordered checks/*.sql, including atlas:assert oneof; unrelated files are ignored.",
-    "evidence": "migration/migrator/migrations.go parses migration.sql, down.sql, checks.sql, and ordered checks/*.sql sections; docs/site/src/content/docs/atlas/migrate-commands.md documents the behavior. The down row's \"Atlas single-file dirs have no down body\" note does not cover this exception. txtar migrations run with checks.sql ENFORCED as a pre-migration gate (failing assertion aborts, exit 1) (measured; observation study, scenario, txtar-checks-enforcement). Fixed 2026-08-01 (stokaro/ptah#956) and hardened after review: check files map onto the same engine, preserve archive order, default to all-of, and honor file-level atlas:assert oneof; a failing assertion aborts before migration.sql; --skip-checks bypasses on native ptah migrations up, compat migrate apply has no such flag (parity), and --tx-mode all refuses checked txtar files. A failed check records NO revision row, so retry after fixing data succeeds without repair."
+    "note": "`-- atlas:txtar` executes migration.sql/down.sql and enforces checks.sql plus ordered checks/*.sql, including atlas:assert oneof; unrelated files are ignored. CE runs every section as plain SQL.",
+    "evidence": "migration/migrator/migrations.go parses migration.sql, down.sql, checks.sql, and ordered checks/*.sql sections; docs/site/src/content/docs/atlas/migrate-commands.md documents the behavior. Fixed 2026-08-01 (stokaro/ptah#956) and hardened after review: check files map onto the same engine, preserve archive order, default to all-of, and honor file-level atlas:assert oneof; a failing assertion aborts before migration.sql; --skip-checks bypasses on native ptah migrations up, compat migrate apply has no such flag (parity), and --tx-mode all refuses checked txtar files. A failed check records NO revision row, so retry after fixing data succeeds without repair. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. One txtar file whose migration.sql creates txtar_marker and whose down.sql drops it, applied to a fresh SQLite database. The community binary reports \"2 sql statements\" and executes both in file order (-> CREATE TABLE txtar_marker; -> DROP TABLE txtar_marker), leaving only atlas_schema_revisions behind; ptah-compat runs the migration.sql section alone and leaves txtar_marker in place. The surviving table name is the discriminator: exit status is 0 for both."
   },
   {
     "area": "Versioned migrations",
     "feature": "Atlas SQL template migrations (`--atlas-env`)",
     "ptah": "yes",
-    "atlas_oss": "unknown",
+    "atlas_oss": "no",
     "atlas_pro": "no",
-    "note": "Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. Flag on 10 migrations verbs.",
-    "evidence": "migration/migrator/atlas_template.go:15-45 (AtlasTemplateData{Env}, RenderAtlasTemplateSQL); /tmp/c-ptah migrations up --help shows \"--atlas-env Value exposed as .Env when rendering Atlas SQL template migrations\"."
+    "note": "Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. CE runs the braces as SQL.",
+    "evidence": "migration/migrator/atlas_template.go:15-45 (AtlasTemplateData{Env}, RenderAtlasTemplateSQL). Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. One migration file containing `CREATE TABLE tpl_{{ .Env }} (n integer);` applied to a fresh SQLite database. `ptah migrations up --atlas-env prod` exits 0 and the database then holds a table named tpl_prod. The community binary on the same directory exits 1: 'sql/migrate: executing statement \"CREATE TABLE tpl_{{ .Env }} (n integer);\" from version \"20260101000001\": unrecognized token: \"{\"' - the braces reach the engine unrendered. The rendered table name is the discriminator. The flag lives on the native verbs; compat `migrate apply --atlas-env` answers \"unknown flag\". Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `template` occurs throughout the page, and every occurrence is `--format string  Go template to use to format the output` -- output formatting. Asked to classify every occurrence, none describes Go templates inside migration file content. Control on the same query: `kkknotarealterm` returns not-found while `--env` returns `set which env from the config file to use`."
   },
   {
-    "area": "Linting and safety Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `template` occurs throughout the page, and every occurrence is `--format string  Go template to use to format the output` -- output formatting. Asked to classify every occurrence, none describes Go templates inside migration file content. Control on the same query: `kkknotarealterm` returns not-found while `--env` returns `set which env from the config file to use`.",
+    "area": "Linting and safety",
     "feature": "Generation-time destructive-change gate",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -1293,19 +1293,19 @@
     "atlas_oss": "no",
     "atlas_pro": "no",
     "note": "Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not.",
-    "evidence": "echo \"DROP TABLE users;\" | /tmp/c-ptah sql lint --stdin --dialect postgres --format json exits 0 with a JSON findings document. Atlas-side: cli-surface.md inventory has no standalone SQL lint verb; migrate lint (line 33) is directory-based. no standalone SQL-file lint verb; `atlas schema lint` exists but lints schema sources, a different mechanism (measured; observation study, scenario, lint-test-pro, ptah-extension-equivalents)"
+    "evidence": "echo \"DROP TABLE users;\" | /tmp/c-ptah sql lint --stdin --dialect postgres --format json exits 0 with a JSON findings document. Atlas-side: cli-surface.md inventory has no standalone SQL lint verb; migrate lint (line 33) is directory-based. no standalone SQL-file lint verb; `atlas schema lint` exists but lints schema sources, a different mechanism (measured; observation study, scenario, lint-test-pro, ptah-extension-equivalents). Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: no `sql lint` command exists. The two lint verbs take other inputs -- `atlas schema lint` is documented as `Run schema linting` with `-u, --url strings  schema URL(s) to lint`, and `atlas migrate lint` analyzes a migration directory. Asked directly, no command on the reference accepts arbitrary SQL files or stdin for linting. Control on the same query: `rrrnotarealflag` returns not-found while `--exclude` returns its description verbatim."
   },
   {
-    "area": "Declarative and direct schema changes Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: no `sql lint` command exists. The two lint verbs take other inputs -- `atlas schema lint` is documented as `Run schema linting` with `-u, --url strings  schema URL(s) to lint`, and `atlas migrate lint` analyzes a migration directory. Asked directly, no command on the reference accepts arbitrary SQL files or stdin for linting. Control on the same query: `rrrnotarealflag` returns not-found while `--exclude` returns its description verbatim.",
+    "area": "Declarative and direct schema changes",
     "feature": "JSON output for native schema diff",
     "ptah": "yes",
-    "atlas_oss": "unknown",
+    "atlas_oss": "na",
     "atlas_pro": "na",
     "note": "Native ptah schema diff `--format` json emits a machine-readable statements document; the Go-template row only states that {{ json . }} fails on the compat diff, leaving native JSON unstated.",
-    "evidence": "/tmp/c-ptah schema diff --from a.sql --to b.sql --dev-url sqlite://... --format json returned {\"statements\":[\"ALTER TABLE \\\"t\\\" ADD COLUMN \\\"name\\\" TEXT\"]}, exit 0."
+    "evidence": "/tmp/c-ptah schema diff --from a.sql --to b.sql --dev-url sqlite://... --format json returned {\"statements\":[\"ALTER TABLE \\\"t\\\" ADD COLUMN \\\"name\\\" TEXT\"]}, exit 0. Not applicable: the capability is scoped to Ptah's native `schema diff` verb rather than the Atlas-compatible surface, so no Atlas plan classifies it."
   },
   {
-    "area": "Go embedding and developer tooling Not applicable: the capability is scoped to Ptah's native `schema diff` verb rather than the Atlas-compatible surface, so no Atlas plan classifies it.",
+    "area": "Go embedding and developer tooling",
     "feature": "Go annotations to HCL export with cleanup",
     "ptah": "yes",
     "atlas_oss": "na",
@@ -1317,10 +1317,10 @@
     "area": "Configuration and dev databases",
     "feature": "PTAH_* environment-variable flag equivalents",
     "ptah": "yes",
-    "atlas_oss": "unknown",
+    "atlas_oss": "no",
     "atlas_pro": "no",
-    "note": "Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) that substitutes for the flag.",
-    "evidence": "All 49 --help screens annotate each flag with [env: PTAH_*]; verified live: PTAH_FORMAT=dot /tmp/c-ptah viz --root-dir . emitted Graphviz DOT instead of the mermaid default, exit 0. No Atlas-side env-var inventory is cited by the page. no documented ATLAS_* env-var flag twins in Atlas's help (measured; observation study, scenario, ptah-extension-equivalents)"
+    "note": "Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) that substitutes for the flag. CE annotates no flag with an environment variable.",
+    "evidence": "All 49 --help screens annotate each flag with [env: PTAH_*]; verified live: PTAH_FORMAT=dot ptah viz --root-dir . emitted Graphviz DOT instead of the mermaid default, exit 0. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. No help screen on the community binary annotates any flag with an environment variable, and `ATLAS_URL=sqlite://file?mode=memory atlas schema inspect` exits 1 with 'Error: required flag(s) \"url\" not set'. Had the twin been honored the run would have printed a schema document and exited 0."
   },
   {
     "area": "Versioned migrations",
