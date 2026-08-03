@@ -602,6 +602,11 @@ func atlasMigrateVersionValue(value string) (string, error) {
 // native desired-schema root, --dev-url selects the throwaway database
 // (ephemeral SQLite when omitted), and the optional [paths] positional selects
 // the directory of Ptah-native YAML test cases.
+//
+// -s/--schema restricts the desired schema before the cases run. Atlas registers
+// it as a repeatable `strings` flag (atlasgo.io/cli-reference); the arg mapper
+// rewrites every occurrence, and the native flag is a string array, so repeated
+// values accumulate instead of the last one winning.
 func atlasSchemaTestVerb() atlasVerb {
 	return atlasVerb{
 		use:                "test",
@@ -616,6 +621,7 @@ func atlasSchemaTestVerb() atlasVerb {
 			atlasSchemaTestSourceFlag(),
 			atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url"),
 			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
+			atlasargs.String(atlasSchemaFlagName, atlasSchemaFlagShorthand, "Restrict the desired schema to these schema names"),
 		},
 	}
 }
