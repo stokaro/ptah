@@ -47,14 +47,14 @@ matching measured Atlas behavior.
 repeatable (`R__`) migrations, goose/dbmate files missing their up directive,
 colliding versions, an Atlas directory that fails `atlas.sum` verification, and
 an Atlas directory that carries no `atlas.sum` at all while holding at least one
-`.sql` file anywhere in its tree — both checksum refusals are byte-identical to
+top-level `.sql` file — both checksum refusals are byte-identical to
 `ptah-compat migrate validate` and nothing is applied. A directory with no
-`.sql` file anywhere reports `No migration files to execute` and exits `0`.
+top-level `.sql` file reports `No migration files to execute` and exits `0`.
 
-The scan is recursive because Ptah's registrar executes migrations in
-subdirectories. Atlas CE ignores subdirectories, so for that layout CE reports
-nothing to execute while Ptah refuses an unhashed directory rather than running
-migrations it has not verified — see [#976](https://github.com/stokaro/ptah/issues/976).
+The scan is top-level-only, matching what `atlas.sum` covers and what Atlas CE
+reads. A `.sql` file in a subdirectory, or a top-level `.SQL`, is not a
+migration and is not executed; each one is named on stderr as declined, which
+Atlas CE does not do — see [#976](https://github.com/stokaro/ptah/issues/976).
 
 A leading `-- atlas:txmode file` or `-- atlas:txmode none` header overrides
 global `file` or `none` for that migration. File-level `all`, unknown values,
