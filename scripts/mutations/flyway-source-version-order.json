@@ -65,6 +65,30 @@
       "file": "internal/atlasmigrateimport/importer.go",
       "old": "\t\tsources[versions[i]] = flywayCEVersion(file)",
       "new": "\t\tsources[versions[i]] = file.version"
+    },
+    {
+      "name": "the tokens a surviving baseline squashed away are not recovered",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tfor version, source := range flywaySquashedSourceVersions(names, covered) {\n\t\tif _, ok := sources[version]; !ok {\n\t\t\tsources[version] = source\n\t\t}\n\t}",
+      "new": "\t_ = flywaySquashedSourceVersions"
+    },
+    {
+      "name": "the recovery overwrites the executed mapping instead of filling gaps",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\tfor version, source := range flywaySquashedSourceVersions(names, covered) {\n\t\tif _, ok := sources[version]; !ok {\n\t\t\tsources[version] = source\n\t\t}\n\t}",
+      "new": "\tfor version, source := range flywaySquashedSourceVersions(names, covered) {\n\t\tsources[version] = source\n\t}"
+    },
+    {
+      "name": "the recovered token is the baseline's own, not the squashed file's",
+      "file": "internal/atlasmigrateimport/importer.go",
+      "old": "\t\trecorded[versions[i]] = flywayCEVersion(file)",
+      "new": "\t\t_ = file\n\t\trecorded[versions[i]] = baseline.version"
+    },
+    {
+      "name": "the surviving-baseline refusal is removed, leaving the exemption to decide",
+      "file": "cmd/atlas/migrate_apply.go",
+      "old": "\tif err := checkFlywayBaselineHistory(linearity.baseline, execOrder, plan); err != nil {\n\t\treturn err\n\t}",
+      "new": "\t_ = checkFlywayBaselineHistory"
     }
   ]
 }

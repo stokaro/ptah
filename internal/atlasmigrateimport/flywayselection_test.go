@@ -3,6 +3,8 @@ package atlasmigrateimport_test
 import (
 	"fmt"
 	"io/fs"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -497,4 +499,84 @@ func TestLoadFSFlywayDescriptionEndingInDown_KnownDivergence(t *testing.T) {
 		"4611686018427469511_a.down.sql",
 		"4611686018427836747_c.sql",
 	})
+}
+
+// TestFlywaySourceVersionsCarriesSquashedTokens covers the operand the linear
+// comparison compares AGAINST: the highest version token a database has
+// applied.
+//
+// A surviving baseline retires the files it squashes from the covered set, and
+// with them their tokens. The comparison then has no mark for any applied
+// version, reports "none", and passes every pending file — which is how
+// `V2__a.sql` applied plus `B3__base.sql` and `R__r.sql` added came to exit 0
+// here while the pinned community binary v1.3.0 exits 1 with `migration files
+// B3__base.sql, R__r.sql were added out of order`. The tokens of the squashed
+// files are therefore recovered from the directory as it stood before the
+// baseline, which is the only shape their revision rows can have come from.
+//
+// The assertion is on the token SET rather than on int64 keys, because the keys
+// are this build's projection and the tokens are Atlas CE's own strings; a row
+// spelling out both would only prove the fixture was written twice.
+func TestFlywaySourceVersionsCarriesSquashedTokens(t *testing.T) {
+	tests := []struct {
+		name   string
+		files  []string
+		tokens []string
+	}{{
+		// Reverted: ["3"] — the applied V2's token is gone with its file, so
+		// the comparison has no mark and lets everything through.
+		name:   "a baseline that squashes the only applied migration",
+		files:  []string{"V2__a.sql", "B3__base.sql"},
+		tokens: []string{"2", "3"},
+	}, {
+		// The shape the pinned binary refuses. Reverted: ["", "3"], and
+		// `migrate apply` exits 0 executing both added files.
+		name:   "a repeatable beside a baseline that squashes the applied migration",
+		files:  []string{"V2__a.sql", "B3__base.sql", "R__r.sql"},
+		tokens: []string{"", "2", "3"},
+	}, {
+		// The recovered token is the SQUASHED file's, not the baseline's: a
+		// fill keyed on the baseline would report ["1", "1", "3"] and make the
+		// mark "1", passing files an applied "02" outranks.
+		name:   "a zero-padded migration squashed by an unpadded baseline",
+		files:  []string{"V02__a.sql", "V3__c.sql", "B1__base.sql"},
+		tokens: []string{"02", "1", "3"},
+	}, {
+		// The executed mapping wins where the two selections land on the same
+		// slot. B02 squashes V02__b.sql and leaves V2__a.sql, which then takes
+		// the tie slot V02 held before it — so the recovered V02 entry and the
+		// executed V2 entry are the SAME key, carrying different tokens. Both
+		// "2"s are real: one is what this directory executes at that slot, the
+		// other is what a pre-baseline database recorded one slot up.
+		// Recovering by overwrite rather than by filling gaps prints
+		// ["02", "02", "2", "3"] and hands the comparison a mark of "02" for a
+		// migration whose token is "2".
+		name:   "a padded and an unpadded migration on one ordering slot",
+		files:  []string{"V2__a.sql", "V02__b.sql", "V3__c.sql", "B02__base.sql"},
+		tokens: []string{"02", "2", "2", "3"},
+	}, {
+		// Control: a baseline that squashes nothing adds nothing. Green either
+		// way; it goes red if the recovery starts inventing tokens.
+		name:   "a baseline below every applied migration",
+		files:  []string{"V2__a.sql", "B1__base.sql"},
+		tokens: []string{"1", "2"},
+	}, {
+		// Control: no baseline, so there is nothing to recover and the map is
+		// exactly the executed one. Green either way.
+		name:   "a directory with no baseline at all",
+		files:  []string{"V2__a.sql", "V10__b.sql"},
+		tokens: []string{"10", "2"},
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			sources, err := atlasmigrateimport.FlywaySourceVersions(
+				flywaySource(test.files...), atlasmigrateimport.FormatFlyway)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(slices.Sorted(maps.Values(sources)), qt.DeepEquals, test.tokens)
+		})
+	}
 }
