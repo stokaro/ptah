@@ -58,6 +58,49 @@ service, not artifact storage; the storage function is covered under
 [Data and distribution](#data-and-distribution).`,
 };
 
+// Every area label a row is allowed to carry. bucket() matches by prefix, so a
+// citation appended to an area still routes to a section and the page still
+// builds - which is how thirteen rows came to carry another row's evidence in
+// their area field. An exact-match roster is what makes that failure loud.
+const AREAS = new Set([
+  'API schema export',
+  'Approval and policy workflows',
+  'Atlas Registry and Cloud',
+  'Configuration and dev databases',
+  'Data and distribution',
+  'Data management',
+  'Database engines',
+  'Declarative / direct schema workflow',
+  'Declarative and direct schema changes',
+  'Dev databases',
+  'Editor tooling',
+  'Go embedding',
+  'Go embedding and developer tooling',
+  'Go-first modeling',
+  'Lint analyzers',
+  'Lint output and CI',
+  'Lint policy and suppression',
+  'Linting and safety',
+  'Migration directory formats',
+  'Migration linting',
+  'OCI artifacts',
+  'Project config',
+  'Safety gates',
+  'Schema inspection filters',
+  'Schema object kinds',
+  'Schema sources',
+  'Schema visualization',
+  'Test frameworks',
+  'Testing framework',
+  'Verification and contracts',
+  'Versioned migrations',
+  'Versioned migrations — directory',
+  'Versioned migrations — execution',
+  'Versioned migrations — revision state',
+  'Versioned migrations — runtime policy',
+  'Versioned migrations — safety',
+]);
+
 function bucket(area) {
   const text = area.toLowerCase();
   for (const [index, [title, prefixes]] of AREA_MAP.entries()) {
@@ -81,6 +124,11 @@ function validate(rows) {
   const problems = [];
   const seen = new Map();
   for (const row of rows) {
+    if (!AREAS.has(row.area)) {
+      problems.push(
+        `${row.feature}: area ${JSON.stringify(row.area)} is not a known label - if it is a citation, it belongs in the evidence of the row it settles`,
+      );
+    }
     if (row.note.length > 200) problems.push(`${row.feature}: note is ${row.note.length} chars`);
     if (BANNED.test(row.note) || BANNED.test(row.feature)) problems.push(`${row.feature}: banned word`);
     for (const key of ['ptah', 'atlas_oss', 'atlas_pro']) {
