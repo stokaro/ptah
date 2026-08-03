@@ -68,6 +68,7 @@ func LoadCases(dir string) ([]Case, error) {
 	sort.Strings(names)
 
 	var cases []Case
+	var origins []string
 	for _, name := range names {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
@@ -79,6 +80,15 @@ func LoadCases(dir string) ([]Case, error) {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		cases = append(cases, parsed...)
+		for range parsed {
+			origins = append(origins, name)
+		}
+	}
+	// Deliberately not wrapped with the per-file prefix above: the union error
+	// already names both colliding files, and a prefix would read as
+	// `b.yaml: duplicate test case "dup" in a.yaml and b.yaml`.
+	if err := validateUniqueCaseNames(cases, origins); err != nil {
+		return nil, err
 	}
 	return cases, nil
 }
@@ -118,6 +128,7 @@ func LoadCasesOfKind(dir string, kind AtlasTestKind) ([]Case, error) {
 	sort.Strings(names)
 
 	var cases []Case
+	var origins []string
 	for _, name := range names {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
@@ -134,6 +145,25 @@ func LoadCasesOfKind(dir string, kind AtlasTestKind) ([]Case, error) {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		cases = append(cases, parsed...)
+		for range parsed {
+			origins = append(origins, name)
+		}
+	}
+	// Checked over the post-filter set, which makes directory validity depend on
+	// kind. One directory holding `a.yaml: dup` and `b.test.hcl: test "migrate"
+	// "dup"` loads clean for schema and is rejected for migrate:
+	//
+	//	LoadCasesOfKind(dir, AtlasTestKindSchema)  -> err=<nil>, 1 case
+	//	LoadCasesOfKind(dir, AtlasTestKindMigrate) -> duplicate test case "dup" in a.yaml and b.test.hcl
+	//
+	// That asymmetry is the point rather than an oversight. ParseAtlasTestCases
+	// drops the blocks of the other kind, so a schema run never loads the
+	// migrate case: --run selects one case, the report shows one row, and there
+	// is nothing to disambiguate. The migrate run does load both and is exactly
+	// the ambiguity this check exists to reject. Both directions are pinned by
+	// tests. Emitted unwrapped for the reason given in LoadCases.
+	if err := validateUniqueCaseNames(cases, origins); err != nil {
+		return nil, err
 	}
 	return cases, nil
 }
