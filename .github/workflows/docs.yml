@@ -118,6 +118,7 @@ jobs:
           npm run check:redirects
           npm run check:core-doc-links
           npm run check:page-health
+          npm run check:exit-codes:selftest
           npm run check:exit-codes
           npm run check:style:selftest
           npm run check:style
@@ -150,6 +151,7 @@ jobs:
             fi
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:core-doc-links
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:style:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:style

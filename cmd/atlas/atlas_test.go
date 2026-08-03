@@ -2031,7 +2031,7 @@ func TestCompatCommand_SchemaDiffRejectsUnsupportedRemoteTarget(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/schema": atlas:// registry URLs are not supported; use oci://.*`)
-	c.Assert(out.String(), qt.Contains, `error: --from "atlas://remote/schema": atlas:// registry URLs are not supported`)
+	c.Assert(out.String(), qt.Contains, `Error: --from "atlas://remote/schema": atlas:// registry URLs are not supported`)
 }
 
 func TestCompatCommand_SchemaDiffFormatsCustomSQLTemplate(t *testing.T) {
@@ -2246,7 +2246,7 @@ env "local" {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `atlas variable overrides must use name=value, got "destructive"`)
-	c.Assert(out.String(), qt.Contains, `error: atlas variable overrides must use name=value, got "destructive"`)
+	c.Assert(out.String(), qt.Contains, `Error: atlas variable overrides must use name=value, got "destructive"`)
 }
 
 func TestCompatCommand_SchemaDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
@@ -2325,7 +2325,7 @@ func TestCompatCommand_SchemaDiffRejectsUnsupportedAtlasProjectDiffPolicy(t *tes
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `atlas\.hcl diff\.concurrent_index\.drop is not supported yet`)
-	c.Assert(out.String(), qt.Contains, `error: atlas.hcl diff.concurrent_index.drop is not supported yet`)
+	c.Assert(out.String(), qt.Contains, `Error: atlas.hcl diff.concurrent_index.drop is not supported yet`)
 }
 
 func TestCompatCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
@@ -3119,7 +3119,7 @@ func TestCompatCommand_MigrateDiffSchemaShorthandParses(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL`)
-	c.Assert(out.String(), qt.Contains, `error: atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL`)
+	c.Assert(out.String(), qt.Contains, `Error: atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL`)
 }
 
 func TestCompatCommand_MigrateDiffCreatesAtlasMigrationFromLocalSchema(t *testing.T) {
@@ -4594,7 +4594,7 @@ func TestCompatCommand_MigrateImportRejectsRemoteSource(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `import --from: only local file:// migration directories are supported`)
-	c.Assert(out.String(), qt.Contains, "error: import --from: only local file:// migration directories are supported")
+	c.Assert(out.String(), qt.Contains, "Error: import --from: only local file:// migration directories are supported")
 }
 
 func TestCompatCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing.T) {

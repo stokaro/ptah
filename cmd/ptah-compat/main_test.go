@@ -36,69 +36,130 @@ func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 	c.Assert(output, qt.Not(qt.Contains), "atlas atlas migrate down")
 }
 
+// TestCompatBinaryCommandFailuresExit1 pins the whole process-level diagnostic
+// class of the compat surface in one table, byte-exact on stderr.
+//
+// Per stokaro/ptah#1019 the prefix is punctuation owned by the surface, not by
+// the message: everything this binary prints as a process-level diagnostic is
+// prefixed "Error: ", and the native ptah binary prefixes "error: " (pinned by
+// TestNativeDiagnosticsKeepTheNativePrefix in cmd/root). Before that decision
+// the two prefixes were split inside this one binary — `migrate set` was the
+// only command that overrode a printer, so it answered "Error: unknown flag"
+// while `migrate status`, `schema inspect`, `version` and the rest answered
+// "error: unknown flag" for the identical failure. Keeping every route in a
+// single table is what makes that kind of drift a red test: the rows reach the
+// shared cmdutil printers, the compat-local printers, and the forwarded native
+// targets respectively, and a fix that lands on only some of them fails here.
+//
+// This table is currently the only byte-exact guard on the class. The
+// stokaro/ptah#1019 definition of done also asks for an exact-stderr assertion
+// in the conformance harness, whose `cli-exit-behavior` "unknown flag" case
+// still matches the substring "unknown flag" — true under either prefix, which
+// is why the split went unnoticed. That assertion is deferred rather than
+// forgotten, and the reason is sequencing, not effort:
+// ptah-atlas-conformance builds its compat binary from the go.5x5.cz/ptah
+// version its own go.mod pins, so the assertion can only be added after a
+// release containing this change is pinned there. Measured, same argv
+// (`migrate validate --totally-unknown-flag`), same machine:
+//
+//	this tree                   -> "Error: unknown flag: --totally-unknown-flag\n"
+//	the currently pinned module -> "error: unknown flag: --totally-unknown-flag\n"
+//
+// Adding the exact-bytes assertion before that bump turns the conformance gate
+// red against the module it actually builds.
 func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
 
 	tests := []struct {
 		name       string
-		command    func(string) *exec.Cmd
+		args       []string
 		wantStderr string
 	}{
+		// Reaches cmdutil's shared flag-error printer.
 		{
-			name: "unknown flag",
-			command: func(binPath string) *exec.Cmd {
-				return newCompatProcess(binPath, "version", "--bogus-flag")
-			},
-			wantStderr: "error: unknown flag: --bogus-flag\n",
+			name:       "unknown flag",
+			args:       []string{"version", "--bogus-flag"},
+			wantStderr: "Error: unknown flag: --bogus-flag\n",
 		},
+		{
+			name:       "schema inspect unknown flag",
+			args:       []string{"schema", "inspect", "--zzz"},
+			wantStderr: "Error: unknown flag: --zzz\n",
+		},
+		{
+			name:       "schema inspect flag without a value",
+			args:       []string{"schema", "inspect", "--url"},
+			wantStderr: "Error: flag needs an argument: --url\n",
+		},
+		{
+			name:       "migrate status unknown flag",
+			args:       []string{"migrate", "status", "--zzz"},
+			wantStderr: "Error: unknown flag: --zzz\n",
+		},
+		// Reaches cmdutil's shared post-execution normalizer.
 		{
 			name: "mutually exclusive flags",
-			command: func(binPath string) *exec.Cmd {
-				return newCompatProcess(
-					binPath,
-					"schema", "apply",
-					"--url", "sqlite://schema.db",
-					"--to", "file://schema.sql",
-					"--file", "schema.sql",
-					"--dry-run",
-				)
+			args: []string{
+				"schema", "apply",
+				"--url", "sqlite://schema.db",
+				"--to", "file://schema.sql",
+				"--file", "schema.sql",
+				"--dry-run",
 			},
-			wantStderr: "error: if any flags in the group [file to] are set none of the others can be; [file to] were all set\n",
+			wantStderr: "Error: if any flags in the group [file to] are set none of the others can be; [file to] were all set\n",
 		},
+		// The verb that used to be the only one answering "Error:".
 		{
-			name: "lazy completion command",
-			command: func(binPath string) *exec.Cmd {
-				return newCompatProcess(binPath, "completion", "bash", "extra")
-			},
+			name:       "migrate set unknown flag",
+			args:       []string{"migrate", "set", "--unknown"},
+			wantStderr: "Error: unknown flag: --unknown\n",
+		},
+		// Reaches a native command the adapter executes detached from this
+		// tree, so its diagnostic is printed by the native package's own
+		// cmdutil.Fail call rather than by anything under cmd/atlas.
+		{
+			name:       "forwarded native target failure",
+			args:       []string{"migrate", "rm", "20990101000000"},
+			wantStderr: "Error: migrations directory migrations: stat migrations: no such file or directory\n",
+		},
+		// Reaches the compat-local printers.
+		{
+			name:       "lazy completion command",
+			args:       []string{"completion", "bash", "extra"},
 			wantStderr: "Error: unknown command \"extra\" for \"atlas completion bash\"\n",
 		},
 		{
 			name: "unknown root command",
-			command: func(binPath string) *exec.Cmd {
-				return exec.Command(binPath, "definitely-not-a-command")
-			},
+			args: []string{"definitely-not-a-command"},
 			wantStderr: "Error: unknown command \"definitely-not-a-command\" for \"atlas\"\n" +
 				"Run 'atlas --help' for usage.\n",
 		},
 		{
-			name: "registered command without an implementation",
-			command: func(binPath string) *exec.Cmd {
-				return newCompatProcess(binPath, "migrate", "push")
-			},
+			name:       "registered command without an implementation",
+			args:       []string{"migrate", "push"},
 			wantStderr: "Error: atlas migrate push is not implemented by Ptah\n",
 		},
 	}
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			run := tt.command(binPath)
-			runOut, err := run.CombinedOutput()
+			run := newCompatProcess(binPath, tt.args...)
+			// An empty working directory: the forwarded-target row resolves the
+			// default relative migration directory from the process cwd, and
+			// must not find the repository's own.
+			run.Dir = c.TempDir()
+			var stdout, stderr bytes.Buffer
+			run.Stdout = &stdout
+			run.Stderr = &stderr
+
+			err := run.Run()
 			var exitErr *exec.ExitError
 
-			c.Assert(err, qt.ErrorAs, &exitErr, qt.Commentf("%s", runOut))
+			c.Assert(err, qt.ErrorAs, &exitErr, qt.Commentf("stderr: %s", stderr.String()))
 			c.Assert(exitErr.ExitCode(), qt.Equals, 1)
-			c.Assert(string(runOut), qt.Equals, tt.wantStderr)
+			c.Assert(stdout.String(), qt.Equals, "")
+			c.Assert(stderr.String(), qt.Equals, tt.wantStderr)
 		})
 	}
 }
@@ -372,7 +433,7 @@ func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &exitErr)
 	c.Assert(exitErr.ExitCode(), qt.Equals, 1)
 	c.Assert(stderr.String(), qt.Equals,
-		"error: error applying migrations: unknown txmode \"bogus\" found in file directive \"1_invalid.sql\"\n")
+		"Error: error applying migrations: unknown txmode \"bogus\" found in file directive \"1_invalid.sql\"\n")
 	c.Assert(stdout.String(), qt.Equals, "")
 }
 

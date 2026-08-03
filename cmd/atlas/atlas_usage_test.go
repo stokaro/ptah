@@ -83,7 +83,13 @@ func TestCompatCommand_ForwardedNativeFailureExits1(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, "migrations directory .*")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out.String(), qt.Contains, "error: migrations directory")
+	// The message is printed by the native implementation, which the adapter
+	// runs detached from this tree, so it cannot reach the compat prefix by
+	// walking parents. It still has to answer with it: per stokaro/ptah#1019
+	// the prefix belongs to the surface the user invoked, not to whichever
+	// package happens to own the failing code.
+	c.Assert(out.String(), qt.Contains, "Error: migrations directory")
+	c.Assert(out.String(), qt.Not(qt.Contains), "error: migrations directory")
 }
 
 func TestAtlasCompatibilityRoots_UnknownCommandMatchesAtlasCE(t *testing.T) {
