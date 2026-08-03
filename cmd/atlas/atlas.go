@@ -310,10 +310,13 @@ func atlasMigrateDownVerb() atlasVerb {
 		// An Atlas-surface verb defaults to Atlas revision bookkeeping, like
 		// `migrate set` above: without this prefix the native --revision-format
 		// default of "ptah" silently no-ops against the atlas_schema_revisions
-		// rows `atlas migrate apply` writes. User args are appended after the
-		// prefix, so an explicit native `--revision-format ptah` pass-through
-		// still overrides it (pflag keeps the last value).
-		prefixArgs:          []string{"--revision-format", "atlas"},
+		// rows `atlas migrate apply` writes. --confirm suppresses the native
+		// safety prompt because Atlas migrate down executes non-interactively.
+		// User args are appended after the prefix, so an explicit native
+		// `--revision-format ptah` pass-through still overrides the format
+		// default (pflag keeps the last value).
+		prefixArgs:          []string{"--revision-format", "atlas", "--confirm"},
+		nativeOnlyFlags:     []string{"confirm"},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),

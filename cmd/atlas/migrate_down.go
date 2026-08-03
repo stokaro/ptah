@@ -96,7 +96,6 @@ type atlasMigrateDownFormatOptions struct {
 	revisionsSchema string
 	lockTimeout     string
 	dryRun          bool
-	confirm         bool
 
 	flagSet *pflag.FlagSet
 	// rawDir preserves the pre-resolution --dir value for the report's Env.Dir.
@@ -194,16 +193,6 @@ func runAtlasMigrateDownFormat(
 		}
 	}
 
-	if !opts.dryRun && !opts.confirm && !plan.Noop() {
-		confirmed, err := confirmAtlasMigrateDownFormat(cmd, plan)
-		if err != nil {
-			return err
-		}
-		if !confirmed {
-			return nil
-		}
-	}
-
 	result, execErr := plan.Execute(cmd.Context())
 	writeErr := atlasreport.WriteMigrateDownFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateDownResultOptions{
 		Driver:           conn.Info().Dialect,
@@ -233,10 +222,11 @@ func runAtlasMigrateDownFormat(
 // parseAtlasMigrateDownFormatArgs parses the Atlas down flag surface for the
 // format path. The default output path forwards unrecognized flags to the
 // native command; the format path executes directly, so an unrecognized flag
-// fails loudly here instead of being silently dropped. The native --confirm
-// flag is accepted because it reaches the native command through the default
-// path's pass-through and is the only non-interactive confirmation.
+// fails loudly here instead of being silently dropped.
 func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigrateDownFormatOptions, error) {
+	if err := rejectNativeOnlyAtlasFlags("migrate", verb, args); err != nil {
+		return nil, err
+	}
 	opts := &atlasMigrateDownFormatOptions{}
 	var toTag string
 	var skipChecks, forcePlan bool
@@ -253,7 +243,6 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 	flagSet.StringVar(&opts.lockTimeout, "lock-timeout", "", "")
 	flagSet.BoolVar(&skipChecks, "skip-checks", false, "")
 	flagSet.BoolVar(&forcePlan, "plan", false, "")
-	flagSet.BoolVar(&opts.confirm, "confirm", false, "")
 	if err := flagSet.Parse(args); err != nil {
 		return nil, fmt.Errorf("atlas migrate down: %w", err)
 	}
@@ -452,28 +441,4 @@ func parseAtlasMigrateDownTarget(value string) (int64, error) {
 		return 0, fmt.Errorf("--to-version must be greater than or equal to zero")
 	}
 	return target, nil
-}
-
-// confirmAtlasMigrateDownFormat asks for the same YES confirmation the native
-// down command requires, on stderr so the rendered report stays alone on
-// stdout. A declined confirmation cancels without writing a report.
-func confirmAtlasMigrateDownFormat(cmd *cobra.Command, plan atlasmigrate.DownPlan) (bool, error) {
-	prompt := cmd.ErrOrStderr()
-	fmt.Fprintln(prompt, "⚠️  WARNING: Rolling back migrations can result in data loss!")
-	fmt.Fprintf(prompt, "This will roll back the database from version %d to version %d.\n", plan.CurrentVersion, plan.TargetVersion)
-	if len(plan.PlannedVersions) > 0 {
-		fmt.Fprintf(prompt, "The following %d migration(s) will be rolled back: %v\n", len(plan.PlannedVersions), plan.PlannedVersions)
-	}
-	fmt.Fprint(prompt, "Are you sure you want to continue? Type 'YES' to confirm: ")
-
-	var confirmation string
-	if _, err := fmt.Fscan(cmd.InOrStdin(), &confirmation); err != nil {
-		return false, fmt.Errorf("read rollback confirmation: %w", err)
-	}
-	if confirmation != "YES" {
-		fmt.Fprintln(prompt, "Migration rollback canceled.")
-		return false, nil
-	}
-	fmt.Fprintln(prompt)
-	return true, nil
 }

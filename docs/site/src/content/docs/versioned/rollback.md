@@ -48,6 +48,10 @@ run without confirmation aborts with
 `error: read rollback confirmation: EOF`. Pass `--confirm` to skip the prompt
 — only in scripts where the target and blast radius are already reviewed.
 
+This confirmation belongs only to the native command. The Atlas-compatible
+`ptah-compat migrate down` matches Atlas by starting a real rollback without
+reading stdin; it does not accept `--confirm`.
+
 Verify with status: the rolled-back version moves from applied back to
 pending.
 

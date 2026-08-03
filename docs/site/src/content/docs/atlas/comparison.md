@@ -252,7 +252,7 @@ Docker dev databases remain a gap.
 
 `ptah-compat migrate new --edit` opens the created migration file in the same editor and refreshes `atlas.sum`. `ptah-compat migrate edit`, `rebase`, and `rm` forward to the native `ptah migrations edit`, `rebase`, and `rm` directory-maintenance commands with Atlas-shaped `--dir`/`--dir-format` flags and `{name | version}` positionals.
 
-`ptah-compat migrate down` forwards to Ptah's pre-planned down-file rollback path, maps Atlas-compatible flags whose behavior matches native Ptah behavior, and fails explicitly for Atlas dynamic down-planning and output-format behavior that is not implemented yet.
+`ptah-compat migrate down` executes Ptah's pre-planned down-file rollback path, maps Atlas-compatible flags, and renders Atlas Go-template reports with `--format`. Dynamic down planning remains a recorded gap and fails explicitly.
 
 `ptah-compat migrate import` imports local `file://` directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`, but rejects Flyway repeatable migrations until Ptah can execute Atlas R-suffixed imported migrations.
 
@@ -626,7 +626,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 
 The forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), so a bare invocation reverts the revisions `ptah-compat migrate apply` wrote; the native `--revision-format ptah` pass-through selects ptah bookkeeping.
 
-`--dev-url` replays and verifies the rollback plan on the dev database before the target is touched (the native `ptah migrations down --shadow-db` verification), and `--format` renders an Atlas Go-template report over `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, and `.Error` with the confirmation prompt on stderr.
+`--dev-url` replays and verifies the rollback plan on the dev database before the target is touched (the native `ptah migrations down --shadow-db` verification), and `--format` renders an Atlas Go-template report over `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, and `.Error`. Both output paths start real rollbacks without reading stdin, matching Atlas; native `ptah migrations down` keeps its confirmation prompt.
 
 The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale.
 
