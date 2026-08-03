@@ -103,12 +103,14 @@ func runAtlasMigrateStatus(
 	if err := validateAtlasMigrateStatusOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	format, err := atlasMigrateDirFormatValue(opts.dirFormat)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir-format: %w", err))
-	}
-	if format != atlasDirFormatDefault {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir-format: expected atlas"))
+	// The flag value is validated here, before --format and before --dir is
+	// parsed, because that is where it was validated when only the Atlas layout
+	// was accepted: moving the whole resolution below --dir would change which
+	// diagnostic an invocation carrying two bad values prints. The query
+	// spelling cannot be resolved yet — it lives in --dir — so this pass sees
+	// the configured value alone and the two are combined below.
+	if _, err := resolveAtlasRevisionDirFormat("status", opts.dirFormat, nil); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if formatOutput {
 		if err := validateAtlasMigrateStatusFormat(opts.format); err != nil {
@@ -130,10 +132,15 @@ func runAtlasMigrateStatus(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
 	}
-	if err := checkNativeAtlasDirQuery(localDir.Query); err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
+	format, err := resolveAtlasRevisionDirFormat("status", opts.dirFormat, localDir.Query)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	source, err := project.captureLocal(localDir)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
+	}
+	captured, err := captureAtlasRevisionSource(source.FileSystem, format)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
 	}
@@ -146,17 +153,21 @@ func runAtlasMigrateStatus(
 	// Placement is measured, not stylistic. The refusal precedes the database
 	// connection (it is emitted even when --url is unreachable) and it covers a
 	// directory resolved from atlas.hcl as well as one named by --dir, which is
-	// why it sits here rather than beside the flag parsing. Only the native
-	// branch of the gate is reachable: checkNativeAtlasDirQuery above admits a
-	// `?format=` only when it resolves to the Atlas layout, and a non-atlas
-	// --dir-format is rejected above too.
+	// why it sits here rather than beside the flag parsing.
+	//
+	// Both branches are reachable since #1002: a foreign layout is gated over
+	// the file set atlas.sum covers for THAT layout, before it is converted.
 	//
 	// Returned bare on purpose — cmdutil.Fail would prepend `error: ` and move
 	// the message off the stream the community binary writes it to.
-	if err := verifyNativeAtlasDirChecksum(cmd, source.FileSystem); err != nil {
+	if err := verifyAtlasApplyChecksum(cmd, captured.gateFS(), format); err != nil {
 		return err
 	}
 	dir := source.Display
+	migrationFS, err := captured.migrationFS(dir)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
+	}
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
@@ -167,7 +178,7 @@ func runAtlasMigrateStatus(
 
 	result, err := atlasmigrate.Status(cmd.Context(), conn, atlasmigrate.StatusOptions{
 		Dir:             dir,
-		FS:              source.FileSystem,
+		FS:              migrationFS,
 		AtlasEnv:        opts.atlasEnv,
 		RevisionsSchema: opts.revisionsSchema,
 	})
@@ -179,7 +190,7 @@ func runAtlasMigrateStatus(
 			Driver:           conn.Info().Dialect,
 			URL:              opts.url,
 			Dir:              atlasStatusDirURL(opts.dir),
-			FS:               source.FileSystem,
+			FS:               migrationFS,
 			Status:           result.Status,
 			AppliedRevisions: result.AppliedRevisions,
 		})

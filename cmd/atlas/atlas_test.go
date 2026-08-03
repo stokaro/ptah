@@ -1837,10 +1837,18 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 }
 
 // TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat covers the
-// metadata verbs that still accept only the atlas layout. `migrate hash` and
-// `migrate validate` are deliberately absent: they read a directory rather than
-// rewrite one, so they implement every Atlas source layout under both
-// spellings (see migrate_integrity_formats_test.go) instead of rejecting it.
+// metadata verbs that still accept only the atlas layout.
+//
+// Four verbs are deliberately absent, and the reason is the same for all four:
+// they READ a directory rather than rewrite one, so a foreign layout can be
+// converted in memory and reported on. `migrate hash` and `migrate validate`
+// have been in that set since #992 (see migrate_integrity_formats_test.go);
+// `migrate status` and `migrate set` joined it in #1002 (see
+// migrate_revision_converted_test.go).
+//
+// The verbs that remain here WRITE, and writing a layout is a larger change
+// than reading one: it needs the converted form emitted back in the source
+// convention, which nothing here does yet.
 func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1865,14 +1873,6 @@ func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testin
 		{
 			name: "rm",
 			args: []string{"migrate", "rm", "1", "--dir", t.TempDir(), "--dir-format", "liquibase"},
-		},
-		{
-			name: "set",
-			args: []string{"migrate", "set", "20260723120000", "--url", "sqlite://state.db", "--dir", t.TempDir(), "--dir-format", "dbmate"},
-		},
-		{
-			name: "status",
-			args: []string{"migrate", "status", "--url", "sqlite://state.db", "--dir", t.TempDir(), "--dir-format", "liquibase"},
 		},
 		{
 			name: "test",
