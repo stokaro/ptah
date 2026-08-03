@@ -196,7 +196,7 @@ seven of them as open capabilities regardless.
 | Atlas Pro analyzer code coverage | 🟡 | ➖ | ✅ | OW101/OW102 have no rule; PG301, PG304, MY130, MY133, MY136 fire under broader codes (DS103, PG104, CD103, MY101), not dedicated ones. |
 | Atlas web reports (`--web`) | ❌ | ❌ | ✅ | Not registered on migrate lint or schema diff; rejected as an unknown flag. Pinned Atlas CE v1.2.0 does not register it either. |
 | Check bypass on the compat surface | ✅ | ❌ | ❌ | No Atlas build registers `--skip-checks` on migrate apply, so the compat bypass is PTAH_SKIP_CHECKS. Explicit-only on migrate down. |
-| CI integration (GitHub Action, annotations) | ✅ | ❔ | ❔ | stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. Atlas features page omits CI integrations. |
+| CI integration (GitHub Action, annotations) | ✅ | ❔ | ✅ | stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. Atlas features page omits CI integrations. |
 | Custom lint rules and check-level policy | 🟡 | ❌ | ✅ | Custom rules only from Go (lint.Register, Options.ExtraRules); atlas.hcl rule, review, naming, non_linear blocks and force all fail. |
 | Default-firing Atlas analyzer concern mapping | ✅ | ➖ | ➖ | lint-analyzer-catalog maps every default-firing Atlas concern to a covering Ptah rule, severity and line; 0 gap on the committed corpus. |
 | Generation-time destructive-change gate | ✅ | ❌ | ❌ | migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row. |
@@ -215,7 +215,7 @@ seven of them as open capabilities regardless.
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
 | Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | schema test -u takes only a Go-annotation directory; SQL/HCL files and DB URLs fail. Neither verb exposes `--report` or `--seed-dir`. |
 | Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused, and schema apply `--dry-run` skips the rehearsal entirely. |
-| Embeddable test runner (Go package) | ✅ | ❔ | ❔ | migration/dbtest exports RunMigrationTest and RunSchemaTest. Nothing cited establishes an Atlas Go test-runner package. |
+| Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. Nothing cited establishes an Atlas Go test-runner package. |
 | Exit-code contract for CI gates | ✅ | ✅ | ➖ | Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2. |
 | Migration test framework (`ptah migrations test`) | ✅ | ❌ | ✅ | Declarative YAML cases: migrate_to, apply_schema, seed, exec, assert. Fresh ephemeral SQLite per case unless `--db-url` is set. |
 | Schema test framework (`ptah schema test`) | ✅ | ❌ | ✅ | Desired schema from Go annotations converges before steps; migrate_to is rejected. Atlas CE v1.2.0 registers no schema test verb. |
