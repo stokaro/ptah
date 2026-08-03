@@ -13,10 +13,15 @@ import (
 )
 
 const (
-	configuredAnnotation      = "ptah.exitcode_configured"
-	errorCodePolicyAnnotation = "ptah.error_code_policy"
-	unconfiguredErrorCode     = -1
-	nativeCommandErrorCode    = 2
+	configuredAnnotation        = "ptah.exitcode_configured"
+	errorCodePolicyAnnotation   = "ptah.error_code_policy"
+	errorPrefixPolicyAnnotation = "ptah.error_prefix_policy"
+	unconfiguredErrorCode       = -1
+	nativeCommandErrorCode      = 2
+	// nativeErrorPrefix is the diagnostic prefix of the native ptah surface.
+	// Surfaces that need a different one declare it with
+	// [SetErrorPrefixPolicy] on their root command.
+	nativeErrorPrefix = "error"
 )
 
 // ConfigureCommand installs Ptah's common CLI error contract on cmd. It is
@@ -70,15 +75,66 @@ func NormalizeCommandError(cmd *cobra.Command, err error, fallback int) error {
 		case code:
 			return err
 		case unconfiguredErrorCode:
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
+			printDiagnostic(cmd, err)
 		}
 		return exitcode.New(code, err)
 	}
 	if exitcode.Code(err, unconfiguredErrorCode) != unconfiguredErrorCode {
 		return err
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
+	printDiagnostic(cmd, err)
 	return exitcode.New(fallback, err)
+}
+
+// SetErrorPrefixPolicy marks cmd and its descendants with the diagnostic
+// prefix every process-level diagnostic below cmd is printed with. The prefix
+// is punctuation owned by the surface, not by the message: the native ptah
+// tree keeps [nativeErrorPrefix], and the Atlas-compatible tree declares its
+// own so a contributor predicts the prefix from the binary alone.
+func SetErrorPrefixPolicy(cmd *cobra.Command, prefix string) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = make(map[string]string)
+	}
+	cmd.Annotations[errorPrefixPolicyAnnotation] = prefix
+}
+
+// ErrorPrefix resolves the nearest configured ancestor prefix policy for cmd,
+// defaulting to the native prefix. Every printer in this package routes through
+// it, so a surface declares its prefix once on its root instead of at each of
+// the call sites that print.
+func ErrorPrefix(cmd *cobra.Command) string {
+	for current := cmd; current != nil; current = current.Parent() {
+		prefix, ok := current.Annotations[errorPrefixPolicyAnnotation]
+		if ok && prefix != "" {
+			return prefix
+		}
+	}
+	return nativeErrorPrefix
+}
+
+// AdoptErrorPrefixPolicy copies the prefix policy resolved for source onto
+// target and returns a function that restores target's previous policy.
+//
+// Forwarding adapters need this because a forwarded target is a detached
+// command tree that cannot reach the calling surface's root through
+// [ErrorPrefix]'s parent walk. Run the returned restore before the process
+// executes anything else: a target that outlives one forwarded execution would
+// otherwise carry the borrowed prefix into a later run on another surface.
+func AdoptErrorPrefixPolicy(target, source *cobra.Command) func() {
+	previous, configured := target.Annotations[errorPrefixPolicyAnnotation]
+	SetErrorPrefixPolicy(target, ErrorPrefix(source))
+	return func() {
+		if configured {
+			target.Annotations[errorPrefixPolicyAnnotation] = previous
+			return
+		}
+		delete(target.Annotations, errorPrefixPolicyAnnotation)
+	}
+}
+
+// printDiagnostic writes err to cmd's stderr under the surface's prefix.
+func printDiagnostic(cmd *cobra.Command, err error) {
+	fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", ErrorPrefix(cmd), err)
 }
 
 func commandErrorCode(cmd *cobra.Command) (int, bool) {
@@ -103,7 +159,7 @@ func WrapRunE(run func(*cobra.Command, []string) error) func(*cobra.Command, []s
 		if err == nil || exitcode.Code(err, unconfiguredErrorCode) != unconfiguredErrorCode {
 			return err
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
+		printDiagnostic(cmd, err)
 		return exitcode.New(nativeCommandErrorCode, err)
 	}
 }
@@ -112,7 +168,7 @@ func WrapRunE(run func(*cobra.Command, []string) error) func(*cobra.Command, []s
 // error. Commands that set SilenceErrors must route their usage failures
 // through this so the message still reaches the user.
 func Fail(cmd *cobra.Command, err error) error {
-	fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
+	printDiagnostic(cmd, err)
 	return exitcode.New(nativeCommandErrorCode, err)
 }
 

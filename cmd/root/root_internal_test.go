@@ -69,6 +69,49 @@ func TestNewRootCommand_AtlasLookingRootPathsStayRejected(t *testing.T) {
 	}
 }
 
+// TestNativeDiagnosticsKeepTheNativePrefix pins the native half of the
+// stokaro/ptah#1019 rule: a process-level diagnostic on the native ptah surface
+// is prefixed "error: " at exit 2, while the same failure on the compat surface
+// is prefixed "Error: " at exit 1 (pinned by
+// TestCompatBinaryCommandFailuresExit1 in cmd/ptah-compat).
+//
+// The assertion is byte-exact rather than a substring on purpose. cmdutil's
+// printers are shared by both surfaces, so the cheap way to make the compat
+// pins green is to edit the literal inside them — which would silently rewrite
+// every native diagnostic in the binary. That shortcut turns this test red;
+// resolving the prefix from the command tree keeps both green.
+func TestNativeDiagnosticsKeepTheNativePrefix(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantStderr string
+	}{
+		{
+			name:       "unknown flag",
+			args:       []string{"version", "--bogus-flag"},
+			wantStderr: "error: unknown flag: --bogus-flag\n",
+		},
+		{
+			name:       "unknown command",
+			args:       []string{"definitely-not-a-command"},
+			wantStderr: "error: unknown command \"definitely-not-a-command\" for \"ptah\"\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			stdout, stderr, err := executeRoot(tt.args...)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, tt.wantStderr)
+		})
+	}
+}
+
 func TestExecuteWithRecovery_ConvertsCommandPanicToError(t *testing.T) {
 	c := qt.New(t)
 

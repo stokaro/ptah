@@ -75,7 +75,7 @@ func executeWithRecovery(cmd *cobra.Command) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = exitcode.New(2, fmt.Errorf("internal error: %v", recovered))
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", cmdutil.ErrorPrefix(cmd), err)
 		}
 	}()
 

@@ -51,7 +51,6 @@ given version applied, without executing migration SQL.`,
 	flags.StringVar(&opts.dirFormat, "dir-format", opts.dirFormat, "Migration directory format")
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the revision table")
 	cmdutil.ConfigureCommandArgs(cmd, nil)
-	cmd.SetFlagErrorFunc(failAtlasCommand)
 	return cmd
 }
 
