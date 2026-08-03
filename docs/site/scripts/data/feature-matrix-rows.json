@@ -1089,7 +1089,7 @@
     "evidence": "push to @sha256:2ebd84f9... -> exit 2 'cannot push to a digest reference'; re-push --version rel1 with changed content -> exit 2 'OCI write-once tag already exists'; tag v1 moved from sha256:869dd082 to sha256:70575f30 across pushes while rel1 stayed pinned"
   },
   {
-    "area": "Data and distribution",
+    "area": "Data and distribution Stays unknown deliberately, and here is how far the sources reach. Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `sha256`, `digest` and `immutable` are each absent, so digest pinning is unsupported by that source; but `--tag` (`tag to push the directory with`) and `--version` (`version of the schema to push. Defaults to the current timestamp`) are documented WITHOUT any statement about whether they can be overwritten, so the write-once half is unestablished. One cell cannot honestly read `no` for one half and `unknown` for the other. atlasgo.io/registry returns an empty body through this channel. Control: `jjjnotarealterm` returns not-found.",
     "feature": "Artifact integrity check (`--verify-sum`)",
     "ptah": "partial",
     "atlas_oss": "na",
@@ -1273,12 +1273,12 @@
     "feature": "Atlas SQL template migrations (`--atlas-env`)",
     "ptah": "yes",
     "atlas_oss": "unknown",
-    "atlas_pro": "unknown",
+    "atlas_pro": "no",
     "note": "Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. Flag on 10 migrations verbs.",
     "evidence": "migration/migrator/atlas_template.go:15-45 (AtlasTemplateData{Env}, RenderAtlasTemplateSQL); /tmp/c-ptah migrations up --help shows \"--atlas-env Value exposed as .Env when rendering Atlas SQL template migrations\"."
   },
   {
-    "area": "Linting and safety",
+    "area": "Linting and safety Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `template` occurs throughout the page, and every occurrence is `--format string  Go template to use to format the output` -- output formatting. Asked to classify every occurrence, none describes Go templates inside migration file content. Control on the same query: `kkknotarealterm` returns not-found while `--env` returns `set which env from the config file to use`.",
     "feature": "Generation-time destructive-change gate",
     "ptah": "yes",
     "atlas_oss": "no",
