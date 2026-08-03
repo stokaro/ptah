@@ -501,7 +501,16 @@ Atlas features that Ptah cannot represent without losing semantics, including:
 - HCL objects outside direct schema definitions, such as realms and other
   dialect-specific object types
 
-Project-level `env` and `variable` blocks may appear next to schema objects in
-schema HCL files, but they are not executed by `ptah schema render --schema-file`.
-Command-level `atlas.hcl` project config support is documented in
+A top-level `env` block is refused. It marks the file as an `atlas.hcl` project
+file rather than a schema file, and a project file holds no schema objects, so
+reading one as a schema would produce an empty desired state and plan to drop
+every table the real schema defines. The error names the offending block and its
+position. Only a top-level `env` block is treated this way: an `env` attribute is
+untouched, and a nested `env` block keeps reporting the surrounding object's own
+error. Command-level `atlas.hcl` project config support is documented in
 [Atlas Project Config](atlas_project_config.md).
+
+A top-level `variable` block is accepted but not evaluated. References such as
+`var.name` are not substituted, and a variable with no default is not reported as
+missing, so a schema file relying on variables renders the reference as literal
+text. Schema-file variable evaluation is tracked separately in issue #926.
