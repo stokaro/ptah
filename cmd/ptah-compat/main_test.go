@@ -50,6 +50,23 @@ func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 // single table is what makes that kind of drift a red test: the rows reach the
 // shared cmdutil printers, the compat-local printers, and the forwarded native
 // targets respectively, and a fix that lands on only some of them fails here.
+//
+// This table is currently the only byte-exact guard on the class. The
+// stokaro/ptah#1019 definition of done also asks for an exact-stderr assertion
+// in the conformance harness, whose `cli-exit-behavior` "unknown flag" case
+// still matches the substring "unknown flag" — true under either prefix, which
+// is why the split went unnoticed. That assertion is deferred rather than
+// forgotten, and the reason is sequencing, not effort:
+// ptah-atlas-conformance builds its compat binary from the go.5x5.cz/ptah
+// version its own go.mod pins, so the assertion can only be added after a
+// release containing this change is pinned there. Measured, same argv
+// (`migrate validate --totally-unknown-flag`), same machine:
+//
+//	this tree                   -> "Error: unknown flag: --totally-unknown-flag\n"
+//	the currently pinned module -> "error: unknown flag: --totally-unknown-flag\n"
+//
+// Adding the exact-bytes assertion before that bump turns the conformance gate
+// red against the module it actually builds.
 func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)

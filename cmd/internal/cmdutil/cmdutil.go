@@ -91,17 +91,33 @@ func NormalizeCommandError(cmd *cobra.Command, err error, fallback int) error {
 // is punctuation owned by the surface, not by the message: the native ptah
 // tree keeps [nativeErrorPrefix], and the Atlas-compatible tree declares its
 // own so a contributor predicts the prefix from the binary alone.
+//
+// It panics on an empty prefix. A surface cannot declare "no prefix": every
+// printer here writes "<prefix>: <message>", so an empty value would emit a
+// leading ": ". Rejecting it at the wiring call is what keeps the
+// misconfiguration loud; silently ignoring it would resolve the surface to
+// whatever an ancestor declares, which is the class of accident this policy
+// exists to remove.
 func SetErrorPrefixPolicy(cmd *cobra.Command, prefix string) {
+	if prefix == "" {
+		panic("cmdutil: empty error prefix policy for command " + cmd.CommandPath())
+	}
 	if cmd.Annotations == nil {
 		cmd.Annotations = make(map[string]string)
 	}
 	cmd.Annotations[errorPrefixPolicyAnnotation] = prefix
 }
 
-// ErrorPrefix resolves the nearest configured ancestor prefix policy for cmd,
-// defaulting to the native prefix. Every printer in this package routes through
-// it, so a surface declares its prefix once on its root instead of at each of
-// the call sites that print.
+// ErrorPrefix resolves the nearest declared prefix policy for cmd, defaulting
+// to the native prefix. Every printer in this package routes through it, so a
+// surface declares its prefix once on its root instead of at each of the call
+// sites that print.
+//
+// The walk starts at cmd, so the nearest declaration wins: a subtree may
+// declare a prefix that differs from its root's. That is deliberate rather
+// than an oversight — [AdoptErrorPrefixPolicy] depends on it to hand a
+// detached forwarded target the calling surface's prefix. Ptah's own trees
+// declare the policy only on their roots.
 func ErrorPrefix(cmd *cobra.Command) string {
 	for current := cmd; current != nil; current = current.Parent() {
 		prefix, ok := current.Annotations[errorPrefixPolicyAnnotation]
@@ -120,12 +136,23 @@ func ErrorPrefix(cmd *cobra.Command) string {
 // [ErrorPrefix]'s parent walk. Run the returned restore before the process
 // executes anything else: a target that outlives one forwarded execution would
 // otherwise carry the borrowed prefix into a later run on another surface.
+//
+// The restore returns target's annotations to their exact previous state,
+// including dropping the map [SetErrorPrefixPolicy] allocated for a target
+// that had none. Restoring "the key is gone" but leaving an allocated empty
+// map behind would make the restore observably incomplete to anything that
+// reads Annotations rather than a single key.
 func AdoptErrorPrefixPolicy(target, source *cobra.Command) func() {
+	allocated := target.Annotations == nil
 	previous, configured := target.Annotations[errorPrefixPolicyAnnotation]
 	SetErrorPrefixPolicy(target, ErrorPrefix(source))
 	return func() {
 		if configured {
 			target.Annotations[errorPrefixPolicyAnnotation] = previous
+			return
+		}
+		if allocated {
+			target.Annotations = nil
 			return
 		}
 		delete(target.Annotations, errorPrefixPolicyAnnotation)
