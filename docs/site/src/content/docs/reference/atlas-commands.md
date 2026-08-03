@@ -855,6 +855,15 @@ so a `--dry-run` or `--format` report is not narrower than the apply:
 | SQL Server | Foreign keys and tables. Views are not dropped, so they are not reported. |
 | ClickHouse | Base tables. Views are not dropped, so they are not reported. |
 
+Ptah's own migration revision table is included in that accounting. On
+PostgreSQL, MySQL, MariaDB and SQL Server the cleanup destroys it like any other
+table, so the plan names it and the operator confirming a destructive run is
+confirming the loss of the record of which migrations have been applied. On
+SQLite the cleanup keeps it, so it is neither reported nor destroyed. Both
+revision-table layouts are covered, Ptah's `schema_migrations` and the
+Atlas-compatible `atlas_schema_revisions`, and a revision table configured under
+any other name is reported as the ordinary table it is.
+
 Objects that vanish as collateral of a listed drop are not listed separately:
 indexes, triggers, non-foreign-key constraints, RLS policies, and comments. The
 rendered `Cmd` describes the object being destroyed; it is not the exact
