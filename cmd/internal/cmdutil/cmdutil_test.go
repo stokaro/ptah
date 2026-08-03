@@ -308,6 +308,95 @@ func TestAdoptErrorPrefixPolicyRestoresTheTargetPolicy(t *testing.T) {
 	}
 }
 
+// TestAdoptErrorPrefixPolicyRestoresTheAnnotationMap pins that the restore is
+// a restore of the annotations, not only of the one key it wrote.
+// [cmdutil.SetErrorPrefixPolicy] allocates the map when a command has none, so
+// a restore that only deletes its key hands back a command whose Annotations
+// changed from nil to an allocated empty map. Forwarded targets are
+// package-level singletons that survive the execution, so that difference
+// outlives the call and is visible to anything that reads Annotations rather
+// than a single key.
+//
+// The second row is the control: the restore must not reach beyond its own key
+// and clear annotations the target already carried.
+func TestAdoptErrorPrefixPolicyRestoresTheAnnotationMap(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*cobra.Command)
+		want      map[string]string
+	}{
+		{
+			name:      "target that carried no annotations at all",
+			configure: func(*cobra.Command) {},
+			want:      nil,
+		},
+		{
+			name: "target that carried unrelated annotations",
+			configure: func(target *cobra.Command) {
+				target.Annotations = map[string]string{"ptah.unrelated": "kept"}
+			},
+			want: map[string]string{"ptah.unrelated": "kept"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			source := &cobra.Command{Use: "source"}
+			cmdutil.SetErrorPrefixPolicy(source, "Error")
+			target := &cobra.Command{Use: "target"}
+			tt.configure(target)
+
+			restore := cmdutil.AdoptErrorPrefixPolicy(target, source)
+			held := cmdutil.ErrorPrefix(target)
+			restore()
+
+			c.Assert(held, qt.Equals, "Error")
+			c.Assert(target.Annotations, qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+// TestSetErrorPrefixPolicyRejectsAnEmptyPrefix pins that a surface cannot
+// declare "no prefix". Every printer in this package writes
+// "<prefix>: <message>", so an empty prefix has no printable meaning; before
+// this was rejected the call was silently ignored and the surface resolved to
+// whatever an ancestor declared, or to the native prefix — the exact class of
+// accident stokaro/ptah#1019 removed from the compat surface.
+func TestSetErrorPrefixPolicyRejectsAnEmptyPrefix(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*cobra.Command)
+	}{
+		{
+			name:      "command with no annotations",
+			configure: func(*cobra.Command) {},
+		},
+		{
+			name: "command that already declares a prefix",
+			configure: func(cmd *cobra.Command) {
+				cmdutil.SetErrorPrefixPolicy(cmd, "Error")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cmd := &cobra.Command{Use: "surface"}
+			tt.configure(cmd)
+
+			c.Assert(
+				func() { cmdutil.SetErrorPrefixPolicy(cmd, "") },
+				qt.PanicMatches,
+				`cmdutil: empty error prefix policy for command surface`,
+			)
+		})
+	}
+}
+
 func commandError(message string) func(*cobra.Command, []string) error {
 	return func(_ *cobra.Command, _ []string) error {
 		return errors.New(message)

@@ -16,34 +16,54 @@ An internal panic recovered by Ptah's process boundary still exits `2`.
 
 ## Diagnostic Prefix
 
-The prefix on a process-level diagnostic is punctuation owned by the surface,
-not by the message. There is exactly one rule, and the only input is which
-binary printed the line:
+A *process-level diagnostic* is the single line a surface prints when a command
+terminates with a failure: the line produced by Ptah's CLI error contract
+(`cmdutil.Fail`, the Cobra flag-error and `RunE` wrappers, the post-execution
+error normalizer, the compatibility tree's own printers, and the recovered
+panic at the process boundary). Its prefix is punctuation owned by the surface,
+not by the message, and the only input is which binary printed the line:
 
 | Surface | Prefix | Exit code |
 | --- | --- | --- |
 | Native `ptah` | `error: ` | `2` |
 | Compatibility `ptah-compat` | `Error: ` | `1` |
 
-This holds for every process-level diagnostic the binary emits, regardless of
-which package produced the underlying error. In particular, a `ptah-compat`
-verb that delegates to a native command still prints `Error: `, because the
-user invoked the compatibility surface.
+This holds for every diagnostic in that class, regardless of which package
+produced the underlying error. In particular, a `ptah-compat` verb that
+delegates to a native command still prints `Error: `, because the user invoked
+the compatibility surface.
 
 The rule covers the prefix only. The message text after it stays Ptah-owned
 prose, so `ptah-compat schema inspect` with no `--url` reports Ptah's own
 `--url is required` rather than any wording copied from another tool.
 
-Report bodies are not process-level diagnostics and are unaffected: the
-`Error:` field inside a `migrate status` dirty-revision block or a
-`migrate validate` checksum report is part of that report's format on both
-surfaces.
+Other stderr output is outside the class and keeps its own format. Report
+bodies are the main case: the `Error:` field inside a `migrate status`
+dirty-revision block, or inside the Atlas-format checksum report
+`ptah-compat migrate validate` writes, is part of that report's format. So are
+`warning: ` lines and progress logs, which do not terminate the command.
+
+One report line currently reaches stderr with no prefix at all:
+`ptah-compat migrate lint` writes a bare `checksum mismatch` before exiting `1`
+when the directory does not match `atlas.sum` and no `--format` was given. That
+line is the lint report's integrity finding rather than a process-level
+diagnostic — with `--format` the same content is rendered into the report on
+stdout — so the prefix rule does not reach it. Its stream is a known
+divergence, not an endorsed format.
 
 Implementation: the prefix is an inherited command-tree policy
 (`cmdutil.SetErrorPrefixPolicy`), declared once on a surface's root command
-next to its exit-code policy and resolved at print time by walking to the
-nearest ancestor that declares one. Adding a command or a diagnostic requires no
-prefix decision, and no individual command may override it.
+next to its exit-code policy and resolved at print time by walking from the
+printing command up to the nearest ancestor that declares one. Adding a command
+or a diagnostic therefore requires no prefix decision.
+
+The walk starts at the printing command, so the nearest declaration wins and a
+subtree can declare a prefix that differs from its root's. Ptah's own trees do
+not: each declares the policy only on its root. The capability exists because
+`cmdutil.AdoptErrorPrefixPolicy` needs it — a `ptah-compat` verb that forwards
+to a native command runs that command detached from the compatibility tree, so
+it cannot reach the surface's prefix by walking parents and is handed it
+directly for the duration of the call.
 
 ## Native Commands
 
