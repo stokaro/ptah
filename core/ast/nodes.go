@@ -221,6 +221,13 @@ type ColumnNode struct {
 	Name string
 	// Type is the column data type (e.g., "INTEGER", "VARCHAR(255)", "TIMESTAMP")
 	Type string
+	// TypeRawSQL records that Type came from Atlas HCL's sql() raw expression
+	// -- `type = sql("USER_DEFINED")` -- rather than from a type the Atlas HCL
+	// grammar names. Type always holds the reduced SQL text, so SQL renderers
+	// need not consult this; it exists so a writer emitting Atlas HCL can put
+	// the call back instead of a bare identifier the Atlas community binary
+	// refuses.
+	TypeRawSQL bool
 	// Nullable indicates whether the column allows NULL values (default: true)
 	Nullable bool
 	// Primary indicates whether this column is part of the primary key

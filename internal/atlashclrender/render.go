@@ -198,7 +198,7 @@ func (r *renderer) renderTable(
 
 func (r *renderer) renderColumn(field goschema.Field) {
 	r.linef(`  column %s {`, quote(field.Name))
-	r.rawAttr(2, "type", typeExpr(field.Type))
+	r.rawAttr(2, "type", columnTypeExpr(field))
 	if field.Nullable {
 		r.rawAttr(2, "null", "true")
 	}
@@ -746,6 +746,23 @@ func parseForeignReference(value string) (string, []string) {
 		}
 	}
 	return table, columns
+}
+
+// columnTypeExpr renders a column's `type` attribute.
+//
+// A type the schema author reached the sql() escape hatch for is written back
+// through it. The reduction issue #1106 introduced is a READ-side reduction:
+// Ptah's IR carries the SQL text so the DDL it renders is valid. Writing that
+// text back bare loses the only spelling of an engine type Atlas does not model
+// that the pinned Atlas community binary v1.3.0 accepts -- it refuses
+// `type = USER_DEFINED` with `Unknown column.type; There is no type named
+// "USER_DEFINED"` and accepts `type = sql("USER_DEFINED")`. Measured on that
+// binary, an HCL file it plans must survive a Ptah round trip still planning.
+func columnTypeExpr(field goschema.Field) string {
+	if field.TypeRawSQL && strings.TrimSpace(field.Type) != "" {
+		return sqlCall(field.Type)
+	}
+	return typeExpr(field.Type)
 }
 
 func typeExpr(value string) string {

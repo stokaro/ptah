@@ -114,6 +114,18 @@ func isPostgreSQLPlatform(targetPlatform string) bool {
 	return strings.EqualFold(targetPlatform, "postgres") || strings.EqualFold(targetPlatform, "postgresql")
 }
 
+// typeRawSQLSurvives reports whether the column type is still the one the
+// schema author wrote with Atlas HCL's sql() escape hatch.
+//
+// A platform override or an inlined enum model replaces the type with a
+// spelling the author never wrote, and the sql() call that produced the
+// original no longer describes it. Carrying the marker across such a rewrite
+// would make a writer emit `sql("<the override>")`, attributing the escape
+// hatch to text that never went through it.
+func typeRawSQLSurvives(field goschema.Field, declaredType string) bool {
+	return field.TypeRawSQL && field.Type == declaredType
+}
+
 func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
 	fieldType := platformFieldType(field.Type, targetPlatform)
 	checkConstraint := field.Check
@@ -418,10 +430,12 @@ func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 // The returned node contains all the attributes specified in the input field, with platform-specific
 // overrides applied when a matching platform is specified.
 func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode {
+	declaredType := field.Type
 	field = applyPlatformOverrides(field, targetPlatform)
 	field = handleEnumTypes(field, enums, targetPlatform)
 
 	column := ast.NewColumn(field.Name, field.Type)
+	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
 
 	// Set nullable - only override default if explicitly set to false
 	// The default behavior should be nullable=true (which ast.NewColumn already sets)
@@ -502,11 +516,13 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 //   - *ast.ColumnNode: Column definition without foreign key constraints
 func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode {
 	// Apply platform-specific overrides if available
+	declaredType := field.Type
 	field = applyPlatformOverrides(field, targetPlatform)
 	field = handleEnumTypes(field, enums, targetPlatform)
 
 	// Create column with basic properties
 	column := ast.NewColumn(field.Name, field.Type)
+	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
 
 	// Set nullable (default is true, so only set if false)
 	if !field.Nullable {
