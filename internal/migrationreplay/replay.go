@@ -233,7 +233,7 @@ func replayMigrations(
 		return fmt.Errorf("clean dev database: %w", err)
 	}
 	for _, migration := range migrations {
-		if err := migration.Up(ctx, conn); err != nil {
+		if err := migration.UpForReplay(ctx, conn); err != nil {
 			return fmt.Errorf("replay migration %d on dev database: %w", migration.Version, err)
 		}
 	}

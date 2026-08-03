@@ -56,6 +56,49 @@ func ParseMigrationUp(filename, sql string) (ParsedMigrationUp, error) {
 	return result, nil
 }
 
+// ParseMigrationUpForAnalysis is [ParseMigrationUp] for read-only analysis,
+// where an unrecognized transaction mode is not a reason to refuse the file.
+//
+// `migrate lint` reads a directory to report on it and executes nothing, so a
+// directive that only decides how the file would be APPLIED cannot make the
+// analysis wrong. Refusing there also diverges: measured on the pinned
+// community binary, `migrate lint` over a directory carrying
+// `-- atlas:txmode unknown` exits 0 and analyzes normally, while refusing it
+// left a user unable to lint a directory they could still apply-check.
+//
+// Only the transaction mode is forgiven. A malformed file, a bad txtar
+// envelope, or anything else [ParseMigrationUp] rejects is still an error, and
+// the apply path keeps using [ParseMigrationUp] unchanged -- executing a file
+// whose transaction mode we could not read is a different question with a
+// different answer.
+func ParseMigrationUpForAnalysis(filename, sql string) (ParsedMigrationUp, error) {
+	parsed, err := ParseMigrationUp(filename, sql)
+	if err == nil {
+		return parsed, nil
+	}
+	stripped, txErr := parseMigrationUpIgnoringTxMode(filename, sql)
+	if txErr != nil {
+		return ParsedMigrationUp{}, err
+	}
+	return stripped, nil
+}
+
+// parseMigrationUpIgnoringTxMode repeats [ParseMigrationUp] without consulting
+// the transaction-mode directive, so a caller can tell a txmode complaint apart
+// from a file it genuinely cannot read.
+func parseMigrationUpIgnoringTxMode(filename, sql string) (ParsedMigrationUp, error) {
+	parsed, isTxtar, err := parseAtlasTxtarSQL(filename, sql)
+	if err != nil {
+		return ParsedMigrationUp{}, err
+	}
+	result := ParsedMigrationUp{SQL: sql}
+	if isTxtar {
+		result.SQL = parsed.migrationSQL
+		result.SourceLineOffset = parsed.migrationLineOffset
+	}
+	return result, nil
+}
+
 func parseAtlasFileTxMode(filename, sql string) (MigrationFileTxMode, bool, error) {
 	if !strings.HasPrefix(sql, "--") {
 		return MigrationFileTxModeUnspecified, false, nil

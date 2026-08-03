@@ -515,7 +515,7 @@ func prepareFile(
 			}
 			sql = rendered
 		}
-		up, err := migrator.ParseMigrationUp(name, sql)
+		up, err := migrator.ParseMigrationUpForAnalysis(name, sql)
 		if err != nil {
 			return File{}, err
 		}
