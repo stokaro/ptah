@@ -334,7 +334,7 @@ func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator {
 // placed below every migration it squashes. On a database that already has
 // migrations recorded it therefore sorts below all of them and trips a guard
 // that has nothing to guard against. Exempting that one version is what this
-// method is for; see atlasmigrateimport.FlywayBaselineAtlasVersion.
+// method is for; see atlasmigrateimport.FlywaySurvivingBaseline.
 //
 // HOW TO MISUSE IT. The exempt list is taken on trust. Supplying a version that
 // IS chronological — an ordinary migration that really was authored late —

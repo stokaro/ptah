@@ -756,39 +756,94 @@ func flywayCEVersion(file flywaySumFile) string {
 	return file.version
 }
 
-// FlywayBaselineAtlasVersion returns the converted Atlas version of the
-// surviving baseline in a Flyway directory, or 0 when it holds none.
+// FlywayBaseline describes the surviving baseline of a Flyway directory.
+type FlywayBaseline struct {
+	// Source is the baseline file name, relative to the migration directory.
+	Source string
+	// Version is the version token Atlas CE keys the file on: "10" for
+	// B10__base.sql. It is the operand CE's own pending-ness comparison uses,
+	// so the refusal quotes it rather than the int64 below.
+	Version string
+	// AtlasVersion is the converted version the entry executes and records
+	// under. It sits in the band below every survivor.
+	AtlasVersion int64
+	// SequenceVersion is the version this baseline's token converts to when an
+	// ORDINARY versioned file carries it — that is, the version already
+	// recorded for a V file of the same version. It is not what the baseline
+	// executes under; it answers "has a migration with this version already
+	// been applied here?", which the band position cannot.
+	SequenceVersion int64
+	// CoveredVersions are the converted versions of every OTHER covered file,
+	// so a caller can ask which of them a database has already recorded.
+	//
+	// Leaving the baseline itself out is a statement of the contract rather
+	// than something a caller can currently observe, and no mutation covers it:
+	// the apply path only asks this about versions a database has recorded, and
+	// it asks only when the baseline is still pending, so including it would
+	// answer the same either way. It becomes observable the moment a caller
+	// asks about a baseline that has already run.
+	CoveredVersions []int64
+}
+
+// FlywaySurvivingBaseline returns the surviving baseline of a Flyway directory,
+// or nil when it holds none.
 //
-// The caller is the apply path, and the reason it needs this is narrow. The
+// The caller is the apply path, and it needs this for two decisions. The
 // converted version encodes Atlas CE's SUM order, in which a surviving baseline
 // comes FIRST whatever its own version — measured, and measured to hold across
 // runs, not only within one conversion. So the baseline is placed in a band
 // below every survivor, and on a database that already has migrations recorded
 // it therefore sorts below all of them. That LOOKS like a migration authored
 // before what is already applied, and it is not: it is an artifact of projecting
-// a sum order onto an int64. See checkFlywayBaselineOrdering in cmd/atlas.
+// a sum order onto an int64, which is why the version is exempted from the
+// linear guard. Whether the baseline may then run at all is a second question,
+// answered by checkFlywayBaselineHistory in cmd/atlas.
 //
 // It shares flywayCoveredFiles and flywayConvertedVersions with the importer, so
 // the version reported here is the one the entry is actually executed under.
-func FlywayBaselineAtlasVersion(fsys fs.FS, format Format) (int64, error) {
+func FlywaySurvivingBaseline(fsys fs.FS, format Format) (*FlywayBaseline, error) {
 	if format != FormatFlyway {
-		return 0, nil
+		return nil, nil
 	}
 	covered, err := flywayCoveredFiles(fsys)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	versions, err := flywayConvertedVersions(covered)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	for i, file := range covered {
-		if file.kind == flywaySumBaseline {
-			// flywaySumFiles emits at most one baseline, and always first.
-			return versions[i], nil
+		if file.kind != flywaySumBaseline {
+			continue
 		}
+		// flywaySumFiles emits at most one baseline, and always first.
+		sequence, err := flywaySequenceVersion(file)
+		if err != nil {
+			return nil, err
+		}
+		return &FlywayBaseline{
+			Source:          file.name,
+			Version:         file.version,
+			AtlasVersion:    versions[i],
+			SequenceVersion: sequence,
+			CoveredVersions: append(slices.Clone(versions[:i]), versions[i+1:]...),
+		}, nil
 	}
-	return 0, nil
+	return nil, nil
+}
+
+// flywaySequenceVersion projects a baseline's token the way an ordinary
+// versioned file carrying the same token is projected.
+//
+// The tie index is 0 because at most one baseline survives, so a baseline never
+// shares a run with another file of its own kind — and the versioned file this
+// answers about is one the baseline squashed, which is no longer in the covered
+// set to be tied against.
+func flywaySequenceVersion(file flywaySumFile) (int64, error) {
+	versioned := file
+	versioned.kind = flywaySumVersioned
+	return flywayAtlasVersion(versioned, 0)
 }
 
 // flywayEntryName renders the converted Atlas single-file name. A Flyway file

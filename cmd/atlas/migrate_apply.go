@@ -265,13 +265,13 @@ func runAtlasMigrateApply(
 	// "authored earlier". It is not: the position encodes sum order, not
 	// chronology. Exempting exactly that one version keeps every other
 	// out-of-order migration refused, which is what Atlas CE does too.
-	baselineVersionExempt, err := atlasmigrateimport.FlywayBaselineAtlasVersion(captured, resolvedDirFormat)
+	flywayBaseline, err := atlasmigrateimport.FlywaySurvivingBaseline(captured, resolvedDirFormat)
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	var outOfOrderExempt []int64
-	if baselineVersionExempt > 0 {
-		outOfOrderExempt = []int64{baselineVersionExempt}
+	if flywayBaseline != nil {
+		outOfOrderExempt = []int64{flywayBaseline.AtlasVersion}
 	}
 
 	plan, err := atlasmigrate.PrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
@@ -297,6 +297,14 @@ func runAtlasMigrateApply(
 	// build therefore reads as entirely pending here. Refuse before executing
 	// anything rather than re-running migrations that already ran.
 	if err := checkLegacyFlywayRevisions(captured, resolvedDirFormat, plan, opts.revisionsSchema); err != nil {
+		return err
+	}
+
+	// The exemption above only stops the linear guard from reading the
+	// baseline's band position as "authored earlier". Whether a baseline may
+	// run against a database that already has history is a separate question,
+	// and one Atlas CE answers three incompatible ways (stokaro/ptah#1003).
+	if err := checkFlywayBaselineHistory(flywayBaseline, execOrder, plan); err != nil {
 		return err
 	}
 

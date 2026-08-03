@@ -244,26 +244,44 @@ lowercase-prefixed file could run SQL no checksum protected. The importer and
 the hasher now share one selection rule, so that class of gap cannot reopen
 without a failing test.
 
-:::note[Flyway baselines: Ptah runs one where Atlas sometimes does not]
-Atlas CE decides which migrations are pending by comparing the version token as
-a **string** against the highest version already recorded. A baseline whose
-token does not sort above that mark is silently treated as applied and never
-runs — measured on Atlas CE v1.2.0:
+:::note[Flyway baselines: Ptah refuses where Atlas decides for you]
+A Flyway `B` file is a squash — it restates the schema the migrations it
+supersedes built. Atlas CE decides what to do with one by comparing the version
+token as a **string** against the highest version already recorded, and gives
+three different answers to that one class of file. Measured against Atlas CE
+v1.3.0, adding a baseline to a directory that has already been applied:
 
-- `V2__x.sql` applied, then `B10__base.sql` added: `"10" < "2"` as strings, so
-  Atlas reports `No migration files to execute` and the baseline never runs.
-- `V1`, `V2`, `V3` applied, then `B2__base.sql` added (superseding `V1` and
-  `V2`): same result.
+| Applied | Baseline added | Atlas CE |
+| --- | --- | --- |
+| `V2` | `B10__base.sql` | `No migration files to execute`, exit 0, table never created |
+| `V1`, `V2`, `V3` | `B2.5__base.sql` | exit 1, `migration file B2.5__base.sql was added out of order` |
+| `V2` | `B3__base.sql` | executes the baseline, exit 0 |
 
-Ptah decides pending-ness from the recorded set instead, so it **runs** the
-baseline in both cases. Where a baseline is added deliberately, that is what was
-intended; it is a divergence from Atlas either way, and which behavior
-`ptah-compat` should keep is
-[#1003](https://github.com/stokaro/ptah/issues/1003).
+The first row is the one that costs you something. Nothing on stdout, nothing on
+stderr and no `migrate status` line says the file was skipped — `migrate status`
+reports `OK` with `Pending Files: 0` on a database missing the object — and once
+the squash retires the superseded files from `atlas.sum`, nothing can re-derive
+it. A production database and a fresh one built from the same directory diverge
+permanently, both reported healthy.
 
-Both tools run a baseline added above the high-water mark, and both execute its
-SQL rather than merely recording it — Atlas fails loudly if that SQL cannot
-survive a second run.
+`ptah-compat` reproduces neither that silence nor its own former behavior of
+running the baseline regardless
+([#1003](https://github.com/stokaro/ptah/issues/1003)). `migrate apply` refuses,
+names the file, and stops before anything executes when the baseline cannot be
+read as a forward migration for the target database — that is, when an
+already-applied migration is still covered by the directory, or when a migration
+carrying the baseline's own version has already been applied. Two paths are
+deliberately left open:
+
+- A database with **no recorded history** still runs the baseline. That is the
+  fresh-install path a converted Flyway directory exists for.
+- `--exec-order=non-linear` executes the baseline against a database that does
+  have history, which is what the refusal points at. Atlas CE applies a
+  below-mark baseline under that flag too.
+
+A baseline that squashes away everything the database has applied still runs on
+both tools, and both execute its SQL rather than merely recording it — so a
+baseline restating DDL that is already there fails loudly on both.
 :::
 
 :::danger[Upgrading a Flyway directory applied by Ptah v0.1.0–v0.1.2]
