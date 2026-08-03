@@ -23,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/schemafile"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -42,9 +43,14 @@ type atlasSchemaApplyOptions struct {
 	lockTimeout string
 	lock        atlasLockOptions
 	edit        bool
+	skipLint    bool
 	// formatOutput is derived at run time: true when --format was passed or
 	// atlas.hcl provides format.schema.apply.
 	formatOutput bool
+	// lintPolicy is the atlas.hcl lint block, resolved at run time. It decides
+	// both which rules the plan is linted against and whether there is a lint
+	// pass at all.
+	lintPolicy projectconfig.LintConfig
 }
 
 func newAtlasSchemaApplyCommand() *cobra.Command {
@@ -92,7 +98,13 @@ env.schema.mode subtract from the result. A selected object that depends on
 an unselected object refuses the plan with an explicit diagnostic instead of
 emitting incomplete SQL. An --include selection that matches neither the
 target nor the desired state refuses the apply: there is nothing to apply, and
-reporting a synced schema would claim success for work that did not happen.`,
+reporting a synced schema would claim success for work that did not happen.
+
+When the selected atlas.hcl env declares a ` + "`lint`" + ` policy, the planned
+SQL is linted against exactly the rules that policy names before anything is
+executed, and a finding the policy rates as an error refuses the apply.
+--skip-lint runs the apply without that check. A project with no lint policy
+has no lint pass to skip, so --skip-lint changes nothing there.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -114,6 +126,7 @@ reporting a synced schema would claim success for work that did not happen.`,
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
 	registerAtlasLockNameFlag(flags, &opts.lock)
 	registerAtlasSkipLockFlag(flags, &opts.lock)
+	flags.BoolVar(&opts.skipLint, "skip-lint", false, "Skip linting the planned migration")
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
@@ -157,6 +170,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+		opts.lintPolicy = projectCfg.Lint
 	}
 	opts.formatOutput = formatOutput
 	if strings.TrimSpace(opts.planURL) != "" {
@@ -235,6 +249,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		TxMode:     txMode,
 		DryRun:     opts.dryRun,
 		ProjectEnv: projectEnv,
+
+		// Atlas-compatible surface: a schema file written for another tool
+		// must not be refused over a name this parser does not model.
+		IgnoreUnknownHCLNames: true,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -267,6 +285,12 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
 	} else {
 		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), sqlText)
+	}
+	// The lint verdict covers the statements that would run, edits included,
+	// and lands before the --dry-run exit so a dry run reports the same refusal
+	// the real apply would.
+	if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if opts.dryRun {
 		return nil
@@ -385,7 +409,10 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 
 	var desired *goschema.Database
 	if len(opts.toURLs) > 0 {
-		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{Dialect: conn.Info().Dialect})
+		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{
+			Dialect:               conn.Info().Dialect,
+			IgnoreUnknownHCLNames: true,
+		})
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 		}
@@ -427,6 +454,13 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
 	} else {
 		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+	}
+	// A pre-approved plan file is still SQL this command is about to run
+	// against the target, so the project's lint policy applies to it too.
+	// Exempting it would make --skip-lint inert on the one path an operator is
+	// most likely to be scripting.
+	if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -687,6 +721,46 @@ func confirmAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions, f
 		fmt.Fprintln(cmd.OutOrStdout())
 	}
 	return promptAtlasSchemaApplyConfirmation(cmd.OutOrStdout(), cmd.InOrStdin())
+}
+
+// lintAtlasSchemaApplyPlan refuses a plan the project's lint policy rates as an
+// error, unless --skip-lint was passed.
+//
+// The pass exists only where a policy does. Atlas CE's `schema apply` neither
+// lints nor registers --skip-lint (measured on the pinned community binary), so
+// a project without a `lint` block keeps byte-identical CE behavior and
+// --skip-lint has nothing to skip there. Where the block is present, the same
+// severities that decide `migrate lint` decide this, which is the point: one
+// policy, applied wherever SQL is about to reach a database.
+func lintAtlasSchemaApplyPlan(opts atlasSchemaApplyOptions, dialect string, statements []string) error {
+	if opts.skipLint || len(statements) == 0 {
+		return nil
+	}
+	findings, err := atlasschema.LintPlan(statements, atlasSchemaApplyLintOptions(opts, dialect))
+	if err != nil {
+		return err
+	}
+	if len(findings) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"the planned changes are refused by the atlas.hcl lint policy:%s\nreview the plan, or rerun with --skip-lint to apply it anyway",
+		atlasschema.FormatPlanLintFindings(findings))
+}
+
+func atlasSchemaApplyLintOptions(opts atlasSchemaApplyOptions, dialect string) atlasschema.PlanLintOptions {
+	rules := make(map[string]migrationlint.RuleConfig, len(opts.lintPolicy.RuleConfigs))
+	for code, rule := range opts.lintPolicy.RuleConfigs {
+		rules[code] = migrationlint.RuleConfig{
+			Severity: migrationlint.Severity(rule.Severity),
+			Exclude:  slices.Clone(rule.Exclude),
+		}
+	}
+	return atlasschema.PlanLintOptions{
+		Dialect:     dialect,
+		RuleConfigs: rules,
+		Disabled:    slices.Clone(opts.lintPolicy.DisabledRules),
+	}
 }
 
 func validateAtlasSchemaApplyDiffPolicy(

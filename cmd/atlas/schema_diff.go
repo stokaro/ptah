@@ -53,7 +53,9 @@ diagnostic. An --include selection that matches nothing on either side keeps
 the exit status and the standard-output bytes it would have had, and reports
 the empty selection on standard error, so a CI check comparing stdout is
 unaffected while a mistyped selector is no longer silent.
-Hosted report output is not implemented.`,
+Hosted report output is not implemented. --export is registered and refused:
+it selects an exporter declared by an atlas.hcl ` + "`exporter`" + ` block,
+which Ptah does not evaluate.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaDiff(cmd, opts)
 		},
@@ -66,11 +68,17 @@ Hosted report output is not implemented.`,
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in diffing")
+	registerAtlasUIFlag(cmd, atlasSchemaExportFlag())
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 
 func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
+	// The refusal lands before any config or database work: a flag Ptah does
+	// not implement must not be answered with a diff that ignored it.
+	if err := refuseAtlasUIFlag(cmd, "schema", "diff", atlasSchemaExportFlag()); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
@@ -134,6 +142,9 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		Policy:      policy,
 		ProjectEnv:  projectEnv,
 		Diagnostics: cmd.ErrOrStderr(),
+
+		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
+		IgnoreUnknownHCLNames: true,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

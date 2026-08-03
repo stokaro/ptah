@@ -250,6 +250,9 @@ func resolveDesiredState(
 		DevURL:         devURL,
 		ConnectTimeout: opts.SourceConnectTimeout,
 		DevLockHeld:    true,
+		// `migrate diff` is registered on the Atlas-compatible command tree
+		// only, so this surface always reads files written for another tool.
+		IgnoreUnknownHCLNames: true,
 	})
 	if err != nil {
 		return atlassource.State{}, fmt.Errorf("load --to schema: %w", err)

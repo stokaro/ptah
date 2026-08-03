@@ -49,6 +49,9 @@ type InspectSourceOptions struct {
 	// ConnectTimeout bounds the initial database connection attempts. Zero
 	// disables the bound.
 	ConnectTimeout time.Duration
+	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
+	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	IgnoreUnknownHCLNames bool
 }
 
 // InspectSource classifies the --url inspection source and renders it with
@@ -121,7 +124,10 @@ func inspectOnDev(
 	var desired *goschema.Database
 	switch set.Kind {
 	case atlassource.KindLocalFile:
-		desired, err = schemafile.LoadAll(sourceRawURLs(set), schemafile.Options{Dialect: dialect})
+		desired, err = schemafile.LoadAll(sourceRawURLs(set), schemafile.Options{
+			Dialect:               dialect,
+			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+		})
 		if err != nil {
 			return "", err
 		}
