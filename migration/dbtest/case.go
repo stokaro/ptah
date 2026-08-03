@@ -202,15 +202,20 @@ func validateCases(cases []Case) error {
 // The two normalizations are not alike, and the difference is measurable rather
 // than a matter of taste:
 //
-//   - `dup` and `dup ` are the same case in every way that the report and the
-//     filter can see. [FilterCases] compiles --run as an unanchored Go regular
-//     expression, so `--run dup` selects both, and [Report.HTML] emits each name
-//     inside `case &ldquo;…&rdquo;`, where a browser collapses the trailing
-//     space and renders the two rows identically. Accepting that pair would
-//     reproduce the exact symptom this check exists to stop.
-//   - `dup` and `DUP` are not. `--run dup` selects only `dup`, and no report
-//     format renders the two alike, so folding here would reject a pair the
-//     filter and the reader both keep apart.
+//   - `dup` and `dup ` are the same case to the one thing that selects cases.
+//     [FilterCases] compiles --run as an unanchored Go regular expression, so
+//     `--run dup` selects both, and a reader who writes that expecting one case
+//     silently runs two. Accepting that pair would reproduce the exact symptom
+//     this check exists to stop.
+//
+//     The reports are not the argument. Measured: [Report.HTML] emits
+//     `case &ldquo;dup &rdquo;`, and a browser collapses runs of whitespace and
+//     the edges of a block, not a single interior space, so the rows are
+//     distinguishable there; the text report escapes the name with %q and shows
+//     it outright.
+//
+//   - `dup` and `DUP` are not. `--run dup` selects only `dup`, so folding here
+//     would reject a pair the filter already keeps apart.
 //
 // Cases are scanned in slice order and the first collision returns, so the
 // reported pair is deterministic. Both loaders sort file names before reading,

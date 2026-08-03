@@ -69,10 +69,10 @@ load. A collision between two files names both of them; a collision inside one
 file names that one.
 
 Comparison removes surrounding whitespace but does not fold case, because that
-is the line the report and `--run` already draw. `dup` and `dup ` collide —
-`--run dup` selects both, and the HTML report renders the two rows identically —
-while `dup` and `DUP` are two distinct cases, since `--run dup` selects only the
-first.
+is the line `--run` already draws. `--run` is an unanchored regular expression,
+so `--run dup` selects both `dup` and `dup ` — write it expecting one case and
+you silently run two. It selects only the first of `dup` and `DUP`, so those
+stay two distinct cases.
 
 Both commands also read Atlas-format `*.test.hcl` files from `--dir` alongside
 the YAML above. Each `test` block there is labeled with the kind it belongs to,

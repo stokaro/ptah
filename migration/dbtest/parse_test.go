@@ -262,11 +262,14 @@ func TestLoadCases_AllowsDistinctNamesAcrossFiles(t *testing.T) {
 }
 
 // TestLoadCases_RejectsNamesDifferingOnlyBySurroundingWhitespace closes the
-// member of the class that a trailing space used to slip through. It is the
-// issue's first bullet verbatim: `--run dup` compiles unanchored, so it matched
-// `dup` and `dup ` alike and ran both, and Report.HTML renders each name inside
-// `case &ldquo;…&rdquo;`, where a browser collapses the trailing space into two
-// visually identical rows.
+// member of the class that a trailing space used to slip through: `--run`
+// compiles unanchored, so `--run dup` matched `dup` and `dup ` alike and ran
+// both while the author expected one.
+//
+// The issue also argued the two are visually identical in the HTML report.
+// That part is not true and is not what this test rests on -- Report.HTML
+// emits `case &ldquo;dup &rdquo;`, and a browser collapses runs of whitespace
+// and block edges, not a single interior space.
 func TestLoadCases_RejectsNamesDifferingOnlyBySurroundingWhitespace(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
