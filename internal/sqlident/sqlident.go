@@ -5,20 +5,26 @@
 // terminate the quoted identifier and inject SQL.
 package sqlident
 
-import "strings"
+import (
+	"strings"
+
+	"go.5x5.cz/ptah/core/platform"
+)
 
 // Quote returns name as a safely-quoted identifier for dialect. The dialect
 // selects the quote style: backticks for MySQL, MariaDB, and ClickHouse; square
 // brackets for SQL Server; and double quotes for the PostgreSQL family, SQLite,
 // and any unrecognized dialect. Embedded quote characters are doubled per the
 // SQL standard so the value cannot terminate the quoted identifier. The dialect
-// is matched case-insensitively and surrounding whitespace is ignored; name
-// itself is quoted verbatim (it is not trimmed).
+// is resolved through platform.NormalizeDialect, so every documented spelling of
+// an engine (`mssql`, `tsql`, `sql-server`, `sql_server`; `ch`) picks the same
+// quote style as its canonical name. name itself is quoted verbatim (it is not
+// trimmed).
 func Quote(dialect, name string) string {
-	switch strings.ToLower(strings.TrimSpace(dialect)) {
-	case "mysql", "mariadb", "clickhouse":
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
-	case "sqlserver", "mssql":
+	case platform.SQLServer:
 		return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
 	default:
 		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
