@@ -15,7 +15,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/testutils"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
@@ -2315,15 +2317,24 @@ table "old_users" {
 	c.Assert(out.String(), qt.Equals, "synced")
 }
 
-func TestCompatCommand_SchemaDiffRejectsUnsupportedAtlasProjectDiffPolicy(t *testing.T) {
+// TestCompatCommand_SchemaDiffAcceptsConcurrentIndexDropPolicy pins that
+// diff.concurrent_index.drop is decoded and carried into planning instead of
+// aborting the run. Reverting the policy wiring prints
+// `Error: atlas.hcl diff.concurrent_index.drop is not supported yet` and the
+// command exits non-zero, which is what the pinned community binary does not do
+// with the same file.
+func TestCompatCommand_SchemaDiffAcceptsConcurrentIndexDropPolicy(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
+	from := filepath.Join(dir, "from.hcl")
+	to := filepath.Join(dir, "to.hcl")
+	c.Assert(os.WriteFile(from, []byte(`schema "main" {}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(to, []byte(`schema "main" {}
+`), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   dev = "sqlite://dev.db"
-  schema {
-    src = "file://to.hcl"
-  }
   diff {
     concurrent_index {
       drop = true
@@ -2340,12 +2351,60 @@ func TestCompatCommand_SchemaDiffRejectsUnsupportedAtlasProjectDiffPolicy(t *tes
 		"schema", "diff",
 		"--env", "local",
 		"--from", "file://from.hcl",
+		"--to", "file://to.hcl",
 	})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas\.hcl diff\.concurrent_index\.drop is not supported yet`)
-	c.Assert(out.String(), qt.Contains, `Error: atlas.hcl diff.concurrent_index.drop is not supported yet`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Not(qt.Contains), "not supported yet")
+}
+
+// TestAtlasDiffPolicy_CarriesConcurrentIndexDrop is the unit-level half: the
+// decoded config must reach the planning policy, not just avoid an error.
+// Reverting the wiring prints "values are not equal: true != false" for the
+// ConcurrentIndexDrop field.
+func TestAtlasDiffPolicy_CarriesConcurrentIndexDrop(t *testing.T) {
+	tests := []struct {
+		name   string
+		config func() projectconfig.Config
+		want   atlasschema.DiffPolicy
+	}{
+		{
+			name: "drop requested",
+			config: func() projectconfig.Config {
+				var cfg projectconfig.Config
+				cfg.Diff.ConcurrentIndex.Drop = projectconfig.ConfigBool{Value: true, Set: true}
+				return cfg
+			},
+			want: atlasschema.DiffPolicy{ConcurrentIndexDrop: true},
+		},
+		{
+			name: "drop explicitly declined",
+			config: func() projectconfig.Config {
+				var cfg projectconfig.Config
+				cfg.Diff.ConcurrentIndex.Drop = projectconfig.ConfigBool{Value: false, Set: true}
+				return cfg
+			},
+			want: atlasschema.DiffPolicy{},
+		},
+		{
+			name:   "drop unset",
+			config: func() projectconfig.Config { return projectconfig.Config{} },
+			want:   atlasschema.DiffPolicy{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := atlasDiffPolicy(tt.config())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, tt.want)
+		})
+	}
 }
 
 func TestCompatCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {

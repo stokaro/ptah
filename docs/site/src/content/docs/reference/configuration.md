@@ -115,16 +115,18 @@ the shadow rehearsal that `migrations down` performs before touching its target.
 | Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |
 | Lint defaults and policy | `lint.dialect`, `lint.disabled-rules`, `lint.latest`, `lint.git.base`, `lint.destructive.error`, `lint.concurrent_index.error` |
 | Online DDL | `online_ddl.tool`, `online_ddl.threshold_rows`, `online_ddl.args`, `online_ddl.fallback` |
-| Diff policy (native `migrations generate`) | `diff.skip: [drop_table, drop_column, drop_index, drop_enum]`, `diff.concurrent_index` |
+| Diff policy (native `migrations generate`) | `diff.skip: [drop_table, drop_column, drop_index, drop_enum]`, `diff.concurrent_index`, `diff.concurrent_index_drop` |
 | Atlas-compatible output | `format.schema.inspect`, `format.schema.apply`, `format.schema.clean`, `format.schema.diff`, `format.migrate.apply`, `format.migrate.diff`, `format.migrate.lint`, `format.migrate.status` |
-| Atlas-compatible diff policy | `diff.skip.drop_table`, `diff.concurrent_index.create` |
+| Atlas-compatible diff policy | `diff.skip.drop_table`, `diff.concurrent_index.create`, `diff.concurrent_index.drop` |
 
 The native `diff` block shapes what `ptah migrations generate` emits: `diff.skip`
 lists destructive change kinds (`drop_table`, `drop_column`, `drop_index`,
 `drop_enum`) to omit — a `-- SKIP: ...` comment is written in their place — and
 `diff.concurrent_index: true` requests `CREATE INDEX CONCURRENTLY` for new
-indexes (PostgreSQL, capability-gated). A skipped change is never emitted, so it
-never trips the `--check-destructive` gate. A selected environment's
+indexes (PostgreSQL, capability-gated), while
+`diff.concurrent_index_drop: true` requests `DROP INDEX CONCURRENTLY` for
+standalone index removals under the same gate. A skipped change is never
+emitted, so it never trips the `--check-destructive` gate. A selected environment's
 `diff.skip` replaces the top-level list; an explicit empty list clears all
 inherited skip kinds.
 

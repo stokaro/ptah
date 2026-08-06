@@ -283,9 +283,11 @@ objects are ignored rather than dropped.
 Disabled `schema.mode` values are mapped to the same resource-exclusion system
 for object kinds represented in Ptah's schema IR. `diff.skip.drop_table = true`
 removes table drops from supported local plans. For non-dry-run PostgreSQL
-`schema apply` plans that actually emit `CREATE INDEX CONCURRENTLY`,
-`diff.concurrent_index.create = true` requires `--tx-mode none`;
-`diff.concurrent_index.drop` fails explicitly. `diff.skip.drop_schema` is
+`schema apply` plans that actually emit a `CONCURRENTLY` index statement,
+`--tx-mode none` is required: `diff.concurrent_index.create = true` for
+`CREATE [UNIQUE] INDEX CONCURRENTLY`, and `diff.concurrent_index.drop = true`
+for `DROP INDEX CONCURRENTLY`. PostgreSQL rejects either inside a transaction
+block. `diff.skip.drop_schema` is
 accepted and type-checked, but changes no plan: Ptah's schema diff has no
 removed-schema list, so there is no `DROP SCHEMA` for the suppression to omit.
 

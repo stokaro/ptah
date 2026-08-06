@@ -653,6 +653,12 @@ func (c DiffConfig) ConcurrentIndexCreate() bool {
 	return c.ConcurrentIndex.Create.Value
 }
 
+// ConcurrentIndexDrop reports whether the policy requests
+// DROP INDEX CONCURRENTLY for removed indexes.
+func (c DiffConfig) ConcurrentIndexDrop() bool {
+	return c.ConcurrentIndex.Drop.Value
+}
+
 // DiffConcurrentIndexConfig holds Atlas diff.concurrent_index policy.
 type DiffConcurrentIndexConfig struct {
 	Create ConfigBool

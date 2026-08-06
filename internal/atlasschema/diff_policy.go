@@ -12,6 +12,7 @@ import (
 type DiffPolicy struct {
 	SkipDropTable         bool
 	ConcurrentIndexCreate bool
+	ConcurrentIndexDrop   bool
 }
 
 // ApplyDiffPolicy returns a shallow copy of diff with supported Atlas diff

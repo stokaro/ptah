@@ -283,8 +283,9 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		ShadowDatabaseURL: shadowDB,
 		SchemaQualifier:   qualifierValue,
 		DiffPolicy: generator.DiffPolicy{
-			SkipChangeKinds: projectCfg.Diff.SkipChangeKinds(),
-			ConcurrentIndex: projectCfg.Diff.ConcurrentIndexCreate(),
+			SkipChangeKinds:     projectCfg.Diff.SkipChangeKinds(),
+			ConcurrentIndex:     projectCfg.Diff.ConcurrentIndexCreate(),
+			ConcurrentIndexDrop: projectCfg.Diff.ConcurrentIndexDrop(),
 		},
 	}
 	var files *generator.MigrationFiles

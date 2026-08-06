@@ -29,7 +29,7 @@ func TestSplitConcurrentIndexDiff_PreservesTableQualifiedIdentity(t *testing.T) 
 	})
 	got := splitConcurrentIndexDiff(diff, []types.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
-	})
+	}, nil)
 
 	c.Assert(got.transactional.IndexAdditions(), qt.DeepEquals, []types.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
@@ -180,7 +180,7 @@ func TestIndexTransforms_PreserveIdentifierSemantics(t *testing.T) {
 
 	cloned := cloneSchemaDiff(diff)
 	reversed := reverseSchemaDiffWithSchema(diff, nil, nil)
-	split := splitConcurrentIndexDiff(diff, diff.IndexAdditions())
+	split := splitConcurrentIndexDiff(diff, diff.IndexAdditions(), nil)
 
 	c.Assert(cloned.IdentifierSemantics, qt.DeepEquals, &semantics)
 	c.Assert(reversed.IdentifierSemantics, qt.DeepEquals, &semantics)

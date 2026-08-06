@@ -106,6 +106,15 @@ const (
 	// changes behavior (issue #171).
 	CreateIndexConcurrently Capability = "create_index_concurrently"
 
+	// DropIndexConcurrently marks support for PostgreSQL's non-locking
+	// DROP INDEX CONCURRENTLY. It is deliberately a separate flag from
+	// CreateIndexConcurrently with no implication edge between them: a caller
+	// composing a set with .With(CreateIndexConcurrently, false) is restricting
+	// index builds, not asserting anything about drops, and Validate must not
+	// turn that composition into an error. The PostgreSQL-compatible presets
+	// that already decline CREATE INDEX CONCURRENTLY decline this too.
+	DropIndexConcurrently Capability = "drop_index_concurrently"
+
 	// CreateOrReplaceTrigger marks support for replacing triggers in one
 	// statement (PostgreSQL 14+ and MariaDB 10.1.4+ use
 	// CREATE OR REPLACE TRIGGER; SQL Server uses CREATE OR ALTER TRIGGER;
@@ -206,6 +215,9 @@ var registry = map[Capability]spec{
 	},
 	CreateIndexConcurrently: {
 		doc: "CREATE [UNIQUE] INDEX CONCURRENTLY (PostgreSQL; a compatibility no-op on CockroachDB)",
+	},
+	DropIndexConcurrently: {
+		doc: "DROP INDEX CONCURRENTLY (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit CONCURRENTLY)",
 	},
 	CreateOrReplaceTrigger: {
 		doc: "single-statement trigger replacement (PostgreSQL/MariaDB CREATE OR REPLACE, SQL Server CREATE OR ALTER; not MySQL)",
@@ -373,6 +385,7 @@ func MySQL84() Capabilities {
 		EnumInlineColumn:                   true,
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
+		DropIndexConcurrently:              false,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -424,6 +437,7 @@ func MariaDB1011() Capabilities {
 		EnumInlineColumn:                   true,
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
+		DropIndexConcurrently:              false,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -463,6 +477,7 @@ func Postgres16() Capabilities {
 		EnumInlineColumn:                   false,
 		EnumCustomType:                     true,
 		CreateIndexConcurrently:            true,
+		DropIndexConcurrently:              true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   true,
@@ -502,6 +517,7 @@ func ClickHouse24() Capabilities {
 		EnumInlineColumn:                   true,
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
+		DropIndexConcurrently:              false,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -530,6 +546,7 @@ func SQLite3() Capabilities {
 		EnumInlineColumn:                   false,
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
+		DropIndexConcurrently:              false,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -559,6 +576,7 @@ func SQLServer2022() Capabilities {
 		EnumInlineColumn:                   false,
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
+		DropIndexConcurrently:              false,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -581,6 +599,7 @@ func SQLServer2022() Capabilities {
 func CockroachDB23() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
+		With(DropIndexConcurrently, false).
 		With(XMLType, false).
 		With(AdvisoryLocks, false).
 		With(RowLevelSecurity, false).
@@ -595,6 +614,7 @@ func CockroachDB23() Capabilities {
 func YugabyteDB25() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
+		With(DropIndexConcurrently, false).
 		With(AdvisoryLocks, false).
 		With(RowLevelSecurity, false)
 }
@@ -612,6 +632,7 @@ func SpannerPostgres() Capabilities {
 		With(CheckConstraintsEnforced, false).
 		With(EnumCustomType, false).
 		With(CreateIndexConcurrently, false).
+		With(DropIndexConcurrently, false).
 		With(CreateOrReplaceTrigger, false).
 		With(RowLevelSecurity, false).
 		With(RoleManagement, false).

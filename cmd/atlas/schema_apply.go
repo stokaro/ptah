@@ -778,11 +778,31 @@ func validateAtlasSchemaApplyDiffPolicy(
 		return nil
 	}
 	for _, statement := range statements {
-		if strings.Contains(strings.ToUpper(statement), "CREATE INDEX CONCURRENTLY") {
-			return fmt.Errorf("atlas.hcl diff.concurrent_index.create requires --tx-mode none for schema apply")
+		if setting := concurrentIndexPolicySetting(statement); setting != "" {
+			return fmt.Errorf("atlas.hcl %s requires --tx-mode none for schema apply", setting)
 		}
 	}
 	return nil
+}
+
+// concurrentIndexPolicySetting names the diff policy that produced a statement
+// PostgreSQL refuses to run inside a transaction block, or "" when the
+// statement is safe to wrap.
+//
+// The UNIQUE spelling is listed explicitly: a unique index renders as
+// CREATE UNIQUE INDEX CONCURRENTLY, which a substring test for
+// "CREATE INDEX CONCURRENTLY" does not see.
+func concurrentIndexPolicySetting(statement string) string {
+	upper := strings.ToUpper(statement)
+	switch {
+	case strings.Contains(upper, "CREATE INDEX CONCURRENTLY"),
+		strings.Contains(upper, "CREATE UNIQUE INDEX CONCURRENTLY"):
+		return "diff.concurrent_index.create"
+	case strings.Contains(upper, "DROP INDEX CONCURRENTLY"):
+		return "diff.concurrent_index.drop"
+	default:
+		return ""
+	}
 }
 
 // editAtlasSchemaApplySQL round-trips the planned SQL through the operator's

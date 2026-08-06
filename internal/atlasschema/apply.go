@@ -179,8 +179,9 @@ func computeApplyPlan(
 	}
 
 	computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, info.Dialect, planner.Options{
-		Capabilities:      info.Capabilities,
-		ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
+		Capabilities:         info.Capabilities,
+		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+		ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 	})
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)

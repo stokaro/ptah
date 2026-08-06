@@ -37,7 +37,10 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t 
 	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
 	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "+ptah lock_timeout")
 	c.Assert(specs[0].DownSQL, qt.Contains, "-- +ptah no_transaction")
-	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX IF EXISTS "idx_users_email";`)
+	// Reverting the concurrent-drop wiring prints
+	// `DROP INDEX IF EXISTS "idx_users_email";` here: the rollback of a
+	// non-blocking build would take the very write lock the build avoided.
+	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`)
 }
 
 func TestPlanGeneratedMigrationSpecs_ConcurrentIndexRequiresPopulatedCapablePostgres(t *testing.T) {
@@ -126,7 +129,9 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 	c.Assert(specs[1].NoTransaction, qt.IsTrue)
 	c.Assert(specs[1].UpSQL, qt.Contains, "-- +ptah no_transaction")
 	c.Assert(specs[1].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
-	c.Assert(specs[1].DownSQL, qt.Contains, `DROP INDEX IF EXISTS "idx_users_email";`)
+	// Reverting the concurrent-drop wiring prints
+	// `DROP INDEX IF EXISTS "idx_users_email";` here.
+	c.Assert(specs[1].DownSQL, qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`)
 }
 
 func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *testing.T) {
@@ -213,6 +218,148 @@ func TestCreateMigrationFilesFromSpecs_WritesAllPairs(t *testing.T) {
 	c.Assert(files.Files[0].Version < files.Files[1].Version, qt.IsTrue)
 	c.Assert(strings.HasSuffix(files.Files[0].UpFile, "100_transactional.up.sql"), qt.IsTrue)
 	c.Assert(strings.HasSuffix(files.Files[1].UpFile, "101_concurrent_indexes.up.sql"), qt.IsTrue)
+}
+
+// TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropPolicy pins the UP
+// direction of the drop policy: a standalone index removal becomes
+// non-blocking only when the project asks for it, and the resulting statement
+// is routed into its own no_transaction migration because PostgreSQL rejects
+// DROP INDEX CONCURRENTLY inside a transaction block.
+//
+// With the change reverted the "policy on" row prints
+// `DROP INDEX IF EXISTS "idx_users_email";` with NoTransaction false, so it
+// becomes indistinguishable from the "policy off" row.
+func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropPolicy(t *testing.T) {
+	tests := []struct {
+		name              string
+		policy            DiffPolicy
+		info              dbschematypes.DBInfo
+		wantNoTransaction bool
+		wantUpSQL         string
+		wantDownSQL       string
+	}{
+		{
+			name:              "policy off keeps the blocking drop",
+			policy:            DiffPolicy{},
+			info:              postgresInfo(capability.Postgres16()),
+			wantNoTransaction: false,
+			wantUpSQL:         `DROP INDEX IF EXISTS "idx_users_email";`,
+			wantDownSQL:       `CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`,
+		},
+		{
+			name:              "policy on drops concurrently and rebuilds concurrently",
+			policy:            DiffPolicy{ConcurrentIndexDrop: true},
+			info:              postgresInfo(capability.Postgres16()),
+			wantNoTransaction: true,
+			wantUpSQL:         `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`,
+			wantDownSQL:       `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`,
+		},
+		{
+			name:              "capability withheld keeps the blocking drop",
+			policy:            DiffPolicy{ConcurrentIndexDrop: true},
+			info:              postgresInfo(capability.Postgres16().With(capability.DropIndexConcurrently, false)),
+			wantNoTransaction: false,
+			wantUpSQL:         `DROP INDEX IF EXISTS "idx_users_email";`,
+			wantDownSQL:       `CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			specs, _, err := planGeneratedMigrationSpecs(
+				indexRemovalOnlyDiff(),
+				indexOnlyGeneratedSchema(),
+				indexRemovalDBSchema(),
+				tt.info,
+				100,
+				"drop_user_email_index",
+				tt.policy,
+				atlasmigrate.Qualifier{},
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(specs, qt.HasLen, 1)
+			c.Assert(specs[0].NoTransaction, qt.Equals, tt.wantNoTransaction)
+			c.Assert(specs[0].UpSQL, qt.Contains, tt.wantUpSQL)
+			c.Assert(specs[0].DownSQL, qt.Contains, tt.wantDownSQL)
+		})
+	}
+}
+
+// TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional
+// pins the file split: a concurrent drop cannot share a file with a statement
+// that needs the transaction, so it gets its own migration.
+//
+// With the change reverted this test fails at the first assertion with
+// "specs has len 1, want 2" — the drop stays blocking and everything fits in a
+// single transactional migration.
+func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(t *testing.T) {
+	c := qt.New(t)
+
+	diff := indexRemovalOnlyDiff()
+	diff.TablesAdded = []string{"posts"}
+	generated := indexOnlyGeneratedSchema()
+	generated.Tables = append(generated.Tables, goschema.Table{StructName: "Post", Name: "posts"})
+	generated.Fields = append(generated.Fields, goschema.Field{
+		StructName: "Post",
+		Name:       "id",
+		Type:       "SERIAL",
+		Primary:    true,
+		AutoInc:    true,
+	})
+
+	specs, _, err := planGeneratedMigrationSpecs(
+		diff,
+		generated,
+		indexRemovalDBSchema(),
+		postgresInfo(capability.Postgres16()),
+		100,
+		"add_posts_drop_index",
+		DiffPolicy{ConcurrentIndexDrop: true},
+		atlasmigrate.Qualifier{},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(specs, qt.HasLen, 2)
+	c.Assert(specs[0].Name, qt.Equals, "add_posts_drop_index_transactional")
+	c.Assert(specs[0].NoTransaction, qt.IsFalse)
+	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE TABLE "posts"`)
+	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "idx_users_email")
+
+	c.Assert(specs[1].Name, qt.Equals, "add_posts_drop_index_concurrent_indexes")
+	c.Assert(specs[1].NoTransaction, qt.IsTrue)
+	c.Assert(specs[1].UpSQL, qt.Contains, "-- +ptah no_transaction")
+	c.Assert(specs[1].UpSQL, qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`)
+	c.Assert(specs[1].UpSQL, qt.Not(qt.Contains), `CREATE TABLE "posts"`)
+}
+
+// indexRemovalDBSchema is the pre-change database state a removal is planned
+// against: the index the migration drops still exists, so the down direction
+// can rebuild it.
+func indexRemovalDBSchema() *dbschematypes.DBSchema {
+	return &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{{
+			Name:          "users",
+			Type:          "BASE TABLE",
+			EstimatedRows: 10,
+			Columns: []dbschematypes.DBColumn{
+				{Name: "email", DataType: "text", UDTName: "text", IsNullable: "YES", OrdinalPosition: 1},
+			},
+		}},
+		Indexes: []dbschematypes.DBIndex{{
+			Name:      "idx_users_email",
+			TableName: "users",
+			Columns:   []string{"email"},
+		}},
+	}
+}
+
+func indexRemovalOnlyDiff() *types.SchemaDiff {
+	return &types.SchemaDiff{IndexesRemoved: []types.IndexRef{
+		{Name: "idx_users_email", TableName: "users"},
+	}}
 }
 
 func indexOnlyDiff() *types.SchemaDiff {

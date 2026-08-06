@@ -876,11 +876,9 @@ func effectiveAtlasExclude(cmd *cobra.Command, flagValues []string, cfg projectc
 }
 
 func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
-	if cfg.Diff.ConcurrentIndex.Drop.Set && cfg.Diff.ConcurrentIndex.Drop.Value {
-		return atlasschema.DiffPolicy{}, fmt.Errorf("atlas.hcl diff.concurrent_index.drop is not supported yet")
-	}
 	return atlasschema.DiffPolicy{
 		SkipDropTable:         cfg.Diff.Skip.DropTable.Set && cfg.Diff.Skip.DropTable.Value,
-		ConcurrentIndexCreate: cfg.Diff.ConcurrentIndex.Create.Set && cfg.Diff.ConcurrentIndex.Create.Value,
+		ConcurrentIndexCreate: cfg.Diff.ConcurrentIndexCreate(),
+		ConcurrentIndexDrop:   cfg.Diff.ConcurrentIndexDrop(),
 	}, nil
 }
