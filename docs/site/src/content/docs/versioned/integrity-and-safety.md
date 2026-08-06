@@ -359,14 +359,86 @@ Run them against the schema `--revisions-schema` selects, then re-run the
 apply. Rewriting the version column is enough on its own: the recorded hash
 covers the converted SQL body, which this change does not touch.
 
-The statements have to be run by hand because `migrate set` and `migrate
-status` do not yet accept `?format=`
-([#1002](https://github.com/stokaro/ptah/issues/1002)), and `--baseline`
-refuses once the revision table is non-empty.
+`--baseline` refuses once the revision table is non-empty, so the rewrite is the
+route for this case. Both encodings are Ptah's own, which is what makes moving
+the version column sufficient.
 
 Without the refusal this is not reliably loud: re-running a `CREATE TABLE`
 fails and leaves a dirty revision, but re-running a backfill or a seed
 succeeds, exits 0, and duplicates the rows.
+:::
+
+:::danger[A revision table written by another Atlas implementation]
+The two implementations record a **converted** Flyway migration under different
+versions. Atlas CE identifies a migration by an opaque version string and stores
+the Flyway token verbatim; Ptah's migrator identifies one by an `int64`, so the
+importer projects the token onto a number. Measured on Atlas CE v1.3.0 against
+sqlite, on a directory holding `V1__a.sql` and `V2__b.sql`:
+
+| Applied by | Versions recorded in `atlas_schema_revisions` |
+| --- | --- |
+| Atlas CE | `1`, `2` |
+| `ptah-compat` | `4611686018427469511`, `4611686018427510315` |
+
+One direction is harmless. Atlas CE reads a table `ptah-compat` wrote as already
+ahead of the directory and prints `No migration files to execute` at exit 0. The
+other is not: every converted file matches no row, the whole directory reads as
+pending, and the migrations run a second time.
+
+That second run is not reliably loud either. A `CREATE TABLE` fails and strands
+a dirty revision, but `CREATE TABLE IF NOT EXISTS` followed by a seed re-runs at
+exit 0 and inserts the row twice, with nothing in the exit status, on stdout, or
+in `migrate status` saying so.
+
+`migrate apply` — and `--dry-run`, which previewed the same re-run — refuses that
+database before executing anything
+([#1100](https://github.com/stokaro/ptah/issues/1100)):
+
+```text
+error: this database records converted Flyway migrations under their SOURCE
+version token, which is how another Atlas implementation identifies them ...
+2 already-applied migration(s) read as pending here and would run a second
+time. Nothing has been applied
+
+recorded version -> version this build uses:
+  1                    -> 4611686018427469511  V1__init.sql
+  2                    -> 4611686018427510315  V2__seed.sql
+```
+
+Two ways forward, both measured:
+
+- Keep applying that database with the implementation that wrote its revision
+  table. It reads its own versions and is unaffected.
+- Adopt the versions this build uses. The refusal prints
+  `migrate set <head version>`; run it with the same `--dir` and `--url`, and
+  Atlas CE still reads the result as up to date afterwards.
+
+The second route is withdrawn, by name, on the one shape where it would destroy
+history. `migrate set` moves the database to exactly the version given and
+removes the revisions above it, and a converted baseline lands in a low band, so
+a directory whose head is a baseline can have real revisions above it. The
+refusal then says there is no safe route and names the rows the command would
+have deleted.
+
+A baseline added to a directory another implementation has already applied is
+covered by the same refusal, and it is not the same defect: nothing re-runs, a
+squashed schema executes on top of the history it squashes. Measured, Atlas CE
+prints `No migration files to execute` there while `ptah-compat` created the
+table.
+
+Rewriting the version column by hand is **not** enough here, unlike the upgrade
+above. The two implementations also record the migration checksum differently —
+a base64 `h1` digest against a hex SHA-256 — so a bare version rewrite fails the
+next apply with `checksum mismatch`. `migrate set` writes the whole revision row.
+
+`migrate status` is deliberately left alone. Its counts run over three different
+sets on a mismatched revision table, so they can sum above the total, and
+measured, Atlas CE reports the equivalent input the same way.
+
+Only Flyway is affected, measured across all five converted layouts. Goose
+records `00001` where Ptah records `1`, and those meet when the revision reader
+parses them; golang-migrate, dbmate and liquibase record identical versions on
+both tools.
 :::
 
 ## Replay on a dev database
