@@ -501,14 +501,29 @@ everywhere else, put a `ptah:nolint` comment directly above it:
 ALTER TABLE users DROP COLUMN archived_note;
 ```
 
-The directive suppresses only the named rules, and only for the next
-statement. List several codes separated by spaces or commas, name a family
-(`DS`), or write a bare `-- ptah:nolint` to silence every rule for that one
-statement. `-- atlas:nolint DS102` is accepted as an alias with the same
+The directive suppresses only the named rules, and only for the statement
+directly below it — a blank line between the comment and the statement
+detaches the two. List several codes separated by spaces or commas, name a
+family (`DS`), or write a bare `-- ptah:nolint` to silence every rule for
+that one statement.
+
+`-- atlas:nolint DS102` is accepted as an alias with the same
 statement-scoped behavior, so a directory shared with Atlas tooling keeps
-one set of directives. Atlas analyzer-name selectors (such as
-`destructive`) and whole-file `atlas:nolint` headers take effect only on
-the Atlas-compatible surface — see
+one set of directives. Atlas analyzer-name selectors (`destructive`,
+`data_depend`, `concurrent_index`, `incompatible`, `nestedtx`) name rule
+families and work here too. A code selector always names the code the
+command you ran printed, so on this surface it is the native code:
+`ptah migrations lint` reports `DS102` for a dropped column and
+`-- atlas:nolint DS102` silences it, while `ptah-compat migrate lint`
+prints the same finding as `DS103`.
+
+The `atlas:` spelling follows Atlas's matching rule rather than Ptah's, so a
+code selector there matches one code exactly: `-- ptah:nolint DS` silences
+the data-safety family and `-- atlas:nolint DS` silences nothing. An
+unrecognized `atlas:nolint` selector is accepted and silences nothing,
+without a warning; `.ptah-lint.yaml` `disabled-rules` stays strict and
+rejects a selector matching no registered rule. Whole-file `atlas:nolint`
+headers take effect only on the Atlas-compatible surface — see
 [Atlas migrate commands](../../atlas/migrate-commands/).
 
 ## The destructive-change gate

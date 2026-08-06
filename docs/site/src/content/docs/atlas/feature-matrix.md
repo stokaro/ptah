@@ -76,13 +76,13 @@ Across the 163 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 89 |
-| Ptah supports it with a stated limitation | 49 |
+| Ptah supports it fully | 90 |
+| Ptah supports it with a stated limitation | 48 |
 | Ptah does not implement it | 25 |
-| Ptah and Atlas CE both support it | 21 |
+| Ptah and Atlas CE both support it | 22 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 20 |
-| Atlas CE has it and Ptah does not, or only in part | 26 |
+| Atlas CE has it and Ptah does not, or only in part | 25 |
 | An Atlas column is ❔ — not established by this page's evidence | 5 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -205,7 +205,7 @@ seven of them as open capabilities regardless.
 | Custom lint rules and check-level policy | 🟡 | ❌ | ✅ | Custom rules only from Go (lint.Register, Options.ExtraRules); atlas.hcl rule, review, naming, non_linear blocks and force all fail. |
 | Default-firing Atlas analyzer concern mapping | ✅ | ➖ | ➖ | lint-analyzer-catalog maps every default-firing Atlas concern to a covering Ptah rule, severity and line; 0 gap on the committed corpus. |
 | Generation-time destructive-change gate | ✅ | ❌ | ❌ | migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row. |
-| Inline nolint suppression | 🟡 | ✅ | ✅ | Analyzer-name selectors suppress, but only codes DS102/DS103/MF103 map; atlas:nolint PG101 and unknown selectors are silently ignored. |
+| Inline nolint suppression | ✅ | ✅ | ✅ | Every code the compat surface prints is silenced by that code; analyzer names work on both surfaces; a blank line detaches a directive. Unknown selectors accepted silently, matching CE. |
 | Native migration lint rule set | ✅ | 🟡 | ✅ | 42 codes across 9 families, gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
 | Per-rule severity policy | 🟡 | ❌ | 🟡 | Severity vocabulary is warning\|error only (info errors out). The community binary carries no severity attribute: it accepts one and ignores it, exactly as it treats an invented attribute. |
 | Pre-migration assertion checks | 🟡 | ❌ | ✅ | Scalar SELECTs; txtar checks.sql and checks/*.sql support all-of/oneof groups. CE ignores checks. Compat bypass is PTAH_SKIP_CHECKS. |
