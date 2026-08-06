@@ -99,9 +99,9 @@ func defaultGeneratedKind(field goschema.Field, targetPlatform string) string {
 	switch {
 	case isPostgreSQLPlatform(targetPlatform):
 		return "STORED"
-	case targetPlatform == "mysql" || targetPlatform == "mariadb":
+	case isMySQLFamilyTarget(targetPlatform):
 		return "VIRTUAL"
-	case targetPlatform == "sqlserver":
+	case platform.NormalizeDialect(targetPlatform) == platform.SQLServer:
 		return "PERSISTED"
 	case isSQLiteTarget(targetPlatform):
 		return "VIRTUAL"
@@ -110,8 +110,23 @@ func defaultGeneratedKind(field goschema.Field, targetPlatform string) string {
 	}
 }
 
+// canonicalPlatform maps a dialect spelling onto the single name every platform
+// predicate in this file compares against, so that a documented alias converts
+// to exactly the same AST as its canonical name.
+//
+// A spelling platform.NormalizeDialect does not recognize is returned unchanged
+// rather than as the empty string NormalizeDialect yields for it. An unknown
+// name has no canonical form, and rewriting it to "" would switch off the
+// platform-override lookup for a schema that keys overrides by that exact name.
+func canonicalPlatform(targetPlatform string) string {
+	if canonical := platform.NormalizeDialect(targetPlatform); canonical != "" {
+		return canonical
+	}
+	return targetPlatform
+}
+
 func isPostgreSQLPlatform(targetPlatform string) bool {
-	return strings.EqualFold(targetPlatform, "postgres") || strings.EqualFold(targetPlatform, "postgresql")
+	return platform.NormalizeDialect(targetPlatform) == platform.Postgres
 }
 
 // typeRawSQLSurvives reports whether the column type is still the one the
@@ -124,6 +139,35 @@ func isPostgreSQLPlatform(targetPlatform string) bool {
 // hatch to text that never went through it.
 func typeRawSQLSurvives(field goschema.Field, declaredType string) bool {
 	return field.TypeRawSQL && field.Type == declaredType
+}
+
+// platformOverrideGroup resolves the platform.<name>.<attribute> override group
+// that applies to targetPlatform.
+//
+// The lookup is by engine, not by spelling. The canonical name is tried first,
+// then — deterministically, lowest key first — any other spelling in the map
+// that names the same engine. Without that second step `--dialect postgres` and
+// `--dialect pgx` disagree whenever the schema keyed its overrides by the
+// spelling the caller did not happen to type.
+func platformOverrideGroup(overrides map[string]map[string]string, targetPlatform string) (map[string]string, bool) {
+	if len(overrides) == 0 {
+		return nil, false
+	}
+	canonical := canonicalPlatform(targetPlatform)
+	if group, ok := overrides[canonical]; ok {
+		return group, true
+	}
+	candidates := make([]string, 0, len(overrides))
+	for key := range overrides {
+		if canonicalPlatform(key) == canonical {
+			candidates = append(candidates, key)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, false
+	}
+	slices.Sort(candidates)
+	return overrides[candidates[0]], true
 }
 
 func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
@@ -153,7 +197,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 		)
 	}
 
-	platformOverrides, exists := field.Overrides[targetPlatform]
+	platformOverrides, exists := platformOverrideGroup(field.Overrides, targetPlatform)
 	if !exists {
 		return fieldWithPlatformValues(
 			field,
@@ -226,7 +270,7 @@ func EffectiveFieldForPlatform(field goschema.Field, targetPlatform string) gosc
 }
 
 func platformFieldType(fieldType, targetPlatform string) string {
-	switch targetPlatform {
+	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.MySQL, platform.MariaDB:
 		return mysqlFamilyFieldType(fieldType)
 	case platform.SQLServer:
@@ -297,7 +341,13 @@ func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform
 	// Validate enum field
 	validateEnumField(field, enums)
 
-	if targetPlatform != "mysql" && targetPlatform != "mariadb" && targetPlatform != "sqlite" && targetPlatform != "sqlserver" {
+	// The inline rewrite is the exact complement of the standalone CREATE TYPE:
+	// a dialect models an enum either on the column or as its own type, never
+	// both and never neither. Deriving both sides from one predicate is what
+	// stops a spelling from suppressing the CREATE TYPE and the inline rewrite
+	// at the same time, which is how `--dialect sqlite3` used to drop the enum
+	// entirely and render the column as the bare type name `enum_status`.
+	if emitsStandaloneEnumDefinitions(targetPlatform) {
 		return field
 	}
 
@@ -318,17 +368,17 @@ func applyInlineEnumModel(field goschema.Field, enum goschema.Enum, targetPlatfo
 	}
 
 	newField := field
-	switch targetPlatform {
-	case "mysql", "mariadb":
+	switch platform.NormalizeDialect(targetPlatform) {
+	case platform.MySQL, platform.MariaDB:
 		newField.Type = fmt.Sprintf("ENUM(%s)", strings.Join(quotedValues, ", "))
-	case "sqlite":
+	case platform.SQLite:
 		newField.Type = "TEXT"
 		enumCheck := fmt.Sprintf("%s IN (%s)", field.Name, strings.Join(quotedValues, ", "))
 		if field.Check != "" {
 			enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
 		}
 		newField.Check = enumCheck
-	case "sqlserver":
+	case platform.SQLServer:
 		newField.Type = "NVARCHAR(255)"
 		enumCheck := fmt.Sprintf("%s IN (%s)", sqlServerBracketIdentifier(field.Name), strings.Join(quotedValues, ", "))
 		if field.Check != "" {
@@ -602,7 +652,7 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	tableStrict := table.Strict
 	tableWithoutRowID := table.WithoutRowID
 
-	platformOverrides, exists := table.Overrides[targetPlatform]
+	platformOverrides, exists := platformOverrideGroup(table.Overrides, targetPlatform)
 	if !exists {
 		return table
 	}
@@ -779,7 +829,7 @@ func fromTableWithFieldConverter(
 	if newTable.Collate != "" {
 		createTable.SetOption("COLLATE", newTable.Collate)
 	}
-	if targetPlatform == "sqlite" {
+	if isSQLiteTarget(targetPlatform) {
 		if newTable.WithoutRowID {
 			createTable.SetOption("WITHOUT_ROWID", "true")
 		}
@@ -2152,10 +2202,8 @@ func appendPostgreSQLPostForeignKeyFeatureStatements(statements *ast.StatementLi
 }
 
 func supportsStandaloneViewsAndTriggers(targetPlatform string) bool {
-	switch {
-	case isPostgreSQLPlatform(targetPlatform):
-		return false
-	case strings.EqualFold(targetPlatform, "mysql"), strings.EqualFold(targetPlatform, "mariadb"), strings.EqualFold(targetPlatform, platform.SQLServer), isSQLiteTarget(targetPlatform):
+	switch platform.NormalizeDialect(targetPlatform) {
+	case platform.MySQL, platform.MariaDB, platform.SQLServer, platform.SQLite:
 		return true
 	default:
 		return false
@@ -2172,11 +2220,16 @@ func appendViewAndTriggerStatements(statements *ast.StatementList, database gosc
 }
 
 func isSQLiteTarget(targetPlatform string) bool {
-	return strings.EqualFold(targetPlatform, "sqlite") || strings.EqualFold(targetPlatform, "sqlite3")
+	return platform.NormalizeDialect(targetPlatform) == platform.SQLite
 }
 
 func isMySQLFamilyTarget(targetPlatform string) bool {
-	return strings.EqualFold(targetPlatform, "mysql") || strings.EqualFold(targetPlatform, "mariadb")
+	switch platform.NormalizeDialect(targetPlatform) {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
 }
 
 func appendSchemaStatements(statements *ast.StatementList, schemas []goschema.Schema) {
