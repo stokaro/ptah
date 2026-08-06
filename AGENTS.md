@@ -240,6 +240,12 @@ existing project-specific test helpers instead. Existing transitive dependency
 metadata from third-party packages is not permission to add direct
 `github.com/stretchr/testify` imports or `assert`/`require` examples.
 
+The prohibition is enforced by a `depguard` deny entry in `.golangci.yml`, so it
+fires on the import declaration and is reported by `golangci-lint run ./...`
+along with every other finding. It is not a text scan: a comment that ends a
+sentence with the word `assert` or `require` is not a violation, and `pkg`
+matches by prefix so every testify subpackage is covered by the one entry.
+
 Bad:
 
 ```go
