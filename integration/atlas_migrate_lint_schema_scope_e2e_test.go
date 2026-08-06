@@ -86,10 +86,14 @@ func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
 		"  -- 1 version ok\n"
 
 	tests := []struct {
-		name        string
-		base        string
-		next        string
-		searchPath  string
+		name       string
+		base       string
+		next       string
+		searchPath string
+		// setupSQL runs on the fresh test database before the migrations do. Only
+		// the row that reviews a schema other than public needs it: the dev
+		// database has to already carry that schema for the snapshot to succeed.
+		setupSQL    string
 		wantExitOne bool
 		want        string
 	}{
@@ -241,6 +245,26 @@ func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
 				"  -- 2 schema changes\n" +
 				"  -- 2 diagnostics\n",
 		},
+		{
+			// The row that proves the scope is the URL's VALUE and not the
+			// constant "public". Every other row reviews public, so substituting
+			// that constant for whatever the URL names leaves them all green --
+			// measured, that mutant survives the entire suite without this cell.
+			//
+			// Here the dev URL reviews `app` while the migration creates and drops
+			// tables explicitly qualified as `public`, so the objects are OUT of
+			// scope and the run is silent. Under the constant they would be in
+			// scope and the run would report two DS102 and exit 1.
+			//
+			// The pinned community binary v1.3.0 answers exactly this: rc=0,
+			// `-- no diagnostics found`, `-- 1 version ok`.
+			name:       "the reviewed schema is the URL's value, not a constant",
+			setupSQL:   "CREATE SCHEMA app;",
+			base:       "CREATE TABLE public.\"Users\" (id int);\nCREATE TABLE public.audit_log (id int);\n",
+			next:       "DROP TABLE public.\"Users\", public.audit_log;\n",
+			searchPath: "app",
+			want:       silent,
+		},
 	}
 
 	for _, test := range tests {
@@ -248,6 +272,7 @@ func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
 			testDBName := fmt.Sprintf("ptah_lint_scope_e2e_%d", time.Now().UnixNano())
 			createE2EDatabase(c, ctx, adminDB, testDBName)
 			defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+			runLintE2ESetupSQL(c, ctx, dbURL, testDBName, test.setupSQL)
 
 			migrationsDir := c.TempDir()
 			writeLintE2EFile(c, migrationsDir, "1.sql", test.base)
@@ -258,6 +283,21 @@ func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
 				scopedLintE2EDevURL(c, devURL, test.searchPath), test.wantExitOne, test.want)
 		})
 	}
+}
+
+// runLintE2ESetupSQL runs a row's setup statement on its own fresh database. A
+// row that names no setup is a no-op, so the ordinary rows keep meeting an
+// untouched database.
+func runLintE2ESetupSQL(c *qt.C, ctx context.Context, dbURL, testDBName, statement string) {
+	c.Helper()
+	if statement == "" {
+		return
+	}
+	db, err := sql.Open("pgx", replaceDatabaseName(c, dbURL, testDBName))
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	_, err = db.ExecContext(ctx, statement)
+	c.Assert(err, qt.IsNil)
 }
 
 // scopedLintE2EDevURL applies the row's search_path, if it names one.
