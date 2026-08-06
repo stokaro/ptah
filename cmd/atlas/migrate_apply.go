@@ -310,6 +310,16 @@ func runAtlasMigrateApply(
 		return err
 	}
 
+	// The same question one implementation over: Atlas CE records a converted
+	// Flyway migration under its SOURCE version token, so a revision table it
+	// wrote also matches no file here and reads as entirely pending
+	// (stokaro/ptah#1100). The Ptah-encoding check above runs first because it
+	// is the more specific claim about who wrote the row, and its repair is a
+	// different one.
+	if err := checkForeignFlywayRevisions(captured, resolvedDirFormat, plan); err != nil {
+		return err
+	}
+
 	// The exemption above only stops the linear guard from reading the
 	// baseline's band position as "authored earlier". Whether a baseline may
 	// run against a database that already has history is a separate question,

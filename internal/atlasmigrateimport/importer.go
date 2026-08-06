@@ -1057,6 +1057,62 @@ func FlywaySourceVersions(fsys fs.FS, format Format) (map[int64]string, error) {
 	return sources, nil
 }
 
+// FlywayCoveredSourceVersion carries both spellings one executed Flyway
+// migration has: the version token the source tool identifies it by, and the
+// int64 Ptah's migrator executes and records it under.
+//
+// It is a list entry rather than a map key because the file name is the third
+// operand and the only one an operator can find in their directory —
+// 4611686018427510315 appears in no file name and in no Atlas output.
+type FlywayCoveredSourceVersion struct {
+	// Source is the file name, relative to the migration directory.
+	Source string
+	// Token is Atlas CE's version string for the file: "10" for B10__base.sql,
+	// "02" for V02__q.sql, and "" for every repeatable. See [flywayCEVersion].
+	Token string
+	// Version is the Atlas version the converted entry executes and is
+	// recorded under.
+	Version int64
+}
+
+// FlywayCoveredSourceVersions reports both spellings for every Flyway migration
+// this directory would execute, in execution order. It returns nil for every
+// other layout.
+//
+// [FlywaySourceVersions] answers the same question keyed the other way round
+// and cannot be substituted here for two reasons. It is keyed BY the converted
+// version, so it cannot name the file a token belongs to; and it deliberately
+// also carries the tokens of migrations a surviving baseline has SQUASHED out
+// of this directory, which is right for the linear guard (a squashed row still
+// sets the high-water mark) and wrong for a caller asking which of the
+// migrations it is about to RUN a database has already run under another name.
+//
+// Both share flywayCoveredFiles and flywayConvertedVersions with the importer,
+// so the token reported for a version belongs to the entry actually executed
+// under it.
+func FlywayCoveredSourceVersions(fsys fs.FS, format Format) ([]FlywayCoveredSourceVersion, error) {
+	if format != FormatFlyway {
+		return nil, nil
+	}
+	covered, err := flywayCoveredFiles(fsys)
+	if err != nil {
+		return nil, err
+	}
+	versions, err := flywayConvertedVersions(covered)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FlywayCoveredSourceVersion, len(covered))
+	for i, file := range covered {
+		out[i] = FlywayCoveredSourceVersion{
+			Source:  file.name,
+			Token:   flywayCEVersion(file),
+			Version: versions[i],
+		}
+	}
+	return out, nil
+}
+
 // flywaySquashedSourceVersions reports the tokens of the migrations a surviving
 // baseline has retired from this directory's covered set, keyed by the Atlas
 // version a database that ran them recorded.
