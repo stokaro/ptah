@@ -120,6 +120,12 @@ func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
 // Restoring the hardcoded "public" reddens the `app` assertion, which is the
 // half this change is about.
 //
+// The "public" assertion is the other half, and it is a defect this change
+// introduced before it was caught: once the root follows the URL, "public" is
+// just another user schema, so it was dropped and never put back, and the next
+// migration naming `public.users` failed with `schema "public" does not exist`.
+// Emptying it is what a realm cleanup is for; removing it is not.
+//
 // The `bystander` schema is NOT an independent assertion, and saying so is the
 // point of this comment. Sparing every schema but the root — the inverse mutant
 // that would have to prove it — is caught one line earlier, by the production
@@ -165,4 +171,5 @@ func TestPostgresRealmCleanupKeepsTheSelectedSchemaE2E(t *testing.T) {
 
 	c.Assert(countDevSchema(c, ctx, setupDB, "app"), qt.Equals, 1)
 	c.Assert(countDevSchema(c, ctx, setupDB, "bystander"), qt.Equals, 0)
+	c.Assert(countDevSchema(c, ctx, setupDB, "public"), qt.Equals, 1)
 }

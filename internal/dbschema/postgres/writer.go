@@ -1148,6 +1148,25 @@ func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
 			return nil, err
 		}
 	}
+	// "public" comes back even when it is not the root schema.
+	//
+	// It used to be the root on every run, because the connection reported
+	// "public" unconditionally, so dropping it and restoring it above was one
+	// step. Now that the root follows the dev URL's search_path, selecting any
+	// other schema left "public" dropped and never restored -- and a migration
+	// that writes `public.users` then failed with `schema "public" does not
+	// exist`, which is the same shape of damage this whole change set is fixing,
+	// just moved to the other schema.
+	//
+	// Emptying it is the point of a realm cleanup; removing it is not. Every
+	// PostgreSQL database is created with it, and DDL that names no schema
+	// resolves there for any caller who did not select another one.
+	if postgresCleanupDroppedPublicSchema(w.schema, plan) {
+		if err := restorePostgresPublicSchema(ctx, tx); err != nil {
+			return nil, err
+		}
+		preservedSchemas = appendUniqueString(preservedSchemas, "public")
+	}
 	return preservedSchemas, nil
 }
 
@@ -1408,7 +1427,7 @@ func verifyPostgresDatabaseRealm(
 	}
 	for schema := range expected {
 		return fmt.Errorf(
-			"PostgreSQL database realm cleanup did not recreate root schema %q",
+			"PostgreSQL database realm cleanup did not recreate preserved schema %q",
 			schema,
 		)
 	}
@@ -1585,4 +1604,35 @@ func (w *PostgreSQLWriter) SetDryRun(dryRun bool) {
 // IsDryRun returns whether dry run mode is enabled
 func (w *PostgreSQLWriter) IsDryRun() bool {
 	return w.dryRun
+}
+
+// postgresCleanupDroppedPublicSchema reports whether the realm cleanup dropped
+// "public" without restoring it, which is true only when it existed, is not the
+// root schema, and the server does not preserve it in place.
+//
+// The three exclusions are each a case that is already handled: a database with
+// no "public" schema has nothing to put back, and recreating one would hand the
+// caller a schema they never had; "public" as the root is restored by
+// restorePostgresRootSchema with its recorded owner and grants; and a server
+// that preserves it never dropped it.
+func postgresCleanupDroppedPublicSchema(rootSchema string, plan postgresDatabaseCleanupPlan) bool {
+	if rootSchema == "public" || plan.capabilities.preservePublicSchema {
+		return false
+	}
+	return slices.Contains(plan.schemas, "public")
+}
+
+// restorePostgresPublicSchema recreates "public" after a realm cleanup dropped
+// it.
+//
+// The recreation is deliberately plain. The root schema is restored with its
+// recorded owner and grants because the caller keeps working inside it; a
+// non-root "public" is being restored only so that DDL naming it resolves, and
+// inventing privileges for it would be asserting something the cleanup never
+// measured.
+func restorePostgresPublicSchema(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `CREATE SCHEMA "public"`); err != nil {
+		return fmt.Errorf("failed to recreate the public schema after realm cleanup: %w", err)
+	}
+	return nil
 }
