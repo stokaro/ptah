@@ -432,13 +432,22 @@ statements rather than being skipped.
 
 ### Deliberate divergences
 
-Two behaviors differ from Atlas on purpose. Both are cases where matching would
-mean reproducing a defect, so Ptah is stricter — never looser — than Atlas.
+Three behaviors differ from Atlas on purpose. All three are cases where matching
+would mean reproducing a defect, so Ptah is stricter — never looser — than Atlas.
 
 | Input | Atlas | Ptah |
 | --- | --- | --- |
 | Goose near-miss directive, for example `-- +goose down` | Exits 0. The typo is not recognized, folds into the body as a comment, and the rollback SQL under it executes — the migration is created, dropped, and recorded as successful. | Refused, naming the line and the correct spelling. A case error in a directive must not silently roll back a migration. |
 | dbmate file with no `-- migrate:up` | Exits 0, records the revision with 0 of 0 statements and creates nothing, so the migration is marked done and never runs. `migrate import` writes a zero-byte file over the authored SQL and hashes it into `atlas.sum`. | Refused, because nothing in the file would execute. |
+| Atlas directory holding an R-suffixed migration, for example `1R_view.sql` or `R__view.sql` | Exits 0 and executes it, keyed on the opaque version string the file name spells (`1R`, `R`). | Refused, naming every such file. Ptah's migration identity is an `int64` version and a repeatable has none, so the only alternatives were executing it under a version no other tool records, or dropping it — which is what Ptah used to do, silently. |
+
+An R-suffixed file only reaches a Ptah directory from outside: the community
+binary's own `migrate import` writes `1R_name.sql`, and `ptah-compat migrate
+import` writes the same migration on a reserved numeric slot instead, so a
+directory Ptah imported is unaffected. Rename the file to `<version>_<name>.sql`
+and re-run `ptah-compat migrate hash` to execute it. Ordering is not preserved by
+that rename: Atlas sorts directory entries by file name, so `1R_view.sql` runs
+*before* `1_users.sql`, while `2_view.sql` runs after it.
 
 Ptah refuses only exact near-miss spellings of the four section directives.
 Prose that merely begins with one (`-- +goose up to date`) and unrecognized
@@ -931,9 +940,10 @@ message off stdout. Rejections stay loud on stderr.
 
 The command is intentionally fail-closed: use a destination directory different
 from the source directory, and start with a destination that does not already
-contain `.sql` migration files or `atlas.sum`. Flyway repeatable migrations
-currently fail explicitly because Ptah does not yet execute Atlas R-suffixed
-imported migrations.
+contain `.sql` migration files or `atlas.sum`. Flyway repeatable migrations are
+not in that list: they are converted onto a reserved version slot above every
+versioned migration, and the destination file name carries that slot rather than
+an R suffix, because Ptah cannot execute an R-suffixed Atlas migration.
 
 **The source directory's `atlas.sum` is verified first.** If the source carries
 one, it must cover the source before anything is converted, and the source
