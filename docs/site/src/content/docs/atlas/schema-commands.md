@@ -96,8 +96,7 @@ follows the documented Atlas behavior.
 `--exclude` accepts repeated or comma-separated Atlas-style glob patterns,
 including `[type=...]` selectors, and removes matching resources from HCL,
 SQL, JSON, and custom-template output. Field-level exclude selector support
-includes the Atlas-documented `*[type=extension].version` form, including
-schema-qualified globs such as `public.*[type=extension].version`.
+includes the Atlas-documented `*[type=extension].version` form.
 
 Other field-level selectors, and type selectors on non-final pattern segments,
 fail explicitly before any database is contacted. Schema-qualified function
@@ -119,6 +118,29 @@ database URL only `public.users` matches, and on a schema-bound URL
 (`?search_path=public`) only `users` does. Ptah honors both in both scopes.
 The extra matches only ever remove more objects from a plan, so the looser
 rule cannot turn a protected object into a dropped one.
+
+That looseness applies to objects, not to their children. A pattern names at
+most an object and one of its children, and Ptah always filters inside a single
+schema, so the schema slot is filled by the connection and the pattern is read
+relative to it: `users` names the table, `users.name` names its column, and
+`users.users_name_idx` names its index. A third part has nowhere left to go.
+Ptah refuses it with the community binary's own message, which quotes the
+pattern with the schema already prefixed:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" --exclude public.users.name
+Error: too many parts in pattern: "public.public.users.name"
+```
+
+The refusal is a usage error rather than a no-op on purpose. A pattern that
+deep is almost always an attempt to name a table, and matching it against
+columns would answer a question that was not asked by removing a column from a
+table the user was trying to keep whole. Parts are counted on the pattern as
+written, selector text included, so `*[type=extension].version` is accepted and
+`public.*[type=extension].version` is refused — the same arithmetic the
+community binary applies on a schema-bound URL. A pattern too deep for any
+scope, such as `*.*.*.*`, is refused before a database is contacted, so its
+message carries no schema prefix.
 
 ### Select what is inspected with `--include`
 
