@@ -149,24 +149,24 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 }
 
 // TestCompatMigrateDirQuery_FailurePathForeignFormat pins the part of the query
-// that is NOT ignored on the two verbs that WRITE into the directory.
+// that is NOT ignored on the one verb that still refuses a foreign layout.
 //
-// The community binary honors `?format=` on these verbs. Ptah converts a
-// foreign layout for every verb that only READS one — hash and validate since
-// #992, status and set since #1002, lint since #1133 — and refuses it on
-// `migrate new` and `migrate diff`, which WRITE into the directory. Refusing is
-// the strict side of the divergence: it never exits 0 where that binary exits 1.
+// The community binary honors `?format=` on every verb. Ptah converts a foreign
+// layout for every verb that READS one — hash and validate since #992, status
+// and set since #1002, lint since #1133 — and, since stokaro/ptah#845, for
+// `migrate new`, which WRITES one. `migrate diff` is the last verb that refuses,
+// because it emits a planned migration and nothing writes SQL in a foreign
+// tool's convention yet; refusing is the strict side of the divergence, and it
+// never exits 0 where the community binary exits 1.
 //
 // The refusal has to survive the relaxation above, which is why it is pinned:
 // once unknown keys are ignored, nothing else stops a `?format=goose` from
-// being ignored too and the directory being silently read as Atlas.
+// being ignored too and the directory being silently read as Atlas — which on a
+// writing verb would gate the wrong covered file set and then write.
 //
-// For the two writing verbs that is not a style preference. Measured against
-// the pinned community binary v1.3.0, `migrate new --dir
-// 'file://goosedir?format=goose'` refuses an UNHASHED goose directory over
-// goose's own covered file set — so honoring the query means computing that
-// file set, not reading the directory as Atlas. Ignoring it here would gate the
-// wrong set and then write.
+// Reverted, this row still passes; it is the guard on the relaxation, not on
+// the #845 change. The `migrate new` half moved to
+// TestCompatMigrateNewConverted_QuerySpellingWritesTheSelectedLayout.
 func TestCompatMigrateDirQuery_FailurePathForeignFormat(t *testing.T) {
 	const want = `atlas migrate \w+ --dir: Atlas accepts \?format=goose, ` +
 		`but Ptah does not implement that directory format for this command yet`
@@ -175,13 +175,6 @@ func TestCompatMigrateDirQuery_FailurePathForeignFormat(t *testing.T) {
 		name string
 		run  func(c *qt.C, dir string) error
 	}{
-		{
-			name: "new",
-			run: func(_ *qt.C, dir string) error {
-				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir+"?format=goose")
-				return err
-			},
-		},
 		{
 			name: "diff",
 			run: func(c *qt.C, dir string) error {

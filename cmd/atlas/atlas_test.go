@@ -1864,17 +1864,18 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 // TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat covers the
 // metadata verbs that still accept only the atlas layout.
 //
-// Five verbs are deliberately absent, and the reason is the same for all five:
-// they READ a directory rather than rewrite one, so a foreign layout can be
-// converted in memory and reported on. `migrate hash` and `migrate validate`
-// have been in that set since #992 (see migrate_integrity_formats_test.go);
-// `migrate status` and `migrate set` joined it in #1002 (see
-// migrate_revision_converted_test.go); `migrate lint` joined it in #1013 (see
-// migrate_lint_converted_test.go).
+// Six verbs are deliberately absent. Five of them READ a directory rather than
+// rewrite one, so a foreign layout can be converted in memory and reported on:
+// `migrate hash` and `migrate validate` have been in that set since #992 (see
+// migrate_integrity_formats_test.go), `migrate status` and `migrate set` joined
+// it in #1002 (see migrate_revision_converted_test.go), and `migrate lint`
+// joined it in #1013 (see migrate_lint_converted_test.go). `migrate new` is the
+// sixth and the only one that WRITES: since stokaro/ptah#845 it emits the
+// selected layout's own skeleton files (see migrate_new_converted_test.go).
 //
-// The verbs that remain here WRITE, and writing a layout is a larger change
-// than reading one: it needs the converted form emitted back in the source
-// convention, which nothing here does yet.
+// The verbs that remain here rewrite migration bodies — an editor round trip, a
+// renumbering, a removal, a replay — and none of them has anything to emit those
+// bodies back in a source tool's convention.
 func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1883,10 +1884,6 @@ func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testin
 		{
 			name: "edit",
 			args: []string{"migrate", "edit", "1", "--dir", t.TempDir(), "--dir-format", "goose"},
-		},
-		{
-			name: "new",
-			args: []string{"migrate", "new", "manual_hotfix", "--dir", t.TempDir(), "--dir-format", "golang-migrate"},
 		},
 		{
 			name: "rebase",

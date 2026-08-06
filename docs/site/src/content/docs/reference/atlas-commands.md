@@ -190,12 +190,10 @@ with `migrate apply`, so relaxing one widens what the integrity gate accepts.
 directory read through `?format=` over the same per-layout file set `hash`
 writes, so what `migrate hash` writes is what `migrate apply` verifies.
 
-`migrate new` and `migrate diff` are the two verbs that still refuse every
-`--dir` query and every non-`atlas` layout. Both write a migration file and a
-fresh `atlas.sum` without verifying the directory first, so accepting a
-`?format=` there would turn a refusal into a write over an unverified
-directory; the relaxation waits on the gate in
-[#1086](https://github.com/stokaro/ptah/issues/1086).
+`migrate new` writes the selected layout, gating the directory over that
+layout's covered file set first. `migrate diff` is the one verb that still
+refuses a non-`atlas` layout under both spellings: it emits planned migration
+SQL, and nothing writes a migration body in a foreign tool's convention yet.
 
 ### `ptah-compat migrate lint`
 
@@ -225,18 +223,34 @@ Native twin: [`ptah migrations lint`](../native-commands/).
 
 ### `ptah-compat migrate new`
 
-Creates an Atlas single-file skeleton migration and updates `atlas.sum` by
-default; the native equivalent is `ptah migrations create`. Supports
-`--dir-format atlas`, and `--edit` opens the created file in
-`$VISUAL`/`$EDITOR` before `atlas.sum` is refreshed.
+Creates a skeleton migration and updates `atlas.sum`; the native equivalent is
+`ptah migrations create`. Every Atlas source layout is supported under both
+spellings, and the created files follow the selected tool's convention:
 
-The directory's existing `atlas.sum` is verified first, with the same output
-`migrate apply` and `migrate validate` produce, and nothing is created when the
-check fails — see
+| Layout | Files created |
+| --- | --- |
+| `atlas` | `<version>_<name>.sql`, empty |
+| `golang-migrate` | `<version>_<name>.up.sql` and `.down.sql`, both empty |
+| `flyway` | `V<version>__<name>.sql` and `U<version>__<name>.sql`, both empty |
+| `goose` | `<version>_<name>.sql` holding `-- +goose Up` / `-- +goose Down` |
+| `dbmate` | `<version>_<name>.sql` holding `-- migrate:up` / `-- migrate:down` |
+| `liquibase` | `<version>_<name>.sql` holding `--liquibase formatted sql` |
+
+`atlas.sum` is rewritten over the set the selected layout covers, so
+`golang-migrate` and `flyway` create two files and cover one. On `atlas`,
+`--edit` opens the created file in `$VISUAL`/`$EDITOR` before `atlas.sum` is
+refreshed; on every other layout it is refused, as it is by Atlas.
+
+A migration name is required on a non-`atlas` layout. Atlas accepts an omitted
+name and writes the version alone, but such a file is one Ptah's own
+`migrate apply` cannot read back on `golang-migrate`, `goose`, `liquibase` and
+`dbmate`, so it is not created.
+
+The directory's existing `atlas.sum` is verified first — over the selected
+layout's covered file set — with the same output `migrate apply` and
+`migrate validate` produce, and nothing is created when the check fails; see
 [Which verbs enforce `atlas.sum`](../../atlas/migrate-commands/#which-verbs-enforce-atlassum).
-An unrecognized `--dir` query key is ignored, as it is on every other verb; a
-`?format=` naming a foreign layout is still refused, because writing one means
-computing that layout's covered file set.
+An unrecognized `--dir` query key is ignored, as it is on every other verb.
 
 ### `ptah-compat migrate set [version]`
 
@@ -288,7 +302,9 @@ before `--to` and `--dev-url` are required at all, which is the order Atlas uses
 — so nothing is created on a directory it refuses. A directory that has never
 been hashed and already holds a migration is refused; one that does not exist
 yet, or holds no top-level `*.sql`, is not, which is how a project's first
-migration gets written. Same query rules as `migrate new` above.
+migration gets written. An unrecognized `--dir` query key is ignored; a
+`?format=` or `--dir-format` naming a non-`atlas` layout is refused, because
+nothing writes planned migration SQL in a foreign tool's convention yet.
 
 **Desired state (`--to`)** accepts one of: local `.hcl`, `.yaml`, `.yml`, or
 `.sql` files; one directly connectable database URL; one local Atlas migration

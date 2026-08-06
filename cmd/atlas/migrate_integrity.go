@@ -370,6 +370,22 @@ func rewriteAtlasMigrateSourceArgs(verb atlasVerb, args []string, dir, dirFormat
 // exits 0 on a stray positional; that predates this path and holds on the
 // forwarding path too.
 func checkAtlasMigrateSourceArgs(cmd *cobra.Command, verb atlasVerb, args []string) error {
+	flagSet := atlasVerbFlagSet(verb)
+	if err := flagSet.Parse(args); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	return cmdutil.NoPositionalArgs(cmd, flagSet.Args())
+}
+
+// atlasVerbFlagSet builds the pflag set for one Atlas verb's own flags, so a
+// path that executes directly instead of forwarding sees the same flags the
+// forwarded native command would have been given.
+//
+// It is shared with the converted `migrate new` path, which reads --edit and
+// the positional migration name out of it. Two copies of this loop would be two
+// answers to "which flags does this verb accept", and the second one is always
+// the one that misses a newly registered flag.
+func atlasVerbFlagSet(verb atlasVerb) *pflag.FlagSet {
 	flagSet := pflag.NewFlagSet("atlas migrate "+verb.use, pflag.ContinueOnError)
 	flagSet.SetOutput(io.Discard)
 	for _, flag := range verb.flags {
@@ -384,8 +400,5 @@ func checkAtlasMigrateSourceArgs(cmd *cobra.Command, verb atlasVerb, args []stri
 			flagSet.StringSliceP(flag.Name, flag.Shorthand, nil, flag.Usage)
 		}
 	}
-	if err := flagSet.Parse(args); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	return cmdutil.NoPositionalArgs(cmd, flagSet.Args())
+	return flagSet
 }
