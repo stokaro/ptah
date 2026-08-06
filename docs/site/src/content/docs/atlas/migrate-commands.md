@@ -772,19 +772,41 @@ For a code-by-code audit of the analyzer checks Atlas marks as Pro against
 Ptah's native lint rules, see
 [Comparison: Atlas Pro analyzer coverage](../comparison/#atlas-pro-analyzer-coverage).
 
-Atlas-compatible lint directives are enabled only under the `ptah-compat
-migrate lint` compatibility profile. A statement-local `-- atlas:nolint
-<selector>` suppresses the following statement. A first nonempty `--
-atlas:nolint <selector>` header followed by a blank line applies to the whole
-file.
+A statement-local `-- atlas:nolint <selector>` suppresses the statement
+directly below it. A blank line between the directive and the statement
+detaches the two: the directive then suppresses nothing, exactly as the
+community binary treats it.
 
-A bare file header ignores the file completely, so it is absent from `.Files`
-and per-file analysis steps. Supported analyzer selectors are `destructive`,
-`data_depend`, `concurrent_index`, `incompatible`, and `nestedtx`; supported
-Atlas diagnostic aliases are `DS102`, `DS103`, and `MF103`.
+The whole-file header form — a first nonempty `-- atlas:nolint <selector>`
+line followed by a blank line — is enabled only under the `ptah-compat migrate
+lint` compatibility profile. A bare file header ignores the file completely, so
+it is absent from `.Files` and per-file analysis steps.
 
-Native lint and migrate-up safety keep their native directive semantics unless
-the Atlas compatibility profile is selected explicitly.
+Supported analyzer selectors are `destructive`, `data_depend`,
+`concurrent_index`, `incompatible`, and `nestedtx`. They name rule families, so
+they mean the same thing on both surfaces.
+
+A code selector names the code the running surface prints: every code
+`ptah-compat migrate lint` emits is suppressed by that code, and every code
+`ptah migrations lint` emits is suppressed by that code. The three codes the
+compatibility surface renames are the only place the two differ — a column drop
+prints `DS102` natively and `DS103` on the compatibility surface, so `--
+atlas:nolint DS103` silences it there and `-- atlas:nolint DS102` silences it
+natively. Where two native rules share one printed code, the selector reaches
+both: `-- atlas:nolint DS103` silences a `DROP COLUMN` and a column type change
+alike.
+
+A code selector matches one code exactly and never widens into a family, on
+both surfaces: `-- atlas:nolint DS` and `-- atlas:nolint D` suppress nothing,
+while the native `-- ptah:nolint DS` still silences the whole family. An
+unrecognized
+selector is accepted and suppresses nothing, without a warning — the pinned
+community binary behaves the same way, and matching it was chosen over
+diagnosing the typo. Ptah's own `.ptah-lint.yaml` `disabled-rules` remains
+strict and rejects a selector matching no registered rule.
+
+Migrate-up safety keeps its native directive semantics: the whole-file Atlas
+header never reopens the apply-time destructive gate.
 
 ## Metadata commands and directory formats
 

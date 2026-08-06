@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/internal/atlaslint"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -93,7 +94,7 @@ type Statement struct {
 	// Line is the 1-based line number of the statement's first token.
 	Line            int
 	sourceWords     []string
-	suppressedRules []string
+	suppressedRules []atlaslint.Target
 }
 
 // File is one migration file prepared for linting.
@@ -154,7 +155,7 @@ type File struct {
 	// statement count. Ordered by statement, then by the order changes appear
 	// within each statement.
 	Changes         []SchemaChange
-	suppressedRules []string
+	suppressedRules []atlaslint.Target
 	// compatibility is the profile this run was started with. A rule reads it
 	// when the two command surfaces model the same statement differently; see
 	// [renamedNames] for the one construct where they do.

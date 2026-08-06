@@ -857,11 +857,11 @@
   {
     "area": "Lint policy and suppression",
     "feature": "Inline nolint suppression",
-    "ptah": "partial",
+    "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Analyzer-name selectors suppress, but only codes DS102/DS103/MF103 map; atlas:nolint PG101 and unknown selectors are silently ignored.",
-    "evidence": "internal/atlaslint/rules.go:41 NativeSuppressionTargets maps 5 analyzer names + ds102/ds103/mf103 only, default returns nil. Reproduced: `ptah-compat migrate lint` reports `[PG101]` yet `-- atlas:nolint PG101` leaves the diagnostic. CE side: PARITY.md:420 records the imported Atlas fixtures asserting `-- atlas:nolint` suppression for `atlas migrate lint`; gaps.md:814 runs cli-migrate-lint-ignore.txtar with 57 assertions. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' is unchecked on Starter — a plan-tier claim in tension with the measured CE fixtures asserting `-- atlas:nolint` suppression; the measured yes stands. `-- atlas:nolint <CODE>` and analyzer-name spellings both suppress; matching is exact, not blanket (measured; observation study, scenario, lint-test-pro)"
+    "note": "Every code the compat surface prints is silenced by that code; analyzer names work on both surfaces; a blank line detaches a directive. Unknown selectors accepted silently, matching CE.",
+    "evidence": "internal/atlaslint/rules.go NativeSuppressionTargets is the inverse of RuleForNativeCode, so all 40 distinct codes the compat profile prints are suppressed by that code — 1 of 40 before (37 resolved to nothing, DS103 and MF103 to one of their two producers each), pinned by TestRules_EveryCompatibilityCodeIsSuppressibleByThatCode over lint.Rules(). Reproduced: `-- atlas:nolint PG101` above CREATE INDEX left `[PG101]` reported by `ptah-compat migrate lint` and now suppresses it; `-- atlas:nolint concurrent_index` now suppresses on `ptah migrations lint` too. Code selectors match exactly, measured against the pinned community binary on `ALTER TABLE t DROP COLUMN legacy;`: `-- atlas:nolint DS`, `-- atlas:nolint D` and `-- atlas:nolint totally_bogus_selector` all leave DS103 reported at exit 1 there, the last with no warning about the selector, so unknown selectors stay silently accepted. Same binary: a blank line between the directive and its statement leaves DS103 reported at exit 1, which Ptah suppressed. CE side: PARITY.md:420 records the imported Atlas fixtures asserting `-- atlas:nolint` suppression for `atlas migrate lint`; gaps.md:814 runs cli-migrate-lint-ignore.txtar with 57 assertions. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration linting' is unchecked on Starter — a plan-tier claim in tension with the measured CE fixtures asserting `-- atlas:nolint` suppression; the measured yes stands."
   },
   {
     "area": "Lint policy and suppression",
