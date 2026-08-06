@@ -988,7 +988,10 @@ func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []gosch
 		operator := p.optionalSQLExpression(nested.Body.Attributes["ops"])
 		prefix := p.optionalRawExpr(nested.Body.Attributes["prefix"])
 		if columnAttr != nil {
-			column := p.columnNameFromExpr(columnAttr)
+			column, err := p.columnNameFromExpr(nested, "index on", columnAttr)
+			if err != nil {
+				return nil, nil, err
+			}
 			columns = append(columns, column)
 			parts = append(parts, goschema.IndexPart{Name: column, Operator: operator, Prefix: prefix, Desc: desc})
 			continue
@@ -1111,7 +1114,11 @@ func (p *parser) parsePartitionParts(block *hclsyntax.Block, byBlocks []*hclsynt
 			return nil, p.blockError(nested, "partition by block cannot set both column and expr")
 		}
 		if columnAttr != nil {
-			parts = append(parts, goschema.PartitionPart{Name: p.columnNameFromExpr(columnAttr)})
+			name, err := p.columnNameFromExpr(nested, "partition by", columnAttr)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, goschema.PartitionPart{Name: name})
 			continue
 		}
 		parts = append(parts, goschema.PartitionPart{Expr: p.exprString(exprAttr)})
@@ -1159,8 +1166,12 @@ func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]goschema.Primar
 		if attr == nil {
 			return nil, p.blockError(nested, "primary_key on block requires column")
 		}
+		name, err := p.columnNameFromExpr(nested, "primary_key on", attr)
+		if err != nil {
+			return nil, err
+		}
 		parts = append(parts, goschema.PrimaryKeyPart{
-			Name:   p.columnNameFromExpr(attr),
+			Name:   name,
 			Prefix: p.optionalRawExpr(nested.Body.Attributes["prefix"]),
 			Desc:   p.optionalBool(nested.Body.Attributes["desc"], false),
 		})
@@ -1796,8 +1807,34 @@ func (p *parser) stringListAttr(block *hclsyntax.Block, attrName string) ([]stri
 	return values, nil
 }
 
-func (p *parser) columnNameFromExpr(attr *hclsyntax.Attribute) string {
-	return columnNameFromRef(p.rawExpr(attr))
+// columnNameFromExpr reads a `column` attribute as a column reference and
+// refuses a value that cannot name a column at all.
+//
+// This is the apply-time half of issue #1106. Reducing Atlas HCL's sql() escape
+// hatch to the SQL text it carries fixed every position that reads a plain
+// STRING, but a `column` attribute reads a REFERENCE, and SQL text is not one.
+// Ptah swallowed the mismatch: columnNameFromRef yields "" for any value it
+// cannot resolve, and the empty name went straight into DDL. Measured before
+// this refusal existed, `index "u" { unique = true, on { column = sql("n") } }`
+// planned AND applied `CREATE UNIQUE INDEX "u" ON "t" ("")` at exit 0, leaving a
+// table that accepts exactly one row -- sqlite indexes every row on the same
+// constant, so the second INSERT fails on a uniqueness rule the schema never
+// asked for. The primary_key form dropped the key without a word. The pinned
+// Atlas community binary v1.3.0 refuses all of it: `expected value to be a
+// *Ref, got: *schemahcl.RawExpr`.
+//
+// The refusal is narrower than the blanket one rejected when sql() reduction
+// landed. It fires only where Ptah has no column name to render, so every value
+// Ptah could already name is untouched -- a reference, or the quoted-string
+// spelling Ptah accepts and that binary does not. Raw SQL in an index part has
+// its own attribute, `expr`, which takes it and renders it.
+func (p *parser) columnNameFromExpr(block *hclsyntax.Block, label string, attr *hclsyntax.Attribute) (string, error) {
+	raw := p.rawExpr(attr)
+	name := columnNameFromRef(raw)
+	if name == "" {
+		return "", p.blockError(block, "%s column contains unsupported reference %q", label, raw)
+	}
+	return name, nil
 }
 
 func (p *parser) rawExpr(attr *hclsyntax.Attribute) string {
