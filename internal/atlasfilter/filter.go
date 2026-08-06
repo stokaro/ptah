@@ -34,7 +34,7 @@ func ExcludeDatabaseWithDefaultSchema(
 	patterns []string,
 	defaultSchema string,
 ) (*dbschematypes.DBSchema, error) {
-	filters, err := parsePatterns(patterns)
+	filters, err := parsePatterns(patterns, defaultSchema)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func ExcludeGeneratedWithDefaultSchema(
 	patterns []string,
 	defaultSchema string,
 ) (*goschema.Database, error) {
-	filters, err := parsePatterns(patterns)
+	filters, err := parsePatterns(patterns, defaultSchema)
 	if err != nil {
 		return nil, err
 	}
@@ -133,12 +133,16 @@ const (
 // forms Ptah cannot honor: malformed globs, unsupported selector kinds, field
 // selectors beyond the documented extension version form, and type selectors
 // on non-final pattern segments. Commands run it before any database work.
+// The depth rule needs the schema the patterns are relative to, which commands
+// only learn once a connection is open, so this pre-connect pass applies the
+// scope-independent half of it: a pattern too deep for any scope is rejected
+// before a database is contacted, and the rest is caught by the filter.
 func ValidateExcludeSelectors(values []string) error {
-	_, err := parsePatterns(values)
+	_, err := parsePatterns(values, "")
 	return err
 }
 
-func parsePatterns(values []string) ([]resourcePattern, error) {
+func parsePatterns(values []string, defaultSchema string) ([]resourcePattern, error) {
 	var patterns []resourcePattern
 	for _, value := range values {
 		for part := range strings.SplitSeq(value, ",") {
@@ -146,12 +150,50 @@ func parsePatterns(values []string) ([]resourcePattern, error) {
 			if err != nil {
 				return nil, err
 			}
-			if pattern.glob != "" {
-				patterns = append(patterns, pattern)
+			if pattern.glob == "" {
+				continue
 			}
+			if err := checkPatternDepth(strings.TrimSpace(part), defaultSchema); err != nil {
+				return nil, err
+			}
+			patterns = append(patterns, pattern)
 		}
 	}
 	return patterns, nil
+}
+
+// maxPatternParts is the deepest object an Atlas exclude pattern can name:
+// schema.object.child. The pinned community binary splits a pattern on "." and
+// refuses anything deeper.
+const maxPatternParts = 3
+
+// checkPatternDepth refuses an exclude pattern that names more parts than its
+// scope can address.
+//
+// A pattern is relative to the scope the URL names. Ptah always filters inside
+// one schema — every reader is schema-scoped, and the connection's schema is
+// the default for the objects introspection leaves unqualified — which is the
+// community binary's schema-bound-URL scope. There a pattern names `object` or
+// `object.child`, because the binary prefixes the schema before counting; a
+// third part has nowhere left to go, and the binary reports the prefixed
+// spelling, so `--exclude public.users.name` on a PostgreSQL connection is
+// refused as "public.public.users.name". Ptah reports it identically.
+//
+// The column part itself is not the error. `users.name` names the column and is
+// honored, exactly as the binary honors it in this scope. What has no meaning
+// is a pattern whose schema slot is already filled by the connection.
+//
+// With no default schema the pattern is realm-relative instead and the full
+// schema.object.child depth is addressable, which is the binary's other scope.
+func checkPatternDepth(raw, defaultSchema string) error {
+	effective := raw
+	if strings.TrimSpace(defaultSchema) != "" {
+		effective = strings.TrimSpace(defaultSchema) + "." + raw
+	}
+	if strings.Count(effective, ".")+1 <= maxPatternParts {
+		return nil
+	}
+	return fmt.Errorf("too many parts in pattern: %q", effective)
 }
 
 func parsePattern(value, kind string) (resourcePattern, error) {
@@ -335,7 +377,10 @@ func (s *exclusionState) qualifiedNameCandidatesFor(name string) []string {
 }
 
 // childNameCandidates returns the names an exclude pattern can match for a
-// child of a table: "table.child" and "schema.table.child".
+// child of a table: "table.child" and "schema.table.child". The qualified
+// spelling is reachable only in the realm-relative scope; once a default schema
+// is in play, [checkPatternDepth] refuses a pattern that deep before it can be
+// matched against.
 func (s *exclusionState) childNameCandidates(schema, table, child string) []string {
 	return tableChildNameCandidates(s.effectiveSchema(schema), table, child)
 }
