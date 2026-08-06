@@ -1354,7 +1354,9 @@ func TestCompatCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", dir})
+	// The scheme is required on this verb since stokaro/ptah#1186: it WRITES,
+	// and the community binary refuses `--dir <bare path>` there.
+	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", "file://" + dir})
 
 	err := cmd.Execute()
 
@@ -1377,7 +1379,7 @@ func TestCompatCommand_MigrateNewAcceptsExplicitAtlasDirFormat(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", dir, "--dir-format", "atlas"})
+	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", "file://" + dir, "--dir-format", "atlas"})
 
 	err := cmd.Execute()
 

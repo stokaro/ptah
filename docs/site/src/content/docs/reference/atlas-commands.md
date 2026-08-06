@@ -252,6 +252,13 @@ layout's covered file set — with the same output `migrate apply` and
 [Which verbs enforce `atlas.sum`](../../atlas/migrate-commands/#which-verbs-enforce-atlassum).
 An unrecognized `--dir` query key is ignored, as it is on every other verb.
 
+`--dir` must name a scheme on this verb and on `migrate diff`, as it must on
+every Atlas verb: `--dir migrations` is refused with
+`missing scheme for dir url. Did you mean "file://migrations"?` and creates
+nothing. The same applies to its `PTAH_DIR` twin. The verbs that only read a
+directory still accept a bare path, as does `atlas.hcl` `migration.dir`
+([#1186](https://github.com/stokaro/ptah/issues/1186)).
+
 ### `ptah-compat migrate set [version]`
 
 Moves Atlas revision history to the positional version without executing

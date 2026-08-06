@@ -212,6 +212,43 @@ func LocalDirValue(value string) (string, error) {
 	return dir.Path, nil
 }
 
+// RequireDirScheme rejects a migration directory URL that names no scheme at
+// all, the way the pinned community binary v1.3.0 does.
+//
+// Measured on 2026-08-06, `migrate new addcol --dir mig --dir-format goose`
+// and `migrate diff demo --dir mig2 --dev-url … --to …` both exit 1 with
+//
+//	Error: missing scheme for dir url. Did you mean "file://mig"?
+//
+// and create nothing. [ParseLocalDir] deliberately keeps accepting the bare
+// path — the read verbs still take one and closing that half is
+// stokaro/ptah#1186 — so this is a separate call the writing verbs make before
+// they can create a directory the operator did not point at.
+//
+// The one measured byte this does not reproduce is a trailing space: that
+// binary prints `…"file://mig"? \n`, where its own `checksum file not found`
+// on the same verb prints no trailing space. The space is a slip in one format
+// string rather than a convention, and reproducing it would be reproducing a
+// defect.
+//
+// The suggestion carries the URL's path component only. Measured on the same
+// day, `--dir 'sub/dir?format=goose&x=1'` and `--dir 'sub/dir#frag'` both
+// suggest `"file://sub/dir"` there, while `--dir ./rel` suggests
+// `"file://./rel"` — so the query and fragment are dropped and the path is
+// otherwise passed through uncleaned.
+//
+// A value carrying some other scheme is not this function's business: it is
+// [ParseLocalDir] that decides which schemes a local directory may be named
+// with, and answering that twice is how the two answers drift.
+func RequireDirScheme(value string) error {
+	if strings.Contains(value, "://") {
+		return nil
+	}
+	path, _, _ := strings.Cut(value, "?")
+	path, _, _ = strings.Cut(path, "#")
+	return fmt.Errorf("missing scheme for dir url. Did you mean %q?", "file://"+path)
+}
+
 // ParseLocalDir parses a local Atlas file:// migration directory URL while
 // preserving its query parameters for command-specific validation. Plain
 // filesystem paths are preserved verbatim and do not have query semantics.

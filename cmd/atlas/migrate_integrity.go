@@ -137,7 +137,7 @@ func resolveAtlasMigrateSource(
 		return atlasMigrateSource{}, err
 	}
 
-	rawDir := resolveAtlasMigrateSourceDir(verb, mapped)
+	rawDir, spelledByAtlas := resolveAtlasMigrateSourceDir(verb, mapped)
 	localDir, err := atlasargs.ParseLocalDir(rawDir)
 	if err != nil {
 		return atlasMigrateSource{}, fmt.Errorf("atlas migrate %s --dir: %w", verb.use, err)
@@ -149,6 +149,22 @@ func resolveAtlasMigrateSource(
 	// resolved path unbounded.
 	if project.project.migrationDirResolved && localDir.Path == project.project.migrationDir.Path {
 		localDir.AllowedRoot = project.project.migrationDir.AllowedRoot
+	}
+	// The scheme requirement runs before the layout is resolved, and the order
+	// is measured: `migrate new a --dir mig --dir-format nosuchformat` prints
+	// the scheme refusal, not `unknown dir format`, on the pinned community
+	// binary v1.3.0. Cobra's arity check still wins over both there, and does
+	// here too, because it runs before RunE.
+	//
+	// The message is that binary's own and carries no `atlas migrate new --dir: `
+	// prefix, which would cost the byte parity that is the point of reproducing
+	// it. It goes out through cmdutil.Fail rather than being returned bare so
+	// the `Error: ` line reaches stderr from the command itself, the way the
+	// #1086 checksum refusal on the same two verbs already does.
+	if verb.writesDir && spelledByAtlas && atlasDirSchemeIsAnswerable(project.project, rawDir) {
+		if err := atlasargs.RequireDirScheme(rawDir); err != nil {
+			return atlasMigrateSource{}, cmdutil.Fail(cmd, err)
+		}
 	}
 	configured, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dir-format"))
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)
@@ -209,19 +225,43 @@ func resolveAtlasMigrateSource(
 // not a gate. Verbs whose Atlas and native spellings coincide (`migrate hash`,
 // `migrate validate`) see the same value from layers 1 and 2 and are
 // unaffected.
-func resolveAtlasMigrateSourceDir(verb atlasVerb, mapped []string) string {
+//
+// It also reports whether the value came from layer 1, the only layer an Atlas
+// spelling reaches. Layers 2 and 3 are the NATIVE flag under its own name and
+// its own default, which take a plain path and which the community binary has
+// no spelling for at all, so a rule read off that binary — the scheme
+// requirement the writing verbs enforce — must not be applied to them.
+func resolveAtlasMigrateSourceDir(verb atlasVerb, mapped []string) (dir string, spelledByAtlas bool) {
 	nativeName := atlasVerbNativeName(verb, "dir")
 	if dir, found := atlasNativeArgValue(mapped, nativeName); found {
-		return dir
+		return dir, true
 	}
 	if dir, found := os.LookupEnv(cmdflags.EnvName(atlasNativeEnvPrefix, nativeName)); found && dir != "" {
-		return dir
+		return dir, false
 	}
 	// The Atlas --dir flag registers no default on these verbs, so an omitted
 	// directory is whatever the forwarded native command defaults to. Reading
 	// it from the native command keeps one default rather than a copy that can
 	// drift.
-	return atlasNativeFlagDefault(verb, "dir")
+	return atlasNativeFlagDefault(verb, "dir"), false
+}
+
+// atlasDirSchemeIsAnswerable reports whether the scheme the operator spelled on
+// the migration directory has survived to this point.
+//
+// It has not when the directory came from atlas.hcl. `migration.dir` is
+// normalized by config/projectconfig.normalizeAtlasMigrationDir, which strips
+// `file://` at parse time, and the result is re-injected into the args as a
+// bare `--dir <path>` — so by the time any verb sees it, `file://mig` and `mig`
+// are the same string and requiring the scheme would refuse both. The community
+// binary refuses only the second, so this layer stays as it is
+// (stokaro/ptah#1186) rather than being closed by a check that cannot tell the
+// two apart.
+//
+// The --dir flag and its PTAH_DIR environment twin arrive verbatim and are
+// answerable.
+func atlasDirSchemeIsAnswerable(project atlasProject, rawDir string) bool {
+	return !project.migrationDirResolved || rawDir != project.migrationDir.Path
 }
 
 // atlasMigrateSourceFlags returns flags with the two flags the source

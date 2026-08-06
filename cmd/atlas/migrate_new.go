@@ -76,6 +76,7 @@ func atlasMigrateNewVerb() atlasVerb {
 		displayUse: "new [flags] [name]",
 		short:      "Create a new migration file",
 		native:     "migrations create",
+		writesDir:  true,
 		factory:    migrate.NewMigrateCreateCommand,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),

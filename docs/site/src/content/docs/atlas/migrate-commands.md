@@ -881,6 +881,21 @@ is rewritten, on a directory the gate refuses. A `--dir` naming a directory that
 does not exist yet is not a checksum error on either tool — both verbs create
 it, which is how the first migration of a project gets written.
 
+Because they create it, those same two verbs require `--dir` to name a scheme,
+which is what Atlas requires on every verb:
+
+```bash
+ptah-compat migrate new add_users --dir migrations
+# Error: missing scheme for dir url. Did you mean "file://migrations"?
+```
+
+Nothing is created. Ptah still accepts a bare path on the verbs that only read a
+directory, and on a directory named by `atlas.hcl` `migration.dir` — both remain
+looser than Atlas and are tracked in
+[#1186](https://github.com/stokaro/ptah/issues/1186). The requirement is a
+`PTAH_DIR` rule as much as a flag rule; `PTAH_MIGRATIONS_DIR`, which is the
+native `--migrations-dir` under its environment name, still takes a plain path.
+
 `lint` deliberately does not enforce it, but only for a *missing* integrity
 file: linting a directory that has never been hashed is how you inspect one
 before adopting it. It does not tolerate drift. On a hashed directory whose
