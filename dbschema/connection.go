@@ -740,14 +740,26 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		info.Dialect = detectPostgresWireDialect(dialect, version)
 		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
 
-		// Get schema name (default to 'public' if not specified in URL)
-		schema := "public"
-		if parsedURL.Path != "" && len(parsedURL.Path) > 1 {
-			// Extract database name from path, schema is typically 'public'
-			// For PostgreSQL, schema is usually specified via search_path or defaults to 'public'
-			schema = "public"
+		// The schema is whatever the server resolves this session's search_path
+		// to, which is what a `?search_path=` on the URL selects. It used to be
+		// the constant "public", with a branch on the URL path that assigned
+		// "public" again, so a dev URL naming another schema was not merely
+		// ignored -- the writer treated that schema as a stranger's and DROPPED
+		// it while cleaning the database realm, then replayed with a search_path
+		// resolving to nothing (stokaro/ptah#1198).
+		//
+		// current_schema() is NULL when search_path names only schemas that do
+		// not exist. "public" is kept for that case: it is what every caller
+		// assumed before, and inventing a refusal here would change far more
+		// than the drop.
+		var currentSchema sql.NullString
+		if err := db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&currentSchema); err != nil {
+			return info, fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
 		}
-		info.Schema = schema
+		info.Schema = "public"
+		if currentSchema.Valid && currentSchema.String != "" {
+			info.Schema = currentSchema.String
+		}
 
 	case platform.MySQL, platform.MariaDB:
 		// Get MySQL/MariaDB version
