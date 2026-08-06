@@ -72,17 +72,17 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 163 capabilities below:
+Across the 164 capabilities below:
 
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 90 |
 | Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 25 |
+| Ptah does not implement it | 26 |
 | Ptah and Atlas CE both support it | 22 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 20 |
-| Atlas CE has it and Ptah does not, or only in part | 25 |
+| Atlas CE has it and Ptah does not, or only in part | 26 |
 | An Atlas column is ❔ — not established by this page's evidence | 5 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -160,6 +160,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format revision tables are covered. |
+| Atlas R-suffixed (`1R_`, `R__`) migration execution | ❌ | ✅ | ✅ | Ptah refuses an Atlas directory holding one, naming every such file; CE executes it keyed on the version string the name spells. Dropping it at exit 0 was stokaro/ptah#846. |
 | Atlas SQL template migrations (`--atlas-env`) | ✅ | ❌ | ❌ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. CE runs the braces as SQL. |
 | Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❌ | ✅ | `-- atlas:txtar` executes migration.sql/down.sql and enforces checks.sql plus ordered checks/*.sql, including atlas:assert oneof; unrelated files are ignored. CE runs every section as plain SQL. |
 | Atlas-format checkpoint output | ✅ | ❌ | ✅ | `migrate checkpoint --dir-format atlas` writes the single `-- atlas:checkpoint` file plus atlas.sum, and is compat's default; `--dir-format ptah` writes the reversible pair. Up-only, as Atlas is. |
