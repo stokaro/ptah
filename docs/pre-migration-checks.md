@@ -77,12 +77,13 @@ next run applies it with no bypass flag and no `migrations repair`. It matches
 Atlas, which also records nothing when its own checks fail.
 
 This matters most on `ptah-compat migrate apply`, which registers no
-`--skip-checks` flag (neither does Atlas). It does register `--allow-dirty`, but
-that flag cannot currently clear a dirty row: the retry fails on the revision
-re-insert with a `UNIQUE constraint failed` error
-([`stokaro/ptah#966`](https://github.com/stokaro/ptah/issues/966)). A recorded
-check failure would therefore have left no working in-band recovery on that
-surface. The `PTAH_SKIP_CHECKS` bypass is an emergency override, not that
+`--skip-checks` flag (neither does Atlas). It does register `--allow-dirty`, and
+until [`stokaro/ptah#1134`](https://github.com/stokaro/ptah/pull/1134) that flag
+could not clear a dirty row — the retry died on the revision re-insert with
+`UNIQUE constraint failed`. The retry now rewrites the existing row and restarts
+the body at the first unapplied statement, so a recorded check failure would
+have a working in-band recovery. Recording nothing in the first place is still
+better: it needs no flag at all. The `PTAH_SKIP_CHECKS` bypass is an emergency override, not that
 recovery path: correcting the guarded data is, and it needs no bypass at all.
 
 ## Assertion result shape
