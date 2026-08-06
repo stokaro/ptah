@@ -771,9 +771,20 @@ that report a statement rather than the objects in it — is always reported,
 since there is nothing to measure a scope against and a hazard must not be
 silenced on an unestablished boundary.
 
-Both surfaces read the boundary from the same `--dev-url`, so `ptah-compat
-migrate lint` and native `ptah migrations lint` never disagree about what is
-under review.
+The boundary applies to `ptah-compat migrate lint` only. Native
+`ptah migrations lint` keeps every object under review, whatever the dev URL
+selects, so the two surfaces deliberately disagree about scope.
+
+The reason the boundary exists on the compatibility surface is that the tool it
+replaces reviews only what the dev URL covers, and matching that is the whole
+point of the surface. The reason it does not exist natively is that the
+justification for it — an object outside the dev URL's reach was never in the
+before-state the run compares against — describes a diff-based analyzer, and
+Ptah's linter reads SQL text. That is why it reports `TRUNCATE` and
+`DROP SCHEMA`, neither of which produces a diff. Scoped natively,
+`DROP TABLE app."Users", app.audit_log;` under `search_path=public` reports
+nothing and exits 0, on the one surface where no other tool can be consulted
+about whether that is right.
 
 ### Renames
 

@@ -296,3 +296,65 @@ func assertLintE2EScopedReport(
 	c.Assert(stderr, qt.Equals, "")
 	c.Assert(redactLintE2EDurations(stdout), qt.Equals, want)
 }
+
+// TestNativeMigrationsLintIgnoresTheDevURLSchemaScopeE2E pins the half of the
+// #1074 S1 decision that has no comparison binary: the schema boundary belongs
+// to the Atlas-compatible surface only.
+//
+// The argument for scoping is that an object outside the dev URL's reach was
+// never in the before-state the run compares against. That describes a
+// diff-based analyzer. Ptah's native linter reads SQL text, which is why it
+// reports TRUNCATE and DROP SCHEMA -- neither of which produces a diff. Scoping
+// it turned two error-grade DS101 findings into "No lint findings." and exit 1
+// into exit 0, silently, on the surface where no binary can be consulted about
+// whether that is right.
+//
+// Removing the profile gate in migrationlintreport leaves every other test in
+// the repository green, so without this row the split is unpinned.
+func TestNativeMigrationsLintIgnoresTheDevURLSchemaScopeE2E(t *testing.T) {
+	dbURL := requirePostgresE2EDatabaseURL(t)
+
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	repoRoot := e2eRepoRoot(t)
+	nativeBinary := filepath.Join(t.TempDir(), "ptah")
+	buildPtah(c, ctx, repoRoot, nativeBinary)
+
+	adminDB, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer adminDB.Close()
+
+	testDBName := fmt.Sprintf("ptah_lint_native_scope_e2e_%d", time.Now().UnixNano())
+	createE2EDatabase(c, ctx, adminDB, testDBName)
+	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+
+	migrationsDir := c.TempDir()
+	writeLintE2EFile(c, migrationsDir, "1.sql",
+		"CREATE SCHEMA app;\nCREATE TABLE app.\"Users\" (id int);\nCREATE TABLE app.audit_log (id int);\n")
+	writeLintE2EFile(c, migrationsDir, "2.sql", "DROP TABLE app.\"Users\", app.audit_log;\n")
+
+	devURL := withLintE2ESearchPath(c, replaceDatabaseName(c, dbURL, testDBName), "public")
+
+	// The same directory and the same dev URL the compatibility surface answers
+	// with "no diagnostics found" and exit 0.
+	stdout, stderr, err := runLintE2EBinary(ctx, nativeBinary,
+		"migrations", "lint",
+		"--dir", migrationsDir,
+		"--dir-format", "atlas",
+		"--dev-url", devURL,
+		"--latest", "1",
+	)
+
+	// The native report goes to stderr, so both streams are joined rather than
+	// asserted on one: reading only stdout here made this test pass against an
+	// empty string.
+	report := stdout + stderr
+
+	c.Assert(err, qt.ErrorMatches, "exit status 1")
+	c.Assert(report, qt.Contains, `DROP TABLE permanently deletes table app."Users"`)
+	c.Assert(report, qt.Contains, "DROP TABLE permanently deletes table app.audit_log")
+	c.Assert(report, qt.Contains, "2 finding(s).")
+	c.Assert(report, qt.Not(qt.Contains), "No lint findings.")
+}

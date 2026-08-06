@@ -194,11 +194,19 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		Dialect:       dialect,
 		Disabled:      disabled,
 		PathPrefix:    filepath.ToSlash(opts.Dir),
-		// The dev database is what the run compares against, so it is also what
-		// decides which objects are under review. Both command surfaces read the
-		// boundary from the same URL, so they cannot disagree about what is
-		// being analyzed.
-		SchemaScope: atlasurl.SchemaScope(opts.DevURL),
+		// Scoped on the Atlas-compatible surface ONLY, where the pinned
+		// community binary is the contract and it reviews just what the dev URL
+		// covers.
+		//
+		// The native surface keeps reviewing everything, deliberately. The
+		// argument for scoping — "an object outside the dev URL's reach is never
+		// in the before-state the run compares against" — describes a diff-based
+		// analyzer. Ptah's is a SQL-text analyzer, which is why it reports
+		// TRUNCATE and DROP SCHEMA, neither of which produces a diff. Applying
+		// the boundary there turned `DROP TABLE app."Users", app.audit_log;`
+		// from two error-grade DS101 findings and exit 1 into "No lint findings"
+		// and exit 0, on a surface with no comparison binary to justify it.
+		SchemaScope: compatSchemaScope(opts.Compatibility, opts.DevURL),
 		Selection: lint.VersionSelection{
 			Versions:   versions,
 			Restricted: restrictVersions,
@@ -1012,4 +1020,20 @@ func validateDir(dir string) error {
 		return fmt.Errorf("migrations directory %s: not a directory", dir)
 	}
 	return nil
+}
+
+// compatSchemaScope returns the schema boundary the run analyzes within, which
+// is empty — everything under review — on every surface but the
+// Atlas-compatible one.
+//
+// The split is the point. On ptah-compat the pinned community binary is the
+// contract and it reviews only what the dev URL covers, so matching it means
+// scoping. The native surface has no such contract and its linter reads SQL
+// text rather than a diff, so an object the dev database does not carry is
+// still an object the migration destroys.
+func compatSchemaScope(profile lint.CompatibilityProfile, devURL string) string {
+	if profile != lint.CompatibilityProfileAtlas {
+		return ""
+	}
+	return atlasurl.SchemaScope(devURL)
 }
