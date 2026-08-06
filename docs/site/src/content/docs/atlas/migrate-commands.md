@@ -110,30 +110,38 @@ Migration complete. Current version: 20260721120000
 ```
 
 ```text
-=== MIGRATION STATUS ===
-Current Version: 20260721120000
-Total Migrations: 1
-Applied Migrations: 1
-Pending Migrations: 0
-Status: Database is up to date
+Migration Status: OK
+  -- Current Version: 20260721120000
+  -- Next Version:    Already at latest version
+  -- Executed Files:  1
+  -- Pending Files:   0
 ```
+
+`migrate status` is the one compatibility verb whose output a pipeline parses
+with a machine rather than reads, so it mirrors the Atlas report shape by
+default — field names, sentinel strings and value encodings included. A deploy
+gate written as `grep -q 'Migration Status: OK'` works unchanged, `-- Current
+Version:` matches, and a database with nothing applied reports the sentence
+`No migration applied yet` rather than `0`. Native
+[`ptah migrations status`](../../versioned/apply/) keeps its own block: the two
+surfaces are allowed to differ and only the compatibility one is a contract.
 
 ## Recovering from a migration body that failed part-way
 
 Unlike Atlas, Ptah records a revision row for a migration whose body failed, so
-the failure survives the run that caused it. `migrate status` names that row
-explicitly, because `Current Version` counts it:
+the failure survives the run that caused it. `migrate status` reports that row
+as a half-applied file, because `Current Version` counts it:
 
 ```text
-=== MIGRATION STATUS ===
-Current Version: 20260721120100
-Total Migrations: 2
-Applied Migrations: 1
-Pending Migrations: 1
-Dirty Migration: version=20260721120100 applied=1/2
-Error Statement: ALTER TABLE users ADD COLUMN email TEXT
-Error: failed to execute migration SQL: ...
-Status: Pending migrations available
+Migration Status: PENDING
+  -- Current Version: 20260721120100 (1 statements applied)
+  -- Next Version:    20260721120100 (1 statements left)
+  -- Executed Files:  2 (last one partially)
+  -- Pending Files:   1
+
+Last migration attempt had errors:
+  -- SQL:   ALTER TABLE users ADD COLUMN email TEXT
+  -- ERROR: failed to execute migration SQL: ...
 ```
 
 Fix the migration, rerun `ptah-compat migrate hash`, and rerun the apply with

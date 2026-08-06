@@ -103,7 +103,7 @@ func TestCompatCommand_AtlasHCLFileReadsInsideTheConfigDirectory(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "MIGRATION STATUS")
+	c.Assert(out.String(), qt.Contains, "Migration Status: OK")
 }
 
 func writeCompatSandboxConfig(c *qt.C, dir, argument string) {
