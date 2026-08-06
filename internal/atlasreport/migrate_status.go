@@ -26,13 +26,18 @@ type MigrateStatus struct {
 	Available []MigrateStatusFile     `json:"Available,omitempty"`
 	Applied   []MigrateStatusRevision `json:"Applied,omitempty"`
 	Pending   []MigrateStatusFile     `json:"Pending,omitempty"`
-	Current   string                  `json:"Current,omitempty"`
-	Next      string                  `json:"Next,omitempty"`
-	Status    string                  `json:"Status,omitempty"`
-	Count     int                     `json:"Count,omitempty"`
-	Total     int                     `json:"Total,omitempty"`
-	Error     string                  `json:"Error,omitempty"`
-	SQL       string                  `json:"SQL,omitempty"`
+	// OutOfOrder lists pending files whose version sorts below a version the
+	// database has already applied. The pinned community binary reports these
+	// separately from Pending and refuses to name a Next Version while any
+	// exist, because "what runs next" has no answer under linear execution.
+	OutOfOrder []MigrateStatusFile `json:"OutOfOrder,omitempty"`
+	Current    string              `json:"Current,omitempty"`
+	Next       string              `json:"Next,omitempty"`
+	Status     string              `json:"Status,omitempty"`
+	Count      int                 `json:"Count,omitempty"`
+	Total      int                 `json:"Total,omitempty"`
+	Error      string              `json:"Error,omitempty"`
+	SQL        string              `json:"SQL,omitempty"`
 }
 
 type MigrateStatusFile struct {
@@ -81,12 +86,13 @@ func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {
 			URL:    atlasRedactedURL(opts.URL),
 			Dir:    opts.Dir,
 		},
-		Available: files,
-		Applied:   migrateStatusAppliedRevisions(files, opts.AppliedRevisions),
-		Pending:   selectedMigrateStatusFiles(files, opts.Status.PendingMigrations, ""),
-		Current:   migrateStatusCurrent(opts.Status.CurrentVersion),
-		Next:      migrateStatusNext(opts.Status.PendingMigrations),
-		Status:    migrateStatusLabel(opts.Status),
+		Available:  files,
+		Applied:    migrateStatusAppliedRevisions(files, opts.AppliedRevisions),
+		Pending:    selectedMigrateStatusFiles(files, opts.Status.PendingMigrations, ""),
+		OutOfOrder: selectedMigrateStatusFiles(files, opts.Status.OutOfOrderMigrations, ""),
+		Current:    migrateStatusCurrent(opts.Status.CurrentVersion),
+		Next:       migrateStatusNext(opts.Status.PendingMigrations),
+		Status:     migrateStatusLabel(opts.Status),
 	}
 	applyMigrateStatusPartial(&result, opts.AppliedRevisions)
 	return result, nil

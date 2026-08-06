@@ -46,10 +46,11 @@ func WriteMigrateStatusText(w io.Writer, opts MigrateStatusOptions) error {
 func writeMigrateStatusReport(w io.Writer, report MigrateStatus) {
 	fmt.Fprintf(w, "Migration Status: %s\n", report.Status)
 	writeMigrateStatusField(w, "Current Version:", report.Current+migrateStatusApplied(report))
-	writeMigrateStatusField(w, "Next Version:", report.Next+migrateStatusLeft(report))
+	writeMigrateStatusField(w, "Next Version:", migrateStatusNextField(report))
 	writeMigrateStatusField(w, "Executed Files:", migrateStatusExecuted(report))
-	writeMigrateStatusField(w, "Pending Files:", strconv.Itoa(len(report.Pending)))
+	writeMigrateStatusField(w, "Pending Files:", migrateStatusPendingField(report))
 	writeMigrateStatusError(w, report)
+	writeMigrateStatusOutOfOrder(w, report)
 }
 
 // migrateStatusPartial reports whether the highest revision row is half-applied.
@@ -107,4 +108,46 @@ func writeMigrateStatusField(w io.Writer, label, value string) {
 
 func writeMigrateStatusLine(w io.Writer, column int, label, value string) {
 	fmt.Fprintf(w, "  -- %-*s%s\n", column, label, value)
+}
+
+// migrateStatusNextField answers "what runs next", and answers UNKNOWN when a
+// pending file sorts below an applied one.
+//
+// Measured against the pinned community binary v1.3.0 on a directory where
+// 20240401000001 and 20240403000000 are applied and 20240402000000 is then
+// added and re-hashed: it prints `-- Next Version:    UNKNOWN`. Naming the
+// out-of-order file there would be worse than saying nothing, because under
+// linear execution that file is exactly the one that will not run.
+func migrateStatusNextField(report MigrateStatus) string {
+	if len(report.OutOfOrder) > 0 {
+		return "UNKNOWN"
+	}
+	return report.Next + migrateStatusLeft(report)
+}
+
+// migrateStatusPendingField counts pending files and annotates the count when
+// any of them is out of order, matching `1 (out of order)` from the binary.
+func migrateStatusPendingField(report MigrateStatus) string {
+	count := strconv.Itoa(len(report.Pending))
+	if len(report.OutOfOrder) > 0 {
+		return count + " (out of order)"
+	}
+	return count
+}
+
+// writeMigrateStatusOutOfOrder writes the trailing ERROR block the pinned
+// binary prints for a non-linear directory, one line per offending file.
+//
+// This block is the reason the mirror had to cover this state rather than
+// leaving it: a pipeline that greps the report for `ERROR:` to decide whether a
+// directory is safe would otherwise read a clean, correctly-shaped report on
+// exactly the directory the binary flags. A partial mirror is more dangerous
+// than none, because the shared shape is what makes the omission invisible.
+func writeMigrateStatusOutOfOrder(w io.Writer, report MigrateStatus) {
+	for _, file := range report.OutOfOrder {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w,
+			"  ERROR: migration file %s was added out of order. See: https://atlasgo.io/versioned/apply#non-linear-error\n",
+			file.Name)
+	}
 }

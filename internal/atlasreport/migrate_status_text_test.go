@@ -48,6 +48,36 @@ func TestWriteMigrateStatusText_MirrorsTheAtlasReport(t *testing.T) {
 				"  -- Pending Files:   2\n",
 		},
 		{
+			// Measured against the pinned community binary v1.3.0 on a
+			// directory where 20240401000001 and 20240403000000 are applied and
+			// 20240402000000 is then added and re-hashed. Reverted, this row
+			// prints `-- Next Version:    2` and `-- Pending Files:   1` with no
+			// ERROR block — a clean, correctly-Atlas-shaped report on exactly
+			// the directory the binary flags as broken, which is what makes a
+			// partial mirror worse than none.
+			name: "a pending file that sorts below an applied one",
+			status: &migrator.MigrationStatus{
+				CurrentVersion:       3,
+				AppliedMigrations:    []int64{1, 3},
+				PendingMigrations:    []int64{2},
+				OutOfOrderMigrations: []int64{2},
+				TotalMigrations:      3,
+				HasPendingChanges:    true,
+			},
+			revisions: []migrator.MigrationRevision{
+				{Version: 1, Applied: 1, Total: 1},
+				{Version: 3, Applied: 1, Total: 1},
+			},
+			wantStdout: "Migration Status: PENDING\n" +
+				"  -- Current Version: 3\n" +
+				"  -- Next Version:    UNKNOWN\n" +
+				"  -- Executed Files:  2\n" +
+				"  -- Pending Files:   1 (out of order)\n" +
+				"\n" +
+				"  ERROR: migration file 2_add_email.sql was added out of order. " +
+				"See: https://atlasgo.io/versioned/apply#non-linear-error\n",
+		},
+		{
 			name: "all applied",
 			status: &migrator.MigrationStatus{
 				CurrentVersion:    2,
