@@ -76,18 +76,34 @@ func assertGeneratedHeader(c *qt.C, lines []string) {
 	c.Assert(strings.HasPrefix(header[2], digestPrefix), qt.IsTrue)
 }
 
-func TestCommentsAllIsTheDefaultAndCopiesSourceProse(t *testing.T) {
+// TestCommentsNoneIsTheDefaultAndAllMustBeAskedFor pins the direction of the
+// default, which is the safety-relevant half of this policy.
+//
+// A schema comment is written for whoever reads the database and routinely
+// carries operational notes or security context; a .proto is published to
+// consumers and copied onward into their generated code. So publishing that
+// prose is opt-in: the zero value omits it, and `--proto-comments=all` is what
+// asks for it.
+//
+// Both halves are asserted together because either alone is satisfiable by a
+// broken implementation — one that never emits comments passes the first, one
+// that always emits them passes the second.
+func TestCommentsNoneIsTheDefaultAndAllMustBeAskedFor(t *testing.T) {
 	c := qt.New(t)
 
 	byDefault := mustRenderText(c, commentedSchema(), baseOptions())
-	explicit := mustRenderText(c, commentedSchema(), commentOptions(baseOptions(), protobufrender.CommentsAll))
+	explicitNone := mustRenderText(c, commentedSchema(), commentOptions(baseOptions(), protobufrender.CommentsNone))
+	explicitAll := mustRenderText(c, commentedSchema(), commentOptions(baseOptions(), protobufrender.CommentsAll))
 
-	// The zero value must mean "all": a baseline generated before the policy
-	// existed has to regenerate byte for byte.
-	c.Assert(explicit, qt.Equals, byDefault)
-	c.Assert(byDefault, qt.Contains,
+	// The zero value means "none".
+	c.Assert(byDefault, qt.Equals, explicitNone)
+	c.Assert(byDefault, qt.Not(qt.Contains), "runbook RB-42")
+	c.Assert(byDefault, qt.Not(qt.Contains), "bcrypt")
+
+	// Asking for them brings the source prose back.
+	c.Assert(explicitAll, qt.Contains,
 		"// Internal: sharded by tenant_id; see runbook RB-42\nmessage User {")
-	c.Assert(byDefault, qt.Contains,
+	c.Assert(explicitAll, qt.Contains,
 		"  // bcrypt hash, never expose\n  string password_hash = 3;")
 }
 

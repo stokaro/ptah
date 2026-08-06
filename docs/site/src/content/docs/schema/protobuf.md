@@ -13,9 +13,9 @@ and used as the source of every number it already pins.
 Ptah emits messages and enums, not Protobuf services or remote procedure calls
 (RPCs). It does not create a server, access database rows, or implement
 authorization. Publishing the generated file still reveals the selected table
-and column names, translated types, enum values, and — unless you pass
-[`--proto-comments none`](#control-what-the-contract-says) — the comments the
-source schema carries.
+and column names, translated types, and enum values. It does **not** carry the
+comments the source schema supplies unless you ask for them with
+[`--proto-comments all`](#control-what-the-contract-says).
 
 Prerequisites: a built `ptah` binary and a directory of annotated Go models.
 `buf` and `protoc` are needed only if you want to lint or compatibility-check
@@ -184,7 +184,7 @@ Ptah protects that state in both directions:
 | `--proto-type-removal` | no | `error` (default), `tombstone`, or `drop`. See [Handle removals and incompatible changes](#handle-removals-and-incompatible-changes). |
 | `--proto-on-incompatible-change` | no | `error` (default) or `renumber`. |
 | `--proto-on-name-reuse` | no | `error` (default) or `release`. |
-| `--proto-comments` | no | `all` (default) or `none`. See [Control what the contract says](#control-what-the-contract-says). |
+| `--proto-comments` | no | `none` (default) or `all`. See [Control what the contract says](#control-what-the-contract-says). |
 
 `--title` belongs to `openapi-v3` and is ignored here with a warning. Setting
 `--proto-package`, `--go-package`, or a policy flag to a value that would do
@@ -303,14 +303,14 @@ type User struct {
 }
 ```
 
-`--proto-comments none` keeps them out of the file:
+They are kept out of the file by default. `--proto-comments all` is what puts
+them in; the default run needs no flag:
 
 ```bash
 ptah schema export --to protobuf \
   --root-dir ./models \
   --out ./proto/acme/inventory/v1/schema.proto \
-  --proto-package acme.inventory.v1 \
-  --proto-comments none
+  --proto-package acme.inventory.v1
 ```
 
 ```proto
@@ -582,11 +582,12 @@ permanent, so nothing on this list is an unowned gap.
   a policy is evaluated by the database against a session, and a published
   `.proto` has no session to evaluate it against.
 - Comment suppression is all-or-nothing.
-  [`--proto-comments none`](#control-what-the-contract-says) omits every comment
+  [`--proto-comments all`](#control-what-the-contract-says) copies every comment
   the source schema supplies, and there is no per-table or per-column form.
-  Under the default `all`, review table and column comments for internal
-  implementation details or sensitive operational information before publishing
-  the file. The all-or-nothing shape is permanent because a table comment can
+  The default is `none`, so passing `all` means reviewing table and column
+  comments for internal implementation details or sensitive operational
+  information first — publishing them is a decision, not an accident. The
+  all-or-nothing shape is permanent because a table comment can
   carry exactly the internal detail a column comment can, so a partial switch
   would report a boundary the published contract does not have.
 - One file per run. Ptah writes a single compilation unit, so splitting a
