@@ -305,6 +305,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	}
 
 	mode := modeForDialect(opts.Dialect)
+	scope := newSchemaScope(opts.SchemaScope)
 	files := make([]File, 0, len(names))
 	for _, name := range names {
 		file, err := prepareFile(
@@ -320,6 +321,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			dirFormat,
 			opts.Selection,
 			opts.Compatibility,
+			scope,
 		)
 		if err != nil {
 			return Analysis{}, err
@@ -333,7 +335,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			continue
 		}
 		file := cloneFile(files[i])
-		findings = append(findings, runRules(&file, opts, rules)...)
+		findings = append(findings, scope.keepFindings(runRules(&file, opts, rules))...)
 	}
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
@@ -460,6 +462,7 @@ func prepareFile(
 	dirFormat migrator.MigrationDirFormat,
 	selection VersionSelection,
 	compatibility CompatibilityProfile,
+	scope schemaScope,
 ) (File, error) {
 	raw := sources[name]
 	base := path.Base(name)
@@ -539,7 +542,7 @@ func prepareFile(
 				suppressedRules: rawStmt.suppressedRules,
 			})
 		}
-		file.Changes = extractSchemaChanges(&file, dialect)
+		file.Changes = extractSchemaChanges(&file, dialect, scope)
 	}
 	return file, nil
 }
