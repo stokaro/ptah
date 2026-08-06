@@ -263,8 +263,13 @@ func TestCompatMigrateNewConverted_QueryFormatOutranksDirFormatFlag(t *testing.T
 func TestCompatMigrateNewConverted_CreatedDirectoryVerifies(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name  string
-		seed  func(c *qt.C, dir string)
+		name string
+		seed func(c *qt.C, dir string)
+		// count is what `migrate status` must report as PENDING afterwards: the
+		// seeded migration plus the one this verb just created. It is read off
+		// the Atlas-mirrored report shape that #1102 landed on this verb,
+		// column alignment included, rather than the native block that preceded
+		// it.
 		count string
 	}{
 		{
@@ -312,7 +317,7 @@ func TestCompatMigrateNewConverted_CreatedDirectoryVerifies(t *testing.T) {
 				"--dir", "file://"+dir, "--dir-format", tt.name,
 				"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
 			c.Assert(err, qt.IsNil, qt.Commentf("status stderr: %s", stderr))
-			c.Assert(stdout, qt.Contains, "Total Migrations: "+tt.count)
+			c.Assert(stdout, qt.Contains, "  -- Pending Files:   "+tt.count+"\n")
 		})
 	}
 }
