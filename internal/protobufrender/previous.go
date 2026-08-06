@@ -69,7 +69,11 @@ func (p previousType) highestUsed() int32 {
 
 // previousFile is the whole compatibility state of a previous export.
 type previousFile struct {
-	Package  string
+	Package string
+	// Version is the export format version the file declares. It is kept so the
+	// caller can report that an older layout was migrated rather than rewriting
+	// the baseline silently.
+	Version  int
 	Messages map[string]previousType
 	Enums    map[string]previousType
 }
@@ -82,7 +86,8 @@ type previousFile struct {
 func loadPrevious(ctx context.Context, path string, raw []byte, wantPackage string) (*previousFile, error) {
 	canonical := canonicalize(raw)
 
-	if _, err := parseHeader(canonical); err != nil {
+	header, err := parseHeader(canonical)
+	if err != nil {
 		return nil, err
 	}
 
@@ -111,6 +116,7 @@ func loadPrevious(ctx context.Context, path string, raw []byte, wantPackage stri
 
 	prev := &previousFile{
 		Package:  string(fd.Package()),
+		Version:  header.Version,
 		Messages: map[string]previousType{},
 		Enums:    map[string]previousType{},
 	}

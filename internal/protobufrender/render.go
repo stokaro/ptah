@@ -13,10 +13,6 @@ import (
 func render(f file) string {
 	var sb strings.Builder
 
-	sb.WriteString(generatedMarker + "\n")
-	sb.WriteString(versionPrefix + strconv.Itoa(exportVersion) + "\n")
-	// Stamped with the real digest by stampDigest once the body is complete.
-	sb.WriteString(digestPrefix + "\n")
 	sb.WriteString("edition = \"2023\";\n\n")
 	sb.WriteString("package " + f.Package + ";\n\n")
 
@@ -43,11 +39,24 @@ func render(f file) string {
 		}
 		renderEnum(&sb, en)
 	}
-	// Exactly one trailing newline. A schema that selects no tables would
-	// otherwise end in the blank line that follows the package statement, which
-	// `buf format` strips - rewriting the file, invalidating the content digest
-	// and making every later export refuse to run.
-	return strings.TrimRight(sb.String(), "\n") + "\n"
+	// Exactly one blank line between the body and the header, and exactly one
+	// trailing newline. A schema that selects no tables would otherwise carry the
+	// blank line that follows the package statement, which `buf format` strips -
+	// rewriting the file, invalidating the content digest and making every later
+	// export refuse to run.
+	body := strings.TrimRight(sb.String(), "\n")
+	return body + "\n\n" + renderHeader()
+}
+
+// renderHeader writes the generated header block. It is the LAST thing in the
+// file: as the leading comment it would be the file's leading detached comment,
+// which protoc-gen-go copies to the top of every .pb.go, putting Ptah's content
+// digest into consumers' Go source. The digest line is stamped with its real
+// value by stampDigest once the rest of the file is complete.
+func renderHeader() string {
+	return generatedMarker + "\n" +
+		versionPrefix + strconv.Itoa(exportVersion) + "\n" +
+		digestPrefix + "\n"
 }
 
 func renderMessage(sb *strings.Builder, msg message) {
