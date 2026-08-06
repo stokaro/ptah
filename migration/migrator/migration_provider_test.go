@@ -384,7 +384,81 @@ func TestNewFSMigrationProvider_AtlasImportedDirectionalFiles(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `migration 2 has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet; add an atlas txtar down.sql section or migrate down manually`)
 }
 
-func TestNewFSMigrationProvider_AtlasRepeatableFilesAreDiscoveryOnly(t *testing.T) {
+// TestNewFSMigrationProvider_AtlasRepeatableFiles replaces
+// TestNewFSMigrationProvider_AtlasRepeatableFilesAreDiscoveryOnly, which pinned
+// the opposite expectation: the provider used to drop `3R_views.sql` and load
+// the rest of the directory, so every caller ran a strict subset of an
+// atlas.sum-covered directory and called it complete (stokaro/ptah#846).
+// Discovery still sees the file — that half is asserted here and in
+// TestDiscoverMigrationFilesRecognizesAtlasImportedFlywayRepeatables, because
+// lint and the integrity file need it — but loading it for execution refuses.
+//
+// Measured under the revert mutant (the skip put back): the "repeatable file"
+// row prints `got non-nil value` on `c.Assert(provider, qt.IsNil)` and dumps the
+// provider holding the single version-2 migration it loaded from a two-file
+// directory. The "versioned twin" row is the non-interference control: it
+// carries the same SQL under a versioned name, stays green under that revert,
+// and reddens with `got 1, want 2` on the migration count if a refusal ever
+// fires on something wider than a repeatable file name.
+func TestNewFSMigrationProvider_AtlasRepeatableFiles(t *testing.T) {
+	repeatableSQL := "CREATE VIEW active_users AS SELECT * FROM users;\n"
+
+	tests := []struct {
+		name     string
+		viewFile string
+		assert   func(c *qt.C, provider *migrator.FSMigrationProvider, err error)
+	}{
+		{
+			name:     "repeatable file refuses the whole directory",
+			viewFile: "3R_views.sql",
+			assert: func(c *qt.C, provider *migrator.FSMigrationProvider, err error) {
+				c.Assert(provider, qt.IsNil)
+				c.Assert(err, qt.ErrorMatches,
+					`migration directory contains Atlas repeatable migrations Ptah cannot execute: 3R_views\.sql; `+
+						`rename each one to a versioned Atlas migration \(<version>_<name>\.sql\) and re-run .migrate hash., `+
+						`or move it out of the migration directory`)
+			},
+		},
+		{
+			name:     "versioned twin of the same SQL still loads",
+			viewFile: "3_views.sql",
+			assert: func(c *qt.C, provider *migrator.FSMigrationProvider, err error) {
+				c.Assert(err, qt.IsNil)
+				migrations := provider.Migrations()
+				c.Assert(migrations, qt.HasLen, 2)
+				c.Assert(migrations[0].Version, qt.Equals, int64(2))
+				c.Assert(migrations[1].Version, qt.Equals, int64(3))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			fsys := fstest.MapFS{
+				"2_baseline.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
+				test.viewFile:    &fstest.MapFile{Data: []byte(repeatableSQL)},
+			}
+
+			files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
+			c.Assert(err, qt.IsNil)
+			c.Assert(files, qt.HasLen, 2)
+
+			provider, err := migrator.NewFSMigrationProvider(
+				fsys,
+				migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+			)
+			test.assert(c, provider, err)
+		})
+	}
+}
+
+// TestDiscoverMigrationFiles_AtlasRepeatableStaysVisible keeps the half of the
+// retired discovery-only test that is still true: the file is recognized, named
+// and flagged, which is what lint and atlas.sum consume. Reverting
+// parseAtlasRepeatableMigrationStem prints `got 1, want 2` on the file count.
+func TestDiscoverMigrationFiles_AtlasRepeatableStaysVisible(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
@@ -397,13 +471,8 @@ func TestNewFSMigrationProvider_AtlasRepeatableFilesAreDiscoveryOnly(t *testing.
 	c.Assert(files, qt.HasLen, 2)
 	c.Assert(files[0].Path, qt.Equals, "3R_views.sql")
 	c.Assert(files[0].Repeatable, qt.IsTrue)
-
-	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
-	c.Assert(err, qt.IsNil)
-	migrations := provider.Migrations()
-	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].Version, qt.Equals, int64(2))
-	c.Assert(migrations[0].Description, qt.Equals, "Baseline")
+	c.Assert(files[1].Path, qt.Equals, "2_baseline.sql")
+	c.Assert(files[1].Repeatable, qt.IsFalse)
 }
 
 func TestNewFSMigrationProvider_AtlasTemplateMigrations(t *testing.T) {
