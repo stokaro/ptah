@@ -236,6 +236,26 @@ that `atlas.hcl` cannot name a path outside its directory at all: a schema
 source such as `src = "../shared/schema.hcl"` is a path the author points the
 tool at deliberately, and it still resolves.
 
+## Local schema data source
+
+`data "hcl_schema"` names local schema files and exposes them as
+`data.hcl_schema.<name>.url` — one `file://` URL for `path`, a list of them for
+`paths`.
+
+Its paths resolve relative to the directory holding `atlas.hcl` but are not
+confined to it: `path = "../shared/schema.hcl"` is a file the author points the
+tool at deliberately, and it resolves. Two kinds of value are refused, and each
+names its own rule rather than blaming the `path` key, which is supported:
+
+| Value | Refusal |
+| --- | --- |
+| `path = "/etc/absolute.hcl"` | `atlas.hcl "path" at atlas.hcl:2: absolute paths are not supported: /etc/absolute.hcl: give a path relative to the directory holding atlas.hcl` |
+| `path = "s3://bucket/x.hcl"` | `atlas.hcl "path" at atlas.hcl:2: unsupported URL scheme: s3://bucket/x.hcl` |
+
+`paths` is refused the same way, naming `paths`. An attribute the data source
+does not have — Atlas's `vars`, for one — is a different failure and keeps the
+construct wording: `unsupported atlas.hcl construct "vars"`.
+
 ## External schema data source
 
 `data "external_schema"` declares a program whose standard output is the
