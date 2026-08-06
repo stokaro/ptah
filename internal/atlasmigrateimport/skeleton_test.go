@@ -118,8 +118,13 @@ func TestSkeletonFilesMatchTheOracleLayout(t *testing.T) {
 // where two files are written and exactly one is covered.
 //
 // Reverted — with a name rule changed so the emitted file falls outside the
-// covered glob — the covered-count row prints `got 1 want 2` for golang-migrate,
-// and the loader row prints `no importable migration files found`.
+// covered glob, measured by emitting `.upp.sql` for golang-migrate — the
+// golang-migrate row alone fails, on the membership assertion rather than on
+// either count, because that one runs first:
+//
+//	error:     no matching element found
+//	container: []string{"1_init.up.sql"}
+//	want:      "20260806071434_addcol.upp.sql"
 func TestSkeletonFilesAreCoveredAndLoadable(t *testing.T) {
 	t.Parallel()
 	for _, format := range skeletonFormats() {
