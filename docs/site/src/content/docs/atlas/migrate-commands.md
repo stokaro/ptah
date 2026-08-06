@@ -675,6 +675,36 @@ alongside table changes) are refused.
 Docker dev databases fail explicitly until their provisioning semantics are
 implemented.
 
+### The publication boundary
+
+`migrate diff` opens the migration directory and its parent once, before
+anything is staged, and keeps both handles for the rest of the run. The parent
+is held as well because the publication journal and the commit marker sit
+beside the directory, so an interrupted run stays recoverable even when the
+directory itself was left half-built.
+
+Every later step names a direct child of one of those two handles: the staged
+files, the published migrations, `atlas.sum`, the journal, the commit marker,
+the rollback quarantine, and orphan cleanup. Recovery runs through the same
+handles, so an interrupted batch is withdrawn from the objects the run opened.
+The directory pathname survives only in reported paths and error text, and no
+write step resolves it a second time.
+
+This draws the boundary against a directory replaced after the run validated
+it. Replacing the pathname, or re-pointing a symlink on the way to it, no
+longer selects where the run writes: a migration or an `atlas.sum` can land
+only in the directory that was captured and verified. When the directory came
+from `atlas.hcl`, both handles are opened through the project root, so a
+replacement cannot move the write outside that root either.
+
+Two things stay keyed to the pathname on purpose. The cross-process lock file
+is created beside the directory before any handle exists, because it is
+cooperative mutual exclusion between Ptah processes rather than a boundary
+against a hostile writer, and every verb has to agree on its identity. The
+`--edit` callback also receives absolute staged paths, because an external
+editor cannot take a handle; the files it returns are re-validated through the
+retained handle before anything is published.
+
 ## Validate integrity
 
 `ptah-compat migrate validate` verifies the migration directory against
