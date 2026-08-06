@@ -135,9 +135,20 @@ func TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *testi
 // The parity comparison is only meaningful if the fixture can tell engines
 // apart at all. A fixture that rendered to the same statements everywhere would
 // make TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName pass
-// no matter what the predicates did. If the fixture is emptied or its
-// per-engine overrides are deleted, this fails naming the two engines that
-// collided.
+// no matter what the predicates did.
+//
+// Emptying the fixture reddens this test. Measured: it then reports one
+// survivor per fingerprint rather than the colliding pair, because the map is
+// keyed by fingerprint and the last engine written wins — `map[string]string
+// {"": "spanner"}` for an empty fixture.
+//
+// Deleting the per-engine `platform.<name>.<attr>` overrides does NOT redden
+// it, and an earlier version of this comment claimed it did. The remaining
+// column types and constraints still fingerprint the nine engines apart, so
+// the control holds for the reason above rather than because of the overrides.
+// What the overrides are load-bearing for is the parity test itself: under a
+// raw-index mutant, dropping `platform.sqlite.default` removes sqlite3 from
+// its divergent list and swapping `platform.clickhouse.type` removes ch.
 func TestFromDatabase_FixtureDiscriminatesEngines(t *testing.T) {
 	c := qt.New(t)
 
