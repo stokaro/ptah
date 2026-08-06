@@ -187,6 +187,8 @@ func TestRenderGoldenFile(t *testing.T) {
 
 	opts := baseOptions()
 	opts.GoPackage = "example.com/acme/gen/inventory/v1;inventoryv1"
+	// The golden file carries source prose, which is opt-in.
+	opts.Comments = protobufrender.CommentsAll
 
 	c.Assert(mustRenderText(c, db, opts), qt.Equals, goldenFile)
 }
@@ -404,7 +406,9 @@ func TestRenderCommentsCannotEscapeTheirContext(t *testing.T) {
 		Fields: columns("Thing", column("id", "BIGINT")),
 	}
 
-	text := mustRenderText(c, db, baseOptions())
+	// Comments are opt-in, and this test is about how they are RENDERED once
+	// asked for, so it asks.
+	text := mustRenderText(c, db, commentOptions(baseOptions(), protobufrender.CommentsAll))
 
 	c.Assert(text, qt.Contains, "// first line\n")
 	c.Assert(text, qt.Contains, "// } message Injected { int32 x = 1; } tabbed\n")
