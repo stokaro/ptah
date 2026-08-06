@@ -760,7 +760,7 @@ Atlas's external migration-tool `--dir-format` values are read directly by `hash
 
 `ptah-compat migrate lint --dev-url` now infers dialect and cleans and replays migrations on directly connectable dev databases; `--latest`, `--git-base`, and `--git-dir` select the linted changeset; `--format` renders Atlas Go-template output over `.Env`, `.Steps`, and `.Files`; Docker dev databases and web reports remain gaps.
 
-`ptah-compat migrate status --format` renders Atlas Go-template output over `.Env`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`.
+`ptah-compat migrate status --format` renders Atlas Go-template output over `.Env`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, `.Status`, and, on a half-applied migration, `.Count`, `.Total`, `.SQL`, and `.Error`. Its default report mirrors the Atlas shape (`Migration Status: OK` with `  -- Current Version:` / `  -- Next Version:` / `  -- Executed Files:` / `  -- Pending Files:` lines), because `migrate status` is the verb pipelines parse with a machine ([#1102](https://github.com/stokaro/ptah/issues/1102)); native `ptah migrations status` keeps its own block.
 
 `ptah-compat migrate diff --to` now supports local schema files, one directly
 connectable database URL, one local Atlas migration directory, or one `env://`

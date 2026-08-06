@@ -2,7 +2,6 @@ package atlas
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,7 +13,6 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/migration/migrator"
 )
 
 type atlasMigrateStatusOptions struct {
@@ -187,21 +185,23 @@ func runAtlasMigrateStatus(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	reportOpts := atlasreport.MigrateStatusOptions{
+		Driver:           conn.Info().Dialect,
+		URL:              opts.url,
+		Dir:              atlasStatusDirURL(opts.dir),
+		FS:               migrationFS,
+		Status:           result.Status,
+		AppliedRevisions: result.AppliedRevisions,
+	}
 	if formatOutput {
-		err := atlasreport.WriteMigrateStatusFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateStatusOptions{
-			Driver:           conn.Info().Dialect,
-			URL:              opts.url,
-			Dir:              atlasStatusDirURL(opts.dir),
-			FS:               migrationFS,
-			Status:           result.Status,
-			AppliedRevisions: result.AppliedRevisions,
-		})
-		if err != nil {
+		if err := atlasreport.WriteMigrateStatusFormat(cmd.OutOrStdout(), opts.format, reportOpts); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 		return nil
 	}
-	writeAtlasMigrateStatusDefault(cmd, result)
+	if err := writeAtlasMigrateStatusDefault(cmd, reportOpts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	return nil
 }
 
@@ -226,49 +226,30 @@ func validateAtlasMigrateStatusFormat(format string) error {
 	return nil
 }
 
-func writeAtlasMigrateStatusDefault(cmd *cobra.Command, result atlasmigrate.StatusResult) {
-	status := result.Status
-	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "=== MIGRATION STATUS ===")
-	fmt.Fprintf(out, "Current Version: %d\n", status.CurrentVersion)
-	fmt.Fprintf(out, "Total Migrations: %d\n", status.TotalMigrations)
-	fmt.Fprintf(out, "Applied Migrations: %d\n", len(status.AppliedMigrations))
-	fmt.Fprintf(out, "Pending Migrations: %d\n", len(status.PendingMigrations))
-	writeAtlasMigrateStatusDirty(out, status.DirtyRevision)
-	if status.HasPendingChanges {
-		fmt.Fprintln(out, "Status: Pending migrations available")
-		return
-	}
-	fmt.Fprintln(out, "Status: Database is up to date")
-}
-
-// writeAtlasMigrateStatusDirty reports a half-applied migration.
+// writeAtlasMigrateStatusDefault writes the mirrored Atlas status report
+// (stokaro/ptah#1102).
 //
-// Current Version above is the highest recorded version, which includes a
-// version whose body failed part-way; without this block the output named that
-// version and then said only "Pending migrations available", so a wedged
-// database was indistinguishable from a healthy one with work outstanding
-// (#966). The community Atlas binary annotates the same state on its own
-// Current Version line and prints the failing statement afterwards; this keeps
-// ptah-compat's own status layout and adds the same facts rather than
-// restructuring the block.
-func writeAtlasMigrateStatusDirty(out io.Writer, revision *migrator.MigrationRevision) {
-	if revision == nil {
-		return
-	}
-	fmt.Fprintf(
-		out,
-		"Dirty Migration: version=%d applied=%d/%d\n",
-		revision.Version,
-		revision.Applied,
-		revision.Total,
-	)
-	if revision.ErrorStatement != "" {
-		fmt.Fprintf(out, "Error Statement: %s\n", revision.ErrorStatement)
-	}
-	if revision.Error != "" {
-		fmt.Fprintf(out, "Error: %s\n", revision.Error)
-	}
+// This verb is the one a deploy pipeline parses with a machine rather than
+// reads, so its field names, sentinel strings and value encodings are the
+// interface, not a wording preference — separate from the deliberate prose
+// divergence settled on `migrate lint` in #1062/#1078. The block Ptah used to
+// print here (`=== MIGRATION STATUS ===`, `Current Version: 0`, `Status:
+// Database is up to date`) shared no line with the community binary, so
+// `grep -q 'Migration Status: OK'` as a deploy gate never fired, `-- Current
+// Version:` matched nothing, and `Next Version:` had no counterpart at all —
+// while both binaries exited 0, so nothing caught it.
+//
+// Native `ptah migrations status` deliberately keeps its own block, including
+// its own counts and its `Dirty Migration:` line: the two surfaces are allowed
+// to differ and only the compat one is a contract. `--format` is not a
+// substitute either, because a caller has to already know it is not talking to
+// the binary being mirrored in order to pass one.
+//
+// The rendering lives in internal/atlasreport beside the `--format` model so
+// the two paths agree on Current, Next, the file counts and the failure by
+// construction rather than by two implementations staying in step.
+func writeAtlasMigrateStatusDefault(cmd *cobra.Command, opts atlasreport.MigrateStatusOptions) error {
+	return atlasreport.WriteMigrateStatusText(cmd.OutOrStdout(), opts)
 }
 
 func atlasStatusDirURL(raw string) string {

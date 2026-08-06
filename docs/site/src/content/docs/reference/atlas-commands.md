@@ -122,8 +122,28 @@ Native twin: [`ptah migrations up`](../native-commands/).
 Reports Atlas-format migration status with Atlas revision-table metadata and
 Atlas-format migration directories by default. Supports `--dir-format atlas`,
 `--revisions-schema`, and Atlas Go-template `--format` output over `.Env`,
-`.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`.
-Native twin: [`ptah migrations status`](../native-commands/).
+`.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, `.Status`, and — on
+a half-applied migration — `.Count`, `.Total`, `.SQL`, and `.Error`.
+
+The default (no `--format`) report mirrors the Atlas shape, because this is the
+verb pipelines parse:
+
+```text
+Migration Status: PENDING
+  -- Current Version: No migration applied yet
+  -- Next Version:    20260721120000
+  -- Executed Files:  0
+  -- Pending Files:   2
+```
+
+`Executed Files` counts revision rows and `Pending Files` counts directory files
+not yet recorded. A half-applied migration annotates the first three lines
+(`(1 statements applied)`, `(1 statements left)`, `(last one partially)`) and
+adds a `Last migration attempt had errors:` block naming the failing statement.
+
+Native twin: [`ptah migrations status`](../native-commands/), which keeps its
+own block — only the compatibility surface is a contract with an existing
+pipeline.
 
 ### `ptah-compat migrate hash`
 
