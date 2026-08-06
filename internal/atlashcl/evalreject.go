@@ -145,7 +145,18 @@ func sqlCallArgument(expr hclsyntax.Expression) (hclsyntax.Expression, bool) {
 // names columns.
 func mustEvaluate(expr hclsyntax.Expression) bool {
 	if usesEvalNamespace(expr) {
-		return true
+		// ...unless the same expression also reaches a namespace this context
+		// does not bind. `column = var.by_a ? column.a : column.b` mixes the two
+		// resolvers: `var` comes from here, `column` from the schema-object
+		// resolver in column_ref.go, which picks the branch and reads the
+		// column off it (stokaro/ptah#1182). Evaluating the whole expression
+		// here would fail on `column` and report `unknown variable: There is no
+		// variable named "column"` for a spelling the pinned community binary
+		// plans correctly.
+		//
+		// Ownership, not tolerance: an expression naming a schema object is the
+		// object resolver's, and it still refuses one that names nothing.
+		return !usesNonEvalTraversal(expr)
 	}
 	call, ok := expr.(*hclsyntax.FunctionCallExpr)
 	return ok && call.Name != sqlFuncName
@@ -163,4 +174,16 @@ func usesEvalNamespace(expr hclsyntax.Expression) bool {
 
 func isEvalNamespace(name string) bool {
 	return name == varNamespace || name == localNamespace
+}
+
+// usesNonEvalTraversal reports whether expr reads a traversal root the
+// evaluation context does not bind -- `column`, `table`, `enum`, `schema` and
+// the other schema-object namespaces.
+func usesNonEvalTraversal(expr hclsyntax.Expression) bool {
+	for _, traversal := range hclsyntax.Variables(expr) {
+		if !isEvalNamespace(traversal.RootName()) {
+			return true
+		}
+	}
+	return false
 }
