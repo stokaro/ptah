@@ -27,7 +27,7 @@ func TestCompatCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"migrate", "lint",
-		"--dir", migrationsDir,
+		"--dir", "file://" + migrationsDir,
 		"--dev-url", "sqlite://" + devDBPath,
 	})
 
@@ -53,7 +53,7 @@ func TestCompatCommand_MigrateLintRejectsDockerDevURL(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"migrate", "lint",
-		"--dir", migrationsDir,
+		"--dir", "file://" + migrationsDir,
 		"--dev-url", "docker://postgres/16/dev",
 	})
 

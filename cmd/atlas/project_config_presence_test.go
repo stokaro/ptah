@@ -100,7 +100,7 @@ env "ci" {
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--env", "ci",
-		"--dir", "migrations",
+		"--dir", "file://migrations",
 		"--dev-url", "sqlite://" + filepath.Join(root, "dev.db"),
 	})
 
@@ -136,7 +136,7 @@ func TestCompatCommand_ExplicitGitBaseSuppressesProjectLatest(t *testing.T) {
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--env", "ci",
-		"--dir", "migrations",
+		"--dir", "file://migrations",
 		"--dev-url", "sqlite://" + filepath.Join(root, "dev.db"),
 		"--git-base=-unsafe",
 	})
@@ -177,7 +177,7 @@ func TestCompatCommand_ExplicitLatestSuppressesProjectGitSelector(t *testing.T) 
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--env", "ci",
-		"--dir", "migrations",
+		"--dir", "file://migrations",
 		"--dev-url", "sqlite://" + filepath.Join(root, "dev.db"),
 		"--latest", "1",
 	})

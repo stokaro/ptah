@@ -100,6 +100,25 @@ func runAtlasMigrateStatus(
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatOutput = formatOutput || formatValue.Present
 	}
+	// The scheme refusal runs before everything this command body validates,
+	// and the position is measured rather than chosen. On the pinned community
+	// binary v1.3.0, `migrate status --dir mig` beats a missing --url, an
+	// unknown --dir-format and a malformed --format template with
+	// `missing scheme for dir url. Did you mean "file://mig"?`; the control
+	// `--dir file://mig --dir-format nosuchfmt` prints `unknown dir format
+	// "nosuchfmt"`, so the dir-format diagnostic is reachable and only the
+	// scheme outranks it. Ptah answered `database URL is required` here.
+	//
+	// Only a command-line --dir is gated; a directory named by atlas.hcl is out
+	// of scope for stokaro/ptah#1186.
+	dirFromProject := loaded &&
+		!cmd.Flags().Changed("dir") &&
+		projectCfg.StringValue(projectconfig.StringMigrationDir).Present
+	if !dirFromProject {
+		if err := atlasargs.RequireDirScheme(opts.dir); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	if err := validateAtlasMigrateStatusOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -122,11 +141,11 @@ func runAtlasMigrateStatus(
 	}
 
 	var localDir atlasargs.LocalDir
-	if loaded &&
-		!cmd.Flags().Changed("dir") &&
-		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
+	if dirFromProject {
 		localDir, err = project.localDirWithQuery(opts.dir)
 	} else {
+		// The scheme was already required above, where the measured ordering
+		// puts it.
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
 	if err != nil {
