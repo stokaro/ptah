@@ -25,18 +25,17 @@ const (
 	versionPrefix   = "// ptah:protobuf-export-version="
 	digestPrefix    = "// ptah:content-sha256="
 
-	// exportVersion is the format version of the generated file. A file
-	// declaring a higher version was written by a newer Ptah and must not be
-	// rewritten by this one.
+	// exportVersion is the format version of the generated file, and the only
+	// one this exporter reads or writes. A file declaring any other version is
+	// refused: a higher one was written by a newer Ptah, and a lower one is a
+	// retired layout.
 	//
-	// Version 2 moved the header block from the head of the file to its foot.
-	// Version 1 files are still read, and are rewritten into the version 2
-	// layout with every pinned number preserved.
+	// Version 1 put the header block at the head of the file, which made it
+	// protoc-gen-go's leading comment too. It was retired rather than migrated:
+	// Ptah is pre-general-availability, so a published .proto carrying it is a
+	// baseline someone can regenerate, and carrying a second reader forever to
+	// save that one regeneration is the wrong trade.
 	exportVersion = 2
-
-	// headerLayoutVersion is the last format version that wrote the header at
-	// the head of the file.
-	headerLayoutVersion = 1
 )
 
 var utf8BOM = []byte{0xef, 0xbb, 0xbf}
@@ -123,7 +122,14 @@ type parsedHeader struct {
 
 // hasHeaderMarker reports whether the generated marker sits in one of the two
 // positions the exporter has ever written it: the file's trailing comment block,
-// which is the current layout, or its first line, which is the version 1 layout.
+// which is the only layout still written, or its first line, which is the
+// retired version 1 layout.
+//
+// The retired position is still RECOGNIZED even though version 1 is no longer
+// read, so that a version 1 file is diagnosed by its version — "delete the file
+// and export again" — rather than as a foreign file, which is a different
+// remedy for a different problem and would leave the reader hunting for who
+// else wrote their .proto.
 //
 // The marker is anchored to those positions rather than searched for file-wide.
 // A table comment whose text happens to reproduce the marker renders as an
@@ -172,8 +178,10 @@ func parseHeader(canonical []byte) (parsedHeader, error) {
 		if err != nil {
 			return parsedHeader{}, fmt.Errorf("%w: unreadable export version %q", ErrUnsupportedVersion, raw)
 		}
-		if version > exportVersion {
-			return parsedHeader{}, fmt.Errorf("%w: file declares export version %d, this Ptah supports %d",
+		if version != exportVersion {
+			return parsedHeader{}, fmt.Errorf(
+				"%w: file declares export version %d, this Ptah reads and writes only %d; "+
+					"delete the file and export again to start a new compatibility history",
 				ErrUnsupportedVersion, version, exportVersion)
 		}
 		return parsedHeader{Version: version}, nil
