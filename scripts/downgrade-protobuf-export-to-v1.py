@@ -6,9 +6,10 @@ Version 1 carried the three generated header lines at the top of the file, where
 they were the file's leading detached comment and protoc-gen-go copied them into
 every .pb.go. Version 2 writes the same lines at the foot instead.
 
-Ptah only ever writes version 2, so this is the only way for an acceptance run to
-obtain the on-disk shape older releases left behind and prove that it is migrated
-rather than refused.
+Ptah only ever writes version 2 and no longer reads version 1, so this is the
+only way for an acceptance run to obtain the on-disk shape older releases left
+behind and prove that it is refused by its VERSION rather than as a foreign
+file. The two refusals have different remedies, and only one of them is right.
 """
 
 import argparse
