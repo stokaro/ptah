@@ -720,6 +720,20 @@ table "t" {
 // accepting one of these the row is no longer a divergence and should move, and
 // if Ptah starts accepting one the trade recorded here has been reversed
 // without being re-argued.
+//
+// The "declared variable" row was removed here rather than adjusted, and this
+// is that argument. `annotation "gql" { ref = var.v }` beside a declared
+// `variable "v"` was a divergence only because the dropped body's scope did not
+// bind `var`; #926 gives it the same evaluation context the rest of the file
+// uses, so the reference resolves. Measured on both, the row is no longer a
+// divergence in either direction:
+//
+//	oracle:      exit 0, table "t" with column "id"
+//	ptah-compat: exit 0, table "t" with column "id"
+//
+// The remaining rows keep the trade, and for the reason above: their roots are
+// `column` and `table`, which need a reference root built from the file's own
+// blocks — the thing every attempt so far has had to guess a member of.
 func TestOracleAcceptsReferencesPtahRefuses(t *testing.T) {
 	oracle := requireSchemaOracle(t)
 	c := qt.New(t)
@@ -728,25 +742,6 @@ func TestOracleAcceptsReferencesPtahRefuses(t *testing.T) {
 		name string
 		hcl  string
 	}{
-		{
-			name: "declared variable",
-			hcl: `variable "v" {
-  type    = string
-  default = "x"
-}
-schema "main" {
-}
-annotation "gql" {
-  ref = var.v
-}
-table "t" {
-  schema = schema.main
-  column "id" {
-    type = int
-  }
-}
-`,
-		},
 		{
 			name: "column root inside a table body",
 			hcl: `schema "main" {

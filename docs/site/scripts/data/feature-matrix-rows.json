@@ -1181,11 +1181,11 @@
   {
     "area": "Schema sources",
     "feature": "HCL variable blocks and var.* references",
-    "ptah": "no",
+    "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "`variable` is parsed then discarded and `var.x` reaches DDL as the literal text `var.x`, exit 0 — no substitution and no error.",
-    "evidence": "internal/atlashcl/atlashcl.go:107-110 and 1478-1484; conformance gaps.md atlas-hcl-parse row `schemahcl/testdata/variables.hcl` — \"only non-schema top-level blocks: variable\". `variable` + var.x inside a schema file substitutes in Atlas (measured; observation study, scenario, hcl-semantics)"
+    "note": "`variable` blocks bind `var.x`, `--var name=value` overrides them, and a typed variable with no value exits 1 with `missing value for required variable \"x\"` — the community binary's own text.",
+    "evidence": "internal/atlashcl/evalcontext.go (var./local. namespaces, --var overrides, variable type keywords) and internal/atlashcl/evalreject.go (refusal of what will not resolve); plumbed through internal/schemafile.Options.Vars to the compat schema and migrate groups. Measured 2026-08-06, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, `schema diff --dev-url \"sqlite://file?mode=memory\"`, fixture with the reference in a COLUMN DEFAULT — a table comment discriminates nothing because ptah drops table comments on SQLite either way. variable status { type = string, default = \"active\" } with `default = var.status`: both binaries exit 0 and render DEFAULT 'active'. Same file with no default and no --var: both exit 1 with `missing value for required variable \"status\"`. Same file with --var status=live: both exit 0 and render DEFAULT 'live'; ptah previously exited 1 demanding an atlas.hcl the community binary does not read. Control with a literal `default = \"active\"` renders identically on both before and after, so the fixture discriminates on the variable alone. `type = var.coltype` exits 1 on both — the community binary with 'set field \"type\": unexpected type string'."
   },
   {
     "area": "Schema sources",
@@ -1193,17 +1193,17 @@
     "ptah": "partial",
     "atlas_oss": "partial",
     "atlas_pro": "partial",
-    "note": "sql() unwraps in column default/on_update/unique_expr/check, index ops, domain check only; in type, check.expr and index.where it leaks into the DDL where the community binary refuses the file.",
-    "evidence": "internal/atlashcl/atlashcl.go:1466-1476 (textual `sql(` prefix match, 6 call sites) and 1486-1496. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Column type: `type = sql(\"varchar(17)\")` -> community binary plans `\"s\" character varying(17)`, ptah-compat plans `\"s\" sql(\"varchar(17)\")`, which is not valid SQL. check.expr and index.where: `expr = sql(\"n > 0\")` with `where = sql(\"n > 5\")` -> community binary exits 1 with 'schemahcl: failed reading spec as *postgres.doc: value of attr \"expr\" cannot be read as string: incorrect type raw', ptah-compat exits 0 and emits CHECK (sql(\"n > 0\")) and WHERE sql(\"n > 5\"). Ptah accepting where the community binary refuses is the ordinary Pro-parity direction, but here it ships DDL no engine will execute; tracked as a follow-up, not fixed by this docs change."
+    "note": "sql() reduces to its SQL everywhere; other calls evaluate against a function set measured name by name on the community binary. yamldecode, yamlencode, uuid and print stay refused where it evaluates.",
+    "evidence": "internal/atlashcl/sqlrawexpr.go (structural sql() reduction, stokaro/ptah#1131 and #1140) and internal/atlashcl/evalcontext.go schemaFunctions. The function set is a measurement, not a guess: each candidate name was called with no arguments in a column default and run through the pinned community binary (reports \"atlas community version v1.3.0\") with `schema diff --dev-url \"sqlite://file?mode=memory\"`; \"There is no function named X\" means absent, an arity or type complaint means present. 68 present, 38 absent, and the negative control `nosuchfnxyz` came back absent, so the probe discriminates. `reverse` is the LIST reverse there and `strrev` the STRING reverse — go-cty spells them the other way round, so a name-for-name match swaps both. Four measured-present names are not implemented: yamldecode and yamlencode would add a module dependency, and uuid and print are a nondeterministic generator and a debug tap. Measured 2026-08-06, same command: `default = upper(\"abc\")` renders DEFAULT 'ABC' on both binaries where ptah-compat previously rendered the literal text upper(\"abc\") at exit 0; `default = now()` exits 1 on both. Remaining looseness, unchanged by this row: check.expr and index.where accept sql() here and are refused by the community binary ('incorrect type raw')."
   },
   {
     "area": "Schema sources",
     "feature": "HCL locals, lock, atlas, dynamic/for_each",
-    "ptah": "no",
+    "ptah": "partial",
     "atlas_oss": "partial",
     "atlas_pro": "partial",
-    "note": "Named rejections, rejected (`ptah-compat` exit 1, native `ptah` exit 2): unsupported top-level block \"locals\"/\"lock\"/\"atlas\"; unsupported table block \"dynamic\". The community binary honors locals.",
-    "evidence": "internal/atlashcl/atlashcl.go:111-113 and 321-323; `ptah schema render --schema-file t_locals.hcl` prints each quoted error. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. locals { dflt = 7 } referenced as `default = local.dflt`: community binary plans `\"n\" integer NOT NULL DEFAULT 7` - the literal 7 is the discriminator, it can only appear if the local resolved - while ptah-compat exits 1 'unsupported top-level block \"locals\"'. lock {} and atlas {} in a schema file: community binary exits 0 and plans the table, so the blocks are accepted and ignored rather than refused. dynamic \"index\" with for_each: community binary exits 0 and plans no index at all, so no expansion happens; the marker name idx_dynamic_marker never appears."
+    "note": "`locals` is evaluated and `local.x` resolves. Still rejected by name (`ptah-compat` exit 1, native `ptah` exit 2): top-level \"lock\"/\"atlas\"; table block \"dynamic\". The community binary ignores both.",
+    "evidence": "internal/atlashcl/evalcontext.go bindLocals (fixed-point evaluation, so locals may reference each other and the var. namespace in any order); lock/atlas/dynamic still reach the default arm of parseTopLevelBlock and `ptah schema render` prints each quoted error. Measured 2026-08-06, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, `schema diff --dev-url \"sqlite://file?mode=memory\"`. locals { d = \"abc\" } referenced as `default = local.d`: both binaries now exit 0 and render DEFAULT 'abc' - the literal abc is the discriminator, it can only appear if the local resolved - where ptah-compat previously exited 1 'unsupported top-level block \"locals\"'. Unchanged from the 2026-08-03 round: lock {} and atlas {} in a schema file are accepted and ignored by the community binary at exit 0, and dynamic \"index\" with for_each exits 0 there planning no index at all, so no expansion happens and the marker name idx_dynamic_marker never appears."
   },
   {
     "area": "Schema sources",

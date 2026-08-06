@@ -131,6 +131,10 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	if err := validateAtlasSchemaDiffOptions(cmd, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemaVars, err := atlasVarFlagValues(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	report, err := atlasschema.Diff(cmd.Context(), atlasschema.DiffOptions{
 		FromURLs:    opts.fromURLs,
@@ -145,6 +149,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
 		IgnoreUnknownHCLNames: true,
+		Vars:                  schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

@@ -676,6 +676,9 @@ table "t" {
 			wantErr: `parse HCL schema at schema\.hcl:12,11-22: unknown variable "primary_key"`,
 		},
 		{
+			// Since issue #926 the file's own variables are in scope here, so
+			// this fails on the member access rather than on the root -- the
+			// same diagnostic the community binary reports for it.
 			name: "attribute access on a declared string variable",
 			hcl: `variable "v" {
   type    = string
@@ -687,7 +690,7 @@ annotation "gql" {
   ref = var.v.nope
 }
 `,
-			wantErr: `parse HCL schema at schema\.hcl:8,9-12: unknown variable "var"`,
+			wantErr: `parse HCL schema at schema\.hcl:8,14-19: unsupported attribute: Can't access attributes on a primitive-typed value \(string\)\.`,
 		},
 		{
 			name: "arithmetic over a declared string variable",
@@ -701,7 +704,7 @@ annotation "gql" {
   ref = 1 + var.v
 }
 `,
-			wantErr: `parse HCL schema at schema\.hcl:8,13-16: unknown variable "var"`,
+			wantErr: `parse HCL schema at schema\.hcl:8,13-18: invalid operand: Unsuitable value for right operand: a number is required\.`,
 		},
 		{
 			name: "reference that stops on a block type rather than a block",
@@ -822,6 +825,25 @@ annotation "gql" {
 }
 `,
 		},
+		{
+			// Moved here from
+			// TestParseIgnoreUnknownNamesIsStricterThanTheOracleOnReferences by
+			// issue #926, which is the revisit that test's doc comment asked
+			// for: the file's own variable blocks now bind real typed values,
+			// so a dropped body reading one resolves it exactly as the
+			// community binary does instead of being refused.
+			name: "declared variable inside a dropped block",
+			hcl: `variable "v" {
+  type    = string
+  default = "x"
+}
+schema "main" {
+}
+annotation "gql" {
+  gql = var.v
+}
+`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -854,20 +876,6 @@ func TestParseIgnoreUnknownNamesIsStricterThanTheOracleOnReferences(t *testing.T
 		hcl     string
 		wantErr string
 	}{
-		{
-			name: "declared variable",
-			hcl: `variable "v" {
-  type    = string
-  default = "x"
-}
-schema "main" {
-}
-annotation "gql" {
-  gql = var.v
-}
-`,
-			wantErr: `.*unknown variable "var"`,
-		},
 		{
 			name: "column root inside a table body",
 			hcl: `schema "main" {

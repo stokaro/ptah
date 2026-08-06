@@ -341,15 +341,32 @@ func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, b
 		flags.envName = flag.Value.String()
 		changed = changed || flag.Changed
 	}
-	if flag := cmd.Flags().Lookup(atlasVarFlagName); flag != nil {
-		values, err := cmd.Flags().GetStringArray(atlasVarFlagName)
-		if err != nil {
-			return atlasProjectFlagValues{}, false, err
-		}
-		flags.vars = values
-		changed = changed || flag.Changed
+	// --var deliberately does NOT contribute to `changed`, which is what makes
+	// the project file REQUIRED. Measured on the pinned Atlas community binary
+	// v1.3.0 in a directory holding no atlas.hcl:
+	//
+	//	schema diff --from file://empty.hcl --to file://v.hcl --var status=live
+	//	  -> exit 0, DEFAULT 'live'
+	//
+	// Ptah answered `failed to read atlas config atlas.hcl: no such file or
+	// directory` at exit 1, because --var reached only config/projectconfig and
+	// dragged the project requirement along with it. The values are still
+	// carried below, so an atlas.hcl that IS present still gets them.
+	values, err := atlasVarFlagValues(cmd)
+	if err != nil {
+		return atlasProjectFlagValues{}, false, err
 	}
+	flags.vars = values
 	return flags, changed, nil
+}
+
+// atlasVarFlagValues reads --var, which the Atlas-compatible commands hand both
+// to the project config and to the HCL schema files they load.
+func atlasVarFlagValues(cmd *cobra.Command) ([]string, error) {
+	if cmd.Flags().Lookup(atlasVarFlagName) == nil {
+		return nil, nil
+	}
+	return cmd.Flags().GetStringArray(atlasVarFlagName)
 }
 
 func refreshAtlasProjectFlagEnvironment(cmd *cobra.Command) error {

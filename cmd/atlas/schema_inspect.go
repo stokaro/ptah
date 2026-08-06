@@ -138,6 +138,10 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err := validateAtlasSchemaInspectOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemaVars, err := atlasVarFlagValues(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
 		URL:            opts.url,
@@ -152,6 +156,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
 		IgnoreUnknownHCLNames: true,
+		Vars:                  schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

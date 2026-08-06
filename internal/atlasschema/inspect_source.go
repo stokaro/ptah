@@ -49,6 +49,9 @@ type InspectSourceOptions struct {
 	// ConnectTimeout bounds the initial database connection attempts. Zero
 	// disables the bound.
 	ConnectTimeout time.Duration
+	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
+	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	Vars []string
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
@@ -127,6 +130,7 @@ func inspectOnDev(
 		desired, err = schemafile.LoadAll(sourceRawURLs(set), schemafile.Options{
 			Dialect:               dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			Vars:                  opts.Vars,
 		})
 		if err != nil {
 			return "", err

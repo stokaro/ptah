@@ -108,12 +108,36 @@ var droppedBodyFunctions = map[string]function.Function{
 	"upper":      stdlib.UpperFunc,
 }
 
-// droppedBodyContext is the evaluation context every dropped expression sees.
-// It is built once and never mutated; HCL only reads it, and a for-expression
-// binds its iterator in a child context rather than in this one.
+// droppedBodyContext is the base evaluation context every dropped expression
+// sees. It is built once and never mutated; HCL only reads it, and a
+// for-expression binds its iterator in a child context rather than in this one.
 var droppedBodyContext = &hcl.EvalContext{
 	Variables: droppedBodyScope,
 	Functions: droppedBodyFunctions,
+}
+
+// droppedContext is droppedBodyContext plus whatever the file's own variable
+// and locals blocks actually declared.
+//
+// The scope above is closed because the earlier attempts to model the file
+// reached for wildcards; these two names need no wildcard. They carry the real
+// typed values newEvalContext resolved, so `ref = var.v` on a declared string
+// variable resolves exactly as it does on the community binary, while
+// `ref = var.v.nope` and `ref = 1 + var.v` fail there with that binary's own
+// member-access and operand diagnostics rather than with a blanket
+// "unknown variable". Nothing widens: a name with no block declaring it is
+// still absent, and the failure is still the closed-scope one.
+func (p *parser) droppedContext() *hcl.EvalContext {
+	if p.ctx == nil {
+		return droppedBodyContext
+	}
+	scope := maps.Clone(droppedBodyScope)
+	for _, name := range []string{varNamespace, localNamespace} {
+		if value, bound := p.ctx.Variables[name]; bound {
+			scope[name] = value
+		}
+	}
+	return &hcl.EvalContext{Variables: scope, Functions: droppedBodyFunctions}
 }
 
 // tolerateUnknownBlock accepts a block name this parser does not model.
@@ -208,6 +232,7 @@ func (p *parser) checkDroppedExpr(expr hclsyntax.Expression) error {
 	if expr == nil {
 		return nil
 	}
+	ctx := p.droppedContext()
 	for _, traversal := range expr.Variables() {
 		if len(traversal) == 0 {
 			continue
@@ -216,7 +241,7 @@ func (p *parser) checkDroppedExpr(expr hclsyntax.Expression) error {
 		if !ok {
 			continue
 		}
-		if _, inScope := droppedBodyScope[root.Name]; inScope {
+		if _, inScope := ctx.Variables[root.Name]; inScope {
 			continue
 		}
 		// The root's own range, not the whole traversal's: the community binary
@@ -224,7 +249,7 @@ func (p *parser) checkDroppedExpr(expr hclsyntax.Expression) error {
 		// at `column`.
 		return p.unknownVariableError(root.Name, root.SrcRange)
 	}
-	if _, diags := expr.Value(droppedBodyContext); diags.HasErrors() {
+	if _, diags := expr.Value(ctx); diags.HasErrors() {
 		return p.evaluationFailed(diags)
 	}
 	return nil
