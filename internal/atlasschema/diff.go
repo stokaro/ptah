@@ -38,6 +38,9 @@ type DiffOptions struct {
 	// that matched nothing on either side. It never receives plan output, so
 	// the bytes on standard output stay unchanged.
 	Diagnostics io.Writer
+	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
+	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	Vars []string
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
@@ -83,6 +86,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		Schemas:               opts.Schemas,
 		ConnectTimeout:        opts.ConnectTimeout,
 		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+		Vars:                  opts.Vars,
 	}
 	fromState, err := fromSet.Resolve(ctx, resolveOpts)
 	if err != nil {

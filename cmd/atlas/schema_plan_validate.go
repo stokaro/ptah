@@ -151,9 +151,14 @@ func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidate
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	schemaVars, err := atlasVarFlagValues(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	desired, err := schemafile.LoadAll(opts.toURLs, schemafile.Options{
 		Dialect:               conn.Info().Dialect,
 		IgnoreUnknownHCLNames: true,
+		Vars:                  schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
