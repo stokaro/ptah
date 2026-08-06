@@ -49,14 +49,50 @@
     {
       "name": "the destructive migrate set is printed anyway",
       "file": "cmd/atlas/migrate_apply_foreign_flyway.go",
-      "old": "\tif len(removed) == 0 {\n\t\treturn fmt.Sprintf(",
-      "new": "\tif true {\n\t\t_ = removed\n\t\treturn fmt.Sprintf("
+      "old": "\tif len(removed) == 0 && len(unrun) == 0 {",
+      "new": "\tif len(unrun) == 0 {\n\t\t_ = removed"
+    },
+    {
+      "name": "the lossy migrate set is printed anyway",
+      "file": "cmd/atlas/migrate_apply_foreign_flyway.go",
+      "old": "\tif len(removed) == 0 && len(unrun) == 0 {",
+      "new": "\tif len(removed) == 0 {\n\t\t_ = unrun"
     },
     {
       "name": "INVERSE: the migrate set route is never offered",
       "file": "cmd/atlas/migrate_apply_foreign_flyway.go",
-      "old": "\tif len(removed) == 0 {\n\t\treturn fmt.Sprintf(",
-      "new": "\tif false {\n\t\treturn fmt.Sprintf("
+      "old": "\tif len(removed) == 0 && len(unrun) == 0 {",
+      "new": "\tif false {\n\t\t_, _ = removed, unrun"
+    },
+    {
+      "name": "the migrations the route would assert unrun are never named",
+      "file": "cmd/atlas/migrate_apply_foreign_flyway.go",
+      "old": "\t\t\tlabels = append(labels, fmt.Sprintf(\"%s (%d)\", migration.Source, migration.Version))",
+      "new": "\t\t\tlabels = append(labels, \"a migration\")\n\t\t\t_ = migration"
+    },
+    {
+      "name": "a migration above the head is counted as one the route would record",
+      "file": "cmd/atlas/migrate_apply_foreign_flyway.go",
+      "old": "\t\tif migration.Version > head {\n\t\t\tcontinue\n\t\t}\n",
+      "new": ""
+    },
+    {
+      "name": "only the other implementation's rows count as executed",
+      "file": "cmd/atlas/migrate_apply_foreign_flyway.go",
+      "old": "\t\tif slices.Contains(applied, migration.Version) || slices.Contains(ran, migration.Version) {",
+      "new": "\t\tif slices.Contains(ran, migration.Version) {"
+    },
+    {
+      "name": "only this build's own rows count as executed",
+      "file": "cmd/atlas/migrate_apply_foreign_flyway.go",
+      "old": "\t\tif slices.Contains(applied, migration.Version) || slices.Contains(ran, migration.Version) {",
+      "new": "\t\tif slices.Contains(applied, migration.Version) {\n\t\t\t_ = ran"
+    },
+    {
+      "name": "the offer still calls the result up to date instead of one way",
+      "file": "cmd/atlas/migrate_apply_foreign_flyway.go",
+      "old": "\"already run, so nothing is recorded that did not execute. It is a one-way switch: the revision \"+\n\t\t\t\"table then carries both spellings, and the implementation that wrote it refuses a migration \"+\n\t\t\t\"added afterwards as out of order.\\n\", head, len(stale))",
+      "new": "\"already run. The other implementation still reads the result as up to date.\\n\", head, len(stale))"
     },
     {
       "name": "every converted layout is checked, not only Flyway",

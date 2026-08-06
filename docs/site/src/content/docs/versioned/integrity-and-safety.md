@@ -405,20 +405,41 @@ recorded version -> version this build uses:
   2                    -> 4611686018427510315  V2__seed.sql
 ```
 
-Two ways forward, both measured:
+Two ways forward, both measured. They are **alternatives, not steps** — taking
+the second closes the first:
 
 - Keep applying that database with the implementation that wrote its revision
   table. It reads its own versions and is unaffected.
 - Adopt the versions this build uses. The refusal prints
-  `migrate set <head version>`; run it with the same `--dir` and `--url`, and
-  Atlas CE still reads the result as up to date afterwards.
+  `migrate set <head version>`; run it with the same `--dir` and `--url`.
 
-The second route is withdrawn, by name, on the one shape where it would destroy
-history. `migrate set` moves the database to exactly the version given and
-removes the revisions above it, and a converted baseline lands in a low band, so
-a directory whose head is a baseline can have real revisions above it. The
-refusal then says there is no safe route and names the rows the command would
-have deleted.
+`migrate set` records this build's versions and does **not** remove the source
+tool's, so the revision table then carries both spellings. Measured on
+`V1__a.sql` and `V2__b.sql` recorded by Atlas CE as `1` and `2`: right after the
+route, Atlas CE v1.3.0 still prints `No migration files to execute` at exit 0 —
+but add `V3__c.sql` and it prints
+`migration file V3__c.sql was added out of order` at exit 1, while `ptah-compat`
+applies it at exit 0. The controls separate that from the added file: the same
+three-file directory on a fresh database, and on a database carrying only CE's
+`1`,`2`, both apply at exit 0 on Atlas CE. So the switch is one way, and the
+refusal says so rather than calling the result up to date.
+
+The second route is withdrawn, by name, on the two shapes where `migrate set`
+is not a no-op. It moves the database to exactly the version given, which both
+**removes** the revisions above it and **records** every covered migration below
+it, run or not:
+
+- A converted baseline lands in a low band, so a directory whose head is a
+  baseline can have real revisions above it. The refusal names the rows the
+  command would have deleted.
+- The head is the largest version among the migrations the other implementation
+  *ran*, and the covered migrations below it need not all be among them.
+  Measured on `V1__g1.sql` and `V3__g3.sql` recorded as `1` and `3` with
+  `V2__g2.sql` added afterwards: `migrate set 4611686018427551119` reports
+  `(3 set)`, the next apply prints `No migration files to execute.` at exit 0,
+  and table `g2` is absent with its version recorded — it can never run again.
+  The refusal names that file and the version the command would assert, so
+  nothing is lost by following the printed instruction.
 
 A baseline added to a directory another implementation has already applied is
 covered by the same refusal, and it is not the same defect: nothing re-runs, a

@@ -115,7 +115,7 @@ func checkForeignFlywayRevisions(
 	if len(stale) == 0 {
 		return nil
 	}
-	return errors.New(foreignFlywayRefusal(stale, applied))
+	return errors.New(foreignFlywayRefusal(covered, stale, applied))
 }
 
 // foreignFlywayRevisions selects the migrations this database recorded under
@@ -167,7 +167,7 @@ func foreignFlywayRevisions(
 	return stale
 }
 
-// foreignFlywayRefusal renders the refusal and the two routes measured to work.
+// foreignFlywayRefusal renders the refusal and the ways forward.
 //
 // The hand-written UPDATE the pre-#982 refusal prints is deliberately NOT
 // offered here, and the last paragraph says why. That repair moves a row
@@ -179,14 +179,11 @@ func foreignFlywayRevisions(
 // ca5446be32fd97a6194819f463b3321c799f9acd0fb138f62dca0cc48164dfa8` on the next
 // apply — the two implementations record the checksum in different encodings.
 // `migrate set` writes whole revision rows, so it settles both at once.
-//
-// Both routes are measured on the fixture in the reproduction, not inferred:
-// `migrate set <head>` reports `(2 set)` and removes nothing, the next
-// `migrate apply` prints `No migration files to execute.` with the seed row
-// still inserted once, and the community binary afterwards prints
-// `No migration files to execute` at exit 0 — so adopting this build's versions
-// does not take the database away from the implementation that wrote it.
-func foreignFlywayRefusal(stale []foreignFlywayRevision, applied []int64) string {
+func foreignFlywayRefusal(
+	covered []atlasmigrateimport.FlywayCoveredSourceVersion,
+	stale []foreignFlywayRevision,
+	applied []int64,
+) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "this database records converted Flyway migrations under their SOURCE version token, "+
 		"which is how another Atlas implementation identifies them; Ptah's migrator identifies a migration "+
@@ -203,7 +200,7 @@ func foreignFlywayRefusal(stale []foreignFlywayRevision, applied []int64) string
 	b.WriteString("\nways forward:\n")
 	b.WriteString("  - keep applying this database with the implementation that wrote the table: it reads " +
 		"its own versions and is unaffected\n")
-	b.WriteString(foreignFlywaySetRoute(head, applied))
+	b.WriteString(foreignFlywaySetRoute(head, covered, stale, applied))
 
 	b.WriteString("\nrewriting the version column by hand is not enough: the two implementations also record " +
 		"the migration checksum differently, so an apply after a bare version rewrite refuses with a " +
@@ -213,39 +210,123 @@ func foreignFlywayRefusal(stale []foreignFlywayRevision, applied []int64) string
 
 // foreignFlywaySetRoute renders the second way forward, or says there is none.
 //
-// `migrate set V` moves the database to EXACTLY V: it records everything up to
-// V as applied and REMOVES every revision above it. Offering it unconditionally
-// would print a command that deletes real history on one measurable shape.
-// Converted baselines sit in the low band — B2__base.sql becomes 122412 — and a
-// baseline squashes files whose token sorts at or below its own AS A STRING, so
-// `V1000000__z.sql` (token "1000000" < "2", value 1000000) is squashed out of
-// the covered set while its revision row sits above the head. Recommending
-// `migrate set 122412` there would retire the migration the database actually
-// ran.
+// `migrate set V` moves the database to EXACTLY V. It writes a revision row for
+// EVERY covered migration up to and including V — whether or not that migration
+// ran — and REMOVES every revision above it. Both halves of that verb can lose
+// something, so the route is offered only when this database is a shape where
+// it loses neither, and withdrawn by name, with the rows it would touch, on
+// every other. That is the same choice [flywayBaselineRefusal] makes for the
+// same verb, and for the same reason: a refusal that prints a command which
+// quietly makes it worse is not a way forward.
 //
-// So the route is offered only when it removes nothing, and named as unsafe
-// with the rows it would delete otherwise — the same choice
-// [flywayBaselineRefusal] makes for the same verb, and for the same reason: a
-// refusal that prints a command which quietly makes it worse is not a way
-// forward.
-func foreignFlywaySetRoute(head int64, applied []int64) string {
+// REMOVES ABOVE THE HEAD. Converted baselines sit in the low band —
+// B2__base.sql becomes 122412 — and a baseline squashes files whose token sorts
+// at or below its own AS A STRING, so `V1000000__z.sql` (token "1000000" < "2",
+// value 1000000) is squashed out of the covered set while its revision row sits
+// above the head. Recommending `migrate set 122412` there would retire the
+// migration the database actually ran.
+//
+// RECORDS BELOW THE HEAD WITHOUT RUNNING. The head is the largest version among
+// the migrations this database HAS run under the source tool's token, and the
+// covered migrations below it need not all be among them. Measured on
+// V1__g1.sql and V3__g3.sql recorded by the other implementation as `1` and `3`
+// with V2__g2.sql added afterwards: the head is V3's 4611686018427551119, and
+// `migrate set 4611686018427551119` reports `(3 set)` — g1, g2 and g3 — so the
+// next `migrate apply` prints `No migration files to execute.` at exit 0 with
+// table g2 never created and now unreachable, because its version is recorded.
+// The operator followed the printed instruction and lost a migration; the
+// refusal said nothing about it. That is the shape this clause withdraws on,
+// naming the file and the version it would assert.
+//
+// WHY THE OFFER SAYS THE SWITCH IS ONE WAY. `migrate set` adds this build's
+// versions and does not remove the source tool's, so the revision table ends up
+// carrying both spellings. Measured on V1__a.sql and V2__b.sql recorded as `1`
+// and `2`: after the route the pinned community binary v1.3.0 prints
+// `No migration files to execute` at exit 0, but once V3__c.sql is added it
+// prints `migration file V3__c.sql was added out of order` at exit 1, while
+// this build applies it at exit 0. The controls separate that from the file:
+// the same three-file directory on a fresh database, and on a database carrying
+// only the source tool's `1`,`2`, both apply at exit 0 on that binary. So the
+// two ways forward are alternatives, not steps — taking the second closes the
+// first — and the offer says so instead of calling the result up to date.
+func foreignFlywaySetRoute(
+	head int64,
+	covered []atlasmigrateimport.FlywayCoveredSourceVersion,
+	stale []foreignFlywayRevision,
+	applied []int64,
+) string {
 	var removed []int64
 	for _, version := range applied {
 		if version > head {
 			removed = append(removed, version)
 		}
 	}
-	if len(removed) == 0 {
+	unrun := foreignFlywayUnrunBelowHead(head, covered, stale, applied)
+	if len(removed) == 0 && len(unrun) == 0 {
 		return fmt.Sprintf("  - adopt the versions this build uses: `migrate set %d`, with the same --dir "+
 			"and --url, records every migration up to and including that version as applied under those "+
-			"versions. The other implementation still reads the result as up to date.\n", head)
+			"versions. On this database that set is exactly the %d migration(s) listed above, which it has "+
+			"already run, so nothing is recorded that did not execute. It is a one-way switch: the revision "+
+			"table then carries both spellings, and the implementation that wrote it refuses a migration "+
+			"added afterwards as out of order.\n", head, len(stale))
 	}
 
-	labels := make([]string, 0, len(removed))
-	for _, version := range removed {
-		labels = append(labels, strconv.FormatInt(version, 10))
+	var b strings.Builder
+	fmt.Fprintf(&b, "\nadopting the versions this build uses has no safe route here: `migrate set %d` would "+
+		"move the database to exactly that version, and on this database that is not a no-op:\n", head)
+	if len(unrun) > 0 {
+		labels := make([]string, 0, len(unrun))
+		for _, migration := range unrun {
+			labels = append(labels, fmt.Sprintf("%s (%d)", migration.Source, migration.Version))
+		}
+		fmt.Fprintf(&b, "  - it would record %d migration(s) as applied WITHOUT running them — %s — so that "+
+			"SQL would never execute here and nothing afterwards would report it missing\n",
+			len(unrun), strings.Join(labels, ", "))
 	}
-	return fmt.Sprintf("\nadopting the versions this build uses has no safe route here: `migrate set %d` "+
-		"would move the database to exactly that version and remove the revision(s) above it — %s — which "+
-		"is history this database really ran.\n", head, strings.Join(labels, ", "))
+	if len(removed) > 0 {
+		labels := make([]string, 0, len(removed))
+		for _, version := range removed {
+			labels = append(labels, strconv.FormatInt(version, 10))
+		}
+		fmt.Fprintf(&b, "  - it would remove the revision(s) above it — %s — which is history this database "+
+			"really ran\n", strings.Join(labels, ", "))
+	}
+	return b.String()
+}
+
+// foreignFlywayUnrunBelowHead reports the covered migrations `migrate set head`
+// would record as applied although this database has not executed them.
+//
+// A covered migration at or below the head has run if this build recorded it —
+// its converted version is in the applied set — or if the other implementation
+// did, which is exactly what putting it in stale claims. Anything else is a
+// migration whose SQL has never touched this database, and recording it is the
+// silent loss.
+//
+// A covered migration the detector DECLINED to claim as foreign history — the
+// collision clause in [foreignFlywayRevisions] — lands here as unrun, which
+// withdraws the route on evidence that is merely ambiguous. That is the
+// conservative direction for a message that tells an operator what to type.
+func foreignFlywayUnrunBelowHead(
+	head int64,
+	covered []atlasmigrateimport.FlywayCoveredSourceVersion,
+	stale []foreignFlywayRevision,
+	applied []int64,
+) []atlasmigrateimport.FlywayCoveredSourceVersion {
+	ran := make([]int64, 0, len(stale))
+	for _, revision := range stale {
+		ran = append(ran, revision.current)
+	}
+
+	var unrun []atlasmigrateimport.FlywayCoveredSourceVersion
+	for _, migration := range covered {
+		if migration.Version > head {
+			continue
+		}
+		if slices.Contains(applied, migration.Version) || slices.Contains(ran, migration.Version) {
+			continue
+		}
+		unrun = append(unrun, migration)
+	}
+	return unrun
 }

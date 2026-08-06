@@ -66,6 +66,28 @@ func recordForeignFlywayVersions(c *qt.C, dbPath string, tokens []string) {
 	c.Assert(revisionVersionsByOrder(c, db), qt.DeepEquals, tokens)
 }
 
+// renameForeignFlywayVersion rewrites ONE revision into the other spelling,
+// leaving the rest on this build's own encoding.
+//
+// That is the mixed database: some migrations recorded here, some by the tool
+// that wrote the source directory.
+func renameForeignFlywayVersion(c *qt.C, dbPath, from, to string) {
+	c.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	result, err := db.Exec(
+		`UPDATE atlas_schema_revisions SET version = ?, hash = ? WHERE version = ?`,
+		to, foreignFlywayHash, from,
+	)
+	c.Assert(err, qt.IsNil)
+	affected, err := result.RowsAffected()
+	c.Assert(err, qt.IsNil)
+	// A fixture that rewrote nothing would leave the database entirely on this
+	// build's encoding and make every assertion below vacuous.
+	c.Assert(affected, qt.Equals, int64(1))
+}
+
 func revisionVersionsByOrder(c *qt.C, db *sql.DB) []string {
 	c.Helper()
 	rows, err := db.Query(`SELECT version FROM atlas_schema_revisions ORDER BY CAST(version AS INTEGER)`)
@@ -163,6 +185,18 @@ var migrateSetVersion = regexp.MustCompile("`migrate set ([0-9]+)`")
 // because the two also record the checksum differently. `migrate set` writes
 // whole rows, which is why it is the route offered.
 //
+// WHAT THIS TEST DELIBERATELY NO LONGER ASSERTS. It used to end by adding
+// `V3__more.sql` and requiring the apply to succeed, under the heading "the
+// directory keeps working". That state is one the pinned community binary
+// v1.3.0 REFUSES: measured, on the revision table this route leaves behind —
+// `1`, `2`, 4611686018427469511, 4611686018427510315 — it prints `migration
+// file V3__c.sql was added out of order` at exit 1 while this build applies at
+// exit 0. Controls separate that from the added file itself: the same
+// three-file directory on a fresh database, and on a database carrying only
+// `1`,`2`, both apply at exit 0 on that binary. Pinning the old assertion
+// pinned ptah-compat exiting 0 where the binary exits 1 as the desired result,
+// so it is gone and the message says the switch is one way instead.
+//
 // Reverting the change makes the first apply succeed, so no message is produced
 // and the regexp finds nothing: the test fails on the `qt.IsNotNil` above it.
 func TestCompatMigrateApply_ForeignFlywayRefusalPrintsWorkingRecovery(t *testing.T) {
@@ -181,6 +215,11 @@ func TestCompatMigrateApply_ForeignFlywayRefusalPrintsWorkingRecovery(t *testing
 	// wordings have to be pinned or one can silently become the other.
 	c.Assert(message, qt.Contains, "adopt the versions this build uses:")
 	c.Assert(message, qt.Not(qt.Contains), "has no safe route here")
+	// The two claims the offer now makes, both measured: it records only what
+	// this database already ran, and it closes the other way forward.
+	c.Assert(message, qt.Contains, "nothing is recorded that did not execute")
+	c.Assert(message, qt.Contains, "one-way switch")
+	c.Assert(message, qt.Not(qt.Contains), "still reads the result as up to date")
 
 	stdout, stderr, err := runCompat(
 		"migrate", "set", match[1],
@@ -188,19 +227,166 @@ func TestCompatMigrateApply_ForeignFlywayRefusalPrintsWorkingRecovery(t *testing
 		"--dir", "file://"+dir+"?format=flyway",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	// Every version the route records is one of the two the refusal listed, so
+	// "nothing is recorded that did not execute" is checked against what the
+	// command actually wrote rather than against the sentence.
+	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals,
+		[]string{"1", "2", foreignFlywayV1, foreignFlywayV2})
 
 	stdout, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Contains, "No migration files to execute.")
 	// The seed did not run a second time.
 	c.Assert(countRows(c, dbPath, "seeded"), qt.Equals, 1)
+}
 
-	// And the directory keeps working: a migration added afterwards applies.
-	writeAtlasApplyProjectMigration(c, dir, "V3__more.sql", "INSERT INTO seeded (id) VALUES (3);")
+// TestCompatMigrateApply_ForeignFlywaySetRouteWithdrawnWhenItWouldRecordUnrunMigrations
+// is the input that separates a route which records only what ran from one
+// that records whatever sits below the head.
+//
+// `migrate set V` writes a revision row for EVERY covered migration up to V,
+// run or not. The head is the largest version among the migrations the other
+// implementation DID run, and nothing makes the covered migrations below it a
+// subset of those: `V1__g1.sql` and `V3__g3.sql` recorded as `1` and `3`, with
+// `V2__g2.sql` added afterwards, puts an unapplied file underneath.
+//
+// Measured with the route still offered there: `migrate set 4611686018427551119`
+// reports `(3 set)` — `+ 4611686018427510315 (g2)` among them — the next
+// `migrate apply` prints `No migration files to execute.` at exit 0, and table
+// g2 is absent with its version recorded, so it can never run again. Following
+// the printed instruction lost a migration and the refusal said nothing.
+//
+// The database is also worse off for the other implementation afterwards: on
+// that five-row table the pinned community binary v1.3.0 prints `migration file
+// V2__g2.sql was added out of order` at exit 1.
+//
+// Reverting the unrun clause prints `- adopt the versions this build uses:
+// `migrate set 4611686018427551119“ as a way forward, which is the command
+// that retires g2 unrun.
+func TestCompatMigrateApply_ForeignFlywaySetRouteWithdrawnWhenItWouldRecordUnrunMigrations(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dir := filepath.Join(root, "migrations")
+	dbPath := filepath.Join(root, "gap.db")
+	writeAtlasApplyProjectMigration(c, dir, "V1__g1.sql", "CREATE TABLE g1 (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, dir, "V3__g3.sql", "CREATE TABLE g3 (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "flyway")
+	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	recordForeignFlywayVersions(c, dbPath, []string{"1", "3"})
+
+	// The gap: a migration between the two the other implementation ran.
+	writeAtlasApplyProjectMigration(c, dir, "V2__g2.sql", "CREATE TABLE g2 (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "flyway")
+
+	_, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
+
+	c.Assert(err, qt.IsNotNil)
+	message := errorText(err) + stderr
+	c.Assert(message, qt.Contains, "has no safe route here")
+	c.Assert(message, qt.Not(qt.Contains), "adopt the versions this build uses:")
+	// The row it would have asserted is named — file and version — so the
+	// operator can see what the command would claim rather than being told it
+	// is safe.
+	c.Assert(message, qt.Contains, "WITHOUT running them")
+	c.Assert(message, qt.Contains, "V2__g2.sql ("+foreignFlywayV2+")")
+	// Nothing ran and nothing was recorded: the database is exactly where the
+	// other implementation left it.
+	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"g1", "g3"})
+	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "3"})
+}
+
+// TestCompatMigrateApply_ForeignFlywaySetRouteOfferedWithPendingAboveTheHead is
+// the input that separates "records something that never ran" from "the
+// directory has anything unapplied in it at all".
+//
+// `migrate set <head>` writes rows up to the head and no further, so a
+// migration ABOVE the head is untouched by it and stays pending — which is the
+// ordinary shape of an operator who switched tools with new work in flight.
+// Withdrawing the route there would strand every such directory.
+//
+// Dropping the `migration.Version > head` skip in foreignFlywayUnrunBelowHead
+// prints `adopting the versions this build uses has no safe route here ... it
+// would record 1 migration(s) as applied WITHOUT running them — V3__c.sql
+// (4611686018427551119)`, on a database `migrate set` would not touch.
+func TestCompatMigrateApply_ForeignFlywaySetRouteOfferedWithPendingAboveTheHead(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dir := filepath.Join(root, "migrations")
+	dbPath := filepath.Join(root, "pending.db")
+	writeAtlasApplyProjectMigration(c, dir, "V1__a.sql", "CREATE TABLE pa (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, dir, "V2__b.sql", "CREATE TABLE pb (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "flyway")
+	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	recordForeignFlywayVersions(c, dbPath, []string{"1", "2"})
+
+	// New work, above everything the other implementation ran.
+	writeAtlasApplyProjectMigration(c, dir, "V3__c.sql", "CREATE TABLE pc (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "flyway")
+
+	_, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
+
+	c.Assert(err, qt.IsNotNil)
+	message := errorText(err) + stderr
+	c.Assert(message, qt.Contains, "adopt the versions this build uses:")
+	c.Assert(message, qt.Not(qt.Contains), "has no safe route here")
+
+	match := migrateSetVersion.FindStringSubmatch(message)
+	c.Assert(match, qt.HasLen, 2)
+	c.Assert(match[1], qt.Equals, foreignFlywayV2)
+	stdout, stderr, err = runCompat(
+		"migrate", "set", match[1],
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+dir+"?format=flyway",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	// V3 is neither recorded nor run: the route asserted only the two
+	// migrations the refusal listed, and left the pending one pending.
+	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals,
+		[]string{"1", "2", foreignFlywayV1, foreignFlywayV2})
+	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"pa", "pb"})
+}
+
+// TestCompatMigrateApply_ForeignFlywaySetRouteCountsThisBuildsOwnRowsAsRun is
+// the mixed database: some migrations recorded here, one recorded by the tool
+// that wrote the directory.
+//
+// A migration this build already recorded HAS run, so `migrate set` writing its
+// row again asserts nothing new. Reading only the foreign half as evidence of
+// execution would withdraw the route on a database where it loses nothing.
+//
+// Dropping the `slices.Contains(applied, migration.Version)` half of the skip
+// prints `it would record 1 migration(s) as applied WITHOUT running them —
+// V1__m.sql (4611686018427469511)` for a migration this build ran itself and
+// whose revision row is right there.
+func TestCompatMigrateApply_ForeignFlywaySetRouteCountsThisBuildsOwnRowsAsRun(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dir := filepath.Join(root, "migrations")
+	dbPath := filepath.Join(root, "mixed.db")
+	writeAtlasApplyProjectMigration(c, dir, "V1__m.sql", "CREATE TABLE m1 (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, dir, "flyway")
+	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+
+	writeAtlasApplyProjectMigration(c, dir, "V2__n.sql", "CREATE TABLE m2 (id INTEGER PRIMARY KEY);")
 	hashConvertedApplyDir(c, dir, "flyway")
 	stdout, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(countRows(c, dbPath, "seeded"), qt.Equals, 2)
+	// Only the second row moves to the other spelling, so V1 stays recorded
+	// under the version this build uses.
+	renameForeignFlywayVersion(c, dbPath, foreignFlywayV2, "2")
+	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{"2", foreignFlywayV1})
+
+	_, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
+
+	c.Assert(err, qt.IsNotNil)
+	message := errorText(err) + stderr
+	c.Assert(message, qt.Contains, "V2__n.sql")
+	c.Assert(message, qt.Contains, "adopt the versions this build uses:")
+	c.Assert(message, qt.Not(qt.Contains), "WITHOUT running them")
+	c.Assert(message, qt.Not(qt.Contains), "has no safe route here")
 }
 
 // TestCompatMigrateApply_ForeignFlywayTokenWithLeadingSpace is the input that
