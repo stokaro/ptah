@@ -129,6 +129,31 @@ open(p,'w').write('\n'.join(l)+'\n')
 	esac
 }
 
+# normalize_run_output — read stdin, write the comparison form on stdout.
+#
+# --format reports embed wall-clock Start/End stamps and elapsed durations. Base
+# compared against BASE differs in exactly those fields, so they are normalized
+# rather than treated as a change. Nothing else is normalized.
+#
+# The duration rule used to end in `\b`, which is not portable: GNU sed reads it
+# as a word boundary and the BSD sed macOS ships reads it as the literal letter
+# `b`. Measured on the input lines `took 12.5ms to run` and `took 12.5msb to
+# run`, with `s/[0-9.]+(ms|ns|s)\b/DUR/g`:
+#
+#   macOS sed  -> rewrites only `12.5msb`
+#   GNU sed    -> rewrites only `12.5ms `
+#
+# Exactly inverted, so on macOS no duration was normalized and every --format
+# row compared two different elapsed times and reported a spurious CHANGED. The
+# boundary is now spelled with an explicit character class plus an end-of-line
+# case, which both engines agree on. See stokaro/ptah#1139.
+normalize_run_output() {
+	sed -E \
+		-e 's/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(\+[0-9:]+|Z)/TS/g' \
+		-e 's/[0-9.]+(ms|µs|ns|s)([^a-zA-Z0-9_])/DUR\2/g' \
+		-e 's/[0-9.]+(ms|µs|ns|s)$/DUR/'
+}
+
 # run2 <label> <shape> <argtemplate...> — build the fixture twice, run both
 # binaries, compare exit + stdout + stderr + resulting tree.
 # The literal DIR in the argument template is replaced with the tree path.
@@ -161,11 +186,8 @@ run2() {
 	# Normalize the directory name out of both outputs so only real differences
 	# survive the comparison.
 	bout=${bout//$b/DIR}; hout=${hout//$h/DIR}
-	# --format reports embed wall-clock Start/End stamps and elapsed durations.
-	# Base compared against BASE differs in exactly those fields, so they are
-	# normalized rather than treated as a change. Nothing else is normalized.
-	bout=$(printf '%s' "$bout" | sed -E -e 's/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(\+[0-9:]+|Z)/TS/g' -e 's/[0-9.]+(ms|µs|ns|s)\b/DUR/g')
-	hout=$(printf '%s' "$hout" | sed -E -e 's/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(\+[0-9:]+|Z)/TS/g' -e 's/[0-9.]+(ms|µs|ns|s)\b/DUR/g')
+	bout=$(printf '%s' "$bout" | normalize_run_output)
+	hout=$(printf '%s' "$hout" | normalize_run_output)
 	local btree htree
 	btree=$(cd "$b" 2>/dev/null && find . -type f | sort | while read -r f; do printf '%s %s\n' "$f" "$(shasum -a 256 "$f" | cut -c1-16)"; done)
 	htree=$(cd "$h" 2>/dev/null && find . -type f | sort | while read -r f; do printf '%s %s\n' "$f" "$(shasum -a 256 "$f" | cut -c1-16)"; done)
