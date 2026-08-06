@@ -239,6 +239,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
 	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, opts.lock, applyLock, conn.Info().Dialect)
 
+	schemaVars, err := atlasVarFlagValues(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL:     opts.devURL,
 		ToURLs:     opts.toURLs,
@@ -253,6 +257,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		// Atlas-compatible surface: a schema file written for another tool
 		// must not be refused over a name this parser does not model.
 		IgnoreUnknownHCLNames: true,
+		Vars:                  schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -407,11 +412,16 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	schemaVars, err := atlasVarFlagValues(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	var desired *goschema.Database
 	if len(opts.toURLs) > 0 {
 		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: true,
+			Vars:                  schemaVars,
 		})
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))

@@ -1434,8 +1434,8 @@ func TestCompatCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T) {
 	err = status.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(statusOut.String(), qt.Contains, "Current Version: 20260723120000")
-	c.Assert(statusOut.String(), qt.Contains, "Database is up to date")
+	c.Assert(statusOut.String(), qt.Contains, "-- Current Version: 20260723120000")
+	c.Assert(statusOut.String(), qt.Contains, "Migration Status: OK")
 }
 
 func TestCompatCommand_MigrateStatusFormatRendersAtlasReport(t *testing.T) {
@@ -3834,7 +3834,7 @@ func TestCompatCommand_MigrateStatusResolvesProjectRelativeMigrationDir(t *testi
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Pending Migrations: 1")
+	c.Assert(out.String(), qt.Contains, "-- Pending Files:   1")
 }
 
 func TestCompatCommand_MigrateValidateResolvesProjectRelativeMigrationDir(t *testing.T) {
@@ -4100,7 +4100,7 @@ func TestCompatCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProjec
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Pending Migrations: 1")
+	c.Assert(out.String(), qt.Contains, "-- Pending Files:   1")
 }
 
 func TestCompatCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *testing.T) {
@@ -4167,7 +4167,7 @@ func TestCompatCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Pending Migrations: 1")
+	c.Assert(out.String(), qt.Contains, "-- Pending Files:   1")
 }
 
 func TestCompatCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.T) {

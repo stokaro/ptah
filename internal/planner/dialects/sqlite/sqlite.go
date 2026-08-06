@@ -3,6 +3,7 @@ package sqlite
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -40,7 +41,11 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if err := rejectUnsupportedChanges(diff); err != nil {
 		return nil, err
 	}
-	if err := validateAddedColumns(diff, generated); err != nil {
+	rebuilds, err := planTableRebuilds(diff)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateAddedColumns(diff, generated, rebuilds); err != nil {
 		return nil, err
 	}
 
@@ -50,21 +55,21 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		return nil, err
 	}
 	result = append(result, addedTables...)
-	modifiedTables, err := p.modifyTables(diff, generated)
+	modifiedTables, err := p.modifyTables(diff, generated, rebuilds)
 	if err != nil {
 		return nil, err
 	}
 	result = append(result, modifiedTables...)
 	result = append(result, p.addViews(diff, generated)...)
 	result = append(result, p.modifyViews(diff, generated)...)
-	result = append(result, p.addTriggers(diff, generated)...)
-	result = append(result, p.modifyTriggers(diff, generated)...)
-	addedIndexes, err := p.addIndexes(diff, indexes)
+	result = append(result, p.addTriggers(diff, generated, rebuilds)...)
+	result = append(result, p.modifyTriggers(diff, generated, rebuilds)...)
+	addedIndexes, err := p.addIndexes(diff, indexes, rebuilds)
 	if err != nil {
 		return nil, err
 	}
 	result = append(result, addedIndexes...)
-	result = append(result, p.removeIndexes(diff)...)
+	result = append(result, p.removeIndexes(diff, rebuilds)...)
 	result = append(result, p.removeTriggers(diff)...)
 	result = append(result, p.removeViews(diff)...)
 	result = append(result, p.removeTables(diff)...)
@@ -72,9 +77,6 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 }
 
 func rejectUnsupportedChanges(diff *types.SchemaDiff) error {
-	if err := rejectUnsupportedTableChanges(diff); err != nil {
-		return err
-	}
 	if err := rejectUnsupportedSchemaObjects(diff); err != nil {
 		return err
 	}
@@ -84,62 +86,124 @@ func rejectUnsupportedChanges(diff *types.SchemaDiff) error {
 	return nil
 }
 
-func rejectUnsupportedTableChanges(diff *types.SchemaDiff) error {
+// tableRebuilds is the set of existing tables whose diff cannot be expressed
+// with SQLite's narrow ALTER TABLE grammar and is therefore executed as a
+// create-new / copy-rows / drop-old / rename sequence.
+//
+// The order field keeps emission deterministic: tables reached through
+// [types.SchemaDiff.TablesModified] keep that slice's order, and tables reached
+// only through a constraint change follow, sorted by name.
+type tableRebuilds struct {
+	order   []string
+	targets map[string]rebuildTarget
+}
+
+// rebuildTarget records what a single table's rebuild has to account for.
+type rebuildTarget struct {
+	// tableName is the table's qualified name, as the diff spells it.
+	tableName string
+	// addedColumns are columns that exist only in the desired schema, so the
+	// copy step must leave them out of the INSERT ... SELECT.
+	addedColumns []string
+}
+
+func (r tableRebuilds) target(tableName string) (rebuildTarget, bool) {
+	target, ok := r.targets[tableName]
+	return target, ok
+}
+
+func (r tableRebuilds) contains(tableName string) bool {
+	_, ok := r.targets[tableName]
+	return ok
+}
+
+// planTableRebuilds decides which existing tables need a rebuild.
+//
+// SQLite's ALTER TABLE can only rename a table, rename a column, add a column,
+// or drop a column. Every other shape — a column's type, nullability, default
+// or generated expression, and any table constraint — has to be rewritten
+// through a new table. A constraint change that cannot be attributed to a table
+// is still refused, because there is nothing to rebuild.
+func planTableRebuilds(diff *types.SchemaDiff) (tableRebuilds, error) {
+	rebuilds := tableRebuilds{targets: map[string]rebuildTarget{}}
+	add := func(tableName string, addedColumns []string) {
+		target, seen := rebuilds.targets[tableName]
+		if !seen {
+			target = rebuildTarget{tableName: tableName}
+			rebuilds.order = append(rebuilds.order, tableName)
+		}
+		target.addedColumns = append(target.addedColumns, addedColumns...)
+		rebuilds.targets[tableName] = target
+	}
+
 	for _, table := range diff.TablesModified {
-		switch {
-		case len(table.ColumnsModified) > 0:
-			return unsupportedFeaturef("modifying columns on table %s requires a table rebuild plan", table.TableName)
-		case len(table.ColumnsRemoved) > 0 && (len(table.ColumnsAdded) > 0 ||
-			len(table.ConstraintsAdded) > 0 || len(table.ConstraintsRemoved) > 0):
-			return unsupportedFeaturef("combining dropped columns with other table changes on %s requires a manual rebuild plan", table.TableName)
-		case len(table.ConstraintsAdded) > 0 || len(table.ConstraintsRemoved) > 0:
-			return unsupportedFeaturef("changing constraints on table %s requires a table rebuild plan", table.TableName)
+		if !tableDiffNeedsRebuild(table) {
+			continue
 		}
+		add(table.TableName, table.ColumnsAdded)
 	}
-	if hasExistingTableConstraintChanges(diff) {
-		return unsupportedFeaturef("changing constraints on existing tables requires a table rebuild plan")
+
+	constrained, err := existingTablesWithConstraintChanges(diff)
+	if err != nil {
+		return tableRebuilds{}, err
 	}
-	if len(diff.EnumsModified) > 0 || len(diff.EnumsRemoved) > 0 {
-		return unsupportedFeaturef("changing enum-backed CHECK constraints requires a table rebuild plan")
+	for _, tableName := range constrained {
+		// The columns this table gains in the SAME diff have to travel with it.
+		// A table reaches this loop when its constraint change arrived at schema
+		// level (ConstraintsAddedWithTables) rather than on the TableDiff, so
+		// tableDiffNeedsRebuild answered false and the loop above skipped it --
+		// even though the diff also adds columns to it.
+		//
+		// Passing nil here made rebuildCopiedColumns copy the new column out of
+		// the old table, where it does not exist. SQLite reads an unknown
+		// double-quoted identifier as a STRING LITERAL, so every row received
+		// the column's own name instead of NULL and `schema apply` exited 0
+		// saying it succeeded (#930).
+		//
+		// A table the loop above already added arrives here carrying the same
+		// names a second time. That is inert, not a bug worth a branch:
+		// rebuildCopiedColumns turns addedColumns into a set before using it, so
+		// a repeat cannot change the plan, and a guard against it would be a
+		// branch no fixture could redden.
+		add(tableName, addedColumnsFor(diff, tableName))
 	}
-	return nil
+	return rebuilds, nil
 }
 
-func hasExistingTableConstraintChanges(diff *types.SchemaDiff) bool {
-	return !constraintAdditionsBelongToAddedTables(diff) ||
-		!constraintRemovalsBelongToRemovedTables(diff)
+func tableDiffNeedsRebuild(table types.TableDiff) bool {
+	return len(table.ColumnsModified) > 0 ||
+		len(table.ColumnsRemoved) > 0 ||
+		len(table.ConstraintsAdded) > 0 ||
+		len(table.ConstraintsRemoved) > 0
 }
 
-func constraintAdditionsBelongToAddedTables(diff *types.SchemaDiff) bool {
-	if len(diff.ConstraintsAdded) == 0 {
-		return true
-	}
-	seen := make(map[string]bool, len(diff.ConstraintsAddedWithTables))
+// existingTablesWithConstraintChanges returns the sorted names of tables that
+// keep existing across the diff while gaining or losing a constraint. Adding
+// and dropping a table already carries its constraints inline, so those are
+// skipped.
+func existingTablesWithConstraintChanges(diff *types.SchemaDiff) ([]string, error) {
+	tables := map[string]bool{}
+	named := make(map[string]bool, len(diff.ConstraintsAddedWithTables)+len(diff.ConstraintsRemovedWithTables))
 	for _, constraint := range diff.ConstraintsAddedWithTables {
+		named[constraint.Name] = true
 		if !slices.Contains(diff.TablesAdded, constraint.TableName) {
-			return false
+			tables[constraint.TableName] = true
 		}
-		seen[constraint.Name] = true
 	}
-	return !slices.ContainsFunc(diff.ConstraintsAdded, func(name string) bool {
-		return !seen[name]
-	})
-}
-
-func constraintRemovalsBelongToRemovedTables(diff *types.SchemaDiff) bool {
-	if len(diff.ConstraintsRemoved) == 0 {
-		return true
-	}
-	seen := make(map[string]bool, len(diff.ConstraintsRemovedWithTables))
 	for _, constraint := range diff.ConstraintsRemovedWithTables {
+		named[constraint.Name] = true
 		if !slices.Contains(diff.TablesRemoved, constraint.TableName) {
-			return false
+			tables[constraint.TableName] = true
 		}
-		seen[constraint.Name] = true
 	}
-	return !slices.ContainsFunc(diff.ConstraintsRemoved, func(name string) bool {
-		return !seen[name]
-	})
+	unattributed := slices.ContainsFunc(diff.ConstraintsAdded, func(name string) bool { return !named[name] }) ||
+		slices.ContainsFunc(diff.ConstraintsRemoved, func(name string) bool { return !named[name] })
+	if unattributed {
+		return nil, unsupportedFeaturef("changing constraints on existing tables requires a table rebuild plan")
+	}
+	names := slices.Collect(maps.Keys(tables))
+	slices.Sort(names)
+	return names, nil
 }
 
 func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
@@ -236,15 +300,21 @@ func withDefaultForeignKeyName(tableName string, constraint goschema.Constraint)
 	return constraint
 }
 
-func (p *Planner) modifyTables(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) modifyTables(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	rebuilds tableRebuilds,
+) ([]ast.Node, error) {
 	var result []ast.Node
+	emitted := make(map[string]bool, len(rebuilds.order))
 	for _, tableDiff := range diff.TablesModified {
-		if len(tableDiff.ColumnsRemoved) > 0 {
-			nodes, err := p.rebuildTableWithoutColumns(tableDiff, diff, generated)
+		if target, ok := rebuilds.target(tableDiff.TableName); ok {
+			nodes, err := p.rebuildTable(target, diff, generated)
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, nodes...)
+			emitted[tableDiff.TableName] = true
 			continue
 		}
 		for _, columnName := range tableDiff.ColumnsAdded {
@@ -256,17 +326,34 @@ func (p *Planner) modifyTables(diff *types.SchemaDiff, generated *goschema.Datab
 			}
 		}
 	}
+	// Tables reached only through a constraint change never appear in
+	// TablesModified, so they are emitted after the column-driven ones.
+	for _, tableName := range rebuilds.order {
+		if emitted[tableName] {
+			continue
+		}
+		nodes, err := p.rebuildTable(rebuilds.targets[tableName], diff, generated)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, nodes...)
+	}
 	return result, nil
 }
 
-func (p *Planner) rebuildTableWithoutColumns(
-	tableDiff types.TableDiff,
+// rebuildTable emits the create-new / copy-rows / drop-old / rename sequence
+// that stands in for the ALTER TABLE forms SQLite does not have. The new table
+// is rendered from the desired definition, so one rebuild covers column type,
+// nullability, default, generated-expression and constraint changes at once,
+// as well as dropped and added columns.
+func (p *Planner) rebuildTable(
+	target rebuildTarget,
 	diff *types.SchemaDiff,
 	generated *goschema.Database,
 ) ([]ast.Node, error) {
-	table := findTable(generated.Tables, tableDiff.TableName)
+	table := findTable(generated.Tables, target.tableName)
 	if table == nil {
-		return nil, unsupportedFeaturef("rebuilding table %s requires the retained table definition", tableDiff.TableName)
+		return nil, unsupportedFeaturef("rebuilding table %s requires the retained table definition", target.tableName)
 	}
 	if err := validateRebuildTablePreconditions(*table, diff, generated); err != nil {
 		return nil, err
@@ -280,16 +367,19 @@ func (p *Planner) rebuildTableWithoutColumns(
 	}
 	createNode.Name = qualifyLikeTable(*table, tempName)
 
-	columns := rebuildColumnNames(*table, generated.Fields)
+	columns, err := rebuildCopiedColumns(*table, generated.Fields, target.addedColumns)
+	if err != nil {
+		return nil, err
+	}
 	if len(columns) == 0 {
 		return nil, unsupportedFeaturef("rebuilding table %s without retained columns is not supported", table.QualifiedName())
 	}
 
 	nodes := []ast.Node{
-		ast.NewComment("SQLite table rebuild to remove unsupported columns from " + table.QualifiedName()),
+		ast.NewComment("SQLite table rebuild for changes ALTER TABLE cannot express on " + table.QualifiedName()),
 		createNode,
 		ast.NewRawSQL("INSERT INTO " + quoteQualifiedIdentifier(createNode.Name) +
-			" (" + quoteIdentifierList(columns) + ") SELECT " + quoteIdentifierList(columns) +
+			" (" + quoteIdentifierList(copiedColumnNames(columns)) + ") SELECT " + copiedColumnSelectList(columns) +
 			" FROM " + quoteQualifiedIdentifier(table.QualifiedName()) + ";"),
 		ast.NewDropTable(table.QualifiedName()),
 		ast.NewRawSQL("ALTER TABLE " + quoteQualifiedIdentifier(createNode.Name) +
@@ -351,14 +441,106 @@ func qualifyLikeTable(table goschema.Table, name string) string {
 	return goschema.QualifyTableName(table.Schema, name)
 }
 
-func rebuildColumnNames(table goschema.Table, fields []goschema.Field) []string {
-	var columns []string
-	for _, field := range fields {
-		if field.StructName == table.StructName {
-			columns = append(columns, field.Name)
-		}
+// copiedColumn is one column of the rebuilt table that carries data over from
+// the old table.
+type copiedColumn struct {
+	// name is the column name on both the old and the new table.
+	name string
+	// selectExpr is the expression read from the old table. It is the bare
+	// quoted column name unless the desired definition needs a backfill.
+	selectExpr string
+}
+
+func copiedColumnNames(columns []copiedColumn) []string {
+	names := make([]string, len(columns))
+	for i, column := range columns {
+		names[i] = column.name
 	}
-	return columns
+	return names
+}
+
+func copiedColumnSelectList(columns []copiedColumn) string {
+	parts := make([]string, len(columns))
+	for i, column := range columns {
+		parts[i] = column.selectExpr
+	}
+	return strings.Join(parts, ", ")
+}
+
+// rebuildCopiedColumns lists the columns the rebuild copies over. Columns the
+// diff adds exist only in the desired schema, so they are left out of the copy
+// and take their declared default in the new table; a NOT NULL addition with no
+// default would violate the new table on the very first row, so it is refused
+// rather than emitted.
+func rebuildCopiedColumns(
+	table goschema.Table,
+	fields []goschema.Field,
+	addedColumns []string,
+) ([]copiedColumn, error) {
+	added := make(map[string]bool, len(addedColumns))
+	for _, name := range addedColumns {
+		added[name] = true
+	}
+
+	var columns []copiedColumn
+	for _, field := range fields {
+		if field.StructName != table.StructName {
+			continue
+		}
+		if added[field.Name] {
+			if err := validateRebuiltAddedColumn(table, field); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		columns = append(columns, copiedColumn{
+			name:       field.Name,
+			selectExpr: rebuildSelectExpression(field),
+		})
+	}
+	return columns, nil
+}
+
+// rebuildSelectExpression backfills a column that the desired schema makes NOT
+// NULL while giving it a default. Rows already holding NULL would otherwise
+// abort the copy, so the default is substituted in flight.
+func rebuildSelectExpression(field goschema.Field) string {
+	quoted := quoteIdentifier(field.Name)
+	if field.Nullable || field.Primary {
+		return quoted
+	}
+	backfill := rebuildBackfillValue(field)
+	if backfill == "" {
+		return quoted
+	}
+	return "IFNULL(" + quoted + ", " + backfill + ") AS " + quoted
+}
+
+func rebuildBackfillValue(field goschema.Field) string {
+	if value := strings.TrimSpace(field.Default); value != "" && !isNullLiteral(value) {
+		return value
+	}
+	if value := strings.TrimSpace(field.DefaultExpr); value != "" && !isNullLiteral(value) {
+		return value
+	}
+	return ""
+}
+
+func validateRebuiltAddedColumn(table goschema.Table, field goschema.Field) error {
+	if field.Nullable || field.Primary || field.AutoInc {
+		return nil
+	}
+	if strings.TrimSpace(field.GeneratedExpression) != "" {
+		return nil
+	}
+	if rebuildBackfillValue(field) != "" {
+		return nil
+	}
+	return unsupportedFeaturef(
+		"rebuilding table %s cannot add NOT NULL column %s without a default",
+		table.QualifiedName(),
+		field.Name,
+	)
 }
 
 func (p *Planner) recreateTableIndexes(table goschema.Table, generated *goschema.Database) []ast.Node {
@@ -451,8 +633,15 @@ func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
-func validateAddedColumns(diff *types.SchemaDiff, generated *goschema.Database) error {
+// validateAddedColumns gates the ALTER TABLE ... ADD COLUMN path, whose
+// accepted shapes SQLite restricts far below what CREATE TABLE accepts. Tables
+// that are being rebuilt go through CREATE TABLE instead, so they are excluded
+// here and checked by [validateRebuiltAddedColumn].
+func validateAddedColumns(diff *types.SchemaDiff, generated *goschema.Database, rebuilds tableRebuilds) error {
 	for _, tableDiff := range diff.TablesModified {
+		if rebuilds.contains(tableDiff.TableName) {
+			continue
+		}
 		for _, columnName := range tableDiff.ColumnsAdded {
 			column := findColumn(generated, tableDiff.TableName, columnName)
 			if column == nil {
@@ -537,6 +726,7 @@ func findColumn(generated *goschema.Database, tableName, columnName string) *ast
 func (p *Planner) addIndexes(
 	diff *types.SchemaDiff,
 	indexes *indexscope.Resolver,
+	rebuilds tableRebuilds,
 ) ([]ast.Node, error) {
 	var result []ast.Node
 	indexRemovals := indexscope.NewConflictSetWithSemantics(
@@ -544,6 +734,12 @@ func (p *Planner) addIndexes(
 		diff.IndexRemovals(),
 	)
 	for _, ref := range diff.IndexAdditions() {
+		// A rebuilt table drops every index with the old table and recreates
+		// the desired set from scratch, so repeating them here would emit the
+		// same CREATE INDEX twice.
+		if rebuilds.contains(ref.TableName) {
+			continue
+		}
 		index, err := indexes.Resolve(ref)
 		if err != nil {
 			return nil, err
@@ -557,7 +753,7 @@ func (p *Planner) addIndexes(
 	return result, nil
 }
 
-func (p *Planner) removeIndexes(diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeIndexes(diff *types.SchemaDiff, rebuilds tableRebuilds) []ast.Node {
 	var result []ast.Node
 	indexAdditions := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(platform.SQLite),
@@ -565,6 +761,10 @@ func (p *Planner) removeIndexes(diff *types.SchemaDiff) []ast.Node {
 	)
 	for _, ref := range diff.IndexRemovals() {
 		if indexAdditions.Contains(ref) {
+			continue
+		}
+		// DROP TABLE already took this index with it.
+		if rebuilds.contains(ref.TableName) {
 			continue
 		}
 		result = append(result, ast.NewDropIndex(ref.Name).SetTable(ref.TableName).SetIfExists())
@@ -617,9 +817,18 @@ func findView(views []goschema.View, name string) *goschema.View {
 	return nil
 }
 
-func (p *Planner) addTriggers(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addTriggers(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	rebuilds tableRebuilds,
+) []ast.Node {
 	var result []ast.Node
 	for _, ref := range diff.TriggersAdded {
+		// A rebuilt table recreates every desired trigger already; CREATE
+		// TRIGGER carries no IF NOT EXISTS here, so a second copy would fail.
+		if rebuilds.contains(ref.TableName) {
+			continue
+		}
 		if trigger := findTrigger(generated.Triggers, ref.TableName, ref.TriggerName); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger))
 		}
@@ -627,9 +836,16 @@ func (p *Planner) addTriggers(diff *types.SchemaDiff, generated *goschema.Databa
 	return result
 }
 
-func (p *Planner) modifyTriggers(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyTriggers(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	rebuilds tableRebuilds,
+) []ast.Node {
 	var result []ast.Node
 	for _, triggerDiff := range diff.TriggersModified {
+		if rebuilds.contains(triggerDiff.TableName) {
+			continue
+		}
 		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
 		}
@@ -662,4 +878,19 @@ func unsupportedFeaturef(format string, args ...any) error {
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: message,
 	}
+}
+
+// addedColumnsFor returns the columns tableName gains in this diff, or nil.
+//
+// planTableRebuilds needs it for a table whose constraint change is recorded at
+// schema level: such a table is in TablesModified with its ColumnsAdded, but
+// tableDiffNeedsRebuild does not select it, so the rebuild would otherwise be
+// planned without knowing which columns are new.
+func addedColumnsFor(diff *types.SchemaDiff, tableName string) []string {
+	for _, table := range diff.TablesModified {
+		if table.TableName == tableName {
+			return table.ColumnsAdded
+		}
+	}
+	return nil
 }

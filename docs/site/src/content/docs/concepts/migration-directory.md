@@ -95,6 +95,21 @@ verification, migration registration, destructive linting, shadow rollback
 verification, execution, and template reports all consume the same captured
 bytes.
 
+## Writing back to the directory
+
+The verbs that write a migration directory — `migrate diff` and native
+`ptah migrate generate` — bind it the same way and keep the binding. They open
+the directory and its parent once, before staging, and every staged file,
+published migration, `atlas.sum`, journal, commit marker, rollback quarantine
+and cleanup entry is named as a direct child of one of those two handles.
+Recovery of an interrupted batch runs through the same handles.
+
+Replacing the directory after the run validated it therefore cannot redirect
+what it writes, and a directory configured through `atlas.hcl` stays inside the
+opened project root. See
+[the publication boundary](../../atlas/migrate-commands/#the-publication-boundary)
+for what remains keyed to the pathname and why.
+
 ## Consequences
 
 - **The directory is portable.** Every environment replays the same files in

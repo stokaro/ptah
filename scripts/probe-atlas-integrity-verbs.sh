@@ -292,10 +292,16 @@ echo "===== 12. the integrity gate reaches status and set, not only hash/validat
 # of the interesting inputs already exit 1 for an unrelated reason and an
 # exit-code-only comparison would coincide.
 #
-# Exempt rows compare the exit code only: on a directory both tools accept, the
-# two report formats differ by design ("Migration Status: OK" against
-# "=== MIGRATION STATUS ==="), which is a reporting divergence outside this
-# gate's scope.
+# Exempt rows compare the exit code, plus stdout on the three `status` states
+# where both tools also write nothing to stderr. That used to be exit-only,
+# because the two report formats differed by design ("Migration Status: OK"
+# against "=== MIGRATION STATUS ==="). Since stokaro/ptah#1102 the compat
+# report mirrors the community one, so an accepted directory is a stdout
+# comparison here as well as an exit one, and the exemption no longer hides a
+# report that drifted. `migrate set` and the nested and case-variant shapes stay
+# exit-only: set prints no mirrored report, and on the nested shapes ptah-compat
+# additionally names the declined file on stderr (asserted in the apply section
+# below).
 
 # native_seed <dir> <state> — one Atlas migration in the requested drift state.
 native_seed() {
@@ -355,6 +361,7 @@ apply_tables() {
 
 # gate_row <verb> <state> <mode> [extra args...]
 #   mode=streams  compare exit code and both streams (a refusal is expected)
+#   mode=stdout   compare exit code and stdout (both tools accept and report)
 #   mode=exit     compare exit code only (the state is exempt on both tools)
 #   mode=report   print both, never fail (a recorded known divergence)
 gate_row() {
@@ -374,14 +381,24 @@ gate_row() {
   case "$mode" in
     streams) [ "$cerc" = "$ptrc" ] && [ "$ceout" = "$ptout" ] && [ "$cerr" = "$pterr" ] \
                && verdict=MATCH || { verdict=DIFFER; fail=1; } ;;
+    stdout)  [ "$cerc" = "$ptrc" ] && [ "$ceout" = "$ptout" ] \
+               && verdict="MATCH(stdout)" || { verdict=DIFFER; fail=1; } ;;
     exit)    [ "$cerc" = "$ptrc" ] && verdict="MATCH(exit)" || { verdict=DIFFER; fail=1; } ;;
     report)  verdict=KNOWN-DIVERGENCE ;;
   esac
   printf '  %-6s %-8s %-16s CE exit=%s  ptah exit=%s\n' "$verb" "$state" "$verdict" "$cerc" "$ptrc"
-  if [ "$verdict" != MATCH ] && [ "$verdict" != "MATCH(exit)" ]; then
+  if [ "$verdict" != MATCH ] && [ "$verdict" != "MATCH(exit)" ] && [ "$verdict" != "MATCH(stdout)" ]; then
     printf '       CE   out=[%s] err=[%s]\n' "$(echo "$ceout" | tr '\n' '|')" "$(echo "$cerr" | tr '\n' '|')"
     printf '       ptah out=[%s] err=[%s]\n' "$(echo "$ptout" | tr '\n' '|')" "$(echo "$pterr" | tr '\n' '|')"
   fi
+}
+
+# gate_accept_mode <verb> — how strictly an ACCEPTED directory is compared.
+gate_accept_mode() {
+  case "$1" in
+    status) echo stdout ;;
+    *)      echo exit ;;
+  esac
 }
 
 for verb in status set; do
@@ -393,8 +410,14 @@ for verb in status set; do
   # mode the other agreed-on states use, no longer a recorded divergence.
   # ptah-compat additionally names the declined file on stderr, which is why
   # these are not streams rows; that line is asserted in the apply section below.
-  for state in clean empty nonsql nested nestedhash nestedtamper uppercase uppermixed; do
+  for state in nested nestedhash nestedtamper uppercase uppermixed; do
     gate_row "$verb" "$state" exit
+  done
+  # The three states where neither tool writes to stderr. Since #1102 `status`
+  # also agrees on the report itself, so these compare stdout; `set` writes no
+  # mirrored report and stays exit-only.
+  for state in clean empty nonsql; do
+    gate_row "$verb" "$state" "$(gate_accept_mode "$verb")"
   done
 done
 

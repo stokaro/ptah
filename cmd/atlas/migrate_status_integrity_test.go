@@ -88,10 +88,12 @@ func writeStatusIntegrityRemoved(c *qt.C, dir string) {
 
 // TestCompatMigrateStatus_DriftedDirRefuses is the discriminator for #974.
 //
-// Pre-change every row here exits 0 and prints `=== MIGRATION STATUS ===`; the
-// removed row additionally reports "Database is up to date" for a directory
-// whose migration is gone. Post-change every row exits 1 with output
-// byte-identical to the pinned community binary v1.3.0.
+// Without the gate every row here exits 0 and reports normally; the removed row
+// additionally reports the database up to date for a directory whose migration
+// is gone. With it, every row exits 1 with output byte-identical to the pinned
+// community binary v1.3.0. (The normal report was `=== MIGRATION STATUS ===`
+// when #974 landed and is the mirrored Atlas block since #1102; the gate is
+// indifferent to which, because it refuses before the report is reached.)
 func TestCompatMigrateStatus_DriftedDirRefuses(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -250,14 +252,18 @@ func TestCompatMigrateStatus_FormatTemplateRefuses(t *testing.T) {
 // bootstrap that #970 established must keep working.
 func TestCompatMigrateStatus_AntiRegressionCleanDirsReportNormally(t *testing.T) {
 	tests := []struct {
-		name     string
-		writeDir func(*qt.C, string)
-		wantLine string
+		name       string
+		writeDir   func(*qt.C, string)
+		wantStdout string
 	}{
 		{
 			name:     "anti-regression: empty directory",
 			writeDir: func(c *qt.C, dir string) { c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil) },
-			wantLine: "Total Migrations: 0",
+			wantStdout: "Migration Status: OK\n" +
+				"  -- Current Version: No migration applied yet\n" +
+				"  -- Next Version:    Already at latest version\n" +
+				"  -- Executed Files:  0\n" +
+				"  -- Pending Files:   0\n",
 		},
 		{
 			name: "anti-regression: no SQL files",
@@ -265,12 +271,20 @@ func TestCompatMigrateStatus_AntiRegressionCleanDirsReportNormally(t *testing.T)
 				c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 				c.Assert(os.WriteFile(filepath.Join(dir, "README.md"), []byte("migrations live here\n"), 0o600), qt.IsNil)
 			},
-			wantLine: "Total Migrations: 0",
+			wantStdout: "Migration Status: OK\n" +
+				"  -- Current Version: No migration applied yet\n" +
+				"  -- Next Version:    Already at latest version\n" +
+				"  -- Executed Files:  0\n" +
+				"  -- Pending Files:   0\n",
 		},
 		{
 			name:     "anti-regression: hashed clean directory",
 			writeDir: writeStatusIntegrityHashed,
-			wantLine: "Total Migrations: 1",
+			wantStdout: "Migration Status: PENDING\n" +
+				"  -- Current Version: No migration applied yet\n" +
+				"  -- Next Version:    20260101000000\n" +
+				"  -- Executed Files:  0\n" +
+				"  -- Pending Files:   1\n",
 		},
 	}
 
@@ -288,8 +302,7 @@ func TestCompatMigrateStatus_AntiRegressionCleanDirsReportNormally(t *testing.T)
 			)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(stdout, qt.Contains, "=== MIGRATION STATUS ===")
-			c.Assert(stdout, qt.Contains, tt.wantLine)
+			c.Assert(stdout, qt.Equals, tt.wantStdout)
 			c.Assert(stderr, qt.Equals, "")
 		})
 	}
@@ -324,7 +337,7 @@ func TestCompatMigrateStatus_UnhashedNestedSQLReportsNothingPending(t *testing.T
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "Total Migrations: 0")
+	c.Assert(stdout, qt.Contains, "  -- Pending Files:   0\n")
 	c.Assert(stderr, qt.Equals,
 		"warning: sub/"+statusIntegrityMigration+" is not covered by atlas.sum and will not run; "+
 			"Atlas migrations are top-level files named *.sql\n")

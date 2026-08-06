@@ -216,6 +216,10 @@ func runAtlasMigrateDiff(
 			return editor.Open(cmd.Context(), "", stagedPaths...)
 		}
 	}
+	schemaVars, err := atlasVarFlagValues(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	diffResult, err := atlasmigrate.GenerateDiff(cmd.Context(), conn, atlasmigrate.DiffOptions{
 		Dir: migrationsDir,
 		// The same handle the preflight gate captured through. Handing it to the
@@ -235,6 +239,7 @@ func runAtlasMigrateDiff(
 		Policy:               policy,
 		Qualifier:            qualifier,
 		DryRun:               opts.dryRun,
+		Vars:                 schemaVars,
 		PreparePublication:   preparePublication,
 		// The same predicate the preflight above already applied, re-applied to
 		// the locked snapshot. Passing it in is what keeps this verb from

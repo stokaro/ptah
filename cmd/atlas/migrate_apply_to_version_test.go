@@ -108,10 +108,10 @@ func TestCompatCommand_MigrateApplyToVersionAppliesBoundedPrefix(t *testing.T) {
 		"--dir", "file://"+migrationsDir,
 	)
 	c.Assert(statusErr, qt.IsNil)
-	c.Assert(statusOut, qt.Contains, "Current Version: "+toVersionTwo)
-	c.Assert(statusOut, qt.Contains, "Applied Migrations: 2")
-	c.Assert(statusOut, qt.Contains, "Pending Migrations: 1")
-	c.Assert(statusOut, qt.Contains, "Status: Pending migrations available")
+	c.Assert(statusOut, qt.Contains, "-- Current Version: "+toVersionTwo)
+	c.Assert(statusOut, qt.Contains, "-- Executed Files:  2")
+	c.Assert(statusOut, qt.Contains, "-- Pending Files:   1")
+	c.Assert(statusOut, qt.Contains, "Migration Status: PENDING")
 
 	// A second bounded apply finishes the directory, so the bound is a bound
 	// and not a permanent ceiling.

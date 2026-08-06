@@ -117,9 +117,8 @@ func TestCompatMigrateStatus_ConvertedDirIsRead(t *testing.T) {
 			args := append([]string{"migrate", "status"}, test.args(dir)...)
 			stdout, stderr, err := runCompatExit(append(args, "--url", revisionDBURL(c))...)
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-			c.Assert(stdout, qt.Contains, "Total Migrations: 2")
-			c.Assert(stdout, qt.Contains, "Pending Migrations: 2")
-			c.Assert(stdout, qt.Contains, "Applied Migrations: 0")
+			c.Assert(stdout, qt.Contains, "  -- Pending Files:   2\n")
+			c.Assert(stdout, qt.Contains, "  -- Executed Files:  0\n")
 		})
 	}
 }
@@ -212,8 +211,8 @@ func TestCompatMigrateSet_ConvertedDirWritesConvertedVersion(t *testing.T) {
 		"--url", url,
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-	c.Assert(stdout, qt.Contains, "Applied Migrations: 1")
-	c.Assert(stdout, qt.Contains, "Pending Migrations: 1")
+	c.Assert(stdout, qt.Contains, "  -- Executed Files:  1\n")
+	c.Assert(stdout, qt.Contains, "  -- Pending Files:   1\n")
 }
 
 // TestCompatMigrateRevisionVerbs_DirFormatIsVerbatim pins the case rule these

@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
+	"github.com/zclconf/go-cty/cty/convert"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -38,6 +39,16 @@ type Options struct {
 	// the order the parser reached them. Optional; nil discards them, which is
 	// what the community binary does.
 	RecordIgnored func(IgnoredName)
+
+	// Vars supplies values for the file's `variable` blocks, spelled the way
+	// `--var` spells them: one entry per flag occurrence, each entry a
+	// comma-separated list of name=value assignments.
+	//
+	// A name with no matching variable block is ignored, matching the pinned
+	// Atlas community binary v1.3.0: `--var nosuch=1` against a file declaring
+	// `variable "v"` still fails with `missing value for required variable
+	// "v"` rather than complaining about the unused override.
+	Vars []string
 }
 
 // ParseFile parses an HCL schema file into the same Database IR used by
@@ -83,6 +94,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 		db:            &goschema.Database{},
 		tolerant:      opts.IgnoreUnknownNames,
 		recordIgnored: opts.RecordIgnored,
+		refContext:    columnRefContext(body),
 	}
 	// Classify before validating the schema body. A file carrying a project-file
 	// marker is the wrong kind of file, and that verdict must not depend on
@@ -93,11 +105,25 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	if err := classifyProjectFile(body, filename); err != nil {
 		return nil, err
 	}
+	// The evaluation context is built from the file's own variable and locals
+	// blocks, so it has to exist before any attribute is read -- including the
+	// sql() arguments the next guard evaluates.
+	ctx, err := newEvalContext(body, opts.Vars)
+	if err != nil {
+		return nil, err
+	}
+	p.ctx = ctx
 	// Refuse malformed sql() calls before the body walk, not during it. Every
 	// value helper below falls back to an attribute's source text when the
 	// expression will not evaluate, so a call this guard let through would be
 	// rendered into DDL verbatim -- issue #1106.
 	if err := p.rejectMalformedSQLRawExprs(body); err != nil {
+		return nil, err
+	}
+	// Same reason, for the expressions the context above was built to resolve:
+	// an unresolved var. reference would otherwise reach DDL as its own source
+	// text -- issue #926.
+	if err := p.rejectUnresolvedExprs(body); err != nil {
 		return nil, err
 	}
 	if err := p.parseBody(body); err != nil {
@@ -164,11 +190,18 @@ type parser struct {
 	sourceDir string
 	db        *goschema.Database
 
+	// ctx carries the var. and local. namespaces and the function set every
+	// attribute is evaluated against. It is never nil once Parse has built it.
+	ctx *hcl.EvalContext
+
 	// tolerant enables the unknown-name policy described on Options.
 	tolerant bool
 	// recordIgnored receives the names dropped under that policy. Nil discards
 	// them.
 	recordIgnored func(IgnoredName)
+	// refContext decides a conditional inside a column reference. Built once
+	// from the file's own `variable` blocks -- see columnRefContext.
+	refContext *hcl.EvalContext
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -220,14 +253,15 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		// returns the identical error so the message cannot drift between the
 		// two routes.
 		return projectFileError(p.filename, block)
-	case "variable":
-		// Left accepted on purpose; do not fold this into the env arm.
+	case variableBlockType, localsBlockType:
+		// Consumed already; do not fold either name into the env arm.
 		//
-		// `variable` is a genuine schema-file construct in Atlas: the community
-		// binary accepts it, EVALUATES var.X references against it, and fails
-		// with `missing value for required variable %q` only when a typed
-		// variable has neither a default nor a --var override. Measured on the
-		// pinned binary, a schema file whose column default is var.status:
+		// Both are genuine schema-file constructs in Atlas: the community
+		// binary accepts them, EVALUATES var.X and local.X references against
+		// them, and fails with `missing value for required variable %q` only
+		// when a typed variable has neither a default nor a --var override.
+		// Measured on the pinned binary, a schema file whose column default is
+		// var.status:
 		//
 		//   variable "status" { type = string, default = "active" }
 		//     -> exit 0, renders `default = "active"`
@@ -238,15 +272,9 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		// prevent. Quote the typed spelling or the measurement says the opposite
 		// of what it is cited for.
 		//
-		// Ptah has no schema-file variable evaluation, so accepting and ignoring
-		// is knowingly looser than that binary on BOTH spellings it refuses --
-		// a variable missing `type`, and a typed variable with no default and no
-		// --var -- and it renders var.X into DDL as literal text. Real defects,
-		// all three, and all of them predate this arm's split. Moving
-		// this name to the default arm would "fix" them by refusing files the
-		// community binary fully supports -- a new stricter break, not parity.
-		// The fix is evaluation plus --var plumbing, tracked in issue #926
-		// ("HCL schema files: expressions are not evaluated").
+		// newEvalContext read both block kinds before this walk started, which
+		// is where their validation and their `missing value` refusal live.
+		// Reaching them again here would parse a type constraint as a value.
 		return nil
 	default:
 		return p.rejectUnsupportedBlock(block, "top-level")
@@ -1357,10 +1385,9 @@ func (p *parser) parseColumnRefsAttr(block *hclsyntax.Block, attrName string) ([
 
 	var refs []columnRef
 	for _, expr := range exprs {
-		item := p.rawExprNode(expr)
-		table, column := tableColumnFromRef(item)
+		table, column := p.tableColumnFromExpr(expr)
 		if column == "" {
-			return nil, p.blockError(block, "%s contains unsupported reference %q", attrName, item)
+			return nil, p.blockError(block, "%s contains unsupported reference %q", attrName, p.rawExprNode(expr))
 		}
 		refs = append(refs, columnRef{table: table, column: column})
 	}
@@ -1659,7 +1686,7 @@ func (p *parser) stringAttr(block *hclsyntax.Block, name, label string) (string,
 	if attr == nil {
 		return "", nil
 	}
-	value, diags := attr.Expr.Value(nil)
+	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() || !value.IsKnown() || value.IsNull() || value.Type() != cty.String {
 		return "", p.blockError(block, "%s attribute %q must be a string", label, name)
 	}
@@ -1670,7 +1697,7 @@ func (p *parser) optionalBool(attr *hclsyntax.Attribute, fallback bool) bool {
 	if attr == nil {
 		return fallback
 	}
-	value, diags := attr.Expr.Value(nil)
+	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() || value.Type() != cty.Bool {
 		return fallback
 	}
@@ -1682,7 +1709,7 @@ func (p *parser) optionalTableBool(block *hclsyntax.Block, name string, fallback
 	if attr == nil {
 		return fallback, nil
 	}
-	value, diags := attr.Expr.Value(nil)
+	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() || value.Type() != cty.Bool {
 		return false, p.blockError(block, "table attribute %q must be a bool", name)
 	}
@@ -1694,7 +1721,7 @@ func (p *parser) optionalIndexOnBool(block *hclsyntax.Block, name string, fallba
 	if attr == nil {
 		return fallback, nil
 	}
-	value, diags := attr.Expr.Value(nil)
+	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() || value.Type() != cty.Bool {
 		return false, p.blockError(block, "index on attribute %q must be a bool", name)
 	}
@@ -1706,7 +1733,7 @@ func (p *parser) optionalBlockBoolPtr(block *hclsyntax.Block, name, label string
 	if attr == nil {
 		return nil, nil
 	}
-	value, diags := attr.Expr.Value(nil)
+	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() || value.Type() != cty.Bool {
 		return nil, p.blockError(block, "%s attribute %q must be a bool", label, name)
 	}
@@ -1720,6 +1747,14 @@ func (p *parser) optionalRawExpr(attr *hclsyntax.Attribute) string {
 	}
 	if value, ok := p.sqlRawExprValue(attr.Expr); ok {
 		return value
+	}
+	// A var. or local. reference resolves here too. Everything else this helper
+	// reads -- `on = table.users`, `to = [role.app]`, a bare argument type --
+	// is a reference spelled as source text and stays one.
+	if mustEvaluate(attr.Expr) {
+		if text, ok := p.evaluatedText(attr.Expr); ok {
+			return text
+		}
 	}
 	return p.rawExpr(attr)
 }
@@ -1754,11 +1789,37 @@ func (p *parser) exprString(attr *hclsyntax.Attribute) string {
 	if value, ok := p.sqlRawExprValue(attr.Expr); ok {
 		return value
 	}
-	value, diags := attr.Expr.Value(nil)
-	if !diags.HasErrors() && value.Type() == cty.String {
-		return value.AsString()
+	if text, ok := p.evaluatedText(attr.Expr); ok {
+		return text
 	}
 	return p.rawExpr(attr)
+}
+
+// evaluatedText returns an expression's evaluated value as the text Ptah stores
+// in the schema IR.
+//
+// A string result is taken whatever the expression was, which is what the nil
+// evaluation context already did for a quoted literal. A number or bool result
+// is taken only for an expression [mustEvaluate] claims -- `var.n`, `max(1,2)`
+// -- because for a plain numeric literal the source text and the formatted
+// value can differ (`1.50` formats as `1.5`) and the source text is what every
+// existing schema was written against.
+func (p *parser) evaluatedText(expr hclsyntax.Expression) (string, bool) {
+	value, diags := expr.Value(p.ctx)
+	if diags.HasErrors() || value.IsNull() || !value.IsKnown() {
+		return "", false
+	}
+	if value.Type() == cty.String {
+		return value.AsString(), true
+	}
+	if !mustEvaluate(expr) {
+		return "", false
+	}
+	converted, err := convert.Convert(value, cty.String)
+	if err != nil {
+		return "", false
+	}
+	return converted.AsString(), true
 }
 
 // columnTypeName returns the column's type and whether it was written with
@@ -1790,7 +1851,7 @@ func (p *parser) stringListAttr(block *hclsyntax.Block, attrName string) ([]stri
 	if attr == nil {
 		return nil, nil
 	}
-	value, diags := attr.Expr.Value(nil)
+	value, diags := attr.Expr.Value(p.ctx)
 	valueType := value.Type()
 	if diags.HasErrors() || !valueType.IsTupleType() && !valueType.IsListType() {
 		return nil, p.blockError(block, "%s must be a list of strings", attrName)
@@ -1828,11 +1889,16 @@ func (p *parser) stringListAttr(block *hclsyntax.Block, attrName string) ([]stri
 // Ptah could already name is untouched -- a reference, or the quoted-string
 // spelling Ptah accepts and that binary does not. Raw SQL in an index part has
 // its own attribute, `expr`, which takes it and renders it.
+//
+// What "has no column name" means is tableColumnFromExpr's business, and it is a
+// question about the PARSED EXPRESSION. Asking the attribute's source text
+// instead was issue #1182: it refused five spellings the pinned binary plans,
+// because text that is not a bare traversal reads the same whether it wraps a
+// column reference or carries no reference at all.
 func (p *parser) columnNameFromExpr(block *hclsyntax.Block, label string, attr *hclsyntax.Attribute) (string, error) {
-	raw := p.rawExpr(attr)
-	name := columnNameFromRef(raw)
+	_, name := p.tableColumnFromExpr(attr.Expr)
 	if name == "" {
-		return "", p.blockError(block, "%s column contains unsupported reference %q", label, raw)
+		return "", p.blockError(block, "%s column contains unsupported reference %q", label, p.rawExpr(attr))
 	}
 	return name, nil
 }
@@ -1874,51 +1940,4 @@ func normalizeIdentityGeneration(value string) string {
 	default:
 		return ""
 	}
-}
-
-func columnNameFromRef(raw string) string {
-	_, column := tableColumnFromRef(raw)
-	return column
-}
-
-func tableColumnFromRef(raw string) (table string, column string) {
-	raw = strings.TrimSpace(raw)
-	raw = strings.TrimSuffix(raw, ",")
-	if unquoted, err := strconv.Unquote(raw); err == nil {
-		return "", unquoted
-	}
-	expr, diags := hclsyntax.ParseExpression([]byte(raw), "column-reference.hcl", hcl.InitialPos)
-	if diags.HasErrors() {
-		return "", ""
-	}
-	traversal, diags := hcl.AbsTraversalForExpr(expr)
-	if diags.HasErrors() || len(traversal) < 2 {
-		return "", ""
-	}
-	root, ok := traversal[0].(hcl.TraverseRoot)
-	if !ok {
-		return "", ""
-	}
-	parts := make([]string, 0, len(traversal)-1)
-	for _, step := range traversal[1:] {
-		part, ok := traversalPart(step)
-		if !ok {
-			return "", ""
-		}
-		parts = append(parts, part)
-	}
-	if root.Name == "column" && len(parts) == 1 {
-		return "", parts[0]
-	}
-	if root.Name != "table" || len(parts) < 3 || parts[len(parts)-2] != "column" {
-		return "", ""
-	}
-	tableParts := parts[:len(parts)-2]
-	if len(tableParts) == 1 {
-		return tableref.Canonical("", tableParts[0]), parts[len(parts)-1]
-	}
-	if len(tableParts) == 2 {
-		return tableref.Canonical(tableParts[0], tableParts[1]), parts[len(parts)-1]
-	}
-	return "", ""
 }

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.5x5.cz/ptah/migration/migrator"
@@ -25,13 +26,18 @@ type MigrateStatus struct {
 	Available []MigrateStatusFile     `json:"Available,omitempty"`
 	Applied   []MigrateStatusRevision `json:"Applied,omitempty"`
 	Pending   []MigrateStatusFile     `json:"Pending,omitempty"`
-	Current   string                  `json:"Current,omitempty"`
-	Next      string                  `json:"Next,omitempty"`
-	Status    string                  `json:"Status,omitempty"`
-	Count     int                     `json:"Count,omitempty"`
-	Total     int                     `json:"Total,omitempty"`
-	Error     string                  `json:"Error,omitempty"`
-	SQL       string                  `json:"SQL,omitempty"`
+	// OutOfOrder lists pending files whose version sorts below a version the
+	// database has already applied. The pinned community binary reports these
+	// separately from Pending and refuses to name a Next Version while any
+	// exist, because "what runs next" has no answer under linear execution.
+	OutOfOrder []MigrateStatusFile `json:"OutOfOrder,omitempty"`
+	Current    string              `json:"Current,omitempty"`
+	Next       string              `json:"Next,omitempty"`
+	Status     string              `json:"Status,omitempty"`
+	Count      int                 `json:"Count,omitempty"`
+	Total      int                 `json:"Total,omitempty"`
+	Error      string              `json:"Error,omitempty"`
+	SQL        string              `json:"SQL,omitempty"`
 }
 
 type MigrateStatusFile struct {
@@ -80,14 +86,58 @@ func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {
 			URL:    atlasRedactedURL(opts.URL),
 			Dir:    opts.Dir,
 		},
-		Available: files,
-		Applied:   migrateStatusAppliedRevisions(files, opts.AppliedRevisions),
-		Pending:   selectedMigrateStatusFiles(files, opts.Status.PendingMigrations, ""),
-		Current:   migrateStatusCurrent(opts.Status.CurrentVersion),
-		Next:      migrateStatusNext(opts.Status.PendingMigrations),
-		Status:    migrateStatusLabel(opts.Status),
+		Available:  files,
+		Applied:    migrateStatusAppliedRevisions(files, opts.AppliedRevisions),
+		Pending:    selectedMigrateStatusFiles(files, opts.Status.PendingMigrations, ""),
+		OutOfOrder: selectedMigrateStatusFiles(files, opts.Status.OutOfOrderMigrations, ""),
+		Current:    migrateStatusCurrent(opts.Status.CurrentVersion),
+		Next:       migrateStatusNext(opts.Status.PendingMigrations),
+		Status:     migrateStatusLabel(opts.Status),
 	}
+	applyMigrateStatusPartial(&result, opts.AppliedRevisions)
 	return result, nil
+}
+
+// applyMigrateStatusPartial fills Count, Total, Error and SQL from the highest
+// revision row when that row is half-applied.
+//
+// Count/Total are the statement counters the report prints as "(N statements
+// applied)" and "(M statements left)"; Error/SQL are the failure the "Last
+// migration attempt had errors" block names. Measured against the pinned
+// community binary v1.3.0: on a clean database all four are absent from
+// `--format '{{ json . }}'`, and on a database whose second migration failed
+// mid-body they read Count=1, Total=2, Error and SQL. Before this they were
+// declared and never written, so `{{ .Total }}` rendered 0 on a wedged database
+// and the failing statement was unreachable from a template.
+//
+// The highest row is the selector because the revision query orders by version
+// and a run stops at its first failure, so a half-applied row is the last one.
+func applyMigrateStatusPartial(result *MigrateStatus, revisions []migrator.MigrationRevision) {
+	if len(revisions) == 0 {
+		return
+	}
+	last := revisions[len(revisions)-1]
+	if last.Error == "" && last.Applied >= last.Total {
+		return
+	}
+	result.Count = last.Applied
+	result.Total = last.Total
+	result.Error = migrateStatusOneLine(last.Error)
+	result.SQL = migrateStatusOneLine(last.ErrorStatement)
+}
+
+// migrateStatusOneLine folds a stored newline into a space.
+//
+// The report's own Error and SQL are one line each; the revision row's are not
+// necessarily, and a multi-line value would otherwise break the `  -- ` column
+// a parser keys on. Measured on the pinned community binary v1.3.0 against a
+// migration whose failing statement spans four lines: `{{ printf "%q" .SQL }}`
+// reads "CREATE TABLE a (   id integer,   name text );" while the same row read
+// as `{{ range .Applied }}{{ printf "%q" .ErrorStmt }}` keeps its "\n" — so the
+// fold belongs to the top-level report field, not to the revision, and it is a
+// newline-to-space substitution rather than a collapse of runs of whitespace.
+func migrateStatusOneLine(value string) string {
+	return strings.ReplaceAll(value, "\n", " ")
 }
 
 func migrateStatusAppliedRevisions(

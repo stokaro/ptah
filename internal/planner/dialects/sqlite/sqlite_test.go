@@ -1,6 +1,7 @@
 package sqlite_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -388,30 +389,177 @@ func TestPlannerDropsIndexesAndTables(t *testing.T) {
 	c.Assert(sql, qt.Contains, `DROP TABLE IF EXISTS "old_users"`)
 }
 
-func TestPlannerRejectsRebuildOnlyTableChanges(t *testing.T) {
+// usersRebuildSchema is the desired shape the rebuild tests converge on: a
+// two-column table whose definition the caller adjusts per case.
+func usersRebuildSchema(fields []goschema.Field, constraints []goschema.Constraint) *goschema.Database {
+	return &goschema.Database{
+		Tables:      []goschema.Table{{Name: "users", StructName: "User"}},
+		Fields:      fields,
+		Constraints: constraints,
+	}
+}
+
+func usersNameField(name goschema.Field) []goschema.Field {
+	return []goschema.Field{
+		{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+		name,
+	}
+}
+
+// TestPlannerRebuildsTableForChangesAlterTableCannotExpress pins one rebuild per
+// diff shape that SQLite's ALTER TABLE grammar cannot carry. Each row asserts
+// the create/copy/drop/rename sequence plus the shape-specific detail. Before
+// the rebuild generalization every row returned an unsupported-feature error
+// instead: "sqlite: modifying columns on table users requires a table rebuild
+// plan" for the three column rows, "sqlite: changing constraints on table users
+// requires a table rebuild plan" for the table-level constraint row, and
+// "sqlite: changing constraints on existing tables requires a table rebuild
+// plan" for the schema-level constraint and enum rows.
+func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 	tests := []struct {
-		name string
-		diff *types.SchemaDiff
-		want string
+		name      string
+		generated *goschema.Database
+		diff      *types.SchemaDiff
+		assert    func(c *qt.C, sql string)
 	}{
 		{
-			name: "modify column",
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{
-				{TableName: "users", ColumnsModified: []types.ColumnDiff{{ColumnName: "name"}}},
-			}},
-			want: "sqlite: modifying columns on table users requires a table rebuild plan",
+			name: "column type change",
+			generated: usersRebuildSchema(
+				usersNameField(goschema.Field{Name: "name", Type: "INTEGER", StructName: "User"}),
+				nil,
+			),
+			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+				TableName:       "users",
+				ColumnsModified: []types.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"type": "text -> integer"}}},
+			}}},
+			assert: func(c *qt.C, sql string) {
+				c.Assert(sql, qt.Contains, `"name" INTEGER NOT NULL`)
+				c.Assert(sql, qt.Contains, `SELECT "id", "name" FROM "users";`)
+			},
 		},
 		{
-			name: "change constraints",
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{
-				{TableName: "users", ConstraintsAdded: []string{"users_name_key"}},
-			}},
-			want: "sqlite: changing constraints on table users requires a table rebuild plan",
+			name: "column nullability change",
+			generated: usersRebuildSchema(
+				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User", Nullable: true}),
+				nil,
+			),
+			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+				TableName:       "users",
+				ColumnsModified: []types.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"nullable": "false -> true"}}},
+			}}},
+			assert: func(c *qt.C, sql string) {
+				c.Assert(sql, qt.Contains, `"name" TEXT`)
+				c.Assert(sql, qt.Not(qt.Contains), `"name" TEXT NOT NULL`)
+			},
 		},
 		{
-			name: "enum check drift",
-			diff: &types.SchemaDiff{EnumsModified: []types.EnumDiff{{EnumName: "enum_users_status"}}},
-			want: "sqlite: changing enum-backed CHECK constraints requires a table rebuild plan",
+			name: "not null default addition backfills the copy",
+			generated: usersRebuildSchema(
+				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User", Default: "'x'"}),
+				nil,
+			),
+			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+				TableName: "users",
+				ColumnsModified: []types.ColumnDiff{{
+					ColumnName: "name",
+					Changes:    map[string]string{"nullable": "true -> false", "default": " -> 'x'"},
+				}},
+			}}},
+			assert: func(c *qt.C, sql string) {
+				c.Assert(sql, qt.Contains, `SELECT "id", IFNULL("name", 'x') AS "name" FROM "users";`)
+			},
+		},
+		{
+			name: "table-level constraint change",
+			generated: usersRebuildSchema(
+				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User"}),
+				[]goschema.Constraint{{
+					Name:            "users_name_check",
+					Type:            "CHECK",
+					StructName:      "User",
+					CheckExpression: "length(name) > 2",
+				}},
+			),
+			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+				TableName:        "users",
+				ConstraintsAdded: []string{"users_name_check"},
+			}}},
+			assert: func(c *qt.C, sql string) {
+				c.Assert(sql, qt.Contains, `CONSTRAINT "users_name_check" CHECK (length(name) > 2)`)
+			},
+		},
+		{
+			name: "schema-level constraint change on an existing table",
+			generated: usersRebuildSchema(
+				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User"}),
+				[]goschema.Constraint{{
+					Name:            "users_name_check",
+					Type:            "CHECK",
+					StructName:      "User",
+					CheckExpression: "length(name) > 2",
+				}},
+			),
+			diff: &types.SchemaDiff{
+				ConstraintsAdded: []string{"users_name_check"},
+				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+					Name:            "users_name_check",
+					TableName:       "users",
+					Type:            "CHECK",
+					CheckExpression: "length(name) > 2",
+				}},
+			},
+			assert: func(c *qt.C, sql string) {
+				c.Assert(sql, qt.Contains, `CONSTRAINT "users_name_check" CHECK (length(name) > 2)`)
+			},
+		},
+		{
+			name: "enum-backed check constraint change",
+			generated: usersRebuildSchema(
+				usersNameField(goschema.Field{
+					Name:       "status",
+					Type:       "TEXT",
+					StructName: "User",
+					Check:      "status IN ('draft', 'published')",
+					CheckName:  "users_status_check",
+				}),
+				nil,
+			),
+			diff: &types.SchemaDiff{
+				EnumsModified:      []types.EnumDiff{{EnumName: "enum_users_status", ValuesRemoved: []string{"archived"}}},
+				ConstraintsAdded:   []string{"users_status_check"},
+				ConstraintsRemoved: []string{"users_status_check"},
+				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+					Name:            "users_status_check",
+					TableName:       "users",
+					Type:            "CHECK",
+					CheckExpression: "status IN ('draft', 'published')",
+				}},
+				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+					Name:      "users_status_check",
+					TableName: "users",
+					Type:      "CHECK",
+				}},
+			},
+			assert: func(c *qt.C, sql string) {
+				c.Assert(sql, qt.Contains, `CHECK (status IN ('draft', 'published'))`)
+				c.Assert(sql, qt.Not(qt.Contains), "archived")
+			},
+		},
+		{
+			name: "dropped column combined with an added column",
+			generated: usersRebuildSchema(
+				usersNameField(goschema.Field{Name: "nickname", Type: "TEXT", StructName: "User", Nullable: true}),
+				nil,
+			),
+			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+				TableName:      "users",
+				ColumnsAdded:   []string{"nickname"},
+				ColumnsRemoved: []string{"email"},
+			}}},
+			assert: func(c *qt.C, sql string) {
+				c.Assert(sql, qt.Contains, `"nickname" TEXT`)
+				c.Assert(sql, qt.Contains, `INSERT INTO "__ptah_rebuild_users" ("id") SELECT "id" FROM "users";`)
+			},
 		},
 	}
 
@@ -419,15 +567,131 @@ func TestPlannerRejectsRebuildOnlyTableChanges(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, &goschema.Database{}, platform.SQLite)
-			c.Assert(nodes, qt.IsNil)
-			var planErr *ptaherr.PlanError
-			c.Assert(err, qt.ErrorAs, &planErr)
-			c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, tt.want)
+			sql, err := planner.GenerateSchemaDiffSQL(tt.diff, tt.generated, platform.SQLite)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+			c.Assert(sql, qt.Contains, `INSERT INTO "__ptah_rebuild_users"`)
+			c.Assert(sql, qt.Contains, `DROP TABLE "users";`)
+			c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users" RENAME TO "users";`)
+			tt.assert(c, sql)
 		})
 	}
+}
+
+// TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault keeps the rebuild
+// from emitting a copy that cannot execute: the added column is absent from the
+// INSERT list, so SQLite would fill it with NULL and abort on the first row.
+// Reverting the guard prints a plan containing
+// `INSERT INTO "__ptah_rebuild_users" ("id") SELECT "id" FROM "users";` and a
+// nil error instead of the refusal.
+func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
+	c := qt.New(t)
+
+	generated := usersRebuildSchema(
+		usersNameField(goschema.Field{Name: "email", Type: "TEXT", StructName: "User"}),
+		nil,
+	)
+	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+		TableName:      "users",
+		ColumnsAdded:   []string{"email"},
+		ColumnsRemoved: []string{"legacy"},
+	}}}
+
+	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
+
+	c.Assert(nodes, qt.IsNil)
+	var planErr *ptaherr.PlanError
+	c.Assert(err, qt.ErrorAs, &planErr)
+	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `sqlite: rebuilding table users cannot add NOT NULL column email without a default`)
+}
+
+// TestPlannerRebuildEmitsIndexesAndTriggersOnce pins that a rebuilt table
+// recreates its desired indexes and triggers exactly once. The rebuild drops
+// the table, so the diff's own index and trigger additions must not be replayed
+// on top. Reverting the skip prints the CREATE INDEX line twice and the CREATE
+// TRIGGER statement twice.
+func TestPlannerRebuildEmitsIndexesAndTriggersOnce(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
+		Fields: []goschema.Field{
+			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+			{Name: "name", Type: "INTEGER", StructName: "User"},
+		},
+		Indexes: []goschema.Index{{
+			Name:       "idx_users_name",
+			StructName: "User",
+			Fields:     []string{"name"},
+		}},
+		Triggers: []goschema.Trigger{{
+			Name:    "trg_users_name",
+			Table:   "users",
+			Timing:  "AFTER",
+			Event:   "UPDATE",
+			ForEach: "ROW",
+			Body:    "BEGIN SELECT NEW.name; END",
+		}},
+	}
+	diff := &types.SchemaDiff{
+		TablesModified: []types.TableDiff{{
+			TableName:       "users",
+			ColumnsModified: []types.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"type": "text -> integer"}}},
+		}},
+		IndexesAdded:  []types.IndexRef{{Name: "idx_users_name", TableName: "users"}},
+		TriggersAdded: []types.TriggerRef{{TriggerName: "trg_users_name", TableName: "users"}},
+	}
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Count(sql, `CREATE INDEX IF NOT EXISTS "idx_users_name"`), qt.Equals, 1)
+	c.Assert(strings.Count(sql, `CREATE TRIGGER "trg_users_name"`), qt.Equals, 1)
+}
+
+// TestPlannerEmitsTriggerChangesWithoutRebuild is the non-interference control
+// for the rebuild skip in addTriggers and modifyTriggers: a table that is not
+// being rebuilt must still get its added and replaced triggers. Inverting the
+// skip so that only rebuilt tables emit prints zero occurrences of both
+// statements and fails on the first count.
+func TestPlannerEmitsTriggerChangesWithoutRebuild(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
+		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+		Triggers: []goschema.Trigger{
+			{
+				Name:    "trg_users_insert",
+				Table:   "users",
+				Timing:  "AFTER",
+				Event:   "INSERT",
+				ForEach: "ROW",
+				Body:    "BEGIN SELECT NEW.id; END",
+			},
+			{
+				Name:    "trg_users_update",
+				Table:   "users",
+				Timing:  "AFTER",
+				Event:   "UPDATE",
+				ForEach: "ROW",
+				Body:    "BEGIN SELECT NEW.id; END",
+			},
+		},
+	}
+	diff := &types.SchemaDiff{
+		TriggersAdded:    []types.TriggerRef{{TriggerName: "trg_users_insert", TableName: "users"}},
+		TriggersModified: []types.TriggerDiff{{TriggerName: "trg_users_update", TableName: "users"}},
+	}
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Count(sql, `CREATE TRIGGER "trg_users_insert"`), qt.Equals, 1)
+	c.Assert(strings.Count(sql, `TRIGGER "trg_users_update"`), qt.Equals, 1)
 }
 
 func TestPlannerRejectsUnqualifiedExistingTableConstraintChanges(t *testing.T) {
@@ -468,4 +732,54 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "sqlite: EXCLUDE constraints are not supported")
+}
+
+// TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange pins the
+// intersection that corrupted data: one diff that BOTH adds a column and changes
+// a table-level constraint on the same existing table.
+//
+// The added column must not appear in the rebuild's SELECT, because it does not
+// exist in the old table. SQLite reads an unknown double-quoted identifier as a
+// STRING LITERAL rather than refusing it, so copying `"note"` out of a table
+// without that column writes the text `note` into every row — and `schema apply`
+// exits 0 reporting success. Measured on a seeded database before the fix:
+// (1,'alpha','note'), (2,'beta','note'), typeof text.
+//
+// Reverted, the INSERT reads `("id", "name", "note") SELECT "id", "name", "note"`
+// and this row fails on the first assertion. The suite covers each half of the
+// shape separately — a column added alone, a constraint changed alone — and
+// neither reaches the bad SELECT, which is why the branch was green.
+func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
+		Fields: []goschema.Field{
+			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+			{Name: "name", Type: "TEXT", StructName: "User", Nullable: false},
+			{Name: "note", Type: "TEXT", StructName: "User", Nullable: true},
+		},
+	}
+	diff := &types.SchemaDiff{
+		TablesModified: []types.TableDiff{{
+			TableName:    "users",
+			ColumnsAdded: []string{"note"},
+		}},
+		ConstraintsAdded: []string{"uq_users_name"},
+		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+			Name:      "uq_users_name",
+			TableName: "users",
+			Type:      "UNIQUE",
+			Columns:   []string{"name"},
+		}},
+	}
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains,
+		`INSERT INTO "__ptah_rebuild_users" ("id", "name") SELECT "id", "name" FROM "users";`)
+	c.Assert(sql, qt.Not(qt.Contains), `SELECT "id", "name", "note"`)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+	c.Assert(sql, qt.Contains, `"note" TEXT`)
 }

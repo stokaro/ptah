@@ -112,7 +112,7 @@ func TestCompatMigrateApply_CheckpointFreshDatabase(t *testing.T) {
 	// Status agrees the database is clean.
 	statusOut, _, err := runCompat("migrate", "status", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("status output:\n%s", statusOut))
-	c.Assert(statusOut, qt.Contains, "Pending Migrations: 0")
+	c.Assert(statusOut, qt.Contains, "-- Pending Files:   0")
 }
 
 func TestCompatMigrateApply_CheckpointPreCheckpointDatabaseSkips(t *testing.T) {
@@ -139,8 +139,8 @@ func TestCompatMigrateApply_CheckpointPreCheckpointDatabaseSkips(t *testing.T) {
 
 	statusOut, _, err := runCompat("migrate", "status", "--url", "sqlite://"+dbPath, "--dir", "file://"+fullDir)
 	c.Assert(err, qt.IsNil, qt.Commentf("status output:\n%s", statusOut))
-	c.Assert(statusOut, qt.Contains, "Pending Migrations: 0")
-	c.Assert(statusOut, qt.Contains, "Database is up to date")
+	c.Assert(statusOut, qt.Contains, "-- Pending Files:   0")
+	c.Assert(statusOut, qt.Contains, "Migration Status: OK")
 }
 
 func tamperCompatCheckpointFile(c *qt.C, dir string) {

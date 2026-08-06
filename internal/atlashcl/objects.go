@@ -662,7 +662,7 @@ func (p *parser) boolAttr(block *hclsyntax.Block, name, label string, fallback b
 	if attr == nil {
 		return fallback, nil
 	}
-	value, diags := attr.Expr.Value(nil)
+	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() || value.Type() != cty.Bool {
 		return false, p.blockError(block, "%s attribute %q must be a bool", label, name)
 	}
@@ -1065,7 +1065,7 @@ func (p *parser) optionalInt64(block *hclsyntax.Block, name, label string) (*int
 	if attr == nil {
 		return nil, nil
 	}
-	value, diags := attr.Expr.Value(nil)
+	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() || value.Type() != cty.Number {
 		return nil, p.blockError(block, "%s attribute %q must be an integer", label, name)
 	}

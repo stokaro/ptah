@@ -150,9 +150,12 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 
 // TestExcludeSelectorsReachChildResources pins that exclusion keeps parsing
 // the child-resource spellings it legitimately reaches. This asserts parsing
-// only: whether a given exclude spelling then matches is a separate,
-// pre-existing question — "table.child" matches on the default schema while
-// "schema.table.child" does not.
+// only, and only at the pre-connect layer, which does not yet know the schema
+// the patterns are relative to. Whether a spelling then survives the filter is
+// a separate question of depth: "table.child" names a child of the connection's
+// schema, while "schema.table.child" is one part too deep for that scope and is
+// refused there — see
+// TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope.
 func TestExcludeSelectorsReachChildResources(t *testing.T) {
 	c := qt.New(t)
 

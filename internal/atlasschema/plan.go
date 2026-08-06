@@ -72,6 +72,9 @@ type PlanFileOptions struct {
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired]. When set, ToURLs are ignored.
 	Desired *goschema.Database
+	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
+	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	Vars []string
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ApplyOptions.IgnoreUnknownHCLNames].
 	IgnoreUnknownHCLNames bool
@@ -118,6 +121,7 @@ func PreparePlanFile(
 		Desired:        opts.Desired,
 
 		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+		Vars:                  opts.Vars,
 	})
 	if err != nil {
 		return PlanFile{}, err

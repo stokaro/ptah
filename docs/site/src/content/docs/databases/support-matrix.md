@@ -13,15 +13,15 @@ per-capability tables are in [Capabilities](../../reference/capabilities/).
 
 | Engine | Dialect (aliases) | URL schemes | Support |
 | --- | --- | --- | --- |
-| [PostgreSQL](../postgresql/) | `postgres` (`postgresql`) | `postgres://`, `postgresql://` | Primary first-party target with the broadest schema-object coverage. |
+| [PostgreSQL](../postgresql/) | `postgres` (`postgresql`, `pgx`) | `postgres://`, `postgresql://` | Primary first-party target with the broadest schema-object coverage. |
 | [SQLite](../sqlite/) | `sqlite` (`sqlite3`) | `sqlite://` | Supported for local workflows, examples, and lightweight test databases. |
 | MySQL | `mysql` | `mysql://` | Supported, with dialect-specific limitations. |
 | MariaDB | `mariadb` | `mariadb://` | Supported, with dialect-specific limitations. |
-| [SQL Server](../sqlserver/) | `sqlserver` (`mssql`, `tsql`) | `sqlserver://`, `mssql://` | Deliberately conservative portable subset. |
+| [SQL Server](../sqlserver/) | `sqlserver` (`mssql`, `tsql`, `sql-server`, `sql_server`) | `sqlserver://`, `mssql://` | Deliberately conservative portable subset. |
 | CockroachDB | `cockroachdb` (`cockroach`, `crdb`) | `cockroachdb://`, `crdb://` | PostgreSQL-compatible path with capability differences. |
 | YugabyteDB | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |
 | ClickHouse | `clickhouse` (`ch`) | `clickhouse://`, `ch://` | Capability-limited support. |
-| Spanner (PostgreSQL interface) | `spanner` (`cloudspanner`) | `spanner://` | Most conservative capability-limited support. |
+| Spanner (PostgreSQL interface) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
 
 Accepted URL formats, and the difference between target, dev, shadow, and
 throwaway databases, are on

@@ -15,7 +15,12 @@ or `row_level_security`.
 ## How Ptah models it
 
 Dialect names normalize first: `postgresql` means `postgres`, `sqlite3` means
-`sqlite`, `mssql` means `sqlserver`, and so on. Each normalized dialect maps
+`sqlite`, `mssql` means `sqlserver`, and so on. Every accepted spelling of an
+engine produces byte-identical DDL; a test derives its spelling list from the
+normalization function itself, so a new spelling cannot be added without being
+covered.
+
+Each normalized dialect maps
 to an implementation family, and several engines deliberately share one —
 MySQL and MariaDB share a planner family, and CockroachDB, YugabyteDB, and
 Spanner ride the PostgreSQL family. What distinguishes the members is their

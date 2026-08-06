@@ -64,6 +64,12 @@ func defaultSchemaExtensionNames(extensions []dbschematypes.DBExtension) []strin
 // rows fail with the excluded object still listed — exactly the reported bug —
 // while the bare-name and non-default-schema rows stay green, which is what
 // makes them controls rather than duplicates.
+//
+// The qualified spelling reaches objects, not their children: a pattern deep
+// enough to name a child of a qualified object is refused by
+// [atlasfilter.ExcludeDatabaseWithDefaultSchema] rather than matched, so the
+// column row here uses the schema-relative spelling. See
+// TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope.
 func TestExcludeDatabaseWithDefaultSchema_QualifiedPatternsReachDefaultSchema(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -107,8 +113,11 @@ func TestExcludeDatabaseWithDefaultSchema_QualifiedPatternsReachDefaultSchema(t 
 			},
 		},
 		{
-			name:    "qualified default-schema column",
-			pattern: "public.users.name",
+			// The column the schema-relative spelling names. The qualified
+			// spelling of the same column is a depth error, not a deeper
+			// selector; see TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope.
+			name:    "schema-relative column",
+			pattern: "users.name",
 			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
 				c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"users", "app.orders"})
 				c.Assert(columnNames(got.Tables[0].Columns), qt.DeepEquals, []string{"id"})

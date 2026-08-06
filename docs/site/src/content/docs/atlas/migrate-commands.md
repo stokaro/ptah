@@ -110,30 +110,38 @@ Migration complete. Current version: 20260721120000
 ```
 
 ```text
-=== MIGRATION STATUS ===
-Current Version: 20260721120000
-Total Migrations: 1
-Applied Migrations: 1
-Pending Migrations: 0
-Status: Database is up to date
+Migration Status: OK
+  -- Current Version: 20260721120000
+  -- Next Version:    Already at latest version
+  -- Executed Files:  1
+  -- Pending Files:   0
 ```
+
+`migrate status` is the one compatibility verb whose output a pipeline parses
+with a machine rather than reads, so it mirrors the Atlas report shape by
+default — field names, sentinel strings and value encodings included. A deploy
+gate written as `grep -q 'Migration Status: OK'` works unchanged, `-- Current
+Version:` matches, and a database with nothing applied reports the sentence
+`No migration applied yet` rather than `0`. Native
+[`ptah migrations status`](../../versioned/apply/) keeps its own block: the two
+surfaces are allowed to differ and only the compatibility one is a contract.
 
 ## Recovering from a migration body that failed part-way
 
 Unlike Atlas, Ptah records a revision row for a migration whose body failed, so
-the failure survives the run that caused it. `migrate status` names that row
-explicitly, because `Current Version` counts it:
+the failure survives the run that caused it. `migrate status` reports that row
+as a half-applied file, because `Current Version` counts it:
 
 ```text
-=== MIGRATION STATUS ===
-Current Version: 20260721120100
-Total Migrations: 2
-Applied Migrations: 1
-Pending Migrations: 1
-Dirty Migration: version=20260721120100 applied=1/2
-Error Statement: ALTER TABLE users ADD COLUMN email TEXT
-Error: failed to execute migration SQL: ...
-Status: Pending migrations available
+Migration Status: PENDING
+  -- Current Version: 20260721120100 (1 statements applied)
+  -- Next Version:    20260721120100 (1 statements left)
+  -- Executed Files:  2 (last one partially)
+  -- Pending Files:   1
+
+Last migration attempt had errors:
+  -- SQL:   ALTER TABLE users ADD COLUMN email TEXT
+  -- ERROR: failed to execute migration SQL: ...
 ```
 
 Fix the migration, rerun `ptah-compat migrate hash`, and rerun the apply with
@@ -424,13 +432,47 @@ statements rather than being skipped.
 
 ### Deliberate divergences
 
-Two behaviors differ from Atlas on purpose. Both are cases where matching would
-mean reproducing a defect, so Ptah is stricter — never looser — than Atlas.
+Three behaviors differ from Atlas on purpose. All three are cases where matching
+would mean reproducing a defect, so Ptah is stricter — never looser — than Atlas.
 
-| Input | Atlas | Ptah |
-| --- | --- | --- |
-| Goose near-miss directive, for example `-- +goose down` | Exits 0. The typo is not recognized, folds into the body as a comment, and the rollback SQL under it executes — the migration is created, dropped, and recorded as successful. | Refused, naming the line and the correct spelling. A case error in a directive must not silently roll back a migration. |
-| dbmate file with no `-- migrate:up` | Exits 0, records the revision with 0 of 0 statements and creates nothing, so the migration is marked done and never runs. `migrate import` writes a zero-byte file over the authored SQL and hashes it into `atlas.sum`. | Refused, because nothing in the file would execute. |
+#### A Goose directive with the wrong case
+
+`-- +goose down` instead of `-- +goose Down`.
+
+Atlas exits 0. The typo is not recognized, so the line folds into the body as a
+comment and the rollback SQL under it executes — the migration is created,
+dropped, and recorded as successful.
+
+Ptah refuses, naming the line and the correct spelling. A case error in a
+directive must not silently roll back a migration.
+
+#### A dbmate file with no `-- migrate:up`
+
+Atlas exits 0, records the revision with 0 of 0 statements and creates nothing,
+so the migration is marked done and never runs. `migrate import` then writes a
+zero-byte file over the authored SQL and hashes it into `atlas.sum`.
+
+Ptah refuses, because nothing in the file would execute.
+
+#### An Atlas directory holding an R-suffixed migration
+
+For example `1R_view.sql` or `R__view.sql`.
+
+Atlas exits 0 and executes it, keyed on the opaque version string the file name
+spells (`1R`, `R`).
+
+Ptah refuses, naming every such file. Ptah's migration identity is an `int64`
+version and a repeatable has none, so the only alternatives were executing it
+under a version no other tool records, or dropping it — which is what Ptah used
+to do, silently.
+
+An R-suffixed file only reaches a Ptah directory from outside: the community
+binary's own `migrate import` writes `1R_name.sql`, and `ptah-compat migrate
+import` writes the same migration on a reserved numeric slot instead, so a
+directory Ptah imported is unaffected. Rename the file to `<version>_<name>.sql`
+and re-run `ptah-compat migrate hash` to execute it. Ordering is not preserved by
+that rename: Atlas sorts directory entries by file name, so `1R_view.sql` runs
+*before* `1_users.sql`, while `2_view.sql` runs after it.
 
 Ptah refuses only exact near-miss spellings of the four section directives.
 Prose that merely begins with one (`-- +goose up to date`) and unrecognized
@@ -632,6 +674,36 @@ alongside table changes) are refused.
 
 Docker dev databases fail explicitly until their provisioning semantics are
 implemented.
+
+### The publication boundary
+
+`migrate diff` opens the migration directory and its parent once, before
+anything is staged, and keeps both handles for the rest of the run. The parent
+is held as well because the publication journal and the commit marker sit
+beside the directory, so an interrupted run stays recoverable even when the
+directory itself was left half-built.
+
+Every later step names a direct child of one of those two handles: the staged
+files, the published migrations, `atlas.sum`, the journal, the commit marker,
+the rollback quarantine, and orphan cleanup. Recovery runs through the same
+handles, so an interrupted batch is withdrawn from the objects the run opened.
+The directory pathname survives only in reported paths and error text, and no
+write step resolves it a second time.
+
+This draws the boundary against a directory replaced after the run validated
+it. Replacing the pathname, or re-pointing a symlink on the way to it, no
+longer selects where the run writes: a migration or an `atlas.sum` can land
+only in the directory that was captured and verified. When the directory came
+from `atlas.hcl`, both handles are opened through the project root, so a
+replacement cannot move the write outside that root either.
+
+Two things stay keyed to the pathname on purpose. The cross-process lock file
+is created beside the directory before any handle exists, because it is
+cooperative mutual exclusion between Ptah processes rather than a boundary
+against a hostile writer, and every verb has to agree on its identity. The
+`--edit` callback also receives absolute staged paths, because an external
+editor cannot take a handle; the files it returns are re-validated through the
+retained handle before anything is published.
 
 ## Validate integrity
 
@@ -952,9 +1024,10 @@ message off stdout. Rejections stay loud on stderr.
 
 The command is intentionally fail-closed: use a destination directory different
 from the source directory, and start with a destination that does not already
-contain `.sql` migration files or `atlas.sum`. Flyway repeatable migrations
-currently fail explicitly because Ptah does not yet execute Atlas R-suffixed
-imported migrations.
+contain `.sql` migration files or `atlas.sum`. Flyway repeatable migrations are
+not in that list: they are converted onto a reserved version slot above every
+versioned migration, and the destination file name carries that slot rather than
+an R suffix, because Ptah cannot execute an R-suffixed Atlas migration.
 
 **The source directory's `atlas.sum` is verified first.** If the source carries
 one, it must cover the source before anything is converted, and the source
