@@ -3,6 +3,7 @@ package atlas
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -433,8 +434,10 @@ func atlasMigrateTestVerb() atlasVerb {
 		flags: []atlasargs.Flag{
 			atlasMigrationsDirFlag(),
 			atlasMigrateDirFormatFlag("dir-format"),
-			atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url"),
+			atlasTestDevURLFlag(),
 			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
+			atlasTestReportFlag(),
+			atlasTestSeedDirFlag(),
 			// Atlas's published CLI reference registers --revisions-schema on
 			// `migrate test` ("name of the schema the revisions table resides
 			// in"), the same spelling it carries on apply, status and set. It
@@ -448,6 +451,76 @@ func atlasMigrateTestVerb() atlasVerb {
 			),
 		},
 	}
+}
+
+// atlasTestDevURLFlag registers the --dev-url that `migrate test` and
+// `schema test` run their cases against.
+//
+// Atlas provisions a docker:// dev database itself; Ptah connects to the URL it
+// is given. Both test verbs used to let a docker:// value travel all the way to
+// the database connector, which answered "unsupported database dialect: docker"
+// -- an internal classification rather than the thing the caller has to change.
+// The refusal now reads like the one migrate diff, migrate lint and
+// migrations validate already produce for the same input, and it lands on both
+// verbs: only `migrate test` was reported, but `schema test` shared the gap.
+func atlasTestDevURLFlag() atlasargs.Flag {
+	flag := atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url")
+	flag.MapValue = atlasTestDevURLValue
+	return flag
+}
+
+// atlasTestDevURLValue refuses a docker:// dev database URL on the test verbs.
+// Every directly connectable URL passes through untouched, so a dialect Ptah
+// does not support still reports itself at the connector.
+func atlasTestDevURLValue(value string) (string, error) {
+	if strings.HasPrefix(strings.TrimSpace(value), "docker://") {
+		return "", errors.New(
+			"docker --dev-url values are accepted by Atlas, but Ptah requires" +
+				" a directly connectable dev database URL for test cases",
+		)
+	}
+	return value, nil
+}
+
+// atlasTestReportFlag registers the report format both test verbs forward to
+// their native runner. The runners have written text, JSON and HTML reports
+// since they were built; the Atlas-shaped verbs exposed no way to ask for one,
+// so a machine-readable report was unreachable from this surface. The value is
+// forwarded verbatim, which keeps the native runner the single place that
+// decides which formats exist.
+func atlasTestReportFlag() atlasargs.Flag {
+	return atlasargs.String("report", "", "Report format: text, json, or html")
+}
+
+// atlasTestSeedDirFlag registers the run-level seed directory both test verbs
+// forward to their native runner. Without it a case set whose seed step omits
+// an inline dir could not run at all under the Atlas-shaped surface: the run
+// was refused as invalid before any database was touched.
+func atlasTestSeedDirFlag() atlasargs.Flag {
+	flag := atlasargs.String("seed-dir", "", "Default directory for seed steps that omit dir")
+	flag.MapValue = atlasTestSeedDirValue
+	return flag
+}
+
+// atlasTestSeedDirValue maps one seed directory.
+//
+// This surface spells directories as file:// URLs, so one written that way
+// resolves to its local path instead of reaching the native runner as a
+// directory name that cannot exist. Any other scheme is refused in the words of
+// the flag that has it: a seed directory is not the migration directory whose
+// wording the shared local-directory mapper would otherwise borrow.
+func atlasTestSeedDirValue(value string) (string, error) {
+	if strings.Contains(value, "://") && !strings.HasPrefix(value, "file://") {
+		return "", errors.New("a seed directory is a local path or a file:// URL")
+	}
+	dir, err := atlasargs.ParseLocalDir(value)
+	if err != nil {
+		return "", err
+	}
+	if len(dir.Query) > 0 {
+		return "", errors.New("seed directory URL query parameters are not supported")
+	}
+	return dir.Path, nil
 }
 
 // atlasMigrationsDirFlag maps the Atlas --dir migration-directory URL (default
@@ -599,9 +672,11 @@ func atlasSchemaTestVerb() atlasVerb {
 		projectConfig:      applyAtlasSchemaTestProjectConfig,
 		flags: []atlasargs.Flag{
 			atlasSchemaTestSourceFlag(),
-			atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url"),
+			atlasTestDevURLFlag(),
 			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
 			atlasargs.String(atlasSchemaFlagName, atlasSchemaFlagShorthand, "Restrict the desired schema to these schema names"),
+			atlasTestReportFlag(),
+			atlasTestSeedDirFlag(),
 		},
 	}
 }
