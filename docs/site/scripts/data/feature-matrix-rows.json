@@ -122,8 +122,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Takes path or paths and exports .url; the Atlas vars input, absolute paths, and any non-file:// value are rejected.",
-    "evidence": "config/projectconfig/atlas.go:1034-1080 (hclSchemaDataSource accepts only path/paths), :1416-1431 (validateAtlasLocalPathValue, atlasLocalFileURL). Atlas documents path, paths, vars in and url out (https://atlasgo.io/atlas-schema/projects). Repro: vars -> `error: unsupported atlas.hcl construct \"vars\" at atlas.hcl:3`"
+    "note": "Takes path or paths and exports .url; the Atlas vars input is rejected by name, and an absolute path or a non-file:// scheme is rejected by its rule rather than as an unsupported construct.",
+    "evidence": "config/projectconfig/atlas.go:1777 (hclSchemaDataSource accepts only path/paths), :2304 atlasLocalPathRule and :2323 atlasLocalFileURL (the two value rules, carried through :2415 invalidValue). Atlas documents path, paths, vars in and url out (https://atlasgo.io/atlas-schema/projects). Repro: vars -> `error: unsupported atlas.hcl construct \"vars\" at atlas.hcl:3`; path = \"/etc/absolute.hcl\" -> `error: atlas.hcl \"path\" at atlas.hcl:2: absolute paths are not supported: /etc/absolute.hcl: give a path relative to the directory holding atlas.hcl`; path = \"s3://bucket/x.hcl\" -> `error: atlas.hcl \"path\" at atlas.hcl:2: unsupported URL scheme: s3://bucket/x.hcl`"
   },
   {
     "area": "Project config",
