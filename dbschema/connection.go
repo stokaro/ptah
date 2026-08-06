@@ -740,14 +740,36 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		info.Dialect = detectPostgresWireDialect(dialect, version)
 		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
 
-		// Get schema name (default to 'public' if not specified in URL)
-		schema := "public"
-		if parsedURL.Path != "" && len(parsedURL.Path) > 1 {
-			// Extract database name from path, schema is typically 'public'
-			// For PostgreSQL, schema is usually specified via search_path or defaults to 'public'
-			schema = "public"
+		// The schema is whatever the server resolves this session's search_path
+		// to, which is what a `?search_path=` on the URL selects. It used to be
+		// the constant "public", with a branch on the URL path that assigned
+		// "public" again, so a dev URL naming another schema was not merely
+		// ignored -- the writer treated that schema as a stranger's and DROPPED
+		// it while cleaning the database realm, then replayed with a search_path
+		// resolving to nothing (stokaro/ptah#1198).
+		//
+		// current_schema() is NULL when search_path names only schemas that do
+		// not exist. That is refused rather than folded back to "public": a
+		// caller who named a schema and silently got a different one is the
+		// failure this whole change is about, and answering "public" would
+		// resume dropping the schemas that one does not cover. Ptah is
+		// pre-general-availability, so the previous fallback is not owed
+		// compatibility.
+		//
+		// The message names the schema, because the operator's mistake is in the
+		// URL and nothing downstream can say so: without this, the run reaches
+		// the replay and fails on a CREATE TABLE with "no schema has been
+		// selected to create in", which sends them to their migration.
+		var currentSchema sql.NullString
+		if err := db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&currentSchema); err != nil {
+			return info, fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
 		}
-		info.Schema = schema
+		if !currentSchema.Valid || currentSchema.String == "" {
+			return info, fmt.Errorf(
+				"database URL selects schema %q, which does not exist in this database",
+				postgresSearchPathSelection(parsedURL))
+		}
+		info.Schema = currentSchema.String
 
 	case platform.MySQL, platform.MariaDB:
 		// Get MySQL/MariaDB version
@@ -1017,4 +1039,19 @@ func removePostgresPoolParams(dbURL string) string {
 	q.Del("pool_min_conns")
 	parsedURL.RawQuery = q.Encode()
 	return parsedURL.String()
+}
+
+// postgresSearchPathSelection returns the schema the URL's search_path names, so
+// a refusal can quote the operator's own value back at them. It is only ever
+// called on the refusal path, where current_schema() resolved to nothing.
+//
+// An absent search_path cannot reach that path: PostgreSQL's own default
+// resolves to "public", which exists in every database Ptah connects to, so the
+// empty string here means the URL carried no selection and the server still
+// answered nothing -- a shape worth reporting verbatim rather than guessing at.
+func postgresSearchPathSelection(parsedURL *url.URL) string {
+	if parsedURL == nil {
+		return ""
+	}
+	return parsedURL.Query().Get("search_path")
 }
