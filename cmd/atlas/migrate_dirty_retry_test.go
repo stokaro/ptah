@@ -114,8 +114,9 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 		"--dir", "file://"+migrationsDir,
 	)
 	c.Assert(statusErr, qt.IsNil)
-	c.Assert(statusOut, qt.Contains, "Status: Database is up to date")
-	c.Assert(statusOut, qt.Not(qt.Contains), "Dirty Migration:")
+	c.Assert(statusOut, qt.Contains, "Migration Status: OK")
+	c.Assert(statusOut, qt.Not(qt.Contains), "Last migration attempt had errors:")
+	c.Assert(statusOut, qt.Not(qt.Contains), "partially")
 }
 
 // TestCompatCommand_DirtyGuardRefusalLeavesTheDatabaseWritable isolates the
@@ -159,10 +160,13 @@ func TestCompatCommand_DirtyGuardRefusalLeavesTheDatabaseWritable(t *testing.T) 
 // TestCompatCommand_MigrateStatusReportsTheDirtyMigration covers the reporting
 // half: while a version is half-applied, status has to say so.
 //
-// Reverted, the output is Current Version / Total / Applied / Pending followed
-// straight by "Status: Pending migrations available", naming the failed version
-// as the current one with no dirty marker, no failing statement and no error —
-// the three Contains assertions below are what go red.
+// Reverted to the pre-#1102 block, every assertion below goes red: the output
+// is `=== MIGRATION STATUS ===` / `Current Version: 20240301000002` /
+// `Dirty Migration: version=20240301000002 applied=0/2` / `Error Statement:` /
+// `Error:` / `Status: Pending migrations available`. It carries the same facts
+// under names no Atlas-shaped parser reads. Reverted further, to before #966,
+// the facts are gone too: the failed version is named as Current Version and
+// nothing else says the attempt failed.
 func TestCompatCommand_MigrateStatusReportsTheDirtyMigration(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, dbPath := writeDirtyRetryFixture(c, dirtyRetryFailingBody)
@@ -181,8 +185,12 @@ func TestCompatCommand_MigrateStatusReportsTheDirtyMigration(t *testing.T) {
 	)
 
 	c.Assert(statusErr, qt.IsNil)
-	c.Assert(statusOut, qt.Contains, "Current Version: "+dirtyRetryVersionTwo)
-	c.Assert(statusOut, qt.Contains, "Dirty Migration: version="+dirtyRetryVersionTwo+" applied=0/2")
-	c.Assert(statusOut, qt.Contains, "Error Statement: THIS IS A FAILING STATEMENT")
-	c.Assert(statusOut, qt.Contains, "Error: failed to execute migration SQL")
+	c.Assert(statusOut, qt.Contains, "Migration Status: PENDING\n")
+	c.Assert(statusOut, qt.Contains, "  -- Current Version: "+dirtyRetryVersionTwo+" (0 statements applied)\n")
+	c.Assert(statusOut, qt.Contains, "  -- Next Version:    "+dirtyRetryVersionTwo+" (2 statements left)\n")
+	c.Assert(statusOut, qt.Contains, "  -- Executed Files:  2 (last one partially)\n")
+	c.Assert(statusOut, qt.Contains, "  -- Pending Files:   1\n")
+	c.Assert(statusOut, qt.Contains, "\nLast migration attempt had errors:\n")
+	c.Assert(statusOut, qt.Contains, "  -- SQL:   THIS IS A FAILING STATEMENT")
+	c.Assert(statusOut, qt.Contains, "  -- ERROR: failed to execute migration SQL")
 }
