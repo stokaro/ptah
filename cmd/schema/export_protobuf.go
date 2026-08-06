@@ -82,7 +82,7 @@ func rejectProtobufOnlyFlags(opts exportOptions) error {
 		protoTypeRemovalFlag:          {opts.protoTypeRemoval, string(protobufrender.RemovalError)},
 		protoOnIncompatibleChangeFlag: {opts.protoOnIncompatibleChange, string(protobufrender.ChangeError)},
 		protoOnNameReuseFlag:          {opts.protoOnNameReuse, string(protobufrender.NameReuseError)},
-		protoCommentsFlag:             {opts.protoComments, string(protobufrender.CommentsAll)},
+		protoCommentsFlag:             {opts.protoComments, string(protobufrender.CommentsNone)},
 	} {
 		if value := strings.TrimSpace(spec[0]); value != "" && value != spec[1] {
 			return fmt.Errorf("--%s is only supported with --%s %s", flag, exportToFlag, exportFormatProtobuf)
@@ -134,9 +134,9 @@ func parseNameReusePolicy(value string) (protobufrender.NameReusePolicy, error) 
 // added without renaming the flag.
 func parseCommentPolicy(value string) (protobufrender.CommentPolicy, error) {
 	switch policy := protobufrender.CommentPolicy(strings.TrimSpace(value)); policy {
-	case "", protobufrender.CommentsAll:
-		return protobufrender.CommentsAll, nil
-	case protobufrender.CommentsNone:
+	case "", protobufrender.CommentsNone:
+		return protobufrender.CommentsNone, nil
+	case protobufrender.CommentsAll:
 		return policy, nil
 	default:
 		return "", fmt.Errorf("invalid --%s %q: expected %s or %s", protoCommentsFlag, value,

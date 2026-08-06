@@ -122,7 +122,7 @@ func protoCommentLines(text string) []string {
 	return out
 }
 
-func TestSchemaExportProtobufCommentsNoneOmitsSourceComments(t *testing.T) {
+func TestSchemaExportProtobufOmitsSourceCommentsUnlessAsked(t *testing.T) {
 	c := qt.New(t)
 	dir := resolvedTempDir(c)
 	writeCommentedModel(c, dir)
@@ -137,9 +137,9 @@ func TestSchemaExportProtobufCommentsNoneOmitsSourceComments(t *testing.T) {
 		}, extra...)
 	}
 
-	// Without the flag both comments reach the published contract, and from
-	// there whatever protoc-gen-go produces from it.
-	_, stderr, err := runSchemaExport(exportArgs()...)
+	// Asking for them puts both in the published contract, and from there into
+	// whatever protoc-gen-go produces from it. This is the opt-in.
+	_, stderr, err := runSchemaExport(exportArgs("--proto-comments", "all")...)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	withComments, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
@@ -148,8 +148,11 @@ func TestSchemaExportProtobufCommentsNoneOmitsSourceComments(t *testing.T) {
 	c.Assert(string(withComments), qt.Contains,
 		"  // bcrypt hash, never expose\n  string password_hash = 3;")
 
-	// With it, the only comments left are the three generated header lines.
-	_, stderr, err = runSchemaExport(exportArgs("--proto-comments", "none")...)
+	// Without the flag — the default — the only comments left are the three
+	// generated header lines. The fixture is the reason the default points this
+	// way: a sharding note and "bcrypt hash, never expose" are written for
+	// whoever reads the database, not for whoever consumes the contract.
+	_, stderr, err = runSchemaExport(exportArgs()...)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	stripped, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
@@ -165,15 +168,15 @@ func TestSchemaExportProtobufCommentsNoneOmitsSourceComments(t *testing.T) {
 		"message User {\n  int32 id = 1;\n  string email = 2;\n  string password_hash = 3;\n}\n")
 
 	// Running again under the same policy is a byte-identical no-op.
-	_, stderr, err = runSchemaExport(exportArgs("--proto-comments", "none")...)
+	_, stderr, err = runSchemaExport(exportArgs()...)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	repeated, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(repeated, qt.DeepEquals, stripped)
 
-	// Dropping the flag restores both comments and renumbers nothing, because
+	// Asking for them again restores both and renumbers nothing, because
 	// comments were never part of the compatibility state.
-	_, stderr, err = runSchemaExport(exportArgs()...)
+	_, stderr, err = runSchemaExport(exportArgs("--proto-comments", "all")...)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	restored, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
@@ -367,7 +370,9 @@ func TestSchemaExportProtobufOnlyFlagsRejectedOnOtherTargets(t *testing.T) {
 			flag: "--proto-on-incompatible-change",
 		},
 		{name: "name reuse", args: []string{"--proto-on-name-reuse", "release"}, flag: "--proto-on-name-reuse"},
-		{name: "comments", args: []string{"--proto-comments", "none"}, flag: "--proto-comments"},
+		// "all" rather than "none": none is the default now, and a flag left at
+		// its default is indistinguishable from one never passed.
+		{name: "comments", args: []string{"--proto-comments", "all"}, flag: "--proto-comments"},
 	}
 
 	for _, tt := range tests {

@@ -62,12 +62,24 @@ type CommentPolicy string
 
 const (
 	// CommentsAll copies every table and column comment the source schema
-	// supplies. It is the default because flipping it would rewrite every
-	// already published .proto on the next export.
+	// supplies. It has to be asked for: see CommentsNone, which is the default.
 	CommentsAll CommentPolicy = "all"
-	// CommentsNone omits them. It is all-or-nothing by design: a table comment
-	// can carry the same internal detail as a column comment, so a per-object
-	// switch would advertise a boundary the contract does not have.
+	// CommentsNone omits them, and is the DEFAULT. It is all-or-nothing by
+	// design: a table comment can carry the same internal detail as a column
+	// comment, so a per-object switch would advertise a boundary the contract
+	// does not have.
+	//
+	// Omitting by default is the safe direction for an exported interface. A
+	// schema comment is written for whoever reads the database — it routinely
+	// carries operational notes, sharding hints, or security context — while a
+	// .proto is published to consumers and copied onward into their generated
+	// code. Publishing that prose has to be a decision, not something that
+	// happens because nobody passed a flag.
+	//
+	// The cost is that an export written before this default flipped loses its
+	// source prose on the next run. Field and enum numbers are untouched, so it
+	// is a diff rather than a compatibility break, and `--proto-comments=all`
+	// restores the previous bytes exactly.
 	//
 	// Only prose the source schema supplies is suppressed. Text Ptah writes
 	// about the generated file itself - the header lines and the tombstone
@@ -111,7 +123,8 @@ type Options struct {
 	OnIncompatibleChange ChangePolicy
 	OnNameReuse          NameReusePolicy
 	// Comments selects which comments the generated file carries. The zero value
-	// is CommentsAll.
+	// is CommentsNone: an embedder that never sets it publishes no source prose,
+	// which is the same default the CLI has.
 	Comments CommentPolicy
 }
 
@@ -430,7 +443,7 @@ func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex m
 // Comments are not part of the compatibility state - previous.go reads numbers
 // and reservations only - so turning this on or off never moves a field number.
 func (b *builder) sourceComment(comment string) string {
-	if b.opts.Comments == CommentsNone {
+	if b.opts.Comments != CommentsAll {
 		return ""
 	}
 	return comment

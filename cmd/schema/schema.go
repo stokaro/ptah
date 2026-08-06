@@ -225,8 +225,8 @@ new, incompatible numbering history.`,
 		"Behavior when a retained field's protobuf type or cardinality changes: error or renumber (protobuf only)")
 	flags.StringVar(&protoOnNameReuse, protoOnNameReuseFlag, string(protobufrender.NameReuseError),
 		"Behavior when a reserved field or enum value name comes back: error or release (protobuf only)")
-	flags.StringVar(&protoComments, protoCommentsFlag, string(protobufrender.CommentsAll),
-		"Comments copied from the source schema: all or none (protobuf only)")
+	flags.StringVar(&protoComments, protoCommentsFlag, string(protobufrender.CommentsNone),
+		"Copy source schema comments into the published contract: all or none (protobuf only)")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
