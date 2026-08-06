@@ -139,6 +139,20 @@ func runAtlasMigrateLint(
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
 		localDir, err = project.localDirWithQuery(opts.dir)
 	} else {
+		// A --dir spelled on the command line needs the scheme the community
+		// binary requires. Measured on the pinned v1.3.0 on 2026-08-06,
+		// `migrate lint --dir mig --dir-format goose --dev-url …` exits 1 with
+		// `missing scheme for dir url. Did you mean "file://mig"?` where Ptah
+		// exited 0 (stokaro/ptah#1186). The flag default is `file://migrations`,
+		// so an omitted --dir passes.
+		//
+		// Only this branch is gated: it is the one carrying a command-line
+		// value. A directory named by atlas.hcl takes the branch above, where
+		// the community binary's own spelling rules are a separate question
+		// #1186 leaves open.
+		if err := atlasargs.RequireDirScheme(opts.dir); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
 	if err != nil {

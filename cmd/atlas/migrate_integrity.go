@@ -161,7 +161,7 @@ func resolveAtlasMigrateSource(
 	// it. It goes out through cmdutil.Fail rather than being returned bare so
 	// the `Error: ` line reaches stderr from the command itself, the way the
 	// #1086 checksum refusal on the same two verbs already does.
-	if verb.writesDir && spelledByAtlas && atlasDirSchemeIsAnswerable(project.project, rawDir) {
+	if spelledByAtlas && atlasDirSchemeIsAnswerable(project.project, rawDir) {
 		if err := atlasargs.RequireDirScheme(rawDir); err != nil {
 			return atlasMigrateSource{}, cmdutil.Fail(cmd, err)
 		}
