@@ -420,8 +420,11 @@ _ = m
 `VersionSelection.Restricted` distinguishes no selector from an explicitly
 empty changeset. Native Ptah callers should keep the zero-value
 `CompatibilityProfileNative`; `CompatibilityProfileAtlas` exists for
-Atlas-compatible command adapters and enables Atlas-specific `nolint` aliases
-and file-header semantics without changing native safety behavior.
+Atlas-compatible command adapters. It switches the `atlas:nolint` code
+namespace to the codes that profile prints and enables the file-header form,
+without changing native safety behavior. Atlas analyzer-name selectors resolve
+under both profiles, because they name rule families rather than printed
+codes.
 
 Each finding context identifies its zero-based statement index. Structured
 subjects preserve the executable identifier spelling: table subjects use

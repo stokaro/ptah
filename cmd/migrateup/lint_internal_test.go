@@ -37,6 +37,54 @@ func TestLintPendingDestructive_DoesNotApplyAtlasFileSuppression(t *testing.T) {
 	c.Assert(findings[0].Rule, qt.Equals, "DS101")
 }
 
+// TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate records which
+// directives reopen the apply-time destructive gate, because resolving Atlas
+// analyzer names on the native surface changed one of these rows.
+//
+// The gate has always honored a statement-local directive an author wrote above
+// the statement: on a binary built from master, `-- ptah:nolint DS101` and
+// `-- atlas:nolint DS101` above `DROP TABLE users;` both take
+// `ptah migrations up` from exit 2 to exit 0. `-- atlas:nolint destructive`
+// did not, because the analyzer name resolved to nothing natively; it now does,
+// which is the row this change moves. The whole-file header keeps blocking, and
+// keeps blocking for the same reason as before: the header form is
+// compatibility-scoped, and a blank line detaches it from the statement below.
+//
+// Reverting the change prints []string{"DS101"} for the "Atlas analyzer name"
+// row instead of an empty slice.
+func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T) {
+	tests := []struct {
+		name string
+		up   string
+		want []string
+	}{
+		{name: "no directive", up: "DROP TABLE users;\n", want: []string{"DS101"}},
+		{name: "native code", up: "-- ptah:nolint DS101\nDROP TABLE users;\n", want: []string{}},
+		{name: "Atlas code spelling", up: "-- atlas:nolint DS101\nDROP TABLE users;\n", want: []string{}},
+		{name: "Atlas analyzer name", up: "-- atlas:nolint destructive\nDROP TABLE users;\n", want: []string{}},
+		{name: "Atlas file header", up: "-- atlas:nolint destructive\n\nDROP TABLE users;\n", want: []string{"DS101"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := fstest.MapFS{
+				"0000000001_drop.up.sql":   {Data: []byte(test.up)},
+				"0000000001_drop.down.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
+			}
+
+			findings, err := lintPendingDestructive(fsys, []int64{1}, "sqlite", "")
+
+			c.Assert(err, qt.IsNil)
+			codes := make([]string, 0, len(findings))
+			for _, finding := range findings {
+				codes = append(codes, finding.Rule)
+			}
+			c.Assert(codes, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 func TestLintPendingDestructive_HonorsDirectoryPrefixedExclusion(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{

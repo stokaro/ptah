@@ -223,13 +223,10 @@ func fileSuppressesRule(file *File, code string) bool {
 	return suppressesRule(file.suppressedRules, code)
 }
 
-func suppressesRule(entries []string, code string) bool {
-	for _, entry := range entries {
-		if entry == "*" || strings.HasPrefix(code, entry) {
-			return true
-		}
-	}
-	return false
+func suppressesRule(entries []atlaslint.Target, code string) bool {
+	return slices.ContainsFunc(entries, func(entry atlaslint.Target) bool {
+		return entry.Matches(code)
+	})
 }
 
 func statementFindingContext(index int, subjects ...Subject) *FindingContext {
@@ -350,7 +347,7 @@ type rawStatement struct {
 	line            int
 	start           int
 	end             int
-	suppressedRules []string
+	suppressedRules []atlaslint.Target
 }
 
 // splitStatementsWithLines splits SQL into statements using the dialect-aware
@@ -367,8 +364,8 @@ func splitStatementsWithLines(
 	end := 0
 	startLine := 0
 	lastStatementEndLine := 0
-	var pendingSuppressions []string
-	var activeSuppressions []string
+	var pendingSuppressions []atlaslint.Target
+	var activeSuppressions []atlaslint.Target
 	for _, tok := range scanSQL(raw, mode) {
 		switch tok.kind {
 		case tokSemicolon:
@@ -387,6 +384,19 @@ func splitStatementsWithLines(
 		case tokWhitespace:
 			// Never starts a statement; keep end untouched so trailing
 			// comments/whitespace are not included in the statement text.
+			//
+			// A blank line detaches a pending directive from whatever comes
+			// next: a statement-local nolint has to sit directly above its
+			// statement. Measured against atlas community version v1.3.0 on
+			// `-- atlas:nolint DS103`, a blank line, then a DROP COLUMN — it
+			// reports DS103 and exits 1, while the same two lines with no
+			// blank line between them exit 0. A directive on the file's first
+			// line followed by a blank line is the file-wide header form,
+			// handled by [parseAtlasFileNoLint] on the compatibility surface
+			// only.
+			if start < 0 && strings.Count(tok.text, "\n") > 1 {
+				pendingSuppressions = nil
+			}
 		case tokComment:
 			if start < 0 && tok.line != lastStatementEndLine {
 				pendingSuppressions = append(
@@ -398,7 +408,7 @@ func splitStatementsWithLines(
 			if start < 0 {
 				start = tok.start
 				startLine = tok.line
-				activeSuppressions = append([]string(nil), pendingSuppressions...)
+				activeSuppressions = slices.Clone(pendingSuppressions)
 				pendingSuppressions = nil
 			}
 			end = tok.end
@@ -419,7 +429,7 @@ func splitStatementsWithLines(
 func parseNoLintDirective(
 	comment string,
 	compatibility CompatibilityProfile,
-) []string {
+) []atlaslint.Target {
 	trimmed := strings.TrimSpace(comment)
 	if !strings.HasPrefix(trimmed, "--") && !strings.HasPrefix(trimmed, "#") {
 		return nil
@@ -427,15 +437,32 @@ func parseNoLintDirective(
 	if rules, ok := parseNoLintMarker(comment, "ptah:nolint", nativeNoLintTargets); ok {
 		return rules
 	}
-	targets := nativeNoLintTargets
-	if compatibility == CompatibilityProfileAtlas {
-		targets = atlaslint.NativeSuppressionTargets
-	}
-	rules, _ := parseNoLintMarker(comment, "atlas:nolint", targets)
+	rules, _ := parseNoLintMarker(comment, "atlas:nolint", atlasNoLintTargets(compatibility))
 	return rules
 }
 
-func parseAtlasFileNoLint(sql string) ([]string, bool) {
+// atlasNoLintTargets resolves one `atlas:nolint` selector for the surface that
+// is running. The selector vocabulary is Atlas's on both surfaces: analyzer
+// names name rule families, and a code selector matches one code exactly rather
+// than widening into a family the way `ptah:nolint DS` does. Only the code
+// namespace is surface-specific — a selector names the code the running surface
+// prints, which is the native code natively and the Atlas identity under the
+// compatibility profile.
+func atlasNoLintTargets(compatibility CompatibilityProfile) func(string) []atlaslint.Target {
+	if compatibility == CompatibilityProfileAtlas {
+		return atlaslint.NativeSuppressionTargets
+	}
+	return nativeAtlasNoLintTargets
+}
+
+func nativeAtlasNoLintTargets(entry string) []atlaslint.Target {
+	if targets, ok := atlaslint.AnalyzerSuppressionTargets(entry); ok {
+		return targets
+	}
+	return []atlaslint.Target{atlaslint.CodeTarget(entry)}
+}
+
+func parseAtlasFileNoLint(sql string) ([]atlaslint.Target, bool) {
 	lines := strings.Split(sql, "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(strings.TrimPrefix(line, "\uFEFF"))
@@ -449,7 +476,7 @@ func parseAtlasFileNoLint(sql string) ([]string, bool) {
 		for _, following := range lines[i+1:] {
 			trimmedFollowing := strings.TrimSpace(following)
 			if trimmedFollowing == "" {
-				return rules, suppressesRule(rules, "*")
+				return rules, slices.ContainsFunc(rules, atlaslint.Target.MatchesEveryRule)
 			}
 			if strings.HasPrefix(trimmedFollowing, "--") {
 				continue
@@ -461,7 +488,7 @@ func parseAtlasFileNoLint(sql string) ([]string, bool) {
 	return nil, false
 }
 
-func parseAtlasNoLintLine(line string) ([]string, bool) {
+func parseAtlasNoLintLine(line string) ([]atlaslint.Target, bool) {
 	comment, ok := strings.CutPrefix(strings.TrimSpace(line), "--")
 	if !ok {
 		return nil, false
@@ -481,8 +508,8 @@ func parseAtlasNoLintLine(line string) ([]string, bool) {
 func parseNoLintMarker(
 	comment string,
 	marker string,
-	targets func(string) []string,
-) ([]string, bool) {
+	targets func(string) []atlaslint.Target,
+) ([]atlaslint.Target, bool) {
 	idx := strings.Index(strings.ToLower(comment), marker)
 	if idx < 0 {
 		return nil, false
@@ -494,13 +521,13 @@ func parseNoLintMarker(
 	return parseNoLintRules(rest, targets), true
 }
 
-func parseNoLintRules(rest string, targets func(string) []string) []string {
+func parseNoLintRules(rest string, targets func(string) []atlaslint.Target) []atlaslint.Target {
 	rest = strings.TrimSpace(rest)
 	if rest == "" {
-		return []string{"*"}
+		return []atlaslint.Target{atlaslint.FamilyTarget("")}
 	}
 	parts := strings.FieldsFunc(rest, isNoLintSeparator)
-	rules := make([]string, 0, len(parts))
+	rules := make([]atlaslint.Target, 0, len(parts))
 	for _, part := range parts {
 		part = strings.ToUpper(strings.TrimSpace(part))
 		if part == "" {
@@ -511,8 +538,11 @@ func parseNoLintRules(rest string, targets func(string) []string) []string {
 	return rules
 }
 
-func nativeNoLintTargets(entry string) []string {
-	return []string{entry}
+// nativeNoLintTargets resolves a selector against the native code namespace,
+// where a code prefix names its family: `ptah:nolint DS` silences every
+// data-safety rule and `ptah:nolint DS102` silences one.
+func nativeNoLintTargets(entry string) []atlaslint.Target {
+	return []atlaslint.Target{atlaslint.FamilyTarget(entry)}
 }
 
 func isNoLintSeparator(r rune) bool {

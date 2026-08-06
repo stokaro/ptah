@@ -536,15 +536,35 @@ ALTER TABLE accounts DROP COLUMN legacy;
 	c.Assert(atlas.Findings(), qt.HasLen, 0)
 }
 
-// TestAnalyzeFS_AtlasAnalyzerSuppressionsAreCompatibilityScoped checks that an
-// Atlas analyzer name silences the native rules that analyzer owns.
+// TestAnalyzeFS_AtlasAnalyzerSuppressionsApplyOnBothSurfaces checks that an
+// Atlas analyzer name silences the native rules that analyzer owns, on the
+// native surface as well as the compatibility one.
 //
-// The rename is suppressed with `destructive`, not `incompatible`: measured
-// against the pinned community binary, `-- atlas:nolint destructive` above a
-// column rename silences it while `-- atlas:nolint incompatible` above the same
-// rename leaves DS103 reported. The per-selector behavior itself is pinned in
+// This fixture previously asserted the opposite for the native column: the
+// three analyzer names were compatibility-scoped, so `-- atlas:nolint
+// concurrent_index` silenced PG101 under `ptah-compat migrate lint` and did
+// nothing under `ptah migrations lint`, while `-- atlas:nolint PG101` did the
+// reverse. Each selector worked on exactly one of the two commands and they
+// disagreed about which. Analyzer names name rule families rather than printed
+// codes, so they mean the same thing on both surfaces; the code namespace is
+// what stays surface-specific, and TestAnalyzeFS_AtlasNoLintSelectorsAgree
+// pins the pair together.
+//
+// The rename is the one row that still differs, and it differs for a reason
+// that is not about selectors: the two surfaces classify a rename under
+// different families. `destructive` owns DS and CD on both surfaces, and the
+// compatibility surface calls a rename DS102 while the native surface calls it
+// BC101 (#1120, measured against the pinned community binary — `-- atlas:nolint
+// destructive` above a column rename silences it there and `-- atlas:nolint
+// incompatible` above the same rename leaves DS103 reported). The rename row is
+// therefore also the non-interference control that resolving analyzer names
+// natively did not widen `destructive` past DS and CD into BC. The per-selector
+// behavior itself is pinned in
 // TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly.
-func TestAnalyzeFS_AtlasAnalyzerSuppressionsAreCompatibilityScoped(t *testing.T) {
+//
+// Reverting the change prints the native column as
+// []string{"PG101", "BC101", "DS101", "TX201"} instead of []string{"BC101"}.
+func TestAnalyzeFS_AtlasAnalyzerSuppressionsApplyOnBothSurfaces(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
 		"1_index.sql": `-- atlas:nolint concurrent_index
@@ -553,7 +573,10 @@ CREATE INDEX idx_users_id ON users (id);
 		"2_rename.sql": `-- atlas:nolint destructive
 ALTER TABLE users RENAME COLUMN old_name TO new_name;
 `,
-		"3_transaction.sql": `-- atlas:nolint nestedtx
+		"3_drop.sql": `-- atlas:nolint destructive
+DROP TABLE legacy_users;
+`,
+		"4_transaction.sql": `-- atlas:nolint nestedtx
 BEGIN;
 `,
 	})
@@ -563,7 +586,7 @@ BEGIN;
 		Dialect:   "postgres",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"PG101", "BC101", "TX201"})
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC101"})
 
 	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
@@ -598,6 +621,17 @@ BEGIN;
 	c.Assert(analysis.Findings(), qt.HasLen, 0)
 }
 
+// TestAnalyzeFS_BareAtlasHeaderMarksOnlyCompatibilityFileIgnored checks that
+// the whole-file Atlas header form applies to the compatibility surface only.
+//
+// The native column asserted zero findings before this change, which
+// contradicted the test's own name: the file was not marked Ignored, but the
+// header line was still being read a second time as a statement-local
+// directive for the statement below it, so nothing was reported anyway.
+// A suppression directive separated from a statement by a blank line no
+// longer attaches to it, so the native surface now reports the DROP TABLE the
+// header does not cover. Reverting the change prints an empty findings slice
+// here.
 func TestAnalyzeFS_BareAtlasHeaderMarksOnlyCompatibilityFileIgnored(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
@@ -614,7 +648,7 @@ DROP TABLE users;
 	nativeFiles := native.Files()
 	c.Assert(nativeFiles, qt.HasLen, 1)
 	c.Assert(nativeFiles[0].Ignored, qt.IsFalse)
-	c.Assert(native.Findings(), qt.HasLen, 0)
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"DS101"})
 
 	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
