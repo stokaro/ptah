@@ -1,5 +1,18 @@
 # Ptah
 
+Some systems are built to carry the weight of the world as it already exists.
+
+Ptah begins from a different premise: infrastructure should not merely bear
+complexity, but shape it. Named after the ancient Egyptian god of architects and
+craftsmen, Ptah turns intent into structure through four deliberate stages:
+**Parse, Transform, Apply, Harmonize**.
+
+It is built to understand the current state, reshape it with precision, apply
+change safely, and bring systems into alignment — without inheriting more weight
+than necessary.
+
+## What Ptah does
+
 Ptah is a schema and migration toolkit for Go projects. It can read annotated Go
 models, YAML schema files, supported HCL schema files, and live databases;
 render SQL; plan and run migrations; and validate migration hashes. A separate
