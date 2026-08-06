@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload lint SARIF to code scanning
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: github/codeql-action/upload-sarif@v4.37.5
+        uses: github/codeql-action/upload-sarif@v4.37.6
         with:
           sarif_file: ptah-lint.sarif
           category: ptah-lint
