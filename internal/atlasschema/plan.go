@@ -309,7 +309,10 @@ func VerifyPlanTarget(conn *dbschema.DatabaseConnection, plan PlanFile) error {
 	if err != nil {
 		return fmt.Errorf("read database schema: %w", err)
 	}
-	current, err = atlasfilter.ExcludeDatabase(current, plan.Exclude)
+	// The connection's default schema is the same one computeApplyPlan gave the
+	// exclusion when the plan was recorded. Passing a different one here would
+	// subtract a different set of objects and mis-report a fresh plan as stale.
+	current, err = atlasfilter.ExcludeDatabaseWithDefaultSchema(current, plan.Exclude, conn.Info().Schema)
 	if err != nil {
 		return fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
 	}
