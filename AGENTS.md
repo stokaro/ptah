@@ -24,6 +24,31 @@ When the two halves pull apart, say so in the commit and in the issue rather
 than picking silently. "We are stricter here, deliberately, and here is the
 measurement" is a complete answer; quietly matching is not.
 
+### Compatibility with older Ptah is a different axis, and it is not owed
+
+Everything above is about the community binary. Compatibility with **Ptah's own
+previous behavior is a separate question, and until Ptah ships v1 the answer is
+no.** There is no supported upgrade path to preserve, so:
+
+- Do not keep a fallback, an alias, a tolerated old spelling, or a second reader
+  for a retired format only because an earlier Ptah produced it.
+- Do not soften a refusal because it would break something an earlier Ptah
+  accepted.
+- Do not carry a default only because changing it would alter existing output.
+  Pick the default that is right for a reader meeting it for the first time.
+
+Changing behavior is the normal, cheap thing to do right now, and the cost of
+not changing it compounds. When a change alters behavior, say so plainly in the
+issue and the commit -- "this changes behavior; pre-v1, so no compatibility is
+owed" -- rather than quietly designing around it.
+
+This does **not** license breaking parity with the community binary, which is a
+contract with users of that CLI rather than with Ptah's own history, nor
+silently discarding user data. It licenses changing Ptah's defaults, spellings,
+internal formats, and error text without a migration path.
+
+The rule expires when Ptah reaches v1.
+
 ### A worked example
 
 `-- atlas:txmode none` marks a migration that must run outside a transaction --
@@ -153,7 +178,10 @@ Ptah treats `.golangci.yml` as a strict contract. Fix code to satisfy the config
 Ptah is pre-GA. Do not preserve old command aliases, compatibility wrappers,
 fallback APIs, or backward-compatibility behavior only to keep an older internal
 shape. Prefer the cleaner architecture and update callers/tests/docs unless a
-maintainer explicitly asks for a compatibility layer.
+maintainer explicitly asks for a compatibility layer. This paragraph is the
+[compatibility-with-older-Ptah rule](#compatibility-with-older-ptah-is-a-different-axis-and-it-is-not-owed)
+applied to code shape; the rule itself is broader and covers defaults, output,
+formats and error text as well.
 
 Atlas OSS command parity belongs in the separate `ptah-compat` binary, the
 Atlas-style root command surface for drop-in script migration. The `ptah`
