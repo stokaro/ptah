@@ -109,7 +109,9 @@ func RehearsePlanStatements(
 	if err != nil {
 		return fmt.Errorf("read database schema: %w", err)
 	}
-	current, err = atlasfilter.ExcludeDatabase(current, opts.Exclude)
+	// Same default schema computeApplyPlan uses, so the rehearsal subtracts
+	// exactly the objects the plan was computed without.
+	current, err = atlasfilter.ExcludeDatabaseWithDefaultSchema(current, opts.Exclude, conn.Info().Schema)
 	if err != nil {
 		return fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
 	}

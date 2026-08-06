@@ -545,8 +545,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Resource globs plus one final-segment [type=...]; schema-qualified globs never match default-schema tables, functions or enums.",
-    "evidence": "internal/atlasfilter/filter.go:341-346 (filterFunctions matches function.Name only) and :298-302 (filterEnums matches value.Name only); dbschema/types/types.go:358-367 DBFunction and :106-109 DBEnum carry no Schema field; internal/tableref/tableref.go:14-21 Canonical returns the bare name when schema is empty; live PostgreSQL 16 repro with the built ptah-compat binary; Atlas CE side from conformance cli-surface.md line 43/45/47 (--exclude registered on schema apply, diff, inspect)"
+    "note": "Resource globs plus one final-segment [type=...]; qualified globs now reach default-schema tables, views and their children, but enum and function filters still compare the bare name.",
+    "evidence": "internal/atlasfilter/filter.go ExcludeDatabaseWithDefaultSchema and exclusionState.effectiveSchema resolve a blank object schema to the connection default, so `--exclude public.users` matches the same table `--exclude users` does; filterEnums and filterFunctions still pass the bare name only; live PostgreSQL 16 repro with the built ptah-compat binary (`schema inspect -u $PG -s public -s app --exclude public.users` keeps table \"orders\" and drops table \"users\"); Atlas CE side from conformance cli-surface.md line 43/45/47 (--exclude registered on schema apply, diff, inspect)"
   },
   {
     "area": "Declarative / direct schema workflow",

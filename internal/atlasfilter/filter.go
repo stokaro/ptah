@@ -13,8 +13,27 @@ import (
 )
 
 // ExcludeDatabase returns a shallow copy of schema with resources matching
-// Atlas-style exclude globs removed.
+// Atlas-style exclude globs removed. Objects that carry no schema are treated
+// as unqualified; use [ExcludeDatabaseWithDefaultSchema] when the connection
+// names the schema those objects live in.
 func ExcludeDatabase(schema *dbschematypes.DBSchema, patterns []string) (*dbschematypes.DBSchema, error) {
+	return ExcludeDatabaseWithDefaultSchema(schema, patterns, "")
+}
+
+// ExcludeDatabaseWithDefaultSchema is [ExcludeDatabase] told which schema owns
+// the objects introspection left unqualified.
+//
+// Every reader blanks the schema of objects in the connection's own schema, so
+// without the default a table in it exposes only its bare name as a match
+// candidate and the schema-qualified spelling of the very same object matches
+// nothing. That miss is silent — exclude patterns have no match requirement —
+// and on `schema apply` and `schema diff` it reaches a DROP: the user writes
+// the qualified spelling to protect an object and the plan destroys it.
+func ExcludeDatabaseWithDefaultSchema(
+	schema *dbschematypes.DBSchema,
+	patterns []string,
+	defaultSchema string,
+) (*dbschematypes.DBSchema, error) {
 	filters, err := parsePatterns(patterns)
 	if err != nil {
 		return nil, err
@@ -23,7 +42,7 @@ func ExcludeDatabase(schema *dbschematypes.DBSchema, patterns []string) (*dbsche
 		return schema, nil
 	}
 
-	state := newExclusionState(filters)
+	state := newExclusionState(filters, defaultSchema)
 	filtered := cloneDatabase(schema)
 	filtered.Tables = state.filterTables(filtered.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
@@ -43,6 +62,20 @@ func ExcludeDatabase(schema *dbschematypes.DBSchema, patterns []string) (*dbsche
 // ExcludeGenerated returns a shallow copy of schema with generated-schema IR
 // resources matching Atlas-style exclude globs removed.
 func ExcludeGenerated(schema *goschema.Database, patterns []string) (*goschema.Database, error) {
+	return ExcludeGeneratedWithDefaultSchema(schema, patterns, "")
+}
+
+// ExcludeGeneratedWithDefaultSchema is [ExcludeGenerated] told which schema
+// owns the objects the generated IR left unqualified.
+//
+// Both sides of a comparison must subtract the same objects: a pattern that
+// removed a table from the introspected side but not from the desired side
+// would turn a filtered-out object into a CREATE.
+func ExcludeGeneratedWithDefaultSchema(
+	schema *goschema.Database,
+	patterns []string,
+	defaultSchema string,
+) (*goschema.Database, error) {
 	filters, err := parsePatterns(patterns)
 	if err != nil {
 		return nil, err
@@ -51,7 +84,7 @@ func ExcludeGenerated(schema *goschema.Database, patterns []string) (*goschema.D
 		return schema, nil
 	}
 
-	state := newExclusionState(filters)
+	state := newExclusionState(filters, defaultSchema)
 	filtered := cloneGenerated(schema)
 	filtered.Tables = state.filterGeneratedTables(filtered.Tables)
 	tableByStruct := generatedTableByStruct(filtered.Tables)
@@ -245,7 +278,12 @@ func selectorLikeSuffix(raw string) (selector string, ok bool) {
 }
 
 type exclusionState struct {
-	patterns        []resourcePattern
+	patterns []resourcePattern
+	// defaultSchema owns objects that carry no schema of their own. It is the
+	// connection's schema for introspected states and the dialect default for
+	// file-backed ones; empty means "no default", which restores the
+	// bare-name-only candidate set.
+	defaultSchema   string
 	excludedTables  map[tableIdentity]struct{}
 	excludedColumns map[columnIdentity]struct{}
 }
@@ -260,19 +298,53 @@ type columnIdentity struct {
 	column string
 }
 
-func newExclusionState(patterns []resourcePattern) *exclusionState {
+func newExclusionState(patterns []resourcePattern, defaultSchema string) *exclusionState {
 	return &exclusionState{
 		patterns:        patterns,
+		defaultSchema:   strings.TrimSpace(defaultSchema),
 		excludedTables:  map[tableIdentity]struct{}{},
 		excludedColumns: map[columnIdentity]struct{}{},
 	}
+}
+
+// effectiveSchema resolves the schema that owns an object. An object with no
+// schema of its own lives in the default schema, so it is the same object the
+// schema-qualified spelling names.
+func (s *exclusionState) effectiveSchema(schema string) string {
+	if trimmed := strings.TrimSpace(schema); trimmed != "" {
+		return trimmed
+	}
+	return s.defaultSchema
+}
+
+// nameCandidates returns the names an exclude pattern can match for a
+// top-level object: the bare name and the effective-schema-qualified name.
+// Both spellings name the same object, so both are offered — matching the
+// bare name is looser than the community binary on a database URL, and
+// looseness on an exclude subtracts rather than adds statements.
+func (s *exclusionState) nameCandidates(schema, name string) []string {
+	return qualifiedNameCandidates(s.effectiveSchema(schema), name)
+}
+
+// qualifiedNameCandidatesFor is [exclusionState.nameCandidates] for objects
+// whose only schema qualification is an optional "schema." prefix on the name,
+// mirroring how the include projection reads generated views.
+func (s *exclusionState) qualifiedNameCandidatesFor(name string) []string {
+	schema, bare := splitQualified(name)
+	return s.nameCandidates(schema, bare)
+}
+
+// childNameCandidates returns the names an exclude pattern can match for a
+// child of a table: "table.child" and "schema.table.child".
+func (s *exclusionState) childNameCandidates(schema, table, child string) []string {
+	return tableChildNameCandidates(s.effectiveSchema(schema), table, child)
 }
 
 func (s *exclusionState) filterTables(tables []dbschematypes.DBTable) []dbschematypes.DBTable {
 	result := make([]dbschematypes.DBTable, 0, len(tables))
 	for _, table := range tables {
 		table = cloneTable(table)
-		tableNames := tableNameCandidates(table.Schema, table.Name)
+		tableNames := s.nameCandidates(table.Schema, table.Name)
 		if s.matchesAny(tableResourceTypes(table), tableNames...) {
 			s.excludeTable(table.Schema, table.Name)
 			continue
@@ -286,7 +358,7 @@ func (s *exclusionState) filterTables(tables []dbschematypes.DBTable) []dbschema
 func (s *exclusionState) filterColumns(table dbschematypes.DBTable, columns []dbschematypes.DBColumn) []dbschematypes.DBColumn {
 	result := make([]dbschematypes.DBColumn, 0, len(columns))
 	for _, column := range columns {
-		columnNames := tableChildNameCandidates(table.Schema, table.Name, column.Name)
+		columnNames := s.childNameCandidates(table.Schema, table.Name, column.Name)
 		if s.matches("column", columnNames...) {
 			s.excludeColumn(table.Schema, table.Name, column.Name)
 			continue
@@ -307,7 +379,7 @@ func (s *exclusionState) filterIndexes(indexes []dbschematypes.DBIndex) []dbsche
 		if s.tableExcluded(index.Schema, index.TableName) || s.anyColumnExcluded(index.Schema, index.TableName, index.Columns) {
 			return false
 		}
-		return !s.matches("index", tableChildNameCandidates(index.Schema, index.TableName, index.Name)...)
+		return !s.matches("index", s.childNameCandidates(index.Schema, index.TableName, index.Name)...)
 	})
 }
 
@@ -320,14 +392,14 @@ func (s *exclusionState) filterConstraints(constraints []dbschematypes.DBConstra
 			s.anyColumnExcluded(foreignSchema, derefString(constraint.ForeignTable), constraint.ForeignColumnsOrDefault()) {
 			return false
 		}
-		return !s.matchesAny(constraintResourceTypes(constraint), tableChildNameCandidates(constraint.Schema, constraint.TableName, constraint.Name)...)
+		return !s.matchesAny(constraintResourceTypes(constraint), s.childNameCandidates(constraint.Schema, constraint.TableName, constraint.Name)...)
 	})
 }
 
 func (s *exclusionState) filterExtensions(extensions []dbschematypes.DBExtension) []dbschematypes.DBExtension {
 	result := make([]dbschematypes.DBExtension, 0, len(extensions))
 	for _, extension := range extensions {
-		names := qualifiedNameCandidates(extension.Schema, extension.Name)
+		names := s.nameCandidates(extension.Schema, extension.Name)
 		if s.matches("extension", names...) {
 			continue
 		}
@@ -347,7 +419,7 @@ func (s *exclusionState) filterFunctions(functions []dbschematypes.DBFunction) [
 
 func (s *exclusionState) filterViews(views []dbschematypes.DBView) []dbschematypes.DBView {
 	return keep(views, func(view dbschematypes.DBView) bool {
-		excluded := s.matches("view", qualifiedNameCandidates(view.Schema, view.Name)...)
+		excluded := s.matches("view", s.nameCandidates(view.Schema, view.Name)...)
 		if excluded {
 			s.excludeTable(view.Schema, view.Name)
 		}
@@ -357,7 +429,7 @@ func (s *exclusionState) filterViews(views []dbschematypes.DBView) []dbschematyp
 
 func (s *exclusionState) filterMatViews(views []dbschematypes.DBMatView) []dbschematypes.DBMatView {
 	return keep(views, func(view dbschematypes.DBMatView) bool {
-		excluded := s.matches("materialized_view", qualifiedNameCandidates(view.Schema, view.Name)...)
+		excluded := s.matches("materialized_view", s.nameCandidates(view.Schema, view.Name)...)
 		if excluded {
 			s.excludeTable(view.Schema, view.Name)
 		}
@@ -370,7 +442,7 @@ func (s *exclusionState) filterTriggers(triggers []dbschematypes.DBTrigger) []db
 		if s.tableExcluded(trigger.Schema, trigger.Table) {
 			return false
 		}
-		return !s.matches("trigger", tableChildNameCandidates(trigger.Schema, trigger.Table, trigger.Name)...)
+		return !s.matches("trigger", s.childNameCandidates(trigger.Schema, trigger.Table, trigger.Name)...)
 	})
 }
 
@@ -380,7 +452,7 @@ func (s *exclusionState) filterRLSPolicies(policies []dbschematypes.DBRLSPolicy)
 		if s.tableExcluded(schema, table) {
 			return false
 		}
-		return !s.matches("policy", tableChildNameCandidates(schema, table, policy.Name)...)
+		return !s.matches("policy", s.childNameCandidates(schema, table, policy.Name)...)
 	})
 }
 
@@ -401,7 +473,7 @@ func (s *exclusionState) filterGrants(grants []dbschematypes.DBGrant) []dbschema
 
 func (s *exclusionState) filterGeneratedTables(tables []goschema.Table) []goschema.Table {
 	return keep(tables, func(table goschema.Table) bool {
-		names := tableNameCandidates(table.Schema, table.Name)
+		names := s.nameCandidates(table.Schema, table.Name)
 		if s.matches("table", names...) {
 			s.excludeTable(table.Schema, table.Name)
 			return false
@@ -456,7 +528,7 @@ func (s *exclusionState) filterGeneratedIndexes(
 		if !ok || s.generatedAnyColumnExcluded(table, generatedIndexColumns(index)) {
 			return false
 		}
-		return !s.matches("index", tableChildNameCandidates(table.Schema, table.Name, index.Name)...)
+		return !s.matches("index", s.childNameCandidates(table.Schema, table.Name, index.Name)...)
 	})
 }
 
@@ -473,7 +545,7 @@ func (s *exclusionState) filterGeneratedConstraints(
 			s.generatedForeignColumnsExcluded(table.Schema, constraint.ForeignTable, constraint.ForeignColumnsOrDefault()) {
 			return false
 		}
-		return !s.matchesAny(generatedConstraintResourceTypes(constraint), tableChildNameCandidates(table.Schema, table.Name, constraint.Name)...)
+		return !s.matchesAny(generatedConstraintResourceTypes(constraint), s.childNameCandidates(table.Schema, table.Name, constraint.Name)...)
 	})
 }
 
@@ -528,9 +600,13 @@ func (s *exclusionState) filterGeneratedFunctions(functions []goschema.Function)
 	})
 }
 
+// filterGeneratedViews mirrors the introspected view exclusion. A generated
+// view carries its schema only as an optional "schema." prefix on its name, so
+// the candidates are resolved from that prefix and the default schema, keeping
+// both sides of a comparison subtracting the same views.
 func (s *exclusionState) filterGeneratedViews(views []goschema.View) []goschema.View {
 	return keep(views, func(view goschema.View) bool {
-		excluded := s.matches("view", view.Name)
+		excluded := s.matches("view", s.qualifiedNameCandidatesFor(view.Name)...)
 		if excluded {
 			s.excludeTable("", view.Name)
 		}
@@ -540,7 +616,7 @@ func (s *exclusionState) filterGeneratedViews(views []goschema.View) []goschema.
 
 func (s *exclusionState) filterGeneratedMaterializedViews(views []goschema.MaterializedView) []goschema.MaterializedView {
 	return keep(views, func(view goschema.MaterializedView) bool {
-		excluded := s.matches("materialized_view", view.Name)
+		excluded := s.matches("materialized_view", s.qualifiedNameCandidatesFor(view.Name)...)
 		if excluded {
 			s.excludeTable("", view.Name)
 		}
@@ -557,7 +633,7 @@ func (s *exclusionState) filterGeneratedTriggers(
 		if !ok {
 			return false
 		}
-		return !s.matches("trigger", tableChildNameCandidates(table.Schema, table.Name, trigger.Name)...)
+		return !s.matches("trigger", s.childNameCandidates(table.Schema, table.Name, trigger.Name)...)
 	})
 }
 
@@ -570,7 +646,7 @@ func (s *exclusionState) filterGeneratedRLSPolicies(
 		if !ok {
 			return false
 		}
-		return !s.matches("policy", tableChildNameCandidates(table.Schema, table.Name, policy.Name)...)
+		return !s.matches("policy", s.childNameCandidates(table.Schema, table.Name, policy.Name)...)
 	})
 }
 
@@ -659,7 +735,7 @@ func (s *exclusionState) anyColumnExcluded(schema, table string, columns []strin
 }
 
 func (s *exclusionState) generatedFieldExcluded(table goschema.Table, column string) bool {
-	return s.matches("column", tableChildNameCandidates(table.Schema, table.Name, column)...)
+	return s.matches("column", s.childNameCandidates(table.Schema, table.Name, column)...)
 }
 
 func (s *exclusionState) generatedColumnExcluded(table goschema.Table, column string) bool {
@@ -764,10 +840,6 @@ func keep[T any](values []T, keepValue func(T) bool) []T {
 		}
 	}
 	return result
-}
-
-func tableNameCandidates(schema, table string) []string {
-	return qualifiedNameCandidates(schema, table)
 }
 
 func tableChildNameCandidates(schema, table, child string) []string {
