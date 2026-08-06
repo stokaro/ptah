@@ -70,15 +70,6 @@ func rejectionCases() []rejectionCase {
 		wantMsg:      "output file is not valid protobuf",
 		wantSentinel: protobufrender.ErrMalformed,
 	}, {
-		name: "oversized reserved state",
-		damage: func(_ *qt.C, _ []byte) []byte {
-			return previousExport(
-				"enum Huge {\n  HUGE_UNSPECIFIED = 0;\n  reserved 1 to 1048577;\n}\n")
-		},
-		wantMsg: "output file is not valid protobuf: enum \"Huge\": reserved ranges expand to more than 1048576 numbers; " +
-			"refusing to truncate compatibility state",
-		wantSentinel: protobufrender.ErrMalformed,
-	}, {
 		name: "unsupported negative reserved state",
 		damage: func(_ *qt.C, _ []byte) []byte {
 			return previousExport(

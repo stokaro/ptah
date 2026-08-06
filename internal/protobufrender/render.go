@@ -91,20 +91,20 @@ func renderEnum(sb *strings.Builder, en enum) {
 }
 
 func hasReservations(res reservations) bool {
-	return len(res.Numbers) > 0 || len(res.Names) > 0
+	return res.hasNumbers() || len(res.Names) > 0
 }
 
-// writeReservations emits numbers as one ascending statement with contiguous
-// runs collapsed, then names as one statement in ascending order. Under
-// editions the names are bare identifiers: quoting them is a hard parse error,
-// which is the inverse of proto2/proto3.
+// writeReservations emits numbers as one ascending statement, each range
+// written the way it is held, then names as one statement in ascending order.
+// Under editions the names are bare identifiers: quoting them is a hard parse
+// error, which is the inverse of proto2/proto3.
 func writeReservations(sb *strings.Builder, res reservations) {
-	if len(res.Numbers) == 0 && len(res.Names) == 0 {
+	if !hasReservations(res) {
 		return
 	}
-	if len(res.Numbers) > 0 {
-		parts := make([]string, 0, len(res.Numbers))
-		for _, r := range collapseRanges(res.Numbers) {
+	if res.hasNumbers() {
+		parts := make([]string, 0, len(res.Ranges))
+		for _, r := range res.Ranges {
 			if r.Start == r.End {
 				parts = append(parts, strconv.FormatInt(int64(r.Start), 10))
 				continue
