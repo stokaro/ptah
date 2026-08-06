@@ -63,11 +63,17 @@ func commentLines(text string) []string {
 
 // assertGeneratedHeader pins the three lines every generated file carries, so a
 // count assertion cannot be satisfied by the wrong three lines.
+// assertGeneratedHeader checks the three generated lines at the END of the
+// comment list. They live at the foot of the file since #1148: as the file's
+// leading comment they were protoc-gen-go's leading comment too, so every
+// consumer's .pb.go carried Ptah's content digest.
 func assertGeneratedHeader(c *qt.C, lines []string) {
 	c.Helper()
-	c.Assert(lines[0], qt.Equals, headerMarker)
-	c.Assert(lines[1], qt.Equals, versionLine)
-	c.Assert(strings.HasPrefix(lines[2], digestPrefix), qt.IsTrue)
+	c.Assert(len(lines) >= 3, qt.IsTrue, qt.Commentf("comment lines: %q", lines))
+	header := lines[len(lines)-3:]
+	c.Assert(header[0], qt.Equals, headerMarker)
+	c.Assert(header[1], qt.Equals, versionLine)
+	c.Assert(strings.HasPrefix(header[2], digestPrefix), qt.IsTrue)
 }
 
 func TestCommentsAllIsTheDefaultAndCopiesSourceProse(t *testing.T) {
@@ -120,7 +126,9 @@ func TestCommentsNoneKeepsPtahsOwnAccountOfTheContract(t *testing.T) {
 	lines := commentLines(text)
 	c.Assert(lines, qt.HasLen, 4)
 	assertGeneratedHeader(c, lines)
-	c.Assert(lines[3], qt.Equals, "// Removed from the source schema; retained for wire compatibility.")
+	// The tombstone rationale precedes the generated header, because the header
+	// is the last thing in the file.
+	c.Assert(lines[0], qt.Equals, "// Removed from the source schema; retained for wire compatibility.")
 
 	// Both source comments are still gone, including the one on the table that
 	// replaced the retired one.
