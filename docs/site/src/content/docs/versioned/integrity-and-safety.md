@@ -581,6 +581,19 @@ project directory handle opened for config evaluation until capture completes;
 replacing the project pathname does not retarget it. Parent-relative project
 directories are external compatibility paths and do not inherit that root.
 
+Commands that *write* the directory — `migrate diff` and native migration
+generation — extend the same binding to publication. The migration directory
+and the directory holding its publication journal are opened once, before the
+snapshot the run verifies is captured, and every staged file, migration file,
+journal, commit marker, `atlas.sum`, rollback quarantine and cleanup entry is
+addressed by name relative to those retained handles. A directory replaced
+after validation therefore receives nothing, and recovery resolves an
+interrupted publication on the objects that were validated rather than on
+whatever the pathname resolves to when recovery runs
+([#895](https://github.com/stokaro/ptah/issues/895)). This closes the
+observation window that the two-capture check cannot: a replacement is no
+longer a difference to notice, it is a directory the writes never reach.
+
 ## Pre-migration checks
 
 Guard a migration on a data-state precondition with a `-- +ptah check`

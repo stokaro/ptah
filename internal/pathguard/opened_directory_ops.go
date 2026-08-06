@@ -19,6 +19,31 @@ func (d *OpenedDirectory) Open(name string) (*os.File, error) {
 	return d.root.Open(name)
 }
 
+// OpenFile opens name with the supplied flags through the rooted directory
+// handle. The caller owns the returned file and must close it.
+func (d *OpenedDirectory) OpenFile(name string, flag int, perm fs.FileMode) (*os.File, error) {
+	return d.root.OpenFile(name, flag, perm)
+}
+
+// Link creates newName as a hard link to oldName through the rooted directory
+// handle. It fails with fs.ErrExist when newName already exists, so callers get
+// no-replace publication semantics.
+func (d *OpenedDirectory) Link(oldName, newName string) error {
+	return d.root.Link(oldName, newName)
+}
+
+// MoveFileNoReplace publishes oldName at newName through the rooted directory
+// handle without replacing an existing entry. Callers must follow a successful
+// move with Sync.
+func (d *OpenedDirectory) MoveFileNoReplace(oldName, newName string) error {
+	return fsdurable.MoveFileNoReplaceAt(d.root, oldName, newName)
+}
+
+// ReadDir lists the opened directory's own entries through the rooted handle.
+func (d *OpenedDirectory) ReadDir() ([]fs.DirEntry, error) {
+	return fs.ReadDir(d.root.FS(), ".")
+}
+
 // Lstat returns information about name without following its final symlink.
 func (d *OpenedDirectory) Lstat(name string) (fs.FileInfo, error) {
 	return d.root.Lstat(name)

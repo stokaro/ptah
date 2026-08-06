@@ -503,6 +503,18 @@ directory; the next lock holder compares the checksum commit marker and either
 finalizes the committed batch or removes only the hard-linked files owned by
 the interrupted batch.
 
+Publication and recovery are rooted. Ptah opens the migration directory and the
+directory that holds its journal once, before the snapshot the run verifies is
+captured, and addresses every later staged file, migration file, journal,
+commit marker, `atlas.sum`, rollback quarantine and cleanup entry by name
+relative to those two retained handles. Replacing the directory's pathname
+afterwards — a rename, a symlink, or a fresh directory moved into place —
+cannot redirect a write: the handles keep referring to the filesystem objects
+that were validated, wherever those objects are moved to
+([#895](https://github.com/stokaro/ptah/issues/895)). The boundary is the
+retained directory, so recovery can never act on a replacement and cleanup can
+never remove a file that a replacement contributed.
+
 ```bash
 ptah-compat migrate diff add_users \
   --dir file://migrations \

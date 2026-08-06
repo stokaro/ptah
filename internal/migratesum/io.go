@@ -54,6 +54,78 @@ func WritePrecomputedWithFormat(
 	return nil
 }
 
+// RootedDir is the retained rooted directory handle a durable checksum write
+// needs. It is satisfied by pathguard.OpenedDirectory, which this package
+// cannot name without depending on it.
+type RootedDir interface {
+	CreateTemp(pattern string) (*os.File, string, error)
+	ReplaceFile(oldName, newName string) error
+	Remove(name string) error
+	Sync() error
+}
+
+// WritePrecomputedWithFormatIn writes sum to the integrity file selected by
+// format through a retained rooted directory handle. A directory whose pathname
+// is replaced after the caller validated it therefore cannot receive the
+// checksum: every name is resolved through the handle that was opened once.
+func WritePrecomputedWithFormatIn(
+	dir RootedDir,
+	format migrator.MigrationDirFormat,
+	sum *SumFile,
+) error {
+	if sum == nil {
+		return errors.New("migration checksum must not be nil")
+	}
+	name, err := FileNameForFormat(format)
+	if err != nil {
+		return err
+	}
+	if err := writeAtomicSumFileIn(dir, name, sum.Bytes()); err != nil {
+		return fmt.Errorf("failed to write %s: %w", name, err)
+	}
+	return nil
+}
+
+func writeAtomicSumFileIn(dir RootedDir, name string, contents []byte) error {
+	file, tempName, err := dir.CreateTemp("." + name + ".*.tmp")
+	if err != nil {
+		return err
+	}
+
+	// The sum file is committed alongside migrations and checked in, so it
+	// uses the same 0644 permissions as generated migration files.
+	if err := file.Chmod(0644); err != nil {
+		return errors.Join(err, file.Close(), removeRootedFile(dir, tempName))
+	}
+	if _, err := file.Write(contents); err != nil {
+		return errors.Join(err, file.Close(), removeRootedFile(dir, tempName))
+	}
+	if err := file.Sync(); err != nil {
+		return errors.Join(err, file.Close(), removeRootedFile(dir, tempName))
+	}
+	if err := file.Close(); err != nil {
+		return errors.Join(err, removeRootedFile(dir, tempName))
+	}
+	if err := dir.ReplaceFile(tempName, name); err != nil {
+		if errors.Is(err, fsdurable.ErrReplacementCommitted) {
+			return &CommitUncertainError{Err: err}
+		}
+		return errors.Join(err, removeRootedFile(dir, tempName))
+	}
+	if err := dir.Sync(); err != nil {
+		return &CommitUncertainError{Err: err}
+	}
+	return nil
+}
+
+func removeRootedFile(dir RootedDir, name string) error {
+	err := dir.Remove(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 // CommitUncertainError reports that the checksum file was atomically replaced
 // but syncing the containing directory failed. The visible checksum may be the
 // old or new commit marker after a crash, so callers must retain recovery state.

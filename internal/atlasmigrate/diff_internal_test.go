@@ -22,16 +22,17 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestWriteMigrationFilesAt_CollisionRejectsStalePlan(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	// A non-cooperating writer claimed version 2 after this run allocated 1..2.
 	// Publishing the stale plan must fail instead of silently moving it above
 	// a migration that was never replayed.
@@ -41,13 +42,13 @@ func TestWriteMigrationFilesAt_CollisionRejectsStalePlan(t *testing.T) {
 		{NameSuffix: "_concurrent_indexes", SQL: "SELECT 2;", NoTransaction: true},
 	}
 
-	batch, err := stageMigrationBatchAt(dir, "add_email", 1, contents)
+	batch, err := stageMigrationBatchAt(pub, "add_email", 1, contents)
 	c.Assert(err, qt.IsNil)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 
 	c.Assert(err, qt.ErrorMatches, `migration directory changed during publication: .*2_add_email_concurrent_indexes\.sql already exists`)
 	c.Assert(published, qt.Equals, 1)
-	c.Assert(rollBackUnjournaledBatch(dir, batch, published), qt.IsNil)
+	c.Assert(rollBackUnjournaledBatch(pub, batch, published), qt.IsNil)
 	// The colliding file kept its content and no version-1 leftover remains
 	// from the aborted attempt.
 	taken, readErr := os.ReadFile(filepath.Join(dir, "2_add_email_concurrent_indexes.sql"))
@@ -60,21 +61,22 @@ func TestWriteMigrationFilesAt_CollisionRejectsStalePlan(t *testing.T) {
 func TestWriteMigrationFiles_FailedWriteRollsBackEarlierFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	// The second file's name exceeds the filesystem's name limit, so its
 	// create fails with a non-collision error after the first file was
 	// already written; the batch rolls back completely.
 	oversizedSuffix := "_" + strings.Repeat("x", 512)
 
-	batch, err := stageMigrationBatch(dir, "add_email", []MigrationFileContent{
+	batch, err := stageMigrationBatch(pub, "add_email", []MigrationFileContent{
 		{NameSuffix: "_transactional", SQL: "SELECT 1;"},
 		{NameSuffix: oversizedSuffix, SQL: "SELECT 2;", NoTransaction: true},
 	})
 	c.Assert(err, qt.IsNil)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 
 	c.Assert(err, qt.ErrorMatches, `publish migration file: .*`)
 	c.Assert(published, qt.Equals, 1)
-	c.Assert(rollBackUnjournaledBatch(dir, batch, published), qt.IsNil)
+	c.Assert(rollBackUnjournaledBatch(pub, batch, published), qt.IsNil)
 	_, leftoverErr := os.Stat(filepath.Join(dir, "1_add_email_transactional.sql"))
 	c.Assert(leftoverErr, qt.ErrorIs, os.ErrNotExist)
 }
@@ -82,8 +84,9 @@ func TestWriteMigrationFiles_FailedWriteRollsBackEarlierFiles(t *testing.T) {
 func TestPublishMigrationBatch_ExclusiveCopyMode(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	batch, err := stageMigrationBatchAt(
-		dir,
+		pub,
 		"copy",
 		1,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -91,26 +94,27 @@ func TestPublishMigrationBatch_ExclusiveCopyMode(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	batch.mode = publicationModeCopy
 
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
-	stagedInfo, err := os.Stat(batch.stagedPaths[0])
+	stagedInfo, err := os.Stat(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.IsNil)
-	finalInfo, err := os.Stat(batch.paths[0])
+	finalInfo, err := os.Stat(batch.paths(pub)[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.SameFile(stagedInfo, finalInfo), qt.IsFalse)
-	stagedContents, err := os.ReadFile(batch.stagedPaths[0])
+	stagedContents, err := os.ReadFile(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.IsNil)
-	finalContents, err := os.ReadFile(batch.paths[0])
+	finalContents, err := os.ReadFile(batch.paths(pub)[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalContents, qt.DeepEquals, stagedContents)
-	c.Assert(rollBackUnjournaledBatch(dir, batch, published), qt.IsNil)
+	c.Assert(rollBackUnjournaledBatch(pub, batch, published), qt.IsNil)
 }
 
 func TestWritePublicationJournal_FallsBackWithoutHardLinks(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	journal := publicationJournal{
 		Version:    publicationJournalVersion,
 		CommitMode: publicationCommitModeAtlasSum,
@@ -124,7 +128,7 @@ func TestWritePublicationJournal_FallsBackWithoutHardLinks(t *testing.T) {
 	}
 
 	err := writePublicationJournalWithLink(
-		dir,
+		pub,
 		journal,
 		func(string, string) error {
 			return syscall.ENOTSUP
@@ -132,24 +136,24 @@ func TestWritePublicationJournal_FallsBackWithoutHardLinks(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
-	got, err := readPublicationJournal(journalPath)
+	journalPath := pub.journalPath()
+	got, err := readPublicationJournal(pub)
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, journal)
 	backups, err := filepath.Glob(journalPath + ".*.tmp")
 	c.Assert(err, qt.IsNil)
 	c.Assert(backups, qt.HasLen, 1)
 	c.Assert(os.WriteFile(journalPath, []byte("{"), 0o600), qt.IsNil)
-	got, err = readPublicationJournal(journalPath)
+	got, err = readPublicationJournal(pub)
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, journal)
-	c.Assert(removePublicationJournal(journalPath), qt.IsNil)
+	c.Assert(removePublicationJournal(pub), qt.IsNil)
 }
 
 func TestPublishArtifactsLocked_PublishesCompleteBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 
 	paths, err := PublishArtifactsLocked(
 		t.Context(),
@@ -176,17 +180,17 @@ func TestPublishArtifactsLocked_PublishesCompleteBatch(t *testing.T) {
 	report, err := os.ReadFile(paths[2])
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(report), qt.Equals, "{}\n")
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	_, err = os.Stat(publicationCommitMarkerPath(journalPath))
+	_, err = os.Stat(journalPath + publicationCommitMarkerSuffix)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
 
 func TestPublishArtifactsLocked_CollisionRollsBackWholeBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	existingPath := filepath.Join(dir, "1_change.down.sql")
 	c.Assert(os.WriteFile(existingPath, []byte("existing\n"), 0o600), qt.IsNil)
 
@@ -209,8 +213,7 @@ func TestPublishArtifactsLocked_CollisionRollsBackWholeBatch(t *testing.T) {
 	staged, err := filepath.Glob(filepath.Join(dir, stagedMigrationPattern))
 	c.Assert(err, qt.IsNil)
 	c.Assert(staged, qt.HasLen, 0)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
@@ -218,15 +221,17 @@ func TestPublishArtifactsLocked_CollisionRollsBackWholeBatch(t *testing.T) {
 func TestStageMigrationBatch_FallsBackToExclusiveCopy(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 
 	batch, err := stageMigrationBatchAtWithModeDetector(
-		dir,
+		pub,
 		"copy",
 		1,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
-		func(stagedPath string) (publicationMode, error) {
+		func(root *pathguard.OpenedDirectory, stagedName string) (publicationMode, error) {
 			return detectPublicationModeWithLink(
-				stagedPath,
+				root,
+				stagedName,
 				func(string, string) error {
 					return syscall.ENOTSUP
 				},
@@ -236,27 +241,28 @@ func TestStageMigrationBatch_FallsBackToExclusiveCopy(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(batch.mode, qt.Equals, publicationModeCopy)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
-	stagedInfo, err := os.Stat(batch.stagedPaths[0])
+	stagedInfo, err := os.Stat(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.IsNil)
-	finalInfo, err := os.Stat(batch.paths[0])
+	finalInfo, err := os.Stat(batch.paths(pub)[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.SameFile(stagedInfo, finalInfo), qt.IsFalse)
-	c.Assert(rollBackUnjournaledBatch(dir, batch, published), qt.IsNil)
+	c.Assert(rollBackUnjournaledBatch(pub, batch, published), qt.IsNil)
 }
 
 func TestWriteDiffArtifacts_SumPublishFailureRollsBackMigrations(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	c.Assert(os.Mkdir(filepath.Join(dir, "atlas.sum"), 0o700), qt.IsNil)
 	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
 	c.Assert(err, qt.IsNil)
 
 	result, err := writeDiffArtifacts(
 		t.Context(),
-		dir,
+		pub,
 		"add_email",
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 		baseSnapshot,
@@ -275,12 +281,13 @@ func TestWriteDiffArtifacts_SumPublishFailureRollsBackMigrations(t *testing.T) {
 func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	initialPath := filepath.Join(dir, "1_initial.sql")
 	c.Assert(os.WriteFile(initialPath, []byte("SELECT 1;"), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	batch, err := stageMigrationBatchAt(
-		dir,
+		pub,
 		"interrupted",
 		2,
 		[]MigrationFileContent{{SQL: "SELECT 2;"}},
@@ -288,22 +295,21 @@ func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	_, _ = beginTestPublication(
 		c,
-		dir,
+		pub,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 2;"}},
 	)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
 
-	c.Assert(recoverPendingPublication(dir), qt.IsNil)
+	c.Assert(recoverPendingPublication(pub), qt.IsNil)
 
-	_, err = os.Stat(batch.paths[0])
+	_, err = os.Stat(batch.paths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	_, err = os.Stat(batch.stagedPaths[0])
+	_, err = os.Stat(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	result, err := migratesum.VerifyWithFormat(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
@@ -314,12 +320,13 @@ func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {
 func TestRecoverPendingPublication_RollsBackInterruptedCopyBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	initialPath := filepath.Join(dir, "1_initial.sql")
 	c.Assert(os.WriteFile(initialPath, []byte("SELECT 1;"), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	batch, err := stageMigrationBatchAt(
-		dir,
+		pub,
 		"interrupted_copy",
 		2,
 		[]MigrationFileContent{{SQL: "SELECT 2;"}},
@@ -328,19 +335,19 @@ func TestRecoverPendingPublication_RollsBackInterruptedCopyBatch(t *testing.T) {
 	batch.mode = publicationModeCopy
 	_, _ = beginTestPublication(
 		c,
-		dir,
+		pub,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 2;"}},
 	)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
 
-	c.Assert(recoverPendingPublication(dir), qt.IsNil)
+	c.Assert(recoverPendingPublication(pub), qt.IsNil)
 
-	_, err = os.Stat(batch.paths[0])
+	_, err = os.Stat(batch.paths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	_, err = os.Stat(batch.stagedPaths[0])
+	_, err = os.Stat(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	result, err := migratesum.VerifyWithFormat(
 		os.DirFS(dir),
@@ -353,8 +360,9 @@ func TestRecoverPendingPublication_RollsBackInterruptedCopyBatch(t *testing.T) {
 func TestRecoverPendingPublication_RollsBackInterruptedMoveBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	batch, err := stageMigrationBatchAt(
-		dir,
+		pub,
 		"interrupted_move",
 		1,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -363,22 +371,21 @@ func TestRecoverPendingPublication_RollsBackInterruptedMoveBatch(t *testing.T) {
 	batch.mode = publicationModeWriteThroughMove
 	_, _ = beginTestPublication(
 		c,
-		dir,
+		pub,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 	)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
-	_, err = os.Stat(batch.stagedPaths[0])
+	_, err = os.Stat(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 
-	c.Assert(recoverPendingPublication(dir), qt.IsNil)
+	c.Assert(recoverPendingPublication(pub), qt.IsNil)
 
-	_, err = os.Stat(batch.paths[0])
+	_, err = os.Stat(batch.paths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
@@ -397,8 +404,9 @@ func TestRecoverPendingPublication_CleansQuarantineOnlyStateForEveryMode(t *test
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			dir := c.TempDir()
+			pub := openTestPublicationDir(c, dir)
 			batch, err := stageMigrationBatchAt(
-				dir,
+				pub,
 				"interrupted",
 				1,
 				[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -407,31 +415,26 @@ func TestRecoverPendingPublication_CleansQuarantineOnlyStateForEveryMode(t *test
 			batch.mode = test.mode
 			_, _ = beginTestPublication(
 				c,
-				dir,
+				pub,
 				batch,
 				[]MigrationFileContent{{SQL: "SELECT 1;"}},
 			)
-			published, err := publishMigrationBatch(dir, batch)
+			published, err := publishMigrationBatch(pub, batch)
 			c.Assert(err, qt.IsNil)
 			c.Assert(published, qt.Equals, 1)
-			quarantineDir := batch.stagedPaths[0] + ".rollback"
-			quarantinePath := filepath.Join(quarantineDir, "published")
-			c.Assert(os.Mkdir(quarantineDir, 0o700), qt.IsNil)
-			c.Assert(os.Rename(batch.paths[0], quarantinePath), qt.IsNil)
-			c.Assert(removeFiles(batch.stagedPaths), qt.IsNil)
+			quarantinePath := batch.stagedPaths(pub)[0] + rollbackQuarantineSuffix
+			c.Assert(os.Rename(batch.paths(pub)[0], quarantinePath), qt.IsNil)
+			c.Assert(removeNames(pub.dir, batch.stagedNames), qt.IsNil)
 
-			c.Assert(recoverPendingPublication(dir), qt.IsNil)
+			c.Assert(recoverPendingPublication(pub), qt.IsNil)
 
-			_, err = os.Stat(batch.paths[0])
+			_, err = os.Stat(batch.paths(pub)[0])
 			c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-			_, err = os.Stat(batch.stagedPaths[0])
+			_, err = os.Stat(batch.stagedPaths(pub)[0])
 			c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 			_, err = os.Stat(quarantinePath)
 			c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-			_, err = os.Stat(quarantineDir)
-			c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-			journalPath, err := publicationJournalPath(dir)
-			c.Assert(err, qt.IsNil)
+			journalPath := pub.journalPath()
 			_, err = os.Stat(journalPath)
 			c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 		})
@@ -441,14 +444,15 @@ func TestRecoverPendingPublication_CleansQuarantineOnlyStateForEveryMode(t *test
 func TestRemovePublicationJournal_RetireFailurePreservesCommitMarker(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	journalPath := filepath.Join(dir, "publication.pending")
-	markerPath := publicationCommitMarkerPath(journalPath)
+	pub := openTestPublicationDir(c, dir)
+	journalPath := pub.journalPath()
+	markerPath := journalPath + publicationCommitMarkerSuffix
 	c.Assert(os.WriteFile(journalPath, []byte("{}"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(markerPath, []byte("committed"), 0o600), qt.IsNil)
 	retireErr := errors.New("injected journal retirement failure")
 
 	err := removePublicationJournalWithRetirer(
-		journalPath,
+		pub,
 		func(string, string) error {
 			return retireErr
 		},
@@ -464,34 +468,34 @@ func TestRemovePublicationJournal_RetireFailurePreservesCommitMarker(t *testing.
 func TestRecoverPendingPublication_FinalizesMarkerCommittedBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	batch, err := stageArtifactBatch(
-		dir,
+		pub,
 		[]PublicationArtifact{
 			{Name: "1_change.up.sql", Contents: []byte("SELECT 1;\n")},
 			{Name: "1_change.safety.json", Contents: []byte("{}\n")},
 		},
 	)
 	c.Assert(err, qt.IsNil)
-	journal, err := beginMarkerPublication(dir, batch)
+	journal, err := beginMarkerPublication(pub, batch)
 	c.Assert(err, qt.IsNil)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 2)
-	c.Assert(writePublicationCommitMarker(dir, journal), qt.IsNil)
+	c.Assert(writePublicationCommitMarker(pub, journal), qt.IsNil)
 
-	c.Assert(recoverPendingPublication(dir), qt.IsNil)
+	c.Assert(recoverPendingPublication(pub), qt.IsNil)
 
-	up, err := os.ReadFile(batch.paths[0])
+	up, err := os.ReadFile(batch.paths(pub)[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(up), qt.Equals, "SELECT 1;\n")
-	report, err := os.ReadFile(batch.paths[1])
+	report, err := os.ReadFile(batch.paths(pub)[1])
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(report), qt.Equals, "{}\n")
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	_, err = os.Stat(publicationCommitMarkerPath(journalPath))
+	_, err = os.Stat(journalPath + publicationCommitMarkerSuffix)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	_, err = os.Stat(journalPath + publicationCleanupSuffix)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
@@ -500,8 +504,9 @@ func TestRecoverPendingPublication_FinalizesMarkerCommittedBatch(t *testing.T) {
 func TestRecoverPendingPublication_FinalizesCommittedBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	batch, err := stageMigrationBatchAt(
-		dir,
+		pub,
 		"committed",
 		1,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -509,28 +514,27 @@ func TestRecoverPendingPublication_FinalizesCommittedBatch(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	journal, sum := beginTestPublication(
 		c,
-		dir,
+		pub,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 	)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
-	_, err = writeDirSum(dir, sum)
+	_, err = writeDirSum(pub, sum)
 	c.Assert(err, qt.IsNil)
-	committed, err := publicationCommitted(dir, journal)
+	committed, err := publicationCommitted(pub, journal)
 	c.Assert(err, qt.IsNil)
 	c.Assert(committed, qt.IsTrue)
 
-	c.Assert(recoverPendingPublication(dir), qt.IsNil)
+	c.Assert(recoverPendingPublication(pub), qt.IsNil)
 
-	contents, err := os.ReadFile(batch.paths[0])
+	contents, err := os.ReadFile(batch.paths(pub)[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "SELECT 1;")
-	_, err = os.Stat(batch.stagedPaths[0])
+	_, err = os.Stat(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	result, err := migratesum.VerifyWithFormat(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
@@ -541,8 +545,9 @@ func TestRecoverPendingPublication_FinalizesCommittedBatch(t *testing.T) {
 func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	batch, err := stageMigrationBatchAt(
-		dir,
+		pub,
 		"collision",
 		1,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -550,24 +555,23 @@ func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	_, _ = beginTestPublication(
 		c,
-		dir,
+		pub,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 	)
-	c.Assert(os.WriteFile(batch.paths[0], []byte("foreign"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(batch.paths(pub)[0], []byte("foreign"), 0o600), qt.IsNil)
 
-	err = recoverPendingPublication(dir)
+	err = recoverPendingPublication(pub)
 
 	c.Assert(err, qt.ErrorMatches, `cannot safely recover migration publication: .* content changed; preserved at .*`)
-	_, err = os.Stat(batch.paths[0])
+	_, err = os.Stat(batch.paths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	contents, err := os.ReadFile(filepath.Join(batch.stagedPaths[0]+".rollback", "published"))
+	contents, err := os.ReadFile(batch.stagedPaths(pub)[0] + rollbackQuarantineSuffix)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "foreign")
-	_, err = os.Stat(batch.stagedPaths[0])
+	_, err = os.Stat(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.IsNil)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.IsNil)
 }
@@ -575,8 +579,9 @@ func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 func TestAbortPendingPublication_RejectsForeignReplacement(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	batch, err := stageMigrationBatchAt(
-		dir,
+		pub,
 		"collision",
 		1,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -584,28 +589,27 @@ func TestAbortPendingPublication_RejectsForeignReplacement(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	_, _ = beginTestPublication(
 		c,
-		dir,
+		pub,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 	)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
-	c.Assert(os.Remove(batch.paths[0]), qt.IsNil)
-	c.Assert(os.WriteFile(batch.paths[0], []byte("foreign"), 0o600), qt.IsNil)
+	c.Assert(os.Remove(batch.paths(pub)[0]), qt.IsNil)
+	c.Assert(os.WriteFile(batch.paths(pub)[0], []byte("foreign"), 0o600), qt.IsNil)
 
-	err = abortPendingPublication(dir, batch, published)
+	err = abortPendingPublication(pub, batch, published)
 
 	c.Assert(err, qt.ErrorMatches, `roll back published migration files: cannot safely recover migration publication: .* content changed; preserved at .*`)
-	_, err = os.Stat(batch.paths[0])
+	_, err = os.Stat(batch.paths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	contents, err := os.ReadFile(filepath.Join(batch.stagedPaths[0]+".rollback", "published"))
+	contents, err := os.ReadFile(batch.stagedPaths(pub)[0] + rollbackQuarantineSuffix)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "foreign")
-	_, err = os.Stat(batch.stagedPaths[0])
+	_, err = os.Stat(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.IsNil)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.IsNil)
 }
@@ -613,8 +617,9 @@ func TestAbortPendingPublication_RejectsForeignReplacement(t *testing.T) {
 func TestAbortPendingPublication_RejectsInPlaceHardLinkMutation(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	batch, err := stageMigrationBatchAt(
-		dir,
+		pub,
 		"mutated",
 		1,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -623,28 +628,27 @@ func TestAbortPendingPublication_RejectsInPlaceHardLinkMutation(t *testing.T) {
 	batch.mode = publicationModeHardLink
 	_, _ = beginTestPublication(
 		c,
-		dir,
+		pub,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 	)
-	published, err := publishMigrationBatch(dir, batch)
+	published, err := publishMigrationBatch(pub, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
-	c.Assert(os.WriteFile(batch.paths[0], []byte("foreign"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(batch.paths(pub)[0], []byte("foreign"), 0o600), qt.IsNil)
 
-	err = abortPendingPublication(dir, batch, published)
+	err = abortPendingPublication(pub, batch, published)
 
 	c.Assert(err, qt.ErrorMatches, `roll back published migration files: cannot safely recover migration publication: staging file content changed; preserved .*`)
-	_, err = os.Stat(batch.paths[0])
+	_, err = os.Stat(batch.paths(pub)[0])
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	contents, err := os.ReadFile(filepath.Join(batch.stagedPaths[0]+".rollback", "published"))
+	contents, err := os.ReadFile(batch.stagedPaths(pub)[0] + rollbackQuarantineSuffix)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "foreign")
-	stagedContents, err := os.ReadFile(batch.stagedPaths[0])
+	stagedContents, err := os.ReadFile(batch.stagedPaths(pub)[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(stagedContents), qt.Equals, "foreign")
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.IsNil)
 }
@@ -652,18 +656,19 @@ func TestAbortPendingPublication_RejectsInPlaceHardLinkMutation(t *testing.T) {
 func TestWriteDiffArtifacts_CommitUncertainRetainsRecoverableBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
 	c.Assert(err, qt.IsNil)
 
 	result, err := writeDiffArtifactsWithSumWriter(
 		t.Context(),
-		dir,
+		pub,
 		"uncertain",
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 		baseSnapshot,
 		nil,
-		func(dir string, sum *migratesum.SumFile) (string, error) {
-			path, writeErr := writeDirSum(dir, sum)
+		func(pub *publicationDir, sum *migratesum.SumFile) (string, error) {
+			path, writeErr := writeDirSum(pub, sum)
 			c.Assert(writeErr, qt.IsNil)
 			return path, &migratesum.CommitUncertainError{
 				Err: errors.New("injected directory sync failure"),
@@ -679,12 +684,11 @@ func TestWriteDiffArtifacts_CommitUncertainRetainsRecoverableBatch(t *testing.T)
 	stagedFiles, err := filepath.Glob(filepath.Join(dir, stagedMigrationPattern))
 	c.Assert(err, qt.IsNil)
 	c.Assert(stagedFiles, qt.HasLen, 1)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(recoverPendingPublication(dir), qt.IsNil)
+	c.Assert(recoverPendingPublication(pub), qt.IsNil)
 	sqlFiles, err = filepath.Glob(filepath.Join(dir, "*_uncertain.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(sqlFiles, qt.HasLen, 1)
@@ -704,6 +708,7 @@ func TestWriteDiffArtifacts_CommitUncertainRetainsRecoverableBatch(t *testing.T)
 func TestWriteDiffArtifacts_RejectsUnreplayedConcurrentMigration(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
 	c.Assert(err, qt.IsNil)
 	foreignPath := filepath.Join(dir, "99_foreign.sql")
@@ -711,7 +716,7 @@ func TestWriteDiffArtifacts_RejectsUnreplayedConcurrentMigration(t *testing.T) {
 
 	result, err := writeDiffArtifacts(
 		t.Context(),
-		dir,
+		pub,
 		"planned",
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 		baseSnapshot,
@@ -726,24 +731,33 @@ func TestWriteDiffArtifacts_RejectsUnreplayedConcurrentMigration(t *testing.T) {
 	plannedFiles, err := filepath.Glob(filepath.Join(dir, "*_planned.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(plannedFiles, qt.HasLen, 0)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
 
+func openTestPublicationDir(c *qt.C, dir string) *publicationDir {
+	c.Helper()
+	pub, err := openPublicationDir(dir)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(pub.close(), qt.IsNil)
+	})
+	return pub
+}
+
 func beginTestPublication(
 	c *qt.C,
-	dir string,
+	pub *publicationDir,
 	batch migrationBatch,
 	contents []MigrationFileContent,
 ) (publicationJournal, *migratesum.SumFile) {
 	c.Helper()
-	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+	baseSnapshot, err := migrationsnapshot.CaptureStable(pub.fsys())
 	c.Assert(err, qt.IsNil)
 	_, sum, err := preparePublicationSnapshot(baseSnapshot, batch, contents)
 	c.Assert(err, qt.IsNil)
-	journal, err := beginPublication(dir, batch, sum.Bytes())
+	journal, err := beginPublication(pub, batch, sum.Bytes())
 	c.Assert(err, qt.IsNil)
 	return journal, sum
 }
@@ -751,10 +765,10 @@ func beginTestPublication(
 func TestRecoverPendingPublication_RemovesOrphanTemps(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	stagedPath, err := stageMigrationFile(dir, "SELECT 1;")
+	pub := openTestPublicationDir(c, dir)
+	stagedName, err := stageMigrationFile(pub, "SELECT 1;")
 	c.Assert(err, qt.IsNil)
-	journalPath, err := publicationJournalPath(dir)
-	c.Assert(err, qt.IsNil)
+	journalPath := pub.journalPath()
 	journalTemp, err := os.CreateTemp(
 		filepath.Dir(journalPath),
 		filepath.Base(journalPath)+".*.tmp",
@@ -763,9 +777,9 @@ func TestRecoverPendingPublication_RemovesOrphanTemps(t *testing.T) {
 	journalTempPath := journalTemp.Name()
 	c.Assert(journalTemp.Close(), qt.IsNil)
 
-	c.Assert(recoverPendingPublication(dir), qt.IsNil)
+	c.Assert(recoverPendingPublication(pub), qt.IsNil)
 
-	_, err = os.Stat(stagedPath)
+	_, err = os.Stat(pub.path(stagedName))
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	_, err = os.Stat(journalTempPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
@@ -774,29 +788,30 @@ func TestRecoverPendingPublication_RemovesOrphanTemps(t *testing.T) {
 func TestWriteMigrationFiles_EmptySQLIsRejected(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	pub := openTestPublicationDir(c, dir)
 
-	batch, err := stageMigrationBatch(dir, "noop", []MigrationFileContent{{SQL: "   \n"}})
+	batch, err := stageMigrationBatch(pub, "noop", []MigrationFileContent{{SQL: "   \n"}})
 
 	c.Assert(err, qt.ErrorMatches, `migration SQL is empty`)
-	c.Assert(batch.paths, qt.HasLen, 0)
+	c.Assert(batch.names, qt.HasLen, 0)
 }
 
-func publishMigrationBatch(dir string, batch migrationBatch) (int, error) {
-	return publishMigrationBatchContext(context.Background(), dir, batch)
+func publishMigrationBatch(pub *publicationDir, batch migrationBatch) (int, error) {
+	return publishMigrationBatchContext(context.Background(), pub, batch)
 }
 
 func rollBackUnjournaledBatch(
-	dir string,
+	pub *publicationDir,
 	batch migrationBatch,
 	published int,
 ) error {
-	if err := removeFiles(batch.paths[:published]); err != nil {
+	if err := removeNames(pub.dir, batch.names[:published]); err != nil {
 		return fmt.Errorf("roll back published migration files: %w", err)
 	}
-	if err := removeFiles(batch.stagedPaths); err != nil {
+	if err := removeNames(pub.dir, batch.stagedNames); err != nil {
 		return fmt.Errorf("remove rolled back migration staging files: %w", err)
 	}
-	if err := fsdurable.SyncDir(dir); err != nil {
+	if err := pub.dir.Sync(); err != nil {
 		return fmt.Errorf("sync rolled back migration directory: %w", err)
 	}
 	return nil

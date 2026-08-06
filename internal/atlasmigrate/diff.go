@@ -144,13 +144,17 @@ func generateDiff(
 	if err != nil {
 		return DiffResult{}, err
 	}
-	if err := os.MkdirAll(opts.Dir, 0755); err != nil {
-		return DiffResult{}, fmt.Errorf("create migration directory: %w", err)
+	pub, err := createAndRetainMigrationDir(opts.Dir)
+	if err != nil {
+		return DiffResult{}, err
 	}
-	if err := recoverPendingPublication(opts.Dir); err != nil {
+	defer func() {
+		err = errors.Join(err, pub.close())
+	}()
+	if err := recoverPendingPublication(pub); err != nil {
 		return DiffResult{}, fmt.Errorf("recover migration artifact publication: %w", err)
 	}
-	migrationSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(opts.Dir))
+	migrationSnapshot, err := migrationsnapshot.CaptureStable(pub.fsys())
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("capture migration directory: %w", err)
 	}
@@ -200,7 +204,7 @@ func generateDiff(
 	if err := ctx.Err(); err != nil {
 		return DiffResult{}, err
 	}
-	if err := verifyMigrationDirUnchanged(opts.Dir, migrationSnapshot); err != nil {
+	if err := verifyMigrationDirUnchanged(pub, migrationSnapshot); err != nil {
 		return DiffResult{}, err
 	}
 	if opts.DryRun {
@@ -208,12 +212,27 @@ func generateDiff(
 	}
 	return writeDiffArtifacts(
 		ctx,
-		opts.Dir,
+		pub,
 		opts.Name,
 		contents,
 		migrationSnapshot,
 		opts.PreparePublication,
 	)
+}
+
+// createAndRetainMigrationDir creates the migration directory if it is missing
+// and retains it, together with the directory that holds its publication
+// journal, as rooted handles.
+//
+// Everything after this point -- recovery, the snapshot this run verifies
+// against, planning, and publication -- acts on the filesystem objects opened
+// here, so replacing the pathname afterwards cannot redirect a write
+// (stokaro/ptah#895). The caller owns the returned handle.
+func createAndRetainMigrationDir(dir string) (*publicationDir, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("create migration directory: %w", err)
+	}
+	return openPublicationDir(dir)
 }
 
 func prepareDiff(
@@ -363,8 +382,8 @@ func verifyDirSum(fsys fs.FS) error {
 	return nil
 }
 
-func verifyMigrationDirUnchanged(dir string, expected fsnapshot.Snapshot) error {
-	current, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+func verifyMigrationDirUnchanged(pub *publicationDir, expected fsnapshot.Snapshot) error {
+	current, err := migrationsnapshot.CaptureStable(pub.fsys())
 	if err != nil {
 		return fmt.Errorf("recapture migration directory: %w", err)
 	}
