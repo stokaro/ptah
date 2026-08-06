@@ -83,6 +83,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 		db:            &goschema.Database{},
 		tolerant:      opts.IgnoreUnknownNames,
 		recordIgnored: opts.RecordIgnored,
+		refContext:    columnRefContext(body),
 	}
 	// Classify before validating the schema body. A file carrying a project-file
 	// marker is the wrong kind of file, and that verdict must not depend on
@@ -169,6 +170,9 @@ type parser struct {
 	// recordIgnored receives the names dropped under that policy. Nil discards
 	// them.
 	recordIgnored func(IgnoredName)
+	// refContext decides a conditional inside a column reference. Built once
+	// from the file's own `variable` blocks -- see columnRefContext.
+	refContext *hcl.EvalContext
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -1357,10 +1361,9 @@ func (p *parser) parseColumnRefsAttr(block *hclsyntax.Block, attrName string) ([
 
 	var refs []columnRef
 	for _, expr := range exprs {
-		item := p.rawExprNode(expr)
-		table, column := tableColumnFromRef(item)
+		table, column := p.tableColumnFromExpr(expr)
 		if column == "" {
-			return nil, p.blockError(block, "%s contains unsupported reference %q", attrName, item)
+			return nil, p.blockError(block, "%s contains unsupported reference %q", attrName, p.rawExprNode(expr))
 		}
 		refs = append(refs, columnRef{table: table, column: column})
 	}
@@ -1828,11 +1831,16 @@ func (p *parser) stringListAttr(block *hclsyntax.Block, attrName string) ([]stri
 // Ptah could already name is untouched -- a reference, or the quoted-string
 // spelling Ptah accepts and that binary does not. Raw SQL in an index part has
 // its own attribute, `expr`, which takes it and renders it.
+//
+// What "has no column name" means is tableColumnFromExpr's business, and it is a
+// question about the PARSED EXPRESSION. Asking the attribute's source text
+// instead was issue #1182: it refused five spellings the pinned binary plans,
+// because text that is not a bare traversal reads the same whether it wraps a
+// column reference or carries no reference at all.
 func (p *parser) columnNameFromExpr(block *hclsyntax.Block, label string, attr *hclsyntax.Attribute) (string, error) {
-	raw := p.rawExpr(attr)
-	name := columnNameFromRef(raw)
+	_, name := p.tableColumnFromExpr(attr.Expr)
 	if name == "" {
-		return "", p.blockError(block, "%s column contains unsupported reference %q", label, raw)
+		return "", p.blockError(block, "%s column contains unsupported reference %q", label, p.rawExpr(attr))
 	}
 	return name, nil
 }
@@ -1874,51 +1882,4 @@ func normalizeIdentityGeneration(value string) string {
 	default:
 		return ""
 	}
-}
-
-func columnNameFromRef(raw string) string {
-	_, column := tableColumnFromRef(raw)
-	return column
-}
-
-func tableColumnFromRef(raw string) (table string, column string) {
-	raw = strings.TrimSpace(raw)
-	raw = strings.TrimSuffix(raw, ",")
-	if unquoted, err := strconv.Unquote(raw); err == nil {
-		return "", unquoted
-	}
-	expr, diags := hclsyntax.ParseExpression([]byte(raw), "column-reference.hcl", hcl.InitialPos)
-	if diags.HasErrors() {
-		return "", ""
-	}
-	traversal, diags := hcl.AbsTraversalForExpr(expr)
-	if diags.HasErrors() || len(traversal) < 2 {
-		return "", ""
-	}
-	root, ok := traversal[0].(hcl.TraverseRoot)
-	if !ok {
-		return "", ""
-	}
-	parts := make([]string, 0, len(traversal)-1)
-	for _, step := range traversal[1:] {
-		part, ok := traversalPart(step)
-		if !ok {
-			return "", ""
-		}
-		parts = append(parts, part)
-	}
-	if root.Name == "column" && len(parts) == 1 {
-		return "", parts[0]
-	}
-	if root.Name != "table" || len(parts) < 3 || parts[len(parts)-2] != "column" {
-		return "", ""
-	}
-	tableParts := parts[:len(parts)-2]
-	if len(tableParts) == 1 {
-		return tableref.Canonical("", tableParts[0]), parts[len(parts)-1]
-	}
-	if len(tableParts) == 2 {
-		return tableref.Canonical(tableParts[0], tableParts[1]), parts[len(parts)-1]
-	}
-	return "", ""
 }
