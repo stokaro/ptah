@@ -83,12 +83,6 @@ func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
 		name:       "a search_path naming public resolves to public",
 		searchPath: "public",
 		want:       "public",
-	}, {
-		// The fallback: a search_path pointing at nothing leaves current_schema()
-		// NULL, and every caller before this change assumed "public".
-		name:       "a search_path naming no existing schema falls back to public",
-		searchPath: "nosuchschema",
-		want:       "public",
 	}}
 
 	for _, test := range tests {
@@ -100,6 +94,22 @@ func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
 			c.Assert(conn.Info().Schema, qt.Equals, test.want)
 		})
 	}
+
+	// A search_path naming a schema that does not exist is REFUSED, naming the
+	// schema. Folding it back to "public" was the first shape of this change and
+	// is wrong for the same reason the bug was: a caller who named a schema and
+	// silently got a different one is exactly what this fixes, and "public" would
+	// resume dropping the schemas it does not cover.
+	//
+	// The message has to name the schema. Without it the run reaches the replay
+	// and dies on a CREATE TABLE with "no schema has been selected to create in",
+	// which sends the operator to their migration instead of their URL.
+	c.Run("a search_path naming no existing schema is refused", func(c *qt.C) {
+		_, err := dbschema.ConnectToDatabase(ctx, withDevSearchPath(c, scopedURL, "nosuchschema"))
+
+		c.Assert(err, qt.ErrorMatches,
+			`.*database URL selects schema "nosuchschema", which does not exist in this database.*`)
+	})
 }
 
 // TestPostgresRealmCleanupKeepsTheSelectedSchemaE2E is the consequence the
