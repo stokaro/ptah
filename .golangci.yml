@@ -38,6 +38,21 @@ linters:
           deny:
             - pkg: io/ioutil
               desc: 'Deprecated: As of Go 1.16, the same functionality is now provided by package `io` or package `os`.'
+            # The testify ban lives here, on the import graph, and not in a text
+            # scan over source files. A regex cannot tell `assert.` in a call
+            # from `assert.` ending an English sentence, and the `\b` the old
+            # scan used means "word boundary" to the regex engine git grep uses
+            # on Linux and the literal letter `b` to the one it uses on macOS --
+            # so the same tree was refused on CI for a comment and accepted
+            # locally for a real call. See stokaro/ptah#1139.
+            #
+            # `pkg` matches by prefix, so this covers every testify subpackage
+            # (assert, require, mock, suite) with one entry. Deleting or
+            # narrowing this entry is caught by scripts/check-testify-ban.sh,
+            # which runs golangci-lint against a fixture that genuinely calls
+            # testify and fails when the finding does not appear.
+            - pkg: github.com/stretchr/testify
+              desc: 'testify is prohibited in Ptah; use quicktest imported as qt, the standard library testing package, or an existing project test helper.'
     funlen:
       lines: 240
       statements: 160

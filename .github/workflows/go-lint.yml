@@ -75,3 +75,9 @@ jobs:
         with:
           args: --timeout=30m
           version: v2.12.2
+
+      # Must stay after the Golint step: golangci-lint-action puts the binary it
+      # installed on PATH (core.addPath in its run.ts), and this script refuses
+      # to report success without it rather than skipping.
+      - name: Check the testify prohibition
+        run: scripts/check-testify-ban.sh
