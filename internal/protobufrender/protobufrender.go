@@ -56,6 +56,26 @@ const (
 	ChangeRenumber ChangePolicy = "renumber"
 )
 
+// CommentPolicy controls whether prose the source schema carries is copied into
+// the published contract.
+type CommentPolicy string
+
+const (
+	// CommentsAll copies every table and column comment the source schema
+	// supplies. It is the default because flipping it would rewrite every
+	// already published .proto on the next export.
+	CommentsAll CommentPolicy = "all"
+	// CommentsNone omits them. It is all-or-nothing by design: a table comment
+	// can carry the same internal detail as a column comment, so a per-object
+	// switch would advertise a boundary the contract does not have.
+	//
+	// Only prose the source schema supplies is suppressed. Text Ptah writes
+	// about the generated file itself - the header lines and the tombstone
+	// rationale - is not source material, describes the contract rather than the
+	// database, and is unaffected.
+	CommentsNone CommentPolicy = "none"
+)
+
 // NameReusePolicy controls what happens when an identifier whose name is
 // currently reserved comes back.
 type NameReusePolicy string
@@ -90,6 +110,9 @@ type Options struct {
 	TypeRemoval          RemovalPolicy
 	OnIncompatibleChange ChangePolicy
 	OnNameReuse          NameReusePolicy
+	// Comments selects which comments the generated file carries. The zero value
+	// is CommentsAll.
+	Comments CommentPolicy
 }
 
 // Result is the rendered definition plus any export diagnostics.
@@ -276,7 +299,7 @@ func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 		}
 		msg := desiredMessage{
 			Name:    names[table.QualifiedName()],
-			Comment: table.Comment,
+			Comment: b.sourceComment(table.Comment),
 		}
 		seen := map[string]string{}
 		for _, f := range tableFields {
@@ -381,7 +404,7 @@ func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex m
 		if err != nil {
 			return desiredField{}, err
 		}
-		return desiredField{Name: name, Type: enumName, Repeated: isArray, Comment: f.Comment}, nil
+		return desiredField{Name: name, Type: enumName, Repeated: isArray, Comment: b.sourceComment(f.Comment)}, nil
 	}
 
 	mapped := mapProtoType(element)
@@ -394,7 +417,23 @@ func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex m
 	if mapped.Lossy != "" {
 		b.warn(path, mapped.Lossy)
 	}
-	return desiredField{Name: name, Type: mapped.Name, Repeated: isArray, Comment: f.Comment}, nil
+	return desiredField{Name: name, Type: mapped.Name, Repeated: isArray, Comment: b.sourceComment(f.Comment)}, nil
+}
+
+// sourceComment returns the comment a table or column contributes to the
+// generated file. Suppression happens here, where source prose enters the
+// model, rather than in the writer: what a published contract owes its readers
+// is the wire shape plus Ptah's own account of it, and the database's internal
+// documentation is neither. Stripping at render time would take the tombstone
+// rationale with it and leave a bare `reserved` block no reader can explain.
+//
+// Comments are not part of the compatibility state - previous.go reads numbers
+// and reservations only - so turning this on or off never moves a field number.
+func (b *builder) sourceComment(comment string) string {
+	if b.opts.Comments == CommentsNone {
+		return ""
+	}
+	return comment
 }
 
 // registerEnum creates (or reuses) the Protobuf enum backing an enum column.

@@ -61,6 +61,9 @@ func validateProtobufExportOptions(opts exportOptions) error {
 	if _, err := parseNameReusePolicy(opts.protoOnNameReuse); err != nil {
 		return err
 	}
+	if _, err := parseCommentPolicy(opts.protoComments); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -79,6 +82,7 @@ func rejectProtobufOnlyFlags(opts exportOptions) error {
 		protoTypeRemovalFlag:          {opts.protoTypeRemoval, string(protobufrender.RemovalError)},
 		protoOnIncompatibleChangeFlag: {opts.protoOnIncompatibleChange, string(protobufrender.ChangeError)},
 		protoOnNameReuseFlag:          {opts.protoOnNameReuse, string(protobufrender.NameReuseError)},
+		protoCommentsFlag:             {opts.protoComments, string(protobufrender.CommentsAll)},
 	} {
 		if value := strings.TrimSpace(spec[0]); value != "" && value != spec[1] {
 			return fmt.Errorf("--%s is only supported with --%s %s", flag, exportToFlag, exportFormatProtobuf)
@@ -123,6 +127,23 @@ func parseNameReusePolicy(value string) (protobufrender.NameReusePolicy, error) 
 	}
 }
 
+// parseCommentPolicy resolves --proto-comments. Suppression is all-or-nothing:
+// a table comment can carry exactly the internal detail a column comment can, so
+// a per-object form would report a boundary the published contract does not
+// have. The value is enumerated rather than a boolean so a future policy can be
+// added without renaming the flag.
+func parseCommentPolicy(value string) (protobufrender.CommentPolicy, error) {
+	switch policy := protobufrender.CommentPolicy(strings.TrimSpace(value)); policy {
+	case "", protobufrender.CommentsAll:
+		return protobufrender.CommentsAll, nil
+	case protobufrender.CommentsNone:
+		return policy, nil
+	default:
+		return "", fmt.Errorf("invalid --%s %q: expected %s or %s", protoCommentsFlag, value,
+			protobufrender.CommentsAll, protobufrender.CommentsNone)
+	}
+}
+
 // runProtobufExport renders the schema and replaces the output atomically. A
 // failed render must never destroy the compatibility baseline, so nothing is
 // written until the rendered bytes have been re-parsed successfully.
@@ -141,6 +162,10 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 		return err
 	}
 	nameReuse, err := parseNameReusePolicy(opts.protoOnNameReuse)
+	if err != nil {
+		return err
+	}
+	comments, err := parseCommentPolicy(opts.protoComments)
 	if err != nil {
 		return err
 	}
@@ -167,6 +192,7 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 		TypeRemoval:          removal,
 		OnIncompatibleChange: change,
 		OnNameReuse:          nameReuse,
+		Comments:             comments,
 	})
 	if err != nil {
 		return err
