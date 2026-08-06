@@ -61,6 +61,12 @@ func validateProtobufExportOptions(opts exportOptions) error {
 	if _, err := parseNameReusePolicy(opts.protoOnNameReuse); err != nil {
 		return err
 	}
+	if _, err := parseSplitPolicy(opts.protoSplit); err != nil {
+		return err
+	}
+	if _, err := parseMovePolicy(opts.protoOnTypeMove); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -79,6 +85,8 @@ func rejectProtobufOnlyFlags(opts exportOptions) error {
 		protoTypeRemovalFlag:          {opts.protoTypeRemoval, string(protobufrender.RemovalError)},
 		protoOnIncompatibleChangeFlag: {opts.protoOnIncompatibleChange, string(protobufrender.ChangeError)},
 		protoOnNameReuseFlag:          {opts.protoOnNameReuse, string(protobufrender.NameReuseError)},
+		protoSplitFlag:                {opts.protoSplit, string(protobufrender.SplitNone)},
+		protoOnTypeMoveFlag:           {opts.protoOnTypeMove, string(protobufrender.MoveError)},
 	} {
 		if value := strings.TrimSpace(spec[0]); value != "" && value != spec[1] {
 			return fmt.Errorf("--%s is only supported with --%s %s", flag, exportToFlag, exportFormatProtobuf)
@@ -123,6 +131,30 @@ func parseNameReusePolicy(value string) (protobufrender.NameReusePolicy, error) 
 	}
 }
 
+func parseSplitPolicy(value string) (protobufrender.SplitPolicy, error) {
+	switch policy := protobufrender.SplitPolicy(strings.TrimSpace(value)); policy {
+	case "", protobufrender.SplitNone:
+		return protobufrender.SplitNone, nil
+	case protobufrender.SplitTable:
+		return policy, nil
+	default:
+		return "", fmt.Errorf("invalid --%s %q: expected %s or %s", protoSplitFlag, value,
+			protobufrender.SplitNone, protobufrender.SplitTable)
+	}
+}
+
+func parseMovePolicy(value string) (protobufrender.MovePolicy, error) {
+	switch policy := protobufrender.MovePolicy(strings.TrimSpace(value)); policy {
+	case "", protobufrender.MoveError:
+		return protobufrender.MoveError, nil
+	case protobufrender.MoveRelocate:
+		return policy, nil
+	default:
+		return "", fmt.Errorf("invalid --%s %q: expected %s or %s", protoOnTypeMoveFlag, value,
+			protobufrender.MoveError, protobufrender.MoveRelocate)
+	}
+}
+
 // runProtobufExport renders the schema and replaces the output atomically. A
 // failed render must never destroy the compatibility baseline, so nothing is
 // written until the rendered bytes have been re-parsed successfully.
@@ -144,6 +176,14 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 	if err != nil {
 		return err
 	}
+	split, err := parseSplitPolicy(opts.protoSplit)
+	if err != nil {
+		return err
+	}
+	move, err := parseMovePolicy(opts.protoOnTypeMove)
+	if err != nil {
+		return err
+	}
 
 	pkg := strings.TrimSpace(opts.protoPackage)
 	errOut := cmd.ErrOrStderr()
@@ -152,6 +192,10 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 	}
 
 	previous, hasPrevious, err := readPreviousExport(outPath)
+	if err != nil {
+		return err
+	}
+	siblings, err := readPreviousSiblings(outPath, previous)
 	if err != nil {
 		return err
 	}
@@ -164,9 +208,12 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 		OutPath:              outPath,
 		Previous:             previous,
 		HasPrevious:          hasPrevious,
+		PreviousSiblings:     siblings,
+		Split:                split,
 		TypeRemoval:          removal,
 		OnIncompatibleChange: change,
 		OnNameReuse:          nameReuse,
+		OnTypeMove:           move,
 	})
 	if err != nil {
 		return err
@@ -176,14 +223,26 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 		fmt.Fprintf(errOut, "%s: %s: %s\n", diagnostic.Severity, diagnostic.Path, diagnostic.Message)
 	}
 
-	if err := writeProtobufAtomically(outPath, rendered.Data); err != nil {
+	written, err := publishProtobufSet(outPath, rendered.Files, rendered.Removed)
+	if err != nil {
 		return err
 	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Exported Protobuf schema to %s\n", outPath)
-	fmt.Fprintf(out, "Exported %d message(s), %d field(s), %d enum(s)\n",
-		rendered.Messages, rendered.Fields, rendered.Enums)
+	for _, path := range written {
+		fmt.Fprintf(out, "Exported Protobuf schema to %s\n", path)
+	}
+	for _, name := range rendered.Removed {
+		fmt.Fprintf(out, "Removed %s\n", filepath.Join(filepath.Dir(outPath), name))
+	}
+	// The file count is only reported for a set, so the default single-file
+	// summary stays exactly what it has always been.
+	suffix := ""
+	if len(rendered.Files) > 1 {
+		suffix = fmt.Sprintf(" across %d file(s)", len(rendered.Files))
+	}
+	fmt.Fprintf(out, "Exported %d message(s), %d field(s), %d enum(s)%s\n",
+		rendered.Messages, rendered.Fields, rendered.Enums, suffix)
 	if rendered.Bootstrapped {
 		fmt.Fprintln(out, "bootstrapped new compatibility history")
 	}
@@ -247,6 +306,81 @@ func readPreviousExport(outPath string) (data []byte, exists bool, err error) {
 		return nil, false, nil
 	}
 	return nil, false, fmt.Errorf("read previous export %s: %w", outPath, err)
+}
+
+// readPreviousSiblings loads every other file the previous export recorded in
+// the anchor's manifest. A named file that is missing is an error rather than a
+// bootstrap: its messages would look deleted and their field numbers would
+// restart at 1, which is the exact damage the manifest exists to prevent.
+//
+// It is only called when an anchor exists; nil anchor bytes record no siblings,
+// so a bootstrap run does not need a special case here.
+func readPreviousSiblings(outPath string, anchor []byte) (map[string][]byte, error) {
+	names, err := protobufrender.ManifestNames(anchor)
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	dir := filepath.Dir(outPath)
+	siblings := make(map[string][]byte, len(names))
+	for _, name := range names {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil, fmt.Errorf(
+					"%s lists %s as part of its export set, but that file is missing; restore it from version control, or delete the whole set to start a new compatibility history",
+					outPath, name)
+			}
+			return nil, fmt.Errorf("read previous export %s: %w", filepath.Join(dir, name), err)
+		}
+		siblings[name] = data
+	}
+	return siblings, nil
+}
+
+// publishProtobufSet writes every file of the export and then deletes the files
+// a previous export wrote that this one no longer contains. Each file is staged
+// and renamed on its own, so no half-written file is ever visible.
+//
+// The anchor is written last and the deletions run after it, because the anchor
+// carries the inventory of the set. A failure part-way through therefore leaves
+// the old inventory in place, and the old inventory never names a file that is
+// not on disk; writing the anchor first would leave it pointing at a member that
+// was never written, which the next run has to refuse.
+//
+// It returns the paths written, anchor first, which is the order they are
+// reported in.
+func publishProtobufSet(outPath string, files []protobufrender.OutputFile, removed []string) ([]string, error) {
+	dir := filepath.Dir(outPath)
+	anchorPath := outPath
+	written := make([]string, 0, len(files))
+	for _, file := range files {
+		if file.Anchor {
+			continue
+		}
+		path := filepath.Join(dir, file.Name)
+		if err := writeProtobufAtomically(path, file.Data); err != nil {
+			return nil, err
+		}
+		written = append(written, path)
+	}
+	for _, file := range files {
+		if !file.Anchor {
+			continue
+		}
+		if err := writeProtobufAtomically(anchorPath, file.Data); err != nil {
+			return nil, err
+		}
+	}
+	for _, name := range removed {
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("remove superseded export %s: %w", path, err)
+		}
+	}
+	return append([]string{anchorPath}, written...), nil
 }
 
 // writeProtobufAtomically publishes data at outPath without ever leaving a

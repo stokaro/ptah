@@ -39,10 +39,12 @@ func rejectionCases() []rejectionCase {
 	}, {
 		name: "unsupported version",
 		damage: func(_ *qt.C, good []byte) []byte {
+			// Version 2 is the multi-file format this Ptah writes and reads, so
+			// the refusal is measured one above the highest supported version.
 			return stampProto(strings.Replace(string(good),
-				"// ptah:protobuf-export-version=1", "// ptah:protobuf-export-version=2", 1))
+				"// ptah:protobuf-export-version=1", "// ptah:protobuf-export-version=3", 1))
 		},
-		wantMsg:      "unsupported ptah protobuf export version: file declares export version 2, this Ptah supports 1",
+		wantMsg:      "unsupported ptah protobuf export version: file declares export version 3, this Ptah supports 2",
 		wantSentinel: protobufrender.ErrUnsupportedVersion,
 	}, {
 		name: "unreadable version",

@@ -169,4 +169,44 @@ if (
 	exit 1
 fi
 
+# Multi-file acceptance (issue #1146). The set has to satisfy the same
+# guarantees the single file does, one file at a time: lint STANDARD including
+# PACKAGE_DIRECTORY_MATCH, `buf format` fixed point, byte-identical
+# regeneration, and WIRE_JSON compatibility with the single-file baseline it
+# was split out of.
+split_root="$workspace/cases/split"
+mkdir -p "$split_root"
+cp -R "$baseline" "$split_root/proto"
+split_proto="$split_root/proto"
+split_dir="$(dirname "$split_proto/$proto_relative_path")"
+
+# Turning the split on moves every message out of the --out file, which is
+# refused unless the move is asked for explicitly.
+if export_schema "$repo_root/stubs" "$split_proto" --proto-split table 2>"$workspace/split-refusal.txt"; then
+	printf 'expected --proto-split=table to be refused against a single-file baseline\n' >&2
+	exit 1
+fi
+grep -q 'types would move between files' "$workspace/split-refusal.txt"
+if [[ "$(find "$split_dir" -name '*.proto' | wc -l | tr -d ' ')" != "1" ]]; then
+	printf 'a refused split must not leave any new file behind\n' >&2
+	exit 1
+fi
+
+export_schema "$repo_root/stubs" "$split_proto" --proto-split table --proto-on-type-move relocate
+split_count="$(find "$split_dir" -name '*.proto' | wc -l | tr -d ' ')"
+if [[ "$split_count" -lt 2 ]]; then
+	printf 'expected --proto-split=table to write more than one file, found %s\n' "$split_count" >&2
+	exit 1
+fi
+check_proto_module "$split_proto"
+(
+	cd "$split_proto"
+	buf breaking --against "$baseline"
+)
+
+# Regeneration of the whole set, not only the --out file.
+cp -R "$split_proto" "$workspace/split-first"
+export_schema "$repo_root/stubs" "$split_proto" --proto-split table
+diff -r "$workspace/split-first" "$split_proto"
+
 printf 'Protobuf export acceptance: OK\n'

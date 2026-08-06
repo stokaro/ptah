@@ -99,8 +99,16 @@ type enum struct {
 	Tombstone bool
 }
 
-// file is the whole generated compilation unit.
+// file is one generated compilation unit.
 type file struct {
+	// Name is the file's base name inside the package directory.
+	Name string
+	// Anchor marks the file --out names. It holds every generated enum and, in a
+	// multi-file set, the manifest of the other files.
+	Anchor bool
+	// Siblings is the sorted inventory written into the anchor's header. It is
+	// empty for every other file and for a single-file export.
+	Siblings  []string
 	Package   string
 	GoPackage string
 	Imports   []string

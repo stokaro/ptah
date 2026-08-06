@@ -10,13 +10,18 @@ import (
 // buf format, so a `buf format -w` pre-commit hook - routine in exactly the
 // buf-using repositories this target serves - cannot rewrite the file, break
 // the content digest and make every later export refuse to run.
-func render(f file) string {
+func render(f file, version int) string {
 	var sb strings.Builder
 
 	sb.WriteString(generatedMarker + "\n")
-	sb.WriteString(versionPrefix + strconv.Itoa(exportVersion) + "\n")
+	sb.WriteString(versionPrefix + strconv.Itoa(version) + "\n")
 	// Stamped with the real digest by stampDigest once the body is complete.
 	sb.WriteString(digestPrefix + "\n")
+	// The manifest is the anchor's record of the rest of its set, so it is
+	// written before any declaration and covered by the digest.
+	if len(f.Siblings) > 0 {
+		sb.WriteString(manifestPrefix + strings.Join(f.Siblings, ",") + "\n")
+	}
 	sb.WriteString("edition = \"2023\";\n\n")
 	sb.WriteString("package " + f.Package + ";\n\n")
 

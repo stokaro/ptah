@@ -48,6 +48,8 @@ const (
 	protoTypeRemovalFlag          = "proto-type-removal"
 	protoOnIncompatibleChangeFlag = "proto-on-incompatible-change"
 	protoOnNameReuseFlag          = "proto-on-name-reuse"
+	protoSplitFlag                = "proto-split"
+	protoOnTypeMoveFlag           = "proto-on-type-move"
 )
 
 // NewSchemaCommand returns the native schema command tree.
@@ -157,6 +159,8 @@ func newSchemaExportCommand() *cobra.Command {
 	var protoTypeRemoval string
 	var protoOnIncompatibleChange string
 	var protoOnNameReuse string
+	var protoSplit string
+	var protoOnTypeMove string
 
 	cmd := &cobra.Command{
 		Use:   "export",
@@ -179,7 +183,11 @@ exported.
 The protobuf target is stateful: field numbers are persistent wire identifiers,
 so --out is required and the previously generated file is read back as the
 source of every number it already pins. Commit that file; deleting it starts a
-new, incompatible numbering history.`,
+new, incompatible numbering history.
+
+--proto-split=table writes one file per exported table next to --out, which then
+holds the generated enums and the inventory of the set. Every file of the set is
+part of the compatibility state, so all of them must be committed together.`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -199,6 +207,8 @@ new, incompatible numbering history.`,
 				protoTypeRemoval:          protoTypeRemoval,
 				protoOnIncompatibleChange: protoOnIncompatibleChange,
 				protoOnNameReuse:          protoOnNameReuse,
+				protoSplit:                protoSplit,
+				protoOnTypeMove:           protoOnTypeMove,
 			})
 		},
 	}
@@ -222,6 +232,10 @@ new, incompatible numbering history.`,
 		"Behavior when a retained field's protobuf type or cardinality changes: error or renumber (protobuf only)")
 	flags.StringVar(&protoOnNameReuse, protoOnNameReuseFlag, string(protobufrender.NameReuseError),
 		"Behavior when a reserved field or enum value name comes back: error or release (protobuf only)")
+	flags.StringVar(&protoSplit, protoSplitFlag, string(protobufrender.SplitNone),
+		"How many files to write: none for a single file at --out, or table for one file per exported table next to it (protobuf only)")
+	flags.StringVar(&protoOnTypeMove, protoOnTypeMoveFlag, string(protobufrender.MoveError),
+		"Behavior when an already-exported type would change files: error or relocate (protobuf only)")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -243,6 +257,8 @@ type exportOptions struct {
 	protoTypeRemoval          string
 	protoOnIncompatibleChange string
 	protoOnNameReuse          string
+	protoSplit                string
+	protoOnTypeMove           string
 }
 
 func runExport(cmd *cobra.Command, opts exportOptions) error {
