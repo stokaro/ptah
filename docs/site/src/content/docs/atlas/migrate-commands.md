@@ -745,6 +745,36 @@ per-object finding names its object in the native message, which is also what
 keeps each SARIF result's fingerprint distinct when several of them share a
 rule, a file, and a line.
 
+### Which objects are under review
+
+The dev database is what a lint run compares against, so it also decides which
+objects the run analyzes. A PostgreSQL-family `--dev-url` carrying
+`?search_path=<schema>` puts exactly that one schema under review:
+
+- an object in a different schema raises no diagnostic and counts as no schema
+  change, because it was never part of the state the run compares against;
+- an unqualified reference resolves into the reviewed schema, so it stays under
+  review, and so does a reference written out with the reviewed schema's own
+  name;
+- one statement is measured per object: `DROP TABLE users, other.audit_log;`
+  under `search_path=public` reports `users` and counts one schema change.
+
+A `--dev-url` that names no schema puts the whole connected database under
+review and filters nothing, which is also what every non-PostgreSQL dev URL
+does. A `search_path` naming more than one schema is not a scope: it is read as
+a single schema name, so it scopes nothing and every object stays under review.
+
+An `ALTER TABLE` belongs to its table's schema, never to the column or
+constraint it names, and a `CREATE SCHEMA` is measured against the reviewed
+schema by its own name. A diagnostic that names no object at all — the rules
+that report a statement rather than the objects in it — is always reported,
+since there is nothing to measure a scope against and a hazard must not be
+silenced on an unestablished boundary.
+
+Both surfaces read the boundary from the same `--dev-url`, so `ptah-compat
+migrate lint` and native `ptah migrations lint` never disagree about what is
+under review.
+
 ### Renames
 
 A rename retires one logical name and introduces another. The two surfaces

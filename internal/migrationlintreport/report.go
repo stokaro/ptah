@@ -194,6 +194,11 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		Dialect:       dialect,
 		Disabled:      disabled,
 		PathPrefix:    filepath.ToSlash(opts.Dir),
+		// The dev database is what the run compares against, so it is also what
+		// decides which objects are under review. Both command surfaces read the
+		// boundary from the same URL, so they cannot disagree about what is
+		// being analyzed.
+		SchemaScope: atlasurl.SchemaScope(opts.DevURL),
 		Selection: lint.VersionSelection{
 			Versions:   versions,
 			Restricted: restrictVersions,
