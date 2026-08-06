@@ -148,7 +148,24 @@ func planTableRebuilds(diff *types.SchemaDiff) (tableRebuilds, error) {
 		return tableRebuilds{}, err
 	}
 	for _, tableName := range constrained {
-		add(tableName, nil)
+		// The columns this table gains in the SAME diff have to travel with it.
+		// A table reaches this loop when its constraint change arrived at schema
+		// level (ConstraintsAddedWithTables) rather than on the TableDiff, so
+		// tableDiffNeedsRebuild answered false and the loop above skipped it --
+		// even though the diff also adds columns to it.
+		//
+		// Passing nil here made rebuildCopiedColumns copy the new column out of
+		// the old table, where it does not exist. SQLite reads an unknown
+		// double-quoted identifier as a STRING LITERAL, so every row received
+		// the column's own name instead of NULL and `schema apply` exited 0
+		// saying it succeeded (#930).
+		//
+		// A table the loop above already added arrives here carrying the same
+		// names a second time. That is inert, not a bug worth a branch:
+		// rebuildCopiedColumns turns addedColumns into a set before using it, so
+		// a repeat cannot change the plan, and a guard against it would be a
+		// branch no fixture could redden.
+		add(tableName, addedColumnsFor(diff, tableName))
 	}
 	return rebuilds, nil
 }
@@ -861,4 +878,19 @@ func unsupportedFeaturef(format string, args ...any) error {
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: message,
 	}
+}
+
+// addedColumnsFor returns the columns tableName gains in this diff, or nil.
+//
+// planTableRebuilds needs it for a table whose constraint change is recorded at
+// schema level: such a table is in TablesModified with its ColumnsAdded, but
+// tableDiffNeedsRebuild does not select it, so the rebuild would otherwise be
+// planned without knowing which columns are new.
+func addedColumnsFor(diff *types.SchemaDiff, tableName string) []string {
+	for _, table := range diff.TablesModified {
+		if table.TableName == tableName {
+			return table.ColumnsAdded
+		}
+	}
+	return nil
 }

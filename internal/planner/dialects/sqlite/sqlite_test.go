@@ -733,3 +733,53 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "sqlite: EXCLUDE constraints are not supported")
 }
+
+// TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange pins the
+// intersection that corrupted data: one diff that BOTH adds a column and changes
+// a table-level constraint on the same existing table.
+//
+// The added column must not appear in the rebuild's SELECT, because it does not
+// exist in the old table. SQLite reads an unknown double-quoted identifier as a
+// STRING LITERAL rather than refusing it, so copying `"note"` out of a table
+// without that column writes the text `note` into every row — and `schema apply`
+// exits 0 reporting success. Measured on a seeded database before the fix:
+// (1,'alpha','note'), (2,'beta','note'), typeof text.
+//
+// Reverted, the INSERT reads `("id", "name", "note") SELECT "id", "name", "note"`
+// and this row fails on the first assertion. The suite covers each half of the
+// shape separately — a column added alone, a constraint changed alone — and
+// neither reaches the bad SELECT, which is why the branch was green.
+func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
+		Fields: []goschema.Field{
+			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+			{Name: "name", Type: "TEXT", StructName: "User", Nullable: false},
+			{Name: "note", Type: "TEXT", StructName: "User", Nullable: true},
+		},
+	}
+	diff := &types.SchemaDiff{
+		TablesModified: []types.TableDiff{{
+			TableName:    "users",
+			ColumnsAdded: []string{"note"},
+		}},
+		ConstraintsAdded: []string{"uq_users_name"},
+		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+			Name:      "uq_users_name",
+			TableName: "users",
+			Type:      "UNIQUE",
+			Columns:   []string{"name"},
+		}},
+	}
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains,
+		`INSERT INTO "__ptah_rebuild_users" ("id", "name") SELECT "id", "name" FROM "users";`)
+	c.Assert(sql, qt.Not(qt.Contains), `SELECT "id", "name", "note"`)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+	c.Assert(sql, qt.Contains, `"note" TEXT`)
+}
