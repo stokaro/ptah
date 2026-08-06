@@ -298,15 +298,29 @@ func TestCompatMigrateWrite_SpellingsTheCommunityBinaryAcceptsStillWrite(t *test
 	}
 }
 
-// TestCompatMigrateRead_StillAcceptsADirectoryNamingNoScheme pins the boundary
-// on the other side: the requirement belongs to the verbs that can CREATE a
-// directory, and widening it to the verbs that only read one is a separate
-// decision with a measurable blast radius (stokaro/ptah#1186).
+// TestCompatMigrateRead_RequiresTheSchemeToo is the boundary this test used to
+// pin from the other side. It read
+// `TestCompatMigrateRead_StillAcceptsADirectoryNamingNoScheme`, and the
+// requirement belonged to the verbs that can CREATE a directory, because
+// widening it was "a separate decision with a measurable blast radius"
+// (stokaro/ptah#1186).
 //
-// It is the second half the revert cannot redden, and the same inverse mutant
-// reddens it: make the requirement unconditional and both rows fail with `got
-// non-nil error` carrying `missing scheme for dir url`.
-func TestCompatMigrateRead_StillAcceptsADirectoryNamingNoScheme(t *testing.T) {
+// That decision was taken and the blast radius was measured, so the assertion
+// is inverted rather than deleted: the reading verbs now refuse the same
+// spelling, with the same message.
+//
+// Measured on the pinned community binary v1.3.0, `--dir mig --dir-format
+// goose`, each verb in its own directory:
+//
+//	hash      binary 1, ptah 1, `missing scheme for dir url. Did you mean "file://mig"?`
+//	validate  binary 1, ptah 1, same line
+//	lint      binary 1, ptah 1, same line
+//	status    binary 1, ptah 1, same line
+//
+// The control is below: the same directory named WITH the scheme still works on
+// every one of them, which is what separates "requires the scheme" from
+// "refuses this directory".
+func TestCompatMigrateRead_RequiresTheSchemeToo(t *testing.T) {
 	verbs := []struct {
 		name string
 		args func(dir string) []string
@@ -328,6 +342,18 @@ func TestCompatMigrateRead_StillAcceptsADirectoryNamingNoScheme(t *testing.T) {
 			hashAtlasWriteFixture(c, dir)
 
 			_, _, err := runCompat(verb.args(dir)...)
+
+			c.Assert(err, qt.ErrorMatches, `missing scheme for dir url\. Did you mean ".*"\?`)
+		})
+	}
+
+	for _, verb := range verbs {
+		t.Run("control: "+verb.name+" with the scheme", func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeAtlasWriteFixture(c, c.TempDir())
+			hashAtlasWriteFixture(c, dir)
+
+			_, _, err := runCompat(verb.args("file://" + dir)...)
 
 			c.Assert(err, qt.IsNil)
 		})
