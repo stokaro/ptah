@@ -148,7 +148,7 @@ seven of them as open capabilities regardless.
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |
 | schema clean | 🟡 | ✅ | ✅ | `--include`/`--exclude` narrow the cleanup, and a narrowed run executes only what it printed. Plan and `--dry-run` list every object kind destroyed, except the revision table outside SQLite. |
-| schema diff between two schema states | 🟡 | ✅ | ✅ | SQLite refuses any change needing a table rebuild: column modify, NOT NULL change, constraint add/remove, enum CHECK change. Same on apply. |
+| schema diff between two schema states | 🟡 | ✅ | ✅ | SQLite rebuilds the table for column modify, NOT NULL, default, constraint and enum CHECK changes. Adding a column that carries UNIQUE still refuses. |
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; `--format` sql\|json\|template. Native twin `ptah schema inspect` adds `--out-dir` and `--split` file export. |
 | Schema-qualified exclude globs for enums and functions | 🟡 | 🟡 | ❔ | Tables, views and extensions match schema-qualified exclude globs; enum and function filters compare the bare name only. The community binary matches `app.mood`; it reports no functions. |
@@ -257,7 +257,7 @@ seven of them as open capabilities regardless.
 | Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files read ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops a `role` block silently. |
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums and FKs render as skip comments, SERIAL hard-errors, no dedicated driver (uses the PostgreSQL pgx path), and no live container or live test exists. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | The mssql and tsql aliases silently drop views and triggers that sqlserver emits; render's default dialect list and `--dialect` help omit SQL Server; no sequences, RLS, roles/grants or matviews. |
-| SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops do emit a full rebuild; type, nullability, default and uniqueness changes fail with "modifying columns ... requires a table rebuild plan". PG-only objects error one at a time. |
+| SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops, type, nullability, default and constraint changes all emit a full rebuild with backfill. Rebuilding a table with inbound FKs still refuses. PG-only objects error one at a time. |
 | Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits it on YugabyteDB too. SQL schema files read CREATE SEQUENCE. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. |
 | Triggers | 🟡 | ❌ | ✅ | `--dialect mssql`/`tsql` drop them while `sqlserver` renders them; MySQL forces FOR EACH ROW; SQL Server rewrites BEFORE to AFTER silently. |

@@ -42,9 +42,15 @@ The SQLite renderer and planner support:
 - `CREATE INDEX`, including unique and partial indexes, and
   `DROP INDEX IF EXISTS` / `DROP TABLE IF EXISTS`.
 - `ALTER TABLE ... ADD COLUMN`, `RENAME COLUMN`, and `RENAME TO`.
-- Simple column drops through a generated table-rebuild plan: create a
-  rebuilt table, copy retained columns, swap it in, and recreate retained
-  indexes and triggers when their metadata round-trips safely.
+- Column and constraint changes ALTER TABLE cannot express, through a
+  generated table-rebuild plan: create a rebuilt table in its desired shape,
+  copy the retained columns, swap it in, and recreate the desired indexes and
+  triggers when their metadata round-trips safely. One rebuild covers column
+  drops, column type, nullability, default and generated-expression changes,
+  added and removed table constraints (including enum-backed `CHECK`
+  constraints), and a column drop combined with a column addition. A column the
+  desired schema makes `NOT NULL` with a default is backfilled in the copy with
+  `IFNULL(<column>, <default>)`, so rows already holding `NULL` survive.
 - Views without `WITH CHECK OPTION`, and row-level triggers (SQLite has no
   statement-level triggers).
 
@@ -53,23 +59,22 @@ and Ptah's own revision table.
 
 ## Rebuild-required changes
 
-SQLite cannot add, drop, or modify table constraints in place, and many column
-changes can only be expressed by rebuilding the table. Ptah's rebuild planning
-is intentionally conservative: outside the supported shapes above, it reports
-an explicit rebuild-required error instead of emitting unsafe or partial SQL.
-Changes that report as rebuild-required include:
+Ptah's rebuild planning is intentionally conservative: where it cannot prove
+the rebuild is safe, it reports an explicit rebuild-required error instead of
+emitting unsafe or partial SQL. Changes that still report as rebuild-required
+are:
 
-- Modifying a column's type, nullability, default, primary key, unique, or
-  generated-column shape.
-- Adding or removing table constraints on an existing table, including
-  enum-backed `CHECK` constraints.
-- Adding a column in a shape SQLite cannot apply in place — a primary key,
-  unique, or `AUTOINCREMENT` column, a `NOT NULL` column without a non-NULL
-  literal default, an expression or parenthesized default, or a `STORED`
-  generated column.
-- Dropping columns combined with other table changes in one diff, from tables
-  referenced by inbound foreign keys, or from tables whose retained triggers
-  use syntax Ptah cannot round-trip.
+- Adding a column, without any other change to the same table, in a shape
+  SQLite cannot apply in place — a primary key, unique, or `AUTOINCREMENT`
+  column, a `NOT NULL` column without a non-NULL literal default, an expression
+  or parenthesized default, or a `STORED` generated column.
+- Adding a `NOT NULL` column without a default as part of a rebuild: the copy
+  step leaves the column out of the `INSERT`, so the first row would violate it.
+- Rebuilding a table referenced by an inbound foreign key, whose retained
+  triggers use syntax Ptah cannot round-trip, or whose rebuild scaffolding name
+  `__ptah_rebuild_<table>` is already taken.
+- A constraint change the diff cannot attribute to a table, so there is no
+  table to rebuild.
 
 Model such changes as a manual migration that performs the rebuild — see
 [Generate migrations](../../versioned/generate/) for hand-written pairs.
