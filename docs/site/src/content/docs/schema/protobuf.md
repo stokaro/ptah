@@ -202,6 +202,12 @@ wire-relevant feature default differs between the two editions, and Edition
 Under editions, `reserved` names are bare identifiers (`reserved nickname;`),
 the inverse of the quoted form `proto2` and `proto3` use.
 
+Reservations are read back and written out as ranges, never as the numbers a
+range covers. A range is accepted at any width the field-number space allows,
+so a previous file carrying `reserved 20000 to 536870911;` round-trips
+unchanged and contiguous retired numbers are written as `reserved 2 to 8;`
+rather than one entry each.
+
 ## Type mapping
 
 The lookup is dialect-agnostic, so the Postgres and MySQL spellings Ptah emits
@@ -511,10 +517,6 @@ permanent, so nothing on this list is an unowned gap.
   next run read it as a type that left the schema: a previous file carrying
   `message AuditMarker {}` for a table still present in the source is refused
   with `types removed from the source schema: AuditMarker`.
-- A previous type whose `reserved` ranges expand past 1,048,576 individual
-  numbers is refused instead of being loaded partially. Partial loading could
-  reallocate a number that remains reserved in the published wire contract.
-  Tracked by [#1147](https://github.com/stokaro/ptah/issues/1147).
 - The three header comment lines are copied into whatever `protoc-gen-go`
   generates, so the content digest appears at the top of the `.pb.go` files
   too. It changes only when the schema changes. Tracked by
