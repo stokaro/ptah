@@ -51,6 +51,13 @@ type atlasVerb struct {
 	// projectConfig overrides how loaded atlas.hcl values map onto the verb's
 	// Atlas flags. When nil, the generic applyAtlasProjectConfigToArgs is used.
 	projectConfig atlasProjectArgsApplier
+	// writesDir marks a verb that can CREATE the migration directory it was
+	// pointed at. It selects the scheme requirement in resolveAtlasMigrateSource
+	// (stokaro/ptah#1186): the community binary refuses a --dir naming no scheme
+	// on every verb, and the verbs that merely read one still accept it here,
+	// but a verb that writes turns that leniency into a directory materialised
+	// somewhere the operator did not name.
+	writesDir bool
 }
 
 type atlasPositionalArg struct {

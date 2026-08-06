@@ -886,10 +886,9 @@ Atlas-compatible migration metadata commands default to Atlas directory
 format. `ptah-compat migrate hash`, `lint`, `new`, `set`, `status`, and
 `validate` register `--dir-format` with Atlas's default value `atlas`.
 
-`hash`, `validate`, `lint`, `status`, and `set` read a directory rather than
-rewrite one, so they accept every Atlas source layout — `golang-migrate`,
-`goose`, `flyway`, `liquibase`, and `dbmate` — under either spelling Atlas
-accepts, and produce the same `atlas.sum` from both:
+All six accept every Atlas source layout — `golang-migrate`, `goose`, `flyway`,
+`liquibase`, and `dbmate` — under either spelling Atlas accepts, and produce the
+same `atlas.sum` from both:
 
 ```bash
 ptah-compat migrate hash --dir "file://migrations?format=goose"
@@ -905,14 +904,29 @@ does. Values are matched verbatim on every one of those verbs: `--dir-format
 ATLAS` and `--dir-format " atlas "` are refused rather than normalized, and an
 empty value selects the Atlas layout.
 
-On `migrate new` the supported value is still `atlas`, and `migrate new` and
-`migrate diff` refuse a `--dir` query outright. Both verbs write a migration
-file and a fresh `atlas.sum` without verifying the directory first, so reading
-a foreign layout there waits on
-[#1086](https://github.com/stokaro/ptah/issues/1086). Until then, import the
-directory with `ptah-compat migrate import` before writing into it.
-`migrate apply` registers no `--dir-format` at all, matching Atlas, and selects
-a converted source directory through `?format=` on `--dir`.
+`migrate new` writes the selected layout rather than only reading it. The
+created file names and their contents follow the source tool's own convention,
+and `atlas.sum` is rewritten over the set that layout covers:
+
+| `--dir-format` | files created | covered by `atlas.sum` |
+| --- | --- | --- |
+| `atlas` | `<version>_<name>.sql`, empty | the file |
+| `golang-migrate` | `<version>_<name>.up.sql` and `.down.sql`, both empty | the `.up.sql` only |
+| `flyway` | `V<version>__<name>.sql` and `U<version>__<name>.sql`, both empty | the `V` file only |
+| `goose` | `<version>_<name>.sql` holding `-- +goose Up` / `-- +goose Down` | the file |
+| `dbmate` | `<version>_<name>.sql` holding `-- migrate:up` / `-- migrate:down` | the file |
+| `liquibase` | `<version>_<name>.sql` holding `--liquibase formatted sql` | the file |
+
+Two inputs are refused on a non-`atlas` layout. A migration name is required,
+because a file named by the version alone is one Ptah's own `migrate apply`
+cannot read back on four of the five layouts. `--edit` is refused, which is what
+Atlas does for a non-Atlas directory as well.
+
+`migrate diff` still refuses a non-`atlas` layout under both spellings: it emits
+planned SQL, and nothing writes a migration body in a foreign tool's convention
+yet. Import the directory with `ptah-compat migrate import` before diffing into
+it. `migrate apply` registers no `--dir-format` at all, matching Atlas, and
+selects a converted source directory through `?format=` on `--dir`.
 
 `ptah-compat migrate set [version]` moves Atlas revision history to the
 selected boundary without executing migration SQL. It preserves existing clean
@@ -938,6 +952,21 @@ rather than a check alongside the work: nothing is created, and no `atlas.sum`
 is rewritten, on a directory the gate refuses. A `--dir` naming a directory that
 does not exist yet is not a checksum error on either tool — both verbs create
 it, which is how the first migration of a project gets written.
+
+Because they create it, those same two verbs require `--dir` to name a scheme,
+which is what Atlas requires on every verb:
+
+```bash
+ptah-compat migrate new add_users --dir migrations
+# Error: missing scheme for dir url. Did you mean "file://migrations"?
+```
+
+Nothing is created. Ptah still accepts a bare path on the verbs that only read a
+directory, and on a directory named by `atlas.hcl` `migration.dir` — both remain
+looser than Atlas and are tracked in
+[#1186](https://github.com/stokaro/ptah/issues/1186). The requirement is a
+`PTAH_DIR` rule as much as a flag rule; `PTAH_MIGRATIONS_DIR`, which is the
+native `--migrations-dir` under its environment name, still takes a plain path.
 
 `lint` deliberately does not enforce it, but only for a *missing* integrity
 file: linting a directory that has never been hashed is how you inspect one
