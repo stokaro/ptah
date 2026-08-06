@@ -435,11 +435,36 @@ statements rather than being skipped.
 Three behaviors differ from Atlas on purpose. All three are cases where matching
 would mean reproducing a defect, so Ptah is stricter — never looser — than Atlas.
 
-| Input | Atlas | Ptah |
-| --- | --- | --- |
-| Goose near-miss directive, for example `-- +goose down` | Exits 0. The typo is not recognized, folds into the body as a comment, and the rollback SQL under it executes — the migration is created, dropped, and recorded as successful. | Refused, naming the line and the correct spelling. A case error in a directive must not silently roll back a migration. |
-| dbmate file with no `-- migrate:up` | Exits 0, records the revision with 0 of 0 statements and creates nothing, so the migration is marked done and never runs. `migrate import` writes a zero-byte file over the authored SQL and hashes it into `atlas.sum`. | Refused, because nothing in the file would execute. |
-| Atlas directory holding an R-suffixed migration, for example `1R_view.sql` or `R__view.sql` | Exits 0 and executes it, keyed on the opaque version string the file name spells (`1R`, `R`). | Refused, naming every such file. Ptah's migration identity is an `int64` version and a repeatable has none, so the only alternatives were executing it under a version no other tool records, or dropping it — which is what Ptah used to do, silently. |
+#### A Goose directive with the wrong case
+
+`-- +goose down` instead of `-- +goose Down`.
+
+Atlas exits 0. The typo is not recognized, so the line folds into the body as a
+comment and the rollback SQL under it executes — the migration is created,
+dropped, and recorded as successful.
+
+Ptah refuses, naming the line and the correct spelling. A case error in a
+directive must not silently roll back a migration.
+
+#### A dbmate file with no `-- migrate:up`
+
+Atlas exits 0, records the revision with 0 of 0 statements and creates nothing,
+so the migration is marked done and never runs. `migrate import` then writes a
+zero-byte file over the authored SQL and hashes it into `atlas.sum`.
+
+Ptah refuses, because nothing in the file would execute.
+
+#### An Atlas directory holding an R-suffixed migration
+
+For example `1R_view.sql` or `R__view.sql`.
+
+Atlas exits 0 and executes it, keyed on the opaque version string the file name
+spells (`1R`, `R`).
+
+Ptah refuses, naming every such file. Ptah's migration identity is an `int64`
+version and a repeatable has none, so the only alternatives were executing it
+under a version no other tool records, or dropping it — which is what Ptah used
+to do, silently.
 
 An R-suffixed file only reaches a Ptah directory from outside: the community
 binary's own `migrate import` writes `1R_name.sql`, and `ptah-compat migrate
