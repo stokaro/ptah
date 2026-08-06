@@ -154,15 +154,6 @@ func Render(ctx context.Context, db *goschema.Database, opts Options) (Result, e
 		}
 		prev = loaded
 		bootstrapped = false
-		if prev.Version <= headerLayoutVersion {
-			// The rewrite is safe - every pinned number is carried over - but it
-			// changes every line's position, so it is announced rather than left
-			// for the reader of the diff to work out.
-			b.warn(opts.OutPath, fmt.Sprintf(
-				"previous export uses format version %d, which carried the generated header at the top of the file; "+
-					"rewriting it as format version %d with the header at the bottom, where protoc-gen-go does not copy it into the generated .pb.go",
-				prev.Version, exportVersion))
-		}
 	} else {
 		b.warn(opts.OutPath, fmt.Sprintf(
 			"no previous export found at %s; field numbering starts from 1 and is not compatible with any previously published .proto",
