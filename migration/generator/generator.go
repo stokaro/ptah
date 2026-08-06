@@ -30,6 +30,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/pathguard"
@@ -115,6 +116,17 @@ type DiffPolicy struct {
 	// index, superseding the populated-table heuristic. It remains gated on the
 	// target's CreateIndexConcurrently capability.
 	ConcurrentIndex bool
+	// ConcurrentIndexDrop requests DROP INDEX CONCURRENTLY for every standalone
+	// index removal, gated on the target's DropIndexConcurrently capability. An
+	// index that is dropped and recreated under the same identity is a
+	// redefinition, not a standalone removal, and keeps the blocking drop the
+	// planner already pairs with the rebuild.
+	//
+	// It does NOT govern the down direction: the rollback of a concurrent index
+	// build is always emitted concurrently where the target supports it,
+	// because a blocking drop there would undo the whole point of having built
+	// the index without a lock.
+	ConcurrentIndexDrop bool
 }
 
 // MigrationFilePair represents one generated up/down migration file pair.
@@ -599,9 +611,11 @@ func planGeneratedMigrationSpecs(
 	}
 
 	concurrentIndexRefs := concurrentIndexRefsForPolicy(diff, dbSchema, info, policy)
+	concurrentIndexDropRefs := concurrentIndexDropRefsForPolicy(diff, info, policy)
 	plannerOpts := planner.Options{
-		Capabilities:        info.Capabilities,
-		ConcurrentIndexRefs: concurrentIndexRefs,
+		Capabilities:            info.Capabilities,
+		ConcurrentIndexRefs:     concurrentIndexRefs,
+		ConcurrentIndexDropRefs: concurrentIndexDropRefs,
 	}
 	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, generated, info.Dialect, plannerOpts)
 	if err != nil {
@@ -631,16 +645,17 @@ func planGeneratedMigrationSpecs(
 	nodeGroups := splitNoTransactionNodes(info.Dialect, upNodes)
 	if len(nodeGroups.transactional) == 0 {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Diff:                diff,
-			Qualifier:           qualifier,
-			Generated:           generated,
-			DBSchema:            dbSchema,
-			Dialect:             info.Dialect,
-			Capabilities:        info.Capabilities,
-			Version:             version,
-			Name:                migrationName,
-			ConcurrentIndexRefs: concurrentIndexRefs,
-			NoTransaction:       true,
+			Diff:                    diff,
+			Qualifier:               qualifier,
+			Generated:               generated,
+			DBSchema:                dbSchema,
+			Dialect:                 info.Dialect,
+			Capabilities:            info.Capabilities,
+			Version:                 version,
+			Name:                    migrationName,
+			ConcurrentIndexRefs:     concurrentIndexRefs,
+			ConcurrentIndexDropRefs: concurrentIndexDropRefs,
+			NoTransaction:           true,
 		})
 		if err != nil || spec.UpSQL == "" {
 			return nil, assessments, err
@@ -651,7 +666,7 @@ func planGeneratedMigrationSpecs(
 		return nil, nil, fmt.Errorf("generated migration mixes transactional statements with non-transactional statements that cannot be split automatically")
 	}
 
-	diffGroups := splitConcurrentIndexDiff(diff, concurrentIndexRefs)
+	diffGroups := splitConcurrentIndexDiff(diff, concurrentIndexRefs, concurrentIndexDropRefs)
 	specs := make([]generatedMigrationSpec, 0, 2)
 	allAssessments := make([]safety.StatementAssessment, 0)
 	if diffGroups.transactional.HasChanges() {
@@ -676,16 +691,17 @@ func planGeneratedMigrationSpecs(
 	}
 	if diffGroups.noTransaction.HasChanges() {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Diff:                diffGroups.noTransaction,
-			Qualifier:           qualifier,
-			Generated:           generated,
-			DBSchema:            dbSchema,
-			Dialect:             info.Dialect,
-			Capabilities:        info.Capabilities,
-			Version:             version,
-			Name:                migrationName + "_concurrent_indexes",
-			ConcurrentIndexRefs: concurrentIndexRefs,
-			NoTransaction:       true,
+			Diff:                    diffGroups.noTransaction,
+			Qualifier:               qualifier,
+			Generated:               generated,
+			DBSchema:                dbSchema,
+			Dialect:                 info.Dialect,
+			Capabilities:            info.Capabilities,
+			Version:                 version,
+			Name:                    migrationName + "_concurrent_indexes",
+			ConcurrentIndexRefs:     concurrentIndexRefs,
+			ConcurrentIndexDropRefs: concurrentIndexDropRefs,
+			NoTransaction:           true,
 		})
 		if err != nil {
 			return nil, nil, err
@@ -717,22 +733,24 @@ func withSkipComments(specs []generatedMigrationSpec, skipped []diffpolicy.Skipp
 }
 
 type generatedMigrationSpecOptions struct {
-	Diff                *types.SchemaDiff
-	Generated           *goschema.Database
-	DBSchema            *dbschematypes.DBSchema
-	Dialect             string
-	Capabilities        capability.Capabilities
-	Version             int64
-	Name                string
-	ConcurrentIndexRefs []types.IndexRef
-	NoTransaction       bool
-	Qualifier           atlasmigrate.Qualifier
+	Diff                    *types.SchemaDiff
+	Generated               *goschema.Database
+	DBSchema                *dbschematypes.DBSchema
+	Dialect                 string
+	Capabilities            capability.Capabilities
+	Version                 int64
+	Name                    string
+	ConcurrentIndexRefs     []types.IndexRef
+	ConcurrentIndexDropRefs []types.IndexRef
+	NoTransaction           bool
+	Qualifier               atlasmigrate.Qualifier
 }
 
 func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
 	plannerOpts := planner.Options{
-		Capabilities:        opts.Capabilities,
-		ConcurrentIndexRefs: opts.ConcurrentIndexRefs,
+		Capabilities:            opts.Capabilities,
+		ConcurrentIndexRefs:     opts.ConcurrentIndexRefs,
+		ConcurrentIndexDropRefs: opts.ConcurrentIndexDropRefs,
 	}
 	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, opts.Generated, opts.Dialect, plannerOpts)
 	if err != nil {
@@ -761,7 +779,18 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 	// so the down migration reverses only what the up migration actually did: a
 	// skipped destructive change is absent from the diff, so its inverse (e.g. a
 	// CREATE TABLE that would collide with the kept table) is never emitted.
-	downSQL, err := generateDownMigrationSQLQualified(opts.Diff, opts.Generated, opts.DBSchema, opts.Dialect, directiveOpts, opts.Qualifier, opts.Capabilities)
+	// The rollback of a concurrent build must itself be non-blocking, so the
+	// two ref sets swap with the direction: an index the up file BUILT
+	// concurrently is DROPPED concurrently by the down file, and an index the
+	// up file DROPPED concurrently is REBUILT concurrently.
+	downOpts := downMigrationOptions{
+		directives:              directiveOpts,
+		qualifier:               opts.Qualifier,
+		capabilities:            opts.Capabilities,
+		concurrentIndexRefs:     opts.ConcurrentIndexDropRefs,
+		concurrentIndexDropRefs: opts.ConcurrentIndexRefs,
+	}
+	downSQL, err := generateDownMigrationSQLQualified(opts.Diff, opts.Generated, opts.DBSchema, opts.Dialect, downOpts)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
@@ -819,12 +848,25 @@ func splitNoTransactionNodes(dialect string, nodes []ast.Node) splitMigrationNod
 
 func allNoTransactionNodesAreConcurrentIndexes(nodes []ast.Node) bool {
 	for _, node := range nodes {
-		index, ok := node.(*ast.IndexNode)
-		if !ok || !index.Concurrently {
+		if !isConcurrentIndexNode(node) {
 			return false
 		}
 	}
 	return true
+}
+
+// isConcurrentIndexNode reports whether a node is one of the two concurrent
+// index statements the generator knows how to split into its own
+// no_transaction migration.
+func isConcurrentIndexNode(node ast.Node) bool {
+	switch typed := node.(type) {
+	case *ast.IndexNode:
+		return typed.Concurrently
+	case *ast.DropIndexNode:
+		return typed.Concurrently
+	default:
+		return false
+	}
 }
 
 // concurrentIndexRefsForPolicy resolves which newly added indexes are built
@@ -844,6 +886,43 @@ func concurrentIndexRefsForPolicy(
 		return nil
 	}
 	return diff.IndexAdditions()
+}
+
+// concurrentIndexDropRefsForPolicy resolves which index removals are dropped
+// concurrently in the UP direction. Unlike builds there is no populated-table
+// heuristic: a concurrent drop happens only when the project asks for one, so
+// the default output is byte-identical to before this policy existed.
+//
+// A removal that is also an addition under the same identity is a redefinition
+// whose drop the planner pairs with the rebuild; it is excluded here so the
+// pair is never split across a transactional and a non-transactional file.
+func concurrentIndexDropRefsForPolicy(
+	diff *types.SchemaDiff,
+	info dbschematypes.DBInfo,
+	policy DiffPolicy,
+) []types.IndexRef {
+	if !policy.ConcurrentIndexDrop {
+		return nil
+	}
+	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.DropIndexConcurrently) {
+		return nil
+	}
+	// Match the planner's own redefinition test (indexscope conflict semantics),
+	// not plain struct equality: two refs differing only in identifier case are
+	// the same index on a case-insensitive target, and treating them as distinct
+	// here would route a rebuild's drop into the wrong migration file.
+	additions := indexscope.NewConflictSetWithSemantics(
+		diff.EffectiveIdentifierSemantics(info.Dialect),
+		diff.IndexAdditions(),
+	)
+	var refs []types.IndexRef
+	for _, ref := range diff.IndexRemovals() {
+		if additions.Contains(ref) {
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	return refs
 }
 
 func concurrentIndexRefsForPopulatedTables(
@@ -889,24 +968,40 @@ type splitSchemaDiffs struct {
 func splitConcurrentIndexDiff(
 	diff *types.SchemaDiff,
 	concurrentIndexRefs []types.IndexRef,
+	concurrentIndexDropRefs []types.IndexRef,
 ) splitSchemaDiffs {
-	concurrent := indexRefSet(concurrentIndexRefs)
 	txDiff := cloneSchemaDiff(diff)
 	noTxDiff := &types.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 	}
-	var transactionalRefs []types.IndexRef
-	var noTransactionRefs []types.IndexRef
-	for _, resolved := range diff.IndexAdditions() {
-		if _, ok := concurrent[resolved]; ok {
-			noTransactionRefs = append(noTransactionRefs, resolved)
+	addTx, addNoTx := partitionIndexRefs(diff.IndexAdditions(), concurrentIndexRefs)
+	txDiff.SetIndexAdditions(addTx)
+	noTxDiff.SetIndexAdditions(addNoTx)
+
+	// Only rewrite the removal lists when something actually moves. SetIndexRemovals
+	// re-sorts, so calling it unconditionally would reorder the drops in every
+	// existing split migration for no reason.
+	if len(concurrentIndexDropRefs) > 0 {
+		dropTx, dropNoTx := partitionIndexRefs(diff.IndexRemovals(), concurrentIndexDropRefs)
+		txDiff.SetIndexRemovals(dropTx)
+		noTxDiff.SetIndexRemovals(dropNoTx)
+	}
+	return splitSchemaDiffs{transactional: txDiff, noTransaction: noTxDiff}
+}
+
+// partitionIndexRefs splits refs into the ones that stay in the transactional
+// migration and the ones that move to the no_transaction migration, preserving
+// the input order within each group so file contents stay deterministic.
+func partitionIndexRefs(refs, selected []types.IndexRef) (transactional, noTransaction []types.IndexRef) {
+	set := indexRefSet(selected)
+	for _, ref := range refs {
+		if _, ok := set[ref]; ok {
+			noTransaction = append(noTransaction, ref)
 			continue
 		}
-		transactionalRefs = append(transactionalRefs, resolved)
+		transactional = append(transactional, ref)
 	}
-	txDiff.SetIndexAdditions(transactionalRefs)
-	noTxDiff.SetIndexAdditions(noTransactionRefs)
-	return splitSchemaDiffs{transactional: txDiff, noTransaction: noTxDiff}
+	return transactional, noTransaction
 }
 
 func indexRefSet(values []types.IndexRef) map[types.IndexRef]struct{} {
@@ -1087,7 +1182,24 @@ func generateDownMigrationSQLWithOptions(
 	directiveOpts generatedDirectiveOptions,
 	capsOverride ...capability.Capabilities,
 ) (string, error) {
-	return generateDownMigrationSQLQualified(diff, generated, dbSchema, dialect, directiveOpts, atlasmigrate.Qualifier{}, capsOverride...)
+	opts := downMigrationOptions{directives: directiveOpts}
+	if len(capsOverride) > 0 {
+		opts.capabilities = capsOverride[0]
+	}
+	return generateDownMigrationSQLQualified(diff, generated, dbSchema, dialect, opts)
+}
+
+// downMigrationOptions carries the down-direction planning inputs that vary per
+// caller. A nil capabilities set means "the dialect default preset".
+type downMigrationOptions struct {
+	directives   generatedDirectiveOptions
+	qualifier    atlasmigrate.Qualifier
+	capabilities capability.Capabilities
+	// concurrentIndexRefs and concurrentIndexDropRefs are expressed in DOWN
+	// direction terms: they name indexes the down file builds and drops, which
+	// are the mirror image of the up file's own two sets.
+	concurrentIndexRefs     []types.IndexRef
+	concurrentIndexDropRefs []types.IndexRef
 }
 
 func generateDownMigrationSQLQualified(
@@ -1095,10 +1207,9 @@ func generateDownMigrationSQLQualified(
 	generated *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	dialect string,
-	directiveOpts generatedDirectiveOptions,
-	qualifier atlasmigrate.Qualifier,
-	capsOverride ...capability.Capabilities,
+	opts downMigrationOptions,
 ) (string, error) {
+	directiveOpts := opts.directives
 	// For down migrations, we need to use the current database schema as the "generated" schema
 	// since we're reverting back to the current state
 	dbAsGoSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
@@ -1111,11 +1222,12 @@ func generateDownMigrationSQLQualified(
 	reverseDiff := reverseSchemaDiffWithSchema(diff, generated, dbSchema)
 	addMySQLFamilyForeignKeyBackingIndexRemovals(reverseDiff, diff, dbSchema, dialect)
 
-	caps := capability.ForDialect(dialect)
-	if len(capsOverride) > 0 {
-		caps = capsOverride[0]
+	plannerOpts := planner.Options{
+		Capabilities:            opts.capabilities,
+		ConcurrentIndexRefs:     opts.concurrentIndexRefs,
+		ConcurrentIndexDropRefs: opts.concurrentIndexDropRefs,
 	}
-	statements, err := planDownMigrationStatements(reverseDiff, dbAsGoSchema, dialect, caps, qualifier)
+	statements, err := planDownMigrationStatements(reverseDiff, dbAsGoSchema, dialect, plannerOpts, opts.qualifier)
 	if err != nil {
 		return "", err
 	}
@@ -1142,24 +1254,24 @@ func planDownMigrationStatements(
 	reverseDiff *types.SchemaDiff,
 	dbAsGoSchema *goschema.Database,
 	dialect string,
-	caps capability.Capabilities,
+	plannerOpts planner.Options,
 	qualifier atlasmigrate.Qualifier,
 ) ([]string, error) {
 	if qualifier.IsZero() {
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(reverseDiff, dbAsGoSchema, dialect, caps)
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(reverseDiff, dbAsGoSchema, dialect, plannerOpts)
 		if err != nil {
 			return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 		}
 		return statements, nil
 	}
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, dbAsGoSchema, dialect, planner.Options{Capabilities: caps})
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, dbAsGoSchema, dialect, plannerOpts)
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
 	if err := qualifier.ApplyToPlan(dialect, dbAsGoSchema, nodes); err != nil {
 		return nil, err
 	}
-	output, err := renderer.RenderSQLWithCapabilities(dialect, caps, nodes...)
+	output, err := renderer.RenderSQLWithCapabilities(dialect, plannerOpts.CapabilitiesFor(dialect), nodes...)
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}

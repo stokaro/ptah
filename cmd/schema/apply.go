@@ -128,6 +128,7 @@ func nativeDiffPolicy(cfg projectconfig.Config) atlasschema.DiffPolicy {
 	return atlasschema.DiffPolicy{
 		SkipDropTable:         slices.Contains(cfg.Diff.SkipChangeKinds(), diffpolicy.DropTable),
 		ConcurrentIndexCreate: cfg.Diff.ConcurrentIndexCreate(),
+		ConcurrentIndexDrop:   cfg.Diff.ConcurrentIndexDrop(),
 	}
 }
 

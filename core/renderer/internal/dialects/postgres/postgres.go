@@ -36,6 +36,12 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	var parts []string
 	parts = append(parts, "DROP INDEX")
 
+	// CONCURRENTLY precedes IF EXISTS in PostgreSQL's grammar:
+	// DROP INDEX CONCURRENTLY [ IF EXISTS ] name.
+	if node.Concurrently && r.capabilities().Has(capability.DropIndexConcurrently) {
+		parts = append(parts, "CONCURRENTLY")
+	}
+
 	if node.IfExists && r.capabilities().Has(capability.DropIndexIfExists) {
 		parts = append(parts, "IF EXISTS")
 	}

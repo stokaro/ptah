@@ -368,6 +368,13 @@ func TestLintFS_AtlasAnalyzerCatalogHazards(t *testing.T) {
 		{"add non-nullable column without default", "postgres", "ALTER TABLE t ADD COLUMN c INT NOT NULL;", []string{"DD101"}},
 		{"add unique constraint", "postgres", "ALTER TABLE t ADD CONSTRAINT u UNIQUE (email);", []string{"PG105"}},
 		{"drop index without concurrently", "postgres", "DROP INDEX idx;", []string{"PG106"}},
+		// The discriminating partner for the row above: PG106 must stay silent
+		// on the spelling Ptah now generates for a concurrent-index rollback.
+		// Without this row a rule that fired on every DROP INDEX would still
+		// pass the table. PG103 is the correct residual finding — this fixture
+		// has no no_transaction directive, and CONCURRENTLY cannot run inside
+		// the migration transaction.
+		{"drop index concurrently", "postgres", "DROP INDEX CONCURRENTLY idx;", []string{"PG103"}},
 		{"add primary key", "postgres", "ALTER TABLE t ADD PRIMARY KEY (id);", []string{"PG104"}},
 		{"volatile default", "postgres", "ALTER TABLE t ADD COLUMN c UUID DEFAULT gen_random_uuid();", []string{"PG302"}},
 		{"set not null", "postgres", "ALTER TABLE t ALTER COLUMN c SET NOT NULL;", []string{"PG303"}},

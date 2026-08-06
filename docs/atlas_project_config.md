@@ -114,6 +114,7 @@ The supported attributes map to Ptah settings as follows:
 | `diff.skip.drop_table` | Drop-table suppression for local schema diff/apply planning |
 | `diff.skip.drop_schema` | Accepted and type-checked; Ptah's planner emits no schema drop for it to suppress |
 | `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
+| `diff.concurrent_index.drop` | PostgreSQL concurrent index removal for standalone index drops, capability-gated |
 | `env.schema.repo.name` | Accepted and type-checked; no local behavior, matching the community binary |
 
 `env.src` and `env.schema.src` accept either one string or a list of strings.
@@ -226,8 +227,18 @@ plans that actually emit `CREATE INDEX CONCURRENTLY`, Ptah requires
 `--tx-mode none` because PostgreSQL does not allow concurrent index creation
 inside a transaction. `ptah-compat migrate diff` splits mixed plans and tags
 concurrent-index files with `-- atlas:txmode none`, so replay executes those
-files outside a transaction. `diff.concurrent_index.drop` is rejected until
-Ptah implements matching concurrent drop semantics.
+files outside a transaction.
+
+`diff.concurrent_index.drop = true` maps to `DROP INDEX CONCURRENTLY` for
+standalone index removals, gated on the target's `drop_index_concurrently`
+capability. An index that is dropped and recreated under the same identity is a
+redefinition, not a standalone removal, and keeps the blocking drop the planner
+pairs with the rebuild. The setting governs the up direction only: the rollback
+of a concurrent index build is always emitted concurrently where the target
+supports it, because a blocking drop there would take the very write lock the
+build avoided. A non-dry-run PostgreSQL `schema apply` plan that emits
+`DROP INDEX CONCURRENTLY` requires `--tx-mode none` for the same reason the
+create side does.
 
 `lint.latest` and `lint.git` configure the migration changeset selected by
 `migrations lint` and `ptah-compat migrate lint`. These selectors are mutually

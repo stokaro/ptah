@@ -85,6 +85,17 @@ type Planner struct {
 	// listed newly added indexes. Table-qualified identity lets the generator
 	// target one of two same-named indexes in different schemas.
 	concurrentIndexRefs map[types.IndexRef]struct{}
+	// concurrentIndexDrops requests DROP INDEX CONCURRENTLY for every standalone
+	// index removal. Like concurrentIndexes it is a POLICY choice and is gated
+	// on capability.DropIndexConcurrently.
+	concurrentIndexDrops bool
+	// concurrentIndexDropRefs requests DROP INDEX CONCURRENTLY only for the
+	// listed removed indexes. It is a SEPARATE set from concurrentIndexRefs on
+	// purpose: the two directions are chosen by different callers (a down file
+	// reverses a concurrent build; an up file honors an explicit drop policy),
+	// and folding them together would make a concurrent build silently rewrite
+	// unrelated drops in the same plan.
+	concurrentIndexDropRefs map[types.IndexRef]struct{}
 	// skip lists destructive change kinds this planner omits from the plan,
 	// emitting a clearly-marked comment in their place. See diffpolicy.
 	skip diffpolicy.SkipSet
@@ -164,6 +175,37 @@ func (p *Planner) WithConcurrentIndexRefs(indexRefs ...types.IndexRef) *Planner 
 	return &cp
 }
 
+// WithConcurrentIndexDrops returns a copy of the planner that emits
+// DROP INDEX CONCURRENTLY for every standalone index removal, provided the
+// target capability set includes capability.DropIndexConcurrently. The receiver
+// is not modified. An index that is dropped and recreated under the same
+// identity is a redefinition, not a standalone removal, and keeps the blocking
+// drop the planner pairs with the rebuild.
+func (p *Planner) WithConcurrentIndexDrops() *Planner {
+	cp := *p
+	cp.concurrentIndexDrops = true
+	return &cp
+}
+
+// WithConcurrentIndexDropRefs returns a copy of the planner that emits
+// DROP INDEX CONCURRENTLY only for the listed removed indexes, provided the
+// target capability set includes capability.DropIndexConcurrently. Concurrent
+// drops cannot run inside a transaction block; callers must arrange
+// no_transaction execution for such statements.
+func (p *Planner) WithConcurrentIndexDropRefs(indexRefs ...types.IndexRef) *Planner {
+	cp := *p
+	cp.concurrentIndexDropRefs = maps.Clone(p.concurrentIndexDropRefs)
+	if cp.concurrentIndexDropRefs == nil {
+		cp.concurrentIndexDropRefs = make(map[types.IndexRef]struct{}, len(indexRefs))
+	}
+	for _, ref := range indexRefs {
+		if strings.TrimSpace(ref.Name) != "" && strings.TrimSpace(ref.TableName) != "" {
+			cp.concurrentIndexDropRefs[ref] = struct{}{}
+		}
+	}
+	return &cp
+}
+
 // WithSkipChangeKinds returns a copy of the planner that omits the listed
 // destructive change kinds from the plan, emitting a clearly-marked comment in
 // their place instead of the DDL. The receiver is not modified. Passing no
@@ -186,6 +228,18 @@ func (p *Planner) usesConcurrentIndex(ref types.IndexRef) bool {
 		return true
 	}
 	_, ok := p.concurrentIndexRefs[ref]
+	return ok
+}
+
+// usesConcurrentIndexDrop reports whether this index removal should be emitted
+// as DROP INDEX CONCURRENTLY. The drop side has its own policy flag and its own
+// ref set, so turning on concurrent index BUILDS never rewrites a drop the
+// caller did not ask for.
+func (p *Planner) usesConcurrentIndexDrop(ref types.IndexRef) bool {
+	if p.concurrentIndexDrops {
+		return true
+	}
+	_, ok := p.concurrentIndexDropRefs[ref]
 	return ok
 }
 
@@ -906,6 +960,15 @@ func (p *Planner) removeIndexes(
 			SetTable(ref.TableName)
 		if guarded {
 			dropIndexNode.SetIfExists()
+		}
+		// CONCURRENTLY on a drop is opt-in policy AND capability-gated, exactly
+		// like the build side. A redefinition never reaches here (it is skipped
+		// above as an addition conflict), so a concurrent drop is always a
+		// standalone index removal — never the drop half of a rebuild and never
+		// an index backing a constraint, both of which PostgreSQL refuses to
+		// drop concurrently.
+		if p.usesConcurrentIndexDrop(ref) && p.capabilities().Has(capability.DropIndexConcurrently) {
+			dropIndexNode.SetConcurrently()
 		}
 		result = append(result, dropIndexNode)
 	}

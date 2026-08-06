@@ -118,6 +118,7 @@ env:
 | `online_ddl.fallback` | Routing fallback policy: `error` or `plain` |
 | `diff.skip` | Destructive change kinds the planner omits from generated migrations (`drop_table`, `drop_column`, `drop_index`, `drop_enum`) |
 | `diff.concurrent_index` | Emit `CREATE INDEX CONCURRENTLY` for newly added indexes (PostgreSQL, capability-gated) |
+| `diff.concurrent_index_drop` | Emit `DROP INDEX CONCURRENTLY` for standalone index removals (PostgreSQL, capability-gated) |
 
 `migrate.generate.shadow_db` is also accepted as the older spelling for `dev`.
 When both are present, `dev` wins.
@@ -194,6 +195,7 @@ concurrent_index { ... } }` policy.
 diff:
   skip: [drop_table, drop_column, drop_index, drop_enum]
   concurrent_index: true
+  concurrent_index_drop: true
 ```
 
 **`diff.skip`** lists destructive change kinds to omit from the plan. A skipped
@@ -235,6 +237,17 @@ the target's capabilities: a PostgreSQL-compatible engine without concurrent
 index support keeps plain `CREATE INDEX`. Concurrent index builds cannot run
 inside a transaction, so the affected statements are split into a
 `+ptah no_transaction` migration file automatically.
+
+**`diff.concurrent_index_drop: true`** requests `DROP INDEX CONCURRENTLY` for
+standalone index removals, under the same capability gate and the same
+`+ptah no_transaction` split. An index that is dropped and recreated under the
+same identity is a redefinition rather than a standalone removal, and keeps the
+blocking drop the planner pairs with the rebuild.
+
+The setting governs the up direction only. The rollback of a concurrent index
+build is always emitted as `DROP INDEX CONCURRENTLY` where the target supports
+it, whatever this setting says: a blocking drop on rollback would take the very
+write lock the build was written to avoid.
 
 ## Precedence
 

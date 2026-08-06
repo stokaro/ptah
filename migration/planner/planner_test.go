@@ -207,6 +207,48 @@ func TestRequiresNoTransaction(t *testing.T) {
 	c.Assert(planner.RequiresNoTransaction(platform.Postgres, []ast.Node{ast.NewComment("noop")}), qt.IsFalse)
 }
 
+// TestRequiresNoTransaction_ConcurrentIndexDrop pins that a concurrent index
+// DROP is routed out of the per-migration transaction, exactly as a concurrent
+// index BUILD already is. Reverting the classifier change prints
+// "values are not equal: false != true" for the concurrent postgres row, and
+// the migrator would then wrap a statement PostgreSQL refuses to run in a
+// transaction block.
+func TestRequiresNoTransaction_ConcurrentIndexDrop(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		node    func() ast.Node
+		want    bool
+	}{
+		{
+			name:    "concurrent drop on postgres",
+			dialect: platform.Postgres,
+			node:    func() ast.Node { return ast.NewDropIndex("idx").SetTable("users").SetConcurrently() },
+			want:    true,
+		},
+		{
+			name:    "blocking drop on postgres",
+			dialect: platform.Postgres,
+			node:    func() ast.Node { return ast.NewDropIndex("idx").SetTable("users") },
+			want:    false,
+		},
+		{
+			name:    "concurrent drop outside the postgres family",
+			dialect: platform.MySQL,
+			node:    func() ast.Node { return ast.NewDropIndex("idx").SetTable("users").SetConcurrently() },
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(planner.RequiresNoTransaction(tt.dialect, []ast.Node{tt.node()}), qt.Equals, tt.want)
+		})
+	}
+}
+
 type externalPlanner struct {
 	caps capability.Capabilities
 }
