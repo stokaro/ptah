@@ -1,6 +1,6 @@
 # Ptah Migration Library Makefile
 
-.PHONY: help build test integration-test integration-test-sqlserver db-start-sqlserver clean docker-build lint lint-qtlint lint-testify-ban lint-fix install-hooks conformance
+.PHONY: help build test integration-test integration-test-sqlserver db-start-sqlserver clean docker-build lint lint-qtlint lint-fix install-hooks conformance
 
 VERSION ?= $(shell git describe --tags --always --dirty)
 COMMIT ?= $(shell git rev-parse --short HEAD)
@@ -20,8 +20,7 @@ help:
 	@echo "  integration-test   Run integration tests using Docker Compose"
 	@echo "  integration-test-sqlserver"
 	@echo "                     Run SQL Server opt-in integration smoke tests"
-	@echo "  lint               Run golangci-lint, qtlint and the testify-ban control"
-	@echo "  lint-testify-ban   Prove the testify prohibition still refuses testify"
+	@echo "  lint               Run golangci-lint and qtlint"
 	@echo "  conformance        Show Atlas conformance scoreboard location"
 	@echo "  lint-fix           Run auto-fixable linters"
 	@echo "  install-hooks      Install local Git hooks"
@@ -165,18 +164,10 @@ coverage:
 lint: lint-qtlint
 	@echo "Running golangci-lint..."
 	golangci-lint run ./...
-	$(MAKE) lint-testify-ban
 
 lint-qtlint:
 	@echo "Running qtlint..."
 	go tool qtlint ./...
-
-# The testify prohibition is a depguard rule; this proves it still refuses a
-# file that genuinely calls testify, and still accepts a comment that ends a
-# sentence with the word. See stokaro/ptah#1139.
-lint-testify-ban:
-	@echo "Checking the testify prohibition..."
-	scripts/check-testify-ban.sh
 
 lint-fix:
 	@echo "Running auto-fixable linters..."

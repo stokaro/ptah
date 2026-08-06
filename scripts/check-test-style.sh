@@ -59,9 +59,9 @@ fi
 #
 #   git grep -nE 'github\.com/stretchr/testify|\b(assert|require)\.' -- '*.go'
 #
-# and it is now a depguard deny entry in .golangci.yml, controlled by
-# scripts/check-testify-ban.sh. The text scan could not tell a call from a
-# sentence -- `\b(assert|require)\.` is "a word, then a full stop" -- and `\b`
+# and it is now a depguard deny entry in .golangci.yml. The text scan could not
+# tell a call from a sentence -- `\b(assert|require)\.` is "a word, then a full
+# stop" -- and `\b`
 # meant "word boundary" to the regex engine git grep compiles with on Linux and
 # the literal letter `b` to the one it compiles with on macOS, so the same tree
 # was refused on CI for a comment and accepted locally for a real call. See

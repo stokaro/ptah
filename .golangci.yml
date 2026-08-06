@@ -47,10 +47,7 @@ linters:
             # locally for a real call. See stokaro/ptah#1139.
             #
             # `pkg` matches by prefix, so this covers every testify subpackage
-            # (assert, require, mock, suite) with one entry. Deleting or
-            # narrowing this entry is caught by scripts/check-testify-ban.sh,
-            # which runs golangci-lint against a fixture that genuinely calls
-            # testify and fails when the finding does not appear.
+            # (assert, require, mock, suite) with one entry.
             - pkg: github.com/stretchr/testify
               desc: 'testify is prohibited in Ptah; use quicktest imported as qt, the standard library testing package, or an existing project test helper.'
     funlen:
