@@ -49,7 +49,7 @@ func scopeAtlasSchemaCleanPlan(
 			return schemaclean.Plan{}, fmt.Errorf("apply --include to the cleanup plan: %w", err)
 		}
 	} else {
-		projected, err = atlasfilter.ExcludeDatabase(synthetic, scope.Exclude)
+		projected, err = atlasfilter.ExcludeDatabaseWithDefaultSchema(synthetic, scope.Exclude, scope.DefaultSchema)
 		if err != nil {
 			return schemaclean.Plan{}, fmt.Errorf("apply --exclude to the cleanup plan: %w", err)
 		}

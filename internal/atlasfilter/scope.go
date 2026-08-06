@@ -215,7 +215,7 @@ func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
 // selection keep using it, and callers that refuse one have the error.
 func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, error) {
 	if !scope.Positive() {
-		return ExcludeGenerated(db, scope.Exclude)
+		return ExcludeGeneratedWithDefaultSchema(db, scope.Exclude, scope.DefaultSchema)
 	}
 	selectors, err := parseIncludeSelectors(scope.Include)
 	if err != nil {
@@ -226,7 +226,7 @@ func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, err
 	}
 	selection := newScopeSelection(scope, selectors)
 	selected := selection.projectGenerated(db)
-	final, err := ExcludeGenerated(selected, scope.Exclude)
+	final, err := ExcludeGeneratedWithDefaultSchema(selected, scope.Exclude, scope.DefaultSchema)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +242,7 @@ func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, err
 // an empty include selection the same way [ScopeGenerated] does.
 func ScopeDatabase(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSchema, error) {
 	if !scope.Positive() {
-		return ExcludeDatabase(db, scope.Exclude)
+		return ExcludeDatabaseWithDefaultSchema(db, scope.Exclude, scope.DefaultSchema)
 	}
 	selectors, err := parseIncludeSelectors(scope.Include)
 	if err != nil {
@@ -253,7 +253,7 @@ func ScopeDatabase(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSc
 	}
 	selection := newScopeSelection(scope, selectors)
 	selected := selection.projectDatabase(db)
-	final, err := ExcludeDatabase(selected, scope.Exclude)
+	final, err := ExcludeDatabaseWithDefaultSchema(selected, scope.Exclude, scope.DefaultSchema)
 	if err != nil {
 		return nil, err
 	}

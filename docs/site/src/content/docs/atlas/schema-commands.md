@@ -105,6 +105,21 @@ and enum filters remain limited by Ptah's current introspection model, which
 does not retain schema names for those resource types yet. Exporter blocks
 remain an explicit gap.
 
+A pattern matches an object under either spelling: its bare name, or its name
+qualified by the schema that owns it. Introspection reports an object in the
+connection's own schema with no schema of its own, so the connection default
+supplies the qualified spelling — `--exclude public.users` and
+`--exclude users` remove the same table on a PostgreSQL database URL, and both
+subtract it from every side of a comparison, so an excluded object is neither
+created nor dropped.
+
+Accepting both spellings is looser than the pinned Atlas community binary,
+deliberately. That binary reads a pattern relative to the URL scope: on a
+database URL only `public.users` matches, and on a schema-bound URL
+(`?search_path=public`) only `users` does. Ptah honors both in both scopes.
+The extra matches only ever remove more objects from a plan, so the looser
+rule cannot turn a protected object into a dropped one.
+
 ### Select what is inspected with `--include`
 
 `--include` positively selects which top-level resources survive inspection,
