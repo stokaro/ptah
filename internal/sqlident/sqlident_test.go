@@ -26,7 +26,19 @@ func TestQuote(t *testing.T) {
 		{name: "mariadb backticks", dialect: "mariadb", ident: "users", want: "`users`"},
 		{name: "clickhouse backticks", dialect: "clickhouse", ident: "users", want: "`users`"},
 		{name: "sqlserver brackets", dialect: "sqlserver", ident: "users", want: "[users]"},
+		// Every documented spelling of an engine has to pick that engine's quote
+		// style. Reverting Quote to matching raw strings makes the four rows
+		// below fail with `"users"` (SQL Server) and `"users"` (ClickHouse):
+		// the raw switch listed only sqlserver/mssql and clickhouse, so tsql,
+		// sql-server, sql_server and ch fell through to the default arm and
+		// produced PostgreSQL quoting for a SQL Server / ClickHouse identifier.
 		{name: "mssql alias brackets", dialect: "mssql", ident: "users", want: "[users]"},
+		{name: "tsql alias brackets", dialect: "tsql", ident: "users", want: "[users]"},
+		{name: "sql-server alias brackets", dialect: "sql-server", ident: "users", want: "[users]"},
+		{name: "sql_server alias brackets", dialect: "sql_server", ident: "users", want: "[users]"},
+		{name: "ch alias backticks", dialect: "ch", ident: "users", want: "`users`"},
+		{name: "pgx alias double quotes", dialect: "pgx", ident: "users", want: `"users"`},
+		{name: "sqlite3 alias double quotes", dialect: "sqlite3", ident: "users", want: `"users"`},
 		{name: "dialect is case and space insensitive", dialect: "  MySQL ", ident: "users", want: "`users`"},
 		{name: "postgres escapes embedded double quote", dialect: "postgres", ident: `a"b`, want: `"a""b"`},
 		{name: "mysql escapes embedded backtick", dialect: "mysql", ident: "a`b", want: "`a``b`"},
