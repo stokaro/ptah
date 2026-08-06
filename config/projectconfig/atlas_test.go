@@ -1779,7 +1779,7 @@ locals {
   path = "https://example.com/schema.hcl"
 }
 `,
-			err: `unsupported atlas\.hcl construct "path" at atlas\.hcl:2`,
+			err: `atlas\.hcl "path" at atlas\.hcl:2: unsupported URL scheme: https://example\.com/schema\.hcl`,
 		},
 		{
 			name: "fileset rejects parent traversal",
@@ -1993,6 +1993,162 @@ func TestAtlasParserDistinguishesFailureClasses(t *testing.T) {
 	_, err := projectconfig.ParseAtlas([]byte(unknown), "atlas.hcl", "local")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "allow_table" .*`)
+}
+
+// TestAtlasHCLSchemaPathNamesTheRuleItBreaks pins the fourth failure class:
+// a supported key given a value that breaks a rule of this parser.
+//
+// `path` and `paths` are supported keys, and both refusals used to be reported
+// as `unsupported atlas.hcl construct "path"` -- naming the key, which is the
+// one thing here that is not the problem, and collapsing two unrelated rules
+// onto one string so that neither a reader nor a test could tell an absolute
+// path from a scheme ptah does not fetch. The reasons already existed:
+// atlasLocalFileURL produced them and then replaced them, four lines away from
+// atlasLocalFSPath, which returns the same reasons intact -- see the file()
+// rows in TestParseAtlasProjectConfigRejectsUnsupportedConstructs.
+//
+// This is stokaro/ptah#935 item 4b. Exit codes do not move: every fixture that
+// failed before still fails, only the message changed.
+func TestAtlasHCLSchemaPathNamesTheRuleItBreaks(t *testing.T) {
+	const envBody = `
+env "local" {
+  url = "sqlite://file.db"
+  src = data.hcl_schema.s.url
+}
+`
+	tests := []struct {
+		name       string
+		dataBody   string
+		wantErr    string
+		wantAbsent []string
+	}{
+		{
+			name:     "absolute path names the absolute-path rule",
+			dataBody: `  path = "/etc/absolute.hcl"`,
+			wantErr: `atlas\.hcl "path" at atlas\.hcl:2: absolute paths are not supported: ` +
+				`/etc/absolute\.hcl: give a path relative to the directory holding atlas\.hcl`,
+			// The scheme reason must not appear here, or the two rules would be
+			// telling the user the same thing again under a longer message.
+			wantAbsent: []string{`unsupported atlas.hcl construct`, `unsupported URL scheme`},
+		},
+		{
+			name:     "absolute path in a paths list names the same rule and the list key",
+			dataBody: `  paths = ["/etc/absolute.hcl"]`,
+			wantErr: `atlas\.hcl "paths" at atlas\.hcl:2: absolute paths are not supported: ` +
+				`/etc/absolute\.hcl: give a path relative to the directory holding atlas\.hcl`,
+			wantAbsent: []string{`unsupported atlas.hcl construct`, `unsupported URL scheme`},
+		},
+		{
+			name:       "unfetchable scheme names the scheme rule, not the absolute-path one",
+			dataBody:   `  path = "s3://bucket/x.hcl"`,
+			wantErr:    `atlas\.hcl "path" at atlas\.hcl:2: unsupported URL scheme: s3://bucket/x\.hcl`,
+			wantAbsent: []string{`unsupported atlas.hcl construct`, `absolute paths are not supported`},
+		},
+		{
+			// The non-interference control. An unknown NAME is still a
+			// construct refusal, so this change relaxed nothing: without this
+			// row, deleting the unsupported-name branch outright would leave
+			// every row above green.
+			name: "an unknown key is still an unsupported construct",
+			dataBody: `  path  = "rel.hcl"
+  query = "table.users"`,
+			wantErr:    `unsupported atlas\.hcl construct "query" at atlas\.hcl:3`,
+			wantAbsent: []string{`absolute paths are not supported`, `unsupported URL scheme`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			raw := "data \"hcl_schema\" \"s\" {\n" + tt.dataBody + "\n}\n" + envBody
+
+			_, err := projectconfig.ParseAtlas([]byte(raw), "atlas.hcl", "local")
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+			for _, absent := range tt.wantAbsent {
+				c.Assert(err.Error(), qt.Not(qt.Contains), absent)
+			}
+		})
+	}
+
+	// The two controls that keep the change a rewording rather than a
+	// relaxation. Without them, deleting the rule altogether would satisfy
+	// every row above.
+	c := qt.New(t)
+
+	// A relative path still parses -- including one that leaves the atlas.hcl
+	// directory, which is why this route must not borrow the file() sandbox
+	// hint: no sandbox is enforced here, so promising one would be false.
+	cfg, err := projectconfig.ParseAtlas(
+		[]byte("data \"hcl_schema\" \"s\" {\n  path = \"../sibling.hcl\"\n}\n"+envBody),
+		"atlas.hcl", "local",
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://../sibling.hcl"})
+
+	// file() keeps its own reason and its own hint, unchanged: the two routes
+	// share the rule, not the wording.
+	_, err = projectconfig.ParseAtlas(
+		[]byte("env \"local\" {\n  url = file(\"/etc/absolute.txt\")\n}\n"), "atlas.hcl", "local",
+	)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "absolute paths are not supported: /etc/absolute.txt")
+	c.Assert(err.Error(), qt.Contains, "atlas.hcl file() and fileset() read only inside the directory holding atlas.hcl")
+}
+
+// TestAtlasHCLSchemaPathRuleScrubsSensitiveValues covers the leak the reworded
+// message opens up. The old text named only the attribute, so it could not
+// publish anything; the new one quotes the offending value, and that value can
+// come from a `sensitive = true` variable.
+func TestAtlasHCLSchemaPathRuleScrubsSensitiveValues(t *testing.T) {
+	c := qt.New(t)
+
+	const hiddenPath = "/var/run/SUPERSECRET_MOUNT_12345/schema.hcl"
+	raw := []byte(`
+variable "secret" {
+  type      = string
+  default   = "` + hiddenPath + `"
+  sensitive = true
+}
+
+data "hcl_schema" "s" {
+  path = var.secret
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = data.hcl_schema.s.url
+}
+`)
+
+	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Not(qt.Contains), hiddenPath)
+	c.Assert(err.Error(), qt.Contains, "(sensitive value)")
+	c.Assert(err.Error(), qt.Contains, "absolute paths are not supported")
+
+	// The control: a non-sensitive variable keeps its value, because quoting it
+	// is what makes the message actionable. A scrubber that redacted every
+	// value would pass the half above and destroy the diagnostic.
+	rawOpen := []byte(`
+variable "path" {
+  type    = string
+  default = "/etc/VISIBLE_PATH_VALUE.hcl"
+}
+
+data "hcl_schema" "s" {
+  path = var.path
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = data.hcl_schema.s.url
+}
+`)
+	_, err = projectconfig.ParseAtlas(rawOpen, "atlas.hcl", "local")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "/etc/VISIBLE_PATH_VALUE.hcl")
 }
 
 // TestAtlasParserScrubsSensitiveValuesFromDiagnostics is a regression test for
