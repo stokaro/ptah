@@ -146,8 +146,14 @@ func writeMigrateLintTextSummary(w io.Writer, model migrateLintText, elapsed str
 	if _, err := fmt.Fprintf(w, "  -- %s\n", versionSummary(model.okCount, model.warnCount, model.errCount)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "  -- %s\n", pluralize(model.changes, "schema change", "schema changes")); err != nil {
-		return err
+	// A run that expresses no schema change prints no schema-change line at all
+	// rather than "0 schema changes". Measured on two shapes: a version whose
+	// only statement is an INSERT, and a version whose only changes are to a
+	// schema the dev URL does not cover -- both end at the version-summary line.
+	if model.changes > 0 {
+		if _, err := fmt.Fprintf(w, "  -- %s\n", pluralize(model.changes, "schema change", "schema changes")); err != nil {
+			return err
+		}
 	}
 	if model.diagnostics == 0 {
 		return nil

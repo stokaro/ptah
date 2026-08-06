@@ -63,18 +63,24 @@ type SchemaChange struct {
 // so a single construct the parser does not model (for example GRANT) cannot
 // suppress the changes of its neighbors. Down migrations and files without
 // parsed statements yield no changes.
-func extractSchemaChanges(file *File, dialect string) []SchemaChange {
+// Changes to objects outside scope are dropped: the dev database the run
+// compares against does not contain them, so they express no change to the
+// state under review. Measured against the pinned community binary v1.3.0 with
+// `?search_path=public`, a version that runs `CREATE SCHEMA app2; CREATE TABLE
+// app2.t (id int); CREATE TABLE keep (id int);` counts one schema change, not
+// three, and a version that drops two `app` tables counts none.
+func extractSchemaChanges(file *File, dialect string, scope schemaScope) []SchemaChange {
 	if !file.IsUp || len(file.Statements) == 0 {
 		return nil
 	}
 	var changes []SchemaChange
 	for i := range file.Statements {
-		changes = append(changes, statementSchemaChanges(file, file.Statements[i], dialect)...)
+		changes = append(changes, statementSchemaChanges(file, file.Statements[i], dialect, scope)...)
 	}
 	return changes
 }
 
-func statementSchemaChanges(file *File, stmt Statement, dialect string) []SchemaChange {
+func statementSchemaChanges(file *File, stmt Statement, dialect string, scope schemaScope) []SchemaChange {
 	var opts []parser.Option
 	if strings.TrimSpace(dialect) != "" {
 		opts = []parser.Option{parser.WithDialect(dialect)}
@@ -89,12 +95,12 @@ func statementSchemaChanges(file *File, stmt Statement, dialect string) []Schema
 	}
 	var changes []SchemaChange
 	for _, node := range list.Statements {
-		changes = append(changes, nodeSchemaChanges(file, stmt, node)...)
+		changes = append(changes, nodeSchemaChanges(file, stmt, node, scope)...)
 	}
 	return changes
 }
 
-func nodeSchemaChanges(file *File, stmt Statement, node ast.Node) []SchemaChange {
+func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaScope) []SchemaChange {
 	change := func(kind SchemaChangeKind, object string) SchemaChange {
 		return SchemaChange{
 			Version:        file.Version,
@@ -108,14 +114,29 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node) []SchemaChange
 	// DROP TABLE and ALTER TABLE are the two constructs where one statement can
 	// carry several changes; every other modeled node maps to exactly one.
 	switch n := node.(type) {
+	case *ast.CreateSchemaNode:
+		// A CREATE SCHEMA names a schema rather than an object inside one, so
+		// it is measured against the reviewed schema by name.
+		if !scope.allowsSchema(n.Name) {
+			return nil
+		}
+		return []SchemaChange{change(SchemaChangeAdd, n.Name)}
 	case *ast.DropTableNode:
 		names := n.TableNames()
 		out := make([]SchemaChange, 0, len(names))
 		for _, name := range names {
+			if !scope.allowsObject(name) {
+				continue
+			}
 			out = append(out, change(SchemaChangeDrop, name))
 		}
 		return out
 	case *ast.AlterTableNode:
+		// Every action of an ALTER TABLE belongs to the table's schema, never
+		// to the column or constraint it names.
+		if !scope.allowsObject(n.Name) {
+			return nil
+		}
 		out := make([]SchemaChange, 0, len(n.Operations))
 		for _, op := range n.Operations {
 			// A table rename is two changes, not one: the old name stops
@@ -136,13 +157,13 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node) []SchemaChange
 		return out
 	}
 	if object, ok := addNodeObject(node); ok {
-		return []SchemaChange{change(SchemaChangeAdd, object)}
+		return scope.keepChange(change(SchemaChangeAdd, object), object)
 	}
 	if object, ok := dropNodeObject(node); ok {
-		return []SchemaChange{change(SchemaChangeDrop, object)}
+		return scope.keepChange(change(SchemaChangeDrop, object), object)
 	}
 	if object, ok := modifyNodeObject(node); ok {
-		return []SchemaChange{change(SchemaChangeModify, object)}
+		return scope.keepChange(change(SchemaChangeModify, object), object)
 	}
 	// Operational nodes (INSERT/SELECT wrappers, DO blocks, raw SQL) and any
 	// construct Ptah does not model as a schema object contribute nothing.

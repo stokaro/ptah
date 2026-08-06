@@ -6621,6 +6621,12 @@ type Options struct {
     // PathPrefix is prepended (with /) to file names in findings so they
     // point at real repository paths in CI annotations.
     PathPrefix string
+    // SchemaScope names the single schema under review, normally the schema the
+    // dev database URL restricts analysis to. Findings and schema changes that
+    // name an object in a different schema are excluded: that object is not in
+    // the state the run compares against, so changing it is not a covered
+    // change. Empty puts every schema under review and filters nothing.
+    SchemaScope string
     // Selection restricts linting to parsed migration versions while retaining
     // the full captured directory for reporting.
     Selection VersionSelection
