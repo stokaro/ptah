@@ -91,8 +91,8 @@
     {
       "name": "the offer still calls the result up to date instead of one way",
       "file": "cmd/atlas/migrate_apply_foreign_flyway.go",
-      "old": "\"already run, so nothing is recorded that did not execute. It is a one-way switch: the revision \"+\n\t\t\t\"table then carries both spellings, and the implementation that wrote it refuses a migration \"+\n\t\t\t\"added afterwards as out of order.\\n\", head, len(stale))",
-      "new": "\"already run. The other implementation still reads the result as up to date.\\n\", head, len(stale))"
+      "old": "\"versions. On this database every migration it would record has already run here, so nothing \"+\n\t\t\t\"is recorded that did not execute. It is a one-way switch: the revision table then carries \"+\n\t\t\t\"both spellings, and the implementation that wrote it refuses a migration added afterwards \"+\n\t\t\t\"as out of order.\\n\", head)",
+      "new": "\"versions. The other implementation still reads the result as up to date.\\n\", head)"
     },
     {
       "name": "every converted layout is checked, not only Flyway",

@@ -263,12 +263,18 @@ func foreignFlywaySetRoute(
 	}
 	unrun := foreignFlywayUnrunBelowHead(head, covered, stale, applied)
 	if len(removed) == 0 && len(unrun) == 0 {
+		// The count of listed migrations is deliberately NOT reported as the
+		// size of what `migrate set` writes: a database that recorded some of
+		// this directory under this build's own versions and the rest under the
+		// source tool's has more rows landing in than the refusal listed, and
+		// both kinds have run. What every one of them has in common is having
+		// executed, and that is what the sentence claims.
 		return fmt.Sprintf("  - adopt the versions this build uses: `migrate set %d`, with the same --dir "+
 			"and --url, records every migration up to and including that version as applied under those "+
-			"versions. On this database that set is exactly the %d migration(s) listed above, which it has "+
-			"already run, so nothing is recorded that did not execute. It is a one-way switch: the revision "+
-			"table then carries both spellings, and the implementation that wrote it refuses a migration "+
-			"added afterwards as out of order.\n", head, len(stale))
+			"versions. On this database every migration it would record has already run here, so nothing "+
+			"is recorded that did not execute. It is a one-way switch: the revision table then carries "+
+			"both spellings, and the implementation that wrote it refuses a migration added afterwards "+
+			"as out of order.\n", head)
 	}
 
 	var b strings.Builder
