@@ -450,18 +450,16 @@ table "t" {
 	}
 }
 
-// Ptah does not evaluate schema-file variables yet (issue #926), so a sql()
-// argument carrying an interpolation cannot be reduced to a value. It must NOT
-// be refused: measured against the pinned Atlas community binary v1.3.0,
-// `default = sql("${var.floor} + 1")` is planned successfully there, so
-// refusing it would break drop-in on a file that binary supports. Ptah keeps
-// #926's existing behavior -- the template source, rendered as-is -- while
-// still stripping the sql() wrapper the renderer must never see.
+// A sql() argument carrying an interpolation is reduced through the file's own
+// variables. Measured against the pinned Atlas community binary v1.3.0,
+// `default = sql("${var.floor} + 1")` is planned there as `5 + 1`, so it must
+// neither be refused nor pass its source text through -- both of which this
+// file did before issue #926 was fixed.
 //
-// Reverted to a refusal, this test fails on the nil-error assertion. Reverted
-// to the pre-#1106 source-text fallback, DefaultExpr holds
-// `sql("${var.floor} + 1")` instead.
-func TestParseKeepsSQLRawExpressionInterpolationSource(t *testing.T) {
+// Reverted, DefaultExpr holds the template source `${var.floor} + 1` and the
+// equality assertion fails printing that string. Reverted to a refusal
+// instead, the nil-error assertion fails.
+func TestParseReducesSQLRawExpressionInterpolation(t *testing.T) {
 	c := qt.New(t)
 
 	db, err := atlashcl.Parse([]byte(`
@@ -479,27 +477,29 @@ table "t" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Fields, qt.HasLen, 1)
-	c.Assert(db.Fields[0].DefaultExpr, qt.Equals, "${var.floor} + 1")
+	c.Assert(db.Fields[0].DefaultExpr, qt.Equals, "5 + 1")
 }
 
-// A function call that is not sql() is out of scope here and keeps its existing
-// behavior, tracked separately in issue #926. The row exists so a future widening
-// of the guard to every unknown call is a deliberate edit with a failing test,
-// not a silent side effect.
+// A function call that is not sql() and is not in the evaluation context's
+// function set is refused rather than copied into the IR as source text.
 //
-// Reverted, this still passes -- it pins the boundary of the change rather than
-// the change itself.
-func TestParseLeavesNonSQLFunctionCallsAlone(t *testing.T) {
+// This is the position issue #926 left open and #1106 deliberately did not
+// widen into. Measured, the same file on the pinned binary exits 1 with
+// `Call to unknown function; There is no function named "sqlx".`, so refusing
+// here is what matches rather than what over-reaches.
+//
+// Reverted, this test fails on the non-nil-error assertion, and the parse
+// instead yields a check constraint whose expression is the literal text
+// `sqlx("n > 0")`.
+func TestParseRefusesUnknownFunctionCalls(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse([]byte(`
 table "t" {
   column "n" { type = int }
   check "c" { expr = sqlx("n > 0") }
 }
 `), "schema.hcl")
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(db.Constraints, qt.HasLen, 1)
-	c.Assert(db.Constraints[0].CheckExpression, qt.Equals, `sqlx("n > 0")`)
+	c.Assert(err, qt.ErrorMatches, `.*call to unknown function: There is no function named "sqlx".*`)
 }

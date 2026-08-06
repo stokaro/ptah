@@ -65,6 +65,9 @@ type ResolveOptions struct {
 	// tool, and not to Ptah's own commands, where an unmodeled name is a typo
 	// worth naming. See [go.5x5.cz/ptah/internal/schemafile.Options].
 	IgnoreUnknownHCLNames bool
+	// Vars supplies values for the `variable` blocks of an HCL schema file, as
+	// `--var` spells them. See [go.5x5.cz/ptah/internal/schemafile.Options].
+	Vars []string
 }
 
 // State is one resolved desired-state. Resolution closes every connection it
@@ -96,6 +99,7 @@ func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 		schema, err := schemafile.LoadAll(s.rawURLs(), schemafile.Options{
 			Dialect:               opts.Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			Vars:                  opts.Vars,
 		})
 		if err != nil {
 			return State{}, err

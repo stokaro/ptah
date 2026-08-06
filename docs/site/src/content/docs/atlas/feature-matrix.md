@@ -76,13 +76,13 @@ Across the 164 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 90 |
-| Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 26 |
-| Ptah and Atlas CE both support it | 22 |
+| Ptah supports it fully | 91 |
+| Ptah supports it with a stated limitation | 49 |
+| Ptah does not implement it | 24 |
+| Ptah and Atlas CE both support it | 23 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 20 |
-| Atlas CE has it and Ptah does not, or only in part | 26 |
+| Atlas CE has it and Ptah does not, or only in part | 25 |
 | An Atlas column is ❔ — not established by this page's evidence | 5 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -113,11 +113,11 @@ seven of them as open capabilities regardless.
 | External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-external-schema`) runs a program without a shell emitting SQL, HCL, or YAML. |
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
 | HCL foreign_key deferrable | ❌ | ❌ | ❌ | Errors: unsupported foreign_key attribute "deferrable". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too. The community binary plans no DEFERRABLE either. |
-| HCL function calls in schema files | 🟡 | 🟡 | 🟡 | sql() unwraps in column default/on_update/unique_expr/check, index ops, domain check only; in type, check.expr and index.where it leaks into the DDL where the community binary refuses the file. |
-| HCL locals, lock, atlas, dynamic/for_each | ❌ | 🟡 | 🟡 | Named rejections, rejected (`ptah-compat` exit 1, native `ptah` exit 2): unsupported top-level block "locals"/"lock"/"atlas"; unsupported table block "dynamic". The community binary honors locals. |
+| HCL function calls in schema files | 🟡 | 🟡 | 🟡 | sql() reduces to its SQL everywhere; other calls evaluate against a function set measured name by name on the community binary. yamldecode, yamlencode, uuid and print stay refused where it evaluates. |
+| HCL locals, lock, atlas, dynamic/for_each | 🟡 | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. Still rejected by name (`ptah-compat` exit 1, native `ptah` exit 2): top-level "lock"/"atlas"; table block "dynamic". The community binary ignores both. |
 | HCL table and column child blocks | ✅ | 🟡 | ✅ | column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. The community binary drops row_security silently. |
 | HCL top-level blocks Ptah parses | ✅ | 🟡 | ✅ | schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data. The community binary plans DDL for table and enum. |
-| HCL variable blocks and var.* references | ❌ | ✅ | ✅ | `variable` is parsed then discarded and `var.x` reaches DDL as the literal text `var.x`, exit 0 — no substitution and no error. |
+| HCL variable blocks and var.* references | ✅ | ✅ | ✅ | `variable` blocks bind `var.x`, `--var name=value` overrides them, and a typed variable with no value exits 1 with `missing value for required variable "x"` — the community binary's own text. |
 | Live database as desired state | ✅ | ✅ | ✅ | One connectable DB URL can be the desired side of compat schema apply/diff and migrate diff; `ptah db read` introspects natively. |
 | Live database to Go annotation source | ✅ | ❌ | ❌ | `ptah introspect` writes annotated Go models from a live DB; repo docs record Go annotations as a first-party Ptah workflow. |
 | Migration directory as a source | ✅ | ✅ | ✅ | Atlas-format directory with `atlas.sum`, replayed on a required `--dev-url`. Works on `ptah schema inspect` and compat apply/diff/migrate diff. |

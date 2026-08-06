@@ -72,22 +72,21 @@ func (p *parser) sqlCallText(call *hclsyntax.FunctionCallExpr) (string, error) {
 	}
 
 	arg := call.Args[0]
-	value, diags := arg.Value(nil)
+	value, diags := arg.Value(p.ctx)
 	if !diags.HasErrors() && value.IsKnown() && !value.IsNull() && value.Type() == cty.String {
 		return value.AsString(), nil
 	}
 
-	// A quoted string Ptah cannot evaluate is a string carrying an
-	// interpolation, and Ptah has no schema-file variable evaluation yet
-	// (issue #926). Handing back the template source keeps that gap exactly
-	// where it already is -- `default = "${var.x}"` renders its own source text
-	// today -- instead of turning #926 into a refusal in this one spot.
+	// A quoted string that still will not evaluate against the file's own
+	// variables and locals is a template reaching something the evaluation
+	// context does not carry. Handing back the template source keeps this spot
+	// out of the refusal business: rejectUnresolvedExprs checks the same
+	// argument and reports the diagnostic with the position, so returning the
+	// source here only decides what a caller that skipped that guard sees.
 	//
-	// The distinction is not cosmetic: measured against the pinned community
-	// binary, `default = sql("${var.floor} + 1")` is planned successfully, so
-	// refusing it here would be a NEW stricter break on a file that binary
-	// supports. The DDL Ptah renders for it stays wrong until #926 lands, but
-	// it no longer carries the literal token sql( into the plan.
+	// Measured against the pinned community binary, `default = sql("${var.floor}
+	// + 1")` is planned successfully; with the evaluation context in place the
+	// branch above now returns "5 + 1" for it rather than the source text.
 	if _, ok := arg.(*hclsyntax.TemplateExpr); ok {
 		return unquotedSource(p.rawExprNode(arg)), nil
 	}
