@@ -1,6 +1,7 @@
 package protobufrender
 
 import (
+	"cmp"
 	"slices"
 	"sort"
 )
@@ -11,14 +12,6 @@ const (
 	reservedRangeStart = 19000
 	reservedRangeEnd   = 19999
 	maxFieldNumber     = 536870911
-
-	// maxReservedNumbers bounds how many individual numbers one type's
-	// reservations may expand to when a previous export is read back. The
-	// exporter only ever writes ranges it built from individual numbers, so
-	// reaching this cap means the input is not something this exporter produced;
-	// the bound keeps a "reserved 1 to max" style range from allocating two
-	// billion entries before the digest gate can reject the file.
-	maxReservedNumbers = 1 << 20
 )
 
 // field is one message field in the generated file.
@@ -40,16 +33,39 @@ type enumValue struct {
 // reservations are the numbers and names a type may never reuse. They are what
 // buys the WIRE_JSON compatibility guarantee: buf reports a removed field as
 // breaking unless both its number and its name are reserved.
+//
+// Numbers are held as ranges, the same shape a .proto spells them in. A single
+// legal range covers the whole 536,870,911-number field space, so expanding one
+// into individual numbers would make both loading and storage proportional to
+// the width of the reservation rather than to the number of ranges.
 type reservations struct {
-	Numbers []int32
-	Names   []string
+	Ranges []numberRange
+	Names  []string
+}
+
+// hasNumbers reports whether the type reserves any number at all.
+func (r *reservations) hasNumbers() bool {
+	return len(r.Ranges) > 0
+}
+
+// highest returns the largest reserved number, or 0 when nothing is reserved.
+func (r *reservations) highest() int32 {
+	var highest int32
+	for _, rng := range r.Ranges {
+		highest = max(highest, rng.End)
+	}
+	return highest
 }
 
 func (r *reservations) addNumber(n int32) {
-	if slices.Contains(r.Numbers, n) {
-		return
-	}
-	r.Numbers = append(r.Numbers, n)
+	r.addRange(n, n)
+}
+
+// addRange records [start, end] inclusive. Overlaps and duplicates are folded
+// away by normalizeRanges before the model is written, so callers may add the
+// same number twice.
+func (r *reservations) addRange(start, end int32) {
+	r.Ranges = append(r.Ranges, numberRange{Start: start, End: end})
 }
 
 func (r *reservations) addName(name string) {
@@ -63,16 +79,12 @@ func (r *reservations) hasName(name string) bool {
 	return slices.Contains(r.Names, name)
 }
 
-func (r *reservations) count() int {
-	return len(r.Numbers)
-}
-
 func (r *reservations) dropName(name string) {
 	r.Names = slices.DeleteFunc(r.Names, func(existing string) bool { return existing == name })
 }
 
 func (r *reservations) sort() {
-	slices.Sort(r.Numbers)
+	r.Ranges = normalizeRanges(r.Ranges)
 	slices.Sort(r.Names)
 }
 
@@ -133,40 +145,42 @@ type numberRange struct {
 	End   int32
 }
 
-// collapseRanges folds a sorted number list into contiguous runs so the writer
-// can emit "reserved 1 to 7;" instead of seven separate entries.
-func collapseRanges(numbers []int32) []numberRange {
-	if len(numbers) == 0 {
+// normalizeRanges sorts ranges ascending and folds overlapping or adjacent runs
+// into one, so two separately retired neighbors are written as "reserved 2 to
+// 3;" rather than "reserved 2, 3;". Merging is a correctness requirement and not
+// only formatting: protoc refuses a file whose reserved ranges overlap, and the
+// same number can reach the model from both a removed field and a range the
+// previous file already carried.
+func normalizeRanges(in []numberRange) []numberRange {
+	if len(in) == 0 {
 		return nil
 	}
-	sorted := slices.Clone(numbers)
-	slices.Sort(sorted)
-
-	ranges := []numberRange{{Start: sorted[0], End: sorted[0]}}
-	for _, n := range sorted[1:] {
-		last := &ranges[len(ranges)-1]
-		switch n {
-		case last.End:
-			// duplicate, already covered
-		case last.End + 1:
-			last.End = n
-		default:
-			ranges = append(ranges, numberRange{Start: n, End: n})
+	sorted := slices.Clone(in)
+	slices.SortFunc(sorted, func(a, b numberRange) int {
+		if a.Start != b.Start {
+			return cmp.Compare(a.Start, b.Start)
 		}
+		return cmp.Compare(a.End, b.End)
+	})
+
+	out := []numberRange{sorted[0]}
+	for _, rng := range sorted[1:] {
+		last := &out[len(out)-1]
+		// Compared in int64 so an end of the maximum field number cannot
+		// overflow the adjacency test.
+		if int64(rng.Start) <= int64(last.End)+1 {
+			last.End = max(last.End, rng.End)
+			continue
+		}
+		out = append(out, rng)
 	}
-	return ranges
+	return out
 }
 
-// nextNumber returns the next free field number for a type, given every number
-// it has ever used. Gaps are never filled and the protobuf implementation range
-// is skipped, so a number retired by a removed column can never come back.
-func nextNumber(used []int32) (int32, bool) {
-	var highest int32
-	for _, n := range used {
-		if n > highest {
-			highest = n
-		}
-	}
+// nextNumber returns the next free field number for a type, given the highest
+// number it has ever used. Gaps are never filled and the protobuf implementation
+// range is skipped, so a number retired by a removed column can never come back.
+func nextNumber(highest int32) (int32, bool) {
 	next := highest + 1
 	if next >= reservedRangeStart && next <= reservedRangeEnd {
 		next = reservedRangeEnd + 1
