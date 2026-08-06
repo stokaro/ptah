@@ -283,8 +283,9 @@ func planDiffFileContents(
 	opts DiffOptions,
 ) ([]MigrationFileContent, error) {
 	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, desired, info.Dialect, planner.Options{
-		Capabilities:      info.Capabilities,
-		ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
+		Capabilities:         info.Capabilities,
+		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+		ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate migration SQL: %w", err)

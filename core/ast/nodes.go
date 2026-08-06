@@ -1056,6 +1056,14 @@ type DropIndexNode struct {
 	Table string
 	// IfExists indicates whether to use IF EXISTS clause
 	IfExists bool
+	// Concurrently requests DROP INDEX CONCURRENTLY, PostgreSQL's non-blocking
+	// index removal. Renderers emit the keyword only when the target's
+	// capability set includes capability.DropIndexConcurrently; every other
+	// dialect ignores the flag. PostgreSQL rejects CONCURRENTLY inside a
+	// transaction block and rejects it for an index that backs a constraint, so
+	// planners set it only for standalone index drops the caller routes into a
+	// no_transaction migration.
+	Concurrently bool
 	// Comment is an optional comment for the drop operation
 	Comment string
 }
@@ -1099,6 +1107,20 @@ func (n *DropIndexNode) SetTable(table string) *DropIndexNode {
 //	dropIndex.SetIfExists()
 func (n *DropIndexNode) SetIfExists() *DropIndexNode {
 	n.IfExists = true
+	return n
+}
+
+// SetConcurrently requests DROP INDEX CONCURRENTLY for the statement.
+//
+// The keyword only reaches the SQL when the renderer's capability set has
+// capability.DropIndexConcurrently. Callers must place the statement in a
+// migration that runs outside a transaction.
+//
+// Example:
+//
+//	dropIndex.SetConcurrently()
+func (n *DropIndexNode) SetConcurrently() *DropIndexNode {
+	n.Concurrently = true
 	return n
 }
 

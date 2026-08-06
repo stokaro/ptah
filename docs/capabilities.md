@@ -89,6 +89,7 @@ so typos fail fast. Current registry:
 | `enum_inline_column` | Enums are inline column types (MySQL/MariaDB `ENUM`, ClickHouse `Enum8/16`) |
 | `enum_custom_type` | Enums are separate named types (PostgreSQL `CREATE TYPE … AS ENUM`) |
 | `create_index_concurrently` | `CREATE [UNIQUE] INDEX CONCURRENTLY` (PostgreSQL; a compatibility no-op on CockroachDB) |
+| `drop_index_concurrently` | `DROP INDEX CONCURRENTLY` (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit `CONCURRENTLY`) |
 | `create_or_replace_trigger` | Single-statement trigger replacement: `CREATE OR REPLACE TRIGGER` on PostgreSQL 14+/MariaDB and `CREATE OR ALTER TRIGGER` on SQL Server. Not available on MySQL |
 | `alter_generated_column_expression` | In-place `ALTER COLUMN SET EXPRESSION` for generated columns (PostgreSQL 17+) |
 | `row_level_security` | Row-level security policies (PostgreSQL) |
@@ -132,6 +133,7 @@ composed sets yourself.
 | `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |

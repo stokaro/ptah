@@ -148,8 +148,16 @@ func splitNoTransactionPlanNodes(dialect string, nodes []ast.Node) (transactiona
 
 func nodesAreConcurrentIndexes(nodes []ast.Node) bool {
 	for _, node := range nodes {
-		index, ok := node.(*ast.IndexNode)
-		if !ok || !index.Concurrently {
+		switch typed := node.(type) {
+		case *ast.IndexNode:
+			if !typed.Concurrently {
+				return false
+			}
+		case *ast.DropIndexNode:
+			if !typed.Concurrently {
+				return false
+			}
+		default:
 			return false
 		}
 	}

@@ -124,7 +124,8 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	var statements []string
 	if diff.HasChanges() {
 		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, to, dialect, planner.Options{
-			ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
+			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 		})
 		if err != nil {
 			return atlasreport.SchemaDiff{}, fmt.Errorf("generate schema diff SQL: %w", err)

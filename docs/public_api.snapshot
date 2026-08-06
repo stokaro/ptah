@@ -284,6 +284,7 @@ type DiffConfig struct {
     DiffConfig holds Atlas diff policy blocks.
 
 func (c DiffConfig) ConcurrentIndexCreate() bool
+func (c DiffConfig) ConcurrentIndexDrop() bool
 func (c DiffConfig) SkipChangeKinds() []diffpolicy.ChangeKind
 
 ### go.5x5.cz/ptah/config/projectconfig.DiffSkipConfig
@@ -1874,6 +1875,14 @@ type DropIndexNode struct {
     Table string
     // IfExists indicates whether to use IF EXISTS clause
     IfExists bool
+    // Concurrently requests DROP INDEX CONCURRENTLY, PostgreSQL's non-blocking
+    // index removal. Renderers emit the keyword only when the target's
+    // capability set includes capability.DropIndexConcurrently; every other
+    // dialect ignores the flag. PostgreSQL rejects CONCURRENTLY inside a
+    // transaction block and rejects it for an index that backs a constraint, so
+    // planners set it only for standalone index drops the caller routes into a
+    // no_transaction migration.
+    Concurrently bool
     // Comment is an optional comment for the drop operation
     Comment string
 }
@@ -1886,6 +1895,7 @@ type DropIndexNode struct {
 func NewDropIndex(name string) *DropIndexNode
 func (n *DropIndexNode) Accept(visitor Visitor) error
 func (n *DropIndexNode) SetComment(comment string) *DropIndexNode
+func (n *DropIndexNode) SetConcurrently() *DropIndexNode
 func (n *DropIndexNode) SetIfExists() *DropIndexNode
 func (n *DropIndexNode) SetTable(table string) *DropIndexNode
 
@@ -6113,6 +6123,17 @@ type DiffPolicy struct {
     // index, superseding the populated-table heuristic. It remains gated on the
     // target's CreateIndexConcurrently capability.
     ConcurrentIndex bool
+    // ConcurrentIndexDrop requests DROP INDEX CONCURRENTLY for every standalone
+    // index removal, gated on the target's DropIndexConcurrently capability. An
+    // index that is dropped and recreated under the same identity is a
+    // redefinition, not a standalone removal, and keeps the blocking drop the
+    // planner already pairs with the rebuild.
+    //
+    // It does NOT govern the down direction: the rollback of a concurrent index
+    // build is always emitted concurrently where the target supports it,
+    // because a blocking drop there would undo the whole point of having built
+    // the index without a lock.
+    ConcurrentIndexDrop bool
 }
     DiffPolicy is the generator-level view of the project diff policy.
 
@@ -7778,6 +7799,14 @@ type Options struct {
     // exactly these table-qualified newly added indexes when the target
     // supports it.
     ConcurrentIndexRefs []types.IndexRef
+    // ConcurrentIndexDrops requests PostgreSQL DROP INDEX CONCURRENTLY for all
+    // standalone index removals when the target supports it. It is separate
+    // from ConcurrentIndexes so enabling concurrent index builds never silently
+    // rewrites a drop the caller did not ask for.
+    ConcurrentIndexDrops bool
+    // ConcurrentIndexDropRefs requests PostgreSQL DROP INDEX CONCURRENTLY for
+    // exactly these table-qualified removed indexes when the target supports it.
+    ConcurrentIndexDropRefs []types.IndexRef
     // SkipChangeKinds lists destructive change kinds the planner must omit from
     // the plan (emitting a clearly-marked comment in their place) instead of
     // deferring to the coarse destructive gate. Currently honored by the

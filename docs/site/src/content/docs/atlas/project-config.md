@@ -120,6 +120,7 @@ env "local" {
 | `format.migrate.status` | Default `migrate status --format`. |
 | `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
+| `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
 
 `migration.tx_mode` accepts `file`, `all`, or `none`. A migration's leading
 `atlas:txmode file` or `atlas:txmode none` header overrides global `file` or

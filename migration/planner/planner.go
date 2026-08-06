@@ -165,6 +165,14 @@ type Options struct {
 	// exactly these table-qualified newly added indexes when the target
 	// supports it.
 	ConcurrentIndexRefs []types.IndexRef
+	// ConcurrentIndexDrops requests PostgreSQL DROP INDEX CONCURRENTLY for all
+	// standalone index removals when the target supports it. It is separate
+	// from ConcurrentIndexes so enabling concurrent index builds never silently
+	// rewrites a drop the caller did not ask for.
+	ConcurrentIndexDrops bool
+	// ConcurrentIndexDropRefs requests PostgreSQL DROP INDEX CONCURRENTLY for
+	// exactly these table-qualified removed indexes when the target supports it.
+	ConcurrentIndexDropRefs []types.IndexRef
 	// SkipChangeKinds lists destructive change kinds the planner must omit from
 	// the plan (emitting a clearly-marked comment in their place) instead of
 	// deferring to the coarse destructive gate. Currently honored by the
@@ -334,9 +342,13 @@ func registerPostgresFamilyPlanner(dialect string) error {
 	return registerPlannerFactory(dialect, func(opts Options) Planner {
 		plan := postgres.NewForDialect(dialect, opts.CapabilitiesFor(dialect)).
 			WithConcurrentIndexRefs(opts.ConcurrentIndexRefs...).
+			WithConcurrentIndexDropRefs(opts.ConcurrentIndexDropRefs...).
 			WithSkipChangeKinds(opts.SkipChangeKinds...)
 		if opts.ConcurrentIndexes {
-			return plan.WithConcurrentIndexes()
+			plan = plan.WithConcurrentIndexes()
+		}
+		if opts.ConcurrentIndexDrops {
+			plan = plan.WithConcurrentIndexDrops()
 		}
 		return plan
 	})
@@ -513,6 +525,12 @@ func NodeRequiresNoTransaction(dialect string, node ast.Node) bool {
 	}
 	if index, ok := node.(*ast.IndexNode); ok {
 		return index.Concurrently
+	}
+	// DROP INDEX CONCURRENTLY is rejected inside a transaction block exactly as
+	// CREATE INDEX CONCURRENTLY is, so it must reach the same no_transaction
+	// routing rather than being wrapped and failing at execution time.
+	if dropIndex, ok := node.(*ast.DropIndexNode); ok {
+		return dropIndex.Concurrently
 	}
 	alterType, ok := node.(*ast.AlterTypeNode)
 	if !ok {

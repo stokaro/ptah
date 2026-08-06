@@ -21,7 +21,7 @@ Capabilities answer questions that a dialect name alone cannot answer:
 - Are enums inline column types or standalone custom types?
   `enum_inline_column`, `enum_custom_type`
 - Can PostgreSQL-style concurrent indexes be emitted?
-  `create_index_concurrently`
+  `create_index_concurrently`, `drop_index_concurrently`
 - Does the target support roles, RLS, XML, or advisory locks?
   `role_management`, `row_level_security`, `xml_type`, `advisory_locks`
 - Does the target support foreign keys, and how is the referenced key backed?

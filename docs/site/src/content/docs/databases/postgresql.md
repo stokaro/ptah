@@ -138,6 +138,20 @@ in `atlas.hcl` tags such files with the Atlas `-- atlas:txmode none` directive
 instead ([Atlas migrate commands](../../atlas/migrate-commands/)); the
 migrator honors both directives.
 
+## Concurrent index removal
+
+`DROP INDEX CONCURRENTLY` is the matching non-blocking removal, and it carries
+the same restriction: it cannot run inside a transaction block.
+
+The rollback of a concurrent index build always uses it where the target
+supports it, so the down file undoes a non-blocking build without taking the
+write lock the build avoided. For the up direction it is opt-in:
+`diff.concurrent_index_drop: true` in `ptah.yaml`, or
+`diff.concurrent_index.drop = true` in `atlas.hcl`, requests it for standalone
+index removals. An index that is dropped and recreated under the same identity
+is a redefinition rather than a standalone removal and keeps the blocking drop
+the planner pairs with the rebuild.
+
 ## Migration locking
 
 Migration runs serialize through a session-level advisory lock
