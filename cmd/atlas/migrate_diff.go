@@ -199,7 +199,15 @@ func runAtlasMigrateDiff(
 		}
 	}
 	diffResult, err := atlasmigrate.GenerateDiff(cmd.Context(), conn, atlasmigrate.DiffOptions{
-		Dir:                  migrationsDir,
+		Dir: migrationsDir,
+		// The same handle the preflight gate captured through. Handing it to the
+		// writer is what keeps the publication bound to the project root the
+		// directory was validated inside: without it the writer would carry only
+		// migrationsDir and reopen it by pathname for locking, staging,
+		// publication, the atlas.sum commit and recovery, so a directory or
+		// ancestor replaced after resolution could take the write somewhere the
+		// gate never looked (stokaro/ptah#1118).
+		Root:                 migrateDiffWriterRoot(project, localDir),
 		Desired:              desired,
 		SourceConnectTimeout: dbcli.DefaultConnectTimeout,
 		Name:                 name,
@@ -264,6 +272,20 @@ func resolveMigrateDiffDirectory(dir atlasargs.LocalDir) (string, error) {
 		return pathguard.ResolveWithinRoot(dir.Path, dir.AllowedRoot)
 	}
 	return pathguard.ResolveCLIPath(dir.Path)
+}
+
+// migrateDiffWriterRoot returns the opened root the writer must stay inside, or
+// nil when the operator named the directory directly.
+//
+// It reads the same two conditions [atlasProject.localOptions] uses for the
+// reading half, deliberately: "did this directory come from the project file"
+// is one question, and answering it differently for the gate and for the writer
+// is how the two end up bound to different filesystem objects.
+func migrateDiffWriterRoot(
+	project atlasProject,
+	dir atlasargs.LocalDir,
+) *pathguard.OpenedDirectory {
+	return project.localOptions(dir).Root
 }
 
 func needsAtlasMigrateDiffConfig(cmd *cobra.Command) bool {
