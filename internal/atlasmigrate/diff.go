@@ -53,6 +53,9 @@ type DiffOptions struct {
 	Policy               atlasschema.DiffPolicy
 	Qualifier            Qualifier
 	DryRun               bool
+	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
+	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	Vars []string
 	// PreparePublication may edit the staged migration files before they are
 	// durably published and included in atlas.sum. The callback runs while the
 	// migration-directory lock is held.
@@ -313,6 +316,7 @@ func resolveDesiredState(
 		// `migrate diff` is registered on the Atlas-compatible command tree
 		// only, so this surface always reads files written for another tool.
 		IgnoreUnknownHCLNames: true,
+		Vars:                  opts.Vars,
 	})
 	if err != nil {
 		return atlassource.State{}, fmt.Errorf("load --to schema: %w", err)

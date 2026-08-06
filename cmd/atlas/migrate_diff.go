@@ -94,6 +94,12 @@ func runAtlasMigrateDiff(
 	name string,
 ) (runErr error) {
 	formatConfigured := cmd.Flags().Changed("format")
+	// dirURLSpelled is --dir as the command line, its environment twin and the
+	// flag default left it, captured before the atlas.hcl merge below can
+	// replace it. The scheme requirement is read off that value rather than the
+	// merged one: see [atlasDirSchemeIsAnswerable] for why a directory named by
+	// atlas.hcl cannot answer the question at all.
+	dirURLSpelled := opts.dirURL
 	policy := atlasschema.DiffPolicy{}
 	mode := ignoreMissingEnvSelection
 	if needsAtlasMigrateDiffConfig(cmd) {
@@ -125,6 +131,18 @@ func runAtlasMigrateDiff(
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	}
+	// This verb creates the directory it was pointed at, so it requires the
+	// scheme the community binary requires: `migrate diff demo --dir mig2` exits
+	// 1 there with `missing scheme for dir url. Did you mean "file://mig2"?` and
+	// creates nothing, measured on the pinned v1.3.0 on 2026-08-06. The flag's
+	// own default carries `file://`, so an omitted --dir passes.
+	//
+	// The read verbs still accept a scheme-less --dir, and so does a directory
+	// named by atlas.hcl on either writing verb; that half is stokaro/ptah#1186
+	// and is deliberately not closed here.
+	if err := atlasargs.RequireDirScheme(dirURLSpelled); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	// The migration directory is resolved and gated before anything else this
 	// verb validates. The position is measured against the pinned community
@@ -198,6 +216,10 @@ func runAtlasMigrateDiff(
 			return editor.Open(cmd.Context(), "", stagedPaths...)
 		}
 	}
+	schemaVars, err := atlasVarFlagValues(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	diffResult, err := atlasmigrate.GenerateDiff(cmd.Context(), conn, atlasmigrate.DiffOptions{
 		Dir: migrationsDir,
 		// The same handle the preflight gate captured through. Handing it to the
@@ -217,6 +239,7 @@ func runAtlasMigrateDiff(
 		Policy:               policy,
 		Qualifier:            qualifier,
 		DryRun:               opts.dryRun,
+		Vars:                 schemaVars,
 		PreparePublication:   preparePublication,
 		// The same predicate the preflight above already applied, re-applied to
 		// the locked snapshot. Passing it in is what keeps this verb from

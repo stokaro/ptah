@@ -57,7 +57,7 @@ func TestCompatCommand_MigrateLintIntegrityFindingIsReportContent(t *testing.T) 
 			// Edit the hashed file so the recorded sum no longer matches it.
 			writeAtlasLintFile(c, dir, "20240101000000_init.sql", "CREATE TABLE t1 (id integer, extra text);\n")
 
-			args := append([]string{"migrate", "lint", "--dir", dir, "--dev-url", devDB, "--latest", "1"}, tt.formatArgs...)
+			args := append([]string{"migrate", "lint", "--dir", "file://" + dir, "--dev-url", devDB, "--latest", "1"}, tt.formatArgs...)
 			stdout, stderr, err := runAtlasMigrateLint(c, args...)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)

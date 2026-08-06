@@ -56,15 +56,16 @@ type previousType struct {
 	Reserved reservations
 }
 
-// used returns every number the type has ever held, live or reserved, which is
-// what new allocations must exceed.
-func (p previousType) used() []int32 {
-	out := make([]int32, 0, len(p.Numbers)+len(p.Reserved.Numbers))
+// highestUsed returns the largest number the type has ever held, live or
+// reserved, which is what new allocations must exceed. It is a single number
+// rather than the list of every number ever used because a reserved range may
+// legally cover the whole field-number space.
+func (p previousType) highestUsed() int32 {
+	highest := p.Reserved.highest()
 	for _, n := range p.Numbers {
-		out = append(out, n)
+		highest = max(highest, n)
 	}
-	out = append(out, p.Reserved.Numbers...)
-	return out
+	return highest
 }
 
 // previousSet is the whole compatibility state of a previous export, flattened
@@ -266,30 +267,23 @@ func enumState(ed protoreflect.EnumDescriptor) (previousType, error) {
 	return state, nil
 }
 
-// addRange records every number in [start, end] (inclusive) as reserved,
-// iterating in int64 so an end of MaxInt32 cannot overflow the counter. It
-// refuses unsupported or oversized state instead of truncating it: truncation
-// could make a later allocation reuse a number that remains reserved on the
-// wire.
+// addRange records [start, end] (inclusive) as reserved. The bounds are taken
+// in int64 because a descriptor's exclusive end is one past the largest legal
+// field number, which the caller decrements before it gets here.
+//
+// The range is kept as a range. Expanding it into individual numbers would cost
+// one entry per number and force a cap on the width the loader accepts, and a
+// capped loader must then refuse a reservation that protobuf itself considers
+// ordinary: the legal field-number space runs to 536,870,911 and a published
+// contract may legitimately retire all of it.
 func addRange(res *reservations, start, end int64) error {
+	// end >= start for every range protocompile produces, so bounding the end
+	// bounds the start too and both conversions below are in range.
 	if start < 0 || end > maxFieldNumber {
 		return fmt.Errorf("reserved range %d to %d is outside Ptah's supported numbering space", start, end)
 	}
-	size := end - start + 1
-	remaining := int64(maxReservedNumbers - res.count())
-	if size > remaining {
-		return fmt.Errorf(
-			"reserved ranges expand to more than %d numbers; refusing to truncate compatibility state",
-			maxReservedNumbers)
-	}
-	// protocompile has already rejected overlapping ranges. Append directly so
-	// loading a large valid range stays O(n); addNumber's duplicate scan would
-	// make this loop quadratic.
-	for n := start; n <= end; n++ {
-		// The bounds check above proves n fits the generator's int32 range.
-		number := int32(n) //nolint:gosec // Conversion is guarded by the supported-numbering-space check.
-		res.Numbers = append(res.Numbers, number)
-	}
+	//nolint:gosec // Both conversions are guarded by the supported-numbering-space check.
+	res.addRange(int32(start), int32(end))
 	return nil
 }
 

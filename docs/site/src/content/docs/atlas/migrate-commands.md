@@ -675,6 +675,36 @@ alongside table changes) are refused.
 Docker dev databases fail explicitly until their provisioning semantics are
 implemented.
 
+### The publication boundary
+
+`migrate diff` opens the migration directory and its parent once, before
+anything is staged, and keeps both handles for the rest of the run. The parent
+is held as well because the publication journal and the commit marker sit
+beside the directory, so an interrupted run stays recoverable even when the
+directory itself was left half-built.
+
+Every later step names a direct child of one of those two handles: the staged
+files, the published migrations, `atlas.sum`, the journal, the commit marker,
+the rollback quarantine, and orphan cleanup. Recovery runs through the same
+handles, so an interrupted batch is withdrawn from the objects the run opened.
+The directory pathname survives only in reported paths and error text, and no
+write step resolves it a second time.
+
+This draws the boundary against a directory replaced after the run validated
+it. Replacing the pathname, or re-pointing a symlink on the way to it, no
+longer selects where the run writes: a migration or an `atlas.sum` can land
+only in the directory that was captured and verified. When the directory came
+from `atlas.hcl`, both handles are opened through the project root, so a
+replacement cannot move the write outside that root either.
+
+Two things stay keyed to the pathname on purpose. The cross-process lock file
+is created beside the directory before any handle exists, because it is
+cooperative mutual exclusion between Ptah processes rather than a boundary
+against a hostile writer, and every verb has to agree on its identity. The
+`--edit` callback also receives absolute staged paths, because an external
+editor cannot take a handle; the files it returns are re-validated through the
+retained handle before anything is published.
+
 ## Validate integrity
 
 `ptah-compat migrate validate` verifies the migration directory against
@@ -744,6 +774,47 @@ surfaces never disagree about how many objects a statement affects. Each
 per-object finding names its object in the native message, which is also what
 keeps each SARIF result's fingerprint distinct when several of them share a
 rule, a file, and a line.
+
+### Which objects are under review
+
+The dev database is what a lint run compares against, so it also decides which
+objects the run analyzes. A PostgreSQL-family `--dev-url` carrying
+`?search_path=<schema>` puts exactly that one schema under review:
+
+- an object in a different schema raises no diagnostic and counts as no schema
+  change, because it was never part of the state the run compares against;
+- an unqualified reference resolves into the reviewed schema, so it stays under
+  review, and so does a reference written out with the reviewed schema's own
+  name;
+- one statement is measured per object: `DROP TABLE users, other.audit_log;`
+  under `search_path=public` reports `users` and counts one schema change.
+
+A `--dev-url` that names no schema puts the whole connected database under
+review and filters nothing, which is also what every non-PostgreSQL dev URL
+does. A `search_path` naming more than one schema is not a scope: it is read as
+a single schema name, so it scopes nothing and every object stays under review.
+
+An `ALTER TABLE` belongs to its table's schema, never to the column or
+constraint it names, and a `CREATE SCHEMA` is measured against the reviewed
+schema by its own name. A diagnostic that names no object at all — the rules
+that report a statement rather than the objects in it — is always reported,
+since there is nothing to measure a scope against and a hazard must not be
+silenced on an unestablished boundary.
+
+The boundary applies to `ptah-compat migrate lint` only. Native
+`ptah migrations lint` keeps every object under review, whatever the dev URL
+selects, so the two surfaces deliberately disagree about scope.
+
+The reason the boundary exists on the compatibility surface is that the tool it
+replaces reviews only what the dev URL covers, and matching that is the whole
+point of the surface. The reason it does not exist natively is that the
+justification for it — an object outside the dev URL's reach was never in the
+before-state the run compares against — describes a diff-based analyzer, and
+Ptah's linter reads SQL text. That is why it reports `TRUNCATE` and
+`DROP SCHEMA`, neither of which produces a diff. Scoped natively,
+`DROP TABLE app."Users", app.audit_log;` under `search_path=public` reports
+nothing and exits 0, on the one surface where no other tool can be consulted
+about whether that is right.
 
 ### Renames
 
@@ -856,10 +927,9 @@ Atlas-compatible migration metadata commands default to Atlas directory
 format. `ptah-compat migrate hash`, `lint`, `new`, `set`, `status`, and
 `validate` register `--dir-format` with Atlas's default value `atlas`.
 
-`hash`, `validate`, `lint`, `status`, and `set` read a directory rather than
-rewrite one, so they accept every Atlas source layout — `golang-migrate`,
-`goose`, `flyway`, `liquibase`, and `dbmate` — under either spelling Atlas
-accepts, and produce the same `atlas.sum` from both:
+All six accept every Atlas source layout — `golang-migrate`, `goose`, `flyway`,
+`liquibase`, and `dbmate` — under either spelling Atlas accepts, and produce the
+same `atlas.sum` from both:
 
 ```bash
 ptah-compat migrate hash --dir "file://migrations?format=goose"
@@ -875,14 +945,29 @@ does. Values are matched verbatim on every one of those verbs: `--dir-format
 ATLAS` and `--dir-format " atlas "` are refused rather than normalized, and an
 empty value selects the Atlas layout.
 
-On `migrate new` the supported value is still `atlas`, and `migrate new` and
-`migrate diff` refuse a `--dir` query outright. Both verbs write a migration
-file and a fresh `atlas.sum` without verifying the directory first, so reading
-a foreign layout there waits on
-[#1086](https://github.com/stokaro/ptah/issues/1086). Until then, import the
-directory with `ptah-compat migrate import` before writing into it.
-`migrate apply` registers no `--dir-format` at all, matching Atlas, and selects
-a converted source directory through `?format=` on `--dir`.
+`migrate new` writes the selected layout rather than only reading it. The
+created file names and their contents follow the source tool's own convention,
+and `atlas.sum` is rewritten over the set that layout covers:
+
+| `--dir-format` | files created | covered by `atlas.sum` |
+| --- | --- | --- |
+| `atlas` | `<version>_<name>.sql`, empty | the file |
+| `golang-migrate` | `<version>_<name>.up.sql` and `.down.sql`, both empty | the `.up.sql` only |
+| `flyway` | `V<version>__<name>.sql` and `U<version>__<name>.sql`, both empty | the `V` file only |
+| `goose` | `<version>_<name>.sql` holding `-- +goose Up` / `-- +goose Down` | the file |
+| `dbmate` | `<version>_<name>.sql` holding `-- migrate:up` / `-- migrate:down` | the file |
+| `liquibase` | `<version>_<name>.sql` holding `--liquibase formatted sql` | the file |
+
+Two inputs are refused on a non-`atlas` layout. A migration name is required,
+because a file named by the version alone is one Ptah's own `migrate apply`
+cannot read back on four of the five layouts. `--edit` is refused, which is what
+Atlas does for a non-Atlas directory as well.
+
+`migrate diff` still refuses a non-`atlas` layout under both spellings: it emits
+planned SQL, and nothing writes a migration body in a foreign tool's convention
+yet. Import the directory with `ptah-compat migrate import` before diffing into
+it. `migrate apply` registers no `--dir-format` at all, matching Atlas, and
+selects a converted source directory through `?format=` on `--dir`.
 
 `ptah-compat migrate set [version]` moves Atlas revision history to the
 selected boundary without executing migration SQL. It preserves existing clean
@@ -908,6 +993,21 @@ rather than a check alongside the work: nothing is created, and no `atlas.sum`
 is rewritten, on a directory the gate refuses. A `--dir` naming a directory that
 does not exist yet is not a checksum error on either tool — both verbs create
 it, which is how the first migration of a project gets written.
+
+Because they create it, those same two verbs require `--dir` to name a scheme,
+which is what Atlas requires on every verb:
+
+```bash
+ptah-compat migrate new add_users --dir migrations
+# Error: missing scheme for dir url. Did you mean "file://migrations"?
+```
+
+Nothing is created. Ptah still accepts a bare path on the verbs that only read a
+directory, and on a directory named by `atlas.hcl` `migration.dir` — both remain
+looser than Atlas and are tracked in
+[#1186](https://github.com/stokaro/ptah/issues/1186). The requirement is a
+`PTAH_DIR` rule as much as a flag rule; `PTAH_MIGRATIONS_DIR`, which is the
+native `--migrations-dir` under its environment name, still takes a plain path.
 
 `lint` deliberately does not enforce it, but only for a *missing* integrity
 file: linting a directory that has never been hashed is how you inspect one

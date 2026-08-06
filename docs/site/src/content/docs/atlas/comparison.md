@@ -671,6 +671,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 | [HCL schema and Atlas project config subset audit](#hcl-schema-and-atlas-project-config-subset-audit) | Product behavior and coverage | [#511](https://github.com/stokaro/ptah/issues/511) |
 | [Live and differential corpus breadth](#live-and-differential-corpus-breadth) | Conformance coverage | [ptah-atlas-conformance#167](https://github.com/stokaro/ptah-atlas-conformance/issues/167) |
 | [Verbs beyond the CE pin](#verbs-beyond-the-ce-pin) | Triage record | [#758](https://github.com/stokaro/ptah/issues/758) |
+| [`atlas.hcl` `file()` confinement](#atlashcl-file-confinement) | Deliberate divergence | [#1042](https://github.com/stokaro/ptah/issues/1042) |
 
 ### Atlas-compatible command runtime placeholders
 
@@ -834,6 +835,35 @@ Triage: `migrate ls` is covered by native `ptah migrations status` (lists every 
 Revisit when the conformance Atlas pin advances past v1.2.0.
 
 **Tracking.** [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758)
+
+
+### `atlas.hcl` `file()` confinement
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat` reads `file()` and `fileset()` inside an
+`atlas.hcl` only from the directory holding that `atlas.hcl`. Three shapes are
+refused that the pinned community binary reads: an absolute path, a
+parent-traversal path, and a plain relative name that resolves out of the
+directory through a symbolic link. The refusal names which of the three applies
+and points at `getenv()` for passing a value in from outside.
+
+This is the one place `ptah-compat` is deliberately stricter than the binary it
+replaces, and it is stricter rather than looser, so it cannot exit 0 where the
+binary exits 1. The reason is that an `atlas.hcl` is usually repository-controlled
+and `file()` is evaluated before anything is applied: without confinement, a
+config file arriving in a pull request can read any file the process can and
+place the contents somewhere observable, such as a database URL or an error
+message. That is a different class of cost from the footguns the drop-in rule
+was written for.
+
+Both halves are measured rather than remembered. The Ptah half is pinned by
+`TestOraclePlacesOutsideFileContentsWhereTheCallerCanSeeThem` in
+`config/projectconfig`; the community half is pinned by four `ce-gating`
+scenarios in the conformance repository, so the day a community build starts
+confining `file()` the gate goes red and this divergence can be retired.
+
+**Tracking.** [`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042)
 
 A green docs build only proves the documentation site builds and internal links
 resolve. It is not parity evidence. Use the conformance reports for measured

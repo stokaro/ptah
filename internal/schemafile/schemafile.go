@@ -45,6 +45,13 @@ type Options struct {
 	// consumes it, and a forwarding field with no producer is a field no test
 	// can hold to account.
 	IgnoreUnknownHCLNames bool
+
+	// Vars supplies values for the `variable` blocks of an HCL schema file, as
+	// `--var` spells them. See [atlashcl.Options.Vars].
+	//
+	// Other schema file formats ignore it: YAML and SQL have no variables, and
+	// silently accepting a value for one there would suggest they do.
+	Vars []string
 }
 
 // Load reads one local schema file from either a plain path or file:// URL.
@@ -78,6 +85,7 @@ func LoadPath(path string, opts Options) (*goschema.Database, error) {
 	case ".hcl":
 		return atlashcl.ParseFileWithOptions(resolved, atlashcl.Options{
 			IgnoreUnknownNames: opts.IgnoreUnknownHCLNames,
+			Vars:               opts.Vars,
 		})
 	case ".yaml", ".yml":
 		return yamlschema.ParseFile(resolved)

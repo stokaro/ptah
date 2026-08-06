@@ -339,6 +339,22 @@ and a list of `file://...` URLs when `paths` is used. `fileset` returns stable
 slash-separated relative paths sorted lexicographically and supports recursive
 `**` path segments.
 
+`path` and `paths` resolve relative to the directory holding `atlas.hcl` but are
+not confined to it: `path = "../shared/schema.hcl"` resolves. An absolute path
+and a scheme other than `file://` are refused, and each names its own rule
+rather than blaming the supported `path` key:
+
+```text
+# path = "/etc/absolute.hcl"
+error: atlas.hcl "path" at atlas.hcl:2: absolute paths are not supported: /etc/absolute.hcl: give a path relative to the directory holding atlas.hcl
+
+# path = "s3://bucket/x.hcl"
+error: atlas.hcl "path" at atlas.hcl:2: unsupported URL scheme: s3://bucket/x.hcl
+```
+
+An attribute the data source does not have keeps the construct wording:
+`unsupported atlas.hcl construct "vars"`.
+
 ### The file() and fileset() sandbox
 
 Both functions are confined to the directory holding `atlas.hcl`. An absolute

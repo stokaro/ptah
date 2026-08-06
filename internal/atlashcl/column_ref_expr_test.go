@@ -248,7 +248,7 @@ table "t" {
   }
 }
 `,
-			match: refusedConditional,
+			match: `.*variable\ "by_a"\ requires\ a\ type.*`,
 		},
 		{
 			name: "variable without a default",
@@ -264,7 +264,7 @@ table "t" {
   }
 }
 `,
-			match: refusedConditional,
+			match: `.*missing\ value\ for\ required\ variable\ "by_a".*`,
 		},
 		{
 			name: "variable typed by an unknown keyword",
@@ -281,7 +281,7 @@ table "t" {
   }
 }
 `,
-			match: refusedConditional,
+			match: `.*variable\ "by_a"\ type\ is\ not\ supported.*`,
 		},
 		{
 			name: "no variable of that name",
@@ -328,7 +328,7 @@ table "t" {
   }
 }
 `,
-			match: refusedConditional,
+			match: `.*variable\ "by_a":\ a\ bool\ is\ required.*`,
 		},
 		{
 			name: "declared type contradicts a default the condition can still compare",
@@ -345,7 +345,7 @@ table "t" {
   }
 }
 `,
-			match: `.*index on column contains unsupported reference "var.pick == \\"a\\" \? column.a : column.b"`,
+			match: `.*variable\ "pick":\ a\ number\ is\ required.*`,
 		},
 	}
 
@@ -357,6 +357,16 @@ table "t" {
 	}
 }
 
+// refusedConditional is the column resolver's own refusal. Only the two rows
+// whose variable declaration is well formed still reach it: "no variable of
+// that name" and "condition is not a boolean".
+//
+// The other five now fail earlier and more precisely. #926's evaluation pass
+// diagnoses the variable DECLARATION -- missing type, missing value, unsupported
+// type keyword, a default contradicting its type -- which is upstream of the
+// column reference and names what the author has to change. Every row still
+// refuses; what moved is which layer speaks first, not whether a conditional
+// column is resolved.
 const refusedConditional = `.*index on column contains unsupported reference "var.by_a \? column.a : column.b"`
 
 // A branch that is taken still has to name a column. This is what keeps the

@@ -797,7 +797,7 @@ func TestCompatCommand_MigrateCheckpointForwardsToNative(t *testing.T) {
 	// --dir-format is pinned to ptah so this stays a test of flag forwarding.
 	// The compat default is atlas; which convention the default selects is
 	// covered by TestCompatCommand_MigrateCheckpointDefaultsToAtlasFormat.
-	cmd.SetArgs([]string{"migrate", "checkpoint", "--dir", migrationsDir, "--dev-url", shadow, "--dir-format", "ptah", "snapshot"})
+	cmd.SetArgs([]string{"migrate", "checkpoint", "--dir", "file://" + migrationsDir, "--dev-url", shadow, "--dir-format", "ptah", "snapshot"})
 
 	err := cmd.Execute()
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
@@ -821,7 +821,7 @@ func TestCompatCommand_MigrateCheckpointRequiresDevURL(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "checkpoint", "--dir", t.TempDir()})
+	cmd.SetArgs([]string{"migrate", "checkpoint", "--dir", "file://" + t.TempDir()})
 
 	// Forwarding reaches the native command, which reports the missing shadow
 	// database rather than the old community-unsupported stub message.
@@ -1354,7 +1354,9 @@ func TestCompatCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", dir})
+	// The scheme is required on this verb since stokaro/ptah#1186: it WRITES,
+	// and the community binary refuses `--dir <bare path>` there.
+	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", "file://" + dir})
 
 	err := cmd.Execute()
 
@@ -1377,7 +1379,7 @@ func TestCompatCommand_MigrateNewAcceptsExplicitAtlasDirFormat(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", dir, "--dir-format", "atlas"})
+	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", "file://" + dir, "--dir-format", "atlas"})
 
 	err := cmd.Execute()
 
@@ -1398,7 +1400,7 @@ func TestCompatCommand_MigrateHashDefaultsToAtlasSum(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "hash", "--dir", dir})
+	cmd.SetArgs([]string{"migrate", "hash", "--dir", "file://" + dir})
 
 	err := cmd.Execute()
 
@@ -1420,7 +1422,7 @@ func TestCompatCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T) {
 	var applyOut bytes.Buffer
 	apply.SetOut(&applyOut)
 	apply.SetErr(&applyOut)
-	apply.SetArgs([]string{"migrate", "apply", "--url", "sqlite://" + dbPath, "--dir", dir})
+	apply.SetArgs([]string{"migrate", "apply", "--url", "sqlite://" + dbPath, "--dir", "file://" + dir})
 	err := apply.Execute()
 	c.Assert(err, qt.IsNil)
 
@@ -1428,7 +1430,7 @@ func TestCompatCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T) {
 	var statusOut bytes.Buffer
 	status.SetOut(&statusOut)
 	status.SetErr(&statusOut)
-	status.SetArgs([]string{"migrate", "status", "--url", "sqlite://" + dbPath, "--dir", dir})
+	status.SetArgs([]string{"migrate", "status", "--url", "sqlite://" + dbPath, "--dir", "file://" + dir})
 	err = status.Execute()
 
 	c.Assert(err, qt.IsNil)
@@ -1449,7 +1451,7 @@ func TestCompatCommand_MigrateStatusFormatRendersAtlasReport(t *testing.T) {
 	cmd.SetArgs([]string{
 		"migrate", "status",
 		"--url", "sqlite://" + dbPath,
-		"--dir", dir,
+		"--dir", "file://" + dir,
 		"--format", "{{ .Status }}|{{ .Current }}|{{ .Next }}|{{ len .Available }}|{{ len .Pending }}|{{ (index .Pending 0).Name }}",
 	})
 
@@ -1469,7 +1471,7 @@ func TestCompatCommand_MigrateStatusFormatRendersAppliedRevisionReport(t *testin
 	var applyOut bytes.Buffer
 	apply.SetOut(&applyOut)
 	apply.SetErr(&applyOut)
-	apply.SetArgs([]string{"migrate", "apply", "--url", "sqlite://" + dbPath, "--dir", dir})
+	apply.SetArgs([]string{"migrate", "apply", "--url", "sqlite://" + dbPath, "--dir", "file://" + dir})
 	err := apply.Execute()
 	c.Assert(err, qt.IsNil)
 
@@ -1480,7 +1482,7 @@ func TestCompatCommand_MigrateStatusFormatRendersAppliedRevisionReport(t *testin
 	status.SetArgs([]string{
 		"migrate", "status",
 		"--url", "sqlite://" + dbPath,
-		"--dir", dir,
+		"--dir", "file://" + dir,
 		"--format", "{{ .Status }}|{{ len .Applied }}|{{ (index .Applied 0).Version }}|{{ (index .Applied 0).Description }}|{{ (index .Applied 0).Type }}|{{ (index .Applied 0).Applied }}|{{ (index .Applied 0).Total }}|{{ (index .Applied 0).OperatorVersion }}",
 	})
 	err = status.Execute()
@@ -1568,7 +1570,7 @@ func TestCompatCommand_MigrateStatusRejectsInvalidFormatBeforeConnecting(t *test
 	cmd.SetArgs([]string{
 		"migrate", "status",
 		"--url", "sqlite://" + dbPath,
-		"--dir", dir,
+		"--dir", "file://" + dir,
 		"--format", "{{ if }}",
 	})
 
@@ -1590,7 +1592,7 @@ func TestCompatCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"migrate", "lint",
-		"--dir", dir,
+		"--dir", "file://" + dir,
 		"--latest", "1",
 		"--format", "{{ len .Files }}|{{ (index .Files 0).Name }}|{{ printf \"%.6s\" (index .Files 0).Text }}",
 	})
@@ -1692,7 +1694,7 @@ func TestCompatCommand_MigrateLintFormatRendersReplayFailure(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"migrate", "lint",
-		"--dir", dir,
+		"--dir", "file://" + dir,
 		"--dev-url", "sqlite://" + dbPath,
 		"--latest", "1",
 		"--format", "{{ len .Steps }}|{{ (index .Steps 1).Text }}|{{ (index .Steps 1).Error }}",
@@ -1717,7 +1719,7 @@ func TestCompatCommand_MigrateLintFormatReportsInvalidAtlasSum(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"migrate", "lint",
-		"--dir", dir,
+		"--dir", "file://" + dir,
 		"--dev-url", "sqlite://" + dbPath,
 		"--latest", "1",
 		"--format", "{{ len .Steps }}|{{ (index .Steps 0).Text }}|{{ (index .Files 0).Name }}|{{ (index .Files 0).Error }}",
@@ -1743,7 +1745,7 @@ func TestCompatCommand_MigrateLintRejectsInvalidFormatBeforeReplay(t *testing.T)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"migrate", "lint",
-		"--dir", dir,
+		"--dir", "file://" + dir,
 		"--dev-url", "sqlite://" + dbPath,
 		"--latest", "1",
 		"--format", "{{ if }}",
@@ -1764,7 +1766,7 @@ func TestCompatCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"migrate", "set", "1",
-		"--dir", t.TempDir(),
+		"--dir", "file://" + t.TempDir(),
 		"--revisions-schema", "custom_revisions",
 	})
 
@@ -1789,7 +1791,7 @@ func TestCompatCommand_MigrateSetMapsPositionalRevision(t *testing.T) {
 	cmd.SetArgs([]string{
 		"migrate", "set", "1",
 		"--url", "sqlite://" + dbPath,
-		"--dir", migrationsDir,
+		"--dir", "file://" + migrationsDir,
 	})
 
 	err := cmd.Execute()
@@ -1824,7 +1826,7 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 		cmd.SetArgs([]string{
 			"migrate", "set",
 			"--url", "sqlite://" + filepath.Join(t.TempDir(), "state.db"),
-			"--dir", t.TempDir(),
+			"--dir", "file://" + t.TempDir(),
 		})
 
 		err := cmd.Execute()
@@ -1840,7 +1842,7 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 		cmd.SetArgs([]string{
 			"migrate", "set", "1", "2",
 			"--url", "sqlite://" + filepath.Join(t.TempDir(), "state.db"),
-			"--dir", t.TempDir(),
+			"--dir", "file://" + t.TempDir(),
 		})
 
 		err := cmd.Execute()
@@ -1853,7 +1855,7 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"migrate", "set", "--version", "1", "--url", "sqlite://state.db", "--dir", t.TempDir()})
+		cmd.SetArgs([]string{"migrate", "set", "--version", "1", "--url", "sqlite://state.db", "--dir", "file://" + t.TempDir()})
 
 		err := cmd.Execute()
 
@@ -1864,17 +1866,18 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 // TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat covers the
 // metadata verbs that still accept only the atlas layout.
 //
-// Five verbs are deliberately absent, and the reason is the same for all five:
-// they READ a directory rather than rewrite one, so a foreign layout can be
-// converted in memory and reported on. `migrate hash` and `migrate validate`
-// have been in that set since #992 (see migrate_integrity_formats_test.go);
-// `migrate status` and `migrate set` joined it in #1002 (see
-// migrate_revision_converted_test.go); `migrate lint` joined it in #1013 (see
-// migrate_lint_converted_test.go).
+// Six verbs are deliberately absent. Five of them READ a directory rather than
+// rewrite one, so a foreign layout can be converted in memory and reported on:
+// `migrate hash` and `migrate validate` have been in that set since #992 (see
+// migrate_integrity_formats_test.go), `migrate status` and `migrate set` joined
+// it in #1002 (see migrate_revision_converted_test.go), and `migrate lint`
+// joined it in #1013 (see migrate_lint_converted_test.go). `migrate new` is the
+// sixth and the only one that WRITES: since stokaro/ptah#845 it emits the
+// selected layout's own skeleton files (see migrate_new_converted_test.go).
 //
-// The verbs that remain here WRITE, and writing a layout is a larger change
-// than reading one: it needs the converted form emitted back in the source
-// convention, which nothing here does yet.
+// The verbs that remain here rewrite migration bodies — an editor round trip, a
+// renumbering, a removal, a replay — and none of them has anything to emit those
+// bodies back in a source tool's convention.
 func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1882,23 +1885,19 @@ func TestCompatCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testin
 	}{
 		{
 			name: "edit",
-			args: []string{"migrate", "edit", "1", "--dir", t.TempDir(), "--dir-format", "goose"},
-		},
-		{
-			name: "new",
-			args: []string{"migrate", "new", "manual_hotfix", "--dir", t.TempDir(), "--dir-format", "golang-migrate"},
+			args: []string{"migrate", "edit", "1", "--dir", "file://" + t.TempDir(), "--dir-format", "goose"},
 		},
 		{
 			name: "rebase",
-			args: []string{"migrate", "rebase", "1", "--dir", t.TempDir(), "--dir-format", "flyway"},
+			args: []string{"migrate", "rebase", "1", "--dir", "file://" + t.TempDir(), "--dir-format", "flyway"},
 		},
 		{
 			name: "rm",
-			args: []string{"migrate", "rm", "1", "--dir", t.TempDir(), "--dir-format", "liquibase"},
+			args: []string{"migrate", "rm", "1", "--dir", "file://" + t.TempDir(), "--dir-format", "liquibase"},
 		},
 		{
 			name: "test",
-			args: []string{"migrate", "test", "--dir", t.TempDir(), "--dir-format", "goose"},
+			args: []string{"migrate", "test", "--dir", "file://" + t.TempDir(), "--dir-format", "goose"},
 		},
 	}
 
@@ -4004,7 +4003,7 @@ func TestCompatCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *testin
 		"migrate", "set", "1",
 		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
 		"--env", "local",
-		"--dir", migrationsDir,
+		"--dir", "file://" + migrationsDir,
 	})
 
 	err := cmd.Execute()

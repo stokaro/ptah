@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -269,6 +270,42 @@ func TestSchemaExportProtobufSplitDigestProtectsEveryFile(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "product.proto: output file was modified since it was generated")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stderr, qt.Contains, "error: product.proto: output file was modified")
+	c.Assert(readProtoSet(c, outDir), qt.DeepEquals, before)
+}
+
+// The manifest is what a later run reads the set back through, so an edit that
+// drops a member from it would otherwise be indistinguishable from an export
+// that never wrote that member -- and the dropped file's field numbers would
+// restart at 1. It is inside the digest-covered header block for exactly that
+// reason, which is what this measures: the edit is refused as a modified file,
+// not read as a smaller set.
+func TestSchemaExportProtobufSplitDigestCoversTheManifest(t *testing.T) {
+	c := qt.New(t)
+	dir, outPath := splitFixture(c, splitModelWithNickname)
+	outDir := filepath.Dir(outPath)
+
+	_, stderr, err := exportSplit(dir, outPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+
+	anchor, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	shrunk := strings.Replace(string(anchor),
+		"// ptah:protobuf-export-files=order.proto,product.proto\n",
+		"// ptah:protobuf-export-files=order.proto\n", 1)
+	c.Assert(shrunk, qt.Not(qt.Equals), string(anchor))
+	//nolint:gosec // The path is this test's own t.TempDir(), not external input.
+	c.Assert(os.WriteFile(outPath, []byte(shrunk), 0o600), qt.IsNil)
+	before := readProtoSet(c, outDir)
+
+	stdout, refusal, err := exportSplit(dir, outPath)
+
+	c.Assert(err, qt.ErrorIs, protobufrender.ErrModified, qt.Commentf("stdout:\n%s", stdout))
+	c.Assert(err.Error(), qt.Contains, "output file was modified since it was generated")
+	// Unprefixed, unlike the sibling refusal in
+	// TestSchemaExportProtobufSplitDigestProtectsEveryFile: the anchor is the
+	// file --out already named, so there is nothing to disambiguate.
+	c.Assert(refusal, qt.Contains, "error: output file was modified since it was generated")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(readProtoSet(c, outDir), qt.DeepEquals, before)
 }
 

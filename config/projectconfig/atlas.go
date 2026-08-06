@@ -1795,7 +1795,7 @@ func (p atlasParser) hclSchemaDataSource(block *hclsyntax.Block) (cty.Value, err
 		if err != nil {
 			return cty.NilVal, err
 		}
-		url, err := atlasLocalFileURL(value, pathAttr)
+		url, err := p.atlasLocalFileURL(value, pathAttr)
 		if err != nil {
 			return cty.NilVal, err
 		}
@@ -1809,7 +1809,7 @@ func (p atlasParser) hclSchemaDataSource(block *hclsyntax.Block) (cty.Value, err
 		}
 		urls := make([]string, 0, len(values))
 		for _, value := range values {
-			url, err := atlasLocalFileURL(value, pathsAttr)
+			url, err := p.atlasLocalFileURL(value, pathsAttr)
 			if err != nil {
 				return cty.NilVal, err
 			}
@@ -2166,6 +2166,14 @@ func atlasMatchSegments(patternParts, nameParts []string) (bool, error) {
 const atlasFileSandboxHint = "atlas.hcl file() and fileset() read only inside the directory holding atlas.hcl; " +
 	"pass a value from outside it through getenv()"
 
+// atlasDataSourcePathHint is the same redirection for data.hcl_schema paths,
+// which need their own wording because their rule is not the file() sandbox.
+// A data source path is only required to be relative -- "../sibling.hcl" is
+// accepted here and refused by file() -- so promising a directory sandbox would
+// be false, and pointing at getenv() would be useless: the value it returns is
+// used as a path and would be just as absolute.
+const atlasDataSourcePathHint = "give a path relative to the directory holding atlas.hcl"
+
 // atlasSymlinkHopLimit is where this walk stops resolving and leaves the rest
 // to the filesystem. A config argument that needs more than a few chained links
 // to resolve is not something an author writes, and following further buys
@@ -2283,9 +2291,20 @@ func atlasLocalFSPath(value string) (string, error) {
 }
 
 func validateAtlasLocalPathValue(value string) error {
+	return atlasLocalPathRule(value, atlasFileSandboxHint)
+}
+
+// atlasLocalPathRule reports which of the two local-path rules value breaks, or
+// nil when it breaks neither.
+//
+// hint is appended to the absolute-path refusal only. A scheme is refused
+// because ptah reads no remote schemas at all, and no hint about which directory
+// to use explains that; an absolute path is refused because of where it points,
+// which is exactly what a hint can redirect.
+func atlasLocalPathRule(value, hint string) error {
 	switch {
 	case filepath.IsAbs(strings.TrimPrefix(value, "file://")):
-		return fmt.Errorf("absolute paths are not supported: %s: %s", value, atlasFileSandboxHint)
+		return fmt.Errorf("absolute paths are not supported: %s: %s", value, hint)
 	case strings.Contains(value, "://") && !strings.HasPrefix(value, "file://"):
 		return fmt.Errorf("unsupported URL scheme: %s", value)
 	default:
@@ -2293,9 +2312,17 @@ func validateAtlasLocalPathValue(value string) error {
 	}
 }
 
-func atlasLocalFileURL(value string, attr *hclsyntax.Attribute) (string, error) {
-	if err := validateAtlasLocalPathValue(value); err != nil {
-		return "", unsupportedAttr(attr.Name, attr)
+// atlasLocalFileURL turns a data.hcl_schema path into a file:// URL, or reports
+// why the path cannot be read.
+//
+// It carries the reason from validateAtlasLocalPathValue instead of replacing it
+// with unsupportedAttr, the way atlasLocalFSPath above already does not replace
+// it. "path" is a supported key; an absolute path and an unreadable URL scheme
+// are two different rules it breaks, and reporting both as an unsupported
+// construct names the one thing here that is not the problem.
+func (p atlasParser) atlasLocalFileURL(value string, attr *hclsyntax.Attribute) (string, error) {
+	if err := atlasLocalPathRule(value, atlasDataSourcePathHint); err != nil {
+		return "", p.invalidValue(attr.Name, attr, err)
 	}
 	return "file://" + filepath.ToSlash(strings.TrimPrefix(value, "file://")), nil
 }
@@ -2374,6 +2401,21 @@ func (p atlasParser) scrubSensitive(text string) string {
 		text = strings.ReplaceAll(text, secret, "(sensitive value)")
 	}
 	return text
+}
+
+// invalidValue reports a known key whose value is of the right type but breaks a
+// rule this parser enforces -- an absolute path, a URL scheme it does not read.
+// The rule's own error is carried through because it names both the rule and the
+// offending value; "unsupported atlas.hcl construct" names neither, and blames
+// the key, which is supported.
+//
+// The text is scrubbed for the same reason evaluationFailed scrubs it: the value
+// may have come from a `sensitive = true` variable, and the rule's error quotes
+// the value.
+func (p atlasParser) invalidValue(name string, attr *hclsyntax.Attribute, err error) error {
+	return fmt.Errorf("atlas.hcl %q at %s:%d: %s",
+		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
+		p.scrubSensitive(err.Error()))
 }
 
 // wrongValueType reports a known key given a value of the wrong type. The key

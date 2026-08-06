@@ -225,17 +225,13 @@ func Render(ctx context.Context, db *goschema.Database, opts Options) (Result, e
 	}
 
 	out := b.group(messages, enums, homes, prev, anchor)
-	version := exportVersionSingle
-	if len(out) > 1 {
-		version = exportVersionMulti
-	}
 
 	sources := map[string]string{}
 	pathOf := map[string]string{}
 	names := make([]string, 0, len(out))
 	files := make([]OutputFile, 0, len(out))
 	for _, current := range out {
-		stamped, err := stampDigest([]byte(render(current, version)))
+		stamped, err := stampDigest([]byte(render(current)))
 		if err != nil {
 			return Result{}, fmt.Errorf("stamp content digest for %s: %w", current.Name, err)
 		}

@@ -520,12 +520,15 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 			// and the diagnostic count rises. Written users first, reported pets
 			// first.
 			//
-			// The `0 schema changes` line is a known divergence, not parity:
+			// The missing schema-change line is a known divergence, not parity:
 			// Ptah's parser does not model the standalone RENAME TABLE
 			// statement, so it contributes no semantic change, where the
 			// analyzer this tool matches counts four. It is pre-existing --
-			// master reports 0 here too -- and dialect-specific to the MySQL
-			// grammar; the diagnostics above are what #1074 aligned.
+			// master reports zero here too -- and dialect-specific to the MySQL
+			// grammar; the diagnostics above are what #1074 aligned. A count of
+			// zero prints no line at all (see the INSERT-only case below), so
+			// the divergence now shows as an absent line rather than as
+			// "0 schema changes".
 			name: "several table renames in one statement are ordered by name",
 			files: map[string]string{
 				"1.sql": "CREATE TABLE users (id int);\nCREATE TABLE pets (id int);\n",
@@ -546,8 +549,31 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 				"  -------------------------\n" +
 				"  -- 0s\n" +
 				"  -- 1 version with errors\n" +
-				"  -- 0 schema changes\n" +
 				"  -- 2 diagnostics\n",
+		},
+		{
+			// #1074 S1: a version that expresses no schema change prints no
+			// schema-change line at all. Measured against the pinned community
+			// binary v1.3.0: a version whose only statement is an INSERT ends at
+			// the version-summary line, where Ptah used to add
+			// "-- 0 schema changes". The scope filter made this reachable on
+			// versions that do carry DDL, because DDL against a schema the dev
+			// URL does not cover counts nothing.
+			name: "a version expressing no schema change prints no change line",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE t (id int);\n",
+				"2.sql": "INSERT INTO t (id) VALUES (1);\n",
+			},
+			latest: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- no diagnostics found\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version ok\n",
 		},
 	}
 

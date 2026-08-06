@@ -10,18 +10,9 @@ import (
 // buf format, so a `buf format -w` pre-commit hook - routine in exactly the
 // buf-using repositories this target serves - cannot rewrite the file, break
 // the content digest and make every later export refuse to run.
-func render(f file, version int) string {
+func render(f file) string {
 	var sb strings.Builder
 
-	sb.WriteString(generatedMarker + "\n")
-	sb.WriteString(versionPrefix + strconv.Itoa(version) + "\n")
-	// Stamped with the real digest by stampDigest once the body is complete.
-	sb.WriteString(digestPrefix + "\n")
-	// The manifest is the anchor's record of the rest of its set, so it is
-	// written before any declaration and covered by the digest.
-	if len(f.Siblings) > 0 {
-		sb.WriteString(manifestPrefix + strings.Join(f.Siblings, ",") + "\n")
-	}
 	sb.WriteString("edition = \"2023\";\n\n")
 	sb.WriteString("package " + f.Package + ";\n\n")
 
@@ -48,11 +39,34 @@ func render(f file, version int) string {
 		}
 		renderEnum(&sb, en)
 	}
-	// Exactly one trailing newline. A schema that selects no tables would
-	// otherwise end in the blank line that follows the package statement, which
-	// `buf format` strips - rewriting the file, invalidating the content digest
-	// and making every later export refuse to run.
-	return strings.TrimRight(sb.String(), "\n") + "\n"
+	// Exactly one blank line between the body and the header, and exactly one
+	// trailing newline. A schema that selects no tables would otherwise carry the
+	// blank line that follows the package statement, which `buf format` strips -
+	// rewriting the file, invalidating the content digest and making every later
+	// export refuse to run.
+	body := strings.TrimRight(sb.String(), "\n")
+	return body + "\n\n" + renderHeader(f.Siblings)
+}
+
+// renderHeader writes the generated header block. It is the LAST thing in the
+// file: as the leading comment it would be the file's leading detached comment,
+// which protoc-gen-go copies to the top of every .pb.go, putting Ptah's content
+// digest into consumers' Go source. The digest line is stamped with its real
+// value by stampDigest once the rest of the file is complete.
+//
+// siblings is the anchor's record of the rest of its export set, and is empty
+// for every other file. It sits inside the header block so that stampDigest
+// covers it: a manifest outside the digest could be edited to drop a file from
+// the set, and the next run would read the survivors as the whole export and
+// restart the dropped file's field numbers at 1.
+func renderHeader(siblings []string) string {
+	header := generatedMarker + "\n" +
+		versionPrefix + strconv.Itoa(exportVersion) + "\n" +
+		digestPrefix + "\n"
+	if len(siblings) > 0 {
+		header += manifestPrefix + strings.Join(siblings, ",") + "\n"
+	}
+	return header
 }
 
 func renderMessage(sb *strings.Builder, msg message) {
@@ -96,20 +110,20 @@ func renderEnum(sb *strings.Builder, en enum) {
 }
 
 func hasReservations(res reservations) bool {
-	return len(res.Numbers) > 0 || len(res.Names) > 0
+	return res.hasNumbers() || len(res.Names) > 0
 }
 
-// writeReservations emits numbers as one ascending statement with contiguous
-// runs collapsed, then names as one statement in ascending order. Under
-// editions the names are bare identifiers: quoting them is a hard parse error,
-// which is the inverse of proto2/proto3.
+// writeReservations emits numbers as one ascending statement, each range
+// written the way it is held, then names as one statement in ascending order.
+// Under editions the names are bare identifiers: quoting them is a hard parse
+// error, which is the inverse of proto2/proto3.
 func writeReservations(sb *strings.Builder, res reservations) {
-	if len(res.Numbers) == 0 && len(res.Names) == 0 {
+	if !hasReservations(res) {
 		return
 	}
-	if len(res.Numbers) > 0 {
-		parts := make([]string, 0, len(res.Numbers))
-		for _, r := range collapseRanges(res.Numbers) {
+	if res.hasNumbers() {
+		parts := make([]string, 0, len(res.Ranges))
+		for _, r := range res.Ranges {
 			if r.Start == r.End {
 				parts = append(parts, strconv.FormatInt(int64(r.Start), 10))
 				continue

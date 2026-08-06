@@ -112,7 +112,7 @@ func (b *builder) reconcileMessage(dm desiredMessage, prev *previousSet) (messag
 	}
 	msg.Reserved = cloneReservations(state.Reserved)
 
-	used := state.used()
+	highest := state.highestUsed()
 	live := map[string]bool{}
 
 	for _, df := range dm.Fields {
@@ -148,13 +148,13 @@ func (b *builder) reconcileMessage(dm desiredMessage, prev *previousSet) (messag
 		}
 
 		if !existed {
-			allocated, ok := nextNumber(used)
+			allocated, ok := nextNumber(highest)
 			if !ok {
 				return message{}, fmt.Errorf("message %q has exhausted the protobuf field number space", dm.Name)
 			}
 			number = allocated
 		}
-		used = append(used, number)
+		highest = max(highest, number)
 		msg.Fields = append(msg.Fields, field{
 			Name:     df.Name,
 			Number:   number,
@@ -189,16 +189,16 @@ func (b *builder) reconcileEnum(de enum, prev *previousSet) (enum, error) {
 	}
 	out.Reserved = cloneReservations(state.Reserved)
 
-	used := state.used()
+	highest := state.highestUsed()
 	live := map[string]bool{}
 
 	for _, dv := range de.Values {
 		live[dv.Name] = true
 
-		// The zero value is synthesized and always keeps number 0.
+		// The zero value is synthesized and always keeps number 0, which never
+		// raises the high-water mark: highestUsed is never negative.
 		if dv.Number == 0 {
 			out.Values = append(out.Values, enumValue{Name: dv.Name, Number: 0, Comment: dv.Comment})
-			used = append(used, 0)
 			continue
 		}
 
@@ -208,13 +208,13 @@ func (b *builder) reconcileEnum(de enum, prev *previousSet) (enum, error) {
 
 		number, existed := state.Numbers[dv.Name]
 		if !existed {
-			allocated, ok := nextNumber(used)
+			allocated, ok := nextNumber(highest)
 			if !ok {
 				return enum{}, fmt.Errorf("enum %q has exhausted the protobuf number space", de.Name)
 			}
 			number = allocated
 		}
-		used = append(used, number)
+		highest = max(highest, number)
 		out.Values = append(out.Values, enumValue{Name: dv.Name, Number: number, Comment: dv.Comment})
 	}
 
@@ -297,14 +297,14 @@ const tombstoneComment = "Removed from the source schema; retained for wire comp
 // no live fields, but numbers reserved. Detected structurally rather than from
 // the comment, because comments are not part of the compatibility state.
 func isMessageTombstone(state previousType) bool {
-	return len(state.Numbers) == 0 && len(state.Reserved.Numbers) > 0
+	return len(state.Numbers) == 0 && state.Reserved.hasNumbers()
 }
 
 // isEnumTombstone reports whether a previous enum is already a tombstone. An
 // enum can never be emptied - protoc rejects an enum with no values - so a
 // tombstoned enum retains exactly its synthesized zero value.
 func isEnumTombstone(state previousType) bool {
-	if len(state.Reserved.Numbers) == 0 || len(state.Numbers) != 1 {
+	if !state.Reserved.hasNumbers() || len(state.Numbers) != 1 {
 		return false
 	}
 	for _, number := range state.Numbers {
@@ -315,8 +315,8 @@ func isEnumTombstone(state previousType) bool {
 
 func cloneReservations(in reservations) reservations {
 	return reservations{
-		Numbers: append([]int32(nil), in.Numbers...),
-		Names:   append([]string(nil), in.Names...),
+		Ranges: append([]numberRange(nil), in.Ranges...),
+		Names:  append([]string(nil), in.Names...),
 	}
 }
 

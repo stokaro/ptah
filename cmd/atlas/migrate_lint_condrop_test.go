@@ -135,7 +135,7 @@ func TestCompatCommand_MigrateLintCondropSeverity(t *testing.T) {
 				[]byte(atlasCondropProjectConfig), 0o600), qt.IsNil)
 			t.Chdir(dir)
 
-			stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "migrations", "--env", tt.env)
+			stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", tt.env)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, tt.code)
 			// The report body is identical in all four rows -- the diagnostic
@@ -181,7 +181,7 @@ func TestCompatCommand_MigrateLintRunsWithDropSchemaConfigured(t *testing.T) {
 		[]byte(atlasDropSchemaProjectConfig), 0o600), qt.IsNil)
 	t.Chdir(dir)
 
-	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "migrations", "--env", "skip_drop_schema")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", "skip_drop_schema")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 0)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -225,7 +225,7 @@ func TestCompatCommand_MigrateLintRunsWithSchemaRepoConfigured(t *testing.T) {
 		[]byte(atlasSchemaRepoProjectConfig), 0o600), qt.IsNil)
 	t.Chdir(dir)
 
-	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "migrations", "--env", "repo")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", "repo")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 0)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,

@@ -84,6 +84,54 @@ Unsupported semantics fail explicitly. Ptah does not silently drop HCL objects
 that it cannot represent in the schema IR. The Ptah `ops` index attribute
 preserves a Go annotation operator class.
 
+## Variables, locals, and expressions
+
+A schema file may declare `variable` and `locals` blocks and read them back
+through the `var.` and `local.` namespaces:
+
+```hcl
+variable "status" {
+  type    = string
+  default = "active"
+}
+
+locals {
+  state_column = "state_${var.status}"
+}
+
+schema "app" {}
+
+table "t" {
+  schema = schema.app
+  column "state" {
+    type    = text
+    default = var.status
+    comment = local.state_column
+  }
+}
+```
+
+A `variable` block requires `type`, which is one of `bool`, `int`, `number`,
+`string`, or `list`, `map` or `set` of those. It accepts `default` and
+`description`. A variable with no `default` needs a value from `--var`:
+
+```bash
+ptah-compat schema diff --dev-url "sqlite://file?mode=memory" \
+  --from file://empty.hcl --to file://schema.hcl --var status=live
+```
+
+One `--var` occurrence carries comma-separated `name=value` assignments, and the
+flag may be repeated. A variable that ends with no value fails with
+`missing value for required variable "status"`. `--var` does not require an
+`atlas.hcl`; when one is present it also supplies that file's variables.
+
+Attribute values are evaluated. A function call resolves against the function
+set, a `var.` or `local.` reference resolves against the blocks above, and
+anything that will not resolve is an error rather than the expression's own
+source text. References that name schema objects — `schema.app`, `column.state`,
+`enum.status` — and type expressions such as `text` or `varchar(255)` are read
+as written and are not evaluated, so a `var.` reference in a `type` is rejected.
+
 ## Go annotation parity
 
 Every schema semantic accepted by Ptah's Go annotation parser has an HCL

@@ -76,13 +76,13 @@ Across the 164 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 90 |
-| Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 26 |
-| Ptah and Atlas CE both support it | 22 |
+| Ptah supports it fully | 91 |
+| Ptah supports it with a stated limitation | 49 |
+| Ptah does not implement it | 24 |
+| Ptah and Atlas CE both support it | 23 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 20 |
-| Atlas CE has it and Ptah does not, or only in part | 26 |
+| Atlas CE has it and Ptah does not, or only in part | 25 |
 | An Atlas column is ❔ — not established by this page's evidence | 5 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -113,11 +113,11 @@ seven of them as open capabilities regardless.
 | External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-external-schema`) runs a program without a shell emitting SQL, HCL, or YAML. |
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
 | HCL foreign_key deferrable | ❌ | ❌ | ❌ | Errors: unsupported foreign_key attribute "deferrable". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too. The community binary plans no DEFERRABLE either. |
-| HCL function calls in schema files | 🟡 | 🟡 | 🟡 | sql() unwraps in column default/on_update/unique_expr/check, index ops, domain check only; in type, check.expr and index.where it leaks into the DDL where the community binary refuses the file. |
-| HCL locals, lock, atlas, dynamic/for_each | ❌ | 🟡 | 🟡 | Named rejections, rejected (`ptah-compat` exit 1, native `ptah` exit 2): unsupported top-level block "locals"/"lock"/"atlas"; unsupported table block "dynamic". The community binary honors locals. |
+| HCL function calls in schema files | 🟡 | 🟡 | 🟡 | sql() reduces to its SQL everywhere; other calls evaluate against a function set measured name by name on the community binary. yamldecode, yamlencode, uuid and print stay refused where it evaluates. |
+| HCL locals, lock, atlas, dynamic/for_each | 🟡 | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. Still rejected by name (`ptah-compat` exit 1, native `ptah` exit 2): top-level "lock"/"atlas"; table block "dynamic". The community binary ignores both. |
 | HCL table and column child blocks | ✅ | 🟡 | ✅ | column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. The community binary drops row_security silently. |
 | HCL top-level blocks Ptah parses | ✅ | 🟡 | ✅ | schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data. The community binary plans DDL for table and enum. |
-| HCL variable blocks and var.* references | ❌ | ✅ | ✅ | `variable` is parsed then discarded and `var.x` reaches DDL as the literal text `var.x`, exit 0 — no substitution and no error. |
+| HCL variable blocks and var.* references | ✅ | ✅ | ✅ | `variable` blocks bind `var.x`, `--var name=value` overrides them, and a typed variable with no value exits 1 with `missing value for required variable "x"` — the community binary's own text. |
 | Live database as desired state | ✅ | ✅ | ✅ | One connectable DB URL can be the desired side of compat schema apply/diff and migrate diff; `ptah db read` introspects natively. |
 | Live database to Go annotation source | ✅ | ❌ | ❌ | `ptah introspect` writes annotated Go models from a live DB; repo docs record Go annotations as a first-party Ptah workflow. |
 | Migration directory as a source | ✅ | ✅ | ✅ | Atlas-format directory with `atlas.sum`, replayed on a required `--dev-url`. Works on `ptah schema inspect` and compat apply/diff/migrate diff. |
@@ -165,12 +165,12 @@ seven of them as open capabilities regardless.
 | Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❌ | ✅ | `-- atlas:txtar` executes migration.sql/down.sql and enforces checks.sql plus ordered checks/*.sql, including atlas:assert oneof; unrelated files are ignored. CE runs every section as plain SQL. |
 | Atlas-format checkpoint output | ✅ | ❌ | ✅ | `migrate checkpoint --dir-format atlas` writes the single `-- atlas:checkpoint` file plus atlas.sum, and is compat's default; `--dir-format ptah` writes the reversible pair. Up-only, as Atlas is. |
 | Baseline an existing database | ✅ | ✅ | ✅ | Ptah adds a standalone baseline verb with `--shadow-db` verification and `--dry-run`; CE exposes baselining as migrate apply `--baseline`. |
-| Create an empty migration file | ✅ | ✅ | ✅ | Native create writes an up/down pair; compat new writes one Atlas .sql skeleton, refreshes `atlas.sum`, `--edit` opens $VISUAL or $EDITOR. |
+| Create an empty migration file | ✅ | ✅ | ✅ | Native create writes an up/down pair; compat new writes the selected layout's skeleton for atlas and all five external formats, refreshes `atlas.sum`, `--edit` opens $VISUAL or $EDITOR on atlas. |
 | Directory integrity file: hash, validate, and the apply/status/set/import gate | ✅ | ✅ | ✅ | hash writes `ptah.sum` or `atlas.sum`; validate checks it. Compat apply, status and set refuse a stale or missing `atlas.sum`; import verifies one the source carries. Native up gates hashed dirs only. |
 | Directory maintenance: edit, rebase, rm | ✅ | ❌ | ✅ | Each rewrites `ptah.sum`/`atlas.sum` and refuses a migration applied in `--db-url` unless `--force`; CE aborts all three as non-community verbs. |
 | Dynamic down planning (`migrate down --plan`) | ❌ | ❌ | ✅ | `--plan`, `--to-tag` and `--skip-checks` are recorded waivers that fail loudly; Ptah reverts only through pre-planned down files. |
 | Execution order (`--exec-order`) | ✅ | ✅ | ✅ | linear fails on a pending migration below the current version, linear-skip warns and leaves it pending, non-linear applies it. |
-| External `--dir-format` outside `migrate import` | 🟡 | ✅ | ✅ | hash and validate read every Atlas source layout, under both `?format=` and `--dir-format`; lint, new, set and status still take only atlas and need migrate import first. |
+| External `--dir-format` outside `migrate import` | 🟡 | ✅ | ✅ | hash, validate, lint, status, set and new read the selected Atlas source layout under both `?format=` and `--dir-format`; new also writes it. Only diff still needs migrate import first. |
 | Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Native `ptah migrations down` marks the row failed with the error and completed-statement count, so status reports it dirty and `migrations repair` clears it; compat matches Atlas, which records none. |
 | Flyway repeatable (`R__`) migration import | 🟡 | ✅ | ✅ | Compat import converts `R__` to a one-time migration ordered last, as Atlas CE runs it. Editing the body then fails on a Ptah revision checksum where CE exits 0. |
 | Generate migrations from a schema diff | 🟡 | ✅ | ✅ | New versions are a Unix epoch in an empty dir and latest+1 otherwise, not the UTC YYYYMMDDHHMMSS stamp migrate new and Atlas dirs carry. |
@@ -219,7 +219,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
-| Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | schema test carries `-s/--schema` and takes a Go-annotation directory, a .sql or .hcl file, or a database URL; env:// and atlas:// are refused. Neither verb exposes `--report` or `--seed-dir`. |
+| Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | Both verbs expose `--report` and `--seed-dir` and name a docker:// `--dev-url` refusal. schema test takes `-s/--schema`, a Go directory, a .sql or .hcl file, or a database URL; env:// stays refused. |
 | Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused, and schema apply `--dry-run` skips the rehearsal entirely. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. CE stays unknown: a CLI probe cannot see a Go API; an Atlas-side source naming a test-runner entry point would settle it. |
 | Exit-code contract for CI gates | ✅ | ✅ | ➖ | Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2. |
@@ -233,7 +233,7 @@ seven of them as open capabilities regardless.
 | Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Rejects atlas, script, exporter, deployment; env for_each and schemas; migration baseline, skip_report, repo; data blocks but hcl_schema and external_schema. |
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl in the working directory; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only. |
-| data "hcl_schema" reference | 🟡 | ✅ | ✅ | Takes path or paths and exports .url; the Atlas vars input, absolute paths, and any non-file:// value are rejected. |
+| data "hcl_schema" reference | 🟡 | ✅ | ✅ | Takes path or paths and exports .url; the Atlas vars input is rejected by name, and an absolute path or a non-file:// scheme is rejected by its rule rather than as an unsupported construct. |
 | Docker dev databases (`docker://` `--dev-url`) | ❌ | ✅ | ✅ | migrate diff, lint and validate refuse docker:// and require a directly connectable dev database URL. |
 | env:// desired-state references | 🟡 | ✅ | ✅ | Resolves only on `--to`/`--from` and only src, schema.src, url, dev, migration.dir; native `--schema-file` refuses it by name; elsewhere (`--exclude`) the literal string is used silently. |
 | Native project config (ptah.yaml) | ✅ | ➖ | ➖ | Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. An unknown key fails, naming the key, its line, and the accepted keys. |
