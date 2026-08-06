@@ -2,8 +2,11 @@
 
 package atlasmigrate
 
-import "os"
+import "go.5x5.cz/ptah/internal/pathguard"
 
-func platformPublicationMode(stagedPath string) (publicationMode, error) {
-	return detectPublicationModeWithLink(stagedPath, os.Link)
+func platformPublicationMode(
+	d *pathguard.OpenedDirectory,
+	stagedName string,
+) (publicationMode, error) {
+	return detectPublicationModeWithLink(d, stagedName, d.Link)
 }

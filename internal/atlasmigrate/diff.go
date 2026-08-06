@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
@@ -34,7 +33,17 @@ const (
 )
 
 type DiffOptions struct {
-	Dir                  string
+	Dir string
+	// Root, when set, is the opened project root the migration directory must
+	// stay inside. The writer binds Dir through it once and runs every later
+	// step -- staging, publication, checksum commit, rollback and recovery --
+	// through that handle, so replacing the directory or one of its ancestors
+	// after Dir was resolved cannot redirect a write out of the root
+	// (stokaro/ptah#1118). The caller retains ownership of the handle.
+	//
+	// Leave it nil for direct CLI semantics, where an explicit absolute --dir is
+	// the operator's own choice of destination and is bound as its own root.
+	Root                 *pathguard.OpenedDirectory
 	Desired              atlassource.Set
 	SourceConnectTimeout time.Duration
 	Name                 string
@@ -123,8 +132,8 @@ func generateDiff(
 	schemas := prepared.schemas
 	format := prepared.format
 
-	if err := os.MkdirAll(filepath.Dir(filepath.Clean(opts.Dir)), 0755); err != nil {
-		return DiffResult{}, fmt.Errorf("create migration directory parent: %w", err)
+	if err := ensureMigrationDirParent(opts.Root, opts.Dir); err != nil {
+		return DiffResult{}, err
 	}
 	dirLock, err := acquireDirLock(ctx, opts.Dir, opts.LockTimeout)
 	if err != nil {
@@ -144,19 +153,18 @@ func generateDiff(
 	if err != nil {
 		return DiffResult{}, err
 	}
-	if err := os.MkdirAll(opts.Dir, 0755); err != nil {
-		return DiffResult{}, fmt.Errorf("create migration directory: %w", err)
-	}
-	if err := recoverPendingPublication(opts.Dir); err != nil {
-		return DiffResult{}, fmt.Errorf("recover migration artifact publication: %w", err)
-	}
-	migrationSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(opts.Dir))
+	// From here on the migration directory is a rooted capability, not a
+	// pathname. Everything that reads or writes it -- the capture, the checksum
+	// recheck, staging, publication, the atlas.sum commit, rollback and recovery
+	// -- goes through this handle, so a directory or ancestor replaced after this
+	// point cannot redirect the transaction (stokaro/ptah#1118).
+	writer, migrationSnapshot, err := openVerifiedMigrationDir(opts)
 	if err != nil {
-		return DiffResult{}, fmt.Errorf("capture migration directory: %w", err)
-	}
-	if err := opts.verifyDir(migrationSnapshot); err != nil {
 		return DiffResult{}, err
 	}
+	defer func() {
+		err = errors.Join(err, writer.Close())
+	}()
 
 	info := conn.Info()
 	devDefaultSchema := info.Schema
@@ -200,7 +208,7 @@ func generateDiff(
 	if err := ctx.Err(); err != nil {
 		return DiffResult{}, err
 	}
-	if err := verifyMigrationDirUnchanged(opts.Dir, migrationSnapshot); err != nil {
+	if err := verifyMigrationDirUnchanged(writer, migrationSnapshot); err != nil {
 		return DiffResult{}, err
 	}
 	if opts.DryRun {
@@ -208,12 +216,51 @@ func generateDiff(
 	}
 	return writeDiffArtifacts(
 		ctx,
-		opts.Dir,
+		writer,
 		opts.Name,
 		contents,
 		migrationSnapshot,
 		opts.PreparePublication,
 	)
+}
+
+// openVerifiedMigrationDir binds the migration directory once and returns it
+// together with the snapshot the rest of the run is planned against. Both come
+// from the same handle deliberately: verifying one filesystem object and
+// planning against another is the defect this ordering closes.
+func openVerifiedMigrationDir(
+	opts DiffOptions,
+) (*migrationWriterDir, fsnapshot.Snapshot, error) {
+	writer, err := createMigrationWriterDir(opts.Root, opts.Dir)
+	if err != nil {
+		return nil, fsnapshot.Snapshot{}, err
+	}
+	snapshot, err := captureVerifiedMigrationDir(writer, opts)
+	if err != nil {
+		return nil, fsnapshot.Snapshot{}, errors.Join(err, writer.Close())
+	}
+	return writer, snapshot, nil
+}
+
+func captureVerifiedMigrationDir(
+	w *migrationWriterDir,
+	opts DiffOptions,
+) (fsnapshot.Snapshot, error) {
+	if err := recoverPendingPublication(w); err != nil {
+		return fsnapshot.Snapshot{}, fmt.Errorf("recover migration artifact publication: %w", err)
+	}
+	fsys, err := w.FS()
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	snapshot, err := migrationsnapshot.CaptureStable(fsys)
+	if err != nil {
+		return fsnapshot.Snapshot{}, fmt.Errorf("capture migration directory: %w", err)
+	}
+	if err := opts.verifyDir(snapshot); err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	return snapshot, nil
 }
 
 func prepareDiff(
@@ -363,8 +410,12 @@ func verifyDirSum(fsys fs.FS) error {
 	return nil
 }
 
-func verifyMigrationDirUnchanged(dir string, expected fsnapshot.Snapshot) error {
-	current, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+func verifyMigrationDirUnchanged(w *migrationWriterDir, expected fsnapshot.Snapshot) error {
+	fsys, err := w.FS()
+	if err != nil {
+		return err
+	}
+	current, err := migrationsnapshot.CaptureStable(fsys)
 	if err != nil {
 		return fmt.Errorf("recapture migration directory: %w", err)
 	}

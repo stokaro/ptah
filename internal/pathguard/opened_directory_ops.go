@@ -34,6 +34,44 @@ func (d *OpenedDirectory) Remove(name string) error {
 	return d.root.Remove(name)
 }
 
+// ReadDir lists name through the rooted directory handle. Pass "." for the
+// opened directory itself.
+func (d *OpenedDirectory) ReadDir(name string) ([]fs.DirEntry, error) {
+	return fs.ReadDir(d.root.FS(), name)
+}
+
+// OpenFile opens name through the rooted directory handle with the supplied
+// flags. The caller owns the returned file and must close it.
+func (d *OpenedDirectory) OpenFile(name string, flag int, perm fs.FileMode) (*os.File, error) {
+	return d.root.OpenFile(name, flag, perm)
+}
+
+// Link creates newName as a hard link to oldName through the rooted directory
+// handle. An existing newName is reported through fs.ErrExist, so the link is
+// already conditional on the destination being absent.
+func (d *OpenedDirectory) Link(oldName, newName string) error {
+	return d.root.Link(oldName, newName)
+}
+
+// Mkdir creates name as a directory inside the opened directory. An entry that
+// already exists is reported through fs.ErrExist.
+func (d *OpenedDirectory) Mkdir(name string, perm fs.FileMode) error {
+	return d.root.Mkdir(name, perm)
+}
+
+// MkdirAll creates path and every missing parent inside the opened directory.
+// Path may be spelled absolutely as long as it stays within the handle.
+func (d *OpenedDirectory) MkdirAll(path string, perm fs.FileMode) error {
+	target, err := rootedRelativePath(path, d.path)
+	if err != nil {
+		return err
+	}
+	if target.relative == "." {
+		return nil
+	}
+	return d.root.MkdirAll(target.relative, perm)
+}
+
 // CreateTemp creates a new exclusively owned file directly in the opened
 // directory. Pattern may contain one or more asterisks; the last is replaced
 // with random text. A pattern without an asterisk receives a random suffix.
