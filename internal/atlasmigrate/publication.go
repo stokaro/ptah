@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -27,10 +28,15 @@ const (
 	publicationJournalSuffix      = ".ptah-migrate-diff.pending"
 	publicationCommitMarkerSuffix = ".committed"
 	publicationCleanupSuffix      = ".cleanup"
+	publicationRollbackSuffix     = ".rollback"
 	stagedMigrationPattern        = ".ptah-migrate-diff-*.tmp"
+	stagedMigrationPrefix         = ".ptah-migrate-diff-"
+	stagedMigrationSuffix         = ".tmp"
 
 	publicationCommitModeAtlasSum = "atlas-sum"
 	publicationCommitModeMarker   = "journal-marker"
+
+	publishedFileMode fs.FileMode = 0o644
 )
 
 type publicationMode string
@@ -61,62 +67,69 @@ type PublicationArtifact struct {
 	Contents []byte
 }
 
+// migrationBatch names the files of one publication batch as direct children of
+// the rooted migration directory. Paths are display data derived from the
+// handle's lexical path; no publication step resolves them again.
 type migrationBatch struct {
 	paths       []string
-	stagedPaths []string
+	names       []string
+	stagedNames []string
 	digests     []string
 	mode        publicationMode
 }
 
 // writeDiffArtifacts durably publishes one batch of migration files and then
-// atlas.sum. A journal next to the migration directory makes an interrupted
-// publication recoverable by the next lock holder.
+// atlas.sum, entirely through the rooted migration-directory handle. A journal
+// beside the migration directory makes an interrupted publication recoverable
+// by the next lock holder.
 func writeDiffArtifacts(
 	ctx context.Context,
-	dir, name string,
+	w *migrationWriterDir,
+	name string,
 	contents []MigrationFileContent,
 	baseSnapshot fsnapshot.Snapshot,
 	prepare func([]string) error,
 ) (DiffResult, error) {
 	return writeDiffArtifactsWithSumWriter(
 		ctx,
-		dir,
+		w,
 		name,
 		contents,
 		baseSnapshot,
 		prepare,
-		writeDirSum,
+		publishDirSum,
 	)
 }
 
 func writeDiffArtifactsWithSumWriter(
 	ctx context.Context,
-	dir, name string,
+	w *migrationWriterDir,
+	name string,
 	contents []MigrationFileContent,
 	baseSnapshot fsnapshot.Snapshot,
 	prepare func([]string) error,
-	writeSum func(string, *migratesum.SumFile) (string, error),
+	writeSum func(*migrationWriterDir, *migratesum.SumFile) (string, error),
 ) (DiffResult, error) {
 	if err := ctx.Err(); err != nil {
 		return DiffResult{}, err
 	}
-	if err := recoverPendingPublication(dir); err != nil {
+	if err := recoverPendingPublication(w); err != nil {
 		return DiffResult{}, fmt.Errorf("recover previous migration artifact publication: %w", err)
 	}
 	version, err := nextMigrationVersionFS(baseSnapshot)
 	if err != nil {
 		return DiffResult{}, err
 	}
-	batch, err := stageMigrationBatchAt(dir, name, version, contents)
+	batch, err := stageMigrationBatchAt(w, name, version, contents)
 	if err != nil {
 		return DiffResult{}, err
 	}
-	if err := prepareStagedMigrationBatch(ctx, batch, prepare); err != nil {
-		return DiffResult{}, errors.Join(err, removeFiles(batch.stagedPaths))
+	if err := prepareStagedMigrationBatch(ctx, w, batch, prepare); err != nil {
+		return DiffResult{}, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
 	}
-	stagedContents, err := readStagedMigrationContents(&batch)
+	stagedContents, err := readStagedMigrationContents(w, &batch)
 	if err != nil {
-		return DiffResult{}, errors.Join(err, removeFiles(batch.stagedPaths))
+		return DiffResult{}, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
 	}
 	publishedSnapshot, sum, err := preparePublicationSnapshot(
 		baseSnapshot,
@@ -124,23 +137,23 @@ func writeDiffArtifactsWithSumWriter(
 		stagedContents,
 	)
 	if err != nil {
-		return DiffResult{}, errors.Join(err, removeFiles(batch.stagedPaths))
+		return DiffResult{}, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
 	}
-	journal, err := beginPublication(dir, batch, sum.Bytes())
+	journal, err := beginPublication(w, batch, sum.Bytes())
 	if err != nil {
-		return DiffResult{}, errors.Join(err, removeFiles(batch.stagedPaths))
+		return DiffResult{}, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
 	}
-	published, err := publishMigrationBatchContext(ctx, dir, batch)
+	published, err := publishMigrationBatchContext(ctx, w, batch)
 	if err != nil {
-		return DiffResult{}, errors.Join(err, abortPendingPublication(dir, batch, published))
+		return DiffResult{}, errors.Join(err, abortPendingPublication(w, batch, published))
 	}
-	if err := verifyMigrationDirUnchanged(dir, publishedSnapshot); err != nil {
-		return DiffResult{}, errors.Join(err, abortPendingPublication(dir, batch, published))
+	if err := verifyMigrationDirUnchanged(w, publishedSnapshot); err != nil {
+		return DiffResult{}, errors.Join(err, abortPendingPublication(w, batch, published))
 	}
 	if err := ctx.Err(); err != nil {
-		return DiffResult{}, errors.Join(err, abortPendingPublication(dir, batch, published))
+		return DiffResult{}, errors.Join(err, abortPendingPublication(w, batch, published))
 	}
-	sumPath, err := writeSum(dir, sum)
+	sumPath, err := writeSum(w, sum)
 	if err != nil {
 		if migratesum.IsCommitUncertain(err) {
 			return DiffResult{}, fmt.Errorf(
@@ -148,21 +161,17 @@ func writeDiffArtifactsWithSumWriter(
 				err,
 			)
 		}
-		return DiffResult{}, errors.Join(err, abortPendingPublication(dir, batch, published))
+		return DiffResult{}, errors.Join(err, abortPendingPublication(w, batch, published))
 	}
 	result := DiffResult{MigrationPaths: batch.paths, SumPath: sumPath}
-	journalPath, err := publicationJournalPath(dir)
-	if err != nil {
-		return result, err
-	}
-	committed, err := publicationCommitted(dir, journal)
+	committed, err := publicationCommitted(w, journal)
 	if err != nil {
 		return result, fmt.Errorf("verify migration publication commit marker: %w", err)
 	}
 	if !committed {
 		return result, errors.New("atlas.sum does not match the journaled migration publication")
 	}
-	if err := finalizeCommittedPublication(dir, journalPath, journal); err != nil {
+	if err := finalizeCommittedPublication(w, journal); err != nil {
 		return result, fmt.Errorf("finalize migration artifact publication: %w", err)
 	}
 	return result, nil
@@ -178,101 +187,138 @@ func PublishArtifactsLocked(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := recoverPendingPublication(dir); err != nil {
-		return nil, fmt.Errorf("recover previous artifact publication: %w", err)
-	}
-	batch, err := stageArtifactBatch(dir, artifacts)
+	w, err := createMigrationWriterDir(nil, dir)
 	if err != nil {
 		return nil, err
 	}
-	journal, err := beginMarkerPublication(dir, batch)
-	if err != nil {
-		return nil, errors.Join(err, removeFiles(batch.stagedPaths))
+	paths, publishErr := publishArtifactsLocked(ctx, w, artifacts)
+	return paths, errors.Join(publishErr, w.Close())
+}
+
+func publishArtifactsLocked(
+	ctx context.Context,
+	w *migrationWriterDir,
+	artifacts []PublicationArtifact,
+) ([]string, error) {
+	if err := recoverPendingPublication(w); err != nil {
+		return nil, fmt.Errorf("recover previous artifact publication: %w", err)
 	}
-	published, err := publishMigrationBatchContext(ctx, dir, batch)
+	batch, err := stageArtifactBatch(w, artifacts)
 	if err != nil {
-		return nil, errors.Join(err, abortPendingPublication(dir, batch, published))
+		return nil, err
+	}
+	journal, err := beginMarkerPublication(w, batch)
+	if err != nil {
+		return nil, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
+	}
+	published, err := publishMigrationBatchContext(ctx, w, batch)
+	if err != nil {
+		return nil, errors.Join(err, abortPendingPublication(w, batch, published))
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, errors.Join(err, abortPendingPublication(dir, batch, published))
+		return nil, errors.Join(err, abortPendingPublication(w, batch, published))
 	}
-	if err := writePublicationCommitMarker(dir, journal); err != nil {
-		committed, commitErr := publicationCommitted(dir, journal)
+	if err := writePublicationCommitMarker(w, journal); err != nil {
+		committed, commitErr := publicationCommitted(w, journal)
 		if committed && commitErr == nil {
 			return nil, fmt.Errorf(
 				"write artifact publication commit marker; journal retained for recovery: %w",
 				err,
 			)
 		}
-		return nil, errors.Join(err, abortPendingPublication(dir, batch, published))
+		return nil, errors.Join(err, abortPendingPublication(w, batch, published))
 	}
-	journalPath, err := publicationJournalPath(dir)
-	if err != nil {
-		return nil, err
-	}
-	committed, err := publicationCommitted(dir, journal)
+	committed, err := publicationCommitted(w, journal)
 	if err != nil {
 		return nil, fmt.Errorf("verify artifact publication commit marker: %w", err)
 	}
 	if !committed {
 		return nil, errors.New("artifact publication commit marker does not match its journal")
 	}
-	if err := finalizeCommittedPublication(dir, journalPath, journal); err != nil {
+	if err := finalizeCommittedPublication(w, journal); err != nil {
 		return slices.Clone(batch.paths), fmt.Errorf("finalize artifact publication: %w", err)
 	}
 	return slices.Clone(batch.paths), nil
 }
 
+// prepareStagedMigrationBatch runs the caller's editor hook over the staged
+// files and then re-validates each one through the rooted handle.
+//
+// The editor is an external program, so the hook has to receive pathnames.
+// Everything after it goes back through the handle and re-establishes the
+// staged file's identity there, so an editor that replaced the directory under
+// itself cannot hand a foreign file to the publication step.
 func prepareStagedMigrationBatch(
 	ctx context.Context,
+	w *migrationWriterDir,
 	batch migrationBatch,
 	prepare func([]string) error,
 ) error {
 	if prepare != nil {
-		if err := prepare(slices.Clone(batch.stagedPaths)); err != nil {
+		stagedPaths := make([]string, 0, len(batch.stagedNames))
+		for _, name := range batch.stagedNames {
+			stagedPaths = append(stagedPaths, filepath.Join(w.path, name))
+		}
+		if err := prepare(stagedPaths); err != nil {
 			return fmt.Errorf("prepare migration files for publication: %w", err)
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	for _, path := range batch.stagedPaths {
-		info, err := os.Lstat(path)
-		if err != nil {
-			return fmt.Errorf("inspect staged migration file after preparation: %w", err)
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("staged migration file is not a regular file: %s", path)
-		}
-		file, err := os.OpenFile(path, os.O_RDWR, 0)
-		if err != nil {
-			return fmt.Errorf("open staged migration file after preparation: %w", err)
-		}
-		openedInfo, err := file.Stat()
-		if err != nil {
-			return errors.Join(
-				fmt.Errorf("inspect opened staged migration file: %w", err),
-				file.Close(),
-			)
-		}
-		if !os.SameFile(info, openedInfo) {
-			return errors.Join(
-				fmt.Errorf("staged migration file changed while being opened: %s", path),
-				file.Close(),
-			)
-		}
-		if err := errors.Join(file.Sync(), file.Close()); err != nil {
-			return fmt.Errorf("sync staged migration file after preparation: %w", err)
+	for _, name := range batch.stagedNames {
+		if err := syncPreparedStagedFile(w, name); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func readStagedMigrationContents(batch *migrationBatch) ([]MigrationFileContent, error) {
-	contents := make([]MigrationFileContent, len(batch.stagedPaths))
-	batch.digests = make([]string, len(batch.stagedPaths))
-	for i, path := range batch.stagedPaths {
-		data, err := os.ReadFile(path)
+func syncPreparedStagedFile(w *migrationWriterDir, name string) error {
+	info, err := w.dir.Lstat(name)
+	if err != nil {
+		return fmt.Errorf("inspect staged migration file after preparation: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf(
+			"staged migration file is not a regular file: %s",
+			filepath.Join(w.path, name),
+		)
+	}
+	file, err := w.dir.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("open staged migration file after preparation: %w", err)
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return errors.Join(
+			fmt.Errorf("inspect opened staged migration file: %w", err),
+			file.Close(),
+		)
+	}
+	if !os.SameFile(info, openedInfo) {
+		return errors.Join(
+			fmt.Errorf(
+				"staged migration file changed while being opened: %s",
+				filepath.Join(w.path, name),
+			),
+			file.Close(),
+		)
+	}
+	if err := errors.Join(file.Sync(), file.Close()); err != nil {
+		return fmt.Errorf("sync staged migration file after preparation: %w", err)
+	}
+	return nil
+}
+
+func readStagedMigrationContents(
+	w *migrationWriterDir,
+	batch *migrationBatch,
+) ([]MigrationFileContent, error) {
+	contents := make([]MigrationFileContent, len(batch.stagedNames))
+	batch.digests = make([]string, len(batch.stagedNames))
+	for i, name := range batch.stagedNames {
+		data, err := w.dir.ReadFile(name)
 		if err != nil {
 			return nil, fmt.Errorf("read staged migration file after preparation: %w", err)
 		}
@@ -292,9 +338,9 @@ func preparePublicationSnapshot(
 	batch migrationBatch,
 	contents []MigrationFileContent,
 ) (fsnapshot.Snapshot, *migratesum.SumFile, error) {
-	files := make(map[string][]byte, len(batch.paths))
-	for i, path := range batch.paths {
-		files[filepath.Base(path)] = []byte(contents[i].SQL)
+	files := make(map[string][]byte, len(batch.names))
+	for i, name := range batch.names {
+		files[name] = []byte(contents[i].SQL)
 	}
 	publishedSnapshot, err := baseSnapshot.WithFiles(files)
 	if err != nil {
@@ -311,77 +357,71 @@ func preparePublicationSnapshot(
 }
 
 func beginPublication(
-	dir string,
+	w *migrationWriterDir,
 	batch migrationBatch,
 	sum []byte,
 ) (publicationJournal, error) {
 	// Persist the staging directory entries before making the journal durable.
 	// Once the journal exists, recovery relies on the staging links to prove
 	// ownership of any published final paths.
-	if err := fsdurable.SyncDir(dir); err != nil {
+	if err := w.dir.Sync(); err != nil {
 		return publicationJournal{}, fmt.Errorf("sync staged migration files: %w", err)
-	}
-
-	entries := make([]publicationEntry, len(batch.paths))
-	for i := range batch.paths {
-		entries[i] = publicationEntry{
-			Staged: filepath.Base(batch.stagedPaths[i]),
-			Final:  filepath.Base(batch.paths[i]),
-			Mode:   string(batch.mode),
-			Digest: batch.digests[i],
-		}
 	}
 	journal := publicationJournal{
 		Version:    publicationJournalVersion,
 		CommitMode: publicationCommitModeAtlasSum,
-		Entries:    entries,
+		Entries:    publicationEntries(batch),
 		Sum:        slices.Clone(sum),
 	}
-	if err := writePublicationJournal(dir, journal); err != nil {
+	if err := writePublicationJournal(w, journal); err != nil {
 		return publicationJournal{}, fmt.Errorf("write migration publication journal: %w", err)
 	}
 	return journal, nil
 }
 
 func beginMarkerPublication(
-	dir string,
+	w *migrationWriterDir,
 	batch migrationBatch,
 ) (publicationJournal, error) {
-	if err := fsdurable.SyncDir(dir); err != nil {
+	if err := w.dir.Sync(); err != nil {
 		return publicationJournal{}, fmt.Errorf("sync staged artifact files: %w", err)
-	}
-	entries := make([]publicationEntry, len(batch.paths))
-	for i := range batch.paths {
-		entries[i] = publicationEntry{
-			Staged: filepath.Base(batch.stagedPaths[i]),
-			Final:  filepath.Base(batch.paths[i]),
-			Mode:   string(batch.mode),
-			Digest: batch.digests[i],
-		}
 	}
 	journal := publicationJournal{
 		Version:    publicationJournalVersion,
 		CommitMode: publicationCommitModeMarker,
-		Entries:    entries,
+		Entries:    publicationEntries(batch),
 	}
-	if err := writePublicationJournal(dir, journal); err != nil {
+	if err := writePublicationJournal(w, journal); err != nil {
 		return publicationJournal{}, fmt.Errorf("write artifact publication journal: %w", err)
 	}
 	return journal, nil
 }
 
+func publicationEntries(batch migrationBatch) []publicationEntry {
+	entries := make([]publicationEntry, len(batch.names))
+	for i := range batch.names {
+		entries[i] = publicationEntry{
+			Staged: batch.stagedNames[i],
+			Final:  batch.names[i],
+			Mode:   string(batch.mode),
+			Digest: batch.digests[i],
+		}
+	}
+	return entries
+}
+
 func publishMigrationBatchContext(
 	ctx context.Context,
-	dir string,
+	w *migrationWriterDir,
 	batch migrationBatch,
 ) (int, error) {
-	for i, stagedPath := range batch.stagedPaths {
+	for i, stagedName := range batch.stagedNames {
 		if err := ctx.Err(); err != nil {
 			return i, err
 		}
-		err := publishStagedFile(stagedPath, batch.paths[i], batch.mode)
+		err := publishStagedFile(w.dir, stagedName, batch.names[i], batch.mode)
 		if err != nil {
-			if errors.Is(err, os.ErrExist) {
+			if errors.Is(err, fs.ErrExist) {
 				return i, fmt.Errorf(
 					"migration directory changed during publication: %s already exists",
 					batch.paths[i],
@@ -390,37 +430,56 @@ func publishMigrationBatchContext(
 			return i, fmt.Errorf("publish migration file: %w", err)
 		}
 	}
-	if err := fsdurable.SyncDir(dir); err != nil {
-		return len(batch.paths), fmt.Errorf("sync published migration files: %w", err)
+	if err := w.dir.Sync(); err != nil {
+		return len(batch.names), fmt.Errorf("sync published migration files: %w", err)
 	}
-	return len(batch.paths), nil
+	return len(batch.names), nil
 }
 
+// publishStagedFile commits one staged entry at its final name through the
+// rooted handle. Every mode is conditional on the destination being absent: a
+// hard link and an exclusive create both fail with fs.ErrExist, and the move
+// mode states the expectation to the rooted commit primitive. None of them can
+// overwrite a file that appeared after the caller looked.
 func publishStagedFile(
-	stagedPath, finalPath string,
+	d *pathguard.OpenedDirectory,
+	stagedName, finalName string,
 	mode publicationMode,
 ) error {
 	switch mode {
 	case publicationModeHardLink:
-		return os.Link(stagedPath, finalPath)
+		return d.Link(stagedName, finalName)
 	case publicationModeCopy:
-		return copyFileExclusive(stagedPath, finalPath)
+		return copyFileExclusive(d, stagedName, finalName)
 	case publicationModeWriteThroughMove:
-		return fsdurable.MoveFileNoReplace(stagedPath, finalPath)
+		info, err := d.Lstat(stagedName)
+		if err != nil {
+			return err
+		}
+		return d.PublishFile(
+			stagedName,
+			finalName,
+			info,
+			publishedFileMode,
+			fsdurable.ExpectAbsent(),
+		)
 	default:
 		return fmt.Errorf("unsupported migration publication mode %q", mode)
 	}
 }
 
-func copyFileExclusive(sourcePath, destinationPath string) (resultErr error) {
-	contents, err := os.ReadFile(sourcePath)
+func copyFileExclusive(
+	d *pathguard.OpenedDirectory,
+	sourceName, destinationName string,
+) (resultErr error) {
+	contents, err := d.ReadFile(sourceName)
 	if err != nil {
 		return err
 	}
-	destination, err := os.OpenFile(
-		destinationPath,
+	destination, err := d.OpenFile(
+		destinationName,
 		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
-		0o644,
+		publishedFileMode,
 	)
 	if err != nil {
 		return err
@@ -431,11 +490,14 @@ func copyFileExclusive(sourcePath, destinationPath string) (resultErr error) {
 			resultErr = errors.Join(
 				resultErr,
 				destination.Close(),
-				removeFiles([]string{destinationPath}),
+				removeRootedFiles(d, []string{destinationName}),
 			)
 		}
 	}()
 	if _, err := destination.Write(contents); err != nil {
+		return err
+	}
+	if err := destination.Chmod(publishedFileMode); err != nil {
 		return err
 	}
 	if err := destination.Sync(); err != nil {
@@ -448,55 +510,58 @@ func copyFileExclusive(sourcePath, destinationPath string) (resultErr error) {
 	return nil
 }
 
-func abortPendingPublication(dir string, batch migrationBatch, published int) error {
+func abortPendingPublication(w *migrationWriterDir, batch migrationBatch, published int) error {
 	for i := range published {
 		if err := rollBackPublicationEntry(
-			batch.stagedPaths[i],
-			batch.paths[i],
+			w,
+			batch.stagedNames[i],
+			batch.names[i],
 			batch.digests[i],
 		); err != nil {
 			return fmt.Errorf("roll back published migration files: %w", err)
 		}
 	}
-	if err := removeFiles(batch.stagedPaths[published:]); err != nil {
+	if err := removeStagedFiles(w, batch.stagedNames[published:]); err != nil {
 		return fmt.Errorf("remove rolled back migration staging files: %w", err)
 	}
-	if err := fsdurable.SyncDir(dir); err != nil {
+	if err := w.dir.Sync(); err != nil {
 		return fmt.Errorf("sync rolled back migration directory: %w", err)
 	}
-	journalPath, err := publicationJournalPath(dir)
-	if err != nil {
-		return err
-	}
-	return removePublicationJournal(journalPath)
+	return removePublicationJournal(w)
 }
 
-func recoverPendingPublication(dir string) error {
-	journalPath, err := publicationJournalPath(dir)
-	if err != nil {
-		return err
-	}
-	journal, err := readPublicationJournal(journalPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return removeOrphanPublicationTemps(dir, journalPath)
+func recoverPendingPublication(w *migrationWriterDir) error {
+	journal, err := readPublicationJournal(w)
+	if errors.Is(err, fs.ErrNotExist) {
+		return removeOrphanPublicationTemps(w)
 	}
 	if err != nil {
 		return err
 	}
-	committed, err := publicationCommitted(dir, journal)
+	if !w.Exists() {
+		return fmt.Errorf(
+			"cannot recover migration publication: %w",
+			w.missingDirError(),
+		)
+	}
+	committed, err := publicationCommitted(w, journal)
 	if err != nil {
 		return err
 	}
 	if committed {
-		return finalizeCommittedPublication(dir, journalPath, journal)
+		return finalizeCommittedPublication(w, journal)
 	}
-	return rollBackPendingPublication(dir, journalPath, journal)
+	return rollBackPendingPublication(w, journal)
 }
 
 // RecoverPendingPublicationLocked resolves an interrupted artifact publication.
 // The caller must hold the migration-directory lock for dir.
 func RecoverPendingPublicationLocked(dir string) error {
-	return recoverPendingPublication(dir)
+	w, err := openMigrationWriterDir(nil, dir)
+	if err != nil {
+		return err
+	}
+	return errors.Join(recoverPendingPublication(w), w.Close())
 }
 
 // RecoverPendingPublication resolves an interrupted artifact publication,
@@ -508,18 +573,21 @@ func RecoverPendingPublication(ctx context.Context, dir string) error {
 		return fmt.Errorf("resolve migration directory lock path: %w", err)
 	}
 	if held {
-		return recoverPendingPublication(dir)
+		return RecoverPendingPublicationLocked(dir)
 	}
 	return WithMigrationDirectoryLock(ctx, dir, 0, func(context.Context) error {
-		return recoverPendingPublication(dir)
+		return RecoverPendingPublicationLocked(dir)
 	})
 }
 
-func publicationCommitted(dir string, journal publicationJournal) (bool, error) {
+func publicationCommitted(w *migrationWriterDir, journal publicationJournal) (bool, error) {
 	switch journal.CommitMode {
 	case publicationCommitModeAtlasSum:
-		contents, err := os.ReadFile(filepath.Join(dir, migratesum.AtlasFileName))
-		if errors.Is(err, os.ErrNotExist) {
+		if !w.Exists() {
+			return false, w.missingDirError()
+		}
+		contents, err := w.dir.ReadFile(migratesum.AtlasFileName)
+		if errors.Is(err, fs.ErrNotExist) {
 			return false, nil
 		}
 		if err != nil {
@@ -527,12 +595,8 @@ func publicationCommitted(dir string, journal publicationJournal) (bool, error) 
 		}
 		return bytes.Equal(contents, journal.Sum), nil
 	case publicationCommitModeMarker:
-		journalPath, err := publicationJournalPath(dir)
-		if err != nil {
-			return false, err
-		}
-		contents, err := os.ReadFile(publicationCommitMarkerPath(journalPath))
-		if errors.Is(err, os.ErrNotExist) {
+		contents, err := w.parent.ReadFile(publicationCommitMarkerName(w))
+		if errors.Is(err, fs.ErrNotExist) {
 			return false, nil
 		}
 		if err != nil {
@@ -552,56 +616,57 @@ func publicationCommitted(dir string, journal publicationJournal) (bool, error) 
 }
 
 func finalizeCommittedPublication(
-	dir, journalPath string,
+	w *migrationWriterDir,
 	journal publicationJournal,
 ) error {
-	stagedPaths := publicationStagedPaths(dir, journal)
-	if err := removeFiles(stagedPaths); err != nil {
+	if err := removeStagedFiles(w, publicationStagedNames(journal)); err != nil {
 		return fmt.Errorf("remove committed migration staging files: %w", err)
 	}
-	if err := fsdurable.SyncDir(dir); err != nil {
+	if err := w.dir.Sync(); err != nil {
 		return fmt.Errorf("sync committed migration directory: %w", err)
 	}
-	return removePublicationJournal(journalPath)
+	return removePublicationJournal(w)
 }
 
 func rollBackPendingPublication(
-	dir, journalPath string,
+	w *migrationWriterDir,
 	journal publicationJournal,
 ) error {
 	for _, entry := range journal.Entries {
-		stagedPath := filepath.Join(dir, entry.Staged)
-		finalPath := filepath.Join(dir, entry.Final)
 		if err := rollBackPublicationEntry(
-			stagedPath,
-			finalPath,
+			w,
+			entry.Staged,
+			entry.Final,
 			entry.Digest,
 		); err != nil {
 			return err
 		}
 	}
-	if err := fsdurable.SyncDir(dir); err != nil {
+	if err := w.dir.Sync(); err != nil {
 		return fmt.Errorf("sync rolled back migration directory: %w", err)
 	}
-	return removePublicationJournal(journalPath)
+	return removePublicationJournal(w)
 }
 
+// rollBackPublicationEntry withdraws one published entry through the rooted
+// handle. The published file is first moved aside under a name only this
+// transaction knows, conditionally on that name being free, so the content
+// check that follows reads bytes nobody else can still reach by the final name.
 func rollBackPublicationEntry(
-	stagedPath, finalPath, expectedDigest string,
+	w *migrationWriterDir,
+	stagedName, finalName, expectedDigest string,
 ) error {
-	quarantineDir := stagedPath + ".rollback"
-	quarantinePath := filepath.Join(quarantineDir, "published")
-
-	if err := quarantinePublishedMigration(finalPath, quarantineDir, quarantinePath); err != nil {
+	quarantineName := stagedName + publicationRollbackSuffix
+	if err := quarantinePublishedMigration(w, finalName, quarantineName); err != nil {
 		return err
 	}
-	stagedDigest, stagedErr := fileDigest(stagedPath)
-	quarantinedDigest, quarantineErr := fileDigest(quarantinePath)
+	stagedDigest, stagedErr := rootedFileDigest(w.dir, stagedName)
+	quarantinedDigest, quarantineErr := rootedFileDigest(w.dir, quarantineName)
 	return reconcileRollbackFiles(rollbackFileState{
-		stagedPath:        stagedPath,
-		finalPath:         finalPath,
-		quarantineDir:     quarantineDir,
-		quarantinePath:    quarantinePath,
+		writer:            w,
+		stagedName:        stagedName,
+		finalName:         finalName,
+		quarantineName:    quarantineName,
 		expectedDigest:    expectedDigest,
 		stagedDigest:      stagedDigest,
 		stagedErr:         stagedErr,
@@ -610,32 +675,39 @@ func rollBackPublicationEntry(
 	})
 }
 
-func quarantinePublishedMigration(finalPath, quarantineDir, quarantinePath string) error {
-	if err := os.Mkdir(quarantineDir, 0700); err != nil && !errors.Is(err, os.ErrExist) {
-		return fmt.Errorf("create migration rollback quarantine: %w", err)
-	}
-	if err := fsdurable.SyncDir(filepath.Dir(quarantineDir)); err != nil {
-		return fmt.Errorf("sync migration rollback quarantine directory: %w", err)
-	}
-	if _, err := os.Stat(quarantinePath); errors.Is(err, os.ErrNotExist) {
-		if moveErr := fsdurable.MoveFileNoReplace(finalPath, quarantinePath); moveErr != nil {
-			if !errors.Is(moveErr, os.ErrNotExist) {
-				return fmt.Errorf("quarantine published migration file: %w", moveErr)
-			}
-		} else if err := syncQuarantineMove(finalPath, quarantineDir); err != nil {
-			return err
-		}
-	} else if err != nil {
+func quarantinePublishedMigration(
+	w *migrationWriterDir,
+	finalName, quarantineName string,
+) error {
+	if _, err := w.dir.Lstat(quarantineName); err == nil {
+		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("inspect quarantined migration file: %w", err)
 	}
-	return nil
+	info, err := w.dir.Lstat(finalName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect published migration file: %w", err)
+	}
+	if err := w.dir.PublishFile(
+		finalName,
+		quarantineName,
+		info,
+		info.Mode().Perm(),
+		fsdurable.ExpectAbsent(),
+	); err != nil {
+		return fmt.Errorf("quarantine published migration file: %w", err)
+	}
+	return w.dir.Sync()
 }
 
 type rollbackFileState struct {
-	stagedPath        string
-	finalPath         string
-	quarantineDir     string
-	quarantinePath    string
+	writer            *migrationWriterDir
+	stagedName        string
+	finalName         string
+	quarantineName    string
 	expectedDigest    string
 	stagedDigest      string
 	stagedErr         error
@@ -643,28 +715,32 @@ type rollbackFileState struct {
 	quarantineErr     error
 }
 
+func (s rollbackFileState) display(name string) string {
+	return filepath.Join(s.writer.path, name)
+}
+
 func reconcileRollbackFiles(state rollbackFileState) error {
 	switch {
-	case errors.Is(state.stagedErr, os.ErrNotExist) && errors.Is(state.quarantineErr, os.ErrNotExist):
-		return removeEmptyQuarantineDir(state.quarantineDir)
-	case state.stagedErr == nil && errors.Is(state.quarantineErr, os.ErrNotExist):
+	case errors.Is(state.stagedErr, fs.ErrNotExist) && errors.Is(state.quarantineErr, fs.ErrNotExist):
+		return nil
+	case state.stagedErr == nil && errors.Is(state.quarantineErr, fs.ErrNotExist):
 		if state.stagedDigest != state.expectedDigest {
 			return fmt.Errorf(
 				"cannot safely recover migration publication: staging file content changed; preserved %s",
-				state.stagedPath,
+				state.display(state.stagedName),
 			)
 		}
-		return removeRollbackFiles(state.quarantineDir, state.stagedPath)
-	case errors.Is(state.stagedErr, os.ErrNotExist) &&
+		return removeRootedFiles(state.writer.dir, []string{state.stagedName})
+	case errors.Is(state.stagedErr, fs.ErrNotExist) &&
 		state.quarantineErr == nil:
 		if state.quarantinedDigest != state.expectedDigest {
 			return fmt.Errorf(
 				"cannot safely recover migration publication: %s content changed; preserved at %s",
-				state.finalPath,
-				state.quarantinePath,
+				state.display(state.finalName),
+				state.display(state.quarantineName),
 			)
 		}
-		return removeRollbackFiles(state.quarantineDir, state.quarantinePath)
+		return removeRootedFiles(state.writer.dir, []string{state.quarantineName})
 	case state.stagedErr != nil:
 		return fmt.Errorf("inspect staged migration file: %w", state.stagedErr)
 	case state.quarantineErr != nil:
@@ -672,176 +748,149 @@ func reconcileRollbackFiles(state rollbackFileState) error {
 	case state.stagedDigest != state.expectedDigest:
 		return fmt.Errorf(
 			"cannot safely recover migration publication: staging file content changed; preserved %s and %s",
-			state.stagedPath,
-			state.quarantinePath,
+			state.display(state.stagedName),
+			state.display(state.quarantineName),
 		)
 	case state.quarantinedDigest != state.expectedDigest:
 		return fmt.Errorf(
 			"cannot safely recover migration publication: %s content changed; preserved at %s",
-			state.finalPath,
-			state.quarantinePath,
+			state.display(state.finalName),
+			state.display(state.quarantineName),
 		)
 	default:
-		return removeRollbackFiles(state.quarantineDir, state.quarantinePath, state.stagedPath)
+		return removeRootedFiles(
+			state.writer.dir,
+			[]string{state.quarantineName, state.stagedName},
+		)
 	}
 }
 
-func syncQuarantineMove(finalPath, quarantineDir string) error {
-	if err := fsdurable.SyncDir(filepath.Dir(finalPath)); err != nil {
-		return fmt.Errorf("sync migration directory after quarantine move: %w", err)
-	}
-	if err := fsdurable.SyncDir(quarantineDir); err != nil {
-		return fmt.Errorf("sync migration rollback quarantine: %w", err)
-	}
-	return nil
-}
-
-func removeRollbackFiles(quarantineDir string, paths ...string) error {
-	for _, path := range paths {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove %s: %w", path, err)
-		}
-	}
-	return removeEmptyQuarantineDir(quarantineDir)
-}
-
-func fileDigest(path string) (string, error) {
-	contents, err := os.ReadFile(path)
+func rootedFileDigest(d *pathguard.OpenedDirectory, name string) (string, error) {
+	contents, err := d.ReadFile(name)
 	if err != nil {
 		return "", err
 	}
 	return contentDigest(contents), nil
 }
 
-func removeEmptyQuarantineDir(path string) error {
-	err := os.Remove(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
-}
-
-func removePublicationJournal(journalPath string) error {
-	return removePublicationJournalWithRetirer(journalPath, retirePublicationJournal)
+func removePublicationJournal(w *migrationWriterDir) error {
+	return removePublicationJournalWithRetirer(w, retirePublicationJournal)
 }
 
 func removePublicationJournalWithRetirer(
-	journalPath string,
-	retire func(string, string) error,
+	w *migrationWriterDir,
+	retire func(*pathguard.OpenedDirectory, string, string) error,
 ) error {
-	journalTemps, err := filepath.Glob(journalPath + ".*.tmp")
+	journalName := publicationJournalName(w)
+	journalTemps, err := rootedGlob(w.parent, journalName+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("find migration publication journal backups: %w", err)
 	}
-	cleanupPath := journalPath + publicationCleanupSuffix
-	if err := retire(journalPath, cleanupPath); err != nil {
+	cleanupName := journalName + publicationCleanupSuffix
+	if err := retire(w.parent, journalName, cleanupName); err != nil {
 		return fmt.Errorf("retire migration publication journal: %w", err)
 	}
-	parent := filepath.Dir(journalPath)
-	if err := fsdurable.SyncDir(parent); err != nil {
+	if err := w.parent.Sync(); err != nil {
 		return fmt.Errorf("sync retired migration publication journal: %w", err)
 	}
-	paths := append(
-		[]string{publicationCommitMarkerPath(journalPath), cleanupPath},
+	names := append(
+		[]string{publicationCommitMarkerName(w), cleanupName},
 		journalTemps...,
 	)
-	if err := removeFiles(paths); err != nil {
+	if err := removeRootedFiles(w.parent, names); err != nil {
 		return fmt.Errorf("remove retired migration publication metadata: %w", err)
 	}
-	if err := fsdurable.SyncDir(parent); err != nil {
+	if err := w.parent.Sync(); err != nil {
 		return fmt.Errorf("sync migration publication journal directory: %w", err)
 	}
 	return nil
 }
 
-func retirePublicationJournal(journalPath, cleanupPath string) error {
-	_, err := os.Stat(journalPath)
-	if errors.Is(err, os.ErrNotExist) {
+func retirePublicationJournal(
+	d *pathguard.OpenedDirectory,
+	journalName, cleanupName string,
+) error {
+	info, err := d.Lstat(journalName)
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	return fsdurable.ReplaceFile(journalPath, cleanupPath)
+	return d.PublishFile(
+		journalName,
+		cleanupName,
+		info,
+		info.Mode().Perm(),
+		fsdurable.ExpectAbsent(),
+	)
 }
 
-func removeOrphanPublicationTemps(dir, journalPath string) error {
-	stagedPaths, err := filepath.Glob(filepath.Join(dir, stagedMigrationPattern))
-	if err != nil {
-		return fmt.Errorf("find orphan migration staging files: %w", err)
-	}
-	journalTemps, err := filepath.Glob(journalPath + ".*.tmp")
+func removeOrphanPublicationTemps(w *migrationWriterDir) error {
+	journalName := publicationJournalName(w)
+	journalTemps, err := rootedGlob(w.parent, journalName+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("find orphan migration publication journals: %w", err)
 	}
-	orphanPaths := slices.Concat(
-		stagedPaths,
+	orphanNames := slices.Concat(
 		journalTemps,
 		[]string{
-			publicationCommitMarkerPath(journalPath),
-			journalPath + publicationCleanupSuffix,
+			publicationCommitMarkerName(w),
+			journalName + publicationCleanupSuffix,
 		},
 	)
-	if err := removeFiles(orphanPaths); err != nil {
+	if err := removeRootedFiles(w.parent, orphanNames); err != nil {
 		return fmt.Errorf("remove orphan migration publication files: %w", err)
 	}
-	if len(stagedPaths) > 0 {
-		if err := fsdurable.SyncDir(dir); err != nil {
-			return fmt.Errorf("sync migration directory after orphan cleanup: %w", err)
+	if len(journalTemps) > 0 {
+		if err := w.parent.Sync(); err != nil {
+			return fmt.Errorf("sync publication journal directory after orphan cleanup: %w", err)
 		}
 	}
-	if len(journalTemps) > 0 {
-		if err := fsdurable.SyncDir(filepath.Dir(journalPath)); err != nil {
-			return fmt.Errorf("sync publication journal directory after orphan cleanup: %w", err)
+	if !w.Exists() {
+		return nil
+	}
+	stagedNames, err := rootedGlob(w.dir, stagedMigrationPattern)
+	if err != nil {
+		return fmt.Errorf("find orphan migration staging files: %w", err)
+	}
+	if err := removeRootedFiles(w.dir, stagedNames); err != nil {
+		return fmt.Errorf("remove orphan migration publication files: %w", err)
+	}
+	if len(stagedNames) > 0 {
+		if err := w.dir.Sync(); err != nil {
+			return fmt.Errorf("sync migration directory after orphan cleanup: %w", err)
 		}
 	}
 	return nil
 }
 
 func writePublicationCommitMarker(
-	dir string,
+	w *migrationWriterDir,
 	journal publicationJournal,
 ) error {
-	journalPath, err := publicationJournalPath(dir)
-	if err != nil {
-		return err
-	}
 	contents, err := publicationJournalDigest(journal)
 	if err != nil {
 		return err
 	}
-	markerPath := publicationCommitMarkerPath(journalPath)
-	parent := filepath.Dir(markerPath)
-	temp, err := os.CreateTemp(parent, filepath.Base(markerPath)+".*.tmp")
+	markerName := publicationCommitMarkerName(w)
+	tempName, err := stageRootedFile(w.parent, markerName+".*.tmp", contents, 0o600)
 	if err != nil {
 		return err
 	}
-	tempPath := temp.Name()
-	if err := temp.Chmod(0600); err != nil {
-		return errors.Join(err, temp.Close(), removeFiles([]string{tempPath}))
-	}
-	if _, err := temp.Write(contents); err != nil {
-		return errors.Join(err, temp.Close(), removeFiles([]string{tempPath}))
-	}
-	if err := temp.Sync(); err != nil {
-		return errors.Join(err, temp.Close(), removeFiles([]string{tempPath}))
-	}
-	if err := temp.Close(); err != nil {
-		return errors.Join(err, removeFiles([]string{tempPath}))
-	}
-	mode, err := detectPublicationMode(tempPath)
+	mode, err := detectPublicationMode(w.parent, tempName)
 	if err != nil {
-		return errors.Join(err, removeFiles([]string{tempPath}))
+		return errors.Join(err, removeRootedFiles(w.parent, []string{tempName}))
 	}
-	if err := publishStagedFile(tempPath, markerPath, mode); err != nil {
-		return errors.Join(err, removeFiles([]string{tempPath}))
+	if err := publishStagedFile(w.parent, tempName, markerName, mode); err != nil {
+		return errors.Join(err, removeRootedFiles(w.parent, []string{tempName}))
 	}
 	if mode != publicationModeWriteThroughMove {
-		if err := removeFiles([]string{tempPath}); err != nil {
+		if err := removeRootedFiles(w.parent, []string{tempName}); err != nil {
 			return err
 		}
 	}
-	return fsdurable.SyncDir(parent)
+	return w.parent.Sync()
 }
 
 func publicationJournalDigest(journal publicationJournal) ([]byte, error) {
@@ -853,35 +902,39 @@ func publicationJournalDigest(journal publicationJournal) ([]byte, error) {
 	return sum[:], nil
 }
 
-func publicationCommitMarkerPath(journalPath string) string {
-	return journalPath + publicationCommitMarkerSuffix
+func publicationJournalName(w *migrationWriterDir) string {
+	return "." + w.name + publicationJournalSuffix
 }
 
-func writePublicationJournal(dir string, journal publicationJournal) error {
+func publicationCommitMarkerName(w *migrationWriterDir) string {
+	return publicationJournalName(w) + publicationCommitMarkerSuffix
+}
+
+func writePublicationJournal(w *migrationWriterDir, journal publicationJournal) error {
 	return writePublicationJournalWithPublisher(
-		dir,
+		w,
 		journal,
-		func(tempPath, journalPath string) error {
-			mode, err := detectPublicationMode(tempPath)
+		func(tempName, journalName string) error {
+			mode, err := detectPublicationMode(w.parent, tempName)
 			if err != nil {
 				return err
 			}
-			return publishStagedFile(tempPath, journalPath, mode)
+			return publishStagedFile(w.parent, tempName, journalName, mode)
 		},
 	)
 }
 
 func writePublicationJournalWithLink(
-	dir string,
+	w *migrationWriterDir,
 	journal publicationJournal,
 	link func(string, string) error,
 ) error {
 	return writePublicationJournalWithPublisher(
-		dir,
+		w,
 		journal,
-		func(tempPath, journalPath string) error {
-			if err := link(tempPath, journalPath); err != nil {
-				if copyErr := copyFileExclusive(tempPath, journalPath); copyErr != nil {
+		func(tempName, journalName string) error {
+			if err := link(tempName, journalName); err != nil {
+				if copyErr := copyFileExclusive(w.parent, tempName, journalName); copyErr != nil {
 					return errors.Join(err, copyErr)
 				}
 			}
@@ -891,44 +944,28 @@ func writePublicationJournalWithLink(
 }
 
 func writePublicationJournalWithPublisher(
-	dir string,
+	w *migrationWriterDir,
 	journal publicationJournal,
 	publish func(string, string) error,
 ) error {
-	journalPath, err := publicationJournalPath(dir)
-	if err != nil {
-		return err
-	}
 	contents, err := json.Marshal(journal)
 	if err != nil {
 		return err
 	}
-	parent := filepath.Dir(journalPath)
-	file, err := os.CreateTemp(parent, filepath.Base(journalPath)+".*.tmp")
+	journalName := publicationJournalName(w)
+	tempName, err := stageRootedFile(w.parent, journalName+".*.tmp", contents, 0o600)
 	if err != nil {
 		return err
 	}
-	tempPath := file.Name()
-	if err := file.Chmod(0600); err != nil {
-		return errors.Join(err, file.Close(), removeFiles([]string{tempPath}))
+	if err := publish(tempName, journalName); err != nil {
+		return errors.Join(err, removeRootedFiles(w.parent, []string{tempName}))
 	}
-	if _, err := file.Write(contents); err != nil {
-		return errors.Join(err, file.Close(), removeFiles([]string{tempPath}))
-	}
-	if err := file.Sync(); err != nil {
-		return errors.Join(err, file.Close(), removeFiles([]string{tempPath}))
-	}
-	if err := file.Close(); err != nil {
-		return errors.Join(err, removeFiles([]string{tempPath}))
-	}
-	if err := publish(tempPath, journalPath); err != nil {
-		return errors.Join(err, removeFiles([]string{tempPath}))
-	}
-	return fsdurable.SyncDir(parent)
+	return w.parent.Sync()
 }
 
-func readPublicationJournal(path string) (publicationJournal, error) {
-	contents, err := os.ReadFile(path)
+func readPublicationJournal(w *migrationWriterDir) (publicationJournal, error) {
+	journalName := publicationJournalName(w)
+	contents, err := w.parent.ReadFile(journalName)
 	if err != nil {
 		return publicationJournal{}, err
 	}
@@ -936,12 +973,12 @@ func readPublicationJournal(path string) (publicationJournal, error) {
 	if decodeErr == nil {
 		return journal, nil
 	}
-	backups, globErr := filepath.Glob(path + ".*.tmp")
+	backups, globErr := rootedGlob(w.parent, journalName+".*.tmp")
 	if globErr != nil {
 		return publicationJournal{}, errors.Join(decodeErr, globErr)
 	}
 	for _, backup := range backups {
-		contents, err := os.ReadFile(backup)
+		contents, err := w.parent.ReadFile(backup)
 		if err != nil {
 			continue
 		}
@@ -1027,8 +1064,8 @@ func validatePublicationCommit(journal publicationJournal) error {
 
 func validatePublicationEntry(entry publicationEntry) error {
 	if filepath.Base(entry.Staged) != entry.Staged ||
-		!strings.HasPrefix(entry.Staged, ".ptah-migrate-diff-") ||
-		!strings.HasSuffix(entry.Staged, ".tmp") {
+		!strings.HasPrefix(entry.Staged, stagedMigrationPrefix) ||
+		!strings.HasSuffix(entry.Staged, stagedMigrationSuffix) {
 		return fmt.Errorf("invalid staged migration publication path: %q", entry.Staged)
 	}
 	if filepath.Base(entry.Final) != entry.Final ||
@@ -1048,51 +1085,131 @@ func validatePublicationEntry(entry publicationEntry) error {
 	return nil
 }
 
-func publicationJournalPath(dir string) (string, error) {
-	canonicalDir, err := canonicalMigrationDir(dir)
-	if err != nil {
-		return "", fmt.Errorf("resolve migration publication journal path: %w", err)
-	}
-	return filepath.Join(
-		filepath.Dir(canonicalDir),
-		"."+filepath.Base(canonicalDir)+publicationJournalSuffix,
-	), nil
-}
-
-func publicationStagedPaths(dir string, journal publicationJournal) []string {
-	paths := make([]string, 0, len(journal.Entries))
+func publicationStagedNames(journal publicationJournal) []string {
+	names := make([]string, 0, len(journal.Entries))
 	for _, entry := range journal.Entries {
-		paths = append(paths, filepath.Join(dir, entry.Staged))
+		names = append(names, entry.Staged)
 	}
-	return paths
+	return names
 }
 
-// writeDirSum atomically refreshes atlas.sum after every complete migration
-// file has been published. The sum is the commit marker for the batch.
-func writeDirSum(dir string, sum *migratesum.SumFile) (string, error) {
-	sumPath := filepath.Join(dir, migratesum.AtlasFileName)
-	if err := migratesum.WritePrecomputedWithFormat(
-		dir,
-		migrator.MigrationDirFormatAtlas,
-		sum,
-	); err != nil {
-		return "", fmt.Errorf("write atlas.sum: %w", err)
+// publishDirSum commits atlas.sum through the same rooted handle that published
+// the migration files, conditionally on the checksum state the transaction
+// observed. A concurrent writer that replaced atlas.sum after the migration
+// snapshot was verified is reported instead of overwritten.
+func publishDirSum(w *migrationWriterDir, sum *migratesum.SumFile) (string, error) {
+	if sum == nil {
+		return "", errors.New("migration checksum must not be nil")
 	}
-	return sumPath, nil
+	sumPath := filepath.Join(w.path, migratesum.AtlasFileName)
+	destination, err := expectedSumDestination(w)
+	if err != nil {
+		return "", fmt.Errorf("write %s: %w", migratesum.AtlasFileName, err)
+	}
+	tempName, err := stageRootedFile(
+		w.dir,
+		"."+migratesum.AtlasFileName+".*.tmp",
+		sum.Bytes(),
+		publishedFileMode,
+	)
+	if err != nil {
+		return "", fmt.Errorf("write %s: %w", migratesum.AtlasFileName, err)
+	}
+	info, err := w.dir.Lstat(tempName)
+	if err != nil {
+		return "", errors.Join(
+			fmt.Errorf("write %s: %w", migratesum.AtlasFileName, err),
+			removeRootedFiles(w.dir, []string{tempName}),
+		)
+	}
+	publishErr := w.dir.PublishFile(
+		tempName,
+		migratesum.AtlasFileName,
+		info,
+		publishedFileMode,
+		destination,
+	)
+	if publishErr == nil {
+		return sumPath, nil
+	}
+	if errors.Is(publishErr, fsdurable.ErrReplacementCommitted) {
+		// The rename took effect; only the durability barrier after it failed.
+		// That is exactly the commit-uncertain contract the checksum writer has
+		// always reported, so the journal is retained for recovery.
+		return "", &migratesum.CommitUncertainError{
+			Err: fmt.Errorf("write %s: %w", migratesum.AtlasFileName, publishErr),
+		}
+	}
+	return "", errors.Join(
+		fmt.Errorf("write %s: %w", migratesum.AtlasFileName, publishErr),
+		removeRootedFiles(w.dir, []string{tempName}),
+	)
 }
 
-func removeFiles(paths []string) error {
+// expectedSumDestination captures the checksum state this commit replaces. It
+// is read through the rooted handle immediately before the staged sum is
+// published, so the window between the two is closed by the conditional commit
+// rather than by trusting the read.
+func expectedSumDestination(w *migrationWriterDir) (fsdurable.Destination, error) {
+	info, err := w.dir.Lstat(migratesum.AtlasFileName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fsdurable.ExpectAbsent(), nil
+	}
+	if err != nil {
+		return fsdurable.Destination{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return fsdurable.Destination{}, fmt.Errorf(
+			"%s is not a regular file",
+			filepath.Join(w.path, migratesum.AtlasFileName),
+		)
+	}
+	return fsdurable.ExpectFile(info), nil
+}
+
+func removeStagedFiles(w *migrationWriterDir, names []string) error {
+	if !w.Exists() {
+		return nil
+	}
+	return removeRootedFiles(w.dir, names)
+}
+
+func removeRootedFiles(d *pathguard.OpenedDirectory, names []string) error {
 	var resultErr error
-	for _, path := range paths {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			resultErr = errors.Join(resultErr, fmt.Errorf("remove %s: %w", path, err))
+	for _, name := range names {
+		if err := d.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			resultErr = errors.Join(resultErr, fmt.Errorf("remove %s: %w", name, err))
 		}
 	}
 	return resultErr
 }
 
+// rootedGlob lists the direct children of d whose names match pattern. It
+// replaces filepath.Glob so the scan cannot follow a replaced pathname out of
+// the opened directory.
+func rootedGlob(d *pathguard.OpenedDirectory, pattern string) ([]string, error) {
+	entries, err := d.ReadDir(".")
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var matched []string
+	for _, entry := range entries {
+		ok, err := filepath.Match(pattern, entry.Name())
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			matched = append(matched, entry.Name())
+		}
+	}
+	return matched, nil
+}
+
 func stageArtifactBatch(
-	dir string,
+	w *migrationWriterDir,
 	artifacts []PublicationArtifact,
 ) (migrationBatch, error) {
 	if len(artifacts) == 0 {
@@ -1100,43 +1217,52 @@ func stageArtifactBatch(
 	}
 	batch := migrationBatch{
 		paths:       make([]string, 0, len(artifacts)),
-		stagedPaths: make([]string, 0, len(artifacts)),
+		names:       make([]string, 0, len(artifacts)),
+		stagedNames: make([]string, 0, len(artifacts)),
 		digests:     make([]string, 0, len(artifacts)),
 	}
-	names := make([]string, 0, len(artifacts))
 	for _, artifact := range artifacts {
 		if filepath.Base(artifact.Name) != artifact.Name ||
 			artifact.Name == "." ||
 			artifact.Name == "" {
 			return migrationBatch{}, errors.Join(
 				fmt.Errorf("invalid artifact publication name %q", artifact.Name),
-				removeFiles(batch.stagedPaths),
+				removeStagedFiles(w, batch.stagedNames),
 			)
 		}
-		if slices.Contains(names, artifact.Name) {
+		if slices.Contains(batch.names, artifact.Name) {
 			return migrationBatch{}, errors.Join(
 				fmt.Errorf("duplicate artifact publication name %q", artifact.Name),
-				removeFiles(batch.stagedPaths),
+				removeStagedFiles(w, batch.stagedNames),
 			)
 		}
-		stagedPath, err := stageArtifactFile(dir, artifact.Contents)
+		stagedName, err := stageRootedFile(
+			w.dir,
+			stagedMigrationPattern,
+			artifact.Contents,
+			publishedFileMode,
+		)
 		if err != nil {
-			return migrationBatch{}, errors.Join(err, removeFiles(batch.stagedPaths))
+			return migrationBatch{}, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
 		}
-		names = append(names, artifact.Name)
-		batch.paths = append(batch.paths, filepath.Join(dir, artifact.Name))
-		batch.stagedPaths = append(batch.stagedPaths, stagedPath)
+		batch.paths = append(batch.paths, filepath.Join(w.path, artifact.Name))
+		batch.names = append(batch.names, artifact.Name)
+		batch.stagedNames = append(batch.stagedNames, stagedName)
 		batch.digests = append(batch.digests, contentDigest(artifact.Contents))
 	}
-	mode, err := detectPublicationMode(batch.stagedPaths[0])
+	mode, err := detectPublicationMode(w.dir, batch.stagedNames[0])
 	if err != nil {
-		return migrationBatch{}, errors.Join(err, removeFiles(batch.stagedPaths))
+		return migrationBatch{}, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
 	}
 	batch.mode = mode
 	return batch, nil
 }
 
-func stageMigrationBatch(dir, name string, contents []MigrationFileContent) (migrationBatch, error) {
+func stageMigrationBatch(
+	w *migrationWriterDir,
+	name string,
+	contents []MigrationFileContent,
+) (migrationBatch, error) {
 	if len(contents) == 0 {
 		return migrationBatch{}, errors.New("migration SQL is empty")
 	}
@@ -1145,20 +1271,25 @@ func stageMigrationBatch(dir, name string, contents []MigrationFileContent) (mig
 			return migrationBatch{}, errors.New("migration SQL is empty")
 		}
 	}
-	version, err := nextMigrationVersion(dir)
+	fsys, err := w.FS()
 	if err != nil {
 		return migrationBatch{}, err
 	}
-	return stageMigrationBatchAt(dir, name, version, contents)
+	version, err := nextMigrationVersionFS(fsys)
+	if err != nil {
+		return migrationBatch{}, err
+	}
+	return stageMigrationBatchAt(w, name, version, contents)
 }
 
 func stageMigrationBatchAt(
-	dir, name string,
+	w *migrationWriterDir,
+	name string,
 	version int64,
 	contents []MigrationFileContent,
 ) (migrationBatch, error) {
 	return stageMigrationBatchAtWithModeDetector(
-		dir,
+		w,
 		name,
 		version,
 		contents,
@@ -1167,85 +1298,100 @@ func stageMigrationBatchAt(
 }
 
 func stageMigrationBatchAtWithModeDetector(
-	dir, name string,
+	w *migrationWriterDir,
+	name string,
 	version int64,
 	contents []MigrationFileContent,
-	detectMode func(string) (publicationMode, error),
+	detectMode func(*pathguard.OpenedDirectory, string) (publicationMode, error),
 ) (migrationBatch, error) {
+	if !w.Exists() {
+		return migrationBatch{}, w.missingDirError()
+	}
 	batch := migrationBatch{
 		paths:       make([]string, 0, len(contents)),
-		stagedPaths: make([]string, 0, len(contents)),
+		names:       make([]string, 0, len(contents)),
+		stagedNames: make([]string, 0, len(contents)),
 	}
 	for i, content := range contents {
 		fileVersion := version + int64(i)
 		slug := migrationSlug(name + content.NameSuffix)
-		path := filepath.Join(dir, fmt.Sprintf("%d_%s.sql", fileVersion, slug))
-		stagedPath, err := stageMigrationFile(dir, content.SQL)
+		fileName := fmt.Sprintf("%d_%s.sql", fileVersion, slug)
+		stagedName, err := stageRootedFile(
+			w.dir,
+			stagedMigrationPattern,
+			[]byte(content.SQL),
+			publishedFileMode,
+		)
 		if err != nil {
 			return migrationBatch{}, errors.Join(
 				fmt.Errorf("stage migration file: %w", err),
-				removeFiles(batch.stagedPaths),
+				removeStagedFiles(w, batch.stagedNames),
 			)
 		}
-		batch.paths = append(batch.paths, path)
-		batch.stagedPaths = append(batch.stagedPaths, stagedPath)
+		batch.paths = append(batch.paths, filepath.Join(w.path, fileName))
+		batch.names = append(batch.names, fileName)
+		batch.stagedNames = append(batch.stagedNames, stagedName)
 	}
-	mode, err := detectMode(batch.stagedPaths[0])
+	mode, err := detectMode(w.dir, batch.stagedNames[0])
 	if err != nil {
-		return migrationBatch{}, errors.Join(err, removeFiles(batch.stagedPaths))
+		return migrationBatch{}, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
 	}
 	batch.mode = mode
-	if _, err := readStagedMigrationContents(&batch); err != nil {
-		return migrationBatch{}, errors.Join(err, removeFiles(batch.stagedPaths))
+	if _, err := readStagedMigrationContents(w, &batch); err != nil {
+		return migrationBatch{}, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
 	}
 	return batch, nil
 }
 
-func detectPublicationMode(stagedPath string) (publicationMode, error) {
-	return platformPublicationMode(stagedPath)
+func detectPublicationMode(
+	d *pathguard.OpenedDirectory,
+	stagedName string,
+) (publicationMode, error) {
+	return platformPublicationMode(d, stagedName)
 }
 
 func detectPublicationModeWithLink(
-	stagedPath string,
+	d *pathguard.OpenedDirectory,
+	stagedName string,
 	link func(string, string) error,
 ) (publicationMode, error) {
-	probePath := stagedPath + ".link-probe"
-	if err := link(stagedPath, probePath); err != nil {
+	probeName := stagedName + ".link-probe"
+	if err := link(stagedName, probeName); err != nil {
 		return publicationModeCopy, nil
 	}
-	if err := os.Remove(probePath); err != nil {
+	if err := d.Remove(probeName); err != nil {
 		return "", fmt.Errorf("remove migration publication link probe: %w", err)
 	}
 	return publicationModeHardLink, nil
 }
 
-func stageMigrationFile(dir, migrationSQL string) (string, error) {
-	return stageArtifactFile(dir, []byte(migrationSQL))
-}
-
-func stageArtifactFile(dir string, contents []byte) (string, error) {
-	file, err := os.CreateTemp(dir, stagedMigrationPattern)
+// stageRootedFile writes contents into a new exclusively owned file inside the
+// opened directory and returns its name. Every staged file is created through
+// the handle, so no staging step can land outside the directory the caller
+// opened.
+func stageRootedFile(
+	d *pathguard.OpenedDirectory,
+	pattern string,
+	contents []byte,
+	mode fs.FileMode,
+) (string, error) {
+	file, name, err := d.CreateTemp(pattern)
 	if err != nil {
 		return "", err
 	}
-	path := file.Name()
-	if err := file.Chmod(0644); err != nil {
-		return "", errors.Join(err, file.Close(), removeFiles([]string{path}))
+	if err := file.Chmod(mode); err != nil {
+		return "", errors.Join(err, file.Close(), removeRootedFiles(d, []string{name}))
 	}
 	if _, err := file.Write(contents); err != nil {
-		return "", errors.Join(err, file.Close(), removeFiles([]string{path}))
+		return "", errors.Join(err, file.Close(), removeRootedFiles(d, []string{name}))
 	}
 	if err := file.Sync(); err != nil {
-		return "", errors.Join(err, file.Close(), removeFiles([]string{path}))
+		return "", errors.Join(err, file.Close(), removeRootedFiles(d, []string{name}))
 	}
 	if err := file.Close(); err != nil {
-		return "", errors.Join(err, removeFiles([]string{path}))
+		return "", errors.Join(err, removeRootedFiles(d, []string{name}))
 	}
-	return path, nil
-}
-
-func nextMigrationVersion(dir string) (int64, error) {
-	return nextMigrationVersionFS(os.DirFS(dir))
+	return name, nil
 }
 
 func nextMigrationVersionFS(fsys fs.FS) (int64, error) {
