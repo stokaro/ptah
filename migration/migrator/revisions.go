@@ -399,7 +399,7 @@ func (m *Migrator) failMigrationSQL() string {
 		return revisionUpdateSQL(
 			m.connectionDialect(),
 			m.qualifiedMigrationsTable(),
-			"applied = ?, total = ?, execution_time = ?, error = ?, error_stmt = ?, operator_version = ?",
+			"applied = ?, total = ?, execution_time = ?, error = ?, error_stmt = ?, partial_hashes = ?, operator_version = ?",
 		)
 	}
 	return revisionUpdateSQL(
@@ -1185,6 +1185,7 @@ func (m *Migrator) markMigrationStatementInFlight(
 			time.Since(startedAt).Nanoseconds(),
 			unknownStatementOutcomeError,
 			event.Statement,
+			m.atlasPartialHashes(migration.UpSQL, event.Index-1, event.Total),
 			ptahOperatorVersion,
 			strconv.FormatInt(migration.Version, 10),
 		)
@@ -1327,6 +1328,7 @@ func (m *Migrator) failAtlasMigrationRevision(
 		time.Since(startedAt).Nanoseconds(),
 		strings.TrimSpace(failure.Error()),
 		stmt,
+		m.atlasPartialHashes(migration.UpSQL, applied, total),
 		ptahOperatorVersion,
 		strconv.FormatInt(migration.Version, 10),
 	)
@@ -1997,10 +1999,17 @@ func (m *Migrator) atlasRevisionTimestamp(at time.Time) any {
 }
 
 func (m *Migrator) atlasNullJSONValue() any {
+	return m.atlasJSONValue(atlasNullJSON)
+}
+
+// atlasJSONValue binds one JSON document the way the column that holds it was
+// declared: a plain string where the column is text (SQL Server, ClickHouse),
+// and a []byte JSON document everywhere the dialect has a real JSON type.
+func (m *Migrator) atlasJSONValue(document string) any {
 	if m.isSQLServer() || m.isClickHouse() {
-		return atlasNullJSON
+		return document
 	}
-	return []byte(atlasNullJSON)
+	return []byte(document)
 }
 
 func (m *Migrator) forceAppliedMigrationClickHouse(ctx context.Context, migration *Migration) error {
