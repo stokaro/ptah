@@ -42,7 +42,14 @@ func atlasMigrateHashVerb() atlasVerb {
 		native:  "migrations hash",
 		factory: newSilentNativeMigrateHashCommand,
 		flags: []atlasargs.Flag{
-			atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
+			// Measured: this verb already READ ./migrations without --dir,
+			// because the native `ptah migrations hash` defaults its own --dir
+			// to the same directory. Only the help line was silent about it,
+			// so `--help` and the runtime disagreed. Declaring the value here
+			// makes the printed default the one that is used.
+			atlasargs.NativeLocalDirDefault(
+				"dir", "", "Migration directory", "dir", atlasDefaultMigrationDirURL,
+			),
 			atlasMigrateDirFormatFlag("dir-format"),
 		},
 	}

@@ -2221,6 +2221,23 @@ func migrationFilesFromPairs(pairs []MigrationFilePair) *MigrationFiles {
 	}
 }
 
+// ensureMigrationOutputDir creates the migration output directory, including
+// every missing parent above it.
+//
+// The parents are the point. This used to os.Mkdir the leaf after requiring its
+// parent to already exist, so `--dir file://a/b` with no `a` failed with
+// `parent directory "…/a" is not available` and wrote nothing, where the pinned
+// community binary v1.3.0 created `a`, `a/b`, the migration file and atlas.sum
+// and exited 0 — measured on 2026-08-07 at two and at three missing levels
+// (stokaro/ptah#1241 item 4). Ptah's OTHER writing verb already did this: the
+// `migrate diff` writer creates parents through
+// internal/atlasmigrate.ensureMigrationDirParent, so the two writers disagreed
+// with each other as well as with that binary.
+//
+// What must NOT relax is a path component that exists and is not a directory.
+// os.MkdirAll refuses that with ENOTDIR naming the offending component, and the
+// pinned binary refuses it too (`--dir file://a/b` over a regular file `a`
+// exits 1 with `stat a/b: not a directory`), so both stay exit 1.
 func ensureMigrationOutputDir(outputDir string) error {
 	info, err := os.Stat(outputDir)
 	if err == nil {
@@ -2232,14 +2249,7 @@ func ensureMigrationOutputDir(outputDir string) error {
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-
-	parent := filepath.Dir(outputDir)
-	if parentInfo, statErr := os.Stat(parent); statErr != nil {
-		return fmt.Errorf("parent directory %q is not available: %w", parent, statErr)
-	} else if !parentInfo.IsDir() {
-		return fmt.Errorf("parent path %q is not a directory", parent)
-	}
-	return os.Mkdir(outputDir, 0755)
+	return os.MkdirAll(outputDir, 0755)
 }
 
 func writeNewMigrationFile(path, content string) error {

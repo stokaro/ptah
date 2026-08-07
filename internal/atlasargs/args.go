@@ -117,6 +117,26 @@ func NativeLocalDir(name, shorthand, usage, nativeName string) Flag {
 	return flag
 }
 
+// NativeLocalDirDefault is [NativeLocalDir] carrying the Atlas-documented
+// default directory URL for the flag.
+//
+// The default is what [registerAtlasFlags] prints in `--help` and what
+// [appendDefaultArgs] folds into the arguments when no layer named a directory,
+// so declaring it here is what makes the help line and the runtime agree. On
+// the pinned community binary v1.3.0 every migrate verb that registers --dir
+// documents `(default "file://migrations")`; Ptah honored it on some verbs and
+// not others, and `migrate new` printed the flag with no default at all while
+// refusing to run without one (stokaro/ptah#1241 item 3).
+//
+// It is a DEFAULT, not a fallback: a --dir naming a directory that is not there
+// still fails, because the value only ever fills in for an absent flag and is
+// never consulted after a failed open.
+func NativeLocalDirDefault(name, shorthand, usage, nativeName, defaultValue string) Flag {
+	flag := NativeLocalDir(name, shorthand, usage, nativeName)
+	flag.Default = defaultValue
+	return flag
+}
+
 // NativeBool creates an Atlas boolean flag that forwards to a native Ptah flag
 // with a different name.
 func NativeBool(name, shorthand, usage, nativeName string) Flag {

@@ -684,6 +684,15 @@
     "evidence": "verified `ptah-compat migrate new init_users --dir file://atlasdir` wrote one .sql plus atlas.sum, and `ptah migrations create` wrote an up/down pair; ptah migrations create --help (--editor defaults to $VISUAL then $EDITOR); measured 2026-08-06 against pinned Atlas CE v1.3.0, `ptah-compat migrate new addcol --dir-format <layout>` writes `<V>_addcol.up.sql`+`.down.sql` for golang-migrate, `V<V>__addcol.sql`+`U<V>__addcol.sql` for flyway, and one `<V>_addcol.sql` carrying the goose, dbmate or liquibase directive header, each byte-identical to CE's on the same empty directory, with atlas.sum covering the up-side file only for golang-migrate and flyway"
   },
   {
+    "area": "Versioned migrations — directory",
+    "feature": "`--dir` defaults to `file://migrations`",
+    "ptah": "yes",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "All eight migrate verbs registering `--dir` default it to `file://migrations`. Never a fallback: the flag, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR` and `atlas.hcl` outrank it, and `atlas.sum` is still gated.",
+    "evidence": "Measured 2026-08-07 against the pinned Atlas CE v1.3.0, each cell in its own freshly built directory with the exit status read on its own line (stokaro/ptah#1241 items 2, 3 and 4). Before: `migrate apply --url sqlite://local.db` and `migrate new addcol` with no `--dir` exited 1 with `migrations directory is required` in a directory holding a hashed `./migrations`, where CE exited 0 and applied / created the file; `migrate new addcol --dir file://a/b` exited 1 with `parent directory \"…/a\" is not available` at two and at three missing levels, where CE created the whole chain plus the migration and `atlas.sum`. CE's own `--help` promised `(default \"file://migrations\")` on apply, new, diff, status, set, lint, hash and validate; ptah-compat printed it on diff, status, set and lint only, and hash and validate used the directory without printing it. After: all rows match, and the created file sets are identical. Controls, all measured and all still exit 1 with nothing written: `--dir file://migrtions` beside a valid `./migrations` (no fallback), `--dir ''` (`missing scheme for dir url`), a drifted `./migrations` with no `--dir` (`checksum mismatch`), an unhashed one (`checksum file not found`), `./migrations` existing as a regular file, and `--dir file://a/b` over a regular file `a`. Precedence measured with a decoy: `atlas.hcl migration.dir = \"file://mydir\"`, `PTAH_DIR` and `PTAH_MIGRATIONS_DIR` each still win over the default on both binaries where they exist. `migrate hash` and `migrate validate` were already reading `./migrations` through the native command's own default, so only their help line changed."
+  },
+  {
     "area": "Versioned migrations — revision state",
     "feature": "Set revision state to a version",
     "ptah": "yes",
