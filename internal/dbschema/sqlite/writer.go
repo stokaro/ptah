@@ -343,7 +343,10 @@ func listAuxiliaryDatabases(ctx context.Context, conn *sql.Conn) ([]string, erro
 func listSchemaObjects(ctx context.Context, conn *sql.Conn, schema string) ([]string, error) {
 	//nolint:gosec // G202: schema is an identifier quoted by sqlident, not an SQL value.
 	query := "SELECT type || ':' || name FROM " + quoteQualifiedIdent(schema, "sqlite_schema") + `
-		WHERE name NOT LIKE 'sqlite_%'
+		-- Escaped: LIKE reads a bare _ as a single-character wildcard, so
+		-- 'sqlite_%' also matches user objects such as sqlitedata. SQLite
+		-- reserves the prefix WITH the underscore (stokaro/ptah#1291).
+		WHERE name NOT LIKE 'sqlite\_%' ESCAPE '\'
 		ORDER BY type, name
 	`
 	rows, err := conn.QueryContext(ctx, query)
@@ -445,7 +448,7 @@ func (w *Writer) listCleanupObjects(
 		FROM pragma_table_list
 		WHERE schema = ?
 		  AND type IN ('table', 'view', 'virtual')
-		  AND name NOT LIKE 'sqlite_%'
+		  AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
 		  AND (? OR name <> 'schema_migrations')
 		ORDER BY CASE type WHEN 'view' THEN 0 ELSE 1 END, name
 	`

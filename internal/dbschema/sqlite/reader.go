@@ -122,7 +122,7 @@ func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
 		SELECT type, name, tbl_name, sql
 		FROM %s
 		WHERE type IN ('table', 'index', 'view', 'trigger')
-		  AND NOT (type = 'table' AND name LIKE 'sqlite_%%')
+		  AND NOT (type = 'table' AND name LIKE 'sqlite\_%%' ESCAPE '\')
 		  AND NOT (type IN ('table', 'view') AND name = 'schema_migrations')
 		ORDER BY type, tbl_name, name
 	`, r.schemaObject("sqlite_schema"))
@@ -220,7 +220,7 @@ func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
 		FROM %s AS m
 		JOIN pragma_table_xinfo(m.name, ?) AS x
 		WHERE m.type = 'table'
-		  AND m.name NOT LIKE 'sqlite_%%'
+		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
 		  AND m.name <> 'schema_migrations'
 		ORDER BY m.name, x.cid
 	`, r.schemaObject("sqlite_schema"))
@@ -362,7 +362,7 @@ func (r *Reader) readIndexEntriesByTable() (map[string][]sqliteIndexEntry, error
 		FROM %s AS m
 		JOIN pragma_index_list(m.name, ?) AS il
 		WHERE m.type = 'table'
-		  AND m.name NOT LIKE 'sqlite_%%'
+		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
 		  AND m.name <> 'schema_migrations'
 		ORDER BY m.name, il.seq
 	`, r.schemaObject("sqlite_schema"))
@@ -468,7 +468,7 @@ func (r *Reader) readIndexColumnsByIndex() (map[string]sqliteIndexColumns, error
 		JOIN pragma_index_list(m.name, ?) AS il
 		JOIN pragma_index_xinfo(il.name, ?) AS ix
 		WHERE m.type = 'table'
-		  AND m.name NOT LIKE 'sqlite_%%'
+		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
 		  AND m.name <> 'schema_migrations'
 		ORDER BY il.name, ix.seqno
 	`, r.schemaObject("sqlite_schema"))
@@ -657,7 +657,7 @@ func (r *Reader) readForeignKeysByTable(tableDDLByName map[string]string) (map[s
 		FROM %s AS m
 		JOIN pragma_foreign_key_list(m.name, ?) AS fk
 		WHERE m.type = 'table'
-		  AND m.name NOT LIKE 'sqlite_%%'
+		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
 		  AND m.name <> 'schema_migrations'
 		ORDER BY m.name, fk.id, fk.seq
 	`, r.schemaObject("sqlite_schema"))
