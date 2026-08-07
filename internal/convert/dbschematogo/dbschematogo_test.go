@@ -460,6 +460,39 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartDirection(t *testing.T) {
 	})
 }
 
+func TestConvertDBSchemaToGoSchema_PreservesIndexPartExpression(t *testing.T) {
+	c := qt.New(t)
+	// An expression key must arrive in the model as an expression. Dropping it
+	// into Name makes the renderer quote it, and CREATE INDEX ... ("lower(name)")
+	// is rejected by PostgreSQL with `column "lower(name)" does not exist`.
+	// See #1242.
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{Schema: "public", Name: "users"},
+		},
+		Indexes: []types.DBIndex{
+			{
+				Schema:    "public",
+				TableName: "users",
+				Name:      "idx_users_lower_name",
+				Columns:   []string{"tenant_id", "lower(name)"},
+				Parts: []types.DBIndexPart{
+					{Name: "tenant_id"},
+					{Expr: "lower(name)"},
+				},
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Indexes, qt.HasLen, 1)
+	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
+		{Name: "tenant_id"},
+		{Expr: "lower(name)"},
+	})
+}
+
 func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
 	c := qt.New(t)
 	statusDefault := "'draft'::enum_product_status"

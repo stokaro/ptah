@@ -151,6 +151,11 @@ func (r DBRange) QualifiedName() string { return QualifyTableName(r.Schema, r.Na
 // DBIndexPart represents one ordered key column in an introspected index.
 type DBIndexPart struct {
 	Name string `json:"name"`
+	// Expr is a raw indexed expression, such as lower(name). It is mutually
+	// exclusive with Name: an expression is not an identifier, and a reader
+	// that reports one in Name makes the renderer quote it into a column
+	// reference that does not exist.
+	Expr string `json:"expr,omitempty"`
 	Desc bool   `json:"desc,omitempty"`
 }
 

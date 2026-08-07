@@ -168,6 +168,33 @@ matched rather than refused, because there Atlas CE is right: it executes the
 file's bytes verbatim, drops nothing, and records the revision honestly. See
 [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
 
+## Known PostgreSQL Introspection Gaps
+
+Reading a live PostgreSQL database currently loses index attributes that the
+pinned Atlas CE v1.3.0 binary preserves. Measured on PostgreSQL 17.10 by
+diffing an empty database against a source database with each binary and
+replaying the emitted SQL into a fresh database with
+`psql -v ON_ERROR_STOP=1`. These affect the live-database read path only; an
+HCL source carrying the same attributes renders correctly.
+
+| Attribute | Ptah reads it? | Replays? | Tracked in |
+| --- | --- | --- | --- |
+| Access method (`USING gin` / `gist` / `brin` / `hash`) | No, every index collapses to the btree default | psql exits 0 and leaves a btree index | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Operator class, for example `text_pattern_ops` | No, the opclass is dropped | psql exits 0 and leaves an index that no longer serves the queries it was built for | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Sort order (`DESC`, `NULLS FIRST`, `NULLS LAST`) | No, ordering is dropped | psql exits 0 and leaves an ascending index | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Domain used as a column type | The `CREATE DOMAIN` is emitted, but the column is flattened to the domain's base type | psql exits 0 and leaves a column without the domain's `CHECK` | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Expression index, for example `lower(name)` | Yes | Yes | fixed |
+
+The first four replay without an error, so nothing reports the loss at the time
+it happens. Treat a green replay of introspected PostgreSQL index DDL as
+unverified until these are closed.
+
+Domains are the one row where Atlas CE is also wrong, in the opposite
+direction: it keeps the column's declared type and never emits the
+`CREATE DOMAIN`, so its own output fails to replay with
+`ERROR: type "..." does not exist`. Ptah emits the `CREATE DOMAIN` already, and
+closing this gap means keeping both halves rather than matching CE.
+
 ## Reports
 
 - Offline corpus report:
