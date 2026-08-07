@@ -114,6 +114,34 @@ Registry protocol is proprietary and account-bound; the native
 [OCI registry](../../operate/oci-registry/) instead) and the `schema plan`
 registry sub-verbs. The per-command pages name each waiver where it appears.
 
+## Compatibility never costs you a capability
+
+Ptah models things the Atlas community CLI does not. PostgreSQL extensions,
+sequences and row-level security policies are the clearest examples: that CLI
+answers `postgres: extensions are not supported by this version` and refuses a
+schema file that declares any of them, while Ptah reads, diffs and applies all
+three.
+
+Being a drop-in for that CLI never means giving those up.
+
+The compatibility surface **defaults** to what the community CLI accepts, so
+output you hand back to it stays readable. What that default leaves out is
+reported rather than dropped in silence — you are told what was omitted and
+why, so a compatibility-shaped inspect never describes less of your database
+than it found without saying so.
+
+The fuller behavior stays available on the same `ptah-compat` surface through a
+`PTAH_*` environment variable. It is an environment variable rather than a flag
+on purpose: the compatibility binary's flags are held to parity with the pinned
+community CLI, so a flag Atlas does not have would break the very drop-in
+promise it was added to serve. Native `ptah` verbs always emit everything Ptah
+models, with no switch to set.
+
+This matters most if you are coming from Atlas **Pro** rather than CE. The
+compatibility surface is the migration path for Pro scripts and configuration
+too, not only CE ones — a capability you could only reach by rewriting your
+pipeline against native `ptah` verbs would not be a migration path at all.
+
 ## Parity expectations
 
 Ptah is not documented as a full Atlas OSS replacement until the external
