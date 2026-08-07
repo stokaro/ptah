@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
+	"time"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
@@ -97,8 +99,41 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 		return err
 	}
 	defer dbschema.CloseAndWarn(devConn)
+	// Registered after the close, so it runs before it: the dev database is
+	// handed back with nothing the rehearsal put in it, whether the rehearsal
+	// succeeded or failed.
+	defer discardDevRehearsalArtifacts(ctx, devConn)
 
 	return rehearseStatementsOnDev(ctx, p.conn, devConn, p.current, p.txMode, statements)
+}
+
+// devCleanupTimeout bounds the post-rehearsal cleanup so a canceled command
+// still returns the dev database empty instead of leaving the rehearsal behind.
+const devCleanupTimeout = 30 * time.Second
+
+// discardDevRehearsalArtifacts drops what the rehearsal created in the dev
+// database, on every exit path.
+//
+// A dev database is scratch space the tool is trusted to borrow. The pinned
+// community binary v1.3.0 hands it back empty, measured 2026-08-07 against a
+// live MySQL 9.7 with a freshly created target/dev pair each time: after a
+// successful `schema apply` the dev database held no tables, and after a run
+// that failed inside the dev database (Error 3780, incompatible foreign key
+// column types) it held no tables either. Ptah matches that on both paths.
+//
+// Failure to clean is reported rather than returned: it must not replace the
+// rehearsal's own verdict, which is what the caller acts on.
+func discardDevRehearsalArtifacts(ctx context.Context, devConn *dbschema.DatabaseConnection) {
+	if devConn == nil {
+		return
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), devCleanupTimeout)
+	defer cancel()
+	devConn.SchemaWriter().SetDryRun(false)
+	if err := devConn.SchemaWriter().DropAllTables(cleanupCtx); err != nil {
+		slog.Warn("failed to clean the dev database after the rehearsal; it may still hold rehearsed objects",
+			"error", err)
+	}
 }
 
 // connectSimulationDev validates the dev database URL against the target and
@@ -173,6 +208,13 @@ func sameDirectDatabaseURL(databaseURL, candidate string) (bool, error) {
 // Every caller reaches the dev database through here, so this is where the
 // escape lint runs: a dev database executes the statements for real, whether
 // they came from a plan file or from a freshly computed apply.
+//
+// It is also where the statements are re-scoped onto the dev database. The plan
+// is rendered with the target's schema name baked into every statement, and on
+// MySQL, MariaDB, and ClickHouse a schema is a database, so running the plan
+// verbatim on the dev connection lands it in the target — the simulation
+// mutates the very database it exists to protect. See
+// [rescopeStatementsForDevDatabase] and stokaro/ptah#1240.
 func rehearseStatementsOnDev(
 	ctx context.Context,
 	targetConn *dbschema.DatabaseConnection,
@@ -184,6 +226,13 @@ func rehearseStatementsOnDev(
 	if targetConn == nil {
 		return errors.New("schema apply simulation requires target database connection")
 	}
+	statements, err := rescopeStatementsForDevDatabase(
+		statements, devConn.Info().Dialect, targetConn.Info().Schema, devConn.Info().Schema)
+	if err != nil {
+		return err
+	}
+	// The lint reads exactly what the dev database will execute, so it runs on
+	// the re-scoped statements rather than on the plan they came from.
 	if err := checkPlanStatements(statements, devConn.Info().Dialect); err != nil {
 		return err
 	}
@@ -231,12 +280,11 @@ func rehearseOnPreparedDev(
 
 // checkSimulationSchemaScope fails explicitly when the dev database's schema
 // scope differs from the target's. Only dialects whose connection schema names
-// a namespace inside the database participate: for MySQL, MariaDB, and
-// ClickHouse it names the database itself, which legitimately differs between
-// a target and its dev counterpart.
+// a namespace inside the database participate: where it names the database
+// itself the two legitimately differ, which is exactly why the plan has to be
+// re-scoped before it is rehearsed.
 func checkSimulationSchemaScope(devInfo, targetInfo dbschematypes.DBInfo) error {
-	switch platform.NormalizeDialect(targetInfo.Dialect) {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
+	if schemaScopeNamesDatabase(targetInfo.Dialect) {
 		return nil
 	}
 	if devInfo.Schema == targetInfo.Schema {
