@@ -6,6 +6,7 @@ package dbschematogo
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
@@ -191,12 +192,26 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 			Unique:        dbIndex.IsUnique,
 			Condition:     dbIndex.Condition,
 			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
-			Type:          dbIndex.Type,
+			Type:          indexType(dbIndex),
 			Granularity:   dbIndex.Granularity,
+
+			IncludeColumns: slices.Clone(dbIndex.IncludeColumns),
 		}
 		indexes = append(indexes, index)
 	}
 	return indexes
+}
+
+// indexType picks the value goschema.Index.Type carries for an introspected
+// index. goschema keeps one field for two concepts the database layer keeps
+// apart: the PostgreSQL access method (btree/gin/gist/brin/hash) and the
+// ClickHouse data-skipping-index type (minmax/bloom_filter/...). No reader
+// sets both, so the choice is unambiguous.
+func indexType(index dbschematypes.DBIndex) string {
+	if index.Method != "" {
+		return index.Method
+	}
+	return index.Type
 }
 
 func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
@@ -206,9 +221,11 @@ func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
 	converted := make([]goschema.IndexPart, len(parts))
 	for position, part := range parts {
 		converted[position] = goschema.IndexPart{
-			Name: part.Name,
-			Expr: part.Expr,
-			Desc: part.Desc,
+			Name:       part.Name,
+			Expr:       part.Expr,
+			Operator:   part.Operator,
+			Desc:       part.Desc,
+			NullsOrder: part.NullsOrder,
 		}
 	}
 	return converted

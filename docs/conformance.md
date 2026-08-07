@@ -168,32 +168,54 @@ matched rather than refused, because there Atlas CE is right: it executes the
 file's bytes verbatim, drops nothing, and records the revision honestly. See
 [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
 
-## Known PostgreSQL Introspection Gaps
+## PostgreSQL Introspection: Index and Domain Attributes
 
-Reading a live PostgreSQL database currently loses index attributes that the
-pinned Atlas CE v1.3.0 binary preserves. Measured on PostgreSQL 17.10 by
-diffing an empty database against a source database with each binary and
+Reading a live PostgreSQL database once lost six attributes that the pinned
+Atlas CE v1.3.0 binary preserves. All six are now read. Measured on PostgreSQL
+17.10 by diffing an empty database against a source database with each binary,
 replaying the emitted SQL into a fresh database with
-`psql -v ON_ERROR_STOP=1`. These affect the live-database read path only; an
-HCL source carrying the same attributes renders correctly.
+`psql -v ON_ERROR_STOP=1` and reading psql's own exit status, then re-diffing
+the replayed database against the source with the pinned binary as a neutral
+observer. These affected the live-database read path only; an HCL source
+carrying the same attributes always rendered correctly.
 
-| Attribute | Ptah reads it? | Replays? | Tracked in |
+| Attribute | Read from | Before | Tracked in |
 | --- | --- | --- | --- |
-| Access method (`USING gin` / `gist` / `brin` / `hash`) | No, every index collapses to the btree default | psql exits 0 and leaves a btree index | [#1242](https://github.com/stokaro/ptah/issues/1242) |
-| Operator class, for example `text_pattern_ops` | No, the opclass is dropped | psql exits 0 and leaves an index that no longer serves the queries it was built for | [#1242](https://github.com/stokaro/ptah/issues/1242) |
-| Sort order (`DESC`, `NULLS FIRST`, `NULLS LAST`) | No, ordering is dropped | psql exits 0 and leaves an ascending index | [#1242](https://github.com/stokaro/ptah/issues/1242) |
-| Domain used as a column type | The `CREATE DOMAIN` is emitted, but the column is flattened to the domain's base type | psql exits 0 and leaves a column without the domain's `CHECK` | [#1242](https://github.com/stokaro/ptah/issues/1242) |
-| Expression index, for example `lower(name)` | Yes | Yes | fixed |
+| Access method (`USING gin` / `gist` / `brin` / `hash`) | `pg_am.amname` | Every index collapsed to the btree default. **Not always silent** -- see below | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Operator class, for example `text_pattern_ops` | `pg_index.indclass`, non-default classes only | Dropped: psql exited 0 and left an index that no longer served the queries it was built for | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Sort order (`DESC`, `NULLS FIRST`, `NULLS LAST`) | `pg_index.indoption` | Dropped: psql exited 0 and left an ascending index | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| `INCLUDE` payload columns | `pg_index.indkey` past `indnkeyatts` | Dropped: psql exited 0 and left an index that cannot serve the index-only scans it was built for | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Expression index, for example `lower(name)` | `pg_index.indkey`, attnum 0 | Emitted as a quoted column identifier, which psql rejected at exit 3 | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Domain used as a column type | `information_schema.columns.domain_name` | The `CREATE DOMAIN` was emitted but the column was flattened to the domain's base type: psql exited 0 and left a column without the domain's `CHECK` | [#1242](https://github.com/stokaro/ptah/issues/1242) |
 
-The first four replay without an error, so nothing reports the loss at the time
-it happens. Treat a green replay of introspected PostgreSQL index DDL as
-unverified until these are closed.
+### The access-method loss was not silent in general
 
-Domains are the one row where Atlas CE is also wrong, in the opposite
-direction: it keeps the column's declared type and never emits the
-`CREATE DOMAIN`, so its own output fails to replay with
-`ERROR: type "..." does not exist`. Ptah emits the `CREATE DOMAIN` already, and
-closing this gap means keeping both halves rather than matching CE.
+An earlier version of this table said the access-method loss "replays at exit 0
+and leaves a btree index". That is fixture-dependent and false in general. It
+holds only when the indexed column's type has a default btree operator class.
+
+Measured, a `gist` index on a `point` column:
+
+```text
+emitted:  CREATE INDEX IF NOT EXISTS "i_gist" ON "t" ("p");
+replay:   psql exits 3
+          ERROR: data type point has no default operator class for access method "btree"
+```
+
+The `int4range` fixture the original claim was generalized from does have a
+btree operator class, so there the same loss degraded quietly. The loss is loud
+for `point`, `box`, `tsvector` and every other type with no btree class, and
+quiet otherwise. A green replay never proved the access method survived; it only
+proved the column type tolerated losing it.
+
+### Domains are where Atlas CE is wrong in the opposite direction
+
+CE keeps the column's declared type but never emits the `CREATE DOMAIN`, so its
+own `schema diff` output fails to replay with
+`ERROR: type "positive_int" does not exist` — measured, psql exit 3. Ptah emits
+both the `CREATE DOMAIN` and the domain-typed column, so closing this gap meant
+keeping both halves rather than matching CE. Ptah's output replays at psql exit
+0 where CE's does not.
 
 ## Reports
 
