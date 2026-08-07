@@ -35,6 +35,26 @@ func domainColumn() types.DBColumn {
 	}
 }
 
+// domainOverEnumColumn is the reader's report of `qty d_enum` where
+// CREATE TYPE color AS ENUM (...) and CREATE DOMAIN d_enum AS color.
+//
+// A domain over a USER-DEFINED base type does not report its base type in
+// data_type the way `positive` above does. Measured on PostgreSQL 17.10, the
+// catalog answers data_type 'USER-DEFINED', udt_name 'color' -- the BASE type --
+// domain_name 'd_enum' and format_type 'd_enum'. Nothing in the tree built this
+// shape until stokaro/ptah#1242 landed, so the branch that answers from udt_name
+// before consulting the domain was invisible to every test.
+func domainOverEnumColumn() types.DBColumn {
+	return types.DBColumn{
+		Name:          "qty",
+		DataType:      "USER-DEFINED",
+		UDTName:       "color",
+		FormattedType: "d_enum",
+		DomainName:    "d_enum",
+		IsNullable:    "YES",
+	}
+}
+
 // TestColumns_DomainColumnHappyPath is the no-churn property: a desired column
 // that names the domain the database column is declared as must produce no
 // change at all.
@@ -74,6 +94,22 @@ func TestColumns_DomainColumnHappyPath(t *testing.T) {
 			name:    "case does not make two spellings of one domain differ",
 			genType: "POSITIVE",
 			dbCol:   domainColumn(),
+		},
+		{
+			name:    "a domain over an enum is the domain on this side too",
+			genType: "d_enum",
+			dbCol:   domainOverEnumColumn(),
+		},
+		{
+			name:    "a domain over a composite type",
+			genType: "d_comp",
+			dbCol: func() types.DBColumn {
+				column := domainOverEnumColumn()
+				column.UDTName = "addr"
+				column.FormattedType = "d_comp"
+				column.DomainName = "d_comp"
+				return column
+			}(),
 		},
 	}
 
@@ -130,6 +166,12 @@ func TestColumns_DomainColumnFailurePath(t *testing.T) {
 			}(),
 			wantChange: "positive_int -> bigint",
 		},
+		{
+			name:       "desired asks for the base enum where the database has the domain",
+			genType:    "color",
+			dbCol:      domainOverEnumColumn(),
+			wantChange: "d_enum -> color",
+		},
 	}
 
 	for _, test := range tests {
@@ -172,6 +214,17 @@ func TestColumns_NonDomainColumnKeepsCategoryComparison(t *testing.T) {
 				Name: "qty", DataType: "integer", UDTName: "int4", IsNullable: "YES",
 			},
 			wantChange: "integer -> positive",
+		},
+		{
+			// The inverse of the domain-over-enum rows: a USER-DEFINED column
+			// with no domain must keep answering with its own type name, so the
+			// gate stays on DomainName rather than on DataType.
+			name:    "a plain enum column with no domain compares as the enum",
+			genType: "color",
+			dbCol: types.DBColumn{
+				Name: "qty", DataType: "USER-DEFINED", UDTName: "color", IsNullable: "YES",
+			},
+			wantChange: "",
 		},
 	}
 

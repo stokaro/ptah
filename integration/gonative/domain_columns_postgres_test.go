@@ -46,6 +46,39 @@ func domainColumnSeed() []string {
 	}
 }
 
+// domainOverUserDefinedSeed is the shape the fixture above cannot reach: a
+// domain whose BASE type is itself user-defined.
+//
+// The distinction is a catalog one and it decides which branch of the
+// conversion runs. For `positive` above, information_schema reports data_type
+// 'integer' -- the base type -- so a consumer that only knows about built-in
+// spellings still lands somewhere that can be corrected. For `d_enum` here,
+// measured on PostgreSQL 17.10, it reports data_type 'USER-DEFINED' with
+// udt_name 'color': the BASE type again, but now under the branch that answers
+// from udt_name. Only domain_name and format_type name the domain.
+//
+// The plain `color` column beside it is the control in the other direction: a
+// USER-DEFINED column that is NOT a domain must keep answering with its own
+// type name, so the rule stays gated on the domain rather than on USER-DEFINED.
+// The composite and range columns are the same shape with the other two kinds
+// of user-defined base type PostgreSQL has.
+func domainOverUserDefinedSeed() []string {
+	return []string{
+		"CREATE TYPE color AS ENUM ('r','g','b')",
+		"CREATE TYPE addr AS (street text, city text)",
+		"CREATE TYPE myrange AS RANGE (subtype = integer)",
+		"CREATE DOMAIN d_enum AS color CHECK (VALUE <> 'b')",
+		"CREATE DOMAIN d_comp AS addr",
+		"CREATE DOMAIN d_range AS myrange",
+		"CREATE TABLE t (" +
+			"id integer PRIMARY KEY, " +
+			"c d_enum NOT NULL, " +
+			"a d_comp, " +
+			"r d_range, " +
+			"plain color NOT NULL)",
+	}
+}
+
 // TestPostgreSQLDomainColumn_ReaderKeepsTheDomain asserts what the reader
 // reports, before anything renders or compares.
 func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
@@ -149,6 +182,143 @@ func TestPostgreSQLDomainColumn_ApplyingItsOwnDescriptionChangesNothing(t *testi
 			plan := boundaryApplyBack(c, conn, document, test.compatibility)
 
 			c.Assert(columnStatements(plan, "qty"), qt.DeepEquals, []string(nil))
+		})
+	}
+}
+
+// TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain is the same
+// claim as TestPostgreSQLDomainColumn_ReaderKeepsTheDomain for the shape whose
+// base type is itself user-defined.
+//
+// This is the shape a fix for the `positive` fixture can silently break. The
+// conversion answers a USER-DEFINED column from udt_name, and for a domain
+// udt_name is the BASE type -- so consulting the domain only where data_type
+// happens to be a built-in spelling flattens `c d_enum` to `color` and takes
+// the domain's CHECK with it. Measured with ptah-compat against PostgreSQL
+// 17.10 before this guard existed: `schema diff --from X --to X` on one
+// database planned `ALTER TABLE "t" ALTER COLUMN "c" TYPE color;`, `schema
+// apply` executed it and reported success, and afterwards
+// information_schema.columns.domain_name for that column was NULL. The pinned
+// community binary v1.3.0 reported the same database synced.
+func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+		name:  "domain_over_user_defined_reader",
+		seed:  domainOverUserDefinedSeed(),
+		query: "search_path=public",
+	})
+	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	live, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	c.Assert(err, qt.IsNil)
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(live)
+
+	tests := []struct {
+		name   string
+		column string
+		// wantDomain is DBColumn.DomainName, empty for the control column.
+		wantDomain string
+		// wantUDTName is the BASE type the catalog reports for a domain
+		// column, and the column's own type for the control. The two being
+		// equal for the control is exactly why the domain rows need the
+		// domain: udt_name cannot tell them apart.
+		wantUDTName string
+		// wantFieldType is what the desired-state model carries, which is what
+		// every renderer and the comparator's desired side then use.
+		wantFieldType string
+	}{
+		{
+			name:          "domain over an enum",
+			column:        "c",
+			wantDomain:    "d_enum",
+			wantUDTName:   "color",
+			wantFieldType: "d_enum",
+		},
+		{
+			name:          "domain over a composite type",
+			column:        "a",
+			wantDomain:    "d_comp",
+			wantUDTName:   "addr",
+			wantFieldType: "d_comp",
+		},
+		{
+			name:          "domain over a range type",
+			column:        "r",
+			wantDomain:    "d_range",
+			wantUDTName:   "myrange",
+			wantFieldType: "d_range",
+		},
+		{
+			name:          "plain enum column is not a domain",
+			column:        "plain",
+			wantDomain:    "",
+			wantUDTName:   "color",
+			wantFieldType: "color",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			column := findLiveColumn(c, live.Tables, "t", test.column)
+			c.Assert(column.DomainName, qt.Equals, test.wantDomain)
+			c.Assert(column.UDTName, qt.Equals, test.wantUDTName)
+			// The catalog reports the same data_type for all four, which is
+			// why nothing downstream can separate them without the domain.
+			c.Assert(column.DataType, qt.Equals, "USER-DEFINED")
+
+			field := findConvertedField(c, converted, test.column)
+			c.Assert(field.Type, qt.Equals, test.wantFieldType)
+		})
+	}
+}
+
+// TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeApplyingItsOwnDescriptionChangesNothing
+// is the round-trip property for the same shape: a database that applies its
+// own inspected description must plan nothing for these columns.
+//
+// The `positive` version of this test next door passed throughout the change
+// that broke this one, which is the whole reason this exists separately.
+func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeApplyingItsOwnDescriptionChangesNothing(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		// compatibility selects the surface, as next door: both must hold it.
+		compatibility bool
+	}{
+		{name: "native surface", compatibility: false},
+		{name: "compatibility surface", compatibility: true},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+				name:  "domain_over_user_defined_apply",
+				seed:  domainOverUserDefinedSeed(),
+				query: "search_path=public",
+			})
+			conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+			document := boundaryInspect(c, dbURL, test.compatibility)
+			c.Assert(document, qt.Contains, `type = sql("d_enum")`)
+			// The control's spelling is asserted too, so a change that made
+			// every USER-DEFINED column print sql(...) would not read as a
+			// pass here.
+			c.Assert(document, qt.Contains, `type = enum.color`)
+
+			plan := boundaryApplyBack(c, conn, document, test.compatibility)
+
+			c.Assert(columnStatements(plan, "c"), qt.DeepEquals, []string(nil))
+			c.Assert(columnStatements(plan, "a"), qt.DeepEquals, []string(nil))
+			c.Assert(columnStatements(plan, "r"), qt.DeepEquals, []string(nil))
+			c.Assert(columnStatements(plan, "plain"), qt.DeepEquals, []string(nil))
 		})
 	}
 }

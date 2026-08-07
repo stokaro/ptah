@@ -401,6 +401,17 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsTheDomain(t *testing
 // ever builds an integer column, so the shorthand would silently undo the
 // domain. The domain wins, and the sequence default it was folding away is
 // carried explicitly instead.
+//
+// The enum, composite and range rows are the shape where a domain does NOT put
+// its base type in data_type. When the base type is itself user-defined the
+// catalog reports data_type = 'USER-DEFINED' with udt_name naming the BASE type
+// -- measured on PostgreSQL 17.10, `c d_enum` where `CREATE DOMAIN d_enum AS
+// color` reads back as data_type 'USER-DEFINED', udt_name 'color', domain_name
+// 'd_enum', format_type 'd_enum'. Answering udt_name there rebuilds the column
+// as the bare enum and drops the domain's CHECK, which is the same loss the
+// `positive` rows above pin, on the branch that reaches USER-DEFINED first.
+// TestConvertDBSchemaToGoSchema_PostgresUserDefinedColumnUsesUDTName is the
+// control: a USER-DEFINED column with no domain still answers with udt_name.
 func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing.T) {
 	nextval := "nextval('s'::regclass)"
 
@@ -445,6 +456,50 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 			},
 			wantType:        "positive",
 			wantDefaultExpr: nextval,
+		},
+		{
+			name: "a domain over an enum keeps the domain, not the enum",
+			column: types.DBColumn{
+				Name:          "c",
+				DataType:      "USER-DEFINED",
+				UDTName:       "color",
+				FormattedType: "d_enum",
+				DomainName:    "d_enum",
+			},
+			wantType: "d_enum",
+		},
+		{
+			name: "a domain over a composite type keeps the domain",
+			column: types.DBColumn{
+				Name:          "a",
+				DataType:      "USER-DEFINED",
+				UDTName:       "addr",
+				FormattedType: "d_comp",
+				DomainName:    "d_comp",
+			},
+			wantType: "d_comp",
+		},
+		{
+			name: "a domain over a range type keeps the domain",
+			column: types.DBColumn{
+				Name:          "r",
+				DataType:      "USER-DEFINED",
+				UDTName:       "myrange",
+				FormattedType: "d_range",
+				DomainName:    "d_range",
+			},
+			wantType: "d_range",
+		},
+		{
+			name: "a domain over an enum outside the search path keeps its qualifier",
+			column: types.DBColumn{
+				Name:          "c",
+				DataType:      "USER-DEFINED",
+				UDTName:       "color",
+				FormattedType: "doms.d_enum",
+				DomainName:    "d_enum",
+			},
+			wantType: "doms.d_enum",
 		},
 	}
 

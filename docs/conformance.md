@@ -372,6 +372,45 @@ folded into the shorthand, and the sequence itself is reported rather than
 treated as the column's implicit backing sequence — without it the emitted DDL
 names a sequence nothing creates, which is measured as psql exit 3.
 
+### A domain over a user-defined base type is a different catalog shape
+
+`CREATE DOMAIN positive AS integer` and `CREATE DOMAIN d_enum AS color` do not
+read back the same way, and the difference decides which code answers the
+question "what type is this column declared as". Measured on PostgreSQL 17.10:
+
+| Column | `data_type` | `udt_name` | `domain_name` | `format_type` |
+| --- | --- | --- | --- | --- |
+| `qty positive`, `positive AS integer` | `integer` | `int4` | `positive` | `positive` |
+| `c d_enum`, `d_enum AS color` | `USER-DEFINED` | `color` | `d_enum` | `d_enum` |
+| `plain color`, no domain | `USER-DEFINED` | `color` | *(null)* | *(not read)* |
+
+For a domain over a built-in base type `data_type` is the base type, so a
+consumer that falls through to `format_type` reaches the domain by accident. For
+a domain over a user-defined base type — an enum, a composite or a range —
+`data_type` is the bare category `USER-DEFINED` and `udt_name` names the BASE
+type, identically to the plain column on the last row. A consumer that answers
+from `udt_name` there flattens `c` to `color` and drops the domain's `CHECK`
+with it, and only `domain_name` separates row two from row three.
+
+Measured with `ptah-compat` against one database holding rows two and three, and
+against the composite and range shapes beside them:
+
+| Probe | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `schema diff --from X --to X`, one database against itself | Schemas are synced | Schemas are synced |
+| `schema apply` of a byte-identical twin | — | Schema is synced, no changes to be made |
+| `schema inspect --format json` | `"type":"d_enum"` | `"type":"d_enum"` |
+| `schema inspect`, HCL | `type = sql("d_enum")` | `type = sql("d_enum")` |
+| `schema inspect`, HCL, plain enum column beside it | `type = enum.color` | `type = enum.color` |
+| `schema diff` from empty, replayed with psql, then compared to the source by CE | — | psql exit 0, Schemas are synced |
+
+The last row is the round trip, and CE is the neutral observer in it: Ptah emits
+`CREATE TYPE`, `CREATE DOMAIN` and a `d_enum` column, the replay runs at psql
+exit 0, and CE then reports the replayed database in sync with the one it was
+described from. A description that spells the column `color` replays at exit 0
+too and CE reports `ALTER TABLE "t" ALTER COLUMN "c" TYPE d_enum;` — the replay
+lost the domain and the exit code did not say so.
+
 ### Reading an attribute and reconciling it are different claims
 
 The table above records what introspection preserves. It does not say what
