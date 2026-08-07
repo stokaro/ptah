@@ -144,9 +144,44 @@ type renderer struct {
 	// once per render by [collectReferencedNames]. Nil means not yet built,
 	// which is distinguishable from "built and empty" because a document with
 	// no references at all still answers every lookup false.
-	references  map[string]bool
-	builder     strings.Builder
-	diagnostics []Diagnostic
+	references map[string]bool
+	// tableSchemas caches, per table block label this render will write, the
+	// schema each block carries. Nil means not yet built, which is
+	// distinguishable from "built and empty" because a document with no tables
+	// still answers every lookup. See [renderer.documentResolvesTableRef].
+	tableSchemas map[string][]string
+	builder      strings.Builder
+	diagnostics  []Diagnostic
+}
+
+// documentResolvesTableRef reports whether an unqualified `table.<name>`
+// reference in this document resolves to exactly the table the qualified name
+// meant.
+//
+// It is true only when the document writes ONE table block with that label and
+// that block carries this schema. Both halves are load-bearing:
+//
+//   - One block, because two tables of one name in different schemas are legal.
+//     Measured on the pinned Atlas community binary v1.3.0 with `public.users`
+//     and `other.users` both declared and an unqualified `ref_columns`, it
+//     refuses the document with `specutil: failed converting to *schema.Realm:
+//     multiple reference tables found for "users"`. Ptah's own reader is no
+//     happier: goschema's resolveTableReference gives up on an ambiguous name
+//     and leaves the reference unqualified, so dropping the schema there would
+//     lose it silently -- worse than a refusal.
+//   - That block's schema, because a lone `public.users` does not make
+//     `table.users` mean `other.users`. Without this half a reference to a table
+//     the document does not contain would resolve, quietly, to a different one.
+func (r *renderer) documentResolvesTableRef(schema, name string) bool {
+	if r.tableSchemas == nil {
+		schemas := make(map[string][]string, len(r.db.Tables))
+		for _, table := range r.db.Tables {
+			schemas[table.Name] = append(schemas[table.Name], r.schemaFor(table.Schema))
+		}
+		r.tableSchemas = schemas
+	}
+	blocks := r.tableSchemas[name]
+	return len(blocks) == 1 && blocks[0] == schema
 }
 
 // schemaFor returns the schema name to write for an object, which is the one it
@@ -643,7 +678,7 @@ func atlasPrimaryKeyConstraint(constraint goschema.Constraint) bool {
 func (r *renderer) renderForeignKey(name string, columns []string, foreignTable string, foreignColumns []string, onDelete string, onUpdate string) {
 	r.linef(`  foreign_key %s {`, quote(name))
 	r.rawAttr(2, "columns", columnRefs(columns))
-	r.rawAttr(2, "ref_columns", tableColumnRefs(foreignTable, foreignColumns))
+	r.rawAttr(2, "ref_columns", r.tableColumnRefs(foreignTable, foreignColumns))
 	r.stringAttr(2, "on_delete", onDelete)
 	r.stringAttr(2, "on_update", onUpdate)
 	r.line("  }")
@@ -1086,8 +1121,8 @@ func schemaRef(name string) string {
 	return "schema" + objectRefPart(name)
 }
 
-func tableColumnRefs(table string, columns []string) string {
-	tableRef := objectRef("table", table)
+func (r *renderer) tableColumnRefs(table string, columns []string) string {
+	tableRef := r.tableRef(table)
 	refs := make([]string, 0, len(columns))
 	for _, column := range columns {
 		if table == "" || column == "" {
