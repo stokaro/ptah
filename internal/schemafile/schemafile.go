@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
@@ -117,7 +118,14 @@ func LoadAll(rawURLs []string, opts Options) (*goschema.Database, error) {
 // ToDBSchema converts Ptah's desired-schema IR into the DB schema shape used by
 // schema comparison. It is intended for local file-to-file comparisons where no
 // live database reader is involved.
-func ToDBSchema(db *goschema.Database) *dbschematypes.DBSchema {
+//
+// dialect names the target the converted schema will be compared under. It only
+// decides how the one goschema field that carries two concepts is unpacked:
+// goschema.Index.Type is the PostgreSQL access method on a PostgreSQL-family
+// target and the ClickHouse data-skipping-index type on ClickHouse, and the DB
+// shape keeps those apart in Method and Type. An empty dialect converts as if
+// no target were known and leaves Method unset.
+func ToDBSchema(db *goschema.Database, dialect string) *dbschematypes.DBSchema {
 	if db == nil {
 		return &dbschematypes.DBSchema{}
 	}
@@ -131,7 +139,7 @@ func ToDBSchema(db *goschema.Database) *dbschematypes.DBSchema {
 		Schemas:     toDBSchemas(db.Schemas),
 		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables),
 		Enums:       toDBEnums(db.Enums),
-		Indexes:     toDBIndexes(db.Indexes, tableByStruct),
+		Indexes:     toDBIndexes(db.Indexes, tableByStruct, dialect),
 		Constraints: toDBConstraints(db.Tables, db.Fields, db.Constraints, tableByStruct),
 		Extensions:  toDBExtensions(db.Extensions),
 		Functions:   toDBFunctions(db.Functions),
@@ -333,23 +341,74 @@ func toDBEnums(enums []goschema.Enum) []dbschematypes.DBEnum {
 	return out
 }
 
-func toDBIndexes(indexes []goschema.Index, tables map[string]goschema.Table) []dbschematypes.DBIndex {
+// toDBIndexes converts desired-state indexes into the DB shape.
+//
+// Everything the comparator reads has to survive this hop. Before issue #1272
+// the access method, the structured key parts and the INCLUDE payload were
+// dropped here, which was invisible only because the PostgreSQL comparator
+// ignored all three; once it started reading them, a `schema diff` whose
+// --from side is a local file would have reported a rebuild for every index
+// carrying any of them against the database it was inspected from.
+func toDBIndexes(
+	indexes []goschema.Index,
+	tables map[string]goschema.Table,
+	dialect string,
+) []dbschematypes.DBIndex {
 	out := make([]dbschematypes.DBIndex, 0, len(indexes))
 	for _, index := range indexes {
 		tableName, schema := indexTable(index.StructName, index.TableName, tables)
 		out = append(out, dbschematypes.DBIndex{
-			Name:          index.Name,
-			TableName:     tableName,
-			Schema:        schema,
-			Columns:       append([]string(nil), index.Fields...),
-			IsUnique:      index.Unique,
-			Condition:     index.Condition,
-			NullsDistinct: index.NullsDistinct,
-			Type:          index.Type,
-			Granularity:   index.Granularity,
+			Name:           index.Name,
+			TableName:      tableName,
+			Schema:         schema,
+			Columns:        append([]string(nil), index.Fields...),
+			Parts:          toDBIndexParts(index.Parts, index.Operator),
+			IsUnique:       index.Unique,
+			Condition:      index.Condition,
+			NullsDistinct:  index.NullsDistinct,
+			Method:         indexAccessMethod(index.Type, dialect),
+			IncludeColumns: append([]string(nil), index.IncludeColumns...),
+			Type:           index.Type,
+			Granularity:    index.Granularity,
 		})
 	}
 	return out
+}
+
+// indexAccessMethod reports goschema.Index.Type as an access method only where
+// that is what it means. On ClickHouse the same field carries the
+// data-skipping-index type, which is a different concept the DB shape keeps in
+// DBIndex.Type.
+func indexAccessMethod(indexType, dialect string) string {
+	if !platform.IsPostgresFamily(dialect) {
+		return ""
+	}
+	return indexType
+}
+
+// toDBIndexParts converts structured key parts, resolving the index-level
+// operator class the way the renderer applies it: a part without its own class
+// inherits the index's, so the DB shape -- which has no index-level slot --
+// records the resolved value per part.
+func toDBIndexParts(parts []goschema.IndexPart, indexOperator string) []dbschematypes.DBIndexPart {
+	if len(parts) == 0 {
+		return nil
+	}
+	converted := make([]dbschematypes.DBIndexPart, len(parts))
+	for position, part := range parts {
+		operator := part.Operator
+		if operator == "" {
+			operator = indexOperator
+		}
+		converted[position] = dbschematypes.DBIndexPart{
+			Name:       part.Name,
+			Expr:       part.Expr,
+			Operator:   operator,
+			Desc:       part.Desc,
+			NullsOrder: part.NullsOrder,
+		}
+	}
+	return converted
 }
 
 func toDBConstraints(

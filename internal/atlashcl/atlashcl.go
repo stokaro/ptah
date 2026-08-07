@@ -1021,6 +1021,10 @@ func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []gosch
 		if err != nil {
 			return nil, nil, err
 		}
+		nullsOrder, err := p.indexPartNullsOrder(nested)
+		if err != nil {
+			return nil, nil, err
+		}
 		operator := p.optionalSQLExpression(nested.Body.Attributes["ops"])
 		prefix := p.optionalRawExpr(nested.Body.Attributes["prefix"])
 		if columnAttr != nil {
@@ -1029,7 +1033,13 @@ func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []gosch
 				return nil, nil, err
 			}
 			columns = append(columns, column)
-			parts = append(parts, goschema.IndexPart{Name: column, Operator: operator, Prefix: prefix, Desc: desc})
+			parts = append(parts, goschema.IndexPart{
+				Name:       column,
+				Operator:   operator,
+				Prefix:     prefix,
+				Desc:       desc,
+				NullsOrder: nullsOrder,
+			})
 			continue
 		}
 		if prefix != "" {
@@ -1037,9 +1047,48 @@ func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []gosch
 		}
 		expr := p.exprString(exprAttr)
 		columns = append(columns, expr)
-		parts = append(parts, goschema.IndexPart{Expr: expr, Operator: operator, Desc: desc})
+		parts = append(parts, goschema.IndexPart{
+			Expr:       expr,
+			Operator:   operator,
+			Desc:       desc,
+			NullsOrder: nullsOrder,
+		})
 	}
 	return columns, parts, nil
+}
+
+// indexPartNullsOrder reads the NULLS ordering of one index key.
+//
+// The two attributes are the spelling the community binary's own
+// `schema inspect` emits for a PostgreSQL index, so a file it produced was
+// reaching Ptah with the ordering silently dropped by the unknown-attribute
+// tolerance -- the property was accepted and then ignored. Only an ordering
+// that deviates from the direction's default is recorded, matching what
+// #1271's reader does with pg_index.indoption, so an explicit
+// `nulls_last = true` on an ascending key stays equal to an omitted one
+// instead of planning a rebuild (issue #1272).
+//
+// Setting both to true is refused rather than resolved: a key has one NULLS
+// ordering, and picking one of the two for the author would be a guess.
+func (p *parser) indexPartNullsOrder(block *hclsyntax.Block) (string, error) {
+	first, err := p.optionalIndexOnBool(block, "nulls_first", false)
+	if err != nil {
+		return "", err
+	}
+	last, err := p.optionalIndexOnBool(block, "nulls_last", false)
+	if err != nil {
+		return "", err
+	}
+	if first && last {
+		return "", p.blockError(block, "index on cannot set both nulls_first and nulls_last")
+	}
+	if first {
+		return goschema.NullsOrderFirst, nil
+	}
+	if last {
+		return goschema.NullsOrderLast, nil
+	}
+	return "", nil
 }
 
 type primaryKeySpec struct {
@@ -1561,11 +1610,13 @@ func (p *parser) rejectUnsupportedUniqueAttrs(block *hclsyntax.Block) error {
 
 func (p *parser) rejectUnsupportedIndexOnAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"column": true,
-		"expr":   true,
-		"ops":    true,
-		"prefix": true,
-		"desc":   true,
+		"column":      true,
+		"expr":        true,
+		"ops":         true,
+		"prefix":      true,
+		"desc":        true,
+		"nulls_first": true,
+		"nulls_last":  true,
 	}, "index on")
 }
 

@@ -114,7 +114,7 @@ table "users" {
 	db, err := schemafile.Load(path, schemafile.Options{})
 	c.Assert(err, qt.IsNil)
 
-	got := schemafile.ToDBSchema(db)
+	got := schemafile.ToDBSchema(db, platform.Postgres)
 
 	c.Assert(got.Tables, qt.HasLen, 1)
 	c.Assert(got.Tables[0].Name, qt.Equals, "users")
@@ -168,7 +168,7 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	}
 	goschema.Finalize(db)
 
-	got := schemafile.ToDBSchema(db)
+	got := schemafile.ToDBSchema(db, platform.Postgres)
 
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Schemas[0].Comment, qt.Equals, "Application")
@@ -219,7 +219,7 @@ func TestToDBSchema_FieldLevelConstraintsStayIdempotent(t *testing.T) {
 		},
 	}
 
-	current := schemafile.ToDBSchema(db)
+	current := schemafile.ToDBSchema(db, platform.Postgres)
 	diff := schemadiff.CompareWithDialect(db, current, platform.Postgres)
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("field-level CHECK/FK should not produce a file-to-file churn diff: %#v", diff))
@@ -245,7 +245,7 @@ func TestToDBSchema_ExplicitConstraintOverridesFieldLevelConstraintWithSameName(
 		}},
 	}
 
-	got := schemafile.ToDBSchema(db)
+	got := schemafile.ToDBSchema(db, platform.Postgres)
 
 	c.Assert(got.Constraints, qt.HasLen, 1)
 	c.Assert(*got.Constraints[0].CheckClause, qt.Equals, "status IN ('active', 'disabled')")
@@ -296,7 +296,7 @@ func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
 	}
 	goschema.Finalize(db)
 
-	got := schemafile.ToDBSchema(db)
+	got := schemafile.ToDBSchema(db, platform.Postgres)
 
 	c.Assert(got.Tables[0].Columns[0].IsPrimaryKey, qt.IsTrue)
 	c.Assert(got.Tables[0].Columns[1].IsPrimaryKey, qt.IsFalse)
