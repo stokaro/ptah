@@ -212,11 +212,35 @@ member list from the catalog (`pg_depend` against `pg_extension`) during
 inspection and keeps the extension when the document uses any of its types,
 functions, relations, operator classes, or operator families.
 
-That set is deliberately coarse. `pgcrypto` supplies a `gen_random_uuid` that
-PostgreSQL 13 and later also supply from core, so a document using it keeps
-`pgcrypto` even though it would have resolved without it. Keeping a block that
-could have been dropped costs compatibility; dropping one that was needed costs
-a document nobody can read, so the rule errs toward keeping.
+Two kinds of member name are left out of that list, because neither one is
+evidence of anything. A name `pg_catalog` also supplies keeps resolving with the
+extension dropped: `citext` supplies fifteen of those, among them `max`,
+`strpos` and `replace`, and `pgcrypto` supplies a `gen_random_uuid` that
+PostgreSQL 13 and later supply from core. A function whose name is a SQL keyword
+cannot be told from the statement that shares the word: `hstore` supplies three
+functions named `delete`, and a `plpgsql` body doing `DELETE FROM audit` calls
+none of them. Either name would pin the extension to a schema that has no
+relationship to it, and the community binary refuses any file declaring an
+extension block, so a keep that did not have to happen does not shrink the
+compatibility win — it removes it.
+
+Neither exclusion can cost a dependency the document really has, and the keyword
+one carries the condition that makes that true. Reaching an extension's overload
+instead of the core function takes arguments of that extension's own type, so a
+genuine call to `delete` takes an `hstore` value and the type is named on a
+column, in a function signature or in a cast. A keyword-named function is
+therefore dropped only when the same extension also puts a type in this list
+that appears in that function's signature — the entry that will keep the
+extension in its place. An extension supplying `merge(text, text)` and no type
+at all has its only evidence in that name, so the name stays and the block
+with it.
+
+Only function names are tested against the keyword list, which the server itself
+supplies through `pg_get_keywords()`. A type, a relation and an operator class
+are each named by nothing but themselves, so dropping a keyword-shaped one would
+throw away the only evidence there is. The `cube` extension shows what that
+leaves behind — its type and its constructor are both called `cube`, so a view
+saying `GROUP BY CUBE(x)` still keeps it.
 
 An extension nothing depends on is still omitted, and the community binary
 reads that document at exit 0. Set `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` when the

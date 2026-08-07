@@ -183,7 +183,14 @@ func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 //
 // What makes the answer precise is therefore the input: the names in
 // [goschema.Extension.Provides] are only those the extension supplies that do
-// not also resolve without it.
+// not also resolve without it, and among functions a keyword-named one is left
+// out only where a type of the same extension is in the list and stands in for
+// it. This scan reads words, not positions, so `DELETE FROM audit` in a plpgsql
+// body is the same token as a call to hstore's `delete`, and a database using
+// no hstore was carrying an hstore block because of it (stokaro/ptah#1281).
+// Where no type stands in, the keyword-shaped name is all this scan has and the
+// reader keeps it -- dropping it would cost a document its only declaration of
+// what it calls.
 func (r *renderer) documentNamesAny(names []string) bool {
 	if r.references == nil {
 		r.references = collectReferencedNames(r.db)
@@ -298,6 +305,13 @@ func collectReferencedNames(db *goschema.Database) map[string]bool {
 // yield `order_seq` through a quote and a cast, and a SQL parser per dialect
 // would be a much larger thing to keep correct than a rule whose failure mode
 // is keeping a block that did not have to be kept.
+//
+// The words it yields carry no position, so a statement keyword and a call to a
+// function of the same name are the same token here. That is answered where the
+// member list is built rather than guessed at afterwards: the PostgreSQL reader
+// leaves a keyword-named function out of [goschema.Extension.Provides] when a
+// type of the same extension is in that list to answer for it, and keeps it
+// when none is.
 func sqlIdentifierTokens(text string) []string {
 	var tokens []string
 	var current strings.Builder

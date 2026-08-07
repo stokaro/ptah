@@ -325,6 +325,16 @@ type DBExtension struct {
 	// `pgcrypto` contributes `gen_random_uuid`, which core has supplied since
 	// PostgreSQL 13.
 	//
+	// A function name pg_get_keywords() reports as a SQL keyword is excluded too,
+	// because a name read out of SQL text carries no position: `hstore` supplies
+	// three functions named `delete`, and `DELETE FROM audit` in a plpgsql body
+	// is indistinguishable from a call to `delete(h, 'k')`. That exclusion is
+	// conditional on the redundancy that makes it free -- the same extension
+	// must also contribute to this list a type appearing in that function's
+	// signature, so a genuine call spells the type and the type entry answers
+	// for it. An extension supplying `merge(text, text)` and no type has its
+	// only evidence in the name, and the name is kept.
+	//
 	// Empty means not measured rather than "supplies nothing" -- every extension
 	// supplies something, and readers that do not consult a catalog (Go
 	// annotations, YAML) leave this unset.
