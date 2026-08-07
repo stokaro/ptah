@@ -14,7 +14,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/fsnapshot"
@@ -116,7 +118,7 @@ func writeDiffArtifactsWithSumWriter(
 	if err := recoverPendingPublication(w); err != nil {
 		return DiffResult{}, fmt.Errorf("recover previous migration artifact publication: %w", err)
 	}
-	version, err := nextMigrationVersionFS(baseSnapshot)
+	version, err := nextMigrationVersionFS(baseSnapshot, len(contents))
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -1275,7 +1277,7 @@ func stageMigrationBatch(
 	if err != nil {
 		return migrationBatch{}, err
 	}
-	version, err := nextMigrationVersionFS(fsys)
+	version, err := nextMigrationVersionFS(fsys, len(contents))
 	if err != nil {
 		return migrationBatch{}, err
 	}
@@ -1394,18 +1396,62 @@ func stageRootedFile(
 	return name, nil
 }
 
-func nextMigrationVersionFS(fsys fs.FS) (int64, error) {
+// MigrationVersion returns the migration version this compatibility surface
+// stamps: the UTC `yyyyMMddHHmmss` value the pinned community binary v1.3.0
+// writes, in every case.
+//
+// "In every case" is measured, not assumed. A directory holding one
+// future-dated `29991231235959_future.sql` still gets today's stamp from that
+// binary -- a version that sorts BEFORE the migration already there. It does
+// not bump past its neighbours and it does not refuse, so neither does this.
+//
+// The fallback is unreachable in practice: Format produces fourteen digits,
+// which fits an int64 until the year 922337. It exists so a clock that somehow
+// yields an unparseable stamp degrades to a usable version rather than an
+// error from a function with nothing to report.
+func MigrationVersion() int64 {
+	version, err := strconv.ParseInt(time.Now().UTC().Format("20060102150405"), 10, 64)
+	if err != nil {
+		return migrator.GetNextMigrationVersion()
+	}
+	return version
+}
+
+// nextMigrationVersionFS returns the first version at which count consecutive
+// migration versions are all free.
+//
+// Only collisions move it. Taking `max(existing) + 1` -- what this did before
+// stokaro/ptah#1218 -- differed from the community binary twice over: on an
+// empty directory it started from `time.Now().Unix()`, a ten-digit epoch rather
+// than a timestamp, and on a directory whose newest version ended in `59`
+// seconds it produced `...235960`, which is not a time anyone can parse back.
+func nextMigrationVersionFS(fsys fs.FS, count int) (int64, error) {
 	files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
 	if err != nil {
 		return 0, err
 	}
-	version := migrator.GetNextMigrationVersion()
+	taken := make(map[int64]struct{}, len(files))
 	for _, file := range files {
-		if file.Version >= version {
-			version = file.Version + 1
-		}
+		taken[file.Version] = struct{}{}
+	}
+	version := MigrationVersion()
+	for collidesWithTakenVersions(taken, version, count) {
+		version++
 	}
 	return version, nil
+}
+
+// collidesWithTakenVersions reports whether any of the count consecutive
+// versions starting at version is already used. A multi-file plan is staged at
+// version+0, version+1, ..., so checking only the first would let a later file
+// of the batch land on an existing name.
+func collidesWithTakenVersions(taken map[int64]struct{}, version int64, count int) bool {
+	for i := range int64(max(count, 1)) {
+		if _, ok := taken[version+i]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 var migrationSlugInvalidChars = regexp.MustCompile(`[^a-z0-9_]+`)

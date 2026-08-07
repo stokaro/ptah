@@ -6,8 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -298,12 +296,13 @@ func rehashAtlasMigrateNewDir(dir string, format atlasmigrateimport.Format) erro
 
 // atlasCompatMigrationVersion returns the UTC `yyyyMMddHHmmss` migration version
 // both binaries stamp a new migration with.
+//
+// It is [atlasmigrate.MigrationVersion] rather than a second copy of the same
+// Format call: `migrate diff` had its own answer to this question until
+// stokaro/ptah#1218, and two writing verbs of one binary disagreeing about how
+// a version is spelled is what that cost.
 func atlasCompatMigrationVersion() int64 {
-	version, err := strconv.ParseInt(time.Now().UTC().Format("20060102150405"), 10, 64)
-	if err != nil {
-		return migrator.GetNextMigrationVersion()
-	}
-	return version
+	return atlasmigrate.MigrationVersion()
 }
 
 // reportAtlasMigrateNewFiles prints the created files the way the forwarded
