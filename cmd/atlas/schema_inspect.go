@@ -38,6 +38,12 @@ require --dev-url: the dev database is reset, the source is materialized on
 it, and the result is introspected, mirroring Atlas dev-database
 normalization.
 
+On PostgreSQL, HCL output omits ` + "`extension`" + `, ` + "`sequence`" + ` and
+` + "`policy`" + ` blocks: Atlas CE refuses a whole schema file that declares
+any one of them, so emitting one would make the output unreadable to the tool
+this binary stands in for. Each omitted object is reported on standard error.
+SQL output keeps them, and native ` + "`ptah schema inspect`" + ` omits nothing.
+
 The default output is HCL. SQL output is supported with --format sql or
 --format '{{ sql . }}', JSON with --format json, and custom Go templates
 through the same --format flag. Split/write exports support the documented
@@ -156,7 +162,13 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
 		IgnoreUnknownHCLNames: true,
-		Vars:                  schemaVars,
+		// This surface stands in for a binary that refuses a whole schema file
+		// for containing an extension, sequence or policy block, so it renders
+		// what that binary can read and reports what it left out on stderr
+		// (stokaro/ptah#1251). Native `ptah schema inspect` sets nothing here
+		// and keeps describing every construct Ptah models.
+		OmitAtlasRefusedBlocks: true,
+		Vars:                   schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

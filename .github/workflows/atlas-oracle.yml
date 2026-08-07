@@ -133,18 +133,24 @@ jobs:
       # The set of column types the HCL schema models is the third contract in
       # this repository whose authority is the community binary rather than any
       # document (stokaro/ptah#1138). A wrong row emits HCL that binary refuses
-      # to read, so the set is re-measured here instead of being trusted.
-      # Listed before it is run, for the same reason as above.
-      - name: Verify column-type conformance selection
+      # to read, so the set is re-measured here instead of being trusted. The
+      # set of top-level BLOCK types it refuses is the same kind of contract
+      # (stokaro/ptah#1251): ptah-compat omits those blocks, and a list nothing
+      # re-measures would go on withholding a construct that binary started
+      # modeling. Both live in internal/atlashclrender and are listed before
+      # they are run, for the same reason as above.
+      - name: Verify HCL render conformance selection
         run: |
           GOWORK=off go test -list '^TestOracle' \
             ./internal/atlashclrender > "$RUNNER_TEMP/atlas-column-type-tests"
           cat "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleModeledColumnTypesMatchTheBinary' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleAcceptsTheWrapItFallsBackTo' "$RUNNER_TEMP/atlas-column-type-tests"
-          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 2
+          grep -Fx 'TestOracleAtlasRefusedBlockTypesMatchTheBinary' "$RUNNER_TEMP/atlas-column-type-tests"
+          grep -Fx 'TestOracleToleratesTheBlockTypesPtahStillRenders' "$RUNNER_TEMP/atlas-column-type-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 4
 
-      - name: Run column-type conformance tests
+      - name: Run HCL render conformance tests
         run: |
           GOWORK=off go test -count=1 -v -run '^TestOracle' ./internal/atlashclrender \
             > "$RUNNER_TEMP/atlas-column-type-run" 2>&1 || {
@@ -156,6 +162,15 @@ jobs:
           # database URL -- which would leave every PostgreSQL row unmeasured
           # while the job stayed green. Both are fatal here.
           ! grep -q 'SKIPPED' "$RUNNER_TEMP/atlas-column-type-run"
+          # A selection that matched no subtest is the other way to stay green
+          # while measuring nothing: the refused list is the whole subject here,
+          # so its rows are named rather than counted in bulk.
+          grep -Fq 'TestOracleAtlasRefusedBlockTypesMatchTheBinary/postgres/base' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAtlasRefusedBlockTypesMatchTheBinary/postgres/refused/extension' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAtlasRefusedBlockTypesMatchTheBinary/postgres/refused/policy' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAtlasRefusedBlockTypesMatchTheBinary/postgres/refused/sequence' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleToleratesTheBlockTypesPtahStillRenders/postgres/tolerated/wibble' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleToleratesTheBlockTypesPtahStillRenders/sqlite/tolerated/sequence' "$RUNNER_TEMP/atlas-column-type-run"
 
       - name: Regenerate Atlas CE corpus
         run: >-

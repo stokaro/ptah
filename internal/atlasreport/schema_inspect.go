@@ -20,8 +20,12 @@ type SchemaInspectReport struct {
 	db          *goschema.Database
 	info        dbschematypes.DBInfo
 	diagnostics io.Writer
-	Realm       atlasSchemaInspectJSONRealm `json:"-"`
-	Schema      atlasSchemaInspectJSONRealm `json:"-"`
+	// omitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
+	// which omits the block types the pinned Atlas community binary refuses to
+	// read; see [go.5x5.cz/ptah/internal/atlashclrender.RenderInspectedForAtlasCLI].
+	omitAtlasRefusedBlocks bool
+	Realm                  atlasSchemaInspectJSONRealm `json:"-"`
+	Schema                 atlasSchemaInspectJSONRealm `json:"-"`
 }
 
 type atlasSchemaInspectJSONRealm struct {
@@ -112,19 +116,27 @@ func RenderSchemaInspect(format string, report *SchemaInspectReport) (SchemaInsp
 	return SchemaInspectOutput{Text: out.String(), Files: files}, nil
 }
 
+// NewSchemaInspectReport builds the report one schema inspect renders from.
+//
+// omitAtlasRefusedBlocks selects the Atlas-compatible HCL rendering, which
+// leaves out the block types the pinned Atlas community binary refuses and
+// reports each omission on diagnostics. It is false on the native surface,
+// which describes every construct Ptah models.
 func NewSchemaInspectReport(
 	db *goschema.Database,
 	schema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	diagnostics io.Writer,
+	omitAtlasRefusedBlocks bool,
 ) *SchemaInspectReport {
 	realm := atlasSchemaInspectJSON(schema, info)
 	return &SchemaInspectReport{
-		db:          db,
-		info:        info,
-		diagnostics: diagnostics,
-		Realm:       realm,
-		Schema:      realm,
+		db:                     db,
+		info:                   info,
+		diagnostics:            diagnostics,
+		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
+		Realm:                  realm,
+		Schema:                 realm,
 	}
 }
 
@@ -188,7 +200,7 @@ func (r *SchemaInspectReport) defaultSchemaName() string {
 }
 
 func (r *SchemaInspectReport) MarshalHCL() (string, error) {
-	rendered, err := atlashclrender.RenderInspected(r.db, r.info.Dialect, r.defaultSchemaName())
+	rendered, err := r.renderHCL()
 	if err != nil {
 		return "", fmt.Errorf("render HCL schema: %w", err)
 	}
@@ -198,6 +210,17 @@ func (r *SchemaInspectReport) MarshalHCL() (string, error) {
 		}
 	}
 	return string(rendered.Data), nil
+}
+
+// renderHCL picks the rendering the surface asked for. Only the HCL output is
+// split this way: what the compatibility surface omits, it omits because the
+// binary it stands in for cannot PARSE the block, and that is a question only
+// the HCL document raises.
+func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
+	if r.omitAtlasRefusedBlocks {
+		return atlashclrender.RenderInspectedForAtlasCLI(r.db, r.info.Dialect, r.defaultSchemaName())
+	}
+	return atlashclrender.RenderInspected(r.db, r.info.Dialect, r.defaultSchemaName())
 }
 
 func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {

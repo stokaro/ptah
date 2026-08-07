@@ -15,6 +15,12 @@ func (r *renderer) renderExtensions() {
 	slices.SortFunc(extensions, func(a, b goschema.Extension) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
+	if r.omitsBlock(blockExtension) {
+		for _, extension := range extensions {
+			r.omitAtlasRefusedBlock("extensions."+extension.Name, blockExtension)
+		}
+		return
+	}
 	for _, extension := range extensions {
 		r.linef(`extension %s {`, quote(extension.Name))
 		if extension.IfNotExists {
@@ -32,6 +38,12 @@ func (r *renderer) renderSequences() {
 	slices.SortFunc(sequences, func(a, b goschema.Sequence) int {
 		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
+	if r.omitsBlock(blockSequence) {
+		for _, sequence := range sequences {
+			r.omitAtlasRefusedBlock("sequences."+sequence.QualifiedName(), blockSequence)
+		}
+		return
+	}
 	for _, sequence := range sequences {
 		sequence.Canonicalize()
 		r.linef(`sequence %s {`, quote(sequence.Name))
@@ -362,6 +374,12 @@ func (r *renderer) renderRLSPolicies() {
 	slices.SortFunc(policies, func(a, b goschema.RLSPolicy) int {
 		return cmp.Or(cmp.Compare(a.Table, b.Table), cmp.Compare(a.Name, b.Name))
 	})
+	if r.omitsBlock(blockPolicy) {
+		for _, policy := range policies {
+			r.omitAtlasRefusedBlock("rls_policies."+policy.Name, blockPolicy)
+		}
+		return
+	}
 	for _, policy := range policies {
 		if policy.Table == "" {
 			r.warn("rls_policies."+policy.Name, "RLS policy requires a target table for HCL schema export")

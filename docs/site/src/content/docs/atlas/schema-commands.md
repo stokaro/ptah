@@ -142,6 +142,38 @@ community binary applies on a schema-bound URL. A pattern too deep for any
 scope, such as `*.*.*.*`, is refused before a database is contacted, so its
 message carries no schema prefix.
 
+### Blocks the compatibility surface leaves out
+
+`ptah-compat schema inspect` omits three top-level HCL block types on
+PostgreSQL: `extension`, `sequence`, and `policy`. The pinned Atlas community
+binary refuses an entire schema file that declares any one of them, answering
+`postgres: extensions are not supported by this version` and the equivalent for
+the other two. Output a drop-in replacement writes has to be output the tool it
+replaces can read back, and one such block costs the whole document.
+
+Nothing is dropped quietly. Every omitted object is reported on standard error,
+one line each, alongside the other loss diagnostics inspection already writes:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" > schema.hcl
+warning: extensions.pgcrypto: omitted from Atlas-compatible schema inspect output: ...
+warning: sequences.order_seq: omitted from Atlas-compatible schema inspect output: ...
+warning: rls_policies.accounts_all: omitted from Atlas-compatible schema inspect output: ...
+```
+
+The omission is scoped as narrowly as the measurement is. It applies to HCL
+output on PostgreSQL only: `--format sql` still writes the extension, the
+sequence, and the policy, because SQL output is read by a database rather than
+by that binary. On SQLite the same three blocks are accepted, so nothing is
+omitted there. Every other block Ptah renders — `role`, `function`, `view`,
+`materialized`, `trigger`, `permission` — is kept, because that binary drops a
+block type it does not model and reads the file anyway.
+
+Native `ptah schema inspect` omits nothing; see
+[Inspect a database](../../direct/inspect/). Which block types that binary
+refuses is re-measured by the Atlas CE Oracle job rather than frozen, so a
+construct a later build starts modeling stops being withheld.
+
 ### Select what is inspected with `--include`
 
 `--include` positively selects which top-level resources survive inspection,
