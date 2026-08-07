@@ -853,6 +853,19 @@ incompatible` does not.
 Index, key and constraint renames are not reported at all: deployed application
 code does not name them.
 
+What a rename does **not** report on either surface is the column it
+introduces. Renaming a `NOT NULL` column draws the destructive diagnostic for
+the retired name from Ptah and from the CE binary alike, but the binary adds a
+second one — `MF103`, "adding a non-nullable column will fail in case the table
+is not empty" — for the new name, and Ptah does not. Ptah's analyzers read the
+migration's SQL text, and a `RENAME COLUMN` statement carries neither the
+column's type nor its nullability: both come from an earlier file or from the
+base schema, and the binary's message spells the type as the database canonicalizes
+it. Reaching that needs the replayed dev schema rather than the statement, which
+is [#1074](https://github.com/stokaro/ptah/issues/1074). Until then a rename is
+reported as destructive on both surfaces and as a data-dependent addition on
+neither, so it is one diagnostic short rather than differently classified.
+
 The report is written to stdout even when findings fail, and error-severity
 findings still exit with code 1. The native `ptah migrations lint` output is
 unchanged. Custom output is selected by `--format`, by `format.migrate.lint`,
