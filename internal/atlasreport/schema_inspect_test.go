@@ -164,7 +164,14 @@ func TestRenderSchemaInspect_HCLSplitRendersTxtar(t *testing.T) {
 	output, err := atlasreport.RenderSchemaInspect(`{{ hcl . | split }}`, report)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(output.Text, qt.Contains, "-- tables/users.hcl --")
+	// The file name carries the schema because the table declares one. That
+	// declaration is not cosmetic: without it the rendered HCL is invalid and
+	// the pinned Atlas community binary v1.3.0 refuses the whole document
+	// (stokaro/ptah#1234). Qualifying the name is also what keeps two tables of
+	// the same name in different schemas from colliding on one path, which
+	// validateUniqueSchemaInspectArchivePaths would otherwise reject.
+	c.Assert(output.Text, qt.Contains, "-- schemas/main.hcl --")
+	c.Assert(output.Text, qt.Contains, "-- tables/main_users.hcl --")
 	c.Assert(output.Text, qt.Contains, `table "users"`)
 	c.Assert(output.Text, qt.Contains, `comment = "keeps { braces } in strings"`)
 }

@@ -400,7 +400,7 @@ func (r *renderer) renderGrants() {
 		r.line("permission {")
 		r.rawAttr(1, "to", roleTarget(grant.Role))
 		r.rawAttr(1, "for", target)
-		r.rawAttr(1, "privileges", rawList(grant.Privileges))
+		r.rawAttr(1, "privileges", privilegeList(grant.Privileges))
 		if grant.WithOption {
 			r.trueAttr(1, "grantable")
 		}
@@ -568,10 +568,22 @@ func roleTargets(value string) string {
 	return "[" + strings.Join(targets, ", ") + "]"
 }
 
+// roleTarget renders one grantee.
+//
+// PUBLIC is written as a quoted string rather than the bare word it is in SQL.
+// Bare, it is an HCL variable reference with nothing to resolve it to, and the
+// pinned Atlas community binary v1.3.0 refuses the whole file with
+// `There is no variable named "PUBLIC"` -- it drops a block whose name it does
+// not model, but only after the body evaluates (stokaro/ptah#1234).
+//
+// A named role stays a `role.<name>` traversal, which is measured to evaluate
+// on that binary when the file also declares the matching `role` block, so
+// quoting it would lose a reference for nothing. Ptah's own parser reads either
+// spelling through rawIdentifierOrString, so the round trip is unaffected.
 func roleTarget(value string) string {
 	value = strings.TrimSpace(value)
 	if strings.EqualFold(value, "PUBLIC") {
-		return "PUBLIC"
+		return quote("PUBLIC")
 	}
 	if value == "" {
 		return quote(value)
@@ -611,14 +623,30 @@ func objectRef(kind, name string) string {
 	return kind + strings.Join(refParts, "")
 }
 
-func rawList(values []string) string {
+// privilegeList renders a permission block's privileges.
+//
+// Each privilege is quoted for the same reason PUBLIC is: `privileges = [USAGE]`
+// is a list containing an unresolvable variable reference, and the pinned
+// community binary v1.3.0 refuses the file over it. Measured on that binary,
+// with everything else held fixed:
+//
+//	to = PUBLIC    privileges = [USAGE]      refused
+//	to = "PUBLIC"  privileges = [USAGE]      refused
+//	to = PUBLIC    privileges = ["USAGE"]    refused
+//	to = "PUBLIC"  privileges = ["USAGE"]    accepted
+//
+// so both attributes had to move, and each row above is what says so.
+//
+// Empty entries are dropped rather than emitted as "", which would round trip
+// as a privilege named nothing.
+func privilegeList(values []string) string {
 	items := make([]string, 0, len(values))
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			continue
 		}
-		items = append(items, rawIdentifier(value))
+		items = append(items, quote(value))
 	}
 	return "[" + strings.Join(items, ", ") + "]"
 }

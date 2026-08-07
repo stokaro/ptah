@@ -1224,7 +1224,8 @@ func TestCompatCommand_SchemaInspectWritesSplitHCLFiles(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	usersHCL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "users.hcl")
+	// Schema-qualified since the table declares its schema (stokaro/ptah#1234).
+	usersHCL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "main_users.hcl")
 	c.Assert(usersHCL, qt.Contains, `table "users"`)
 	c.Assert(usersHCL, qt.Contains, `column "email"`)
 }
