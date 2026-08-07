@@ -79,9 +79,9 @@ func TestPostgreSQLDBReadRoleCommentReplayIntegration(t *testing.T) {
 	cleanupDBReadRoleIntegration(c, db)
 	c.Cleanup(func() { cleanupDBReadRoleIntegration(c, db) })
 
-	// The described role owns the schema being read, which is why the read
-	// describes it. Ownership adds no statement of its own, so the role is
-	// still named by exactly the two statements this test replays.
+	// The described role holds a privilege on the schema being read, which is
+	// why the read describes it, and the GRANT that says so is emitted beside
+	// the role -- a description names no role it does not also create.
 	//
 	// The stranger role exists in the same cluster and is used by nothing in
 	// the schema being read. PostgreSQL roles are cluster-wide, so before
@@ -91,7 +91,8 @@ func TestPostgreSQLDBReadRoleCommentReplayIntegration(t *testing.T) {
 CREATE ROLE ptah_db_read_role_137;
 COMMENT ON ROLE ptah_db_read_role_137 IS 'Database read replay role';
 CREATE ROLE ptah_db_read_stranger_137;
-CREATE SCHEMA ptah_db_read_empty_schema_137 AUTHORIZATION ptah_db_read_role_137;`)
+CREATE SCHEMA ptah_db_read_empty_schema_137;
+GRANT USAGE ON SCHEMA ptah_db_read_empty_schema_137 TO ptah_db_read_role_137;`)
 	c.Assert(err, qt.IsNil)
 
 	cmd := readdb.NewReadDBCommand()
@@ -118,9 +119,13 @@ CREATE SCHEMA ptah_db_read_empty_schema_137 AUTHORIZATION ptah_db_read_role_137;
 			return !strings.Contains(statement, "ptah_db_read_role_137")
 		},
 	)
-	c.Assert(roleStatements, qt.HasLen, 2)
+	// CREATE ROLE, COMMENT ON ROLE, and the GRANT that is the role's reason
+	// for being described at all.
+	c.Assert(roleStatements, qt.HasLen, 3)
 
-	cleanupDBReadRoleIntegration(c, db)
+	// Drop the roles but keep the schema: the grant among the replayed
+	// statements has to have somewhere to land.
+	cleanupDBReadRolesOnly(c, db)
 	for _, statement := range roleStatements {
 		_, replayErr := db.Exec(statement)
 		c.Assert(replayErr, qt.IsNil, qt.Commentf("role restore failed: %s", statement))
@@ -248,9 +253,14 @@ $ptah_cleanup_roles$;`)
 
 func cleanupDBReadRoleIntegration(c *qt.C, db *sql.DB) {
 	c.Helper()
+	cleanupDBReadRolesOnly(c, db)
 	_, err := db.Exec("DROP SCHEMA IF EXISTS ptah_db_read_empty_schema_137 CASCADE")
 	c.Check(err, qt.IsNil)
-	_, err = db.Exec(`
+}
+
+func cleanupDBReadRolesOnly(c *qt.C, db *sql.DB) {
+	c.Helper()
+	_, err := db.Exec(`
 DO $ptah_cleanup_role$
 DECLARE
     role_name text;
@@ -361,4 +371,103 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(outStr, qt.Contains, "WITH GRANT OPTION")
 	c.Assert(outStr, qt.Contains, "CREATE ROLE fixture_app_user")
 	c.Assert(outStr, qt.Contains, "CONSTRAINT users_email_check")
+}
+
+// TestPostgreSQLDescribedRolesCoverEveryRoleTheDescriptionNamesIntegration pins
+// the invariant that scoping roles to the inspected schemas
+// (stokaro/ptah#1267) has to preserve: a description defines every role it
+// refers to. Break it and the document stops being readable -- the pinned
+// Atlas community binary refuses the whole file with
+// `Unsupported attribute; This object does not have an attribute named "..."`.
+//
+// The trap is information_schema.role_table_grants, which reports an owner's
+// built-in privileges as grants even for a table whose pg_class.relacl is
+// null, meaning nobody has ever run GRANT on it. Those are not privileges
+// anyone granted, and a role reaching a description only through them is a
+// role no GRANT statement put there.
+func TestPostgreSQLDescribedRolesCoverEveryRoleTheDescriptionNamesIntegration(t *testing.T) {
+	c := qt.New(t)
+	dsn := skipIfNoPostgreSQL(t)
+	db, err := sql.Open("pgx", dsn)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	cleanupDescribedRolesIntegration(c, db)
+	c.Cleanup(func() { cleanupDescribedRolesIntegration(c, db) })
+
+	_, err = db.Exec(`
+CREATE ROLE ptah_ref_granted_137;
+CREATE ROLE ptah_ref_owner_137;
+GRANT ptah_ref_owner_137 TO CURRENT_USER;
+CREATE TABLE ptah_ref_granted_tbl_137 (id integer PRIMARY KEY);
+GRANT SELECT ON ptah_ref_granted_tbl_137 TO ptah_ref_granted_137;
+CREATE TABLE ptah_ref_untouched_137 (id integer PRIMARY KEY);
+ALTER TABLE ptah_ref_untouched_137 OWNER TO ptah_ref_owner_137;`)
+	c.Assert(err, qt.IsNil)
+
+	reader := postgres.NewPostgreSQLReader(db, "public")
+	live, err := reader.ReadSchema()
+	c.Assert(err, qt.IsNil)
+
+	described := make([]string, 0, len(live.Roles))
+	for _, role := range live.Roles {
+		described = append(described, role.Name)
+	}
+
+	for _, named := range rolesNamedByDescription(live) {
+		c.Assert(described, qt.Contains, named,
+			qt.Commentf("the description names role %q but does not define it", named))
+	}
+
+	// The positive half, so the invariant cannot be satisfied by describing
+	// every role on the server: a role reachable only as the owner of a table
+	// nobody has granted anything on is named nowhere and described nowhere.
+	c.Assert(rolesNamedByDescription(live), qt.Not(qt.Contains), "ptah_ref_owner_137")
+	c.Assert(described, qt.Not(qt.Contains), "ptah_ref_owner_137")
+	// The control: a role an actual GRANT names is both named and described.
+	c.Assert(rolesNamedByDescription(live), qt.Contains, "ptah_ref_granted_137")
+	c.Assert(described, qt.Contains, "ptah_ref_granted_137")
+}
+
+// rolesNamedByDescription lists every role name the non-role parts of a
+// description refer to: grant subjects, grantors, and the roles a row-level
+// security policy applies to.
+func rolesNamedByDescription(schema *dbschematypes.DBSchema) []string {
+	var named []string
+	for _, grant := range schema.Grants {
+		named = append(named, grant.Role)
+		if grant.GrantedBy != "" {
+			named = append(named, grant.GrantedBy)
+		}
+	}
+	for _, policy := range schema.RLSPolicies {
+		for _, role := range strings.Split(policy.ToRoles, ",") {
+			named = append(named, strings.TrimSpace(role))
+		}
+	}
+	return slices.DeleteFunc(named, func(name string) bool {
+		return name == "" || name == "PUBLIC" || strings.HasPrefix(name, "pg_")
+	})
+}
+
+func cleanupDescribedRolesIntegration(c *qt.C, db *sql.DB) {
+	c.Helper()
+	_, err := db.Exec("DROP TABLE IF EXISTS ptah_ref_granted_tbl_137 CASCADE")
+	c.Check(err, qt.IsNil)
+	_, err = db.Exec("DROP TABLE IF EXISTS ptah_ref_untouched_137 CASCADE")
+	c.Check(err, qt.IsNil)
+	_, err = db.Exec(`
+DO $ptah_cleanup_ref_roles$
+DECLARE
+    role_name text;
+BEGIN
+    FOREACH role_name IN ARRAY ARRAY['ptah_ref_granted_137', 'ptah_ref_owner_137'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+            EXECUTE format('REVOKE %I FROM %I', role_name, current_user);
+            EXECUTE format('DROP OWNED BY %I', role_name);
+            EXECUTE format('DROP ROLE %I', role_name);
+        END IF;
+    END LOOP;
+END
+$ptah_cleanup_ref_roles$;`)
+	c.Check(err, qt.IsNil)
 }

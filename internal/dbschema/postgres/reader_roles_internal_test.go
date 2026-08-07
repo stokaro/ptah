@@ -48,10 +48,6 @@ type clusterRole struct {
 // stripped before matching, so a branch documented by name but not actually
 // read cannot satisfy the guard.
 const (
-	readsSchemaOwner      = "s.nspowner"
-	readsRelationOwner    = "c.relowner"
-	readsTypeOwner        = "t.typowner"
-	readsRoutineOwner     = "p.proowner"
 	readsRelationACL      = "aclexplode(c.relacl)"
 	readsSchemaACL        = "aclexplode(s.nspacl)"
 	readsGrantee          = "acl.grantee"
@@ -69,17 +65,27 @@ const (
 	readsScopedRoleSet = "FROM used"
 )
 
+// Ownership columns. These name reasons the query must NOT act on, so they
+// exist to be asserted absent. See TestReadRolesDoesNotTreatOwnershipAsUse.
+const (
+	readsSchemaOwner   = "s.nspowner"
+	readsRelationOwner = "c.relowner"
+	readsTypeOwner     = "t.typowner"
+	readsRoutineOwner  = "p.proowner"
+)
+
 // Reasons spelled as the branch that must carry them.
 var (
-	bySchemaOwner     = []string{readsSchemaOwner}
-	byRelationOwner   = []string{readsRelationOwner}
-	byTypeOwner       = []string{readsTypeOwner}
-	byRoutineOwner    = []string{readsRoutineOwner}
 	byRelationGrant   = []string{readsRelationACL, readsGrantee}
 	byRelationGrantor = []string{readsRelationACL, readsGrantor}
 	bySchemaGrant     = []string{readsSchemaACL, readsGrantee}
 	bySchemaGrantor   = []string{readsSchemaACL, readsGrantor}
 	byPolicy          = []string{readsPolicyRoles}
+
+	bySchemaOwner   = []string{readsSchemaOwner}
+	byRelationOwner = []string{readsRelationOwner}
+	byTypeOwner     = []string{readsTypeOwner}
+	byRoutineOwner  = []string{readsRoutineOwner}
 )
 
 // stripSQLComments removes `-- ...` comments so the reader's prose cannot
@@ -214,11 +220,10 @@ func branchReadsAll(branch string, reads []string) bool {
 // that are used by nothing in this database.
 func fullCluster() []clusterRole {
 	return []clusterRole{
-		{name: "app_schema_owner", schema: "app", reads: bySchemaOwner},
-		{name: "pg_reserved", schema: "public", reads: byRelationOwner},
+		{name: "app_schema_grantee", schema: "app", reads: bySchemaGrant},
+		{name: "pg_reserved", schema: "public", reads: byRelationGrant},
 		{name: "policy_named", schema: "public", reads: byPolicy},
-		{name: "postgres", schema: "public", reads: byRelationOwner},
-		{name: "relation_owner", schema: "public", reads: byRelationOwner},
+		{name: "postgres", schema: "public", reads: byRelationGrant},
 		{name: "schema_grantee", schema: "public", reads: bySchemaGrant},
 		{name: "schema_grantor", schema: "public", reads: bySchemaGrantor},
 		{name: "someone_elses", schema: "", reads: nil},
@@ -248,26 +253,6 @@ func TestReadRolesReportsOneRolePerReason(t *testing.T) {
 		used    clusterRole
 		schemas []string
 	}{
-		{
-			name:    "owns the schema in scope",
-			used:    clusterRole{name: "schema_owner", schema: "app", reads: bySchemaOwner},
-			schemas: []string{"app"},
-		},
-		{
-			name:    "owns a relation in the schema in scope",
-			used:    clusterRole{name: "relation_owner", schema: "public", reads: byRelationOwner},
-			schemas: []string{"public"},
-		},
-		{
-			name:    "owns a type in the schema in scope",
-			used:    clusterRole{name: "type_owner", schema: "public", reads: byTypeOwner},
-			schemas: []string{"public"},
-		},
-		{
-			name:    "owns a routine in the schema in scope",
-			used:    clusterRole{name: "routine_owner", schema: "public", reads: byRoutineOwner},
-			schemas: []string{"public"},
-		},
 		{
 			name:    "holds a privilege on a relation in scope",
 			used:    clusterRole{name: "table_grantee", schema: "public", reads: byRelationGrant},
@@ -334,7 +319,7 @@ func TestReadRolesLeavesClusterRolesTheScopeDoesNotUseOut(t *testing.T) {
 		{
 			name: "a role used by a schema that is out of scope",
 			cluster: []clusterRole{
-				{name: "app_schema_owner", schema: "app", reads: bySchemaOwner},
+				{name: "app_schema_grantee", schema: "app", reads: bySchemaGrant},
 				{name: "someone_elses", schema: "", reads: nil},
 			},
 			schemas: []string{"public"},
@@ -367,21 +352,21 @@ func TestReadRolesFollowsTheSchemasBeingRead(t *testing.T) {
 			name:    "public only",
 			schemas: []string{"public"},
 			want: []string{
-				"policy_named", "relation_owner", "schema_grantee",
-				"schema_grantor", "table_grantee", "table_grantor",
+				"policy_named", "schema_grantee", "schema_grantor",
+				"table_grantee", "table_grantor",
 			},
 		},
 		{
 			name:    "app only",
 			schemas: []string{"app"},
-			want:    []string{"app_schema_owner"},
+			want:    []string{"app_schema_grantee"},
 		},
 		{
 			name:    "both schemas",
 			schemas: []string{"public", "app"},
 			want: []string{
-				"app_schema_owner", "policy_named", "relation_owner",
-				"schema_grantee", "schema_grantor", "table_grantee", "table_grantor",
+				"app_schema_grantee", "policy_named", "schema_grantee",
+				"schema_grantor", "table_grantee", "table_grantor",
 			},
 		},
 	}
@@ -410,19 +395,19 @@ func TestReadRolesKeepsSystemRolesOut(t *testing.T) {
 		cluster []clusterRole
 	}{
 		{
-			name:   "reserved role owning a relation in scope",
+			name:   "reserved role holding a privilege in scope",
 			absent: "pg_reserved",
 			cluster: []clusterRole{
-				{name: "pg_reserved", schema: "public", reads: byRelationOwner},
-				{name: "relation_owner", schema: "public", reads: byRelationOwner},
+				{name: "pg_reserved", schema: "public", reads: byRelationGrant},
+				{name: "table_grantee", schema: "public", reads: byRelationGrant},
 			},
 		},
 		{
-			name:   "bootstrap superuser owning a relation in scope",
+			name:   "bootstrap superuser holding a privilege in scope",
 			absent: "postgres",
 			cluster: []clusterRole{
-				{name: "postgres", schema: "public", reads: byRelationOwner},
-				{name: "relation_owner", schema: "public", reads: byRelationOwner},
+				{name: "postgres", schema: "public", reads: byRelationGrant},
+				{name: "table_grantee", schema: "public", reads: byRelationGrant},
 			},
 		},
 	}
@@ -434,7 +419,7 @@ func TestReadRolesKeepsSystemRolesOut(t *testing.T) {
 			roles, err := reader.readRoles()
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(roleNames(roles), qt.DeepEquals, []string{"relation_owner"})
+			c.Assert(roleNames(roles), qt.DeepEquals, []string{"table_grantee"})
 			c.Assert(roleNames(roles), qt.Not(qt.Contains), test.absent)
 		})
 	}
@@ -454,18 +439,18 @@ func TestReadRolesAsksForPolicyRolesOnlyWherePoliciesExist(t *testing.T) {
 		{
 			name: "row-level security supported",
 			caps: capability.Postgres16(),
-			want: []string{"policy_named", "relation_owner"},
+			want: []string{"policy_named", "table_grantee"},
 		},
 		{
 			name: "row-level security not supported",
 			caps: capability.Postgres16().With(capability.RowLevelSecurity, false),
-			want: []string{"relation_owner"},
+			want: []string{"table_grantee"},
 		},
 	}
 
 	cluster := []clusterRole{
 		{name: "policy_named", schema: "public", reads: byPolicy},
-		{name: "relation_owner", schema: "public", reads: byRelationOwner},
+		{name: "table_grantee", schema: "public", reads: byRelationGrant},
 	}
 
 	for _, test := range tests {
@@ -476,6 +461,62 @@ func TestReadRolesAsksForPolicyRolesOnlyWherePoliciesExist(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(roleNames(roles), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestReadRolesDoesNotTreatOwnershipAsUse(t *testing.T) {
+	c := qt.New(t)
+
+	// Ptah describes no ownership: it emits no OWNER TO and no
+	// CREATE SCHEMA ... AUTHORIZATION. An owner is therefore a role the
+	// description would create and then never refer to, and since the
+	// connecting superuser owns every object it creates, reading ownership
+	// made every inspect describe the connecting role. Measured on live
+	// PostgreSQL 18.4: a diff between a populated database and an empty dev
+	// database in the same cluster planned
+	// `CREATE ROLE "ptah_user" WITH LOGIN SUPERUSER CREATEDB CREATEROLE
+	// INHERIT REPLICATION` and failed to apply it at SQLSTATE 42710.
+	//
+	// An owner a description does refer to is still described, through the
+	// privilege clauses: granting anything on a relation makes its ACL
+	// explicit, and an explicit ACL always carries the owner's own privileges.
+	// That case is TestReadRolesReportsOneRolePerReason's relation-privilege
+	// row, not this one.
+	tests := []struct {
+		name  string
+		owner clusterRole
+	}{
+		{
+			name:  "owns the schema in scope",
+			owner: clusterRole{name: "schema_owner", schema: "public", reads: bySchemaOwner},
+		},
+		{
+			name:  "owns a relation in scope",
+			owner: clusterRole{name: "relation_owner", schema: "public", reads: byRelationOwner},
+		},
+		{
+			name:  "owns a type in scope",
+			owner: clusterRole{name: "type_owner", schema: "public", reads: byTypeOwner},
+		},
+		{
+			name:  "owns a routine in scope",
+			owner: clusterRole{name: "routine_owner", schema: "public", reads: byRoutineOwner},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			cluster := []clusterRole{
+				test.owner,
+				{name: "table_grantee", schema: "public", reads: byRelationGrant},
+			}
+			reader := newRolesServer(c.TB, cluster, []string{"public"}, capability.Postgres16())
+
+			roles, err := reader.readRoles()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(roleNames(roles), qt.DeepEquals, []string{"table_grantee"})
 		})
 	}
 }

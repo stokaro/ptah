@@ -67,13 +67,24 @@ target objects exist.
 
 Reading a live database describes only the roles the schemas being read
 actually use, because a PostgreSQL role belongs to the cluster rather than to
-one database. A role counts as used when it owns one of those schemas or an
-object in them, when it holds or granted a privilege on one of them, or when a
-row-level security policy on a table in them names it. A role that merely
-exists elsewhere on the server is not part of the schema being described, so
-it is left out — of `ptah db read` and of `ptah-compat schema inspect` alike.
-Every role the emitted grants and policies refer to is described, so a
-description never names a role it does not also create.
+one database. A role counts as used when it holds a privilege on a relation in
+those schemas or on one of the schemas themselves, when it granted one, or when
+a row-level security policy on a table in them applies to it. A role that
+merely exists elsewhere on the server is not part of the schema being
+described, so it is left out — of `ptah db read` and of `ptah-compat schema
+inspect` alike.
+
+The rule is exact in both directions: a description defines a role when some
+other statement in it names that role, and not otherwise. Ownership alone does
+not qualify, because Ptah describes no ownership — it writes no `OWNER TO` and
+no `CREATE SCHEMA ... AUTHORIZATION` — so an owner would be created and then
+never referred to.
+
+For the same reason, grant introspection reports privileges somebody granted
+rather than the built-in privileges an owner holds by default. A relation whose
+`pg_class.relacl` is null has had no `GRANT` run against it, and its owner's
+implicit privileges are no longer emitted as `GRANT` statements; replaying
+`CREATE TABLE` gives the new owner exactly those privileges again.
 
 :::caution
 Ptah never drops a role automatically. A role that disappears from the desired
