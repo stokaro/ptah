@@ -191,6 +191,11 @@ func TestCompatCommand_MigrateStatusReportsTheDirtyMigration(t *testing.T) {
 	c.Assert(statusOut, qt.Contains, "  -- Executed Files:  2 (last one partially)\n")
 	c.Assert(statusOut, qt.Contains, "  -- Pending Files:   1\n")
 	c.Assert(statusOut, qt.Contains, "\nLast migration attempt had errors:\n")
-	c.Assert(statusOut, qt.Contains, "  -- SQL:   THIS IS A FAILING STATEMENT")
-	c.Assert(statusOut, qt.Contains, "  -- ERROR: failed to execute migration SQL")
+	// Both lines are the shape the pinned community binary v1.3.0 prints: the
+	// statement with its terminator, and the database's own message with no
+	// Ptah wrapping in front of it (stokaro/ptah#1196). The negative assertion
+	// is what keeps the wrapping from creeping back.
+	c.Assert(statusOut, qt.Contains, "  -- SQL:   THIS IS A FAILING STATEMENT;")
+	c.Assert(statusOut, qt.Not(qt.Contains), "failed to execute migration SQL")
+	c.Assert(statusOut, qt.Contains, "  -- ERROR: ")
 }

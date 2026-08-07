@@ -837,6 +837,35 @@ Revisit when the conformance Atlas pin advances past v1.2.0.
 **Tracking.** [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758)
 
 
+### Recorded revision `error` text on a failed migration
+
+**Type.** Driver difference, not a behavior one
+
+**Current boundary.** The Atlas revision table's `error` column records the
+database's own message on both sides, but the two spell the same condition
+differently because they use different SQLite drivers. On the same failing
+migration:
+
+```text
+pinned community binary v1.3.0   no such table: missing_table
+ptah-compat                      SQL logic error: no such table: missing_table (1)
+```
+
+Ptah used to record more than that — its own `failed to execute migration SQL:`
+prefix and a `SQL:` line repeating the statement that the adjacent `error_stmt`
+column already holds in full. Both were Ptah's own additions and are gone; the
+column now carries the innermost error and nothing else. `error_stmt` matches
+byte for byte, terminating semicolon included.
+
+What is left is `modernc.org/sqlite`'s wording. Closing it would mean rewriting
+driver messages per driver and per dialect to match a different driver's
+phrasing, which trades a cosmetic difference for a table of string surgery that
+goes stale silently. The native revision format is unaffected either way: this
+applies only where the revision table is Atlas-shaped, and Ptah's own surface
+keeps the context it added.
+
+**Tracking.** [`stokaro/ptah#1196`](https://github.com/stokaro/ptah/issues/1196)
+
 ### `atlas.hcl` `file()` confinement
 
 **Type.** Deliberate divergence

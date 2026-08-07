@@ -148,32 +148,52 @@ func (m *Migrator) migrationStatementCount(sqlText string) int {
 	return migrationStatementCountForDialect(sqlText, m.conn.Info().Dialect)
 }
 
-func migrationExecutionProgress(err error, dialect string, txMode MigrationTxMode) (applied int, total int, stmt string) {
+// migrationProgress is what a failed execution reports about how far it got.
+//
+// FailedIndex is deliberately separate from Applied: Applied is zeroed whenever
+// the transaction rolled the body back, and the statement that failed is still
+// the one it was. Indexing the migration source by Applied would name the
+// file's first statement for every tx-mode-all failure.
+type migrationProgress struct {
+	Applied     int
+	Total       int
+	Statement   string
+	FailedIndex int
+}
+
+func migrationExecutionProgress(
+	err error,
+	dialect string,
+	txMode MigrationTxMode,
+) migrationProgress {
 	var progressErr *statementProgressError
 	if errors.As(err, &progressErr) {
 		event := progressErr.event
-		return progressErr.applied, event.Total, event.Statement
+		return migrationProgress{
+			Applied: progressErr.applied, Total: event.Total,
+			Statement: event.Statement, FailedIndex: event.Index,
+		}
 	}
 
 	var observationErr *StatementObservationError
 	if errors.As(err, &observationErr) {
 		event := observationErr.Event
-		applied = event.Index
-		total = event.Total
-		stmt = event.Statement
+		applied := event.Index
 		if migrationProgressRolledBack(dialect, txMode) {
 			applied = 0
 		}
-		return applied, total, stmt
+		return migrationProgress{
+			Applied: applied, Total: event.Total,
+			Statement: event.Statement, FailedIndex: event.Index,
+		}
 	}
 
 	var execErr *MigrationExecutionError
 	if !errors.As(err, &execErr) {
-		return 0, 0, ""
+		return migrationProgress{}
 	}
 
-	total = execErr.Total
-	applied = execErr.StatementIndex - 1
+	applied := execErr.StatementIndex - 1
 	// The recorded counter is not decoration: a retry resumes at applied+1, so
 	// overstating it skips a statement that never ran. Whether the earlier
 	// statements survived the failure is a property of the transaction mode and
@@ -187,7 +207,10 @@ func migrationExecutionProgress(err error, dialect string, txMode MigrationTxMod
 	if applied < 0 {
 		applied = 0
 	}
-	return applied, total, execErr.Statement
+	return migrationProgress{
+		Applied: applied, Total: execErr.Total,
+		Statement: execErr.Statement, FailedIndex: execErr.StatementIndex,
+	}
 }
 
 func migrationProgressRolledBack(dialect string, txMode MigrationTxMode) bool {
@@ -1270,7 +1293,8 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
-	applied, total, stmt := migrationExecutionProgress(failure, m.conn.Info().Dialect, txMode)
+	progress := migrationExecutionProgress(failure, m.conn.Info().Dialect, txMode)
+	applied, total, stmt, failedIndex := progress.Applied, progress.Total, progress.Statement, progress.FailedIndex
 	if total == 0 {
 		total = m.migrationStatementCount(sqlText)
 	}
@@ -1288,7 +1312,9 @@ func (m *Migrator) failMigrationRevisionWithMode(
 		applied = 0
 	}
 	if m.revisionTableFormat.isAtlas() {
-		return m.failAtlasMigrationRevision(recordCtx, migration, startedAt, failure, applied, total, stmt)
+		return m.failAtlasMigrationRevision(
+			recordCtx, migration, startedAt, failure, applied, total, stmt, failedIndex,
+		)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
 	return executeSQLOutsideTransaction(
@@ -1317,6 +1343,7 @@ func (m *Migrator) failAtlasMigrationRevision(
 	applied int,
 	total int,
 	stmt string,
+	failedIndex int,
 ) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
 	return executeSQLOutsideTransaction(
@@ -1326,8 +1353,8 @@ func (m *Migrator) failAtlasMigrationRevision(
 		applied,
 		total,
 		time.Since(startedAt).Nanoseconds(),
-		strings.TrimSpace(failure.Error()),
-		stmt,
+		atlasFailureError(failure),
+		atlasFailureStatement(migration.UpSQL, m.connectionDialect(), failedIndex, stmt),
 		m.atlasPartialHashes(migration.UpSQL, applied, total),
 		ptahOperatorVersion,
 		strconv.FormatInt(migration.Version, 10),
