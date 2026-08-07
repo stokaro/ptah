@@ -102,7 +102,7 @@ func (r *renderer) renderDomain(domain goschema.Domain) {
 	if domain.Schema != "" {
 		r.rawAttr(1, "schema", schemaRef(domain.Schema))
 	}
-	r.rawAttr(1, "type", typeExpr(domain.BaseType))
+	r.rawAttr(1, "type", userTypeExpr(domain.BaseType))
 	if domain.NotNull {
 		r.rawAttr(1, "null", "false")
 	}
@@ -128,7 +128,7 @@ func (r *renderer) renderComposite(composite goschema.CompositeType) {
 	r.stringAttr(1, "comment", composite.Comment)
 	for _, field := range composite.Fields {
 		r.linef(`  field %s {`, quote(field.Name))
-		r.rawAttr(2, "type", typeExpr(field.Type))
+		r.rawAttr(2, "type", userTypeExpr(field.Type))
 		r.line("  }")
 	}
 	r.line("}")
@@ -141,7 +141,7 @@ func (r *renderer) renderRange(rangeType goschema.Range) {
 	if rangeType.Schema != "" {
 		r.rawAttr(1, "schema", schemaRef(rangeType.Schema))
 	}
-	r.rawAttr(1, "subtype", typeExpr(rangeType.Subtype))
+	r.rawAttr(1, "subtype", userTypeExpr(rangeType.Subtype))
 	r.stringAttr(1, "subtype_opclass", rangeType.SubtypeOpClass)
 	r.stringAttr(1, "collation", rangeType.Collation)
 	r.stringAttr(1, "canonical", rangeType.Canonical)
