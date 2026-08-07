@@ -73,16 +73,45 @@ type atlasCompatExtensionRoundTripCase struct {
 // a plpgsql body saying `DELETE FROM audit` or `CREATE INDEX` looks exactly
 // like a call. Both of those pinned an extension the database does not use, and
 // the pinned Atlas community binary refused the result: `postgres: extensions
-// are not supported by this version`, exit 1, PostgreSQL 17.10.
+// are not supported by this version`, exit 1, PostgreSQL 18.4.
 //
 // The three that follow expect a block, and they are what makes dropping
 // keyword-named members a fix rather than a deletion. Two of them are the
-// redundancy the issue asked to measure rather than assume: a genuine call to
-// `delete` needs an hstore value, so the document spells that type either on a
-// column or in the calling function's own signature, and the extension survives
-// on it. The third is `cube`, where the keyword is the type's name and the
-// extension's label at once; it is the row that fails if the exclusion is moved
-// off the member list and onto the words the keep decision matches.
+// redundancy the fix relies on: a genuine call to `delete` needs an hstore
+// value, so the document spells that type either on a column or in the calling
+// function's own signature, and the extension survives on it. The third is
+// `cube`, where the keyword is the type's name and the extension's label at
+// once; it is the row that fails if the exclusion is moved off the member list
+// and onto the words the keep decision matches.
+//
+// The last two rows are why that redundancy is a PRECONDITION of the exclusion
+// rather than a description of contrib. Over the 46 extensions this build ships
+// every keyword-named function member does take or return a type its own
+// extension supplies -- but nothing in the catalog requires that, and a filter
+// resting on it drops the only evidence there is the moment an extension
+// supplies `merge(text, text)` and no type at all. Measured on PostgreSQL 18.4
+// against a fixture extension of exactly that shape: the block went away, the
+// CHECK calling `merge` stayed, and the pinned Atlas community binary v1.3.0
+// answered `create "names" table: pq: function merge(text, text) does not
+// exist` where before it had refused the extension block instead.
+//
+// Both rows build that shape through `ALTER EXTENSION ... ADD`, which writes
+// the same pg_depend membership rows an extension's install script writes, so
+// no fixture control file has to be installed on the server for CI to run them.
+// The dependent call therefore lives in a plpgsql body, which PostgreSQL does
+// not resolve at creation time, so the document still materializes on a dev
+// database that has the extension but not the added member -- the assertion
+// that carries these two rows is the block, not the round trip. The word in
+// that body is also indistinguishable from the false positives above, which is
+// the whole point: the decision cannot be made from the word, only from what
+// the extension is the only supplier of.
+//
+// The second of the two pins the answering type against its own arm. An
+// extension supplying a type named like a pg_catalog type has that name
+// filtered out as shadowed, so it can no longer answer for anything, and a
+// keyword filter that consults the raw membership instead of the reported
+// member list drops the function name too -- the refuted shape again, one level
+// down.
 func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 	adminURL := requirePostgresE2EDatabaseURL(t)
 
@@ -201,6 +230,41 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			// declaring its type. Measured -- with the filter moved there, this is
 			// the only one of the twelve rows that fails.
 			why: "cube is a keyword, cube's type and cube's label at once; the column has no other evidence",
+		},
+		{
+			name:      "keyword-named extension function no type of that extension answers for",
+			extension: "pgcrypto",
+			seed: "CREATE FUNCTION merge(a text, b text) RETURNS text LANGUAGE sql IMMUTABLE" +
+				" AS $fn$ SELECT a || b $fn$;" +
+				" ALTER EXTENSION pgcrypto ADD FUNCTION merge(text, text);" +
+				" CREATE TABLE names (id integer PRIMARY KEY, a text NOT NULL, b text NOT NULL);" +
+				" CREATE FUNCTION combined(row_id integer) RETURNS text LANGUAGE plpgsql AS $fn$" +
+				" DECLARE result text;" +
+				" BEGIN SELECT merge(names.a, names.b) INTO result FROM names" +
+				" WHERE names.id = row_id; RETURN result; END $fn$",
+			wantBlock: true,
+			why: "merge is an unreserved keyword and pgcrypto supplies no type at all, so the" +
+				" name is the only evidence the document carries; dropping it because it is a" +
+				" keyword leaves a body calling a function nothing declares",
+		},
+		{
+			name:      "keyword-named extension function whose answering type pg_catalog shadows",
+			extension: "pgcrypto",
+			seed: "CREATE DOMAIN public.box AS text;" +
+				" ALTER EXTENSION pgcrypto ADD DOMAIN public.box;" +
+				" CREATE FUNCTION public.merge(a public.box, b public.box) RETURNS public.box" +
+				" LANGUAGE sql IMMUTABLE AS $fn$ SELECT (a::text || b::text)::public.box $fn$;" +
+				" ALTER EXTENSION pgcrypto ADD FUNCTION public.merge(public.box, public.box);" +
+				" CREATE TABLE labels (id integer PRIMARY KEY, a public.box NOT NULL," +
+				" b public.box NOT NULL);" +
+				" CREATE FUNCTION labelled(row_id integer) RETURNS text LANGUAGE plpgsql AS $fn$" +
+				" DECLARE result text;" +
+				" BEGIN SELECT merge(labels.a, labels.b)::text INTO result FROM labels" +
+				" WHERE labels.id = row_id; RETURN result; END $fn$",
+			wantBlock: true,
+			why: "the type in merge's signature is named box, which pg_catalog also supplies," +
+				" so the type arm already dropped it and it cannot answer for anything;" +
+				" excluding merge as well leaves this document with no evidence either",
 		},
 	}
 
