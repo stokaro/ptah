@@ -1483,6 +1483,39 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 // overload rather than the core one requires arguments of that extension's own
 // type, and naming that type is what keeps the extension alive through the
 // pg_type arm.
+//
+// The function arm excludes one more class of name: the ones that are SQL
+// keywords, which the server enumerates itself through pg_get_keywords().
+// Measured on PostgreSQL 17.10, `hstore` supplies three functions named
+// `delete` and pg_catalog supplies none, so the exclusion above keeps all
+// three -- and the scan that consumes this list splits SQL text into
+// identifier-shaped words with no notion of position, so `DELETE FROM audit`
+// in a plpgsql body reads exactly like a call to `delete(h, 'k')` and pins
+// hstore to a database that does not use it (stokaro/ptah#1281).
+//
+// The list has to come from the server because no hand-written one is right.
+// `delete`, `each` and `index` are UNRESERVED words: PostgreSQL 17.10 reports
+// 78 reserved words against 327 unreserved ones, so filtering the reserved list
+// catches none of the three, and pinning the unreserved list in Go would be 327
+// words that move every release.
+//
+// Dropping such a name is safe because the pg_type arm answers for it, and that
+// is measured rather than assumed. Over the 45 extensions this PostgreSQL 17.10
+// build makes available, the keyword-named function members are hstore's
+// `delete` and `each`, ltree's `index` and cube's `cube` -- and every one of
+// them takes or returns a type the same extension supplies. A document
+// containing a genuine call therefore spells that type somewhere it can be
+// seen: a column, a function parameter or return, a domain, a cast. The
+// extension stays through pg_type.
+//
+// Only this arm is filtered. A relation, an operator class and an operator
+// family are each named by nothing but themselves, so excluding a
+// keyword-shaped one would throw away the only evidence there is. `cube` shows
+// the residue that leaves: its type and its constructor share a name, the type
+// arm keeps supplying it, and a view saying `GROUP BY CUBE(x)` still pins the
+// extension. That is the cheaper of the two errors -- a block kept where it
+// could have been dropped costs this document its compatibility, a block
+// dropped where a column needs it costs a document nobody can read.
 func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 	const membersQuery = `
 		SELECT e.extname AS extension_name, t.typname AS member_name
@@ -1504,6 +1537,8 @@ func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 		       SELECT 1 FROM pg_proc core
 		         JOIN pg_namespace corens ON corens.oid = core.pronamespace
 		        WHERE corens.nspname = 'pg_catalog' AND core.proname = p.proname)
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_get_keywords() k WHERE k.word = p.proname)
 		UNION
 		SELECT e.extname, c.relname
 		  FROM pg_depend d
