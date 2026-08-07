@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
@@ -156,11 +157,25 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
-	// Unknown query keys are ignored here exactly as they are on the verbs that
-	// already accept them; a ?format= naming a foreign layout stays refused,
-	// because this verb WRITES and Ptah does not compute that layout's covered
-	// file set (stokaro/ptah#1013 section 1).
-	if err := checkWritingVerbDirQuery(localDir.Query); err != nil {
+	// Both spellings that can name the directory's layout are resolved here,
+	// once, with the `--dir` query outranking `--dir-format`. Unknown query keys
+	// are ignored exactly as they are on the verbs that already accept them, and
+	// a value neither spelling can parse is refused ahead of the atlas.sum gate,
+	// which is where the community binary refuses it. See
+	// [resolveWritingVerbDirFormat] for the measured table.
+	dirFormat, err := resolveWritingVerbDirFormat(opts.dirFormat, localDir.Query)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"atlas migrate diff %s: %w",
+			atlasDirFormatSpelling(localDir.Query),
+			err,
+		))
+	}
+	// A foreign layout named by the QUERY stays refused, because this verb
+	// WRITES and Ptah plans no reverse SQL for the layouts that carry one
+	// (stokaro/ptah#1013 section 1). Named by `--dir-format` it is refused too,
+	// but after the gate, in [prepareAtlasMigrateDiffSource].
+	if err := checkWritingVerbDirQuery(dirFormat, localDir.Query); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
 	if err := verifyAtlasWriteDirChecksum(cmd, project, localDir); err != nil {
@@ -182,7 +197,7 @@ func runAtlasMigrateDiff(
 		(len(projectCfg.SchemaSources) > 0 || atlasExternalSchemaConfigured(projectCfg)) {
 		opts.toURLs = []string{"env://src"}
 	}
-	desired, err := prepareAtlasMigrateDiffSource(opts, projectEnv)
+	desired, err := prepareAtlasMigrateDiffSource(opts, dirFormat, projectEnv)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -316,8 +331,18 @@ func needsAtlasMigrateDiffConfig(cmd *cobra.Command) bool {
 		!cmd.Flags().Changed("dev-url")
 }
 
+// prepareAtlasMigrateDiffSource validates the desired-state flags and the
+// resolved directory layout.
+//
+// dirFormat arrives already resolved from both spellings rather than being
+// re-derived from opts.dirFormat here, so "which layout is this run writing"
+// has one answer. The refusal of a foreign layout stays at this position — after
+// the atlas.sum gate — because that is where the community binary refuses it:
+// measured on the pinned v1.3.0, an unhashed directory with `--dir-format goose`
+// prints the checksum error, not a format complaint.
 func prepareAtlasMigrateDiffSource(
 	opts atlasMigrateDiffOptions,
+	dirFormat atlasmigrateimport.Format,
 	projectEnv atlassource.ProjectEnv,
 ) (atlassource.Set, error) {
 	if len(opts.toURLs) == 0 {
@@ -326,8 +351,7 @@ func prepareAtlasMigrateDiffSource(
 	if strings.TrimSpace(opts.devURL) == "" {
 		return atlassource.Set{}, fmt.Errorf("--dev-url is required")
 	}
-	dirFormat := strings.ToLower(strings.TrimSpace(opts.dirFormat))
-	if dirFormat != "" && dirFormat != string(migrator.MigrationDirFormatAtlas) {
+	if !atlasmigrate.ReadsNativeAtlasDir(dirFormat) {
 		return atlassource.Set{}, fmt.Errorf("atlas migrate diff currently writes Atlas-format migration directories only")
 	}
 	if opts.edit && opts.dryRun {

@@ -169,15 +169,12 @@ func resolveAtlasMigrateSource(
 	configured, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dir-format"))
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)
 	if err != nil {
-		// A ?format= query is the only thing that can carry a format value other
-		// than the configured one, so it is the only thing that can be blamed
-		// for a rejected one. A query carrying only ignored keys selects
-		// nothing, and the blame stays on --dir-format.
-		spelling := "--dir-format"
-		if atlasmigrate.DirFormatFromQuery(localDir.Query) {
-			spelling = "--dir"
-		}
-		return atlasMigrateSource{}, fmt.Errorf("atlas migrate %s %s: %w", verb.use, spelling, err)
+		return atlasMigrateSource{}, fmt.Errorf(
+			"atlas migrate %s %s: %w",
+			verb.use,
+			atlasDirFormatSpelling(localDir.Query),
+			err,
+		)
 	}
 
 	devURL, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dev-url"))
