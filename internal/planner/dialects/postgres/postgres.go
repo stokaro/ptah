@@ -1871,38 +1871,83 @@ func findRLSPolicy(policies []goschema.RLSPolicy, tableName, policyName string) 
 	return nil
 }
 
+// enableRLSOnTables emits ALTER TABLE ... ENABLE ROW LEVEL SECURITY.
+//
+// Two sources feed it, and both are needed.
+//
+// RLSEnabledTablesAdded is the comparator's verdict on the desired schema's
+// enablement declarations against pg_class.relrowsecurity. It is the only
+// source that covers an existing table whose row-level security was turned off
+// in the database, and a table that declares enablement without declaring a
+// policy. Until stokaro/ptah#1284 nothing read it, so a database with RLS off
+// and a schema demanding it on produced no statement at all.
+//
+// New tables carrying a policy are the second source. A desired schema may
+// declare a policy without a separate enablement annotation, and CREATE POLICY
+// on a table whose row-level security is off protects nothing, so the
+// enablement is emitted with the table rather than left to the operator.
 func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	// Create a set of tables that need RLS enabled
 	tablesNeedingRLS := make(map[string]bool)
+	for _, tableName := range diff.RLSEnabledTablesAdded {
+		tablesNeedingRLS[tableName] = true
+	}
 	for _, policy := range generated.RLSPolicies {
-		tablesNeedingRLS[policy.Table] = true
+		if slices.Contains(diff.TablesAdded, policy.Table) {
+			tablesNeedingRLS[policy.Table] = true
+		}
 	}
 
-	// Enable RLS on tables that have policies but don't have RLS enabled yet.
 	// Iterate in sorted order so migration output is deterministic (issue #59).
 	for _, tableName := range slices.Sorted(maps.Keys(tablesNeedingRLS)) {
-		// Check if this table is being added or if RLS is being enabled
-		tableIsNew := slices.Contains(diff.TablesAdded, tableName)
-
-		// For new tables with RLS policies, enable RLS
-		if tableIsNew {
-			enableRLSNode := ast.NewAlterTableEnableRLS(tableName).
-				SetComment(fmt.Sprintf("Enable RLS for %s table", tableName))
-			result = append(result, enableRLSNode)
-		}
+		enableRLSNode := ast.NewAlterTableEnableRLS(tableName).
+			SetComment(fmt.Sprintf("Enable RLS for %s table", tableName))
+		result = append(result, enableRLSNode)
 	}
 	return result
 }
 
+// disableRLSOnTables emits ALTER TABLE ... DISABLE ROW LEVEL SECURITY for the
+// tables the comparator recorded in RLSEnabledTablesRemoved, and keeps the
+// advisory comment for a table that merely lost policies.
+//
+// A table that is being dropped is left out: DROP TABLE removes its row-level
+// security with it, and disabling first would emit a statement whose only
+// effect is on an object that no longer exists two statements later.
+//
+// Losing every policy is not the same as losing enablement. The desired schema
+// may keep row-level security on to deny by default, which is what a table with
+// enablement and no policy means, so a table with removed policies that the
+// comparator did not list for disablement keeps its enablement and gets the
+// comment.
 func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	// Track which tables had policies removed to potentially disable RLS
+	droppedTables := make(map[string]bool, len(diff.TablesRemoved))
+	for _, tableName := range diff.TablesRemoved {
+		droppedTables[tableName] = true
+	}
+
+	tablesToDisable := make(map[string]bool)
+	for _, tableName := range diff.RLSEnabledTablesRemoved {
+		if droppedTables[tableName] {
+			continue
+		}
+		tablesToDisable[tableName] = true
+	}
+
+	// Iterate in sorted order so migration output is deterministic (issue #59).
+	for _, tableName := range slices.Sorted(maps.Keys(tablesToDisable)) {
+		disableRLSNode := ast.NewAlterTableDisableRLS(tableName).
+			SetComment(fmt.Sprintf("Disable RLS for %s table", tableName))
+		result = append(result, disableRLSNode)
+	}
+
 	tablesWithRemovedPolicies := make(map[string]bool)
 	for _, policyRef := range diff.RLSPoliciesRemoved {
+		if tablesToDisable[policyRef.TableName] || droppedTables[policyRef.TableName] {
+			continue
+		}
 		tablesWithRemovedPolicies[policyRef.TableName] = true
 	}
 
-	// For each table that had policies removed, add a comment about potentially disabling RLS
-	// Note: We don't automatically disable RLS because there might be other policies on the table
 	for _, tableName := range slices.Sorted(maps.Keys(tablesWithRemovedPolicies)) {
 		warningComment := ast.NewComment(fmt.Sprintf("NOTE: RLS policies were removed from table %s - verify if RLS should be disabled", tableName))
 		result = append(result, warningComment)

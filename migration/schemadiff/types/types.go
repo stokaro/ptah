@@ -494,10 +494,19 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 		len(d.GrantOptionsRevoked) > 0
 }
 
-// hasConstraintChanges returns true if there are any constraint-related changes
+// hasConstraintChanges returns true if there are any constraint-related changes.
+//
+// The table-qualified lists are consulted as well as the bare name lists. The
+// comparator fills both halves together, but a caller that builds a diff from
+// the table-qualified halves alone — a planner test, a policy filter that
+// rewrites one list — would otherwise hold a diff that carries constraints and
+// answers false to HasChanges, and every check built on HasChanges would report
+// a synced schema.
 func (d *SchemaDiff) hasConstraintChanges() bool {
 	return len(d.ConstraintsAdded) > 0 ||
-		len(d.ConstraintsRemoved) > 0
+		len(d.ConstraintsRemoved) > 0 ||
+		len(d.ConstraintsAddedWithTables) > 0 ||
+		len(d.ConstraintsRemovedWithTables) > 0
 }
 
 // TableDiff represents structural differences within a specific database table.

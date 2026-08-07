@@ -85,6 +85,15 @@ applies to and its `USING`/`WITH CHECK` expressions. Policies are created
 after the roles they reference, so a role and the policy that uses it can land
 in the same migration.
 
+Enablement is compared against `pg_class.relrowsecurity` and planned in both
+directions: a table your schema declares that the database has row-level
+security off for gets `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`, and a table
+the database secures that your schema does not declare gets the matching
+`DISABLE`. A table that is being dropped is not disabled first. A table that
+declares a policy without declaring enablement is enabled with the table,
+because `CREATE POLICY` on a table whose row-level security is off protects
+nothing.
+
 ## Extensions
 
 `//ptah:schema:extension` manages `CREATE EXTENSION`. Some extensions are
