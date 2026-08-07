@@ -65,7 +65,34 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	if opts != nil {
 		dialect = opts.Dialect
 	}
-	semantics := identifier.ForDialect(dialect)
+	ConstraintsWithSemantics(generated, database, diff, opts, identifier.ForDialect(dialect))
+}
+
+// ConstraintsWithSemantics is [Constraints] told which identifier rules the
+// target actually has, rather than the offline defaults its dialect name
+// implies. Table and index comparison already take the resolved rules; this
+// entry point exists so constraint comparison stops being the one side that
+// rebuilds them from the dialect string.
+//
+// The difference is not cosmetic on MySQL and MariaDB. A schema there is a
+// database, so [identifier.ForDialect] cannot name the one that owns an
+// unqualified table and returns an empty DefaultSchema; only a connection can
+// supply it. Re-deriving the offline rules here discarded that value, the
+// normalization in [tableMemberKey] became a no-op, and every constraint the
+// database had was reported as removed -- the exact failure #1232 fixed on
+// PostgreSQL and SQLite, still live on MySQL because it could never see a
+// default schema (stokaro/ptah#1244).
+func ConstraintsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	opts *config.CompareOptions,
+	semantics identifier.Semantics,
+) {
+	dialect := ""
+	if opts != nil {
+		dialect = opts.Dialect
+	}
 
 	// Create maps for detailed constraint comparison
 	genConstraints := make(map[tableMemberKey]goschema.Constraint)

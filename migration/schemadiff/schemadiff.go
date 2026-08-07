@@ -178,7 +178,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.Grants(generated, database, diff)
 
 	// Compare table-level constraints (EXCLUDE, CHECK, UNIQUE, etc.)
-	compare.Constraints(generated, database, diff, opts)
+	compare.ConstraintsWithSemantics(generated, database, diff, opts, identifierSemantics)
 
 	return diff
 }
