@@ -79,9 +79,19 @@ func TestPostgreSQLDBReadRoleCommentReplayIntegration(t *testing.T) {
 	cleanupDBReadRoleIntegration(c, db)
 	c.Cleanup(func() { cleanupDBReadRoleIntegration(c, db) })
 
+	// The described role owns the schema being read, which is why the read
+	// describes it. Ownership adds no statement of its own, so the role is
+	// still named by exactly the two statements this test replays.
+	//
+	// The stranger role exists in the same cluster and is used by nothing in
+	// the schema being read. PostgreSQL roles are cluster-wide, so before
+	// stokaro/ptah#1267 it was described here too, and reading one schema
+	// disclosed every role on the server. It must not appear.
 	_, err = db.Exec(`
 CREATE ROLE ptah_db_read_role_137;
-COMMENT ON ROLE ptah_db_read_role_137 IS 'Database read replay role';`)
+COMMENT ON ROLE ptah_db_read_role_137 IS 'Database read replay role';
+CREATE ROLE ptah_db_read_stranger_137;
+CREATE SCHEMA ptah_db_read_empty_schema_137 AUTHORIZATION ptah_db_read_role_137;`)
 	c.Assert(err, qt.IsNil)
 
 	cmd := readdb.NewReadDBCommand()
@@ -100,6 +110,7 @@ COMMENT ON ROLE ptah_db_read_role_137 IS 'Database read replay role';`)
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout.String(), qt.Contains, `CREATE ROLE "ptah_db_read_role_137"`)
 	c.Assert(stdout.String(), qt.Contains, `COMMENT ON ROLE "ptah_db_read_role_137" IS 'Database read replay role';`)
+	c.Assert(stdout.String(), qt.Not(qt.Contains), "ptah_db_read_stranger_137")
 	c.Assert(stderr.String(), qt.Contains, "Connected to postgres database successfully!")
 	roleStatements := slices.DeleteFunc(
 		migrator.SplitSQLStatements(stdout.String()),
@@ -237,14 +248,20 @@ $ptah_cleanup_roles$;`)
 
 func cleanupDBReadRoleIntegration(c *qt.C, db *sql.DB) {
 	c.Helper()
-	_, err := db.Exec(`
+	_, err := db.Exec("DROP SCHEMA IF EXISTS ptah_db_read_empty_schema_137 CASCADE")
+	c.Check(err, qt.IsNil)
+	_, err = db.Exec(`
 DO $ptah_cleanup_role$
+DECLARE
+    role_name text;
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ptah_db_read_role_137') THEN
-        EXECUTE format('REVOKE %I FROM %I', 'ptah_db_read_role_137', current_user);
-        DROP OWNED BY ptah_db_read_role_137;
-        DROP ROLE ptah_db_read_role_137;
-    END IF;
+    FOREACH role_name IN ARRAY ARRAY['ptah_db_read_role_137', 'ptah_db_read_stranger_137'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+            EXECUTE format('REVOKE %I FROM %I', role_name, current_user);
+            EXECUTE format('DROP OWNED BY %I', role_name);
+            EXECUTE format('DROP ROLE %I', role_name);
+        END IF;
+    END LOOP;
 END
 $ptah_cleanup_role$;`)
 	c.Check(err, qt.IsNil)

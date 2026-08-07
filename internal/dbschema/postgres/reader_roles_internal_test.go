@@ -59,6 +59,14 @@ const (
 	readsPolicyRoles      = "unnest(pol.polroles)"
 	readsSystemExclusion  = "NOT LIKE 'pg_%'"
 	readsPostgresExcluded = "!= 'postgres'"
+
+	// readsScopedRoleSet is the outer statement consuming the set the branches
+	// build. Binding the schema names is not on its own a restriction: the
+	// scope CTE still references them, so a query that computes the used-role
+	// set and then never applies it binds every argument and answers the whole
+	// cluster anyway. Live PostgreSQL caught exactly that mutant while an
+	// earlier version of this fake did not.
+	readsScopedRoleSet = "FROM used"
 )
 
 // Reasons spelled as the branch that must carry them.
@@ -167,9 +175,9 @@ func roleIsAnswerable(role clusterRole, stripped string, branches []string, boun
 	if role.name == "postgres" && strings.Contains(stripped, readsPostgresExcluded) {
 		return false
 	}
-	if len(bound) == 0 {
-		// Nothing restricts the query to a database, so every role on the
-		// server is in the answer.
+	if len(bound) == 0 || !strings.Contains(stripped, readsScopedRoleSet) {
+		// Nothing restricts the answer to the inspected schemas, so every role
+		// on the server is in it.
 		return true
 	}
 	if role.schema == "" || !bound[role.schema] {
