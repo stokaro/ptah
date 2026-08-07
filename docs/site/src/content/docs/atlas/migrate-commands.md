@@ -35,6 +35,37 @@ plus the flag translation rules are on the
 Per-verb status detail — Atlas differences, waivers, and the inputs that fail
 explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/).
 
+### The `--dir` default
+
+Every `migrate` verb that registers `--dir` defaults it to
+`file://migrations`, so `ptah-compat migrate apply --url "$DATABASE_URL"` run
+from a project root reads `./migrations` with no flag at all. That is
+`apply`, `new`, `diff`, `status`, `set`, `lint`, `hash` and `validate` — the
+same eight verbs Atlas documents the default on, and the same value
+([#1241](https://github.com/stokaro/ptah/issues/1241)). `migrate apply` and
+`migrate new` used to refuse a run with no `--dir`, and `migrate hash` and
+`migrate validate` used the directory without printing the default in `--help`.
+
+The default is a default, not a fallback. Every layer that names a directory
+outranks it — `--dir`, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR`, and `atlas.hcl`
+`migration.dir` — and a `--dir` naming a directory that is not there fails
+rather than quietly reading `./migrations`:
+
+```bash
+ptah-compat migrate apply --url "$DATABASE_URL" --dir file://migrtions
+# Error: atlas migrate apply --dir: open migrations directory: openat migrtions: no such file or directory
+```
+
+The default also does not skip anything. A defaulted directory reaches the
+`atlas.sum` gate exactly as an explicit one does, so an unhashed or drifted
+`./migrations` is still refused with `Error: checksum file not found` or
+`Error: checksum mismatch`.
+
+The writing verbs create the directory they are pointed at, including missing
+parents: `ptah-compat migrate new add_users --dir file://db/migrations` creates
+`db` and `db/migrations`. A path component that already exists and is not a
+directory is still refused, and nothing is written.
+
 ## Worked example: an Atlas-format directory
 
 Atlas-style migration files can include `migration.sql`, `down.sql`, the

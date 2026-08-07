@@ -43,6 +43,18 @@ type atlasMigrateApplyOptions struct {
 
 func newAtlasMigrateApplyCommand() *cobra.Command {
 	opts := atlasMigrateApplyOptions{
+		// `--dir` defaults to the same directory `migrate status` and
+		// `migrate set` already default to (stokaro/ptah#1241 item 2).
+		// Measured on the pinned community binary v1.3.0: in a directory
+		// holding a hashed ./migrations, `migrate apply --url sqlite://local.db`
+		// with no --dir exits 0 and applies, where Ptah exited 1 with
+		// `migrations directory is required`. Its own --help documents
+		// `(default "file://migrations")` for this flag.
+		//
+		// The default is a default, never a fallback: --dir naming a directory
+		// that is not there still fails rather than quietly reading
+		// ./migrations, which is what keeps a typo visible.
+		dir:       atlasDefaultMigrationDirURL,
 		dirFormat: atlasDirFormatDefault,
 		txMode:    string(migrator.MigrationTxModeFile),
 		execOrder: string(migrator.ExecOrderLinear),
@@ -63,7 +75,7 @@ Native Ptah equivalent: ptah migrations up.`,
 
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to apply migrations to")
-	flags.StringVar(&opts.dir, "dir", "", "Migration directory URL")
+	flags.StringVar(&opts.dir, "dir", opts.dir, "Migration directory URL")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show migrations without applying them")
 	flags.StringVar(&opts.txMode, "tx-mode", opts.txMode, "Transaction mode: file, all, or none")
 	flags.StringVar(&opts.execOrder, "exec-order", opts.execOrder, "Execution order: linear, linear-skip, or non-linear")

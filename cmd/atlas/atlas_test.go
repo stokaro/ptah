@@ -766,6 +766,15 @@ func TestCompatCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
+			// Run somewhere with no ./migrations. Since stokaro/ptah#1241 item
+			// 2 gave `migrate apply` the Atlas-documented `--dir` default,
+			// omitting the flag no longer stops at `migrations directory is
+			// required`; the run reaches the directory and fails to open it.
+			// The proxy still proves what this test is about — every spelling
+			// of --url got past `database URL is required` — but it now
+			// depends on the working directory, so it is pinned rather than
+			// inherited from the package directory.
+			t.Chdir(t.TempDir())
 			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
@@ -774,7 +783,7 @@ func TestCompatCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 
 			err := cmd.Execute()
 
-			c.Assert(err, qt.ErrorMatches, "migrations directory is required")
+			c.Assert(err, qt.ErrorMatches, `atlas migrate apply --dir: open migrations directory: .*`)
 		})
 	}
 }
