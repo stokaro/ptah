@@ -386,6 +386,16 @@ type Extension struct {
 	IfNotExists bool   // Whether to use IF NOT EXISTS clause
 	Version     string // Specific version requirement (optional)
 	Comment     string // Extension comment/description
+
+	// Provides lists the catalog names this extension supplies -- types,
+	// functions, relations, operator classes and operator families. It is filled
+	// in when the schema was read from a live PostgreSQL catalog and answers
+	// "what stops resolving without this extension", which is almost never the
+	// extension's own name: `isn` supplies the type `isbn`.
+	//
+	// Empty means not measured. Annotation and YAML sources have no catalog to
+	// ask and leave it unset.
+	Provides []string
 }
 
 // Table represents a database table configuration parsed from Go struct annotations.
