@@ -72,11 +72,11 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 167 capabilities below:
+Across the 168 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 94 |
+| Ptah supports it fully | 95 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 24 |
 | Ptah and Atlas CE both support it | 26 |
