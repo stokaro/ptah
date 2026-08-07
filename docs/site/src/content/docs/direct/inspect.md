@@ -115,6 +115,14 @@ table "users" {
 }
 ```
 
+Native inspection describes every construct Ptah models, including PostgreSQL
+extensions, sequences, and row-level security policies. The Atlas-compatible
+binary leaves those three block types out of its HCL by default, because the
+tool it stands in for refuses a file containing them; that filtering is a
+property of `ptah-compat` alone, never reaches this command, and
+`PTAH_ATLAS_INSPECT_ALL_BLOCKS` has no effect here. See
+[Blocks the compatibility surface leaves out by default](../../atlas/schema-commands/#blocks-the-compatibility-surface-leaves-out-by-default).
+
 `--format sql` and `--format json` select SQL and JSON output. `--schemas`,
 `--include`, and `--exclude` select what is inspected, in that order:
 `--schemas` names the database schemas, `--include` picks top-level resources

@@ -63,7 +63,7 @@ func Render(db *goschema.Database) (Result, error) {
 // their input was HCL, so the raw-SQL marker the parser set is already right and
 // re-deciding it from the type name would second-guess the author.
 func RenderForDialect(db *goschema.Database, dialect string) (Result, error) {
-	return render(db, dialect, "")
+	return render(db, dialect, "", false)
 }
 
 // RenderInspected renders a schema that was read out of a database, declaring
@@ -89,18 +89,38 @@ func RenderForDialect(db *goschema.Database, dialect string) (Result, error) {
 // here, so their IR already carries whatever the author wrote, and synthesizing
 // a schema there would invent one the author did not declare.
 func RenderInspected(db *goschema.Database, dialect, defaultSchema string) (Result, error) {
-	return render(db, dialect, strings.TrimSpace(defaultSchema))
+	return render(db, dialect, strings.TrimSpace(defaultSchema), false)
 }
 
-func render(db *goschema.Database, dialect, defaultSchema string) (Result, error) {
+// RenderInspectedForAtlasCLI renders an inspected schema for the
+// Atlas-compatible surface, leaving out the top-level block types the pinned
+// Atlas community binary v1.3.0 refuses as a feature -- but only where nothing
+// else in the document names the object -- and reporting every decision as a
+// loss diagnostic.
+//
+// It differs from [RenderInspected] in nothing else. The omission is a property
+// of the reader the compatibility binary stands in for, not of the database and
+// not of Ptah, so the native surface keeps describing everything Ptah models;
+// see [atlasRefusedBlockTypes] for the list and the measurement behind it, and
+// [renderer.omitRefusedBlock] for why suppression is reference-aware
+// (stokaro/ptah#1251).
+//
+// The capability is not deleted by the default. Setting
+// [KeepAtlasRefusedBlocksEnvVar] restores every block on this same surface.
+func RenderInspectedForAtlasCLI(db *goschema.Database, dialect, defaultSchema string) (Result, error) {
+	return render(db, dialect, strings.TrimSpace(defaultSchema), true)
+}
+
+func render(db *goschema.Database, dialect, defaultSchema string, omitAtlasRefusedBlocks bool) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
 
 	r := renderer{
-		db:            db,
-		dialect:       dialect,
-		defaultSchema: defaultSchema,
+		db:                     db,
+		dialect:                dialect,
+		defaultSchema:          defaultSchema,
+		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
 	}
 	r.render()
 	return Result{
@@ -116,8 +136,17 @@ type renderer struct {
 	// IR is taken as written, which is what every parse-and-re-render caller
 	// wants.
 	defaultSchema string
-	builder       strings.Builder
-	diagnostics   []Diagnostic
+	// omitAtlasRefusedBlocks marks the render as feeding the Atlas-compatible
+	// surface, which leaves out the block types the pinned binary refuses
+	// unless the document names the object; see [renderer.omitRefusedBlock].
+	omitAtlasRefusedBlocks bool
+	// references caches the identifiers the surviving document names, built
+	// once per render by [collectReferencedNames]. Nil means not yet built,
+	// which is distinguishable from "built and empty" because a document with
+	// no references at all still answers every lookup false.
+	references  map[string]bool
+	builder     strings.Builder
+	diagnostics []Diagnostic
 }
 
 // schemaFor returns the schema name to write for an object, which is the one it

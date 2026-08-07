@@ -55,6 +55,9 @@ type InspectSourceOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// OmitAtlasRefusedBlocks is the Atlas-compatible surface's block-type
+	// policy for rendered HCL; see [InspectOptions].
+	OmitAtlasRefusedBlocks bool
 }
 
 // InspectSource classifies the --url inspection source and renders it with
@@ -82,12 +85,13 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 	}
 
 	inspectOpts := InspectOptions{
-		DevURL:      opts.DevURL,
-		Schemas:     opts.Schemas,
-		Include:     opts.Include,
-		Exclude:     opts.Exclude,
-		Format:      opts.Format,
-		Diagnostics: opts.Diagnostics,
+		DevURL:                 opts.DevURL,
+		Schemas:                opts.Schemas,
+		Include:                opts.Include,
+		Exclude:                opts.Exclude,
+		Format:                 opts.Format,
+		Diagnostics:            opts.Diagnostics,
+		OmitAtlasRefusedBlocks: opts.OmitAtlasRefusedBlocks,
 	}
 	if set.Kind == atlassource.KindDatabase {
 		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout)

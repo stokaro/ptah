@@ -16,6 +16,9 @@ func (r *renderer) renderExtensions() {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, extension := range extensions {
+		if r.omitRefusedBlock("extensions."+extension.Name, blockExtension, extension.Name) {
+			continue
+		}
 		r.linef(`extension %s {`, quote(extension.Name))
 		if extension.IfNotExists {
 			r.trueAttr(1, "if_not_exists")
@@ -33,6 +36,9 @@ func (r *renderer) renderSequences() {
 		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
 	for _, sequence := range sequences {
+		if r.omitRefusedBlock("sequences."+sequence.QualifiedName(), blockSequence, sequence.Name) {
+			continue
+		}
 		sequence.Canonicalize()
 		r.linef(`sequence %s {`, quote(sequence.Name))
 		if sequence.Schema != "" {
@@ -410,6 +416,9 @@ func (r *renderer) renderRLSPolicies() {
 	for _, policy := range policies {
 		if policy.Table == "" {
 			r.warn("rls_policies."+policy.Name, "RLS policy requires a target table for HCL schema export")
+			continue
+		}
+		if r.omitRefusedBlock("rls_policies."+policy.Name, blockPolicy, policy.Name) {
 			continue
 		}
 		r.linef(`policy %s {`, quote(policy.Name))

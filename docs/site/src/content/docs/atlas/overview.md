@@ -142,6 +142,45 @@ compatibility surface is the migration path for Pro scripts and configuration
 too, not only CE ones — a capability you could only reach by rewriting your
 pipeline against native `ptah` verbs would not be a migration path at all.
 
+### The variables
+
+**`PTAH_ATLAS_INSPECT_ALL_BLOCKS`** — by default, `ptah-compat schema inspect`
+leaves an `extension`, `sequence` or `policy` block out of PostgreSQL HCL
+output when nothing else in the document names it, and reports each omission on
+standard error. Set it to `1` and every block Ptah models is emitted: the output
+describes the database in full, and the community CLI refuses it.
+
+**`PTAH_ALLOW_EXTERNAL_SCHEMA`** — by default, `atlas.hcl`
+`data "external_schema"` is not evaluated, because it runs a
+repository-controlled program. Set it to `1` and the data source is evaluated,
+matching the native `--allow-external-schema` flag.
+
+### One shape has no Atlas-readable form at all
+
+Suppression can only leave out a block nothing else names. A **sequence behind a
+column default** is named, so the block stays and the document is not readable
+by the community CLI:
+
+```sql
+CREATE SEQUENCE order_seq;
+CREATE TABLE orders (id integer NOT NULL DEFAULT nextval('order_seq'::regclass));
+```
+
+This is not a gap Ptah can close. Measured on PostgreSQL 17, the community CLI's
+own inspect of that database emits
+`default = sql("nextval('order_seq'::regclass)")` with no `sequence` block, and
+then cannot read its own output back: `pq: relation "order_seq" does not exist`.
+There is no faithful description of that database the CLI can read — not Ptah's
+and not its own. Ptah keeps the sequence, so the document is at least readable
+by Ptah and true about the database, and says so on standard error. Dropping the
+column's default to make the file readable would describe a database you do not
+have, which is the one outcome worse than a refusal.
+
+So `ptah-compat schema inspect` is not a promise that every PostgreSQL database
+produces community-CLI-readable HCL. It is a promise that the output is always
+self-consistent, that nothing disappears without being reported, and that the
+full description is one environment variable away.
+
 ## Parity expectations
 
 Ptah is not documented as a full Atlas OSS replacement until the external
