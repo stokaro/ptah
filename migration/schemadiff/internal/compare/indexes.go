@@ -212,7 +212,7 @@ func IndexesWithSemantics(
 		database,
 		dialect,
 		semantics,
-		fkBackedIndexes,
+		hiddenForeignKeyBackingIndexes(fkBackedIndexes, genIndexes),
 		uniqueConstraintIndexes,
 	)
 	appendIndexDifferences(
@@ -290,6 +290,48 @@ func constraintBackedIndexIdentities(
 		}
 	}
 	return foreignKeys, uniqueConstraints
+}
+
+// hiddenForeignKeyBackingIndexes narrows the foreign-key backing index filter
+// to the identities the desired state never mentions.
+//
+// MySQL and MariaDB create a backing index for every FOREIGN KEY. With a bare
+// `CONSTRAINT ... FOREIGN KEY` and no `KEY` clause -- the ordinary way a MySQL
+// schema is written -- the backing index carries the constraint's own name, so
+// `information_schema.STATISTICS` reports an index named `fk_posts_user`
+// alongside the constraint named `fk_posts_user`. Hiding that identity from
+// the database side keeps a desired state that says nothing about the backing
+// index from planning a DROP INDEX that would take the constraint with it.
+//
+// Hiding it unconditionally was one-sided: the desired side is never filtered,
+// so an index the author did declare had no counterpart to match and was
+// planned as an addition. That is not a hypothetical desired state -- the
+// pinned community binary's own `schema inspect` output writes the backing
+// index back out as an `index` block, so applying a database's own inspect
+// output to the database it came from planned
+// `CREATE INDEX "fk_posts_user"` where the pinned binary reported
+// "Schema is synced". That statement is not executable: run against the same
+// fixture, MySQL 9.7.1 answers it with
+// `Error 1061 (42000): Duplicate key name 'fk_posts_user'` (issue #1258).
+//
+// Letting declared identities through restores the comparison rather than
+// suppressing it: a declared backing index is matched, replaced, or added on
+// the same terms as any other index. The filter cannot start dropping
+// anything either, because an identity only survives it when the desired
+// state names that identity, and an identity the desired state names is
+// matched instead of removed.
+func hiddenForeignKeyBackingIndexes(
+	foreignKeys map[difftypes.IndexRef]struct{},
+	declared map[difftypes.IndexRef]generatedIndexEntry,
+) map[difftypes.IndexRef]struct{} {
+	hidden := make(map[difftypes.IndexRef]struct{}, len(foreignKeys))
+	for identity := range foreignKeys {
+		if _, isDeclared := declared[identity]; isDeclared {
+			continue
+		}
+		hidden[identity] = struct{}{}
+	}
+	return hidden
 }
 
 func collectDatabaseIndexes(
