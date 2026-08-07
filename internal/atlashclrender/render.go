@@ -978,6 +978,41 @@ func typeExpr(value string) string {
 	return value
 }
 
+// userTypeExpr renders the type a user-defined type is built on: a domain's
+// base type, a composite field's type, a range's subtype.
+//
+// These are not column type positions and do not follow the column rules. The
+// pinned Atlas community binary v1.3.0 reads only a sql() call in the first two,
+// measured with everything else held fixed:
+//
+//	domain    type = text          refused, There is no variable named "text"
+//	domain    type = "text"        refused, schemahcl: failed reading spec
+//	domain    type = sql("text")   accepted
+//	composite type = text          refused
+//	composite type = "text"        refused
+//	composite type = sql("text")   accepted
+//
+// A range is the odd one, and it is why this was measured rather than inferred
+// from the other two:
+//
+//	range     subtype = int4          refused
+//	range     subtype = "int4"        ACCEPTED
+//	range     subtype = sql("int4")   accepted
+//
+// It takes the quoted string the other two refuse. sql() is used for all three
+// because it is the one spelling every position accepts, and one rule beats
+// three. Ptah's own parser reads it back to the bare name in each -- text, text,
+// int4 -- so the round trip is unaffected (stokaro/ptah#1260).
+//
+// An empty value keeps typeExpr's behavior rather than becoming sql(""), which
+// would round trip as a type named nothing.
+func userTypeExpr(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return typeExpr(value)
+	}
+	return sqlCall(value)
+}
+
 func sqlCall(value string) string {
 	return "sql(" + quote(value) + ")"
 }
