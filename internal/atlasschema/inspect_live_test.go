@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,6 +125,94 @@ func TestInspectLive_ScopeSelectsSchemas(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestInspectLive_SQLSchemaStatements pins which runs put schema DDL in the SQL
+// rendering.
+//
+// The other two formats describe the schema in every scope, and that is
+// deliberate: stokaro/ptah#1264 is about a document that claimed a database had
+// no schema at all. The SQL format does not follow, and the split is the pinned
+// community binary v1.3.0's own. Counting `CREATE SCHEMA` in
+// `--format '{{ sql . }}'` on a PostgreSQL 17.10 database holding `public` and
+// `extra`, 2026-08-07:
+//
+//	plain URL                        2
+//	?search_path=public              0
+//	--schema public                  1
+//	--schema public --schema extra   2
+//	MySQL 9.7, connected database    0
+//
+// So the rule is not "realm scope only" — a named schema is rendered. What that
+// binary leaves out is the schema it was merely connected to.
+//
+// The `search_path` row is the one that can go red. Making the reader describe
+// the connected schema, which is what #1264 required, put a
+// `CREATE SCHEMA IF NOT EXISTS "public";` and its `COMMENT ON SCHEMA` in front
+// of every scoped PostgreSQL script and every MySQL script, where that binary
+// emits neither (stokaro/ptah#1275 review).
+//
+// The MySQL cell has no row here because this package's live PostgreSQL helper
+// cannot reach a MySQL server; it travels through the same
+// `describesSchemas` branch, which answers from the connected schema on that
+// dialect.
+func TestInspectLive_SQLSchemaStatements(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		query   string
+		schemas []string
+		want    int
+		wantSQL []string
+		notWant []string
+	}{
+		{
+			name:    "plain URL renders every schema it describes",
+			want:    2,
+			wantSQL: []string{`CREATE SCHEMA IF NOT EXISTS "extra";`},
+		},
+		{
+			name:    "search_path renders no schema statement",
+			query:   "search_path=public",
+			want:    0,
+			notWant: []string{"CREATE SCHEMA", "COMMENT ON SCHEMA"},
+		},
+		{
+			name:    "an explicit schema is rendered",
+			schemas: []string{"public"},
+			want:    1,
+		},
+		{
+			name:    "two explicit schemas are both rendered",
+			schemas: []string{"public", "extra"},
+			want:    2,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			conn := newInspectLiveConnection(c, ctx, test.query, inspectLiveMultiSchema)
+
+			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
+				Format:  "sql",
+				Schemas: test.schemas,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Count(rendered, "CREATE SCHEMA"), qt.Equals, test.want)
+			// The tables are asserted in every row so that a rendering which
+			// lost its whole body cannot pass by having zero schema statements.
+			c.Assert(rendered, qt.Contains, `CREATE TABLE`)
+			for _, want := range test.wantSQL {
+				c.Assert(rendered, qt.Contains, want)
+			}
+			for _, notWant := range test.notWant {
+				c.Assert(rendered, qt.Not(qt.Contains), notWant)
+			}
 		})
 	}
 }
