@@ -6,9 +6,9 @@ require (
 	github.com/frankban/quicktest v1.14.6
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/moby/moby/api v1.55.0
-	github.com/testcontainers/testcontainers-go v0.43.0
-	github.com/testcontainers/testcontainers-go/modules/mysql v0.43.0
-	github.com/testcontainers/testcontainers-go/modules/postgres v0.43.0
+	github.com/testcontainers/testcontainers-go v0.44.0
+	github.com/testcontainers/testcontainers-go/modules/mysql v0.44.0
+	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	go.5x5.cz/ptah v0.2.0
 )
 
