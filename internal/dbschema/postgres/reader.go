@@ -1467,6 +1467,22 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 // Measured on PostgreSQL 17.10: no pg_namespace row is ever an extension member
 // for an extension installed into an existing schema, so `public` does not enter
 // this set and naming the schema does not pin every extension in the database.
+//
+// Every arm excludes members whose name also resolves in pg_catalog. Contrib
+// extensions overwhelmingly supply OVERLOADS of core functions, so their raw
+// member lists contain ordinary words: measured on PostgreSQL 17.10, `citext`
+// supplies fifteen names pg_catalog also supplies, among them `max`, `min`,
+// `strpos`, `replace`, `split_part` and `translate`, and `pgcrypto` supplies
+// `gen_random_uuid`, which core has had since 13. A name pg_catalog also
+// supplies is no evidence of a dependency, because pg_catalog is always on the
+// search path -- the document resolves it with the extension dropped. Counting
+// such a name as evidence pins the extension to schemas that have no
+// relationship to it (stokaro/ptah#1280).
+//
+// The exclusion cannot cost a genuine dependency. Reaching an extension's
+// overload rather than the core one requires arguments of that extension's own
+// type, and naming that type is what keeps the extension alive through the
+// pg_type arm.
 func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 	const membersQuery = `
 		SELECT e.extname AS extension_name, t.typname AS member_name
@@ -1474,30 +1490,50 @@ func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 		  JOIN pg_extension e ON e.oid = d.refobjid
 		  JOIN pg_type t ON t.oid = d.objid
 		 WHERE d.deptype = 'e' AND d.classid = 'pg_type'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_type core
+		         JOIN pg_namespace corens ON corens.oid = core.typnamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.typname = t.typname)
 		UNION
 		SELECT e.extname, p.proname
 		  FROM pg_depend d
 		  JOIN pg_extension e ON e.oid = d.refobjid
 		  JOIN pg_proc p ON p.oid = d.objid
 		 WHERE d.deptype = 'e' AND d.classid = 'pg_proc'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_proc core
+		         JOIN pg_namespace corens ON corens.oid = core.pronamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.proname = p.proname)
 		UNION
 		SELECT e.extname, c.relname
 		  FROM pg_depend d
 		  JOIN pg_extension e ON e.oid = d.refobjid
 		  JOIN pg_class c ON c.oid = d.objid
 		 WHERE d.deptype = 'e' AND d.classid = 'pg_class'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_class core
+		         JOIN pg_namespace corens ON corens.oid = core.relnamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.relname = c.relname)
 		UNION
 		SELECT e.extname, opc.opcname
 		  FROM pg_depend d
 		  JOIN pg_extension e ON e.oid = d.refobjid
 		  JOIN pg_opclass opc ON opc.oid = d.objid
 		 WHERE d.deptype = 'e' AND d.classid = 'pg_opclass'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_opclass core
+		         JOIN pg_namespace corens ON corens.oid = core.opcnamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.opcname = opc.opcname)
 		UNION
 		SELECT e.extname, opf.opfname
 		  FROM pg_depend d
 		  JOIN pg_extension e ON e.oid = d.refobjid
 		  JOIN pg_opfamily opf ON opf.oid = d.objid
 		 WHERE d.deptype = 'e' AND d.classid = 'pg_opfamily'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_opfamily core
+		         JOIN pg_namespace corens ON corens.oid = core.opfnamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.opfname = opf.opfname)
 		 ORDER BY 1, 2`
 
 	rows, err := r.db.Query(membersQuery)

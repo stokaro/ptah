@@ -318,6 +318,13 @@ type DBExtension struct {
 	// usually a disjoint set of words: `isn` supplies the type `isbn`, and
 	// `pgcrypto` supplies the function `gen_salt`.
 	//
+	// Names pg_catalog also supplies are excluded, because a document using one
+	// resolves it with the extension dropped. This matters because contrib
+	// extensions mostly supply overloads of core functions: unfiltered, `citext`
+	// contributes `max`, `min`, `strpos`, `replace` and `split_part`, and
+	// `pgcrypto` contributes `gen_random_uuid`, which core has supplied since
+	// PostgreSQL 13.
+	//
 	// Empty means not measured rather than "supplies nothing" -- every extension
 	// supplies something, and readers that do not consult a catalog (Go
 	// annotations, YAML) leave this unset.

@@ -402,6 +402,13 @@ type Extension struct {
 	// "what stops resolving without this extension", which is almost never the
 	// extension's own name: `isn` supplies the type `isbn`.
 	//
+	// Names the extension supplies that pg_catalog also supplies are excluded,
+	// because those keep resolving with the extension dropped. Contrib
+	// extensions mostly supply overloads of core functions, so the unfiltered
+	// list is full of ordinary words -- `citext` supplies `max`, `strpos` and
+	// `replace` -- and treating those as evidence would tie the extension to
+	// every schema that happens to use them.
+	//
 	// Empty means not measured. Annotation and YAML sources have no catalog to
 	// ask and leave it unset.
 	Provides []string
