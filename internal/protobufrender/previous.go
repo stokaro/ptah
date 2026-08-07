@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/bufbuild/protocompile"
@@ -67,27 +68,31 @@ func (p previousType) highestUsed() int32 {
 	return highest
 }
 
-// previousFile is the whole compatibility state of a previous export.
-type previousFile struct {
-	Package string
-	// Version is the export format version the file declares. It is kept so the
-	// caller can report that an older layout was migrated rather than rewriting
-	// the baseline silently.
-	Version  int
+// previousSet is the whole compatibility state of a previous export, flattened
+// across every file it wrote. Type names are unique across the set because all
+// of its files share one protobuf package, so the numbering lookups stay
+// file-agnostic and only the *File indexes know where a type lived.
+type previousSet struct {
+	Package  string
 	Messages map[string]previousType
 	Enums    map[string]previousType
+	// MessageFile and EnumFile map a type name to the base name of the file that
+	// declared it, which is what turns a rename-shaped diff into a detected move.
+	MessageFile map[string]string
+	EnumFile    map[string]string
+	// Files is every base name the previous export wrote, anchor first.
+	Files []string
 }
 
-// loadPrevious validates raw as a Ptah-generated .proto and extracts the field
-// and enum-value numbering it pins. Validation runs in a fixed order so the
-// user always gets the most specific diagnosis: a foreign file is never
-// reported as malformed, and a modified file is never reported as a package
-// mismatch.
-func loadPrevious(ctx context.Context, path string, raw []byte, wantPackage string) (*previousFile, error) {
+// validatePreviousBytes runs the header and digest gates over one file of a
+// previous export and returns its canonical bytes. It is deliberately separate
+// from the compile step: every file's authenticity is settled before any of
+// them is parsed, so a tampered sibling is never diagnosed as a compile error
+// in the anchor.
+func validatePreviousBytes(raw []byte) ([]byte, error) {
 	canonical := canonicalize(raw)
 
-	header, err := parseHeader(canonical)
-	if err != nil {
+	if _, err := parseHeader(canonical); err != nil {
 		return nil, err
 	}
 
@@ -103,40 +108,102 @@ func loadPrevious(ctx context.Context, path string, raw []byte, wantPackage stri
 		return nil, fmt.Errorf("%w: recorded %s, computed %s; %s",
 			ErrModified, shortDigest(recorded), shortDigest(actual), remedyModified)
 	}
+	return canonical, nil
+}
 
-	fd, err := compileProto(ctx, path, string(canonical))
+// loadPrevious validates a previous export set and extracts the field and
+// enum-value numbering it pins. Validation runs in a fixed order so the user
+// always gets the most specific diagnosis: a foreign file is never reported as
+// malformed, and a modified file is never reported as a package mismatch.
+//
+// Only the anchor's own diagnostics are unprefixed. A sibling is named, because
+// --out does not point at it and the message would otherwise be unactionable.
+func loadPrevious(ctx context.Context, pkgDir, anchor string, raw []byte, siblings map[string][]byte, wantPackage string) (*previousSet, error) {
+	order := append([]string{anchor}, sortedKeys(siblings)...)
+
+	sources := map[string]string{}
+	pathOf := map[string]string{}
+	own := map[string]bool{}
+	for _, name := range order {
+		data := raw
+		if name != anchor {
+			data = siblings[name]
+		}
+		canonical, err := validatePreviousBytes(data)
+		if err != nil {
+			if name == anchor {
+				return nil, err
+			}
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		path := logicalPath(pkgDir, name)
+		sources[path] = string(canonical)
+		pathOf[name] = path
+		own[path] = true
+	}
+
+	files, err := compileProtoSet(ctx, sources, order, pathOf)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 
-	if got := string(fd.Package()); got != wantPackage {
-		return nil, fmt.Errorf("%w: file declares %q, --proto-package is %q; %s",
-			ErrPackageMismatch, got, wantPackage, remedyPackage)
+	prev := &previousSet{
+		Package:     wantPackage,
+		Messages:    map[string]previousType{},
+		Enums:       map[string]previousType{},
+		MessageFile: map[string]string{},
+		EnumFile:    map[string]string{},
+		Files:       order,
 	}
+	for _, name := range order {
+		fd := files[name]
+		if got := string(fd.Package()); got != wantPackage {
+			if name == anchor {
+				return nil, fmt.Errorf("%w: file declares %q, --proto-package is %q; %s",
+					ErrPackageMismatch, got, wantPackage, remedyPackage)
+			}
+			return nil, fmt.Errorf("%s: %w: file declares %q, --proto-package is %q; %s",
+				name, ErrPackageMismatch, got, wantPackage, remedyPackage)
+		}
+		if err := prev.collect(name, fd, own); err != nil {
+			return nil, err
+		}
+	}
+	return prev, nil
+}
 
-	prev := &previousFile{
-		Package:  string(fd.Package()),
-		Version:  header.Version,
-		Messages: map[string]previousType{},
-		Enums:    map[string]previousType{},
-	}
+// collect records one file's numbering state under its base name. own is the
+// logical path of every file of the export set, which is what decides whether a
+// referenced type is written bare or fully qualified.
+func (p *previousSet) collect(name string, fd protoreflect.FileDescriptor, own map[string]bool) error {
 	for i := range fd.Messages().Len() {
 		md := fd.Messages().Get(i)
-		state, err := messageState(md, fd)
+		state, err := messageState(md, fd, own)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
+			return fmt.Errorf("%w: %w", ErrMalformed, err)
 		}
-		prev.Messages[string(md.Name())] = state
+		p.Messages[string(md.Name())] = state
+		p.MessageFile[string(md.Name())] = name
 	}
 	for i := range fd.Enums().Len() {
 		ed := fd.Enums().Get(i)
 		state, err := enumState(ed)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrMalformed, err)
+			return fmt.Errorf("%w: %w", ErrMalformed, err)
 		}
-		prev.Enums[string(ed.Name())] = state
+		p.Enums[string(ed.Name())] = state
+		p.EnumFile[string(ed.Name())] = name
 	}
-	return prev, nil
+	return nil
+}
+
+func sortedKeys(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for key := range m {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func shortDigest(s string) string {
@@ -148,7 +215,7 @@ func shortDigest(s string) string {
 
 // messageState reads a message's live numbers, field shapes and reservations.
 // Message reserved ranges carry an EXCLUSIVE end, unlike enum ranges.
-func messageState(md protoreflect.MessageDescriptor, file protoreflect.FileDescriptor) (previousType, error) {
+func messageState(md protoreflect.MessageDescriptor, file protoreflect.FileDescriptor, own map[string]bool) (previousType, error) {
 	state := previousType{
 		Numbers: map[string]int32{},
 		Fields:  map[string]previousField{},
@@ -157,7 +224,7 @@ func messageState(md protoreflect.MessageDescriptor, file protoreflect.FileDescr
 		fd := md.Fields().Get(i)
 		state.Numbers[string(fd.Name())] = int32(fd.Number())
 		state.Fields[string(fd.Name())] = previousField{
-			Type:     fieldTypeString(fd, file),
+			Type:     fieldTypeString(fd, file, own),
 			Repeated: fd.IsList(),
 		}
 	}
@@ -221,37 +288,48 @@ func addRange(res *reservations, start, end int64) error {
 }
 
 // fieldTypeString spells a field's type exactly as the generator writes it, so
-// the two can be compared to detect a wire-incompatible change. Types defined by
-// this file are written bare; imported types keep their full name.
+// the two can be compared to detect a wire-incompatible change. Types the export
+// set itself defines are written bare, because they resolve through the package
+// scope every file of the set shares; anything else keeps its full name.
 //
 // The test is the DEFINING FILE, not the package prefix. Trimming by package
 // would also shorten "google.protobuf.Timestamp" when --proto-package is
 // "google.protobuf", so the previous spelling would never match what the
-// renderer writes and every run would report a spurious type change.
-func fieldTypeString(fd protoreflect.FieldDescriptor, file protoreflect.FileDescriptor) string {
+// renderer writes and every run would report a spurious type change. The test
+// is the whole SET rather than the one file, because an enum that a table file
+// references lives in the anchor: comparing it against its fully qualified
+// spelling would report a spurious type change on every regeneration.
+func fieldTypeString(fd protoreflect.FieldDescriptor, file protoreflect.FileDescriptor, own map[string]bool) string {
 	switch fd.Kind() {
 	case protoreflect.MessageKind, protoreflect.GroupKind:
-		return localName(fd.Message().FullName(), fd.Message().ParentFile(), file)
+		return localName(fd.Message().FullName(), fd.Message().ParentFile(), file, own)
 	case protoreflect.EnumKind:
-		return localName(fd.Enum().FullName(), fd.Enum().ParentFile(), file)
+		return localName(fd.Enum().FullName(), fd.Enum().ParentFile(), file, own)
 	default:
 		return fd.Kind().String()
 	}
 }
 
-func localName(full protoreflect.FullName, definedIn, file protoreflect.FileDescriptor) string {
-	if definedIn != nil && file != nil && definedIn.Path() == file.Path() {
-		prefix := string(file.Package()) + "."
-		return strings.TrimPrefix(string(full), prefix)
+func localName(full protoreflect.FullName, definedIn, file protoreflect.FileDescriptor, own map[string]bool) string {
+	if definedIn == nil || file == nil {
+		return string(full)
 	}
-	return string(full)
+	if definedIn.Path() != file.Path() && !own[definedIn.Path()] {
+		return string(full)
+	}
+	return strings.TrimPrefix(string(full), string(file.Package())+".")
 }
 
-// compileProto parses and links src with protocompile. It is used both to read
-// a previous export and to validate freshly rendered bytes before they are
-// written, which catches generator bugs at generation time rather than in the
-// caller's build.
-func compileProto(ctx context.Context, path, src string) (protoreflect.FileDescriptor, error) {
+// compileProtoSet parses and links every file of an export set together with
+// protocompile. It is used both to read a previous export and to validate
+// freshly rendered bytes before they are written, which catches generator bugs
+// at generation time rather than in the caller's build. The whole set is
+// compiled in one pass because the files import each other: compiling them
+// one at a time would resolve a cross-file enum reference against nothing.
+//
+// The result is keyed by base name, so callers never have to rebuild a logical
+// path to find the descriptor they asked for.
+func compileProtoSet(ctx context.Context, sources map[string]string, names []string, pathOf map[string]string) (map[string]protoreflect.FileDescriptor, error) {
 	var problems []string
 	rep := reporter.NewReporter(
 		func(err reporter.ErrorWithPos) error {
@@ -260,22 +338,31 @@ func compileProto(ctx context.Context, path, src string) (protoreflect.FileDescr
 		},
 		nil,
 	)
+	paths := make([]string, 0, len(names))
+	for _, name := range names {
+		paths = append(paths, pathOf[name])
+	}
 	compiler := protocompile.Compiler{
 		Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{
-			Accessor: protocompile.SourceAccessorFromMap(map[string]string{path: src}),
+			Accessor: protocompile.SourceAccessorFromMap(sources),
 		}),
 		SourceInfoMode: protocompile.SourceInfoStandard,
 		Reporter:       rep,
 	}
-	files, err := compiler.Compile(ctx, path)
+	files, err := compiler.Compile(ctx, paths...)
 	if err != nil {
 		if len(problems) > 0 {
 			return nil, errors.New(strings.Join(problems, "; "))
 		}
 		return nil, err
 	}
-	if len(files) == 0 {
-		return nil, errors.New("no file descriptor produced")
+	if len(files) != len(paths) {
+		return nil, fmt.Errorf("compiled %d file descriptor(s) for %d source file(s)", len(files), len(paths))
 	}
-	return linker.Files(files)[0], nil
+	linked := linker.Files(files)
+	out := make(map[string]protoreflect.FileDescriptor, len(names))
+	for i, name := range names {
+		out[name] = linked[i]
+	}
+	return out, nil
 }

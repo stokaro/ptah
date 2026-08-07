@@ -10,17 +10,15 @@ import (
 // is where the compatibility contract is enforced: existing numbers are kept,
 // removed identifiers are reserved by number and name, and new numbers are
 // allocated above everything the type has ever used.
-func (b *builder) reconcile(desired desiredShape, prev *previousFile) (file, error) {
-	out := file{}
-
+func (b *builder) reconcile(desired desiredShape, prev *previousSet) (outMessages []message, outEnums []enum, err error) {
 	seenMessages := map[string]bool{}
 	for _, dm := range desired.messages {
 		seenMessages[dm.Name] = true
 		msg, err := b.reconcileMessage(dm, prev)
 		if err != nil {
-			return file{}, err
+			return nil, nil, err
 		}
-		out.Messages = append(out.Messages, msg)
+		outMessages = append(outMessages, msg)
 	}
 
 	seenEnums := map[string]bool{}
@@ -28,13 +26,13 @@ func (b *builder) reconcile(desired desiredShape, prev *previousFile) (file, err
 		seenEnums[de.Name] = true
 		en, err := b.reconcileEnum(de, prev)
 		if err != nil {
-			return file{}, err
+			return nil, nil, err
 		}
-		out.Enums = append(out.Enums, en)
+		outEnums = append(outEnums, en)
 	}
 
 	if prev == nil {
-		return out, nil
+		return outMessages, outEnums, nil
 	}
 
 	// A type that is already a tombstone was removed by an earlier run and has
@@ -46,7 +44,7 @@ func (b *builder) reconcile(desired desiredShape, prev *previousFile) (file, err
 	for _, name := range missingNames(prev.Messages, seenMessages) {
 		state := prev.Messages[name]
 		if isMessageTombstone(state) && b.opts.TypeRemoval != RemovalDrop {
-			out.Messages = append(out.Messages, tombstoneMessage(name, state))
+			outMessages = append(outMessages, tombstoneMessage(name, state))
 			continue
 		}
 		removedMessages = append(removedMessages, name)
@@ -54,14 +52,14 @@ func (b *builder) reconcile(desired desiredShape, prev *previousFile) (file, err
 	for _, name := range missingNames(prev.Enums, seenEnums) {
 		state := prev.Enums[name]
 		if isEnumTombstone(state) && b.opts.TypeRemoval != RemovalDrop {
-			out.Enums = append(out.Enums, tombstoneEnum(name, state))
+			outEnums = append(outEnums, tombstoneEnum(name, state))
 			continue
 		}
 		removedEnums = append(removedEnums, name)
 	}
 
 	if len(removedMessages) == 0 && len(removedEnums) == 0 {
-		return out, nil
+		return outMessages, outEnums, nil
 	}
 
 	switch b.opts.TypeRemoval {
@@ -72,11 +70,11 @@ func (b *builder) reconcile(desired desiredShape, prev *previousFile) (file, err
 		}
 	case RemovalTombstone:
 		for _, name := range removedMessages {
-			out.Messages = append(out.Messages, tombstoneMessage(name, prev.Messages[name]))
+			outMessages = append(outMessages, tombstoneMessage(name, prev.Messages[name]))
 			b.warn(name, fmt.Sprintf("message %q was removed from the source schema and retained as a tombstone", name))
 		}
 		for _, name := range removedEnums {
-			out.Enums = append(out.Enums, tombstoneEnum(name, prev.Enums[name]))
+			outEnums = append(outEnums, tombstoneEnum(name, prev.Enums[name]))
 			b.warn(name, fmt.Sprintf("enum %q was removed from the source schema and retained as a tombstone", name))
 		}
 	default:
@@ -84,11 +82,11 @@ func (b *builder) reconcile(desired desiredShape, prev *previousFile) (file, err
 		removed = append(removed, removedMessages...)
 		removed = append(removed, removedEnums...)
 		sort.Strings(removed)
-		return file{}, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"types removed from the source schema: %s; protobuf cannot reserve a top-level type name, so choose --proto-type-removal=tombstone to retain them for wire compatibility or =drop to abandon it",
 			strings.Join(removed, ", "))
 	}
-	return out, nil
+	return outMessages, outEnums, nil
 }
 
 func missingNames(previous map[string]previousType, seen map[string]bool) []string {
@@ -102,7 +100,7 @@ func missingNames(previous map[string]previousType, seen map[string]bool) []stri
 	return missing
 }
 
-func (b *builder) reconcileMessage(dm desiredMessage, prev *previousFile) (message, error) {
+func (b *builder) reconcileMessage(dm desiredMessage, prev *previousSet) (message, error) {
 	msg := message{Name: dm.Name, Comment: dm.Comment}
 
 	var state previousType
@@ -179,7 +177,7 @@ func (b *builder) reconcileMessage(dm desiredMessage, prev *previousFile) (messa
 	return msg, nil
 }
 
-func (b *builder) reconcileEnum(de enum, prev *previousFile) (enum, error) {
+func (b *builder) reconcileEnum(de enum, prev *previousSet) (enum, error) {
 	out := enum{Name: de.Name, Comment: de.Comment}
 
 	var state previousType
