@@ -36,6 +36,13 @@ type renamedName struct {
 	kind SubjectKind
 	// name is the retired name exactly as the source spells it.
 	name string
+	// normalized is the retired name in the linter's comparison form, used to
+	// look the retired object up in the schema state the version starts from.
+	normalized string
+	// introduced is the name the rename puts in place of the retired one,
+	// source-spelled. Empty when the statement is a rename whose target could
+	// not be read.
+	introduced string
 	// parent is the owning table of a renamed column, source-spelled.
 	parent string
 	// owner is the normalized reference of the table whose creation earlier in
@@ -123,11 +130,14 @@ func alterRenamedNames(w, sourceWords []string) []renamedName {
 			continue
 		}
 		if next < len(w) && (w[next] == "TO" || w[next] == "AS") {
+			introduced, _, _ := identifierAt(w, sourceWords, next+1)
 			names = append(names, renamedName{
-				kind:   SubjectColumn,
-				name:   identifier.name,
-				parent: table.name,
-				owner:  table.normalized,
+				kind:       SubjectColumn,
+				name:       identifier.name,
+				normalized: identifier.normalized,
+				introduced: introduced.name,
+				parent:     table.name,
+				owner:      table.normalized,
 			})
 			continue
 		}
@@ -192,6 +202,22 @@ func fileRenames(file *File) []statementRename {
 		})
 	}
 	return renames
+}
+
+// renameAddSideCandidates returns the column renames whose add side this file's
+// surface reports, before any schema state has been consulted.
+//
+// Both the request for that state ([baselineVersions]) and the finding built
+// from it ([renamedColumnAddFindings]) go through this one function, so the
+// surface split is decided in exactly one place. Deciding it twice made the
+// native surface's control unable to see the rule's own gate disappear: with no
+// baseline ever requested there, the finding could not fire whether that gate
+// was present or not, and the control stayed green either way.
+func renameAddSideCandidates(file *File) []statementRename {
+	if file.compatibility != CompatibilityProfileAtlas {
+		return nil
+	}
+	return renamesOfKind(fileRenames(file), SubjectColumn)
 }
 
 // renamesOfKind keeps the renames of one object kind, dropping statements left

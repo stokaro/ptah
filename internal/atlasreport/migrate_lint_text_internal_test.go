@@ -139,6 +139,21 @@ func TestAtlasDiagnosticText_FallsBackForMultiSubjectSingleObjectCodes(t *testin
 // selecting the latest N versions exactly as the migrate lint command does.
 func analyzeMigrations(t *testing.T, files map[string]string, latest int) migrationlint.Analysis {
 	t.Helper()
+	return analyzeMigrationsWithBaseline(t, files, latest, nil)
+}
+
+// analyzeMigrationsWithBaseline is [analyzeMigrations] for the diagnostics that
+// need the schema state a version starts from -- the add side of a rename, whose
+// column type and nullability live in an earlier file. A live run reads that
+// state off the dev database mid-replay; here it is supplied directly so the
+// rendering can be pinned without one.
+func analyzeMigrationsWithBaseline(
+	t *testing.T,
+	files map[string]string,
+	latest int,
+	baseline []migrationlint.BaselineColumn,
+) migrationlint.Analysis {
+	t.Helper()
 	fsys := fstest.MapFS{}
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
@@ -166,6 +181,7 @@ func analyzeMigrations(t *testing.T, files map[string]string, latest int) migrat
 		DirFormat:     migrator.MigrationDirFormatAtlas,
 		Dialect:       "sqlite",
 		Selection:     migrationlint.VersionSelection{Versions: versions, Restricted: true},
+		Baseline:      baseline,
 	})
 	qt.Assert(t, err, qt.IsNil)
 	return analysis
@@ -189,10 +205,11 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 	}
 
 	tests := []struct {
-		name   string
-		files  map[string]string
-		latest int
-		want   string
+		name     string
+		files    map[string]string
+		latest   int
+		baseline []migrationlint.BaselineColumn
+		want     string
 	}{
 		{
 			name:   "two diagnostics in one group collect their fixes",
@@ -575,13 +592,104 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 				"  -- 0s\n" +
 				"  -- 1 version ok\n",
 		},
+		{
+			// stokaro/ptah#1074. The compatibility surface models a rename as the
+			// retirement of one name plus the introduction of another, and prints
+			// both: the drop of "id" and the add of an `integer` column "oid".
+			// Verbatim from atlas community version v1.3.0 on PostgreSQL 16, which
+			// is also where the `integer` spelling comes from -- the statement says
+			// `int` and the state says `integer`.
+			name: "rename prints its add side from the baseline",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE users (id int NOT NULL);\n",
+				"2.sql": "ALTER TABLE users RENAME COLUMN id TO oid;\n",
+			},
+			latest: 1,
+			baseline: []migrationlint.BaselineColumn{{
+				Version: 2, Table: "users", Name: "id", DataType: "integer", NotNull: true,
+			}},
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping non-virtual column \"id\" https://atlasgo.io/lint/analyzers#DS103\n" +
+				"    -- data dependent changes detected:\n" +
+				"      -- L1: Adding a non-nullable \"integer\" column \"oid\" will fail in case table \"users\" is not\n" +
+				"         empty https://atlasgo.io/lint/analyzers#MF103\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure column \"id\" is NULL before dropping it\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 1 schema change\n" +
+				"  -- 2 diagnostics\n",
+		},
+		{
+			// The same fixture with a NULLABLE retired column, which is the control
+			// that separates "the rename is reported" from "the rename's add side
+			// is reported". Measured: one diagnostic, no data dependent group.
+			name: "nullable rename prints no add side",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE users (id int);\n",
+				"2.sql": "ALTER TABLE users RENAME COLUMN id TO oid;\n",
+			},
+			latest: 1,
+			baseline: []migrationlint.BaselineColumn{{
+				Version: 2, Table: "users", Name: "id", DataType: "integer",
+			}},
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L1: Dropping non-virtual column \"id\" https://atlasgo.io/lint/analyzers#DS103\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure column \"id\" is NULL before dropping it\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 1 schema change\n" +
+				"  -- 1 diagnostic\n",
+		},
+		{
+			// Analyzer groups print in analyzer order, not in the order their first
+			// diagnostic appears. The add is on line 1 and the drop on line 2, so a
+			// renderer ordering groups by first appearance prints them the other way
+			// round -- which is what it used to do. Verbatim from the pinned binary.
+			name: "analyzer groups print in measured order",
+			files: map[string]string{
+				"1.sql": "CREATE TABLE users (id int, nick int);\n",
+				"2.sql": "ALTER TABLE users ADD COLUMN x text NOT NULL;\nALTER TABLE users DROP COLUMN nick;\n",
+			},
+			latest: 1,
+			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
+				"\n" +
+				"  -- analyzing version 2\n" +
+				"    -- destructive changes detected:\n" +
+				"      -- L2: Dropping non-virtual column \"nick\" https://atlasgo.io/lint/analyzers#DS103\n" +
+				"    -- data dependent changes detected:\n" +
+				"      -- L1: Adding a non-nullable \"text\" column \"x\" will fail in case table \"users\" is not empty\n" +
+				"         https://atlasgo.io/lint/analyzers#MF103\n" +
+				"    -- suggested fix:\n" +
+				"      -> Add a pre-migration check to ensure column \"nick\" is NULL before dropping it\n" +
+				"  -- ok (0s)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- 0s\n" +
+				"  -- 1 version with errors\n" +
+				"  -- 2 schema changes\n" +
+				"  -- 2 diagnostics\n",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			analysis := analyzeMigrations(t, tc.files, tc.latest)
+			analysis := analyzeMigrationsWithBaseline(t, tc.files, tc.latest, tc.baseline)
 			var out bytes.Buffer
 
 			err := writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())

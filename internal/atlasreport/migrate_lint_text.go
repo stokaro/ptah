@@ -363,8 +363,19 @@ func analyzerGroupLabel(analyzer string) string {
 	}
 }
 
-// groupDiagnostics collects a file's diagnostics into analyzer groups, keeping
-// the order in which each analyzer first appears.
+// groupDiagnostics collects a file's diagnostics into analyzer groups.
+//
+// Groups are emitted in analyzer order, not in the order the first diagnostic of
+// each happens to appear. One version reporting a drop on line 2 and a
+// non-nullable add on line 1 still prints the destructive group first: measured
+// against the pinned community binary v1.3.0, `ALTER TABLE users ADD COLUMN x
+// int NOT NULL` on line 1 followed by `ALTER TABLE users DROP COLUMN nick` on
+// line 2 prints "destructive changes detected" above "data dependent changes
+// detected". Ordering by first appearance printed them the other way round.
+//
+// Only analyzers whose relative order has been measured are ranked. Ptah's own
+// diagnostics have no counterpart to be measured against, so they keep
+// first-appearance order among themselves and follow the ranked groups.
 func groupDiagnostics(diags []migrateLintTextDiag) []migrateLintTextGroup {
 	var groups []migrateLintTextGroup
 	index := map[string]int{}
@@ -377,7 +388,24 @@ func groupDiagnostics(diags []migrateLintTextDiag) []migrateLintTextGroup {
 		}
 		groups[at].diags = append(groups[at].diags, diag)
 	}
+	slices.SortStableFunc(groups, func(a, b migrateLintTextGroup) int {
+		return cmp.Compare(analyzerGroupRank(a.label), analyzerGroupRank(b.label))
+	})
 	return groups
+}
+
+// analyzerGroupRank orders the analyzer groups whose relative order has been
+// measured. Unranked groups share the last rank, which a stable sort leaves in
+// first-appearance order behind the measured ones.
+func analyzerGroupRank(label string) int {
+	switch label {
+	case analyzerGroupLabel(atlaslint.AnalyzerDestructive):
+		return 0
+	case analyzerGroupLabel(atlaslint.AnalyzerDataDependent):
+		return 1
+	default:
+		return 2
+	}
 }
 
 func versionSeverity(groups []migrateLintTextGroup) (hasError, hasWarning bool, count int) {
