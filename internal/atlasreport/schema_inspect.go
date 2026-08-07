@@ -338,10 +338,7 @@ func atlasSchemaInspectColumn(column dbschematypes.DBColumn) atlasSchemaInspectJ
 }
 
 func atlasSchemaInspectIndex(index dbschematypes.DBIndex) atlasSchemaInspectJSONIndex {
-	parts := make([]atlasSchemaInspectJSONIndexPart, 0, len(index.Columns))
-	for _, column := range index.Columns {
-		parts = append(parts, atlasSchemaInspectIndexPart(column))
-	}
+	parts := atlasSchemaInspectIndexParts(index)
 	if index.Expression != "" && len(parts) == 0 {
 		parts = append(parts, atlasSchemaInspectJSONIndexPart{Expr: index.Expression})
 	}
@@ -350,6 +347,45 @@ func atlasSchemaInspectIndex(index dbschematypes.DBIndex) atlasSchemaInspectJSON
 		Unique: index.IsUnique,
 		Parts:  parts,
 	}
+}
+
+// atlasSchemaInspectIndexParts prefers the reader's structured key parts over
+// the flat Columns list.
+//
+// Columns is a list of names and cannot say that a key is descending, so this
+// output dropped the direction of every index. Measured against the pinned
+// community binary v1.3.0 on PostgreSQL 17.10, for
+// CREATE INDEX i_desc ON t (a DESC) it prints
+// `{"desc": true, "column": "a"}` where Ptah printed `{"column": "a"}`.
+//
+// Falling back to Columns keeps every reader that supplies only the flat form
+// -- MySQL, MariaDB -- printing exactly what it printed before.
+func atlasSchemaInspectIndexParts(index dbschematypes.DBIndex) []atlasSchemaInspectJSONIndexPart {
+	if len(index.Parts) == 0 {
+		parts := make([]atlasSchemaInspectJSONIndexPart, 0, len(index.Columns))
+		for _, column := range index.Columns {
+			parts = append(parts, atlasSchemaInspectIndexPart(column))
+		}
+		return parts
+	}
+	parts := make([]atlasSchemaInspectJSONIndexPart, 0, len(index.Parts))
+	for _, part := range index.Parts {
+		parts = append(parts, atlasSchemaInspectStructuredIndexPart(part))
+	}
+	return parts
+}
+
+// atlasSchemaInspectStructuredIndexPart maps one structured key part. Unlike
+// the string form below it never has to guess whether a key is an expression:
+// the reader already established that from pg_index.indkey, so a column
+// literally named "lower(name)" stays a column here.
+func atlasSchemaInspectStructuredIndexPart(
+	part dbschematypes.DBIndexPart,
+) atlasSchemaInspectJSONIndexPart {
+	if part.Expr != "" {
+		return atlasSchemaInspectJSONIndexPart{Desc: part.Desc, Expr: part.Expr}
+	}
+	return atlasSchemaInspectJSONIndexPart{Desc: part.Desc, Column: part.Name}
 }
 
 func atlasSchemaInspectUniqueConstraintIndex(constraint dbschematypes.DBConstraint) atlasSchemaInspectJSONIndex {

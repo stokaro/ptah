@@ -199,6 +199,10 @@ type IndexPart struct {
 	Operator string // PostgreSQL operator class for this part
 	Prefix   string // MySQL index prefix length
 	Desc     bool   // Whether this part is ordered DESC
+	// NullsOrder is an explicit NULLS ordering for this part: "FIRST",
+	// "LAST", or empty for the direction's default (NULLS LAST for ASC,
+	// NULLS FIRST for DESC on PostgreSQL).
+	NullsOrder string
 }
 
 // Index represents a database index definition parsed from Go struct annotations.

@@ -639,8 +639,15 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	parts = append(parts, "ON")
 	parts = append(parts, r.escapeQualifiedIdentifier(node.Table))
 
-	// Add index type (USING clause) for PostgreSQL
-	if node.Type != "" && node.Type != "BTREE" {
+	// Add index type (USING clause) for PostgreSQL.
+	//
+	// The btree comparison is case-insensitive because the access method now
+	// has two sources with different conventions: an annotation or HCL source
+	// spells it BTREE/GIN, while the live-database reader reports pg_am.amname
+	// verbatim, which PostgreSQL spells btree/gin. Both mean the default
+	// method, and emitting "USING btree" for every introspected index would be
+	// a gratuitous divergence from the pinned binary's output.
+	if node.Type != "" && !strings.EqualFold(node.Type, "BTREE") {
 		parts = append(parts, "USING")
 		parts = append(parts, node.Type)
 	}
@@ -657,6 +664,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 		if part.Desc {
 			columnSpec += " DESC"
 		}
+		columnSpec += renderIndexPartNullsOrder(part)
 		columnSpecs = append(columnSpecs, columnSpec)
 	}
 	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(columnSpecs, ", ")))
@@ -686,6 +694,25 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 
 	return nil
+}
+
+// renderIndexPartNullsOrder renders the NULLS clause for one index part.
+//
+// It renders whatever the part carries rather than second-guessing it. Deciding
+// that a clause is redundant belongs to whoever produced the part: PostgreSQL's
+// defaults are NULLS LAST for ASC and NULLS FIRST for DESC, and the live-
+// database reader already declines to record an ordering that matches its
+// direction's default, so nothing introspected reaches here with a redundant
+// value. A source that spelled one out explicitly gets it back.
+func renderIndexPartNullsOrder(part ast.IndexPart) string {
+	switch strings.ToUpper(part.NullsOrder) {
+	case ast.NullsOrderFirst:
+		return " NULLS FIRST"
+	case ast.NullsOrderLast:
+		return " NULLS LAST"
+	default:
+		return ""
+	}
 }
 
 func (r *Renderer) renderIndexStorageParams(params map[string]string) (string, error) {

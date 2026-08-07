@@ -520,7 +520,18 @@ type IndexPart struct {
 	Prefix string
 	// Desc indicates DESC ordering for this index part.
 	Desc bool
+	// NullsOrder carries an explicit NULLS ordering: "FIRST", "LAST", or
+	// empty when the part uses the direction's default. PostgreSQL's defaults
+	// are NULLS LAST for ASC and NULLS FIRST for DESC, so an empty value
+	// renders no clause and reproduces the index either way.
+	NullsOrder string
 }
+
+// Index NULLS ordering spellings for IndexPart.NullsOrder.
+const (
+	NullsOrderFirst = "FIRST"
+	NullsOrderLast  = "LAST"
+)
 
 // Reference returns the column name or expression represented by the index part.
 func (p IndexPart) Reference() string {

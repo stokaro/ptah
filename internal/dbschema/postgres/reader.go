@@ -303,11 +303,21 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			-- information_schema erases an array's element type: data_type is
 			-- the bare category "ARRAY" and character_maximum_length is null,
 			-- so varchar(100)[] cannot be reconstructed from either. Only
-			-- format_type carries it. Read for array columns alone: preferring
-			-- it everywhere would change the type string for every column and
-			-- reach the SERIAL detection and the sized-type branches
-			-- downstream (stokaro/ptah#1138).
-			CASE WHEN data_type = 'ARRAY'
+			-- format_type carries it. Read for array and domain columns alone:
+			-- preferring it everywhere would change the type string for every
+			-- column and reach the SERIAL detection and the sized-type
+			-- branches downstream (stokaro/ptah#1138).
+			--
+			-- It erases a domain the same way. data_type for a column of
+			-- domain positive_int is its base type, "integer", so the column
+			-- was rebuilt without the domain's CHECK and nothing said so;
+			-- domain_name is how information_schema records that the
+			-- declared type was a domain, and format_type spells it the way
+			-- the server does, schema-qualifying it when the search path
+			-- needs that. Measured against the pinned binary v1.3.0, which
+			-- reports "type":"positive_int" here, so this is also the
+			-- compatible answer. See #1242.
+			CASE WHEN data_type = 'ARRAY' OR col.domain_name IS NOT NULL
 				THEN format_type(a.atttypid, a.atttypmod)
 				ELSE ''
 			END AS formatted_type,
@@ -695,6 +705,44 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
 				WHERE keys.ordinality <= ix.indnkeyatts
 			), '[]') as index_key_attnums,
+			-- pg_index.indclass names the operator class each key was built
+			-- with. Only a non-default class has to be carried: dropping
+			-- text_pattern_ops leaves an index PostgreSQL will not use for the
+			-- LIKE prefix scans it was created for, and nothing reports it.
+			-- opcdefault separates the two, so a default class reports the
+			-- empty string rather than a name the emitted DDL does not need.
+			COALESCE((
+				SELECT json_agg(
+					CASE WHEN op.opcdefault IS NOT FALSE THEN '' ELSE op.opcname::text END
+					ORDER BY keys.ordinality
+				)::text
+				FROM unnest(ix.indclass) WITH ORDINALITY AS keys(opcoid, ordinality)
+				LEFT JOIN pg_opclass op ON op.oid = keys.opcoid
+				WHERE keys.ordinality <= ix.indnkeyatts
+			), '[]') as index_key_opclasses,
+			-- pg_index.indoption is a per-key bitmask: bit 0 is DESC, bit 1 is
+			-- NULLS FIRST. Measured on PostgreSQL 17.10: (a DESC) reports 3,
+			-- (c DESC NULLS LAST) reports 1, (b NULLS FIRST) reports 2, and a
+			-- plain ascending key reports 0.
+			COALESCE((
+				SELECT json_agg(keys.optionbits ORDER BY keys.ordinality)::text
+				FROM unnest(ix.indoption) WITH ORDINALITY AS keys(optionbits, ordinality)
+				WHERE keys.ordinality <= ix.indnkeyatts
+			), '[]') as index_key_options,
+			-- INCLUDE payload columns are the keys past indnkeyatts. They are
+			-- absent from indclass and indoption, which cover key columns
+			-- only, so they are read separately rather than filtered out of
+			-- the key list afterwards.
+			COALESCE((
+				SELECT json_agg(pg_get_indexdef(i.oid, keys.ordinality::integer, true) ORDER BY keys.ordinality)::text
+				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
+				WHERE keys.ordinality > ix.indnkeyatts
+			), '[]') as index_include_columns,
+			-- The access method. Losing it is not always the quiet
+			-- degradation to btree it looks like: a gist index on a point
+			-- column does not replay at all without it, because point has no
+			-- default btree operator class. See #1242.
+			am.amname as index_method,
 			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
 			ix.indisprimary,
 			ix.indisunique
@@ -702,6 +750,7 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 		JOIN pg_class i ON i.oid = ix.indexrelid
 		JOIN pg_class t ON t.oid = ix.indrelid
 		JOIN pg_namespace n ON n.oid = t.relnamespace
+		JOIN pg_am am ON am.oid = i.relam
 		WHERE n.nspname = $1
 		AND t.relname NOT IN ('schema_migrations')
 		ORDER BY t.relname, i.relname`
@@ -714,39 +763,191 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 
 	var indexes []types.DBIndex
 	for rows.Next() {
-		var schemaName, tableName, indexName, indexDef, indexColumns, keyAttnums, predicate string
-		var isPrimary, isUnique bool
-		err := rows.Scan(&schemaName, &tableName, &indexName, &indexDef, &indexColumns, &keyAttnums, &predicate, &isPrimary, &isUnique)
+		var row postgresIndexRow
+		err := rows.Scan(
+			&row.schemaName, &row.tableName, &row.indexName, &row.indexDef,
+			&row.keyTexts, &row.keyAttnums, &row.keyOpclasses, &row.keyOptions,
+			&row.includeColumns, &row.method,
+			&row.predicate, &row.isPrimary, &row.isUnique,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan index: %w", err)
 		}
 
-		// Parse index definition to extract columns and properties
-		index := types.DBIndex{
-			Name:          indexName,
-			TableName:     tableName,
-			Schema:        r.outputSchema(schemaName),
-			Definition:    indexDef,
-			Condition:     predicate,
-			IsUnique:      isUnique,
-			IsPrimary:     isPrimary,
-			NullsDistinct: postgresNullsDistinctFromDefinition(indexDef),
-		}
-
-		index.Columns, err = parsePostgresIndexColumns(indexColumns, indexDef)
+		index, err := buildPostgresIndex(row)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse index columns for %s: %w", indexName, err)
+			return nil, err
 		}
-
-		index.Parts, err = parsePostgresIndexParts(index.Columns, keyAttnums)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse index key parts for %s: %w", indexName, err)
-		}
+		index.Schema = r.outputSchema(row.schemaName)
 
 		indexes = append(indexes, index)
 	}
 
 	return indexes, nil
+}
+
+// postgresIndexRow is one row of the index introspection query. Each field
+// names the catalog value it carries, so the mapping below can be read without
+// counting scan positions.
+type postgresIndexRow struct {
+	schemaName string
+	tableName  string
+	indexName  string
+	indexDef   string
+	// keyTexts is the JSON array of per-key texts from pg_get_indexdef.
+	keyTexts string
+	// keyAttnums is the JSON array of pg_index.indkey attribute numbers.
+	keyAttnums string
+	// keyOpclasses is the JSON array of per-key operator class names, empty
+	// where the key uses its type's default class.
+	keyOpclasses string
+	// keyOptions is the JSON array of pg_index.indoption bitmasks.
+	keyOptions string
+	// includeColumns is the JSON array of INCLUDE payload column texts.
+	includeColumns string
+	// method is pg_am.amname.
+	method    string
+	predicate string
+	isPrimary bool
+	isUnique  bool
+}
+
+// buildPostgresIndex maps one introspection row onto the dialect-neutral index
+// model. It does not set Schema, which needs the reader's output-schema policy.
+func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
+	index := types.DBIndex{
+		Name:          row.indexName,
+		TableName:     row.tableName,
+		Definition:    row.indexDef,
+		Condition:     row.predicate,
+		IsUnique:      row.isUnique,
+		IsPrimary:     row.isPrimary,
+		Method:        row.method,
+		NullsDistinct: postgresNullsDistinctFromDefinition(row.indexDef),
+	}
+
+	columns, err := parsePostgresIndexColumns(row.keyTexts, row.indexDef)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index columns for %s: %w", row.indexName, err)
+	}
+	index.Columns = columns
+
+	index.IncludeColumns, err = parsePostgresIndexIncludeColumns(row.includeColumns)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index include columns for %s: %w", row.indexName, err)
+	}
+
+	index.Parts, err = parsePostgresIndexParts(index.Columns, row.keyAttnums)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index key parts for %s: %w", row.indexName, err)
+	}
+
+	index.Parts, err = applyPostgresIndexOpclasses(index.Parts, row.keyOpclasses)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index operator classes for %s: %w", row.indexName, err)
+	}
+
+	index.Parts, err = applyPostgresIndexOptions(index.Parts, row.keyOptions)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index key options for %s: %w", row.indexName, err)
+	}
+
+	return index, nil
+}
+
+// parsePostgresIndexIncludeColumns decodes the INCLUDE payload column list. An
+// absent or empty list is not an error: most indexes have no payload.
+func parsePostgresIndexIncludeColumns(value string) ([]string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "[]" {
+		return nil, nil
+	}
+	var columns []string
+	if err := json.Unmarshal([]byte(trimmed), &columns); err != nil {
+		return nil, err
+	}
+	if len(columns) == 0 {
+		return nil, nil
+	}
+	return columns, nil
+}
+
+// applyPostgresIndexOpclasses attaches the non-default operator class of each
+// key to its part.
+//
+// A list that does not line up with the parts is dropped rather than applied
+// off by one: an operator class on the wrong key builds a different index than
+// the one being read, which is worse than not carrying it at all.
+func applyPostgresIndexOpclasses(parts []types.DBIndexPart, opclassesJSON string) ([]types.DBIndexPart, error) {
+	opclasses, err := decodePostgresKeyList[string](opclassesJSON, len(parts))
+	if err != nil || opclasses == nil {
+		return parts, err
+	}
+	for position := range parts {
+		parts[position].Operator = opclasses[position]
+	}
+	return parts, nil
+}
+
+// PostgreSQL's per-key index option bits, from pg_index.indoption.
+const (
+	postgresIndexOptionDesc       = 1
+	postgresIndexOptionNullsFirst = 2
+)
+
+// applyPostgresIndexOptions attaches the sort direction and NULLS ordering of
+// each key to its part.
+//
+// Only an ordering that contradicts its direction's default is recorded:
+// PostgreSQL gives NULLS LAST to ASC and NULLS FIRST to DESC, so recording the
+// default would make the renderer emit a clause the pinned binary does not.
+func applyPostgresIndexOptions(parts []types.DBIndexPart, optionsJSON string) ([]types.DBIndexPart, error) {
+	options, err := decodePostgresKeyList[int](optionsJSON, len(parts))
+	if err != nil || options == nil {
+		return parts, err
+	}
+	for position := range parts {
+		parts[position].Desc = options[position]&postgresIndexOptionDesc != 0
+		parts[position].NullsOrder = postgresNullsOrder(options[position])
+	}
+	return parts, nil
+}
+
+// postgresNullsOrder reads the NULLS ordering out of one pg_index.indoption
+// bitmask, or returns the empty string when the ordering is the default for
+// the key's direction and does not have to be spelled out.
+//
+// The two default combinations are the two where the DESC bit and the
+// NULLS FIRST bit agree: bitmask 0 is ASC NULLS LAST and bitmask 3 is
+// DESC NULLS FIRST.
+func postgresNullsOrder(optionBits int) string {
+	descending := optionBits&postgresIndexOptionDesc != 0
+	nullsFirst := optionBits&postgresIndexOptionNullsFirst != 0
+	switch {
+	case descending == nullsFirst:
+		return ""
+	case nullsFirst:
+		return types.NullsOrderFirst
+	default:
+		return types.NullsOrderLast
+	}
+}
+
+// decodePostgresKeyList decodes a per-key JSON array fetched alongside the key
+// texts, returning nil when it is absent or does not have one entry per key.
+func decodePostgresKeyList[T any](value string, keyCount int) ([]T, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "[]" {
+		return nil, nil
+	}
+	var decoded []T
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return nil, err
+	}
+	if len(decoded) != keyCount {
+		return nil, nil
+	}
+	return decoded, nil
 }
 
 func parsePostgresIndexColumns(value, indexDef string) ([]string, error) {

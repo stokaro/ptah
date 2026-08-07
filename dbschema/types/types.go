@@ -156,8 +156,24 @@ type DBIndexPart struct {
 	// that reports one in Name makes the renderer quote it into a column
 	// reference that does not exist.
 	Expr string `json:"expr,omitempty"`
-	Desc bool   `json:"desc,omitempty"`
+	// Operator is the non-default operator class this key was built with, for
+	// example text_pattern_ops. Empty means the key uses its type's default
+	// class, which is the only case where omitting it from emitted DDL
+	// reproduces the index. See #1242.
+	Operator string `json:"operator,omitempty"`
+	Desc     bool   `json:"desc,omitempty"`
+	// NullsOrder is an explicit NULLS ordering for this key: "FIRST", "LAST",
+	// or empty when the key uses the direction's default. PostgreSQL defaults
+	// to NULLS LAST for ASC and NULLS FIRST for DESC, so only the deviating
+	// spelling has to be carried.
+	NullsOrder string `json:"nulls_order,omitempty"`
 }
+
+// Index NULLS ordering spellings for DBIndexPart.NullsOrder.
+const (
+	NullsOrderFirst = "FIRST"
+	NullsOrderLast  = "LAST"
+)
 
 // DBIndex represents a database index.
 //
@@ -183,6 +199,22 @@ type DBIndex struct {
 	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
 	// state. Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`
+
+	// Method is the index access method as the server spells it -- btree,
+	// gin, gist, brin, hash. It is deliberately not Type: Type is the
+	// ClickHouse data-skipping-index type below, a different concept that
+	// happens to share a slot in the annotation surface, and overloading one
+	// field with both would make a ClickHouse "bloom_filter" and a PostgreSQL
+	// "gin" indistinguishable at this layer. Empty means the reader did not
+	// report an access method.
+	//
+	// A dropped access method is not always a quiet degradation: an index on
+	// a type with no btree operator class, such as point, does not replay at
+	// all without it. See #1242.
+	Method string `json:"method,omitempty"`
+	// IncludeColumns carries PostgreSQL INCLUDE payload columns, the
+	// non-key columns stored in the index for index-only scans.
+	IncludeColumns []string `json:"include_columns,omitempty"`
 
 	// Type is the ClickHouse data-skipping-index type. One of
 	// "minmax" / "set(N)" / "bloom_filter" / "bloom_filter(p)" /
