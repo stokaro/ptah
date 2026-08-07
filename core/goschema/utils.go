@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -1193,6 +1195,11 @@ func deduplicateExtensions(extensions []Extension) []Extension {
 	return deduplicated
 }
 
+// rlsPolicyTableSemantics are the identifier rules the owning table of an RLS
+// policy is folded with. Row-level security is a PostgreSQL-family construct,
+// so the default schema an unqualified table lands in is `public`.
+var rlsPolicyTableSemantics = identifier.ForDialect(platform.Postgres)
+
 // deduplicateRLSPolicies keeps one policy per (table, policy name) pair.
 //
 // The table has to be part of the key. A PostgreSQL policy name is scoped to
@@ -1201,9 +1208,21 @@ func deduplicateExtensions(extensions []Extension) []Extension {
 // The single-source path used to key on the policy name alone, which silently
 // dropped the second of two identically named policies before the comparator
 // ever saw it (stokaro/ptah#1276).
+//
+// The table component is that table's identity, not the string the policy was
+// written with, because one table has more than one spelling. A table declared
+// without a schema is reached both as `orders` and as `public.orders`, and
+// PostgreSQL treats those as one table: `CREATE POLICY p ON orders` followed by
+// `CREATE POLICY p ON public.orders` is refused with `policy "p" for table
+// "orders" already exists`. Keying the two spellings apart kept both, and
+// `ptah schema render` then emitted a pair of CREATE POLICY statements the
+// database rejects. [identifier.Semantics.QualifiedTableIdentityKey] is the
+// same fold the comparator applies through newQualifiedTableIdentity, so
+// deduplication and comparison agree on which table owns a policy.
 func deduplicateRLSPolicies(policies []RLSPolicy, resolver tableScopeResolver) []RLSPolicy {
 	return deduplicateNamedDefinitions(policies, func(policy RLSPolicy) string {
-		return compositeDeduplicationScope(resolver, policy.StructName, policy.Table) + "." + policy.Name
+		table := compositeDeduplicationScope(resolver, policy.StructName, policy.Table)
+		return rlsPolicyTableSemantics.QualifiedTableIdentityKey(table) + "." + policy.Name
 	})
 }
 

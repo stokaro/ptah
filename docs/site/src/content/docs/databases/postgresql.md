@@ -101,6 +101,15 @@ identifies each policy by its table and its name together, so two tables can
 each carry a `tenant_isolation` policy and both are rendered, compared, and
 migrated independently.
 
+The owning table is that table's identity rather than the string you spelled
+it with. A table declared without a schema is reached both as `orders` and as
+`public.orders`, and PostgreSQL treats those as one table: declaring `p` on
+each spelling is one policy declared twice, and the second `CREATE POLICY` is
+refused with `policy "p" for table "orders" already exists`. Ptah keeps the
+first declaration and renders it once. Two tables of the same name in
+different schemas — `tenanta.orders` and `tenantb.orders` — remain two tables,
+and a policy name on each remains two policies.
+
 ## Extensions
 
 `//ptah:schema:extension` manages `CREATE EXTENSION`. Some extensions are

@@ -237,3 +237,48 @@ func TestRLSPolicies_DelegatesWithDialectlessSemantics(t *testing.T) {
 	c.Assert(diff.RLSPoliciesRemoved, qt.HasLen, 0)
 	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 0)
 }
+
+// TestRLSPoliciesWithSemantics_OrdersRefsByTableFirst pins the sort key. The
+// policy name alone stopped being a total order the moment two tables could
+// share one, so the table leads and the name breaks ties within it. This
+// fixture separates the two orders: sorting by the name alone would lead with
+// `alpha_policy` on `zeta_orders`, while the shipped order groups the refs
+// under the table that owns them.
+//
+// Order is what a caller diffs between runs -- the shadow report, the drift
+// JSON, and the planned SQL all read these slices in sequence -- so an order
+// nothing pins shows up later as churn in artifacts nothing changed in.
+func TestRLSPoliciesWithSemantics_OrdersRefsByTableFirst(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "alpha_orders", StructName: "AlphaOrder"},
+			{Name: "zeta_orders", StructName: "ZetaOrder"},
+		},
+		RLSPolicies: []goschema.RLSPolicy{
+			{Name: "zeta_policy", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
+			{Name: "alpha_policy", Table: "zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 2"},
+			{Name: "alpha_policy", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 3"},
+		},
+	}
+	database := &types.DBSchema{
+		RLSPolicies: []types.DBRLSPolicy{
+			{Name: "zeta_policy", Table: "public.zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 4"},
+			{Name: "alpha_extra", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 5"},
+		},
+	}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"))
+
+	c.Assert(diff.RLSPoliciesAdded, qt.DeepEquals, []difftypes.RLSPolicyRef{
+		{PolicyName: "alpha_policy", TableName: "alpha_orders"},
+		{PolicyName: "zeta_policy", TableName: "alpha_orders"},
+		{PolicyName: "alpha_policy", TableName: "zeta_orders"},
+	})
+	c.Assert(diff.RLSPoliciesRemoved, qt.DeepEquals, []difftypes.RLSPolicyRef{
+		{PolicyName: "alpha_extra", TableName: "public.alpha_orders"},
+		{PolicyName: "zeta_policy", TableName: "public.zeta_orders"},
+	})
+}

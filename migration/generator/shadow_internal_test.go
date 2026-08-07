@@ -211,6 +211,51 @@ func mismatchKinds(mismatches []ShadowMismatch) []string {
 	return kinds
 }
 
+// TestCollectShadowMismatchesNamesTheTableOwningAnRLSPolicy pins the shape of
+// the two policy-reference mismatches, not only their kinds. ShadowMismatch is
+// serialized into the shadow verification report, so a reader of that JSON is
+// told which policy is missing and which table it belongs to. Reporting a bare
+// name could not distinguish two tables that each carry a policy called
+// tenant_isolation, which PostgreSQL permits (stokaro/ptah#1276).
+//
+// Ordering is part of the contract too: the refs are sorted by table first, so
+// alpha_orders leads zeta_orders regardless of the order the comparison put
+// them in.
+func TestCollectShadowMismatchesNamesTheTableOwningAnRLSPolicy(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		RLSPoliciesAdded: []types.RLSPolicyRef{
+			{TableName: "zeta_orders", PolicyName: "tenant_isolation"},
+			{TableName: "alpha_orders", PolicyName: "tenant_isolation"},
+		},
+		RLSPoliciesRemoved: []types.RLSPolicyRef{
+			{TableName: "zeta_orders", PolicyName: "legacy_isolation"},
+		},
+	}
+
+	c.Assert(collectShadowMismatches(diff), qt.DeepEquals, []ShadowMismatch{
+		{
+			Kind:    "missing_rls_policy",
+			Table:   "alpha_orders",
+			Object:  "alpha_orders.tenant_isolation",
+			Message: "missing RLS policy alpha_orders.tenant_isolation",
+		},
+		{
+			Kind:    "missing_rls_policy",
+			Table:   "zeta_orders",
+			Object:  "zeta_orders.tenant_isolation",
+			Message: "missing RLS policy zeta_orders.tenant_isolation",
+		},
+		{
+			Kind:    "extra_rls_policy",
+			Table:   "zeta_orders",
+			Object:  "zeta_orders.legacy_isolation",
+			Message: "extra RLS policy zeta_orders.legacy_isolation",
+		},
+	})
+}
+
 func TestNextAvailableMigrationVersionChecksUpAndDownFiles(t *testing.T) {
 	c := qt.New(t)
 
