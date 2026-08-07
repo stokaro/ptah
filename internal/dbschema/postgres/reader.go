@@ -684,6 +684,17 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
 				WHERE keys.ordinality <= ix.indnkeyatts
 			), '[]') as index_columns,
+			-- pg_index.indkey holds 0 for a key that is an expression rather
+			-- than a column. Without it the key texts above are ambiguous:
+			-- lower(name) and a column literally named "lower(name)" arrive
+			-- identically, and treating the former as an identifier renders
+			-- CREATE INDEX ... ("lower(name)"), which PostgreSQL rejects with
+			-- ERROR: column "lower(name)" does not exist. See #1242.
+			COALESCE((
+				SELECT json_agg(keys.attnum ORDER BY keys.ordinality)::text
+				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
+				WHERE keys.ordinality <= ix.indnkeyatts
+			), '[]') as index_key_attnums,
 			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
 			ix.indisprimary,
 			ix.indisunique
@@ -703,9 +714,9 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 
 	var indexes []types.DBIndex
 	for rows.Next() {
-		var schemaName, tableName, indexName, indexDef, indexColumns, predicate string
+		var schemaName, tableName, indexName, indexDef, indexColumns, keyAttnums, predicate string
 		var isPrimary, isUnique bool
-		err := rows.Scan(&schemaName, &tableName, &indexName, &indexDef, &indexColumns, &predicate, &isPrimary, &isUnique)
+		err := rows.Scan(&schemaName, &tableName, &indexName, &indexDef, &indexColumns, &keyAttnums, &predicate, &isPrimary, &isUnique)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan index: %w", err)
 		}
@@ -727,6 +738,11 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			return nil, fmt.Errorf("failed to parse index columns for %s: %w", indexName, err)
 		}
 
+		index.Parts, err = parsePostgresIndexParts(index.Columns, keyAttnums)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse index key parts for %s: %w", indexName, err)
+		}
+
 		indexes = append(indexes, index)
 	}
 
@@ -742,6 +758,39 @@ func parsePostgresIndexColumns(value, indexDef string) ([]string, error) {
 		return nil, err
 	}
 	return columns, nil
+}
+
+// parsePostgresIndexParts labels each index key as a column reference or as an
+// expression, using the pg_index.indkey attribute numbers fetched alongside the
+// key texts. An attnum of 0 marks an expression key.
+//
+// It returns nil when the attnum list is missing or does not line up with the
+// key texts, which leaves DBIndex.Parts empty and keeps the legacy
+// columns-only representation rather than guessing.
+func parsePostgresIndexParts(columns []string, attnumsJSON string) ([]types.DBIndexPart, error) {
+	trimmed := strings.TrimSpace(attnumsJSON)
+	if trimmed == "" || trimmed == "[]" {
+		return nil, nil
+	}
+	var attnums []int
+	if err := json.Unmarshal([]byte(trimmed), &attnums); err != nil {
+		return nil, err
+	}
+	if len(attnums) != len(columns) {
+		return nil, nil
+	}
+
+	parts := make([]types.DBIndexPart, len(columns))
+	for position, key := range columns {
+		// Attribute number 0 is PostgreSQL's marker for "this key is an
+		// expression"; every real column has a positive attnum.
+		if attnums[position] == 0 {
+			parts[position] = types.DBIndexPart{Expr: key}
+			continue
+		}
+		parts[position] = types.DBIndexPart{Name: key}
+	}
+	return parts, nil
 }
 
 func extractPostgresIndexColumns(indexDef string) []string {
