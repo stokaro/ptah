@@ -179,12 +179,12 @@ construct a later build starts modeling stops being withheld.
 #### A referenced block is kept, and the document says so
 
 Suppression never leaves a reference behind. If anything else in the document
-names the object — a column default calling `nextval` on a sequence, a view body
-selecting from it, a `permission` block targeting it, a column whose type an
-extension supplies — the block stays, and the reason is reported:
+still depends on the object — a column default calling `nextval` on a sequence, a
+view body selecting from it, a `permission` block targeting it, a column whose
+type an extension supplies — the block stays, and the reason is reported:
 
 ```console
-warning: sequences.order_seq: kept in Atlas-compatible schema inspect output because another object in this document names it: ...
+warning: sequences.order_seq: kept in Atlas-compatible schema inspect output because another object in this document depends on it: ...
 ```
 
 Such a document **is not readable by the community binary**, and that is not a
@@ -203,10 +203,24 @@ it writes itself. Ptah keeps the sequence so the document stays true and stays
 readable by Ptah; dropping the column's default instead would describe a
 database that does not exist.
 
-The reference test is by name, so an extension that supplies a **type** in use
-(`citext`, `hstore`) is kept, while an extension that supplies only functions
-(`pgcrypto` behind `gen_random_uuid()`) is not named by the document and is
-omitted. Set `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` when the output has to carry it.
+For an extension the question asked is **what it supplies**, not what it is
+called, because the two are usually different words. The `isn` extension
+supplies the type `isbn`; `pgcrypto` supplies the function `gen_salt`. Neither
+name appears in a document that depends on it, so a test against the extension's
+own label would omit the block and leave the column behind. Ptah reads the
+member list from the catalog (`pg_depend` against `pg_extension`) during
+inspection and keeps the extension when the document uses any of its types,
+functions, relations, operator classes, or operator families.
+
+That set is deliberately coarse. `pgcrypto` supplies a `gen_random_uuid` that
+PostgreSQL 13 and later also supply from core, so a document using it keeps
+`pgcrypto` even though it would have resolved without it. Keeping a block that
+could have been dropped costs compatibility; dropping one that was needed costs
+a document nobody can read, so the rule errs toward keeping.
+
+An extension nothing depends on is still omitted, and the community binary
+reads that document at exit 0. Set `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` when the
+output has to carry every block regardless.
 
 #### Get the full description back
 
