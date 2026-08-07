@@ -24,6 +24,32 @@ When the two halves pull apart, say so in the commit and in the issue rather
 than picking silently. "We are stricter here, deliberately, and here is the
 measurement" is a complete answer; quietly matching is not.
 
+**Compatibility never removes a capability. Constitute it, do not discard it.**
+Where Ptah models something the community binary does not -- an extension, a
+sequence, a policy, anything the Pro surface covers or that Ptah does better --
+reaching CE compatibility must never mean deleting that capability from the
+compatibility surface. `ptah-compat` is the migration path for Atlas
+**Pro** users' scripts too, not only CE users'; a capability reachable only
+through native `ptah` does not help someone porting a Pro pipeline.
+
+The shape that satisfies both:
+
+- the compatibility surface **defaults** to what the community binary accepts,
+  so drop-in output stays drop-in;
+- the fuller behavior stays reachable on that same surface behind a `PTAH_*`
+  environment variable -- never a new flag, because the conformance
+  `cli-surface` tier asserts flag parity with the pinned binary and an
+  environment variable is invisible to the help surface. Precedent:
+  `PTAH_ALLOW_EXTERNAL_SCHEMA`;
+- what the default leaves out is reported, not dropped in silence, so an
+  operator is never told less than the truth about their database;
+- the capability is written down -- feature matrix row, user documentation, and
+  a test -- so it is a product decision rather than an accident of which branch
+  of an `if` ran.
+
+"CE refuses it, so we stopped emitting it" is an incomplete answer. The complete
+one names where the capability still lives.
+
 ### Compatibility with older Ptah is a different axis, and it is not owed
 
 Everything above is about the community binary. Compatibility with **Ptah's own
