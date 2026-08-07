@@ -134,6 +134,25 @@ func (c atlasDirCapture) coveredNames() ([]string, error) {
 	return atlasmigrateimport.SumFileNames(c.gateFS(), c.format)
 }
 
+// versionTokens returns the two-way dictionary between the versions an operator
+// can name and the versions this build executes, for a directory whose layout
+// has a version space of its own. It is empty for every layout but Flyway.
+//
+// It reads the GATE filesystem, which for a foreign layout is the same
+// immutable snapshot [atlasDirCapture.migrationFS] converts, so a token can
+// never belong to a different read of the directory than the migration it
+// names.
+//
+// Call it only after the gate has passed, for the same reason migrationFS says
+// so: it interprets the source layout.
+func (c atlasDirCapture) versionTokens() (flywayVersionTokens, error) {
+	covered, err := atlasmigrateimport.FlywayCoveredSourceVersions(c.gateFS(), c.format)
+	if err != nil {
+		return flywayVersionTokens{}, err
+	}
+	return newFlywayVersionTokens(covered), nil
+}
+
 // migrationFS returns the filesystem the verb interprets as Atlas migrations.
 // A foreign layout is rebuilt in memory as up-only Atlas migrations, which is
 // the same conversion `migrate apply` executes -- so the versions a status
