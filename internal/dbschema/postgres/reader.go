@@ -534,6 +534,17 @@ func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, erro
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		WHERE t.typtype = 'd' AND n.nspname = $1
+		-- Exclude extension-owned types, for the same reason the function read
+		-- excludes extension-owned functions: they are created by CREATE
+		-- EXTENSION and cannot be created or dropped independently. Describing
+		-- one as a user type put both an extension block and its own type
+		-- block in the document, and replaying that failed with
+		-- type ... already exists (stokaro/ptah#1294).
+		AND NOT EXISTS (
+			SELECT 1 FROM pg_depend extdep
+			WHERE extdep.classid = 'pg_type'::regclass
+			  AND extdep.objid = t.oid AND extdep.deptype = 'e'
+		)
 		ORDER BY t.typname`
 
 	rows, err := r.db.Query(query, schemaName)
@@ -585,6 +596,17 @@ func (r *Reader) readCompositesForSchema(schemaName string) ([]types.DBComposite
 		JOIN pg_class c ON c.oid = t.typrelid AND c.relkind = 'c'
 		JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
 		WHERE t.typtype = 'c' AND n.nspname = $1
+		-- Exclude extension-owned types, for the same reason the function read
+		-- excludes extension-owned functions: they are created by CREATE
+		-- EXTENSION and cannot be created or dropped independently. Describing
+		-- one as a user type put both an extension block and its own type
+		-- block in the document, and replaying that failed with
+		-- type ... already exists (stokaro/ptah#1294).
+		AND NOT EXISTS (
+			SELECT 1 FROM pg_depend extdep
+			WHERE extdep.classid = 'pg_type'::regclass
+			  AND extdep.objid = t.oid AND extdep.deptype = 'e'
+		)
 		ORDER BY t.typname, a.attnum`
 
 	rows, err := r.db.Query(query, schemaName)
@@ -645,6 +667,17 @@ func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error)
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		JOIN pg_range rng ON rng.rngtypid = t.oid
 		WHERE t.typtype = 'r' AND n.nspname = $1
+		-- Exclude extension-owned types, for the same reason the function read
+		-- excludes extension-owned functions: they are created by CREATE
+		-- EXTENSION and cannot be created or dropped independently. Describing
+		-- one as a user type put both an extension block and its own type
+		-- block in the document, and replaying that failed with
+		-- type ... already exists (stokaro/ptah#1294).
+		AND NOT EXISTS (
+			SELECT 1 FROM pg_depend extdep
+			WHERE extdep.classid = 'pg_type'::regclass
+			  AND extdep.objid = t.oid AND extdep.deptype = 'e'
+		)
 		ORDER BY t.typname`
 
 	rows, err := r.db.Query(query, schemaName)
