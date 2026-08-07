@@ -129,6 +129,10 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	if err := p.parseBody(body); err != nil {
 		return nil, err
 	}
+	// After the walk, because a reference may name a block declared further
+	// down the file, and before Finalize, which reads schemas off the same
+	// blocks for the positions it covers.
+	p.resolveDocumentTableRefs()
 	goschema.Finalize(p.db)
 	return p.db, nil
 }
@@ -202,6 +206,10 @@ type parser struct {
 	// refContext decides a conditional inside a column reference. Built once
 	// from the file's own `variable` blocks -- see columnRefContext.
 	refContext *hcl.EvalContext
+	// pendingForeignRefs holds the single-column foreign key targets that can
+	// only be read once every table block is known; see
+	// [parser.resolveDocumentTableRefs].
+	pendingForeignRefs []pendingForeignRef
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -1308,6 +1316,12 @@ func (p *parser) applyForeignKey(table goschema.Table, fieldsStart int, block *h
 		field.ForeignKeyName = spec.name
 		field.OnDelete = spec.onDelete
 		field.OnUpdate = spec.onUpdate
+		p.pendingForeignRefs = append(p.pendingForeignRefs, pendingForeignRef{
+			field:  i,
+			owner:  table,
+			table:  spec.foreignTable,
+			column: spec.foreignColumns[0],
+		})
 		return nil
 	}
 	return nil

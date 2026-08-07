@@ -109,7 +109,16 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(fields["app.users.audit_created_at"].Overrides["mysql"]["type"], qt.Equals, "DATETIME(6)")
 	c.Assert(fields["app.users.metadata"].Nullable, qt.IsTrue)
 	c.Assert(fields["app.users.metadata"].Overrides["mysql"]["type"], qt.Equals, "JSON")
-	c.Assert(fields["app.users.manager_id"].Foreign, qt.Equals, "app.accounts(id)")
+	// The annotation writes ref="app.accounts(id)" and the export writes
+	// `ref_columns = [table.accounts.column.id]`, because an HCL reference names
+	// a block by its label and the pinned Atlas community binary v1.3.0 refuses
+	// `table.app.accounts` outright. The target is unchanged: `accounts` is
+	// declared once in this document, in `app`, which is also the schema of the
+	// table holding the field, so every reader -- including the DDL path, via
+	// tablelookup.ResolveReference -- gets back to app.accounts. A cross-schema
+	// target does keep its schema here; see the round-trip coverage in
+	// internal/atlashcl.
+	c.Assert(fields["app.users.manager_id"].Foreign, qt.Equals, "accounts(id)")
 	c.Assert(fields["app.users.manager_id"].OnDelete, qt.Equals, "SET NULL")
 	c.Assert(fields["app.users.manager_id"].Overrides["mysql"]["type"], qt.Equals, "BIGINT UNSIGNED")
 	indexes := indexesByName(after.Indexes)
