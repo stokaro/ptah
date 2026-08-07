@@ -1387,12 +1387,12 @@
   },
   {
     "area": "Versioned migrations",
-    "feature": "migrate apply `--allow-dirty` semantics",
-    "ptah": "partial",
+    "feature": "migrate apply `--allow-dirty` semantics and the not-clean adoption gate",
+    "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Flag gates a dirty revision row, not a non-empty target: a pre-populated database applies without it, and the recovery re-insert fails with UNIQUE on atlas_schema_revisions (SQLite).",
-    "evidence": "/tmp/c-compat migrate apply onto SQLite with a pre-existing table succeeded with no flag ('Migration complete'); after a failed migration, apply refuses ('is dirty'), and --allow-dirty errors 'UNIQUE constraint failed: atlas_schema_revisions.version'. Flag in CE inventory, cli-surface.md line 27; help: 'Allow applying migrations when the revision table is dirty'."
+    "note": "The flag carries both meanings CE gives it: it clears a dirty revision row, and it opts in to adopting a schema that already holds unmanaged tables. Without it that database is refused.",
+    "evidence": "/tmp/c-compat migrate apply onto SQLite with a pre-existing table succeeded with no flag ('Migration complete'); after a failed migration, apply refuses ('is dirty'), and --allow-dirty errors 'UNIQUE constraint failed: atlas_schema_revisions.version'. Flag in CE inventory, cli-surface.md line 27; help: 'Allow applying migrations when the revision table is dirty'. The dirty-row half was fixed in stokaro/ptah#966. The non-empty-target half was stokaro/ptah#1231 case 1 and is fixed on this branch. Measured 2026-08-07 against the pinned community binary v1.3.0 on PostgreSQL 17, MySQL 9.7 and SQLite, one database per cell with exit codes read unpiped: an unmanaged table refuses on both tools with byte-identical text ('sql/migrate: connected database is not clean: found table \"X\" in schema \"S\". baseline version or allow-dirty is required'; SQLite reports 'found multiple tables: N' instead). Clean on both: empty schema, a lone empty atlas_schema_revisions, a view, a sequence, sqlite_sequence, an empty non-default schema, and a table in another schema. The gate is an adoption gate — once any revision row exists it never fires again, measured on a managed database that grew an unmanaged table and then applied a new migration at exit 0 on both tools. --allow-dirty and --baseline each opt out; passing both exits 1 with 'sql/migrate: baseline and allow-dirty are mutually exclusive' on both tools, which ptah-compat previously accepted at exit 0. The discriminating fixture for the predicate is `--revisions-schema revs`, which leaves `public` holding exactly one table: both tools still refuse and name that table, which rules out 'more than one table' and pins the rule at 'any table other than this run's revision table'."
   },
   {
     "area": "Versioned migrations",

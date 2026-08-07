@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -177,6 +178,39 @@ func (p ApplyPlan) MigrationLockSkipped() bool {
 	return p.mig != nil && p.mig.MigrationLockSkipped()
 }
 
+// RevisionCount reports how many rows this run's revision table holds.
+//
+// The operand is the row count rather than Status.AppliedMigrations, which is
+// intersected with the directory: a database whose migration directory has been
+// rotated reports no applied migrations while its revision table is full, and a
+// caller asking "has any migration ever been recorded here" must not read that
+// as a database nothing has been applied to.
+//
+// A run that has not created the revision table yet — a dry run — reports zero
+// rather than failing, because the migrator answers an absent table with an
+// empty result.
+func (p ApplyPlan) RevisionCount(ctx context.Context) (int, error) {
+	if p.mig == nil {
+		return 0, errors.New("migrate apply revision count requires a prepared plan")
+	}
+	revisions, err := p.mig.GetRevisions(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("error reading migration revisions: %w", err)
+	}
+	return len(revisions), nil
+}
+
+// RevisionTable reports where this run records revisions: the schema, empty
+// when the connection's own schema is used, and the unqualified table name.
+//
+// The table name is the Atlas default rather than a value read back from the
+// migrator because newApplyMigrator pins RevisionTableFormatAtlas and passes no
+// table-name override, so this path has exactly one answer. The schema is the
+// caller's --revisions-schema, which is the only part a run can move.
+func (p ApplyPlan) RevisionTable() (schema, table string) {
+	return p.opts.RevisionsSchema, revisiontable.Atlas
+}
+
 // Execute applies the selected plan. Dry-run and no-op plans return metadata
 // without modifying schema state.
 func (p ApplyPlan) Execute(ctx context.Context) (ApplyResult, error) {
@@ -328,6 +362,19 @@ func validateApplyOptions(conn *dbschema.DatabaseConnection, opts ApplyOptions) 
 	// the run must not start.
 	if opts.ToVersion > 0 && opts.Amount > 0 {
 		return errors.New("--to-version and the amount argument cannot both be set")
+	}
+	// The two opt-outs of the not-clean gate are not composable, and the pinned
+	// community binary v1.3.0 says so before it records anything: measured on
+	// PostgreSQL 17, MySQL 9.7 and SQLite, `--allow-dirty --baseline <v>`
+	// together exits 1 with this text and leaves the revision table empty,
+	// while either alone exits 0. They select different histories — a baseline
+	// records a version as applied and skips it, allow-dirty records nothing
+	// and runs everything — so there is no defensible precedence between them.
+	//
+	// This is checked before the baseline is recorded rather than after, so a
+	// refused invocation cannot leave a baseline row behind.
+	if opts.AllowDirty && opts.BaselineVersion > 0 {
+		return errors.New("sql/migrate: baseline and allow-dirty are mutually exclusive")
 	}
 	return nil
 }

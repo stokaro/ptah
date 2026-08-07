@@ -76,13 +76,13 @@ Across the 166 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 92 |
-| Ptah supports it with a stated limitation | 50 |
+| Ptah supports it fully | 93 |
+| Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 24 |
-| Ptah and Atlas CE both support it | 24 |
+| Ptah and Atlas CE both support it | 25 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 20 |
-| Atlas CE has it and Ptah does not, or only in part | 26 |
+| Atlas CE has it and Ptah does not, or only in part | 25 |
 | An Atlas column is ❔ — not established by this page's evidence | 5 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -174,7 +174,7 @@ seven of them as open capabilities regardless.
 | Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Native `ptah migrations down` marks the row failed with the error and completed-statement count, so status reports it dirty and `migrations repair` clears it; compat matches Atlas, which records none. |
 | Flyway repeatable (`R__`) migration import | 🟡 | ✅ | ✅ | Compat import converts `R__` to a one-time migration ordered last, as Atlas CE runs it. Editing the body then fails on a Ptah revision checksum where CE exits 0. |
 | Generate migrations from a schema diff | 🟡 | ✅ | ✅ | New versions are a Unix epoch in an empty dir and latest+1 otherwise, not the UTC YYYYMMDDHHMMSS stamp migrate new and Atlas dirs carry. |
-| migrate apply `--allow-dirty` semantics | 🟡 | ✅ | ✅ | Flag gates a dirty revision row, not a non-empty target: a pre-populated database applies without it, and the recovery re-insert fails with UNIQUE on atlas_schema_revisions (SQLite). |
+| migrate apply `--allow-dirty` semantics and the not-clean adoption gate | ✅ | ✅ | ✅ | The flag carries both meanings CE gives it: it clears a dirty revision row, and it opts in to adopting a schema that already holds unmanaged tables. Without it that database is refused. |
 | Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint: the ptah reversible pair, or Atlas's single `-- atlas:checkpoint` file under `--dir-format atlas`. CE gates the verb. |
 | Migration import from other tools | 🟡 | ✅ | ✅ | Native import converts golang-migrate/Goose/Flyway/Liquibase-SQL to ptah format (`R__` becomes one-time); the compat path writes atlas format and rejects `R__`. Liquibase XML/YAML/JSON not parsed. |
 | Migration linting | ✅ | 🟡 | ✅ | CE registers `migrate lint` with a basic Open rule set; Atlas's features page marks the lint CLI Pro. Ptah loads custom rules only through the Go API at compile time. |
