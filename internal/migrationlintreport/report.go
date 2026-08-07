@@ -23,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/risk"
@@ -1035,5 +1036,5 @@ func compatSchemaScope(profile lint.CompatibilityProfile, devURL string) string 
 	if profile != lint.CompatibilityProfileAtlas {
 		return ""
 	}
-	return atlasurl.SchemaScope(devURL)
+	return schemaselection.FromURL(devURL).Scope
 }

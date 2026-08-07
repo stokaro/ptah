@@ -23,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -760,16 +761,11 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		// URL and nothing downstream can say so: without this, the run reaches
 		// the replay and fails on a CREATE TABLE with "no schema has been
 		// selected to create in", which sends them to their migration.
-		var currentSchema sql.NullString
-		if err := db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&currentSchema); err != nil {
-			return info, fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
+		schema, err := schemaselection.FromParsedURL(parsedURL).Resolve(ctx, db)
+		if err != nil {
+			return info, err
 		}
-		if !currentSchema.Valid || currentSchema.String == "" {
-			return info, fmt.Errorf(
-				"database URL selects schema %q, which does not exist in this database",
-				postgresSearchPathSelection(parsedURL))
-		}
-		info.Schema = currentSchema.String
+		info.Schema = schema
 
 	case platform.MySQL, platform.MariaDB:
 		// Get MySQL/MariaDB version
@@ -1039,19 +1035,4 @@ func removePostgresPoolParams(dbURL string) string {
 	q.Del("pool_min_conns")
 	parsedURL.RawQuery = q.Encode()
 	return parsedURL.String()
-}
-
-// postgresSearchPathSelection returns the schema the URL's search_path names, so
-// a refusal can quote the operator's own value back at them. It is only ever
-// called on the refusal path, where current_schema() resolved to nothing.
-//
-// An absent search_path cannot reach that path: PostgreSQL's own default
-// resolves to "public", which exists in every database Ptah connects to, so the
-// empty string here means the URL carried no selection and the server still
-// answered nothing -- a shape worth reporting verbatim rather than guessing at.
-func postgresSearchPathSelection(parsedURL *url.URL) string {
-	if parsedURL == nil {
-		return ""
-	}
-	return parsedURL.Query().Get("search_path")
 }
