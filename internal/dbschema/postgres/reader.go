@@ -2235,21 +2235,12 @@ func (r *Reader) readRLSPoliciesForSchema(schemaName string) ([]types.DBRLSPolic
 // The `scope` CTE the branches join against is defined by readRoles.
 func (r *Reader) rolesInScopeClauses() []string {
 	clauses := []string{
-		// Owns one of the schemas in scope (pg_namespace.nspowner).
-		`SELECT s.nspowner AS roleoid FROM scope s`,
-		// Owns a relation in scope -- table, view, materialized view,
-		// sequence or index (pg_class.relowner).
-		`SELECT c.relowner FROM pg_class c
-			JOIN scope s ON s.oid = c.relnamespace`,
-		// Owns a type in scope -- enum, domain, composite or range
-		// (pg_type.typowner).
-		`SELECT t.typowner FROM pg_type t
-			JOIN scope s ON s.oid = t.typnamespace`,
-		// Owns a routine in scope (pg_proc.proowner).
-		`SELECT p.proowner FROM pg_proc p
-			JOIN scope s ON s.oid = p.pronamespace`,
-		// Holds a privilege on a relation in scope (pg_class.relacl).
-		`SELECT acl.grantee FROM pg_class c
+		// Holds a privilege on a relation in scope -- table, view,
+		// materialized view or sequence (pg_class.relacl). An owner appears
+		// here as soon as the relation carries any explicit privilege, which
+		// is also exactly when readTableGrantsForSchema reports the owner's
+		// own grants.
+		`SELECT acl.grantee AS roleoid FROM pg_class c
 			JOIN scope s ON s.oid = c.relnamespace
 			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
 		// Granted a privilege on a relation in scope (pg_class.relacl).
@@ -2285,15 +2276,29 @@ func (r *Reader) rolesInScopeClauses() []string {
 //
 // "Uses" is defined here, deliberately, as any of:
 //
-//   - owning an object in a schema in scope, or owning one of those schemas;
-//   - holding a privilege on an object in a schema in scope, or on one of
+//   - holding a privilege on a relation in a schema in scope, or on one of
 //     those schemas -- or having granted one;
 //   - being named by a row-level security policy on a table in scope.
 //
-// A role that merely exists in the cluster is not used by the inspected scope
-// and is not reported. This is a scoping decision rather than a suppression:
-// a role that belongs to the inspected schemas is still reported in full, on
-// the native and the compatibility surface alike, so no capability is lost.
+// Equivalently: a role is described exactly when some other statement in the
+// same description can name it. Nothing else is reported, and a role that
+// merely exists in the cluster certainly is not.
+//
+// Ownership is deliberately NOT a reason, and this was measured rather than
+// assumed. Ptah describes no ownership -- it emits no OWNER TO and no CREATE
+// SCHEMA ... AUTHORIZATION -- so an owner is a role the description creates
+// and then never refers to. Because the connecting superuser owns every object
+// it creates, treating ownership as a reason made every inspect describe the
+// connecting role, and a diff between a populated database and an empty dev
+// database in the same cluster then planned
+// `CREATE ROLE "..." WITH LOGIN SUPERUSER ...` and failed to apply it at
+// SQLSTATE 42710. An owner that a description does refer to still appears,
+// through the privilege clauses: granting anything on a relation makes its
+// ACL explicit, and an explicit ACL always carries the owner's own privileges.
+//
+// This is a scoping decision rather than a suppression: a role that belongs to
+// the inspected schemas is still reported in full, on the native and the
+// compatibility surface alike, so no capability is lost.
 //
 // The privilege clauses read the grantor as well as the grantee because
 // readGrants reports both. That makes this set a superset of every role name
@@ -2310,7 +2315,7 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 
 	rolesQuery := `
 		WITH scope AS (
-			SELECT n.oid, n.nspowner, n.nspacl
+			SELECT n.oid, n.nspacl
 			FROM pg_namespace n
 			WHERE n.nspname IN (` + strings.Join(placeholders, ", ") + `)
 		),
@@ -2416,10 +2421,25 @@ func (r *Reader) readTableGrantsForSchema(schemaName string) ([]types.DBGrant, e
 			table_name,
 			is_grantable = 'YES' AS with_option,
 			grantor
-		FROM information_schema.role_table_grants
+		FROM information_schema.role_table_grants g
 		WHERE table_schema = $1
 		AND grantee NOT LIKE 'pg\_%' ESCAPE '\'
 		AND grantee != 'postgres'
+		-- Only relations on which some privilege has actually been granted.
+		-- information_schema reports an owner's built-in privileges as grants
+		-- even for a table whose pg_class.relacl is null, meaning nobody has
+		-- ever run GRANT on it. Describing those as GRANT statements describes
+		-- something no one wrote; CREATE TABLE re-establishes them for the new
+		-- owner on replay anyway. It also made the description name a role it
+		-- did not define once role reporting was scoped (stokaro/ptah#1267),
+		-- and the pinned Atlas community binary refuses such a document.
+		AND EXISTS (
+			SELECT 1 FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = g.table_schema
+			AND c.relname = g.table_name
+			AND c.relacl IS NOT NULL
+		)
 		ORDER BY table_schema, table_name, grantee, privilege_type`
 
 	rows, err := r.db.Query(query, schemaName)

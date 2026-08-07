@@ -55,12 +55,20 @@ database schemas to read; when empty, Ptah reads the connection's default
 schema.
 
 PostgreSQL roles are cluster-wide rather than per-database, so a read reports
-only the roles the schemas being read actually use: a role that owns one of
-those schemas or an object in them, that holds or granted a privilege on one
-of them, or that is named by a row-level security policy on a table in them. A
+only the roles the schemas being read actually use: a role that holds a
+privilege on a relation in them or on one of the schemas, a role that granted
+one, or a role a row-level security policy on a table in them applies to. A
 role that merely exists elsewhere on the server belongs to no schema being read
-and is not described. Every role the emitted grants and policies name is still
-described, so the output never refers to a role it does not create.
+and is not described.
+
+Equivalently, a read describes a role exactly when some other statement in the
+same output names it, so the output never refers to a role it does not create.
+Ownership alone is not a reason: Ptah writes no `OWNER TO` and no
+`CREATE SCHEMA ... AUTHORIZATION`, so an owner would be a role the output
+creates and never mentions again. For the same reason a read no longer reports
+the built-in privileges an owner holds on a relation nobody has granted
+anything on -- no `GRANT` produced them, and `CREATE TABLE` re-establishes them
+for the new owner when the output is replayed.
 
 Role creation statements in PostgreSQL output are intended for
 a clean target. If a role already exists, applying the SQL
