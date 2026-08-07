@@ -3482,6 +3482,7 @@ type Visitor interface {
 
 ## go.5x5.cz/ptah/core/goschema
 
+const NullsOrderFirst = "FIRST" ...
 func Deduplicate(r *Database)
 func Finalize(r *Database)
 func GetDependencyInfo(r *Database) string

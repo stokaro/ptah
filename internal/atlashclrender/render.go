@@ -720,6 +720,7 @@ func (r *renderer) renderIndex(index goschema.Index) {
 			if part.Desc {
 				r.rawAttr(3, "desc", "true")
 			}
+			r.renderIndexPartNullsOrder(part.NullsOrder)
 			r.line("    }")
 		}
 	} else {
@@ -892,9 +893,32 @@ func simplePrimaryKeyParts(parts []goschema.PrimaryKeyPart) bool {
 	return true
 }
 
+// renderIndexPartNullsOrder writes the NULLS ordering of one index key.
+//
+// The rendered value is whatever the part carries. Deciding that an ordering
+// is redundant belongs to whoever produced the part -- the live-database reader
+// records only an ordering that deviates from the direction's default -- and
+// an author who spelled one out gets it back. The two attribute names are the
+// spelling the community binary's own inspect output uses, so a rendered file
+// stays readable by both (issue #1272).
+func (r *renderer) renderIndexPartNullsOrder(order string) {
+	switch strings.ToUpper(strings.TrimSpace(order)) {
+	case goschema.NullsOrderFirst:
+		r.rawAttr(3, "nulls_first", "true")
+	case goschema.NullsOrderLast:
+		r.rawAttr(3, "nulls_last", "true")
+	}
+}
+
+// simpleIndexParts reports whether the parts carry nothing the compact
+// `columns = [...]` spelling would lose. Every field the `on` block can express
+// has to be listed: a part carrying only a NULLS ordering is not simple, and
+// omitting that check is how the ordering used to disappear from rendered HCL
+// even after #1271 taught the reader to preserve it.
 func simpleIndexParts(parts []goschema.IndexPart) bool {
 	for _, part := range parts {
-		if part.Expr != "" || part.Operator != "" || part.Prefix != "" || part.Desc {
+		if part.Expr != "" || part.Operator != "" || part.Prefix != "" ||
+			part.Desc || part.NullsOrder != "" {
 			return false
 		}
 	}

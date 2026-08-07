@@ -41,6 +41,9 @@ current schema IR:
   `include`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
   `on { expr = "..." }`, `desc`, `unique`, `type`, `where`, and `comment`;
+  an `on` block also accepts `nulls_first` or `nulls_last` (not both) for a key
+  whose `NULL` ordering differs from its direction's default, which is
+  `NULLS LAST` for ascending and `NULLS FIRST` for descending;
   PostgreSQL indexes also support `include`, BRIN `page_per_range`, and
   `nulls_distinct`, ClickHouse data-skipping indexes support `granularity`, and
   the Ptah `ops` parity extension preserves the Go annotation operator class
