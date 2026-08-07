@@ -175,6 +175,18 @@ func TestCompatMigrateApply_ForeignFlywayDryRunRefused(t *testing.T) {
 // a change to what is printed and a change to what works cannot drift apart.
 var migrateSetVersion = regexp.MustCompile("`migrate set ([0-9]+)`")
 
+// foreignFlywaySetOperandV2 is the operand the route prints for a database
+// whose head is V2__*.sql: the SOURCE version token, not the ordering key it
+// converts to.
+//
+// Since stokaro/ptah#1206 `migrate set` on a converted Flyway directory takes
+// the token, and the ordering key — measured on the pinned community binary
+// v1.3.0 — is a spelling that binary has always refused. Pinning the two values
+// apart is what makes this an assertion rather than a restatement: before the
+// change the route printed foreignFlywayV2 and running it worked; after it,
+// printing foreignFlywayV2 would still match the regexp and then fail to run.
+const foreignFlywaySetOperandV2 = "2"
+
 // TestCompatMigrateApply_ForeignFlywayRefusalPrintsWorkingRecovery runs the
 // route the refusal prints, verbatim, and then applies again.
 //
@@ -209,7 +221,7 @@ func TestCompatMigrateApply_ForeignFlywayRefusalPrintsWorkingRecovery(t *testing
 	message := errorText(err) + stderr
 	match := migrateSetVersion.FindStringSubmatch(message)
 	c.Assert(match, qt.HasLen, 2)
-	c.Assert(match[1], qt.Equals, foreignFlywayV2)
+	c.Assert(match[1], qt.Equals, foreignFlywaySetOperandV2)
 	// The version alone does not say the route was OFFERED: the withdrawal
 	// names the same command while telling the reader not to run it. Both
 	// wordings have to be pinned or one can silently become the other.
@@ -334,7 +346,7 @@ func TestCompatMigrateApply_ForeignFlywaySetRouteOfferedWithPendingAboveTheHead(
 
 	match := migrateSetVersion.FindStringSubmatch(message)
 	c.Assert(match, qt.HasLen, 2)
-	c.Assert(match[1], qt.Equals, foreignFlywayV2)
+	c.Assert(match[1], qt.Equals, foreignFlywaySetOperandV2)
 	stdout, stderr, err = runCompat(
 		"migrate", "set", match[1],
 		"--url", "sqlite://"+dbPath,
