@@ -235,6 +235,77 @@ func TestConvertDBSchemaToGoSchema_PostgresUserDefinedColumnUsesUDTName(t *testi
 	c.Assert(result.Fields[0].Type, qt.Equals, "enum_product_status")
 }
 
+// A PostgreSQL array column reaches the converter as the bare category "ARRAY"
+// -- information_schema carries no element type for one, and no length either
+// -- so the reader asks the server directly and the converter has to prefer
+// that answer (stokaro/ptah#1138).
+//
+// The rows are the three ways this can go wrong, and the last one is why the
+// obvious narrow fix is not enough: reconstructing the type from UDTName yields
+// "varchar[]" from a "varchar(100)[]" column, which parses and plans and is
+// still the wrong type.
+func TestConvertDBSchemaToGoSchema_PostgresArrayColumnUsesTheServerSpelling(t *testing.T) {
+	tests := []struct {
+		name     string
+		column   types.DBColumn
+		wantType string
+	}{
+		{
+			name: "a sized element type keeps its length",
+			column: types.DBColumn{
+				Name:          "records",
+				DataType:      "ARRAY",
+				UDTName:       "_varchar",
+				FormattedType: "character varying(100)[]",
+			},
+			wantType: "character varying(100)[]",
+		},
+		{
+			name: "an unsized element type",
+			column: types.DBColumn{
+				Name:          "tags",
+				DataType:      "ARRAY",
+				UDTName:       "_text",
+				FormattedType: "text[]",
+			},
+			wantType: "text[]",
+		},
+		{
+			name: "an enum element type is spelled by its own name",
+			column: types.DBColumn{
+				Name:          "statuses",
+				DataType:      "ARRAY",
+				UDTName:       "_status",
+				FormattedType: "status[]",
+			},
+			wantType: "status[]",
+		},
+		{
+			name: "a column the server did not have to spell is untouched",
+			column: types.DBColumn{
+				Name:               "title",
+				DataType:           "character varying",
+				CharacterMaxLength: new(64),
+			},
+			wantType: "VARCHAR(64)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dbSchema := &types.DBSchema{
+				Tables: []types.DBTable{{Name: "logs", Columns: []types.DBColumn{test.column}}},
+			}
+
+			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+			c.Assert(result.Fields, qt.HasLen, 1)
+			c.Assert(result.Fields[0].Type, qt.Equals, test.wantType)
+		})
+	}
+}
+
 func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName(t *testing.T) {
 	c := qt.New(t)
 	checkClause := "tenant_id > 0"

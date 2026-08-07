@@ -529,6 +529,22 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 	if strings.EqualFold(dbColumn.DataType, "USER-DEFINED") && dbColumn.UDTName != "" {
 		return dbColumn.UDTName
 	}
+	// The server's own spelling wins wherever the reader had to ask for it,
+	// which today means PostgreSQL array columns. DataType there is the bare
+	// category "ARRAY" -- a word no engine accepts as a type, so a schema read
+	// back out of a database rendered DDL that could not be executed
+	// (stokaro/ptah#1138).
+	//
+	// It is read from FormattedType rather than from ColumnType deliberately.
+	// ColumnType is also what the Atlas-compatible JSON inspect output prints,
+	// and measured on the pinned community binary v1.3.0 that output is
+	// `"type": "ARRAY"` for an array column -- the same value Ptah prints there
+	// today. Routing the fix through ColumnType would have made that surface
+	// disagree with the binary in order to fix a surface the binary does not
+	// have.
+	if dbColumn.FormattedType != "" {
+		return dbColumn.FormattedType
+	}
 	if dbColumn.ColumnType != "" {
 		return dbColumn.ColumnType
 	}
