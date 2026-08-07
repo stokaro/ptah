@@ -217,6 +217,63 @@ both the `CREATE DOMAIN` and the domain-typed column, so closing this gap meant
 keeping both halves rather than matching CE. Ptah's output replays at psql exit
 0 where CE's does not.
 
+### Reading an attribute and reconciling it are different claims
+
+The table above records what introspection preserves. It does not say what
+`schema diff` does with an index that already exists, and until
+[#1272](https://github.com/stokaro/ptah/issues/1272) the answer was: nothing.
+The PostgreSQL branch of the index comparator compared the partial predicate
+and `NULLS DISTINCT` and returned before reaching anything else, so every
+attribute the reader had learned to preserve was discarded at reconciliation
+time. Each pair below reported
+`Schemas are synced, no changes to be made.` while the pinned Atlas CE v1.3.0
+binary planned `DROP INDEX` + `CREATE INDEX`. Measured on PostgreSQL 17.10 by
+loading each side into its own database and diffing one against the other.
+
+| Current index | Desired index | Now planned |
+| --- | --- | --- |
+| `USING btree (value)` | `USING hash (value)` | Rebuild |
+| `USING gin (tsv)` | `USING gist (tsv)` | Rebuild |
+| `(value)` | `(value text_pattern_ops)`, and the reverse | Rebuild |
+| `(value NULLS FIRST)` | `(value DESC)` | Rebuild |
+| `(value)` | `(value NULLS FIRST)` | Rebuild |
+| `(value DESC)` | `(value DESC NULLS LAST)` | Rebuild |
+| `(a) INCLUDE (b)` | `(a) INCLUDE (c)`, added, removed, reordered | Rebuild |
+| `(a)` | `(lower(a))`, and the reverse | Rebuild |
+| `(lower(a))` | `(upper(a))` | Rebuild |
+| `(value)` | `UNIQUE (value)` | Rebuild |
+| `(a)` | `(b)` | Rebuild |
+
+PostgreSQL cannot alter any of these in place, so the transition is a rebuild
+rather than an `ALTER INDEX`. Every plan above was executed against the current
+database with `psql -v ON_ERROR_STOP=1` at exit 0, and both Ptah and the pinned
+binary reported the databases synced afterwards.
+
+Equivalent spellings still compare equal, so nothing is rebuilt for the sake of
+it: `btree` and `BTREE`; an omitted access method and `USING btree`; `ASC` and
+`ASC NULLS LAST`; `DESC` and `DESC NULLS FIRST`; an index-level `ops` and the
+same class written on each key.
+
+Two consequences worth naming:
+
+- The HCL surface now reads and writes `nulls_first` / `nulls_last` on an
+  `index` `on` block. These are the attribute names Atlas CE's own
+  `schema inspect` emits. `ptah-compat` previously dropped them under its
+  unknown-attribute tolerance, so a file CE produced reached Ptah with the
+  ordering gone; the native parser refused the file outright.
+- An operator class is compared as written, case-insensitively. Ptah does not
+  resolve a column type's *default* operator class, so a hand-written source
+  that spells the default out — `ops = text_ops` on a `text` column — plans a
+  rebuild on every run where CE reports the schemas synced. The catalog reports
+  only non-default classes, so neither binary's `schema inspect` produces that
+  input and no round trip reaches it. Omit a default class, which is how both
+  binaries write one.
+
+Only PostgreSQL is covered. MySQL, MariaDB, SQLite, ClickHouse, CockroachDB,
+YugabyteDB and Spanner keep the comparison they had, because what makes two
+indexes the same index is a per-dialect question and only PostgreSQL was
+measured.
+
 ## Reports
 
 - Offline corpus report:

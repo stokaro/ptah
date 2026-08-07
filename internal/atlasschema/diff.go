@@ -119,7 +119,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	if emptySelection(fromErr) && emptySelection(toErr) {
 		reportEmptySelection(opts.Diagnostics, fromErr)
 	}
-	fromDB, err := diffFromDBState(fromState, from, scope)
+	fromDB, err := diffFromDBState(fromState, from, scope, dialect)
 	if err != nil && !emptySelection(err) {
 		return atlasreport.SchemaDiff{}, err
 	}
@@ -146,9 +146,10 @@ func diffFromDBState(
 	state atlassource.State,
 	filtered *goschema.Database,
 	scope atlasfilter.Scope,
+	dialect string,
 ) (*types.DBSchema, error) {
 	if state.DB == nil {
-		return schemafile.ToDBSchema(filtered), nil
+		return schemafile.ToDBSchema(filtered, dialect), nil
 	}
 	return scopeDatabaseSide(state.DB, scope, "--from schema")
 }

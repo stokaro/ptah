@@ -205,6 +205,15 @@ type IndexPart struct {
 	NullsOrder string
 }
 
+// Index NULLS ordering spellings for IndexPart.NullsOrder, matching
+// [go.5x5.cz/ptah/core/ast.NullsOrderFirst] and
+// [go.5x5.cz/ptah/dbschema/types.NullsOrderFirst] so the value survives every
+// hop between the three index-part shapes unchanged.
+const (
+	NullsOrderFirst = "FIRST"
+	NullsOrderLast  = "LAST"
+)
+
 // Index represents a database index definition parsed from Go struct annotations.
 // Indexes are used to improve query performance and enforce uniqueness constraints
 // on one or more columns.

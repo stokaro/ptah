@@ -450,11 +450,236 @@ func indexDefinitionsChanged(
 		indexPredicateChanged(generated.Condition, database.Condition, dialect) {
 		return true
 	}
-	if platform.NormalizeDialect(dialect) != platform.SQLServer {
+	// Every other property is compared per dialect, because "these two indexes
+	// are the same index" is a dialect question. Adding a dialect here means
+	// deciding what its catalog reports and what it leaves implicit; a dialect
+	// that has not been measured keeps the name-only comparison rather than
+	// getting guessed semantics (issue #1272 scope).
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLServer:
+		return generated.Unique != database.IsUnique ||
+			indexKeyPartsChanged(generated, database, semantics)
+	case platform.Postgres:
+		return postgresIndexDefinitionChanged(generated, database, semantics)
+	default:
 		return false
 	}
+}
+
+// postgresIndexDefinitionChanged answers whether a PostgreSQL index has to be
+// rebuilt to match the desired definition.
+//
+// Until issue #1272 the PostgreSQL branch compared nothing beyond the partial
+// predicate and NULLS DISTINCT, so every property #1246 and #1271 taught the
+// reader to preserve was read and then discarded at reconciliation time.
+// Measured on PostgreSQL 17.10 against the pinned community binary v1.3.0,
+// each of these pairs made `schema diff` print "Schemas are synced, no changes
+// to be made" while the pinned binary planned DROP INDEX + CREATE INDEX:
+//
+//	USING btree (value)        -> USING hash (value)
+//	USING gin (tsv)            -> USING gist (tsv)
+//	(value)                    -> (value text_pattern_ops)   and the reverse
+//	(value)                    -> (value DESC)
+//	(value)                    -> (value NULLS FIRST)
+//	(value DESC)               -> (value DESC NULLS LAST)
+//	(a) INCLUDE (b)            -> (a) INCLUDE (c), added, and removed
+//	(a)                        -> (lower(a))                 and the reverse
+//	(lower(a))                 -> (upper(a))
+//	(value)                    -> UNIQUE (value)
+//	(a)                        -> (b)
+//
+// PostgreSQL cannot alter any of them in place: there is no ALTER INDEX form
+// for the access method, the key list, an operator class, a key's sort or
+// NULLS ordering, or the INCLUDE payload. Reporting the change is therefore
+// enough -- the planner already emits DROP INDEX followed by CREATE INDEX for
+// an index that is both added and removed, which is the transition the pinned
+// binary plans and the one the server accepts.
+func postgresIndexDefinitionChanged(
+	generated goschema.Index,
+	database types.DBIndex,
+	semantics identifier.Semantics,
+) bool {
 	return generated.Unique != database.IsUnique ||
-		indexKeyPartsChanged(generated, database, semantics)
+		postgresAccessMethod(generated.Type) != postgresAccessMethod(database.Method) ||
+		postgresIndexKeysChanged(generated, database, semantics) ||
+		postgresIncludeColumnsChanged(generated.IncludeColumns, database.IncludeColumns, semantics)
+}
+
+// postgresDefaultAccessMethod is the method PostgreSQL uses when CREATE INDEX
+// carries no USING clause.
+const postgresDefaultAccessMethod = "btree"
+
+// postgresAccessMethod reduces an access method to a comparison key.
+//
+// The two sides spell it differently by construction: an annotation or HCL
+// source writes BTREE/GIN, while the reader reports pg_am.amname verbatim,
+// which PostgreSQL spells btree/gin. An absent method is the default one, so
+// `USING btree (x)` and `(x)` are the same index and must not churn.
+func postgresAccessMethod(method string) string {
+	normalized := strings.ToLower(strings.TrimSpace(method))
+	if normalized == "" {
+		return postgresDefaultAccessMethod
+	}
+	return normalized
+}
+
+func postgresIndexKeysChanged(
+	generated goschema.Index,
+	database types.DBIndex,
+	semantics identifier.Semantics,
+) bool {
+	generatedParts := effectiveGeneratedIndexParts(generated)
+	databaseParts := effectiveDatabaseIndexParts(database)
+	if len(generatedParts) != len(databaseParts) {
+		return true
+	}
+	for position, generatedPart := range generatedParts {
+		generatedKey := postgresGeneratedIndexKey(generatedPart, generated.Operator, semantics)
+		if generatedKey != postgresDatabaseIndexKey(databaseParts[position], semantics) {
+			return true
+		}
+	}
+	return false
+}
+
+// postgresIndexKey is one index key reduced to the form the two sides can be
+// compared in. It is comparable, so a key is one `!=` rather than a chain of
+// per-attribute comparisons that a later attribute could be forgotten from.
+//
+// column and expr are separate fields on purpose, and exactly one is ever set.
+// That is the distinction #1246 established: an index on lower(name) and an
+// index on a column literally named "lower(name)" are different indexes, and
+// collapsing them is how the reader used to emit
+// CREATE INDEX ... ("lower(name)"), which psql rejects.
+type postgresIndexKey struct {
+	column     string
+	expr       string
+	operator   string
+	desc       bool
+	nullsOrder string
+}
+
+// resolvedNullsOrder resolves this key's NULLS ordering to the ordering the
+// server actually applies.
+//
+// The default is direction-dependent -- NULLS LAST for ASC, NULLS FIRST for
+// DESC -- so an omitted ordering and an explicit spelling of that direction's
+// default are the same key. #1271's reader records only the deviating spelling,
+// so resolving both sides is what keeps `ASC` and `ASC NULLS LAST` from
+// planning a rebuild against each other while `ASC` and `ASC NULLS FIRST` still
+// report one.
+func (k postgresIndexKey) resolvedNullsOrder(order string) string {
+	switch strings.ToUpper(strings.TrimSpace(order)) {
+	case types.NullsOrderFirst:
+		return types.NullsOrderFirst
+	case types.NullsOrderLast:
+		return types.NullsOrderLast
+	}
+	if k.desc {
+		return types.NullsOrderFirst
+	}
+	return types.NullsOrderLast
+}
+
+// postgresGeneratedIndexKey reduces one desired key.
+//
+// indexOperator is the index-level operator class an annotation may set for
+// every key at once. The renderer applies it to each key that has none, so the
+// comparison resolves it the same way.
+func postgresGeneratedIndexKey(
+	part goschema.IndexPart,
+	indexOperator string,
+	semantics identifier.Semantics,
+) postgresIndexKey {
+	key := postgresIndexKey{
+		operator: postgresOperatorClass(part.Operator, indexOperator),
+		desc:     part.Desc,
+	}
+	key.column, key.expr = postgresIndexKeyTarget(part.Name, part.Expr, semantics)
+	key.nullsOrder = key.resolvedNullsOrder(part.NullsOrder)
+	return key
+}
+
+// postgresDatabaseIndexKey reduces one introspected key. The database shape has
+// no index-level operator class slot, so every class it reports is already
+// per-key.
+func postgresDatabaseIndexKey(
+	part types.DBIndexPart,
+	semantics identifier.Semantics,
+) postgresIndexKey {
+	key := postgresIndexKey{
+		operator: postgresOperatorClass(part.Operator, ""),
+		desc:     part.Desc,
+	}
+	key.column, key.expr = postgresIndexKeyTarget(part.Name, part.Expr, semantics)
+	key.nullsOrder = key.resolvedNullsOrder(part.NullsOrder)
+	return key
+}
+
+// postgresIndexKeyTarget splits what a key indexes into its column slot and its
+// expression slot, filling exactly one. An expression is normalized the way a
+// check-constraint expression is, so spacing and keyword case do not make a new
+// index; a column goes through the dialect's identifier semantics.
+func postgresIndexKeyTarget(
+	name, expr string,
+	semantics identifier.Semantics,
+) (column, expression string) {
+	trimmedExpr := strings.TrimSpace(expr)
+	if trimmedExpr != "" {
+		return "", normalizeCheckExpression(trimmedExpr)
+	}
+	return semantics.ColumnIdentityKey(name), ""
+}
+
+// postgresOperatorClass reduces an operator class to a comparison key.
+//
+// Only case and surrounding space are normalized. PostgreSQL reports an
+// operator class in pg_index.indclass for every key, and #1271's reader
+// deliberately records only the ones that are not the key type's default, so
+// an introspected index names a class exactly when the choice was not the
+// default and both sides of an inspect/replay round trip agree.
+//
+// A hand-written source that spells the default out -- `ops = text_ops` on a
+// text column -- is the one case where this diverges from the pinned community
+// binary v1.3.0, which resolves type defaults and reported "Schemas are synced"
+// for that fixture on PostgreSQL 17.10 where Ptah plans a rebuild. Ptah does
+// not resolve default operator classes, and inventing the resolution from a
+// version-pinned catalog table would be worse than the churn: the alternative
+// is to ignore a named class, which would silently accept a real operator-class
+// change. Neither binary's `schema inspect` emits a default class, so no
+// round trip reaches this branch. Recorded in docs/conformance.md.
+func postgresOperatorClass(partOperator, indexOperator string) string {
+	operator := strings.TrimSpace(partOperator)
+	if operator == "" {
+		operator = strings.TrimSpace(indexOperator)
+	}
+	return strings.ToLower(operator)
+}
+
+// postgresIncludeColumnsChanged compares the INCLUDE payload.
+//
+// Order is significant, matching both PostgreSQL -- which stores the payload
+// columns in the order they were written and reports them that way -- and the
+// pinned community binary v1.3.0, which planned a rebuild for
+// `INCLUDE (b, c)` against `INCLUDE (c, b)` on PostgreSQL 17.10.
+//
+// The payload is compared separately from the keys and never merged into them:
+// an index on (a) INCLUDE (b) is not an index on (a, b), and treating the
+// payload as a trailing key would make the two compare equal.
+func postgresIncludeColumnsChanged(
+	generated, database []string,
+	semantics identifier.Semantics,
+) bool {
+	if len(generated) != len(database) {
+		return true
+	}
+	for position, column := range generated {
+		if semantics.ColumnIdentityKey(column) !=
+			semantics.ColumnIdentityKey(database[position]) {
+			return true
+		}
+	}
+	return false
 }
 
 func indexKeyPartsChanged(

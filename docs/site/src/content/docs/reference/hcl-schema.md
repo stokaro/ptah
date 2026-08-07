@@ -62,7 +62,7 @@ table "users" {
 | `table` | Columns, keys, indexes, constraints, checks, row security, and Ptah `checks`, `custom`, and `platform` extensions. |
 | `column` | Type, nullability, defaults, generated/identity metadata, comments, checks, and Ptah `enum` and `platform` extensions. |
 | `primary_key` | `columns`; PostgreSQL also supports `include`. |
-| `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `unique`, `type`, `where`, `comment`, ClickHouse `granularity`, and PostgreSQL include/storage options. |
+| `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `on { nulls_first = ... }` or `on { nulls_last = ... }`, `unique`, `type`, `where`, `comment`, ClickHouse `granularity`, and PostgreSQL include/storage options. |
 | `constraint` | Ptah block used when annotation metadata cannot fit the Atlas-native constraint blocks, and for `EXCLUDE` constraints. |
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
 | `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry. |
