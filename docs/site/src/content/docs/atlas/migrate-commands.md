@@ -250,6 +250,42 @@ measured Atlas checkpoint semantics — a fresh database applies only the
 latest checkpoint plus later migrations, and a database that already applied
 pre-checkpoint history skips the checkpoint silently.
 
+### Adopting a database that already has tables
+
+`migrate apply` refuses to adopt a database whose schema already holds tables no
+migration recorded, matching Atlas:
+
+```text
+Error: sql/migrate: connected database is not clean: found table "legacy_stuff" in schema "public". baseline version or allow-dirty is required
+```
+
+On SQLite the same refusal reports a count instead of a name:
+`found multiple tables: 2`.
+
+The check is an adoption gate, not a standing drift check. It runs only while
+the revision table holds no rows, so it fires on the first apply against a
+database somebody else's tooling owns and never again — a managed database that
+later grows an unmanaged table applies its next migration normally. Views,
+sequences, and tables in other schemas are not tables in the connected schema
+and do not trigger it, and neither does the revision table itself. The refusal
+also fires under `--dry-run` and on a directory with nothing pending, because
+the question it answers is about the database rather than about the work.
+
+Two flags opt in, and they cannot be combined:
+
+- `--allow-dirty` applies every pending migration against the existing schema.
+- `--baseline <version>` records history as starting at that version and applies
+  only what comes after it.
+
+Passing both exits `1` with
+`Error: sql/migrate: baseline and allow-dirty are mutually exclusive` before
+anything is recorded.
+
+The gate is enforced on PostgreSQL, MySQL, MariaDB, and SQLite. Other dialects
+are not gated, because the behavior to match has not been measured on them.
+Native [`ptah migrations up`](../../versioned/apply/) has no equivalent gate; see
+[#1231](https://github.com/stokaro/ptah/issues/1231).
+
 ```bash
 ptah-compat migrate apply 2 \
   --url "$DATABASE_URL" \

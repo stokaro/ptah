@@ -300,33 +300,21 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
+	if err := runAtlasMigrateApplyRefusals(cmd.Context(), atlasMigrateApplyRefusalOperands{
+		conn:            conn,
+		plan:            plan,
+		captured:        captured,
+		dirFormat:       resolvedDirFormat,
+		linearity:       linearity,
+		execOrder:       execOrder,
+		revisionsSchema: opts.revisionsSchema,
+		allowDirty:      opts.allowDirty,
+		baselineVersion: baselineVersion,
+	}); err != nil {
+		return err
+	}
+
 	noteAtlasMigrateApplyLockUnsupported(cmd, opts.lock, plan, conn.Info().Dialect)
-
-	// #982 changed the Atlas version a Flyway file converts to, which is the
-	// key `atlas_schema_revisions` stores. A database migrated by an older Ptah
-	// build therefore reads as entirely pending here. Refuse before executing
-	// anything rather than re-running migrations that already ran.
-	if err := checkLegacyFlywayRevisions(captured, resolvedDirFormat, plan, opts.revisionsSchema); err != nil {
-		return err
-	}
-
-	// The same question one implementation over: Atlas CE records a converted
-	// Flyway migration under its SOURCE version token, so a revision table it
-	// wrote also matches no file here and reads as entirely pending
-	// (stokaro/ptah#1100). The Ptah-encoding check above runs first because it
-	// is the more specific claim about who wrote the row, and its repair is a
-	// different one.
-	if err := checkForeignFlywayRevisions(captured, resolvedDirFormat, plan); err != nil {
-		return err
-	}
-
-	// The exemption above only stops the linear guard from reading the
-	// baseline's band position as "authored earlier". Whether a baseline may
-	// run against a database that already has history is a separate question,
-	// and one Atlas CE answers three incompatible ways (stokaro/ptah#1003).
-	if err := checkFlywayBaselineHistory(linearity.baseline, execOrder, plan); err != nil {
-		return err
-	}
 
 	out := cmd.OutOrStdout()
 	emitApplyStart := func([]int64) {}
