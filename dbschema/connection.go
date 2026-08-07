@@ -781,6 +781,18 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 			}
 			info.Schema = dbName
 		}
+		// A MySQL-family schema is a database, so no static dialect rule can
+		// name the one that owns an unqualified table the way "public" and
+		// "main" do; only the connection knows it. Leaving the field empty is
+		// what made the two comparison sides key differently: the catalog
+		// reports every table with no schema, while a desired state written as
+		// Atlas HCL carries `schema = schema.<database>`. Measured on live
+		// MySQL 9.7.1, `schema apply` fed the database's own inspected HCL
+		// planned CREATE TABLE and DROP TABLE for every table where the pinned
+		// Atlas community v1.3.0 binary answered "Schema is synced, no changes
+		// to be made" (stokaro/ptah#1244). SQL Server pins the same field from
+		// the same place, in getSQLServerDatabaseInfo.
+		info.IdentifierSemantics.DefaultSchema = info.Schema
 	case platform.ClickHouse:
 		var version string
 		if err := db.QueryRow("SELECT version()").Scan(&version); err != nil {
