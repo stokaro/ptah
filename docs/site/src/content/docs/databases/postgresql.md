@@ -65,6 +65,16 @@ Ordering is dependency-aware: roles are created before the functions and
 policies that reference them, and grants are emitted after the roles and
 target objects exist.
 
+Reading a live database describes only the roles the schemas being read
+actually use, because a PostgreSQL role belongs to the cluster rather than to
+one database. A role counts as used when it owns one of those schemas or an
+object in them, when it holds or granted a privilege on one of them, or when a
+row-level security policy on a table in them names it. A role that merely
+exists elsewhere on the server is not part of the schema being described, so
+it is left out — of `ptah db read` and of `ptah-compat schema inspect` alike.
+Every role the emitted grants and policies refer to is described, so a
+description never names a role it does not also create.
+
 :::caution
 Ptah never drops a role automatically. A role that disappears from the desired
 schema stays in the database, because roles may be shared with DBAs,

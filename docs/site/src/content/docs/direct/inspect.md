@@ -52,7 +52,17 @@ sqlite3 restored.db <schema.sql
 
 On PostgreSQL-family databases, `--schemas` accepts a comma-separated list of
 database schemas to read; when empty, Ptah reads the connection's default
-schema. Cluster-role creation statements in PostgreSQL output are intended for
+schema.
+
+PostgreSQL roles are cluster-wide rather than per-database, so a read reports
+only the roles the schemas being read actually use: a role that owns one of
+those schemas or an object in them, that holds or granted a privilege on one
+of them, or that is named by a row-level security policy on a table in them. A
+role that merely exists elsewhere on the server belongs to no schema being read
+and is not described. Every role the emitted grants and policies name is still
+described, so the output never refers to a role it does not create.
+
+Role creation statements in PostgreSQL output are intended for
 a clean target. If a role already exists, applying the SQL
 fails before its description or grants are changed; this prevents privileges
 from being attached to a role with unverified security attributes. Role
