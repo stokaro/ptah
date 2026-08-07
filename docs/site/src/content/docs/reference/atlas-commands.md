@@ -333,6 +333,14 @@ migration gets written. An unrecognized `--dir` query key is ignored; a
 `?format=` or `--dir-format` naming a non-`atlas` layout is refused, because
 nothing writes planned migration SQL in a foreign tool's convention yet.
 
+Both spellings of the layout are read the way every other migrate verb reads
+them. The value is matched verbatim, so `--dir-format ATLAS` and
+`--dir-format " atlas "` are rejected rather than coerced, and an explicit
+`?format=` outranks `--dir-format` — `--dir "file://migrations?format=atlas"
+--dir-format golang-migrate` writes the Atlas-layout migration. An
+unrecognized query key selects no layout, so `--dir-format` still decides
+there.
+
 **Desired state (`--to`)** accepts one of: local `.hcl`, `.yaml`, `.yml`, or
 `.sql` files; one directly connectable database URL; one local Atlas migration
 directory; or one `env://` reference into the evaluated `atlas.hcl`
@@ -473,10 +481,11 @@ an Atlas CE stub.
 `?format=` on this verb's `--dir` URL is still refused; use `--dir-format`. CE
 aborts every `migrate checkpoint` invocation, so there is no CE behavior to
 diverge from here and refusing an unimplemented spelling loudly is the intended
-outcome. That is **not** true of the other verbs that share the refusal —
-`migrate lint`, `new`, `diff`, `set` and `status` — where CE exits 0 and honors
-the parameter; those are parity defects, tracked in the feature matrix and its
-linked issues, not deliberate.
+outcome. `migrate diff` is now the only other verb that refuses it, and there
+the refusal **is** a parity defect rather than a deliberate choice: CE exits 0
+and writes the migration in the named layout, reverse SQL included. It is
+tracked in the feature matrix and its linked issues. `migrate lint`, `new`,
+`set` and `status` honor the parameter today.
 
 ### `ptah-compat migrate test [paths]`
 
