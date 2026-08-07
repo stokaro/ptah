@@ -1721,7 +1721,7 @@ func (r *Reader) readSequenceGrantsForSchema(schemaName string, standalone map[s
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE c.relkind = 'S'
 		AND n.nspname = $1
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg_%'
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY n.nspname, c.relname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 
@@ -2038,7 +2038,10 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 		WHERE n.nspname = $1
 		AND p.prokind = 'f'  -- Only functions, not procedures
 		AND l.lanname != 'internal'  -- Exclude internal functions
-		AND p.proname NOT LIKE 'ptah_trigger_%'
+		-- Escaped for the same reason as the role filters above: a bare _
+		-- is a LIKE wildcard, so the unescaped form also excluded ordinary
+		-- functions such as ptahxtriggery (stokaro/ptah#1291).
+		AND p.proname NOT LIKE 'ptah\_trigger\_%' ESCAPE '\'
 		-- Exclude extension-owned functions to prevent migration issues
 		-- Extension functions cannot be dropped independently and should be managed by the extension
 		AND NOT EXISTS (
@@ -2164,7 +2167,11 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 			COALESCE(shobj_description(r.oid, 'pg_authid'), '') AS comment
 		FROM pg_roles r
 		LEFT JOIN pg_authid a ON r.oid = a.oid
-		WHERE r.rolname NOT LIKE 'pg_%'  -- Exclude system roles
+		-- The underscore is escaped because LIKE reads a bare _ as a
+		-- single-character wildcard: 'pg_%' matches pgbouncer, pgadmin and
+		-- pgpool, which are ordinary user roles. PostgreSQL reserves the
+		-- prefix WITH the underscore (stokaro/ptah#1291).
+		WHERE r.rolname NOT LIKE 'pg\_%' ESCAPE '\'  -- Exclude system roles
 		AND r.rolname != 'postgres'      -- Exclude postgres superuser
 		ORDER BY r.rolname`
 
@@ -2246,7 +2253,7 @@ func (r *Reader) readTableGrantsForSchema(schemaName string) ([]types.DBGrant, e
 			grantor
 		FROM information_schema.role_table_grants
 		WHERE table_schema = $1
-		AND grantee NOT LIKE 'pg_%'
+		AND grantee NOT LIKE 'pg\_%' ESCAPE '\'
 		AND grantee != 'postgres'
 		ORDER BY table_schema, table_name, grantee, privilege_type`
 
@@ -2284,7 +2291,7 @@ func (r *Reader) readSchemaGrantsForSchema(schemaName string) ([]types.DBGrant, 
 		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg_%'
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY n.nspname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 
