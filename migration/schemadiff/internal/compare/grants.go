@@ -5,18 +5,49 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
-// Grants compares PostgreSQL role privilege grants.
+// grantObjectTypeSchema is the one object type whose target is not a table.
+const grantObjectTypeSchema = "SCHEMA"
+
+// Grants compares PostgreSQL role privilege grants using the identifier rules
+// its dialect name implies.
+//
+// Callers holding a live connection should use [GrantsWithSemantics] instead:
+// on MySQL and MariaDB a schema is a database, so nothing offline can name the
+// one that owns an unqualified target.
 func Grants(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	generatedGrantMap := make(map[string]difftypes.GrantRef)
+	GrantsWithSemantics(generated, database, diff, identifier.ForDialect(""))
+}
+
+// GrantsWithSemantics is [Grants] told which identifier rules the target has.
+//
+// The two sides do not spell a target the same way, and until they were
+// normalized they could not match. A grant read from the catalog reports the
+// object through [types.DBGrant.QualifiedTarget], which qualifies it with the
+// schema the reader found -- `"public"."granted"`. A grant declared in Go
+// annotations or HCL carries whatever the author wrote, which is normally the
+// bare `granted`. Keyed raw, one grant became two: the declared one absent from
+// the database and therefore GRANTed, and the database one absent from the
+// declaration and therefore REVOKEd, on every run of an unchanged schema.
+//
+// This is [tableMemberKey]'s defect (stokaro/ptah#1232) in a comparator that
+// builds its own key, and one of the instances collected in stokaro/ptah#1276.
+func GrantsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+) {
+	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
 	for _, grant := range generated.Grants {
 		generatedGrantRoles[grant.Role] = true
 		for _, ref := range grantRefsFromGenerated(grant) {
-			generatedGrantMap[grantRefIdentityKey(ref)] = ref
+			generatedGrantMap[newGrantIdentity(ref, semantics)] = ref
 		}
 	}
 
@@ -25,11 +56,11 @@ func Grants(generated *goschema.Database, database *types.DBSchema, diff *diffty
 		managedRoles[role.Name] = true
 	}
 
-	databaseGrantMapForAdditions := make(map[string]difftypes.GrantRef)
-	databaseGrantMapForRemovals := make(map[string]difftypes.GrantRef)
+	databaseGrantMapForAdditions := make(map[grantIdentity]difftypes.GrantRef)
+	databaseGrantMapForRemovals := make(map[grantIdentity]difftypes.GrantRef)
 	for _, grant := range database.Grants {
 		ref := grantRefFromDatabase(grant)
-		key := grantRefIdentityKey(ref)
+		key := newGrantIdentity(ref, semantics)
 		if managedRoles[ref.Role] || generatedGrantRoles[ref.Role] {
 			databaseGrantMapForAdditions[key] = ref
 		}
@@ -69,7 +100,7 @@ func grantRefsFromGenerated(grant goschema.Grant) []difftypes.GrantRef {
 	objectName := grant.OnTable
 	switch {
 	case grant.OnSchema != "":
-		objectType = "SCHEMA"
+		objectType = grantObjectTypeSchema
 		objectName = grant.OnSchema
 	case grant.OnSequence != "":
 		objectType = "SEQUENCE"
@@ -91,7 +122,7 @@ func grantRefsFromGenerated(grant goschema.Grant) []difftypes.GrantRef {
 func grantRefFromDatabase(grant types.DBGrant) difftypes.GrantRef {
 	objectType := strings.ToUpper(strings.TrimSpace(grant.ObjectType))
 	objectName := grant.QualifiedTarget()
-	if objectType == "SCHEMA" {
+	if objectType == grantObjectTypeSchema {
 		objectName = grant.ObjectName
 	}
 	return difftypes.GrantRef{
@@ -103,13 +134,36 @@ func grantRefFromDatabase(grant types.DBGrant) difftypes.GrantRef {
 	}
 }
 
-func grantRefIdentityKey(ref difftypes.GrantRef) string {
-	return strings.Join([]string{
-		strings.TrimSpace(ref.Role),
-		strings.ToUpper(strings.TrimSpace(ref.ObjectType)),
-		strings.TrimSpace(ref.ObjectName),
-		strings.ToUpper(strings.TrimSpace(ref.Privilege)),
-	}, "\x00")
+// grantIdentity is what makes two grants the same grant: a role, a privilege,
+// and the object they are about.
+//
+// The object is a normalized [tableIdentity] rather than the string it was
+// written as, for the reason given on [GrantsWithSemantics]. A SCHEMA grant is
+// the exception -- its target is a schema, so there is no owning schema to
+// resolve -- and it goes in the schema slot with the table slot left empty,
+// which also keeps `GRANT ... ON SCHEMA app` from colliding with
+// `GRANT ... ON TABLE app`.
+type grantIdentity struct {
+	role       string
+	privilege  string
+	objectType string
+	object     tableIdentity
+}
+
+func newGrantIdentity(ref difftypes.GrantRef, semantics identifier.Semantics) grantIdentity {
+	objectType := strings.ToUpper(strings.TrimSpace(ref.ObjectType))
+	object := newQualifiedTableIdentity(ref.ObjectName, semantics)
+	if objectType == grantObjectTypeSchema {
+		object = tableIdentity{
+			schema: semantics.TableIdentityKey(strings.TrimSpace(ref.ObjectName)),
+		}
+	}
+	return grantIdentity{
+		role:       strings.TrimSpace(ref.Role),
+		privilege:  strings.ToUpper(strings.TrimSpace(ref.Privilege)),
+		objectType: objectType,
+		object:     object,
+	}
 }
 
 func sortGrantRefs(refs []difftypes.GrantRef) {

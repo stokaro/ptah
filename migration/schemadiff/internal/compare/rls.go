@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -160,29 +161,53 @@ func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *d
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
 func RLSEnabledTables(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	RLSEnabledTablesWithSemantics(generated, database, diff, identifier.ForDialect(""))
+}
+
+// RLSEnabledTablesWithSemantics is [RLSEnabledTables] told which identifier
+// rules the target has.
+//
+// The two sides spell the table differently and could not match until they were
+// normalized: the database side comes from [types.DBTable.QualifiedName], which
+// carries the schema the reader found, while a declaration carries whatever the
+// author wrote. `secured` and `public.secured` were two tables, so an unchanged
+// schema planned `ENABLE ROW LEVEL SECURITY` on a table that already had it and
+// `DISABLE` on the same table, every run.
+//
+// Same defect as [tableMemberKey] (stokaro/ptah#1232), in a comparator that
+// keys by raw string; one of the instances collected in stokaro/ptah#1276.
+//
+// The reported names stay the strings each side supplied, because they are what
+// the planner renders. Only the matching is normalized.
+func RLSEnabledTablesWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+) {
 	// Create sets for comparison
-	genRLSTables := make(map[string]bool)
+	genRLSTables := make(map[tableIdentity]string)
 	for _, rlsTable := range generated.RLSEnabledTables {
-		genRLSTables[rlsTable.Table] = true
+		genRLSTables[newQualifiedTableIdentity(rlsTable.Table, semantics)] = rlsTable.Table
 	}
 
-	dbRLSTables := make(map[string]bool)
+	dbRLSTables := make(map[tableIdentity]string)
 	for _, table := range database.Tables {
 		if table.RLSEnabled {
-			dbRLSTables[table.QualifiedName()] = true
+			dbRLSTables[newTableIdentity(table.Schema, table.Name, semantics)] = table.QualifiedName()
 		}
 	}
 
 	// Find tables that need RLS enabled
-	for tableName := range genRLSTables {
-		if !dbRLSTables[tableName] {
+	for identity, tableName := range genRLSTables {
+		if _, enabled := dbRLSTables[identity]; !enabled {
 			diff.RLSEnabledTablesAdded = append(diff.RLSEnabledTablesAdded, tableName)
 		}
 	}
 
 	// Find tables that need RLS disabled
-	for tableName := range dbRLSTables {
-		if !genRLSTables[tableName] {
+	for identity, tableName := range dbRLSTables {
+		if _, declared := genRLSTables[identity]; !declared {
 			diff.RLSEnabledTablesRemoved = append(diff.RLSEnabledTablesRemoved, tableName)
 		}
 	}
