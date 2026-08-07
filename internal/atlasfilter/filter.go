@@ -848,6 +848,11 @@ func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 		RLSPolicies: slices.Clone(schema.RLSPolicies),
 		Roles:       slices.Clone(schema.Roles),
 		Grants:      slices.Clone(schema.Grants),
+		// Which roles the server has is a fact about the server, not part of
+		// the description a filter narrows. Dropping it here would tell the
+		// comparator that every cluster role outside the description is
+		// absent. See stokaro/ptah#1267.
+		RolesOutOfScope: slices.Clone(schema.RolesOutOfScope),
 	}
 }
 

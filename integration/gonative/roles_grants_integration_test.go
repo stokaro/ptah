@@ -431,6 +431,16 @@ ALTER TABLE ptah_ref_untouched_137 OWNER TO ptah_ref_owner_137;`)
 // rolesNamedByDescription lists every role name the non-role parts of a
 // description refer to: grant subjects, grantors, and the roles a row-level
 // security policy applies to.
+//
+// The names a description never defines are dropped, because a description
+// never refers to them either: PUBLIC is a keyword rather than a role, and the
+// reserved pg_ roles and the bootstrap superuser are excluded from role
+// reporting by readRoles. Leaving the bootstrap superuser in made this guard
+// fail against any connection that IS the bootstrap superuser -- the grantor
+// of every GRANT it runs -- while the document it produces names no such role
+// and the pinned Atlas community binary v1.3.0 reads it at exit 0. That is a
+// property of who connected, not of the description, and a guard that fails on
+// a legitimate connection is a guard that gets switched off.
 func rolesNamedByDescription(schema *dbschematypes.DBSchema) []string {
 	var named []string
 	for _, grant := range schema.Grants {
@@ -445,8 +455,118 @@ func rolesNamedByDescription(schema *dbschematypes.DBSchema) []string {
 		}
 	}
 	return slices.DeleteFunc(named, func(name string) bool {
-		return name == "" || name == "PUBLIC" || strings.HasPrefix(name, "pg_")
+		return name == "" || name == "PUBLIC" ||
+			name == "postgres" || strings.HasPrefix(name, "pg_")
 	})
+}
+
+// TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration pins the other
+// half of scoping roles to the inspected schemas (stokaro/ptah#1267): the
+// reader may leave a role out of the description, but the comparator must not
+// then conclude the role does not exist.
+//
+// PostgreSQL roles are cluster-wide. Scoping the description alone made every
+// role outside the inspected schemas look absent, so a desired schema naming
+// one planned CREATE ROLE and the server refused it at SQLSTATE 42710 --
+// `role "admin_user" already exists`, which took stokaro/ptah#1273's
+// integration job red three times. That is requirement 2 of
+// stokaro/ptah#1276: "not described" and "not present" have to stay
+// distinguishable in what the comparator consumes.
+//
+// The fixture holds both halves so neither can be satisfied by a blanket
+// answer: a role that exists outside the scope must be planned as nothing,
+// and a role that exists nowhere must still be planned as a CREATE.
+//
+// Say it plainly: without POSTGRES_TEST_DSN this test SKIPS and the run still
+// reports ok, so on any job that does not set it the SQL in
+// readRolesOutOfScope has no coverage from here at all. The white-box guard in
+// internal/dbschema/postgres/reader_roles_internal_test.go covers the query
+// text on every unit run, deliberately, because it is the only thing that runs
+// when this does not -- and it is not a substitute for a live server: it
+// cannot tell whether PostgreSQL agrees with what the predicate means.
+//
+// The reserved roles are outside this test as they are outside the reader: pg_
+// names and the bootstrap superuser are in neither list, so a desired schema
+// naming one is still planned as a CREATE ROLE the server refuses. See
+// compare.TestRolesReservedNameIsNotComparedAgainstAnything.
+func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
+	c := qt.New(t)
+	dsn := skipIfNoPostgreSQL(t)
+	db, err := sql.Open("pgx", dsn)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	cleanupScopedRolePresenceIntegration(c, db)
+	c.Cleanup(func() { cleanupScopedRolePresenceIntegration(c, db) })
+
+	// A role the cluster has and the inspected schema does not use: nothing
+	// grants it anything and no policy names it.
+	_, err = db.Exec("CREATE ROLE ptah_scope_outside_137 LOGIN")
+	c.Assert(err, qt.IsNil)
+
+	reader := postgres.NewPostgreSQLReader(db, "public")
+	live, err := reader.ReadSchema()
+	c.Assert(err, qt.IsNil)
+
+	// The description leaves it out, which is what stokaro/ptah#1267 asked
+	// for, and the reader still reports that it exists.
+	c.Assert(integrationRoleNames(live.Roles), qt.Not(qt.Contains), "ptah_scope_outside_137")
+	c.Assert(integrationRoleNames(live.RolesOutOfScope), qt.Contains, "ptah_scope_outside_137")
+
+	desired := &goschema.Database{
+		Roles: []goschema.Role{
+			{Name: "ptah_scope_outside_137", Login: true, Inherit: true},
+			{Name: "ptah_scope_absent_137", Login: true, Inherit: true},
+		},
+	}
+	// Compare against the role facts alone: the rest of this shared database
+	// belongs to other tests, and the decision under test is the role one.
+	rolesOnly := &dbschematypes.DBSchema{
+		Roles:           live.Roles,
+		RolesOutOfScope: live.RolesOutOfScope,
+	}
+	diff := schemadiff.Compare(desired, rolesOnly)
+
+	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"ptah_scope_absent_137"})
+
+	// And the plan applies. Before this fix the same plan carried
+	// CREATE ROLE "ptah_scope_outside_137" and died on it.
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "postgres")
+	c.Assert(err, qt.IsNil)
+	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationSQL, qt.Not(qt.Contains), "ptah_scope_outside_137")
+	for _, statement := range migrator.SplitSQLStatements(migrationSQL) {
+		_, execErr := db.Exec(statement)
+		c.Assert(execErr, qt.IsNil, qt.Commentf("statement failed: %s", statement))
+	}
+}
+
+// integrationRoleNames lists the names of introspected roles.
+func integrationRoleNames(roles []dbschematypes.DBRole) []string {
+	names := make([]string, 0, len(roles))
+	for _, role := range roles {
+		names = append(names, role.Name)
+	}
+	return names
+}
+
+func cleanupScopedRolePresenceIntegration(c *qt.C, db *sql.DB) {
+	c.Helper()
+	_, err := db.Exec(`
+DO $ptah_cleanup_scope_roles$
+DECLARE
+    role_name text;
+BEGIN
+    FOREACH role_name IN ARRAY ARRAY['ptah_scope_outside_137', 'ptah_scope_absent_137'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+            EXECUTE format('REVOKE %I FROM %I', role_name, current_user);
+            EXECUTE format('DROP OWNED BY %I', role_name);
+            EXECUTE format('DROP ROLE %I', role_name);
+        END IF;
+    END LOOP;
+END
+$ptah_cleanup_scope_roles$;`)
+	c.Check(err, qt.IsNil)
 }
 
 func cleanupDescribedRolesIntegration(c *qt.C, db *sql.DB) {

@@ -31,6 +31,32 @@ type DBSchema struct {
 	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
 	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
 	Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
+
+	// RolesOutOfScope lists roles that exist on the server but that this
+	// description deliberately does not define, because nothing in the
+	// schemas being read refers to them.
+	//
+	// PostgreSQL roles belong to the cluster rather than to one database, so
+	// "the reader did not describe this role" and "this role does not exist"
+	// are different facts, and a comparator that cannot tell them apart plans
+	// CREATE ROLE for a role that is already there. Roles and RolesOutOfScope
+	// partition the roles Ptah manages, so their union answers the
+	// comparator's question -- does this role exist -- whatever scoping rule
+	// decided the description. See stokaro/ptah#1267 and stokaro/ptah#1276.
+	//
+	// The partition is over managed roles, not over the whole catalog. A
+	// PostgreSQL reader leaves the reserved pg_ roles and the bootstrap
+	// superuser out of both lists, because Ptah manages neither in either
+	// direction, so a desired schema that names one of them is still compared
+	// against nothing and still planned as a CREATE ROLE the server refuses
+	// (SQLSTATE 42710 for postgres, 42939 for a reserved name). That is
+	// unchanged by this field and is tracked separately; do not read the union
+	// as "every role the server has".
+	//
+	// This field is not part of the description: it carries role names from
+	// outside the inspected scope, so it is never serialized and never
+	// rendered. Only Roles reaches output.
+	RolesOutOfScope []DBRole `json:"-"`
 }
 
 // DBSchemaInfo represents a database schema/namespace.

@@ -86,6 +86,25 @@ rather than the built-in privileges an owner holds by default. A relation whose
 implicit privileges are no longer emitted as `GRANT` statements; replaying
 `CREATE TABLE` gives the new owner exactly those privileges again.
 
+Leaving a role out of a description does not mean Ptah thinks it is missing.
+Which roles a schema uses and which roles Ptah manages on the server are
+separate questions, and comparison asks the second one: a managed role that
+already exists anywhere in the cluster is never planned as a `CREATE ROLE`,
+whether or not the schema you are reading refers to it. Declare such a role in
+your entities and Ptah still applies `ALTER ROLE` when its attributes drift, so
+scoping the description costs you nothing you could do before. Roles outside
+the described scope are used for that comparison only — they are never written
+to any output.
+
+Reserved roles sit outside that rule in both directions. Ptah manages neither
+the `pg_` roles nor the bootstrap `postgres` superuser: it never describes
+them and never compares them, so a desired schema that declares one is compared
+against nothing and is still planned as a `CREATE ROLE` the server refuses —
+`role "postgres" already exists` (SQLSTATE 42710) for the superuser, and
+`role name "pg_monitor" is reserved` (SQLSTATE 42939) for a `pg_` name. Do not
+declare them: Ptah does not yet refuse the declaration up front, and that
+refusal is a known gap rather than something this page describes as working.
+
 :::caution
 Ptah never drops a role automatically. A role that disappears from the desired
 schema stays in the database, because roles may be shared with DBAs,

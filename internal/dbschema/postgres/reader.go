@@ -185,6 +185,16 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		}
 		schema.Roles = roles
 
+		// The roles the description leaves out still exist on the server, and
+		// a comparator that is not told so plans CREATE ROLE for them. Read
+		// the complement so "not described" and "not present" stay different
+		// answers. See stokaro/ptah#1267 and stokaro/ptah#1276.
+		rolesOutOfScope, err := r.readRolesOutOfScope()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read roles outside the inspected scope: %w", err)
+		}
+		schema.RolesOutOfScope = rolesOutOfScope
+
 		grants, err := r.readGrants(standaloneSequenceSet(schema.Sequences))
 		if err != nil {
 			return nil, fmt.Errorf("failed to read grants: %w", err)
@@ -2305,6 +2315,60 @@ func (r *Reader) rolesInScopeClauses() []string {
 // the rest of the description can mention, so the description never references
 // a role it does not also define.
 func (r *Reader) readRoles() ([]types.DBRole, error) {
+	return r.queryRoles(rolesUsedByScope)
+}
+
+// readRolesOutOfScope reads the roles the server has that readRoles left out:
+// the exact complement, over the same catalog and the same reserved-name
+// exclusions.
+//
+// Scoping the description (stokaro/ptah#1267) is right for describing a schema
+// and says nothing about what the server has. The comparator asks a different
+// question -- does this role exist -- and answering it from the description
+// alone reads "out of scope" as "absent" and plans CREATE ROLE for a role that
+// is already there, which the server refuses at SQLSTATE 42710. That is
+// requirement 2 of stokaro/ptah#1276: "not described" and "not present" have
+// to be distinguishable in what the comparator consumes.
+//
+// The two reads partition the roles this reader reports at all, so their union
+// is every such role regardless of which scoping rule readRoles applies. A
+// change to the scoping rule moves roles between the two lists and can never
+// make a reported role look absent.
+//
+// The partition is over managed roles, not over pg_roles. queryRoles ends both
+// statements with the same `NOT LIKE 'pg\_%' ESCAPE '\'` and `!= 'postgres'`
+// exclusions, so the reserved roles and the bootstrap superuser are in neither
+// list -- Ptah manages neither, in either direction. A desired schema that
+// names one is therefore still compared against nothing and still planned as a
+// CREATE ROLE the server refuses (SQLSTATE 42710 for postgres, 42939 for a
+// reserved name); that predates this method, is unchanged by it, and is a
+// separate refusal to build. Do not restate this as "every role the server
+// has".
+//
+// The escape is load-bearing for both reads at once: an unescaped underscore
+// is a single-character wildcard, so it would drop pgbouncer, pgadmin and
+// pgpool from the description and from this complement alike, leaving them in
+// neither list and back in the CREATE ROLE failure this method prevents
+// (stokaro/ptah#1291).
+//
+// The complement is spelled NOT EXISTS rather than NOT IN because a NOT IN
+// over a subquery yielding a single NULL matches nothing at all, which would
+// silently empty this list and restore the very defect it exists to prevent.
+func (r *Reader) readRolesOutOfScope() ([]types.DBRole, error) {
+	return r.queryRoles(rolesNotUsedByScope)
+}
+
+// Membership predicates for the role query, applied against the `used` set the
+// scope branches build. They are complements of one another, and nothing else
+// in the two queries differs.
+const (
+	rolesUsedByScope    = `EXISTS (SELECT 1 FROM used u WHERE u.roleoid = r.oid)`
+	rolesNotUsedByScope = `NOT EXISTS (SELECT 1 FROM used u WHERE u.roleoid = r.oid)`
+)
+
+// queryRoles reads pg_roles restricted by one of the two membership
+// predicates above.
+func (r *Reader) queryRoles(membership string) ([]types.DBRole, error) {
 	schemas := r.schemasToRead()
 	placeholders := make([]string, 0, len(schemas))
 	args := make([]any, 0, len(schemas))
@@ -2340,7 +2404,7 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 		-- single-character wildcard: 'pg_%' matches pgbouncer, pgadmin and
 		-- pgpool, which are ordinary user roles. PostgreSQL reserves the
 		-- prefix WITH the underscore (stokaro/ptah#1291).
-		WHERE r.oid IN (SELECT roleoid FROM used)
+		WHERE ` + membership + `
 		AND r.rolname NOT LIKE 'pg\_%' ESCAPE '\'  -- Exclude system roles
 		AND r.rolname != 'postgres'      -- Exclude postgres superuser
 		ORDER BY r.rolname`
