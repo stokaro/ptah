@@ -300,6 +300,17 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			column_name,
 			data_type,
 			udt_name,
+			-- information_schema erases an array's element type: data_type is
+			-- the bare category "ARRAY" and character_maximum_length is null,
+			-- so varchar(100)[] cannot be reconstructed from either. Only
+			-- format_type carries it. Read for array columns alone: preferring
+			-- it everywhere would change the type string for every column and
+			-- reach the SERIAL detection and the sized-type branches
+			-- downstream (stokaro/ptah#1138).
+			CASE WHEN data_type = 'ARRAY'
+				THEN format_type(a.atttypid, a.atttypmod)
+				ELSE ''
+			END AS formatted_type,
 			is_nullable,
 			column_default,
 			character_maximum_length,
@@ -346,6 +357,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			&col.Name,
 			&col.DataType,
 			&col.UDTName,
+			&col.FormattedType,
 			&col.IsNullable,
 			&col.ColumnDefault,
 			&col.CharacterMaxLength,
