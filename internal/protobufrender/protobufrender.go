@@ -20,7 +20,6 @@ package protobufrender
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -108,29 +107,62 @@ type Options struct {
 	Package string
 	// GoPackage, when set, is emitted as option go_package.
 	GoPackage string
-	// OutPath is the destination path. It is used for diagnostics and as the
-	// logical file name given to the protobuf compiler.
+	// OutPath is the destination path of the anchor file. It is used for
+	// diagnostics and as the logical file name given to the protobuf compiler.
 	OutPath string
-	// Previous is the previously generated file's bytes.
+	// Previous is the previously generated anchor file's bytes.
 	Previous []byte
 	// HasPrevious reports that a previous export exists at OutPath. It is
 	// explicit rather than inferred from len(Previous), so a zero-byte file is
 	// refused by the validation gate instead of silently bootstrapping a fresh,
 	// incompatible numbering history.
 	HasPrevious bool
+	// PreviousSiblings carries the bytes of every other file the previous export
+	// wrote, keyed by base name. The caller learns those names from
+	// ManifestNames and must supply all of them: a file left out would make its
+	// messages look deleted and restart their numbering.
+	PreviousSiblings map[string][]byte
+
+	// Split selects how many files the export writes. The zero value is
+	// SplitNone.
+	Split SplitPolicy
 
 	TypeRemoval          RemovalPolicy
 	OnIncompatibleChange ChangePolicy
 	OnNameReuse          NameReusePolicy
+	// OnTypeMove decides what happens when an already-pinned type changes files.
+	// The zero value refuses, like every other policy here.
+	OnTypeMove MovePolicy
+
 	// Comments selects which comments the generated file carries. The zero value
 	// is CommentsNone: an embedder that never sets it publishes no source prose,
 	// which is the same default the CLI has.
 	Comments CommentPolicy
 }
 
+// OutputFile is one file of a rendered export set.
+type OutputFile struct {
+	// Name is the base name inside the anchor's directory.
+	Name string
+	// Data is the complete file, digest already stamped.
+	Data []byte
+	// Anchor marks the file --out names.
+	Anchor bool
+}
+
 // Result is the rendered definition plus any export diagnostics.
 type Result struct {
-	Data        []byte
+	// Data is the anchor file's bytes, which is the whole export when Split is
+	// SplitNone. Files carries the complete set, anchor first.
+	Data []byte
+	// Files is every file the export writes, anchor first and the rest sorted by
+	// name. Writing all of them is what makes the set self-consistent: the
+	// anchor's manifest names exactly these files.
+	Files []OutputFile
+	// Removed lists the base names of files the previous export wrote that this
+	// one no longer contains. They are Ptah's own output, already validated, and
+	// leaving them behind would redeclare types the set no longer owns.
+	Removed     []string
 	Diagnostics []schemaexport.Diagnostic
 	// Bootstrapped reports that no previous export existed, so the numbering
 	// starts from 1 and is compatible with no previously published .proto.
@@ -146,10 +178,17 @@ type Result struct {
 type builder struct {
 	opts        Options
 	diagnostics []schemaexport.Diagnostic
-	imports     map[string]bool
+	// messageImports records the well-known-type imports each message's fields
+	// need, keyed by message name. It is per-message rather than per-file
+	// because the file a message lands in is only decided after every field has
+	// been mapped.
+	messageImports map[string][]string
 	// enumByKey deduplicates enums so several columns sharing one named Ptah
 	// enum produce exactly one Protobuf enum.
 	enumByKey map[string]string
+	// enumNames is the set of generated enum type names, used to decide which
+	// files have to import the anchor.
+	enumNames map[string]bool
 	enums     []enum
 	// messageOwners maps a generated message name to the table that produced it,
 	// so an enum that would take the same name is rejected with both sources
@@ -172,19 +211,21 @@ func Render(ctx context.Context, db *goschema.Database, opts Options) (Result, e
 	}
 
 	b := &builder{
-		opts:          opts,
-		imports:       map[string]bool{},
-		enumByKey:     map[string]string{},
-		valueOwners:   map[string][]string{},
-		messageOwners: map[string]string{},
+		opts:           opts,
+		messageImports: map[string][]string{},
+		enumByKey:      map[string]string{},
+		enumNames:      map[string]bool{},
+		valueOwners:    map[string][]string{},
+		messageOwners:  map[string]string{},
 	}
 
-	logicalPath := protoLogicalPath(opts)
+	anchor := anchorName(opts.OutPath)
+	pkgDir := packageDir(opts.Package)
 
-	var prev *previousFile
+	var prev *previousSet
 	bootstrapped := true
 	if opts.HasPrevious {
-		loaded, err := loadPrevious(ctx, logicalPath, opts.Previous, opts.Package)
+		loaded, err := loadPrevious(ctx, pkgDir, anchor, opts.Previous, opts.PreviousSiblings, opts.Package)
 		if err != nil {
 			return Result{}, err
 		}
@@ -205,58 +246,66 @@ func Render(ctx context.Context, db *goschema.Database, opts Options) (Result, e
 		return Result{}, err
 	}
 
-	out, err := b.reconcile(desired, prev)
+	homes, err := b.assignFiles(desired, anchor)
 	if err != nil {
 		return Result{}, err
 	}
-	out.Package = opts.Package
-	out.GoPackage = opts.GoPackage
-	for imp := range b.imports {
-		out.Imports = append(out.Imports, imp)
+	// The move gate runs before any numbering is reconciled, so a refused move
+	// cannot leave a partially renumbered model behind.
+	if err := b.checkMoves(homes, prev, anchor); err != nil {
+		return Result{}, err
 	}
-	out.sortForOutput()
 
-	rendered := render(out)
-	stamped, err := stampDigest([]byte(rendered))
+	messages, enums, err := b.reconcile(desired, prev)
 	if err != nil {
-		return Result{}, fmt.Errorf("stamp content digest: %w", err)
+		return Result{}, err
 	}
 
-	// Re-parse what we are about to write. This catches generator bugs at
-	// generation time rather than in the caller's build. It is deliberately not
-	// an injection backstop: a balanced injection parses and links cleanly,
-	// which is why comments and identifiers are escaped in their own right.
-	if _, err := compileProto(ctx, logicalPath, string(stamped)); err != nil {
+	out := b.group(messages, enums, homes, prev, anchor)
+
+	sources := map[string]string{}
+	pathOf := map[string]string{}
+	names := make([]string, 0, len(out))
+	files := make([]OutputFile, 0, len(out))
+	for _, current := range out {
+		stamped, err := stampDigest([]byte(render(current)))
+		if err != nil {
+			return Result{}, fmt.Errorf("stamp content digest for %s: %w", current.Name, err)
+		}
+		path := logicalPath(pkgDir, current.Name)
+		sources[path] = string(stamped)
+		pathOf[current.Name] = path
+		names = append(names, current.Name)
+		files = append(files, OutputFile{Name: current.Name, Data: stamped, Anchor: current.Anchor})
+	}
+
+	// Re-parse what we are about to write, as one set so cross-file imports are
+	// resolved. This catches generator bugs at generation time rather than in
+	// the caller's build. It is deliberately not an injection backstop: a
+	// balanced injection parses and links cleanly, which is why comments and
+	// identifiers are escaped in their own right.
+	if _, err := compileProtoSet(ctx, sources, names, pathOf); err != nil {
 		return Result{}, fmt.Errorf("generated protobuf is invalid: %w", err)
 	}
 
-	fieldCount := 0
-	for _, msg := range out.Messages {
-		fieldCount += len(msg.Fields)
+	messageCount, fieldCount, enumCount := 0, 0, 0
+	for _, current := range out {
+		messageCount += len(current.Messages)
+		enumCount += len(current.Enums)
+		for _, msg := range current.Messages {
+			fieldCount += len(msg.Fields)
+		}
 	}
 	return Result{
-		Data:         stamped,
+		Data:         files[0].Data,
+		Files:        files,
+		Removed:      removedFiles(prev, out),
 		Diagnostics:  b.diagnostics,
 		Bootstrapped: bootstrapped,
-		Messages:     len(out.Messages),
+		Messages:     messageCount,
 		Fields:       fieldCount,
-		Enums:        len(out.Enums),
+		Enums:        enumCount,
 	}, nil
-}
-
-// protoLogicalPath is the path handed to the protobuf compiler. Using the
-// package directory keeps compiler diagnostics meaningful even when --out lives
-// somewhere else.
-func protoLogicalPath(opts Options) string {
-	name := "schema.proto"
-	if opts.OutPath != "" {
-		name = filepath.Base(opts.OutPath)
-	}
-	dir := strings.ReplaceAll(opts.Package, ".", "/")
-	if dir == "" {
-		return name
-	}
-	return dir + "/" + name
 }
 
 // desiredShape is the schema as the source describes it, before any previously
@@ -277,6 +326,9 @@ type desiredField struct {
 	Type     string
 	Repeated bool
 	Comment  string
+	// Import is the well-known-type file the field's type needs, empty for a
+	// built-in scalar or a generated enum.
+	Import string
 }
 
 func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
@@ -318,6 +370,9 @@ func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 			}
 			seen[df.Name] = f.Name
 			msg.Fields = append(msg.Fields, df)
+			if df.Import != "" {
+				b.messageImports[msg.Name] = append(b.messageImports[msg.Name], df.Import)
+			}
 		}
 		shape.messages = append(shape.messages, msg)
 	}
@@ -412,16 +467,19 @@ func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex m
 	}
 
 	mapped := mapProtoType(element)
-	if mapped.Import != "" {
-		b.imports[mapped.Import] = true
-	}
 	if !mapped.Known {
 		b.warn(path, fmt.Sprintf("column type %q is not recognized and was exported as string", f.Type))
 	}
 	if mapped.Lossy != "" {
 		b.warn(path, mapped.Lossy)
 	}
-	return desiredField{Name: name, Type: mapped.Name, Repeated: isArray, Comment: b.sourceComment(f.Comment)}, nil
+	return desiredField{
+		Name:     name,
+		Type:     mapped.Name,
+		Repeated: isArray,
+		Comment:  b.sourceComment(f.Comment),
+		Import:   mapped.Import,
+	}, nil
 }
 
 // sourceComment returns the comment a table or column contributes to the
@@ -504,6 +562,7 @@ func (b *builder) registerEnum(table goschema.Table, f goschema.Field, values []
 	}
 
 	b.enumByKey[key] = name
+	b.enumNames[name] = true
 	b.enums = append(b.enums, built)
 	return name, nil
 }

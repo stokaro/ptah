@@ -45,7 +45,7 @@ func render(f file) string {
 	// rewriting the file, invalidating the content digest and making every later
 	// export refuse to run.
 	body := strings.TrimRight(sb.String(), "\n")
-	return body + "\n\n" + renderHeader()
+	return body + "\n\n" + renderHeader(f.Siblings)
 }
 
 // renderHeader writes the generated header block. It is the LAST thing in the
@@ -53,10 +53,20 @@ func render(f file) string {
 // which protoc-gen-go copies to the top of every .pb.go, putting Ptah's content
 // digest into consumers' Go source. The digest line is stamped with its real
 // value by stampDigest once the rest of the file is complete.
-func renderHeader() string {
-	return generatedMarker + "\n" +
+//
+// siblings is the anchor's record of the rest of its export set, and is empty
+// for every other file. It sits inside the header block so that stampDigest
+// covers it: a manifest outside the digest could be edited to drop a file from
+// the set, and the next run would read the survivors as the whole export and
+// restart the dropped file's field numbers at 1.
+func renderHeader(siblings []string) string {
+	header := generatedMarker + "\n" +
 		versionPrefix + strconv.Itoa(exportVersion) + "\n" +
 		digestPrefix + "\n"
+	if len(siblings) > 0 {
+		header += manifestPrefix + strings.Join(siblings, ",") + "\n"
+	}
+	return header
 }
 
 func renderMessage(sb *strings.Builder, msg message) {
