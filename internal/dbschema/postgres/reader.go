@@ -2227,9 +2227,98 @@ func (r *Reader) readRLSPoliciesForSchema(schemaName string) ([]types.DBRLSPolic
 	return policies, nil
 }
 
-// readRoles reads all PostgreSQL roles from the database
+// rolesInScopeClauses returns the branches of the role-scoping union, one per
+// reason a role counts as used by the inspected schemas. Each branch reads the
+// catalog column that carries the reason, so the reason a role is reported is
+// always a fact about the inspected scope rather than about the server.
+//
+// The `scope` CTE the branches join against is defined by readRoles.
+func (r *Reader) rolesInScopeClauses() []string {
+	clauses := []string{
+		// Owns one of the schemas in scope (pg_namespace.nspowner).
+		`SELECT s.nspowner AS roleoid FROM scope s`,
+		// Owns a relation in scope -- table, view, materialized view,
+		// sequence or index (pg_class.relowner).
+		`SELECT c.relowner FROM pg_class c
+			JOIN scope s ON s.oid = c.relnamespace`,
+		// Owns a type in scope -- enum, domain, composite or range
+		// (pg_type.typowner).
+		`SELECT t.typowner FROM pg_type t
+			JOIN scope s ON s.oid = t.typnamespace`,
+		// Owns a routine in scope (pg_proc.proowner).
+		`SELECT p.proowner FROM pg_proc p
+			JOIN scope s ON s.oid = p.pronamespace`,
+		// Holds a privilege on a relation in scope (pg_class.relacl).
+		`SELECT acl.grantee FROM pg_class c
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+		// Granted a privilege on a relation in scope (pg_class.relacl).
+		`SELECT acl.grantor FROM pg_class c
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+		// Holds a privilege on a schema in scope (pg_namespace.nspacl).
+		`SELECT acl.grantee FROM scope s
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+		// Granted a privilege on a schema in scope (pg_namespace.nspacl).
+		`SELECT acl.grantor FROM scope s
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+	}
+	if r.caps.Has(capability.RowLevelSecurity) {
+		// Named by a row-level security policy on a table in scope
+		// (pg_policy.polroles), read in the same shape readRLSPolicies uses.
+		clauses = append(clauses, `SELECT policyrole FROM pg_policy pol
+			JOIN pg_class c ON c.oid = pol.polrelid
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL unnest(pol.polroles) AS policyrole`)
+	}
+	return clauses
+}
+
+// readRoles reads the PostgreSQL roles the inspected scope actually uses.
+//
+// Roles are cluster-wide: pg_roles lists every role on the server, including
+// roles that exist only for databases this reader was never pointed at.
+// Reporting all of them describes objects the inspected schema does not
+// contain, cannot be replayed (CREATE ROLE is not idempotent, and creating a
+// fresh database does not clear cluster roles), and on a shared instance
+// discloses every other tenant's role names. See stokaro/ptah#1267.
+//
+// "Uses" is defined here, deliberately, as any of:
+//
+//   - owning an object in a schema in scope, or owning one of those schemas;
+//   - holding a privilege on an object in a schema in scope, or on one of
+//     those schemas -- or having granted one;
+//   - being named by a row-level security policy on a table in scope.
+//
+// A role that merely exists in the cluster is not used by the inspected scope
+// and is not reported. This is a scoping decision rather than a suppression:
+// a role that belongs to the inspected schemas is still reported in full, on
+// the native and the compatibility surface alike, so no capability is lost.
+//
+// The privilege clauses read the grantor as well as the grantee because
+// readGrants reports both. That makes this set a superset of every role name
+// the rest of the description can mention, so the description never references
+// a role it does not also define.
 func (r *Reader) readRoles() ([]types.DBRole, error) {
+	schemas := r.schemasToRead()
+	placeholders := make([]string, 0, len(schemas))
+	args := make([]any, 0, len(schemas))
+	for i, schemaName := range schemas {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, schemaName)
+	}
+
 	rolesQuery := `
+		WITH scope AS (
+			SELECT n.oid, n.nspowner, n.nspacl
+			FROM pg_namespace n
+			WHERE n.nspname IN (` + strings.Join(placeholders, ", ") + `)
+		),
+		used AS (
+			` + strings.Join(r.rolesInScopeClauses(), `
+			UNION
+			`) + `
+		)
 		SELECT
 			r.rolname AS role_name,
 			r.rolcanlogin AS login,
@@ -2246,11 +2335,12 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 		-- single-character wildcard: 'pg_%' matches pgbouncer, pgadmin and
 		-- pgpool, which are ordinary user roles. PostgreSQL reserves the
 		-- prefix WITH the underscore (stokaro/ptah#1291).
-		WHERE r.rolname NOT LIKE 'pg\_%' ESCAPE '\'  -- Exclude system roles
+		WHERE r.oid IN (SELECT roleoid FROM used)
+		AND r.rolname NOT LIKE 'pg\_%' ESCAPE '\'  -- Exclude system roles
 		AND r.rolname != 'postgres'      -- Exclude postgres superuser
 		ORDER BY r.rolname`
 
-	rows, err := r.db.Query(rolesQuery)
+	rows, err := r.db.Query(rolesQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query roles: %w", err)
 	}
