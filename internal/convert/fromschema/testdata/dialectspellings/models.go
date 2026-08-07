@@ -20,7 +20,7 @@
 //   - email_lower pins defaultGeneratedKind (STORED / VIRTUAL / PERSISTED).
 //   - orders.user_id pins isSQLiteTarget (inline vs ALTER TABLE foreign keys)
 //     and isMySQLFamilyTarget (index emission order around ADD CONSTRAINT).
-//   - the PostgreSQL object block pins isPostgreSQLPlatform.
+//   - the PostgreSQL object block pins isPostgreSQLFamilyPlatform.
 //
 // The app-qualified audit table exercises renderTableName, but it does not pin
 // sqlident.Quote's quote style: the dialect renderer re-quotes the table name,
