@@ -34,7 +34,11 @@ func atlasMigrateValidateVerb() atlasVerb {
 		factory: migratevalidate.NewAtlasMigrateValidateCommand,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
-			atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
+			// Same as `migrate hash`: the directory was already defaulted by
+			// the native command, and only the help line failed to say so.
+			atlasargs.NativeLocalDirDefault(
+				"dir", "", "Migration directory", "dir", atlasDefaultMigrationDirURL,
+			),
 			atlasMigrateDirFormatFlag("dir-format"),
 		},
 	}

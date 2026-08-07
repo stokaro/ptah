@@ -74,7 +74,15 @@ type atlasPositionalArg struct {
 
 const (
 	atlasDirFormatDefault = "atlas"
-	atlasErrorExitCode    = 1
+	// atlasDefaultMigrationDirURL is the migration directory every verb that
+	// documents a `--dir` default falls back to. The pinned community binary
+	// v1.3.0 prints `(default "file://migrations")` on `migrate apply`,
+	// `migrate new`, `migrate diff`, `migrate status`, `migrate set`,
+	// `migrate lint`, `migrate hash` and `migrate validate`; Ptah honored it
+	// on some and not others (stokaro/ptah#1241 items 2 and 3), so the value
+	// lives here once instead of being retyped per verb.
+	atlasDefaultMigrationDirURL = "file://migrations"
+	atlasErrorExitCode          = 1
 	// atlasErrorPrefix is the diagnostic prefix of the whole compat surface.
 	// It is declared once on the root command (see NewCompatCommand) and
 	// resolved from the command tree at print time, so every diagnostic below

@@ -72,14 +72,14 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 167 capabilities below:
+Across the 168 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 94 |
+| Ptah supports it fully | 95 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 24 |
-| Ptah and Atlas CE both support it | 25 |
+| Ptah and Atlas CE both support it | 26 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 21 |
 | Atlas CE has it and Ptah does not, or only in part | 25 |
@@ -160,6 +160,7 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
+| `--dir` defaults to `file://migrations` | ✅ | ✅ | ✅ | All eight migrate verbs registering `--dir` default it to `file://migrations`. Never a fallback: the flag, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR` and `atlas.hcl` outrank it, and `atlas.sum` is still gated. |
 | Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format revision tables are covered. |
 | Atlas R-suffixed (`1R_`, `R__`) migration execution | ❌ | ✅ | ✅ | Ptah refuses an Atlas directory holding one, naming every such file; CE executes it keyed on the version string the name spells. Dropping it at exit 0 was stokaro/ptah#846. |
 | Atlas SQL template migrations (`--atlas-env`) | ✅ | ❌ | ❌ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. CE runs the braces as SQL. |

@@ -279,6 +279,15 @@ nothing. The same applies to its `PTAH_DIR` twin. The verbs that only read a
 directory still accept a bare path, as does `atlas.hcl` `migration.dir`
 ([#1186](https://github.com/stokaro/ptah/issues/1186)).
 
+Omitted entirely, `--dir` defaults to `file://migrations`, so
+`ptah-compat migrate new add_users` creates `./migrations` and writes into it
+([#1241](https://github.com/stokaro/ptah/issues/1241)). Missing parents are
+created too: `--dir file://db/migrations` creates `db` and `db/migrations`. A
+path component that exists and is not a directory is still refused, and nothing
+is written. See
+[The `--dir` default](../../atlas/migrate-commands/#the---dir-default) for how
+the default ranks against `PTAH_DIR`, `PTAH_MIGRATIONS_DIR` and `atlas.hcl`.
+
 ### `ptah-compat migrate set [version]`
 
 Moves Atlas revision history to the positional version without executing

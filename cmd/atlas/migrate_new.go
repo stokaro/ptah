@@ -71,7 +71,22 @@ func atlasMigrateNewVerb() atlasVerb {
 		writesDir:  true,
 		factory:    migrate.NewMigrateCreateCommand,
 		flags: []atlasargs.Flag{
-			atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
+			// `ptah migrations create` registers no default for its own
+			// --migrations-dir, so before this default was declared here the
+			// compat verb refused every invocation that did not spell --dir --
+			// exit 1 with `migrations directory is required` where the pinned
+			// community binary v1.3.0 created ./migrations and a file in it,
+			// and where its own --help already promised
+			// `(default "file://migrations")` (stokaro/ptah#1241 item 3).
+			//
+			// Declared on the Atlas flag rather than on the native one: the
+			// native command is also reachable as `ptah migrations create`,
+			// where no Atlas default is owed, and atlas.hcl `migration.dir`
+			// and PTAH_MIGRATIONS_DIR both still win because
+			// atlasargs.appendDefaultArgs only fills an absent flag.
+			atlasargs.NativeLocalDirDefault(
+				"dir", "", "Migration directory", "migrations-dir", atlasDefaultMigrationDirURL,
+			),
 			atlasMigrateDirFormatFlag("dir-format"),
 			atlasargs.NativeBool("edit", "", "Edit the created migration files", "edit"),
 		},
