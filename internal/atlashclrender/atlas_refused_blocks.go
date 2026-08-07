@@ -170,17 +170,20 @@ func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 // documentNamesAny reports whether anything the surviving document emits names
 // any of these identifiers.
 //
-// Matching is case-insensitive because unquoted PostgreSQL identifiers are, and
-// because the direction of a wrong answer matters: a false positive keeps a
-// block that could have been omitted, which costs compatibility; a false
-// negative emits a document with a hole in it, which costs correctness -- a
-// document nobody, including the pinned binary, can read. This errs toward
-// keeping.
+// Matching is case-insensitive because unquoted PostgreSQL identifiers are.
 //
-// That asymmetry is what makes the coarse `Provides` set the right input even
-// though it over-matches. `pgcrypto` supplies `gen_random_uuid`, which
-// PostgreSQL 17 also supplies from core, so a document using it keeps pgcrypto
-// although it would have resolved without it. That is the harmless direction.
+// Neither direction of a wrong answer is safe, so this does not lean either
+// way. A false negative emits a document with a hole in it: the Atlas community
+// CLI refuses it and so does everything else, because the document names an
+// object nothing declares. A false positive emits a correct document carrying
+// an extension block, and that binary refuses ANY schema file declaring one --
+// measured, every kept block is a refusal, not a partial loss. So a spurious
+// match costs the entire result this suppression exists to produce, on a schema
+// with no relationship to the extension (stokaro/ptah#1280).
+//
+// What makes the answer precise is therefore the input: the names in
+// [goschema.Extension.Provides] are only those the extension supplies that do
+// not also resolve without it.
 func (r *renderer) documentNamesAny(names []string) bool {
 	if r.references == nil {
 		r.references = collectReferencedNames(r.db)
