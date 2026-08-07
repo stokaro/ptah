@@ -23,6 +23,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
@@ -32,6 +33,20 @@ import (
 // searchPathParam is the PostgreSQL-family query parameter that restricts a
 // database URL to a single schema.
 const searchPathParam = "search_path"
+
+// PostgresNonSystemSchemas is the WHERE predicate that keeps the schemas a
+// realm describes and drops the server's own, over a `pg_namespace n`.
+//
+// The ESCAPE clause matters: in LIKE, `_` matches any single character, so an
+// unescaped 'pg\_%' would also hide a user schema named `pgapp` and describe
+// less of the database than is there.
+//
+// It is one string rather than two because two callers ask about the same set
+// — this package's [RealmSchemas] and the not-clean gate's realm probe in
+// go.5x5.cz/ptah/internal/migrateclean, which needs each schema's tables as
+// well. Those two questions differ; "which schemas is the realm" does not.
+const PostgresNonSystemSchemas = `n.nspname <> 'information_schema'
+			  AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'`
 
 // RowQuerier is the part of *sql.DB and *sql.Tx [Selection.Resolve] needs.
 // Taking the narrow interface keeps this package off the connection layer,
@@ -110,6 +125,95 @@ func fromQuery(query url.Values) Selection {
 	}
 	selection.Scope = raw
 	return selection
+}
+
+// Realm reports whether a connection left the run at realm scope — describing
+// every schema of the connected database rather than one.
+//
+// It is answered per dialect from the URL, NOT from the session, and the
+// difference is observable. Measured on PostgreSQL 17, a URL carrying
+// `options=-c search_path=extra` puts the session's `current_schema()` in
+// `extra` and the pinned community binary v1.3.0 still evaluates the whole
+// realm: with an empty `extra` present the not-clean gate refuses `found schema
+// "extra"`. Only the `search_path` query parameter moves it to schema scope.
+// Reading the session back would therefore get that URL wrong.
+//
+// The PostgreSQL half defers to [FromURL] above, so every caller of this
+// distinction shares one answer to "did this URL restrict the run to one
+// schema". A comma-carrying `search_path` selects nothing there, which lands
+// here as realm scope — the direction that describes more of the database
+// rather than less.
+//
+// MySQL-family connections answer from the connected schema instead of the URL
+// because dbschema resolves the database for both URL spellings, and an empty
+// answer is unreachable today: a MySQL URL with no database fails to connect
+// before any of this runs, on a NULL DATABASE() scan.
+//
+// Two callers share this: the not-clean adoption gate (stokaro/ptah#1257) and
+// the Atlas-compatible `schema inspect` surface (stokaro/ptah#1264), which had
+// collapsed the two scopes into the connection's own schema and so described
+// only one schema of a multi-schema database.
+func Realm(dialect, rawURL, connectedSchema string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLite:
+		// SQLite has one namespace, so there is no wider scope to select.
+		return false
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return FromURL(rawURL).Scope == ""
+	case platform.MySQL, platform.MariaDB:
+		return strings.TrimSpace(connectedSchema) == ""
+	default:
+		// A dialect whose realm boundary nobody has measured stays at schema
+		// scope, which is what every such connection already describes.
+		return false
+	}
+}
+
+// RowsQuerier is the part of *sql.DB and dbschema.DatabaseConnection
+// [RealmSchemas] needs.
+type RowsQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// RealmSchemas returns every schema a realm-scoped run describes, sorted in
+// byte order.
+//
+// The sort is Go's rather than the server's ORDER BY, which is
+// collation-dependent: measured on PostgreSQL 17 with schemas "Zed" and "app"
+// present, the pinned binary walks "Zed" first, which is byte order and not
+// what this database's default collation returns.
+//
+// A dialect with no probe is an error rather than an empty list. Answering
+// "no schemas" would let a caller describe an empty database where the server
+// holds one, which is the failure stokaro/ptah#1264 is about. Only PostgreSQL
+// reaches realm scope through [Realm] with a connection that can be opened at
+// all, so only it has a probe.
+func RealmSchemas(ctx context.Context, dialect string, q RowsQuerier) ([]string, error) {
+	if !platform.IsPostgresFamily(dialect) {
+		return nil, fmt.Errorf("no realm-scope schema probe for dialect %q", dialect)
+	}
+	rows, err := q.QueryContext(ctx, `
+		SELECT n.nspname
+		FROM pg_namespace n
+		WHERE `+PostgresNonSystemSchemas)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list realm schemas: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if scanErr := rows.Scan(&name); scanErr != nil {
+			return nil, fmt.Errorf("failed to list realm schemas: %w", scanErr)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list realm schemas: %w", err)
+	}
+	slices.Sort(names)
+	return names, nil
 }
 
 // Resolve asks the server which schema this session actually resolved to. It is

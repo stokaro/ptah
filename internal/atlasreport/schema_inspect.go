@@ -33,19 +33,29 @@ type atlasSchemaInspectJSONRealm struct {
 	Schemas []atlasSchemaInspectJSONSchema `json:"schemas,omitempty"`
 }
 
+// atlasSchemaInspectJSONSchema and atlasSchemaInspectJSONTable both carry their
+// attributes AFTER their children, because that is where the pinned community
+// binary v1.3.0 puts them. Measured on PostgreSQL 17 and MySQL 9.7:
+//
+//	{"name":"public","tables":[…],"comment":"standard public schema"}
+//	{"name":"t","columns":[…],"comment":"table comment"}
+//	{"name":"adv_dev","tables":[…],"charset":"utf8mb4","collate":"utf8mb4_0900_ai_ci"}
+//
+// Go emits object keys in field order, embedded fields included, so the field
+// order here is the byte order of the document a consumer diffs.
 type atlasSchemaInspectJSONSchema struct {
-	Name string `json:"name"`
-	atlasSchemaInspectJSONAttrs
+	Name   string                        `json:"name"`
 	Tables []atlasSchemaInspectJSONTable `json:"tables,omitempty"`
+	atlasSchemaInspectJSONAttrs
 }
 
 type atlasSchemaInspectJSONTable struct {
-	Name string `json:"name"`
-	atlasSchemaInspectJSONAttrs
+	Name        string                             `json:"name"`
 	Columns     []atlasSchemaInspectJSONColumn     `json:"columns,omitempty"`
 	Indexes     []atlasSchemaInspectJSONIndex      `json:"indexes,omitempty"`
 	PrimaryKey  *atlasSchemaInspectJSONIndex       `json:"primary_key,omitempty"`
 	ForeignKeys []atlasSchemaInspectJSONForeignKey `json:"foreign_keys,omitempty"`
+	atlasSchemaInspectJSONAttrs
 }
 
 type atlasSchemaInspectJSONAttrs struct {
@@ -271,10 +281,30 @@ func atlasSchemaInspectBase64URL(value any) string {
 	return strings.NewReplacer("+", "-", "/", "_", "=", "").Replace(atlasTemplateString(value))
 }
 
+// atlasSchemaInspectJSON builds the realm document.
+//
+// The schema list comes from the schemas the reader described, NOT from the
+// tables it found. Deriving it from tables made a schema disappear the moment
+// it held none: an empty database rendered as `{}` where the pinned community
+// binary v1.3.0 renders `{"schemas":[{"name":"public","comment":"standard
+// public schema"}]}` — measured on PostgreSQL 17, and the same on SQLite with
+// `main` and on MySQL 9.7 with the connected database (stokaro/ptah#1264).
+//
+// Tables still contribute their schema, so a reader that describes no schemas
+// keeps rendering what it did before rather than losing its tables to a
+// missing row.
 func atlasSchemaInspectJSON(schema *dbschematypes.DBSchema, info dbschematypes.DBInfo) atlasSchemaInspectJSONRealm {
 	schemasByName := make(map[string]*atlasSchemaInspectJSONSchema)
 	indexesByTable := atlasSchemaInspectIndexesByTable(schema.Indexes)
 	constraintsByTable := atlasSchemaInspectConstraintsByTable(schema.Constraints)
+	for _, described := range schema.Schemas {
+		jsonSchema := atlasSchemaInspectSchemaForName(schemasByName, described.Name)
+		jsonSchema.atlasSchemaInspectJSONAttrs = atlasSchemaInspectJSONAttrs{
+			Comment: described.Comment,
+			Charset: described.Charset,
+			Collate: described.Collate,
+		}
+	}
 	for _, table := range schema.Tables {
 		schemaName := atlasSchemaInspectSchemaName(table.Schema, info)
 		jsonSchema := atlasSchemaInspectSchemaForName(schemasByName, schemaName)

@@ -1,6 +1,7 @@
 package atlasschema
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -56,7 +57,7 @@ func NormalizeInspectFormat(format string) (string, error) {
 // Inspect reads a live schema and renders it with Atlas-compatible
 // formatting, applying any split/write file exports the format template
 // planned.
-func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, error) {
+func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts InspectOptions) (string, error) {
 	if _, err := NormalizeInspectFormat(opts.Format); err != nil {
 		return "", err
 	}
@@ -67,7 +68,7 @@ func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, er
 		return "", err
 	}
 
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, SplitSchemaNames(opts.Schemas))
+	schema, err := readInspectSchema(ctx, conn, opts.Schemas)
 	if err != nil {
 		return "", fmt.Errorf("read database schema: %w", err)
 	}
