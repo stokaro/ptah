@@ -83,10 +83,13 @@ fmt.Printf("published %s and %s\n", files.UpFile, files.DownFile)
 
 Planning does not write migration artifacts. A successful `WriteFiles` call
 consumes the plan; call it once after all surrounding work has succeeded.
-The plan records the migration-directory snapshot used for planning.
+The plan records the migration-directory snapshot used for planning, together
+with that directory's filesystem identity.
 `WriteFiles` acquires the shared cross-process directory lock and rejects the
-plan if migration SQL or integrity metadata changed before publication. It
-never renumbers and publishes a plan derived from stale history.
+plan if migration SQL or integrity metadata changed before publication, or if
+the directory is no longer the same filesystem object — a substitute holding
+exactly the planned files is still a different destination. It never renumbers
+and publishes a plan derived from stale history.
 
 It renders every up/down file and requested safety report before publishing
 the artifacts as one batch. A filename collision leaves no partial new files.
@@ -262,7 +265,8 @@ type GenerateMigrationOptions struct {
     // OutputDir is the directory where migration files will be saved (always real filesystem)
     OutputDir string
 
-    // AllowedOutputRoot constrains OutputDir when accepting user-supplied paths
+    // AllowedOutputRoot confines the whole writer transaction when accepting
+    // user-supplied paths
     AllowedOutputRoot string
 
     // CompareOptions are the options to use when comparing schemas
@@ -284,6 +288,7 @@ type GenerateMigrationOptions struct {
 - `DBConn`: Existing database connection (optional; used instead of `DatabaseURL` when set)
 - `MigrationName`: Name for the migration (optional, defaults to "migration")
 - `OutputDir`: Directory where migration files will be saved (required)
+- `AllowedOutputRoot`: Project or workspace root the output directory must stay inside (optional). It is opened, not merely compared against: the root, the migration directory and its parent are bound once and every read, create, checksum commit and rollback of the run goes through those handles, so replacing the directory or an ancestor after the path was validated cannot move the write outside the root
 - `CompareOptions`: Schema comparison options (optional)
 - `Schemas`: PostgreSQL schema allow-list for database introspection (optional)
 - `ShadowDatabaseURL`: Disposable database URL for pre-write migration replay and round-trip checks; it must identify a different live database realm from the target (optional)

@@ -38,8 +38,10 @@ type MigrationPlanSpecForTest struct {
 }
 
 // NewMigrationPlanForTest creates a plan without database-dependent planning.
+// allowedOutputRoot is the confinement root the publication must stay inside,
+// or empty for the direct-CLI shape.
 func NewMigrationPlanForTest(
-	outputDir, reportFormat string,
+	outputDir, allowedOutputRoot, reportFormat string,
 	specs []MigrationPlanSpecForTest,
 ) (*MigrationPlan, error) {
 	outputState, err := captureMigrationDirectoryState(outputDir)
@@ -58,10 +60,11 @@ func NewMigrationPlanForTest(
 		}
 	}
 	return &MigrationPlan{
-		outputDir:    outputDir,
-		outputState:  outputState,
-		reportFormat: reportFormat,
-		specs:        generatedSpecs,
+		outputDir:         outputDir,
+		allowedOutputRoot: allowedOutputRoot,
+		outputState:       outputState,
+		reportFormat:      reportFormat,
+		specs:             generatedSpecs,
 	}, nil
 }
 

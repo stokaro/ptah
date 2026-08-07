@@ -97,18 +97,30 @@ bytes.
 
 ## Writing back to the directory
 
-The verbs that write a migration directory — `migrate diff` and native
-`ptah migrate generate` — bind it the same way and keep the binding. They open
-the directory and its parent once, before staging, and every staged file,
-published migration, `atlas.sum`, journal, commit marker, rollback quarantine
-and cleanup entry is named as a direct child of one of those two handles.
-Recovery of an interrupted batch runs through the same handles.
+The verbs that write a migration directory — `migrate diff`, `migrate new`, and
+native `ptah migrations generate` and `ptah migrations create` — bind it the
+same way and keep the binding. They open the directory and its parent once,
+before staging, and every staged file, published migration, `atlas.sum`,
+journal, commit marker, rollback quarantine and cleanup entry is named as a
+direct child of one of those two handles. A migration directory that does not
+exist yet is created through the bound parent, so it is materialized where the
+run looked rather than where the pathname points by then. Recovery of an
+interrupted batch runs through the same handles.
 
 Replacing the directory after the run validated it therefore cannot redirect
 what it writes, and a directory configured through `atlas.hcl` stays inside the
 opened project root. See
 [the publication boundary](../../atlas/migrate-commands/#the-publication-boundary)
 for what remains keyed to the pathname and why.
+
+`ptah migrations generate` plans and publishes in two steps, so the directory
+can be replaced between them by something outside the run's control. The plan
+records the planned directory's filesystem identity as well as its contents, and
+publication refuses a directory that is no longer the same object — including a
+substitute that holds exactly the files the plan verified. The refusal is
+`migration directory changed after migration planning`, and nothing is written
+([#1118](https://github.com/stokaro/ptah/issues/1118)). This changes behavior:
+a run that previously published into a recreated directory now fails instead.
 
 ## Consequences
 

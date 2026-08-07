@@ -179,24 +179,13 @@ func writeDiffArtifactsWithSumWriter(
 	return result, nil
 }
 
-// PublishArtifactsLocked durably publishes all artifacts as one batch. The
-// caller must hold the migration-directory lock for dir.
-func PublishArtifactsLocked(
-	ctx context.Context,
-	dir string,
-	artifacts []PublicationArtifact,
-) ([]string, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	w, err := createMigrationWriterDir(nil, dir)
-	if err != nil {
-		return nil, err
-	}
-	paths, publishErr := publishArtifactsLocked(ctx, w, artifacts)
-	return paths, errors.Join(publishErr, w.Close())
-}
-
+// publishArtifactsLocked durably publishes all artifacts as one batch through
+// the caller's bound handle. The caller must hold the migration-directory lock.
+//
+// There is deliberately no pathname-taking entry point beside it. The one that
+// existed took a dir string and bound its own handle, which meant the batch
+// could be published to a filesystem object the caller had never verified
+// (stokaro/ptah#1118); MigrationWriter.PublishArtifacts is the only way in.
 func publishArtifactsLocked(
 	ctx context.Context,
 	w *migrationWriterDir,

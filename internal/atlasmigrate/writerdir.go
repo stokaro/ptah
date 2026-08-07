@@ -141,9 +141,10 @@ func bindMigrationWriterDir(
 	name := filepath.Base(canonical)
 	writer := &migrationWriterDir{parent: parent, name: name, path: filepath.Clean(display)}
 	if binding.creates() {
-		if err := parent.Mkdir(name, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
-			return nil, errors.Join(fmt.Errorf("create migration directory: %w", err), parent.Close())
+		if err := writer.create(); err != nil {
+			return nil, errors.Join(err, parent.Close())
 		}
+		return writer, nil
 	}
 	opened, err := parent.OpenDirectory(name)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -154,6 +155,29 @@ func bindMigrationWriterDir(
 	}
 	writer.dir = opened
 	return writer, nil
+}
+
+// create materializes the migration directory through the parent handle this
+// writer already holds and binds the result. An entry that already exists is
+// not an error; the containment guarantee comes from the rooted open that
+// follows, not from the create.
+//
+// The parent handle is the point. Creating the directory by pathname would
+// place it wherever the name resolves at that moment, which is not necessarily
+// the parent the transaction validated (stokaro/ptah#1118).
+func (w *migrationWriterDir) create() error {
+	if w.dir != nil {
+		return nil
+	}
+	if err := w.parent.Mkdir(w.name, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("create migration directory: %w", err)
+	}
+	opened, err := w.parent.OpenDirectory(w.name)
+	if err != nil {
+		return fmt.Errorf("open migration directory: %w", err)
+	}
+	w.dir = opened
+	return nil
 }
 
 func openMigrationWriterParent(
