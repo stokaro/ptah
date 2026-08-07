@@ -953,8 +953,23 @@ type MigrationExecutionError struct {
 	Total          int
 }
 
+// Error renders the wrapped failure with the statement that caused it.
+//
+// The statement line is omitted when the wrapped error already carries it. Every
+// dialect writer appends its own `SQL: <statement>` line, so adding one here
+// unconditionally printed the same statement twice for one failure -- in the
+// CLI message, and in the recorded revision `error` column, which is where
+// stokaro/ptah#1196 found it.
+//
+// The comparison is against this error's own Statement rather than a search for
+// any SQL line, so a wrapped error mentioning a DIFFERENT statement still gets
+// this one appended.
 func (e *MigrationExecutionError) Error() string {
-	return fmt.Sprintf("%v\nSQL: %s", e.Err, e.Statement)
+	message := fmt.Sprintf("%v", e.Err)
+	if strings.Contains(message, "\nSQL: "+e.Statement) {
+		return message
+	}
+	return fmt.Sprintf("%s\nSQL: %s", message, e.Statement)
 }
 
 func (e *MigrationExecutionError) Unwrap() error {
