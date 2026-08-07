@@ -837,6 +837,47 @@ Revisit when the conformance Atlas pin advances past v1.2.0.
 **Tracking.** [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758)
 
 
+### Revision row for a migration whose body failed
+
+**Type.** Deliberate divergence
+
+**Current boundary.** When a migration body fails inside a transaction, the
+pinned community binary v1.3.0 writes no revision row — its insert rolls back
+with the body. Ptah writes one, durably, outside that transaction. Measured
+across the transaction-mode matrix:
+
+```text
+--tx-mode file, no file directive     binary 0 rows   ptah 1 row
+--tx-mode file, -- atlas:txmode file  binary 0 rows   ptah 1 row
+--tx-mode all,  no file directive     binary 0 rows   ptah 1 row
+--tx-mode none, -- atlas:txmode file  binary 0 rows   ptah 1 row
+--tx-mode none, -- atlas:txmode none  binary 1 row    ptah 1 row
+```
+
+The boundary is the transaction, not the directive spelling: the four that
+differ are the ones where the body ran transactionally, and the row that has
+nothing to roll back agrees. The reason for the divergence is that the failure
+should survive the run that caused it — `migrate status` reports the dirty
+version, `ptah migrations repair` has a row to act on, and a retry resumes
+rather than stacking work on an unfinished migration.
+
+It costs nothing on the interop path, which is the part worth measuring rather
+than assuming. Handed a database Ptah left in that state, the community binary
+re-runs the whole migration and reports clean:
+
+```text
+ptah-compat migrate apply --tx-mode file   leaves 1 row, applied=0
+atlas migrate apply   on that database     exit 0, "1 migration, 2 sql statements"
+atlas migrate status  on that database     Migration Status: OK
+```
+
+It does not refuse, does not skip the statements the row might have implied
+were already done, and does not need `--allow-dirty`. `applied=0` is honest —
+the transaction rolled everything back — and it reads as a pending version
+rather than as damage.
+
+**Tracking.** [`stokaro/ptah#1196`](https://github.com/stokaro/ptah/issues/1196)
+
 ### Recorded revision `error` text on a failed migration
 
 **Type.** Driver difference, not a behavior one
