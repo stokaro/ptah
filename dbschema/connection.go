@@ -749,18 +749,9 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		// it while cleaning the database realm, then replayed with a search_path
 		// resolving to nothing (stokaro/ptah#1198).
 		//
-		// current_schema() is NULL when search_path names only schemas that do
-		// not exist. That is refused rather than folded back to "public": a
-		// caller who named a schema and silently got a different one is the
-		// failure this whole change is about, and answering "public" would
-		// resume dropping the schemas that one does not cover. Ptah is
-		// pre-general-availability, so the previous fallback is not owed
-		// compatibility.
-		//
-		// The message names the schema, because the operator's mistake is in the
-		// URL and nothing downstream can say so: without this, the run reaches
-		// the replay and fails on a CREATE TABLE with "no schema has been
-		// selected to create in", which sends them to their migration.
+		// Why a selection that resolves to nothing is refused rather than folded
+		// back to "public" is documented on [schemaselection.Selection.Resolve],
+		// next to the code that decides it.
 		schema, err := schemaselection.FromParsedURL(parsedURL).Resolve(ctx, db)
 		if err != nil {
 			return info, err
