@@ -864,6 +864,24 @@
     "evidence": "migration/lint/rules.go:20 Register, migration/lint/lint.go:107 Options.ExtraRules; migration/lint/config.go Config has only Dialect/DisabledRules/Rules{severity,exclude} — no rule definition. config/projectconfig/atlas.go parseLintPolicyBlocks accepts only concurrent_index, condrop, data_depend, destructive, git, nestedtx, incompatible; parseLintAnalyzer tolerates `force` without acting on it. Atlas features page classifies \"Custom linting rules\" as Pro. `lint { rule \"hcl\" \"custom\" { src = [...] } }` accepted and the rules execute during migrate lint; rule severity is only `error=true/false` (measured; observation study, scenario, lint-test-pro)"
   },
   {
+    "area": "Lint analyzers",
+    "feature": "Dev-URL schema scope on `migrate lint`",
+    "ptah": "yes",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "`ptah-compat migrate lint` reviews only the schema the dev URL's search_path names, matching the pinned CE binary. Native `ptah migrations lint` reads SQL text and deliberately does not scope.",
+    "evidence": "Measured against the pinned CE binary v1.3.0 on PostgreSQL, migrations creating app.\"Users\" and app.audit_log then dropping both: with ?search_path=public both exit 0 with no diagnostic; without search_path both exit 1 with one DS102 per dropped table; ?search_path=app reviews app rather than a constant. Pinned by the ten rows of integration/atlas_migrate_lint_schema_scope_e2e_test.go plus TestNativeMigrationsLintIgnoresTheDevURLSchemaScopeE2E, which reddens if the boundary is applied to the native surface. internal/migrationlintreport/report.go compatSchemaScope gates it to the compatibility profile; internal/schemaselection derives it (stokaro/ptah#1074 S1, #1197, #1207)."
+  },
+  {
+    "area": "Lint analyzers",
+    "feature": "Analyzers that need a dev-database schema diff",
+    "ptah": "partial",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "Ptah's analyzers read SQL text, so a concern whose subject appears only in the resulting schema is unreported: a RENAME COLUMN draws DS103 from both, but only Atlas adds MF103 for the new column.",
+    "evidence": "Measured on the pinned CE binary v1.3.0 against PostgreSQL 17, `CREATE TABLE users (id int NOT NULL)` then `ALTER TABLE users RENAME COLUMN id TO oid`: CE reports DS103 plus `Adding a non-nullable \"integer\" column \"oid\" ... MF103` and exits 1; ptah-compat reports DS103 alone and exits 1. The renamed column's type and nullability come from an earlier file or the base schema rather than from the statement, and the message spells the dialect-canonical type name, so reaching it needs the replayed dev schema rather than the SQL text. migration/lint/rules.go notNullWithoutDefaultFindings scans ADD COLUMN clauses only. Tracked by stokaro/ptah#1074 S2."
+  },
+  {
     "area": "Lint policy and suppression",
     "feature": "Inline nolint suppression",
     "ptah": "yes",
