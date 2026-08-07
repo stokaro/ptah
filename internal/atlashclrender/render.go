@@ -137,21 +137,30 @@ func (r *renderer) referencedSchemas() []string {
 		return nil
 	}
 	// Nothing to attach a schema to means nothing to declare. An inspect whose
-	// selection matched no table renders an empty document, and a lone schema
+	// selection matched no object renders an empty document, and a lone schema
 	// block there would be a declaration of nothing -- which is what the
 	// empty-include-selection contract already pins.
-	if len(r.db.Tables) == 0 {
+	//
+	// Enums count as something to attach. They now carry a schema reference of
+	// their own (see renderEnums), so a read that matched enums but no table
+	// still has to declare the block that reference points at.
+	if len(r.db.Tables) == 0 && len(r.db.Enums) == 0 {
 		return nil
 	}
 	seen := map[string]bool{}
 	var names []string
-	for _, table := range r.db.Tables {
-		name := r.schemaFor(table.Schema)
+	add := func(name string) {
 		if name == "" || seen[name] {
-			continue
+			return
 		}
 		seen[name] = true
 		names = append(names, name)
+	}
+	for _, table := range r.db.Tables {
+		add(r.schemaFor(table.Schema))
+	}
+	if len(r.db.Enums) > 0 {
+		add(r.defaultSchema)
 	}
 	slices.Sort(names)
 	return names
@@ -212,6 +221,24 @@ func (r *renderer) renderEnums() {
 	})
 	for _, enum := range enums {
 		r.linef(`enum %s {`, quote(enum.Name))
+		// An enum block with no schema is not under-specified, it is invalid.
+		// The pinned Atlas community binary v1.3.0 refuses the whole file with
+		//
+		//	extract schema name from enum reference: schemahcl: type "schema"
+		//	was not found in nil reference
+		//
+		// and accepts the identical file once `schema = schema.public` is added
+		// -- one operand, measured both ways. That binary's own inspect writes
+		// the attribute too (stokaro/ptah#1251).
+		//
+		// goschema.Enum carries no schema of its own, so the schema the whole
+		// read belongs to is the only name available. It is also the right one:
+		// a catalog omits the schema exactly where the engine treats the read's
+		// own schema as implicit, which is the same reason renderTable falls
+		// back to it.
+		if schema := r.schemaFor(""); schema != "" {
+			r.rawAttr(1, "schema", schemaRef(schema))
+		}
 		r.rawAttr(1, "values", stringList(enum.Values))
 		r.line("}")
 		r.line("")
@@ -303,7 +330,7 @@ func (r *renderer) renderTable(
 
 func (r *renderer) renderColumn(field goschema.Field) {
 	r.linef(`  column %s {`, quote(field.Name))
-	r.rawAttr(2, "type", columnTypeExpr(field, r.dialect))
+	r.rawAttr(2, "type", r.columnTypeExpr(field))
 	if field.Nullable {
 		r.rawAttr(2, "null", "true")
 	}
@@ -863,7 +890,7 @@ func parseForeignReference(value string) (string, []string) {
 // `type = USER_DEFINED` with `Unknown column.type; There is no type named
 // "USER_DEFINED"` and accepts `type = sql("USER_DEFINED")`. Measured on that
 // binary, an HCL file it plans must survive a Ptah round trip still planning.
-func columnTypeExpr(field goschema.Field, dialect string) string {
+func (r *renderer) columnTypeExpr(field goschema.Field) string {
 	if strings.TrimSpace(field.Type) == "" {
 		return typeExpr(field.Type)
 	}
@@ -871,16 +898,69 @@ func columnTypeExpr(field goschema.Field, dialect string) string {
 	// from a database it remembers nothing, so the dialect's own list of
 	// modeled types decides -- see modeled_types.go for why that list is
 	// trustworthy rather than a copied table.
+	//
+	// The raw-SQL check stays ahead of the enum check on purpose. A sql() call
+	// is the author's own escape hatch, and issue #1106's contract is to write
+	// it back exactly as written rather than re-decide it from the type name; a
+	// name that happens to match an enum block could just as well mean a domain
+	// or composite the author is reaching past Atlas's model for. A database
+	// read never sets the flag -- only the HCL parser does -- so the inspect
+	// path this fixes is not affected by the ordering.
 	if field.TypeRawSQL {
 		return sqlCall(field.Type)
 	}
-	modeled, ok := modeledColumnType(dialect, field.Type)
+	if ref, ok := r.enumTypeRef(field.Type); ok {
+		return ref
+	}
+	modeled, ok := modeledColumnType(r.dialect, field.Type)
 	if !ok {
 		// Wrapped verbatim: an engine type Atlas does not model is only
 		// readable as the text the database itself reports.
 		return sqlCall(field.Type)
 	}
 	return typeExpr(modeled)
+}
+
+// enumTypeRef returns the expression for a column whose type is an enum this
+// same document declares, and reports whether the type is one.
+//
+// The reference is not one spelling among several -- it is the only one that
+// works. Measured on the pinned Atlas community binary v1.3.0, a table with an
+// enum-typed column and the matching `enum` block, one operand varied:
+//
+//	type = enum.status     exit 0
+//	type = sql("status")   exit 1  pq: type "status" does not exist
+//	type = status          exit 1  Unknown column.type; There is no type named "status"
+//	type = "status"        exit 1  set field "type": unexpected type string
+//
+// sql() is the interesting failure and the one Ptah used to emit: the type name
+// is real in the database that was inspected but not in the dev database the
+// file gets replayed into, and only the enum block creates it there. That
+// binary's own inspect writes `type = enum.status` as well.
+//
+// The reference is unqualified because that binary keys enum blocks by name
+// alone: two `enum "status"` blocks in different schemas are refused as
+// `duplicate enum "status"`, and an `enum.status` reference resolves to a block
+// declared in a non-default schema (measured with table and enum both in
+// `reporting`).
+//
+// A name that also names a domain, composite or range is left alone. Those are
+// separate declarations in the same document, and a reference into the enum
+// block would point at the wrong one.
+func (r *renderer) enumTypeRef(typeName string) (string, bool) {
+	name := strings.TrimSpace(typeName)
+	if name == "" {
+		return "", false
+	}
+	if !slices.ContainsFunc(r.db.Enums, func(e goschema.Enum) bool { return e.Name == name }) {
+		return "", false
+	}
+	if slices.ContainsFunc(r.db.Domains, func(d goschema.Domain) bool { return d.Name == name }) ||
+		slices.ContainsFunc(r.db.CompositeTypes, func(ct goschema.CompositeType) bool { return ct.Name == name }) ||
+		slices.ContainsFunc(r.db.Ranges, func(rg goschema.Range) bool { return rg.Name == name }) {
+		return "", false
+	}
+	return "enum" + objectRefPart(name), true
 }
 
 func typeExpr(value string) string {
