@@ -146,9 +146,12 @@ pipeline against native `ptah` verbs would not be a migration path at all.
 
 **`PTAH_ATLAS_INSPECT_ALL_BLOCKS`** — by default, `ptah-compat schema inspect`
 leaves an `extension`, `sequence` or `policy` block out of PostgreSQL HCL
-output when nothing else in the document names it, and reports each omission on
-standard error. Set it to `1` and every block Ptah models is emitted: the output
-describes the database in full, and the community CLI refuses it.
+output when nothing else in the document depends on it, and reports each
+omission on standard error. For an extension, "depends on" is measured against
+what the catalog says the extension supplies — `isn` supplies the type `isbn` —
+rather than against its name. Set it to `1` and every block Ptah models is
+emitted: the output describes the database in full, and the community CLI
+refuses it.
 
 **`PTAH_ALLOW_EXTERNAL_SCHEMA`** — by default, `atlas.hcl`
 `data "external_schema"` is not evaluated, because it runs a

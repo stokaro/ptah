@@ -1431,8 +1431,94 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 
 		extensions = append(extensions, ext)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate extensions: %w", err)
+	}
+
+	provides, err := r.readExtensionMembers()
+	if err != nil {
+		return nil, err
+	}
+	for i := range extensions {
+		extensions[i].Provides = provides[extensions[i].Name]
+	}
 
 	return extensions, nil
+}
+
+// readExtensionMembers reads, per extension, the catalog names that extension
+// supplies, keyed by extension name.
+//
+// This exists because an extension is almost never referenced by its own name.
+// A document that depends on `isn` says `isbn`; one that depends on `pgcrypto`
+// says `gen_salt`. Asking the catalog is what makes "does anything still need
+// this extension" answerable without a hand-maintained table of well-known
+// extensions, which would be both unbounded and wrong the moment someone
+// installs an extension nobody listed.
+//
+// pg_depend with deptype 'e' is the extension-membership edge, and the member's
+// name lives in a different catalog per object class, hence the union. The five
+// classes covered are the ones whose names can appear as an identifier in a
+// rendered schema document: types (column types, domains), functions (defaults,
+// checks, generated and index expressions, view and trigger bodies), relations
+// (extension-supplied tables, views and sequences), and operator classes and
+// families (index USING clauses).
+//
+// Measured on PostgreSQL 17.10: no pg_namespace row is ever an extension member
+// for an extension installed into an existing schema, so `public` does not enter
+// this set and naming the schema does not pin every extension in the database.
+func (r *Reader) readExtensionMembers() (map[string][]string, error) {
+	const membersQuery = `
+		SELECT e.extname AS extension_name, t.typname AS member_name
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_type t ON t.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_type'::regclass
+		UNION
+		SELECT e.extname, p.proname
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_proc p ON p.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_proc'::regclass
+		UNION
+		SELECT e.extname, c.relname
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_class c ON c.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_class'::regclass
+		UNION
+		SELECT e.extname, opc.opcname
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_opclass opc ON opc.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_opclass'::regclass
+		UNION
+		SELECT e.extname, opf.opfname
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_opfamily opf ON opf.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_opfamily'::regclass
+		 ORDER BY 1, 2`
+
+	rows, err := r.db.Query(membersQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query extension members: %w", err)
+	}
+	defer rows.Close()
+
+	members := map[string][]string{}
+	for rows.Next() {
+		var extensionName, memberName string
+		if err := rows.Scan(&extensionName, &memberName); err != nil {
+			return nil, fmt.Errorf("failed to scan extension member: %w", err)
+		}
+		members[extensionName] = append(members[extensionName], memberName)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate extension members: %w", err)
+	}
+
+	return members, nil
 }
 
 // readSequences reads standalone PostgreSQL sequences.

@@ -129,13 +129,29 @@ func atlasRefusesBlock(dialect, block string) bool {
 // referenced sequence is not readable by the pinned binary. It is readable by
 // Ptah, and it describes the database truthfully, which the two alternatives
 // cannot both do.
-func (r *renderer) omitRefusedBlock(path, block, name string) bool {
+//
+// The question asked of the document is "does anything here still DEPEND on
+// this object", which is why the caller passes every name that would stop
+// resolving without the block rather than only the block's label. For a
+// sequence and a policy those are the same word. For an extension they are
+// usually disjoint: `isn` supplies the type `isbn`, `pgcrypto` supplies the
+// function `gen_salt`, and matching the label alone omitted the extension while
+// leaving the column that needs it behind. Measured on PostgreSQL 17.10 against
+//
+//	CREATE EXTENSION isn;
+//	CREATE TABLE books (id integer PRIMARY KEY, code isbn NOT NULL);
+//
+// label-only matching rendered at exit 0 and then neither Ptah nor the pinned
+// binary could read the result back: `type "isbn" does not exist`, exit 1 from
+// both. That is strictly worse than either alternative -- it is not a
+// compatibility win, because the pinned binary rejects that document too.
+func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 	if !r.omitAtlasRefusedBlocks || !atlasRefusesBlock(r.dialect, block) {
 		return false
 	}
-	if r.documentNames(name) {
+	if r.documentNamesAny(names) {
 		r.warn(path, fmt.Sprintf(
-			"kept in Atlas-compatible schema inspect output because another object in this document names it:"+
+			"kept in Atlas-compatible schema inspect output because another object in this document depends on it:"+
 				" the Atlas community CLI refuses a %s schema file that declares any %s block, so it cannot read"+
 				" this document, but omitting the block would leave a reference to an object nothing declares",
 			r.dialect, block,
@@ -151,23 +167,31 @@ func (r *renderer) omitRefusedBlock(path, block, name string) bool {
 	return true
 }
 
-// documentNames reports whether anything the surviving document emits names
-// this object.
+// documentNamesAny reports whether anything the surviving document emits names
+// any of these identifiers.
 //
 // Matching is case-insensitive because unquoted PostgreSQL identifiers are, and
 // because the direction of a wrong answer matters: a false positive keeps a
 // block that could have been omitted, which costs compatibility; a false
-// negative emits a document with a hole in it, which costs correctness. This
-// errs toward keeping.
-func (r *renderer) documentNames(name string) bool {
-	name = strings.ToLower(strings.TrimSpace(name))
-	if name == "" {
-		return false
-	}
+// negative emits a document with a hole in it, which costs correctness -- a
+// document nobody, including the pinned binary, can read. This errs toward
+// keeping.
+//
+// That asymmetry is what makes the coarse `Provides` set the right input even
+// though it over-matches. `pgcrypto` supplies `gen_random_uuid`, which
+// PostgreSQL 17 also supplies from core, so a document using it keeps pgcrypto
+// although it would have resolved without it. That is the harmless direction.
+func (r *renderer) documentNamesAny(names []string) bool {
 	if r.references == nil {
 		r.references = collectReferencedNames(r.db)
 	}
-	return r.references[name]
+	for _, name := range names {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name != "" && r.references[name] {
+			return true
+		}
+	}
+	return false
 }
 
 // collectReferencedNames gathers every identifier named by the parts of an
@@ -178,12 +202,15 @@ func (r *renderer) documentNames(name string) bool {
 // exist in the output when that block does, so counting them would keep a block
 // alive on a reference that goes away with it.
 //
-// Type positions are scanned alongside expressions because an extension that
-// supplies a type is named by the columns using it -- `citext`, `hstore`. An
-// extension that supplies only FUNCTIONS is not named anywhere by this rule:
-// `pgcrypto` behind `gen_random_uuid()` is invisible to it, and that limitation
-// is documented rather than papered over, because resolving it needs a catalog
-// of what each extension provides rather than a name.
+// Type positions are scanned alongside expressions because a dependency on an
+// extension shows up as the type of a column -- `isbn`, `citext`, `hstore` --
+// as often as it shows up inside an expression.
+//
+// This builds the set of names the document USES. Deciding whether a particular
+// extension is still needed is the other half, and it belongs to
+// [goschema.Extension.Provides], which the PostgreSQL reader fills from
+// pg_depend: the names collected here are matched against what the extension
+// supplies, not against its label.
 func collectReferencedNames(db *goschema.Database) map[string]bool {
 	names := map[string]bool{}
 	add := func(text string) {

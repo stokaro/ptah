@@ -40,12 +40,14 @@ it, and the result is introspected, mirroring Atlas dev-database
 normalization.
 
 On PostgreSQL, HCL output omits an ` + "`extension`" + `, ` + "`sequence`" + ` or
-` + "`policy`" + ` block that nothing else in the document names: Atlas CE
+` + "`policy`" + ` block that nothing else in the document depends on: Atlas CE
 refuses a whole schema file that declares any one of them, so emitting one
 would make the output unreadable to the tool this binary stands in for. A block
-something DOES name — a sequence behind a column default, for instance — is
-kept, because a document that references an object it did not declare is
-readable by nobody. Every decision is reported on standard error. Set
+something still NEEDS — a sequence behind a column default, an extension
+supplying a column's type — is kept, because a document that references an
+object it did not declare is readable by nobody. For an extension the test is
+what the catalog says it supplies, not its name: ` + "`isn`" + ` supplies the
+type ` + "`isbn`" + `. Every decision is reported on standard error. Set
 ` + "`PTAH_ATLAS_INSPECT_ALL_BLOCKS=1`" + ` to emit every block Ptah models on
 this surface. SQL output keeps them all, and native
 ` + "`ptah schema inspect`" + ` omits nothing.

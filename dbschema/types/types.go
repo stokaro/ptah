@@ -310,6 +310,18 @@ type DBExtension struct {
 	Comment          *string `json:"comment"`           // Extension comment/description
 	DefaultVersion   *string `json:"default_version"`   // Default version available
 	InstalledVersion *string `json:"installed_version"` // Currently installed version (may differ from default)
+
+	// Provides lists the catalog names this extension supplies -- its types,
+	// functions, relations, operator classes and operator families -- read from
+	// pg_depend. It answers "what would stop resolving if this extension were
+	// not here", which is a different question from the extension's own name and
+	// usually a disjoint set of words: `isn` supplies the type `isbn`, and
+	// `pgcrypto` supplies the function `gen_salt`.
+	//
+	// Empty means not measured rather than "supplies nothing" -- every extension
+	// supplies something, and readers that do not consult a catalog (Go
+	// annotations, YAML) leave this unset.
+	Provides []string `json:"provides,omitempty"`
 }
 
 // DBSequence represents a standalone PostgreSQL sequence read from the database.

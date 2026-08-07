@@ -3836,6 +3836,16 @@ type Extension struct {
     IfNotExists bool   // Whether to use IF NOT EXISTS clause
     Version     string // Specific version requirement (optional)
     Comment     string // Extension comment/description
+
+    // Provides lists the catalog names this extension supplies -- types,
+    // functions, relations, operator classes and operator families. It is filled
+    // in when the schema was read from a live PostgreSQL catalog and answers
+    // "what stops resolving without this extension", which is almost never the
+    // extension's own name: `isn` supplies the type `isbn`.
+    //
+    // Empty means not measured. Annotation and YAML sources have no catalog to
+    // ask and leave it unset.
+    Provides []string
 }
     Extension represents a PostgreSQL extension definition parsed from Go struct
     annotations. Extensions enable additional functionality in PostgreSQL
@@ -5363,6 +5373,18 @@ type DBExtension struct {
     Comment          *string `json:"comment"`           // Extension comment/description
     DefaultVersion   *string `json:"default_version"`   // Default version available
     InstalledVersion *string `json:"installed_version"` // Currently installed version (may differ from default)
+
+    // Provides lists the catalog names this extension supplies -- its types,
+    // functions, relations, operator classes and operator families -- read from
+    // pg_depend. It answers "what would stop resolving if this extension were
+    // not here", which is a different question from the extension's own name and
+    // usually a disjoint set of words: `isn` supplies the type `isbn`, and
+    // `pgcrypto` supplies the function `gen_salt`.
+    //
+    // Empty means not measured rather than "supplies nothing" -- every extension
+    // supplies something, and readers that do not consult a catalog (Go
+    // annotations, YAML) leave this unset.
+    Provides []string `json:"provides,omitempty"`
 }
     DBExtension represents a PostgreSQL extension installed in the database
 

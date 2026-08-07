@@ -273,10 +273,15 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			wantPath: "sequences.order_seq",
 		},
 		{
+			// citext is the easy case and, on its own, a false comfort: the
+			// extension and the type it supplies are spelled the same word, so
+			// matching the extension's own LABEL answers correctly by accident.
+			// The two rows below separate the label from what the extension
+			// supplies, which is what this rule actually has to get right.
 			name: "a column type is the type the extension supplies",
 			database: func() *goschema.Database {
 				db := standaloneSequenceDatabase()
-				db.Extensions = []goschema.Extension{{Name: "citext"}}
+				db.Extensions = []goschema.Extension{{Name: "citext", Provides: []string{"citext"}}}
 				db.Fields = append(db.Fields, goschema.Field{
 					StructName: "Order", Name: "label", Type: "citext",
 				})
@@ -284,6 +289,49 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			},
 			want:     "extension \"citext\"",
 			wantPath: "extensions.citext",
+		},
+		{
+			// The regression this front exists for. `isn` supplies the type
+			// `isbn`; the word "isn" appears nowhere in the document, so the
+			// label rule omitted the extension and left `code isbn` behind.
+			// Measured on PostgreSQL 17.10: neither Ptah nor the pinned binary
+			// could then read the result -- `type "isbn" does not exist`, exit 1
+			// from both -- so the omission was not even a compatibility win.
+			name: "a column type is supplied by an extension spelled differently",
+			database: func() *goschema.Database {
+				db := standaloneSequenceDatabase()
+				db.Extensions = []goschema.Extension{{
+					Name:     "isn",
+					Provides: []string{"ean13", "isbn", "isbn13", "issn", "upc"},
+				}}
+				db.Fields = append(db.Fields, goschema.Field{
+					StructName: "Order", Name: "code", Type: "isbn",
+				})
+				return db
+			},
+			want:     "extension \"isn\"",
+			wantPath: "extensions.isn",
+		},
+		{
+			// The function-only shape: nothing in a document ever spells a type
+			// supplied by pgcrypto, only a call. Measured on PostgreSQL 17.10,
+			// gen_salt is pgcrypto's and has no core equivalent, so a document
+			// that drops the extension stops resolving.
+			name: "a column default calls a function the extension supplies",
+			database: func() *goschema.Database {
+				db := standaloneSequenceDatabase()
+				db.Extensions = []goschema.Extension{{
+					Name:     "pgcrypto",
+					Provides: []string{"crypt", "digest", "gen_salt", "hmac"},
+				}}
+				db.Fields = append(db.Fields, goschema.Field{
+					StructName: "Order", Name: "salt", Type: "text",
+					DefaultExpr: "gen_salt('bf'::text)",
+				})
+				return db
+			},
+			want:     "extension \"pgcrypto\"",
+			wantPath: "extensions.pgcrypto",
 		},
 	}
 
@@ -300,7 +348,7 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			c.Assert(string(result.Data), qt.Contains, test.want,
 				qt.Commentf("the document names this object, so omitting its block leaves a dangling reference"))
 			c.Assert(diagnosticMessageFor(result.Diagnostics, test.wantPath), qt.Contains,
-				"kept in Atlas-compatible schema inspect output because another object in this document names it",
+				"kept in Atlas-compatible schema inspect output because another object in this document depends on it",
 				qt.Commentf("keeping a block the pinned binary refuses has to be reported, not silently done"))
 		})
 	}
@@ -321,6 +369,35 @@ func TestRenderInspectedForAtlasCLIOmitsAnUnreferencedSequence(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Not(qt.Contains), "sequence \"order_seq\"")
 	c.Assert(diagnosticMessageFor(result.Diagnostics, "sequences.order_seq"), qt.Contains,
+		"omitted from Atlas-compatible schema inspect output")
+}
+
+// TestRenderInspectedForAtlasCLIOmitsAnExtensionNothingDependsOn is the control
+// that keeps the provides-aware rule from collapsing into "never omit an
+// extension", which would throw away what stokaro/ptah#1266 bought.
+//
+// The extension here supplies a full member list -- the same one that keeps the
+// block alive two tests up -- and the document simply uses none of it. Widening
+// the rule to keep any extension whose Provides is non-empty, or to keep
+// extensions unconditionally, turns this red.
+func TestRenderInspectedForAtlasCLIOmitsAnExtensionNothingDependsOn(t *testing.T) {
+	c := qt.New(t)
+
+	db := standaloneSequenceDatabase()
+	db.Extensions = []goschema.Extension{{
+		Name:     "isn",
+		Provides: []string{"ean13", "isbn", "isbn13", "issn", "upc"},
+	}}
+	db.Fields = append(db.Fields, goschema.Field{
+		StructName: "Order", Name: "label", Type: "text",
+	})
+
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, platform.Postgres, "public")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Not(qt.Contains), "extension \"isn\"",
+		qt.Commentf("nothing in the document uses anything isn supplies, so the block still goes"))
+	c.Assert(diagnosticMessageFor(result.Diagnostics, "extensions.isn"), qt.Contains,
 		"omitted from Atlas-compatible schema inspect output")
 }
 

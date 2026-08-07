@@ -237,6 +237,10 @@ func convertExtensions(database *goschema.Database, dbExtensions []dbschematypes
 			Name:        dbExtension.Name,
 			IfNotExists: true, // Default to true for down migrations for safety
 			Version:     dbExtension.Version,
+			// Carried rather than recomputed: only the reader has the catalog,
+			// and the Atlas-compatible renderer needs it to tell an extension
+			// nothing depends on from one a column type still needs.
+			Provides: dbExtension.Provides,
 		}
 
 		// Set comment if available
