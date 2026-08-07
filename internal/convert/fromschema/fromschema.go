@@ -97,7 +97,7 @@ func defaultGeneratedKind(field goschema.Field, targetPlatform string) string {
 		return field.GeneratedKind
 	}
 	switch {
-	case isPostgreSQLPlatform(targetPlatform):
+	case isPostgreSQLFamilyPlatform(targetPlatform):
 		return "STORED"
 	case isMySQLFamilyTarget(targetPlatform):
 		return "VIRTUAL"
@@ -125,8 +125,20 @@ func canonicalPlatform(targetPlatform string) string {
 	return targetPlatform
 }
 
-func isPostgreSQLPlatform(targetPlatform string) bool {
-	return platform.NormalizeDialect(targetPlatform) == platform.Postgres
+// isPostgreSQLFamilyPlatform reports whether the target renders PostgreSQL
+// object DDL: PostgreSQL itself and the wire-compatible engines.
+//
+// It asks about the family rather than about the one name because the live path
+// already does. registerBuiltInPlanners routes cockroachdb, yugabytedb and
+// spanner through the PostgreSQL planner, so `schema apply --dry-run` planned
+// sequences, domains, roles, views, functions and triggers for those targets
+// while `schema render` dropped every one of them -- silently, no comment, no
+// warning, exit 0. Two commands answering differently about the same file is
+// the defect; whether an engine of the family should then refuse a particular
+// object kind is a capability question, and there is no capability key for
+// views, functions or triggers to ask it with yet (stokaro/ptah#929).
+func isPostgreSQLFamilyPlatform(targetPlatform string) bool {
+	return platform.IsPostgresFamily(targetPlatform)
 }
 
 // typeRawSQLSurvives reports whether the column type is still the one the
@@ -2040,7 +2052,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// tables, because a sequence may back a column DEFAULT. The OWNED BY
 	// association is emitted later (after tables) via
 	// appendPostgreSQLPostForeignKeyFeatureStatements.
-	if isPostgreSQLPlatform(targetPlatform) {
+	if isPostgreSQLFamilyPlatform(targetPlatform) {
 		for _, sequence := range database.Sequences {
 			sequenceNode := FromSequence(sequence)
 			sequenceNode.OwnedBy = ""
@@ -2063,7 +2075,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// before tables so columns can reference them. Ordering within the group:
 	// domains and ranges reference base subtypes; composites may reference
 	// domains/enums, so they come last.
-	if isPostgreSQLPlatform(targetPlatform) {
+	if isPostgreSQLFamilyPlatform(targetPlatform) {
 		for _, domain := range database.Domains {
 			statements.Statements = append(statements.Statements, FromDomain(domain))
 		}
@@ -2079,7 +2091,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// Use the combined field list that includes embedded field expansions
 	appendTableStatements(statements, database, allFields, targetPlatform)
 
-	isPostgreSQL := isPostgreSQLPlatform(targetPlatform)
+	isPostgreSQL := isPostgreSQLFamilyPlatform(targetPlatform)
 	if isPostgreSQL {
 		appendPostgreSQLPreIndexFeatureStatements(statements, database)
 	}

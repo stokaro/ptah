@@ -129,6 +129,59 @@ func TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *testi
 	c.Assert(divergent, qt.HasLen, 0, qt.Commentf("these spellings convert differently from their own canonical name"))
 }
 
+// nodeKinds is the sequence of AST node types a conversion produces. It is the
+// converter's whole output as far as this comparison cares: which object kinds
+// were emitted, in which order. Rendering is deliberately not involved -- see
+// the test below for why.
+func nodeKinds(database goschema.Database, dialect string) []string {
+	nodes := fromschema.FromDatabase(database, dialect)
+	kinds := make([]string, 0, len(nodes.Statements))
+	for _, node := range nodes.Statements {
+		kinds = append(kinds, fmt.Sprintf("%T", node))
+	}
+	return kinds
+}
+
+// TestFromDatabase_PostgresFamilyEmitsTheSameObjectKinds is the completion
+// criterion for stokaro/ptah#929 items 1 and 4: offline render and live plan
+// must answer the same question the same way.
+//
+// registerBuiltInPlanners routes cockroachdb, yugabytedb and spanner through
+// the PostgreSQL planner, so `schema apply --dry-run` planned sequences,
+// domains, composites, ranges, roles, grants, RLS, functions, views, matviews
+// and triggers for those targets. The offline converter gated all of them on a
+// predicate that matched the literal "postgres", so `schema render` dropped
+// every one -- with no comment, no warning and exit 0. Measured on the fixture
+// used here before the fix: postgres rendered 6 statements, each of the other
+// three rendered 1.
+//
+// The comparison is over node kinds rather than rendered SQL on purpose. Which
+// objects the converter emits is its decision; whether an engine accepts one is
+// the renderer's, and it already refuses what a preset cannot do -- rendering
+// this fixture for cockroachdb now reports `cockroachdb does not support role
+// management` instead of silently dropping the role AND everything near it.
+// Comparing SQL would fold those two separate answers into one string and make
+// this test fail for the renderer's reasons.
+func TestFromDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
+	c := qt.New(t)
+
+	database := spellingFixture(c)
+	want := nodeKinds(database, platform.Postgres)
+
+	// The fixture has to carry PostgreSQL object kinds for this to compare
+	// anything: a table-only fixture would agree across the family no matter
+	// what the predicate did.
+	c.Assert(len(want) > 1, qt.IsTrue, qt.Commentf("fixture emits %d nodes for postgres", len(want)))
+
+	for _, dialect := range []string{platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(nodeKinds(database, dialect), qt.DeepEquals, want)
+		})
+	}
+}
+
 // TestFromDatabase_FixtureDiscriminatesEngines is the negative control for the
 // parity test above.
 //
