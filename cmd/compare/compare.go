@@ -7,11 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/diffreport"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/cmd/internal/schemaload"
 	"go.5x5.cz/ptah/config/projectconfig"
@@ -164,17 +167,62 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
 
-	// 4. Display differences
-	output, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, result, info.Dialect, info.Capabilities)
+	// 4. Display differences: every category the comparator recorded, then the
+	// SQL that reconciles them.
+	output, err := planner.GenerateSchemaDiffSQLWithCapabilities(diff, result, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}
-	fmt.Fprint(out, output)
+	writeComparison(out, cmd.ErrOrStderr(), diff, output, info.Dialect)
 
 	if opts.exitOnDiff {
 		return nonEmptyDiffExitCode(diff)
 	}
 	return nil
+}
+
+// writeComparison reports the comparison result: first the change categories
+// the comparator recorded, then the planner's SQL for them.
+//
+// The categories are listed from the diff's own fields (see
+// cmd/internal/diffreport), so a difference is reported whether or not the
+// dialect planner turned it into a statement. Reporting only the SQL is what
+// made "ptah schema compare" print an empty diff for row-level security
+// changes it had detected (stokaro/ptah#1284): a category no planner path
+// reads renders as nothing, and nothing is indistinguishable from agreement.
+func writeComparison(out, errOut io.Writer, diff *difftypes.SchemaDiff, sql, dialect string) {
+	categories := diffreport.Categories(diff)
+	if len(categories) == 0 {
+		fmt.Fprintln(out, "No schema differences detected.")
+		return
+	}
+
+	fmt.Fprintf(out, "Differences detected (%d %s):\n", len(categories), pluralize("category", "categories", len(categories)))
+	for _, category := range categories {
+		fmt.Fprintf(out, "  %s (%d): %s\n", category.Name, category.Count(), strings.Join(category.Objects, ", "))
+	}
+	fmt.Fprintln(out)
+
+	if strings.TrimSpace(sql) == "" {
+		fmt.Fprintln(out, "Reconciling SQL: none.")
+		fmt.Fprintf(
+			errOut,
+			"warning: the %s planner produced no statements for %s; the differences above cannot be reconciled by this dialect's planner\n",
+			dialect,
+			strings.Join(diffreport.Names(categories), ", "),
+		)
+		return
+	}
+
+	fmt.Fprintln(out, "Reconciling SQL:")
+	fmt.Fprint(out, sql)
+}
+
+func pluralize(singular, plural string, count int) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
 }
 
 func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff) error {
