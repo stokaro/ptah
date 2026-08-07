@@ -314,6 +314,11 @@ func columnsWithDesiredDomains(
 	}
 
 	dbRawType := rawDBColumnType(dbCol)
+
+	// The default comparison below asks what CATEGORY each side's type is, so it
+	// keeps using the normalizer even where the type comparison above does not:
+	// a default is normalized as a boolean or a number, and a domain's base type
+	// is the right answer to that question.
 	genType, dbType := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
 
 	if change := columnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); change != "" {

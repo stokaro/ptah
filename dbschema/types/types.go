@@ -94,6 +94,16 @@ func QualifyTableName(schema, table string) string {
 // GeneratedKind / GeneratedExpression are populated by readers for dialects
 // that expose generated column metadata. Schema comparison matches these fields
 // when the goschema-side model also carries generated column metadata.
+//
+// DomainName and FormattedType are a pair. DataType reports a domain column's
+// BASE type, so it alone cannot say that the declared type was a domain:
+// DomainName carries that fact and FormattedType carries the spelling the
+// server uses for it, schema-qualified where the search path needs that.
+// Everything that answers "what type is this column declared as" -- the
+// desired-state conversion, the Atlas-compatible JSON inspect output, and the
+// comparator's database side -- must consult DomainName rather than infer the
+// answer from DataType, which reports the base type and drops the domain's
+// constraints with it. See stokaro/ptah#1242.
 type DBColumn struct {
 	Name               string  `json:"name"`
 	DataType           string  `json:"data_type"`

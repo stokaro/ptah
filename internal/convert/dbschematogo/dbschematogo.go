@@ -607,7 +607,23 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 	return dbColumn.DataType
 }
 
+// postgresSerialType reports the SERIAL shorthand a column can be written back
+// as, or "" when it cannot.
+//
+// A domain column can never be written back as SERIAL. PostgreSQL's SERIAL
+// shorthand only ever builds a column of an integer type, so spelling a column
+// of domain `positive` as SERIAL rebuilds it as a plain integer and drops the
+// domain's CHECK with it. The domain wins, and the sequence default it was
+// drawing from is then carried as an ordinary default rather than folded into
+// the shorthand. Measured on PostgreSQL 17.10 against `id positive DEFAULT
+// nextval('s')` with the sequence OWNED BY that column: the pinned binary
+// v1.3.0 reports `type = sql("positive")` with the nextval default beside it,
+// and Ptah reported `type = serial` with no default at all. See
+// stokaro/ptah#1242.
 func postgresSerialType(dbColumn dbschematypes.DBColumn) string {
+	if dbColumn.DomainName != "" {
+		return ""
+	}
 	if !dbColumn.IsAutoIncrement || dbColumn.ColumnDefault == nil ||
 		!strings.Contains(strings.ToLower(*dbColumn.ColumnDefault), "nextval(") {
 		return ""

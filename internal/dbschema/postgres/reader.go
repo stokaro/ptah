@@ -330,6 +330,15 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			-- named "context" contains "text". A domain over an array is
 			-- reported with data_type 'ARRAY' just like a plain array column, so
 			-- the distinction cannot be recovered downstream (stokaro/ptah#1138).
+			--
+			-- The Atlas-compatible JSON inspect surface reads the same fact for
+			-- the same reason: measured against the pinned binary v1.3.0, an
+			-- array column prints "type":"ARRAY" while a domain column prints
+			-- "type":"positive", schema-qualified to "doms.positive" when the
+			-- domain is off the search path. Carrying the fact separately is
+			-- what lets each consumer pick, instead of every consumer
+			-- re-deriving it from a coincidence of which other field is empty
+			-- (stokaro/ptah#1242).
 			COALESCE(col.domain_name, '') AS domain_name,
 			-- And the schema that holds it, because the name is only half of a
 			-- domain's identity. public.status and other.status are two types;
@@ -1823,6 +1832,18 @@ func (r *Reader) readSequencesForSchema(schemaName string) ([]types.DBSequence, 
 			CASE
 				WHEN dep.refobjid IS NULL THEN false
 				WHEN dep.deptype = 'i' THEN true
+				-- A sequence a DOMAIN column draws from is not implicit, however
+				-- the catalog edges look. "Implicit" here means "writing the
+				-- owning column back recreates this sequence on its own", and
+				-- only the SERIAL shorthand and an identity column do that.
+				-- Neither is available to a domain column: SERIAL always builds
+				-- an integer column, so the column is written back as its domain
+				-- with an ordinary nextval default, and the sequence that
+				-- default names has to be created too. Calling it implicit
+				-- omitted the CREATE SEQUENCE and the emitted DDL failed on
+				-- replay with ERROR: relation "s" does not exist. See
+				-- stokaro/ptah#1242, and #657 for the rest of this rule.
+				WHEN owner_col_type.typtype = 'd' THEN false
 				ELSE EXISTS (
 					SELECT 1
 					FROM pg_attrdef ad
@@ -1845,6 +1866,7 @@ func (r *Reader) readSequencesForSchema(schemaName string) ([]types.DBSequence, 
 		LEFT JOIN pg_class owner_tbl ON owner_tbl.oid = dep.refobjid
 		LEFT JOIN pg_namespace owner_ns ON owner_ns.oid = owner_tbl.relnamespace
 		LEFT JOIN pg_attribute owner_col ON owner_col.attrelid = dep.refobjid AND owner_col.attnum = dep.refobjsubid
+		LEFT JOIN pg_type owner_col_type ON owner_col_type.oid = owner_col.atttypid
 		WHERE n.nspname = $1
 		ORDER BY n.nspname, c.relname`
 

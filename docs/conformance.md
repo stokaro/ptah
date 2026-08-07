@@ -323,7 +323,54 @@ own `schema diff` output fails to replay with
 `ERROR: type "positive_int" does not exist` — measured, psql exit 3. Ptah emits
 both the `CREATE DOMAIN` and the domain-typed column, so closing this gap meant
 keeping both halves rather than matching CE. Ptah's output replays at psql exit
-0 where CE's does not.
+0 where CE's does not. The same divergence reaches `schema apply`: applying this
+source database to an empty target, CE exits 1 with
+`create "t" table: pq: type "positive" does not exist` and Ptah exits 0 with the
+domain created first.
+
+### A domain column has to survive the comparator too, and the JSON surface
+
+Rendering a domain and reconciling one are separate claims, the same way they
+are for indexes below. Reading the domain fixed what `schema inspect` writes as
+HCL and left two other surfaces on the base type. Measured on PostgreSQL 17.10
+against one database holding `CREATE DOMAIN positive AS integer CHECK (VALUE >
+0)` and a column of it:
+
+| Surface | Atlas CE v1.3.0 | Ptah before | Ptah now |
+| --- | --- | --- | --- |
+| `schema inspect`, HCL | `type = sql("positive")` | `type = sql("positive")` | `type = sql("positive")` |
+| `schema inspect --format json` | `"type":"positive"` | `"type":"integer"` | `"type":"positive"` |
+| `schema inspect --format json`, domain off the search path | `"type":"doms.positive"` | `"type":"integer"` | `"type":"doms.positive"` |
+| `schema diff --from X --to X`, one database against itself | Schemas are synced | `ALTER TABLE "t" ALTER COLUMN "qty" TYPE positive;` | Schemas are synced |
+| `schema apply` run twice against the same target | — | plans and executes the same `ALTER` on every run, exit 0 each time | second run reports the schema synced |
+
+The diff row is the one that made the rendered domain worth nothing: the desired
+side answered `positive` and the database side answered `integer`, so a database
+was never in sync with itself and `schema apply` executed an `ALTER COLUMN` on
+every run while reporting success.
+
+Two details decided whether any of this was visible:
+
+- **The name of the domain.** The type comparison folded a spelling into a
+  category by substring, so any domain whose name contains `int` — the issue's
+  own `positive_int` fixture — compared equal to `integer` by accident and the
+  churn did not appear. A domain is now compared as the identifier it is: two
+  domains are the same type when they are the same domain. The reverse follows,
+  and is the point: a column of `positive_int` that a desired schema declares as
+  `bigint` is now reported as drift instead of silently matching.
+- **The array column next to it.** An array column and a domain column both make
+  the reader ask the server for its own spelling of the type, and the two want
+  opposite answers on the JSON surface: CE prints the bare category `ARRAY` for
+  an array and the domain name for a domain. The read carries which one it was,
+  rather than letting each consumer guess from which field happens to be empty.
+
+A domain column that also draws from an owned sequence is not a `SERIAL`
+column. PostgreSQL's `SERIAL` shorthand only ever builds a column of an integer
+type, so writing such a column back as `SERIAL` rebuilds it without the domain.
+The domain wins, the sequence default is written out beside it instead of being
+folded into the shorthand, and the sequence itself is reported rather than
+treated as the column's implicit backing sequence — without it the emitted DDL
+names a sequence nothing creates, which is measured as psql exit 3.
 
 ### Reading an attribute and reconciling it are different claims
 
