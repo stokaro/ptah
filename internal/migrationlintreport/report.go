@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
@@ -374,6 +375,19 @@ func effectiveDialect(opts Options, configDialect, devDialect string) (string, e
 	return dialect, nil
 }
 
+// lintDirectory analyzes the captured migration directory and replays it on the
+// dev database.
+//
+// The replay does double duty. It has always validated that the SQL runs, and it
+// now also reads the schema state the versions the analysis asked about start
+// from, because some diagnostics cannot be reached from SQL text alone -- see
+// [lint.BaselineColumn]. When it read anything, the analysis runs a second time
+// with those facts in hand.
+//
+// The analysis stays first so error precedence does not move: a directory that
+// fails to analyze reports that, not a replay error it would also have hit. The
+// second pass is skipped whenever the first one asked for nothing, which is
+// every run with no renames to resolve and every run without a dev database.
 func lintDirectory(
 	ctx context.Context,
 	opts Options,
@@ -385,16 +399,69 @@ func lintDirectory(
 	if err != nil {
 		return lint.Analysis{}, err
 	}
+	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
 		Dir:               opts.Dir,
 		DirFormat:         dirFormat,
 		DevURL:            opts.DevURL,
 		FS:                analysis.SnapshotFS(),
 		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
+		ObserveVersion:    baseline.observer(),
 	}); err != nil {
 		return analysis, fmt.Errorf("error validating migration SQL on dev database: %w", err)
 	}
-	return analysis, nil
+	if len(baseline.columns) == 0 {
+		return analysis, nil
+	}
+	lintOptions.Baseline = baseline.columns
+	return lint.AnalyzeFS(fsys, lintOptions)
+}
+
+// baselineCollector reads the dev database once per version the analysis asked
+// about, while the replay is standing on that version's starting state.
+//
+// A nil observer is handed to the replay when nothing was asked for, so a
+// directory with no renames pays no introspection at all.
+type baselineCollector struct {
+	wanted  map[int64]bool
+	schemas []string
+	columns []lint.BaselineColumn
+}
+
+func newBaselineCollector(versions []int64, devURL string) *baselineCollector {
+	collector := &baselineCollector{wanted: make(map[int64]bool, len(versions))}
+	for _, version := range versions {
+		collector.wanted[version] = true
+	}
+	if scope := schemaselection.FromURL(devURL).Scope; scope != "" {
+		collector.schemas = []string{scope}
+	}
+	return collector
+}
+
+// observer returns the replay hook, or nil when the analysis asked for nothing
+// so the replay runs exactly as it did before this existed.
+func (c *baselineCollector) observer() func(context.Context, int64, *dbschema.DatabaseConnection) error {
+	if len(c.wanted) == 0 {
+		return nil
+	}
+	return c.observe
+}
+
+func (c *baselineCollector) observe(
+	_ context.Context,
+	version int64,
+	conn *dbschema.DatabaseConnection,
+) error {
+	if c == nil || !c.wanted[version] {
+		return nil
+	}
+	columns, err := readBaselineColumns(conn, version, c.schemas)
+	if err != nil {
+		return err
+	}
+	c.columns = append(c.columns, columns...)
+	return nil
 }
 
 func validateDevURLDialect(dialect, devDialect string) error {

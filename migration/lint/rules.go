@@ -574,7 +574,82 @@ func notNullWithoutDefaultFindings(file *File) []Finding {
 		}
 		findings = append(findings, notNullWithoutDefaultFindingsFor(file.Path, stmt.Line, i, subjects)...)
 	}
+	return append(findings, renamedColumnAddFindings(file)...)
+}
+
+// renamedColumnAddFindings reports the add side of a column rename, on the
+// compatibility surface only.
+//
+// That surface models a rename structurally, as the retirement of one name plus
+// the introduction of another (see [renamedNames]); the retirement is already
+// reported as destructive, and this is its other half. If the retired column
+// rejected NULL and had no default, the introduced name is a non-nullable column
+// with no default, which is exactly what DD101 is about. Measured against the
+// pinned community binary v1.3.0 on PostgreSQL 16: `CREATE TABLE users (id int
+// NOT NULL)` in one file and `ALTER TABLE users RENAME COLUMN id TO oid` in the
+// next reports BOTH the drop of "id" and the add of an `integer` column "oid",
+// and exits 1.
+//
+// The native surface deliberately does not get this. It models a rename as a
+// rename, and a rename does not fail on a populated table -- saying it would
+// there would be a claim about the statement that is not true of the statement
+// Ptah's own analyzer describes. On the compatibility surface the drop-plus-add
+// model is the contract, so the claim follows the model.
+//
+// It needs facts the statement does not carry: the retired column's type,
+// nullability and default live in an earlier file or the base schema. They come
+// from [Options.Baseline], so a run without a dev database reports nothing here
+// rather than guessing. A rename this file's own CREATE TABLE exempts is already
+// gone from [fileRenames], which is the same exemption the loop above applies to
+// a plain ADD COLUMN and is measured the same way.
+func renamedColumnAddFindings(file *File) []Finding {
+	var findings []Finding
+	for _, rename := range renameAddSideCandidates(file) {
+		for _, name := range rename.names {
+			subject, ok := renamedColumnAddSubject(file, name)
+			if !ok {
+				continue
+			}
+			findings = append(findings, Finding{
+				Rule:     "DD101",
+				Title:    "non-nullable column added without a default",
+				Severity: SeverityWarning,
+				File:     file.Path,
+				Line:     rename.line,
+				Message: fmt.Sprintf(
+					"RENAME introduces NOT NULL column %s without a DEFAULT, which %s",
+					subject.Name,
+					notNullWithoutDefaultAdvice,
+				),
+				Context: statementFindingContext(rename.statementIndex, subject),
+			})
+		}
+	}
 	return findings
+}
+
+// renamedColumnAddSubject resolves the column a rename introduces against the
+// schema state its version starts from, and reports whether that column is the
+// non-nullable, default-less shape DD101 covers.
+//
+// Every unresolved case returns false: an unreadable rename, a column the
+// baseline does not carry, or no baseline at all. Reporting requires having
+// established the column's shape, and a run that has not established it must not
+// claim the migration will fail on data.
+func renamedColumnAddSubject(file *File, name renamedName) (Subject, bool) {
+	if name.introduced == "" || name.normalized == "" {
+		return Subject{}, false
+	}
+	column, ok := file.baseline.column(name.owner, name.normalized)
+	if !ok || !column.NotNull || column.HasDefault {
+		return Subject{}, false
+	}
+	return Subject{
+		Kind:     SubjectColumn,
+		Name:     name.introduced,
+		Parent:   name.parent,
+		DataType: column.DataType,
+	}, true
 }
 
 // notNullWithoutDefaultFindingsFor reports one finding per column an ALTER

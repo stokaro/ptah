@@ -853,18 +853,34 @@ incompatible` does not.
 Index, key and constraint renames are not reported at all: deployed application
 code does not name them.
 
-What a rename does **not** report on either surface is the column it
-introduces. Renaming a `NOT NULL` column draws the destructive diagnostic for
-the retired name from Ptah and from the CE binary alike, but the binary adds a
-second one — `MF103`, "adding a non-nullable column will fail in case the table
-is not empty" — for the new name, and Ptah does not. Ptah's analyzers read the
-migration's SQL text, and a `RENAME COLUMN` statement carries neither the
-column's type nor its nullability: both come from an earlier file or from the
-base schema, and the binary's message spells the type as the database canonicalizes
-it. Reaching that needs the replayed dev schema rather than the statement, which
-is [#1074](https://github.com/stokaro/ptah/issues/1074). Until then a rename is
-reported as destructive on both surfaces and as a data-dependent addition on
-neither, so it is one diagnostic short rather than differently classified.
+On the compatibility surface a rename also reports the column it **introduces**.
+Renaming a `NOT NULL` column with no `DEFAULT` produces a second diagnostic —
+`MF103`, "adding a non-nullable column will fail in case the table is not
+empty" — naming the new column and the retired column's type. A `RENAME COLUMN`
+statement carries neither that type nor its nullability, so this one is not read
+from the migration text: `ptah-compat migrate lint` reads the schema state the
+version starts from off the `--dev-url` database during the replay it already
+performs, before the version runs and while the retired column still exists. A
+run without `--dev-url` reports the retirement alone.
+
+Three consequences follow from where the facts come from:
+
+- The type is spelled the way the database canonicalizes it, not the way the
+  migration writes it: `int` reports as `integer` and `varchar(20)` as
+  `character varying(20)`.
+- A retired column that is nullable, or that carries a `DEFAULT`, has no such
+  diagnostic — the introduced column cannot fail on existing rows.
+- A type whose diagnostic spelling Ptah has not measured keeps the diagnostic but
+  prints Ptah's own labeled wording for it rather than a guess at the other
+  tool's.
+
+The two halves belong to different analyzers, so `-- atlas:nolint destructive`
+silences the retirement and leaves the addition, and `-- atlas:nolint
+data_depend` does the reverse.
+
+Native `ptah migrations lint` reports no addition. It models a rename as a
+rename, and a rename does not fail on a populated table, so `BC101` stays its
+single finding.
 
 The report is written to stdout even when findings fail, and error-severity
 findings still exit with code 1. The native `ptah migrations lint` output is

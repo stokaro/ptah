@@ -160,6 +160,9 @@ type File struct {
 	// when the two command surfaces model the same statement differently; see
 	// [renamedNames] for the one construct where they do.
 	compatibility CompatibilityProfile
+	// baseline is the schema state this file's version starts from, when the
+	// caller supplied one. Rules read it for facts the statement cannot carry.
+	baseline baselineColumns
 }
 
 // VersionSelection selects migration versions while preserving the difference
@@ -176,9 +179,10 @@ type VersionSelection struct {
 // copies, so callers cannot modify the captured files, findings, or source
 // snapshot.
 type Analysis struct {
-	files    []File
-	findings []Finding
-	snapshot fsnapshot.Snapshot
+	files            []File
+	findings         []Finding
+	snapshot         fsnapshot.Snapshot
+	baselineVersions []int64
 }
 
 // Files returns every prepared migration file in the captured directory.
@@ -200,6 +204,17 @@ func (a Analysis) SelectedFiles() []File {
 // Findings returns the ordered lint findings.
 func (a Analysis) Findings() []Finding {
 	return cloneFindings(a.findings)
+}
+
+// BaselineVersions returns the analyzed migration versions whose starting
+// schema state would let a second analysis say more than SQL text alone can,
+// sorted ascending.
+//
+// It is empty for a run that already has nothing to gain, so a caller can skip
+// the dev-database round trips and the second analysis entirely. Feed the
+// versions back through [Options.Baseline]; see [BaselineColumn].
+func (a Analysis) BaselineVersions() []int64 {
+	return slices.Clone(a.baselineVersions)
 }
 
 // SnapshotFS returns a read-only filesystem containing the SQL sources,
@@ -306,6 +321,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 
 	mode := modeForDialect(opts.Dialect)
 	scope := newSchemaScope(opts.SchemaScope)
+	baseline := newBaselineIndex(normalizeBaselineColumns(opts.Baseline))
 	files := make([]File, 0, len(names))
 	for _, name := range names {
 		file, err := prepareFile(
@@ -322,6 +338,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			opts.Selection,
 			opts.Compatibility,
 			scope,
+			baseline,
 		)
 		if err != nil {
 			return Analysis{}, err
@@ -348,9 +365,10 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	})
 
 	return Analysis{
-		files:    files,
-		findings: cloneFindings(findings),
-		snapshot: snapshot,
+		files:            files,
+		findings:         cloneFindings(findings),
+		snapshot:         snapshot,
+		baselineVersions: baselineVersions(files),
 	}, nil
 }
 
@@ -463,6 +481,7 @@ func prepareFile(
 	selection VersionSelection,
 	compatibility CompatibilityProfile,
 	scope schemaScope,
+	baseline map[int64]baselineColumns,
 ) (File, error) {
 	raw := sources[name]
 	base := path.Base(name)
@@ -493,6 +512,7 @@ func prepareFile(
 		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql"),
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
 		compatibility:  compatibility,
+		baseline:       baseline[version],
 	}
 	if compatibility == CompatibilityProfileAtlas {
 		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw)

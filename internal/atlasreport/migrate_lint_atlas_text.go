@@ -142,7 +142,63 @@ func atlasDataType(value string) (string, bool) {
 	if strings.ReplaceAll(normalized, " ", "") == "varchar(255)" {
 		return "varchar", true
 	}
+	if catalogSpelledDataType(normalized) {
+		return normalized, true
+	}
 	return "", false
+}
+
+// catalogDataTypes are the PostgreSQL catalog type names the compatibility
+// surface prints unchanged, each measured against the pinned community binary
+// v1.3.0 on PostgreSQL 16 by renaming a NOT NULL column of that type and reading
+// the MF103 diagnostic it produces (stokaro/ptah#1074).
+//
+// The set is deliberately short. `timestamp with time zone` is absent because
+// the measured diagnostic says `timestamptz`, `timestamp without time zone`
+// because it says `timestamp`, and array types because the diagnostic says
+// `integer[]` where the catalog says `ARRAY` -- none of those is the catalog's
+// own spelling, so passing the catalog through would print a type the tool being
+// matched never prints. Those fall through to Ptah's labeled prose instead.
+var catalogDataTypes = map[string]bool{
+	"bigint":            true,
+	"boolean":           true,
+	"bytea":             true,
+	"character":         true,
+	"character varying": true,
+	"date":              true,
+	"double precision":  true,
+	"integer":           true,
+	"json":              true,
+	"jsonb":             true,
+	"numeric":           true,
+	"real":              true,
+	"smallint":          true,
+	"text":              true,
+	"uuid":              true,
+}
+
+// catalogSpelledDataType reports whether a lower-cased type name is one of the
+// measured catalog spellings, with or without the length or precision the
+// diagnostic carries in parentheses.
+//
+// Measured forms: `character varying(20)`, `character(5)`, `numeric(10,2)` and
+// `numeric(10)` -- PostgreSQL reports scale 0 for `numeric(10,0)` and the
+// diagnostic prints `numeric(10)` for both spellings.
+func catalogSpelledDataType(normalized string) bool {
+	base, arguments, found := strings.Cut(normalized, "(")
+	if !found {
+		return catalogDataTypes[normalized]
+	}
+	arguments, closed := strings.CutSuffix(arguments, ")")
+	if !closed || arguments == "" || !catalogDataTypes[base] {
+		return false
+	}
+	for argument := range strings.SplitSeq(arguments, ",") {
+		if argument == "" || strings.TrimLeft(argument, "0123456789") != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // atlasSoleSubject returns the schema object a one-object diagnostic is about.
