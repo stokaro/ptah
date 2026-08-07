@@ -169,13 +169,13 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.RLSPolicies(generated, database, diff)
 
 	// Compare RLS enabled tables (PostgreSQL-specific feature)
-	compare.RLSEnabledTables(generated, database, diff)
+	compare.RLSEnabledTablesWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare roles (PostgreSQL-specific feature)
 	compare.Roles(generated, database, diff)
 
 	// Compare role privilege grants (PostgreSQL-specific feature)
-	compare.Grants(generated, database, diff)
+	compare.GrantsWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare table-level constraints (EXCLUDE, CHECK, UNIQUE, etc.)
 	compare.ConstraintsWithSemantics(generated, database, diff, opts, identifierSemantics)

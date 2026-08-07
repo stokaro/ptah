@@ -130,10 +130,13 @@ func boundaryCases() []boundaryCase {
 			wantDocumentOnly: []string{"schema:public"},
 			wantDatabaseOnly: nil,
 
-			// WRONG (#1276): applying a database's own description back to it
-			// plans fourteen statements. Must become nil on both surfaces.
-			wantNativePlan: boundaryOwnerGrantChurn("public", "a"),
-			wantCompatPlan: boundaryOwnerGrantChurn("public", "a"),
+			// FIXED (#1283): applying a database's own description back to it
+			// plans nothing. The fourteen statements this row used to expect
+			// were one grant revoked under the unqualified spelling and
+			// re-granted under the qualified one; keying the comparison by
+			// table identity collapsed them.
+			wantNativePlan: boundaryNoPlan,
+			wantCompatPlan: boundaryNoPlan,
 		},
 		{
 			// The control. The same content reached with an explicit
@@ -153,9 +156,10 @@ func boundaryCases() []boundaryCase {
 			wantDocumentOnly: []string{"schema:public"},
 			wantDatabaseOnly: nil,
 
-			// WRONG (#1276): must become nil on both surfaces.
-			wantNativePlan: boundaryOwnerGrantChurn("public", "a"),
-			wantCompatPlan: boundaryOwnerGrantChurn("public", "a"),
+			// FIXED (#1283): the grant churn is gone here too, on the URL form
+			// that pins a single schema.
+			wantNativePlan: boundaryNoPlan,
+			wantCompatPlan: boundaryNoPlan,
 		},
 		{
 			// An extension supplying a type a column uses. #1266: inspect
@@ -175,11 +179,11 @@ func boundaryCases() []boundaryCase {
 			wantDocumentOnly: []string{"schema:public"},
 			wantDatabaseOnly: nil,
 
-			// WRONG (#1276): must become nil on both surfaces. No extension
-			// statement appears here -- the plan is the same fourteen-statement
-			// grant churn every table gets.
-			wantNativePlan: boundaryOwnerGrantChurn("public", "books"),
-			wantCompatPlan: boundaryOwnerGrantChurn("public", "books"),
+			// FIXED (#1283): no extension statement appeared here even when
+			// this row was red -- the plan was the grant churn every table got,
+			// and it is gone. An extension a column uses stays described.
+			wantNativePlan: boundaryNoPlan,
+			wantCompatPlan: boundaryNoPlan,
 		},
 		{
 			// An extension nothing references. This is the fifth defect, and
@@ -231,9 +235,9 @@ func boundaryCases() []boundaryCase {
 			wantDocumentOnly: []string{"schema:public"},
 			wantDatabaseOnly: nil,
 
-			// WRONG (#1276): must become nil on both surfaces.
-			wantNativePlan: boundaryOwnerGrantChurn("public", "pk_t"),
-			wantCompatPlan: boundaryOwnerGrantChurn("public", "pk_t"),
+			// FIXED (#1283): nil on both surfaces.
+			wantNativePlan: boundaryNoPlan,
+			wantCompatPlan: boundaryNoPlan,
 		},
 		{
 			// An empty database. The floor: whatever else is broken, nothing
@@ -507,38 +511,6 @@ func boundaryStripComments(statements []string) []string {
 // boundaryNoPlan is property 2 holding: applying a database's own description
 // back to it changes nothing.
 func boundaryNoPlan(string) []string { return nil }
-
-// boundaryOwnerGrantChurn is the plan master produces for any table in these
-// fixtures, on both surfaces.
-//
-// Measured cause: the two sides key a grant on how the table is NAMED, and they
-// name it differently. The reader reports the grant against `pk_t`, exactly as
-// the catalog spelled it; the same grant parsed back out of the document
-// resolves through `for = table.pk_t` to the qualified `public.pk_t`. The
-// comparator sees seven grants removed and seven different grants added, so a
-// database's own description is never in sync with itself.
-//
-// That is #1276's pattern in its third form -- not a reader that moved narrower
-// or wider, but a change to what NAMES an object -- and it is why this guard
-// asserts a plan rather than an exit code: both sides are individually correct
-// and the boundary between them is not.
-//
-// Must become nil.
-func boundaryOwnerGrantChurn(schema, table string) func(role string) []string {
-	// The privileges PostgreSQL grants a table's owner by default, in the order
-	// the planner emits them.
-	privileges := []string{"DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"}
-	return func(role string) []string {
-		out := make([]string, 0, 2*len(privileges))
-		for _, privilege := range privileges {
-			out = append(out, fmt.Sprintf("REVOKE %s ON TABLE %q FROM %q", privilege, table, role))
-		}
-		for _, privilege := range privileges {
-			out = append(out, fmt.Sprintf("GRANT %s ON TABLE %q.%q TO %q WITH GRANT OPTION", privilege, schema, table, role))
-		}
-		return out
-	}
-}
 
 // boundaryDropExtension is the destructive plan: the description a database
 // gave of itself, applied back to that database, removes an object it has.
