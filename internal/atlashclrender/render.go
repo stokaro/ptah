@@ -46,13 +46,30 @@ type Result struct {
 }
 
 // Render renders a finalized Ptah schema IR as deterministic HCL schema text.
+//
+// It renders every column type as the IR spells it. Use [RenderForDialect] when
+// the schema came out of a database rather than out of HCL: an inspected type
+// carries no record of how it was written, and some of them have to be written
+// as a sql() call to be readable at all.
 func Render(db *goschema.Database) (Result, error) {
+	return RenderForDialect(db, "")
+}
+
+// RenderForDialect renders the IR for a named dialect, writing a column type
+// that dialect's Atlas HCL schema does not model as a sql() call.
+//
+// The dialect matters only for that decision. An empty dialect renders exactly
+// what [Render] renders, which is what the parse-and-re-render callers want:
+// their input was HCL, so the raw-SQL marker the parser set is already right and
+// re-deciding it from the type name would second-guess the author.
+func RenderForDialect(db *goschema.Database, dialect string) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
 
 	r := renderer{
-		db: db,
+		db:      db,
+		dialect: dialect,
 	}
 	r.render()
 	return Result{
@@ -63,6 +80,7 @@ func Render(db *goschema.Database) (Result, error) {
 
 type renderer struct {
 	db          *goschema.Database
+	dialect     string
 	builder     strings.Builder
 	diagnostics []Diagnostic
 }
@@ -198,7 +216,7 @@ func (r *renderer) renderTable(
 
 func (r *renderer) renderColumn(field goschema.Field) {
 	r.linef(`  column %s {`, quote(field.Name))
-	r.rawAttr(2, "type", columnTypeExpr(field))
+	r.rawAttr(2, "type", columnTypeExpr(field, r.dialect))
 	if field.Nullable {
 		r.rawAttr(2, "null", "true")
 	}
@@ -758,11 +776,24 @@ func parseForeignReference(value string) (string, []string) {
 // `type = USER_DEFINED` with `Unknown column.type; There is no type named
 // "USER_DEFINED"` and accepts `type = sql("USER_DEFINED")`. Measured on that
 // binary, an HCL file it plans must survive a Ptah round trip still planning.
-func columnTypeExpr(field goschema.Field) string {
-	if field.TypeRawSQL && strings.TrimSpace(field.Type) != "" {
+func columnTypeExpr(field goschema.Field, dialect string) string {
+	if strings.TrimSpace(field.Type) == "" {
+		return typeExpr(field.Type)
+	}
+	// The IR remembers the call when the schema came from HCL. When it came
+	// from a database it remembers nothing, so the dialect's own list of
+	// modeled types decides -- see modeled_types.go for why that list is
+	// trustworthy rather than a copied table.
+	if field.TypeRawSQL {
 		return sqlCall(field.Type)
 	}
-	return typeExpr(field.Type)
+	modeled, ok := modeledColumnType(dialect, field.Type)
+	if !ok {
+		// Wrapped verbatim: an engine type Atlas does not model is only
+		// readable as the text the database itself reports.
+		return sqlCall(field.Type)
+	}
+	return typeExpr(modeled)
 }
 
 func typeExpr(value string) string {

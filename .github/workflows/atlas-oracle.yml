@@ -20,6 +20,26 @@ jobs:
 
     env:
       PTAH_ATLAS_FUZZ_N: '200'
+      # The column-type conformance run needs a real PostgreSQL dev database.
+      # The binary resolves a column type by materializing it there, so a run
+      # without a server could not tell a type it does not model from a type the
+      # engine does not have -- and those are the two verdicts that run exists to
+      # keep apart.
+      PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL: 'postgres://postgres:pw@localhost:5432/dev?sslmode=disable&search_path=public'
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: pw
+          POSTGRES_DB: dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v7
@@ -109,6 +129,33 @@ jobs:
           # A missing oracle skips these silently. That is the exact failure
           # mode this job exists to prevent, so a skip fails the job.
           ! grep -q 'SKIPPED' "$RUNNER_TEMP/atlas-file-sandbox-run"
+
+      # The set of column types the HCL schema models is the third contract in
+      # this repository whose authority is the community binary rather than any
+      # document (stokaro/ptah#1138). A wrong row emits HCL that binary refuses
+      # to read, so the set is re-measured here instead of being trusted.
+      # Listed before it is run, for the same reason as above.
+      - name: Verify column-type conformance selection
+        run: |
+          GOWORK=off go test -list '^TestOracle' \
+            ./internal/atlashclrender > "$RUNNER_TEMP/atlas-column-type-tests"
+          cat "$RUNNER_TEMP/atlas-column-type-tests"
+          grep -Fx 'TestOracleModeledColumnTypesMatchTheBinary' "$RUNNER_TEMP/atlas-column-type-tests"
+          grep -Fx 'TestOracleAcceptsTheWrapItFallsBackTo' "$RUNNER_TEMP/atlas-column-type-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 2
+
+      - name: Run column-type conformance tests
+        run: |
+          GOWORK=off go test -count=1 -v -run '^TestOracle' ./internal/atlashclrender \
+            > "$RUNNER_TEMP/atlas-column-type-run" 2>&1 || {
+              cat "$RUNNER_TEMP/atlas-column-type-run"
+              exit 1
+            }
+          cat "$RUNNER_TEMP/atlas-column-type-run"
+          # A missing oracle skips these silently, and so does a missing dev
+          # database URL -- which would leave every PostgreSQL row unmeasured
+          # while the job stayed green. Both are fatal here.
+          ! grep -q 'SKIPPED' "$RUNNER_TEMP/atlas-column-type-run"
 
       - name: Regenerate Atlas CE corpus
         run: >-
