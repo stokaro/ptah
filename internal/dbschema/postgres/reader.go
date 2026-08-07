@@ -1565,9 +1565,15 @@ func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 		            WHERE typedep.deptype = 'e'
 		              AND typedep.classid = 'pg_type'::regclass
 		              AND typedep.refobjid = e.oid
-		              AND (answering.oid = p.prorettype
-		                   OR answering.oid = ANY (p.proargtypes)
-		                   OR answering.oid = ANY (COALESCE(p.proallargtypes, '{}'::oid[])))
+		              -- Argument position ONLY. The redundancy this gate relies on
+		              -- is that a genuine call spells the answering type, and only
+		              -- an argument obliges the caller to: a return type or an OUT
+		              -- parameter is named by the function, not by the call site.
+		              -- Measured: an extension supplying merge(text, text)
+		              -- RETURNS kwbox had its member dropped while the document
+		              -- kept a CHECK calling merge, which then failed to
+		              -- materialize (stokaro/ptah#1281).
+		              AND answering.oid = ANY (p.proargtypes)
 		              AND NOT EXISTS (
 		                  SELECT 1 FROM pg_type core
 		                    JOIN pg_namespace corens ON corens.oid = core.typnamespace
