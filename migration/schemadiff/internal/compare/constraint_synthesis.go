@@ -104,7 +104,7 @@ func synthesizeTablePrimaryKeyConstraints(
 			continue
 		}
 
-		name := tablePrimaryKeyConstraintName(table, database.Constraints, dialect)
+		name := tablePrimaryKeyConstraintName(table, database.Constraints, dialect, semantics)
 		synthesized = append(synthesized, goschema.Constraint{
 			StructName: table.StructName,
 			Name:       name,
@@ -116,9 +116,31 @@ func synthesizeTablePrimaryKeyConstraints(
 	return synthesized
 }
 
-func tablePrimaryKeyConstraintName(table goschema.Table, dbConstraints []types.DBConstraint, dialect string) string {
+// tablePrimaryKeyConstraintName adopts the name the database already uses for
+// this table's primary key, so the synthesized constraint compares equal to it
+// instead of being reported as a rename.
+//
+// The lookup normalizes both sides for the same reason the keys around it do:
+// the database reports the schema as empty wherever the engine treats it as
+// implicit, and the desired side carries it. Comparing the two spellings
+// directly meant the lookup never matched and the name always came from the
+// fallback below. That was invisible wherever the fallback happens to be right
+// -- MySQL always names it PRIMARY, PostgreSQL usually names it <table>_pkey --
+// and wrong the moment a schema names its primary key itself, which surfaced as
+// dropping the real constraint and adding a differently named one
+// (stokaro/ptah#1244).
+func tablePrimaryKeyConstraintName(
+	table goschema.Table,
+	dbConstraints []types.DBConstraint,
+	dialect string,
+	semantics identifier.Semantics,
+) string {
+	wanted := newQualifiedTableIdentity(table.QualifiedName(), semantics)
 	for _, constraint := range dbConstraints {
-		if constraint.Type == "PRIMARY KEY" && constraint.QualifiedTableName() == table.QualifiedName() {
+		if constraint.Type != "PRIMARY KEY" {
+			continue
+		}
+		if newQualifiedTableIdentity(constraint.QualifiedTableName(), semantics) == wanted {
 			return constraint.Name
 		}
 	}
