@@ -43,8 +43,10 @@ ptah schema apply --db-url "sqlite://$PWD/app.db" --plan change.plan.json
 On the Atlas-compatible surface, `--to` additionally accepts a database URL
 whose live schema becomes the desired state, or an Atlas-format migration
 directory replayed on the required `--dev-url` dev database. When `--dev-url`
-is set, the exact ordered plan is rehearsed on the dev database before the
-target is touched, and a failed rehearsal refuses the apply. `--lock-timeout`
+is set, the ordered plan is rehearsed on the dev database before the target is
+touched, and a failed rehearsal refuses the apply. The rehearsal runs entirely
+inside the dev database, which is handed back empty afterwards — see
+[Atlas schema commands](../../atlas/schema-commands/). `--lock-timeout`
 bounds the session advisory lock that serializes concurrent applies,
 `--tx-mode` selects the transaction mode, `--edit` opens the planned SQL in
 `$VISUAL`/`$EDITOR`, and `--schemas`, `--include`, and `--exclude` scope both

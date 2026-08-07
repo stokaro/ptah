@@ -48,7 +48,7 @@ CREATE TABLE sim_existing (
 func TestSimulateOnDev_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("plan rehearses on the reset dev database", func(c *qt.C) {
+	c.Run("plan rehearses on the reset dev database and hands it back empty", func(c *qt.C) {
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		devPath := filepath.Join(dir, "dev.db")
@@ -70,11 +70,37 @@ CREATE TABLE sim_stale (
 		})
 
 		c.Assert(err, qt.IsNil)
-		// The dev database ends at baseline + plan: current state recreated,
-		// plan applied, stale objects gone. The target only has the baseline.
-		c.Assert(sqliteTableExists(c, devPath, "sim_existing"), qt.IsTrue)
-		c.Assert(sqliteTableExists(c, devPath, "sim_added"), qt.IsTrue)
+		// The dev database is scratch space, borrowed and handed back: nothing
+		// the rehearsal created, and nothing that was there before it, is left
+		// behind. The target only has the baseline.
+		c.Assert(sqliteTableExists(c, devPath, "sim_existing"), qt.IsFalse)
+		c.Assert(sqliteTableExists(c, devPath, "sim_added"), qt.IsFalse)
 		c.Assert(sqliteTableExists(c, devPath, "sim_stale"), qt.IsFalse)
+		c.Assert(sqliteTableExists(c, dbPath, "sim_added"), qt.IsFalse)
+	})
+
+	c.Run("the baseline and the plan really execute on the dev database", func(c *qt.C) {
+		dir := c.TB.TempDir()
+		dbPath := filepath.Join(dir, "target.db")
+		devPath := filepath.Join(dir, "dev.db")
+		plan := prepareSimulationPlan(c, dbPath)
+
+		// Cleaning the dev database afterwards must not be mistaken for a
+		// rehearsal that did nothing, so every statement here depends on the
+		// one before it: the ALTERs only parse against tables the reset,
+		// baseline recreation, and plan actually created.
+		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
+			DevURL:    atlasurl.SQLiteURLFromPath(devPath),
+			TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
+			Statements: []string{
+				"CREATE TABLE sim_added (id INTEGER PRIMARY KEY)",
+				"ALTER TABLE sim_existing ADD COLUMN probe_baseline TEXT",
+				"ALTER TABLE sim_added ADD COLUMN probe_plan TEXT",
+			},
+		})
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(sqliteTableExists(c, devPath, "sim_added"), qt.IsFalse)
 		c.Assert(sqliteTableExists(c, dbPath, "sim_added"), qt.IsFalse)
 	})
 
@@ -91,16 +117,53 @@ CREATE TABLE sim_stale (
 		devPath := filepath.Join(dir, "dev.db")
 		plan := prepareSimulationPlan(c, dbPath)
 
+		// The prepared plan also creates sim_added, so this list only runs
+		// clean if the plan was replaced rather than added to: had both
+		// rehearsed, the second CREATE would collide.
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
-			DevURL:     atlasurl.SQLiteURLFromPath(devPath),
-			TargetURL:  atlasurl.SQLiteURLFromPath(dbPath),
-			Statements: []string{"CREATE TABLE sim_edited (id INTEGER PRIMARY KEY)"},
+			DevURL:    atlasurl.SQLiteURLFromPath(devPath),
+			TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
+			Statements: []string{
+				"CREATE TABLE sim_edited (id INTEGER PRIMARY KEY)",
+				"CREATE TABLE sim_added (id INTEGER PRIMARY KEY)",
+				"ALTER TABLE sim_edited ADD COLUMN probe_edited TEXT",
+			},
 		})
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sqliteTableExists(c, devPath, "sim_edited"), qt.IsTrue)
-		c.Assert(sqliteTableExists(c, devPath, "sim_added"), qt.IsFalse)
+		c.Assert(sqliteTableExists(c, devPath, "sim_edited"), qt.IsFalse)
 	})
+}
+
+func TestSimulateOnDev_FailedRehearsalStillEmptiesTheDevDatabase(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	devPath := filepath.Join(dir, "dev.db")
+	plan := prepareSimulationPlan(c, dbPath)
+
+	// The first statement succeeds and the second fails, so the dev database
+	// holds a half-applied plan at the moment the rehearsal gives up. The
+	// pinned community binary v1.3.0 leaves its dev database empty when its own
+	// dev-database work fails (measured 2026-08-07, live MySQL 9.7, Error 3780
+	// on an incompatible foreign key); Ptah matches that on the failure path,
+	// not only on the success path.
+	err := plan.SimulateOnDev(t.Context(), atlasschema.SimulateOptions{
+		DevURL:    atlasurl.SQLiteURLFromPath(devPath),
+		TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
+		Statements: []string{
+			"CREATE TABLE sim_half (id INTEGER PRIMARY KEY)",
+			"CREATE TABLE sim_existing (id INTEGER PRIMARY KEY)",
+		},
+	})
+
+	c.Assert(atlasschema.IsSimulationFailure(err), qt.IsTrue, qt.Commentf("error: %v", err))
+	c.Assert(sqliteTableExists(c, devPath, "sim_half"), qt.IsFalse)
+	c.Assert(sqliteTableExists(c, devPath, "sim_existing"), qt.IsFalse)
+	// The failed rehearsal changed nothing in the target.
+	c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, dbPath, "sim_half"), qt.IsFalse)
+	c.Assert(sqliteTableExists(c, dbPath, "sim_added"), qt.IsFalse)
 }
 
 func TestSimulateOnDev_FailedSimulationLeavesTargetUnchanged(t *testing.T) {
