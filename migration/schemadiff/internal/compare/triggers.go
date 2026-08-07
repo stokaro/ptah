@@ -6,21 +6,40 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // Triggers compares trigger definitions between generated and database schemas.
 func Triggers(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	TriggersWithDialect(generated, database, diff, "")
+}
+
+// TriggersWithDialect compares triggers with the dialect's own idea of which
+// schema an unqualified table belongs to.
+//
+// The dialect matters because the two sides spell the owning table
+// differently: the desired schema carries the table's schema explicitly while
+// the database reports it as empty wherever the engine treats it as implicit.
+// Without the fill-in, every trigger on such a table read as removed and
+// re-added (stokaro/ptah#1232).
+func TriggersWithDialect(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+) {
+	semantics := identifier.ForDialect(dialect)
 	generatedTriggers := make(map[tableMemberKey]goschema.Trigger)
 	for _, trigger := range generated.Triggers {
 		trigger.Canonicalize()
-		generatedTriggers[triggerKey(trigger.Table, trigger.Name)] = trigger
+		generatedTriggers[triggerKey(trigger.Table, trigger.Name, semantics)] = trigger
 	}
 
 	databaseTriggers := make(map[tableMemberKey]types.DBTrigger)
 	for _, trigger := range database.Triggers {
-		databaseTriggers[triggerKey(trigger.QualifiedTable(), trigger.Name)] = trigger
+		databaseTriggers[triggerKey(trigger.QualifiedTable(), trigger.Name, semantics)] = trigger
 	}
 
 	for key, trigger := range generatedTriggers {
@@ -58,8 +77,8 @@ func Triggers(generated *goschema.Database, database *types.DBSchema, diff *diff
 	})
 }
 
-func triggerKey(tableName, triggerName string) tableMemberKey {
-	return tableMemberKey{table: tableName, member: triggerName}
+func triggerKey(tableName, triggerName string, semantics identifier.Semantics) tableMemberKey {
+	return newTableMemberKey(tableName, triggerName, semantics)
 }
 
 func sortTriggerRefs(refs []difftypes.TriggerRef) {

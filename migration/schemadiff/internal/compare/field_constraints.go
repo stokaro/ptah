@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 )
 
@@ -18,16 +19,23 @@ import (
 // foreignKeyConstraintChanged (issue #189). FKs without a synthesized
 // counterpart (e.g. a column that is not yet in the database, which never gets
 // synthesized) keep the previous filter-out behavior.
-// buildTablePrimaryKeyColumnSets maps each generated table's qualified name to
-// the set of columns in its table-level primary key.
-func buildTablePrimaryKeyColumnSets(generated *goschema.Database) map[string]map[string]struct{} {
-	result := make(map[string]map[string]struct{}, len(generated.Tables))
+// buildTablePrimaryKeyColumnSets maps each generated table to the set of
+// columns in its table-level primary key.
+//
+// The key is normalized rather than the qualified name as written, because the
+// database side of the lookup spells an implicit schema as nothing at all
+// (stokaro/ptah#1232).
+func buildTablePrimaryKeyColumnSets(
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) map[tableIdentity]map[string]struct{} {
+	result := make(map[tableIdentity]map[string]struct{}, len(generated.Tables))
 	for _, table := range generated.Tables {
 		columns := make(map[string]struct{})
 		for _, column := range tablePrimaryKeyColumns(table) {
 			columns[column] = struct{}{}
 		}
-		result[table.QualifiedName()] = columns
+		result[newQualifiedTableIdentity(table.QualifiedName(), semantics)] = columns
 	}
 	return result
 }
@@ -36,13 +44,14 @@ func isFieldLevelConstraint(
 	dbConstraint types.DBConstraint,
 	generated *goschema.Database,
 	synthesizedFKKeys map[tableMemberKey]struct{},
+	semantics identifier.Semantics,
 ) bool {
 	// Create a map of table.column -> field for quick lookup
 	fieldMap := make(map[tableMemberKey]goschema.Field)
 	// tablePKColumns maps a qualified table name to the set of columns in its
 	// table-level primary key (Table.PrimaryKey), which are synthesized as a
 	// table-level PRIMARY KEY constraint.
-	tablePKColumns := buildTablePrimaryKeyColumnSets(generated)
+	tablePKColumns := buildTablePrimaryKeyColumnSets(generated, semantics)
 	for _, field := range generated.Fields {
 		// Get table name for this field
 		tableName := field.StructName // default to struct name
@@ -52,7 +61,7 @@ func isFieldLevelConstraint(
 				break
 			}
 		}
-		key := tableMemberKey{table: tableName, member: field.Name}
+		key := newTableMemberKey(tableName, field.Name, semantics)
 		fieldMap[key] = field
 	}
 
@@ -60,7 +69,7 @@ func isFieldLevelConstraint(
 	switch dbConstraint.Type {
 	case "NOT NULL":
 		// Check if there's a field with not_null=true for this column
-		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: getConstraintColumn(dbConstraint)}
+		key := newTableMemberKey(dbConstraint.QualifiedTableName(), getConstraintColumn(dbConstraint), semantics)
 		if field, exists := fieldMap[key]; exists && !field.Nullable {
 			return true
 		}
@@ -72,15 +81,16 @@ func isFieldLevelConstraint(
 		// database constraint must stay in the comparison to match/add correctly
 		// (#708).
 		column := getConstraintColumn(dbConstraint)
-		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: column}
+		key := newTableMemberKey(dbConstraint.QualifiedTableName(), column, semantics)
 		if field, exists := fieldMap[key]; exists && field.Primary {
-			if _, synthesized := tablePKColumns[dbConstraint.QualifiedTableName()][column]; !synthesized {
+			pkKey := newQualifiedTableIdentity(dbConstraint.QualifiedTableName(), semantics)
+			if _, synthesized := tablePKColumns[pkKey][column]; !synthesized {
 				return true
 			}
 		}
 	case "UNIQUE":
 		// Check if there's a field with unique=true for this column
-		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: getConstraintColumn(dbConstraint)}
+		key := newTableMemberKey(dbConstraint.QualifiedTableName(), getConstraintColumn(dbConstraint), semantics)
 		if field, exists := fieldMap[key]; exists && field.Unique {
 			return true
 		}
@@ -94,7 +104,7 @@ func isFieldLevelConstraint(
 		// the constraint name rather than the column, because the synthesized
 		// name is keyed on table.constraint_name and getConstraintColumn does
 		// not always resolve the FK column.
-		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: dbConstraint.Name}
+		key := newTableMemberKey(dbConstraint.QualifiedTableName(), dbConstraint.Name, semantics)
 		if _, synthesized := synthesizedFKKeys[key]; synthesized {
 			return false
 		}
@@ -102,7 +112,7 @@ func isFieldLevelConstraint(
 		// No synthesized counterpart (e.g. the column is not yet in the
 		// database): keep the historical behavior and treat it as field-level
 		// so it is owned by the column/table lifecycle.
-		key = tableMemberKey{table: dbConstraint.QualifiedTableName(), member: getConstraintColumn(dbConstraint)}
+		key = newTableMemberKey(dbConstraint.QualifiedTableName(), getConstraintColumn(dbConstraint), semantics)
 		if field, exists := fieldMap[key]; exists && field.Foreign != "" {
 			return true
 		}

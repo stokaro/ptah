@@ -2,6 +2,7 @@ package compare
 
 import (
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
@@ -27,7 +28,11 @@ import (
 // `//ptah:schema:constraint` that happens to share the synthesized
 // name wins — synthesis never clobbers it. See the guard in
 // Constraints() where genConstraints is populated.
-func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database *types.DBSchema) []goschema.Constraint {
+func synthesizeFieldLevelCheckConstraints(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	semantics identifier.Semantics,
+) []goschema.Constraint {
 	if generated == nil || database == nil {
 		return nil
 	}
@@ -40,7 +45,7 @@ func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database
 	dbColumns := make(map[tableMemberKey]struct{}, 16)
 	for _, t := range database.Tables {
 		for _, c := range t.Columns {
-			dbColumns[tableMemberKey{table: t.QualifiedName(), member: c.Name}] = struct{}{}
+			dbColumns[newTableMemberKey(t.QualifiedName(), c.Name, semantics)] = struct{}{}
 		}
 	}
 
@@ -56,7 +61,7 @@ func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database
 			tableName = f.StructName
 			tableLeafName = f.StructName
 		}
-		if _, exists := dbColumns[tableMemberKey{table: tableName, member: f.Name}]; !exists {
+		if _, exists := dbColumns[newTableMemberKey(tableName, f.Name, semantics)]; !exists {
 			continue
 		}
 		name := f.CheckName
@@ -78,14 +83,15 @@ func synthesizeTablePrimaryKeyConstraints(
 	generated *goschema.Database,
 	database *types.DBSchema,
 	dialect string,
+	semantics identifier.Semantics,
 ) []goschema.Constraint {
 	if generated == nil || database == nil {
 		return nil
 	}
 
-	dbTables := make(map[string]struct{}, len(database.Tables))
+	dbTables := make(map[tableIdentity]struct{}, len(database.Tables))
 	for _, table := range database.Tables {
-		dbTables[table.QualifiedName()] = struct{}{}
+		dbTables[newQualifiedTableIdentity(table.QualifiedName(), semantics)] = struct{}{}
 	}
 
 	var synthesized []goschema.Constraint
@@ -94,7 +100,7 @@ func synthesizeTablePrimaryKeyConstraints(
 		if len(columns) == 0 {
 			continue
 		}
-		if _, exists := dbTables[table.QualifiedName()]; !exists {
+		if _, exists := dbTables[newQualifiedTableIdentity(table.QualifiedName(), semantics)]; !exists {
 			continue
 		}
 
@@ -145,7 +151,11 @@ func tablePrimaryKeyConstraintName(table goschema.Table, dbConstraints []types.D
 // Precedence: an explicit table-level constraint declared via
 // `//ptah:schema:constraint` that happens to share the synthesized name
 // wins — synthesis never clobbers it (see the guard in Constraints()).
-func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, database *types.DBSchema) []goschema.Constraint {
+func synthesizeFieldLevelForeignKeyConstraints(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	semantics identifier.Semantics,
+) []goschema.Constraint {
 	if generated == nil || database == nil {
 		return nil
 	}
@@ -153,7 +163,7 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 	dbColumns := make(map[tableMemberKey]struct{}, 16)
 	for _, t := range database.Tables {
 		for _, c := range t.Columns {
-			dbColumns[tableMemberKey{table: t.QualifiedName(), member: c.Name}] = struct{}{}
+			dbColumns[newTableMemberKey(t.QualifiedName(), c.Name, semantics)] = struct{}{}
 		}
 	}
 
@@ -185,7 +195,7 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		if tableName == "" {
 			continue
 		}
-		if _, exists := dbColumns[tableMemberKey{table: tableName, member: f.Name}]; !exists {
+		if _, exists := dbColumns[newTableMemberKey(tableName, f.Name, semantics)]; !exists {
 			continue
 		}
 		name := f.ForeignKeyName
@@ -201,7 +211,7 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		if fkRef == nil {
 			continue
 		}
-		dedupeKey := tableMemberKey{table: tableName, member: name}
+		dedupeKey := newTableMemberKey(tableName, name, semantics)
 		if _, seen := dedupe[dedupeKey]; seen {
 			continue
 		}
