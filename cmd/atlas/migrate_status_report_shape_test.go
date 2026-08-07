@@ -182,13 +182,14 @@ func TestCompatMigrateStatus_HalfAppliedFailureBlock(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(stdout, qt.Contains, "  -- Pending Files:   1\n\nLast migration attempt had errors:\n")
-	c.Assert(stdout, qt.Contains, "\n  -- SQL:   CREATE TABLE ss_one (id INTEGER PRIMARY KEY)")
-	c.Assert(stdout, qt.Contains, "\n  -- ERROR: failed to execute migration SQL")
-	// Nine lines exactly. Ptah's applier records this failure as a TWO-line
-	// error ("...(1)\nSQL: CREATE TABLE ..."), and the report folds the stored
-	// newline to a space the way the pinned community binary folds it. Without
-	// the fold this reads 10 and a parser keying on `  -- ` loses the tail of
-	// the message to a line with no prefix.
+	c.Assert(stdout, qt.Contains, "\n  -- SQL:   CREATE TABLE ss_one (id INTEGER PRIMARY KEY);")
+	c.Assert(stdout, qt.Not(qt.Contains), "failed to execute migration SQL")
+	c.Assert(stdout, qt.Contains, "\n  -- ERROR: ")
+	// Nine lines exactly. The stored error is one line since
+	// stokaro/ptah#1196 -- Ptah's wrapping and the `SQL:` line it carried are
+	// gone -- but the report keeps folding a stored newline to a space, because
+	// a driver is still free to produce one and a parser keying on `  -- `
+	// would lose the tail of the message to a line with no prefix.
 	c.Assert(strings.Count(stdout, "\n"), qt.Equals, 9)
 }
 
