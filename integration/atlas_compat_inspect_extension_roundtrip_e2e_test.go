@@ -53,8 +53,17 @@ type atlasCompatExtensionRoundTripCase struct {
 // the pinned Atlas community binary, measured on PostgreSQL 17.10. The omission
 // was not a compatibility win, it was a document nobody could read.
 //
-// The third row is the control that keeps the fix from becoming "never omit an
-// extension", which would throw away what #1266 bought.
+// The rows expecting no block are the control that keeps the fix from becoming
+// "never omit an extension", which would throw away what #1266 bought. Three of
+// them are the shapes stokaro/ptah#1280 measured going the other way: a
+// document naming `strpos`, `max` or `gen_random_uuid` kept the extension that
+// overloads them although pg_catalog supplies all three, and the pinned Atlas
+// community binary refuses ANY document declaring an extension block -- so a
+// spurious keep is not a smaller compatibility win, it is none at all.
+//
+// The last row is the control in the other direction. Excluding the shadowed
+// names must not exclude a name only the extension supplies, or the fix would
+// have traded #1280's shapes back for #1266's.
 func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 	adminURL := requirePostgresE2EDatabaseURL(t)
 
@@ -84,6 +93,39 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			seed:      "CREATE TABLE plain (id integer PRIMARY KEY, label text NOT NULL)",
 			wantBlock: false,
 			why:       "nothing uses anything isn supplies, so #1266's omission still applies",
+		},
+		{
+			name:      "core function an extension also overloads, in a check",
+			extension: "citext",
+			seed: "CREATE TABLE t (id integer PRIMARY KEY, label text," +
+				" CONSTRAINT ck CHECK (strpos(label, 'x') = 0))",
+			wantBlock: false,
+			why: "citext overloads strpos, but pg_catalog supplies it too and is always" +
+				" on the search path, so this document resolves with citext dropped",
+		},
+		{
+			name:      "core function an extension also overloads, in a view",
+			extension: "citext",
+			seed: "CREATE TABLE t (id integer PRIMARY KEY, n integer);" +
+				" CREATE VIEW v AS SELECT max(n) AS m FROM t",
+			wantBlock: false,
+			why:       "max is one of the fifteen names citext overloads that pg_catalog also supplies",
+		},
+		{
+			name:      "extension function core has since absorbed",
+			extension: "pgcrypto",
+			seed:      "CREATE TABLE u (id uuid PRIMARY KEY DEFAULT gen_random_uuid())",
+			wantBlock: false,
+			why: "pgcrypto supplies gen_random_uuid, but so has pg_catalog since" +
+				" PostgreSQL 13; the default evaluates without the extension",
+		},
+		{
+			name:      "extension supplying a column type it also overloads functions for",
+			extension: "citext",
+			seed:      "CREATE TABLE t (id integer PRIMARY KEY, label citext NOT NULL)",
+			wantBlock: true,
+			why: "the control against over-narrowing: dropping the shadowed names must not" +
+				" drop citext's own type, which nothing but citext supplies",
 		},
 	}
 
