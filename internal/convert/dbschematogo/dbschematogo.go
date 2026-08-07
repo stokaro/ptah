@@ -207,6 +207,7 @@ func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
 	for position, part := range parts {
 		converted[position] = goschema.IndexPart{
 			Name: part.Name,
+			Expr: part.Expr,
 			Desc: part.Desc,
 		}
 	}
