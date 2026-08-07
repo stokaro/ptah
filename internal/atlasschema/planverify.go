@@ -121,6 +121,9 @@ func RehearsePlanStatements(
 		return err
 	}
 	defer dbschema.CloseAndWarn(devConn)
+	// Registered after the close so it runs before it, and after the
+	// end-state comparison below, which reads the rehearsed state it drops.
+	defer discardDevRehearsalArtifacts(ctx, devConn)
 
 	if err := rehearseStatementsOnDev(ctx, conn, devConn, current, opts.TxMode, statements); err != nil {
 		return err

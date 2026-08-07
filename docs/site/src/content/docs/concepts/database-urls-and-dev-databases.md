@@ -37,11 +37,17 @@ whose state matters after the command exits.
 
 **A dev database** (`--dev-url`) is a disposable replay target used for
 validation: `ptah migrations validate` and `ptah migrations lint` clean it and
-replay the migration directory on it to prove the SQL executes, and
-Atlas-compatible verbs use it for planning, linting, and rollback verification.
-Ptah cleans the replay realm before migration execution, after a failed replay,
-and after a successful replay. Commands that inspect the replayed state do so
-between execution and the final cleanup on the same pinned database session.
+replay the migration directory on it to prove the SQL executes, `schema apply`
+rehearses its plan on it before touching the target, and Atlas-compatible verbs
+use it for planning, linting, and rollback verification. Ptah cleans the replay
+realm before migration execution, after a failed replay, and after a successful
+replay. Commands that inspect the replayed state do so between execution and
+the final cleanup on the same pinned database session.
+
+Everything a dev database runs stays inside it. Where a schema names a database
+rather than a namespace — MySQL, MariaDB, and ClickHouse — a plan carrying the
+target's schema name is re-scoped onto the dev database before it is rehearsed,
+and a statement naming some third database is refused instead of run.
 
 **A shadow database** (`--shadow-db`) is a disposable verification target for
 commands that write or record migrations: `ptah migrations generate` replays

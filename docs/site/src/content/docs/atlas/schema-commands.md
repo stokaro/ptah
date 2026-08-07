@@ -348,10 +348,24 @@ required.
 
 Before a non-dry-run apply touches the target, the generated plan is rehearsed
 on the dev database: Ptah resets the dev database, recreates the target's
-introspected current schema on it, and executes the exact ordered plan
-statements — including SQL edited through `--edit` — under the same
-transaction mode as the target apply. A failed rehearsal refuses the apply and
-leaves the target unchanged.
+introspected current schema on it, and executes the ordered plan statements —
+including SQL edited through `--edit` — under the same transaction mode as the
+target apply. A failed rehearsal refuses the apply and leaves the target
+unchanged.
+
+On MySQL, MariaDB, and ClickHouse a schema *is* a database, so a plan
+qualified with the target's schema name would modify the target whichever
+connection issued it. Ptah re-scopes those statements onto the dev database
+before rehearsing them, so the rehearsal runs entirely inside `--dev-url`. A
+statement naming a third database — one that is neither the target nor the dev
+database — cannot be re-scoped and is refused rather than executed somewhere
+nobody asked for. On the PostgreSQL family, SQLite, and SQL Server a schema is
+a namespace inside the connected database, so the plan is rehearsed exactly as
+planned.
+
+The dev database is handed back with nothing the rehearsal put in it, on both
+the success and the failure path, so the same `--dev-url` stays usable by the
+next command.
 
 The dev database must not be the target itself or a database-URL `--to`
 desired state (it is reset destructively), must be directly connectable (no
