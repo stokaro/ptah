@@ -409,6 +409,15 @@ type Extension struct {
 	// `replace` -- and treating those as evidence would tie the extension to
 	// every schema that happens to use them.
 	//
+	// A function name that is a SQL keyword is excluded for the same reason, but
+	// only when this list also carries a type of the same extension that appears
+	// in that function's signature: `hstore` supplies three functions named
+	// `delete`, and a caller reading identifiers out of SQL text cannot tell
+	// `DELETE FROM audit` from `delete(h, 'k')`, while a genuine call needs an
+	// `hstore` value and the type entry is what keeps the extension here. Where
+	// no such type entry exists -- an extension supplying `merge(text, text)`
+	// and no type at all -- the name is the only evidence there is and it stays.
+	//
 	// Empty means not measured. Annotation and YAML sources have no catalog to
 	// ask and leave it unset.
 	Provides []string

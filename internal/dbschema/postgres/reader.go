@@ -1483,6 +1483,57 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 // overload rather than the core one requires arguments of that extension's own
 // type, and naming that type is what keeps the extension alive through the
 // pg_type arm.
+//
+// The function arm drops one more class of name, and only where dropping it is
+// provably free: a name that is a SQL keyword, when the SAME extension also
+// contributes a type this member list reports and that type appears in the
+// function's own signature. The keyword list comes from the server through
+// pg_get_keywords().
+//
+// The reason to drop such a name at all is that the scan consuming this list
+// splits SQL text into identifier-shaped words with no notion of position.
+// Measured on PostgreSQL 18.4, `hstore` supplies three functions named `delete`
+// and pg_catalog supplies none, so the exclusion above keeps all three, and
+// `DELETE FROM audit` in a plpgsql body then reads exactly like a call to
+// `delete(h, 'k')` and pins hstore to a database that does not use it
+// (stokaro/ptah#1281).
+//
+// The list has to come from the server because no hand-written one is right.
+// `delete`, `each` and `index` are UNRESERVED words: PostgreSQL 18.4 reports 78
+// reserved words against 330 unreserved ones, so filtering the reserved list
+// catches none of the three, and pinning the unreserved list in Go would be 330
+// words that move every release.
+//
+// The type condition is what makes the drop safe, and it is enforced here
+// rather than asserted about the extensions that happen to be installed. An
+// earlier form of this filter dropped every keyword-named function member and
+// justified it with a survey: over the contrib extensions this build ships, the
+// keyword-named function members are hstore's `delete` and `each`, ltree's
+// `index` and cube's `cube`, and every one of them takes or returns a type the
+// same extension supplies, so a genuine call spells that type on a column, in a
+// signature or in a cast and the pg_type arm keeps the extension. That is a
+// property of contrib, not of the query. An extension supplying `merge(text,
+// text)` and no type at all has its only evidence in that name, and dropping it
+// leaves a document whose CHECK calls a function nothing declares -- measured
+// on PostgreSQL 18.4 against a fixture extension of exactly that shape, where
+// the pinned Atlas community binary v1.3.0 answered `create "names" table: pq:
+// function merge(text, text) does not exist`. Requiring the answering type
+// makes the redundancy a precondition instead of a coincidence; on the 46
+// extensions available here it excludes the same four names as the survey did.
+//
+// The answering type must itself survive the pg_type arm, or the redundancy is
+// asserted one level down instead of two: an extension supplying a type named
+// like a pg_catalog type has that name filtered out above, so it can no longer
+// answer for anything.
+//
+// Only this arm is filtered. A type, a relation, an operator class and an
+// operator family are each named by nothing but themselves, so excluding a
+// keyword-shaped one would throw away the only evidence there is. `cube` shows
+// the residue that leaves: its type and its constructor share a name, the type
+// arm keeps supplying it, and a view saying `GROUP BY CUBE(x)` still pins the
+// extension. That is the cheaper of the two errors -- a block kept where it
+// could have been dropped costs this document its compatibility, a block
+// dropped where a column needs it costs a document nobody can read.
 func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 	const membersQuery = `
 		SELECT e.extname AS extension_name, t.typname AS member_name
@@ -1504,6 +1555,30 @@ func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 		       SELECT 1 FROM pg_proc core
 		         JOIN pg_namespace corens ON corens.oid = core.pronamespace
 		        WHERE corens.nspname = 'pg_catalog' AND core.proname = p.proname)
+		   AND NOT (
+		       EXISTS (
+		           SELECT 1 FROM pg_get_keywords() k WHERE k.word = p.proname)
+		       AND EXISTS (
+		           SELECT 1
+		             FROM pg_depend typedep
+		             JOIN pg_type answering ON answering.oid = typedep.objid
+		            WHERE typedep.deptype = 'e'
+		              AND typedep.classid = 'pg_type'::regclass
+		              AND typedep.refobjid = e.oid
+		              -- Argument position ONLY. The redundancy this gate relies on
+		              -- is that a genuine call spells the answering type, and only
+		              -- an argument obliges the caller to: a return type or an OUT
+		              -- parameter is named by the function, not by the call site.
+		              -- Measured: an extension supplying merge(text, text)
+		              -- RETURNS kwbox had its member dropped while the document
+		              -- kept a CHECK calling merge, which then failed to
+		              -- materialize (stokaro/ptah#1281).
+		              AND answering.oid = ANY (p.proargtypes)
+		              AND NOT EXISTS (
+		                  SELECT 1 FROM pg_type core
+		                    JOIN pg_namespace corens ON corens.oid = core.typnamespace
+		                   WHERE corens.nspname = 'pg_catalog'
+		                     AND core.typname = answering.typname)))
 		UNION
 		SELECT e.extname, c.relname
 		  FROM pg_depend d
