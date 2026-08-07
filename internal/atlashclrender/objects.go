@@ -38,9 +38,20 @@ func (r *renderer) renderSequences() {
 		if sequence.Schema != "" {
 			r.rawAttr(1, "schema", schemaRef(sequence.Schema))
 		}
-		if sequence.AsType != "" {
-			r.rawAttr(1, "type", typeExpr(sequence.AsType))
-		}
+		// A quoted string, not the bare word `bigint`. Bare, it is an HCL
+		// variable reference with nothing behind it and the pinned Atlas
+		// community binary v1.3.0 refuses the whole file with `There is no
+		// variable named "bigint"`. Quoted, the file evaluates and that binary
+		// gets as far as its own feature gap -- `postgres: sequences are not
+		// supported by this version` -- which is the signal that nothing in this
+		// block is unreadable any more (stokaro/ptah#1251).
+		//
+		// The gap means that binary never writes a sequence block, so it cannot
+		// say which readable spelling it would prefer; `sql("bigint")` reaches
+		// the same message. The quoted string is chosen because it is what Ptah's
+		// own parser reads back to the same AsType, and because the value is
+		// always one of smallint/integer/bigint, never SQL needing an escape.
+		r.stringAttr(1, "type", sequence.AsType)
 		r.int64PtrAttr(1, "start", sequence.Start)
 		r.int64PtrAttr(1, "increment", sequence.Increment)
 		r.int64PtrAttr(1, "min_value", sequence.MinValue)
@@ -234,13 +245,34 @@ func (r *renderer) renderFunction(function goschema.Function) {
 	if schema := schemaNameFromQualified(function.Name); schema != "" {
 		r.rawAttr(1, "schema", schemaRef(schema))
 	}
+	// Every one of these four is a quoted string rather than a bare word.
+	// Measured on the pinned Atlas community binary v1.3.0, one attribute varied
+	// at a time against a function block it accepts:
+	//
+	//	lang = PLpgSQL         exit 1  There is no variable named "PLpgSQL"
+	//	lang = SQL             exit 1  There is no variable named "SQL"
+	//	lang = "PLpgSQL"       exit 0
+	//	return = trigger       exit 1  There is no variable named "trigger"
+	//	return = bigint        exit 1  There is no variable named "bigint"
+	//	return = "trigger"     exit 0
+	//	security = INVOKER     exit 1  There is no variable named "INVOKER"
+	//	security = "INVOKER"   exit 0
+	//	volatility = VOLATILE  exit 1  There is no variable named "VOLATILE"
+	//	volatility = "VOLATILE" exit 0
+	//
+	// `return` needed its own rows because it looks like a type position and is
+	// not: a bare `bigint` evaluates as a column's `type` and fails here, so
+	// typeExpr was the wrong renderer for it whatever the return type is.
+	//
+	// That binary accepts the block and emits nothing for it -- its output for a
+	// file with the function is byte-identical to the same file without it, and
+	// `lang = "BANANA"` is accepted too -- so it validates none of these values
+	// and the only thing to match is that the file evaluates at all.
 	r.rawAttr(1, "lang", atlasLanguage(function.Language))
-	if function.Returns != "" {
-		r.rawAttr(1, "return", typeExpr(function.Returns))
-	}
+	r.stringAttr(1, "return", function.Returns)
 	r.renderFunctionArgs(function)
-	r.rawAttr(1, "security", rawIdentifier(function.Security))
-	r.rawAttr(1, "volatility", rawIdentifier(function.Volatility))
+	r.stringAttr(1, "security", function.Security)
+	r.stringAttr(1, "volatility", function.Volatility)
 	r.stringAttr(1, "as", function.Body)
 	r.stringAttr(1, "comment", function.Comment)
 	r.line("}")
@@ -350,7 +382,20 @@ func (r *renderer) renderTrigger(trigger goschema.Trigger) {
 	r.linef("  %s {", timing)
 	r.rawAttr(2, event, "true")
 	r.line("  }")
-	r.rawAttr(1, "for", rawIdentifier(firstNonEmpty(trigger.ForEach, "ROW")))
+	// Quoted, for the same reason as everywhere else in this file. Measured on
+	// the pinned Atlas community binary v1.3.0 against a trigger block it
+	// accepts, one operand varied:
+	//
+	//	for = ROW          exit 1  There is no variable named "ROW"
+	//	for = "ROW"        exit 0
+	//	for = "STATEMENT"  exit 0
+	//	(attribute absent) exit 0
+	//
+	// The block is accepted and dropped, not modeled: that binary's output for a
+	// file containing it is byte-identical to the same file without it, and
+	// `for = "BANANA"` is accepted just as readily. So there is no spelling of
+	// its own to match, only the requirement that the file evaluate.
+	r.stringAttr(1, "for", firstNonEmpty(trigger.ForEach, "ROW"))
 	r.stringAttr(1, "as", trigger.Body)
 	r.stringAttr(1, "comment", trigger.Comment)
 	r.line("}")
@@ -369,7 +414,19 @@ func (r *renderer) renderRLSPolicies() {
 		}
 		r.linef(`policy %s {`, quote(policy.Name))
 		r.rawAttr(1, "on", objectRef("table", policy.Table))
-		r.rawAttr(1, "for", rawIdentifier(firstNonEmpty(strings.ToUpper(policy.PolicyFor), "ALL")))
+		// Quoted. Measured on the pinned Atlas community binary v1.3.0, one
+		// operand varied against an otherwise identical policy block:
+		//
+		//	for = ALL      exit 1  There is no variable named "ALL"
+		//	for = "ALL"    exit 1  postgres: policies are not supported by this version
+		//	for = "SELECT" exit 1  postgres: policies are not supported by this version
+		//
+		// Like the sequence, the block never gets past that binary's own feature
+		// gap, so the reachable target is the message changing from a parse
+		// failure over Ptah's rendering to a statement about what that binary
+		// models. The quoted string is what Ptah's parser reads back to the same
+		// PolicyFor.
+		r.stringAttr(1, "for", firstNonEmpty(strings.ToUpper(policy.PolicyFor), "ALL"))
 		if policy.ToRoles != "" {
 			r.rawAttr(1, "to", roleTargets(policy.ToRoles))
 		}
@@ -545,12 +602,15 @@ func triggerEventAttr(event string) (string, bool) {
 	return "", false
 }
 
+// atlasLanguage renders a function's `lang` attribute: the canonical spelling
+// of the language name, quoted. See renderFunction for the measurement that
+// says the bare form is refused for every value, canonical or not.
 func atlasLanguage(language string) string {
 	switch strings.ToLower(language) {
 	case "sql":
-		return "SQL"
+		return quote("SQL")
 	case "plpgsql":
-		return "PLpgSQL"
+		return quote("PLpgSQL")
 	default:
 		return quote(language)
 	}
@@ -649,13 +709,6 @@ func privilegeList(values []string) string {
 		items = append(items, quote(value))
 	}
 	return "[" + strings.Join(items, ", ") + "]"
-}
-
-func rawIdentifier(value string) string {
-	if isHCLIdentifier(value) {
-		return value
-	}
-	return quote(value)
 }
 
 func objectNameFromQualified(value string) string {
