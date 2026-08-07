@@ -1085,6 +1085,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Grants: Deduplicated by role + privileges + grant option + (table or schema) target
 //   - Roles: Deduplicated by role name
 //   - Schemas: Deduplicated by schema name
+//   - RLS policies: Deduplicated by resolved table + policy name combination
 //
 // Composite finalization additionally deduplicates sequences, domains,
 // composite types, ranges, and exact managed-data declarations. Grants retain
@@ -1096,11 +1097,11 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
 func Deduplicate(r *Database) {
-	deduplicateDatabase(r, structDeduplicationScope, unscopedDeduplication)
+	deduplicateDatabase(r, structDeduplicationScope)
 }
 
 func deduplicateComposite(r *Database) {
-	deduplicateDatabase(r, compositeDeduplicationScope, compositeDeduplicationScope)
+	deduplicateDatabase(r, compositeDeduplicationScope)
 	r.Sequences = deduplicateNamedDefinitions(r.Sequences, func(sequence Sequence) string {
 		return sequence.QualifiedName()
 	})
@@ -1122,10 +1123,6 @@ func structDeduplicationScope(_ tableScopeResolver, structName, _ string) string
 	return structName
 }
 
-func unscopedDeduplication(_ tableScopeResolver, _, _ string) string {
-	return ""
-}
-
 func compositeDeduplicationScope(resolver tableScopeResolver, structName, tableName string) string {
 	return resolver.resolve(structName, tableName)
 }
@@ -1133,7 +1130,6 @@ func compositeDeduplicationScope(resolver tableScopeResolver, structName, tableN
 func deduplicateDatabase(
 	r *Database,
 	resolveScope deduplicationScope,
-	resolvePolicyScope deduplicationScope,
 ) {
 	resolver := newTableScopeResolver(r.Tables)
 	r.Schemas = deduplicateSchemas(r.Schemas)
@@ -1152,7 +1148,7 @@ func deduplicateDatabase(
 	})
 
 	deduplicateSchemaObjects(r)
-	r.RLSPolicies = deduplicateRLSPolicies(r.RLSPolicies, resolver, resolvePolicyScope)
+	r.RLSPolicies = deduplicateRLSPolicies(r.RLSPolicies, resolver)
 	r.RLSEnabledTables = deduplicateNamedDefinitions(r.RLSEnabledTables, func(table RLSEnabledTable) string {
 		return table.Table
 	})
@@ -1197,13 +1193,17 @@ func deduplicateExtensions(extensions []Extension) []Extension {
 	return deduplicated
 }
 
-func deduplicateRLSPolicies(
-	policies []RLSPolicy,
-	resolver tableScopeResolver,
-	resolveScope deduplicationScope,
-) []RLSPolicy {
+// deduplicateRLSPolicies keeps one policy per (table, policy name) pair.
+//
+// The table has to be part of the key. A PostgreSQL policy name is scoped to
+// its table: `CREATE POLICY tenant_isolation` succeeds once on each of two
+// tables in one schema and is refused only when repeated on the same table.
+// The single-source path used to key on the policy name alone, which silently
+// dropped the second of two identically named policies before the comparator
+// ever saw it (stokaro/ptah#1276).
+func deduplicateRLSPolicies(policies []RLSPolicy, resolver tableScopeResolver) []RLSPolicy {
 	return deduplicateNamedDefinitions(policies, func(policy RLSPolicy) string {
-		return resolveScope(resolver, policy.StructName, policy.Table) + "." + policy.Name
+		return compositeDeduplicationScope(resolver, policy.StructName, policy.Table) + "." + policy.Name
 	})
 }
 

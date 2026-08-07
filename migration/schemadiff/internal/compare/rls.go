@@ -15,7 +15,8 @@ import (
 //
 // This function handles the comparison of Row-Level Security policies, which are
 // PostgreSQL-specific security features used for multi-tenant data isolation and
-// fine-grained access control. Policies are compared by name and their complete definition.
+// fine-grained access control. Policies are matched by the table they belong to
+// together with their name, and then compared on their complete definition.
 //
 // # RLS Policy Comparison Logic
 //
@@ -38,17 +39,17 @@ import (
 // # Example Scenarios
 //
 // **Policy addition**:
-//   - Generated schema defines "user_tenant_isolation" policy
-//   - Database doesn't have this policy
-//   - Result: "user_tenant_isolation" added to diff.RLSPoliciesAdded
+//   - Generated schema defines "user_tenant_isolation" on "users"
+//   - Database doesn't have that policy on that table
+//   - Result: RLSPolicyRef added to diff.RLSPoliciesAdded
 //
 // **Policy removal**:
-//   - Database has "old_security_policy" policy
-//   - Generated schema doesn't define this policy
-//   - Result: "old_security_policy" added to diff.RLSPoliciesRemoved
+//   - Database has "old_security_policy" on "users"
+//   - Generated schema doesn't define that policy on that table
+//   - Result: RLSPolicyRef added to diff.RLSPoliciesRemoved
 //
 // **Policy modification**:
-//   - Both have "tenant_isolation" policy
+//   - Both have "tenant_isolation" on "users"
 //   - Generated: different USING expression or target roles
 //   - Result: RLSPolicyDiff added to diff.RLSPoliciesModified
 //
@@ -67,31 +68,65 @@ import (
 //
 // # Output Consistency
 //
-// Results are sorted alphabetically for consistent output across multiple runs.
+// Results are sorted by table and then by policy name for consistent output
+// across multiple runs.
 func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	// Build lookup maps for RLS policy comparison
-	generatedPolicyMap := make(map[string]goschema.RLSPolicy)
+	RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect(""))
+}
+
+// RLSPoliciesWithSemantics is [RLSPolicies] told which identifier rules the
+// target actually has, so the two sides' spellings of the owning table resolve
+// to one identity.
+//
+// A PostgreSQL policy name is scoped to its table, not to the schema. Measured
+// on PostgreSQL 17.10: `CREATE POLICY tenant_isolation` succeeds on
+// `public.alpha_orders` and again on `public.zeta_orders`, leaving two rows in
+// `pg_policy`, and is refused only when repeated on the same table
+// ("policy \"tenant_isolation\" for table \"alpha_orders\" already exists").
+// Keying either side by the policy name alone therefore collapses distinct
+// policies into one entry, and the loser is compared against the wrong
+// counterpart or disappears (stokaro/ptah#1276).
+//
+// The table component goes through [tableMemberKey] rather than the raw string
+// for the reason recorded on that type: the database reports a table's schema
+// as empty wherever the engine treats it as implicit, while the desired schema
+// carries it explicitly, so `alpha_orders` and `public.alpha_orders` are two
+// spellings of one table. Only the MATCHING is normalized -- what each side is
+// reported as stays the string that side supplied, because the planner renders
+// those names.
+func RLSPoliciesWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+) {
+	// Build lookup maps for RLS policy comparison, keyed by the owning table
+	// and the policy name together.
+	generatedPolicyMap := make(map[tableMemberKey]goschema.RLSPolicy, len(generated.RLSPolicies))
 	for _, rlsPolicy := range generated.RLSPolicies {
-		generatedPolicyMap[rlsPolicy.Name] = rlsPolicy
+		generatedPolicyMap[newTableMemberKey(rlsPolicy.Table, rlsPolicy.Name, semantics)] = rlsPolicy
 	}
 
-	databasePolicyMap := make(map[string]types.DBRLSPolicy)
+	databasePolicyMap := make(map[tableMemberKey]types.DBRLSPolicy, len(database.RLSPolicies))
 	for _, rlsPolicy := range database.RLSPolicies {
-		databasePolicyMap[rlsPolicy.Name] = rlsPolicy
+		databasePolicyMap[newTableMemberKey(rlsPolicy.Table, rlsPolicy.Name, semantics)] = rlsPolicy
 	}
 
 	// Find added policies (inline logic to avoid duplication detection)
-	for policyName := range generatedPolicyMap {
-		if _, exists := databasePolicyMap[policyName]; !exists {
-			diff.RLSPoliciesAdded = append(diff.RLSPoliciesAdded, policyName)
+	for key, generatedPolicy := range generatedPolicyMap {
+		if _, exists := databasePolicyMap[key]; !exists {
+			diff.RLSPoliciesAdded = append(diff.RLSPoliciesAdded, difftypes.RLSPolicyRef{
+				PolicyName: generatedPolicy.Name,
+				TableName:  generatedPolicy.Table,
+			})
 		}
 	}
 
 	// Find removed policies
-	for policyName, dbPolicy := range databasePolicyMap {
-		if _, exists := generatedPolicyMap[policyName]; !exists {
+	for key, dbPolicy := range databasePolicyMap {
+		if _, exists := generatedPolicyMap[key]; !exists {
 			policyRef := difftypes.RLSPolicyRef{
-				PolicyName: policyName,
+				PolicyName: dbPolicy.Name,
 				TableName:  dbPolicy.Table,
 			}
 			diff.RLSPoliciesRemoved = append(diff.RLSPoliciesRemoved, policyRef)
@@ -99,8 +134,8 @@ func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *d
 	}
 
 	// Detect policy definition modifications
-	for policyName, generatedPolicy := range generatedPolicyMap {
-		if databasePolicy, policyExists := databasePolicyMap[policyName]; policyExists {
+	for key, generatedPolicy := range generatedPolicyMap {
+		if databasePolicy, policyExists := databasePolicyMap[key]; policyExists {
 			policyComparison := RLSPolicyDefinitions(generatedPolicy, databasePolicy)
 			if len(policyComparison.Changes) > 0 {
 				diff.RLSPoliciesModified = append(diff.RLSPoliciesModified, policyComparison)
@@ -108,13 +143,24 @@ func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *d
 		}
 	}
 
-	// Ensure consistent ordering of results
-	sort.Strings(diff.RLSPoliciesAdded)
-	sort.Slice(diff.RLSPoliciesRemoved, func(i, j int) bool {
-		return diff.RLSPoliciesRemoved[i].PolicyName < diff.RLSPoliciesRemoved[j].PolicyName
-	})
+	// Ensure consistent ordering of results. The policy name alone is not a
+	// total order once two tables may share one, so the table leads.
+	sortRLSPolicyRefs(diff.RLSPoliciesAdded)
+	sortRLSPolicyRefs(diff.RLSPoliciesRemoved)
 	sort.Slice(diff.RLSPoliciesModified, func(i, j int) bool {
-		return diff.RLSPoliciesModified[i].PolicyName < diff.RLSPoliciesModified[j].PolicyName
+		if diff.RLSPoliciesModified[i].TableName == diff.RLSPoliciesModified[j].TableName {
+			return diff.RLSPoliciesModified[i].PolicyName < diff.RLSPoliciesModified[j].PolicyName
+		}
+		return diff.RLSPoliciesModified[i].TableName < diff.RLSPoliciesModified[j].TableName
+	})
+}
+
+func sortRLSPolicyRefs(refs []difftypes.RLSPolicyRef) {
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].TableName == refs[j].TableName {
+			return refs[i].PolicyName < refs[j].PolicyName
+		}
+		return refs[i].TableName < refs[j].TableName
 	})
 }
 

@@ -118,7 +118,7 @@ func TestCollectShadowMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		TriggersAdded:             []types.TriggerRef{{TableName: "users", TriggerName: "missing_trigger"}},
 		TriggersRemoved:           []types.TriggerRef{{TableName: "users", TriggerName: "extra_trigger"}},
 		TriggersModified:          []types.TriggerDiff{{TableName: "users", TriggerName: "changed_trigger", Changes: changes}},
-		RLSPoliciesAdded:          []string{"missing_policy"},
+		RLSPoliciesAdded:          []types.RLSPolicyRef{{TableName: "users", PolicyName: "missing_policy"}},
 		RLSPoliciesRemoved:        []types.RLSPolicyRef{{TableName: "users", PolicyName: "extra_policy"}},
 		RLSPoliciesModified:       []types.RLSPolicyDiff{{TableName: "users", PolicyName: "changed_policy", Changes: changes}},
 		RLSEnabledTablesAdded:     []string{"missing_rls_table"},

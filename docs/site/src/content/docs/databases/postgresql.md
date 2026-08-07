@@ -94,6 +94,13 @@ declares a policy without declaring enablement is enabled with the table,
 because `CREATE POLICY` on a table whose row-level security is off protects
 nothing.
 
+A policy name is scoped to its table rather than to the schema, which is what
+PostgreSQL itself enforces: `CREATE POLICY tenant_isolation` succeeds on two
+tables in one schema and is refused only when repeated on the same table. Ptah
+identifies each policy by its table and its name together, so two tables can
+each carry a `tenant_isolation` policy and both are rendered, compared, and
+migrated independently.
+
 ## Extensions
 
 `//ptah:schema:extension` manages `CREATE EXTENSION`. Some extensions are

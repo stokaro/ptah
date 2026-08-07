@@ -243,9 +243,14 @@ type SchemaDiff struct {
 	// TriggersModified contains detailed information about changed triggers.
 	TriggersModified []TriggerDiff `json:"triggers_modified"`
 
-	// RLSPoliciesAdded contains names of RLS policies that exist in the target schema
-	// but not in the current database schema
-	RLSPoliciesAdded []string `json:"rls_policies_added"`
+	// RLSPoliciesAdded contains RLS policies that exist in the target schema
+	// but not in the current database schema.
+	//
+	// A policy name is scoped to its table, not to the schema, so the name on
+	// its own does not identify a policy: two tables may each carry one called
+	// "tenant_isolation". The table travels with the name for the same reason
+	// it does in TriggersAdded.
+	RLSPoliciesAdded []RLSPolicyRef `json:"rls_policies_added"`
 
 	// RLSPoliciesRemoved contains RLS policies that exist in the current database
 	// but not in the target schema (may remove an access-control protection)

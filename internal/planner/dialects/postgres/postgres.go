@@ -1956,17 +1956,18 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) 
 }
 
 func (p *Planner) addNewRLSPolicies(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	for _, policyName := range diff.RLSPoliciesAdded {
-		// Find the policy definition
-		for _, policy := range generated.RLSPolicies {
-			if policy.Name == policyName {
-				policyNode := fromschema.FromRLSPolicy(policy)
-				// Set Replace flag to handle conflicts gracefully during migrations
-				policyNode.Replace = true
-				result = append(result, policyNode)
-				break
-			}
+	for _, policyRef := range diff.RLSPoliciesAdded {
+		// Find the policy definition. The name alone does not identify it:
+		// two tables may each carry a policy called "tenant_isolation", and
+		// matching on the name picked whichever was declared first.
+		policy := findRLSPolicy(generated.RLSPolicies, policyRef.TableName, policyRef.PolicyName)
+		if policy == nil {
+			continue
 		}
+		policyNode := fromschema.FromRLSPolicy(*policy)
+		// Set Replace flag to handle conflicts gracefully during migrations
+		policyNode.Replace = true
+		result = append(result, policyNode)
 	}
 	return result
 }
