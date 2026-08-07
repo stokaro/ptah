@@ -173,7 +173,7 @@ func (r *renderer) renderManagedData() {
 	})
 	for _, data := range managedData {
 		r.line("data {")
-		r.rawAttr(1, "table", objectRef("table", managedDataTable(data)))
+		r.rawAttr(1, "table", r.tableRef(managedDataTable(data)))
 		r.rawAttr(1, "keys", stringList(data.Keys))
 		r.stringAttr(1, "file", data.File)
 		r.line("}")
@@ -389,7 +389,7 @@ func (r *renderer) renderTrigger(trigger goschema.Trigger) {
 		return
 	}
 	r.linef(`trigger %s {`, quote(trigger.Name))
-	r.rawAttr(1, "on", objectRef("table", trigger.Table))
+	r.rawAttr(1, "on", r.tableRef(trigger.Table))
 	r.linef("  %s {", timing)
 	r.rawAttr(2, event, "true")
 	r.line("  }")
@@ -427,7 +427,7 @@ func (r *renderer) renderRLSPolicies() {
 			continue
 		}
 		r.linef(`policy %s {`, quote(policy.Name))
-		r.rawAttr(1, "on", objectRef("table", policy.Table))
+		r.rawAttr(1, "on", r.tableRef(policy.Table))
 		// Quoted. Measured on the pinned Atlas community binary v1.3.0, one
 		// operand varied against an otherwise identical policy block:
 		//
@@ -457,13 +457,13 @@ func (r *renderer) renderGrants() {
 	slices.SortFunc(grants, func(a, b goschema.Grant) int {
 		return cmp.Or(
 			cmp.Compare(a.Role, b.Role),
-			cmp.Compare(grantTarget(a), grantTarget(b)),
+			cmp.Compare(r.grantTarget(a), r.grantTarget(b)),
 			cmp.Compare(strings.Join(a.Privileges, ","), strings.Join(b.Privileges, ",")),
 		)
 	})
 	for _, grant := range grants {
 		grant.Canonicalize()
-		target := grantTarget(grant)
+		target := r.grantTarget(grant)
 		if grant.Role == "" || target == "" || len(grant.Privileges) == 0 {
 			r.warn("grants."+grant.Role, "grant requires role, table, schema, or sequence target, and at least one privilege")
 			continue
@@ -665,12 +665,12 @@ func roleTarget(value string) string {
 	return "role" + objectRefPart(value)
 }
 
-func grantTarget(grant goschema.Grant) string {
+func (r *renderer) grantTarget(grant goschema.Grant) string {
 	if grant.OnSchema != "" {
 		return schemaRef(grant.OnSchema)
 	}
 	if grant.OnTable != "" {
-		return objectRef("table", grant.OnTable)
+		return r.tableRef(grant.OnTable)
 	}
 	if grant.OnSequence != "" {
 		return objectRef("sequence", grant.OnSequence)
@@ -678,6 +678,58 @@ func grantTarget(grant goschema.Grant) string {
 	return ""
 }
 
+// tableRef renders a reference to a table block.
+//
+// A reference in HCL names a BLOCK, and a block is named by its labels. Ptah
+// writes a table block with one label, so `table.<schema>.<name>` does not read
+// as "the table <name> in schema <schema>" -- it reads as "the <schema>
+// attribute of the table object", which is exactly what the pinned Atlas
+// community binary v1.3.0 says. Measured on PostgreSQL 17, realm-scope dev URL,
+// with `users` in `other` and `posts` in `public`, one operand varied:
+//
+//	ref_columns = [table.users.column.id]        exit 0
+//	ref_columns = [table.other.users.column.id]  exit 1  Unsupported attribute;
+//	                                                     This object does not have
+//	                                                     an attribute named "other"
+//	on = table.users        (trigger)            exit 0
+//	on = table.other.users  (trigger)            exit 1  same message
+//	for = table.users       (permission)         exit 0
+//	for = table.other.users (permission)         exit 1  same message
+//
+// It is not a cross-schema special case: with the target in the SAME schema as
+// the referring table, `table.public.users` is refused the same way. The short
+// form is that binary's OWN spelling -- its inspect of the cross-schema foreign
+// key above emits `ref_columns = [table.users.column.id]`.
+//
+// The schema is dropped only when [renderer.documentResolvesTableRef] says this
+// document resolves the short form back to the same table, because that is the
+// only case where nothing is lost. A reference to a table the document does not
+// render -- a filtered export, an orphan trigger -- keeps the qualified form:
+// there is no block to read the schema off on the way back, so the short form
+// would destroy it irrecoverably, and a document missing the referenced table is
+// not readable by that binary under either spelling (stokaro/ptah#1260).
+// Everything the short form is not written for -- an empty name, a name that
+// does not parse, one carrying no schema, one this document cannot resolve --
+// falls through to [objectRef], which is what Ptah wrote for every reference
+// before this rule existed.
+func (r *renderer) tableRef(name string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok || !ref.Qualified || !r.documentResolvesTableRef(ref.Schema, ref.Name) {
+		return objectRef("table", name)
+	}
+	return "table" + objectRefPart(ref.Name)
+}
+
+// objectRef renders a reference to a block, with whatever schema the name
+// carries.
+//
+// Only [renderer.tableRef] shortens a reference, and only table positions call
+// it, so a sequence target keeps `sequence.<schema>.<name>`. That is a
+// structural guarantee rather than a policy: a permission naming a sequence
+// keeps that sequence block in the document, and the pinned binary refuses any
+// PostgreSQL file declaring one with `postgres: sequences are not supported by
+// this version` before any reference is resolved, so nothing measured says
+// which spelling it would take there.
 func objectRef(kind, name string) string {
 	if name == "" {
 		return quote("")

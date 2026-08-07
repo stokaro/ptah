@@ -135,9 +135,17 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	c.Assert(parsed.Constraints, qt.HasLen, 2)
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(constraintByName(parsed.Constraints, "users_email_key").IncludeColumns, qt.DeepEquals, []string{"created_at"})
-	c.Assert(fieldByName(parsed.Fields, "account_id").Foreign, qt.Equals, "auth.accounts(id)")
+	// `accounts`, not `auth.accounts`: the reference names the `accounts` block,
+	// which the same document declares in `auth`, so the schema is written once
+	// on that block instead of on every reference to it. The declaring table is
+	// in `auth` too, which is what makes the short name unambiguous to every
+	// reader of this IR -- tablelookup.ResolveReference, the one the DDL path
+	// calls, resolves it to `auth.accounts` from these same tables. Only a
+	// reference the document cannot resolve keeps its schema; see
+	// TestRenderKeepsQualifiedReferenceWhenTargetTableIsAbsent.
+	c.Assert(fieldByName(parsed.Fields, "account_id").Foreign, qt.Equals, "accounts(id)")
 	c.Assert(fieldByName(parsed.Fields, "account_id").ForeignKeyName, qt.Equals, "users_account_fk")
-	c.Assert(fieldByName(parsed.Fields, "team_id").Foreign, qt.Equals, "auth.teams(id)")
+	c.Assert(fieldByName(parsed.Fields, "team_id").Foreign, qt.Equals, "teams(id)")
 	c.Assert(fieldByName(parsed.Fields, "team_id").OnUpdate, qt.Equals, "CASCADE")
 }
 
@@ -232,8 +240,14 @@ func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) 
 	c.Assert(parsed.Indexes, qt.HasLen, 2)
 	c.Assert(parsed.Indexes[0].TableName, qt.Equals, `"tenant.data"`)
 	c.Assert(parsed.Indexes[1].TableName, qt.Equals, "tenant.data")
+	// The two identities stay apart, which is what this test is for. The literal
+	// name keeps its quotes and its dot -- it is one name, not a qualification,
+	// and nothing shortens it. The qualified one loses the schema from the
+	// REFERENCE, because the `data` block the document declares carries it and
+	// the declaring table is in `tenant` as well; what it must not do is come
+	// back looking like the literal one.
 	c.Assert(fieldByName(parsed.Fields, "literal_id").Foreign, qt.Equals, `"tenant.data"(literal_id)`)
-	c.Assert(fieldByName(parsed.Fields, "qualified_id").Foreign, qt.Equals, "tenant.data(qualified_id)")
+	c.Assert(fieldByName(parsed.Fields, "qualified_id").Foreign, qt.Equals, "data(qualified_id)")
 	c.Assert(parsed.Triggers, qt.HasLen, 2)
 	c.Assert(parsed.Triggers[0].Table, qt.Equals, `"tenant.data"`)
 	c.Assert(parsed.Triggers[1].Table, qt.Equals, "tenant.data")
@@ -690,8 +704,17 @@ func TestRenderPreservesQualifiedTargetsAndRoleInheritance(t *testing.T) {
 	hcl := string(rendered.Data)
 	c.Assert(hcl, qt.Contains, `inherit = true`)
 	c.Assert(hcl, qt.Contains, `inherit = false`)
-	c.Assert(hcl, qt.Contains, `on = table.auth.users`)
-	c.Assert(hcl, qt.Contains, `for = table.auth.users`)
+	// The reference names the `users` block, which this document declares, and a
+	// block is named by its label alone. `table.auth.users` is what the pinned
+	// Atlas community binary v1.3.0 refuses with `Unsupported attribute; This
+	// object does not have an attribute named "auth"` -- measured with the
+	// target in the SAME schema as the referring table too, so this is not a
+	// cross-schema special case. What has to survive is the IR below, and it
+	// does: the schema is written on the table block and read back off it.
+	c.Assert(hcl, qt.Contains, `on = table.users`)
+	c.Assert(hcl, qt.Contains, `for = table.users`)
+	c.Assert(hcl, qt.Contains, `table "users" {`)
+	c.Assert(hcl, qt.Contains, `schema = schema.auth`)
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(roleByName(parsed.Roles, "inheriting").Inherit, qt.IsTrue)

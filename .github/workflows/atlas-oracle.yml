@@ -137,8 +137,11 @@ jobs:
       # set of top-level BLOCK types it refuses is the same kind of contract
       # (stokaro/ptah#1251): ptah-compat omits those blocks by default, and a
       # list nothing re-measures would go on withholding a construct that binary
-      # started modeling. Both live in internal/atlashclrender and are listed
-      # before they are run, for the same reason as above.
+      # started modeling. The spelling of a table REFERENCE is another
+      # (stokaro/ptah#1260): `table.<schema>.<name>` costs the whole document,
+      # so the rendered output is put to that binary here rather than trusted.
+      # All of them live in internal/atlashclrender and are listed before they
+      # are run, for the same reason as above.
       - name: Verify HCL render conformance selection
         run: |
           GOWORK=off go test -list '^TestOracle' \
@@ -148,7 +151,8 @@ jobs:
           grep -Fx 'TestOracleAcceptsTheWrapItFallsBackTo' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleAtlasRefusedBlockTypesMatchTheBinary' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleToleratesTheBlockTypesPtahStillRenders' "$RUNNER_TEMP/atlas-column-type-tests"
-          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 4
+          grep -Fx 'TestOracleReadsTheReferenceSpellingPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 5
 
       - name: Run HCL render conformance tests
         run: |
@@ -171,6 +175,14 @@ jobs:
           grep -Fq 'TestOracleAtlasRefusedBlockTypesMatchTheBinary/postgres/refused/sequence' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleToleratesTheBlockTypesPtahStillRenders/postgres/tolerated/wibble' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleToleratesTheBlockTypesPtahStillRenders/sqlite/tolerated/sequence' "$RUNNER_TEMP/atlas-column-type-run"
+          # Same reason for the reference spelling (stokaro/ptah#1260): its two
+          # rows are a pair, and only the pair is a measurement. `rendered`
+          # alone would pass on a build that had stopped shortening anything,
+          # and `qualified` alone says nothing about what Ptah writes today.
+          grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/postgres/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/postgres/qualified' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/sqlite/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/sqlite/qualified' "$RUNNER_TEMP/atlas-column-type-run"
 
       - name: Regenerate Atlas CE corpus
         run: >-
