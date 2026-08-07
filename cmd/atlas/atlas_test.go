@@ -1315,7 +1315,15 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "{}")
+	// `mode { tables = false }` drops the tables, not the schema they lived in.
+	// The document still describes `main`, which is what the pinned community
+	// binary v1.3.0 does with the same project file: measured on SQLite, it
+	// renders `schema "main" {}` — in fact it renders the tables too, so it
+	// ignores this mode block entirely on inspect. Rendering `{}` for a
+	// database that has a schema is the defect stokaro/ptah#1264 is about, and
+	// this row is the one place it survived a filter rather than an empty
+	// database.
+	c.Assert(out.String(), qt.Equals, `{"schemas":[{"name":"main"}]}`)
 }
 
 // TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags pins the inspect

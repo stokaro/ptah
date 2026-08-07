@@ -101,7 +101,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 			return "", fmt.Errorf("connect to --url: %w", err)
 		}
 		defer dbschema.CloseAndWarn(conn)
-		return Inspect(conn, inspectOpts)
+		return Inspect(ctx, conn, inspectOpts)
 	}
 	return inspectOnDev(ctx, set, opts, inspectOpts)
 }
@@ -174,7 +174,7 @@ func inspectOnDev(
 			set.Sources[0].Path,
 			migrator.MigrationDirFormatAtlas,
 			func(replayConn *dbschema.DatabaseConnection) error {
-				schema, err := readInspectDevSchema(replayConn, opts.Schemas)
+				schema, err := readInspectDevSchema(ctx, replayConn, opts.Schemas)
 				if err != nil {
 					return err
 				}
@@ -198,7 +198,7 @@ func inspectOnDev(
 			desired,
 			opts.Diagnostics,
 			func(materializedConn *dbschema.DatabaseConnection) error {
-				schema, err := readInspectDevSchema(materializedConn, opts.Schemas)
+				schema, err := readInspectDevSchema(ctx, materializedConn, opts.Schemas)
 				if err != nil {
 					return err
 				}
@@ -331,11 +331,16 @@ func devMaterializableSchema(
 	return &materializable, nil
 }
 
+// readInspectDevSchema reads back a source that was materialized on the dev
+// database. It resolves scope exactly the way a database source does, so
+// `schema inspect -u file://…` describes the same set of schemas the same URL
+// would describe as a target.
 func readInspectDevSchema(
+	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	schemas []string,
 ) (*dbschematypes.DBSchema, error) {
-	schema, err := dbschema.ReadSchemaWithSchemas(devConn, SplitSchemaNames(schemas))
+	schema, err := readInspectSchema(ctx, devConn, schemas)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}
