@@ -25,8 +25,27 @@ type SchemaInspectReport struct {
 	// refuses to read where nothing in the document names them; see
 	// [go.5x5.cz/ptah/internal/atlashclrender.RenderInspectedForAtlasCLI].
 	omitAtlasRefusedBlocks bool
-	Realm                  atlasSchemaInspectJSONRealm `json:"-"`
-	Schema                 atlasSchemaInspectJSONRealm `json:"-"`
+	// describeSchemas renders the schema itself -- CREATE SCHEMA, its comment,
+	// its charset and collation -- into the SQL format. It is false when the
+	// connection URL chose the scope rather than the run choosing it.
+	//
+	// The distinction is the pinned community binary v1.3.0's, measured on
+	// PostgreSQL 17.10 against a database holding `public` and `extra`, counting
+	// `CREATE SCHEMA` in `--format '{{ sql . }}'`:
+	//
+	//	plain URL                    2
+	//	?search_path=public          0
+	//	--schema public              1
+	//	--schema public --schema extra   2
+	//	MySQL 9.7, connected database    0
+	//
+	// So it is not "realm scope only": naming a schema explicitly renders it.
+	// What that binary leaves out is the schema it was merely connected to. The
+	// JSON format does list that schema (stokaro/ptah#1264), so the two surfaces
+	// genuinely disagree and only the SQL one is gated here.
+	describeSchemas bool
+	Realm           atlasSchemaInspectJSONRealm `json:"-"`
+	Schema          atlasSchemaInspectJSONRealm `json:"-"`
 }
 
 type atlasSchemaInspectJSONRealm struct {
@@ -134,12 +153,16 @@ func RenderSchemaInspect(format string, report *SchemaInspectReport) (SchemaInsp
 // nothing else in the document names them, and reports every decision on
 // diagnostics. It is false on the native surface, which describes every
 // construct Ptah models.
+//
+// describeSchemas gates schema DDL out of the SQL format for a run whose scope
+// came from the connection URL; see the field's own documentation.
 func NewSchemaInspectReport(
 	db *goschema.Database,
 	schema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	diagnostics io.Writer,
 	omitAtlasRefusedBlocks bool,
+	describeSchemas bool,
 ) *SchemaInspectReport {
 	realm := atlasSchemaInspectJSON(schema, info)
 	return &SchemaInspectReport{
@@ -147,6 +170,7 @@ func NewSchemaInspectReport(
 		info:                   info,
 		diagnostics:            diagnostics,
 		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
+		describeSchemas:        describeSchemas,
 		Realm:                  realm,
 		Schema:                 realm,
 	}
@@ -235,12 +259,31 @@ func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
 	return atlashclrender.RenderInspected(r.db, r.info.Dialect, r.defaultSchemaName())
 }
 
+// sqlSource is the database the SQL format renders, which is the inspected one
+// minus the schema rows when the run did not choose its own scope.
+//
+// Dropping the rows here rather than never reading them keeps the JSON and HCL
+// formats seeing everything the reader described: the schema row an empty
+// database needs in JSON (stokaro/ptah#1264) is the same row that would put a
+// `CREATE SCHEMA` in front of SQL output the pinned binary emits without one.
+//
+// The copy is shallow on purpose -- only the Schemas slice header is replaced,
+// and nothing downstream writes through it.
+func (r *SchemaInspectReport) sqlSource() *goschema.Database {
+	if r.describeSchemas || r.db == nil || len(r.db.Schemas) == 0 {
+		return r.db
+	}
+	source := *r.db
+	source.Schemas = nil
+	return &source
+}
+
 func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
-		r.db,
+		r.sqlSource(),
 		r.info.Dialect,
 		r.info.Capabilities,
 	)

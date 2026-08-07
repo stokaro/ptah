@@ -433,5 +433,6 @@ func sampleSchemaInspectReport() *atlasreport.SchemaInspectReport {
 		types.DBInfo{Dialect: "sqlite", Schema: "main"},
 		nil,
 		false,
+		true,
 	)
 }
