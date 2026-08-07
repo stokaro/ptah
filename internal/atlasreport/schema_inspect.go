@@ -188,7 +188,7 @@ func (r *SchemaInspectReport) defaultSchemaName() string {
 }
 
 func (r *SchemaInspectReport) MarshalHCL() (string, error) {
-	rendered, err := atlashclrender.RenderForDialect(r.db, r.info.Dialect)
+	rendered, err := atlashclrender.RenderInspected(r.db, r.info.Dialect, r.defaultSchemaName())
 	if err != nil {
 		return "", fmt.Errorf("render HCL schema: %w", err)
 	}
