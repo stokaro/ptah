@@ -72,17 +72,17 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 164 capabilities below:
+Across the 166 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 91 |
-| Ptah supports it with a stated limitation | 49 |
+| Ptah supports it fully | 92 |
+| Ptah supports it with a stated limitation | 50 |
 | Ptah does not implement it | 24 |
-| Ptah and Atlas CE both support it | 23 |
+| Ptah and Atlas CE both support it | 24 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 20 |
-| Atlas CE has it and Ptah does not, or only in part | 25 |
+| Atlas CE has it and Ptah does not, or only in part | 26 |
 | An Atlas column is ❔ — not established by this page's evidence | 5 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -198,6 +198,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | `schema apply --skip-lint` | ✅ | ❌ | ✅ | With an atlas.hcl `lint` policy, the planned SQL is linted against the rules it names and an error-rated finding refuses the apply; `--skip-lint` applies anyway. No policy, no lint pass, as in CE. |
+| Analyzers that need a dev-database schema diff | 🟡 | ✅ | ✅ | Ptah's analyzers read SQL text, so a concern whose subject appears only in the resulting schema is unreported: a RENAME COLUMN draws DS103 from both, but only Atlas adds MF103 for the new column. |
 | Apply-time destructive-change gate | ✅ | ❌ | ➖ | migrations up refuses destructive pending files; .ptah-lint.yaml disabled-rules reopens the gate and ptah.sum does not hash that file. |
 | Atlas Pro analyzer code coverage | 🟡 | ➖ | ✅ | OW101/OW102 have no rule; PG301, PG304, MY130, MY133, MY136 fire under broader codes (DS103, PG104, CD103, MY101), not dedicated ones. |
 | Atlas web reports (`--web`) | ❌ | ❌ | ✅ | Not registered on migrate lint or schema diff; rejected as an unknown flag. Pinned Atlas CE v1.2.0 does not register it either. |
@@ -205,6 +206,7 @@ seven of them as open capabilities regardless.
 | CI integration (GitHub Action, annotations) | ✅ | 🟡 | ✅ | stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. The community binary has no annotation mode; its lint `--format` takes a Go template only. |
 | Custom lint rules and check-level policy | 🟡 | ❌ | ✅ | Custom rules only from Go (lint.Register, Options.ExtraRules); atlas.hcl rule, review, naming, non_linear blocks and force all fail. |
 | Default-firing Atlas analyzer concern mapping | ✅ | ➖ | ➖ | lint-analyzer-catalog maps every default-firing Atlas concern to a covering Ptah rule, severity and line; 0 gap on the committed corpus. |
+| Dev-URL schema scope on `migrate lint` | ✅ | ✅ | ✅ | `ptah-compat migrate lint` reviews only the schema the dev URL's search_path names, matching the pinned CE binary. Native `ptah migrations lint` reads SQL text and deliberately does not scope. |
 | Generation-time destructive-change gate | ✅ | ❌ | ❌ | migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row. |
 | Inline nolint suppression | ✅ | ✅ | ✅ | Every code the compat surface prints is silenced by that code; analyzer names work on both surfaces; a blank line detaches a directive. Unknown selectors accepted silently, matching CE. |
 | Native migration lint rule set | ✅ | 🟡 | ✅ | 42 codes across 9 families, gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
