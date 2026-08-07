@@ -63,13 +63,44 @@ func Render(db *goschema.Database) (Result, error) {
 // their input was HCL, so the raw-SQL marker the parser set is already right and
 // re-deciding it from the type name would second-guess the author.
 func RenderForDialect(db *goschema.Database, dialect string) (Result, error) {
+	return render(db, dialect, "")
+}
+
+// RenderInspected renders a schema that was read out of a database, declaring
+// defaultSchema as the owner of every object the catalog reported without one.
+//
+// A catalog does not repeat the schema on objects the engine considers
+// implicit, so an inspected IR arrives with no schema anywhere. HCL has no such
+// notion: a file with no `schema` block and no `schema =` on its tables is not
+// an under-specified schema, it is an invalid one. The pinned Atlas community
+// binary v1.3.0 refuses it with
+//
+//	specutil: failed converting to *schema.Realm: cannot extract schema name
+//	for table "t": schemahcl: type "schema" was not found in nil
+//
+// which is what made Ptah's inspect output unreadable to it independently of
+// any type or permission question (stokaro/ptah#1234).
+//
+// The name is a parameter rather than something derived from the dialect
+// because it is not derivable: a PostgreSQL connection's search_path can name
+// any schema, and the caller is the only one that knows which one was read.
+//
+// [RenderForDialect] is deliberately left alone. Its callers parsed HCL to get
+// here, so their IR already carries whatever the author wrote, and synthesizing
+// a schema there would invent one the author did not declare.
+func RenderInspected(db *goschema.Database, dialect, defaultSchema string) (Result, error) {
+	return render(db, dialect, strings.TrimSpace(defaultSchema))
+}
+
+func render(db *goschema.Database, dialect, defaultSchema string) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
 
 	r := renderer{
-		db:      db,
-		dialect: dialect,
+		db:            db,
+		dialect:       dialect,
+		defaultSchema: defaultSchema,
 	}
 	r.render()
 	return Result{
@@ -79,10 +110,51 @@ func RenderForDialect(db *goschema.Database, dialect string) (Result, error) {
 }
 
 type renderer struct {
-	db          *goschema.Database
-	dialect     string
-	builder     strings.Builder
-	diagnostics []Diagnostic
+	db      *goschema.Database
+	dialect string
+	// defaultSchema owns every object that arrived without one. Empty means the
+	// IR is taken as written, which is what every parse-and-re-render caller
+	// wants.
+	defaultSchema string
+	builder       strings.Builder
+	diagnostics   []Diagnostic
+}
+
+// schemaFor returns the schema name to write for an object, which is the one it
+// carries or, failing that, the schema the whole read belongs to.
+func (r *renderer) schemaFor(schema string) string {
+	if strings.TrimSpace(schema) != "" {
+		return schema
+	}
+	return r.defaultSchema
+}
+
+// referencedSchemas lists, in a stable order, every schema this render will
+// write a `schema.<name>` reference to. It is empty outside an inspected
+// render, because nothing is synthesized there.
+func (r *renderer) referencedSchemas() []string {
+	if r.defaultSchema == "" {
+		return nil
+	}
+	// Nothing to attach a schema to means nothing to declare. An inspect whose
+	// selection matched no table renders an empty document, and a lone schema
+	// block there would be a declaration of nothing -- which is what the
+	// empty-include-selection contract already pins.
+	if len(r.db.Tables) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, table := range r.db.Tables {
+		name := r.schemaFor(table.Schema)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }
 
 func (r *renderer) render() {
@@ -105,6 +177,21 @@ func (r *renderer) render() {
 
 func (r *renderer) renderSchemas() {
 	schemas := append([]goschema.Schema(nil), r.db.Schemas...)
+	// An inspected read reports no schema block at all, so every schema the
+	// file is about to reference has to be declared here or the reference
+	// resolves to nothing. A read that DID report one keeps what it reported,
+	// comment, charset and collation included.
+	//
+	// It is not enough to declare the default. A reader looking at more than
+	// one schema reports each table's own, so a table in `reporting` emits
+	// `schema = schema.reporting` and needs that block too -- the first version
+	// of this declared only the default, and a test row with a table outside it
+	// is what caught the dangling reference.
+	for _, name := range r.referencedSchemas() {
+		if !slices.ContainsFunc(schemas, func(s goschema.Schema) bool { return s.Name == name }) {
+			schemas = append(schemas, goschema.Schema{Name: name})
+		}
+	}
 	sort.Slice(schemas, func(i, j int) bool {
 		return schemas[i].Name < schemas[j].Name
 	})
@@ -169,8 +256,8 @@ func (r *renderer) renderTable(
 	rlsEnabled *goschema.RLSEnabledTable,
 ) {
 	r.linef(`table %s {`, quote(table.Name))
-	if table.Schema != "" {
-		r.rawAttr(1, "schema", schemaRef(table.Schema))
+	if schema := r.schemaFor(table.Schema); schema != "" {
+		r.rawAttr(1, "schema", schemaRef(schema))
 	}
 	r.stringAttr(1, "engine", table.Engine)
 	r.stringAttr(1, "charset", table.Charset)
