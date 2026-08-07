@@ -405,6 +405,15 @@
     "evidence": "conformance cli-surface.md line 47 lists Atlas CE `schema inspect` flags as --config --dev-url --env --exclude --format --schema --url --var, with no --include; pinned Atlas CE v1.3.0 `schema inspect -u sqlite://app.db --include users` exits 1 with \"Error: unknown flag: --include\". Built ptah-compat after this change: `schema inspect -u sqlite://app.db --include t1` renders t1 with its columns and drops t2; `--include 'main.t1.*'` matches no top-level object, so it renders nothing, exits 0, and reports `Warning: the --include selection matched no objects: \"main.t1.*\".` on stderr; `--include t2` refuses the projection because t2's foreign key targets unselected t1. `--include t1` matches Ptah, `--include '*.t1'` is read at child depth and renders t1 without columns plus an empty t2 shell, `--include 'main.t1.*'` exits 1 with \"too many parts in pattern\" (measured; observation study, scenario, verbs-and-flags)"
   },
   {
+    "area": "Schema inspection filters",
+    "feature": "Compat inspect block superset opt-in",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "no",
+    "note": "Compat inspect omits unreferenced extension, sequence and policy blocks; an env variable restores them.",
+    "evidence": "Measured 2026-08-07 on PostgreSQL 17 against the pinned community binary (reports \"atlas community version v1.3.0\"). Each block bare in a file that binary accepts: `extension` / `sequence` / `policy` -> exit 1 `postgres: <kind> are not supported by this version`; `role`, `function`, `view`, `materialized`, `trigger`, `permission` and an invented `wibble` -> exit 0, dropped. Re-measured by TestOracleAtlasRefusedBlockTypesMatchTheBinary and TestOracleToleratesTheBlockTypesPtahStillRenders, both enumerated in .github/workflows/atlas-oracle.yml. Suppression is reference-aware because that binary's own inspect of `CREATE SEQUENCE order_seq; CREATE TABLE orders (id integer DEFAULT nextval('order_seq'::regclass))` emits the default with no sequence block and then refuses its own output (`pq: relation \"order_seq\" does not exist`, exit 1); ptah-compat keeps the sequence, so Ptah reads that document at exit 0 while the community binary answers `postgres: sequences are not supported by this version`. With nothing referencing them, ptah-compat output is read by that binary at exit 0 and round-trips through Ptah at exit 0. `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` output is byte-identical to Ptah's pre-suppression output; the variable is inert on native `ptah schema inspect` (cmd/atlas/schema_inspect_refused_blocks_internal_test.go, internal/atlashclrender/atlas_refused_blocks_test.go). A flag was not used because the conformance cli-surface tier asserts flag parity."
+  },
+  {
     "area": "Migration directory formats",
     "feature": "Atlas R-suffixed (`1R_`, `R__`) migration execution",
     "ptah": "no",

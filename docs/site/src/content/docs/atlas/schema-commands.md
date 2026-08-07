@@ -142,6 +142,85 @@ community binary applies on a schema-bound URL. A pattern too deep for any
 scope, such as `*.*.*.*`, is refused before a database is contacted, so its
 message carries no schema prefix.
 
+### Blocks the compatibility surface leaves out by default
+
+`ptah-compat schema inspect` omits three top-level HCL block types on
+PostgreSQL — `extension`, `sequence`, and `policy` — **when nothing else in the
+document names the object**. The pinned Atlas community binary refuses an entire
+schema file that declares any one of them, answering
+`postgres: extensions are not supported by this version` and the equivalent for
+the other two. Output a drop-in replacement writes has to be output the tool it
+replaces can read back, and one such block costs the whole document.
+
+Nothing is dropped quietly. Every omitted object is reported on standard error,
+one line each, alongside the other loss diagnostics inspection already writes,
+and the message names the variable that brings it back:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" > schema.hcl
+warning: extensions.pgcrypto: omitted from Atlas-compatible schema inspect output: ... set PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 to keep every block Ptah models
+warning: sequences.order_seq: omitted from ...
+warning: rls_policies.accounts_all: omitted from ...
+```
+
+The omission is scoped as narrowly as the measurement is. It applies to HCL
+output on PostgreSQL only: `--format sql` still writes the extension, the
+sequence, and the policy, because SQL output is read by a database rather than
+by that binary. On SQLite the same three blocks are accepted, so nothing is
+omitted there. Every other block Ptah renders — `role`, `function`, `view`,
+`materialized`, `trigger`, `permission` — is kept, because that binary drops a
+block type it does not model and reads the file anyway.
+
+Native `ptah schema inspect` omits nothing; see
+[Inspect a database](../../direct/inspect/). Which block types that binary
+refuses is re-measured by the Atlas CE Oracle job rather than frozen, so a
+construct a later build starts modeling stops being withheld.
+
+#### A referenced block is kept, and the document says so
+
+Suppression never leaves a reference behind. If anything else in the document
+names the object — a column default calling `nextval` on a sequence, a view body
+selecting from it, a `permission` block targeting it, a column whose type an
+extension supplies — the block stays, and the reason is reported:
+
+```console
+warning: sequences.order_seq: kept in Atlas-compatible schema inspect output because another object in this document names it: ...
+```
+
+Such a document **is not readable by the community binary**, and that is not a
+defect Ptah can fix. Measured on PostgreSQL 17 for
+
+```sql
+CREATE SEQUENCE order_seq;
+CREATE TABLE orders (id integer NOT NULL DEFAULT nextval('order_seq'::regclass));
+```
+
+that binary's own inspect emits `default = sql("nextval('order_seq'::regclass)")`
+with no `sequence` block, and then refuses that output when it is fed back:
+`pq: relation "order_seq" does not exist`. There is no faithful description of a
+sequence-backed column default the community binary can read, including the one
+it writes itself. Ptah keeps the sequence so the document stays true and stays
+readable by Ptah; dropping the column's default instead would describe a
+database that does not exist.
+
+The reference test is by name, so an extension that supplies a **type** in use
+(`citext`, `hstore`) is kept, while an extension that supplies only functions
+(`pgcrypto` behind `gen_random_uuid()`) is not named by the document and is
+omitted. Set `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` when the output has to carry it.
+
+#### Get the full description back
+
+```console
+$ PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 ptah-compat schema inspect --url "$PG_URL"
+```
+
+Every block Ptah models is emitted and nothing is reported as omitted. The
+result describes the database in full and the community binary refuses it, which
+is the trade the variable exists to let you make. It is an environment variable
+rather than a flag because `ptah-compat`'s flag surface is held to parity with
+the pinned binary; see
+[Compatibility never costs you a capability](../overview/#compatibility-never-costs-you-a-capability).
+
 ### Select what is inspected with `--include`
 
 `--include` positively selects which top-level resources survive inspection,

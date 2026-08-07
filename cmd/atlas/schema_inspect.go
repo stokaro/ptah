@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 )
@@ -37,6 +38,17 @@ reference into the evaluated atlas.hcl environment. Non-database sources
 require --dev-url: the dev database is reset, the source is materialized on
 it, and the result is introspected, mirroring Atlas dev-database
 normalization.
+
+On PostgreSQL, HCL output omits an ` + "`extension`" + `, ` + "`sequence`" + ` or
+` + "`policy`" + ` block that nothing else in the document names: Atlas CE
+refuses a whole schema file that declares any one of them, so emitting one
+would make the output unreadable to the tool this binary stands in for. A block
+something DOES name — a sequence behind a column default, for instance — is
+kept, because a document that references an object it did not declare is
+readable by nobody. Every decision is reported on standard error. Set
+` + "`PTAH_ATLAS_INSPECT_ALL_BLOCKS=1`" + ` to emit every block Ptah models on
+this surface. SQL output keeps them all, and native
+` + "`ptah schema inspect`" + ` omits nothing.
 
 The default output is HCL. SQL output is supported with --format sql or
 --format '{{ sql . }}', JSON with --format json, and custom Go templates
@@ -155,8 +167,9 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		ConnectTimeout: dbcli.DefaultConnectTimeout,
 
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
-		IgnoreUnknownHCLNames: true,
-		Vars:                  schemaVars,
+		IgnoreUnknownHCLNames:  true,
+		OmitAtlasRefusedBlocks: atlasInspectOmitsRefusedBlocks(),
+		Vars:                   schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -169,6 +182,25 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	}
 	fmt.Fprint(cmd.OutOrStdout(), rendered)
 	return nil
+}
+
+// atlasInspectOmitsRefusedBlocks is this surface's default for the top-level
+// block types the pinned Atlas community binary refuses to read.
+//
+// It stands in for a binary that refuses a whole schema file for containing an
+// extension, sequence or policy block, so by default it renders what that
+// binary can read and reports what it left out on standard error
+// (stokaro/ptah#1251). The capability is not deleted with it:
+// PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 restores every block Ptah models on this same
+// surface, because compatibility never removes a capability (AGENTS.md). It is
+// an environment variable rather than a flag because the conformance
+// cli-surface tier asserts flag parity with that binary, and a flag it does not
+// register would break the promise this surface exists to keep.
+//
+// Native `ptah schema inspect` never calls this and always describes every
+// construct Ptah models.
+func atlasInspectOmitsRefusedBlocks() bool {
+	return !atlashclrender.KeepAtlasRefusedBlocks()
 }
 
 func needsAtlasSchemaInspectConfig(cmd *cobra.Command) bool {

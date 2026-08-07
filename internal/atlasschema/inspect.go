@@ -27,6 +27,16 @@ type InspectOptions struct {
 	Exclude     []string
 	Format      string
 	Diagnostics io.Writer
+	// OmitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
+	// which leaves out the top-level block types the pinned Atlas community
+	// binary refuses as a feature -- unless something else in the document
+	// names the object -- and reports every decision on Diagnostics. Only
+	// `ptah-compat` sets it, and setting
+	// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar]
+	// turns it back off there; the native surface renders every construct Ptah
+	// models. See
+	// [go.5x5.cz/ptah/internal/atlashclrender.RenderInspectedForAtlasCLI].
+	OmitAtlasRefusedBlocks bool
 }
 
 // NormalizeInspectFormat returns and validates the executable Atlas schema
@@ -92,6 +102,7 @@ func renderInspectSchema(
 		schema,
 		info,
 		opts.Diagnostics,
+		opts.OmitAtlasRefusedBlocks,
 	))
 	if err != nil {
 		return "", err
