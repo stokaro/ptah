@@ -50,6 +50,7 @@ const (
 	protoOnNameReuseFlag          = "proto-on-name-reuse"
 	protoSplitFlag                = "proto-split"
 	protoOnTypeMoveFlag           = "proto-on-type-move"
+	protoCommentsFlag             = "proto-comments"
 )
 
 // NewSchemaCommand returns the native schema command tree.
@@ -161,6 +162,7 @@ func newSchemaExportCommand() *cobra.Command {
 	var protoOnNameReuse string
 	var protoSplit string
 	var protoOnTypeMove string
+	var protoComments string
 
 	cmd := &cobra.Command{
 		Use:   "export",
@@ -209,6 +211,7 @@ part of the compatibility state, so all of them must be committed together.`,
 				protoOnNameReuse:          protoOnNameReuse,
 				protoSplit:                protoSplit,
 				protoOnTypeMove:           protoOnTypeMove,
+				protoComments:             protoComments,
 			})
 		},
 	}
@@ -236,6 +239,8 @@ part of the compatibility state, so all of them must be committed together.`,
 		"How many files to write: none for a single file at --out, or table for one file per exported table next to it (protobuf only)")
 	flags.StringVar(&protoOnTypeMove, protoOnTypeMoveFlag, string(protobufrender.MoveError),
 		"Behavior when an already-exported type would change files: error or relocate (protobuf only)")
+	flags.StringVar(&protoComments, protoCommentsFlag, string(protobufrender.CommentsNone),
+		"Copy source schema comments into the published contract: all or none (protobuf only)")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -259,6 +264,7 @@ type exportOptions struct {
 	protoOnNameReuse          string
 	protoSplit                string
 	protoOnTypeMove           string
+	protoComments             string
 }
 
 func runExport(cmd *cobra.Command, opts exportOptions) error {

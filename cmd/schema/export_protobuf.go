@@ -67,6 +67,9 @@ func validateProtobufExportOptions(opts exportOptions) error {
 	if _, err := parseMovePolicy(opts.protoOnTypeMove); err != nil {
 		return err
 	}
+	if _, err := parseCommentPolicy(opts.protoComments); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -87,6 +90,7 @@ func rejectProtobufOnlyFlags(opts exportOptions) error {
 		protoOnNameReuseFlag:          {opts.protoOnNameReuse, string(protobufrender.NameReuseError)},
 		protoSplitFlag:                {opts.protoSplit, string(protobufrender.SplitNone)},
 		protoOnTypeMoveFlag:           {opts.protoOnTypeMove, string(protobufrender.MoveError)},
+		protoCommentsFlag:             {opts.protoComments, string(protobufrender.CommentsNone)},
 	} {
 		if value := strings.TrimSpace(spec[0]); value != "" && value != spec[1] {
 			return fmt.Errorf("--%s is only supported with --%s %s", flag, exportToFlag, exportFormatProtobuf)
@@ -155,6 +159,23 @@ func parseMovePolicy(value string) (protobufrender.MovePolicy, error) {
 	}
 }
 
+// parseCommentPolicy resolves --proto-comments. Suppression is all-or-nothing:
+// a table comment can carry exactly the internal detail a column comment can, so
+// a per-object form would report a boundary the published contract does not
+// have. The value is enumerated rather than a boolean so a future policy can be
+// added without renaming the flag.
+func parseCommentPolicy(value string) (protobufrender.CommentPolicy, error) {
+	switch policy := protobufrender.CommentPolicy(strings.TrimSpace(value)); policy {
+	case "", protobufrender.CommentsNone:
+		return protobufrender.CommentsNone, nil
+	case protobufrender.CommentsAll:
+		return policy, nil
+	default:
+		return "", fmt.Errorf("invalid --%s %q: expected %s or %s", protoCommentsFlag, value,
+			protobufrender.CommentsAll, protobufrender.CommentsNone)
+	}
+}
+
 // runProtobufExport renders the schema and replaces the output atomically. A
 // failed render must never destroy the compatibility baseline, so nothing is
 // written until the rendered bytes have been re-parsed successfully.
@@ -181,6 +202,10 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 		return err
 	}
 	move, err := parseMovePolicy(opts.protoOnTypeMove)
+	if err != nil {
+		return err
+	}
+	comments, err := parseCommentPolicy(opts.protoComments)
 	if err != nil {
 		return err
 	}
@@ -214,6 +239,7 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 		OnIncompatibleChange: change,
 		OnNameReuse:          nameReuse,
 		OnTypeMove:           move,
+		Comments:             comments,
 	})
 	if err != nil {
 		return err

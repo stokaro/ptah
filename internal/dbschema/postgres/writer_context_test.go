@@ -288,10 +288,41 @@ func TestWriterDropDatabaseRealm_CreatesAbsentRootSchema(t *testing.T) {
 		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
 		`DROP SCHEMA IF EXISTS "public" RESTRICT`,
 		`CREATE SCHEMA "shadow"`,
+		`CREATE SCHEMA "public"`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 10)
-	c.Assert(db.ExecCount(), qt.Equals, 4)
+	c.Assert(db.ExecCount(), qt.Equals, 5)
+	c.Assert(db.CommitCount(), qt.Equals, 1)
+	c.Assert(db.RollbackCount(), qt.Equals, 0)
+}
+
+// A database whose "public" schema was already gone gets nothing invented for
+// it: the cleanup restores what it dropped, and a schema the caller never had
+// is not part of that. This is what separates restoring "public" from creating
+// it unconditionally -- both look identical in
+// TestWriterDropDatabaseRealm_CreatesAbsentRootSchema, where it was present.
+func TestWriterDropDatabaseRealm_LeavesAnAbsentPublicSchemaAbsent(t *testing.T) {
+	c := qt.New(t)
+	var execQueries []string
+	queryHandler := newPostgresRealmAbsentPublicQuery()
+	db := dbtest.OpenWithExec(t, queryHandler.query, func(
+		query string,
+		_ []driver.NamedValue,
+	) (driver.Result, error) {
+		execQueries = append(execQueries, query)
+		return driver.RowsAffected(0), nil
+	})
+	writer := postgres.NewPostgreSQLWriter(db.SQL, "shadow")
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(execQueries, qt.DeepEquals, []string{
+		"\n\t\tSELECT lo_unlink(oid)\n\t\tFROM pg_largeobject_metadata\n\t\tORDER BY oid\n\t",
+		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
+		`CREATE SCHEMA "shadow"`,
+	})
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
@@ -750,6 +781,15 @@ func newPostgresRealmAbsentRootQuery() *postgresRealmQuery {
 		version:        "PostgreSQL 18.0",
 		database:       "ptah_test",
 		initialSchemas: [][]driver.Value{{"audit"}, {"public"}},
+		finalSchemas:   [][]driver.Value{{"public"}, {"shadow"}},
+	}
+}
+
+func newPostgresRealmAbsentPublicQuery() *postgresRealmQuery {
+	return &postgresRealmQuery{
+		version:        "PostgreSQL 18.0",
+		database:       "ptah_test",
+		initialSchemas: [][]driver.Value{{"audit"}},
 		finalSchemas:   [][]driver.Value{{"shadow"}},
 	}
 }
