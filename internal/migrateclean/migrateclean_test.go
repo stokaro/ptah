@@ -248,3 +248,382 @@ func TestScopeRefusal_UncleanDatabases(t *testing.T) {
 		})
 	}
 }
+
+// Realm scope: the connection pinned no schema, so the operand is schemas.
+//
+// These rows are the states the pinned community binary v1.3.0 applied against
+// on 2026-08-07 through a plain `postgres://user:pass@host:port/db?sslmode=disable`
+// URL — no search_path — against a throwaway PostgreSQL 17 database per cell.
+
+func TestScopeRefusal_CleanRealms(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		scope migrateclean.Scope
+	}{
+		{
+			// A brand new database: `public` exists and is empty.
+			name: "empty database",
+			scope: migrateclean.Scope{
+				Dialect:         "postgres",
+				Realm:           true,
+				Schemas:         []migrateclean.RealmSchema{{Name: "public"}},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+		},
+		{
+			// The state a first realm-scope run leaves behind. The bookkeeping
+			// schema holding nothing but the revision table applies at exit 0.
+			name: "bookkeeping schema beside an empty public",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "atlas_schema_revisions", Tables: []string{"atlas_schema_revisions"}},
+					{Name: "public"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+		},
+		{
+			// The bookkeeping schema exists but is empty, which is what a
+			// --dry-run leaves behind.
+			name: "empty bookkeeping schema",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "atlas_schema_revisions"},
+					{Name: "public"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+		},
+		{
+			// --revisions-schema moves the exemption with it.
+			name: "bookkeeping schema named by --revisions-schema",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "public"},
+					{Name: "revs", Tables: []string{"atlas_schema_revisions"}},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "revs",
+			},
+		},
+		{
+			// --revisions-schema public makes `public` the bookkeeping schema,
+			// and the revision table alone in it is then tolerated as such.
+			name: "bookkeeping schema pointed at public",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "public", Tables: []string{"atlas_schema_revisions"}},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "public",
+			},
+		},
+		{
+			// The gate stays off for a dialect Governs does not cover even when
+			// the realm is full.
+			name: "ungoverned dialect with schemas",
+			scope: migrateclean.Scope{
+				Dialect:         "clickhouse",
+				Realm:           true,
+				Schemas:         []migrateclean.RealmSchema{{Name: "extra"}},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(test.scope.Refusal(), qt.IsNil)
+		})
+	}
+}
+
+func TestScopeRefusal_UncleanRealms(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		scope   migrateclean.Scope
+		wantErr string
+	}{
+		{
+			// The cell stokaro/ptah#1257 is about. An EMPTY extra schema is
+			// enough: the binary is not looking for tables at this scope. The
+			// same database through `?search_path=public` applies at exit 0,
+			// which is pinned as a clean row of the schema-scope table above.
+			name: "an empty extra schema",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "extra"},
+					{Name: "public"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "extra". baseline version or allow-dirty is required`,
+		},
+		{
+			name: "a table living only in another schema",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "extra", Tables: []string{"legacy_stuff"}},
+					{Name: "public"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "extra". baseline version or allow-dirty is required`,
+		},
+		{
+			// `public` is tolerated only while it is empty, and a table in it
+			// is reported by the SCHEMA shape rather than the table shape.
+			name: "a table in public",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "public", Tables: []string{"legacy_stuff"}},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "public". baseline version or allow-dirty is required`,
+		},
+		{
+			// This row and the next one separate "the first offender by name"
+			// from "the first offender in the list": only name order satisfies
+			// both, and the offenders sort either side of `public`.
+			name: "an offender sorting before public",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "extra"},
+					{Name: "public", Tables: []string{"legacy_stuff"}},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "extra". baseline version or allow-dirty is required`,
+		},
+		{
+			name: "an offender sorting after public",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "public", Tables: []string{"legacy_stuff"}},
+					{Name: "zextra"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "public". baseline version or allow-dirty is required`,
+		},
+		{
+			// The bookkeeping schema does not outrank a schema sorting before
+			// it: the walk stops at the first failure either way.
+			name: "a dirty bookkeeping schema behind another offender",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "aextra"},
+					{Name: "atlas_schema_revisions", Tables: []string{"other"}},
+					{Name: "public"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "aextra". baseline version or allow-dirty is required`,
+		},
+		{
+			name: "a dirty bookkeeping schema ahead of another offender",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "atlas_schema_revisions", Tables: []string{"other"}},
+					{Name: "bextra"},
+					{Name: "public"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found 2 tables in schema "atlas_schema_revisions". baseline version or allow-dirty is required`,
+		},
+		{
+			// The count includes the revision table the binary creates before
+			// it looks, which is why one unrelated table reads as two. Without
+			// the addition a --dry-run would report `1`.
+			name: "one unrelated table in the bookkeeping schema",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "atlas_schema_revisions", Tables: []string{"other"}},
+					{Name: "public"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found 2 tables in schema "atlas_schema_revisions". baseline version or allow-dirty is required`,
+		},
+		{
+			// The same shape once --revisions-schema points at public.
+			name: "bookkeeping in public beside another table",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "public", Tables: []string{"atlas_schema_revisions", "legacy_stuff"}},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "public",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found 2 tables in schema "public". baseline version or allow-dirty is required`,
+		},
+		{
+			// The exemption is keyed on THIS run's bookkeeping schema, so the
+			// default one becomes an ordinary offender when the run moved.
+			name: "the default bookkeeping schema while the run moved",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "atlas_schema_revisions", Tables: []string{"atlas_schema_revisions"}},
+					{Name: "public"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "revs",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "atlas_schema_revisions". baseline version or allow-dirty is required`,
+		},
+		{
+			// Byte order, not the server's collation: PostgreSQL's default
+			// collation sorts "app" first and the binary reports "Zed".
+			name: "uppercase schema names sort by byte",
+			scope: migrateclean.Scope{
+				Dialect: "postgres",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "Zed"},
+					{Name: "app"},
+					{Name: "public"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "Zed". baseline version or allow-dirty is required`,
+		},
+		{
+			// A realm scope for a dialect whose realm shapes this package does
+			// not implement must never read as clean. Inspect refuses to build
+			// one, and a hand-built one says so rather than passing.
+			name: "a dialect with no realm rule",
+			scope: migrateclean.Scope{
+				Dialect:         "mysql",
+				Realm:           true,
+				Schemas:         []migrateclean.RealmSchema{{Name: "appdb"}},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `migrate apply clean check has no realm-scope rule for dialect "mysql"`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			err := test.scope.Refusal()
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, test.wantErr)
+		})
+	}
+}
+
+// ForRevisions is the boundary between the catalog read and the decision, and
+// the two scopes fill different fields from the same call.
+func TestScopeForRevisions(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name            string
+		scope           migrateclean.Scope
+		revisionsSchema string
+		revisionTable   string
+		want            migrateclean.Scope
+	}{
+		{
+			name:          "schema scope keeps the table it will create",
+			scope:         migrateclean.Scope{Dialect: "postgres", Schema: "public"},
+			revisionTable: "atlas_schema_revisions",
+			want: migrateclean.Scope{
+				Dialect:       "postgres",
+				Schema:        "public",
+				RevisionTable: "atlas_schema_revisions",
+			},
+		},
+		{
+			// --revisions-schema took the bookkeeping table out of the scope,
+			// so there is nothing inside it left to exempt.
+			name:            "schema scope drops a table kept elsewhere",
+			scope:           migrateclean.Scope{Dialect: "postgres", Schema: "public"},
+			revisionsSchema: "revs",
+			revisionTable:   "atlas_schema_revisions",
+			want:            migrateclean.Scope{Dialect: "postgres", Schema: "public"},
+		},
+		{
+			// At realm scope an unset --revisions-schema is not "the connected
+			// schema" but the binary's own bookkeeping schema.
+			name:          "realm scope defaults the bookkeeping schema",
+			scope:         migrateclean.Scope{Dialect: "postgres", Schema: "public", Realm: true},
+			revisionTable: "atlas_schema_revisions",
+			want: migrateclean.Scope{
+				Dialect:         "postgres",
+				Schema:          "public",
+				Realm:           true,
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+		},
+		{
+			name:            "realm scope follows --revisions-schema",
+			scope:           migrateclean.Scope{Dialect: "postgres", Schema: "public", Realm: true},
+			revisionsSchema: "revs",
+			revisionTable:   "atlas_schema_revisions",
+			want: migrateclean.Scope{
+				Dialect:         "postgres",
+				Schema:          "public",
+				Realm:           true,
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "revs",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got := test.scope.ForRevisions(test.revisionsSchema, test.revisionTable)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}

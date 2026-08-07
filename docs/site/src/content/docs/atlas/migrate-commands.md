@@ -250,24 +250,48 @@ measured Atlas checkpoint semantics — a fresh database applies only the
 latest checkpoint plus later migrations, and a database that already applied
 pre-checkpoint history skips the checkpoint silently.
 
-### Adopting a database that already has tables
+### Adopting a database that already has objects
 
-`migrate apply` refuses to adopt a database whose schema already holds tables no
-migration recorded, matching Atlas:
+`migrate apply` refuses to adopt a database that already holds objects no
+migration recorded, matching Atlas. What counts as such an object depends on
+what the URL pinned, and the two answers are different.
+
+**A URL that pins a schema** — `?search_path=public` on PostgreSQL, or a
+database on a MySQL URL — puts the run in schema scope. The refusal names a
+table in that one schema:
 
 ```text
 Error: sql/migrate: connected database is not clean: found table "legacy_stuff" in schema "public". baseline version or allow-dirty is required
 ```
 
 On SQLite the same refusal reports a count instead of a name:
-`found multiple tables: 2`.
+`found multiple tables: 2`. Views, sequences, and tables in other schemas are
+not tables in the connected schema and do not trigger it, and neither does the
+revision table itself.
+
+**A plain PostgreSQL URL that pins no `search_path`** puts the run in realm
+scope, where the whole database is under review and the operand is schemas
+rather than tables. An empty extra schema is enough:
+
+```text
+Error: sql/migrate: connected database is not clean: found schema "extra". baseline version or allow-dirty is required
+```
+
+At that scope only two things are tolerated: an empty `public`, and the schema
+holding this run's revision table. Anything else — another schema, empty or
+not, or a table in `public` — refuses, and the refusal names the first offender
+by name. A `public` holding a table is reported as `found schema "public"`, not
+as a table. A revisions schema holding more than the revision table reports a
+count: `found 2 tables in schema "atlas_schema_revisions"`.
+
+Only the `search_path` query parameter selects schema scope. A search path set
+through libpq's `options=-c search_path=…` moves the session but leaves the run
+at realm scope, which is what Atlas does.
 
 The check is an adoption gate, not a standing drift check. It runs only while
 the revision table holds no rows, so it fires on the first apply against a
 database somebody else's tooling owns and never again — a managed database that
-later grows an unmanaged table applies its next migration normally. Views,
-sequences, and tables in other schemas are not tables in the connected schema
-and do not trigger it, and neither does the revision table itself. The refusal
+later grows an unmanaged table applies its next migration normally. The refusal
 also fires under `--dry-run` and on a directory with nothing pending, because
 the question it answers is about the database rather than about the work.
 
@@ -283,8 +307,16 @@ anything is recorded.
 
 The gate is enforced on PostgreSQL, MySQL, MariaDB, and SQLite. Other dialects
 are not gated, because the behavior to match has not been measured on them.
-Native [`ptah migrations up`](../../versioned/apply/) has no equivalent gate; see
+Realm scope is enforced on PostgreSQL only: a MySQL URL that names no database
+is refused by the connection before the gate is reached, so that combination
+never applies anything either. Native
+[`ptah migrations up`](../../versioned/apply/) has no equivalent gate; see
 [#1231](https://github.com/stokaro/ptah/issues/1231).
+
+At realm scope this implementation keeps its own revision table in `public`
+while Atlas keeps its in a schema named `atlas_schema_revisions`. Both databases
+are adopted at exit `0`; the difference is where the bookkeeping lands, and it
+is tracked in [#1257](https://github.com/stokaro/ptah/issues/1257).
 
 ```bash
 ptah-compat migrate apply 2 \

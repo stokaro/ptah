@@ -279,7 +279,7 @@ func runAtlasMigrateApply(
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 
-	plan, err := atlasmigrate.PrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
+	cleanScope, plan, err := inspectThenPrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
 		Dir:                  dir,
 		FS:                   migrationFS,
 		DryRun:               opts.dryRun,
@@ -310,6 +310,7 @@ func runAtlasMigrateApply(
 		revisionsSchema: opts.revisionsSchema,
 		allowDirty:      opts.allowDirty,
 		baselineVersion: baselineVersion,
+		cleanScope:      cleanScope,
 	}); err != nil {
 		return err
 	}
