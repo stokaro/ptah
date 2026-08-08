@@ -192,9 +192,11 @@ func TestRender_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
 // `CONSTRAINT <name> CHECK <expr>`, so the constraint is promoted rather than
 // dropped. Measured on a live ClickHouse: the rendered statement executes, the
 // constraint appears in SHOW CREATE TABLE, and a violating INSERT is rejected
-// (code 213). The name is not optional -- an unnamed `CHECK (expr)` in a column
-// list is a syntax error there (code 62) -- so one is synthesized when the
-// author did not give one (stokaro/ptah#931 item 7).
+// with `Code: 469 ... VIOLATED_CONSTRAINT` while a satisfying one succeeds, so
+// it is enforced rather than decorative. (213 is what clickhouse-client exits
+// with, not what the server reports.) The name is not optional -- an unnamed
+// `CHECK (expr)` in a column list is a syntax error there (code 62) -- so one is
+// synthesized when the author did not give one (stokaro/ptah#931 item 7).
 func TestRender_ClickHouseKeepsAColumnCheckAsANamedConstraint(t *testing.T) {
 	c := qt.New(t)
 
