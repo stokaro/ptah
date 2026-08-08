@@ -145,6 +145,32 @@ describe every role Ptah manages on the server, which is what you want when the
 output is meant to reproduce a cluster's roles somewhere else; apply that output
 to a clean target, or reconcile existing roles explicitly before applying it.
 
+### Reserved Role Names
+
+Ptah manages neither the reserved `pg_` roles nor the bootstrap `postgres`
+superuser, in either direction: neither read describes them and neither is ever
+compared. A desired schema declaring one would therefore be compared against
+nothing, read as absent, and planned as a `CREATE ROLE` the server rejects.
+Ptah refuses the declaration instead, before anything is compared or planned,
+on both the compare path and the generate path, naming the role and the rule:
+
+```text
+Error: compare database schema: invalid schema diff: desired schema declares reserved PostgreSQL role "pg_monitor" (PostgreSQL reserves the "pg_" prefix for system roles and refuses CREATE ROLE at SQLSTATE 42939); Ptah manages reserved roles in neither direction, so the declaration is compared against nothing and would be planned as a CREATE ROLE the server refuses; rename the role, or set PTAH_ALLOW_RESERVED_ROLE_NAMES=1 to plan it anyway
+```
+
+Both spellings are covered, and they fail for different reasons: `postgres`
+because the role already exists (SQLSTATE 42710), and any `pg_` name because
+the prefix is reserved (SQLSTATE 42939). The prefix is matched literally, so
+`pgbouncer`, `pgadmin` and `pgpool` are ordinary roles and are planned as
+before, and so is an uppercase `PG_` name, which PostgreSQL also accepts.
+
+Set `PTAH_ALLOW_RESERVED_ROLE_NAMES=1` to plan the declaration anyway, which is
+what Ptah did before the refusal existed. That is not a curiosity: measured on
+PostgreSQL 17.10, a cluster bootstrapped as `admin` rather than `postgres`
+accepts `CREATE ROLE "postgres"` and the role appears in `pg_roles`. The
+variable decides only whether Ptah refuses first or the server does; it changes
+neither read, so a `pg_` name still fails at the server whatever it is set to.
+
 ### Role Modifications
 
 When role attributes change between migrations, Ptah generates ALTER ROLE statements:

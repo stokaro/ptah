@@ -174,6 +174,16 @@ only: comparison already treats undescribed roles as present, so the planned
 statements are identical either way. Reserved `pg_` names and the bootstrap
 `postgres` superuser are outside it in both directions.
 
+**`PTAH_ALLOW_RESERVED_ROLE_NAMES`** — by default, a desired schema that
+declares a reserved PostgreSQL role is refused before anything is compared or
+planned, naming the role and the rule, because Ptah manages neither the `pg_`
+roles nor the bootstrap `postgres` superuser in either direction and the
+declaration would otherwise become a `CREATE ROLE` the server rejects at
+SQLSTATE 42939 or 42710. Set it to `1` and the declaration is planned instead,
+as it was before the refusal existed. That is worth having on a cluster
+bootstrapped under a name other than `postgres`, where `CREATE ROLE "postgres"`
+succeeds.
+
 **`PTAH_ALLOW_EXTERNAL_SCHEMA`** — by default, `atlas.hcl`
 `data "external_schema"` is not evaluated, because it runs a
 repository-controlled program. Set it to `1` and the data source is evaluated,

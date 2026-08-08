@@ -139,13 +139,35 @@ on standard error. A role the server does **not** have is still created there,
 so the same document also materializes on a server that has never seen it.
 
 Reserved roles sit outside that rule in both directions. Ptah manages neither
-the `pg_` roles nor the bootstrap `postgres` superuser: it never describes
-them and never compares them, so a desired schema that declares one is compared
-against nothing and is still planned as a `CREATE ROLE` the server refuses —
-`role "postgres" already exists` (SQLSTATE 42710) for the superuser, and
-`role name "pg_monitor" is reserved` (SQLSTATE 42939) for a `pg_` name. Do not
-declare them: Ptah does not yet refuse the declaration up front, and that
-refusal is a known gap rather than something this page describes as working.
+the `pg_` roles nor the bootstrap `postgres` superuser: it never describes them
+and never compares them, so a declaration naming one would be compared against
+nothing and planned as a `CREATE ROLE` the server refuses. Ptah refuses the
+declaration instead, before anything is compared or planned:
+
+```text
+Error: compare database schema: invalid schema diff: desired schema declares reserved PostgreSQL role "pg_monitor" (PostgreSQL reserves the "pg_" prefix for system roles and refuses CREATE ROLE at SQLSTATE 42939); Ptah manages reserved roles in neither direction, so the declaration is compared against nothing and would be planned as a CREATE ROLE the server refuses; rename the role, or set PTAH_ALLOW_RESERVED_ROLE_NAMES=1 to plan it anyway
+```
+
+The two names fail for different reasons and both are covered: the superuser
+because it already exists (`role "postgres" already exists`, SQLSTATE 42710),
+and a `pg_` name because the prefix is reserved (`role name "pg_monitor" is
+reserved`, SQLSTATE 42939). The prefix is matched literally, so `pgbouncer`,
+`pgadmin` and `pgpool` are ordinary roles and are planned as before.
+
+One thing the refusal costs, so it stays reachable rather than being removed:
+on a cluster bootstrapped under another name, `CREATE ROLE "postgres"` succeeds.
+Measured on PostgreSQL 17.10, a cluster whose superuser is `admin` accepts the
+statement and the role appears in `pg_roles`.
+
+```bash
+# Plan a declared reserved role anyway, as Ptah did before the refusal existed.
+PTAH_ALLOW_RESERVED_ROLE_NAMES=1 ptah-compat schema apply --dry-run --url "$PG_URL" --to file://schema.hcl --dev-url "$PG_DEV_URL"
+```
+
+The variable changes only whether Ptah refuses first or the server does. The
+reads are untouched, so a `pg_` name still fails at the server whatever you set
+it to. It is an environment variable rather than a flag because `ptah-compat`
+registers exactly the flags the Atlas community CLI registers.
 
 :::caution
 Ptah never drops a role automatically. A role that disappears from the desired

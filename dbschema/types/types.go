@@ -47,11 +47,10 @@ type DBSchema struct {
 	// The partition is over managed roles, not over the whole catalog. A
 	// PostgreSQL reader leaves the reserved pg_ roles and the bootstrap
 	// superuser out of both lists, because Ptah manages neither in either
-	// direction, so a desired schema that names one of them is still compared
-	// against nothing and still planned as a CREATE ROLE the server refuses
-	// (SQLSTATE 42710 for postgres, 42939 for a reserved name). That is
-	// unchanged by this field and is tracked separately; do not read the union
-	// as "every role the server has".
+	// direction, so the union is not every role the server has and must not be
+	// described as if it were. A desired schema that names one of them is
+	// refused before anything is compared or planned, naming the role and the
+	// rule, rather than compared against nothing. See stokaro/ptah#1312.
 	//
 	// This field is not part of the description: it carries role names from
 	// outside the inspected scope, so it is never serialized and never
