@@ -54,6 +54,16 @@ materialized on it (schema files executed, migration directories replayed),
 and the result is introspected. Inspecting a file without `--dev-url` fails
 with Atlas's `--dev-url cannot be empty` message.
 
+One kind of object is not materialized: a role the dev database's **server**
+already has. The reset empties the dev database, and a role is not in it —
+PostgreSQL roles belong to the server — so `CREATE ROLE` for one of them fails
+at SQLSTATE 42710 no matter how clean the database is. Ptah leaves such a role
+exactly as the server has it, never altering it, and names the skipped roles on
+standard error. A role the server does not have is still created, so the same
+document still materializes on a server that has never seen it. This is what
+lets an inspected description be fed straight back in against a clean sibling
+database on the same server.
+
 ```bash
 ptah-compat schema inspect \
   --url file://schema.sql \

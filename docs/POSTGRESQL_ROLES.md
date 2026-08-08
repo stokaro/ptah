@@ -119,9 +119,20 @@ CREATE ROLE app_user WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NORE
 COMMENT ON ROLE app_user IS 'Application user role';
 ```
 
-PostgreSQL has no `CREATE ROLE IF NOT EXISTS`. Ptah deliberately fails when a
-role already exists instead of suppressing the collision and applying later
-comments or grants to a role whose security attributes Ptah did not create.
+PostgreSQL has no `CREATE ROLE IF NOT EXISTS`. Applying generated SQL to a
+target that already has the role deliberately fails, instead of suppressing the
+collision and applying later comments or grants to a role whose security
+attributes Ptah did not create.
+
+One path is deliberately different, and it is not an apply: evaluating a schema
+file or a migration directory on a `--dev-url` dev database. That database is
+reset before the state is materialized on it, but resetting a database does not
+clear the server's roles, so a role the server already has cannot be created
+there and its `CREATE ROLE` would fail every time. The dev materialization
+leaves such a role exactly as the server has it — it never alters it — and
+names the ones it skipped on standard error. A role the server does not have is
+still created. That is what makes an inspected description replayable into a
+clean sibling database on the same server (issue #1267).
 
 Reading a database no longer produces a cluster-role dump. `ptah db read` and
 `ptah-compat schema inspect` describe only the roles the schemas being read use

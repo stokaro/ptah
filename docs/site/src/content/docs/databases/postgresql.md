@@ -128,6 +128,16 @@ The note reports a count and never the names: on a shared instance those names
 belong to other tenants, which is half the reason the description is scoped at
 all.
 
+A scoped description is also a replayable one, which is the point of scoping it
+at all. Feed `ptah-compat schema inspect` output straight back in against a
+clean sibling database on the same server and it materializes at exit 0, and
+the document that comes back is the one that went in. The roles a scoped
+description names are precisely the roles the server already has — they hold
+privileges on the inspected tables — so the dev database is not given them
+again; they are left exactly as the server has them, never altered, and named
+on standard error. A role the server does **not** have is still created there,
+so the same document also materializes on a server that has never seen it.
+
 Reserved roles sit outside that rule in both directions. Ptah manages neither
 the `pg_` roles nor the bootstrap `postgres` superuser: it never describes
 them and never compares them, so a desired schema that declares one is compared

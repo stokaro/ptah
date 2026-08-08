@@ -1,7 +1,8 @@
-// Package rolescope owns the two halves of Ptah's decision to describe only
-// the PostgreSQL roles an inspected schema uses: the opt-in that restores the
-// full cluster read on the same surface, and the note that tells an operator
-// what the default left out.
+// Package rolescope owns what Ptah does about roles being server-scoped while
+// a schema description is not: the opt-in that restores the full cluster read
+// on the same surface, the note that tells an operator which roles the default
+// description left out, and the partition that keeps a dev-database
+// materialization from re-creating a role its server already has.
 package rolescope
 
 import (

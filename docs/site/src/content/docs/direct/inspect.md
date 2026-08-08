@@ -85,11 +85,20 @@ names and the bootstrap `postgres` superuser stay out of both. See
 [PostgreSQL roles and grants](../../databases/postgresql/#roles-and-grants).
 
 Role creation statements in PostgreSQL output are intended for
-a clean target. If a role already exists, applying the SQL
+a clean target. If a role already exists, running the SQL by hand
 fails before its description or grants are changed; this prevents privileges
 from being attached to a role with unverified security attributes. Role
 descriptions are restored with `COMMENT ON ROLE`; schema and table grants are
 still emitted after successful role creation.
+
+Feeding that description back through Ptah is different, because Ptah knows the
+role is already there. `ptah-compat schema apply` plans no `CREATE ROLE` for a
+role the target's server has, and evaluating the document on a `--dev-url` dev
+database does not re-create one either — a dev database is reset before the
+document is materialized on it, and resetting a database does not clear the
+server's roles. Roles the dev database was not given are named on standard
+error and are left exactly as the server has them; a role the server does not
+have is still created there.
 
 ## Turn the schema into Go models
 
