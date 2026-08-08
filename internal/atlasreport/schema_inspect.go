@@ -347,10 +347,7 @@ func atlasSchemaInspectTable(
 }
 
 func atlasSchemaInspectColumn(column dbschematypes.DBColumn) atlasSchemaInspectJSONColumn {
-	columnType := column.ColumnType
-	if columnType == "" {
-		columnType = column.DataType
-	}
+	columnType := atlasSchemaInspectColumnType(column)
 	return atlasSchemaInspectJSONColumn{
 		Name: column.Name,
 		Type: columnType,
@@ -360,6 +357,33 @@ func atlasSchemaInspectColumn(column dbschematypes.DBColumn) atlasSchemaInspectJ
 			Collate: column.Collate,
 		},
 	}
+}
+
+// atlasSchemaInspectColumnType spells a column's type the way the pinned
+// community binary v1.3.0 spells it in `schema inspect --format '{{ json . }}'`.
+//
+// A domain column is the one place where DataType is not that spelling:
+// information_schema reports the domain's BASE type there and puts the domain
+// in domain_name, so a column of `positive` printed as "integer" and lost the
+// domain's CHECK with it. Measured on PostgreSQL 17.10, both against the same
+// database:
+//
+//	column of domain positive   binary: "positive"       Ptah before: "integer"
+//	column of doms.positive     binary: "doms.positive"  Ptah before: "integer"
+//	column of varchar(100)[]    binary: "ARRAY"          Ptah:        "ARRAY"
+//
+// The array row is why this reads DomainName rather than FormattedType, which
+// both kinds of column fill: preferring FormattedType outright would print
+// "character varying(100)[]" where the binary prints "ARRAY" and trade one
+// disagreement for another. See stokaro/ptah#1242.
+func atlasSchemaInspectColumnType(column dbschematypes.DBColumn) string {
+	if column.DomainName != "" && column.FormattedType != "" {
+		return column.FormattedType
+	}
+	if column.ColumnType != "" {
+		return column.ColumnType
+	}
+	return column.DataType
 }
 
 func atlasSchemaInspectIndex(index dbschematypes.DBIndex) atlasSchemaInspectJSONIndex {

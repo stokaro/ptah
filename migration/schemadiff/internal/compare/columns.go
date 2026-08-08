@@ -314,6 +314,26 @@ func columnsWithDesiredDomains(
 	}
 
 	dbRawType := rawDBColumnType(dbCol)
+
+	// The default comparison below asks what CATEGORY each side's type is, so it
+	// keeps using the normalizer even where the type comparison above does not:
+	// a default is normalized as a boolean or a number.
+	//
+	// For a domain column both sides receive the DOMAIN NAME, not the domain's
+	// base type, because rawDBColumnType answers with the domain and the desired
+	// side spells the column as the domain too. So `d_bool` reaches the
+	// normalizer, which folds by substring and lands on "boolean" by luck, while
+	// `positive` folds to nothing and the boolean/decimal/temporal branches of
+	// normalize.DefaultValue are skipped for that column.
+	//
+	// Passing the base type on the database side alone would be worse, not
+	// better: the desired side is a goschema.Field carrying only a type name and
+	// has no base type to reach for, so the two sides would land in different
+	// categories and a database would stop being in sync with itself -- the
+	// asymmetry stokaro/ptah#1242 is about. Both sides receiving the same
+	// category, right or wrong, is what keeps a self-diff quiet, and no live
+	// churn from the folding has been measured. Fixing it properly means giving
+	// the desired side a base type to answer with.
 	genType, dbType := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
 
 	if change := columnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); change != "" {

@@ -36,7 +36,15 @@ func Domains(
 	for name, target := range generatedDomains {
 		if current, exists := databaseDomains[name]; exists {
 			if changes := domainChanges(target, current); len(changes) > 0 {
-				diff.DomainsModified = append(diff.DomainsModified, difftypes.DomainDiff{DomainName: name, Changes: changes})
+				// CurrentBaseType is the from-side of the comparison carried as
+				// a type spelling: the recreate path's non-CASCADE DROP runs
+				// against this database, so it is these references that can
+				// block it, not the target's.
+				diff.DomainsModified = append(diff.DomainsModified, difftypes.DomainDiff{
+					DomainName:      name,
+					Changes:         changes,
+					CurrentBaseType: current.BaseType,
+				})
 			}
 		}
 	}
@@ -147,9 +155,12 @@ func CompositeTypes(
 			continue
 		}
 		if targetFields, currentFields := compositeFieldList(target), dbCompositeFieldList(current); targetFields != currentFields {
+			// CurrentFieldTypes is the from-side of the comparison carried as
+			// type spellings, for the reason given on the domain branch above.
 			diff.CompositeTypesModified = append(diff.CompositeTypesModified, difftypes.CompositeTypeDiff{
-				TypeName: name,
-				Changes:  map[string]string{"fields": fmt.Sprintf("%s -> %s", currentFields, targetFields)},
+				TypeName:          name,
+				Changes:           map[string]string{"fields": fmt.Sprintf("%s -> %s", currentFields, targetFields)},
+				CurrentFieldTypes: dbCompositeFieldTypes(current),
 			})
 		}
 	}
@@ -174,6 +185,19 @@ func compositeFieldList(composite goschema.CompositeType) string {
 		parts[i] = strings.ToLower(field.Name) + " " + canonicalizePostgresType(field.Type)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// dbCompositeFieldTypes returns the field types the database holds for a
+// composite, in field order and in the catalog's own spelling. Unlike
+// dbCompositeFieldList these are not normalized: they are resolved against
+// other type names later, and canonicalization would rewrite a user-defined
+// name that happens to collide with a built-in alias.
+func dbCompositeFieldTypes(composite types.DBComposite) []string {
+	fieldTypes := make([]string, len(composite.Fields))
+	for i, field := range composite.Fields {
+		fieldTypes[i] = field.Type
+	}
+	return fieldTypes
 }
 
 func dbCompositeFieldList(composite types.DBComposite) string {
