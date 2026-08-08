@@ -64,8 +64,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS "accounts_email_key" ON "public"."accounts" ("
 ```
 
 `--schema-file` is accepted wherever Ptah needs a desired schema:
-`ptah schema render`, `ptah schema compare`, `ptah schema drift`, and the
-migration commands (`ptah migrations plan` / `ptah migrations generate`).
+`ptah schema render`, `ptah schema compare`, `ptah schema drift`, the
+migration commands (`ptah migrations plan` / `ptah migrations generate`), and
+the API targets of [`ptah schema export`](../export/#sources).
 
 To replace Go annotations with an HCL source, use the review-aware one-time
 export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).

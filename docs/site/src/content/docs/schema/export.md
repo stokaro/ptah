@@ -3,10 +3,14 @@ title: API schema export
 description: Project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.
 ---
 
-Ptah projects the schema it parses from Go annotations into API-facing formats:
-OpenAPI 3.0 component schemas, GraphQL SDL, and Protobuf definitions. Use these
-artifacts when the selected database entities intentionally match your transport
-model, or as input to a separately designed contract.
+Ptah projects a desired schema into API-facing formats: OpenAPI 3.0 component
+schemas, GraphQL SDL, and Protobuf definitions. Use these artifacts when the
+selected database entities intentionally match your transport model, or as input
+to a separately designed contract.
+
+The source can be Go annotations under `--root-dir` or a YAML, HCL, or SQL
+schema file named by `--schema-file` — the same desired-schema sources
+`ptah schema render` reads.
 
 The export does not expose database rows or create a working API. It does not
 generate handlers, resolvers, Protobuf services, authentication, authorization,
@@ -32,12 +36,17 @@ ptah schema export --to graphql --root-dir ./models --out schema.graphql
 
 # Omit --out to write the schema to stdout (for piping into a validator)
 ptah schema export --to graphql --root-dir ./models > schema.graphql
+
+# Export a YAML, HCL, or SQL schema file instead of Go annotations
+ptah schema export --to openapi-v3 --schema-file schema.yaml --out openapi.yaml
 ```
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
 | `--to` | all | `hcl`, `openapi-v3`, `graphql`, or [`protobuf`](../protobuf/). The old `atlas-hcl` value is accepted as an alias. |
+| `--from` | all | Format of the `--schema-file` value: `go` (default), `yaml`, `hcl`, or `sql`. |
 | `--root-dir` | all | Directory scanned for Go annotations. |
+| `--schema-file` | `openapi-v3`, `graphql`, `protobuf` | YAML, HCL, or SQL schema file to export instead of Go annotations. Repeatable. |
 | `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl` and for [`protobuf`](../protobuf/), where it is also the compatibility state read back on the next run. |
 | `--include-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated allowlist of tables. |
 | `--exclude-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated denylist, applied after the allowlist. |
@@ -45,6 +54,42 @@ ptah schema export --to graphql --root-dir ./models > schema.graphql
 
 Export warnings (for example an enum whose values cannot be resolved) are written
 to stderr, so a schema piped from stdout is never corrupted.
+
+## Sources
+
+`--schema-file` is read by the same resolver as `ptah schema render`, so a
+desired schema is spelled the same way on both commands. The `openapi-v3`,
+`graphql`, and `protobuf` targets read all four sources below:
+
+- **Go annotations** — the directory named by `--root-dir`, which defaults to
+  `.`. This is `--from go`.
+- **[YAML schema](../yaml/)** — a `--schema-file` whose extension is `.yaml` or
+  `.yml`. This is `--from yaml`.
+- **[HCL schema](../hcl/)** — a `--schema-file` whose extension is `.hcl`. This
+  is `--from hcl`.
+- **[SQL schema](../sql/)** — a `--schema-file` whose extension is `.sql`. This
+  is `--from sql`.
+
+An export taken from a schema file is byte-identical to the export taken from
+annotated Go models describing the same tables, so a project can change how it
+spells its schema without republishing a different contract.
+
+`--from` declares the file's format and is checked against its extension:
+`--from yaml --schema-file schema.sql` is refused rather than parsed as YAML.
+Leave `--from` unset and the extension decides. Naming both `--root-dir` and
+`--schema-file` merges them into one
+[composite desired schema](../composite/); `--root-dir` alone keeps its `.`
+default, which a schema-file export never picks up.
+
+Two combinations are refused rather than approximated:
+
+- `--to hcl` with `--schema-file`. That target rewrites the Go files it reads —
+  `--cleanup-go-annotations` removes their annotations after a lossless export —
+  so its source is `--root-dir`. Converting a schema file to HCL is a different
+  operation from migrating annotations out of Go code.
+- `--from db`. An export reads a schema definition, not a live database. Run
+  [`ptah introspect`](../../start/adopt-an-existing-database/) to generate
+  annotated models from a database URL, review them, then export those.
 
 ## OpenAPI
 

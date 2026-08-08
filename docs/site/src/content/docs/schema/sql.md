@@ -36,8 +36,9 @@ CREATE TABLE "users" (
 Rendering SQL back out of a SQL file is not a no-op: it proves the parser
 understood every statement, and it can retarget the schema at another dialect.
 `--schema-file` is accepted wherever Ptah needs a desired schema:
-`ptah schema render`, `ptah schema compare`, `ptah schema drift`, and the
-migration commands (`ptah migrations plan` / `ptah migrations generate`).
+`ptah schema render`, `ptah schema compare`, `ptah schema drift`, the
+migration commands (`ptah migrations plan` / `ptah migrations generate`), and
+the API targets of [`ptah schema export`](../export/#sources).
 
 ## Diff two SQL files locally
 
