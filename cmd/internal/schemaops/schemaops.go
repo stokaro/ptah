@@ -129,7 +129,11 @@ func FilterGeneratedTables(db *goschema.Database, ignoredTables []string) *gosch
 	ignoredEnumRefs := make(map[string]struct{})
 	filtered.Fields = keep(db.Fields, func(field goschema.Field) bool {
 		_, ignore := ignoredStructs[field.StructName]
-		if ignore && strings.HasPrefix(field.Type, "enum_") {
+		if ignore {
+			// Record the type name unconditionally: keepGeneratedEnums
+			// intersects it with the declared enum names, so a type that names
+			// something else never matches. Enum identity is the declaration,
+			// not an "enum_" name prefix (stokaro/ptah#931 item 1).
 			ignoredEnumRefs[field.Type] = struct{}{}
 		}
 		return !ignore
@@ -276,11 +280,13 @@ func filterSelfReferencingForeignKeys(
 }
 
 func keepGeneratedEnums(enums []goschema.Enum, fields []goschema.Field, ignoredEnumRefs map[string]struct{}) []goschema.Enum {
+	// Every field type is a candidate reference; the keep below intersects them
+	// with the names the schema actually declares as enums. Restricting this to
+	// types spelled "enum_*" made an ignored table drop an enum that a kept
+	// table still referenced (stokaro/ptah#931 item 1).
 	referenced := make(map[string]struct{})
 	for _, field := range fields {
-		if strings.HasPrefix(field.Type, "enum_") {
-			referenced[field.Type] = struct{}{}
-		}
+		referenced[field.Type] = struct{}{}
 	}
 	return keep(enums, func(enum goschema.Enum) bool {
 		if _, stillReferenced := referenced[enum.Name]; stillReferenced {

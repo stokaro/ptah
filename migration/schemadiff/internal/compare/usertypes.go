@@ -209,26 +209,52 @@ func dbCompositeFieldList(composite types.DBComposite) string {
 }
 
 // Ranges compares PostgreSQL range types between the target schema and the
-// current database. Ranges have no in-place alter, so only add/remove is
-// reported.
+// current database, reporting additions, removals and modifications.
+//
+// "Ranges have no in-place alter, so only add/remove is reported" is what this
+// comment used to say, and it described the defect rather than the design: a
+// changed subtype produced no diff at all and `schema apply` answered "Schema
+// is synced" over a database that still held the old definition
+// (stokaro/ptah#931 item 2). PostgreSQL really has no ALTER TYPE ... AS RANGE,
+// which is a fact about how the planner spells the change -- a non-CASCADE DROP
+// TYPE followed by a CREATE TYPE, the shape domains and composites already use
+// -- and not a reason to skip the comparison. rangeChanges below decides what
+// counts as a difference.
 func Ranges(
 	generated *goschema.Database,
 	database *types.DBSchema,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	generatedRanges := make(map[string]struct{}, len(generated.Ranges))
+	generatedRanges := make(map[string]goschema.Range, len(generated.Ranges))
 	for _, rangeType := range generated.Ranges {
-		generatedRanges[rangeType.QualifiedName()] = struct{}{}
+		generatedRanges[rangeType.QualifiedName()] = rangeType
 	}
-	databaseRanges := make(map[string]struct{}, len(database.Ranges))
+	databaseRanges := make(map[string]types.DBRange, len(database.Ranges))
 	for _, rangeType := range database.Ranges {
-		databaseRanges[rangeType.QualifiedName()] = struct{}{}
+		databaseRanges[rangeType.QualifiedName()] = rangeType
 	}
 
 	added, removed := compareNamedItems(generatedRanges, databaseRanges)
 	diff.RangesAdded = append(diff.RangesAdded, added...)
 	diff.RangesRemoved = append(diff.RangesRemoved, removed...)
+
+	for name, target := range generatedRanges {
+		current, exists := databaseRanges[name]
+		if !exists {
+			continue
+		}
+		if changes := rangeChanges(target, current); len(changes) > 0 {
+			// CurrentSubtype is the from-side of the comparison carried as a
+			// type spelling: the recreate path's non-CASCADE DROP runs against
+			// this database, so it is these references that can block it.
+			diff.RangesModified = append(diff.RangesModified, difftypes.RangeDiff{
+				RangeName:      name,
+				Changes:        changes,
+				CurrentSubtype: current.Subtype,
+			})
+		}
+	}
 
 	keptRanges, withheldRanges := cov.keepPlannedAdditions(
 		coverage.Range, diff.RangesAdded, qualifiedName, unguardedCreations(),
@@ -239,4 +265,45 @@ func Ranges(
 
 	sort.Strings(diff.RangesAdded)
 	sort.Strings(diff.RangesRemoved)
+	sort.Slice(diff.RangesModified, func(i, j int) bool {
+		return diff.RangesModified[i].RangeName < diff.RangesModified[j].RangeName
+	})
+}
+
+// rangeChanges reports how an existing range type differs from its declaration.
+//
+// Only attributes the target explicitly declares are compared, matching
+// domainChanges. The catalog always resolves an operator class and (for a
+// collatable subtype) a collation even when the author named neither, so
+// comparing an undeclared attribute against the resolved default would report a
+// difference on every run and never converge.
+//
+// Comparing nothing at all was the previous behavior: the comparator built name
+// sets, so a changed subtype produced an empty plan and `schema apply` answered
+// "Schema is synced, no changes to be made." while the old definition was still
+// in the database (stokaro/ptah#931 item 2).
+func rangeChanges(target goschema.Range, current types.DBRange) map[string]string {
+	changes := make(map[string]string)
+	if target.Subtype != "" && canonicalizePostgresType(target.Subtype) != canonicalizePostgresType(current.Subtype) {
+		changes["subtype"] = fmt.Sprintf("%s -> %s", current.Subtype, target.Subtype)
+	}
+	addDeclaredRangeChange(changes, "subtype_opclass", target.SubtypeOpClass, current.SubtypeOpClass)
+	addDeclaredRangeChange(changes, "collation", target.Collation, current.Collation)
+	addDeclaredRangeChange(changes, "canonical", target.Canonical, current.Canonical)
+	addDeclaredRangeChange(changes, "subtype_diff", target.SubtypeDiff, current.SubtypeDiff)
+	return changes
+}
+
+// addDeclaredRangeChange records a difference only when the target declares the
+// attribute. PostgreSQL reports these as bare identifiers, so the comparison is
+// case-insensitive on trimmed text rather than type canonicalization.
+func addDeclaredRangeChange(changes map[string]string, key, declared, current string) {
+	declared = strings.TrimSpace(declared)
+	if declared == "" {
+		return
+	}
+	if strings.EqualFold(declared, strings.TrimSpace(current)) {
+		return
+	}
+	changes[key] = fmt.Sprintf("%s -> %s", current, declared)
 }

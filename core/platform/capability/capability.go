@@ -193,8 +193,16 @@ const (
 	// referenced columns are not declared unique or indexed in the input.
 	ForeignKeysCreateBackingIndex Capability = "foreign_keys_create_backing_index"
 
-	// Sequences marks support for database sequence objects used by
-	// PostgreSQL SERIAL/BIGSERIAL or explicit CREATE SEQUENCE support.
+	// Sequences marks that Ptah generates standalone sequence objects for the
+	// target: PostgreSQL SERIAL/BIGSERIAL backing and explicit CREATE SEQUENCE.
+	//
+	// It describes the generator, not the engine's brochure. A preset that sets
+	// it must have a code path that emits, reads back and plans sequences for
+	// that target, because every reader of this key -- the PostgreSQL renderer's
+	// CREATE/ALTER/DROP SEQUENCE visitors and the PostgreSQL introspection
+	// reader -- assumes all three. MariaDB is the worked example: the engine has
+	// had SEQUENCE since 10.3, this key claimed it, and no code path anywhere
+	// emitted, read or planned one (stokaro/ptah#931 item 8).
 	Sequences Capability = "sequences"
 
 	// XMLType marks support for the PostgreSQL XML column type. CockroachDB
@@ -515,9 +523,16 @@ func MariaDB1011() Capabilities {
 		ForeignKeysRequireUniqueReference:  false,
 		ForeignKeysRequireIndexedReference: true,
 		ForeignKeysCreateBackingIndex:      false,
-		Sequences:                          true,
-		XMLType:                            false,
-		AdvisoryLocks:                      false,
+		// MariaDB the engine does have SEQUENCE objects (10.3+, verified live on
+		// 10.11.18: TABLE_TYPE = SEQUENCE). Ptah the generator does not: there is
+		// no MariaDB sequence introspection and no MySQL-family sequence
+		// planning, so `schema render` emitting a CREATE SEQUENCE would produce a
+		// statement `schema apply` never plans and never sees converge. This key
+		// describes the generator, so it is false until those land -- do NOT flip
+		// it back on the engine's behalf (stokaro/ptah#931 item 8).
+		Sequences:     false,
+		XMLType:       false,
+		AdvisoryLocks: false,
 	}
 }
 

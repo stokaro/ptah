@@ -708,14 +708,25 @@ func (r *Reader) readRanges() ([]types.DBRange, error) {
 }
 
 func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error) {
+	// The four attributes after the subtype are what makes a change to an
+	// existing range type visible at all; without them the comparator had only
+	// names to compare and called a changed range converged (stokaro/ptah#931
+	// item 2). rngcanonical and rngsubdiff are regproc and hold 0 when the range
+	// has no such function, which renders as "-", so they are nulled first.
 	const query = `
 		SELECT
 			n.nspname AS schema_name,
 			t.typname AS range_name,
-			format_type(rng.rngsubtype, NULL) AS subtype
+			format_type(rng.rngsubtype, NULL) AS subtype,
+			COALESCE(opc.opcname, '') AS subtype_opclass,
+			COALESCE(coll.collname, '') AS collation_name,
+			COALESCE(NULLIF(rng.rngcanonical, 0)::regproc::text, '') AS canonical,
+			COALESCE(NULLIF(rng.rngsubdiff, 0)::regproc::text, '') AS subtype_diff
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		JOIN pg_range rng ON rng.rngtypid = t.oid
+		LEFT JOIN pg_opclass opc ON opc.oid = rng.rngsubopc
+		LEFT JOIN pg_collation coll ON coll.oid = rng.rngcollation
 		WHERE t.typtype = 'r' AND n.nspname = $1` +
 		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname`
@@ -730,7 +741,15 @@ func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error)
 	for rows.Next() {
 		var rangeType types.DBRange
 		var rawSchema string
-		if err := rows.Scan(&rawSchema, &rangeType.Name, &rangeType.Subtype); err != nil {
+		if err := rows.Scan(
+			&rawSchema,
+			&rangeType.Name,
+			&rangeType.Subtype,
+			&rangeType.SubtypeOpClass,
+			&rangeType.Collation,
+			&rangeType.Canonical,
+			&rangeType.SubtypeDiff,
+		); err != nil {
 			return nil, fmt.Errorf("failed to scan range type for schema %s: %w", schemaName, err)
 		}
 		rangeType.Schema = r.outputSchema(rawSchema)

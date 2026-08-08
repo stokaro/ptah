@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/mysql"
 )
 
 func TestMySQLRenderer_ViewsAndTriggers(t *testing.T) {
@@ -20,14 +22,26 @@ func TestMySQLRenderer_ViewsAndTriggers(t *testing.T) {
 			SetEvent("UPDATE").
 			SetBody("SET NEW.updated_at = NOW()").
 			SetReplace(),
-		ast.NewCreateMaterializedView("user_stats").
-			SetBody("SELECT id, COUNT(*) FROM users GROUP BY id"),
 	)
 
 	c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW `active_users` AS")
 	c.Assert(sql, qt.Contains, "DROP TRIGGER IF EXISTS `set_updated_at`;")
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER `set_updated_at` BEFORE UPDATE ON `users` FOR EACH ROW SET NEW.updated_at = NOW();")
-	c.Assert(sql, qt.Contains, "-- MYSQL does not support CREATE MATERIALIZED VIEW user_stats")
+}
+
+// A materialized view used to render as a comment here, which let
+// `ptah schema render --dialect mysql` exit 0 on a model the MySQL planner
+// refuses at apply time. Issue #931 item 3: the two surfaces have to agree, and
+// the planner's answer is the one that stands.
+func TestMySQLRenderer_MaterializedViewIsRefused(t *testing.T) {
+	c := qt.New(t)
+
+	err := ast.NewCreateMaterializedView("user_stats").
+		SetBody("SELECT id, COUNT(*) FROM users GROUP BY id").
+		Accept(mysql.New())
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, ".*materialized views are not supported by MySQL or MariaDB.*")
 }
 
 func TestMySQLRenderer_ConstraintColumnParts(t *testing.T) {

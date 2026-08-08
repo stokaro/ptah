@@ -1144,6 +1144,17 @@ func (p *Planner) plannedUserTypes(diff *types.SchemaDiff, generated *goschema.D
 			})
 		}
 	}
+	// PostgreSQL has no ALTER TYPE ... AS RANGE, so a changed range type takes
+	// the same drop-and-recreate path domains and composites already use
+	// (stokaro/ptah#931 item 2).
+	for _, rangeDiff := range diff.RangesModified {
+		if rangeType := findRange(generated.Ranges, rangeDiff.RangeName); rangeType != nil {
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
+				node: fromschema.FromRange(*rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
+			})
+		}
+	}
 	return planned
 }
 
@@ -1206,6 +1217,11 @@ func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDif
 			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use")
 		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: compositeDiff.CurrentFieldTypes})
 	}
+	for _, rangeDiff := range diff.RangesModified {
+		byName[rangeDiff.RangeName] = ast.NewDropType(rangeDiff.RangeName).SetIfExists().
+			SetComment("Recreate modified range type; drop is non-CASCADE and fails if the type is in use")
+		deps = append(deps, deporder.UserType{Name: rangeDiff.RangeName, References: currentRangeReferences(rangeDiff)})
+	}
 
 	for _, name := range deporder.UserTypesForDrop(deps) {
 		if node, ok := byName[name]; ok {
@@ -1224,6 +1240,16 @@ func currentDomainReferences(domainDiff types.DomainDiff) []string {
 		return nil
 	}
 	return []string{domainDiff.CurrentBaseType}
+}
+
+// currentRangeReferences reports the from-side subtype of a modified range, for
+// the same reason and with the same Changes-is-prose caveat as
+// currentDomainReferences.
+func currentRangeReferences(rangeDiff types.RangeDiff) []string {
+	if rangeDiff.CurrentSubtype == "" {
+		return nil
+	}
+	return []string{rangeDiff.CurrentSubtype}
 }
 
 func findDomain(domains []goschema.Domain, name string) *goschema.Domain {

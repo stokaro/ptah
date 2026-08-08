@@ -12,7 +12,13 @@ import (
 // Renderer provides MySQL-specific SQL rendering
 type Renderer struct {
 	r *mysqllike.Renderer
-	w bufwriter.Writer
+
+	// w is the SAME buffer the embedded mysqllike renderer writes into, held by
+	// pointer on purpose. Output, Reset and Render all delegate to r, so a
+	// visitor defined on this wrapper is only observable if it appends to r's
+	// buffer. Storing a bufwriter.Writer by value here silently orphaned every
+	// such visitor: they wrote into a copy nothing ever read.
+	w *bufwriter.Writer
 }
 
 // New creates a new MySQL renderer
@@ -23,9 +29,9 @@ func New() *Renderer {
 // NewWithCapabilities creates a MySQL renderer for a concrete server
 // capability set. Use New for offline/default rendering.
 func NewWithCapabilities(caps capability.Capabilities) *Renderer {
-	var w bufwriter.Writer
+	w := &bufwriter.Writer{}
 	return &Renderer{
-		r: mysqllike.NewWithCapabilities("mysql", &w, caps),
+		r: mysqllike.NewWithCapabilities("mysql", w, caps),
 		w: w,
 	}
 }
