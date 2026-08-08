@@ -141,6 +141,86 @@ func TestRenderForDialectKeepsAnAuthoredSQLCall(t *testing.T) {
 	}
 }
 
+// TestRenderForDialectWrapsEveryArrayColumnType pins that an array reaches HCL
+// through sql() whatever its element type is (stokaro/ptah#1138).
+//
+// Before this the modeled set was consulted through the element name, so an
+// array split in half by an accident: `text[]` is absent from the set as a
+// whole string and was wrapped, while `numeric(10,2)[]` found `numeric` in it
+// and came out as the quoted string `"numeric(10,2)[]"` -- which the pinned
+// Atlas community binary v1.3.0 refuses to read at all.
+//
+// The rows are the four spellings PostgreSQL's format_type produces for a sized
+// element, each measured against that binary bare, quoted and wrapped, plus the
+// unsized ones that were already right and must stay right. The scalar controls
+// at the end are what keeps this from being "wrap everything": drop the
+// bracket and the same name goes out bare, exactly as it did before.
+func TestRenderForDialectWrapsEveryArrayColumnType(t *testing.T) {
+	tests := []struct {
+		name       string
+		columnType string
+		want       string
+	}{
+		{
+			name:       "a sized element type whose name is modeled",
+			columnType: "numeric(10,2)[]",
+			want:       `    type = sql("numeric(10,2)[]")` + "\n",
+		},
+		{
+			name:       "a bit array",
+			columnType: "bit(8)[]",
+			want:       `    type = sql("bit(8)[]")` + "\n",
+		},
+		{
+			name:       "a character array",
+			columnType: "character(5)[]",
+			want:       `    type = sql("character(5)[]")` + "\n",
+		},
+		{
+			name:       "a sized multi-word element type",
+			columnType: "timestamp(3) with time zone[]",
+			want:       `    type = sql("timestamp(3) with time zone[]")` + "\n",
+		},
+		{
+			name:       "an unsized element type whose name is modeled",
+			columnType: "integer[]",
+			want:       `    type = sql("integer[]")` + "\n",
+		},
+		{
+			name:       "an element type that is not modeled at all",
+			columnType: "text[]",
+			want:       `    type = sql("text[]")` + "\n",
+		},
+		{
+			name:       "an enum element type",
+			columnType: "status[]",
+			want:       `    type = sql("status[]")` + "\n",
+		},
+		{
+			name:       "the same name without the bracket still goes out bare",
+			columnType: "numeric(10,2)",
+			want:       "    type = numeric(10,2)\n",
+		},
+		{
+			name:       "and so does an unsized one",
+			columnType: "integer",
+			want:       "    type = integer\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderForDialect(inspectedColumn(test.columnType), platform.Postgres)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(result.Data), qt.Contains, test.want)
+		})
+	}
+}
+
 // TestRenderIgnoresTheDialect pins that the plain entry point is unchanged, so
 // every caller that parses HCL and renders it back keeps the behavior it had.
 func TestRenderIgnoresTheDialect(t *testing.T) {

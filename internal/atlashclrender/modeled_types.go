@@ -206,6 +206,9 @@ func modeledColumnType(dialect, columnType string) (string, bool) {
 	if trimmed == "" {
 		return trimmed, true
 	}
+	if isArrayColumnType(trimmed) {
+		return "", false
+	}
 	name, argument := trimmed, ""
 	if open := strings.IndexByte(trimmed, '('); open >= 0 {
 		name, argument = strings.TrimSpace(trimmed[:open]), trimmed[open:]
@@ -215,4 +218,44 @@ func modeledColumnType(dialect, columnType string) (string, bool) {
 		return "", false
 	}
 	return lowered + argument, true
+}
+
+// isArrayColumnType reports whether a column type is an array of another type,
+// which the Atlas HCL schema models in no bare spelling at all.
+//
+// The element type being modeled does not help, and reading the modeled set
+// through the element name is what made this wrong. `numeric` is modeled, so
+// splitting `numeric(10,2)[]` at its first parenthesis found `numeric` in the
+// set and put the rest back untouched -- and `numeric(10,2)[]` is not one HCL
+// expression, so typeExpr fell through to its quoted branch and the file
+// carried `type = "numeric(10,2)[]"`. An element type NOT in the set escaped by
+// accident: `text[]` is absent from it as a whole string, so it was wrapped.
+// That accident is why half the array columns of one table were readable and
+// half were not.
+//
+// Measured on the pinned Atlas community binary v1.3.0 against a PostgreSQL 17
+// dev database, one column varied and nothing else:
+//
+//	type = "bit(8)[]"                       exit 1  set field "type": unexpected type string
+//	type = "character(5)[]"                 exit 1  the same
+//	type = "numeric(10,2)[]"                exit 1  the same
+//	type = "timestamp(3) with time zone[]"  exit 1  the same
+//	type = text[]                           exit 1  Invalid expression
+//	type = sql("bit(8)[]")                  exit 0
+//	type = sql("character(5)[]")            exit 0
+//	type = sql("numeric(10,2)[]")           exit 0
+//	type = sql("timestamp(3) with time zone[]") exit 0
+//
+// So there is no bare or quoted spelling to prefer: every array reaches that
+// binary through sql() or not at all. Its own `schema inspect` writes them the
+// same way, `sql("numeric(10,2)[]")` included.
+//
+// The suffix test is deliberately the whole rule. PostgreSQL's own
+// format_type reports an array as the element spelling followed by `[]`, and
+// drops the declared dimensions on the way -- `varchar(100)[10][]` is stored
+// and reported as `character varying(100)[]` -- so a trailing bracket is the
+// only shape the reader can produce, and a type name that ends in one does not
+// otherwise exist.
+func isArrayColumnType(columnType string) bool {
+	return strings.HasSuffix(columnType, "]")
 }

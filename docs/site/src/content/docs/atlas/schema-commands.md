@@ -152,6 +152,48 @@ community binary applies on a schema-bound URL. A pattern too deep for any
 scope, such as `*.*.*.*`, is refused before a database is contacted, so its
 message carries no schema prefix.
 
+### How an inspected column type is written
+
+A column read out of a database carries no record of how anyone spelled it, so
+inspection decides. A type the Atlas HCL schema models is written bare and
+lower case, and every other type is written as a `sql("...")` call carrying the
+server's own spelling:
+
+```hcl
+column "price"   { type = numeric(10,2) }
+column "prices"  { type = sql("numeric(10,2)[]") }
+column "kind"    { type = sql("cube") }
+```
+
+The split is not cosmetic. The pinned Atlas community binary refuses a type it
+does not model in every spelling except the call — `type = USER_DEFINED` comes
+back as `Unknown column.type`, and `type = "numeric(10,2)[]"` as
+`set field "type": unexpected type string` — so a bare or quoted unmodeled type
+produces a document that binary cannot read at all. Which names are modeled is
+measured against it per dialect by the Atlas CE Oracle job rather than copied
+from a table, and the list errs short: wrapping a type that did not need it
+round-trips, while leaving one bare that did need it does not.
+
+**Arrays always take the call.** No array is one HCL type expression, whatever
+its element type is, so `text[]`, `numeric(10,2)[]` and
+`timestamp(3) with time zone[]` are all written as `sql(...)`. PostgreSQL drops
+an array's declared dimensions itself — `varchar(100)[10][]` is stored and
+reported as `character varying(100)[]` — so the inspected spelling is the
+server's, not the author's.
+
+**A domain is named, not resolved.** A column typed by a domain is written with
+the domain's own name, including when the domain is built on a type Atlas does
+not model:
+
+```sql
+CREATE DOMAIN point3d AS cube CHECK (cube_dim(VALUE) = 3);
+CREATE TABLE scalars (c_point3d point3d NOT NULL);
+```
+
+inspects as `type = sql("point3d")`. Writing the base type there would apply
+back as a bare `cube` column and take the domain's `CHECK` with it, so the
+domain name is what survives the round trip (stokaro/ptah#1138).
+
 ### Blocks the compatibility surface leaves out by default
 
 `ptah-compat schema inspect` omits three top-level HCL block types on
@@ -563,6 +605,64 @@ for `DROP INDEX CONCURRENTLY`. PostgreSQL rejects either inside a transaction
 block. `diff.skip.drop_schema` is
 accepted and type-checked, but changes no plan: Ptah's schema diff has no
 removed-schema list, so there is no `DROP SCHEMA` for the suppression to omit.
+
+### How a column type is compared
+
+Type spellings are compared after normalization, so a difference that is only
+cosmetic — `INT` against `integer`, `VARCHAR(255)` against
+`character varying(255)` — plans nothing, while a change in width, length, or
+precision is reported in both directions.
+
+**A domain is compared by identity, never by its name's spelling.** A column
+whose declared type is a PostgreSQL domain agrees only with a desired type that
+names the same domain; a base type, a different domain, or any other spelling
+is a change and is planned as one.
+
+A domain's identity is its schema and its name together, and the name alone is
+not it: `public.status` and `other.status` are two types, with two `CHECK`
+constraints over possibly different base types. Both halves are read from
+`information_schema.columns` — `domain_name` and `domain_schema` — and both are
+compared. A desired type that qualifies its schema is held to that schema
+exactly. A desired type that does not is resolved through the domain the desired
+schema declares by that name, and when nothing declares it the name alone
+decides, because which domain an unqualified name reaches is a search-path
+question Ptah does not answer for the server. That is why `alt.alt_dom` and a
+bare `alt_dom` that no `CREATE DOMAIN` accounts for still name one domain, while
+`other.alt_dom` never does.
+
+Two declarations that share a bare name in different schemas leave an
+unqualified reference to the name as well: a change between them is reported
+only when one side spells its schema. That is a known gap rather than a claim —
+nothing is dropped in that shape, so the cost is drift and not data loss.
+
+The rule exists because normalization matches by substring, and a domain's name
+belongs to whoever wrote the schema rather than to any type vocabulary:
+
+```sql
+CREATE DOMAIN waypoint AS integer CHECK (VALUE > 0);
+CREATE DOMAIN context  AS integer;
+CREATE TABLE t (id serial PRIMARY KEY, a waypoint NOT NULL, b context NOT NULL);
+```
+
+`waypoint` contains `int` and `context` contains `text`. Compared by spelling,
+a column of either would match a desired `bigint` and `text` respectively and
+no `ALTER COLUMN ... TYPE` would be planned — while the plan still carries the
+`DROP DOMAIN ... CASCADE` that removing the domain requires, so applying it
+would drop the columns and their data instead of converting them
+(stokaro/ptah#1138). The same rule is what `ptah schema compare` reports on the
+native surface.
+
+The rule holds in the other direction too. A plain `integer` column against a
+desired schema that declares `waypoint` and types the column with it is planned
+as `ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint`, which is what the pinned
+Atlas community binary v1.3.0 plans for the same pair. The desired side must
+declare the domain for this: a bare type name that no `CREATE DOMAIN` in the
+desired schema introduces is an ordinary type name, and every schema source
+Ptah reads carries the declaration alongside the column.
+
+An array is not a domain: its spelling is a type, and it keeps normalizing like
+one. `format_type` writes every array with a trailing `[]`, including an array
+of a domain, so the two are told apart by the catalog rather than by the name.
 
 ### Scope the comparison with `--schema` and `--include`
 

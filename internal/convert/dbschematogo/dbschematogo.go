@@ -555,14 +555,11 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 	if serialType := postgresSerialType(dbColumn); serialType != "" {
 		return serialType
 	}
-	if strings.EqualFold(dbColumn.DataType, "USER-DEFINED") && dbColumn.UDTName != "" {
-		return dbColumn.UDTName
-	}
 	// The server's own spelling wins wherever the reader had to ask for it,
-	// which today means PostgreSQL array columns. DataType there is the bare
-	// category "ARRAY" -- a word no engine accepts as a type, so a schema read
-	// back out of a database rendered DDL that could not be executed
-	// (stokaro/ptah#1138).
+	// which today means PostgreSQL array and domain columns. DataType for an
+	// array is the bare category "ARRAY" -- a word no engine accepts as a type,
+	// so a schema read back out of a database rendered DDL that could not be
+	// executed (stokaro/ptah#1138).
 	//
 	// It is read from FormattedType rather than from ColumnType deliberately.
 	// ColumnType is also what the Atlas-compatible JSON inspect output prints,
@@ -571,8 +568,35 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 	// today. Routing the fix through ColumnType would have made that surface
 	// disagree with the binary in order to fix a surface the binary does not
 	// have.
+	//
+	// It stays AHEAD of the USER-DEFINED branch below, and that order is the
+	// whole content of one half of #1138. A domain whose base type is itself
+	// user-defined is reported by information_schema with data_type
+	// "USER-DEFINED" and udt_name naming the BASE, while domain_name names the
+	// domain -- so with the branches the other way round the domain was
+	// flattened to its base and the CHECK it carries was silently dropped.
+	// Measured on PostgreSQL 17, one cluster, two domains that differ only in
+	// what they are built on:
+	//
+	//	CREATE DOMAIN point3d AS cube CHECK (cube_dim(VALUE) = 3);
+	//	CREATE DOMAIN positive_int AS integer CHECK (VALUE > 0);
+	//
+	//	column      data_type      udt_name   domain_name   format_type
+	//	c_point3d   USER-DEFINED   cube       point3d       point3d
+	//	c_domain    integer        int4       positive_int  positive_int
+	//
+	// Before this, c_point3d inspected as `cube` and c_domain as
+	// `positive_int`: applying that document back built the column as a bare
+	// cube, so the domain and its constraint were gone from the database with
+	// nothing reported. The pinned community binary v1.3.0 renders
+	// `sql("point3d")` for the same column, so this is also the compatible
+	// answer. The same split is visible on stock extension domains -- `lo`
+	// (over oid) survived while `earth` (over cube) did not.
 	if dbColumn.FormattedType != "" {
 		return dbColumn.FormattedType
+	}
+	if strings.EqualFold(dbColumn.DataType, "USER-DEFINED") && dbColumn.UDTName != "" {
+		return dbColumn.UDTName
 	}
 	if dbColumn.ColumnType != "" {
 		return dbColumn.ColumnType

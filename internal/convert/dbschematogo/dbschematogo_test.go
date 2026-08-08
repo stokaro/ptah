@@ -306,6 +306,86 @@ func TestConvertDBSchemaToGoSchema_PostgresArrayColumnUsesTheServerSpelling(t *t
 	}
 }
 
+// A PostgreSQL domain is reported by information_schema under its BASE type,
+// and the base is what decides which branch of the converter used to run first.
+// A domain over a built-in base survived; a domain over a user-defined base was
+// flattened to that base and the CHECK it carries went with it
+// (stokaro/ptah#1138).
+//
+// The catalog rows are copied from PostgreSQL 17, one cluster, four columns:
+//
+//	column      data_type      udt_name   domain_name   format_type
+//	c_domain    integer        int4       positive_int  positive_int
+//	c_point3d   USER-DEFINED   cube       point3d       point3d
+//	c_tags      ARRAY          _text      tags          tags
+//	c_cube      USER-DEFINED   cube       (null)        (not read)
+//
+// The reader fills FormattedType for the first three and leaves it empty for
+// the fourth, which is what keeps the last row a control rather than a
+// duplicate: an ordinary user-defined column is not a domain and must still be
+// named by UDTName.
+func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsTheDomain(t *testing.T) {
+	tests := []struct {
+		name     string
+		column   types.DBColumn
+		wantType string
+	}{
+		{
+			name: "a domain over a built-in base",
+			column: types.DBColumn{
+				Name:          "c_domain",
+				DataType:      "integer",
+				UDTName:       "int4",
+				FormattedType: "positive_int",
+			},
+			wantType: "positive_int",
+		},
+		{
+			name: "a domain over a user-defined base",
+			column: types.DBColumn{
+				Name:          "c_point3d",
+				DataType:      "USER-DEFINED",
+				UDTName:       "cube",
+				FormattedType: "point3d",
+			},
+			wantType: "point3d",
+		},
+		{
+			name: "a domain over an array",
+			column: types.DBColumn{
+				Name:          "c_tags",
+				DataType:      "ARRAY",
+				UDTName:       "_text",
+				FormattedType: "tags",
+			},
+			wantType: "tags",
+		},
+		{
+			name: "a user-defined column that is not a domain still uses UDTName",
+			column: types.DBColumn{
+				Name:     "c_cube",
+				DataType: "USER-DEFINED",
+				UDTName:  "cube",
+			},
+			wantType: "cube",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dbSchema := &types.DBSchema{
+				Tables: []types.DBTable{{Name: "scalars", Columns: []types.DBColumn{test.column}}},
+			}
+
+			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+			c.Assert(result.Fields, qt.HasLen, 1)
+			c.Assert(result.Fields[0].Type, qt.Equals, test.wantType)
+		})
+	}
+}
+
 func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName(t *testing.T) {
 	c := qt.New(t)
 	checkClause := "tenant_id > 0"
