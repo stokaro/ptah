@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -1218,21 +1219,11 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []as
 }
 
 func findView(views []goschema.View, name string) *goschema.View {
-	for i := range views {
-		if views[i].Name == name {
-			return &views[i]
-		}
-	}
-	return nil
+	return objectlookup.View(views, name)
 }
 
 func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *goschema.Trigger {
-	for i := range triggers {
-		if triggers[i].Table == tableName && triggers[i].Name == triggerName {
-			return &triggers[i]
-		}
-	}
-	return nil
+	return objectlookup.Trigger(triggers, tableName, triggerName)
 }
 
 // addNewConstraints adds new table-level constraints via ALTER TABLE statements.

@@ -1536,6 +1536,44 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 // to rebuild prior FK/PK/CHECK/UNIQUE definitions for reversed constraint
 // additions; it may be nil when callers only have the generated schema (the
 // reversed additions then fall back to the name-only path).
+//
+// # Every field of SchemaDiff is accounted for here
+//
+// This function builds a fresh SchemaDiff literal, and a literal that
+// enumerates fields has no compiler check for the ones it forgets. Nine fields
+// -- views, materialized views and triggers, added/removed/modified -- were
+// once simply absent, so every down migration silently dropped those whole
+// categories: an up that created a view rolled back to "No rollback operations
+// needed" and left the view in place (issue #1287). Three dispositions are
+// available, and every field must have exactly one:
+//
+//   - Exchanged. Added and removed swap where both sides carry the same kind of
+//     value and the reverse operation is the inverse of the forward one:
+//     tables, enums, indexes, extensions, functions, sequences, domains,
+//     composite types, ranges, views, materialized views, triggers, RLS
+//     policies, RLS enablement, roles, grants, grant options and constraints.
+//   - Carried. A Modified entry is not the inverse of itself. The planner
+//     re-renders a modified object from the schema it is handed, and the down
+//     direction is handed the pre-change database schema, so carrying the entry
+//     across is what restores the prior definition. Only the recorded
+//     "old -> new" description is flipped, plus any recorded prior state (a
+//     view's PreviousBody) that names a side rather than a change.
+//   - Derived. IdentifierSemantics is cloned rather than reversed: it describes
+//     the catalog the diff was measured against, which does not have a
+//     direction. The table-qualified constraint collections are rebuilt from
+//     the pre-change database schema by reverseConstraintAdditions and
+//     reverseConstraintRemovals rather than swapped, because a down migration
+//     must restore the prior body, not the new one. ConstraintBackedIndexRemovals
+//     is derived too, and it redirects rather than reverses: it names the subset
+//     of the index removals whose object is really a UNIQUE constraint, so
+//     reverseIndexRemovals turns exactly that subset into constraint additions
+//     rebuilt from the introspected constraint, and leaves the rest as index
+//     additions.
+//
+// No field is deliberately dropped, and none is unreachable in the down
+// direction. TestReverseSchemaDiff_AccountsForEverySchemaDiffField enforces
+// that by reflection: it zeroes one field of a fully populated diff at a time
+// and fails when doing so leaves the reverse plan unchanged.
 func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
 	reversed := &types.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
@@ -1573,6 +1611,31 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove
 		SequencesModified: reverseSequenceDiffs(diff.SequencesModified),
+
+		// Reverse view, materialized view and trigger operations.
+		//
+		// Each side carries the same kind of value (view names, materialized
+		// view names, table-qualified trigger refs) and DROP is the inverse of
+		// CREATE for all three, so the plain swap is the correct reversal.
+		//
+		// The Modified entries are carried across rather than swapped: the
+		// planner re-renders a modified object from the schema it is handed,
+		// which in the down direction is the pre-change database schema, so the
+		// entry itself is what selects the prior definition. A view carries the
+		// body it will be replacing as well, and THAT is a side rather than a
+		// change, so it is exchanged for the up migration's target body -- the
+		// state the database is actually in when the rollback runs.
+		ViewsAdded:    diff.ViewsRemoved, // Views to remove become views to add
+		ViewsRemoved:  diff.ViewsAdded,   // Views to add become views to remove
+		ViewsModified: reverseViewDiffs(diff.ViewsModified, schema),
+
+		MaterializedViewsAdded:    diff.MaterializedViewsRemoved, // Materialized views to remove become materialized views to add
+		MaterializedViewsRemoved:  diff.MaterializedViewsAdded,   // Materialized views to add become materialized views to remove
+		MaterializedViewsModified: reverseMaterializedViewDiffs(diff.MaterializedViewsModified),
+
+		TriggersAdded:    diff.TriggersRemoved, // Triggers to remove become triggers to add
+		TriggersRemoved:  diff.TriggersAdded,   // Triggers to add become triggers to remove
+		TriggersModified: reverseTriggerDiffs(diff.TriggersModified),
 
 		// Reverse RLS policy operations. Both directions carry the owning
 		// table, so reversing is a swap and no name-to-table resolution is
@@ -2197,6 +2260,83 @@ func reverseDomainDiffs(domainDiffs []types.DomainDiff, schema *goschema.Databas
 			DomainName:      domainDiff.DomainName,
 			Changes:         reverseChangeMap(domainDiff.Changes),
 			CurrentBaseType: targetDomainBaseType(schema, domainDiff.DomainName),
+		}
+	}
+	return reversed
+}
+
+// reverseViewDiffs carries modified views into the down direction.
+//
+// The entry is carried across rather than swapped with anything: the planner
+// renders a modified view from the schema it is given (the pre-change database
+// schema, in the down direction), so the entry itself is what selects the prior
+// definition.
+//
+// PreviousBody is different in kind: it names the body the view HAS when the
+// statement runs, not a change. When the rollback runs, the database holds what
+// the up migration wrote, which is the generated schema's body -- so that is
+// what the reversed entry must carry. Getting this wrong is not cosmetic: the
+// PostgreSQL planner reads it to decide whether CREATE OR REPLACE VIEW is legal
+// for the rollback, and PostgreSQL refuses the replace for every column-list
+// change except a trailing append.
+//
+// A nil schema (the deprecated reverseSchemaDiff entry point) leaves it empty,
+// which planners read as "not known" and answer with drop-and-recreate. That is
+// the safe direction: it always applies.
+//
+// Rollback is set for the same reason and is the other half of it. Where a
+// planner can neither prove the replace legal nor prove it refused, the answer
+// it should give differs by direction, and this is the only place that knows
+// which direction is being built.
+func reverseViewDiffs(viewDiffs []types.ViewDiff, schema *goschema.Database) []types.ViewDiff {
+	reversed := make([]types.ViewDiff, len(viewDiffs))
+	for i, viewDiff := range viewDiffs {
+		reversed[i] = types.ViewDiff{
+			ViewName:     viewDiff.ViewName,
+			Changes:      reverseChangeMap(viewDiff.Changes),
+			PreviousBody: generatedViewBody(schema, viewDiff.ViewName),
+			Rollback:     true,
+		}
+	}
+	return reversed
+}
+
+func generatedViewBody(schema *goschema.Database, viewName string) string {
+	if schema == nil {
+		return ""
+	}
+	for _, view := range schema.Views {
+		if view.Name == viewName {
+			return strings.TrimSpace(view.Body)
+		}
+	}
+	return ""
+}
+
+// reverseMaterializedViewDiffs carries modified materialized views into the
+// down direction, on the same terms as reverseViewDiffs. A materialized view
+// has no in-place replace at all, so there is no prior body to record: both
+// directions drop and recreate it.
+func reverseMaterializedViewDiffs(viewDiffs []types.MaterializedViewDiff) []types.MaterializedViewDiff {
+	reversed := make([]types.MaterializedViewDiff, len(viewDiffs))
+	for i, viewDiff := range viewDiffs {
+		reversed[i] = types.MaterializedViewDiff{ViewName: viewDiff.ViewName, Changes: reverseChangeMap(viewDiff.Changes)}
+	}
+	return reversed
+}
+
+// reverseTriggerDiffs carries modified triggers into the down direction, on the
+// same terms as reverseViewDiffs. TableName is part of the trigger's identity
+// rather than a changed value, so it is preserved. PostgreSQL 17.10 accepts
+// CREATE OR REPLACE TRIGGER even for a timing change, so a trigger needs no
+// legality test of its own.
+func reverseTriggerDiffs(triggerDiffs []types.TriggerDiff) []types.TriggerDiff {
+	reversed := make([]types.TriggerDiff, len(triggerDiffs))
+	for i, triggerDiff := range triggerDiffs {
+		reversed[i] = types.TriggerDiff{
+			TriggerName: triggerDiff.TriggerName,
+			TableName:   triggerDiff.TableName,
+			Changes:     reverseChangeMap(triggerDiff.Changes),
 		}
 	}
 	return reversed

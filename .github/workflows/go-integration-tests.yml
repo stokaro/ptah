@@ -233,6 +233,19 @@ jobs:
           go test -v -count=1 ./migration/migrator -run 'TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestAtlasRevisionMetadata_SQLServerIntegration|TestAtlasTxtarChecks_SQLServer(SequenceDoesNotAdvance)?Integration|TestDryRunRevisionState_SQLServerIntegration' -timeout 3m
           go test -v -count=1 ./migration/generator -run 'TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive' -timeout 5m
 
+      # The reverse plan for views, materialized views and triggers is decided
+      # by what PostgreSQL accepts, and rendering the rollback proves only that
+      # a statement exists. This applies it. The test is behind the integration
+      # build tag in ./migration/generator, which no other step in this file
+      # compiles, so without this step the only live gate for the rollback would
+      # run nowhere.
+      - name: Run reverse view-like rollback round trip
+        env:
+          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+        run: |
+          go test -tags=integration ./migration/generator -list '^TestReverseViewLikeObjects_DownRoundTrip_Integration$' | grep -q '^TestReverseViewLikeObjects_DownRoundTrip_Integration$'
+          go test -v -count=1 -tags=integration ./migration/generator -run '^TestReverseViewLikeObjects_DownRoundTrip_Integration$' -timeout 5m
+
       - name: Run database-realm cleanup and replay tests
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"

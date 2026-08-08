@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
@@ -1917,13 +1918,187 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDif
 	return result
 }
 
+// modifyExistingViews re-renders each modified view, choosing between
+// CREATE OR REPLACE VIEW and DROP + CREATE per view.
+//
+// Both statements cost something, and the two costs land in different places.
+// PostgreSQL accepts CREATE OR REPLACE VIEW only for appending trailing columns;
+// dropping, renaming or retyping a projected column is refused at execution
+// time, so the replace can render perfectly and fail when it runs. The drop
+// always applies, but it carries CASCADE: it takes dependent views and
+// materialized views with it, along with the privileges granted on the view
+// itself, none of which the replace disturbs.
+//
+// So the choice is made per view from what viewReplaceLegality can prove, and
+// the undecidable case is resolved by the direction being planned:
+//
+//	appends columns    replace, both directions -- PostgreSQL accepts it
+//	moves columns      drop and recreate, both directions -- the replace would
+//	                   be refused, and rendering a statement we know the engine
+//	                   rejects helps nobody
+//	undecidable        replace going forward, drop on a rollback. Forward, a
+//	                   body this parser cannot read is usually a predicate-only
+//	                   edit to a WITH / star / set-operation view, where the
+//	                   column list never moves and the replace is accepted; if
+//	                   it is not, PostgreSQL says so and the migration stops
+//	                   with nothing destroyed. A rollback cannot afford that
+//	                   answer -- it runs while an operator is undoing a
+//	                   migration, and a rollback that fails is discovered during
+//	                   the incident it was meant to end -- so it takes the
+//	                   statement that always applies.
+//
+// Whatever the drop path takes with it, this step puts back: every declared view
+// and materialized view that reads a dropped view, transitively, is recreated
+// after it. Without that the plan silently left the database short of the schema
+// it was generated from, and re-planning did not converge (issue #1287). What
+// CASCADE removes and this cannot rebuild is anything Ptah does not declare -- a
+// hand-made view, a rule, privileges on the view -- which is why the drop is
+// taken only where it buys something.
+//
+// The drop and the create are emitted from inside the modify step, not by
+// pushing the view into ViewsRemoved and ViewsAdded. The plan runs additions
+// before removals, so a modification expressed from outside comes out
+// create-then-drop and ends with no view at all.
 func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	var dropped []string
+	replaced := make([]deporder.ViewLike, 0, len(diff.ViewsModified))
 	for _, viewDiff := range diff.ViewsModified {
-		if view := findView(generated.Views, viewDiff.ViewName); view != nil {
-			result = append(result, fromschema.FromView(*view).SetReplace())
+		view := objectlookup.View(generated.Views, viewDiff.ViewName)
+		if view == nil {
+			continue
+		}
+		if viewReplaceKeepsDependents(viewDiff, view.Body) {
+			replaced = append(replaced, deporder.ViewLike{Name: view.Name, Body: view.Body})
+			continue
+		}
+		dropped = append(dropped, view.Name)
+	}
+
+	for _, name := range dropped {
+		result = append(result, ast.NewDropView(name).SetIfExists().SetCascade())
+	}
+
+	// A view on the replace path can also be a dependent of one on the drop
+	// path, in which case it is on both lists and must still be rendered once.
+	recreate := viewLikesLostToCascade(generated, dropped)
+	named := make(map[string]bool, len(recreate))
+	for _, object := range recreate {
+		named[object.Name] = true
+	}
+	for _, object := range replaced {
+		if !named[object.Name] {
+			recreate = append(recreate, object)
 		}
 	}
+
+	for _, object := range deporder.ViewLikesForCreate(recreate) {
+		result = p.appendViewLikeRecreate(result, generated, object, dropped)
+	}
 	return result
+}
+
+// appendViewLikeRecreate renders the CREATE that puts one view-like object back.
+//
+// A view this step dropped itself is created outright. Everything else is
+// re-asserted rather than created blind: a dependent is on the list because its
+// body names a dropped view in code, which is a syntactic test rather than a
+// resolved one, and a CREATE OR REPLACE costs nothing if the object survived
+// after all while a bare CREATE would fail on "already exists". A materialized
+// view has no in-place replace, so it is dropped first for the same reason.
+func (p *Planner) appendViewLikeRecreate(
+	result []ast.Node,
+	generated *goschema.Database,
+	object deporder.ViewLike,
+	dropped []string,
+) []ast.Node {
+	if object.Materialized {
+		view := objectlookup.MaterializedView(generated.MaterializedViews, object.Name)
+		if view == nil {
+			return result
+		}
+		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
+		return append(result, fromschema.FromMaterializedView(*view))
+	}
+
+	view := objectlookup.View(generated.Views, object.Name)
+	if view == nil {
+		return result
+	}
+	if slices.Contains(dropped, object.Name) {
+		return append(result, fromschema.FromView(*view))
+	}
+	return append(result, fromschema.FromView(*view).SetReplace())
+}
+
+// viewReplaceKeepsDependents decides whether one modified view keeps the
+// in-place replace, which is the statement that leaves dependents and grants
+// alone. The table in modifyExistingViews explains the three answers.
+func viewReplaceKeepsDependents(viewDiff types.ViewDiff, targetBody string) bool {
+	switch viewReplaceLegality(viewDiff.PreviousBody, targetBody) {
+	case viewReplaceAppendsColumns:
+		return true
+	case viewReplaceMovesColumns:
+		return false
+	default:
+		return !viewDiff.Rollback
+	}
+}
+
+// viewLikesLostToCascade returns the declared views and materialized views that
+// DROP VIEW ... CASCADE removes when it drops the named views, the dropped views
+// themselves included, so the caller can put every one of them back.
+//
+// Dependency is read off the declared bodies, the same test that orders view
+// creation, and it is applied transitively: dropping a view takes the view that
+// reads it, and the view that reads that one.
+//
+// The test reads the code of those bodies and not their text. A name inside a
+// string literal or a comment reads nothing, and putting it on this list is not
+// a harmless over-approximation: everything on the list is answered with a
+// statement, and for a materialized view that statement is
+// DROP MATERIALIZED VIEW ... CASCADE. On PostgreSQL 17.10 that took a hand-made
+// dependent view, a unique index and a GRANT off an object no part of the
+// migration touched -- none of them declared, so nothing put them back.
+func viewLikesLostToCascade(generated *goschema.Database, dropped []string) []deporder.ViewLike {
+	if len(dropped) == 0 {
+		return nil
+	}
+
+	candidates := make([]deporder.ViewLike, 0, len(generated.Views)+len(generated.MaterializedViews))
+	for _, view := range generated.Views {
+		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body})
+	}
+	for _, view := range generated.MaterializedViews {
+		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
+	}
+
+	lost := make([]deporder.ViewLike, 0, len(dropped))
+	taken := make(map[string]bool, len(dropped))
+	frontier := make([]string, 0, len(dropped))
+	for _, name := range dropped {
+		if taken[name] {
+			continue
+		}
+		taken[name] = true
+		frontier = append(frontier, name)
+		if view := objectlookup.View(generated.Views, name); view != nil {
+			lost = append(lost, deporder.ViewLike{Name: view.Name, Body: view.Body})
+		}
+	}
+
+	for len(frontier) > 0 {
+		gone := frontier[0]
+		frontier = frontier[1:]
+		for _, candidate := range candidates {
+			if taken[candidate.Name] || !deporder.ReferencesIdentifier(candidate.Body, gone) {
+				continue
+			}
+			taken[candidate.Name] = true
+			frontier = append(frontier, candidate.Name)
+			lost = append(lost, candidate)
+		}
+	}
+	return lost
 }
 
 func (p *Planner) removeViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
@@ -1980,30 +2155,15 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []as
 }
 
 func findView(views []goschema.View, name string) *goschema.View {
-	for i := range views {
-		if views[i].Name == name {
-			return &views[i]
-		}
-	}
-	return nil
+	return objectlookup.View(views, name)
 }
 
 func findMaterializedView(views []goschema.MaterializedView, name string) *goschema.MaterializedView {
-	for i := range views {
-		if views[i].Name == name {
-			return &views[i]
-		}
-	}
-	return nil
+	return objectlookup.MaterializedView(views, name)
 }
 
 func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *goschema.Trigger {
-	for i := range triggers {
-		if triggers[i].Table == tableName && triggers[i].Name == triggerName {
-			return &triggers[i]
-		}
-	}
-	return nil
+	return objectlookup.Trigger(triggers, tableName, triggerName)
 }
 
 func findRLSPolicy(policies []goschema.RLSPolicy, tableName, policyName string) *goschema.RLSPolicy {
