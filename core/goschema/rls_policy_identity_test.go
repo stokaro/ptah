@@ -145,6 +145,72 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			},
 		},
 		{
+			// The schema is not the only part of a table that has more than
+			// one spelling. An unquoted PostgreSQL identifier folds to lower
+			// case, so `ORDERS` names the table declared as `orders`: measured
+			// on PostgreSQL 17.10, `CREATE POLICY p ON orders` followed by
+			// `CREATE POLICY p ON ORDERS` is refused with `policy "p" for
+			// table "orders" already exists`.
+			name:   "a case variant of one unqualified table collapses onto the first",
+			tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
+			policies: []goschema.RLSPolicy{
+				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
+				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
+			},
+			want: []goschema.RLSPolicy{
+				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
+			},
+		},
+		{
+			// Collapsing onto the first declaration is only half an answer if
+			// the first declaration is the variant spelling. The survivor has
+			// to name the declared table, because the renderer quotes what it
+			// is given and `CREATE POLICY "p" ON "ORDERS"` is answered by
+			// `relation "ORDERS" does not exist`.
+			name:   "a case variant declared first still names the declared table",
+			tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
+			policies: []goschema.RLSPolicy{
+				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
+				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
+			},
+			want: []goschema.RLSPolicy{
+				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 2"},
+			},
+		},
+		{
+			// The control that bounds the case fold: a quoted identifier keeps
+			// its case, so `orders` and `"ORDERS"` are two tables. PostgreSQL
+			// 17.10 accepts a policy called `p` on each and reports both rows
+			// in pg_policy. An ambiguous fold must resolve to nothing rather
+			// than pick one.
+			name: "two tables differing only in case keep one policy each",
+			tables: []goschema.Table{
+				{Name: "orders", StructName: "Order"},
+				{Name: "ORDERS", StructName: "ORDERSTable"},
+			},
+			policies: []goschema.RLSPolicy{
+				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
+				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
+			},
+			want: []goschema.RLSPolicy{
+				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
+				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
+			},
+		},
+		{
+			// A policy on a table nothing declares keeps its spelling. The
+			// resolver maps a reference onto a declared table or leaves it
+			// alone; it does not invent one.
+			name:   "a policy on an undeclared table keeps its spelling",
+			tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
+			policies: []goschema.RLSPolicy{
+				{Name: "p", Table: "archive.SHIPMENTS", UsingExpression: "tenant_id = 1"},
+			},
+			want: []goschema.RLSPolicy{
+				{Name: "p", Table: "archive.SHIPMENTS", UsingExpression: "tenant_id = 1"},
+			},
+		},
+		{
 			// The control that separates the fold above from folding every
 			// qualified spelling together: two tables of the same name in two
 			// schemas are two tables, and one policy name on each is two

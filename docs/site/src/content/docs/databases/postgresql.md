@@ -110,6 +110,17 @@ first declaration and renders it once. Two tables of the same name in
 different schemas — `tenanta.orders` and `tenantb.orders` — remain two tables,
 and a policy name on each remains two policies.
 
+Letter case is the other spelling that reaches one table. An unquoted
+PostgreSQL identifier folds to lower case, so a SQL schema file declaring
+`CREATE TABLE orders` and then naming `ORDERS` in `CREATE POLICY` or in
+`ALTER TABLE ... ENABLE ROW LEVEL SECURITY` is naming that same table. Ptah
+binds each declaration to the table it names and renders the declared
+spelling, so a policy or an enablement written as `ORDERS` no longer renders
+`ON "ORDERS"` — a table nothing declared, answered by `relation "ORDERS" does
+not exist`. A quoted identifier keeps its case: when a schema declares both
+`orders` and `"ORDERS"`, they are two tables and a policy on each is two
+policies.
+
 ## Extensions
 
 `//ptah:schema:extension` manages `CREATE EXTENSION`. Some extensions are
