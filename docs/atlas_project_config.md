@@ -196,7 +196,9 @@ explicit `--exclude` flag is provided.
 matching Atlas-style resource exclusions for object kinds represented in Ptah's
 schema IR. `sensitive = DENY` is accepted as a no-op because Ptah does not emit
 sensitive values through the supported local workflows. `sensitive = ALLOW` is
-rejected until Ptah has explicit sensitive-value semantics.
+also accepted as a no-op, matching Atlas CE's project-config decoding. Both
+values produce the ignored-construct warning because Ptah has no
+sensitive-value behavior to enable or disable.
 
 `env.schema.repo` names a schema repository in a hosted registry. Its `name` is
 accepted and type-checked as a string, and nothing reads it afterwards — the
@@ -503,30 +505,45 @@ supported `diff` policy.
 `ptah-compat migrate diff` reads `env.schema.src`, `env.dev`, `migration.dir`,
 `format.migrate.diff`, and supported `diff` policy.
 
-## Unsupported constructs
+## Structural contract and ignored names
 
-Ptah intentionally rejects everything outside the documented subset. Unsupported
-attributes, unsupported data sources, unsupported lint policy blocks or attributes,
-Cloud or registry URLs such as `atlas://`, unsupported format blocks,
-unsupported diff policy fields, duplicate `migration` or `lint` blocks,
-variables without defaults that are not supplied through `--var` fail with a
+Ptah classifies every `atlas.hcl` name into one of three outcomes:
+
+| Outcome | Behavior |
+| --- | --- |
+| Supported | Ptah parses the value into project config and evaluates its expression when the containing environment is selected. |
+| Structurally unsupported | Ptah rejects the file with a location-aware error, even when the construct is in an unselected environment. |
+| Ignored by Atlas CE | Ptah accepts the name for compatibility, records it in `Config.IgnoredConstructs`, and the CLI warns that it has no effect. |
+
+Structurally unsupported attributes, data sources, lint policy shapes, format
+fields, diff policy fields, labels, and duplicate supported blocks fail with a
 location-aware error:
 
 ```text
 unsupported atlas.hcl construct "src" at atlas.hcl:2
 ```
 
-This hard-fail policy prevents partially interpreted Atlas project configs from
-silently changing migration behavior.
+Ptah does not turn a construct that Atlas CE decodes or enforces into a no-op.
+The ignored category is limited to names that Atlas CE itself accepts without
+acting on. The CLI writes one warning per ignored source location:
+
+```text
+warning: atlas.hcl attribute "project" at atlas.hcl:2 is ignored for Atlas compatibility and has no effect
+```
+
+This distinction preserves Atlas CE's unknown-name behavior without hiding a
+likely typo or a policy that does nothing. The warning goes to stderr; stdout
+and the success exit code remain unchanged.
 
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested
 block, label, or duplicate therefore fails even when it appears in another
-environment. Expressions inside `env` blocks are evaluated only in the selected
-environment, so an unselected environment may still refer to variables, files,
-or environment values that are unavailable in the current invocation. Global
-`variable`, `locals`, and `data` blocks are evaluated separately to build the
-shared context before environment selection.
+environment. Expressions inside `env` blocks, including bodies and values of
+ignored names, are evaluated only in the selected environment. An unselected
+environment may therefore refer to variables, files, or environment values
+unavailable in the current invocation. Global `variable`, `locals`, and `data`
+blocks are evaluated separately to build the shared context before environment
+selection.
 
 Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
 a command needs that configured value. An explicit CLI path flag still wins over

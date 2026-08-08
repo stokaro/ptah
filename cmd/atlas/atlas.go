@@ -949,6 +949,9 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), project.project.Config); err != nil {
+			return nil, nil, err
+		}
 		args = project.args
 		if err := rejectNativeOnlyAtlasFlags(group, verb, args); err != nil {
 			return nil, nil, err

@@ -524,7 +524,8 @@ func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url     = "sqlite://`+dbPath+`"
+  project = "ignored"
   migration {
     dir = "file://migrations"
   }
@@ -551,6 +552,11 @@ func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
 	// the apply report's behavior with a config-supplied dir.
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", errOut.String()))
 	c.Assert(out.String(), qt.Equals, "migrations|2")
+	c.Assert(
+		errOut.String(),
+		qt.Equals,
+		"warning: atlas.hcl attribute \"project\" at "+filepath.Join(projectDir, "atlas.hcl")+":3 is ignored for Atlas compatibility and has no effect\n",
+	)
 }
 
 func TestCompatCommand_MigrateDownFormatValidation(t *testing.T) {

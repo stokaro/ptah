@@ -228,12 +228,6 @@ func loadOptionalAtlasProjectConfigForCommand(
 	return loadAtlasProjectConfigForCommand(cmd, ignoreMissingEnvSelection)
 }
 
-func loadRequiredAtlasProjectConfigForCommand(
-	cmd *cobra.Command,
-) (projectconfig.Config, bool, error) {
-	return loadAtlasProjectConfigForCommand(cmd, reportMissingEnvSelection)
-}
-
 func atlasProjectConfigSchemaURLs(cmd *cobra.Command, raw []string) ([]string, error) {
 	flags, _, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
@@ -314,15 +308,21 @@ func openAtlasProjectForCommand(
 	if err != nil {
 		return atlasProject{}, false, err
 	}
+	requirement := optionalAtlasProject
 	if changed {
-		return openAtlasProject(flags, requiredAtlasProject)
+		requirement = requiredAtlasProject
 	}
-	project, loaded, err := openAtlasProject(flags, optionalAtlasProject)
+	project, loaded, err := openAtlasProject(flags, requirement)
 	if err != nil {
 		if isAtlasEnvSelectionRequired(err) && mode == ignoreMissingEnvSelection {
 			return atlasProject{}, false, nil
 		}
 		return atlasProject{}, false, err
+	}
+	if loaded {
+		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), project.Config); err != nil {
+			return atlasProject{}, false, errors.Join(err, project.Close())
+		}
 	}
 	return project, loaded, nil
 }

@@ -50,7 +50,10 @@ online-DDL policy is parsed, merged, validated, and then passed to migration
 execution without a second configuration-file read.
 `ParseAtlasFSWithOptions` lets embedders evaluate `atlas.hcl` against an
 already anchored or immutable `fs.FS`; `file()` and `fileset()` resolve only
-through that filesystem.
+through that filesystem. `Config.IgnoredConstructs` identifies names that
+Atlas CE accepts without acting on, with kind and source location. `Merge`
+preserves this diagnostic metadata from both inputs. Ptah's command layer warns
+for each entry; embedders can choose their own reporting policy.
 
 `core/renderer.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table

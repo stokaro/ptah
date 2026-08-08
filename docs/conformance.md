@@ -35,6 +35,10 @@ is recorded as a deliberate divergence, with the measurement that establishes
 which behavior is the defective one, and the report says which of the two rules
 it falls under.
 
+An unknown name that the community binary itself accepts without acting on is
+not a refused construct under rule 1. Ptah can accept the same no-op for
+compatibility, but reports its source location so the behavior is not silent.
+
 The distinction is not academic. `-- atlas:txmode none` written directly above
 its statement, with no blank line between them, is silently dropped by the
 community binary; the statement then runs inside the transaction it asked to
