@@ -116,12 +116,13 @@ for what remains keyed to the pathname and why.
 `ptah migrations generate` plans and publishes in two steps, so the directory
 can be replaced between them by something outside the run's control. The plan
 binds the directory while it is being built and holds that binding open until
-it publishes, so the plan is a claim on a filesystem object rather than on a
-pathname. Publication refuses a directory that is no longer the object the plan
-holds — a substitute that holds exactly the files the plan verified, and a
-directory removed and recreated at the same pathname, are both refused. The
-refusal is `migration directory changed after migration planning`, and nothing
-is written ([#1118](https://github.com/stokaro/ptah/issues/1118)).
+its publication attempt returns, so the plan is a claim on a filesystem object
+rather than on a pathname. Publication refuses a directory that is no longer
+the object the plan holds — a substitute that holds exactly the files the plan
+verified, and a directory removed and recreated at the same pathname, are both
+refused. The refusal is `migration directory changed after migration planning`,
+and nothing is written
+([#1118](https://github.com/stokaro/ptah/issues/1118)).
 
 Holding the directory open is what makes the answer the same on every platform.
 Comparing a recorded `os.SameFile` identity instead would ask the operating
@@ -131,10 +132,24 @@ remove-and-recreate cycles of one pathname, ext4 reissued it 20 times and APFS
 none, so the same code refused the substitution on one filesystem and accepted
 it on another. An open directory cannot have its identifier reissued.
 
-This changes behavior twice over: a run that previously published into a
-recreated directory now fails instead, and while a plan is outstanding the
-migration directory is held open, so another process cannot rename or remove it
-until the plan publishes or is discarded.
+Holding the directory open is not a lock on it. On Unix another process renames
+or removes the held directory exactly as it always could; the guarantee is that
+the plan keeps writing to the object it retained, and refuses to write at all
+once revalidation shows the pathname no longer names that object. On Windows an
+open handle is stronger and the rename or removal may be refused or deferred
+instead. The plan releases the directory when its publication attempt returns —
+whether that attempt published or failed — and a plan that is never published at
+all releases it when it is collected.
+
+This changes behavior twice over. A run that previously published into a
+recreated directory now fails instead. And a migration directory containing a
+symbolic link that points outside itself — a shared migration linked in from
+elsewhere — is refused by `ptah migrations generate` rather than followed,
+because the directory is read, checksummed and published through the object the
+run opened. `ptah migrations up` already refused such a directory, so what the
+generator used to do was publish into a directory the applier would not read;
+the two now agree. A link whose target is inside the migration directory is
+unaffected. The refusal names the entry and the rule.
 
 ## Consequences
 

@@ -73,6 +73,33 @@ func TestMigrationPlanWriteFiles_FailurePath(t *testing.T) {
 	c.Assert(files, qt.IsNil)
 }
 
+// TestMigrationPlanWriteFiles_FailedPublicationSpendsThePlan is the portable
+// half of the handle-release measurement, and the reason the release is safe:
+// once a publication attempt has returned, the plan no longer holds the
+// migration directory, so a second attempt has nothing to publish through and
+// says so instead of reaching for a released handle.
+//
+// Retrying is not what the caller wants anyway. Both the contents the plan
+// verifies against and the version it chose describe the directory as it was
+// before the attempt, so the honest retry is a fresh PlanMigration.
+func TestMigrationPlanWriteFiles_FailedPublicationSpendsThePlan(t *testing.T) {
+	c := qt.New(t)
+	plan, outputDir := newSQLiteMigrationPlan(c)
+	concurrentMigration := filepath.Join(outputDir, "20000101000000_concurrent.up.sql")
+	c.Assert(os.WriteFile(concurrentMigration, []byte("SELECT 1;\n"), 0o600), qt.IsNil)
+	files, err := plan.WriteFiles()
+	c.Assert(err, qt.ErrorIs, generator.ErrMigrationDirectoryChanged)
+	c.Assert(files, qt.IsNil)
+
+	files, err = plan.WriteFiles()
+
+	c.Assert(err, qt.ErrorMatches, `migration plan was released by a failed publication`)
+	c.Assert(files, qt.IsNil)
+	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(matches, qt.DeepEquals, []string{concurrentMigration})
+}
+
 func TestMigrationPlanWriteFiles_RejectsChangedDirectory(t *testing.T) {
 	c := qt.New(t)
 	plan, outputDir := newSQLiteMigrationPlan(c)

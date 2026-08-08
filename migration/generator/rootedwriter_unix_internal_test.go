@@ -20,6 +20,64 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
+// TestNextAvailableMigrationVersionReadsTheHeldDirectory pins the half of the
+// binding that no publication guard can reach: the version scan.
+//
+// The scan runs during planning, between binding the migration directory and
+// recording the specs, and it decides which version numbers the plan may use.
+// Reading it by pathname means the plan avoids colliding with whatever the name
+// resolves to at that instant, which is not necessarily the directory it holds
+// and will publish into; the collision it was supposed to avoid then happens at
+// publication, against files the scan never saw.
+//
+// Every other fixture in the package stages a directory whose pathname and
+// bound object are the same, so the pathname-based scan and the handle-based
+// one answer identically and neither is pinned. This one makes them answer
+// differently on purpose, and the last assertion is what proves the fixture
+// separates them: read by pathname the same writer would say 901.
+//
+// //go:build unix because the divergence is staged with a symlink swap. The
+// bound directory has to survive the swap, which rules out removing and
+// recreating it -- an unlinked directory lists as empty and both answers would
+// collapse back together.
+func TestNextAvailableMigrationVersionReadsTheHeldDirectory(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	bound := filepath.Join(root, "real")
+	decoy := filepath.Join(root, "decoy")
+	c.Assert(os.MkdirAll(bound, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(decoy, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(bound, migrator.GenerateMigrationFileName(105, "add_email", "up")),
+		[]byte("SELECT 1;\n"), 0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(decoy, migrator.GenerateMigrationFileName(900, "decoy", "up")),
+		[]byte("SELECT 1;\n"), 0o600,
+	), qt.IsNil)
+	selected := filepath.Join(root, "migrations")
+	c.Assert(os.Symlink(bound, selected), qt.IsNil)
+
+	writer, err := bindPlannedMigrationDir("", selected)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = writer.Close() }()
+
+	// From here the pathname the writer was selected by names a different
+	// directory, with a different highest version in it.
+	c.Assert(os.Remove(selected), qt.IsNil)
+	c.Assert(os.Symlink(decoy, selected), qt.IsNil)
+
+	version, err := nextAvailableMigrationVersion(writer, 100, "add_email")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(version, qt.Equals, int64(106))
+	c.Assert(
+		nextAvailablePtahVersion(migrationDirFileNames(writer.Path()), 100, "add_email"),
+		qt.Equals,
+		int64(901),
+	)
+}
+
 // These are the `migration/generator` half of the rooted-writer regressions
 // stokaro/ptah#1118 asks for, and the counterpart to the TestGenerateDiff_*
 // rows in internal/atlasmigrate and the TestWriteSkeletonMigration_* rows

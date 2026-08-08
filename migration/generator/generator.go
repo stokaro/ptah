@@ -152,14 +152,19 @@ type MigrationPlan struct {
 	mu        sync.Mutex
 	outputDir string
 	// dir is the migration directory, bound while the plan was built and held
-	// open until the plan is published or collected. It is what makes the plan
-	// a claim on a filesystem object rather than on a pathname: publication
-	// verifies and writes through this one handle, so a directory replaced --
-	// or removed and recreated -- between the two exported calls cannot receive
-	// the batch (stokaro/ptah#1118).
+	// open until the plan's one publication attempt returns. It is what makes
+	// the plan a claim on a filesystem object rather than on a pathname:
+	// publication verifies and writes through this one handle, so a directory
+	// replaced -- or removed and recreated -- between the two exported calls
+	// cannot receive the batch (stokaro/ptah#1118).
 	//
-	// A plan that is dropped without being published releases the handles when
-	// it is collected, because os.Root closes its descriptor from a finalizer.
+	// It is nil once the handles have been released, which is what marks the
+	// plan spent. WriteFilesContext releases them on the way out whether the
+	// publication succeeded or failed, so the window in which the plan holds
+	// the directory ends at a point the caller controls rather than at the next
+	// garbage collection. A plan that is never published at all still releases
+	// them when it is collected, because os.Root closes its descriptor from a
+	// finalizer.
 	dir *atlasmigrate.MigrationWriter
 	// plannedContents is what dir held when the plan was built, and nothing
 	// else. It used to carry a filesystem identity beside the contents; identity
@@ -538,6 +543,14 @@ func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error) {
 // under the lock it revalidates the handle it was given, compares the contents
 // against what planning recorded, and publishes through that same handle.
 //
+// One call is one use of the plan. Whatever this call returns, it releases the
+// migration directory handles before returning, so a failed publication ends
+// the plan's hold on the directory at a moment the caller can observe instead
+// of at the next garbage collection. A plan whose attempt already happened is
+// reported rather than retried: its recorded contents and its chosen version
+// both describe a directory as it was before the attempt, so the honest retry
+// is a fresh PlanMigration.
+//
 // It used to reopen the directory by pathname here and decide whether it was
 // still the planned one by comparing an fs.FileInfo captured before any handle
 // existed. That comparison is only as good as the operating system's promise
@@ -556,6 +569,12 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 	if p.written {
 		return nil, fmt.Errorf("migration plan has already been written")
 	}
+	if p.dir == nil {
+		return nil, fmt.Errorf("migration plan was released by a failed publication")
+	}
+	// The plan is single-use, so the handles have no reader left once this call
+	// returns -- on the failure paths as much as on the successful one.
+	defer p.release()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -568,10 +587,23 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 	if err != nil {
 		return nil, err
 	}
-	// The plan is single-use, so the handles have no reader left once the batch
-	// is committed.
-	_ = p.dir.Close()
 	return files, nil
+}
+
+// release closes the migration directory handles the plan holds and marks the
+// plan spent. It is idempotent and runs with p.mu held.
+//
+// Deterministic release is the point. os.Root closes its descriptor from a
+// finalizer, so an unreleased handle survives until the next collection; on
+// Windows that is also the window in which nothing else can rename or remove
+// the migration directory, and a failed publication would otherwise leave that
+// window open with no event that ends it (stokaro/ptah#1118).
+func (p *MigrationPlan) release() {
+	if p.dir == nil {
+		return
+	}
+	_ = p.dir.Close()
+	p.dir = nil
 }
 
 func (p *MigrationPlan) publishLocked(ctx context.Context) (*MigrationFiles, error) {
@@ -620,7 +652,66 @@ func captureMigrationDirectoryContents(
 	if err != nil {
 		return fsnapshot.Snapshot{}, err
 	}
-	return migrationsnapshot.CaptureStable(fsys)
+	snapshot, err := migrationsnapshot.CaptureStable(fsys)
+	if err != nil {
+		return fsnapshot.Snapshot{}, explainMigrationDirectoryRead(writer, err)
+	}
+	return snapshot, nil
+}
+
+// explainMigrationDirectoryRead names the entries that make a migration
+// directory unreadable through the handle the run bound, when that is what went
+// wrong. Any other failure is returned unchanged.
+//
+// The reachable cause is a migration file that is a symbolic link out of the
+// migration directory -- a shared migration linked in from elsewhere. Reading
+// the directory by pathname followed such a link, and reading it through the
+// bound handle does not, so this is a refusal rather than an accident: every
+// read, checksum and publication of the directory goes through the object the
+// run opened, and a file whose bytes live outside it cannot be part of a
+// directory Ptah is willing to seal (stokaro/ptah#1118). A link that resolves
+// inside the migration directory stays supported and never reaches this.
+//
+// The diagnosis runs only after a failed capture, so the successful path pays
+// nothing for it.
+func explainMigrationDirectoryRead(writer *atlasmigrate.MigrationWriter, cause error) error {
+	escaping := escapingMigrationEntries(writer)
+	if len(escaping) == 0 {
+		return cause
+	}
+	return fmt.Errorf(
+		"migration directory %s: symbolic links resolving outside it: %s;"+
+			" a migration file linked in from another directory is refused because"+
+			" the whole directory is read, checksummed and published through the"+
+			" directory itself: %w",
+		writer.Path(),
+		strings.Join(escaping, ", "),
+		cause,
+	)
+}
+
+// escapingMigrationEntries lists the migration directory's symbolic links that
+// do not resolve inside it, asked through the bound handle: the link itself is
+// visible as an entry, and a stat that cannot follow it is the escape.
+func escapingMigrationEntries(writer *atlasmigrate.MigrationWriter) []string {
+	entries, err := writer.Entries()
+	if err != nil {
+		return nil
+	}
+	fsys, err := writer.FS()
+	if err != nil {
+		return nil
+	}
+	var escaping []string
+	for _, entry := range entries {
+		if entry.Type()&fs.ModeSymlink == 0 {
+			continue
+		}
+		if _, statErr := fs.Stat(fsys, entry.Name()); statErr != nil {
+			escaping = append(escaping, entry.Name())
+		}
+	}
+	return escaping
 }
 
 func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateMigrationOptions, error) {
