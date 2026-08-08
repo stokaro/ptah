@@ -202,12 +202,23 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	return schema, nil
 }
 
+// readSchemas reports the schemas this read covered.
+//
+// It asks schemasToRead(), the same list readTables, readIndexes and every
+// other read below iterate, so the schema list and the objects underneath it
+// are one decision rather than two. It used to answer nothing at all unless an
+// allow-list had been passed, which meant an unscoped read described tables in
+// `public` while denying it had read any schema -- and whatever consumed that
+// silence had to guess. stokaro/ptah#1276.
+//
+// Which schemas an unscoped read covers is a separate question, and this
+// change does not move it: it is still the connected schema. What moves is that
+// the read says so. `schema inspect` resolves its own wider scope from the URL
+// and hands the names in explicitly (stokaro/ptah#1264).
 func (r *Reader) readSchemas() ([]types.DBSchemaInfo, error) {
-	if !r.scoped {
-		return nil, nil
-	}
-	schemas := make([]types.DBSchemaInfo, 0, len(r.schemasToRead()))
-	for _, schemaName := range r.schemasToRead() {
+	names := r.schemasToRead()
+	schemas := make([]types.DBSchemaInfo, 0, len(names))
+	for _, schemaName := range names {
 		schema, err := r.readSchemaInfo(schemaName)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
