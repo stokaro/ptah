@@ -143,8 +143,10 @@ func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
 		"--url", "sqlite://"+targetPath,
 		"--config", "file://"+configPath,
 		"--env", "dev",
+		// --auto-approve is deliberately absent: the pair is refused, by both
+		// binaries, and a dry run has nothing to approve (stokaro/ptah#1231
+		// case 5).
 		"--dry-run",
-		"--auto-approve",
 	)
 
 	c.Assert(err, qt.IsNil)

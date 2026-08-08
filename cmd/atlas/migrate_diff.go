@@ -62,7 +62,6 @@ $EDITOR before the directory checksum is finalized. Docker dev databases
 remain an explicit follow-up gap. When --env is set, the selected atlas.hcl env
 can provide schema.src, dev, migration.dir, format.migrate.diff, and supported
 diff policy values.`,
-		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
 			if len(args) == 1 {
@@ -85,7 +84,14 @@ diff policy values.`,
 	if err := flags.MarkHidden("dry-run"); err != nil {
 		panic(err)
 	}
-	cmdutil.ConfigureCommandArgs(cmd, nil)
+	// The arity validator is passed HERE, not declared in the literal above:
+	// ConfigureCommandArgs assigns cmd.Args unconditionally, so a
+	// `Args: cobra.MaximumNArgs(1)` field was overwritten with nil and this verb
+	// silently accepted every extra positional. `migrate diff --to … one two`
+	// exited 0 where the pinned community binary v1.3.0 exits 1 with
+	// `accepts at most 1 arg(s), received 2` (stokaro/ptah#1231 case 8); the
+	// message below is cobra's own, which is where that binary's comes from too.
+	cmdutil.ConfigureCommandArgs(cmd, cobra.MaximumNArgs(1))
 	return cmd
 }
 
@@ -270,6 +276,13 @@ func runAtlasMigrateDiff(
 		// and re-hashed.
 		VerifyDir: func(fsys fs.FS) error {
 			return checkNativeAtlasDirChecksum(cmd, fsys)
+		},
+		// Checked here rather than on the way in, because that is where the
+		// community binary decides it: a name it cannot turn into a file refuses
+		// a diff that has changes and passes one that has none. See
+		// [checkAtlasMigrationName] for the measured table.
+		VerifyName: func(name string) error {
+			return checkAtlasMigrationName("diff", name)
 		},
 	})
 	if err != nil {

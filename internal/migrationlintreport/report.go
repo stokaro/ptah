@@ -590,16 +590,28 @@ type effectiveGitOptions struct {
 	ok   bool
 }
 
+// effectiveGitBase merges the command-line --git-base with the project value,
+// without judging it. Keeping the merge in one place is what stops "a selector
+// was named" and "the selector is usable" from becoming two different
+// definitions of --git-base.
+func effectiveGitBase(
+	opts Options,
+	cfg projectconfig.Config,
+	projectSelectors projectLintSelectorUse,
+) string {
+	configGitBase := cfg.StringValue(projectconfig.StringLintGitBase)
+	if !opts.Changed.GitBase && projectSelectors.git && configGitBase.Present {
+		return configGitBase.Value
+	}
+	return opts.GitBase
+}
+
 func effectiveGit(
 	opts Options,
 	cfg projectconfig.Config,
 	projectSelectors projectLintSelectorUse,
 ) (effectiveGitOptions, error) {
-	gitBase := opts.GitBase
-	configGitBase := cfg.StringValue(projectconfig.StringLintGitBase)
-	if !opts.Changed.GitBase && projectSelectors.git && configGitBase.Present {
-		gitBase = configGitBase.Value
-	}
+	gitBase := effectiveGitBase(opts, cfg, projectSelectors)
 	gitDir := opts.GitDir
 	configGitDir := cfg.StringValue(projectconfig.StringLintGitDir)
 	if !opts.Changed.GitDir && projectSelectors.git && configGitDir.Present {

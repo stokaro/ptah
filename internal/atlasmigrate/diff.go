@@ -73,6 +73,17 @@ type DiffOptions struct {
 	// is refused with the same bytes rather than with a second verifier's
 	// wording.
 	VerifyDir func(fs.FS) error
+	// VerifyName checks Name just before migration files are written, and only
+	// then. Leave it nil to accept whatever the file naming produces.
+	//
+	// The position is the point: the community binary composes its file name
+	// from the migration name verbatim and fails at the open, so a name it
+	// cannot write refuses a run that HAS changes and passes a run that has
+	// none (measured on the pinned v1.3.0: `migrate diff sub/name` exits 0 on a
+	// synced directory and 1 on one with changes). Checking earlier would refuse
+	// where it accepts, which is the direction compatibility forbids in both
+	// senses.
+	VerifyName func(string) error
 }
 
 type DiffResult struct {
@@ -216,6 +227,11 @@ func generateDiff(
 	}
 	if opts.DryRun {
 		return DiffResult{SQL: joinFileContentSQL(contents)}, nil
+	}
+	if opts.VerifyName != nil {
+		if err := opts.VerifyName(opts.Name); err != nil {
+			return DiffResult{}, err
+		}
 	}
 	return writeDiffArtifacts(
 		ctx,

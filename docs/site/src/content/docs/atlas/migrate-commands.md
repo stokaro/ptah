@@ -857,22 +857,42 @@ ptah-compat migrate lint \
   --latest 1
 ```
 
-A lint run needs a **scope**: `--latest N`, `--git-base <ref>`, or a `lint`
-block in `atlas.hcl` that supplies one. Without a scope `ptah-compat migrate
-lint` exits `1` with `Error: --latest or --git-base is required`, matching the
-pinned Atlas community binary v1.3.0 on the same argv. The refusal comes before
-the migration directory is read and before `--dev-url` is contacted, which is
-the part that matters: `--dev-url` is scratch space and the run **cleans** it,
-so an unscoped invocation that answered would drop tables in a database the
-pinned binary never connects to.
+Both flags in that example are required, and they are **two separate
+requirements** with two separate refusals, each matching the pinned Atlas
+community binary v1.3.0 byte for byte:
 
-Set `PTAH_ATLAS_LINT_ALL_VERSIONS=1` to lint the whole directory with no
-selector instead. Ptah's linter can do that and the tool this surface stands in
-for cannot; defaulting to the refusal keeps drop-in scripts drop-in, and the
-variable keeps the fuller behavior reachable here rather than only through
-native `ptah`. It is an environment variable and not a flag because the
-conformance `cli-surface` tier asserts flag parity with the pinned binary.
-Native `ptah migrations lint` needs no scope and is unaffected.
+| invocation | exit | message |
+| --- | --- | --- |
+| no `--dev-url` | 1 | `required flag(s) "dev-url" not set` |
+| no `--latest` and no `--git-base` | 1 | `--latest or --git-base is required` |
+
+An argv missing both answers the `--dev-url` sentence, because that is the one
+the pinned binary answers on the same argv.
+
+A **scope** may come from the selected `atlas.hcl` environment instead of the
+command line: a `lint { latest = 1 }` or a `lint { git { base = … } }` satisfies
+the requirement with nothing spelled on the command line. `--latest N` with an N
+larger than the directory analyzes every migration. The scope refusal comes
+before the migration directory is read and before `--dev-url` is contacted,
+which is the part that matters: `--dev-url` is scratch space and the run
+**cleans** it, so an unscoped invocation that answered would drop tables in a
+database the pinned binary never connects to.
+
+Two environment variables relax these requirements. They relax **different**
+ones, and neither implies the other:
+
+- `PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1` drops the dev-database requirement.
+  Ptah's analyzers reach a verdict from the migration files alone; the run still
+  needs a scope.
+- `PTAH_ATLAS_LINT_ALL_VERSIONS=1` drops the scope requirement and lints the
+  whole directory. The run still needs a dev database unless the variable above
+  is also set.
+
+Both default to off so a pipeline written against the community CLI gets the
+same refusal here that it gets there, and both are environment variables rather
+than flags because the conformance `cli-surface` tier asserts flag parity with
+the pinned binary. Native `ptah migrations lint` needs neither a dev database
+nor a scope and is unaffected by both.
 
 `migrate lint --dev-url` treats the dev database as scratch space: it drops user
 tables, replays the migration directory, and then runs static lint
@@ -1245,6 +1265,28 @@ looser than Atlas and are tracked in
 [#1186](https://github.com/stokaro/ptah/issues/1186). The requirement is a
 `PTAH_DIR` rule as much as a flag rule; `PTAH_MIGRATIONS_DIR`, which is the
 native `--migrations-dir` under its environment name, still takes a plain path.
+
+### A migration name cannot contain a path separator
+
+The name becomes part of the file name, so a `/` in it selects a directory that
+is not there. Both writing verbs refuse it and write nothing
+([#1231](https://github.com/stokaro/ptah/issues/1231)):
+
+```bash
+ptah-compat migrate new "sub/dir_name" --dir file://migrations
+# Error: atlas migrate new "sub/dir_name": migration name must be a single file
+# name element, without a path separator
+```
+
+The community CLI refuses the same input, with the raw `open …: no such file or
+directory` of the write it did not expect to fail; Ptah names the rule instead,
+in the same words the foreign-layout path has always used. Nothing else about a
+name is refused on an Atlas-layout directory: a space, a backslash and `..` are
+all accepted, because they are accepted there.
+
+The refusal lands where the file would be written, which matters on
+`migrate diff`: a diff that finds no changes writes nothing and never reaches
+the name, so it still exits 0 — the same as the community CLI.
 
 `lint` deliberately does not enforce it, but only for a *missing* integrity
 file: linting a directory that has never been hashed is how you inspect one

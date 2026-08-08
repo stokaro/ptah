@@ -34,7 +34,10 @@ func TestCompatVarFlagKeepsAtlasUsage(t *testing.T) {
 			"%s --var help is %q, not Atlas's wording", group, flag.Usage,
 		))
 		c.Assert(flag.Usage, qt.Not(qt.Contains), "atlas.hcl variable with no default")
-		c.Assert(flag.Value.Type(), qt.Equals, "stringArray")
+		// The value type is the community binary's own spelling of this flag,
+		// and it is not cosmetic: registering it as that type is what refuses a
+		// `--var` carrying no `=` at parse time (stokaro/ptah#1231 case 7).
+		c.Assert(flag.Value.Type(), qt.Equals, "<name>=<value>")
 		c.Assert(flag.Hidden, qt.IsFalse)
 	}
 }

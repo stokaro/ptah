@@ -134,6 +134,15 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 		panic(err)
 	}
 	cmd.MarkFlagsMutuallyExclusive(atlasFileFlagName, "to")
+	// --dry-run and --auto-approve contradict each other: one asks for the plan
+	// and no execution, the other for execution with no prompt. The pinned
+	// community binary v1.3.0 refuses the pair at exit 1 while Ptah printed the
+	// plan at exit 0 (stokaro/ptah#1231 case 5). Nothing is lost by refusing:
+	// --auto-approve had no effect on a run that executes nothing, so the pair
+	// never reached a behavior that --dry-run alone does not have. The wording
+	// comes from cobra's own flag-group validation, which is where that binary's
+	// identical sentence comes from.
+	cmd.MarkFlagsMutuallyExclusive("dry-run", "auto-approve")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url and the desired schema with --to"))
 	return cmd
 }

@@ -722,7 +722,11 @@ func TestCompatCommand_AdvertisesAtlasProjectFlags(t *testing.T) {
 			c.Assert(help, qt.Contains, "--config string")
 			c.Assert(help, qt.Contains, "-c, --config")
 			c.Assert(help, qt.Contains, "--env string")
-			c.Assert(help, qt.Contains, "--var stringArray")
+			// `<name>=<value>`, not `stringArray`: the flag is registered with a
+			// value type that refuses an assignment carrying no `=`
+			// (stokaro/ptah#1231 case 7), and the community binary spells the
+			// same row `--var <name>=<value>   input variables (default [])`.
+			c.Assert(help, qt.Contains, "--var <name>=<value>")
 		})
 	}
 }
@@ -945,8 +949,13 @@ env "local" {
 	c.Assert(err, qt.IsNil)
 }
 
+// The opt-in is set because this fixture lints a destructive migration with no
+// dev database on purpose: replaying `ALTER TABLE users DROP COLUMN legacy`
+// against an empty one would fail for a reason that has nothing to do with the
+// `--var` value reaching the native loader, which is what this test measures.
 func TestCompatCommand_AdapterCommandForwardsAtlasProjectConfigToNativeLoader(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -1605,6 +1614,7 @@ func TestCompatCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
 		"migrate", "lint",
 		"--dir", "file://" + dir,
 		"--latest", "1",
+		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
 		"--format", "{{ len .Files }}|{{ (index .Files 0).Name }}|{{ printf \"%.6s\" (index .Files 0).Text }}",
 	})
 
@@ -1614,8 +1624,13 @@ func TestCompatCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql|CREATE")
 }
 
+// This test analyzes with no dev database, which is Ptah's own capability and
+// is refused by default so the compatibility surface matches the community
+// binary's required --dev-url (stokaro/ptah#1231 case 2). The opt-in keeps the
+// subject of the test -- where the format template comes from -- unchanged.
 func TestCompatCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -1648,8 +1663,11 @@ func TestCompatCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql")
 }
 
+// The opt-in is set for the same reason as in the test above: the subject is
+// the config-relative directory, not the dev-database precondition.
 func TestCompatCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
 	otherDir := filepath.Join(dir, "other")
