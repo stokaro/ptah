@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -49,6 +50,15 @@ type ApplyOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// Diagnostics receives out-of-band notices, such as an --exclude selector
+	// that named no object. Nil discards them.
+	Diagnostics io.Writer
+	// RefuseUnmatchedExclude makes an --exclude selector that named nothing in
+	// either state an error rather than a notice. Only the verb that executes
+	// the plan sets it: `schema apply` refuses because a selector that
+	// protected nothing means the plan is free to change the object the user
+	// wrote it for.
+	RefuseUnmatchedExclude bool
 }
 
 type ApplyPlan struct {
@@ -73,6 +83,8 @@ type ApplyRuntimeOptions struct {
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired].
 	Desired *goschema.Database
+	// Diagnostics receives out-of-band notices; see [ApplyOptions.Diagnostics].
+	Diagnostics io.Writer
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -150,7 +162,7 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("read database schema: %w", err)
 	}
-	current, currentErr := scopeDatabaseSide(current, scope, "current schema")
+	current, currentReport, currentErr := scopeDatabaseSide(current, scope, "current schema")
 	if currentErr != nil && !emptySelection(currentErr) {
 		return applyComputation{}, currentErr
 	}
@@ -158,9 +170,22 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
-	desired, desiredErr := scopeGeneratedSide(desired, scope, "desired schema")
+	desired, desiredReport, desiredErr := scopeGeneratedSide(desired, scope, "desired schema")
 	if desiredErr != nil && !emptySelection(desiredErr) {
 		return applyComputation{}, desiredErr
+	}
+	// An --exclude selector that named nothing in the database and nothing in
+	// the desired state protected nothing, and apply is the verb that carries
+	// the plan out. Refusing is the safe answer there; the opt-in named in the
+	// message restores the permissive one. Callers that only compute a plan
+	// say so instead.
+	unmatched := atlasfilter.UnmatchedAcrossStates(currentReport, desiredReport)
+	if opts.RefuseUnmatchedExclude {
+		if err := refuseUnmatchedExclude(opts.Diagnostics, unmatched); err != nil {
+			return applyComputation{}, err
+		}
+	} else {
+		reportUnmatchedExclude(opts.Diagnostics, unmatched)
 	}
 	// An --include selection that matched neither the database nor the desired
 	// state leaves nothing to apply. Reported as a synced schema it is a verb
@@ -255,8 +280,10 @@ func PrepareApply(
 		ProjectEnv: opts.ProjectEnv,
 		Desired:    opts.Desired,
 
-		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
-		Vars:                  opts.Vars,
+		Diagnostics:            opts.Diagnostics,
+		RefuseUnmatchedExclude: true,
+		IgnoreUnknownHCLNames:  opts.IgnoreUnknownHCLNames,
+		Vars:                   opts.Vars,
 	})
 	if err != nil {
 		return ApplyRuntimePlan{}, err

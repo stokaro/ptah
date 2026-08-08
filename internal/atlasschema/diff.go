@@ -104,11 +104,11 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		Exclude:       opts.Exclude,
 		DefaultSchema: diffDefaultSchema(dialect, fromState, toState),
 	}
-	from, fromErr := scopeGeneratedSide(fromState.Schema, scope, "--from schema")
+	from, fromReport, fromErr := scopeGeneratedSide(fromState.Schema, scope, "--from schema")
 	if fromErr != nil && !emptySelection(fromErr) {
 		return atlasreport.SchemaDiff{}, fromErr
 	}
-	to, toErr := scopeGeneratedSide(toState.Schema, scope, "--to schema")
+	to, toReport, toErr := scopeGeneratedSide(toState.Schema, scope, "--to schema")
 	if toErr != nil && !emptySelection(toErr) {
 		return atlasreport.SchemaDiff{}, toErr
 	}
@@ -120,10 +120,20 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	if emptySelection(fromErr) && emptySelection(toErr) {
 		reportEmptySelection(opts.Diagnostics, fromErr)
 	}
-	fromDB, err := diffFromDBState(fromState, from, scope, dialect)
+	fromDB, fromDBReport, err := diffFromDBState(fromState, from, scope, dialect)
 	if err != nil && !emptySelection(err) {
 		return atlasreport.SchemaDiff{}, err
 	}
+	// A database-backed --from is filtered twice: once as the converted IR and
+	// once as the introspected state the comparison actually consumes. The
+	// second is the one whose report describes what the user's selector met.
+	if fromState.DB != nil {
+		fromReport = fromDBReport
+	}
+	// Same split as the empty --include selection above: diff previews rather
+	// than executes, so it keeps its exit status and says on stderr that a
+	// selector protected nothing.
+	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(fromReport, toReport))
 
 	// The comparison reports what the --from document's coverage record made
 	// undecidable alongside what it decided. The list is empty for every --from
@@ -156,9 +166,9 @@ func diffFromDBState(
 	filtered *goschema.Database,
 	scope atlasfilter.Scope,
 	dialect string,
-) (*types.DBSchema, error) {
+) (*types.DBSchema, atlasfilter.ExcludeReport, error) {
 	if state.DB == nil {
-		return schemafile.ToDBSchema(filtered, dialect), nil
+		return schemafile.ToDBSchema(filtered, dialect), atlasfilter.ExcludeReport{}, nil
 	}
 	return scopeDatabaseSide(state.DB, scope, "--from schema")
 }

@@ -34,18 +34,53 @@ func ExcludeDatabaseWithDefaultSchema(
 	patterns []string,
 	defaultSchema string,
 ) (*dbschematypes.DBSchema, error) {
+	filtered, _, err := ExcludeDatabaseReport(schema, patterns, defaultSchema)
+	return filtered, err
+}
+
+// ExcludeReport records what an exclude run observed beyond the filtering
+// itself.
+//
+// The one thing worth observing is emptiness. An exclude pattern has no match
+// requirement, so a selector that names nothing subtracts nothing and the
+// command succeeds with the object still in its output — the failure mode this
+// report exists to make visible. A scoping flag that fails open is worse than
+// one that refuses: someone excluding an object is excluding it for a reason,
+// and silently keeping it defeats that reason with no diagnostic.
+type ExcludeReport struct {
+	// Unmatched lists the exclude selectors, as written, that named no object
+	// in the state they were applied to. It is an outcome, not a shape: the
+	// selectors here are well formed, they simply matched nothing.
+	Unmatched []string
+}
+
+// ExcludeDatabaseReport is [ExcludeDatabaseWithDefaultSchema] plus the report.
+// The filtering is identical; only the extra return value is new, so callers
+// that do not care about emptiness keep the two-value form.
+func ExcludeDatabaseReport(
+	schema *dbschematypes.DBSchema,
+	patterns []string,
+	defaultSchema string,
+) (*dbschematypes.DBSchema, ExcludeReport, error) {
 	filters, err := parsePatterns(patterns, defaultSchema)
 	if err != nil {
-		return nil, err
+		return nil, ExcludeReport{}, err
 	}
 	if schema == nil || len(filters) == 0 {
-		return schema, nil
+		return schema, unfilteredReport(filters), nil
 	}
 
 	state := newExclusionState(filters, defaultSchema)
 	filtered := cloneDatabase(schema)
+	// Schemas go first: every filter below asks whether its object's schema
+	// left, and that answer has to exist before the first object is judged.
+	filtered.Schemas = state.filterSchemas(filtered.Schemas)
 	filtered.Tables = state.filterTables(filtered.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
+	filtered.Sequences = state.filterSequences(filtered.Sequences)
+	filtered.Domains = state.filterDomains(filtered.Domains)
+	filtered.Composites = state.filterComposites(filtered.Composites)
+	filtered.Ranges = state.filterRanges(filtered.Ranges)
 	filtered.Indexes = state.filterIndexes(filtered.Indexes)
 	filtered.Constraints = state.filterConstraints(filtered.Constraints)
 	filtered.Extensions = state.filterExtensions(filtered.Extensions)
@@ -56,7 +91,18 @@ func ExcludeDatabaseWithDefaultSchema(
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
 	filtered.Roles = state.filterRoles(filtered.Roles)
 	filtered.Grants = state.filterGrants(filtered.Grants)
-	return filtered, nil
+	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
+	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
+}
+
+// unfilteredReport is the report for a state no pattern was ever tested
+// against: nothing matched, because nothing was asked.
+func unfilteredReport(filters []resourcePattern) ExcludeReport {
+	var unmatched []string
+	for _, filter := range filters {
+		unmatched = append(unmatched, filter.raw)
+	}
+	return ExcludeReport{Unmatched: unmatched}
 }
 
 // ExcludeGenerated returns a shallow copy of schema with generated-schema IR
@@ -76,16 +122,32 @@ func ExcludeGeneratedWithDefaultSchema(
 	patterns []string,
 	defaultSchema string,
 ) (*goschema.Database, error) {
+	filtered, _, err := ExcludeGeneratedReport(schema, patterns, defaultSchema)
+	return filtered, err
+}
+
+// ExcludeGeneratedReport is [ExcludeGeneratedWithDefaultSchema] plus the
+// [ExcludeReport] for the generated side.
+func ExcludeGeneratedReport(
+	schema *goschema.Database,
+	patterns []string,
+	defaultSchema string,
+) (*goschema.Database, ExcludeReport, error) {
 	filters, err := parsePatterns(patterns, defaultSchema)
 	if err != nil {
-		return nil, err
+		return nil, ExcludeReport{}, err
 	}
 	if schema == nil || len(filters) == 0 {
-		return schema, nil
+		return schema, unfilteredReport(filters), nil
 	}
 
 	state := newExclusionState(filters, defaultSchema)
 	filtered := cloneGenerated(schema)
+	// Same ordering rule as the database side, and the same reason both sides
+	// have this pass at all: a schema removed from one side only would come
+	// back as a CREATE SCHEMA for the object the selector was written to
+	// protect.
+	filtered.Schemas = state.filterGeneratedSchemas(filtered.Schemas)
 	filtered.Tables = state.filterGeneratedTables(filtered.Tables)
 	tableByStruct := generatedTableByStruct(filtered.Tables)
 	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields)
@@ -94,6 +156,10 @@ func ExcludeGeneratedWithDefaultSchema(
 	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
 	filtered.EmbeddedFields = state.filterGeneratedEmbeddedFields(tableByStruct, filtered.EmbeddedFields)
 	filtered.Enums = state.filterGeneratedEnums(filtered.Enums)
+	filtered.Sequences = state.filterGeneratedSequences(filtered.Sequences)
+	filtered.Domains = state.filterGeneratedDomains(filtered.Domains)
+	filtered.CompositeTypes = state.filterGeneratedCompositeTypes(filtered.CompositeTypes)
+	filtered.Ranges = state.filterGeneratedRanges(filtered.Ranges)
 	filtered.Extensions = state.filterGeneratedExtensions(filtered.Extensions)
 	filtered.Functions = state.filterGeneratedFunctions(filtered.Functions)
 	filtered.Views = state.filterGeneratedViews(filtered.Views)
@@ -107,10 +173,14 @@ func ExcludeGeneratedWithDefaultSchema(
 	filtered.FunctionDependencies = nil
 	filtered.SelfReferencingForeignKeys = nil
 	goschema.Finalize(filtered)
-	return filtered, nil
+	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
 }
 
 type resourcePattern struct {
+	// raw is the selector exactly as the user wrote it, trimmed and already
+	// split on commas. Diagnostics quote it, so a report names the spelling
+	// the user typed rather than the glob left after the selector was cut off.
+	raw   string
 	glob  string
 	types map[string]struct{}
 	field string
@@ -225,7 +295,7 @@ func parsePattern(value, kind string) (resourcePattern, error) {
 	if _, err := path.Match(glob, "ptah_match_probe"); err != nil {
 		return resourcePattern{}, fmt.Errorf("invalid Atlas %s glob %q: %w", kind, raw, err)
 	}
-	return resourcePattern{glob: glob, types: types, field: field}, nil
+	return resourcePattern{raw: raw, glob: glob, types: types, field: field}, nil
 }
 
 func parseTypeSelector(raw string, open int, kind string) (typeSelector, error) {
@@ -325,9 +395,31 @@ type exclusionState struct {
 	// connection's schema for introspected states and the dialect default for
 	// file-backed ones; empty means "no default", which restores the
 	// bare-name-only candidate set.
-	defaultSchema   string
+	defaultSchema string
+	// matched[i] records whether patterns[i] ever named an object during this
+	// run. Emptiness is an outcome rather than a shape -- a selector can be
+	// perfectly well formed and still name nothing -- so it cannot be decided
+	// by reading the selector text, only by watching the match.
+	matched         []bool
 	excludedTables  map[tableIdentity]struct{}
 	excludedColumns map[columnIdentity]struct{}
+	// excludedSchemas holds the schemas a selector named. Every object that
+	// lives in one leaves with it, the way a column leaves with its table:
+	// the pinned binary drops the whole schema for `--exclude app`, so an
+	// object kept behind an excluded schema would still be planned for a DROP
+	// the selector was written to prevent.
+	excludedSchemas map[string]struct{}
+	// excludedSequences mirrors excludedTables for sequences, so a grant on a
+	// sequence a selector removed leaves with it instead of naming an object
+	// the filtered schema no longer holds.
+	excludedSequences map[tableIdentity]struct{}
+	// removedGeneratedTables keeps the generated tables an earlier selector
+	// removed, keyed the way generatedTableByStruct keys the surviving ones. A
+	// generated child is reached through its parent struct, so once the parent
+	// leaves the map there is no name left to test a child selector against and
+	// the child selector reports as naming nothing. The keep decision does not
+	// use this map -- a child of a removed table leaves with it either way.
+	removedGeneratedTables map[string]goschema.Table
 }
 
 type tableIdentity struct {
@@ -342,11 +434,27 @@ type columnIdentity struct {
 
 func newExclusionState(patterns []resourcePattern, defaultSchema string) *exclusionState {
 	return &exclusionState{
-		patterns:        patterns,
-		defaultSchema:   strings.TrimSpace(defaultSchema),
-		excludedTables:  map[tableIdentity]struct{}{},
-		excludedColumns: map[columnIdentity]struct{}{},
+		patterns:               patterns,
+		defaultSchema:          strings.TrimSpace(defaultSchema),
+		matched:                make([]bool, len(patterns)),
+		excludedTables:         map[tableIdentity]struct{}{},
+		excludedColumns:        map[columnIdentity]struct{}{},
+		excludedSchemas:        map[string]struct{}{},
+		excludedSequences:      map[tableIdentity]struct{}{},
+		removedGeneratedTables: map[string]goschema.Table{},
 	}
+}
+
+// unmatchedSelectors returns the exclude selectors, as written, that named no
+// object in the state this run filtered.
+func (s *exclusionState) unmatchedSelectors() []string {
+	var out []string
+	for i, pattern := range s.patterns {
+		if !s.matched[i] {
+			out = append(out, pattern.raw)
+		}
+	}
+	return out
 }
 
 // effectiveSchema resolves the schema that owns an object. An object with no
@@ -385,19 +493,88 @@ func (s *exclusionState) childNameCandidates(schema, table, child string) []stri
 	return tableChildNameCandidates(s.effectiveSchema(schema), table, child)
 }
 
+// filterSchemas subtracts the schemas an exclude selector names.
+//
+// Schemas were the last collection this package cloned and never offered to
+// the patterns. That made two things wrong at once. A selector naming a real
+// schema was reported as having matched nothing, so `schema apply` refused a
+// selection that in fact named an object the description renders -- the very
+// failure the unmatched report exists to prevent. And it was destructive:
+// `--exclude app` left every object in `app` in the description, so the plan
+// still dropped them.
+//
+// Measured on the pinned community binary against a database holding
+// `public.users`, `public.mood`, `app.orders` and `app.color`, with the same
+// `-s public -s app` scope ptah-compat exposes:
+//
+//	--exclude app          removes schema "app" and both objects in it
+//	--exclude public       removes schema "public" and both objects in it
+//	--exclude p*           removes schema "public" the same way
+//	--exclude app[type=schema]  removes schema "app" and both objects in it
+//	--exclude app.*        removes app's objects and KEEPS schema "app"
+//
+// So a pattern is matched against the schema's own name, under resource type
+// `schema`, and a schema that matches takes its contents with it. The two-part
+// `app.*` spelling keeps naming the objects rather than the schema, because
+// `app` is not a match for the glob `app.*`.
+//
+// Ptah also keeps honoring the bare spelling as an object name, which that
+// binary does not do in this scope -- the divergence already recorded for
+// tables and views. Both readings are offered here for the same reason both
+// name candidates are offered elsewhere: on an exclude, looseness only ever
+// subtracts more, and it cannot turn a protected object into a dropped one.
+func (s *exclusionState) filterSchemas(schemas []dbschematypes.DBSchemaInfo) []dbschematypes.DBSchemaInfo {
+	return keep(schemas, func(schema dbschematypes.DBSchemaInfo) bool {
+		excluded := s.matches("schema", strings.TrimSpace(schema.Name))
+		if excluded {
+			s.excludeSchema(schema.Name)
+		}
+		return !excluded
+	})
+}
+
+// filterGeneratedSchemas is [exclusionState.filterSchemas] for the desired
+// side, so both sides of a comparison subtract the same schemas.
+func (s *exclusionState) filterGeneratedSchemas(schemas []goschema.Schema) []goschema.Schema {
+	return keep(schemas, func(schema goschema.Schema) bool {
+		excluded := s.matches("schema", strings.TrimSpace(schema.Name))
+		if excluded {
+			s.excludeSchema(schema.Name)
+		}
+		return !excluded
+	})
+}
+
 func (s *exclusionState) filterTables(tables []dbschematypes.DBTable) []dbschematypes.DBTable {
 	result := make([]dbschematypes.DBTable, 0, len(tables))
 	for _, table := range tables {
 		table = cloneTable(table)
 		tableNames := s.nameCandidates(table.Schema, table.Name)
-		if s.matchesAny(tableResourceTypes(table), tableNames...) {
+		if s.matchesAny(tableResourceTypes(table), tableNames...) || s.schemaExcluded(table.Schema) {
 			s.excludeTable(table.Schema, table.Name)
+			// The table leaves with every column it had, but the column
+			// patterns still have to be ASKED. filterColumns is never reached
+			// for an excluded table, so without this a selector naming a real
+			// column of it -- `--exclude users --exclude users.id` -- would be
+			// reported as naming nothing. Same rule as filterIndexes below,
+			// applied to the one child the parent short-circuit skips entirely.
+			s.noteColumnSelectors(table)
 			continue
 		}
 		table.Columns = s.filterColumns(table, table.Columns)
 		result = append(result, table)
 	}
 	return result
+}
+
+// noteColumnSelectors asks the patterns whether they name a column of a table
+// another selector already removed. It records matches and nothing else: the
+// columns are gone with their table either way, so no exclusion is recorded and
+// no keep decision changes.
+func (s *exclusionState) noteColumnSelectors(table dbschematypes.DBTable) {
+	for _, column := range table.Columns {
+		s.matches("column", s.childNameCandidates(table.Schema, table.Name, column.Name)...)
+	}
 }
 
 func (s *exclusionState) filterColumns(table dbschematypes.DBTable, columns []dbschematypes.DBColumn) []dbschematypes.DBColumn {
@@ -415,29 +592,96 @@ func (s *exclusionState) filterColumns(table dbschematypes.DBTable, columns []db
 
 func (s *exclusionState) filterEnums(enums []dbschematypes.DBEnum) []dbschematypes.DBEnum {
 	return keep(enums, func(value dbschematypes.DBEnum) bool {
-		return !s.matches("enum", value.Name)
+		named := s.matches("enum", s.nameCandidates(value.Schema, value.Name)...)
+		return !named && !s.schemaExcluded(value.Schema)
 	})
 }
 
+// filterSequences, filterDomains, filterComposites and filterRanges subtract
+// the four top-level kinds the exclusion used to clone and never ask about.
+//
+// The include projection already selects all four by name
+// ([scopeSelection.projectDatabaseTopLevel] and projectDatabaseSupport), so
+// `--include positive_int` picked the domain while `--exclude positive_int` was
+// a silent no-op that still planned DROP DOMAIN for the object the user wrote
+// the selector to protect -- the same destructive miss this file fixes for
+// enums and functions. It is also what makes the unmatched-selector report
+// truthful: a selector can only be called empty by a filter that asked it.
+//
+// The resource-type names match the include side exactly: sequence, domain,
+// composite_type, range.
+func (s *exclusionState) filterSequences(sequences []dbschematypes.DBSequence) []dbschematypes.DBSequence {
+	return keep(sequences, func(sequence dbschematypes.DBSequence) bool {
+		excluded := s.matches("sequence", s.nameCandidates(sequence.Schema, sequence.Name)...) ||
+			s.schemaExcluded(sequence.Schema)
+		if excluded {
+			s.excludeSequence(sequence.Schema, sequence.Name)
+		}
+		return !excluded
+	})
+}
+
+func (s *exclusionState) filterDomains(domains []dbschematypes.DBDomain) []dbschematypes.DBDomain {
+	return keep(domains, func(domain dbschematypes.DBDomain) bool {
+		named := s.matches("domain", s.nameCandidates(domain.Schema, domain.Name)...)
+		return !named && !s.schemaExcluded(domain.Schema)
+	})
+}
+
+func (s *exclusionState) filterComposites(composites []dbschematypes.DBComposite) []dbschematypes.DBComposite {
+	return keep(composites, func(composite dbschematypes.DBComposite) bool {
+		named := s.matches("composite_type", s.nameCandidates(composite.Schema, composite.Name)...)
+		return !named && !s.schemaExcluded(composite.Schema)
+	})
+}
+
+func (s *exclusionState) filterRanges(ranges []dbschematypes.DBRange) []dbschematypes.DBRange {
+	return keep(ranges, func(value dbschematypes.DBRange) bool {
+		named := s.matches("range", s.nameCandidates(value.Schema, value.Name)...)
+		return !named && !s.schemaExcluded(value.Schema)
+	})
+}
+
+// noteRolesOutOfScope asks the patterns about the cluster roles this
+// description deliberately does not define.
+//
+// They are cloned but never filtered, and correctly so: they are not part of
+// the description, so there is nothing to subtract and the plan cannot touch
+// them. That makes "this selector protected nothing" false for a selector that
+// names one -- it is already out -- so the selector is marked as having named
+// something rather than reported empty.
+func (s *exclusionState) noteRolesOutOfScope(roles []dbschematypes.DBRole) {
+	for _, role := range roles {
+		s.matches("role", role.Name)
+	}
+}
+
+// filterIndexes asks the patterns whether they name the index BEFORE the
+// parent short-circuits decide, so a selector that names an index inside an
+// already-excluded table still counts as having matched something. The keep
+// decision is unchanged: an index whose table or column left the schema leaves
+// with it either way. Every child filter below is ordered for the same reason.
 func (s *exclusionState) filterIndexes(indexes []dbschematypes.DBIndex) []dbschematypes.DBIndex {
 	return keep(indexes, func(index dbschematypes.DBIndex) bool {
+		named := s.matches("index", s.childNameCandidates(index.Schema, index.TableName, index.Name)...)
 		if s.tableExcluded(index.Schema, index.TableName) || s.anyColumnExcluded(index.Schema, index.TableName, index.Columns) {
 			return false
 		}
-		return !s.matches("index", s.childNameCandidates(index.Schema, index.TableName, index.Name)...)
+		return !named
 	})
 }
 
 func (s *exclusionState) filterConstraints(constraints []dbschematypes.DBConstraint) []dbschematypes.DBConstraint {
 	return keep(constraints, func(constraint dbschematypes.DBConstraint) bool {
 		foreignSchema := foreignSchemaOrLocal(constraint)
+		named := s.matchesAny(constraintResourceTypes(constraint), s.childNameCandidates(constraint.Schema, constraint.TableName, constraint.Name)...)
 		if s.tableExcluded(constraint.Schema, constraint.TableName) ||
 			s.tableExcluded(foreignSchema, derefString(constraint.ForeignTable)) ||
 			s.anyColumnExcluded(constraint.Schema, constraint.TableName, constraint.ColumnNamesOrDefault()) ||
 			s.anyColumnExcluded(foreignSchema, derefString(constraint.ForeignTable), constraint.ForeignColumnsOrDefault()) {
 			return false
 		}
-		return !s.matchesAny(constraintResourceTypes(constraint), s.childNameCandidates(constraint.Schema, constraint.TableName, constraint.Name)...)
+		return !named
 	})
 }
 
@@ -445,7 +689,7 @@ func (s *exclusionState) filterExtensions(extensions []dbschematypes.DBExtension
 	result := make([]dbschematypes.DBExtension, 0, len(extensions))
 	for _, extension := range extensions {
 		names := s.nameCandidates(extension.Schema, extension.Name)
-		if s.matches("extension", names...) {
+		if s.matches("extension", names...) || s.schemaExcluded(extension.Schema) {
 			continue
 		}
 		if s.matchesField("extension", "version", names...) {
@@ -458,13 +702,15 @@ func (s *exclusionState) filterExtensions(extensions []dbschematypes.DBExtension
 
 func (s *exclusionState) filterFunctions(functions []dbschematypes.DBFunction) []dbschematypes.DBFunction {
 	return keep(functions, func(function dbschematypes.DBFunction) bool {
-		return !s.matches("function", function.Name)
+		named := s.matches("function", s.nameCandidates(function.Schema, function.Name)...)
+		return !named && !s.schemaExcluded(function.Schema)
 	})
 }
 
 func (s *exclusionState) filterViews(views []dbschematypes.DBView) []dbschematypes.DBView {
 	return keep(views, func(view dbschematypes.DBView) bool {
-		excluded := s.matches("view", s.nameCandidates(view.Schema, view.Name)...)
+		excluded := s.matches("view", s.nameCandidates(view.Schema, view.Name)...) ||
+			s.schemaExcluded(view.Schema)
 		if excluded {
 			s.excludeTable(view.Schema, view.Name)
 		}
@@ -474,7 +720,8 @@ func (s *exclusionState) filterViews(views []dbschematypes.DBView) []dbschematyp
 
 func (s *exclusionState) filterMatViews(views []dbschematypes.DBMatView) []dbschematypes.DBMatView {
 	return keep(views, func(view dbschematypes.DBMatView) bool {
-		excluded := s.matches("materialized_view", s.nameCandidates(view.Schema, view.Name)...)
+		excluded := s.matches("materialized_view", s.nameCandidates(view.Schema, view.Name)...) ||
+			s.schemaExcluded(view.Schema)
 		if excluded {
 			s.excludeTable(view.Schema, view.Name)
 		}
@@ -484,20 +731,22 @@ func (s *exclusionState) filterMatViews(views []dbschematypes.DBMatView) []dbsch
 
 func (s *exclusionState) filterTriggers(triggers []dbschematypes.DBTrigger) []dbschematypes.DBTrigger {
 	return keep(triggers, func(trigger dbschematypes.DBTrigger) bool {
+		named := s.matches("trigger", s.childNameCandidates(trigger.Schema, trigger.Table, trigger.Name)...)
 		if s.tableExcluded(trigger.Schema, trigger.Table) {
 			return false
 		}
-		return !s.matches("trigger", s.childNameCandidates(trigger.Schema, trigger.Table, trigger.Name)...)
+		return !named
 	})
 }
 
 func (s *exclusionState) filterRLSPolicies(policies []dbschematypes.DBRLSPolicy) []dbschematypes.DBRLSPolicy {
 	return keep(policies, func(policy dbschematypes.DBRLSPolicy) bool {
 		schema, table := splitQualified(policy.Table)
+		named := s.matches("policy", s.childNameCandidates(schema, table, policy.Name)...)
 		if s.tableExcluded(schema, table) {
 			return false
 		}
-		return !s.matches("policy", s.childNameCandidates(schema, table, policy.Name)...)
+		return !named
 	})
 }
 
@@ -509,22 +758,52 @@ func (s *exclusionState) filterRoles(roles []dbschematypes.DBRole) []dbschematyp
 
 func (s *exclusionState) filterGrants(grants []dbschematypes.DBGrant) []dbschematypes.DBGrant {
 	return keep(grants, func(grant dbschematypes.DBGrant) bool {
+		named := s.matches("grant", grant.QualifiedTarget(), grant.Role+"."+grant.QualifiedTarget())
 		if strings.EqualFold(grant.ObjectType, "TABLE") && s.tableExcluded(grant.Schema, grant.ObjectName) {
 			return false
 		}
-		return !s.matches("grant", grant.QualifiedTarget(), grant.Role+"."+grant.QualifiedTarget())
+		if strings.EqualFold(grant.ObjectType, "SEQUENCE") && s.sequenceExcluded(grant.Schema, grant.ObjectName) {
+			return false
+		}
+		// A grant rides the object it is on, so it leaves when that object's
+		// schema leaves. For a SCHEMA grant the object IS the schema, named by
+		// ObjectName; reading grant.Schema there would resolve an empty field
+		// to the default schema and drop a grant on an unrelated schema.
+		if strings.EqualFold(grant.ObjectType, "SCHEMA") {
+			return !named && !s.schemaExcluded(grant.ObjectName)
+		}
+		return !named && !s.schemaExcluded(grant.Schema)
 	})
 }
 
 func (s *exclusionState) filterGeneratedTables(tables []goschema.Table) []goschema.Table {
 	return keep(tables, func(table goschema.Table) bool {
 		names := s.nameCandidates(table.Schema, table.Name)
-		if s.matches("table", names...) {
+		if s.matches("table", names...) || s.schemaExcluded(table.Schema) {
 			s.excludeTable(table.Schema, table.Name)
+			// Recorded whichever way the table left, so a selector naming one
+			// of its children is still asked rather than reported empty.
+			s.removedGeneratedTables[table.StructName] = table
 			return false
 		}
 		return true
 	})
+}
+
+// noteGeneratedChild asks the patterns whether they name a child of a generated
+// table an earlier selector removed.
+//
+// Every generated child filter resolves its parent through the map of SURVIVING
+// tables, so a removed parent makes the child unreachable and its selector
+// reports as naming nothing -- while the same selector on the introspected side
+// matches, because an index there carries its own schema and table. The keep
+// decision is untouched: the child leaves with its parent either way.
+func (s *exclusionState) noteGeneratedChild(resourceType, structName, tableName, childName string) {
+	table, ok := generatedObjectTable(s.removedGeneratedTables, structName, tableName)
+	if !ok {
+		return
+	}
+	s.matches(resourceType, s.childNameCandidates(table.Schema, table.Name, childName)...)
 }
 
 func (s *exclusionState) filterGeneratedFields(
@@ -535,6 +814,7 @@ func (s *exclusionState) filterGeneratedFields(
 	for _, field := range fields {
 		table, ok := tables[field.StructName]
 		if !ok {
+			s.noteGeneratedChild("column", field.StructName, "", field.Name)
 			continue
 		}
 		if s.generatedFieldExcluded(table, field.Name) {
@@ -570,10 +850,15 @@ func (s *exclusionState) filterGeneratedIndexes(
 ) []goschema.Index {
 	return keep(indexes, func(index goschema.Index) bool {
 		table, ok := generatedIndexTable(tables, index)
-		if !ok || s.generatedAnyColumnExcluded(table, generatedIndexColumns(index)) {
+		if !ok {
+			s.noteGeneratedChild("index", index.StructName, index.TableName, index.Name)
 			return false
 		}
-		return !s.matches("index", s.childNameCandidates(table.Schema, table.Name, index.Name)...)
+		named := s.matches("index", s.childNameCandidates(table.Schema, table.Name, index.Name)...)
+		if s.generatedAnyColumnExcluded(table, generatedIndexColumns(index)) {
+			return false
+		}
+		return !named
 	})
 }
 
@@ -583,14 +868,21 @@ func (s *exclusionState) filterGeneratedConstraints(
 ) []goschema.Constraint {
 	return keep(constraints, func(constraint goschema.Constraint) bool {
 		table, ok := generatedConstraintTable(tables, constraint)
-		if !ok || s.generatedAnyColumnExcluded(table, generatedConstraintColumns(constraint)) {
+		if !ok {
+			for _, resourceType := range generatedConstraintResourceTypes(constraint) {
+				s.noteGeneratedChild(resourceType, constraint.StructName, constraint.Table, constraint.Name)
+			}
+			return false
+		}
+		named := s.matchesAny(generatedConstraintResourceTypes(constraint), s.childNameCandidates(table.Schema, table.Name, constraint.Name)...)
+		if s.generatedAnyColumnExcluded(table, generatedConstraintColumns(constraint)) {
 			return false
 		}
 		if s.generatedForeignTableExcluded(table.Schema, constraint.ForeignTable) ||
 			s.generatedForeignColumnsExcluded(table.Schema, constraint.ForeignTable, constraint.ForeignColumnsOrDefault()) {
 			return false
 		}
-		return !s.matchesAny(generatedConstraintResourceTypes(constraint), s.childNameCandidates(table.Schema, table.Name, constraint.Name)...)
+		return !named
 	})
 }
 
@@ -601,6 +893,7 @@ func (s *exclusionState) filterGeneratedEmbeddedFields(
 	return keep(fields, func(field goschema.EmbeddedField) bool {
 		table, ok := tables[field.StructName]
 		if !ok {
+			s.noteGeneratedChild("column", field.StructName, "", field.Field)
 			return false
 		}
 		if field.Field != "" && s.generatedFieldExcluded(table, field.Field) {
@@ -618,20 +911,64 @@ func (s *exclusionState) filterGeneratedEmbeddedFields(
 }
 
 // filterGeneratedEnums mirrors the database-side enum exclusion, so excluding
-// an enum removes it from both sides of a comparison.
+// an enum removes it from both sides of a comparison. A generated enum carries
+// its schema the way a generated view does — as an optional "schema." prefix on
+// its name — so the candidates come from that prefix and the default schema.
 func (s *exclusionState) filterGeneratedEnums(enums []goschema.Enum) []goschema.Enum {
 	return keep(enums, func(enum goschema.Enum) bool {
-		return !s.matches("enum", enum.Name)
+		named := s.matches("enum", s.qualifiedNameCandidatesFor(enum.Name)...)
+		return !named && !s.qualifiedSchemaExcluded(enum.Name)
+	})
+}
+
+// filterGeneratedSequences, filterGeneratedDomains,
+// filterGeneratedCompositeTypes and filterGeneratedRanges are the desired-side
+// mirrors of the four kinds added to the database side. Both sides of a
+// comparison must subtract the same objects: a selector that removed a domain
+// from the introspected side alone would turn a protected object into a CREATE.
+//
+// These carry a Schema field of their own, exactly as generated tables do, so
+// the candidates come from nameCandidates rather than from a "schema." prefix.
+func (s *exclusionState) filterGeneratedSequences(sequences []goschema.Sequence) []goschema.Sequence {
+	return keep(sequences, func(sequence goschema.Sequence) bool {
+		excluded := s.matches("sequence", s.nameCandidates(sequence.Schema, sequence.Name)...) ||
+			s.schemaExcluded(sequence.Schema)
+		if excluded {
+			s.excludeSequence(sequence.Schema, sequence.Name)
+		}
+		return !excluded
+	})
+}
+
+func (s *exclusionState) filterGeneratedDomains(domains []goschema.Domain) []goschema.Domain {
+	return keep(domains, func(domain goschema.Domain) bool {
+		named := s.matches("domain", s.nameCandidates(domain.Schema, domain.Name)...)
+		return !named && !s.schemaExcluded(domain.Schema)
+	})
+}
+
+func (s *exclusionState) filterGeneratedCompositeTypes(types []goschema.CompositeType) []goschema.CompositeType {
+	return keep(types, func(composite goschema.CompositeType) bool {
+		named := s.matches("composite_type", s.nameCandidates(composite.Schema, composite.Name)...)
+		return !named && !s.schemaExcluded(composite.Schema)
+	})
+}
+
+func (s *exclusionState) filterGeneratedRanges(ranges []goschema.Range) []goschema.Range {
+	return keep(ranges, func(value goschema.Range) bool {
+		named := s.matches("range", s.nameCandidates(value.Schema, value.Name)...)
+		return !named && !s.schemaExcluded(value.Schema)
 	})
 }
 
 func (s *exclusionState) filterGeneratedExtensions(extensions []goschema.Extension) []goschema.Extension {
 	result := make([]goschema.Extension, 0, len(extensions))
 	for _, extension := range extensions {
-		if s.matches("extension", extension.Name) {
+		names := s.qualifiedNameCandidatesFor(extension.Name)
+		if s.matches("extension", names...) || s.qualifiedSchemaExcluded(extension.Name) {
 			continue
 		}
-		if s.matchesField("extension", "version", extension.Name) {
+		if s.matchesField("extension", "version", names...) {
 			extension.Version = ""
 		}
 		result = append(result, extension)
@@ -641,7 +978,8 @@ func (s *exclusionState) filterGeneratedExtensions(extensions []goschema.Extensi
 
 func (s *exclusionState) filterGeneratedFunctions(functions []goschema.Function) []goschema.Function {
 	return keep(functions, func(function goschema.Function) bool {
-		return !s.matches("function", function.Name)
+		named := s.matches("function", s.qualifiedNameCandidatesFor(function.Name)...)
+		return !named && !s.qualifiedSchemaExcluded(function.Name)
 	})
 }
 
@@ -651,7 +989,8 @@ func (s *exclusionState) filterGeneratedFunctions(functions []goschema.Function)
 // both sides of a comparison subtracting the same views.
 func (s *exclusionState) filterGeneratedViews(views []goschema.View) []goschema.View {
 	return keep(views, func(view goschema.View) bool {
-		excluded := s.matches("view", s.qualifiedNameCandidatesFor(view.Name)...)
+		excluded := s.matches("view", s.qualifiedNameCandidatesFor(view.Name)...) ||
+			s.qualifiedSchemaExcluded(view.Name)
 		if excluded {
 			s.excludeTable("", view.Name)
 		}
@@ -661,7 +1000,8 @@ func (s *exclusionState) filterGeneratedViews(views []goschema.View) []goschema.
 
 func (s *exclusionState) filterGeneratedMaterializedViews(views []goschema.MaterializedView) []goschema.MaterializedView {
 	return keep(views, func(view goschema.MaterializedView) bool {
-		excluded := s.matches("materialized_view", s.qualifiedNameCandidatesFor(view.Name)...)
+		excluded := s.matches("materialized_view", s.qualifiedNameCandidatesFor(view.Name)...) ||
+			s.qualifiedSchemaExcluded(view.Name)
 		if excluded {
 			s.excludeTable("", view.Name)
 		}
@@ -676,6 +1016,7 @@ func (s *exclusionState) filterGeneratedTriggers(
 	return keep(triggers, func(trigger goschema.Trigger) bool {
 		table, ok := generatedObjectTable(tables, trigger.StructName, trigger.Table)
 		if !ok {
+			s.noteGeneratedChild("trigger", trigger.StructName, trigger.Table, trigger.Name)
 			return false
 		}
 		return !s.matches("trigger", s.childNameCandidates(table.Schema, table.Name, trigger.Name)...)
@@ -689,6 +1030,7 @@ func (s *exclusionState) filterGeneratedRLSPolicies(
 	return keep(policies, func(policy goschema.RLSPolicy) bool {
 		table, ok := generatedObjectTable(tables, policy.StructName, policy.Table)
 		if !ok {
+			s.noteGeneratedChild("policy", policy.StructName, policy.Table, policy.Name)
 			return false
 		}
 		return !s.matches("policy", s.childNameCandidates(table.Schema, table.Name, policy.Name)...)
@@ -713,11 +1055,22 @@ func (s *exclusionState) filterGeneratedRoles(roles []goschema.Role) []goschema.
 
 func (s *exclusionState) filterGeneratedGrants(grants []goschema.Grant) []goschema.Grant {
 	return keep(grants, func(grant goschema.Grant) bool {
+		named := s.matches("grant", generatedGrantTargets(grant)...)
 		if grant.OnTable != "" && generatedTableKeyExcluded(s, grant.OnTable) {
 			return false
 		}
-		targets := generatedGrantTargets(grant)
-		return !s.matches("grant", targets...)
+		// Mirrors filterGrants: a grant leaves with the schema of the object it
+		// is on, and for a schema grant that object is the schema itself.
+		if grant.OnSchema != "" && s.schemaExcluded(grant.OnSchema) {
+			return false
+		}
+		if grant.OnTable != "" && s.qualifiedSchemaExcluded(grant.OnTable) {
+			return false
+		}
+		if grant.OnSequence != "" && s.qualifiedSchemaExcluded(grant.OnSequence) {
+			return false
+		}
+		return !named
 	})
 }
 
@@ -725,24 +1078,59 @@ func (s *exclusionState) matches(resourceType string, names ...string) bool {
 	return s.matchesAny([]string{resourceType}, names...)
 }
 
+// matchesField and matchesAny deliberately visit every pattern instead of
+// returning on the first hit. The return value only needs the first, but the
+// match marks do not: two selectors that name the same object are both honored,
+// and stopping early would report the second as having matched nothing.
 func (s *exclusionState) matchesField(resourceType, field string, names ...string) bool {
-	for _, pattern := range s.patterns {
+	found := false
+	for i, pattern := range s.patterns {
 		if pattern.matchesField(resourceType, field, names...) {
-			return true
+			s.matched[i] = true
+			found = true
 		}
 	}
-	return false
+	return found
 }
 
 func (s *exclusionState) matchesAny(resourceTypes []string, names ...string) bool {
-	for _, pattern := range s.patterns {
+	found := false
+	for i, pattern := range s.patterns {
 		for _, resourceType := range resourceTypes {
 			if pattern.matches(resourceType, names...) {
-				return true
+				s.matched[i] = true
+				found = true
+				break
 			}
 		}
 	}
-	return false
+	return found
+}
+
+func (s *exclusionState) excludeSchema(name string) {
+	if name = strings.TrimSpace(name); name != "" {
+		s.excludedSchemas[name] = struct{}{}
+	}
+}
+
+// schemaExcluded reports whether the schema owning an object left. An object
+// with no schema of its own lives in the default schema, so it is the same
+// object the schema-qualified spelling names and it leaves with that schema.
+func (s *exclusionState) schemaExcluded(schema string) bool {
+	name := s.effectiveSchema(schema)
+	if name == "" {
+		return false
+	}
+	_, excluded := s.excludedSchemas[name]
+	return excluded
+}
+
+// qualifiedSchemaExcluded is [exclusionState.schemaExcluded] for objects whose
+// only schema qualification is an optional "schema." prefix on the name --
+// generated enums, functions, extensions and views.
+func (s *exclusionState) qualifiedSchemaExcluded(name string) bool {
+	schema, _ := splitQualified(name)
+	return s.schemaExcluded(schema)
 }
 
 func (s *exclusionState) excludeTable(schema, table string) {
@@ -757,6 +1145,21 @@ func (s *exclusionState) tableExcluded(schema, table string) bool {
 		return false
 	}
 	_, excluded := s.excludedTables[key]
+	return excluded
+}
+
+func (s *exclusionState) excludeSequence(schema, name string) {
+	if key, ok := tableIdentityKey(schema, name); ok {
+		s.excludedSequences[key] = struct{}{}
+	}
+}
+
+func (s *exclusionState) sequenceExcluded(schema, name string) bool {
+	key, ok := tableIdentityKey(schema, name)
+	if !ok {
+		return false
+	}
+	_, excluded := s.excludedSequences[key]
 	return excluded
 }
 
@@ -873,6 +1276,10 @@ func cloneGenerated(schema *goschema.Database) *goschema.Database {
 	filtered.EmbeddedFields = slices.Clone(schema.EmbeddedFields)
 	filtered.Extensions = slices.Clone(schema.Extensions)
 	filtered.Functions = slices.Clone(schema.Functions)
+	filtered.Sequences = slices.Clone(schema.Sequences)
+	filtered.Domains = slices.Clone(schema.Domains)
+	filtered.CompositeTypes = slices.Clone(schema.CompositeTypes)
+	filtered.Ranges = slices.Clone(schema.Ranges)
 	filtered.Views = slices.Clone(schema.Views)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)

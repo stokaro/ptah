@@ -109,10 +109,8 @@ SQL, JSON, and custom-template output. Field-level exclude selector support
 includes the Atlas-documented `*[type=extension].version` form.
 
 Other field-level selectors, and type selectors on non-final pattern segments,
-fail explicitly before any database is contacted. Schema-qualified function
-and enum filters remain limited by Ptah's current introspection model, which
-does not retain schema names for those resource types yet. Exporter blocks
-remain an explicit gap.
+fail explicitly before any database is contacted. Exporter blocks remain an
+explicit gap.
 
 A pattern matches an object under either spelling: its bare name, or its name
 qualified by the schema that owns it. Introspection reports an object in the
@@ -121,6 +119,99 @@ supplies the qualified spelling — `--exclude public.users` and
 `--exclude users` remove the same table on a PostgreSQL database URL, and both
 subtract it from every side of a comparison, so an excluded object is neither
 created nor dropped.
+
+That rule covers every top-level object kind: tables, views, materialized
+views, extensions, enums, functions, sequences, domains, composite types and
+range types. Each carries the schema that owns it, so `--exclude public.mood`,
+`--exclude app.fn_app` and `--exclude public.positive_int` remove exactly the
+object they name — including from the DROP list a `schema diff` or
+`schema apply` plans.
+
+Two kinds have no owning schema and so match by bare name only. Roles are
+cluster-scoped. Schemas are the top of the tree themselves, and a selector
+naming one removes it together with everything in it — see
+[Excluding a schema](#excluding-a-schema).
+
+The kinds an `--exclude` subtracts are the same kinds an `--include` selects.
+Sequences, domains, composite types and range types used to be selectable by
+`--include` and invisible to `--exclude`, so `--exclude positive_int` left the
+domain in the plan and `DROP DOMAIN` ran on an object the selector was written
+to protect.
+
+### Excluding a schema
+
+A one-part selector also names a **schema**, and a schema that matches takes
+its contents with it:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" -s public -s app --exclude app
+schema "public" {
+  comment = "standard public schema"
+}
+...
+```
+
+`schema "app"` and every object in it — tables, enums, sequences, views, the
+grants that ride them — leave together. That is what the pinned Atlas community
+binary v1.3.0 does for the same selector in the same scope: with `--exclude app`
+it plans drops for `public` only, and removing the selector from that run adds
+exactly one line, `DROP SCHEMA "app" CASCADE;`. `--exclude app[type=schema]`
+names the same schema explicitly.
+
+The two-part spelling keeps meaning what it always meant. `--exclude 'app.*'`
+removes the objects in `app` and **keeps** the schema itself, because `app` is
+not a match for the glob `app.*`. Use the one-part form to protect the schema,
+the two-part form to protect only its contents.
+
+Schemas were the last kind that was read and rendered but never offered to the
+patterns, which made `--exclude app` fail in both directions at once: `schema
+apply` refused it as a selector that matched nothing, and with the permissive
+opt-in set the plan still dropped `app`'s tables and enums.
+
+## An `--exclude` selector that matches nothing
+
+A selector that names no object protects no object, and the output cannot say
+whether that was the schema or the selector. Ptah always says which:
+
+- `schema inspect` and `schema diff` keep their exit status and write
+  `Warning: the --exclude selection matched no objects: "<selector>".` to
+  stderr. Neither verb changes anything, and stdout stays byte-identical so the
+  CI idiom "does this selection differ?" keeps working.
+- `schema apply` refuses with exit 1. It is the verb that carries the plan out,
+  and a selector written to keep an object out of the plan that named nothing
+  leaves the plan free to change it.
+
+A selector counts as matched when it names an object in **any** state the
+command filtered. Naming an object that exists on only one side of a comparison
+is ordinary — that is what a CREATE or a DROP looks like — so only a selector
+empty on every side is reported.
+
+A selector is only ever called empty by a filter that asked it. That is why
+this diagnostic is tied to the coverage above: an object kind that is read but
+never offered to the patterns would make every selector naming one of its
+objects look empty, and the refusal would then be a hard failure asserting
+something false. The same rule covers children of a parent another selector
+already removed — `--exclude users --exclude users.id` names two objects that
+both exist, so it is accepted even though the column leaves with its table.
+
+This is a deliberate divergence. The pinned Atlas community binary v1.3.0 exits
+0 and prints no diagnostic for `--exclude nosuchobject`; matching is the floor
+rather than the ceiling, and a silent scope failure is the one answer Ptah
+declines to reproduce.
+
+Reusing one exclude list across environments where some of the objects are
+absent is a real workflow, so the permissive behavior stays reachable on this
+same surface:
+
+```console
+$ PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 ptah-compat schema apply --url "$PG_URL" \
+    --to file://schema.hcl --exclude nosuchobject
+Warning: the --exclude selection matched no objects: "nosuchobject".
+```
+
+It is an environment variable and not a flag because the conformance
+`cli-surface` tier asserts that `ptah-compat` registers exactly the flags the
+pinned binary registers.
 
 Accepting both spellings is looser than the pinned Atlas community binary,
 deliberately. That binary reads a pattern relative to the URL scope: on a
