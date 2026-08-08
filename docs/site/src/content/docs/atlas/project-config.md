@@ -374,6 +374,15 @@ The refusal is a flag-parse failure, so it precedes everything the verb itself
 requires. Only the separator is required: an empty name and an empty value are
 both accepted, because both are accepted there.
 
+`PTAH_VAR` carries the same rule, wrapped in the sentence Ptah uses for any
+rejected environment value. There is no community binary to match here — the
+variable is Ptah's own — so the shape is the one every other `PTAH_*` value
+already has:
+
+```text
+Error: invalid value "novalue" for PTAH_VAR: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
+```
+
 Variable blocks accept the `type` constraints `string`, `number`, `bool`, and
 `list(string)` — the attribute Atlas requires — so one
 `atlas.hcl` with typed variables works with both binaries. `--var` overrides
