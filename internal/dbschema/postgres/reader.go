@@ -321,6 +321,24 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 				THEN format_type(a.atttypid, a.atttypmod)
 				ELSE ''
 			END AS formatted_type,
+			-- The same format_type answer means two different things, and only
+			-- this column separates them: for an array it is a TYPE, and for a
+			-- domain it is the IDENTIFIER its author picked. A comparator that
+			-- normalizes the two the same way lets a name decide whether a
+			-- column changed -- a domain named "waypoint" contains "int" and one
+			-- named "context" contains "text". A domain over an array is
+			-- reported with data_type 'ARRAY' just like a plain array column, so
+			-- the distinction cannot be recovered downstream (stokaro/ptah#1138).
+			COALESCE(col.domain_name, '') AS domain_name,
+			-- And the schema that holds it, because the name is only half of a
+			-- domain's identity. public.status and other.status are two types;
+			-- a comparator given "status" for both reports no change for a
+			-- column that must be converted, and the DROP DOMAIN ... CASCADE
+			-- the plan keeps then takes the column. Read raw rather than
+			-- through outputSchema: the domain may live outside the schemas
+			-- being read, and blanking it there is exactly the erasure this
+			-- projection exists to prevent (stokaro/ptah#1138).
+			COALESCE(col.domain_schema, '') AS domain_schema,
 			is_nullable,
 			column_default,
 			character_maximum_length,
@@ -368,6 +386,8 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			&col.DataType,
 			&col.UDTName,
 			&col.FormattedType,
+			&col.DomainName,
+			&col.DomainSchema,
 			&col.IsNullable,
 			&col.ColumnDefault,
 			&col.CharacterMaxLength,

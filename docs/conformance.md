@@ -190,7 +190,7 @@ carrying the same attributes always rendered correctly.
 | Sort order (`DESC`, `NULLS FIRST`, `NULLS LAST`) | `pg_index.indoption` | Dropped: psql exited 0 and left an ascending index | [#1242](https://github.com/stokaro/ptah/issues/1242) |
 | `INCLUDE` payload columns | `pg_index.indkey` past `indnkeyatts` | Dropped: psql exited 0 and left an index that cannot serve the index-only scans it was built for | [#1242](https://github.com/stokaro/ptah/issues/1242) |
 | Expression index, for example `lower(name)` | `pg_index.indkey`, attnum 0 | Emitted as a quoted column identifier, which psql rejected at exit 3 | [#1242](https://github.com/stokaro/ptah/issues/1242) |
-| Domain used as a column type | `information_schema.columns.domain_name` | The `CREATE DOMAIN` was emitted but the column was flattened to the domain's base type: psql exited 0 and left a column without the domain's `CHECK` | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Domain used as a column type | `information_schema.columns.domain_name` and `domain_schema` | The `CREATE DOMAIN` was emitted but the column was flattened to the domain's base type: psql exited 0 and left a column without the domain's `CHECK` | [#1242](https://github.com/stokaro/ptah/issues/1242) |
 
 ### The access-method loss was not silent in general
 
@@ -561,6 +561,75 @@ reports `origin` `u` for the implicit index behind a declared UNIQUE constraint
 and `c` for a standalone `CREATE UNIQUE INDEX`. Only the first is part of the
 column's declaration, and only the first is folded now. A declared column
 `UNIQUE` still round-trips through its own implicit index.
+
+### A domain column is reconciled by identity
+
+The same split applies to the domain row of the table above. Reading a column's
+domain is one claim; comparing it is another, and the comparison must not go
+through type normalization. Normalization matches by substring — anything
+containing `int` is an integer and anything containing `text` is text — which
+is right for type names and wrong for a name a schema author picked. Measured
+on PostgreSQL 17.10, two domains over `integer` with ordinary names:
+
+```sql
+CREATE DOMAIN waypoint AS integer CHECK (VALUE > 0);
+CREATE DOMAIN context  AS integer;
+CREATE TABLE t (id serial PRIMARY KEY, a waypoint NOT NULL, b context NOT NULL);
+```
+
+against a desired `a bigint, b text`, `waypoint` matched `bigint` and `context`
+matched `text`, so neither `ALTER COLUMN ... TYPE` was planned while the
+`DROP DOMAIN ... CASCADE` both columns depend on stayed. `schema apply
+--auto-approve` exited 0, printed `Schema apply completed successfully`, and
+left the table with only its `id` column and the row's other two values gone
+([#1138](https://github.com/stokaro/ptah/issues/1138)).
+
+A domain column now agrees only with a desired type that names the same domain,
+in `ptah-compat schema diff`, `ptah-compat schema apply` and native
+`ptah schema compare` alike. `information_schema.columns.domain_name` is what
+separates a domain from a plain column of the same base type, and it is read
+for that reason: a domain over an array is reported with `data_type` `ARRAY`
+exactly like a plain array column, and an array's spelling is a type that must
+keep normalizing like one.
+
+`domain_schema` is read beside it, because a domain's identity is both halves.
+Measured on the same server, one database holding `public.status` and one
+holding `other.status`, over a table with one row:
+
+| | plan for the column | outcome of `schema apply --auto-approve` |
+| --- | --- | --- |
+| name alone | none; only `DROP DOMAIN IF EXISTS "status" CASCADE` | exit 0, `Schema apply completed successfully`, table left with `id` only |
+| identity | `ALTER TABLE "t" ALTER COLUMN "s" TYPE other.status` ahead of the drop | the column and its row survive |
+
+A desired type that names its schema is held to that schema exactly. One that
+does not is resolved through the domain the desired schema declares by that
+name; with nothing declaring it, the bare name decides on its own, since which
+domain an unqualified reference reaches is a search-path question and Ptah does
+not answer that for the server.
+
+One case is still open and is stated rather than claimed closed: when the desired
+schema declares the same bare name in two schemas, an unqualified reference to it
+stays undecided, and a column that should move between those two domains is
+reported only if one side spells its schema. Measured on PostgreSQL 17.10 with
+`public.status` and `other.status` both declared and both schemas selected, a
+column of `other.status` against a desired `public.status` reported
+`Schemas are synced`. Nothing is dropped in that shape, so the cost is drift
+rather than data loss. Deciding it needs the desired column to carry its domain's
+schema instead of a type string.
+
+The reverse pair was missed as well, and there the pinned binary was right where
+Ptah was silent. A plain `integer` column against a desired schema that declares
+`waypoint` and types the column with it:
+
+| | plan |
+| --- | --- |
+| Atlas CE v1.3.0 | `ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint;` |
+| Ptah, before | `Schemas are synced, no changes to be made.` |
+| Ptah, now | the same `ALTER`, executed at exit 0 with the row intact |
+
+A desired type names a domain when the desired schema declares one by that
+name, which is how every source Ptah reads carries it. A bare name with no
+declaration behind it stays an ordinary type name.
 
 ## Reports
 

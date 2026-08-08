@@ -183,6 +183,14 @@ jobs:
           grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/postgres/qualified' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/sqlite/rendered' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/sqlite/qualified' "$RUNNER_TEMP/atlas-column-type-run"
+          # The array rows are a pair for the same reason (stokaro/ptah#1138).
+          # The wrapped row alone would pass on a build that had stopped
+          # refusing anything, and the quoted row alone says nothing about the
+          # spelling Ptah writes today. Both are named so a selection that
+          # silently stopped matching them cannot leave the job green.
+          grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_wraps_a_sized_array_whose_element_name_is_modeled' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_refuses_that_same_array_quoted' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_refuses_an_array_written_bare' "$RUNNER_TEMP/atlas-column-type-run"
 
       - name: Regenerate Atlas CE corpus
         run: >-
