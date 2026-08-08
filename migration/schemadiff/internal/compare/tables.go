@@ -150,7 +150,15 @@ func TablesAndColumnsWithSemantics(
 	// gone. Widening the schema reader without this made applying a database's
 	// own description back to it plan CREATE SCHEMA and CREATE TABLE for a
 	// schema and a table that exist (stokaro/ptah#1264, stokaro/ptah#1276).
-	diff.TablesAdded = cov.keepPlannedAdditions(coverage.Schema, diff.TablesAdded, tableSchemaOnly)
+	//
+	// `CREATE TABLE` is rendered without a guard on every dialect Ptah supports,
+	// so a table in an unread schema cannot be planned safely; it is withheld
+	// and named rather than dropped in silence.
+	keptTables, withheldTables := cov.keepPlannedAdditions(
+		coverage.Schema, diff.TablesAdded, tableSchemaOnly, unguardedCreations(),
+	)
+	diff.TablesAdded = keptTables
+	cov.recordUndecidedAdditions(coverage.Schema, withheldTables)
 	diff.TablesRemoved = cov.keepPlannedRemovals(coverage.Schema, diff.TablesRemoved, tableSchemaOnly)
 
 	// Sort for consistent output

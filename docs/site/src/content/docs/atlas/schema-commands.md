@@ -275,6 +275,27 @@ The lines are HCL comments, so they change nothing for any other reader: the
 pinned Atlas community binary v1.3.0 reads a document carrying them at exit 0
 and prints byte-identical output to the same document without them.
 
+Split exports carry the header too, into **every** member. `write` puts the
+members on a filesystem and whatever reads one of them next is handed that one
+file by path, so a record living in a sibling would not be there when it
+matters:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" \
+    --format '{{ hcl . | split "schema" | write "out" }}'
+$ head -3 out/public.hcl
+// ptah:not-described extension
+// ptah:not-described policy
+// ptah:not-described sequence
+$ ptah-compat schema apply --url "$PG_URL" --to file://out/public.hcl --dev-url "$DEV_URL" --dry-run
+Schema is synced, no changes to be made.
+```
+
+All three split strategies do this — per object (the default), `split "schema"`,
+and `split "type"` — because each of their members is an independently
+consumable desired state. Loading several members together is fine: the loader
+unions their records rather than intersecting them.
+
 The claim is about the rule this surface applies, not about what one database
 happened to contain, so an inspect of a database with no extension at all still
 writes the `extension` line. A document that named only what it left out would
@@ -304,6 +325,39 @@ no Ptah surface writes one there, because only the HCL rendering omits blocks.
 A directive naming an object kind the build does not know is an error rather
 than a line to skip past: a record nothing understands reads as no record at
 all, and the absence it was protecting would become a removal.
+
+##### When such a document is the *current* state
+
+`schema diff --from file://schema.hcl` puts a document on the other side of the
+comparison, where its header means something different: not "do not remove
+these" but "this side never looked". That is a reason to distrust the conclusion
+"the object is missing" — it is not a reason to discard what `--to` explicitly
+asked for.
+
+So the record withholds a creation only when the creation would need that
+conclusion to be true. A statement Ptah renders with `IF NOT EXISTS` is correct
+either way and is planned:
+
+```console
+$ ptah-compat schema diff --from file://schema.hcl --to file://desired.hcl --dev-url "$DEV_URL"
+CREATE EXTENSION IF NOT EXISTS "citext";
+```
+
+A statement with no guard — `CREATE SEQUENCE` for a sequence declared without
+`if_not_exists`, `CREATE ROLE`, `CREATE DOMAIN`, `CREATE TABLE` — would fail the
+migration if the object were already there, so it is not planned. It is named on
+standard error rather than dropped in silence:
+
+```console
+Warning: sequence "public.order_seq" is declared by --to but no change was
+planned for it: --from records `ptah:not-described sequence`, so this comparison
+cannot tell it apart from one that already exists, and the creation Ptah renders
+for it has no IF NOT EXISTS guard.
+```
+
+Adding `if_not_exists = true` to the declaration is how you ask for it anyway.
+Deleting the directive line from `--from` is how you assert that side really did
+look.
 
 #### A referenced block is kept, and the document says so
 

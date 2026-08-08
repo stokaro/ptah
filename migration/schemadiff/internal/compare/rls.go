@@ -153,7 +153,16 @@ func RLSPoliciesWithSemantics(
 	// The Atlas-compatible surface omits `policy` blocks the binary it stands in
 	// for refuses; a document that left one out has said nothing about it
 	// (stokaro/ptah#1276).
-	diff.RLSPoliciesAdded = keepPlannedPolicyAdditions(cov, diff.RLSPoliciesAdded)
+	//
+	// A declared policy is always planned: the planner emits
+	// `DROP POLICY IF EXISTS` immediately followed by `CREATE POLICY`, so the
+	// pair converges whether or not the read looked for policies. Nothing is
+	// ever withheld here; the withheld list is still passed on rather than
+	// discarded, so that a future guard change shows up as a diagnostic instead
+	// of as silence.
+	kept, withheld := keepPlannedPolicyAdditions(cov, diff.RLSPoliciesAdded, alwaysGuardedCreations())
+	diff.RLSPoliciesAdded = kept
+	cov.recordUndecidedAdditions(coverage.Policy, withheld)
 	diff.RLSPoliciesRemoved = keepPlannedPolicyRemovals(cov, diff.RLSPoliciesRemoved)
 
 	// Ensure consistent ordering of results. The policy name alone is not a
@@ -177,22 +186,34 @@ func sortRLSPolicyRefs(refs []difftypes.RLSPolicyRef) {
 	})
 }
 
-// keepPlannedPolicyAdditions drops every policy creation the read's silence
-// cannot justify. A policy has its own list shape rather than a bare name, so
-// it cannot use the shared filter; the owning schema is taken from the policy's
-// table, since a policy in a schema nobody read is not described either.
-func keepPlannedPolicyAdditions(cov Coverage, planned []difftypes.RLSPolicyRef) []difftypes.RLSPolicyRef {
+// keepPlannedPolicyAdditions splits planned policy creations into the ones this
+// comparison plans and the ones it withholds, on the same rule as
+// [Coverage.keepPlannedAdditions]: the read's silence is authoritative, or the
+// creation is guarded and does not need it.
+//
+// A policy has its own list shape rather than a bare name, so it cannot use the
+// shared filter; the owning schema is taken from the policy's table, since a
+// policy in a schema nobody read is not described either. The withheld entries
+// are reported by policy name, which is how [keepPlannedPolicyRemovals] and the
+// coverage record spell one.
+func keepPlannedPolicyAdditions(
+	cov Coverage,
+	planned []difftypes.RLSPolicyRef,
+	guarded creationGuard,
+) (kept []difftypes.RLSPolicyRef, withheld []string) {
 	if planned == nil {
-		return nil
+		return nil, nil
 	}
-	out := make([]difftypes.RLSPolicyRef, 0, len(planned))
+	kept = make([]difftypes.RLSPolicyRef, 0, len(planned))
 	for _, ref := range planned {
 		schema, _ := qualifiedName(ref.TableName)
-		if cov.PlansAddition(coverage.Policy, schema, ref.PolicyName) {
-			out = append(out, ref)
+		if cov.PlansAddition(coverage.Policy, schema, ref.PolicyName) || guarded(ref.PolicyName) {
+			kept = append(kept, ref)
+			continue
 		}
+		withheld = append(withheld, ref.PolicyName)
 	}
-	return out
+	return kept, withheld
 }
 
 // keepPlannedPolicyRemovals drops every policy the desired state never claimed

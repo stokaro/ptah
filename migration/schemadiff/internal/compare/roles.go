@@ -164,7 +164,14 @@ func Roles(
 	// such a read did not report is unknown, not missing, and planning
 	// CREATE ROLE for it fails the migration with `role "..." already exists`
 	// (stokaro/ptah#1267, stokaro/ptah#1276).
-	diff.RolesAdded = cov.keepPlannedAdditions(coverage.Role, diff.RolesAdded, globalName)
+	//
+	// `CREATE ROLE` has no conditional form on any dialect Ptah renders, so a
+	// withheld role is recorded as undecided instead of vanishing.
+	kept, withheld := cov.keepPlannedAdditions(
+		coverage.Role, diff.RolesAdded, globalName, unguardedCreations(),
+	)
+	diff.RolesAdded = kept
+	cov.recordUndecidedAdditions(coverage.Role, withheld)
 
 	// Ensure consistent ordering of results
 	sort.Strings(diff.RolesAdded)

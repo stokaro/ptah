@@ -129,7 +129,21 @@ func Extensions(
 	// database with no extensions, and a read that did not look for them is not
 	// a database that has none. Both directions are dropped here rather than at
 	// the two dozen call sites that build a comparison (stokaro/ptah#1276).
-	diff.ExtensionsAdded = cov.keepPlannedAdditions(coverage.Extension, diff.ExtensionsAdded, globalName)
+	//
+	// The additive direction consults the extension's own IF NOT EXISTS flag:
+	// a document that explicitly declares `extension "citext"` has asked for it,
+	// and `CREATE EXTENSION IF NOT EXISTS "citext"` grants that request whether
+	// or not the read looked. Silence there was the one case where a read's
+	// blind spot deleted an author's explicit instruction.
+	extensionGuards := make(map[string]bool, len(genExtensions))
+	for name, extension := range genExtensions {
+		extensionGuards[name] = extension.IfNotExists
+	}
+	kept, withheld := cov.keepPlannedAdditions(
+		coverage.Extension, diff.ExtensionsAdded, globalName, guardedCreations(extensionGuards),
+	)
+	diff.ExtensionsAdded = kept
+	cov.recordUndecidedAdditions(coverage.Extension, withheld)
 	diff.ExtensionsRemoved = cov.keepPlannedRemovals(coverage.Extension, diff.ExtensionsRemoved, globalName)
 
 	// Sort for consistent output

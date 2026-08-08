@@ -63,7 +63,20 @@ func Sequences(
 	// The Atlas-compatible surface omits `sequence` blocks the binary it stands
 	// in for refuses; a document that left one out has said nothing about it,
 	// and nothing is not a drop (stokaro/ptah#1276).
-	diff.SequencesAdded = cov.keepPlannedAdditions(coverage.Sequence, diff.SequencesAdded, qualifiedName)
+	//
+	// A declared sequence carrying `if_not_exists` is planned even against a
+	// read that never looked, because `CREATE SEQUENCE IF NOT EXISTS` is right
+	// either way. One without it is withheld and named, since `CREATE SEQUENCE`
+	// against an existing sequence fails the migration.
+	sequenceGuards := make(map[string]bool, len(generatedSequences))
+	for name, sequence := range generatedSequences {
+		sequenceGuards[name] = sequence.IfNotExists
+	}
+	kept, withheld := cov.keepPlannedAdditions(
+		coverage.Sequence, diff.SequencesAdded, qualifiedName, guardedCreations(sequenceGuards),
+	)
+	diff.SequencesAdded = kept
+	cov.recordUndecidedAdditions(coverage.Sequence, withheld)
 	diff.SequencesRemoved = cov.keepPlannedRemovals(coverage.Sequence, diff.SequencesRemoved, qualifiedName)
 
 	sort.Strings(diff.SequencesAdded)

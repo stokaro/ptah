@@ -45,7 +45,14 @@ func Domains(
 	// A reader that leaves those to their extension has not said the schema
 	// lacks them, and a document that omitted the extension block has not said
 	// the type is unwanted (stokaro/ptah#1294, stokaro/ptah#1276).
-	diff.DomainsAdded = cov.keepPlannedAdditions(coverage.Domain, diff.DomainsAdded, qualifiedName)
+	//
+	// `CREATE DOMAIN` and `CREATE TYPE` have no conditional form, so an
+	// undecidable addition is recorded on the coverage rather than dropped.
+	keptDomains, withheldDomains := cov.keepPlannedAdditions(
+		coverage.Domain, diff.DomainsAdded, qualifiedName, unguardedCreations(),
+	)
+	diff.DomainsAdded = keptDomains
+	cov.recordUndecidedAdditions(coverage.Domain, withheldDomains)
 	diff.DomainsRemoved = cov.keepPlannedRemovals(coverage.Domain, diff.DomainsRemoved, qualifiedName)
 
 	sort.Strings(diff.DomainsAdded)
@@ -147,7 +154,11 @@ func CompositeTypes(
 		}
 	}
 
-	diff.CompositeTypesAdded = cov.keepPlannedAdditions(coverage.Composite, diff.CompositeTypesAdded, qualifiedName)
+	keptComposites, withheldComposites := cov.keepPlannedAdditions(
+		coverage.Composite, diff.CompositeTypesAdded, qualifiedName, unguardedCreations(),
+	)
+	diff.CompositeTypesAdded = keptComposites
+	cov.recordUndecidedAdditions(coverage.Composite, withheldComposites)
 	diff.CompositeTypesRemoved = cov.keepPlannedRemovals(coverage.Composite, diff.CompositeTypesRemoved, qualifiedName)
 
 	sort.Strings(diff.CompositeTypesAdded)
@@ -195,7 +206,11 @@ func Ranges(
 	diff.RangesAdded = append(diff.RangesAdded, added...)
 	diff.RangesRemoved = append(diff.RangesRemoved, removed...)
 
-	diff.RangesAdded = cov.keepPlannedAdditions(coverage.Range, diff.RangesAdded, qualifiedName)
+	keptRanges, withheldRanges := cov.keepPlannedAdditions(
+		coverage.Range, diff.RangesAdded, qualifiedName, unguardedCreations(),
+	)
+	diff.RangesAdded = keptRanges
+	cov.recordUndecidedAdditions(coverage.Range, withheldRanges)
 	diff.RangesRemoved = cov.keepPlannedRemovals(coverage.Range, diff.RangesRemoved, qualifiedName)
 
 	sort.Strings(diff.RangesAdded)

@@ -78,6 +78,14 @@ const (
 	// Role is a database role (CREATE ROLE). Roles are cluster-scoped on
 	// PostgreSQL, so a reader scoped to one database describes a subset of them
 	// by construction.
+	//
+	// Role is ADDITIVE-ONLY, and deliberately so. The role comparator never
+	// plans a removal at all -- roles are created by DBAs and by infrastructure
+	// as often as by a schema, so dropping one because a description does not
+	// name it is not a decision it makes -- which means a `ptah:not-described
+	// role` line in a desired-state document protects nothing that was at risk.
+	// It is accepted rather than refused so the closed list stays one list, but
+	// a reader meeting it should not conclude that a removal was suppressed.
 	Role Kind = "role"
 	// Schema is a schema or namespace (CREATE SCHEMA). A schema recorded here
 	// also covers everything in it: an object in a schema nobody read is not

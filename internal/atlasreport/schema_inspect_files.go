@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/sqlutil"
 )
 
@@ -62,8 +63,19 @@ func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectAr
 	}
 	opts.DefaultSchema = defaultSchema
 
+	// The document's account of its own limits lives in its leading comment
+	// header, and splitting throws that header away: every member is rebuilt
+	// from a parsed block, and a leading comment belongs to no block. Read it
+	// from the input before the split so each member can carry it
+	// (stokaro/ptah#1276).
+	notDescribed, err := coverage.DecodeHeader(input)
+	if err != nil {
+		return schemaInspectArchive{}, fmt.Errorf("split schema output: %w", err)
+	}
+
 	hclArchive, hclErr := splitSchemaInspectHCL(input, opts.withDefaultExtension(".hcl"))
 	if hclErr == nil && len(hclArchive.Files) > 0 {
+		hclArchive = withCoverageHeaders(hclArchive, notDescribed, hclCommentPrefix)
 		if err := validateUniqueSchemaInspectArchivePaths(hclArchive); err != nil {
 			return schemaInspectArchive{}, err
 		}
@@ -74,10 +86,66 @@ func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectAr
 	if err != nil {
 		return schemaInspectArchive{}, err
 	}
+	sqlArchive = withCoverageHeaders(sqlArchive, notDescribed, sqlCommentPrefix)
 	if err := validateUniqueSchemaInspectArchivePaths(sqlArchive); err != nil {
 		return schemaInspectArchive{}, err
 	}
 	return sqlArchive, nil
+}
+
+// Comment spellings the split archive writes its coverage header with. HCL
+// accepts `//`, SQL accepts `--`, and [go.5x5.cz/ptah/core/coverage] reads both.
+const (
+	hclCommentPrefix = "//"
+	sqlCommentPrefix = "--"
+)
+
+// withCoverageHeaders prefixes the document's coverage record onto EVERY member
+// of a split archive.
+//
+// Every member, not the first one, because a split archive is not read back as
+// an archive: `write` drops the members on the filesystem and the next process
+// is handed one of them by path. `schema apply --to file://out/public.hcl`
+// reads that file and nothing else, so a record carried only by a sibling is a
+// record that is not there. Where several members ARE loaded together,
+// [go.5x5.cz/ptah/internal/schemafile.LoadAll] unions their records, so
+// repeating it costs nothing.
+//
+// Without this the split path recreates exactly the round trip
+// stokaro/ptah#1276 exists to prevent: the same block suppression runs, the
+// same objects are left out, and the document that says why is discarded --
+// applying `out/public.hcl` back to the database it was inspected from planned
+// DROP POLICY, DROP SEQUENCE and DROP EXTENSION.
+//
+// A record with nothing in it renders no lines and leaves every member byte for
+// byte as it was, which is what `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` and every
+// non-PostgreSQL dialect produce.
+func withCoverageHeaders(archive schemaInspectArchive, set coverage.Set, commentPrefix string) schemaInspectArchive {
+	header := coverageHeader(set, commentPrefix)
+	if header == "" {
+		return archive
+	}
+	files := make([]schemaInspectArchiveFile, 0, len(archive.Files))
+	for _, file := range archive.Files {
+		files = append(files, schemaInspectArchiveFile{Path: file.Path, Data: header + file.Data})
+	}
+	return schemaInspectArchive{Files: files}
+}
+
+// coverageHeader renders a coverage record as a leading comment block, blank
+// line included so the directives stay a header rather than a comment attached
+// to the first declaration.
+func coverageHeader(set coverage.Set, commentPrefix string) string {
+	directives := set.Directives()
+	if len(directives) == 0 {
+		return ""
+	}
+	var out strings.Builder
+	for _, directive := range directives {
+		fmt.Fprintf(&out, "%s %s\n", commentPrefix, directive)
+	}
+	out.WriteString("\n")
+	return out.String()
 }
 
 // atlasSchemaInspectWrite plans the archive's files under the write call's
