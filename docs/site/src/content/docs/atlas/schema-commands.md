@@ -676,6 +676,20 @@ evaluated `atlas.hcl` env.
 All `--to` values must be one source kind, and unsupported schemes such as
 `atlas://` fail before the target database is contacted.
 
+A schema directory is an **ordered script**, not a set of declarations: Atlas
+reads one by executing every file in filename order against the dev database.
+A file that declares an object an earlier file already declared is therefore an
+error rather than a merge, and Ptah refuses it the same way:
+
+```
+Error: load --to schema: read state from "2_b.sql": table "users" already exists
+```
+
+A declaration that carries its own `IF NOT EXISTS` (or `OR REPLACE`) is
+admitted, because the engine accepts it against an object that is already
+there. A later file that only `ALTER`s what an earlier file created declares
+nothing and neither refuses nor contributes.
+
 With `--env`, Ptah can read `env.url`, `env.src`, `env.schema.src`, `env.dev`,
 `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff`
 policy from the selected `atlas.hcl` environment, including local variable
@@ -1163,11 +1177,13 @@ error: pre-planned migration does not converge to the desired state: replaying t
 ## Diff schema files
 
 `ptah-compat schema diff` accepts a desired-state source on each side: one or
-more local `--from`/`--to` schema file URLs, one directly connectable database
-URL whose live schema is introspected, one migration directory (a `file://`
-directory containing `atlas.sum`) replayed on the required `--dev-url` dev
-database, or one `env://<attribute>` reference (`src`, `schema.src`, `url`,
-`dev`, `migration.dir`) resolved through the evaluated `atlas.hcl` env.
+more local `--from`/`--to` schema file URLs, a `file://` directory of `.sql` or
+`.hcl` schema files read in filename order as an ordered script, one directly
+connectable database URL whose live schema is introspected, one migration
+directory (a `file://` directory containing `atlas.sum`) replayed on the
+required `--dev-url` dev database, or one `env://<attribute>` reference (`src`,
+`schema.src`, `url`, `dev`, `migration.dir`) resolved through the evaluated
+`atlas.hcl` env.
 
 All URLs of one flag must be one source kind. The SQL dialect is pinned by
 `--dev-url` first, then by `--from` and `--to` database URLs; local schema

@@ -109,7 +109,7 @@ seven of them as open capabilities regardless.
 | Atlas HCL data "external_schema" | ✅ | ❌ | ✅ | Ptah evaluates the data source and runs the program, gated behind `--allow-external-schema`/`PTAH_ALLOW_EXTERNAL_SCHEMA`. Community Atlas rejects `data.external_schema`. |
 | Composite multi-source desired schema | ✅ | ❌ | ✅ | Repeatable `--root-dir`/`--schema-file` merge into one schema; conflicts error. Repo docs cite composite_schema as an Atlas Pro data source. |
 | Desired-schema artifacts in an OCI registry | ✅ | ❌ | ✅ | `ptah schema push/pull` publish and fetch canonical HCL resolved from Go, YAML, HCL or SQL sources. Verified round trip against registry:2. |
-| Directory of .hcl files as one schema source | ✅ | ✅ | ✅ | `--schema-file dir` and `--to file://dir` read a directory of .sql or .hcl files in filename order. Mixed formats, an empty directory and a subdirectory are refused; globs are not expanded. |
+| Directory of .hcl files as one schema source | ✅ | ✅ | ✅ | `--schema-file dir` and `--to file://dir` read a directory of .sql or .hcl files in filename order as an ordered script: mixed formats, an empty directory, a subdirectory and a redeclaration refuse. |
 | External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-external-schema`) runs a program without a shell emitting SQL, HCL, or YAML. |
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
 | HCL foreign_key deferrable | ❌ | ❌ | ❌ | Errors: unsupported foreign_key attribute "deferrable". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too. The community binary plans no DEFERRABLE either. |

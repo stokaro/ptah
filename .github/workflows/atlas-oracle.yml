@@ -246,6 +246,42 @@ jobs:
           grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/unreadable/a_grant_target_named_as_a_qualified_view' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/unreadable/a_trigger_target_named_as_a_qualified_table' "$RUNNER_TEMP/atlas-column-type-run"
 
+      # A schema DIRECTORY is an ordered script, and that is a contract whose
+      # authority is the community binary too (stokaro/ptah#940). It reads one
+      # by executing every file against the dev database, so a file that
+      # redeclares an object an earlier file declared is an engine error there.
+      # Ptah reads the same directory by merging parsed files, which is a
+      # different mechanism that can agree only where it is measured -- and the
+      # first cut of it exited 0, having really applied a table that appears in
+      # no file. Listed before it is run, for the same reason as above.
+      - name: Verify schema-directory conformance selection
+        run: |
+          GOWORK=off go test -list '^TestOracle' \
+            ./cmd/atlas > "$RUNNER_TEMP/atlas-schema-dir-tests"
+          cat "$RUNNER_TEMP/atlas-schema-dir-tests"
+          grep -Fx 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject' "$RUNNER_TEMP/atlas-schema-dir-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-schema-dir-tests")" -eq 1
+
+      - name: Run schema-directory conformance tests
+        run: |
+          GOWORK=off go test -count=1 -v -run '^TestOracle' ./cmd/atlas \
+            > "$RUNNER_TEMP/atlas-schema-dir-run" 2>&1 || {
+              cat "$RUNNER_TEMP/atlas-schema-dir-run"
+              exit 1
+            }
+          cat "$RUNNER_TEMP/atlas-schema-dir-run"
+          # A missing oracle skips these silently. That is the exact failure
+          # mode this job exists to prevent, so a skip fails the job.
+          ! grep -q 'SKIPPED' "$RUNNER_TEMP/atlas-schema-dir-run"
+          # The refusing row alone would pass on a build that refused every
+          # directory, so the rows that must stay exit 0 are named too: a
+          # selection that silently stopped matching them cannot leave the job
+          # green.
+          grep -Fq 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject/redeclared' "$RUNNER_TEMP/atlas-schema-dir-run"
+          grep -Fq 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject/distinct' "$RUNNER_TEMP/atlas-schema-dir-run"
+          grep -Fq 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject/guarded' "$RUNNER_TEMP/atlas-schema-dir-run"
+          grep -Fq 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject/hcl_redeclared' "$RUNNER_TEMP/atlas-schema-dir-run"
+
       - name: Regenerate Atlas CE corpus
         run: >-
           internal/atlasmigrateimport/testdata/ce-sums/regenerate.sh

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
@@ -78,21 +79,33 @@ func LoadPath(path string, opts Options) (*goschema.Database, error) {
 	return loadSchemaFile(resolved, opts)
 }
 
-// loadSchemaDirEntry reads one entry of a schema directory.
+// loadSchemaDirEntry reads one entry of a schema directory, together with the
+// identities that entry declares under a guard (see [guardedObjects]).
 //
 // It exists so a directory source cannot recurse: an entry that turns out to be
 // a directory refuses here instead of being read as another schema directory.
 // That covers the case [os.ReadDir] cannot see, a symlink to a directory, which
 // it reports as a symlink rather than as a directory.
-func loadSchemaDirEntry(path string, opts Options) (*goschema.Database, error) {
+func loadSchemaDirEntry(path string, opts Options) (*goschema.Database, map[guardKey]struct{}, error) {
 	resolved, isDir, err := statSchemaPath(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if isDir {
-		return nil, isDirectoryError(resolved)
+		return nil, nil, isDirectoryError(resolved)
 	}
-	return loadSchemaFile(resolved, opts)
+	if strings.EqualFold(filepath.Ext(resolved), dirSQLExtension) {
+		db, statements, err := loadSQLFileWithStatements(resolved, opts)
+		if err != nil {
+			return nil, nil, err
+		}
+		return db, guardedObjects(statements), nil
+	}
+	db, err := loadSchemaFile(resolved, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	return db, nil, nil
 }
 
 // statSchemaPath resolves a caller-supplied path through the CLI path guard and
@@ -153,7 +166,9 @@ const (
 //   - files with any other extension are ignored, so a README next to the
 //     schema costs nothing;
 //   - a directory with neither refuses;
-//   - a subdirectory refuses — there is no recursion.
+//   - a subdirectory refuses — there is no recursion;
+//   - a file that declares an object an earlier file already declared refuses,
+//     because the files are a script and not a set (see schemadir_order.go).
 //
 // The subdirectory rule is applied to BOTH formats, which is one deliberate
 // divergence: that binary refuses a subdirectory inside a SQL directory and
@@ -204,9 +219,14 @@ func loadSchemaDir(dir string, opts Options) (*goschema.Database, error) {
 	}
 
 	merged := &goschema.Database{}
+	sqlFormat := len(sqlNames) > 0
+	ledger := newDirDeclarations()
 	for _, name := range names {
-		db, err := loadSchemaDirEntry(filepath.Join(dir, name), opts)
+		db, guarded, err := loadSchemaDirEntry(filepath.Join(dir, name), opts)
 		if err != nil {
+			return nil, err
+		}
+		if err := ledger.admit(name, declaredObjects(db, sqlFormat), guarded); err != nil {
 			return nil, err
 		}
 		appendDatabase(merged, db)
@@ -320,14 +340,25 @@ func LocalFilePath(rawURL string) (string, error) {
 }
 
 func loadSQLFile(path string, opts Options) (*goschema.Database, error) {
+	db, _, err := loadSQLFileWithStatements(path, opts)
+	return db, err
+}
+
+// loadSQLFileWithStatements is [loadSQLFile] with the parsed statements kept.
+//
+// A schema DIRECTORY needs them: the goschema IR records no IF NOT EXISTS for a
+// table, so only the statement can say whether a redeclaration is guarded, and
+// that is the difference between an exit 1 the pinned binary also gives and a
+// refusal it does not (see schemadir_order.go).
+func loadSQLFileWithStatements(path string, opts Options) (*goschema.Database, *ast.StatementList, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read SQL schema file: %w", err)
+		return nil, nil, fmt.Errorf("read SQL schema file: %w", err)
 	}
 
 	statements, err := parser.NewParser(string(data), parser.WithDialect(opts.Dialect)).Parse()
 	if err != nil {
-		return nil, fmt.Errorf("parse SQL schema file: %w", err)
+		return nil, nil, fmt.Errorf("parse SQL schema file: %w", err)
 	}
 	db := toschema.ToDatabase(statements)
 	goschema.Finalize(&db)
@@ -338,10 +369,10 @@ func loadSQLFile(path string, opts Options) (*goschema.Database, error) {
 	// same thing (stokaro/ptah#1276).
 	notDescribed, err := coverage.DecodeHeader(string(data))
 	if err != nil {
-		return nil, fmt.Errorf("parse SQL schema file %s: %w", path, err)
+		return nil, nil, fmt.Errorf("parse SQL schema file %s: %w", path, err)
 	}
 	db.NotDescribed = notDescribed
-	return &db, nil
+	return &db, statements, nil
 }
 
 func appendDatabase(dst, src *goschema.Database) {

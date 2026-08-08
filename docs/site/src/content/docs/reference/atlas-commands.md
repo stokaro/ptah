@@ -681,9 +681,12 @@ and applies it after interactive confirmation or explicit `--auto-approve`.
 
 - local `file://` `.hcl`, `.yaml`, `.yml`, or `.sql` schema files;
 - one `file://` directory of `.sql` or `.hcl` schema files, read in filename
-  order — the two formats together are ambiguous, other extensions are ignored,
-  an empty directory is refused, and a subdirectory is refused rather than
-  descended into;
+  order as an ordered script — the two formats together are ambiguous, other
+  extensions are ignored, an empty directory is refused, a subdirectory is
+  refused rather than descended into, and a file that declares an object an
+  earlier file already declared is refused (`read state from "2_b.sql": table
+  "users" already exists`) unless its declaration carries `IF NOT EXISTS` or
+  `OR REPLACE`;
 - one directly connectable database URL;
 - one migration directory (a `file://` directory containing `atlas.sum`)
   replayed on the required `--dev-url` dev database;
