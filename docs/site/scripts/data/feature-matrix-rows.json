@@ -1040,8 +1040,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Matviews are an explicit error; extensions, functions, domains, roles/grants, RLS and MariaDB SEQUENCE objects are dropped silently. DDL auto-commit blocks rollback.",
-    "evidence": "Live MySQL 9.7 `ptah schema apply --dry-run` fails with \"materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target\"; with the matview removed the plan contains only tables, a view, a trigger and the FK — the extension, function, sequence, domain, role, grant and RLS objects produce no statement and no warning. capability.go:358 MariaDB1011 sets Sequences=true, yet `schema render --dialect mariadb` emits no CREATE SEQUENCE. Atlas side: comparison.md:398 lists MySQL and MariaDB as Open drivers. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Starter 'Databases engines' names MySQL, MariaDB, PostgreSQL and SQLite, corroborating MySQL and MariaDB on the free tier."
+    "note": "Matviews are an explicit error on both `render` and `apply`; extensions and MariaDB SEQUENCE objects render a not-supported comment. Functions, domains, roles/grants and RLS still drop silently.",
+    "evidence": "Live MySQL 9.7 `ptah schema apply --dry-run` fails with \"materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target\"; with the matview removed the plan contains only tables, a view, a trigger and the FK — the extension, function, sequence, domain, role, grant and RLS objects produce no statement and no warning. capability.MariaDB1011 no longer claims Sequences: MariaDB the engine has had SEQUENCE since 10.3 (verified live on 10.11.18, TABLE_TYPE = SEQUENCE) but Ptah has no MariaDB sequence introspection or MySQL-family sequence planning, so emitting a CREATE would never converge; the declared sequence now renders a named not-supported comment instead of vanishing (#931 item 8). The MySQL/MariaDB renderer wrappers stored a by-value copy of the writer they handed the shared mysqllike renderer, so VisitExtension and four sibling visitors wrote into an orphaned buffer and a declared extension rendered as a zero-length statement (#931 item 5). Atlas side: comparison.md:398 lists MySQL and MariaDB as Open drivers. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Starter 'Databases engines' names MySQL, MariaDB, PostgreSQL and SQLite, corroborating MySQL and MariaDB on the free tier."
   },
   {
     "area": "Database engines",
@@ -1067,7 +1067,7 @@
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Tables and indexes only. Views, matviews, functions, triggers, roles, grants, RLS, sequences, domains and CHECKs vanish from the plan with no diagnostic.",
+    "note": "Tables, indexes and column CHECKs (as named table constraints). Views, matviews, functions, triggers, roles and sequences render a named not-supported comment; grants, RLS and domains still drop.",
     "evidence": "Live ClickHouse 24.12: `ptah schema apply --root-dir <fixture> --db-url clickhouse://... --dry-run` planned only the two CREATE TABLE statements from a 13-object fixture. Offline `schema render` emits skip comments for extension/enum/FK but nothing for views or triggers. capability.go:430 ClickHouse24 sets ForeignKeys=false, CheckConstraintsEnforced=false. Atlas side: comparison.md:400 lists ClickHouse as a Pro driver."
   },
   {
@@ -1121,8 +1121,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "MySQL/SQLite/SQL Server inline-enum rewrite fires only if the type name starts with `enum_`; other names emit the bare type name verbatim.",
-    "evidence": "internal/convert/fromschema/fromschema.go:268 `if !strings.HasPrefix(field.Type, \"enum_\") { return field }`; reproduced with /tmp/pt-audit schema render. Atlas CE column from stokaro/ptah-atlas-conformance gaps-diff.md rows `mysql/02-enum`, `postgres/02-enum`, `sqlite/02-enum` (compare against Atlas CE inspect, ok)"
+    "note": "An enum is whatever the schema declares as one; the type name plays no part. The undocumented `enum_` prefix that gated the inline rewrite, the scoped-schema filter and the PostgreSQL cast is gone.",
+    "evidence": "Was internal/convert/fromschema/fromschema.go `if !strings.HasPrefix(field.Type, \"enum_\") { return field }`, now a lookup against the declared enums. Measured: `status_kind` and `enum_status` render byte-identical DDL on mysql, mariadb, sqlite and sqlserver, and the MySQL result executes on live MySQL 9.7 as `enum('active','archived')` with an out-of-domain INSERT rejected (ERROR 1265). On PostgreSQL 17.10 the ALTER path used to abort with `column \"s\" cannot be cast automatically to type status_kind` (SQLSTATE 42804, TRUE_EXIT=2) and now applies (#931 item 1). Atlas CE column from stokaro/ptah-atlas-conformance gaps-diff.md rows `mysql/02-enum`, `postgres/02-enum`, `sqlite/02-enum` (compare against Atlas CE inspect, ok)"
   },
   {
     "area": "Schema object kinds",
@@ -1148,8 +1148,8 @@
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "`--dialect mssql`/`tsql` drop them while `sqlserver` renders them; MySQL forces FOR EACH ROW; SQL Server rewrites BEFORE to AFTER silently.",
-    "evidence": "internal/convert/fromschema/fromschema.go:1747-1756 matches platform.SQLServer (\"sqlserver\") without normalizing; core/renderer/internal/dialects/mysqllike/mysqllike.go:643 hard-codes FOR EACH ROW; core/renderer/internal/dialects/mssql/mssql.go:626-628 maps BEFORE to AFTER; core/renderer/internal/dialects/sqlite/sqlite.go:313 errors on FOR EACH STATEMENT"
+    "note": "`--dialect mssql`/`tsql` drop them while `sqlserver` renders them. MySQL/MariaDB refuse FOR EACH STATEMENT and SQL Server refuses BEFORE instead of downgrading; a body ending in `;` gets one `;`.",
+    "evidence": "internal/convert/fromschema/fromschema.go:1747-1756 matches platform.SQLServer (\"sqlserver\") without normalizing; mysqllike.go used to hard-code FOR EACH ROW in the format string and mssql.go used to map BEFORE to AFTER; both now refuse, matching core/renderer/internal/dialects/sqlite/sqlite.go which already errored on FOR EACH STATEMENT. PostgreSQL still renders both forms unchanged. The rendered single-`;` trigger executes on live MySQL 9.7 and fires (#931 items 4 and 6)."
   },
   {
     "area": "Schema object kinds",
@@ -1184,7 +1184,7 @@
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. Range subtype changes produce no diff. The community binary reports none of the three when they exist.",
+    "note": "PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. A changed range type is planned as DROP TYPE + CREATE TYPE. The community binary reports none of the three.",
     "evidence": "Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. Fixture schema \"kinds\" holds CREATE DOMAIN us_postal, CREATE TYPE addr AS (city text, zip text), CREATE TYPE int_span AS RANGE, a sequence and pg_trgm. `atlas schema inspect --url <pg> -s kinds` returns exactly `table \"anchor\"` plus `schema \"kinds\"`; ptah-compat on the same URL returns domain, composite, range, sequence and extension blocks. In the writing direction a domain or composite block in a schema file leaves the community binary printing \"Schemas are synced, no changes to be made.\" - dropped in silence, not refused. Atlas features page (atlasgo.io/features), retrieved 2026-08-03: `Domain types`, `Composite types` and `Range types` are each listed under the PostgreSQL Pro Plan features. Same control as the extensions row."
   },
   {

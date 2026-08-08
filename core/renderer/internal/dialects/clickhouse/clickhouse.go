@@ -572,9 +572,14 @@ func (r *Renderer) resolveAndValidateTableEngine(node *ast.CreateTableNode) (tab
 	return spec, nil
 }
 
-// renderTableBody renders the column list and any inline CHECK constraints
-// for a CREATE TABLE statement. Other constraint types are silently dropped
-// because ClickHouse has no equivalent.
+// renderTableBody renders the column list and any CHECK constraints for a
+// CREATE TABLE statement. Other constraint types are silently dropped because
+// ClickHouse has no equivalent.
+//
+// Column-level CHECKs are promoted to table-level constraints. ClickHouse has
+// no column-level CHECK clause but does have `CONSTRAINT <name> CHECK <expr>`,
+// so the constraint is kept rather than dropped -- it used to vanish from the
+// rendered table with no comment (stokaro/ptah#931 item 7).
 func (r *Renderer) renderTableBody(node *ast.CreateTableNode) ([]string, error) {
 	lines := make([]string, 0, len(node.Columns)+len(node.Constraints))
 	for _, col := range node.Columns {
@@ -584,17 +589,46 @@ func (r *Renderer) renderTableBody(node *ast.CreateTableNode) ([]string, error) 
 		}
 		lines = append(lines, line)
 	}
+	for _, col := range node.Columns {
+		if col.Check == "" {
+			continue
+		}
+		lines = append(lines, checkConstraintLine(checkConstraintName(col.CheckName, node.Name, col.Name), col.Check))
+	}
 	for _, c := range node.Constraints {
 		if c.Type != ast.CheckConstraint || c.Expression == "" {
 			continue
 		}
-		if c.Name != "" {
-			lines = append(lines, fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", c.Name, c.Expression))
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("  CHECK (%s)", c.Expression))
+		lines = append(lines, checkConstraintLine(checkConstraintName(c.Name, node.Name, ""), c.Expression))
 	}
 	return lines, nil
+}
+
+// checkConstraintLine renders one ClickHouse CHECK constraint.
+//
+// The name is mandatory: measured on ClickHouse, an unnamed `CHECK (expr)` in a
+// column list is rejected with `Code: 62 ... SYNTAX_ERROR`, so the unnamed
+// fallback that used to be emitted here produced DDL the server would not
+// accept.
+func checkConstraintLine(name, expression string) string {
+	return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", name, expression)
+}
+
+// checkConstraintName returns the declared constraint name, or a deterministic
+// one built from the table and column when the author did not name it. It is
+// deterministic so re-rendering the same schema produces the same DDL.
+func checkConstraintName(declared, tableName, columnName string) string {
+	if declared != "" {
+		return declared
+	}
+	base := tableName
+	if ref, ok := tableref.Parse(tableName); ok {
+		base = ref.Name
+	}
+	if columnName != "" {
+		return base + "_" + columnName + "_check"
+	}
+	return base + "_check"
 }
 
 // writeEngineClause emits the trailing ENGINE/PARTITION BY/... clause for a

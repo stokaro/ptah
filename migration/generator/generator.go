@@ -1204,6 +1204,7 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.CompositeTypesModified = slices.Clone(diff.CompositeTypesModified)
 	clone.RangesAdded = slices.Clone(diff.RangesAdded)
 	clone.RangesRemoved = slices.Clone(diff.RangesRemoved)
+	clone.RangesModified = slices.Clone(diff.RangesModified)
 	clone.ViewsAdded = slices.Clone(diff.ViewsAdded)
 	clone.ViewsRemoved = slices.Clone(diff.ViewsRemoved)
 	clone.ViewsModified = slices.Clone(diff.ViewsModified)
@@ -1569,6 +1570,7 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema),
 		RangesAdded:            diff.RangesRemoved,
 		RangesRemoved:          diff.RangesAdded,
+		RangesModified:         reverseRangeDiffs(diff.RangesModified, schema),
 
 		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove
@@ -2200,6 +2202,31 @@ func reverseDomainDiffs(domainDiffs []types.DomainDiff, schema *goschema.Databas
 		}
 	}
 	return reversed
+}
+
+// reverseRangeDiffs mirrors reverseDomainDiffs for range types.
+func reverseRangeDiffs(rangeDiffs []types.RangeDiff, schema *goschema.Database) []types.RangeDiff {
+	reversed := make([]types.RangeDiff, len(rangeDiffs))
+	for i, rangeDiff := range rangeDiffs {
+		reversed[i] = types.RangeDiff{
+			RangeName:      rangeDiff.RangeName,
+			Changes:        reverseChangeMap(rangeDiff.Changes),
+			CurrentSubtype: targetRangeSubtype(schema, rangeDiff.RangeName),
+		}
+	}
+	return reversed
+}
+
+func targetRangeSubtype(schema *goschema.Database, name string) string {
+	if schema == nil {
+		return ""
+	}
+	for _, rangeType := range schema.Ranges {
+		if rangeType.QualifiedName() == name {
+			return rangeType.Subtype
+		}
+	}
+	return ""
 }
 
 // reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.
