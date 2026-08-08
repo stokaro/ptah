@@ -28,6 +28,10 @@
 // catalog answers NOT NULL, the desired model answers nullable, and every plan
 // is another full table rebuild. Treating every SQLite table as NOT NULL-key is
 // the defect #1235 closed. Both halves need the table.
+//
+// One shape SQLite distinguishes is deliberately not modeled here: a DESC key
+// ordering defeats the rowid alias, and this package does not ask, because
+// Ptah's SQLite renderer drops DESC from a PRIMARY KEY. See [isRowidAlias].
 package sqlitekey
 
 import (
@@ -54,7 +58,7 @@ func ImpliesNotNull(table goschema.Table, keyColumns []string, field goschema.Fi
 	if !table.Strict {
 		return false
 	}
-	return !isRowidAlias(table, keyColumns, field)
+	return !isRowidAlias(keyColumns, field)
 }
 
 // KeyColumns returns every column table's primary key covers, reading the
@@ -92,26 +96,24 @@ func tableLevelKeyColumns(table goschema.Table) []string {
 }
 
 // isRowidAlias reports whether field is the table's rowid under another name,
-// which is the one key column SQLite still lets hold NULL in a STRICT table.
+// which is the one key column SQLite still lets hold NULL in a STRICT table. The
+// alias exists only for a single-column key of declared type INTEGER on a table
+// that has a rowid.
 //
-// The alias exists only for a single-column key of declared type INTEGER on a
-// table that has a rowid, and DESC ordering defeats it: measured, a STRICT
-// `id INTEGER PRIMARY KEY DESC` reports notnull=1 while the same key without
-// DESC reports 0.
-func isRowidAlias(table goschema.Table, keyColumns []string, field goschema.Field) bool {
+// A DESC key ordering defeats the alias in SQLite -- measured, a STRICT
+// `id INTEGER PRIMARY KEY DESC` reports notnull=1 where the same key without
+// DESC reports 0 -- and this function deliberately does not ask, because Ptah's
+// SQLite renderer does not write DESC into a PRIMARY KEY at all. Asking would
+// describe a table Ptah never builds: measured, `PRIMARY KEY (id DESC)` in a
+// STRICT source is applied as `PRIMARY KEY ("id")`, whose catalog answer is 0,
+// so a model that answered NOT NULL for it would plan a rebuild on every run and
+// never converge. The DESC that goes missing is its own defect, in the renderer,
+// and it has to be fixed there rather than modeled around here.
+func isRowidAlias(keyColumns []string, field goschema.Field) bool {
 	if len(keyColumns) != 1 {
 		return false
 	}
-	if keyOrdersColumnDesc(table, field.Name) {
-		return false
-	}
 	return rendersAsSQLiteInteger(field.Type)
-}
-
-func keyOrdersColumnDesc(table goschema.Table, column string) bool {
-	return slices.ContainsFunc(table.PrimaryKeyParts, func(part goschema.PrimaryKeyPart) bool {
-		return strings.EqualFold(strings.TrimSpace(part.Name), column) && part.Desc
-	})
 }
 
 // rendersAsSQLiteInteger reports whether the SQLite renderer writes rawType as

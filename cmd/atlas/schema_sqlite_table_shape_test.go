@@ -181,6 +181,19 @@ func TestSchemaApplySQLiteTableShapeConvergesOnKeyNullability(t *testing.T) {
 			source: "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL) STRICT;",
 			want:   map[string]bool{"id": false},
 		},
+		{
+			// SQLite's own rule is that DESC defeats the rowid alias, so a
+			// database built from this source *with* the DESC would report
+			// notnull=1. Ptah's SQLite renderer drops DESC from a PRIMARY KEY,
+			// so the table it builds does not have it, and the row asserts what
+			// was actually built. Modelling SQLite's DESC rule instead made this
+			// shape plan a rebuild on every run: the table has the alias, the
+			// model said it did not.
+			name:   "strict table level key ordered DESC follows the table that was built",
+			table:  "users",
+			source: "CREATE TABLE users (id INTEGER, name TEXT NOT NULL, PRIMARY KEY (id DESC)) STRICT;",
+			want:   map[string]bool{"id": false},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

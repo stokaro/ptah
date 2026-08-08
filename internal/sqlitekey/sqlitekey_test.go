@@ -92,7 +92,14 @@ func TestImpliesNotNull(t *testing.T) {
 			want:       true,
 		},
 		{
-			name: "strict integer key ordered DESC is not the rowid alias",
+			// SQLite would answer notnull=1 here, because DESC defeats the
+			// rowid alias. Ptah answers 0 on purpose: its SQLite renderer drops
+			// DESC from a PRIMARY KEY, so the table it actually builds from this
+			// schema does have the alias, and answering SQLite's DESC rule would
+			// plan a rebuild against that table on every run. Measured:
+			// `PRIMARY KEY (id DESC)` in a STRICT source is applied as
+			// `PRIMARY KEY ("id")` and the catalog reports notnull=0.
+			name: "strict integer key ordered DESC follows what the renderer builds",
 			table: goschema.Table{
 				Name:            "t",
 				Strict:          true,
@@ -100,7 +107,7 @@ func TestImpliesNotNull(t *testing.T) {
 			},
 			keyColumns: []string{"id"},
 			field:      goschema.Field{Name: "id", Type: "INTEGER"},
-			want:       true,
+			want:       false,
 		},
 		{
 			name:       "strict and without rowid together answer not null",
