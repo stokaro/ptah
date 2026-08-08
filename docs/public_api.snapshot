@@ -3598,12 +3598,14 @@ type Constraint struct {
     OnUpdate       string   // ON UPDATE action
 
     // RequiresExtensions names the extensions the index backing this constraint
-    // cannot be built without and that nothing in the constraint's own text
-    // names. It is filled in for EXCLUDE constraints read from a live
-    // PostgreSQL catalog, where the elements print operators rather than
-    // operator classes: `EXCLUDE USING gist (room WITH =, during WITH &&)` over
-    // an integer column needs btree_gist and says so nowhere
-    // (stokaro/ptah#1286). See [Index.RequiresExtensions].
+    // cannot be built without, as the catalog resolved them rather than as
+    // ExcludeElements spells them. It is filled in for EXCLUDE constraints read
+    // from a live PostgreSQL catalog, where an element prints its operator and
+    // prints its operator class only when that class is not the default:
+    // `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+    // needs btree_gist and says so nowhere, while
+    // `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and does name
+    // the class (stokaro/ptah#1286). See [Index.RequiresExtensions].
     RequiresExtensions []string
 
     Comment string // Constraint comment/description
@@ -4098,8 +4100,9 @@ type Index struct {
     Granularity int
 
     // RequiresExtensions names the extensions this index cannot be built
-    // without and does not name. It is filled in when the schema was read from
-    // a live PostgreSQL catalog.
+    // without, as the catalog resolved them rather than as the index's own DDL
+    // spells them. It is filled in when the schema was read from a live
+    // PostgreSQL catalog.
     //
     // An operator class is printed only when it is not the default for its key's
     // type on the index's access method, so an index resting on a default class
@@ -4107,6 +4110,10 @@ type Index struct {
     // over an integer column needs btree_gin, and `isbn` at least says a word
     // [Extension.Provides] can match. The catalog is asked instead of the text
     // (stokaro/ptah#1286).
+    //
+    // A printed class such as pg_trgm's `gin_trgm_ops` is recorded here too. The
+    // field is the catalog's answer, not "the part the DDL left out", so a reader
+    // of it must not conclude that the document names nothing behind the edge.
     //
     // Empty means not measured or nothing to report. Annotation and YAML sources
     // have no catalog to ask and leave it unset.
@@ -5375,10 +5382,13 @@ type DBConstraint struct {
     // It is a separate field rather than a lookup because the backing index is
     // not part of the entity model: a constraint owns its index, and the
     // converter drops the index row so the constraint is rendered once. The
-    // dependency is as unnameable here as it is on a plain index. Measured on
-    // PostgreSQL 17.10, `EXCLUDE USING gist (room WITH =, during WITH &&)` over
-    // an integer column needs btree_gist and pg_get_constraintdef prints no
-    // token of it (stokaro/ptah#1286).
+    // dependency is as hard to read off the text here as on a plain index, and
+    // for the same reason. Measured on PostgreSQL 17.10,
+    // `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+    // needs btree_gist and pg_get_constraintdef prints no token of it, while
+    // `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and prints
+    // the class, because a class is printed exactly when it is not the default
+    // (stokaro/ptah#1286).
     RequiresExtensions []string `json:"requires_extensions,omitempty"`
 }
     DBConstraint represents a database constraint
@@ -5550,6 +5560,13 @@ type DBIndex struct {
     // access method the catalog owns, `gin` or `gist`, belongs to no extension
     // and pins nothing; one an extension supplies, such as bloom's `bloom`,
     // resolves to that extension.
+    //
+    // The edge is recorded whether or not the DDL prints the class. It does print
+    // a non-default one -- pg_trgm's gin_trgm_ops arrives as
+    // CREATE INDEX w_trgm ON public.w USING gin (txt gin_trgm_ops) -- and that
+    // index resolves to pg_trgm here as well. This field answers "which
+    // extension owns what this index resolved to", not "which dependency the DDL
+    // omitted".
     //
     // Empty means the reader found no such edge, which is the ordinary case:
     // core supplies the default operator class for every core type its access

@@ -197,7 +197,8 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 
 			IncludeColumns: slices.Clone(dbIndex.IncludeColumns),
 			// Carried rather than recomputed: only the reader has the catalog,
-			// and this edge is the one the index's own DDL does not spell.
+			// and an operator class the index's own DDL leaves implicit is
+			// reachable no other way.
 			RequiresExtensions: slices.Clone(dbIndex.RequiresExtensions),
 		}
 		indexes = append(indexes, index)

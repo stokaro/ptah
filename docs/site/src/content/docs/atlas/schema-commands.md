@@ -242,7 +242,7 @@ throw away the only evidence there is. The `cube` extension shows what that
 leaves behind — its type and its constructor are both called `cube`, so a view
 saying `GROUP BY CUBE(x)` still keeps it.
 
-#### An extension the document cannot name
+#### An extension the document may not name
 
 Some dependencies have no name to match. PostgreSQL prints an operator class in
 a `CREATE INDEX` only when that class is not the default for the key's type on
@@ -266,13 +266,31 @@ Ptah asks the catalog instead of the text. `pg_index.indclass` holds the
 operator class each index key actually resolved to, so inspection resolves those
 classes — and the index's access method — against `pg_depend` and records which
 extension owns them. The same edge is read for an exclusion constraint, whose
-elements print their operators and never their classes:
-`EXCLUDE USING gist (room WITH =, during WITH &&)` over an `integer` column
-needs `btree_gist` and says nothing of it. The keep is reported like any other:
+elements print their operators and print an operator class under the same
+not-the-default rule: `EXCLUDE USING gist (room WITH =, during WITH &&)` over an
+`integer` column needs `btree_gist` and says nothing of it. The keep is reported
+like any other, and says which question answered it:
 
 ```console
-warning: extensions.btree_gin: kept in Atlas-compatible schema inspect output because an index or constraint in this document resolves to an operator class or access method it supplies, which the rendered DDL does not spell: ...
+warning: extensions.btree_gin: kept in Atlas-compatible schema inspect output because the catalog resolved an index or constraint in this document to an operator class or access method it supplies: ...
 ```
+
+The same rule read the other way says when the class **is** in the document: a
+class is printed exactly when it is not the default, so `pg_trgm`'s
+`gin_trgm_ops` on a `text` column comes back as
+`CREATE INDEX w_trgm ON public.w USING gin (txt gin_trgm_ops)` and is rendered as
+`ops = "gin_trgm_ops"`, or as `elements = "txt gist_trgm_ops WITH ="` on an
+exclusion constraint. That extension is kept as well — omitted, the document
+failed to apply with `operator class "gin_trgm_ops" does not exist for access
+method "gin"` — but it is kept because the document names something it supplies,
+and the report says so:
+
+```console
+warning: extensions.pg_trgm: kept in Atlas-compatible schema inspect output because another object in this document depends on it: ...
+```
+
+The name question is asked first for that reason. A keep you can find by
+searching the document is never reported as one you cannot.
 
 Reading `USING gin` as a reference to `btree_gin` would answer the same question
 wrongly. `gin` is a core access method that belongs to no extension, and

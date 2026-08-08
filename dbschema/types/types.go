@@ -235,6 +235,13 @@ type DBIndex struct {
 	// and pins nothing; one an extension supplies, such as bloom's `bloom`,
 	// resolves to that extension.
 	//
+	// The edge is recorded whether or not the DDL prints the class. It does print
+	// a non-default one -- pg_trgm's gin_trgm_ops arrives as
+	// CREATE INDEX w_trgm ON public.w USING gin (txt gin_trgm_ops) -- and that
+	// index resolves to pg_trgm here as well. This field answers "which
+	// extension owns what this index resolved to", not "which dependency the DDL
+	// omitted".
+	//
 	// Empty means the reader found no such edge, which is the ordinary case:
 	// core supplies the default operator class for every core type its access
 	// methods index. Readers with no catalog to ask leave it unset.
@@ -294,10 +301,13 @@ type DBConstraint struct {
 	// It is a separate field rather than a lookup because the backing index is
 	// not part of the entity model: a constraint owns its index, and the
 	// converter drops the index row so the constraint is rendered once. The
-	// dependency is as unnameable here as it is on a plain index. Measured on
-	// PostgreSQL 17.10, `EXCLUDE USING gist (room WITH =, during WITH &&)` over
-	// an integer column needs btree_gist and pg_get_constraintdef prints no
-	// token of it (stokaro/ptah#1286).
+	// dependency is as hard to read off the text here as on a plain index, and
+	// for the same reason. Measured on PostgreSQL 17.10,
+	// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+	// needs btree_gist and pg_get_constraintdef prints no token of it, while
+	// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and prints
+	// the class, because a class is printed exactly when it is not the default
+	// (stokaro/ptah#1286).
 	RequiresExtensions []string `json:"requires_extensions,omitempty"`
 }
 

@@ -419,11 +419,18 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNothingDependsOn(t *testing.T
 // PostgreSQL 17.10 (stokaro/ptah#1286).
 //
 // The second row is the same shape reaching the document through a constraint
-// instead of an index. An exclusion constraint prints its operators, never its
-// operator classes, so `EXCLUDE USING gist (room WITH =, during WITH &&)` over
-// an integer column needs btree_gist and names nothing of it -- and the backing
-// index is dropped from the entity model, so the requirement has to travel on
-// the constraint or it is lost between the reader and here.
+// instead of an index. An exclusion constraint prints its operators, and prints
+// an operator class only under the same not-the-default rule, so
+// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+// needs btree_gist and names nothing of it -- and the backing index is dropped
+// from the entity model, so the requirement has to travel on the constraint or
+// it is lost between the reader and here.
+//
+// Both rows are the case where nothing in the document names the extension,
+// which is why both expect the catalog wording. The case where the class IS
+// printed is
+// TestRenderInspectedForAtlasCLIReportsAPrintedOperatorClassAsAName, and that
+// one must not get this message.
 func TestRenderInspectedForAtlasCLIKeepsAnExtensionOnlyTheCatalogNames(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -458,9 +465,78 @@ func TestRenderInspectedForAtlasCLIKeepsAnExtensionOnlyTheCatalogNames(t *testin
 			c.Assert(string(result.Data), qt.Contains, test.want,
 				qt.Commentf("the document cannot be materialized without this extension"))
 			c.Assert(diagnosticMessageFor(result.Diagnostics, test.wantPath), qt.Contains,
-				"kept in Atlas-compatible schema inspect output because an index or constraint in this"+
-					" document resolves to an operator class or access method it supplies",
+				"kept in Atlas-compatible schema inspect output because the catalog resolved an index or"+
+					" constraint in this document to an operator class or access method it supplies",
 				qt.Commentf("a dependency no word in the document carries cannot be reported as if it were named"))
+		})
+	}
+}
+
+// TestRenderInspectedForAtlasCLIReportsAPrintedOperatorClassAsAName is the row
+// the catalog wording was false on.
+//
+// PostgreSQL prints an operator class exactly when it is NOT the default for the
+// key's type on the access method, which is the same rule that hides btree_gin's
+// class -- read the other way. A non-default class is printed, so it is in the
+// document, and both rendering sites carry it: an index writes
+// `ops = "gin_trgm_ops"` and an exclusion constraint writes
+// `elements = "txt gist_trgm_ops WITH ="`. Measured on PostgreSQL 17.10 with
+// pg_trgm installed, `CREATE INDEX w_trgm ON w USING gin (txt gin_trgm_ops)`
+// comes back from the catalog spelled in full.
+//
+// The extension has to be kept -- omitted, the document failed to apply with
+// `operator class "gin_trgm_ops" does not exist for access method "gin"` -- but
+// it must be kept for the reason that is true. Reporting it as a dependency the
+// document does not spell sent an operator looking for the absence of a word
+// printed two lines above (stokaro/ptah#1286).
+//
+// Over the 45 extensions in the postgres:17 image there are 5 non-default
+// extension-owned operator classes -- citext_pattern_ops, gin__int_ops,
+// gist__intbig_ops, gin_trgm_ops, gist_trgm_ops -- and no pg_catalog class
+// shares a name with any of them, so each survives the shadowed-name filter into
+// Extension.Provides and the name scan can answer for all of them.
+func TestRenderInspectedForAtlasCLIReportsAPrintedOperatorClassAsAName(t *testing.T) {
+	tests := []struct {
+		name      string
+		database  func() *goschema.Database
+		wantSpelt string
+	}{
+		{
+			name:      "an index part prints the operator class",
+			database:  printedOpclassIndexDatabase,
+			wantSpelt: "ops = \"gin_trgm_ops\"",
+		},
+		{
+			name:      "an exclusion constraint prints the operator class",
+			database:  printedOpclassConstraintDatabase,
+			wantSpelt: "elements = \"txt gist_trgm_ops WITH =\"",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(
+				test.database(), platform.Postgres, "public",
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(result.Data), qt.Contains, test.wantSpelt,
+				qt.Commentf("the fixture is about a class the document does spell"))
+			c.Assert(string(result.Data), qt.Contains, "extension \"pg_trgm\"",
+				qt.Commentf("the document cannot be materialized without the extension supplying that class"))
+			c.Assert(diagnosticMessageFor(result.Diagnostics, "extensions.pg_trgm"), qt.Contains,
+				"kept in Atlas-compatible schema inspect output because another object in this document"+
+					" depends on it",
+				qt.Commentf("a keep the reader can look up in the document is reported as one they can"))
+			c.Assert(diagnosticMessageFor(result.Diagnostics, "extensions.pg_trgm"), qt.Not(qt.Contains),
+				"the catalog resolved",
+				qt.Commentf("the catalog wording is for a dependency no name covers, and a name covers this one"))
+			c.Assert(diagnosticMessageFor(result.Diagnostics, "extensions.pg_trgm"), qt.Not(qt.Contains),
+				"does not spell",
+				qt.Commentf("the document spells the operator class this keep is about"))
 		})
 	}
 }
@@ -738,6 +814,66 @@ func implicitOpclassConstraintDatabase() *goschema.Database {
 			UsingMethod:        "gist",
 			ExcludeElements:    "room WITH =, during WITH &&",
 			RequiresExtensions: []string{"btree_gist"},
+		}},
+	}
+}
+
+// printedOpclassIndexDatabase is the same catalog edge on an index that DOES
+// spell the operator class: pg_trgm's gin_trgm_ops on a text column.
+//
+// gin_trgm_ops is not the default GIN class for text -- text has no default one
+// at all -- so PostgreSQL prints it, and the renderer writes it as `ops` on the
+// index part. The member list is the real one read from pg_depend on PostgreSQL
+// 17.10, trimmed to the entries that matter here: both operator classes are in
+// it, because neither name is shadowed by a pg_catalog class.
+//
+// RequiresExtensions is set as well, because the reader records the edge whether
+// or not the class is printed. Both answers are therefore available for this
+// fixture, which is exactly what makes it the test of which one is reported.
+func printedOpclassIndexDatabase() *goschema.Database {
+	return &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:     "pg_trgm",
+			Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"},
+		}},
+		Tables: []goschema.Table{{StructName: "W", Name: "w", Schema: "public"}},
+		Fields: []goschema.Field{
+			{StructName: "W", Name: "id", Type: "integer", Primary: true},
+			{StructName: "W", Name: "txt", Type: "text"},
+		},
+		Indexes: []goschema.Index{{
+			StructName:         "W",
+			Name:               "w_trgm",
+			Type:               "gin",
+			Parts:              []goschema.IndexPart{{Name: "txt", Operator: "gin_trgm_ops"}},
+			RequiresExtensions: []string{"pg_trgm"},
+		}},
+	}
+}
+
+// printedOpclassConstraintDatabase is the constraint arm of the same shape:
+// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)`, which pg_get_constraintdef
+// prints with the class because gist_trgm_ops is not the default gist class for
+// text either. The class lands in the rendered `elements` string.
+func printedOpclassConstraintDatabase() *goschema.Database {
+	return &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:     "pg_trgm",
+			Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"},
+		}},
+		Tables: []goschema.Table{{StructName: "Y", Name: "y", Schema: "public"}},
+		Fields: []goschema.Field{
+			{StructName: "Y", Name: "id", Type: "integer", Primary: true},
+			{StructName: "Y", Name: "txt", Type: "text"},
+		},
+		Constraints: []goschema.Constraint{{
+			StructName:         "Y",
+			Name:               "y_txt_excl",
+			Type:               "EXCLUDE",
+			Table:              "y",
+			UsingMethod:        "gist",
+			ExcludeElements:    "txt gist_trgm_ops WITH =",
+			RequiresExtensions: []string{"pg_trgm"},
 		}},
 	}
 }

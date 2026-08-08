@@ -151,7 +151,7 @@ func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 
 // omitRefusedExtension decides one extension's fate. It asks
 // [renderer.omitRefusedBlock]'s question about two sets of names, and then one
-// question no name can answer.
+// question those names may not be able to answer.
 //
 // The names are two sets because an extension is almost never referenced by its
 // own label: `isn` supplies the type `isbn`, `pgcrypto` supplies the function
@@ -186,26 +186,43 @@ func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 // question: `gin` is a core access method, and tsvector, jsonb and array columns
 // have core GIN operator classes, so that rule would pin btree_gin to indexes
 // that do not need it and cost every such document its readability.
+//
+// The NAME question is asked first, and the ordering is what keeps each
+// diagnostic true rather than a preference between them. PostgreSQL prints an
+// operator class exactly when it is NOT the default for the key's type on the
+// access method, so a printed class is a name the document does carry:
+// `CREATE INDEX w_trgm ON w USING gin (txt gin_trgm_ops)` renders
+// `ops = "gin_trgm_ops"` and its exclusion-constraint form renders
+// `elements = "txt gist_trgm_ops WITH ="`. Both are catalog edges too, so asking
+// the catalog first answered "kept because of something the document does not
+// spell" about a class sitting in the document two lines above -- measured on
+// PostgreSQL 17.10 with pg_trgm installed (stokaro/ptah#1286). Printed classes
+// are exactly the non-default ones, and over the 45 extensions in the
+// postgres:17 image all 5 of those have names pg_catalog does not also supply,
+// so each survives the shadowed-name filter into
+// [goschema.Extension.Provides] and the name scan can answer for it:
+// citext_pattern_ops, gin__int_ops, gist__intbig_ops, gin_trgm_ops,
+// gist_trgm_ops.
 func (r *renderer) omitRefusedExtension(path string, extension goschema.Extension) bool {
 	return r.omitRefused(path, blockExtension, func() blockDependency {
-		if r.documentRequiresExtension(extension.Name) {
-			return blockDependency{
-				because: "an index or constraint in this document resolves to an operator class or access" +
-					" method it supplies, which the rendered DDL does not spell",
-				cost: "leave an index no database could build",
-			}
-		}
 		// The extension's own name AND everything it supplies: a document that
 		// depends on `isn` says `isbn`, never `isn`. Provides is empty for
 		// sources with no catalog behind them, and the check then degenerates to
 		// the label, which is the most that can be known about such a source.
-		if !r.documentNamesAny(append([]string{extension.Name}, extension.Provides...)) {
-			return blockDependency{}
+		if r.documentNamesAny(append([]string{extension.Name}, extension.Provides...)) {
+			return blockDependency{
+				because: "another object in this document depends on it",
+				cost:    "leave a reference to an object nothing declares",
+			}
 		}
-		return blockDependency{
-			because: "another object in this document depends on it",
-			cost:    "leave a reference to an object nothing declares",
+		if r.documentRequiresExtension(extension.Name) {
+			return blockDependency{
+				because: "the catalog resolved an index or constraint in this document to an operator class" +
+					" or access method it supplies",
+				cost: "leave an index no database could build",
+			}
 		}
+		return blockDependency{}
 	})
 }
 
@@ -213,9 +230,14 @@ func (r *renderer) omitRefusedExtension(path string, extension goschema.Extensio
 // would cost the document. A zero value means nothing depends on the block.
 //
 // Both halves are reported because they are what an operator needs to act on. A
-// dependency spelled in the document can be looked up by searching it; one the
-// catalog resolved cannot be, so a diagnostic that only said "something depends
-// on it" would send its reader looking for a word that is not there.
+// dependency the document names can be found by searching the document; one that
+// exists only because the catalog resolved an operator class cannot be, so a
+// diagnostic that only said "something depends on it" would send its reader
+// looking for a word that may not be there. Which of the two an extension gets
+// is decided by asking the name question first, in [renderer.omitRefusedExtension]
+// -- a keep the reader CAN look up must never be reported as one they cannot.
+// Neither wording claims anything about the other's evidence: an operator class
+// can be both printed in the document and resolved from the catalog.
 type blockDependency struct {
 	because string
 	cost    string
@@ -250,13 +272,17 @@ func (r *renderer) omitRefused(path, block string, dependency func() blockDepend
 // declares cannot be built without this extension, as the catalog resolved it
 // rather than as the document spells it.
 //
-// This is the half [documentNamesAny] cannot answer. It reads no text: the
-// reader recorded, per index and per exclusion constraint, which extensions
+// This is the half [documentNamesAny] cannot always answer. It reads no text:
+// the reader recorded, per index and per exclusion constraint, which extensions
 // that object's operator classes and access method belong to, so the answer is
-// a catalog fact rather than a guess about a word. An object this render leaves
-// out takes its requirement with it -- whether a selector dropped it or
-// [renderTables] found no table to write it into -- which is why the edge is
-// carried on the object and not on the extension.
+// a catalog fact rather than a guess about a word. The two overlap rather than
+// partition -- a printed operator class is both a name and a catalog edge, and
+// the default class PostgreSQL declined to print is only the latter -- so the
+// caller asks the name question first and reaches this one for what no name
+// covers. An object this render leaves out takes its requirement with it --
+// whether a selector dropped it or [renderTables] found no table to write it
+// into -- which is why the edge is carried on the object and not on the
+// extension.
 func (r *renderer) documentRequiresExtension(name string) bool {
 	if r.requiredExtensions == nil {
 		r.requiredExtensions = collectRequiredExtensions(r.db)
@@ -412,8 +438,24 @@ func collectReferencedNames(db *goschema.Database) map[string]bool {
 	}
 	for _, index := range db.Indexes {
 		add(index.Condition)
+		// An operator class is rendered as `ops`, on the index or on one of its
+		// parts, and it names something only an extension may declare:
+		// `ops = "gin_trgm_ops"` needs pg_trgm and nothing else in such a
+		// document says so. A class reaches the document exactly when it is not
+		// the default for its key's type, and a non-default extension class is
+		// one the shadowed-name filter keeps in
+		// [goschema.Extension.Provides], so what lands here is matchable. Not
+		// reading it omitted pg_trgm from a document whose index block spelled
+		// gin_trgm_ops, and the document then failed to apply with `operator
+		// class "gin_trgm_ops" does not exist for access method "gin"` --
+		// measured on PostgreSQL 17.10 (stokaro/ptah#1286). The constraint arm
+		// has always been read, through ExcludeElements above, which is where
+		// the same class is printed for `EXCLUDE USING gist (txt gist_trgm_ops
+		// WITH =)`.
+		add(index.Operator)
 		for _, part := range index.Parts {
 			add(part.Expr)
+			add(part.Operator)
 		}
 	}
 	for _, view := range db.Views {

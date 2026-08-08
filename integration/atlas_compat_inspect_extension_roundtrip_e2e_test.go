@@ -113,30 +113,41 @@ type atlasCompatExtensionRoundTripCase struct {
 // member list drops the function name too -- the refuted shape again, one level
 // down.
 //
-// The last three rows are stokaro/ptah#1286, where the member list cannot help
-// at all because no identifier in the document names the dependency. PostgreSQL
-// prints an operator class only when it is not the default for its key's type,
-// so `CREATE INDEX t_gin ON t USING gin (n int4_ops)` over an integer column
-// comes back as `USING gin (n)` and every word of btree_gin is gone. The block
-// was dropped at exit 0 and the pinned Atlas community binary v1.3.0 then
+// The btree_gin and btree_gist rows are stokaro/ptah#1286, where the member list
+// cannot help because no identifier in the document names the dependency.
+// PostgreSQL prints an operator class only when it is not the default for its
+// key's type, so `CREATE INDEX t_gin ON t USING gin (n int4_ops)` over an integer
+// column comes back as `USING gin (n)` and every word of btree_gin is gone. The
+// block was dropped at exit 0 and the pinned Atlas community binary v1.3.0 then
 // refused the result: `create index "t_gin" to table: "t": pq: data type
 // integer has no default operator class for access method "gin"`, exit 1, with
-// Ptah's own apply failing identically. The second row is the same dependency
+// Ptah's own apply failing identically. The btree_gist row is the same dependency
 // arriving through an exclusion constraint, whose elements print operators and
-// never classes. The third is the control that keeps the fix from becoming
-// "pin the extension to every GIN index": jsonb and tsvector have core GIN
-// classes, and that document must still come out with no extension block.
+// print a class under the same not-the-default rule. The jsonb/tsvector row is
+// the control that keeps the fix from becoming "pin the extension to every GIN
+// index": those have core GIN classes, and that document must still come out
+// with no extension block.
 //
-// The last row is that fix's other control, and the shape it first got wrong.
-// Carrying the edge is not the same as being in the document: renderTables
-// drops an index whose table this render does not write and reports it as an
-// orphan, and a materialized view's index is exactly that -- pg_index resolves
-// its operator classes like any other index, and a `materialized` block carries
-// no index, so it can never be rendered. Keeping btree_gin for it produced a
-// document with no index block anywhere that the pinned Atlas community binary
-// v1.3.0 refused, `postgres: extensions are not supported by this version`,
-// exit 1, where the same document without the block is read at exit 0 -- and
-// both apply at exit 0, so the block bought nothing at all.
+// The two pg_trgm rows are the same rule read the other way, and they are here
+// because the reason reported for them was wrong. gin_trgm_ops is not the
+// default GIN class for text, so it IS printed: the index arrives as
+// `USING gin (txt gin_trgm_ops)` and renders `ops = "gin_trgm_ops"`, and the
+// exclusion form renders `elements = "txt gist_trgm_ops WITH ="`. The block is
+// needed either way -- without it the round trip below fails with `operator class
+// "gin_trgm_ops" does not exist for access method "gin"` -- but the document does
+// name what pg_trgm supplies, so the keep is reported as a dependency the reader
+// can find rather than as one the DDL does not spell.
+//
+// The materialized-view row is the fix's other control, and the shape it first
+// got wrong. Carrying the edge is not the same as being in the document:
+// renderTables drops an index whose table this render does not write and reports
+// it as an orphan, and a materialized view's index is exactly that -- pg_index
+// resolves its operator classes like any other index, and a `materialized` block
+// carries no index, so it can never be rendered. Keeping btree_gin for it
+// produced a document with no index block anywhere that the pinned Atlas
+// community binary v1.3.0 refused, `postgres: extensions are not supported by
+// this version`, exit 1, where the same document without the block is read at
+// exit 0 -- and both apply at exit 0, so the block bought nothing at all.
 func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 	adminURL := requirePostgresE2EDatabaseURL(t)
 
@@ -310,6 +321,36 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			why: "an EXCLUDE element prints its operator and not its operator class, and the index" +
 				" backing the constraint is not in the entity model, so the requirement has to" +
 				" travel on the constraint",
+		},
+		{
+			name:      "index printing an operator class the extension supplies",
+			extension: "pg_trgm",
+			seed: "CREATE TABLE w (id integer PRIMARY KEY, txt text NOT NULL);" +
+				" CREATE INDEX w_trgm ON w USING gin (txt gin_trgm_ops)",
+			wantBlock: true,
+			// The other side of the not-the-default rule, and the row the
+			// diagnostic was false on: this class is printed, so the document
+			// names something pg_trgm supplies, and the keep must be reported as
+			// a dependency the reader can look up rather than as one the DDL does
+			// not spell. The round trip is what proves the block is needed at
+			// all: on a dev database without pg_trgm the index cannot be built.
+			why: "gin_trgm_ops is not the default GIN class for text, so PostgreSQL prints it and" +
+				" the document does name what pg_trgm supplies -- and the index still cannot be" +
+				" built without the extension",
+		},
+		{
+			name:      "exclusion constraint printing an operator class the extension supplies",
+			extension: "pg_trgm",
+			seed: "CREATE TABLE y (id integer PRIMARY KEY, txt text NOT NULL," +
+				" EXCLUDE USING gist (txt gist_trgm_ops WITH =))",
+			wantBlock: true,
+			// The constraint arm of the same shape. pg_get_constraintdef prints
+			// the class here for the same reason, and it lands in the rendered
+			// `elements` string, which the reference scan has always read -- so
+			// this row was already answerable by name before #1286 and was
+			// nonetheless reported as a catalog-only edge.
+			why: "gist_trgm_ops is not the default gist class for text either, so the constraint" +
+				" definition prints it and the rendered elements string carries it",
 		},
 		{
 			name:      "gin indexes whose operator classes core supplies",

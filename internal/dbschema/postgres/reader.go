@@ -691,7 +691,7 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 // PostgreSQL prints an operator class in a CREATE INDEX or an EXCLUDE clause
 // only when that class is not the default for the key's type on the access
 // method, so the dependency this answers is one no identifier in the rendered
-// document carries. Measured on PostgreSQL 17.10 with btree_gin installed,
+// document need carry. Measured on PostgreSQL 17.10 with btree_gin installed,
 //
 //	CREATE INDEX t_gin ON t USING gin (n int4_ops);   -- n is integer
 //
@@ -709,11 +709,14 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 // which is a different question: it pins nothing for `gin`, and pins the owner
 // for an access method an extension does supply, such as bloom's `bloom`.
 //
-// Both arms are unconditional on opcdefault. A printed, non-default class is
-// already matched by name through [goschema.Extension.Provides], but that list
-// excludes names pg_catalog also supplies, so a non-default class shadowed by a
-// core one would drop out of it; the catalog edge does not depend on the name
-// being unique or on it being printed.
+// Both arms are unconditional on opcdefault, so a printed class is recorded
+// here as well as an unprinted one. A printed class is also matchable by name
+// through [goschema.Extension.Provides] wherever the renderer's reference scan
+// reads the attribute it lands in, and that is the answer preferred when both
+// are available, because a name can be looked up in the document; see
+// [go.5x5.cz/ptah/internal/atlashclrender] omitRefusedExtension. This projection
+// does not depend on either: Provides excludes names pg_catalog also supplies,
+// so a class shadowed by a core one would drop out of it.
 func requiredExtensionsProjection(indclassExpr, accessMethodExpr string) string {
 	return `COALESCE((
 				SELECT json_agg(DISTINCT e.extname)::text
@@ -788,9 +791,10 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			-- column does not replay at all without it, because point has no
 			-- default btree operator class. See #1242.
 			am.amname as index_method,
-			-- The extensions this index resolves to and never names, from the
-			-- resolved operator class OIDs and the access method OID rather
-			-- than from either one's name. See requiredExtensionsProjection.
+			-- The extensions this index resolves to, from the resolved operator
+			-- class OIDs and the access method OID rather than from either
+			-- one's name -- including the class the DDL does print, which is
+			-- the non-default one. See requiredExtensionsProjection.
 			` + requiredExtensionsProjection("ix.indclass", "i.relam") + ` as index_required_extensions,
 			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
 			ix.indisprimary,
@@ -1306,12 +1310,12 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.
 				cl.relname AS table_name,
 				c.contype AS constraint_type,
 			pg_get_constraintdef(c.oid) AS constraint_definition,
-			-- The extensions the backing index resolves to and the constraint
-			-- text never names. An EXCLUDE element prints its operator, and its
-			-- operator class only when that class is not the default, so
-			-- EXCLUDE USING gist (room WITH =, ...) over an integer column
-			-- needs btree_gist and says nothing of it. See
-			-- requiredExtensionsProjection.
+			-- The extensions the backing index resolves to. An EXCLUDE element
+			-- prints its operator, and its operator class only when that class
+			-- is not the default, so EXCLUDE USING gist (room WITH =, ...) over
+			-- an integer column needs btree_gist and says nothing of it, while
+			-- (txt gist_trgm_ops WITH =) needs pg_trgm and does print the
+			-- class. See requiredExtensionsProjection.
 			` + requiredExtensionsProjection("ix.indclass", "ic.relam") + ` AS required_extensions
 		FROM pg_constraint c
 		JOIN pg_class cl ON c.conrelid = cl.oid
