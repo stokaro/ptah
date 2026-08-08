@@ -372,11 +372,13 @@ func TestGenerateMigration_CompareOptions_Integration_NoIgnoredExtensions(t *tes
 
 	// With no ignored extensions, plpgsql should be managed and migration should be generated
 	c.Assert(files, qt.IsNotNil, qt.Commentf("Expected migration to be generated when no extensions are ignored"))
-	c.Assert(files.UpFile, qt.Not(qt.Equals), "")
-	c.Assert(files.DownFile, qt.Not(qt.Equals), "")
+	c.Assert(files.Files, qt.HasLen, 1)
+	pair := files.Files[0]
+	c.Assert(pair.UpFile, qt.Not(qt.Equals), "")
+	c.Assert(pair.DownFile, qt.Not(qt.Equals), "")
 
 	// Verify UP migration content doesn't contain CREATE EXTENSION (since we're removing, not adding)
-	upContent, err := os.ReadFile(files.UpFile)
+	upContent, err := os.ReadFile(pair.UpFile)
 	c.Assert(err, qt.IsNil)
 	upSQL := string(upContent)
 	c.Assert(upSQL, qt.Not(qt.Contains), "CREATE EXTENSION",
@@ -442,11 +444,13 @@ func TestGenerateMigration_CompareOptions_Integration_AddExtension(t *testing.T)
 
 	// Migration should be generated to add pg_trgm
 	c.Assert(files, qt.IsNotNil, qt.Commentf("Expected migration to be generated to add pg_trgm"))
-	c.Assert(files.UpFile, qt.Not(qt.Equals), "")
-	c.Assert(files.DownFile, qt.Not(qt.Equals), "")
+	c.Assert(files.Files, qt.HasLen, 1)
+	pair := files.Files[0]
+	c.Assert(pair.UpFile, qt.Not(qt.Equals), "")
+	c.Assert(pair.DownFile, qt.Not(qt.Equals), "")
 
 	// Verify UP migration content contains CREATE EXTENSION for pg_trgm
-	upContent, err := os.ReadFile(files.UpFile)
+	upContent, err := os.ReadFile(pair.UpFile)
 	c.Assert(err, qt.IsNil)
 	upSQL := string(upContent)
 	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm",

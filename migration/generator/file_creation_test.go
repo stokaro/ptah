@@ -65,16 +65,18 @@ func TestGenerateEmptyMigrationNeverOverwritesAnExistingHalf(t *testing.T) {
 		OutputDir:     dir,
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(os.WriteFile(first.DownFile, []byte("SELECT old_down;\n"), 0600), qt.IsNil)
+	c.Assert(first.Files, qt.HasLen, 1)
+	c.Assert(os.WriteFile(first.Files[0].DownFile, []byte("SELECT old_down;\n"), 0600), qt.IsNil)
 
 	second, err := GenerateEmptyMigration(EmptyMigrationOptions{
 		MigrationName: "constraint drift",
 		OutputDir:     dir,
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(second.DownFile, qt.Not(qt.Equals), first.DownFile)
+	c.Assert(second.Files, qt.HasLen, 1)
+	c.Assert(second.Files[0].DownFile, qt.Not(qt.Equals), first.Files[0].DownFile)
 
-	oldDownBytes, err := os.ReadFile(first.DownFile)
+	oldDownBytes, err := os.ReadFile(first.Files[0].DownFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(oldDownBytes), qt.Equals, "SELECT old_down;\n")
 }
@@ -104,9 +106,10 @@ func TestGenerateEmptyMigrationCreatesMissingParents(t *testing.T) {
 		OutputDir:     dir,
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(filepath.Dir(files.UpFile), qt.Equals, dir)
+	c.Assert(files.Files, qt.HasLen, 1)
+	c.Assert(filepath.Dir(files.Files[0].UpFile), qt.Equals, dir)
 
-	upBytes, err := os.ReadFile(files.UpFile)
+	upBytes, err := os.ReadFile(files.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(upBytes), qt.Contains, "-- Direction: UP\n")
 }
@@ -142,16 +145,18 @@ func TestGenerateEmptyMigrationCreatesSkeletonPair(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files.Version, qt.Not(qt.Equals), int64(0))
-	c.Assert(filepath.Base(files.UpFile), qt.Matches, `[0-9]+_add_user_preferences\.up\.sql`)
-	c.Assert(filepath.Base(files.DownFile), qt.Matches, `[0-9]+_add_user_preferences\.down\.sql`)
+	c.Assert(files.Files, qt.HasLen, 1)
+	pair := files.Files[0]
+	c.Assert(filepath.Base(pair.UpFile), qt.Matches, `[0-9]+_add_user_preferences\.up\.sql`)
+	c.Assert(filepath.Base(pair.DownFile), qt.Matches, `[0-9]+_add_user_preferences\.down\.sql`)
 
-	upBytes, err := os.ReadFile(files.UpFile)
+	upBytes, err := os.ReadFile(pair.UpFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(upBytes), qt.Contains, "-- Migration: Add User Preferences\n")
 	c.Assert(string(upBytes), qt.Contains, "-- Direction: UP\n")
 	c.Assert(string(upBytes), qt.Contains, "-- Add your migration SQL here.\n")
 
-	downBytes, err := os.ReadFile(files.DownFile)
+	downBytes, err := os.ReadFile(pair.DownFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(downBytes), qt.Contains, "-- Migration: Add User Preferences\n")
 	c.Assert(string(downBytes), qt.Contains, "-- Direction: DOWN\n")
@@ -174,8 +179,10 @@ func TestGenerateEmptyMigrationSkipsExistingVersion(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(second.Version > first.Version, qt.IsTrue)
-	c.Assert(second.UpFile, qt.Not(qt.Equals), first.UpFile)
-	c.Assert(second.DownFile, qt.Not(qt.Equals), first.DownFile)
+	c.Assert(second.Files, qt.HasLen, 1)
+	c.Assert(first.Files, qt.HasLen, 1)
+	c.Assert(second.Files[0].UpFile, qt.Not(qt.Equals), first.Files[0].UpFile)
+	c.Assert(second.Files[0].DownFile, qt.Not(qt.Equals), first.Files[0].DownFile)
 }
 
 func TestGenerateEmptyMigrationValidation(t *testing.T) {

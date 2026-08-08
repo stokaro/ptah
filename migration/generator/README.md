@@ -1,4 +1,4 @@
-# Migration Generator
+# Migration generator
 
 The migration generator package provides functionality to automatically generate both UP and DOWN migration files by comparing the desired database schema (from Go entities) with the current database state.
 
@@ -13,7 +13,7 @@ The migration generator package provides functionality to automatically generate
 
 ## Usage
 
-### Basic Usage
+### Basic usage
 
 ```go
 package main
@@ -52,12 +52,18 @@ func main() {
         return
     }
 
-    fmt.Printf("Generated migration files:\n")
-    fmt.Printf("UP:   %s\n", files.UpFile)
-    fmt.Printf("DOWN: %s\n", files.DownFile)
-    fmt.Printf("Version: %d\n", files.Version)
+    fmt.Println("Generated migration files:")
+    for _, pair := range files.Files {
+        fmt.Printf("UP:      %s\n", pair.UpFile)
+        fmt.Printf("DOWN:    %s\n", pair.DownFile)
+        fmt.Printf("Version: %d\n", pair.Version)
+    }
 }
 ```
+
+`MigrationFiles.Files` is the authoritative result. It contains every
+generated pair in apply order, including each pair's optional safety report
+and transaction mode.
 
 ### Planning before publication
 
@@ -78,7 +84,9 @@ files, err := plan.WriteFiles()
 if err != nil {
     return err
 }
-fmt.Printf("published %s and %s\n", files.UpFile, files.DownFile)
+for _, pair := range files.Files {
+    fmt.Printf("published %s and %s\n", pair.UpFile, pair.DownFile)
+}
 ```
 
 Planning does not write migration artifacts. One `WriteFiles` call consumes the
@@ -132,7 +140,7 @@ operation deadline. Callers can branch on
 migration history after planning, and on `generator.ErrMigrationPlanInUse`
 when the same plan is already being published.
 
-### Migration Process
+### Migration process
 
 The generator follows this process:
 
@@ -144,7 +152,7 @@ The generator follows this process:
 6. **Shadow Verification (Optional)**: Replays prior migrations plus the candidate on a disposable database before files are written
 7. **Save Files**: Writes both migration files with proper naming convention
 
-### Shadow Database Verification
+### Shadow database verification
 
 Set `ShadowDatabaseURL` to verify generated migrations before they are written:
 
@@ -194,7 +202,7 @@ boundaries, can additionally report `target-introspect`, `reset-schemas`, and
 `drop-metadata`, and never reports the candidate-only `round-trip-down` or
 `round-trip-up` stages.
 
-### File Naming Convention
+### File naming convention
 
 Migration files follow the pattern:
 ```text
@@ -205,7 +213,7 @@ Examples:
 - `1703123456_add_user_table.up.sql`
 - `1703123456_add_user_table.down.sql`
 
-### Supported Schema Changes
+### Supported schema changes
 
 The generator can handle:
 
@@ -215,7 +223,7 @@ The generator can handle:
 - **Enum Operations**: CREATE TYPE, DROP TYPE, ALTER TYPE (PostgreSQL)
 - **Constraint Operations**: ADD/DROP foreign keys, unique constraints
 
-### Example Generated Migration
+### Example generated migration
 
 **UP Migration** (`1703123456_add_user_table.up.sql`):
 ```sql
@@ -243,7 +251,7 @@ DROP INDEX IF EXISTS idx_users_email;
 DROP TABLE IF EXISTS users;
 ```
 
-### Error Handling
+### Error handling
 
 The generator will return an error if:
 
@@ -254,7 +262,7 @@ The generator will return an error if:
 
 **Note:** When no schema changes are detected, the generator returns `nil, nil` (not an error). This is considered a successful no-op operation.
 
-### Integration with Migration System
+### Integration with migration system
 
 The generated files are compatible with the ptah migration system and can be executed using:
 
@@ -271,9 +279,9 @@ For PostgreSQL, MySQL, and MariaDB targets, generated migrations containing `ALT
 
 Review these defaults before production deployment and adjust them per migration when a longer rollout window is intentional.
 
-## Configuration Options
+## Configuration options
 
-### GenerateMigrationOptions
+### `GenerateMigrationOptions`
 
 The `GenerateMigrationOptions` struct provides comprehensive configuration for migration generation:
 
@@ -315,7 +323,7 @@ type GenerateMigrationOptions struct {
 }
 ```
 
-### Field Details
+### Field details
 
 - `GoEntitiesDir`: Directory to scan for Go entities (required)
 - `DatabaseURL`: Database connection string (required)
@@ -327,7 +335,7 @@ type GenerateMigrationOptions struct {
 - `Schemas`: PostgreSQL schema allow-list for database introspection (optional)
 - `ShadowDatabaseURL`: Disposable database URL for pre-write migration replay and round-trip checks; it must identify a different live database realm from the target (optional)
 
-### PostgreSQL Concurrent Indexes
+### PostgreSQL concurrent indexes
 
 When Ptah generates a new PostgreSQL index on an existing table whose
 introspected row estimate is greater than zero, it emits `CREATE INDEX
@@ -346,13 +354,13 @@ PostgreSQL `CREATE INDEX CONCURRENTLY`. PostgreSQL-wire engines such as
 YugabyteDB and CockroachDB keep regular `CREATE INDEX` output when their
 capability preset disables the keyword.
 
-### Database URL Examples
+### Database URL examples
 
 - PostgreSQL: `postgres://user:password@localhost:5432/database`
 - MySQL: `mysql://user:password@localhost:3306/database`
 - MariaDB: `mariadb://user:password@localhost:3306/database`
 
-## Best Practices
+## Best practices
 
 1. **Review Generated SQL**: Always review the generated migration files before applying them
 2. **Test Migrations**: Test both UP and DOWN migrations in a development environment

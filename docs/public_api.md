@@ -220,7 +220,8 @@ changed.
 cross-process publication lock and rejects concurrent use of one plan with
 `generator.ErrMigrationPlanInUse`. `GenerateMigration` remains the convenience
 composition of planning and publication and propagates its context through
-both phases.
+both phases. The returned `generator.MigrationFiles.Files` slice is the
+authoritative list of generated pairs and published paths, in apply order.
 
 `migration/safety.RenderJSON` writes a `safety.Report` containing the highest
 risk, destructive verdict, and rendered statement assessments. The native

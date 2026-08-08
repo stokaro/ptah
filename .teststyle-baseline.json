@@ -1148,11 +1148,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "migration/generator/concurrent_index_test.go",
-      "package": "generator",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "migration/generator/constraint_drift_integration_test.go",
       "package": "generator",
       "reason": "same-package test file is not named *_internal_test.go"

@@ -81,8 +81,9 @@ type Product struct {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.IsNotNil)
+	c.Assert(files.Files, qt.HasLen, 1)
 
-	upSQLBytes, err := os.ReadFile(files.UpFile)
+	upSQLBytes, err := os.ReadFile(files.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)
 	upSQL := string(upSQLBytes)
 	c.Assert(upSQL, qt.Contains, "DROP CONSTRAINT")
@@ -172,8 +173,9 @@ type Product struct {
 			})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.IsNotNil)
+			c.Assert(files.Files, qt.HasLen, 1)
 
-			upSQLBytes, err := os.ReadFile(files.UpFile)
+			upSQLBytes, err := os.ReadFile(files.Files[0].UpFile)
 			c.Assert(err, qt.IsNil)
 			upSQL := string(upSQLBytes)
 			c.Assert(strings.Count(upSQL, "ADD CONSTRAINT ptah_unique_constraint_unique"), qt.Equals, 1,

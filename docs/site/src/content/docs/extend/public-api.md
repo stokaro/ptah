@@ -202,7 +202,9 @@ Embedders that need cancellation while waiting for that lock use
 `WriteFilesContext`; concurrent use of one plan fails with
 `generator.ErrMigrationPlanInUse`. `migration/planner.Planner` exposes only
 checked planning; malformed references, unresolved additions, and target
-index-namespace conflicts fail before SQL is returned.
+index-namespace conflicts fail before SQL is returned. The returned
+`generator.MigrationFiles.Files` slice is the authoritative list of generated
+pairs and published paths, in apply order.
 
 ## Safety reports and shadow errors
 

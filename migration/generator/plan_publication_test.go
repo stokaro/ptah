@@ -76,11 +76,8 @@ func TestMigrationPlanWriteFiles_PublishesMultiplePairsAndReports(t *testing.T) 
 	}
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.DeepEquals, &generator.MigrationFiles{
-		UpFile:     firstUp,
-		DownFile:   firstDown,
-		ReportFile: firstReport,
-		Version:    1700000000,
-		Files:      expectedPairs,
+		Version: 1700000000,
+		Files:   expectedPairs,
 	})
 
 	firstUpContents, err := os.ReadFile(firstUp)
