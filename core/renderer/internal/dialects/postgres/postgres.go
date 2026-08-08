@@ -1151,8 +1151,19 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		}
 	}
 
-	// Change nullability
-	if column.Nullable {
+	// Change nullability.
+	//
+	// A primary key column is NOT NULL on every engine this renderer serves --
+	// PostgreSQL, CockroachDB, YugabyteDB and Spanner -- and PostgreSQL refuses
+	// to take that away: `ALTER TABLE "users" ALTER COLUMN "id" DROP NOT NULL`
+	// on a key column fails with `column "id" is in a primary key`
+	// (SQLSTATE 42P16), so emitting it makes the whole plan unappliable rather
+	// than merely verbose. ast.ColumnNode.Nullable no longer carries the rule
+	// for the AST, because SQLite does not have it (stokaro/ptah#1235), so the
+	// dialects that do have it apply it where the dialect is known. The
+	// CREATE TABLE path above writes PRIMARY KEY and NOT NULL together for the
+	// same reason.
+	if column.Nullable && !column.Primary {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	} else {
 		r.updateNullValuesBeforeNotNull(tableName, column)
