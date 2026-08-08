@@ -370,17 +370,18 @@ ptah-compat migrate status --dir file://migrations --url "$DATABASE_URL" --var n
 # Error: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
 ```
 
-The refusal is a flag-parse failure, so it precedes everything the verb itself
-requires. Only the separator is required: an empty name and an empty value are
-both accepted, because both are accepted there.
+The refusal precedes everything the verb itself requires — the missing `--url`,
+the missing `--dir`, the arity check — and it fires on every verb, including the
+ones that never read the flag. A value is checked field by field as CSV, so
+`--var a=1,b` is refused naming `b`. Only the separator is required within a
+field: an empty name and an empty value are both accepted, because both are
+accepted there.
 
-`PTAH_VAR` carries the same rule, wrapped in the sentence Ptah uses for any
-rejected environment value. There is no community binary to match here — the
-variable is Ptah's own — so the shape is the one every other `PTAH_*` value
-already has:
+`PTAH_VAR` carries the same rule and the same sentence, since the value reaches
+the same check:
 
 ```text
-Error: invalid value "novalue" for PTAH_VAR: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
+Error: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
 ```
 
 Variable blocks accept the `type` constraints `string`, `number`, `bool`, and

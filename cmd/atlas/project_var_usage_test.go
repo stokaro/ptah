@@ -34,9 +34,12 @@ func TestCompatVarFlagKeepsAtlasUsage(t *testing.T) {
 			"%s --var help is %q, not Atlas's wording", group, flag.Usage,
 		))
 		c.Assert(flag.Usage, qt.Not(qt.Contains), "atlas.hcl variable with no default")
-		// The value type is the community binary's own spelling of this flag,
-		// and it is not cosmetic: registering it as that type is what refuses a
-		// `--var` carrying no `=` at parse time (stokaro/ptah#1231 case 7).
+		// pflag names a flag's help placeholder from its value's Type(), and the
+		// conformance cli-surface tier compares this surface's --help against the
+		// pinned binary's. That binary prints `--var <name>=<value>` (measured
+		// 2026-08-08, `atlas schema apply --help`); a plain string array prints
+		// `--var stringArray`. The type only renders and collects -- the syntax
+		// rule is validateAtlasVarFlagValue, which knows the value is CSV.
 		c.Assert(flag.Value.Type(), qt.Equals, "<name>=<value>")
 		c.Assert(flag.Hidden, qt.IsFalse)
 	}

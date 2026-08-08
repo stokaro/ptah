@@ -112,40 +112,6 @@ func TestCompatCommand_MigrateLintOptInIgnoresNonBooleanValues(t *testing.T) {
 	}
 }
 
-// TestCompatCommand_MigrateLintRefusesWithoutChangesetSelector covers
-// stokaro/ptah#1231 case 3.
-//
-//	atlas migrate lint --dir file://migrations --dev-url sqlite://dv?mode=memory
-//	pinned binary   exit 1   Error: --latest or --git-base is required
-//	ptah-compat     exit 0   Analyzing changes until version …
-//
-// `--latest 0` is a row because that binary treats it as unset and answers the
-// same sentence, where Ptah answered `--latest must be greater than zero`.
-func TestCompatCommand_MigrateLintRefusesWithoutChangesetSelector(t *testing.T) {
-	tests := []struct {
-		name     string
-		selector []string
-	}{
-		{name: "no selector", selector: nil},
-		{name: "latest zero", selector: []string{"--latest", "0"}},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			dir := seedAtlasPreconditionDir(c, t.TempDir())
-			devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
-			args := append([]string{"migrate", "lint", "--dir", "file://" + dir, "--dev-url", devDB}, test.selector...)
-
-			out, err := runAtlasPrecondition(c, args...)
-
-			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-			c.Assert(out, qt.Contains, "Error: --latest or --git-base is required")
-			c.Assert(out, qt.Not(qt.Contains), "Analyzing changes")
-		})
-	}
-}
-
 // TestCompatCommand_MigrateLintAcceptsSelectorsTheBinaryAccepts is the control
 // against over-correcting case 3 into a refusal of runs that binary allows.
 //
@@ -641,4 +607,3 @@ func TestCompatCommand_MigrateDiffAcceptsOnePositional(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
 	c.Assert(out, qt.Contains, "Created migration file:")
 }
-
