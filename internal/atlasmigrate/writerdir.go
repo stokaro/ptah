@@ -141,9 +141,10 @@ func bindMigrationWriterDir(
 	name := filepath.Base(canonical)
 	writer := &migrationWriterDir{parent: parent, name: name, path: filepath.Clean(display)}
 	if binding.creates() {
-		if err := parent.Mkdir(name, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
-			return nil, errors.Join(fmt.Errorf("create migration directory: %w", err), parent.Close())
+		if err := writer.create(); err != nil {
+			return nil, errors.Join(err, parent.Close())
 		}
+		return writer, nil
 	}
 	opened, err := parent.OpenDirectory(name)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -154,6 +155,76 @@ func bindMigrationWriterDir(
 	}
 	writer.dir = opened
 	return writer, nil
+}
+
+// create materializes the migration directory through the parent handle this
+// writer already holds and binds the result. An entry that already exists is
+// not an error; the containment guarantee comes from the rooted open that
+// follows, not from the create.
+//
+// The parent handle is the point. Creating the directory by pathname would
+// place it wherever the name resolves at that moment, which is not necessarily
+// the parent the transaction validated (stokaro/ptah#1118).
+func (w *migrationWriterDir) create() error {
+	if w.dir != nil {
+		return nil
+	}
+	if err := w.parent.Mkdir(w.name, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("create migration directory: %w", err)
+	}
+	opened, err := w.parent.OpenDirectory(w.name)
+	if err != nil {
+		return fmt.Errorf("open migration directory: %w", err)
+	}
+	w.dir = opened
+	return nil
+}
+
+// revalidate reports whether the pathname this writer was selected by still
+// names the object it holds -- or, for a directory that did not exist when the
+// handles were bound, whether the name is still free in the parent it holds.
+//
+// It answers with os.SameFile, and the answer is trustworthy only because the
+// handle is still open. An open directory keeps its identifier allocated: the
+// kernel cannot hand the same inode number, or the same Windows file index, to
+// a directory created after this one was removed. Comparing a detached
+// fs.FileInfo captured before the removal has no such guarantee, and measured on
+// ext4 the recreated directory took the identifier back in 20 of 20
+// remove-and-recreate cycles, so the comparison said "same object" every time
+// (stokaro/ptah#1118).
+//
+// The two cases ask different questions on purpose. A directory that exists is
+// compared against the selected pathname, so an ancestor swapped anywhere above
+// it is caught as well. A directory that does not exist is compared against the
+// entry name in the retained parent, because that is where create() is about to
+// materialize it and the pathname is not what it will resolve through.
+func (w *migrationWriterDir) revalidate() error {
+	if w.dir == nil {
+		return w.revalidateAbsent()
+	}
+	held, err := w.dir.Stat(".")
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", pathguard.ErrDirectoryChanged, w.path, err)
+	}
+	current, err := os.Stat(w.path)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", pathguard.ErrDirectoryChanged, w.path, err)
+	}
+	if !current.IsDir() || !os.SameFile(held, current) {
+		return fmt.Errorf("%w: %s", pathguard.ErrDirectoryChanged, w.path)
+	}
+	return nil
+}
+
+func (w *migrationWriterDir) revalidateAbsent() error {
+	_, err := w.parent.Lstat(w.name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", pathguard.ErrDirectoryChanged, w.path, err)
+	}
+	return fmt.Errorf("%w: %s", pathguard.ErrDirectoryChanged, w.path)
 }
 
 func openMigrationWriterParent(

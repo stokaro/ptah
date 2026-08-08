@@ -97,18 +97,59 @@ bytes.
 
 ## Writing back to the directory
 
-The verbs that write a migration directory — `migrate diff` and native
-`ptah migrate generate` — bind it the same way and keep the binding. They open
-the directory and its parent once, before staging, and every staged file,
-published migration, `atlas.sum`, journal, commit marker, rollback quarantine
-and cleanup entry is named as a direct child of one of those two handles.
-Recovery of an interrupted batch runs through the same handles.
+The verbs that write a migration directory — `migrate diff`, `migrate new`, and
+native `ptah migrations generate` and `ptah migrations create` — bind it the
+same way and keep the binding. They open the directory and its parent once,
+before staging, and every staged file, published migration, `atlas.sum`,
+journal, commit marker, rollback quarantine and cleanup entry is named as a
+direct child of one of those two handles. A migration directory that does not
+exist yet is created through the bound parent, so it is materialized where the
+run looked rather than where the pathname points by then. Recovery of an
+interrupted batch runs through the same handles.
 
 Replacing the directory after the run validated it therefore cannot redirect
 what it writes, and a directory configured through `atlas.hcl` stays inside the
 opened project root. See
 [the publication boundary](../../atlas/migrate-commands/#the-publication-boundary)
 for what remains keyed to the pathname and why.
+
+`ptah migrations generate` plans and publishes in two steps, so the directory
+can be replaced between them by something outside the run's control. The plan
+binds the directory while it is being built and holds that binding open until
+its publication attempt returns, so the plan is a claim on a filesystem object
+rather than on a pathname. Publication refuses a directory that is no longer
+the object the plan holds — a substitute that holds exactly the files the plan
+verified, and a directory removed and recreated at the same pathname, are both
+refused. The refusal is `migration directory changed after migration planning`,
+and nothing is written
+([#1118](https://github.com/stokaro/ptah/issues/1118)).
+
+Holding the directory open is what makes the answer the same on every platform.
+Comparing a recorded `os.SameFile` identity instead would ask the operating
+system whether two identifiers match, and an identifier belonging to a removed
+directory can be handed straight back to its replacement: measured over 20
+remove-and-recreate cycles of one pathname, ext4 reissued it 20 times and APFS
+none, so the same code refused the substitution on one filesystem and accepted
+it on another. An open directory cannot have its identifier reissued.
+
+Holding the directory open is not a lock on it. On Unix another process renames
+or removes the held directory exactly as it always could; the guarantee is that
+the plan keeps writing to the object it retained, and refuses to write at all
+once revalidation shows the pathname no longer names that object. On Windows an
+open handle is stronger and the rename or removal may be refused or deferred
+instead. The plan releases the directory when its publication attempt returns —
+whether that attempt published or failed — and a plan that is never published at
+all releases it when it is collected.
+
+This changes behavior twice over. A run that previously published into a
+recreated directory now fails instead. And a migration directory containing a
+symbolic link that points outside itself — a shared migration linked in from
+elsewhere — is refused by `ptah migrations generate` rather than followed,
+because the directory is read, checksummed and published through the object the
+run opened. `ptah migrations up` already refused such a directory, so what the
+generator used to do was publish into a directory the applier would not read;
+the two now agree. A link whose target is inside the migration directory is
+unaffected. The refusal names the entry and the rule.
 
 ## Consequences
 

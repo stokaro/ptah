@@ -31,7 +31,6 @@ import (
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -150,17 +149,31 @@ type MigrationFiles struct {
 // MigrationPlan is a fully validated migration that has not been written to
 // disk yet. WriteFiles publishes the planned migration once.
 type MigrationPlan struct {
-	mu           sync.Mutex
-	outputDir    string
-	outputState  migrationDirectoryState
-	reportFormat string
-	specs        []generatedMigrationSpec
-	written      bool
-}
-
-type migrationDirectoryState struct {
-	exists   bool
-	snapshot fsnapshot.Snapshot
+	mu        sync.Mutex
+	outputDir string
+	// dir is the migration directory, bound while the plan was built and held
+	// open until the plan's one publication attempt returns. It is what makes
+	// the plan a claim on a filesystem object rather than on a pathname:
+	// publication verifies and writes through this one handle, so a directory
+	// replaced -- or removed and recreated -- between the two exported calls
+	// cannot receive the batch (stokaro/ptah#1118).
+	//
+	// It is nil once the handles have been released, which is what marks the
+	// plan spent. WriteFilesContext releases them on the way out whether the
+	// publication succeeded or failed, so the window in which the plan holds
+	// the directory ends at a point the caller controls rather than at the next
+	// garbage collection. A plan that is never published at all still releases
+	// them when it is collected, because os.Root closes its descriptor from a
+	// finalizer.
+	dir *atlasmigrate.MigrationWriter
+	// plannedContents is what dir held when the plan was built, and nothing
+	// else. It used to carry a filesystem identity beside the contents; identity
+	// now lives in dir, which is a handle rather than a detached fs.FileInfo the
+	// operating system is free to reissue to a replacement.
+	plannedContents fsnapshot.Snapshot
+	reportFormat    string
+	specs           []generatedMigrationSpec
+	written         bool
 }
 
 // EmptyMigrationOptions contains options for skeleton migration creation.
@@ -178,6 +191,14 @@ type EmptyMigrationOptions struct {
 
 // GenerateEmptyMigration creates skeleton migration files for manual SQL
 // authoring.
+//
+// The whole creation runs through one rooted migration-directory handle, bound
+// before anything is read or written: the directory is materialized, the
+// version scanned, the files created and atlas.sum committed through that one
+// handle rather than through the pathname it was selected by
+// (stokaro/ptah#1118). When AllowedOutputRoot is set the handle is opened
+// through it, so the transaction stays inside that root even if the directory
+// or one of its ancestors is replaced after the path was validated.
 func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error) {
 	name := strings.TrimSpace(opts.MigrationName)
 	if strings.TrimSpace(opts.OutputDir) == "" {
@@ -192,50 +213,23 @@ func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 	if err != nil {
 		return nil, fmt.Errorf("error validating output directory: %w", err)
 	}
-	if dirFormat == migrator.MigrationDirFormatAtlas {
-		return generateEmptyAtlasMigration(name, outputDir)
+	// The Atlas layout derives its own file name from the migration name and
+	// accepts an empty one, so only the paired layout validates it here -- and
+	// it validates before the directory is bound, so a rejected name never
+	// creates a directory.
+	if dirFormat != migrator.MigrationDirFormatAtlas {
+		if err := validateEmptyMigrationName(name); err != nil {
+			return nil, err
+		}
 	}
-	if err := validateEmptyMigrationName(name); err != nil {
+
+	root, err := openOutputRoot(opts.AllowedOutputRoot)
+	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = closeOutputRoot(root) }()
 
-	version := migrator.GetNextMigrationVersion()
-	version = nextAvailableMigrationVersion(outputDir, version, name)
-	generatedAt := time.Now().UTC().Format(time.RFC3339)
-
-	return createMigrationFiles(
-		outputDir,
-		version,
-		name,
-		emptyMigrationSQL(name, generatedAt, "UP"),
-		emptyMigrationSQL(name, generatedAt, "DOWN"),
-	)
-}
-
-func generateEmptyAtlasMigration(name, outputDir string) (*MigrationFiles, error) {
-	if err := ensureMigrationOutputDir(outputDir); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
-	}
-	version := nextAvailableAtlasMigrationVersion(outputDir, nextAtlasMigrationVersion())
-	for {
-		filePath := filepath.Join(outputDir, atlasEmptyMigrationFileName(version, name))
-		if err := writeNewMigrationFile(filePath, ""); err != nil {
-			if errors.Is(err, os.ErrExist) {
-				version++
-				continue
-			}
-			return nil, fmt.Errorf("failed to write atlas migration file: %w", err)
-		}
-		if _, err := migratesum.WriteWithFormat(outputDir, migrator.MigrationDirFormatAtlas); err != nil {
-			_ = os.Remove(filePath)
-			return nil, fmt.Errorf("failed to write atlas migration checksum: %w", err)
-		}
-		pair := MigrationFilePair{
-			UpFile:  filePath,
-			Version: version,
-		}
-		return migrationFilesFromPairs([]MigrationFilePair{pair}), nil
-	}
+	return writeEmptyMigration(root, outputDir, name, dirFormat)
 }
 
 func nextAtlasMigrationVersion() int64 {
@@ -246,27 +240,30 @@ func nextAtlasMigrationVersion() int64 {
 	return version
 }
 
+// nextAvailableAtlasMigrationVersion answers the version question for a
+// directory named by pathname, for readers that are not inside a writer
+// transaction. A writer holding a rooted handle asks nextAvailableAtlasVersion
+// over the names it listed through that handle instead, so it never resolves
+// the directory a second time.
 func nextAvailableAtlasMigrationVersion(outputDir string, version int64) int64 {
-	if latest := latestExistingAtlasMigrationVersion(outputDir); latest >= version {
+	return nextAvailableAtlasVersion(migrationDirFileNames(outputDir), version)
+}
+
+func nextAvailableAtlasVersion(names []string, version int64) int64 {
+	if latest := latestAtlasVersionIn(names); latest >= version {
 		version = latest + 1
 	}
-	for fileExists(filepath.Join(outputDir, atlasEmptyMigrationFileName(version, ""))) {
+	taken := nameSet(names)
+	for taken[atlasEmptyMigrationFileName(version, "")] {
 		version++
 	}
 	return version
 }
 
-func latestExistingAtlasMigrationVersion(outputDir string) int64 {
-	entries, err := os.ReadDir(outputDir)
-	if err != nil {
-		return 0
-	}
+func latestAtlasVersionIn(names []string) int64 {
 	var latest int64
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		migrationFile, err := migrator.ParseAtlasMigrationFileName(entry.Name())
+	for _, name := range names {
+		migrationFile, err := migrator.ParseAtlasMigrationFileName(name)
 		if err != nil {
 			continue
 		}
@@ -351,31 +348,9 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	// 1. Determine the desired schema: use a pre-merged one when provided (for a
 	// composite desired-state assembled from several sources), otherwise parse the
 	// Go entities directory.
-	generated := opts.Generated
-	if generated == nil {
-		var entitiesDir string
-
-		if opts.GoEntitiesFS == nil {
-			// Default to using the real filesystem
-			// We need to set up the filesystem root and relative path correctly
-			absPath, err := filepath.Abs(opts.GoEntitiesDir)
-			if err != nil {
-				return nil, fmt.Errorf("error resolving root directory path: %w", err)
-			}
-
-			// Use the parent directory as filesystem root and the basename as the path
-			fsRoot := filepath.Dir(absPath)
-			entitiesDir = filepath.Base(absPath)
-			opts.GoEntitiesFS = os.DirFS(fsRoot)
-		} else {
-			// For custom filesystems, use the path as-is
-			entitiesDir = opts.GoEntitiesDir
-		}
-
-		generated, err = goschema.ParseFS(opts.GoEntitiesFS, entitiesDir)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing Go entities: %w", err)
-		}
+	generated, err := resolveDesiredSchema(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	// 2. Connect to database and read current schema
@@ -395,10 +370,25 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
-	if err := recoverMigrationPublication(ctx, opts.OutputDir); err != nil {
+	if err := recoverMigrationPublication(ctx, opts.AllowedOutputRoot, opts.OutputDir); err != nil {
 		return nil, err
 	}
-	outputState, err := captureMigrationDirectoryState(opts.OutputDir)
+	// Bind the migration directory here, at planning time, and hold it. Every
+	// later step of this plan -- the version scan below, the pre-publication
+	// verification, and the publication itself -- addresses that one handle.
+	writer, err := bindPlannedMigrationDir(opts.AllowedOutputRoot, opts.OutputDir)
+	if err != nil {
+		return nil, err
+	}
+	// Planning can still fail, or find nothing to do, on any of the paths
+	// below. Only a plan that is handed back keeps the handles.
+	planned := false
+	defer func() {
+		if !planned {
+			_ = writer.Close()
+		}
+	}()
+	plannedContents, err := captureMigrationDirectoryContents(writer)
 	if err != nil {
 		return nil, fmt.Errorf("capture migration directory before planning: %w", err)
 	}
@@ -423,9 +413,14 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		return nil, nil
 	}
 
-	// 4. Generate migration version (timestamp)
+	// 4. Generate migration version (timestamp). The scan for a free version
+	// reads the bound handle rather than the pathname, so the names this plan
+	// avoids colliding with are the ones in the directory it will publish into.
 	version := migrator.GetNextMigrationVersion()
-	version = nextAvailableMigrationVersion(opts.OutputDir, version, opts.MigrationName)
+	version, err = nextAvailableMigrationVersion(writer, version, opts.MigrationName)
+	if err != nil {
+		return nil, fmt.Errorf("error reading migration directory: %w", err)
+	}
 	slog.Debug("Generated migration version", "version", version)
 
 	qualifier, err := atlasmigrate.ParseQualifier(opts.SchemaQualifier)
@@ -467,17 +462,67 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		}
 	}
 
+	planned = true
 	return &MigrationPlan{
-		outputDir:    opts.OutputDir,
-		outputState:  outputState,
-		reportFormat: opts.ReportFormat,
-		specs:        specs,
+		outputDir:       opts.OutputDir,
+		dir:             writer,
+		plannedContents: plannedContents,
+		reportFormat:    opts.ReportFormat,
+		specs:           specs,
 	}, nil
 }
 
-func recoverMigrationPublication(ctx context.Context, outputDir string) error {
-	if err := os.MkdirAll(filepath.Dir(filepath.Clean(outputDir)), 0755); err != nil {
-		return fmt.Errorf("create migration directory parent: %w", err)
+// resolveDesiredSchema answers what the migration should bring the database to:
+// a pre-merged schema when the caller assembled one from several sources, and
+// otherwise the Go entities directory, parsed through a filesystem rooted at its
+// parent so the scan cannot walk out of the directory the caller named.
+func resolveDesiredSchema(opts GenerateMigrationOptions) (*goschema.Database, error) {
+	if opts.Generated != nil {
+		return opts.Generated, nil
+	}
+	entitiesFS := opts.GoEntitiesFS
+	entitiesDir := opts.GoEntitiesDir
+	if entitiesFS == nil {
+		absPath, err := filepath.Abs(opts.GoEntitiesDir)
+		if err != nil {
+			return nil, fmt.Errorf("error resolving root directory path: %w", err)
+		}
+		entitiesFS = os.DirFS(filepath.Dir(absPath))
+		entitiesDir = filepath.Base(absPath)
+	}
+	generated, err := goschema.ParseFS(entitiesFS, entitiesDir)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing Go entities: %w", err)
+	}
+	return generated, nil
+}
+
+// recoverMigrationPublication resolves an interrupted publication left by an
+// earlier run, before this one starts planning. It resolves the directory by
+// pathname because it is the start of its own transaction rather than a step
+// inside this one; the levels above it are still created through the confining
+// root, so a recovery run cannot materialize directories outside it.
+func recoverMigrationPublication(
+	ctx context.Context,
+	allowedOutputRoot, outputDir string,
+) error {
+	root, err := openOutputRoot(allowedOutputRoot)
+	if err != nil {
+		return err
+	}
+	return errors.Join(
+		recoverMigrationPublicationWithin(ctx, root, outputDir),
+		closeOutputRoot(root),
+	)
+}
+
+func recoverMigrationPublicationWithin(
+	ctx context.Context,
+	root *pathguard.OpenedDirectory,
+	outputDir string,
+) error {
+	if err := atlasmigrate.EnsureMigrationParent(root, outputDir); err != nil {
+		return err
 	}
 	if err := atlasmigrate.RecoverPendingPublication(ctx, outputDir); err != nil {
 		return fmt.Errorf("recover migration publication before planning: %w", err)
@@ -493,6 +538,26 @@ func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error) {
 
 // WriteFilesContext publishes the migration artifacts represented by the plan.
 // The context bounds waiting for the migration-directory publication lock.
+//
+// The plan already holds the migration directory. This call does not reopen it:
+// under the lock it revalidates the handle it was given, compares the contents
+// against what planning recorded, and publishes through that same handle.
+//
+// One call is one use of the plan. Whatever this call returns, it releases the
+// migration directory handles before returning, so a failed publication ends
+// the plan's hold on the directory at a moment the caller can observe instead
+// of at the next garbage collection. A plan whose attempt already happened is
+// reported rather than retried: its recorded contents and its chosen version
+// both describe a directory as it was before the attempt, so the honest retry
+// is a fresh PlanMigration.
+//
+// It used to reopen the directory by pathname here and decide whether it was
+// still the planned one by comparing an fs.FileInfo captured before any handle
+// existed. That comparison is only as good as the operating system's promise
+// not to reissue an identifier, and it makes no such promise: measured on ext4,
+// a directory removed and recreated at the same pathname took its inode number
+// back in 20 of 20 cycles, so the guard stayed silent on exactly the
+// substitution an attacker performs most easily (stokaro/ptah#1118).
 func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles, error) {
 	if p == nil {
 		return nil, fmt.Errorf("migration plan is nil")
@@ -504,33 +569,20 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 	if p.written {
 		return nil, fmt.Errorf("migration plan has already been written")
 	}
+	if p.dir == nil {
+		return nil, fmt.Errorf("migration plan was released by a failed publication")
+	}
+	// The plan is single-use, so the handles have no reader left once this call
+	// returns -- on the failure paths as much as on the successful one.
+	defer p.release()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(filepath.Clean(p.outputDir)), 0755); err != nil {
-		return nil, fmt.Errorf("create migration directory parent: %w", err)
-	}
 	var files *MigrationFiles
 	err := atlasmigrate.WithMigrationDirectoryLock(ctx, p.outputDir, 0, func(context.Context) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		currentState, err := captureMigrationDirectoryState(p.outputDir)
-		if err != nil {
-			return fmt.Errorf("capture migration directory before publication: %w", err)
-		}
-		if !p.outputState.equal(currentState) {
-			return ErrMigrationDirectoryChanged
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		files, err = createMigrationFilesFromSpecs(ctx, p.outputDir, p.reportFormat, p.specs)
-		if err != nil {
-			return fmt.Errorf("error creating migration files: %w", err)
-		}
-		p.written = true
-		return nil
+		published, publishErr := p.publishLocked(ctx)
+		files = published
+		return publishErr
 	})
 	if err != nil {
 		return nil, err
@@ -538,26 +590,128 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 	return files, nil
 }
 
-func captureMigrationDirectoryState(outputDir string) (migrationDirectoryState, error) {
-	info, err := os.Stat(outputDir)
-	if errors.Is(err, os.ErrNotExist) {
-		return migrationDirectoryState{}, nil
+// release closes the migration directory handles the plan holds and marks the
+// plan spent. It is idempotent and runs with p.mu held.
+//
+// Deterministic release is the point. os.Root closes its descriptor from a
+// finalizer, so an unreleased handle survives until the next collection; on
+// Windows that is also the window in which nothing else can rename or remove
+// the migration directory, and a failed publication would otherwise leave that
+// window open with no event that ends it (stokaro/ptah#1118).
+func (p *MigrationPlan) release() {
+	if p.dir == nil {
+		return
 	}
-	if err != nil {
-		return migrationDirectoryState{}, err
-	}
-	if !info.IsDir() {
-		return migrationDirectoryState{}, fmt.Errorf("%q exists and is not a directory", outputDir)
-	}
-	snapshot, err := migrationsnapshot.CaptureStable(os.DirFS(outputDir))
-	if err != nil {
-		return migrationDirectoryState{}, err
-	}
-	return migrationDirectoryState{exists: true, snapshot: snapshot}, nil
+	_ = p.dir.Close()
+	p.dir = nil
 }
 
-func (s migrationDirectoryState) equal(other migrationDirectoryState) bool {
-	return s.exists == other.exists && s.snapshot.Equal(other.snapshot)
+func (p *MigrationPlan) publishLocked(ctx context.Context) (*MigrationFiles, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := p.dir.Revalidate(); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrMigrationDirectoryChanged, err)
+	}
+	currentContents, err := captureMigrationDirectoryContents(p.dir)
+	if err != nil {
+		return nil, fmt.Errorf("capture migration directory before publication: %w", err)
+	}
+	// The contents check is the concurrency half of the guard: another writer
+	// that added a migration while this plan was outstanding. Which filesystem
+	// object is being committed to was settled by Revalidate above.
+	if !p.plannedContents.Equal(currentContents) {
+		return nil, ErrMigrationDirectoryChanged
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	notifyMigrationPublicationVerified()
+	files, err := publishPlannedMigration(ctx, p.dir, p.reportFormat, p.specs)
+	if err != nil {
+		return nil, fmt.Errorf("error creating migration files: %w", err)
+	}
+	p.written = true
+	return files, nil
+}
+
+// captureMigrationDirectoryContents reads the migration directory through the
+// bound handle, so what the publication compares is the object it is about to
+// commit to rather than whatever the pathname resolves to at comparison time.
+//
+// A directory the writer bound as absent reads as the empty snapshot. It cannot
+// have appeared since -- Revalidate refuses that before this runs -- so the two
+// captures either both describe the bound object or both describe nothing.
+func captureMigrationDirectoryContents(
+	writer *atlasmigrate.MigrationWriter,
+) (fsnapshot.Snapshot, error) {
+	if !writer.Exists() {
+		return fsnapshot.Snapshot{}, nil
+	}
+	fsys, err := writer.FS()
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	snapshot, err := migrationsnapshot.CaptureStable(fsys)
+	if err != nil {
+		return fsnapshot.Snapshot{}, explainMigrationDirectoryRead(writer, err)
+	}
+	return snapshot, nil
+}
+
+// explainMigrationDirectoryRead names the entries that make a migration
+// directory unreadable through the handle the run bound, when that is what went
+// wrong. Any other failure is returned unchanged.
+//
+// The reachable cause is a migration file that is a symbolic link out of the
+// migration directory -- a shared migration linked in from elsewhere. Reading
+// the directory by pathname followed such a link, and reading it through the
+// bound handle does not, so this is a refusal rather than an accident: every
+// read, checksum and publication of the directory goes through the object the
+// run opened, and a file whose bytes live outside it cannot be part of a
+// directory Ptah is willing to seal (stokaro/ptah#1118). A link that resolves
+// inside the migration directory stays supported and never reaches this.
+//
+// The diagnosis runs only after a failed capture, so the successful path pays
+// nothing for it.
+func explainMigrationDirectoryRead(writer *atlasmigrate.MigrationWriter, cause error) error {
+	escaping := escapingMigrationEntries(writer)
+	if len(escaping) == 0 {
+		return cause
+	}
+	return fmt.Errorf(
+		"migration directory %s: symbolic links resolving outside it: %s;"+
+			" a migration file linked in from another directory is refused because"+
+			" the whole directory is read, checksummed and published through the"+
+			" directory itself: %w",
+		writer.Path(),
+		strings.Join(escaping, ", "),
+		cause,
+	)
+}
+
+// escapingMigrationEntries lists the migration directory's symbolic links that
+// do not resolve inside it, asked through the bound handle: the link itself is
+// visible as an entry, and a stat that cannot follow it is the escape.
+func escapingMigrationEntries(writer *atlasmigrate.MigrationWriter) []string {
+	entries, err := writer.Entries()
+	if err != nil {
+		return nil
+	}
+	fsys, err := writer.FS()
+	if err != nil {
+		return nil
+	}
+	var escaping []string
+	for _, entry := range entries {
+		if entry.Type()&fs.ModeSymlink == 0 {
+			continue
+		}
+		if _, statErr := fs.Stat(fsys, entry.Name()); statErr != nil {
+			escaping = append(escaping, entry.Name())
+		}
+	}
+	return escaping
 }
 
 func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateMigrationOptions, error) {
@@ -2000,31 +2154,41 @@ func reverseRoleDiffs(roleDiffs []types.RoleDiff) []types.RoleDiff {
 	return reversed
 }
 
-func nextAvailableMigrationVersion(outputDir string, version int64, migrationName string) int64 {
-	if latest := latestExistingMigrationVersion(outputDir); latest >= version {
+// nextAvailableMigrationVersion answers the version question over the names
+// listed through the writer handle the plan already holds, so the version it
+// avoids colliding with comes from the directory the plan will publish into
+// rather than from whatever the pathname resolves to while it is being chosen.
+func nextAvailableMigrationVersion(
+	writer *atlasmigrate.MigrationWriter,
+	version int64,
+	migrationName string,
+) (int64, error) {
+	names, err := migrationDirNames(writer)
+	if err != nil {
+		return 0, err
+	}
+	return nextAvailablePtahVersion(names, version, migrationName), nil
+}
+
+func nextAvailablePtahVersion(names []string, version int64, migrationName string) int64 {
+	if latest := latestPtahVersionIn(names); latest >= version {
 		version = latest + 1
 	}
+	taken := nameSet(names)
 	for {
-		upFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "up"))
-		downFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "down"))
-		if !fileExists(upFilePath) && !fileExists(downFilePath) {
+		upName := migrator.GenerateMigrationFileName(version, migrationName, "up")
+		downName := migrator.GenerateMigrationFileName(version, migrationName, "down")
+		if !taken[upName] && !taken[downName] {
 			return version
 		}
 		version++
 	}
 }
 
-func latestExistingMigrationVersion(outputDir string) int64 {
-	entries, err := os.ReadDir(outputDir)
-	if err != nil {
-		return 0
-	}
+func latestPtahVersionIn(names []string) int64 {
 	var latest int64
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		migrationFile, err := migrator.ParseMigrationFileName(entry.Name())
+	for _, name := range names {
+		migrationFile, err := migrator.ParseMigrationFileName(name)
 		if err != nil {
 			continue
 		}
@@ -2033,6 +2197,33 @@ func latestExistingMigrationVersion(outputDir string) int64 {
 		}
 	}
 	return latest
+}
+
+// migrationDirFileNames lists a migration directory by pathname. It is the
+// reader-side counterpart of migrationDirNames, which lists the same thing
+// through a bound writer handle; a directory that cannot be listed reads as
+// empty, so a version scan over a missing directory starts from scratch.
+func migrationDirFileNames(outputDir string) []string {
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+func nameSet(names []string) map[string]bool {
+	set := make(map[string]bool, len(names))
+	for _, name := range names {
+		set[name] = true
+	}
+	return set
 }
 
 func fileExists(path string) bool {
@@ -2048,66 +2239,6 @@ func withNoTransactionDirective(sql string) string {
 		return sql
 	}
 	return "-- +ptah " + migrator.DirectiveNoTransaction + "\n" + sql
-}
-
-// createMigrationFiles creates the up and down migration files
-func createMigrationFiles(outputDir string, version int64, migrationName, upSQL, downSQL string) (*MigrationFiles, error) {
-	if err := ensureMigrationOutputDir(outputDir); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	for {
-		upFileName := migrator.GenerateMigrationFileName(version, migrationName, "up")
-		downFileName := migrator.GenerateMigrationFileName(version, migrationName, "down")
-
-		upFilePath := filepath.Join(outputDir, upFileName)
-		downFilePath := filepath.Join(outputDir, downFileName)
-
-		if err := writeNewMigrationFile(upFilePath, upSQL); err != nil {
-			if errors.Is(err, os.ErrExist) {
-				version++
-				continue
-			}
-			return nil, fmt.Errorf("failed to write up migration file: %w", err)
-		}
-
-		if err := writeNewMigrationFile(downFilePath, downSQL); err != nil {
-			_ = os.Remove(upFilePath)
-			if errors.Is(err, os.ErrExist) {
-				version++
-				continue
-			}
-			return nil, fmt.Errorf("failed to write down migration file: %w", err)
-		}
-
-		pair := MigrationFilePair{
-			UpFile:   upFilePath,
-			DownFile: downFilePath,
-			Version:  version,
-		}
-		return migrationFilesFromPairs([]MigrationFilePair{pair}), nil
-	}
-}
-
-func createMigrationFilesFromSpecs(
-	ctx context.Context,
-	outputDir, reportFormat string,
-	specs []generatedMigrationSpec,
-) (*MigrationFiles, error) {
-	if len(specs) == 0 {
-		return nil, nil
-	}
-	artifacts, pairs, err := renderMigrationArtifacts(outputDir, reportFormat, specs)
-	if err != nil {
-		return nil, err
-	}
-	if err := ensureMigrationOutputDir(outputDir); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
-	}
-	if _, err := atlasmigrate.PublishArtifactsLocked(ctx, outputDir, artifacts); err != nil {
-		return nil, err
-	}
-	return migrationFilesFromPairs(pairs), nil
 }
 
 func renderMigrationArtifacts(

@@ -48,7 +48,7 @@ func TestMigrationPlanWriteFiles_PublishesMultiplePairsAndReports(t *testing.T) 
 			NoTransaction: true,
 		},
 	}
-	plan, err := generator.NewMigrationPlanForTest(outputDir, "json", specs)
+	plan, err := generator.NewMigrationPlanForTest(outputDir, "", "json", specs)
 	c.Assert(err, qt.IsNil)
 
 	files, err := plan.WriteFilesContext(t.Context())
@@ -128,6 +128,7 @@ func TestMigrationPlanWriteFiles_CollisionLeavesNoPartialArtifacts(t *testing.T)
 	c.Assert(os.WriteFile(reportPath, originalReport, 0600), qt.IsNil)
 	plan, err := generator.NewMigrationPlanForTest(
 		outputDir,
+		"",
 		"json",
 		[]generator.MigrationPlanSpecForTest{{
 			Version: 1700000000,
@@ -160,6 +161,7 @@ func TestMigrationPlanWriteFiles_CreatesMissingOutputParents(t *testing.T) {
 	outputDir := filepath.Join(c.TempDir(), "nested", "migrations")
 	plan, err := generator.NewMigrationPlanForTest(
 		outputDir,
+		"",
 		"",
 		[]generator.MigrationPlanSpecForTest{{
 			Version: 1700000000,
