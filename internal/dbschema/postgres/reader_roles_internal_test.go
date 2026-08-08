@@ -861,9 +861,11 @@ func TestReadRolesPartitionsEveryManageableRole(t *testing.T) {
 	// It is NOT a partition of pg_roles, and the fixture proves that rather
 	// than footnoting it: fullCluster holds pg_reserved and postgres, both
 	// reads exclude them, and the union below is asserted to be the manageable
-	// names exactly. A desired schema naming a reserved role is therefore still
-	// compared against nothing, which is why the comparator's documentation
-	// says so and TestRolesReservedNameIsNotComparedAgainstAnything pins it.
+	// names exactly. A desired schema naming a reserved role would therefore be
+	// compared against nothing, which is why such a schema is refused before it
+	// reaches the comparator -- see
+	// compare.TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll and
+	// go.5x5.cz/ptah/internal/reservedrole.
 	//
 	// This test alone cannot catch a broken complement predicate: the fake
 	// answers the complement read by negating its own scoped answer. What

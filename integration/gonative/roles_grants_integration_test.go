@@ -490,8 +490,10 @@ func rolesNamedByDescription(schema *dbschematypes.DBSchema) []string {
 //
 // The reserved roles are outside this test as they are outside the reader: pg_
 // names and the bootstrap superuser are in neither list, so a desired schema
-// naming one is still planned as a CREATE ROLE the server refuses. See
-// compare.TestRolesReservedNameIsNotComparedAgainstAnything.
+// naming one is refused before anything is compared or planned rather than
+// turned into a CREATE ROLE the server refuses. See
+// compare.TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll and
+// go.5x5.cz/ptah/internal/reservedrole.
 func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	c := qt.New(t)
 	dsn := skipIfNoPostgreSQL(t)

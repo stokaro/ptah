@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -2477,14 +2478,13 @@ func (r *Reader) readRolesInto(schema *types.DBSchema) error {
 // make a reported role look absent.
 //
 // The partition is over managed roles, not over pg_roles. queryRoles ends both
-// statements with the same `NOT LIKE 'pg\_%' ESCAPE '\'` and `!= 'postgres'`
-// exclusions, so the reserved roles and the bootstrap superuser are in neither
-// list -- Ptah manages neither, in either direction. A desired schema that
-// names one is therefore still compared against nothing and still planned as a
-// CREATE ROLE the server refuses (SQLSTATE 42710 for postgres, 42939 for a
-// reserved name); that predates this method, is unchanged by it, and is a
-// separate refusal to build. Do not restate this as "every role the server
-// has".
+// statements with the exclusion [reservedrole.ExcludeSQL] renders, so the
+// reserved roles and the bootstrap superuser are in neither list -- Ptah
+// manages neither, in either direction. A desired schema that names one is
+// refused before anything is compared or planned, through
+// [reservedrole.ValidateDeclared] over the same definition of "reserved"
+// (stokaro/ptah#1312), rather than being compared against nothing here. Do not
+// restate this as "every role the server has".
 //
 // The escape is load-bearing for both reads at once: an unescaped underscore
 // is a single-character wildcard, so it would drop pgbouncer, pgadmin and
@@ -2541,13 +2541,15 @@ func (r *Reader) queryRoles(membership string) ([]types.DBRole, error) {
 			COALESCE(shobj_description(r.oid, 'pg_authid'), '') AS comment
 		FROM pg_roles r
 		LEFT JOIN pg_authid a ON r.oid = a.oid
-		-- The underscore is escaped because LIKE reads a bare _ as a
-		-- single-character wildcard: 'pg_%' matches pgbouncer, pgadmin and
-		-- pgpool, which are ordinary user roles. PostgreSQL reserves the
-		-- prefix WITH the underscore (stokaro/ptah#1291).
+		-- Reserved system roles and the bootstrap superuser, excluded through
+		-- the same definition the desired-schema refusal tests against, so the
+		-- two cannot drift into disagreeing about what "reserved" means
+		-- (stokaro/ptah#1312). The rendered fragment escapes the underscore,
+		-- because LIKE reads a bare _ as a single-character wildcard: an
+		-- unescaped 'pg_%' matches pgbouncer, pgadmin and pgpool, which are
+		-- ordinary user roles (stokaro/ptah#1291).
 		WHERE ` + membership + `
-		AND r.rolname NOT LIKE 'pg\_%' ESCAPE '\'  -- Exclude system roles
-		AND r.rolname != 'postgres'      -- Exclude postgres superuser
+		AND ` + reservedrole.ExcludeSQL("r.rolname") + `
 		ORDER BY r.rolname`
 
 	rows, err := r.db.Query(rolesQuery, args...)

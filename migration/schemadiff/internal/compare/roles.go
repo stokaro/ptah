@@ -45,14 +45,17 @@ import (
 // The union is not every role the server has, and this comparison must not be
 // described as if it were. A PostgreSQL reader excludes the reserved pg_ roles
 // and the bootstrap superuser from both lists, because Ptah manages neither in
-// either direction. A desired schema naming one of them therefore still lands
-// in RolesAdded and the server still refuses the statement -- measured on
-// PostgreSQL 17.10, `role "postgres"` in the desired state gives
-// `CREATE ROLE "postgres" ...` and SQLSTATE 42710, and `role "pg_monitor"`
-// gives SQLSTATE 42939. That is identical before and after this change;
-// refusing such a desired state up front is a separate change, and until it
-// lands TestRolesReservedNameIsNotComparedAgainstAnything pins the gap so it
-// cannot be lost or silently claimed fixed.
+// either direction, so a reserved name reaching this function would land in
+// RolesAdded and be planned as a statement the server refuses -- measured on
+// PostgreSQL 17.10, `role "postgres"` gave `CREATE ROLE "postgres" ...` and
+// SQLSTATE 42710, and `role "pg_monitor"` gave SQLSTATE 42939.
+//
+// A reserved name therefore never reaches this function: the desired schema is
+// refused first, at the surfaces that accept one and can return an error
+// (stokaro/ptah#1312). This comparison keeps no opinion about reserved names,
+// which is why it still needs no error return. The single definition of
+// "reserved" lives in [go.5x5.cz/ptah/internal/reservedrole], shared with the
+// reader's own exclusion so the two cannot disagree.
 //
 // # Role Modification Detection
 //
