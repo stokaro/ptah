@@ -66,6 +66,22 @@ func TestCapabilities_Validate_RequiresEdge(t *testing.T) {
 	caps = capability.Capabilities{capability.DropCheckClause: true}
 	c.Assert(caps.Validate(), qt.ErrorMatches,
 		`capability "drop_check_clause" requires "check_constraints_enforced", which is not enabled`)
+
+	// A materialized view is a view whose result is stored, so a target that
+	// has no views cannot have one (stokaro/ptah#929).
+	caps = capability.Capabilities{capability.MaterializedViews: true}
+	c.Assert(caps.Validate(), qt.ErrorMatches,
+		`capability "materialized_views" requires "views", which is not enabled`)
+	caps = capability.Capabilities{capability.MaterializedViews: true, capability.Views: true}
+	c.Assert(caps.Validate(), qt.IsNil)
+
+	// Replace syntax for a statement the target does not have is the same
+	// contradiction as IF EXISTS above.
+	caps = capability.Capabilities{capability.CreateOrReplaceTrigger: true}
+	c.Assert(caps.Validate(), qt.ErrorMatches,
+		`capability "create_or_replace_trigger" requires "triggers", which is not enabled`)
+	caps = capability.Capabilities{capability.CreateOrReplaceTrigger: true, capability.Triggers: true}
+	c.Assert(caps.Validate(), qt.IsNil)
 }
 
 func TestCapabilities_Validate_MutexGroup(t *testing.T) {
@@ -216,7 +232,46 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(spanner.Has(capability.XMLType), qt.IsFalse)
 	c.Assert(spanner.Has(capability.RoleManagement), qt.IsFalse)
 
+	// Object kinds (stokaro/ptah#929 item 5). Every row below was measured
+	// against a live server of that engine except Spanner, which has no
+	// container and no live test (#942) and follows Google's documentation.
+	//
+	// Spanner is the row the keys exist for: it shares the PostgreSQL planner
+	// and renderer with the three presets above, and is the only family member
+	// that refuses a materialized view, a function or a trigger.
+	c.Assert(capability.Postgres16().Has(capability.Views), qt.IsTrue)
+	c.Assert(capability.Postgres16().Has(capability.MaterializedViews), qt.IsTrue)
+	c.Assert(capability.Postgres16().Has(capability.Functions), qt.IsTrue)
+	c.Assert(capability.Postgres16().Has(capability.Triggers), qt.IsTrue)
+	c.Assert(cockroach.Has(capability.MaterializedViews), qt.IsTrue)
+	c.Assert(cockroach.Has(capability.Triggers), qt.IsTrue)
+	c.Assert(yugabyte.Has(capability.MaterializedViews), qt.IsTrue)
+	c.Assert(yugabyte.Has(capability.Triggers), qt.IsTrue)
+	c.Assert(spanner.Has(capability.Views), qt.IsTrue)
+	c.Assert(spanner.Has(capability.MaterializedViews), qt.IsFalse)
+	c.Assert(spanner.Has(capability.Functions), qt.IsFalse)
+	c.Assert(spanner.Has(capability.Triggers), qt.IsFalse)
+
+	// Outside the PostgreSQL family the keys record the engine rather than
+	// gating an emission yet. MySQL accepts CREATE MATERIALIZED VIEW and then
+	// recomputes the result on every read, so the key that names a STORED
+	// result is off for it just as it is for MariaDB, which refuses the
+	// statement outright.
+	c.Assert(capability.MySQL84().Has(capability.Views), qt.IsTrue)
+	c.Assert(capability.MySQL84().Has(capability.MaterializedViews), qt.IsFalse)
+	c.Assert(capability.MariaDB1011().Has(capability.MaterializedViews), qt.IsFalse)
+	c.Assert(capability.MariaDB1011().Has(capability.Triggers), qt.IsTrue)
+	c.Assert(capability.SQLite3().Has(capability.Triggers), qt.IsTrue)
+	c.Assert(capability.SQLite3().Has(capability.Functions), qt.IsFalse)
+	c.Assert(capability.ClickHouse24().Has(capability.MaterializedViews), qt.IsTrue)
+	c.Assert(capability.ClickHouse24().Has(capability.Triggers), qt.IsFalse)
+	c.Assert(capability.ClickHouse24().Has(capability.Functions), qt.IsFalse)
+
 	sqlServer := capability.SQLServer2022()
+	c.Assert(sqlServer.Has(capability.Views), qt.IsTrue)
+	c.Assert(sqlServer.Has(capability.MaterializedViews), qt.IsFalse)
+	c.Assert(sqlServer.Has(capability.Functions), qt.IsTrue)
+	c.Assert(sqlServer.Has(capability.Triggers), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.DropConstraintGeneric), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.CheckConstraintsEnforced), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.ForeignKeys), qt.IsTrue)

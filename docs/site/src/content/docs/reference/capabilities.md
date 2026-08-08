@@ -24,6 +24,8 @@ Capabilities answer questions that a dialect name alone cannot answer:
   `create_index_concurrently`, `drop_index_concurrently`
 - Does the target support roles, RLS, XML, or advisory locks?
   `role_management`, `row_level_security`, `xml_type`, `advisory_locks`
+- Which schema objects can this target host?
+  `views`, `materialized_views`, `functions`, `triggers`
 - Does the target support foreign keys, and how is the referenced key backed?
   `foreign_keys`, `foreign_keys_require_unique_reference`,
   `foreign_keys_require_indexed_reference`,
@@ -33,6 +35,17 @@ Schema rendering validates foreign keys before emitting any SQL. A malformed
 constraint, incompatible column types, an unsupported referential action, or a
 target without `foreign_keys` fails the complete render instead of producing
 partial DDL or a comment that silently omits referential integrity.
+
+The object-kind keys answer a question a dialect name cannot. PostgreSQL,
+CockroachDB, YugabyteDB, and Spanner share one planner and one renderer, so
+without them nothing could express that Spanner hosts views but not
+materialized views, user-defined functions, or triggers. A refused object kind
+is named rather than dropped:
+`-- SPANNER: trigger users_touch is not supported by this target; skipped.`
+appears in place of the DDL, identically in `ptah schema render` and in the plan
+`ptah schema apply` builds, because both pass through the same renderer. A
+materialized view presupposes a view and `create_or_replace_trigger`
+presupposes `triggers`, so those two requirement edges are validated.
 
 Exactly one referenced-key policy is enabled for every foreign-key-capable
 preset. PostgreSQL, CockroachDB, YugabyteDB, SQLite, SQL Server, and MySQL 8.4+
