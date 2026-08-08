@@ -397,6 +397,143 @@ func TestGenerateEmptyMigrationCreatesMissingDirectoryThroughTheBoundParent(t *t
 	c.Assert(generatorDirNames(c, decoy), qt.HasLen, 0)
 }
 
+// TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion is the skeleton
+// writer's half of the scan the planned writer's rows above pin, and it was the
+// half nothing measured: reverting writeEmptyMigrationFiles to list the pathname
+// left migration/generator, internal/atlasmigrate and internal/pathguard all at
+// exit 0, while the same revert in the planned writer reddened two rows.
+//
+// The two writers ask the same question at the same moment and only one of them
+// was held to the answer. Every other fixture for this one stages a directory
+// whose pathname and bound object are the same, or an empty decoy that carries
+// no version at all, so a pathname-based scan and a handle-based one agree by
+// construction. The row next door,
+// TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite, pins where
+// the bytes land and nothing about which number is on them.
+//
+// What a scan over the pathname costs is a version chosen to avoid colliding
+// with a directory this transaction is not writing into. The number it picks is
+// then free in the impostor and, as here, already taken in the directory the
+// handle holds -- so the write either collides with a migration the scan never
+// saw, or numbers a new migration behind one that is already applied.
+//
+// The impostor carries a much higher version than the bound directory, so the
+// two readings cannot agree by accident, and the last assertion of each row is
+// what proves the fixture separates them rather than hoping it does.
+//
+// The assertion is on the version alone. Where the bytes land is already pinned
+// next door, and the rooted handle keeps them in the retained directory under
+// either reading -- which is exactly why a wrong number here is invisible to a
+// destination assertion.
+//
+// This row lives in the //go:build unix file for the reason stated above it: the
+// hostile step is a rename of a directory the run holds open, which Win32
+// refuses without FILE_SHARE_DELETE. It asserts which directory was listed, not
+// whether two identifiers match, so it does not depend on the filesystem
+// reissuing an inode -- measured over 20 remove-and-recreate cycles of one
+// pathname, ext4 reissues the inode every time and APFS never does, and this row
+// answers the same on both.
+func TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion(t *testing.T) {
+	tests := []struct {
+		name      string
+		dirFormat migrator.MigrationDirFormat
+		// boundFile is the migration already in the directory the run binds,
+		// and impostorFile the one in the directory that takes over its
+		// pathname before the scan runs.
+		boundFile    string
+		impostorFile string
+		// wantVersion is the version the scan must choose, one past the bound
+		// directory's highest. wantPathnameVersion is what the same scan
+		// answers over the pathname, one past the impostor's.
+		wantVersion         int64
+		wantPathnameVersion int64
+		// pathnameScan re-runs this layout's scan over a set of names, so the
+		// row can state what reading the pathname would have produced.
+		pathnameScan func(names []string) int64
+		// wantRetained is the bound directory afterwards: what it already held,
+		// plus what this transaction wrote into it.
+		wantRetained []string
+	}{
+		{
+			name:                "atlas layout",
+			dirFormat:           migrator.MigrationDirFormatAtlas,
+			boundFile:           atlasEmptyMigrationFileName(29990101000001, "seed"),
+			impostorFile:        atlasEmptyMigrationFileName(29991231235959, "impostor"),
+			wantVersion:         29990101000002,
+			wantPathnameVersion: 29991231235960,
+			pathnameScan: func(names []string) int64 {
+				return nextAvailableAtlasVersion(names, nextAtlasMigrationVersion())
+			},
+			wantRetained: []string{
+				atlasEmptyMigrationFileName(29990101000001, "seed"),
+				atlasEmptyMigrationFileName(29990101000002, "added"),
+				"atlas.sum",
+			},
+		},
+		{
+			name:                "paired layout",
+			dirFormat:           migrator.MigrationDirFormatPtah,
+			boundFile:           migrator.GenerateMigrationFileName(3000000005, "seed", "up"),
+			impostorFile:        migrator.GenerateMigrationFileName(3999999999, "impostor", "up"),
+			wantVersion:         3000000006,
+			wantPathnameVersion: 4000000000,
+			pathnameScan: func(names []string) int64 {
+				return nextAvailablePtahVersion(names, migrator.GetNextMigrationVersion(), "added")
+			},
+			wantRetained: []string{
+				migrator.GenerateMigrationFileName(3000000005, "seed", "up"),
+				migrator.GenerateMigrationFileName(3000000006, "added", "down"),
+				migrator.GenerateMigrationFileName(3000000006, "added", "up"),
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			root := t.TempDir()
+			selected := filepath.Join(root, "migrations")
+			aside := filepath.Join(root, "renamed-aside")
+			c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
+			c.Assert(os.WriteFile(
+				filepath.Join(selected, test.boundFile), []byte("SELECT 1;\n"), 0o600,
+			), qt.IsNil)
+
+			// The hostile step, staged in the one window the binding defends:
+			// after the directory is bound and before the transaction reads
+			// anything through it. The bound directory is renamed aside, keeping
+			// its contents, and a fresh directory holding a far higher version
+			// takes the pathname the writer was selected by.
+			afterMigrationWriterBound = func() {
+				c.Assert(os.Rename(selected, aside), qt.IsNil)
+				c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
+				c.Assert(os.WriteFile(
+					filepath.Join(selected, test.impostorFile), []byte("SELECT 1;\n"), 0o600,
+				), qt.IsNil)
+			}
+			defer func() { afterMigrationWriterBound = nil }()
+
+			files, err := GenerateEmptyMigration(EmptyMigrationOptions{
+				MigrationName:     "added",
+				OutputDir:         selected,
+				AllowedOutputRoot: root,
+				DirFormat:         test.dirFormat,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(files, qt.IsNotNil)
+			c.Assert(files.Version, qt.Equals, test.wantVersion)
+			c.Assert(generatorDirNames(c, aside), qt.DeepEquals, test.wantRetained)
+			c.Assert(generatorDirNames(c, selected), qt.DeepEquals, []string{test.impostorFile})
+			c.Assert(
+				test.pathnameScan(migrationDirFileNames(selected)),
+				qt.Equals,
+				test.wantPathnameVersion,
+			)
+		})
+	}
+}
+
 // TestMigrationPlanWriteFilesReplacedDirectoryCannotRedirectPublication is the
 // same measurement for the planned-migration writer, staged in the one window
 // that writer still has: after the publication has revalidated the directory it
