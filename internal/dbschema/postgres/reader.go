@@ -505,6 +505,46 @@ func (r *Reader) readUserTypesInto(schema *types.DBSchema) error {
 	return nil
 }
 
+// extensionOwnedTypeExclusion is the correlated NOT EXISTS that keeps a type an
+// extension owns out of a description. It is written once and shared by the
+// domain, composite and range reads because the three ask the same question of
+// the same catalog and three copies drift.
+//
+// The predicate correlates on `t`, which every one of those queries spells for
+// its pg_type row.
+//
+// The reasoning is the one [Reader.readFunctionsForSchema] already carries for
+// functions -- an extension's members "cannot be dropped independently and
+// should be managed by the extension" -- and it was never applied to its types.
+// A description that declares both `extension "lo"` and `domain "lo"` cannot be
+// replayed, because CREATE EXTENSION makes the domain and the second
+// declaration collides with it. Measured on PostgreSQL 17.10 (stokaro/ptah#1294):
+//
+//	CREATE EXTENSION lo;
+//	CREATE TABLE docs (id integer PRIMARY KEY, payload lo);
+//
+//	Error: materialize schema on dev database: ... ERROR: type "lo" already
+//	exists (SQLSTATE 42710)  SQL: CREATE DOMAIN "lo" AS oid;
+//
+// classid is part of the predicate rather than left to objid alone: a pg_depend
+// row names its object by (classid, objid), and OIDs are drawn from one counter
+// shared by every catalog, so objid on its own can collide with a row of another
+// class.
+//
+// Ownership is asked of pg_depend rather than of the type's NAME. A user type
+// named close to an extension's -- `lo_own` beside `lo` -- is a user type, and a
+// name filter would have to spell `NOT LIKE` with an ESCAPE clause to avoid
+// treating its underscore as a wildcard, a mistake this reader has already had
+// to correct elsewhere (stokaro/ptah#1291). The catalog edge has no such
+// failure mode.
+const extensionOwnedTypeExclusion = `
+		AND NOT EXISTS (
+			SELECT 1 FROM pg_depend extdep
+			WHERE extdep.classid = 'pg_type'::regclass
+			  AND extdep.objid = t.oid
+			  AND extdep.deptype = 'e'
+		)`
+
 // readDomains reads PostgreSQL domain types (typtype='d').
 func (r *Reader) readDomains() ([]types.DBDomain, error) {
 	var domains []types.DBDomain
@@ -533,7 +573,8 @@ func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, erro
 			), '') AS check_expr
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
-		WHERE t.typtype = 'd' AND n.nspname = $1
+		WHERE t.typtype = 'd' AND n.nspname = $1` +
+		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname`
 
 	rows, err := r.db.Query(query, schemaName)
@@ -584,7 +625,8 @@ func (r *Reader) readCompositesForSchema(schemaName string) ([]types.DBComposite
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		JOIN pg_class c ON c.oid = t.typrelid AND c.relkind = 'c'
 		JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-		WHERE t.typtype = 'c' AND n.nspname = $1
+		WHERE t.typtype = 'c' AND n.nspname = $1` +
+		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname, a.attnum`
 
 	rows, err := r.db.Query(query, schemaName)
@@ -644,7 +686,8 @@ func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error)
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		JOIN pg_range rng ON rng.rngtypid = t.oid
-		WHERE t.typtype = 'r' AND n.nspname = $1
+		WHERE t.typtype = 'r' AND n.nspname = $1` +
+		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname`
 
 	rows, err := r.db.Query(query, schemaName)

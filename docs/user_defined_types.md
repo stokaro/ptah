@@ -75,6 +75,27 @@ Renders `CREATE TYPE "floatrange" AS RANGE (SUBTYPE = float8, SUBTYPE_DIFF = flo
 
 Range types have no in-place `ALTER`, so a changed range is dropped and recreated, and range comparison matches by name only.
 
+## Extension-owned types
+
+Reading a PostgreSQL database describes only the domains, composite types and
+range types the user declared. One that an extension owns is left to the
+extension, for the same reason extension-owned functions always have been: it
+is created by `CREATE EXTENSION` and cannot be created or dropped
+independently.
+
+Describing one made the description declare a type the extension already
+creates, and replaying such a description failed — measured on PostgreSQL
+17.10 against `CREATE EXTENSION lo`, which supplies the domain `lo`:
+
+```text
+ERROR: type "lo" already exists (SQLSTATE 42710)
+SQL: CREATE DOMAIN "lo" AS oid;
+```
+
+Ownership is read from `pg_depend` (`deptype = 'e'`) rather than from the type
+name, so a type of your own named closely after an extension's — `lo_own`
+beside `lo` — is still described in full.
+
 ## Ordering
 
 Ptah emits user-defined types after extensions and enums but before tables, so table columns can reference them. Within the group the order is domains → ranges → composites (composites may reference the others). Drops run after tables, and `DROP TYPE` / `DROP DOMAIN` are classified as destructive by the safety gate.

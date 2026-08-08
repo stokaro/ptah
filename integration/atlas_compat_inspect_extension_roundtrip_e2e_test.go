@@ -33,6 +33,28 @@ type atlasCompatExtensionRoundTripCase struct {
 	wantBlock bool
 	// why records the measurement behind the expectation.
 	why string
+	// unreplayable, when set, is the reason this row's fixture cannot be
+	// materialized on a fresh dev database no matter what the renderer emits,
+	// so the round trip below is not an assertion about Ptah for this row. An
+	// empty string means the round trip is asserted, which is the default and
+	// what every row that builds its extension from an install script gets.
+	//
+	// Only a fixture whose membership comes from `ALTER EXTENSION ... ADD` can
+	// need this, and only when the added member is a TYPE. `ALTER EXTENSION`
+	// writes the pg_depend membership row without adding anything to the
+	// extension's install script, so it builds a catalog state no
+	// `CREATE EXTENSION` can reproduce. Measured on PostgreSQL 17.10 against a
+	// clean database:
+	//
+	//	CREATE EXTENSION pgcrypto;
+	//	SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+	//	 WHERE n.nspname = 'public' AND t.typname = 'box';   -> 0
+	//
+	// against `CREATE EXTENSION lo` answering 1 for its own domain `lo`. A
+	// function member is not affected, because the bodies that call one are
+	// plpgsql and PostgreSQL does not resolve them at creation time; a type
+	// member is resolved when the column is created, so the replay stops there.
+	unreplayable string
 }
 
 // TestAtlasCompatInspectExtensionRoundTripE2E pins the property that
@@ -98,10 +120,20 @@ type atlasCompatExtensionRoundTripCase struct {
 // Both rows build that shape through `ALTER EXTENSION ... ADD`, which writes
 // the same pg_depend membership rows an extension's install script writes, so
 // no fixture control file has to be installed on the server for CI to run them.
-// The dependent call therefore lives in a plpgsql body, which PostgreSQL does
-// not resolve at creation time, so the document still materializes on a dev
-// database that has the extension but not the added member -- the assertion
-// that carries these two rows is the block, not the round trip. The word in
+// The assertion that carries these two rows is therefore the block, not the
+// round trip: `ALTER EXTENSION` adds nothing to the extension's install script,
+// so `CREATE EXTENSION` on a fresh dev database does not recreate the added
+// member and the fixture is one no replay can rebuild.
+//
+// Whether that costs the round trip depends on WHAT was added, and the two rows
+// differ on exactly this. A function member does not: the dependent call lives
+// in a plpgsql body, which PostgreSQL does not resolve at creation time, so the
+// first row still materializes. A TYPE member does, because a column's type is
+// resolved when the table is created -- so the second row records the reason in
+// `unreplayable` and asserts the block alone. Before stokaro/ptah#1294 that row
+// materialized only because the reader described the extension's own domain as
+// a user domain, which is the defect that issue is about; the round trip was
+// passing because of the bug, not despite it. The word in
 // that body is also indistinguishable from the false positives above, which is
 // the whole point: the decision cannot be made from the word, only from what
 // the extension is the only supplier of.
@@ -301,6 +333,9 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			why: "the type in merge's signature is named box, which pg_catalog also supplies," +
 				" so the type arm already dropped it and it cannot answer for anything;" +
 				" excluding merge as well leaves this document with no evidence either",
+			unreplayable: "pgcrypto owns public.box through ALTER EXTENSION ... ADD, so no" +
+				" CREATE EXTENSION recreates it and the labels table can never be built on a" +
+				" fresh dev database (stokaro/ptah#1294)",
 		},
 		{
 			name:      "index resting on an operator class the extension supplies as the default",
@@ -423,13 +458,33 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			// The round trip. A fresh dev database has none of these
 			// extensions, so materializing the document is what proves it
 			// carries everything it depends on.
-			documentPath := filepath.Join(t.TempDir(), "inspected.hcl")
-			c.Assert(os.WriteFile(documentPath, []byte(rendered), 0o600), qt.IsNil)
-			readBack := runAtlasCompatInspect(c, "file://"+documentPath, devURL)
-			c.Assert(readBack, qt.Not(qt.Equals), "",
-				qt.Commentf("the round trip produced an empty document"))
+			assertAtlasCompatRoundTrip(c, test, rendered, devURL)
 		})
 	}
+}
+
+// assertAtlasCompatRoundTrip materializes the rendered document on a fresh dev
+// database, unless the row has recorded a reason its fixture can never be
+// materialized at all.
+//
+// The skip is per row and carries its reason with it rather than being a flag,
+// because "this document is unreadable" and "this fixture is unbuildable" are
+// different findings and only the first is about Ptah. Every row that builds
+// its extension from an install script is asserted, which is all of them but
+// one.
+func assertAtlasCompatRoundTrip(c *qt.C, test atlasCompatExtensionRoundTripCase, rendered, devURL string) {
+	c.Helper()
+
+	if test.unreplayable != "" {
+		c.Logf("round trip not asserted: %s", test.unreplayable)
+		return
+	}
+
+	documentPath := filepath.Join(c.TempDir(), "inspected.hcl")
+	c.Assert(os.WriteFile(documentPath, []byte(rendered), 0o600), qt.IsNil)
+	readBack := runAtlasCompatInspect(c, "file://"+documentPath, devURL)
+	c.Assert(readBack, qt.Not(qt.Equals), "",
+		qt.Commentf("the round trip produced an empty document"))
 }
 
 // seedAtlasCompatExtensionDB installs the extension and runs the shape's DDL,
