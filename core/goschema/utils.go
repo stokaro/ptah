@@ -1343,6 +1343,18 @@ func boundRLSTable(resolver rlsTableResolver, structName, table string) string {
 	return resolver.resolve(structName, table)
 }
 
+// rlsPolicyIdentity is what makes two row-level security policies the same
+// policy: the table that owns it, and its own name.
+//
+// It is a struct rather than a joined string because both components are
+// PostgreSQL identifiers and either may contain a dot when quoted, while
+// Table.QualifiedName already spends the dot structurally. Any separator is
+// therefore ambiguous; a struct key cannot be.
+type rlsPolicyIdentity struct {
+	table  string
+	policy string
+}
+
 // deduplicateRLSPolicies keeps one policy per (table, policy name) pair.
 //
 // The table has to be part of the key. A PostgreSQL policy name is scoped to
@@ -1355,13 +1367,25 @@ func boundRLSTable(resolver rlsTableResolver, structName, table string) string {
 // The table component is the declared table the policy names rather than the
 // string it was written with, which is [rlsTableResolver]'s subject.
 func deduplicateRLSPolicies(policies []RLSPolicy, resolver rlsTableResolver) []RLSPolicy {
-	return deduplicateNamedDefinitions(policies, func(policy RLSPolicy) string {
-		return resolver.resolve(policy.StructName, policy.Table) + "." + policy.Name
+	return deduplicateNamedDefinitions(policies, func(policy RLSPolicy) rlsPolicyIdentity {
+		return rlsPolicyIdentity{
+			table:  resolver.resolve(policy.StructName, policy.Table),
+			policy: policy.Name,
+		}
 	})
 }
 
-func deduplicateNamedDefinitions[T any](definitions []T, identity func(T) string) []T {
-	seen := make(map[string]struct{}, len(definitions))
+// deduplicateNamedDefinitions keeps the first definition per identity.
+//
+// The key type is a parameter rather than a string so a caller whose identity
+// has SEVERAL components can use a struct instead of joining them with a
+// separator. Joining is not safe here: every component is a PostgreSQL
+// identifier, quoting lets any of them contain the separator, and the encoding
+// then stops being injective -- table `a` with policy `"b.c"` and table `a.b`
+// with policy `c` both render as `a.b.c`, and one of two distinct policies is
+// dropped (stokaro/ptah#1276). Single-component callers keep passing strings.
+func deduplicateNamedDefinitions[T any, K comparable](definitions []T, identity func(T) K) []T {
+	seen := make(map[K]struct{}, len(definitions))
 	deduplicated := make([]T, 0, len(definitions))
 	for _, definition := range definitions {
 		key := identity(definition)
