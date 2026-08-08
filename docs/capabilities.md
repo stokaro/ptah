@@ -90,7 +90,11 @@ so typos fail fast. Current registry:
 | `enum_custom_type` | Enums are separate named types (PostgreSQL `CREATE TYPE … AS ENUM`) |
 | `create_index_concurrently` | `CREATE [UNIQUE] INDEX CONCURRENTLY` (PostgreSQL; a compatibility no-op on CockroachDB) |
 | `drop_index_concurrently` | `DROP INDEX CONCURRENTLY` (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit `CONCURRENTLY`) |
-| `create_or_replace_trigger` | Single-statement trigger replacement: `CREATE OR REPLACE TRIGGER` on PostgreSQL 14+/MariaDB and `CREATE OR ALTER TRIGGER` on SQL Server. Not available on MySQL |
+| `views` | Standalone `CREATE VIEW … AS <query>` objects |
+| `materialized_views` | `CREATE MATERIALIZED VIEW`: a view whose query result is stored. Requires `views` |
+| `functions` | User-defined functions declared with a return type, a language, and a body |
+| `triggers` | `CREATE TRIGGER` objects |
+| `create_or_replace_trigger` | Single-statement trigger replacement: `CREATE OR REPLACE TRIGGER` on PostgreSQL 14+/MariaDB and `CREATE OR ALTER TRIGGER` on SQL Server. Not available on MySQL. Requires `triggers` |
 | `alter_generated_column_expression` | In-place `ALTER COLUMN SET EXPRESSION` for generated columns (PostgreSQL 17+) |
 | `row_level_security` | Row-level security policies (PostgreSQL) |
 | `role_management` | PostgreSQL role and object privilege management (`CREATE/ALTER ROLE`, `GRANT`, `REVOKE`) |
@@ -110,7 +114,9 @@ so typos fail fast. Current registry:
 2. **Requirement edges** — an enabled capability with a disabled prerequisite
    is a contradiction (`drop_constraint_if_exists` without
    `drop_constraint_generic`: an `IF EXISTS` variant of a statement the target
-   does not have).
+   does not have). The object-kind keys carry the same rule: a refinement
+   cannot outlive its object, so `materialized_views` requires `views` and
+   `create_or_replace_trigger` requires `triggers`.
 3. **Mutual exclusion groups** — at most one member of a group may be enabled
    (`enum_inline_column` vs `enum_custom_type`: a dialect models enums one way
    or the other).
@@ -134,6 +140,10 @@ composed sets yourself.
 | `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -283,6 +293,19 @@ value or wants to pin a specific server version in tests/CI.
   scenarios that run against live OSS containers in CI. Spanner currently has
   capability, planning, rendering, URL, and detection coverage only; there is
   no OSS Spanner PostgreSQL-interface container in the integration suite.
+- **Object kinds across the PostgreSQL family (#929).** One planner and one
+  renderer serve PostgreSQL, CockroachDB, YugabyteDB, and Spanner, so the
+  `views`, `materialized_views`, `functions`, and `triggers` keys are what lets
+  one member of that family refuse an object kind. Spanner disables the last
+  three: a Spanner view does not store its query result, and Spanner does not
+  run user code in the database. A refused object is not dropped in silence —
+  the renderer writes
+  `-- SPANNER: trigger users_touch is not supported by this target; skipped.`
+  in its place, and because `schema render` and the apply planner both pass
+  through that renderer, the two commands say the same thing about the same
+  object. Every row of these four keys was measured against a live server of
+  that engine except Spanner's, which has no container and no live test (#942)
+  and follows Google's documentation.
 - **SQLite native DDL (#148).**
   `SQLite3()` enables enforced CHECK constraints, foreign keys, and
   `DROP INDEX IF EXISTS`. It deliberately leaves generic constraint drops and
