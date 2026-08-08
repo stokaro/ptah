@@ -493,6 +493,63 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartExpression(t *testing.T) {
 	})
 }
 
+// TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements pins the
+// one edge in the model that no text carries.
+//
+// The reader resolves an index's operator classes and access method against
+// pg_depend because PostgreSQL prints neither when the class is the default for
+// its type: a GIN index over an integer column needs btree_gin and says so
+// nowhere. Dropping the answer here loses it just as completely as never asking
+// (stokaro/ptah#1286).
+//
+// The exclusion constraint is the second half. Its backing index is skipped
+// above so the constraint renders once, and the requirement it carries has to
+// arrive on the constraint or it goes with the index that was skipped.
+func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *testing.T) {
+	c := qt.New(t)
+	usingMethod := "gist"
+	elements := "room WITH =, during WITH &&"
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{{Schema: "public", Name: "booking"}},
+		Indexes: []types.DBIndex{
+			{
+				Schema:             "public",
+				TableName:          "booking",
+				Name:               "booking_room_gin",
+				Columns:            []string{"room"},
+				Method:             "gin",
+				RequiresExtensions: []string{"btree_gin"},
+			},
+			{
+				Schema:             "public",
+				TableName:          "booking",
+				Name:               "booking_room_during_excl",
+				Columns:            []string{"room", "during"},
+				Method:             "gist",
+				RequiresExtensions: []string{"btree_gist"},
+			},
+		},
+		Constraints: []types.DBConstraint{{
+			Schema:             "public",
+			TableName:          "booking",
+			Name:               "booking_room_during_excl",
+			Type:               "EXCLUDE",
+			UsingMethod:        &usingMethod,
+			ExcludeElements:    &elements,
+			RequiresExtensions: []string{"btree_gist"},
+		}},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Indexes, qt.HasLen, 1)
+	c.Assert(result.Indexes[0].Name, qt.Equals, "booking_room_gin")
+	c.Assert(result.Indexes[0].RequiresExtensions, qt.DeepEquals, []string{"btree_gin"})
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].RequiresExtensions, qt.DeepEquals, []string{"btree_gist"},
+		qt.Commentf("the constraint-backed index is dropped here, so its requirement rides the constraint"))
+}
+
 func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
 	c := qt.New(t)
 	statusDefault := "'draft'::enum_product_status"

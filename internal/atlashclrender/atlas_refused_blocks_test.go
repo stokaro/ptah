@@ -401,6 +401,257 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNothingDependsOn(t *testing.T
 		"omitted from Atlas-compatible schema inspect output")
 }
 
+// TestRenderInspectedForAtlasCLIKeepsAnExtensionOnlyTheCatalogNames covers the
+// dependency no identifier in the document carries.
+//
+// PostgreSQL prints an operator class only when it is not the default for the
+// key's type on the access method, so with btree_gin installed
+//
+//	CREATE INDEX t_gin ON t USING gin (n int4_ops);   -- n is integer
+//
+// is stored, and rendered back, as `USING gin (n)`. The document then contains
+// no token of btree_gin -- not its label, and not one of the 87 support
+// functions its member list holds, none of which anything ever spells. The
+// block was dropped at exit 0 and the pinned Atlas community binary v1.3.0
+// refused the result: `create index "t_gin" to table: "t": pq: data type
+// integer has no default operator class for access method "gin"`, exit 1.
+// Ptah's own apply of the same document failed identically. Measured on
+// PostgreSQL 17.10 (stokaro/ptah#1286).
+//
+// The second row is the same shape reaching the document through a constraint
+// instead of an index. An exclusion constraint prints its operators, and prints
+// an operator class only under the same not-the-default rule, so
+// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+// needs btree_gist and names nothing of it -- and the backing index is dropped
+// from the entity model, so the requirement has to travel on the constraint or
+// it is lost between the reader and here.
+//
+// Both rows are the case where nothing in the document names the extension,
+// which is why both expect the catalog wording. The case where the class IS
+// printed is
+// TestRenderInspectedForAtlasCLIReportsAPrintedOperatorClassAsAName, and that
+// one must not get this message.
+func TestRenderInspectedForAtlasCLIKeepsAnExtensionOnlyTheCatalogNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		database func() *goschema.Database
+		want     string
+		wantPath string
+	}{
+		{
+			name:     "a gin index resolves to an operator class the extension supplies",
+			database: implicitOpclassIndexDatabase,
+			want:     "extension \"btree_gin\"",
+			wantPath: "extensions.btree_gin",
+		},
+		{
+			name:     "an exclusion constraint's backing index resolves to it",
+			database: implicitOpclassConstraintDatabase,
+			want:     "extension \"btree_gist\"",
+			wantPath: "extensions.btree_gist",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(
+				test.database(), platform.Postgres, "public",
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(result.Data), qt.Contains, test.want,
+				qt.Commentf("the document cannot be materialized without this extension"))
+			c.Assert(diagnosticMessageFor(result.Diagnostics, test.wantPath), qt.Contains,
+				"kept in Atlas-compatible schema inspect output because the catalog resolved an index or"+
+					" constraint in this document to an operator class or access method it supplies",
+				qt.Commentf("a dependency no word in the document carries cannot be reported as if it were named"))
+		})
+	}
+}
+
+// TestRenderInspectedForAtlasCLIReportsAPrintedOperatorClassAsAName is the row
+// the catalog wording was false on.
+//
+// PostgreSQL prints an operator class exactly when it is NOT the default for the
+// key's type on the access method, which is the same rule that hides btree_gin's
+// class -- read the other way. A non-default class is printed, so it is in the
+// document, and both rendering sites carry it: an index writes
+// `ops = "gin_trgm_ops"` and an exclusion constraint writes
+// `elements = "txt gist_trgm_ops WITH ="`. Measured on PostgreSQL 17.10 with
+// pg_trgm installed, `CREATE INDEX w_trgm ON w USING gin (txt gin_trgm_ops)`
+// comes back from the catalog spelled in full.
+//
+// The extension has to be kept -- omitted, the document failed to apply with
+// `operator class "gin_trgm_ops" does not exist for access method "gin"` -- but
+// it must be kept for the reason that is true. Reporting it as a dependency the
+// document does not spell sent an operator looking for the absence of a word
+// printed two lines above (stokaro/ptah#1286).
+//
+// Over the 45 extensions in the postgres:17 image there are 5 non-default
+// extension-owned operator classes -- citext_pattern_ops, gin__int_ops,
+// gist__intbig_ops, gin_trgm_ops, gist_trgm_ops -- and no pg_catalog class
+// shares a name with any of them, so each survives the shadowed-name filter into
+// Extension.Provides and the name scan can answer for all of them.
+func TestRenderInspectedForAtlasCLIReportsAPrintedOperatorClassAsAName(t *testing.T) {
+	tests := []struct {
+		name      string
+		database  func() *goschema.Database
+		wantSpelt string
+	}{
+		{
+			name:      "an index part prints the operator class",
+			database:  printedOpclassIndexDatabase,
+			wantSpelt: "ops = \"gin_trgm_ops\"",
+		},
+		{
+			name:      "an exclusion constraint prints the operator class",
+			database:  printedOpclassConstraintDatabase,
+			wantSpelt: "elements = \"txt gist_trgm_ops WITH =\"",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(
+				test.database(), platform.Postgres, "public",
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(result.Data), qt.Contains, test.wantSpelt,
+				qt.Commentf("the fixture is about a class the document does spell"))
+			c.Assert(string(result.Data), qt.Contains, "extension \"pg_trgm\"",
+				qt.Commentf("the document cannot be materialized without the extension supplying that class"))
+			c.Assert(diagnosticMessageFor(result.Diagnostics, "extensions.pg_trgm"), qt.Contains,
+				"kept in Atlas-compatible schema inspect output because another object in this document"+
+					" depends on it",
+				qt.Commentf("a keep the reader can look up in the document is reported as one they can"))
+			c.Assert(diagnosticMessageFor(result.Diagnostics, "extensions.pg_trgm"), qt.Not(qt.Contains),
+				"the catalog resolved",
+				qt.Commentf("the catalog wording is for a dependency no name covers, and a name covers this one"))
+			c.Assert(diagnosticMessageFor(result.Diagnostics, "extensions.pg_trgm"), qt.Not(qt.Contains),
+				"does not spell",
+				qt.Commentf("the document spells the operator class this keep is about"))
+		})
+	}
+}
+
+// TestRenderInspectedForAtlasCLIOmitsAnExtensionNoIndexResolvesTo is the
+// control the fix above is worthless without.
+//
+// It is the same extension, the same access method and the same rendered
+// `type = "gin"`, differing from implicitOpclassIndexDatabase in exactly one
+// operand: the key's type has a GIN operator class in core, so the catalog
+// resolved the index to nothing. Measured on PostgreSQL 17.10 with btree_gin
+// installed, `CREATE INDEX ON doc USING gin (body)` over jsonb and
+// `USING gin (tsv)` over tsvector both report no extension at all, and the
+// document round-trips at exit 0 through Ptah and through the pinned Atlas
+// community binary v1.3.0 with no extension block.
+//
+// Answering "does this index say gin" instead of "what did this index resolve
+// to" passes the rows above and fails here, which is the whole reason the
+// decision is a catalog question. So does keeping every extension whose member
+// list is non-empty.
+func TestRenderInspectedForAtlasCLIOmitsAnExtensionNoIndexResolvesTo(t *testing.T) {
+	c := qt.New(t)
+
+	db := implicitOpclassIndexDatabase()
+	db.Fields[1].Type = "jsonb"
+	db.Indexes[0].RequiresExtensions = nil
+
+	result, err := atlashclrender.RenderInspectedForAtlasCLI(db, platform.Postgres, "public")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Contains, "type = \"gin\"",
+		qt.Commentf("the fixture must still carry the gin index the control is about"))
+	c.Assert(string(result.Data), qt.Not(qt.Contains), "extension \"btree_gin\"",
+		qt.Commentf("jsonb has a core GIN operator class, so this index does not need the extension"))
+	c.Assert(diagnosticMessageFor(result.Diagnostics, "extensions.btree_gin"), qt.Contains,
+		"omitted from Atlas-compatible schema inspect output")
+}
+
+// TestRenderInspectedForAtlasCLIOmitsAnExtensionOnlyAnOrphanObjectResolvesTo
+// is the other half of the same control: carrying the edge is not the same as
+// being in the document.
+//
+// renderTables drops an index or a constraint whose table this render does not
+// write, reports it as an orphan, and emits nothing at all for it. A
+// materialized view's index is that shape, and an ordinary one: PostgreSQL
+// stores it in pg_index with its resolved operator classes, and a `materialized`
+// block carries no index, so it can never be rendered. Measured on PostgreSQL
+// 17.10,
+//
+//	CREATE EXTENSION btree_gin;
+//	CREATE TABLE src (id integer PRIMARY KEY, n integer NOT NULL);
+//	CREATE MATERIALIZED VIEW mv AS SELECT id, n FROM src;
+//	CREATE INDEX mv_gin ON mv USING gin (n int4_ops);
+//
+// inspects to a document with no index block anywhere. Keeping btree_gin for it
+// contradicted the next line of the same stderr -- `index mv_gin: index cannot
+// be rendered because the target table is absent from the exported schema` --
+// and spent on nothing the only thing this suppression exists to produce: the
+// pinned Atlas community binary v1.3.0 read the document at exit 1, `postgres:
+// extensions are not supported by this version`, where the same document
+// without the block is read at exit 0, and both applied at exit 0
+// (stokaro/ptah#1286).
+//
+// Both arms are here because the collector and renderTables have to ask one
+// question, not two: an arm with no test is where the next divergence lands.
+func TestRenderInspectedForAtlasCLIOmitsAnExtensionOnlyAnOrphanObjectResolvesTo(t *testing.T) {
+	tests := []struct {
+		name       string
+		database   func() *goschema.Database
+		block      string
+		blockPath  string
+		absentName string
+		orphanPath string
+	}{
+		{
+			name:       "an index whose table this render does not write",
+			database:   orphanOpclassIndexDatabase,
+			block:      "extension \"btree_gin\"",
+			blockPath:  "extensions.btree_gin",
+			absentName: "mv_gin",
+			orphanPath: "index mv_gin",
+		},
+		{
+			name:       "a constraint whose table this render does not write",
+			database:   orphanOpclassConstraintDatabase,
+			block:      "extension \"btree_gist\"",
+			blockPath:  "extensions.btree_gist",
+			absentName: "booking_room_during_excl",
+			orphanPath: "constraint booking_room_during_excl",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(
+				test.database(), platform.Postgres, "public",
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(result.Data), qt.Not(qt.Contains), test.absentName,
+				qt.Commentf("the object carrying the requirement is not in the document"))
+			c.Assert(string(result.Data), qt.Not(qt.Contains), test.block,
+				qt.Commentf("an extension kept for an object the document does not contain costs the whole file"))
+			c.Assert(diagnosticMessageFor(result.Diagnostics, test.blockPath), qt.Contains,
+				"omitted from Atlas-compatible schema inspect output")
+			c.Assert(diagnosticMessageFor(result.Diagnostics, test.orphanPath), qt.Contains,
+				"cannot be rendered because the target table is absent from the exported schema",
+				qt.Commentf("the same render already reports that it wrote nothing for this object"))
+		})
+	}
+}
+
 // TestRenderInspectedForAtlasCLIOutputIsSelfConsistent is the invariant the
 // whole reshape exists to hold: whatever the surface decides to omit, the
 // document it emits still describes itself.
@@ -506,6 +757,179 @@ func sequenceBackedDefaultDatabase() *goschema.Database {
 func standaloneSequenceDatabase() *goschema.Database {
 	db := sequenceBackedDefaultDatabase()
 	db.Fields[0].DefaultExpr = ""
+	return db
+}
+
+// implicitOpclassIndexDatabase is the shape stokaro/ptah#1286 measured: an
+// integer column, a GIN index over it, and btree_gin behind the operator class
+// PostgreSQL chose and did not print.
+//
+// The member list is the real one, read from pg_depend on PostgreSQL 17.10.
+// Every name in it is a GIN support function, and the shadowed-name filter has
+// already removed the operator classes, whose names -- int4_ops and its 28
+// siblings -- pg_catalog also supplies. So no document can name anything here,
+// which is what makes the name scan the wrong instrument for this dependency.
+func implicitOpclassIndexDatabase() *goschema.Database {
+	return &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:     "btree_gin",
+			Provides: []string{"gin_btree_consistent", "gin_extract_query_int4", "gin_extract_value_int4"},
+		}},
+		Tables: []goschema.Table{{StructName: "T", Name: "t", Schema: "public"}},
+		Fields: []goschema.Field{
+			{StructName: "T", Name: "id", Type: "integer", Primary: true},
+			{StructName: "T", Name: "n", Type: "integer"},
+		},
+		Indexes: []goschema.Index{{
+			StructName:         "T",
+			Name:               "t_gin",
+			Fields:             []string{"n"},
+			Type:               "gin",
+			RequiresExtensions: []string{"btree_gin"},
+		}},
+	}
+}
+
+// implicitOpclassConstraintDatabase is the same dependency arriving through an
+// exclusion constraint: `EXCLUDE USING gist (room WITH =, during WITH &&)` over
+// an integer column, which needs btree_gist for the integer half and prints
+// only the operator.
+func implicitOpclassConstraintDatabase() *goschema.Database {
+	return &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:     "btree_gist",
+			Provides: []string{"gbt_int4_compress", "gbt_int4_consistent", "gbtreekey8"},
+		}},
+		Tables: []goschema.Table{{StructName: "Booking", Name: "booking", Schema: "public"}},
+		Fields: []goschema.Field{
+			{StructName: "Booking", Name: "id", Type: "integer", Primary: true},
+			{StructName: "Booking", Name: "room", Type: "integer"},
+			{StructName: "Booking", Name: "during", Type: "tsrange"},
+		},
+		Constraints: []goschema.Constraint{{
+			StructName:         "Booking",
+			Name:               "booking_room_during_excl",
+			Type:               "EXCLUDE",
+			Table:              "booking",
+			UsingMethod:        "gist",
+			ExcludeElements:    "room WITH =, during WITH &&",
+			RequiresExtensions: []string{"btree_gist"},
+		}},
+	}
+}
+
+// printedOpclassIndexDatabase is the same catalog edge on an index that DOES
+// spell the operator class: pg_trgm's gin_trgm_ops on a text column.
+//
+// gin_trgm_ops is not the default GIN class for text -- text has no default one
+// at all -- so PostgreSQL prints it, and the renderer writes it as `ops` on the
+// index part. The member list is the real one read from pg_depend on PostgreSQL
+// 17.10, trimmed to the entries that matter here: both operator classes are in
+// it, because neither name is shadowed by a pg_catalog class.
+//
+// RequiresExtensions is set as well, because the reader records the edge whether
+// or not the class is printed. Both answers are therefore available for this
+// fixture, which is exactly what makes it the test of which one is reported.
+func printedOpclassIndexDatabase() *goschema.Database {
+	return &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:     "pg_trgm",
+			Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"},
+		}},
+		Tables: []goschema.Table{{StructName: "W", Name: "w", Schema: "public"}},
+		Fields: []goschema.Field{
+			{StructName: "W", Name: "id", Type: "integer", Primary: true},
+			{StructName: "W", Name: "txt", Type: "text"},
+		},
+		Indexes: []goschema.Index{{
+			StructName:         "W",
+			Name:               "w_trgm",
+			Type:               "gin",
+			Parts:              []goschema.IndexPart{{Name: "txt", Operator: "gin_trgm_ops"}},
+			RequiresExtensions: []string{"pg_trgm"},
+		}},
+	}
+}
+
+// printedOpclassConstraintDatabase is the constraint arm of the same shape:
+// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)`, which pg_get_constraintdef
+// prints with the class because gist_trgm_ops is not the default gist class for
+// text either. The class lands in the rendered `elements` string.
+func printedOpclassConstraintDatabase() *goschema.Database {
+	return &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:     "pg_trgm",
+			Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"},
+		}},
+		Tables: []goschema.Table{{StructName: "Y", Name: "y", Schema: "public"}},
+		Fields: []goschema.Field{
+			{StructName: "Y", Name: "id", Type: "integer", Primary: true},
+			{StructName: "Y", Name: "txt", Type: "text"},
+		},
+		Constraints: []goschema.Constraint{{
+			StructName:         "Y",
+			Name:               "y_txt_excl",
+			Type:               "EXCLUDE",
+			Table:              "y",
+			UsingMethod:        "gist",
+			ExcludeElements:    "txt gist_trgm_ops WITH =",
+			RequiresExtensions: []string{"pg_trgm"},
+		}},
+	}
+}
+
+// orphanOpclassIndexDatabase is implicitOpclassIndexDatabase's dependency
+// arriving on an object no table in this render owns: the index of a
+// materialized view.
+//
+// The reader resolves a materialized view's index out of pg_index exactly like
+// a table's, operator classes and all, so the edge is real. What it can never
+// do is reach the document, because a `materialized` block carries no index and
+// the view is not a table: renderTables finds nothing to write the index into
+// and reports it as an orphan.
+func orphanOpclassIndexDatabase() *goschema.Database {
+	return &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:     "btree_gin",
+			Provides: []string{"gin_btree_consistent", "gin_extract_query_int4", "gin_extract_value_int4"},
+		}},
+		Tables: []goschema.Table{{StructName: "Src", Name: "src", Schema: "public"}},
+		Fields: []goschema.Field{
+			{StructName: "Src", Name: "id", Type: "integer", Primary: true},
+			{StructName: "Src", Name: "n", Type: "integer"},
+		},
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "Mv",
+			Name:       "mv",
+			Body:       "SELECT id, n FROM src",
+		}},
+		Indexes: []goschema.Index{{
+			StructName:         "Mv",
+			Name:               "mv_gin",
+			TableName:          "public.mv",
+			Fields:             []string{"n"},
+			Type:               "gin",
+			RequiresExtensions: []string{"btree_gin"},
+		}},
+	}
+}
+
+// orphanOpclassConstraintDatabase is the constraint arm of the same shape:
+// implicitOpclassConstraintDatabase's exclusion constraint left hanging on a
+// table this render does not write, with an unrelated table kept so the
+// document is a document rather than a lone block.
+//
+// groupConstraintsByTable reports it through the same orphan branch the index
+// arm goes through, which is the point of the row: the collector and
+// renderTables have to agree for both object kinds, and an arm with no test is
+// where the next divergence lands.
+func orphanOpclassConstraintDatabase() *goschema.Database {
+	db := implicitOpclassConstraintDatabase()
+	db.Tables = []goschema.Table{{StructName: "Src", Name: "src", Schema: "public"}}
+	db.Fields = []goschema.Field{
+		{StructName: "Src", Name: "id", Type: "integer", Primary: true},
+	}
+	db.Constraints[0].Table = "public.booking"
 	return db
 }
 

@@ -112,6 +112,42 @@ type atlasCompatExtensionRoundTripCase struct {
 // keyword filter that consults the raw membership instead of the reported
 // member list drops the function name too -- the refuted shape again, one level
 // down.
+//
+// The btree_gin and btree_gist rows are stokaro/ptah#1286, where the member list
+// cannot help because no identifier in the document names the dependency.
+// PostgreSQL prints an operator class only when it is not the default for its
+// key's type, so `CREATE INDEX t_gin ON t USING gin (n int4_ops)` over an integer
+// column comes back as `USING gin (n)` and every word of btree_gin is gone. The
+// block was dropped at exit 0 and the pinned Atlas community binary v1.3.0 then
+// refused the result: `create index "t_gin" to table: "t": pq: data type
+// integer has no default operator class for access method "gin"`, exit 1, with
+// Ptah's own apply failing identically. The btree_gist row is the same dependency
+// arriving through an exclusion constraint, whose elements print operators and
+// print a class under the same not-the-default rule. The jsonb/tsvector row is
+// the control that keeps the fix from becoming "pin the extension to every GIN
+// index": those have core GIN classes, and that document must still come out
+// with no extension block.
+//
+// The two pg_trgm rows are the same rule read the other way, and they are here
+// because the reason reported for them was wrong. gin_trgm_ops is not the
+// default GIN class for text, so it IS printed: the index arrives as
+// `USING gin (txt gin_trgm_ops)` and renders `ops = "gin_trgm_ops"`, and the
+// exclusion form renders `elements = "txt gist_trgm_ops WITH ="`. The block is
+// needed either way -- without it the round trip below fails with `operator class
+// "gin_trgm_ops" does not exist for access method "gin"` -- but the document does
+// name what pg_trgm supplies, so the keep is reported as a dependency the reader
+// can find rather than as one the DDL does not spell.
+//
+// The materialized-view row is the fix's other control, and the shape it first
+// got wrong. Carrying the edge is not the same as being in the document:
+// renderTables drops an index whose table this render does not write and reports
+// it as an orphan, and a materialized view's index is exactly that -- pg_index
+// resolves its operator classes like any other index, and a `materialized` block
+// carries no index, so it can never be rendered. Keeping btree_gin for it
+// produced a document with no index block anywhere that the pinned Atlas
+// community binary v1.3.0 refused, `postgres: extensions are not supported by
+// this version`, exit 1, where the same document without the block is read at
+// exit 0 -- and both apply at exit 0, so the block bought nothing at all.
 func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 	adminURL := requirePostgresE2EDatabaseURL(t)
 
@@ -265,6 +301,92 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			why: "the type in merge's signature is named box, which pg_catalog also supplies," +
 				" so the type arm already dropped it and it cannot answer for anything;" +
 				" excluding merge as well leaves this document with no evidence either",
+		},
+		{
+			name:      "index resting on an operator class the extension supplies as the default",
+			extension: "btree_gin",
+			seed: "CREATE TABLE t (id integer PRIMARY KEY, n integer NOT NULL);" +
+				" CREATE INDEX t_gin ON t USING gin (n int4_ops)",
+			wantBlock: true,
+			why: "PostgreSQL prints an operator class only when it is not the default, so the" +
+				" catalog stores this as USING gin (n) and the document carries no token of" +
+				" btree_gin -- not its label, and none of the support functions its member list holds",
+		},
+		{
+			name:      "exclusion constraint resting on an operator class the extension supplies",
+			extension: "btree_gist",
+			seed: "CREATE TABLE booking (id integer PRIMARY KEY, room integer NOT NULL," +
+				" during tsrange NOT NULL, EXCLUDE USING gist (room WITH =, during WITH &&))",
+			wantBlock: true,
+			why: "an EXCLUDE element prints its operator and not its operator class, and the index" +
+				" backing the constraint is not in the entity model, so the requirement has to" +
+				" travel on the constraint",
+		},
+		{
+			name:      "index printing an operator class the extension supplies",
+			extension: "pg_trgm",
+			seed: "CREATE TABLE w (id integer PRIMARY KEY, txt text NOT NULL);" +
+				" CREATE INDEX w_trgm ON w USING gin (txt gin_trgm_ops)",
+			wantBlock: true,
+			// The other side of the not-the-default rule, and the row the
+			// diagnostic was false on: this class is printed, so the document
+			// names something pg_trgm supplies, and the keep must be reported as
+			// a dependency the reader can look up rather than as one the DDL does
+			// not spell. The round trip is what proves the block is needed at
+			// all: on a dev database without pg_trgm the index cannot be built.
+			why: "gin_trgm_ops is not the default GIN class for text, so PostgreSQL prints it and" +
+				" the document does name what pg_trgm supplies -- and the index still cannot be" +
+				" built without the extension",
+		},
+		{
+			name:      "exclusion constraint printing an operator class the extension supplies",
+			extension: "pg_trgm",
+			seed: "CREATE TABLE y (id integer PRIMARY KEY, txt text NOT NULL," +
+				" EXCLUDE USING gist (txt gist_trgm_ops WITH =))",
+			wantBlock: true,
+			// The constraint arm of the same shape. pg_get_constraintdef prints
+			// the class here for the same reason, and it lands in the rendered
+			// `elements` string, which the reference scan has always read -- so
+			// this row was already answerable by name before #1286 and was
+			// nonetheless reported as a catalog-only edge.
+			why: "gist_trgm_ops is not the default gist class for text either, so the constraint" +
+				" definition prints it and the rendered elements string carries it",
+		},
+		{
+			name:      "gin indexes whose operator classes core supplies",
+			extension: "btree_gin",
+			seed: "CREATE TABLE doc (id integer PRIMARY KEY, body jsonb NOT NULL, tsv tsvector NOT NULL);" +
+				" CREATE INDEX doc_body_gin ON doc USING gin (body);" +
+				" CREATE INDEX doc_tsv_gin ON doc USING gin (tsv)",
+			wantBlock: false,
+			// The control the two rows above are worthless without. Same
+			// extension, same access method, same rendered `type = "gin"`: only
+			// the resolved operator class differs. A rule that read `USING gin`
+			// as a reference to btree_gin passes both rows above and fails here,
+			// and so does keeping every extension with a non-empty member list.
+			why: "jsonb and tsvector have core GIN operator classes, so these indexes resolve to" +
+				" nothing btree_gin supplies and the document materializes without it",
+		},
+		{
+			name:      "index resolving to the extension on a relation this render cannot write",
+			extension: "btree_gin",
+			seed: "CREATE TABLE src (id integer PRIMARY KEY, n integer NOT NULL);" +
+				" CREATE MATERIALIZED VIEW mv AS SELECT id, n FROM src;" +
+				" CREATE INDEX mv_gin ON mv USING gin (n int4_ops)",
+			wantBlock: false,
+			// The control in the other direction: the edge is real and the
+			// object carrying it reaches no document. A materialized view's
+			// index is read out of pg_index with its resolved operator classes
+			// like any other, and a `materialized` block carries no index, so
+			// the renderer reports `index mv_gin: index cannot be rendered
+			// because the target table is absent from the exported schema` and
+			// writes nothing for it. Keeping btree_gin here cost the file the
+			// whole compatibility this suppression exists to produce: the
+			// pinned Atlas community binary v1.3.0 answered `postgres:
+			// extensions are not supported by this version`, exit 1, on a
+			// document that applies at exit 0 with or without the block.
+			why: "the only object resolving to btree_gin is one this render reports it wrote nowhere," +
+				" so the document neither names the extension nor needs it",
 		},
 	}
 

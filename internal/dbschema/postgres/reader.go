@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform/capability"
@@ -682,6 +683,53 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 	return indexes, nil
 }
 
+// requiredExtensionsProjection builds the correlated sub-select that names the
+// extensions an index resolves to through the catalog rather than through its
+// own text. indclassExpr is the index's pg_index.indclass vector and
+// accessMethodExpr its pg_class.relam.
+//
+// PostgreSQL prints an operator class in a CREATE INDEX or an EXCLUDE clause
+// only when that class is not the default for the key's type on the access
+// method, so the dependency this answers is one no identifier in the rendered
+// document need carry. Measured on PostgreSQL 17.10 with btree_gin installed,
+//
+//	CREATE INDEX t_gin ON t USING gin (n int4_ops);   -- n is integer
+//
+// comes back from the catalog as `CREATE INDEX t_gin ON public.t USING gin (n)`,
+// and the same DDL replayed where btree_gin is absent fails with `data type
+// integer has no default operator class for access method "gin"` (42704).
+// pg_index.indclass holds the class each key resolved to, so the reader can
+// answer "which extension owns it" exactly (stokaro/ptah#1286).
+//
+// Matching the ACCESS METHOD's name would answer it wrongly. `gin` is a pg_am
+// row belonging to no extension, so treating "this index says gin" as evidence
+// would pin btree_gin to every GIN index in the database -- and tsvector, jsonb
+// and array columns all have core GIN operator classes, so most of them do not
+// need it. The access method is read here as an OID resolved against pg_depend,
+// which is a different question: it pins nothing for `gin`, and pins the owner
+// for an access method an extension does supply, such as bloom's `bloom`.
+//
+// Both arms are unconditional on opcdefault, so a printed class is recorded
+// here as well as an unprinted one. A printed class is also matchable by name
+// through [goschema.Extension.Provides] wherever the renderer's reference scan
+// reads the attribute it lands in, and that is the answer preferred when both
+// are available, because a name can be looked up in the document; see
+// [go.5x5.cz/ptah/internal/atlashclrender] omitRefusedExtension. This projection
+// does not depend on either: Provides excludes names pg_catalog also supplies,
+// so a class shadowed by a core one would drop out of it.
+func requiredExtensionsProjection(indclassExpr, accessMethodExpr string) string {
+	return `COALESCE((
+				SELECT json_agg(DISTINCT e.extname)::text
+				  FROM pg_depend dep
+				  JOIN pg_extension e ON e.oid = dep.refobjid
+				 WHERE dep.deptype = 'e'
+				   AND ((dep.classid = 'pg_opclass'::regclass
+				         AND dep.objid = ANY (` + indclassExpr + `::oid[]))
+				     OR (dep.classid = 'pg_am'::regclass
+				         AND dep.objid = ` + accessMethodExpr + `))
+			), '[]')`
+}
+
 func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error) {
 	indexesQuery := `
 		SELECT
@@ -743,6 +791,11 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			-- column does not replay at all without it, because point has no
 			-- default btree operator class. See #1242.
 			am.amname as index_method,
+			-- The extensions this index resolves to, from the resolved operator
+			-- class OIDs and the access method OID rather than from either
+			-- one's name -- including the class the DDL does print, which is
+			-- the non-default one. See requiredExtensionsProjection.
+			` + requiredExtensionsProjection("ix.indclass", "i.relam") + ` as index_required_extensions,
 			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
 			ix.indisprimary,
 			ix.indisunique
@@ -767,7 +820,7 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 		err := rows.Scan(
 			&row.schemaName, &row.tableName, &row.indexName, &row.indexDef,
 			&row.keyTexts, &row.keyAttnums, &row.keyOpclasses, &row.keyOptions,
-			&row.includeColumns, &row.method,
+			&row.includeColumns, &row.method, &row.requiredExtensions,
 			&row.predicate, &row.isPrimary, &row.isUnique,
 		)
 		if err != nil {
@@ -806,10 +859,13 @@ type postgresIndexRow struct {
 	// includeColumns is the JSON array of INCLUDE payload column texts.
 	includeColumns string
 	// method is pg_am.amname.
-	method    string
-	predicate string
-	isPrimary bool
-	isUnique  bool
+	method string
+	// requiredExtensions is the JSON array of extension names the index's
+	// resolved operator classes and access method belong to.
+	requiredExtensions string
+	predicate          string
+	isPrimary          bool
+	isUnique           bool
 }
 
 // buildPostgresIndex maps one introspection row onto the dialect-neutral index
@@ -832,10 +888,16 @@ func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
 	}
 	index.Columns = columns
 
-	index.IncludeColumns, err = parsePostgresIndexIncludeColumns(row.includeColumns)
+	index.IncludeColumns, err = decodePostgresNameList(row.includeColumns)
 	if err != nil {
 		return types.DBIndex{}, fmt.Errorf("failed to parse index include columns for %s: %w", row.indexName, err)
 	}
+
+	index.RequiresExtensions, err = decodePostgresNameList(row.requiredExtensions)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index required extensions for %s: %w", row.indexName, err)
+	}
+	slices.Sort(index.RequiresExtensions)
 
 	index.Parts, err = parsePostgresIndexParts(index.Columns, row.keyAttnums)
 	if err != nil {
@@ -855,21 +917,23 @@ func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
 	return index, nil
 }
 
-// parsePostgresIndexIncludeColumns decodes the INCLUDE payload column list. An
-// absent or empty list is not an error: most indexes have no payload.
-func parsePostgresIndexIncludeColumns(value string) ([]string, error) {
+// decodePostgresNameList decodes a JSON array of names fetched alongside an
+// index row -- the INCLUDE payload columns, the extensions the index resolves
+// to -- and reports nil for an absent or empty one. Neither list is expected to
+// be present on most indexes, so empty is not an error.
+func decodePostgresNameList(value string) ([]string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || trimmed == "[]" {
 		return nil, nil
 	}
-	var columns []string
-	if err := json.Unmarshal([]byte(trimmed), &columns); err != nil {
+	var names []string
+	if err := json.Unmarshal([]byte(trimmed), &names); err != nil {
 		return nil, err
 	}
-	if len(columns) == 0 {
+	if len(names) == 0 {
 		return nil, nil
 	}
-	return columns, nil
+	return names, nil
 }
 
 // applyPostgresIndexOpclasses attaches the non-default operator class of each
@@ -1245,10 +1309,19 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.
 				c.conname AS constraint_name,
 				cl.relname AS table_name,
 				c.contype AS constraint_type,
-			pg_get_constraintdef(c.oid) AS constraint_definition
+			pg_get_constraintdef(c.oid) AS constraint_definition,
+			-- The extensions the backing index resolves to. An EXCLUDE element
+			-- prints its operator, and its operator class only when that class
+			-- is not the default, so EXCLUDE USING gist (room WITH =, ...) over
+			-- an integer column needs btree_gist and says nothing of it, while
+			-- (txt gist_trgm_ops WITH =) needs pg_trgm and does print the
+			-- class. See requiredExtensionsProjection.
+			` + requiredExtensionsProjection("ix.indclass", "ic.relam") + ` AS required_extensions
 		FROM pg_constraint c
 		JOIN pg_class cl ON c.conrelid = cl.oid
 		JOIN pg_namespace n ON cl.relnamespace = n.oid
+		LEFT JOIN pg_index ix ON ix.indexrelid = c.conindid
+		LEFT JOIN pg_class ic ON ic.oid = c.conindid
 		WHERE c.contype IN ('x')  -- 'x' = exclusion constraint (add more types as needed)
 		AND n.nspname = $1
 		AND cl.relname NOT IN ('schema_migrations')
@@ -1263,10 +1336,17 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.
 	var constraints []types.DBConstraint
 	for rows.Next() {
 		var schemaName, constraintName, tableName, constraintType, definition string
-		err := rows.Scan(&schemaName, &constraintName, &tableName, &constraintType, &definition)
+		var requiredExtensions string
+		err := rows.Scan(&schemaName, &constraintName, &tableName, &constraintType, &definition, &requiredExtensions)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan PostgreSQL constraint: %w", err)
 		}
+
+		required, err := decodePostgresNameList(requiredExtensions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse required extensions for constraint %s: %w", constraintName, err)
+		}
+		slices.Sort(required)
 
 		// Convert PostgreSQL constraint type to standard type
 		var stdType string
@@ -1278,10 +1358,11 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.
 		}
 
 		constraint := types.DBConstraint{
-			Name:      constraintName,
-			TableName: tableName,
-			Schema:    r.outputSchema(schemaName),
-			Type:      stdType,
+			Name:               constraintName,
+			TableName:          tableName,
+			Schema:             r.outputSchema(schemaName),
+			Type:               stdType,
+			RequiresExtensions: required,
 		}
 
 		// Parse constraint definition for EXCLUDE constraints

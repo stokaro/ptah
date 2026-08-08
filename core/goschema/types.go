@@ -309,6 +309,26 @@ type Index struct {
 	// what the renderer falls back to when this field is unset). Ignored by
 	// all non-ClickHouse renderers.
 	Granularity int
+
+	// RequiresExtensions names the extensions this index cannot be built
+	// without, as the catalog resolved them rather than as the index's own DDL
+	// spells them. It is filled in when the schema was read from a live
+	// PostgreSQL catalog.
+	//
+	// An operator class is printed only when it is not the default for its key's
+	// type on the index's access method, so an index resting on a default class
+	// an extension supplies spells no token of that extension: `USING gin (n)`
+	// over an integer column needs btree_gin, and `isbn` at least says a word
+	// [Extension.Provides] can match. The catalog is asked instead of the text
+	// (stokaro/ptah#1286).
+	//
+	// A printed class such as pg_trgm's `gin_trgm_ops` is recorded here too. The
+	// field is the catalog's answer, not "the part the DDL left out", so a reader
+	// of it must not conclude that the document names nothing behind the edge.
+	//
+	// Empty means not measured or nothing to report. Annotation and YAML sources
+	// have no catalog to ask and leave it unset.
+	RequiresExtensions []string
 }
 
 // Constraint represents a table-level constraint definition parsed from Go struct annotations.
@@ -362,6 +382,17 @@ type Constraint struct {
 	ForeignColumns []string // Referenced column names for composite foreign keys
 	OnDelete       string   // ON DELETE action
 	OnUpdate       string   // ON UPDATE action
+
+	// RequiresExtensions names the extensions the index backing this constraint
+	// cannot be built without, as the catalog resolved them rather than as
+	// ExcludeElements spells them. It is filled in for EXCLUDE constraints read
+	// from a live PostgreSQL catalog, where an element prints its operator and
+	// prints its operator class only when that class is not the default:
+	// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+	// needs btree_gist and says so nowhere, while
+	// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and does name
+	// the class (stokaro/ptah#1286). See [Index.RequiresExtensions].
+	RequiresExtensions []string
 
 	Comment string // Constraint comment/description
 }
