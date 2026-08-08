@@ -70,6 +70,20 @@ the built-in privileges an owner holds on a relation nobody has granted
 anything on -- no `GRANT` produced them, and `CREATE TABLE` re-establishes them
 for the new owner when the output is replayed.
 
+A read that leaves roles out says so on standard error, and the fuller read is
+still available on this same command:
+
+```bash
+PTAH_POSTGRES_INSPECT_ALL_ROLES=1 ptah db read --db-url "$PG_URL"
+```
+
+That describes every role Ptah manages on the server — what a read produced
+before the scoping — which is what you want when the point of the read is to
+reproduce a cluster's roles somewhere else. It changes the description only:
+comparison already treats those roles as present either way. Reserved `pg_`
+names and the bootstrap `postgres` superuser stay out of both. See
+[PostgreSQL roles and grants](../../databases/postgresql/#roles-and-grants).
+
 Role creation statements in PostgreSQL output are intended for
 a clean target. If a role already exists, applying the SQL
 fails before its description or grants are changed; this prevents privileges

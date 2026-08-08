@@ -43,6 +43,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/internal/rolescope"
 )
 
 // clusterRole is one role on the simulated server together with the single
@@ -934,6 +935,92 @@ func TestReadRolesComplementIsTheExactNegationOfTheScopedRead(t *testing.T) {
 	c.Assert(complement, qt.Equals,
 		strings.Replace(scoped, "WHERE "+scopedPredicate, "WHERE "+complementPredicate, 1),
 		qt.Commentf("the two reads must differ by that NOT alone, or they are not complements"))
+}
+
+func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
+	c := qt.New(t)
+
+	// The default: the description is the scoped read, and the roles it leaves
+	// out are carried separately for the comparator alone. This is the shape
+	// every surface produces unless an operator asks for the other one.
+	c.Setenv(rolescope.DescribeAllEnvVar, "")
+	reader := newRolesServer(c.TB, fullCluster(), []string{"public"}, capability.Postgres16())
+	schema := &types.DBSchema{}
+
+	c.Assert(reader.readRolesInto(schema), qt.IsNil)
+
+	c.Assert(roleNames(schema.Roles), qt.DeepEquals, []string{
+		"policy_named", "schema_grantee", "schema_grantor", "table_grantee", "table_grantor",
+	})
+	c.Assert(roleNames(schema.RolesOutOfScope), qt.DeepEquals, []string{
+		"app_schema_grantee", "pgbouncer", "someone_elses", "third_party", "unrelated_tenant",
+	})
+}
+
+func TestReadRolesIntoDescribesEveryManagedRoleUnderTheOptIn(t *testing.T) {
+	c := qt.New(t)
+
+	// The capability scoping the description took away, put back on the same
+	// surface (AGENTS.md, "Compatibility never removes a capability").
+	// Measured on PostgreSQL 17.10 across two clusters: a database holding one
+	// table and one ungranted cluster role is described with 4 CREATE ROLE
+	// before stokaro/ptah#1267 and 0 after, and `ptah-compat schema apply
+	// --dry-run` against an empty database in a second cluster plans those
+	// roles before and not after. With this variable set, both numbers come
+	// back.
+	//
+	// Reserved names do not come back, and that is the point of asserting
+	// against manageableClusterRoleNames rather than against fullCluster: the
+	// opt-in widens the description to every role Ptah MANAGES, and Ptah
+	// manages neither the pg_ names nor the bootstrap superuser in either
+	// direction. An opt-in that emitted `CREATE ROLE "postgres"` would be a
+	// worse answer than the scoping it undoes.
+	c.Setenv(rolescope.DescribeAllEnvVar, "1")
+	reader := newRolesServer(c.TB, fullCluster(), []string{"public"}, capability.Postgres16())
+	schema := &types.DBSchema{}
+
+	c.Assert(reader.readRolesInto(schema), qt.IsNil)
+
+	c.Assert(roleNames(schema.Roles), qt.DeepEquals, manageableClusterRoleNames())
+	c.Assert(schema.RolesOutOfScope, qt.HasLen, 0,
+		qt.Commentf("nothing was left out, so nothing may be reported as left out"))
+}
+
+func TestReadRolesIntoLeavesTheComparatorsAnswerAlone(t *testing.T) {
+	c := qt.New(t)
+
+	// The safety property of the opt-in, stated on its own because it is the
+	// reason the variable can exist at all: both reads run either way, so the
+	// UNION -- which is what compare.Roles takes existence from -- is the same
+	// set under both settings. Turning the variable on moves roles between the
+	// two lists and can never make Ptah plan a CREATE ROLE for a role that is
+	// already there, which is the failure stokaro/ptah#1276 is about.
+	tests := []struct {
+		name    string
+		optIn   string
+		schemas []string
+	}{
+		{name: "default, public", optIn: "", schemas: []string{"public"}},
+		{name: "opt-in, public", optIn: "1", schemas: []string{"public"}},
+		{name: "default, a schema nothing uses", optIn: "", schemas: []string{"empty"}},
+		{name: "opt-in, a schema nothing uses", optIn: "1", schemas: []string{"empty"}},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Setenv(rolescope.DescribeAllEnvVar, test.optIn)
+			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
+			schema := &types.DBSchema{}
+
+			c.Assert(reader.readRolesInto(schema), qt.IsNil)
+
+			union := append(roleNames(schema.Roles), roleNames(schema.RolesOutOfScope)...)
+			slices.Sort(union)
+			c.Assert(union, qt.DeepEquals, manageableClusterRoleNames())
+			c.Assert(slices.Compact(slices.Clone(union)), qt.DeepEquals, union,
+				qt.Commentf("a role was reported by both lists"))
+		})
+	}
 }
 
 // manageableClusterRoleNames is every role fullCluster holds that either read

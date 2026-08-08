@@ -264,6 +264,54 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 	})
 }
 
+func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
+	c := qt.New(t)
+
+	// The opt-in that puts the removed capability back
+	// ([go.5x5.cz/ptah/internal/rolescope.DescribeAllEnvVar]) changes which
+	// list a role arrives in: with it set, the PostgreSQL reader describes
+	// every role it manages and RolesOutOfScope is empty. That must not change
+	// a single planned statement, and this is where the property is decided.
+	//
+	// So the two shapes below carry the SAME roles and differ only in the list
+	// they arrived in, and the comparison is asserted to be identical. Without
+	// it, an operator who turned the variable on to copy a cluster's roles
+	// could get a different migration plan for the same two databases, which
+	// would make the escape hatch a second behavior rather than a fuller read.
+	generated := &goschema.Database{
+		Roles: []goschema.Role{
+			{Name: "app_user", Login: true},
+			{Name: "scoped_out", Login: true, CreateDB: true},
+			{Name: "nowhere_at_all", Login: true},
+		},
+	}
+	scoped := &types.DBSchema{
+		Roles: []types.DBRole{{Name: "app_user", Login: true}},
+		RolesOutOfScope: []types.DBRole{
+			{Name: "scoped_out", Login: true},
+			{Name: "other_tenant_user", Login: true},
+		},
+	}
+	described := &types.DBSchema{
+		Roles: []types.DBRole{
+			{Name: "app_user", Login: true},
+			{Name: "other_tenant_user", Login: true},
+			{Name: "scoped_out", Login: true},
+		},
+	}
+
+	scopedDiff := &difftypes.SchemaDiff{}
+	compare.Roles(generated, scoped, scopedDiff)
+	describedDiff := &difftypes.SchemaDiff{}
+	compare.Roles(generated, described, describedDiff)
+
+	c.Assert(scopedDiff.RolesAdded, qt.DeepEquals, []string{"nowhere_at_all"})
+	c.Assert(scopedDiff.RolesModified, qt.HasLen, 1)
+	c.Assert(scopedDiff.RolesModified[0].RoleName, qt.Equals, "scoped_out")
+	c.Assert(describedDiff, qt.DeepEquals, scopedDiff,
+		qt.Commentf("describing a role instead of carrying it out of scope changed the plan"))
+}
+
 func TestRolesReservedNameIsNotComparedAgainstAnything(t *testing.T) {
 	c := qt.New(t)
 

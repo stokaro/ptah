@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -179,21 +181,9 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 
 	if r.caps.Has(capability.RoleManagement) {
 		// Read roles and grants (PostgreSQL-specific)
-		roles, err := r.readRoles()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read roles: %w", err)
+		if err := r.readRolesInto(schema); err != nil {
+			return nil, err
 		}
-		schema.Roles = roles
-
-		// The roles the description leaves out still exist on the server, and
-		// a comparator that is not told so plans CREATE ROLE for them. Read
-		// the complement so "not described" and "not present" stay different
-		// answers. See stokaro/ptah#1267 and stokaro/ptah#1276.
-		rolesOutOfScope, err := r.readRolesOutOfScope()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read roles outside the inspected scope: %w", err)
-		}
-		schema.RolesOutOfScope = rolesOutOfScope
 
 		grants, err := r.readGrants(standaloneSequenceSet(schema.Sequences))
 		if err != nil {
@@ -2306,9 +2296,13 @@ func (r *Reader) rolesInScopeClauses() []string {
 // through the privilege clauses: granting anything on a relation makes its
 // ACL explicit, and an explicit ACL always carries the owner's own privileges.
 //
-// This is a scoping decision rather than a suppression: a role that belongs to
-// the inspected schemas is still reported in full, on the native and the
-// compatibility surface alike, so no capability is lost.
+// A role that belongs to the inspected schemas is still reported in full, on
+// the native and the compatibility surface alike. What the scoping does cost
+// is naming a role the inspected schemas do not use, which a description could
+// do before -- enough to copy one cluster's roles into another. That capability
+// is not discarded: readRolesInto restores the full read under
+// [rolescope.DescribeAllEnvVar], and what the default leaves out is reported
+// rather than dropped in silence.
 //
 // The privilege clauses read the grantor as well as the grantee because
 // readGrants reports both. That makes this set a superset of every role name
@@ -2316,6 +2310,53 @@ func (r *Reader) rolesInScopeClauses() []string {
 // a role it does not also define.
 func (r *Reader) readRoles() ([]types.DBRole, error) {
 	return r.queryRoles(rolesUsedByScope)
+}
+
+// readRolesInto performs both role reads and decides which of them the
+// description carries.
+//
+// By default the description is the scoped read and the complement is carried
+// separately, for the comparator alone. Under
+// [rolescope.DescribeAllEnvVar] the description is the union -- every role Ptah
+// manages on the server, which is what a read produced before
+// stokaro/ptah#1267 -- and the complement is then empty because nothing is
+// left out.
+//
+// Both reads happen either way, so the set the comparator takes existence from
+// is byte-for-byte the same set under both settings. That is the property that
+// makes the variable safe: turning it on changes what is described and can
+// never make Ptah plan a CREATE ROLE for a role that is already there.
+//
+// The union is re-sorted by name rather than concatenated, so the fuller
+// description is ordered exactly as the single unscoped query ordered it.
+func (r *Reader) readRolesInto(schema *types.DBSchema) error {
+	described, err := r.readRoles()
+	if err != nil {
+		return fmt.Errorf("failed to read roles: %w", err)
+	}
+
+	// The roles the description leaves out still exist on the server, and a
+	// comparator that is not told so plans CREATE ROLE for them. Read the
+	// complement so "not described" and "not present" stay different answers.
+	// See stokaro/ptah#1267 and stokaro/ptah#1276.
+	outOfScope, err := r.readRolesOutOfScope()
+	if err != nil {
+		return fmt.Errorf("failed to read roles outside the inspected scope: %w", err)
+	}
+
+	if rolescope.DescribeAll() {
+		everyManagedRole := slices.Concat(described, outOfScope)
+		slices.SortFunc(everyManagedRole, func(a, b types.DBRole) int {
+			return strings.Compare(a.Name, b.Name)
+		})
+		schema.Roles = everyManagedRole
+		schema.RolesOutOfScope = nil
+		return nil
+	}
+
+	schema.Roles = described
+	schema.RolesOutOfScope = outOfScope
+	return nil
 }
 
 // readRolesOutOfScope reads the roles the server has that readRoles left out:

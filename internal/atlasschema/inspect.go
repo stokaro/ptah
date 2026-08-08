@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/fileplan"
+	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/schemascope"
 )
 
@@ -70,6 +71,14 @@ func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, er
 	if err != nil {
 		return "", fmt.Errorf("read database schema: %w", err)
 	}
+	// A description scoped to the roles the inspected schemas use omits roles
+	// that exist on the server, and the rendered document is the only thing
+	// the operator sees. Reported here rather than in renderInspectSchema
+	// because only this path inspects a database the operator named: the
+	// file and migration-directory sources render a dev database they were
+	// told to materialize, whose other cluster roles are not an answer to
+	// anything they asked. See stokaro/ptah#1267.
+	rolescope.ReportUndescribed(opts.Diagnostics, schema)
 	return renderInspectSchema(schema, conn.Info(), opts)
 }
 

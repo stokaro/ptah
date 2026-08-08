@@ -17,8 +17,11 @@ import (
 	"go.5x5.cz/ptah/cmd/readdb"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -589,5 +592,149 @@ BEGIN
     END LOOP;
 END
 $ptah_cleanup_ref_roles$;`)
+	c.Check(err, qt.IsNil)
+}
+
+// TestPostgreSQLUndescribedRolesAreReportedAndRecoverableIntegration is the
+// guard on the half of stokaro/ptah#1267 that is not the scoping.
+//
+// Scoping the description removed a capability: before it, `ptah db read` of a
+// database emitted CREATE ROLE for every role Ptah manages on the server, and
+// that output could be replayed into a DIFFERENT cluster to reproduce them.
+// Measured on PostgreSQL 17.10 across two containers, on a database holding one
+// table and one ungranted cluster role: 4 CREATE ROLE before, 0 after, and
+// `ptah-compat schema apply --dry-run` against an empty database in the second
+// cluster planned three of them before and none after. AGENTS.md
+// ("Compatibility never removes a capability. Constitute it, do not discard
+// it.") requires that to stay reachable on the same surface, and requires what
+// the default leaves out to be reported rather than dropped in silence, so this
+// asserts both halves at once and in both directions.
+//
+// Said plainly, the way the sibling guards say it: without POSTGRES_TEST_DSN
+// this test SKIPS and the run still reports ok. The wiring it covers -- the
+// reader honoring the variable, and `ptah db read` printing the note -- has
+// unit coverage in internal/dbschema/postgres/reader_roles_internal_test.go and
+// internal/rolescope, which is what runs when this does not; neither of those
+// can show that a real server answers the widened read with the roles this one
+// checks for.
+func TestPostgreSQLUndescribedRolesAreReportedAndRecoverableIntegration(t *testing.T) {
+	c := qt.New(t)
+	dsn := skipIfNoPostgreSQL(t)
+	db, err := sql.Open("pgx", dsn)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	cleanupUndescribedRolesIntegration(c, db)
+	c.Cleanup(func() { cleanupUndescribedRolesIntegration(c, db) })
+
+	// A role the cluster has and the inspected schema does not use, plus a
+	// pg-prefixed ordinary role: the reserved-prefix pattern is escaped, so
+	// this one is MANAGED and has to come back with the others rather than
+	// being swallowed by `pg_%` (stokaro/ptah#1291, stokaro/ptah#1292).
+	_, err = db.Exec(`
+CREATE SCHEMA ptah_undescribed_schema_137;
+CREATE ROLE ptah_undescribed_outside_137 LOGIN;
+CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
+	c.Assert(err, qt.IsNil)
+
+	scopedCmd := readdb.NewReadDBCommand()
+	var scopedOut, scopedErr bytes.Buffer
+	scopedCmd.SetContext(t.Context())
+	scopedCmd.SetOut(&scopedOut)
+	scopedCmd.SetErr(&scopedErr)
+	scopedCmd.SetArgs([]string{"--db-url", dsn, "--schemas", "ptah_undescribed_schema_137"})
+
+	c.Assert(scopedCmd.Execute(), qt.IsNil)
+
+	// The default: neither role is described, and the operator is told so
+	// without being told their names.
+	c.Assert(scopedOut.String(), qt.Not(qt.Contains), "ptah_undescribed_outside_137")
+	c.Assert(scopedOut.String(), qt.Not(qt.Contains), "pgbouncer_undescribed_137")
+	c.Assert(scopedErr.String(), qt.Contains, "roles Ptah manages on this server are not described")
+	c.Assert(scopedErr.String(), qt.Contains, "Set PTAH_POSTGRES_INSPECT_ALL_ROLES=1")
+	c.Assert(scopedErr.String(), qt.Not(qt.Contains), "ptah_undescribed_outside_137")
+	c.Assert(scopedOut.String(), qt.Not(qt.Contains), "PTAH_POSTGRES_INSPECT_ALL_ROLES",
+		qt.Commentf("the note belongs on the diagnostics stream, never in the SQL"))
+
+	// The compatibility surface owes the same two answers, and it is a
+	// different call path: `ptah-compat schema inspect` renders through
+	// atlasschema.Inspect and reports on its own diagnostics writer rather
+	// than on a cobra stderr.
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	var inspectDiag bytes.Buffer
+	inspected, err := atlasschema.Inspect(conn, atlasschema.InspectOptions{
+		Schemas:     []string{"ptah_undescribed_schema_137"},
+		Diagnostics: &inspectDiag,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(inspected, qt.Not(qt.Contains), "ptah_undescribed_outside_137")
+	c.Assert(inspected, qt.Not(qt.Contains), "PTAH_POSTGRES_INSPECT_ALL_ROLES",
+		qt.Commentf("the note belongs on the diagnostics stream, never in the document"))
+	c.Assert(inspectDiag.String(), qt.Contains, "roles Ptah manages on this server are not described")
+	c.Assert(inspectDiag.String(), qt.Contains, "Set PTAH_POSTGRES_INSPECT_ALL_ROLES=1")
+
+	// The opt-in: the same read describes them again, and says nothing about
+	// an omission because there is none.
+	t.Setenv(rolescope.DescribeAllEnvVar, "1")
+	fullCmd := readdb.NewReadDBCommand()
+	var fullOut, fullErr bytes.Buffer
+	fullCmd.SetContext(t.Context())
+	fullCmd.SetOut(&fullOut)
+	fullCmd.SetErr(&fullErr)
+	fullCmd.SetArgs([]string{"--db-url", dsn, "--schemas", "ptah_undescribed_schema_137"})
+
+	c.Assert(fullCmd.Execute(), qt.IsNil)
+
+	c.Assert(fullOut.String(), qt.Contains, `CREATE ROLE "ptah_undescribed_outside_137"`)
+	c.Assert(fullOut.String(), qt.Contains, `CREATE ROLE "pgbouncer_undescribed_137"`)
+	c.Assert(fullErr.String(), qt.Not(qt.Contains), "are not described")
+
+	// And the widened read is still a read of the roles Ptah MANAGES. The
+	// reserved names stay out in both directions, so the opt-in can never plan
+	// a statement PostgreSQL is guaranteed to reject.
+	c.Assert(fullOut.String(), qt.Not(qt.Contains), `CREATE ROLE "postgres"`)
+	c.Assert(fullOut.String(), qt.Not(qt.Contains), `CREATE ROLE "pg_`)
+
+	// Both directions on the comparator: widening the description must not
+	// change one planned statement. The role exists either way, so it is never
+	// added; a role that exists nowhere still is.
+	reader := postgres.NewPostgreSQLReader(db, "ptah_undescribed_schema_137")
+	full, err := reader.ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(integrationRoleNames(full.Roles), qt.Contains, "ptah_undescribed_outside_137")
+	c.Assert(full.RolesOutOfScope, qt.HasLen, 0)
+
+	desired := &goschema.Database{
+		Roles: []goschema.Role{
+			{Name: "ptah_undescribed_outside_137", Login: true, Inherit: true},
+			{Name: "ptah_undescribed_absent_137", Login: true, Inherit: true},
+		},
+	}
+	diff := schemadiff.Compare(desired, &dbschematypes.DBSchema{
+		Roles:           full.Roles,
+		RolesOutOfScope: full.RolesOutOfScope,
+	})
+	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"ptah_undescribed_absent_137"})
+}
+
+func cleanupUndescribedRolesIntegration(c *qt.C, db *sql.DB) {
+	c.Helper()
+	_, err := db.Exec("DROP SCHEMA IF EXISTS ptah_undescribed_schema_137 CASCADE")
+	c.Check(err, qt.IsNil)
+	_, err = db.Exec(`
+DO $ptah_cleanup_undescribed_roles$
+DECLARE
+    role_name text;
+BEGIN
+    FOREACH role_name IN ARRAY ARRAY['ptah_undescribed_outside_137', 'pgbouncer_undescribed_137', 'ptah_undescribed_absent_137'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+            EXECUTE format('REVOKE %I FROM %I', role_name, current_user);
+            EXECUTE format('DROP OWNED BY %I', role_name);
+            EXECUTE format('DROP ROLE %I', role_name);
+        END IF;
+    END LOOP;
+END
+$ptah_cleanup_undescribed_roles$;`)
 	c.Check(err, qt.IsNil)
 }
