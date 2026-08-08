@@ -92,10 +92,85 @@ func TestCompareWithDialect_PostgresDomainColumnComparesByIdentity(t *testing.T)
 			assert:      assertTypeChange("waypoint -> milestone"),
 		},
 		{
+			// The reviewer's shape for stokaro/ptah#1138. A domain's identity
+			// is (schema, name); the name alone is not it. The database column
+			// is declared with public.status and the desired schema types it
+			// with other.status -- two different domains, with two different
+			// CHECK constraints. Measured on PostgreSQL 17.10 with the name
+			// alone reaching the comparator, `schema diff` emitted
+			// DROP DOMAIN IF EXISTS "status" CASCADE and no ALTER, and
+			// `schema apply --auto-approve` exited 0, said "Schema apply
+			// completed successfully", and left the table with only its id
+			// column.
+			name:        "a domain in another schema is a different domain",
+			column:      types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
+			desiredType: "other.status",
+			assert:      assertTypeChange("status -> other.status"),
+		},
+		{
+			// The same miss the other way round: the column is declared with
+			// the domain in another schema and the desired schema declares its
+			// own. Measured on the same server, that one is silent drift rather
+			// than data loss -- the column is never converted and re-running
+			// never converges.
+			name:           "a column from another schema against the declared one is a change",
+			column:         types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "other.status", DomainName: "status", DomainSchema: "other", IsNullable: "NO"},
+			desiredType:    "status",
+			desiredDomains: []goschema.Domain{{Name: "status", BaseType: "TEXT"}},
+			assert:         assertTypeChange("other.status -> status"),
+		},
+		{
+			// And the boundary that keeps this from becoming "any domain is a
+			// change": one domain, spelled qualified on the desired side and
+			// reported by the catalog as the schema it is in.
+			name:        "the same domain named with its schema is not a change",
+			column:      types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
+			desiredType: "public.status",
+			assert:      assertNoChange(),
+		},
+		{
+			// A domain declared with no schema of its own lives in the schema
+			// the connection reads, which is the schema the database side
+			// reports for it. This is the ordinary single-schema case and it
+			// must stay a no-op.
+			name:           "a domain declared without a schema is the one in the default schema",
+			column:         types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
+			desiredType:    "status",
+			desiredDomains: []goschema.Domain{{Name: "status", BaseType: "TEXT"}},
+			assert:         assertNoChange(),
+		},
+		{
+			// An unqualified reference resolves through the declaration, so a
+			// desired schema that declares its status in another schema means
+			// that one even when the column spells the name bare.
+			name:           "an unqualified reference means the domain that is declared",
+			column:         types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
+			desiredType:    "status",
+			desiredDomains: []goschema.Domain{{Name: "status", Schema: "other", BaseType: "TEXT"}},
+			assert:         assertTypeChange("status -> status"),
+		},
+		{
+			// The residual gap, pinned so it is visible rather than assumed
+			// away: two declarations share the bare name in different schemas,
+			// so an unqualified reference is left to the name. Measured on
+			// PostgreSQL 17.10, one database whose column b is other.status
+			// against one whose column b is public.status, read with both
+			// schemas selected, reports "Schemas are synced" -- drift rather
+			// than data loss, since neither domain is dropped. Closing it needs
+			// the desired column to carry its domain's schema rather than a
+			// type string, which is a model change (stokaro/ptah#1138).
+			name:           "two same-named domains leave an unqualified reference undecided",
+			column:         types.DBColumn{Name: "b", DataType: "integer", UDTName: "int4", FormattedType: "other.status", DomainName: "status", DomainSchema: "other", IsNullable: "NO"},
+			desiredType:    "status",
+			desiredDomains: []goschema.Domain{{Name: "status", BaseType: "TEXT"}, {Name: "status", Schema: "other", BaseType: "INTEGER"}},
+			assert:         assertNoChange(),
+		},
+		{
 			// A domain off the search path: format_type qualifies it, while
 			// information_schema.domain_name stays bare. Whether the server
 			// qualifies a name is a property of the search path, not of the
-			// domain, so the two spellings name one domain.
+			// domain, so with nothing on the desired side to resolve the bare
+			// spelling the two name one domain.
 			name:        "a qualified spelling and a bare one name one domain",
 			column:      types.DBColumn{Name: "c", DataType: "USER-DEFINED", UDTName: "cube", FormattedType: "alt.alt_dom", DomainName: "alt_dom", IsNullable: "NO"},
 			desiredType: "alt_dom",

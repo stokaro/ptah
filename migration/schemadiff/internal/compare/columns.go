@@ -148,7 +148,7 @@ func tableColumnsWithSemantics(
 		dbColumns[semantics.ColumnIdentityKey(col.Name)] = col
 	}
 
-	desiredDomains := desiredDomainNames(generated)
+	desiredDomains := desiredDomainIdentities(generated, semantics)
 
 	// Find added and removed columns
 	for identity, column := range genColumns {
@@ -299,7 +299,7 @@ func columnsWithDesiredDomains(
 	genCol goschema.Field,
 	dbCol types.DBColumn,
 	dialect string,
-	desiredDomains map[string]struct{},
+	desiredDomains map[string]domainIdentity,
 ) difftypes.ColumnDiff {
 	colDiff := difftypes.ColumnDiff{
 		ColumnName: genCol.Name,
@@ -462,15 +462,27 @@ func sqliteKeyColumnImpliesNotNull(
 //
 // where both sides of this comparator's normalization say "integer" and Ptah
 // reported the schemas synced.
+//
+// A domain's identity is (schema, name), and the name alone is not it. Measured
+// on the same server, one database holding public.status and one holding
+// other.status, with a row in the table:
+//
+//	ptah-compat schema diff --from <public.status> --to <other.status>
+//	  DROP DOMAIN IF EXISTS "status" CASCADE;      <- and no ALTER
+//
+// so `schema apply --auto-approve` exited 0, said "Schema apply completed
+// successfully", and left the table with only its id column. Comparing the two
+// halves of the identity is what makes that a reported change.
 func columnTypeChange(
 	genCol goschema.Field,
 	dbCol types.DBColumn,
 	dbRawType, dialect string,
-	desiredDomains map[string]struct{},
+	desiredDomains map[string]domainIdentity,
 ) string {
-	dbDomain := domainColumnSpelling(dbCol)
-	if dbDomain != "" || namesADesiredDomain(genCol.Type, desiredDomains) {
-		if domainColumnTypeMatches(genCol.Type, dbDomain) {
+	dbDomain, dbIsDomain := dbColumnDomainIdentity(dbCol)
+	desiredDomain, desiredIsDomain := desiredColumnDomainIdentity(genCol.Type, desiredDomains)
+	if dbIsDomain || desiredIsDomain {
+		if dbIsDomain && domainIdentitiesMatch(dbDomain, desiredDomain) {
 			return ""
 		}
 		return fmt.Sprintf("%s -> %s", dbRawType, strings.TrimSpace(genCol.Type))
@@ -486,88 +498,152 @@ func columnTypeChange(
 	return ""
 }
 
-// domainColumnSpelling returns the name of the DOMAIN a column is declared
-// with, and "" when the column's declared type is not a domain.
-//
-// DomainName is the fact: information_schema records it for exactly the columns
-// whose declared type is a domain, and nothing else in a column's catalog row
-// separates a domain from a plain column of the same base type. FormattedType
-// is the server's own format_type of the same domain, and it is preferred
-// because it is the fuller spelling -- it carries the schema qualifier when the
-// search path needs one, where information_schema's name is always bare.
-//
-// FormattedType on its own still counts, because the reader fills it for a
-// domain column whether or not the caller carried DomainName along, and because
-// the failure it guards is destructive while its cost is not: reading a
-// spelling as an identity can only ever REPORT a change that normalization
-// would have folded away, never hide one. The one shape it must not claim is an
-// array, whose spelling is a type rather than an identifier -- and format_type
-// spells every array with a trailing "[]", including an array of a domain,
-// while a column whose declared type IS a domain is spelled with the domain's
-// own name (stokaro/ptah#1138).
-func domainColumnSpelling(dbCol types.DBColumn) string {
-	if formatted := strings.TrimSpace(dbCol.FormattedType); formatted != "" && !strings.HasSuffix(formatted, "[]") {
-		return formatted
-	}
-	return strings.TrimSpace(dbCol.DomainName)
+// domainIdentity is what a domain IS: the schema that holds it and its own
+// name, both case-folded. An empty schema means "not said, and nothing here can
+// resolve it" -- never "the default schema", which is a value this type carries
+// spelled out.
+type domainIdentity struct {
+	schema string
+	name   string
 }
 
-// desiredDomainNames indexes, by lower-case bare name, the domains the desired
+// foldDomainPart canonicalizes one half of an identity. PostgreSQL folds an
+// unquoted identifier to lower case on the way in, so the catalog spelling and
+// the spelling a schema author typed differ in case and name one domain.
+func foldDomainPart(value string) string {
+	return strings.ToLower(unquoteIdentifier(value))
+}
+
+// dbColumnDomainIdentity returns the identity of the DOMAIN a database column
+// is declared with, and false when its declared type is not a domain.
+//
+// DomainName/DomainSchema are the fact: information_schema records them for
+// exactly the columns whose declared type is a domain, and nothing else in a
+// column's catalog row separates a domain from a plain column of the same base
+// type. They are read together, because half an identity is not one: a
+// comparator holding only "status" for a column of public.status calls it equal
+// to a desired other.status, reports no change, and lets the plan's
+// DROP DOMAIN ... CASCADE take the column (stokaro/ptah#1138).
+//
+// FormattedType is the server's own format_type of the same domain. It is
+// consulted for the schema qualifier the server writes when the search path
+// forces one, and it still counts on its own, because a caller may carry it
+// without the catalog columns and because the failure it guards is destructive
+// while its cost is not: reading a spelling as an identity can only ever REPORT
+// a change that normalization would have folded away, never hide one. The one
+// shape it must not claim is an array, whose spelling is a type rather than an
+// identifier -- and format_type spells every array with a trailing "[]",
+// including an array of a domain, while a column whose declared type IS a
+// domain is spelled with the domain's own name.
+func dbColumnDomainIdentity(dbCol types.DBColumn) (domainIdentity, bool) {
+	qualifier, spelled := domainColumnSpelling(dbCol)
+	if name := foldDomainPart(dbCol.DomainName); name != "" {
+		schema := foldDomainPart(dbCol.DomainSchema)
+		if schema == "" {
+			schema = foldDomainPart(qualifier)
+		}
+		return domainIdentity{schema: schema, name: name}, true
+	}
+	if name := foldDomainPart(spelled); name != "" {
+		return domainIdentity{schema: foldDomainPart(qualifier), name: name}, true
+	}
+	return domainIdentity{}, false
+}
+
+// domainColumnSpelling splits the server's own spelling of a domain column's
+// declared type, and returns an empty name for every column that has none --
+// including an array, whose spelling is a type.
+func domainColumnSpelling(dbCol types.DBColumn) (schema, name string) {
+	formatted := strings.TrimSpace(dbCol.FormattedType)
+	if formatted == "" || strings.HasSuffix(formatted, "[]") {
+		return "", ""
+	}
+	return splitQualifiedTypeName(formatted)
+}
+
+// desiredDomainIdentities indexes, by folded bare name, the domains the desired
 // schema declares. It is what lets the comparator see a domain on the side
 // where a type is only a string: goschema.Field carries a type name and nothing
 // that says the name belongs to a domain.
-func desiredDomainNames(generated *goschema.Database) map[string]struct{} {
+//
+// The index is by BARE name because that is how a column references a domain
+// declared in the same schema, and its value carries the declared schema so an
+// unqualified reference resolves to the domain it actually names rather than to
+// any domain of that name. A name two declarations share is left unresolved:
+// which one an unqualified reference means is a search-path question this
+// comparator has no answer for, and guessing one would be the miss again.
+//
+// semantics.DefaultSchema is the explicit default rule. A domain declared with
+// no schema of its own lives in the schema the connection reads, which is the
+// same schema the database side reports for it.
+func desiredDomainIdentities(
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) map[string]domainIdentity {
 	if generated == nil {
 		return nil
 	}
-	names := make(map[string]struct{}, len(generated.Domains))
+	identities := make(map[string]domainIdentity, len(generated.Domains))
+	ambiguous := make(map[string]struct{})
 	for _, domain := range generated.Domains {
-		if name := unquoteIdentifier(domain.Name); name != "" {
-			names[strings.ToLower(name)] = struct{}{}
+		name := foldDomainPart(domain.Name)
+		if name == "" {
+			continue
 		}
+		schema := foldDomainPart(domain.Schema)
+		if schema == "" {
+			schema = foldDomainPart(semantics.DefaultSchema)
+		}
+		if declared, seen := identities[name]; seen && declared.schema != schema {
+			ambiguous[name] = struct{}{}
+		}
+		identities[name] = domainIdentity{schema: schema, name: name}
 	}
-	return names
+	for name := range ambiguous {
+		identities[name] = domainIdentity{name: name}
+	}
+	return identities
 }
 
-// namesADesiredDomain reports whether a desired column type names one of those
-// domains. The qualifier is dropped before the lookup because a domain is
-// declared once and may be referenced either way.
-func namesADesiredDomain(genType string, desiredDomains map[string]struct{}) bool {
-	if len(desiredDomains) == 0 {
-		return false
-	}
-	_, bare := splitQualifiedTypeName(strings.TrimSpace(genType))
-	_, declared := desiredDomains[strings.ToLower(bare)]
-	return declared
-}
-
-// domainColumnTypeMatches reports whether the desired type names the same
-// domain as the spelling the database side carries.
+// desiredColumnDomainIdentity returns the identity a desired column type names,
+// and whether the desired schema declares that name as a domain.
 //
-// A database compared against itself arrives here with the desired side holding
-// FormattedType verbatim, because that is the field the database-to-schema
-// converter reads for a domain column.
-func domainColumnTypeMatches(genType, spelling string) bool {
-	return sameDomainSpelling(strings.TrimSpace(genType), spelling)
+// A qualified spelling says its own schema. An unqualified one is resolved
+// through the declaration when there is exactly one, and otherwise left with an
+// empty schema -- the search path decides it, and this comparator does not read
+// the search path.
+func desiredColumnDomainIdentity(
+	genType string,
+	desiredDomains map[string]domainIdentity,
+) (domainIdentity, bool) {
+	schema, bare := splitQualifiedTypeName(strings.TrimSpace(genType))
+	identity := domainIdentity{schema: foldDomainPart(schema), name: foldDomainPart(bare)}
+	if identity.name == "" {
+		return identity, false
+	}
+	declared, isDomain := desiredDomains[identity.name]
+	if isDomain && identity.schema == "" {
+		identity.schema = declared.schema
+	}
+	return identity, isDomain
 }
 
-// sameDomainSpelling reports whether two spellings name one domain. A qualified
-// spelling agrees with an unqualified one, because whether the server qualifies
-// a name is a property of the search path rather than of the domain; two
-// DIFFERENT qualifiers name two different domains and never agree.
-func sameDomainSpelling(left, right string) bool {
-	if left == "" || right == "" {
+// domainIdentitiesMatch reports whether two identities name one domain.
+//
+// Both halves must agree when both are known. An empty schema on either side is
+// a spelling that did not say and that nothing resolved, which the search path
+// decides at the server; it is matched by name so that a database compared
+// against itself stays synced. Two DIFFERENT schemas name two different
+// domains and never agree -- that is the half whose absence lost a column.
+func domainIdentitiesMatch(dbDomain, desiredDomain domainIdentity) bool {
+	if dbDomain.name == "" || desiredDomain.name == "" {
 		return false
 	}
-	if strings.EqualFold(left, right) {
-		return true
-	}
-	leftSchema, leftName := splitQualifiedTypeName(left)
-	rightSchema, rightName := splitQualifiedTypeName(right)
-	if !strings.EqualFold(leftName, rightName) {
+	if dbDomain.name != desiredDomain.name {
 		return false
 	}
-	return leftSchema == "" || rightSchema == ""
+	return dbDomain.schema == "" || desiredDomain.schema == "" ||
+		dbDomain.schema == desiredDomain.schema
 }
 
 // splitQualifiedTypeName splits schema.name and drops the quotes PostgreSQL

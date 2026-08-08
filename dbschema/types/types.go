@@ -126,6 +126,25 @@ type DBColumn struct {
 	// (stokaro/ptah#1138).
 	DomainName string `json:"domain_name,omitempty"`
 
+	// DomainSchema names the schema holding that domain, empty for every column
+	// whose declared type is not a domain.
+	//
+	// A domain's identity is (schema, name), and the name alone is not it:
+	// public.status and other.status are two different types with different
+	// CHECK constraints over possibly different base types. A comparator handed
+	// only "status" for both calls a column that must be converted unchanged,
+	// while the plan still drops the domain the desired schema no longer
+	// declares -- so DROP DOMAIN ... CASCADE takes the column and its data with
+	// nothing having converted it first (stokaro/ptah#1138).
+	//
+	// It is recorded raw, exactly as information_schema.columns.domain_schema
+	// reports it, rather than blanked for the schema being read: the domain a
+	// column is declared with may live in a schema the read never visits, and
+	// blanking it there erases the very distinction this field exists for.
+	// FormattedType cannot stand in, because the server writes a qualifier
+	// there only when the search path forces one.
+	DomainSchema string `json:"domain_schema,omitempty"`
+
 	// GeneratedExpression holds the generated-column expression. Nil for plain
 	// columns.
 	GeneratedExpression *string `json:"generated_expression,omitempty"`

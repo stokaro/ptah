@@ -330,6 +330,15 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			-- reported with data_type 'ARRAY' just like a plain array column, so
 			-- the distinction cannot be recovered downstream (stokaro/ptah#1138).
 			COALESCE(col.domain_name, '') AS domain_name,
+			-- And the schema that holds it, because the name is only half of a
+			-- domain's identity. public.status and other.status are two types;
+			-- a comparator given "status" for both reports no change for a
+			-- column that must be converted, and the DROP DOMAIN ... CASCADE
+			-- the plan keeps then takes the column. Read raw rather than
+			-- through outputSchema: the domain may live outside the schemas
+			-- being read, and blanking it there is exactly the erasure this
+			-- projection exists to prevent (stokaro/ptah#1138).
+			COALESCE(col.domain_schema, '') AS domain_schema,
 			is_nullable,
 			column_default,
 			character_maximum_length,
@@ -378,6 +387,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			&col.UDTName,
 			&col.FormattedType,
 			&col.DomainName,
+			&col.DomainSchema,
 			&col.IsNullable,
 			&col.ColumnDefault,
 			&col.CharacterMaxLength,

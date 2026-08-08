@@ -616,9 +616,24 @@ precision is reported in both directions.
 **A domain is compared by identity, never by its name's spelling.** A column
 whose declared type is a PostgreSQL domain agrees only with a desired type that
 names the same domain; a base type, a different domain, or any other spelling
-is a change and is planned as one. Whether the server qualifies the name is a
-property of the search path, so `alt.alt_dom` and `alt_dom` are one domain,
-while `other.alt_dom` is a different one.
+is a change and is planned as one.
+
+A domain's identity is its schema and its name together, and the name alone is
+not it: `public.status` and `other.status` are two types, with two `CHECK`
+constraints over possibly different base types. Both halves are read from
+`information_schema.columns` — `domain_name` and `domain_schema` — and both are
+compared. A desired type that qualifies its schema is held to that schema
+exactly. A desired type that does not is resolved through the domain the desired
+schema declares by that name, and when nothing declares it the name alone
+decides, because which domain an unqualified name reaches is a search-path
+question Ptah does not answer for the server. That is why `alt.alt_dom` and a
+bare `alt_dom` that no `CREATE DOMAIN` accounts for still name one domain, while
+`other.alt_dom` never does.
+
+Two declarations that share a bare name in different schemas leave an
+unqualified reference to the name as well: a change between them is reported
+only when one side spells its schema. That is a known gap rather than a claim —
+nothing is dropped in that shape, so the cost is drift and not data loss.
 
 The rule exists because normalization matches by substring, and a domain's name
 belongs to whoever wrote the schema rather than to any type vocabulary:

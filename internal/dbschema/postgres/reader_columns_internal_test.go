@@ -38,6 +38,11 @@ type pgColumnCatalog struct {
 	// domainName is information_schema.columns.domain_name: how the catalog
 	// records that the declared type was a domain. Empty for a plain column.
 	domainName string
+	// domainSchema is information_schema.columns.domain_schema, the other half
+	// of the domain's identity. public.status and other.status are two types,
+	// and a reader that drops this hands the comparator a name both of them
+	// answer to.
+	domainSchema string
 }
 
 // domainColumnCatalog is CREATE DOMAIN positive_int AS integer CHECK (VALUE > 0)
@@ -50,7 +55,18 @@ func domainColumnCatalog() pgColumnCatalog {
 		udtName:       "int4",
 		formattedType: "positive_int",
 		domainName:    "positive_int",
+		domainSchema:  "public",
 	}
+}
+
+// offSearchPathDomainColumnCatalog is the same column for a domain that lives
+// in another schema: format_type qualifies it because the search path does not
+// reach it, while information_schema reports the two halves separately.
+func offSearchPathDomainColumnCatalog() pgColumnCatalog {
+	catalog := domainColumnCatalog()
+	catalog.formattedType = "other.positive_int"
+	catalog.domainSchema = "other"
+	return catalog
 }
 
 // plainColumnCatalog is a plain integer column: same base type, no domain. It
@@ -62,6 +78,7 @@ func plainColumnCatalog() pgColumnCatalog {
 	catalog.columnName = "id"
 	catalog.formattedType = "integer"
 	catalog.domainName = ""
+	catalog.domainSchema = ""
 	return catalog
 }
 
@@ -79,7 +96,7 @@ func serveColumnQuery(catalog pgColumnCatalog, query string) (dbtest.QueryResult
 	if asksAboutDomains && catalog.domainName != "" {
 		formattedType = catalog.formattedType
 	}
-	readsDomainName, err := queryReadsDomainName(query)
+	readsDomainName, err := queryReadsCatalogColumn(query, "domain_name")
 	if err != nil {
 		return dbtest.QueryResult{}, err
 	}
@@ -87,17 +104,25 @@ func serveColumnQuery(catalog pgColumnCatalog, query string) (dbtest.QueryResult
 	if readsDomainName {
 		domainName = catalog.domainName
 	}
+	readsDomainSchema, err := queryReadsCatalogColumn(query, "domain_schema")
+	if err != nil {
+		return dbtest.QueryResult{}, err
+	}
+	domainSchema := ""
+	if readsDomainSchema {
+		domainSchema = catalog.domainSchema
+	}
 	return dbtest.QueryResult{
 		Columns: []string{
 			"table_name", "column_name", "data_type", "udt_name", "formatted_type",
-			"domain_name", "is_nullable", "column_default", "character_maximum_length",
+			"domain_name", "domain_schema", "is_nullable", "column_default", "character_maximum_length",
 			"numeric_precision", "numeric_scale", "ordinal_position",
 			"generated_kind", "generated_expression", "identity_kind",
 			"owned_sequence_name",
 		},
 		Rows: [][]driver.Value{{
 			catalog.tableName, catalog.columnName, catalog.dataType, catalog.udtName, formattedType,
-			domainName, "YES", nil, nil,
+			domainName, domainSchema, "YES", nil, nil,
 			nil, nil, int64(1),
 			"", "", "",
 			"",
@@ -121,24 +146,25 @@ func queryAsksAboutDomains(query string) (bool, error) {
 	return strings.Contains(projection, "domain_name"), nil
 }
 
-// queryReadsDomainName reports whether the domain_name projection reads
-// information_schema's domain_name column rather than answering a constant.
+// queryReadsCatalogColumn reports whether the projection aliased column reads
+// the information_schema column of that name rather than answering a constant.
 //
-// The alias is cut off before the expression is inspected, since the alias
-// itself is spelled domain_name: a projection of an empty SQL string literal
-// aliased domain_name names the column without reading it, and a comparator
-// handed that empty string cannot tell a domain column from a plain one of the
-// same base type.
-func queryReadsDomainName(query string) (bool, error) {
-	projection, ok := selectListItem(query, "domain_name", "FROM information_schema.columns")
+// The alias is cut off before the expression is inspected, since the alias is
+// spelled like the column: a projection of an empty SQL string literal aliased
+// domain_name names the column without reading it, and a comparator handed that
+// empty string cannot tell a domain column from a plain one of the same base
+// type -- nor, for domain_schema, one domain from another of the same name in a
+// different schema.
+func queryReadsCatalogColumn(query, column string) (bool, error) {
+	projection, ok := selectListItem(query, column, "FROM information_schema.columns")
 	if !ok {
-		return false, fmt.Errorf("query has no projection aliased domain_name:\n%s", query)
+		return false, fmt.Errorf("query has no projection aliased %s:\n%s", column, query)
 	}
 	expression := projection
 	if alias := strings.LastIndex(strings.ToLower(projection), " as "); alias >= 0 {
 		expression = projection[:alias]
 	}
-	return strings.Contains(expression, "domain_name"), nil
+	return strings.Contains(expression, column), nil
 }
 
 // TestReadColumnsForSchema_KeepsTheDeclaredDomainType guards the last of the
@@ -166,18 +192,33 @@ func TestReadColumnsForSchema_KeepsTheDeclaredDomainType(t *testing.T) {
 		// contains "text", so with this empty the name decides whether a
 		// column changed at all (stokaro/ptah#1138).
 		expectedDomainName string
+		// expectedDomainSchema is the other half of that fact. Without it a
+		// column of public.status and a desired other.status compare equal,
+		// the required ALTER COLUMN ... TYPE is never planned, and the
+		// DROP DOMAIN ... CASCADE the plan keeps takes the column and its data
+		// (stokaro/ptah#1138).
+		expectedDomainSchema string
 	}{
 		{
 			name:                  "domain column keeps the domain",
 			catalog:               domainColumnCatalog,
 			expectedFormattedType: "positive_int",
 			expectedDomainName:    "positive_int",
+			expectedDomainSchema:  "public",
+		},
+		{
+			name:                  "a domain off the search path keeps its schema",
+			catalog:               offSearchPathDomainColumnCatalog,
+			expectedFormattedType: "other.positive_int",
+			expectedDomainName:    "positive_int",
+			expectedDomainSchema:  "other",
 		},
 		{
 			name:                  "plain column is left alone",
 			catalog:               plainColumnCatalog,
 			expectedFormattedType: "",
 			expectedDomainName:    "",
+			expectedDomainSchema:  "",
 		},
 	}
 
@@ -193,6 +234,7 @@ func TestReadColumnsForSchema_KeepsTheDeclaredDomainType(t *testing.T) {
 			c.Assert(columnsByTable["t"], qt.HasLen, 1)
 			c.Assert(columnsByTable["t"][0].FormattedType, qt.Equals, test.expectedFormattedType)
 			c.Assert(columnsByTable["t"][0].DomainName, qt.Equals, test.expectedDomainName)
+			c.Assert(columnsByTable["t"][0].DomainSchema, qt.Equals, test.expectedDomainSchema)
 			// The base type stays available; the fix adds a spelling rather
 			// than replacing one.
 			c.Assert(columnsByTable["t"][0].DataType, qt.Equals, "integer")
