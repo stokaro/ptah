@@ -44,8 +44,35 @@ func nonEmptyNames(names []string) []string {
 	return filtered
 }
 
+// rawDBColumnType is the type spelling the comparator holds the desired schema
+// against.
+//
+// FormattedType comes first because it is the only field that survives an array
+// or a domain, and because the desired side reads the same field -- see
+// goSchemaFieldType in internal/convert/dbschematogo. The reader fills it from
+// the server's own format_type for exactly those two shapes and leaves it empty
+// for every other column, so this changes nothing else.
+//
+// With ColumnType and UDTName first the two sides read different fields for the
+// same column, and the comparator reported a change between a database and
+// ITSELF. Measured on PostgreSQL 17, `ptah-compat schema diff` with --from and
+// --to naming one database, seven phantom rows:
+//
+//	arrays.a_bit          type: _bit    -> bit(8)[]
+//	arrays.a_char         type: _bpchar -> character(5)[]
+//	arrays.a_cube         type: _cube   -> cube[]
+//	arrays.a_enum         type: _status -> status[]
+//	arrays.a_varchar      type: varchar -> character varying(100)[]
+//	arrays.a_varchar_dim  type: varchar -> character varying(100)[]
+//	scalars.c_tags        type: text    -> tags
+//
+// Every one of them proposed an ALTER COLUMN ... TYPE to the type the column
+// already had. None survive this (stokaro/ptah#1138).
 func rawDBColumnType(dbCol types.DBColumn) string {
-	rawType := strings.TrimSpace(dbCol.ColumnType)
+	rawType := strings.TrimSpace(dbCol.FormattedType)
+	if rawType == "" {
+		rawType = strings.TrimSpace(dbCol.ColumnType)
+	}
 	if rawType == "" && dbCol.UDTName != "" {
 		rawType = strings.TrimSpace(dbCol.UDTName)
 	}

@@ -152,6 +152,48 @@ community binary applies on a schema-bound URL. A pattern too deep for any
 scope, such as `*.*.*.*`, is refused before a database is contacted, so its
 message carries no schema prefix.
 
+### How an inspected column type is written
+
+A column read out of a database carries no record of how anyone spelled it, so
+inspection decides. A type the Atlas HCL schema models is written bare and
+lower case, and every other type is written as a `sql("...")` call carrying the
+server's own spelling:
+
+```hcl
+column "price"   { type = numeric(10,2) }
+column "prices"  { type = sql("numeric(10,2)[]") }
+column "kind"    { type = sql("cube") }
+```
+
+The split is not cosmetic. The pinned Atlas community binary refuses a type it
+does not model in every spelling except the call — `type = USER_DEFINED` comes
+back as `Unknown column.type`, and `type = "numeric(10,2)[]"` as
+`set field "type": unexpected type string` — so a bare or quoted unmodeled type
+produces a document that binary cannot read at all. Which names are modeled is
+measured against it per dialect by the Atlas CE Oracle job rather than copied
+from a table, and the list errs short: wrapping a type that did not need it
+round-trips, while leaving one bare that did need it does not.
+
+**Arrays always take the call.** No array is one HCL type expression, whatever
+its element type is, so `text[]`, `numeric(10,2)[]` and
+`timestamp(3) with time zone[]` are all written as `sql(...)`. PostgreSQL drops
+an array's declared dimensions itself — `varchar(100)[10][]` is stored and
+reported as `character varying(100)[]` — so the inspected spelling is the
+server's, not the author's.
+
+**A domain is named, not resolved.** A column typed by a domain is written with
+the domain's own name, including when the domain is built on a type Atlas does
+not model:
+
+```sql
+CREATE DOMAIN point3d AS cube CHECK (cube_dim(VALUE) = 3);
+CREATE TABLE scalars (c_point3d point3d NOT NULL);
+```
+
+inspects as `type = sql("point3d")`. Writing the base type there would apply
+back as a bare `cube` column and take the domain's `CHECK` with it, so the
+domain name is what survives the round trip (stokaro/ptah#1138).
+
 ### Blocks the compatibility surface leaves out by default
 
 `ptah-compat schema inspect` omits three top-level HCL block types on
