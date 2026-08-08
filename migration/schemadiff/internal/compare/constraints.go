@@ -150,17 +150,14 @@ func ConstraintsWithSemantics(
 		}
 	}
 
-	// Create map of existing database constraints, filtering out field-level constraints
-	dbConstraints := make(map[tableMemberKey]types.DBConstraint)
-	for _, constraint := range database.Constraints {
-		// Skip field-level constraints that are represented in field definitions
-		if isFieldLevelConstraint(constraint, generated, synthesizedFKKeys, semantics) {
-			continue
-		}
-
-		key := newTableMemberKey(constraint.QualifiedTableName(), constraint.Name, semantics)
-		dbConstraints[key] = constraint
-	}
+	dbConstraints := collectDatabaseConstraints(
+		generated,
+		database,
+		genConstraints,
+		synthesizedFKKeys,
+		dialect,
+		semantics,
+	)
 
 	// Find added constraints (constraints in generated schema but not in database)
 	for constraintKey, genConstraint := range genConstraints {
@@ -211,6 +208,47 @@ func ConstraintsWithSemantics(
 		}
 		return a.Name < b.Name
 	})
+}
+
+// collectDatabaseConstraints keys the database's constraints by table and name,
+// leaving out the ones another representation of the same object already owns.
+//
+// Two exclusions, and they are different in kind. A field-level constraint is
+// carried by the column it belongs to, so the column's lifecycle creates and
+// drops it. A UNIQUE constraint the desired state names as an *index* is the
+// same catalog object as that index, so index comparison creates and drops it;
+// see [uniqueConstraintOwnedByDeclaredIndex]. A desired state that names the
+// object as a constraint keeps it here, which is why the hand-off asks about
+// genConstraints first: a schema that declares both spellings of one name has
+// its constraint honored rather than being handed to a pool that would then
+// plan an ADD CONSTRAINT on top of the existing index.
+func collectDatabaseConstraints(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	genConstraints map[tableMemberKey]goschema.Constraint,
+	synthesizedFKKeys map[tableMemberKey]struct{},
+	dialect string,
+	semantics identifier.Semantics,
+) map[tableMemberKey]types.DBConstraint {
+	declaredIndexes := generatedIndexIdentities(generated, semantics)
+	dbConstraints := make(map[tableMemberKey]types.DBConstraint, len(database.Constraints))
+	for _, constraint := range database.Constraints {
+		if isFieldLevelConstraint(constraint, generated, synthesizedFKKeys, semantics) {
+			continue
+		}
+		key := newTableMemberKey(constraint.QualifiedTableName(), constraint.Name, semantics)
+		if _, declaredAsConstraint := genConstraints[key]; !declaredAsConstraint &&
+			uniqueConstraintOwnedByDeclaredIndex(
+				constraint,
+				dialect,
+				declaredIndexes,
+				semantics,
+			) {
+			continue
+		}
+		dbConstraints[key] = constraint
+	}
+	return dbConstraints
 }
 
 // appendConstraintRemoval records the table-qualified removal info for a
