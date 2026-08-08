@@ -339,6 +339,10 @@ func ViewDefinitionsWithDialect(genView goschema.View, dbView types.DBView, dial
 	viewDiff := difftypes.ViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
+		// The database body is what the view has before this diff is applied.
+		// The planner needs it to decide whether CREATE OR REPLACE VIEW is legal
+		// for the change, which is not derivable from the target body alone.
+		PreviousBody: strings.TrimSpace(dbView.Body),
 	}
 
 	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {

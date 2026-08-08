@@ -360,8 +360,126 @@ capability preset disables the keyword.
 4. **Version Control**: Commit migration files to version control
 5. **Sequential Application**: Apply migrations in the correct order based on timestamps
 
+## How the reverse plan handles each category
+
+A DOWN migration is planned from the UP diff with the added and removed
+collections exchanged and the pre-change database schema supplied as the target.
+Three rules decide what happens to each field of the diff, and every field has
+exactly one of them:
+
+- **Added and removed are exchanged** where both sides carry the same kind of
+  value and the reverse operation is the inverse of the forward one: tables,
+  enums, indexes, extensions, functions, sequences, domains, composite types,
+  ranges, views, materialized views, triggers, RLS policies, RLS enablement,
+  roles, grants, grant options and constraints. A created view is dropped on
+  rollback; a dropped view is recreated from the pre-change schema.
+- **Modified entries are carried across, not exchanged.** A modification is not
+  the inverse of itself. The planner re-renders a modified object from the schema
+  it is given, and the DOWN direction is given the pre-change database schema, so
+  carrying the entry across is what restores the prior definition. The recorded
+  `old -> new` description is flipped so the diff reads truthfully in the DOWN
+  direction, and a view's recorded prior body is exchanged for the UP
+  migration's target body, because that is the state the database is in when the
+  rollback runs.
+- **Derived entries are rebuilt** from the pre-change database rather than
+  swapped, because a rollback must restore the prior body rather than the new
+  one. This covers the table-qualified constraint collections. The recorded
+  catalog identifier semantics are copied rather than reversed: they describe the
+  catalog the diff was measured against, which has no direction.
+
+No category is dropped from the rollback. Two tests hold that claim up, and they
+check different things. A reflection test over `SchemaDiff` fails when a field is
+added and the reverse builder does not read it, because adding a field to a
+struct literal is silent about the fields the literal omits. A second test
+renders the rollback and requires the modified view, materialized view and
+trigger to appear in it: reaching the reversed diff is not the same as reaching
+the file, because a modified object is re-rendered from the pre-change schema by
+a name lookup, and a lookup that misses renders nothing at all.
+
+### View modifications choose per view, and the direction settles the rest
+
+PostgreSQL accepts `CREATE OR REPLACE VIEW` only when the new query produces the
+old column list with columns appended to the end. Measured on PostgreSQL 17.10
+against a view over `(id bigint, email text, age integer)`:
+
+| change to the view | PostgreSQL |
+| --- | --- |
+| append a trailing column | accepted |
+| drop the appended column | `ERROR: cannot drop columns from view` |
+| rename a column | `ERROR: cannot change name of view column "id" to "uid"` |
+| change a column type | `ERROR: cannot change data type of view column "id"` |
+| change only the predicate | accepted |
+
+A projected column's type is fixed by the relation it reads, which the select
+list does not say, so the relations are compared as well: swapping
+`SELECT id FROM b` for `SELECT id FROM a` keeps the column name and still fails
+with `cannot change data type of view column "id"`.
+
+That comparison folds letter case only outside quoted identifiers. PostgreSQL
+folds an unquoted identifier to lower case and keeps a quoted one exactly, so
+`"Foo"` and `"foo"` are two relations; folding them together answered "the
+relations did not change" and produced a `CREATE OR REPLACE VIEW` PostgreSQL
+17.10 refuses with `cannot change data type of view column "id" from bigint to
+text` — `psql -v ON_ERROR_STOP=1 -f` exits 3. The
+conservative side of the same rule is that `"foo"` and `foo`, which *are* the
+same relation, compare as changed and cost a drop and recreate. Telling those
+apart needs a real parse of the `FROM` clause, because `"join"` is a relation
+where `join` is a keyword.
+
+Both statements cost something. The replace can be refused at execution time. The
+drop always applies and carries `CASCADE`, which takes dependent views and
+materialized views with it along with the privileges granted on the view. So Ptah
+decides per view:
+
+| what Ptah can prove | UP | DOWN |
+| --- | --- | --- |
+| the new column list appends to the old one, over the same relations | replace | replace |
+| the column list moved, or the relations changed | drop and recreate | drop and recreate |
+| neither — a `WITH` prefix, a `SELECT *` projection, a top-level set operation, or no prior body at all | replace | drop and recreate |
+
+The last row is the only place direction enters. Going forward, an undecidable
+body is usually a predicate-only edit where the column list never moves and the
+replace is accepted; if it is not, PostgreSQL refuses the statement and the
+migration stops having destroyed nothing. A rollback cannot be answered that way,
+because it is already running during the incident it was meant to end, so it
+takes the statement that always applies.
+
+Wherever the drop path runs, the plan rebuilds every view and materialized view
+the `CASCADE` takes, transitively, in dependency order. What it cannot rebuild is
+anything Ptah does not declare.
+
+That rebuild list is read off the declared bodies, and it reads their **code**:
+a name spelled inside a string literal, a dollar-quoted string, a line comment
+or a block comment refers to nothing and does not join the list. The distinction
+is not cosmetic, because every name on the list is answered with a statement —
+a materialized view is dropped with `CASCADE` and recreated. Measured on
+PostgreSQL 17.10, a materialized view whose body is
+`SELECT 'base_view' AS label, count(*) AS total FROM accounts` was dropped when
+`base_view` was modified, and the drop took a hand-made dependent view, a unique
+index on the materialized view and the `SELECT` granted on it; none of the three
+is declared, so nothing put them back.
+
 ## Limitations
 
 - **Data Loss Warning**: DOWN migrations may result in data loss (e.g., dropping columns/tables)
 - **Complex Changes**: Some complex schema changes may require manual intervention
 - **Database-Specific Features**: Some database-specific features may not be fully supported in reverse migrations
+- **Materialized View Contents**: A rollback that recreates a materialized view
+  recreates its definition, and PostgreSQL populates it as part of the `CREATE`
+  — Ptah does not emit `WITH NO DATA`. The contents are therefore recomputed
+  from the base tables as they stand at rollback time, not restored: a snapshot
+  that had deliberately not been refreshed is silently refreshed, and the
+  rollback pays for the whole query. Anything attached to the old materialized
+  view rather than to its definition — its indexes, and the privileges granted
+  on it — is gone with the drop.
+- **Dependents of a Recreated View**: `DROP ... CASCADE` takes dependent objects
+  with it. Every view and materialized view Ptah declares is rebuilt after the
+  view it reads, but an object Ptah does not declare — a hand-made view, a rule,
+  or a privilege granted on the view itself — is not, and is lost with the drop.
+- **Views Read Under Two Names**: A modified object is found in the pre-change
+  schema by name, and the two sides do not always spell it the same way: the diff
+  records the name the Go schema uses while the introspected schema qualifies it
+  with the schema or database it was read from. The lookup accepts either
+  spelling, but only where one candidate carries the unqualified name. Two views
+  of the same name in different schemas are ambiguous, and the modification is
+  skipped rather than guessed at.
