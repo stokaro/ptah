@@ -29,6 +29,7 @@ const (
 	exportFromFlag           = "from"
 	exportToFlag             = "to"
 	exportRootDirFlag        = "root-dir"
+	exportSchemaFileFlag     = "schema-file"
 	exportOutFlag            = "out"
 	exportIncludeTablesFlag  = "include-tables"
 	exportExcludeTablesFlag  = "exclude-tables"
@@ -37,11 +38,17 @@ const (
 	cleanupDryRunFlag        = "cleanup-dry-run"
 	cleanupDiffFlag          = "cleanup-diff"
 	exportFormatGo           = "go"
+	exportFormatYAML         = "yaml"
+	exportFormatSQL          = "sql"
 	exportFormatHCL          = "hcl"
 	exportFormatLegacyHCL    = "atlas-hcl"
 	exportFormatOpenAPI      = "openapi-v3"
 	exportFormatGraphQL      = "graphql"
 	exportFormatProtobuf     = "protobuf"
+
+	// exportSourceDB is named so --from db is refused with the reason and the
+	// command that does read a live database, rather than with a bare list.
+	exportSourceDB = "db"
 
 	protoPackageFlag              = "proto-package"
 	protoGoPackageFlag            = "go-package"
@@ -148,6 +155,7 @@ func newSchemaExportCommand() *cobra.Command {
 	var from string
 	var to string
 	var rootDir string
+	var schemaFiles []string
 	var outPath string
 	var includeTables []string
 	var excludeTables []string
@@ -169,7 +177,7 @@ func newSchemaExportCommand() *cobra.Command {
 		Short: "Export one schema source format to another",
 		Long: `Export a Ptah schema to another format.
 
-Convert Go annotations to an HCL schema, an OpenAPI 3.0 component schema, a
+Convert a desired schema to an HCL schema, an OpenAPI 3.0 component schema, a
 GraphQL SDL, or a Protobuf definition:
 
   ptah schema export --to hcl         --root-dir ./models --out schema.hcl
@@ -177,6 +185,17 @@ GraphQL SDL, or a Protobuf definition:
   ptah schema export --to graphql     --root-dir ./models --out schema.graphql
   ptah schema export --to protobuf    --root-dir ./models \
     --out ./proto/acme/inventory/v1/schema.proto --proto-package acme.inventory.v1
+
+The source is Go annotations under --root-dir by default. The openapi-v3,
+graphql, and protobuf targets also read a YAML, HCL, or SQL schema file, which
+--schema-file names as "ptah schema render" does:
+
+  ptah schema export --to protobuf --schema-file schema.yaml \
+    --out ./proto/acme/inventory/v1/schema.proto --proto-package acme.inventory.v1
+
+--from declares that file's format and is checked against its extension; leave
+it unset to take the format from the extension. The hcl target reads Go
+annotations only, because it rewrites the files it reads.
 
 For openapi-v3 and graphql, --out is optional; the schema is written to stdout
 when omitted. Use --include-tables / --exclude-tables to select which tables are
@@ -195,8 +214,11 @@ part of the compatibility state, so all of them must be committed together.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runExport(cmd, exportOptions{
 				from:                      from,
+				fromExplicit:              cmd.Flags().Changed(exportFromFlag),
 				to:                        to,
 				rootDir:                   rootDir,
+				rootDirExplicit:           cmd.Flags().Changed(exportRootDirFlag),
+				schemaFiles:               schemaFiles,
 				outPath:                   outPath,
 				includeTables:             includeTables,
 				excludeTables:             excludeTables,
@@ -217,9 +239,13 @@ part of the compatibility state, so all of them must be committed together.`,
 	}
 
 	flags := cmd.Flags()
-	flags.StringVar(&from, exportFromFlag, exportFormatGo, "Source schema format: go")
+	flags.StringVar(&from, exportFromFlag, exportFormatGo, "Source schema format: go, yaml, hcl, or sql")
 	flags.StringVar(&to, exportToFlag, exportFormatHCL, "Target schema format: hcl, openapi-v3, graphql, or protobuf")
 	flags.StringVar(&rootDir, exportRootDirFlag, ".", "Root directory to scan for Go annotations")
+	flags.StringArrayVar(&schemaFiles, exportSchemaFileFlag, nil,
+		"YAML, HCL, or SQL schema file to export instead of Go annotations (repeatable; "+
+			"merged with --root-dir into one composite schema when both are given; "+
+			"not supported for --to hcl)")
 	flags.StringVar(&outPath, exportOutFlag, "", "Output file (optional for openapi-v3/graphql; required for protobuf)")
 	flags.StringSliceVar(&includeTables, exportIncludeTablesFlag, nil, "Only export these tables (comma-separated); applies to openapi-v3/graphql/protobuf")
 	flags.StringSliceVar(&excludeTables, exportExcludeTablesFlag, nil, "Exclude these tables (comma-separated); applies to openapi-v3/graphql/protobuf")
@@ -246,9 +272,18 @@ part of the compatibility state, so all of them must be committed together.`,
 }
 
 type exportOptions struct {
-	from               string
-	to                 string
-	rootDir            string
+	from string
+	// fromExplicit records whether --from was passed. The flag defaults to "go",
+	// so without this an explicit "--from go" and an unset --from are the same
+	// value, and --schema-file could not infer its format from the extension
+	// without contradicting the default.
+	fromExplicit bool
+	to           string
+	rootDir      string
+	// rootDirExplicit records whether --root-dir was passed, so its "." default
+	// is not merged into a schema-file export as a second source.
+	rootDirExplicit    bool
+	schemaFiles        []string
 	outPath            string
 	includeTables      []string
 	excludeTables      []string
@@ -286,21 +321,17 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 		fmt.Fprintf(cmd.ErrOrStderr(),
 			"warning: --%s is ignored for --%s %s\n", exportTitleFlag, exportToFlag, exportFormatProtobuf)
 	}
-	rootDir, err := pathguard.ResolveCLIPath(opts.rootDir)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("invalid root directory: %w", err))
-	}
-	if err := cmdutil.StatDir(rootDir); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-
 	if opts.to == exportFormatHCL {
+		rootDir, err := exportGoRootDir(opts)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 		return runHCLExport(cmd, opts, rootDir)
 	}
 
-	db, err := goschema.ParseDir(rootDir)
+	db, err := loadExportSchema(cmd, opts)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("parse Go annotations: %w", err))
+		return cmdutil.Fail(cmd, err)
 	}
 	switch opts.to {
 	case exportFormatOpenAPI:
@@ -425,8 +456,8 @@ func normalizeExportFormat(format string) string {
 }
 
 func validateExportOptions(opts exportOptions) error {
-	if opts.from != exportFormatGo {
-		return fmt.Errorf("unsupported --from %q: expected %s", opts.from, exportFormatGo)
+	if err := validateExportSource(opts); err != nil {
+		return err
 	}
 	switch opts.to {
 	case exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf:

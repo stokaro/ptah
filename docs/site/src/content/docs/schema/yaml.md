@@ -48,8 +48,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS "accounts_email_key" ON "accounts" ("email");
 
 The rendered SQL proves Ptah understood the desired schema. `--schema-file` is
 accepted wherever Ptah needs a desired schema: `ptah schema render`,
-`ptah schema compare`, `ptah schema drift`, and the migration commands
-(`ptah migrations plan` / `ptah migrations generate`).
+`ptah schema compare`, `ptah schema drift`, the migration commands
+(`ptah migrations plan` / `ptah migrations generate`), and the API targets of
+[`ptah schema export`](../export/#sources).
 
 ## Use it for migrations
 
