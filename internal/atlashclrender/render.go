@@ -182,6 +182,11 @@ type renderer struct {
 	// because a document with no roles still answers every lookup. See
 	// [renderer.documentDeclaresRole].
 	roleBlocks map[string]bool
+	// relationBlocks caches, per block label this render will write, every
+	// relation block carrying it. Nil means not yet built, which is
+	// distinguishable from "built and empty" because a document with no
+	// relations still answers every lookup. See [renderer.documentDeclares].
+	relationBlocks map[string][]declaredBlock
 	// schemaRefs collects the name of every `schema.<name>` reference the body
 	// wrote, filled by [renderer.schemaRef] as the body is rendered and read
 	// afterwards by [renderer.referencedSchemas].
@@ -210,6 +215,91 @@ func (r *renderer) documentDeclaresRole(name string) bool {
 		r.roleBlocks = blocks
 	}
 	return r.roleBlocks[name]
+}
+
+// declaredBlock is one relation block this render writes, described the way a
+// reference to it has to be spelled: the block KIND the traversal names, and
+// the schema the block belongs to.
+type declaredBlock struct {
+	kind   string
+	schema string
+}
+
+// documentDeclares reports the single relation block this document writes under
+// this label, when there is exactly one.
+//
+// A reference in HCL names a BLOCK, and the block TYPE is the first word of the
+// traversal, so `table.v` is "the v attribute of the table object" and resolves
+// to nothing when the document declares `view "v"`. The pinned Atlas community
+// binary v1.3.0 refuses the whole file over it. Measured on PostgreSQL 17
+// against the document `ptah-compat schema inspect` writes for
+//
+//	CREATE TABLE t (id integer PRIMARY KEY);
+//	CREATE VIEW v AS SELECT id FROM t;
+//
+// with one operand varied and nothing else touched:
+//
+//	for = table.v   exit 1  Unsupported attribute; This object does not have
+//	                        an attribute named "v"
+//	for = view.v    exit 0
+//	for = "v"       exit 0
+//
+// PostgreSQL reports the owner's implicit grants on a view exactly as it does
+// on a table, so that is the DEFAULT invocation on any database carrying a
+// view, with no selection involved (stokaro/ptah#1234).
+//
+// The set is what this render WRITES, not what the IR holds: a view with no
+// body is warned about and skipped, and a sequence the Atlas-compatible surface
+// omits is not there to be named either -- both asked through the same
+// predicate the render itself uses, so the answer cannot drift from the
+// document.
+//
+// "Exactly one" is what makes the kind knowable. Relations share one namespace
+// per schema in every engine Ptah renders for, so two blocks under one label
+// are two schemas' worth, and which of them an unqualified reference means is
+// exactly the question [renderer.documentResolvesTableRef] refuses to guess.
+// The caller falls back to the spelling its own position implies.
+func (r *renderer) documentDeclares(label string) (declaredBlock, bool) {
+	if r.relationBlocks == nil {
+		r.relationBlocks = r.declaredRelationBlocks()
+	}
+	blocks := r.relationBlocks[label]
+	if len(blocks) != 1 {
+		return declaredBlock{}, false
+	}
+	return blocks[0], true
+}
+
+func (r *renderer) declaredRelationBlocks() map[string][]declaredBlock {
+	blocks := make(map[string][]declaredBlock, len(r.db.Tables)+len(r.db.Views)+len(r.db.MaterializedViews))
+	declare := func(kind, label, schema string) {
+		blocks[label] = append(blocks[label], declaredBlock{kind: kind, schema: r.schemaFor(schema)})
+	}
+	for _, table := range r.db.Tables {
+		declare(blockTable, table.Name, table.Schema)
+	}
+	for _, view := range r.db.Views {
+		if view.Body == "" {
+			continue
+		}
+		declare(blockView, objectNameFromQualified(view.Name), schemaNameFromQualified(view.Name))
+	}
+	for _, view := range r.db.MaterializedViews {
+		if view.Body == "" {
+			continue
+		}
+		declare(blockMaterialized, objectNameFromQualified(view.Name), schemaNameFromQualified(view.Name))
+	}
+	for _, sequence := range r.db.Sequences {
+		if r.omitsRefusedBlock(blockSequence, sequence.Name) {
+			continue
+		}
+		// The label [renderer.renderSequences] writes is the canonical name, so
+		// that is the label a reference has to match.
+		sequence.Canonicalize()
+		declare(blockSequence, sequence.Name, sequence.Schema)
+	}
+	return blocks
 }
 
 // documentResolvesTableRef reports whether an unqualified `table.<name>`

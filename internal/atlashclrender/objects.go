@@ -384,7 +384,13 @@ func (r *renderer) renderTrigger(trigger goschema.Trigger) {
 		return
 	}
 	r.linef(`trigger %s {`, quote(trigger.Name))
-	r.rawAttr(1, "on", r.tableRef(trigger.Table))
+	// A trigger's target is a relation, not a table: `INSTEAD OF` triggers only
+	// exist on views, and Trigger.Table is where the reader puts one. Measured
+	// on PostgreSQL 17, `CREATE TRIGGER v_ins INSTEAD OF INSERT ON v` inspected
+	// whole and put to the pinned Atlas community binary v1.3.0,
+	// `on = table.v` is refused with `This object does not have an attribute
+	// named "v"` and `on = view.v` is read at exit 0.
+	r.rawAttr(1, "on", r.relationRef(blockTable, trigger.Table))
 	r.linef("  %s {", timing)
 	r.rawAttr(2, event, "true")
 	r.line("  }")
@@ -689,20 +695,61 @@ func grantTargetName(grant goschema.Grant) string {
 	return cmp.Or(grant.OnSchema, grant.OnTable, grant.OnSequence)
 }
 
+// grantTarget renders the object a `permission` block is about.
+//
+// The IR names the object; the document decides how to spell it. A grant on a
+// view arrives in OnTable -- PostgreSQL reports the owner's implicit privileges
+// on a view exactly as it does on a table, and the reader keeps that shape --
+// so the field it came in on cannot be what picks the block type, or every
+// database carrying a view writes `for = table.<view>` against a document
+// declaring `view "<view>"`. That is [renderer.relationRef]'s question, and the
+// field is only the fallback for a name the document does not declare at all.
 func (r *renderer) grantTarget(grant goschema.Grant) string {
 	if grant.OnSchema != "" {
 		return r.schemaRef(grant.OnSchema)
 	}
 	if grant.OnTable != "" {
-		return r.tableRef(grant.OnTable)
+		return r.relationRef(blockTable, grant.OnTable)
 	}
 	if grant.OnSequence != "" {
-		return objectRef("sequence", grant.OnSequence)
+		return r.relationRef(blockSequence, grant.OnSequence)
 	}
 	return ""
 }
 
-// tableRef renders a reference to a table block.
+// relationRef renders a reference from a position that can name any relation:
+// a `permission` target and a `trigger`'s `on`, both of which reach a view on
+// an ordinary PostgreSQL database.
+//
+// The block type comes from [renderer.documentDeclares] -- from what this
+// document writes -- rather than from the IR field the name arrived on or from
+// the position doing the referring. fallback is the spelling for a name the
+// document declares nothing under, or declares twice: it is the position's own
+// guess, which is all there is left, and it is what Ptah wrote for every
+// reference before this rule existed.
+//
+// A reference the document CAN resolve loses the schema for the same reason
+// [renderer.tableRef] drops it -- the block is named by its labels alone -- and
+// keeps it otherwise, because there would be no block to read it back off.
+func (r *renderer) relationRef(fallback, name string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return objectRef(fallback, name)
+	}
+	block, declared := r.documentDeclares(ref.Name)
+	if !declared || (ref.Qualified && block.schema != ref.Schema) {
+		return objectRef(fallback, name)
+	}
+	return block.kind + objectRefPart(ref.Name)
+}
+
+// tableRef renders a reference from a position that can only be about a table:
+// a foreign key's `ref_columns`, a row-level security `policy`'s `on`, and a
+// `data` block's `table`. No engine Ptah renders for lets a foreign key or an
+// RLS policy name a view, and a `data` block is Ptah's own construct for seeding
+// rows, so there is no second block type for these to resolve to and the kind is
+// not a question. A position that CAN name one goes through
+// [renderer.relationRef] instead.
 //
 // A reference in HCL names a BLOCK, and a block is named by its labels. Ptah
 // writes a table block with one label, so `table.<schema>.<name>` does not read
@@ -739,21 +786,23 @@ func (r *renderer) grantTarget(grant goschema.Grant) string {
 func (r *renderer) tableRef(name string) string {
 	ref, ok := tableref.Parse(name)
 	if !ok || !ref.Qualified || !r.documentResolvesTableRef(ref.Schema, ref.Name) {
-		return objectRef("table", name)
+		return objectRef(blockTable, name)
 	}
-	return "table" + objectRefPart(ref.Name)
+	return blockTable + objectRefPart(ref.Name)
 }
 
-// objectRef renders a reference to a block, with whatever schema the name
-// carries.
+// objectRef renders a reference to a block of a named kind, with whatever
+// schema the name carries.
 //
-// Only [renderer.tableRef] shortens a reference, and only table positions call
-// it, so a sequence target keeps `sequence.<schema>.<name>`. That is a
-// structural guarantee rather than a policy: a permission naming a sequence
-// keeps that sequence block in the document, and the pinned binary refuses any
-// PostgreSQL file declaring one with `postgres: sequences are not supported by
-// this version` before any reference is resolved, so nothing measured says
-// which spelling it would take there.
+// It is the fallback both [renderer.tableRef] and [renderer.relationRef] reach
+// for, and the only thing that writes a two-part reference. A grant on a
+// sequence therefore keeps `sequence.<schema>.<name>` where the schema is
+// spelled out and the document declares no block to read it back off. Nothing
+// measured says which spelling the pinned binary would take there in any case:
+// it refuses any PostgreSQL file declaring a sequence block at all, with
+// `postgres: sequences are not supported by this version`, so both
+// `for = sequence.order_seq` and `for = "order_seq"` reach that same message
+// while the block is kept -- measured on PostgreSQL 17.
 func objectRef(kind, name string) string {
 	if name == "" {
 		return quote("")

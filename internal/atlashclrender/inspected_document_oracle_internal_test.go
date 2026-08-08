@@ -191,6 +191,39 @@ var inspectedOracleDocuments = []struct {
 		},
 	},
 	{
+		// What `ptah-compat schema inspect` renders for a database carrying a
+		// VIEW, with no selection and no hand-editing: PostgreSQL reports the
+		// owner's implicit privileges on a view exactly as it does on a table,
+		// so the grant arrives in Grant.OnTable and the target used to be
+		// written `for = table.v` against a document declaring `view "v"`.
+		//
+		// This is the reachable instance the other three miss. They are all
+		// documents a filter left behind; this one is the DEFAULT invocation on
+		// an ordinary database.
+		name: "a table and a view with grants on both",
+		db:   inspectedOracleViewDocument,
+		wantContains: func(_ string) []string {
+			return []string{"view \"v\" {\n", "  for = table.t\n", "  for = view.v\n"}
+		},
+		unreadable: func(_ string) []inspectedOracleMutation {
+			return []inspectedOracleMutation{
+				{
+					// The whole refutation of the first version of this fix, as
+					// one substitution: the block type is part of the spelling,
+					// so naming a view under `table` resolves to nothing. The
+					// document declares `table "t"`, so `table` is an object and
+					// the missing label is reported as a missing attribute of
+					// it -- the same message the sibling rows use, for the same
+					// reason.
+					name:        "a view named as a table",
+					from:        "for = view.v",
+					to:          "for = table.v",
+					wantMessage: `This object does not have an attribute named "v"`,
+				},
+			}
+		},
+	},
+	{
 		name: "nothing but the grant every database has",
 		db:   inspectedOracleGrantOnlyDocument,
 		wantContains: func(schema string) []string {
@@ -234,6 +267,22 @@ func inspectedOracleTableDocument(schema string) *goschema.Database {
 			{Role: "reporting", OnTable: schema + ".t", Privileges: []string{"SELECT"}},
 		},
 	}
+}
+
+// inspectedOracleViewDocument adds a view, and a grant on it, to the same IR.
+//
+// The grant is in OnTable and unqualified, which is what a read produces: the
+// catalog reports privileges on a view through the same table-grant path, and
+// the reader drops the schema of everything in the read's own schema. So the
+// renderer cannot learn the block type from the IR field or from the name -- it
+// has to read it off the block the document declares.
+func inspectedOracleViewDocument(schema string) *goschema.Database {
+	db := inspectedOracleTableDocument(schema)
+	db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
+	db.Grants = append(db.Grants, goschema.Grant{
+		Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
+	})
+	return db
 }
 
 // inspectedOracleGrantOnlyDocument is what an empty PostgreSQL database

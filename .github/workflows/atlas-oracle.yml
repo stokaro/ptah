@@ -202,11 +202,17 @@ jobs:
           # document unreadable, so both halves of each pair are named. The
           # grant-only document is the one no prediction reaches: it is what an
           # EMPTY database inspects to, with no table anywhere to declare a
-          # schema from.
+          # schema from. The table-and-view document is the one no FILTER
+          # reaches: it is the default invocation on any database carrying a
+          # view, and its pair is what says a permission target names the block
+          # type the document declares rather than the field the name arrived on.
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_with_grants/rendered' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_with_grants/unreadable/PUBLIC_written_bare' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_whose_roles_were_excluded/rendered' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_whose_roles_were_excluded/unreadable/a_grantee_reference_with_no_role_block_anywhere' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_and_a_view_with_grants_on_both/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_and_a_view_with_grants_on_both/unreadable/a_view_named_as_a_table' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/sqlite/a_table_and_a_view_with_grants_on_both/rendered' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/nothing_but_the_grant_every_database_has/rendered' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/nothing_but_the_grant_every_database_has/unreadable/a_schema_reference_with_no_block' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/sqlite/nothing_but_the_grant_every_database_has/rendered' "$RUNNER_TEMP/atlas-column-type-run"

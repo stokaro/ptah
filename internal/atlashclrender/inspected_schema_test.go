@@ -349,6 +349,370 @@ func TestRenderedPermissionRoundTrips(t *testing.T) {
 	}
 }
 
+// TestRenderNamesTheBlockTypeTheDocumentDeclares pins that a reference to a
+// relation spells the block type the same document writes for it
+// (stokaro/ptah#1234).
+//
+// A reference in HCL names a BLOCK, and the block type is the first word of the
+// traversal, so `table.v` reads as "the v attribute of the table object" and
+// resolves to nothing where the document declares `view "v"`. Measured on the
+// pinned Atlas community binary v1.3.0 against the document
+// `ptah-compat schema inspect` writes for
+//
+//	CREATE TABLE t (id integer PRIMARY KEY);
+//	CREATE VIEW v AS SELECT id FROM t;
+//
+// one operand varied and nothing else touched:
+//
+//	for = table.v   exit 1  Unsupported attribute; This object does not have
+//	                        an attribute named "v"
+//	for = view.v    exit 0
+//	for = "v"       exit 0
+//
+// and on a document declaring `materialized "mv"`, the same pair:
+//
+//	for = table.mv         exit 1  ... an attribute named "mv"
+//	for = materialized.mv  exit 0
+//
+// That is the DEFAULT invocation on any database carrying a view, with no
+// selection involved: PostgreSQL reports the owner's implicit privileges on a
+// view exactly as it does on a table, so the grant reaches the renderer in
+// Grant.OnTable and the field cannot be what picks the word.
+//
+// The last two rows are the controls that keep this from being "call anything
+// with a view in the IR a view". A reference is only allowed to name what this
+// render actually WRITES, so a view the render drops is not a block to name,
+// and a name the document declares nothing under keeps the spelling the
+// position implies.
+func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
+	tests := []struct {
+		name string
+		db   func() *goschema.Database
+		want []string
+	}{
+		{
+			name: "a grant on a table names the table block",
+			db: func() *goschema.Database {
+				return relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "t", Privileges: []string{"SELECT"},
+				})
+			},
+			want: []string{"  for = table.t\n"},
+		},
+		{
+			name: "a grant on a view names the view block",
+			db: func() *goschema.Database {
+				db := relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
+				})
+				db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
+				return db
+			},
+			want: []string{"view \"v\" {\n", "  for = view.v\n"},
+		},
+		{
+			name: "a grant on a materialized view names the materialized block",
+			db: func() *goschema.Database {
+				db := relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "mv", Privileges: []string{"SELECT"},
+				})
+				db.MaterializedViews = []goschema.MaterializedView{{Name: "mv", Body: "SELECT id FROM t"}}
+				return db
+			},
+			want: []string{"materialized \"mv\" {\n", "  for = materialized.mv\n"},
+		},
+		{
+			// A trigger's target is a relation too: `INSTEAD OF` triggers only
+			// exist on views, and Trigger.Table is where the reader puts one.
+			// Measured on the same binary, `on = table.v` refused with the same
+			// message and `on = view.v` read at exit 0.
+			name: "a trigger on a view names the view block",
+			db: func() *goschema.Database {
+				db := relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "t", Privileges: []string{"SELECT"},
+				})
+				db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
+				db.Triggers = []goschema.Trigger{{
+					Name: "v_ins", Table: "v", Timing: "INSTEAD OF", Event: "INSERT",
+					ForEach: "ROW", Body: "RETURN NEW;",
+				}}
+				return db
+			},
+			want: []string{"  on = view.v\n"},
+		},
+		{
+			name: "a view this render drops is not a block to name",
+			db: func() *goschema.Database {
+				db := relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
+				})
+				db.Views = []goschema.View{{Name: "v"}}
+				return db
+			},
+			want: []string{"  for = table.v\n"},
+		},
+		{
+			// A read puts a sequence grant in OnTable -- the catalog reports it
+			// through the same table-grant path -- while a Go annotation puts it
+			// in OnSequence. One reference, so one spelling: both name the block
+			// the document declares.
+			name: "a grant on a sequence names the sequence block whichever field it arrived in",
+			db: func() *goschema.Database {
+				db := relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "order_seq", Privileges: []string{"SELECT"},
+				})
+				db.Grants = append(db.Grants, goschema.Grant{
+					Role: "app", OnSequence: "order_seq", Privileges: []string{"USAGE"},
+				})
+				db.Sequences = []goschema.Sequence{{Name: "order_seq"}}
+				return db
+			},
+			want: []string{
+				"sequence \"order_seq\" {\n",
+				"  for = sequence.order_seq\n  privileges = [\"SELECT\"]\n",
+				"  for = sequence.order_seq\n  privileges = [\"USAGE\"]\n",
+			},
+		},
+		{
+			name: "a name the document declares nothing under keeps the table spelling",
+			db: func() *goschema.Database {
+				return relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "gone", Privileges: []string{"SELECT"},
+				})
+			},
+			want: []string{"  for = table.gone\n"},
+		},
+		{
+			// The fallback is the position's own guess, and for a sequence
+			// target that is `sequence`, not `table`. A reference to a block the
+			// document does not declare is unreadable either way, so the one
+			// that says what the object IS is the one to write.
+			name: "a sequence the document declares no block for keeps the sequence spelling",
+			db: func() *goschema.Database {
+				return relationTargetDocument(goschema.Grant{
+					Role: "app", OnSequence: "gone_seq", Privileges: []string{"USAGE"},
+				})
+			},
+			want: []string{"  for = sequence.gone_seq\n"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderInspected(test.db(), platform.Postgres, "public")
+
+			c.Assert(err, qt.IsNil)
+			for _, want := range test.want {
+				c.Assert(string(result.Data), qt.Contains, want)
+			}
+		})
+	}
+}
+
+// TestRenderedRelationTargetRoundTrips pins that Ptah reads back every block
+// type its own renderer can now write into a target position.
+//
+// Without this the change would be measured only against the other binary, and
+// a document Ptah could no longer read would still look like progress -- which
+// is exactly what emitting `view.<name>` without teaching the parser would be.
+func TestRenderedRelationTargetRoundTrips(t *testing.T) {
+	tests := []struct {
+		name   string
+		db     func() *goschema.Database
+		target string
+	}{
+		{
+			// The table target comes back qualified: goschema.Finalize reads a
+			// grant's schema off the table block it names, which is what it has
+			// always done and what the schema restore for the other two block
+			// types is modeled on.
+			name: "a table",
+			db: func() *goschema.Database {
+				return relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "t", Privileges: []string{"SELECT"},
+				})
+			},
+			target: "public.t",
+		},
+		{
+			name: "a view",
+			db: func() *goschema.Database {
+				db := relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
+				})
+				db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
+				return db
+			},
+			target: "v",
+		},
+		{
+			name: "a materialized view",
+			db: func() *goschema.Database {
+				db := relationTargetDocument(goschema.Grant{
+					Role: "app", OnTable: "mv", Privileges: []string{"SELECT"},
+				})
+				db.MaterializedViews = []goschema.MaterializedView{{Name: "mv", Body: "SELECT id FROM t"}}
+				return db
+			},
+			target: "mv",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderInspected(test.db(), platform.Postgres, "public")
+			c.Assert(err, qt.IsNil)
+
+			parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.Grants, qt.HasLen, 1)
+			c.Assert(parsed.Grants[0].OnTable, qt.Equals, test.target)
+			c.Assert(parsed.Grants[0].Role, qt.Equals, "app")
+			c.Assert(parsed.Grants[0].Privileges, qt.DeepEquals, []string{"SELECT"})
+		})
+	}
+}
+
+// TestRenderedTriggerOnAViewRoundTrips is the same round trip for the other
+// position that can name one.
+func TestRenderedTriggerOnAViewRoundTrips(t *testing.T) {
+	c := qt.New(t)
+
+	db := relationTargetDocument(goschema.Grant{
+		Role: "app", OnTable: "t", Privileges: []string{"SELECT"},
+	})
+	db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
+	db.Triggers = []goschema.Trigger{{
+		Name: "v_ins", Table: "v", Timing: "INSTEAD OF", Event: "INSERT",
+		ForEach: "ROW", Body: "RETURN NEW;",
+	}}
+
+	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(result.Data), qt.Contains, "  on = view.v\n")
+
+	parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Triggers, qt.HasLen, 1)
+	c.Assert(parsed.Triggers[0].Table, qt.Equals, "v")
+}
+
+// TestRenderedRelationTargetKeepsItsSchema pins that shortening the reference
+// costs nothing on Ptah's own side in a MULTI-SCHEMA document, which is the
+// only place there is a schema to lose.
+//
+// A reference names a block by its labels, so `view.v` is the only spelling the
+// pinned Atlas community binary v1.3.0 reads -- measured on a two-schema
+// PostgreSQL 17 inspect, `for = table.other.v` refused with
+// `This object does not have an attribute named "other"` and `for = view.v`
+// read at exit 0. goschema.Finalize restores a grant's schema off a TABLE block
+// and says in its own closing note that it does nothing for views, so the
+// restore for these lives in the HCL reader beside the other two positions the
+// same note leaves out.
+//
+// The single-schema row is the control: a bare name there was never carrying a
+// schema, and inventing one would change a document the author controls.
+func TestRenderedRelationTargetKeepsItsSchema(t *testing.T) {
+	tests := []struct {
+		name       string
+		viewName   string
+		wantTarget string
+	}{
+		{
+			name:       "a view outside the default schema",
+			viewName:   "other.v",
+			wantTarget: "other.v",
+		},
+		{
+			name:       "a view the document declares no schema for",
+			viewName:   "v",
+			wantTarget: "v",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			db := relationTargetDocument(goschema.Grant{
+				Role: "app", OnTable: test.wantTarget, Privileges: []string{"SELECT"},
+			})
+			db.Views = []goschema.View{{Name: test.viewName, Body: "SELECT id FROM t"}}
+
+			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(result.Data), qt.Contains, "  for = view.v\n")
+
+			parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.Grants, qt.HasLen, 1)
+			c.Assert(parsed.Grants[0].OnTable, qt.Equals, test.wantTarget)
+		})
+	}
+}
+
+// TestRenderedSequenceTargetKeepsItsSchema is the same restore for the block
+// type a grant reaches through Grant.OnSequence.
+func TestRenderedSequenceTargetKeepsItsSchema(t *testing.T) {
+	tests := []struct {
+		name           string
+		sequenceSchema string
+		wantTarget     string
+	}{
+		{
+			name:           "a sequence outside the default schema",
+			sequenceSchema: "app",
+			wantTarget:     "app.order_seq",
+		},
+		{
+			name:       "a sequence the document declares no schema for",
+			wantTarget: "order_seq",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			db := relationTargetDocument(goschema.Grant{
+				Role: "app", OnSequence: test.wantTarget, Privileges: []string{"USAGE"},
+			})
+			db.Sequences = []goschema.Sequence{{Name: "order_seq", Schema: test.sequenceSchema}}
+
+			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(result.Data), qt.Contains, "  for = sequence.order_seq\n")
+
+			parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.Grants, qt.HasLen, 1)
+			c.Assert(parsed.Grants[0].OnSequence, qt.Equals, test.wantTarget)
+		})
+	}
+}
+
+// relationTargetDocument builds the IR a database read produces for one table
+// plus one grant, with no schema anywhere -- which is what a catalog reports
+// for the read's own schema.
+func relationTargetDocument(grant goschema.Grant) *goschema.Database {
+	db := inspectedTable("")
+	db.Roles = []goschema.Role{{Name: "app"}}
+	db.Grants = []goschema.Grant{grant}
+	return db
+}
+
 // inspectedTable builds the IR a database read produces for one table, with the
 // schema the reader reported -- which is nothing at all wherever the engine
 // treats it as implicit.
