@@ -44,59 +44,141 @@ func (i postgresUnusableIndex) quotedName() string {
 // as applied over a constraint the database is not enforcing. Refusing leaves
 // the operator with a dirty state they can still see.
 //
-// The probe is PostgreSQL-only by nature: no other supported dialect has a
-// concurrent index build that can be left half-finished, so every other dialect
-// returns here before any query runs and keeps its existing code path. This
-// deliberately ignores opts.Force. --force is documented as "Rewrite or create
-// the revision row even when it is not dirty" -- it relaxes a precondition
-// about the metadata, not a fact about the database. The escape hatch is
-// REINDEX INDEX CONCURRENTLY, which fixes the database rather than the
-// bookkeeping about it.
+// The probe is PostgreSQL-only by nature -- see
+// [Migrator.unusableIndexesCreatedBy]. This deliberately ignores opts.Force.
+// --force is documented as "Rewrite or create the revision row even when it is
+// not dirty" -- it relaxes a precondition about the metadata, not a fact about
+// the database. The escape hatch is REINDEX INDEX CONCURRENTLY, which fixes the
+// database rather than the bookkeeping about it. No flag on any surface relaxes
+// either refusal, for the same reason: a flag can only change what Ptah records
+// about the database, and the problem is the database.
+//
+// [Migrator.refuseUpOverUnusableIndex] is the same refusal on the up path.
 func (m *Migrator) refuseRepairOverUnusableIndex(ctx context.Context, migration *Migration) error {
-	if m.conn == nil || platform.NormalizeDialect(m.conn.Info().Dialect) != platform.Postgres {
-		return nil
-	}
-	refs := postgresCreatedIndexNames(migration.UpSQL)
-	if len(refs) == 0 {
-		return nil
-	}
-	unusable, err := m.postgresUnusableIndexes(ctx, refs)
-	if err != nil {
+	unusable, err := m.unusableIndexesCreatedBy(ctx, migration)
+	if err != nil || len(unusable) == 0 {
 		return err
-	}
-	if len(unusable) == 0 {
-		return nil
 	}
 	return unusableIndexRepairError(migration.Version, unusable)
 }
 
-// unusableIndexRepairError renders the refusal. It names every index that is
-// unusable together with the catalog flags that say so, and points at the
+// refuseUpOverUnusableIndex refuses to run a migration while PostgreSQL already
+// reports an index that migration creates as unusable.
+//
+// This is the automatic half of the defect refuseRepairOverUnusableIndex covers.
+// An operator does not have to reach for repair at all: `migrations up
+// --allow-dirty` (and `ptah-compat migrate apply --allow-dirty`, which reaches
+// the same code) re-runs the body over the dirty row a failed concurrent build
+// left, and meets the leftover on exactly the same terms -- the generated
+// statement is CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS, the invalid index
+// still occupies the name, PostgreSQL skips it with a notice, nothing errors,
+// and the run clears the dirty state over an index that enforces nothing.
+//
+// It is not restricted to that retry. Measured on PostgreSQL 17.10 with the
+// refusal scoped to a dirty retry: an invalid index left behind by any other
+// route -- a hand-run build, a restored dump, a migration whose revision row was
+// cleaned up out of band -- is skipped by the same IF NOT EXISTS on a FIRST
+// attempt, the migration is recorded applied, and a duplicate write is accepted.
+// The question worth asking is whether the object the migration creates is
+// usable, and a revision row cannot answer it.
+//
+// Two limits are deliberate. A dry run is exempt, because it records nothing to
+// be wrong about and no surface's dry-run exit code was measured for this. And
+// an index deliberately left invalid -- CREATE INDEX ON ONLY a partitioned
+// parent, which stays invalid until every partition's index is attached -- is
+// refused if a later attempt at the same migration meets it. Telling that shape
+// apart from residue is stokaro/ptah#997's partitioned-parent awareness, which
+// is measured there rather than guessed at here.
+//
+// Nothing is written when it refuses. The probe runs before any revision
+// bookkeeping, so a dirty row still holds the failed attempt's own error and its
+// applied/total counters: `migrations status` reports the same state it did
+// before, and a later retry resumes from the same statement. Recording a second
+// failure over it would reset those counters from something that is not a
+// statement failure, and the next retry would re-run SQL that already committed.
+func (m *Migrator) refuseUpOverUnusableIndex(ctx context.Context, migration *Migration) error {
+	if m.conn == nil || m.conn.Writer().IsDryRun() {
+		return nil
+	}
+	unusable, err := m.unusableIndexesCreatedBy(ctx, migration)
+	if err != nil || len(unusable) == 0 {
+		return err
+	}
+	return unusableIndexApplyError(migration.Version, unusable)
+}
+
+// unusableIndexesCreatedBy returns the indexes migration's up SQL creates that
+// PostgreSQL currently reports as unusable.
+//
+// It is empty on every other dialect before any query runs: no other supported
+// dialect has a concurrent index build that can be left half-finished, so they
+// keep their existing code paths rather than growing a no-op probe.
+func (m *Migrator) unusableIndexesCreatedBy(ctx context.Context, migration *Migration) ([]postgresUnusableIndex, error) {
+	if m.conn == nil || platform.NormalizeDialect(m.conn.Info().Dialect) != platform.Postgres {
+		return nil, nil
+	}
+	refs := postgresCreatedIndexNames(migration.UpSQL)
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	return m.postgresUnusableIndexes(ctx, refs)
+}
+
+// unusableIndexRepairError renders the repair refusal. It names every index that
+// is unusable together with the catalog flags that say so, and points at the
 // PostgreSQL command that rebuilds one without holding writes.
 func unusableIndexRepairError(version int64, unusable []postgresUnusableIndex) error {
-	details := make([]string, 0, len(unusable))
-	rebuild := make([]string, 0, len(unusable))
-	for _, index := range unusable {
-		details = append(details, fmt.Sprintf(
-			"%s (indisvalid=%t, indisready=%t)",
-			index.quotedName(), index.Valid, index.Ready,
-		))
-		rebuild = append(rebuild, "REINDEX INDEX CONCURRENTLY "+index.quotedName())
-	}
-	noun := "index"
-	if len(unusable) > 1 {
-		noun = "indexes"
-	}
+	details, rebuild, noun := unusableIndexPhrases(unusable)
 	return fmt.Errorf(
 		"migration %d cannot be repaired: PostgreSQL reports %s %s unusable, "+
 			"so recording the migration applied would report a constraint that is not enforced; "+
 			"run %s, or drop the %s and rerun the migration, then repair again",
 		version,
 		noun,
-		strings.Join(details, ", "),
-		strings.Join(rebuild, "; "),
+		details,
+		rebuild,
 		noun,
 	)
+}
+
+// unusableIndexApplyError renders the up-path refusal. It says why running the
+// body is not itself the fix, which is what separates this refusal from an
+// ordinary migration failure the operator could simply run again -- and running
+// it again is exactly what an operator holding --allow-dirty has already chosen
+// to do.
+func unusableIndexApplyError(version int64, unusable []postgresUnusableIndex) error {
+	details, rebuild, noun := unusableIndexPhrases(unusable)
+	return fmt.Errorf(
+		"migration %d cannot be applied: PostgreSQL reports %s %s unusable, "+
+			"and CREATE INDEX ... IF NOT EXISTS finds the name taken and skips it rather than rebuilding it, "+
+			"so this run would record the migration applied over a constraint that is not enforced; "+
+			"run %s, or drop the %s, then run the migration again",
+		version,
+		noun,
+		details,
+		rebuild,
+		noun,
+	)
+}
+
+// unusableIndexPhrases renders the three parts both refusals share: the named
+// indexes with the catalog flags that condemn them, the REINDEX commands that
+// rebuild them, and the noun that agrees with how many there are.
+func unusableIndexPhrases(unusable []postgresUnusableIndex) (details, rebuild, noun string) {
+	detailParts := make([]string, 0, len(unusable))
+	rebuildParts := make([]string, 0, len(unusable))
+	for _, index := range unusable {
+		detailParts = append(detailParts, fmt.Sprintf(
+			"%s (indisvalid=%t, indisready=%t)",
+			index.quotedName(), index.Valid, index.Ready,
+		))
+		rebuildParts = append(rebuildParts, "REINDEX INDEX CONCURRENTLY "+index.quotedName())
+	}
+	noun = "index"
+	if len(unusable) > 1 {
+		noun = "indexes"
+	}
+	return strings.Join(detailParts, ", "), strings.Join(rebuildParts, "; "), noun
 }
 
 // postgresUnusableIndexes returns the subset of refs the catalog reports as
