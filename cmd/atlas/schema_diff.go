@@ -69,7 +69,7 @@ which Ptah does not evaluate.`,
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in diffing")
 	registerAtlasUIFlag(cmd, atlasSchemaExportFlag())
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the states with --from and --to"))
 	return cmd
 }
 

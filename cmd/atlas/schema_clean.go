@@ -68,7 +68,7 @@ object can take dependent objects with it whether or not they were selected.`,
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url"))
 	return cmd
 }
 

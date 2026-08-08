@@ -356,12 +356,22 @@ func applyAtlasMigrateDownFormatProjectConfig(
 	project atlasProject,
 	returnErr error,
 ) {
+	// Same rule as resolveAtlasVerbProject: -c and --env select a project file
+	// and make it required, --var only supplies values to one and leaves it
+	// optional (stokaro/ptah#1241 item 12).
+	requirement := requiredAtlasProject
 	if !projectArgs.changed {
-		return atlasProject{}, nil
+		if len(projectArgs.flags.vars) == 0 {
+			return atlasProject{}, nil
+		}
+		requirement = optionalAtlasProject
 	}
-	project, _, err := openAtlasProject(projectArgs.flags, requiredAtlasProject)
+	project, loaded, err := openAtlasProject(projectArgs.flags, requirement)
 	if err != nil {
 		return atlasProject{}, err
+	}
+	if !loaded {
+		return atlasProject{}, nil
 	}
 	defer closeAtlasProjectOnError(&project, &returnErr)
 	cfg := project.Config

@@ -172,6 +172,110 @@ matched rather than refused, because there Atlas CE is right: it executes the
 file's bytes verbatim, drops nothing, and records the revision honestly. See
 [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
 
+### A trailing positional argument
+
+`migrate status`, `migrate validate`, `migrate hash`, `migrate lint` and
+`schema inspect` take no positional argument. Atlas CE accepts one anyway and
+discards it; `ptah-compat` exits 1 and names it.
+
+Measured on the pinned Atlas CE v1.3.0 binary, 2026-08-08, on SQLite and on
+PostgreSQL 17, with `./migrations` and a second hashed directory `mig2` both
+present:
+
+```text
+atlas migrate status --url "sqlite://app.db" file://mig2
+  exit 0
+  Migration Status: PENDING
+    -- Pending Files:   1      <- the ONE file in ./migrations, not the two in mig2
+```
+
+The operator named `mig2` and was answered about `./migrations`. With no
+`./migrations` at all the same argv exits 1 with
+`sql/migrate: stat migrations: no such file or directory`, which is the same
+argument being discarded, reported by accident. `atlas migrate status --help`
+prints `Usage: atlas migrate status [flags]` and documents no positional, so
+the tolerance is Cobra's default arity rather than a contract.
+
+Silently answering about a directory the caller did not name is the defect this
+project does not copy. The refusal names the rejected token and the flag that
+takes a value there instead.
+
+### An edited migration that has already been applied
+
+A migration file whose bytes changed after it ran, with `atlas.sum` re-hashed
+so the directory itself verifies, is a no-op on Atlas CE and a refusal here.
+
+Measured on SQLite and on PostgreSQL 17, 2026-08-08, applying two migrations,
+editing the first, re-hashing, and applying again:
+
+| | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `migrate validate` after the edit | 0 | 0 |
+| `migrate apply` after the edit | 0, `No migration files to execute` | 1, `migration <version> checksum mismatch` |
+
+Both binaries record a hash per revision; only Ptah compares it. The database
+was built from SQL that is no longer in the repository, and every later
+computation that replays the directory — `migrate lint`, `migrate diff`'s
+desired state, a rollback's down file — assumes it was not. Reporting nothing
+there is reporting a history that is not the one that ran.
+
+The escape hatch is `ptah migrations repair --version <version> --force`, which
+rewrites the recorded revision to match the file as it now stands. Run it for
+the edited version **and for every version applied after it**: an `atlas.sum`
+entry is a running hash over the preceding files, so editing one file changes
+the recorded hash of every file below it. Measured on the two-migration fixture
+above, repairing only the edited version moved the refusal to the next one, and
+repairing both returned `migrate apply` to exit 0 with
+`No migration files to execute.`
+
+The refusal is exit 1 in the direction the rules allow, and it is stricter than
+Atlas CE, never looser. See
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) items 6
+and 13.
+
+### The same running hash makes the gate fire on files nobody edited
+
+The property above has a second consequence, and there Ptah is the one that is
+wrong. `migration/migrator` treats the stored `atlas.sum` entry as a content
+hash of one file; it is not. Inserting a migration ahead of applied ones
+rewrites the entry of every later file, and the gate then refuses citing a file
+whose bytes never changed.
+
+Measured on SQLite and on PostgreSQL 17, 2026-08-08, applying `one` and `three`
+and then adding `two` between them:
+
+| | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `migrate apply` (default `--exec-order linear`) | 1, `migration file …_two.sql was added out of order` | 1, `migration …_three checksum mismatch` |
+| `migrate apply --exec-order non-linear` | **0**, applies `two` | **1**, same checksum mismatch |
+
+`…_three.sql` is byte-identical in both directories; only its position in the
+sum chain moved. Both binaries stored the same value, so this is Ptah reading
+its own recorded data under the wrong contract, and the second row is a
+`ptah-compat exits 1 where Atlas CE exits 0` cell. It is open and tracked as
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 5; the
+repair above is the operator's route through it in the meantime.
+
+### `migrate lint` does not require `--dev-url`
+
+Found while measuring the scope selector, and left open rather than widened into
+that change. Atlas CE marks `--dev-url` required on `migrate lint`;
+`ptah-compat` registers it as an ordinary flag and lints without it.
+
+Measured 2026-08-08 in a directory holding a hashed `./migrations`, exit status
+read on its own line after a redirect:
+
+| | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `migrate lint --dir file://migrations --latest 1`, no `--dev-url` | 1, `required flag(s) "dev-url" not set` | **0**, lints and reports |
+
+This is a `ptah-compat exits 0 where Atlas CE exits 1` cell, and it predates the
+scope selector: the same two answers come back on the commit before it. It is
+recorded here rather than fixed in the same change, because the flag's
+requiredness is a separate decision from what a run's scope is — Ptah's linter
+can analyze SQL text with no dev database, so making the flag required deletes a
+capability and needs the `PTAH_*` treatment of its own.
+
 ## PostgreSQL Introspection: Index and Domain Attributes
 
 Reading a live PostgreSQL database once lost six attributes that the pinned

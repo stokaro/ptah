@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -14,6 +15,40 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/migrator"
 )
+
+// errNoSQLMigrationFiles reports a directory holding no *.sql file at all. It
+// is a sentinel rather than an inline message because the Atlas-compatible
+// profile answers it with an empty analysis instead of a failure, and telling
+// the two apart by message text would break the moment the wording changed.
+var errNoSQLMigrationFiles = errors.New("no *.sql migration files found")
+
+// loadAnalyzableSources reads the SQL sources to analyze, returning an empty
+// set for a directory that holds none on a surface where that is nothing to do
+// rather than a failure. Every step below iterates over the returned names, so
+// an empty set analyzes to an empty result with no branch of its own.
+//
+// An empty migration directory analyzes to nothing on the Atlas-compatible
+// surface, where the pinned community binary v1.3.0 exits 0 with no output for
+// `migrate lint --latest 1` on one.
+//
+// The native profile keeps the refusal: `ptah migrations lint` names a
+// directory to analyze, and answering "no findings" for a directory that holds
+// nothing to analyze reports success for work never done. The Atlas surface
+// cannot afford that reading, because its verb runs in a repository's CI
+// before the first migration exists (stokaro/ptah#1241, adjacent to item 7).
+func loadAnalyzableSources(
+	fsys fs.FS,
+	profile CompatibilityProfile,
+) (sqlSources, []string, error) {
+	sources, names, err := loadSQLSources(fsys)
+	if err == nil {
+		return sources, names, nil
+	}
+	if profile == CompatibilityProfileAtlas && errors.Is(err, errNoSQLMigrationFiles) {
+		return sqlSources{}, nil, nil
+	}
+	return nil, nil, err
+}
 
 // CompatibilityProfile selects command-surface-specific lint semantics.
 type CompatibilityProfile string
@@ -312,7 +347,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	if err != nil {
 		return Analysis{}, err
 	}
-	sources, names, err := loadSQLSources(snapshot)
+	sources, names, err := loadAnalyzableSources(snapshot, opts.Compatibility)
 	if err != nil {
 		return Analysis{}, err
 	}
@@ -420,7 +455,7 @@ func loadSQLSources(fsys fs.FS) (sqlSources, []string, error) {
 		return nil, nil, fmt.Errorf("list migration files: %w", err)
 	}
 	if len(names) == 0 {
-		return nil, nil, fmt.Errorf("no *.sql migration files found")
+		return nil, nil, errNoSQLMigrationFiles
 	}
 	sort.Strings(names)
 	sources := make(sqlSources, len(names))

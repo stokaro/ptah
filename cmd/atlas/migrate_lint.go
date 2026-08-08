@@ -3,6 +3,8 @@ package atlas
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -42,6 +44,13 @@ func newAtlasMigrateLintCommand() *cobra.Command {
 		Short: "Lint migration files",
 		Long: `Run Atlas-compatible migration lint checks over a local migration directory.
 
+A run needs a scope: --latest N, --git-base <ref>, or a lint block in atlas.hcl
+that supplies one. Without a scope this surface refuses, because the binary it
+stands in for refuses, and answering an unscoped invocation would connect to
+--dev-url and clean it on an argv that binary never connects on. Set
+` + "`PTAH_ATLAS_LINT_ALL_VERSIONS=1`" + ` to lint the whole directory instead;
+native ` + "`ptah migrations lint`" + ` needs no scope and is unaffected.
+
 Native Ptah equivalent: ptah migrations lint.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasMigrateLint(cmd, opts)
@@ -55,7 +64,7 @@ Native Ptah equivalent: ptah migrations lint.`,
 	flags.UintVar(&opts.latest, "latest", 0, "Number of latest migrations to lint")
 	flags.StringVar(&opts.gitBase, "git-base", "", "Base Git branch for changeset linting")
 	flags.StringVar(&opts.gitDir, "git-dir", opts.gitDir, "Repository working directory for --git-base")
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the migration directory with --dir"))
 	return cmd
 }
 
@@ -123,6 +132,9 @@ func runAtlasMigrateLint(
 	// spelling cannot be resolved yet -- it lives in --dir -- so this pass sees
 	// the configured value alone and the two are combined below.
 	if _, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "lint", opts.dirFormat, nil); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := requireAtlasMigrateLintScope(cmd, opts, projectCfg); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if formatOutput {
@@ -286,6 +298,95 @@ func validateAtlasMigrateLintOptions(opts atlasMigrateLintOptions) error {
 		return fmt.Errorf("migrations directory is required")
 	}
 	return nil
+}
+
+// atlasMigrateLintAllVersionsEnvVar lints every version in the directory when
+// the argv names no scope, which is what this surface did before it started
+// refusing.
+//
+// It exists because compatibility must not delete a capability (AGENTS.md,
+// "Compatibility never removes a capability"): Ptah's linter can review a whole
+// directory, and a pipeline being ported that relied on the unscoped form has
+// to be able to get it back on THIS surface rather than being sent to native
+// `ptah`. It is an environment variable and not a flag because the conformance
+// cli-surface tier asserts that ptah-compat registers exactly the flags the
+// pinned binary registers. Precedent and spelling:
+// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
+const atlasMigrateLintAllVersionsEnvVar = "PTAH_ATLAS_LINT_ALL_VERSIONS"
+
+// atlasMigrateLintAllVersions reports whether the opt-in is set to a true
+// boolean. Unset, empty, false and unparsable values all keep the default.
+func atlasMigrateLintAllVersions() bool {
+	all, err := strconv.ParseBool(os.Getenv(atlasMigrateLintAllVersionsEnvVar))
+	return err == nil && all
+}
+
+// atlasMigrateLintScopeGiven reports whether anything named the set of versions
+// to lint, mirroring how internal/migrationlintreport resolves the same two
+// selectors: --latest wins outright, an atlas.hcl `lint.latest` counts unless
+// --git-base was spelled, and a --git-base counts once opts.gitBase has taken
+// the project value (which the caller does only when --latest was not spelled).
+//
+// No "was a project loaded" argument is needed: a run that loaded none carries
+// the zero projectconfig.Config, whose LintLatestValue reports Present false.
+func atlasMigrateLintScopeGiven(
+	cmd *cobra.Command,
+	opts atlasMigrateLintOptions,
+	projectCfg projectconfig.Config,
+) bool {
+	if cmd.Flags().Changed("latest") {
+		return true
+	}
+	if strings.TrimSpace(opts.gitBase) != "" {
+		return true
+	}
+	return !cmd.Flags().Changed("git-base") && projectCfg.LintLatestValue().Present
+}
+
+// requireAtlasMigrateLintScope refuses a lint run that names no scope, the way
+// the pinned Atlas community binary v1.3.0 refuses one.
+//
+// Measured on 2026-08-08, `migrate lint --dir file://migrations --dev-url …`
+// with no --latest and no --git-base, exit status read on a line of its own:
+//
+//	pinned binary   exit 1  Error: --latest or --git-base is required
+//	ptah-compat     exit 0
+//
+// The same two answers whether ./migrations is empty or holds a hashed
+// migration, and on SQLite, PostgreSQL 17 and MySQL 9.7. It is not only an exit
+// code: Ptah reaches the dev database on that argv and CLEANS it. Against a
+// MySQL dev schema holding one table, the pinned binary refuses before
+// connecting and the table survives; ptah-compat dropped it. The refusal
+// therefore has to come before the directory is captured and before
+// internal/migrationlintreport touches --dev-url, which is where it is called.
+//
+// Where the pinned binary orders this refusal among the others was measured too,
+// on the same fixture: `--dir migrations` (no scheme), a missing --dev-url and
+// `--dir-format nosuch` all answer BEFORE it, while a broken --format template
+// and a corrupt atlas.sum answer AFTER it. Hence the call site: after the
+// dir-format resolution, before the --format template check and before the
+// directory is captured. Two rows are not reproduced, and neither can make this
+// surface exit 0 where that binary exits 1:
+//
+//   - a scheme-less --dir with no scope answers with this refusal here and with
+//     `missing scheme for dir url` there; both exit 1, and Ptah already ordered
+//     its --format check ahead of its scheme check before this;
+//   - --dev-url is not required at all here, which is a separate looseness cell
+//     that predates this change: `migrate lint --dir file://migrations
+//     --latest 1` with no --dev-url is that binary 1 and ptah-compat 0 on the
+//     base commit too. Left open rather than widened into here.
+//
+// Scoped to this surface. Native `ptah migrations lint` names a directory and
+// reviews all of it; nothing here runs on that path.
+func requireAtlasMigrateLintScope(
+	cmd *cobra.Command,
+	opts atlasMigrateLintOptions,
+	projectCfg projectconfig.Config,
+) error {
+	if atlasMigrateLintScopeGiven(cmd, opts, projectCfg) || atlasMigrateLintAllVersions() {
+		return nil
+	}
+	return errors.New("--latest or --git-base is required")
 }
 
 func validateAtlasMigrateLintFormat(format string) error {

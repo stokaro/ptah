@@ -977,6 +977,7 @@ env "ci" {
 		"--env", "ci",
 		"--var", "dir=migrations",
 		"lint",
+		"--latest", "1",
 		"--format", "{{ json . }}",
 	})
 
@@ -1638,6 +1639,7 @@ func TestCompatCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--env", "local",
+		"--latest", "1",
 	})
 
 	err := cmd.Execute()
@@ -1676,6 +1678,7 @@ func TestCompatCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(t 
 		"--config", "file://" + filepath.Join(projectDir, "atlas.hcl"),
 		"--env", "ci",
 		"lint",
+		"--latest", "1",
 	})
 
 	err := cmd.Execute()
@@ -2276,8 +2279,15 @@ env "local" {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas variable overrides must use name=value, got "destructive"`)
-	c.Assert(out.String(), qt.Contains, `Error: atlas variable overrides must use name=value, got "destructive"`)
+	// The wording is the pinned Atlas community binary v1.3.0's own, measured
+	// on 2026-08-08: it refuses the flag's SYNTAX while parsing flags, so the
+	// refusal is pflag's `invalid argument %q for %q flag: %v` wrapper around
+	// its --var value parser rather than anything the project loader says.
+	// Before this it was Ptah's config/projectconfig message, which only fired
+	// once an atlas.hcl had been found -- and a directory with no atlas.hcl got
+	// no refusal at all (stokaro/ptah#1241).
+	c.Assert(err, qt.ErrorMatches, `invalid argument "destructive" for "--var" flag: variables must be format as key=value, got: "destructive"`)
+	c.Assert(out.String(), qt.Contains, `Error: invalid argument "destructive" for "--var" flag: variables must be format as key=value, got: "destructive"`)
 }
 
 func TestCompatCommand_SchemaDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
