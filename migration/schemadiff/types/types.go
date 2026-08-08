@@ -163,6 +163,19 @@ type SchemaDiff struct {
 	// plans or uniqueness protections.
 	IndexesRemoved []IndexRef `json:"indexes_removed"`
 
+	// ConstraintBackedIndexRemovals is the subset of IndexesRemoved whose
+	// object is enforced by a UNIQUE constraint of the same name on the same
+	// table, so the drop has to be spelled
+	// `ALTER TABLE <table> DROP CONSTRAINT <name>`.
+	//
+	// PostgreSQL refuses the index spelling for those:
+	// `cannot drop index uq_users_email because constraint uq_users_email on
+	// table users requires it (SQLSTATE 2BP01)`, measured on 17.10. MySQL and
+	// MariaDB are the opposite case -- a unique key and its index are one
+	// catalog row that `DROP INDEX` drops -- so their removals are never listed
+	// here.
+	ConstraintBackedIndexRemovals []IndexRef `json:"constraint_backed_index_removals,omitempty"`
+
 	// ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
 	// but not in the current database schema
 	ExtensionsAdded []string `json:"extensions_added"`
@@ -413,6 +426,24 @@ func (d *SchemaDiff) SetIndexAdditions(refs []IndexRef) {
 // SetIndexRemovals replaces the removed index references with a sorted copy.
 func (d *SchemaDiff) SetIndexRemovals(refs []IndexRef) {
 	d.IndexesRemoved = sortedIndexRefs(refs)
+}
+
+// SetConstraintBackedIndexRemovals replaces the constraint-backed index
+// removals with a sorted copy, in the same key order as SetIndexRemovals.
+func (d *SchemaDiff) SetConstraintBackedIndexRemovals(refs []IndexRef) {
+	d.ConstraintBackedIndexRemovals = sortedIndexRefs(refs)
+}
+
+// ConstraintBackedIndexRemovalSet keys ConstraintBackedIndexRemovals for the
+// membership test a planner makes once per rendered drop. The references are
+// the ones recorded in IndexesRemoved, so an exact match is the right test:
+// both come from the same introspected index.
+func (d *SchemaDiff) ConstraintBackedIndexRemovalSet() map[IndexRef]struct{} {
+	set := make(map[IndexRef]struct{}, len(d.ConstraintBackedIndexRemovals))
+	for _, ref := range d.ConstraintBackedIndexRemovals {
+		set[ref] = struct{}{}
+	}
+	return set
 }
 
 func sortedIndexRefs(refs []IndexRef) []IndexRef {

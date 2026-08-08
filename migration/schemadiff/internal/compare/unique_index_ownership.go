@@ -66,7 +66,15 @@ func generatedIndexIdentities(
 // hand-off. A desired plain `index "uq_users_email"` against a database
 // `UNIQUE KEY uq_users_email` is a real change, and it is one index comparison
 // states correctly as a replacement of a single object; splitting it across the
-// two pools would plan a DROP CONSTRAINT and a DROP INDEX for the same row.
+// two pools would state one object's replacement as two objects' lifecycles,
+// with no order between the drop and the create that the two pools agree on.
+//
+// The replacement's drop is still spelled per engine, because the object is
+// one catalog row on MySQL and MariaDB and a constraint owning an index
+// everywhere else. That is decided at removal time rather than here; see
+// [uniqueConstraintOwnsTheIndexObject]. On PostgreSQL 17.10 the drop is
+// `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`, which is what the
+// pinned community binary v1.3.0 plans and the only spelling the server takes.
 //
 // SQL Server is excluded because a UNIQUE constraint and a unique index are
 // separate objects there, which is the same reason it is excluded from

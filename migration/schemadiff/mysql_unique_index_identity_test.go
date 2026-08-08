@@ -396,6 +396,201 @@ func TestCompareWithDialect_DeclaredUniqueConstraintKeepsConstraintOwnership(t *
 	}
 }
 
+// TestCompareWithDialect_ConstraintBackedIndexRemovalCarriesItsSpelling covers
+// what a removal means when the object it names is a UNIQUE constraint's.
+//
+// The desired state below spells the object as a plain index, so it is a real
+// change and index comparison states it as a replacement -- one object, dropped
+// and recreated -- on every dialect. The statement that drops it is not the
+// same everywhere. On MySQL and MariaDB the unique key and its constraint are
+// one catalog row and `DROP INDEX` removes it, which is what the pinned
+// community binary v1.3.0 plans there. On PostgreSQL 17.10 the same spelling
+// answers `cannot drop index uq_users_email because constraint uq_users_email
+// on table users requires it (SQLSTATE 2BP01)`, and the pinned binary plans
+// `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"` instead, so the
+// comparator marks the removal for the planner.
+func TestCompareWithDialect_ConstraintBackedIndexRemovalCarriesItsSpelling(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		dialect string
+		want    []difftypes.IndexRef
+	}{
+		{name: "mysql", dialect: "mysql", want: nil},
+		{name: "mariadb", dialect: "mariadb", want: nil},
+		{
+			name:    "postgres",
+			dialect: "postgres",
+			want:    []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			generated := mysqlUniqueKeyGeneratedSchema()
+			generated.Indexes[0].Unique = false
+
+			diff := schemadiff.CompareWithDialect(
+				generated,
+				mysqlUniqueKeyDatabaseSchema(),
+				test.dialect,
+			)
+
+			c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
+				Name:      "uq_users_email",
+				TableName: "users",
+			}})
+			c.Assert(diff.ConstraintBackedIndexRemovals, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestCompareWithDialect_PlainIndexRemovalIsNotConstraintBacked is the control
+// for the marker: an index no constraint enforces is dropped as an index, on
+// PostgreSQL as everywhere else. Marking every removal would turn this one into
+// an ALTER TABLE DROP CONSTRAINT for a constraint that does not exist.
+func TestCompareWithDialect_PlainIndexRemovalIsNotConstraintBacked(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("postgres", func(c *qt.C) {
+		generated := mysqlUniqueKeyGeneratedSchema()
+		generated.Indexes = nil
+		database := mysqlUniqueKeyDatabaseSchema()
+		database.Constraints = nil
+		database.Indexes[0].Name = "idx_users_email"
+		database.Indexes[0].IsUnique = false
+
+		diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+
+		c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
+			Name:      "idx_users_email",
+			TableName: "users",
+		}})
+		c.Assert(diff.ConstraintBackedIndexRemovals, qt.HasLen, 0)
+	})
+}
+
+// TestCompareWithDialect_MySQLKeyWithAnUnreadablePartIsNotCompared covers a
+// functional key part on MySQL and MariaDB. `KEY idx_mixed (b, (b + 1))` is
+// reported by information_schema.STATISTICS as one named column and one row
+// whose COLUMN_NAME is NULL, and the reader cannot name the second part -- the
+// expression lives in a STATISTICS column MariaDB does not have. Comparing what
+// it can see would find the key short by one part against the desired state
+// every run and plan a rebuild forever, on a database MySQL 9.7.1 and the
+// pinned community binary v1.3.0 both call unchanged.
+func TestCompareWithDialect_MySQLKeyWithAnUnreadablePartIsNotCompared(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "mysql", dialect: "mysql"},
+		{name: "mariadb", dialect: "mariadb"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			diff := schemadiff.CompareWithDialect(
+				expressionKeyGeneratedSchema(),
+				expressionKeyDatabaseSchema(true),
+				test.dialect,
+			)
+
+			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
+		})
+	}
+}
+
+// TestCompareWithDialect_MySQLKeyReadWholeIsStillCompared is the control: the
+// declining above is about a key the reader could not read whole, not about
+// key columns in general. The same pair with every part named is a genuine
+// difference and stays one.
+func TestCompareWithDialect_MySQLKeyReadWholeIsStillCompared(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "mysql", dialect: "mysql"},
+		{name: "mariadb", dialect: "mariadb"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			diff := schemadiff.CompareWithDialect(
+				expressionKeyGeneratedSchema(),
+				expressionKeyDatabaseSchema(false),
+				test.dialect,
+			)
+
+			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
+				Name:      "idx_mixed",
+				TableName: "t4",
+			}})
+			c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
+				Name:      "idx_mixed",
+				TableName: "t4",
+			}})
+		})
+	}
+}
+
+// expressionKeyDatabaseSchema is what MySQL 9.7.1 reports for
+//
+//	CREATE TABLE t4 (
+//	  id BIGINT NOT NULL AUTO_INCREMENT,
+//	  b INT NOT NULL,
+//	  PRIMARY KEY (id),
+//	  KEY idx_mixed (b, (b + 1))
+//	);
+//
+// once the reader has assembled the key: one named column, and -- when
+// incomplete is set -- the record that a second part exists which it could not
+// name.
+func expressionKeyDatabaseSchema(incomplete bool) *types.DBSchema {
+	return &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "t4",
+			Type: "BASE TABLE",
+			Columns: []types.DBColumn{{
+				Name:       "b",
+				DataType:   "int",
+				ColumnType: "int",
+				IsNullable: "NO",
+			}},
+		}},
+		Indexes: []types.DBIndex{{
+			Name:               "idx_mixed",
+			TableName:          "t4",
+			Columns:            []string{"b"},
+			KeyPartsIncomplete: incomplete,
+		}},
+	}
+}
+
+// expressionKeyGeneratedSchema is the same key as `schema inspect` writes it:
+// the named column and the expression, both spelled out.
+func expressionKeyGeneratedSchema() *goschema.Database {
+	return &goschema.Database{
+		Tables: []goschema.Table{{Name: "t4", StructName: "T4"}},
+		Fields: []goschema.Field{{
+			StructName: "T4",
+			Name:       "b",
+			Type:       "INT",
+			Nullable:   false,
+		}},
+		Indexes: []goschema.Index{{
+			StructName: "T4",
+			Name:       "idx_mixed",
+			TableName:  "t4",
+			Parts: []goschema.IndexPart{
+				{Name: "b"},
+				{Expr: "(`b` + 1)"},
+			},
+		}},
+	}
+}
+
 // addedIndexesAlsoRemovedAsConstraints reports every table-qualified name the
 // plan creates as an index and drops as a constraint in the same run.
 func addedIndexesAlsoRemovedAsConstraints(diff *difftypes.SchemaDiff) []string {

@@ -20,12 +20,16 @@ import (
 )
 
 // nonCategoryFields names the SchemaDiff fields that do not carry schema
-// changes, with the reason each is not reported as a difference. A field that
-// is not a list is not a category by construction, and this map is what forces
-// that judgment to be made rather than assumed: a new non-list field fails
-// TestSchemaDiffNonCategoryFieldsAreDocumented until it is listed here.
+// changes, with the reason each is not reported as a difference. Everything
+// that is not a list is one by construction, and a list can be one too when it
+// qualifies another list rather than adding to it. This map is what forces that
+// judgment to be made rather than assumed: a field missing from both the
+// categories and this map fails TestSchemaDiffNonCategoryFieldsAreDocumented,
+// and a list listed here is a claim that reporting it would say nothing the
+// list it qualifies does not already say.
 var nonCategoryFields = map[string]string{
-	"IdentifierSemantics": "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
+	"IdentifierSemantics":           "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
+	"ConstraintBackedIndexRemovals": "a subset of IndexesRemoved, naming the removals whose object a UNIQUE constraint enforces so the planner spells the drop as a constraint drop; reporting it would print the same removed index a second time, and on its own it removes nothing",
 }
 
 // TestWriteComparisonReportsEveryDiffCategory is the guard for
@@ -123,8 +127,9 @@ ALTER TABLE "other"."secured" ENABLE ROW LEVEL SECURITY;
 }
 
 // diffCategoryFields returns the SchemaDiff fields that carry changes: the
-// exported list fields. It is a helper rather than an inline loop so the test
-// bodies above stay free of control flow.
+// exported list fields, less the ones nonCategoryFields excludes with a stated
+// reason. It is a helper rather than an inline loop so the test bodies above
+// stay free of control flow.
 func diffCategoryFields() []reflect.StructField {
 	structType := reflect.TypeFor[difftypes.SchemaDiff]()
 	var fields []reflect.StructField
@@ -132,16 +137,26 @@ func diffCategoryFields() []reflect.StructField {
 		if !field.IsExported() || field.Type.Kind() != reflect.Slice {
 			continue
 		}
+		if _, excluded := nonCategoryFields[field.Name]; excluded {
+			continue
+		}
 		fields = append(fields, field)
 	}
 	return fields
 }
 
+// diffNonCategoryFieldNames returns every SchemaDiff field the report guard
+// above does not exercise, which is exactly the set that has to carry a written
+// reason.
 func diffNonCategoryFieldNames() []string {
+	categories := make(map[string]struct{})
+	for _, field := range diffCategoryFields() {
+		categories[field.Name] = struct{}{}
+	}
 	structType := reflect.TypeFor[difftypes.SchemaDiff]()
 	var names []string
 	for field := range structType.Fields() {
-		if field.Type.Kind() == reflect.Slice {
+		if _, isCategory := categories[field.Name]; isCategory {
 			continue
 		}
 		names = append(names, field.Name)

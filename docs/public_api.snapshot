@@ -5472,6 +5472,16 @@ type DBIndex struct {
     IsUnique   bool          `json:"is_unique"`
     IsPrimary  bool          `json:"is_primary"`
     Definition string        `json:"definition"` // Full index definition
+    // KeyPartsIncomplete reports that the catalog described a key part this
+    // reader cannot name, so Columns (and Parts) list fewer parts than the key
+    // actually has. The MySQL reader sets it for a functional key part --
+    // `KEY idx ((b + 1))` -- whose information_schema.STATISTICS row carries a
+    // NULL COLUMN_NAME and an EXPRESSION column that MariaDB does not have.
+    //
+    // A comparison must not read the key columns of such an index as the whole
+    // key: it would plan a rebuild on every run for a key that never changed.
+    // Everything else about the index is reported normally.
+    KeyPartsIncomplete bool `json:"key_parts_incomplete,omitempty"`
     // Condition is the WHERE clause for partial indexes when the dialect
     // exposes one structurally.
     Condition string `json:"condition,omitempty"`
@@ -8605,6 +8615,19 @@ type SchemaDiff struct {
     // plans or uniqueness protections.
     IndexesRemoved []IndexRef `json:"indexes_removed"`
 
+    // ConstraintBackedIndexRemovals is the subset of IndexesRemoved whose
+    // object is enforced by a UNIQUE constraint of the same name on the same
+    // table, so the drop has to be spelled
+    // `ALTER TABLE <table> DROP CONSTRAINT <name>`.
+    //
+    // PostgreSQL refuses the index spelling for those:
+    // `cannot drop index uq_users_email because constraint uq_users_email on
+    // table users requires it (SQLSTATE 2BP01)`, measured on 17.10. MySQL and
+    // MariaDB are the opposite case -- a unique key and its index are one
+    // catalog row that `DROP INDEX` drops -- so their removals are never listed
+    // here.
+    ConstraintBackedIndexRemovals []IndexRef `json:"constraint_backed_index_removals,omitempty"`
+
     // ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
     // but not in the current database schema
     ExtensionsAdded []string `json:"extensions_added"`
@@ -8793,10 +8816,12 @@ type SchemaDiff struct {
             fmt.Printf("Found %d new tables\n", len(diff.TablesAdded))
         }
 
+func (d *SchemaDiff) ConstraintBackedIndexRemovalSet() map[IndexRef]struct{}
 func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Semantics
 func (d *SchemaDiff) HasChanges() bool
 func (d *SchemaDiff) IndexAdditions() []IndexRef
 func (d *SchemaDiff) IndexRemovals() []IndexRef
+func (d *SchemaDiff) SetConstraintBackedIndexRemovals(refs []IndexRef)
 func (d *SchemaDiff) SetIndexAdditions(refs []IndexRef)
 func (d *SchemaDiff) SetIndexRemovals(refs []IndexRef)
 

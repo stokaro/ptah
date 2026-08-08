@@ -188,6 +188,11 @@ type generatedIndexEntry struct {
 type databaseIndexEntry struct {
 	ref   difftypes.IndexRef
 	index types.DBIndex
+	// dropAsConstraint reports that a UNIQUE constraint of this identity
+	// enforces the index on an engine where the constraint is a catalog object
+	// of its own, so removing the index means dropping that constraint. See
+	// [uniqueConstraintOwnsTheIndexObject].
+	dropAsConstraint bool
 }
 
 func IndexesWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
@@ -226,6 +231,7 @@ func IndexesWithSemantics(
 	)
 	diff.SetIndexAdditions(diff.IndexAdditions())
 	diff.SetIndexRemovals(diff.IndexRemovals())
+	diff.SetConstraintBackedIndexRemovals(diff.ConstraintBackedIndexRemovals)
 }
 
 func collectGeneratedIndexes(
@@ -330,9 +336,16 @@ func constraintBackedIndexIdentities(
 // IF NOT EXISTS and IF EXISTS, skipped the create, ran the drop, exited 0, and
 // left the table with no unique index at all.
 //
-// Letting a declared identity through cannot start dropping anything: an
-// identity only survives the filters when the desired state names it, and an
-// identity the desired state names is matched rather than removed.
+// Letting a declared identity through never drops an object the desired state
+// did not ask to change: an identity only survives the filters when the desired
+// state names it, and a named identity is either matched or replaced by the
+// definition the desired state gives it -- [appendIndexDifferences] pairs that
+// removal with the addition that supersedes it, and never emits it alone.
+//
+// The removal is still a removal, and what removes the object depends on the
+// object. A UNIQUE constraint's backing index is dropped through the constraint
+// everywhere except MySQL and MariaDB, so each entry carries the answer; see
+// [uniqueConstraintOwnsTheIndexObject].
 func collectDatabaseIndexes(
 	database *types.DBSchema,
 	dialect string,
@@ -362,11 +375,40 @@ func collectDatabaseIndexes(
 			continue
 		}
 		indexes[identity] = databaseIndexEntry{
-			ref:   ref,
-			index: index,
+			ref:              ref,
+			index:            index,
+			dropAsConstraint: uniqueConstraintOwnsTheIndexObject(dialect, identity, uniqueConstraints),
 		}
 	}
 	return indexes
+}
+
+// uniqueConstraintOwnsTheIndexObject reports whether removing this database
+// index means dropping a UNIQUE constraint rather than dropping an index.
+//
+// The engines split two ways. On MySQL and MariaDB a unique key and its
+// constraint are one catalog row and `ALTER TABLE ... DROP INDEX` removes it,
+// which is what the pinned community binary v1.3.0 plans there. Everywhere else
+// the constraint is an object of its own that owns the index, and the server
+// refuses to drop the index alone: PostgreSQL 17.10 answers
+// `DROP INDEX "uq_users_email"` with `cannot drop index uq_users_email because
+// constraint uq_users_email on table users requires it (SQLSTATE 2BP01)`, and
+// the pinned binary plans `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`
+// for the same change.
+//
+// SQL Server never reaches here: a UNIQUE constraint and a unique index are
+// separate objects there, so [constraintBackedIndexIdentities] records no
+// unique-constraint identities for it at all.
+func uniqueConstraintOwnsTheIndexObject(
+	dialect string,
+	identity difftypes.IndexRef,
+	uniqueConstraints map[difftypes.IndexRef]struct{},
+) bool {
+	if _, constraintBacked := uniqueConstraints[identity]; !constraintBacked {
+		return false
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return normalized != platform.MySQL && normalized != platform.MariaDB
 }
 
 // unaddressableDatabaseIndex reports whether an index has no standalone
@@ -441,7 +483,7 @@ func appendIndexDifferences(
 			semantics,
 		):
 			appendIndexAddition(diff, generatedEntry.ref)
-			appendIndexRemoval(diff, databaseEntry.ref)
+			appendIndexRemoval(diff, databaseEntry)
 		}
 	}
 
@@ -450,7 +492,7 @@ func appendIndexDifferences(
 			continue
 		}
 		if _, exists := generated[identity]; !exists {
-			appendIndexRemoval(diff, entry.ref)
+			appendIndexRemoval(diff, entry)
 		}
 	}
 }
@@ -459,8 +501,19 @@ func appendIndexAddition(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) {
 	diff.IndexesAdded = append(diff.IndexesAdded, ref)
 }
 
-func appendIndexRemoval(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) {
-	diff.IndexesRemoved = append(diff.IndexesRemoved, ref)
+// appendIndexRemoval records a database index the plan drops, and — when the
+// object is a UNIQUE constraint's on an engine that keeps the constraint as its
+// own catalog row — records that the drop has to be spelled as a constraint
+// drop. The two lists are parallel by construction: the second is a subset of
+// the first, keyed by the same reference.
+func appendIndexRemoval(diff *difftypes.SchemaDiff, entry databaseIndexEntry) {
+	diff.IndexesRemoved = append(diff.IndexesRemoved, entry.ref)
+	if entry.dropAsConstraint {
+		diff.ConstraintBackedIndexRemovals = append(
+			diff.ConstraintBackedIndexRemovals,
+			entry.ref,
+		)
+	}
 }
 
 func isSQLiteInternalAutoindex(indexName, dialect string) bool {
@@ -531,14 +584,12 @@ func indexDefinitionsChanged(
 // `Error 1061 (42000): Duplicate key name`.
 //
 // Nothing else is compared, and the omissions are the reader's, not a
-// judgement that they do not matter. Ptah's MySQL reader projects
-// information_schema.STATISTICS through GROUP_CONCAT(COLUMN_NAME) and keeps
-// only the column names and NON_UNIQUE, so a descending key and a prefix key
-// both arrive as a plain column. Comparing a direction the reader always
-// reports as ascending against a desired `desc = true` would plan a rebuild on
-// every run forever, which is the oscillation this change exists to remove. An
-// expression key never reaches the comparison at all: COLUMN_NAME is NULL for
-// one and the read fails first. Those are reader gaps, recorded as such.
+// judgement that they do not matter. Ptah's MySQL reader keeps only the column
+// names and NON_UNIQUE out of information_schema.STATISTICS, so a descending
+// key and a prefix key both arrive as a plain column. Comparing a direction the
+// reader always reports as ascending against a desired `desc = true` would plan
+// a rebuild on every run forever, which is the oscillation this change exists
+// to remove. Those are reader gaps, recorded as such.
 func mysqlIndexDefinitionChanged(
 	generated goschema.Index,
 	database types.DBIndex,
@@ -551,11 +602,21 @@ func mysqlIndexDefinitionChanged(
 // mysqlIndexKeyColumnsChanged compares the key columns in order, and only the
 // columns. See [mysqlIndexDefinitionChanged] for why a key's direction is not
 // part of the comparison.
+//
+// A key the reader could not read whole is not compared at all. The MySQL
+// reader reports a functional key part -- `KEY idx ((b + 1))` -- as a part
+// missing from Columns, because the expression lives in a STATISTICS column
+// MariaDB does not have; see [types.DBIndex.KeyPartsIncomplete]. Comparing what
+// is left would find the key short by one part on every run and plan a rebuild
+// forever, on a database the pinned community binary v1.3.0 reports synced.
 func mysqlIndexKeyColumnsChanged(
 	generated goschema.Index,
 	database types.DBIndex,
 	semantics identifier.Semantics,
 ) bool {
+	if database.KeyPartsIncomplete {
+		return false
+	}
 	generatedParts := effectiveGeneratedIndexParts(generated)
 	databaseParts := effectiveDatabaseIndexParts(database)
 	if len(generatedParts) != len(databaseParts) {

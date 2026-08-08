@@ -908,6 +908,7 @@ func (p *Planner) addNewIndexes(
 		diff.IndexRemovals(),
 	)
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 
 	for _, ref := range diff.IndexAdditions() {
 		index, err := indexes.Resolve(ref)
@@ -915,6 +916,10 @@ func (p *Planner) addNewIndexes(
 			return nil, err
 		}
 		for removal := range indexRemovals.Matches(ref) {
+			if _, ownedByConstraint := constraintBacked[removal]; ownedByConstraint {
+				result = append(result, p.constraintBackedIndexDropNode(removal))
+				continue
+			}
 			dropIndexNode := ast.NewDropIndex(removal.Name).
 				SetTable(removal.TableName)
 			if guardedDrops {
@@ -948,12 +953,17 @@ func (p *Planner) removeIndexes(
 	// the default preset keeps today's output; a preset without it (or a
 	// composed set) actually changes the plan.
 	guarded := p.capabilities().Has(capability.DropIndexIfExists)
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	indexAdditions := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff.IndexAdditions(),
 	)
 	for _, ref := range diff.IndexRemovals() {
 		if indexAdditions.Contains(ref) {
+			continue
+		}
+		if _, ownedByConstraint := constraintBacked[ref]; ownedByConstraint {
+			result = append(result, p.constraintBackedIndexDropNode(ref))
 			continue
 		}
 		dropIndexNode := ast.NewDropIndex(ref.Name).
@@ -963,16 +973,43 @@ func (p *Planner) removeIndexes(
 		}
 		// CONCURRENTLY on a drop is opt-in policy AND capability-gated, exactly
 		// like the build side. A redefinition never reaches here (it is skipped
-		// above as an addition conflict), so a concurrent drop is always a
-		// standalone index removal — never the drop half of a rebuild and never
-		// an index backing a constraint, both of which PostgreSQL refuses to
-		// drop concurrently.
+		// above as an addition conflict), and a constraint's backing index left
+		// through the branch above, so a concurrent drop is always a standalone
+		// index removal — never the drop half of a rebuild and never an index
+		// backing a constraint, both of which PostgreSQL refuses to drop
+		// concurrently.
 		if p.usesConcurrentIndexDrop(ref) && p.capabilities().Has(capability.DropIndexConcurrently) {
 			dropIndexNode.SetConcurrently()
 		}
 		result = append(result, dropIndexNode)
 	}
 	return result
+}
+
+// constraintBackedIndexDropNode removes an index a UNIQUE constraint enforces,
+// through the constraint.
+//
+// PostgreSQL does not accept the index spelling for one: `DROP INDEX
+// "uq_users_email"` comes back as `cannot drop index uq_users_email because
+// constraint uq_users_email on table users requires it (SQLSTATE 2BP01)`,
+// measured on 17.10. Dropping the constraint takes its index with it, which is
+// what the pinned community binary v1.3.0 plans for the same change:
+// `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`, followed by the
+// CREATE INDEX that replaces it when there is one. The comparator marks these
+// removals (ConstraintBackedIndexRemovals) because it is the side that read the
+// constraint catalog.
+//
+// IF EXISTS is unconditional, matching removeConstraints: every supported
+// PostgreSQL line accepts it on DROP CONSTRAINT, and the DropIndexIfExists
+// capability speaks for the DROP INDEX spelling only.
+func (p *Planner) constraintBackedIndexDropNode(ref types.IndexRef) ast.Node {
+	return &ast.AlterTableNode{
+		Name: ref.TableName,
+		Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
+			ConstraintName: ref.Name,
+			IfExists:       true,
+		}},
+	}
 }
 
 // appendSkipComments emits one clearly-marked comment per change omitted by the

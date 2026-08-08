@@ -33,6 +33,14 @@ type tableColumnKey struct {
 	column string
 }
 
+// indexKey groups the information_schema.STATISTICS rows that belong to one
+// key. MySQL scopes an index name to its table, so the table is part of the
+// identity.
+type indexKey struct {
+	table string
+	index string
+}
+
 // NewMySQLReader creates a new MySQL schema reader
 func NewMySQLReader(db sqlrunner.Runner, schema string) *Reader {
 	if schema == "" {
@@ -492,48 +500,109 @@ func (r *Reader) readEnums(dbName string) ([]types.DBEnum, error) {
 	return enums, nil
 }
 
-// readIndexes reads all indexes
-func (r *Reader) readIndexes(dbName string) ([]types.DBIndex, error) {
-	query := `
+// indexKeyPartsQuery reads information_schema.STATISTICS one key part at a
+// time, in key order, so the key can be assembled in Go.
+//
+// The projection this replaced was
+// `GROUP_CONCAT(s.COLUMN_NAME ORDER BY s.SEQ_IN_INDEX)` split on a comma, and
+// it cannot carry a key faithfully in two ways that a schema is free to hit:
+//
+//   - A comma is a legal character in a MySQL identifier. `KEY idx (`a,b`)`
+//     came back as the two columns `a` and `b`.
+//   - GROUP_CONCAT truncates at group_concat_max_len, 1024 bytes by default on
+//     MySQL 9.7. A 16-part key of 64-character names is 1039 bytes, so the last
+//     name arrived cut in half. MariaDB 11.8 defaults to 1048576 and does not
+//     reach this one.
+//
+// Either way the reader reported column names the table does not have, and a
+// comparison that trusts them plans a rebuild for a key that never changed.
+// Measured on MySQL 9.7.1 and MariaDB 11.8.8, replaying a database's own
+// `schema inspect` output ended in
+// `Error 1072 (42000): Key column 'a' doesn't exist in table` where the pinned
+// community binary v1.3.0 reported "Schema is synced" (issue #1245).
+const indexKeyPartsQuery = `
 		SELECT
 			s.INDEX_NAME,
 			s.TABLE_NAME,
-			GROUP_CONCAT(s.COLUMN_NAME ORDER BY s.SEQ_IN_INDEX) as COLUMNS,
+			s.COLUMN_NAME,
 			s.NON_UNIQUE,
 			s.INDEX_TYPE
 		FROM information_schema.STATISTICS s
 		WHERE s.TABLE_SCHEMA = ?
 		AND s.TABLE_NAME NOT IN ('schema_migrations')
-		GROUP BY s.INDEX_NAME, s.TABLE_NAME, s.NON_UNIQUE, s.INDEX_TYPE
-		ORDER BY s.TABLE_NAME, s.INDEX_NAME`
+		ORDER BY s.TABLE_NAME, s.INDEX_NAME, s.SEQ_IN_INDEX`
 
-	rows, err := r.db.Query(query, dbName)
+// readIndexes reads all indexes, assembling each key from its parts.
+func (r *Reader) readIndexes(dbName string) ([]types.DBIndex, error) {
+	rows, err := r.db.Query(indexKeyPartsQuery, dbName)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var indexes []types.DBIndex
+	var (
+		indexes    []types.DBIndex
+		indexTypes []string
+		positions  = make(map[indexKey]int)
+	)
 	for rows.Next() {
-		var index types.DBIndex
-		var columnsStr string
-		var nonUnique int
-		var indexType string
-
-		err := rows.Scan(&index.Name, &index.TableName, &columnsStr, &nonUnique, &indexType)
+		var (
+			name       string
+			tableName  string
+			columnName sql.NullString
+			nonUnique  int
+			indexType  string
+		)
+		err := rows.Scan(&name, &tableName, &columnName, &nonUnique, &indexType)
 		if err != nil {
 			return nil, err
 		}
-
-		index.Columns = strings.Split(columnsStr, ",")
-		index.IsUnique = nonUnique == 0
-		index.IsPrimary = index.Name == "PRIMARY"
-		index.Definition = fmt.Sprintf("%s INDEX %s ON %s (%s)", indexType, index.Name, index.TableName, columnsStr)
-
-		indexes = append(indexes, index)
+		key := indexKey{table: tableName, index: name}
+		position, started := positions[key]
+		if !started {
+			position = len(indexes)
+			positions[key] = position
+			indexes = append(indexes, types.DBIndex{
+				Name:      name,
+				TableName: tableName,
+				IsUnique:  nonUnique == 0,
+				IsPrimary: name == "PRIMARY",
+			})
+			indexTypes = append(indexTypes, indexType)
+		}
+		addIndexKeyPart(&indexes[position], columnName)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for position := range indexes {
+		index := &indexes[position]
+		index.Definition = fmt.Sprintf(
+			"%s INDEX %s ON %s (%s)",
+			indexTypes[position],
+			index.Name,
+			index.TableName,
+			strings.Join(index.Columns, ","),
+		)
 	}
 
 	return indexes, nil
+}
+
+// addIndexKeyPart records one key part of an index.
+//
+// A NULL COLUMN_NAME is a functional key part -- `KEY idx ((b + 1))` on MySQL
+// 8.0.13 and later -- whose expression lives in a STATISTICS column MariaDB
+// does not have, so this reader cannot name it. It is recorded as a part that
+// is missing from Columns rather than dropped silently: a comparison that read
+// Columns as the whole key would plan a rebuild of a key that never changed.
+// See [types.DBIndex.KeyPartsIncomplete].
+func addIndexKeyPart(index *types.DBIndex, columnName sql.NullString) {
+	if !columnName.Valid {
+		index.KeyPartsIncomplete = true
+		return
+	}
+	index.Columns = append(index.Columns, columnName.String)
 }
 
 // readConstraints reads all constraints

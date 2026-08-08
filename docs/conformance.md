@@ -277,6 +277,27 @@ leaves out and why. SQLite, ClickHouse, CockroachDB, YugabyteDB and Spanner keep
 the comparison they had, because what makes two indexes the same index is a
 per-dialect question and those dialects were not measured.
 
+A key those two engines compare has to be read whole first, and one is read one
+part at a time for that reason. `information_schema.STATISTICS` describes a key
+as one row per part; joining the names in SQL and splitting them again in Go
+lost a key two ways, both of which a schema is free to hit:
+
+| Fixture on MySQL 9.7.1 | Read as | Applying a database's own `schema inspect` output |
+| --- | --- | --- |
+| `` KEY idx_weird (`a,b`) `` | two columns, `a` and `b` | exit 1, `Error 1072 (42000): Key column 'a' doesn't exist in table` |
+| a 16-part key of 64-character names, 1039 bytes past `group_concat_max_len` | the last name cut at 1024 bytes | exit 1, same error naming the truncated column |
+| `KEY idx_expr ((b + 1))` | nothing — the read failed | exit 1, `converting NULL to string is unsupported` |
+
+The pinned Atlas CE v1.3.0 binary reported all three synced, and so does Ptah
+now. A comma is a legal character in a MySQL identifier and
+`group_concat_max_len` defaults to 1024 bytes on MySQL 9.7 (1048576 on MariaDB
+11.8, which is why only the comma reaches it there). A functional key part has a
+`NULL` `COLUMN_NAME` and an `EXPRESSION` column MariaDB does not have, so the
+reader still cannot name it — it now reports the part as one it could not read
+instead of failing, and the key-column comparison declines on such an index
+rather than planning a rebuild of a key that never changed. Comparing MySQL
+expression keys is still not supported.
+
 ### A unique constraint and its index are one object, and the schema says which
 
 Every engine Ptah supports except SQL Server enforces a `UNIQUE` constraint with
@@ -318,16 +339,35 @@ state declares as an index reaches index comparison, whichever filter would
 otherwise have claimed it, and constraint comparison leaves that object alone; a
 desired state that spells uniqueness as a constraint, or does not mention the
 object at all, is unchanged — the constraint pool still owns it, and an
-undeclared unique key is still reported removed. The rule cannot start dropping
-anything, because an identity only survives the filters when the desired state
-names it, and an identity the desired state names is matched rather than
-removed.
+undeclared unique key is still reported removed. The rule never drops an object
+the desired state did not ask to change: an identity only survives the filters
+when the desired state names it, and a named identity is either matched, or
+replaced by the definition the desired state gives it — an addition paired with
+the drop of what it replaces, never a drop on its own.
 
 Two objects that merely share a name stay two: index identity carries the owning
 table, and a desired plain `index "uq_users_email"` against a database
-`UNIQUE KEY uq_users_email` is reported as a replacement — one `DROP INDEX`
-followed by one `CREATE INDEX`, which is the pair the pinned binary plans for it
-on MySQL 9.7.1 — rather than being collapsed into agreement.
+`UNIQUE KEY uq_users_email` is reported as a replacement rather than being
+collapsed into agreement.
+
+**The drop half of that replacement is spelled per engine, because the object
+is.** On MySQL and MariaDB the unique key and its constraint are one catalog row
+and `DROP INDEX` removes it. On PostgreSQL the constraint is an object of its
+own that owns the index, and the server refuses the index spelling. Both cells
+below are the pinned binary's own plan, matched by Ptah:
+
+| Target | Database | Desired | Plan |
+| --- | --- | --- | --- |
+| MySQL 9.7.1 | `UNIQUE KEY uq_users_email (email)` | `index "uq_users_email"` | `ALTER TABLE users DROP INDEX uq_users_email` then `ADD INDEX` |
+| PostgreSQL 17.10 | `CONSTRAINT uq_users_email UNIQUE (email)` | `index "uq_users_email"` | `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"` then `CREATE INDEX` |
+
+Dropping the PostgreSQL one as an index answers `cannot drop index
+uq_users_email because constraint uq_users_email on table users requires it
+(SQLSTATE 2BP01)`, so the comparator marks those removals and the
+PostgreSQL-family planner renders the constraint spelling. SQL Server never
+reaches the rule — a UNIQUE constraint and a unique index are separate objects
+there — and SQLite's constraint-backed index is `sqlite_autoindex_*`, which no
+statement can name and which the comparator therefore never considers.
 
 ## Reports
 

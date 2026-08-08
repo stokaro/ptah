@@ -896,6 +896,12 @@ func concurrentIndexRefsForPolicy(
 // A removal that is also an addition under the same identity is a redefinition
 // whose drop the planner pairs with the rebuild; it is excluded here so the
 // pair is never split across a transactional and a non-transactional file.
+//
+// A UNIQUE constraint's backing index is excluded for a different reason: it is
+// not dropped as an index at all (the planner spells it
+// ALTER TABLE ... DROP CONSTRAINT), and PostgreSQL has no concurrent form of
+// that statement. Routing it into the no-transaction file would also strand the
+// marker, which the no-transaction diff does not carry.
 func concurrentIndexDropRefsForPolicy(
 	diff *types.SchemaDiff,
 	info dbschematypes.DBInfo,
@@ -915,9 +921,13 @@ func concurrentIndexDropRefsForPolicy(
 		diff.EffectiveIdentifierSemantics(info.Dialect),
 		diff.IndexAdditions(),
 	)
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	var refs []types.IndexRef
 	for _, ref := range diff.IndexRemovals() {
 		if additions.Contains(ref) {
+			continue
+		}
+		if _, ownedByConstraint := constraintBacked[ref]; ownedByConstraint {
 			continue
 		}
 		refs = append(refs, ref)
@@ -1023,6 +1033,7 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.EnumsModified = slices.Clone(diff.EnumsModified)
 	clone.IndexesAdded = slices.Clone(diff.IndexesAdded)
 	clone.IndexesRemoved = slices.Clone(diff.IndexesRemoved)
+	clone.ConstraintBackedIndexRemovals = slices.Clone(diff.ConstraintBackedIndexRemovals)
 	clone.ExtensionsAdded = slices.Clone(diff.ExtensionsAdded)
 	clone.ExtensionsRemoved = slices.Clone(diff.ExtensionsRemoved)
 	clone.FunctionsAdded = slices.Clone(diff.FunctionsAdded)
