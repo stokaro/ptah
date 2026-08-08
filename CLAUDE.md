@@ -118,6 +118,14 @@ The system is organized into several key packages:
 - Each command is in its own package (generate, migrate, compare, etc.)
 - Main binary entry point in `cmd/ptah/main.go`
 - Root command assembly in `cmd/root/root.go`
+- Atlas-compatible command tree in `cmd/atlas`, shipped by the separate
+  `cmd/ptah-compat` binary
+
+Both command trees are adapters. A generally useful capability belongs in a
+reusable package below the CLI layer and must be reachable from the native
+`ptah` surface, not only from `ptah-compat`; only Atlas-specific interface
+machinery stays compatibility-only. `AGENTS.md` is authoritative for that
+boundary and for the dependency direction it implies.
 
 ### Key Design Patterns
 
