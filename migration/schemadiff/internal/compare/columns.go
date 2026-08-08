@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
 	"go.5x5.cz/ptah/migration/internal/typechange"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
@@ -135,10 +136,12 @@ func tableColumnsWithSemantics(
 	tableDiff := difftypes.TableDiff{TableName: genTable.QualifiedName()}
 
 	// Create maps for quick lookup
+	genFields := generatedschema.FieldsForTable(generated, genTable)
 	genColumns := make(map[string]goschema.Field)
-	for _, field := range generatedschema.FieldsForTable(generated, genTable) {
+	for _, field := range genFields {
 		genColumns[semantics.ColumnIdentityKey(field.Name)] = field
 	}
+	keyColumns := sqlitekey.KeyColumns(genTable, genFields)
 
 	dbColumns := make(map[string]types.DBColumn)
 	for _, col := range dbTable.Columns {
@@ -162,7 +165,10 @@ func tableColumnsWithSemantics(
 	for identity, genCol := range genColumns {
 		if dbCol, exists := dbColumns[identity]; exists {
 			if columnInTablePrimaryKey(genTable, genCol.Name) {
-				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol)
+				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol, dialect)
+			}
+			if sqliteKeyColumnImpliesNotNull(dialect, genTable, keyColumns, genCol) {
+				genCol.Nullable = false
 			}
 			columnKey := columnIdentity{
 				table:  newTableIdentity(genTable.Schema, genTable.Name, semantics),
@@ -300,10 +306,13 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
 
-	// Compare nullable (primary keys are always NOT NULL regardless of the field definition)
+	// Compare nullable. On the engines that enforce it, a primary key column is
+	// NOT NULL whatever the field says, and the reader reports it that way, so
+	// the generated side is normalized to match or every primary key would show
+	// a permanent diff.
 	genNullable := genCol.Nullable
-	if genCol.Primary {
-		genNullable = false // Primary keys are always NOT NULL
+	if genCol.Primary && primaryKeyImpliesNotNull(dialect) {
+		genNullable = false
 	}
 	dbNullable := dbCol.IsNullable == "YES"
 	if genNullable != dbNullable {
@@ -366,6 +375,45 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 	return colDiff
 }
 
+// primaryKeyImpliesNotNull reports whether the dialect makes a primary key
+// column NOT NULL on its own, so the comparator may normalize the generated
+// side to the reader's answer.
+//
+// SQLite does not decide this from the dialect at all. On a rowid table
+// `id INTEGER PRIMARY KEY` is a rowid alias: `pragma table_info.notnull` is 0,
+// an explicit NULL insert is accepted, and a rowid is assigned for it.
+// Normalizing anyway made a schema whose key column SQLite reports as nullable
+// diff forever against the very DDL that created it (stokaro/ptah#1235).
+//
+// SQLite's answer depends on the table's shape, which this predicate cannot see,
+// so it answers with the shape that has no NOT NULL to normalize -- the ordinary
+// rowid table. [sqliteKeyColumnImpliesNotNull] carries the STRICT and
+// WITHOUT ROWID halves, where SQLite does enforce NOT NULL on a key column, and
+// the caller applies both.
+func primaryKeyImpliesNotNull(dialect string) bool {
+	return platform.NormalizeDialect(dialect) != platform.SQLite
+}
+
+// sqliteKeyColumnImpliesNotNull reports whether SQLite -- not SQL in general --
+// enforces NOT NULL on this key column because of the table's shape.
+//
+// A STRICT or WITHOUT ROWID table makes its key columns NOT NULL, and the reader
+// reports them that way from `pragma table_info`, so the generated side has to
+// be normalized to match or the table drifts against the DDL that created it and
+// every plan is another full table rebuild. The rowid alias of a STRICT table
+// stays nullable; see [sqlitekey] for the measured shape table.
+func sqliteKeyColumnImpliesNotNull(
+	dialect string,
+	table goschema.Table,
+	keyColumns []string,
+	field goschema.Field,
+) bool {
+	if platform.NormalizeDialect(dialect) != platform.SQLite {
+		return false
+	}
+	return sqlitekey.ImpliesNotNull(table, keyColumns, field)
+}
+
 func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedType, databaseType string) {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.SQLite:
@@ -414,8 +462,10 @@ func sqliteRenderedColumnType(rawType string) string {
 	}
 }
 
-func normalizeTablePrimaryKeyColumn(genCol goschema.Field, dbCol types.DBColumn) goschema.Field {
-	genCol.Nullable = false
+func normalizeTablePrimaryKeyColumn(genCol goschema.Field, dbCol types.DBColumn, dialect string) goschema.Field {
+	if primaryKeyImpliesNotNull(dialect) {
+		genCol.Nullable = false
+	}
 	genCol.Primary = dbCol.IsPrimaryKey
 	return genCol
 }

@@ -293,15 +293,40 @@ func (n *ColumnNode) Accept(visitor Visitor) error {
 
 // SetPrimary marks the column as a primary key and returns the column for chaining.
 //
-// Setting a column as primary automatically makes it NOT NULL, as primary keys
-// cannot contain NULL values in SQL.
+// Nullability is left alone. "A primary key is NOT NULL" is a rule of the
+// dialect, not of this AST: SQLite does not enforce it on a rowid table, where
+// `id INTEGER PRIMARY KEY` is a rowid alias whose `pragma table_info.notnull`
+// is 0 and which accepts an explicit NULL insert. Clearing the flag here made
+// every reader of a SQLite database and every parser of SQLite DDL invent a
+// NOT NULL its source never wrote, so a dump taken through `schema inspect`
+// restored a stricter table than the one it read. See stokaro/ptah#1235.
+//
+// The dialects that do enforce it say so in their own renderer, which is where
+// the dialect is known. On the CREATE TABLE path they always have: the
+// PostgreSQL, MySQL, MariaDB and SQL Server renderers write NOT NULL beside
+// PRIMARY KEY without consulting this flag, and the ClickHouse renderer
+// excludes a primary-key column from Nullable() wrapping.
+//
+// The ALTER path is not free of it, and assuming otherwise cost a live
+// regression. The PostgreSQL and SQL Server MODIFY-COLUMN renderers do read
+// this flag, and PostgreSQL refuses `ALTER COLUMN ... DROP NOT NULL` on a key
+// column outright (SQLSTATE 42P16), so leaving the flag set there made every
+// modification of a single-column key column unappliable. Both now take the
+// primary-key branch as well; see the guards in core/renderer, pinned by
+// TestModifyColumn_KeyColumnNeverRendersNullable across every supported
+// dialect. Any new consumer of this flag owes the same decision.
+//
+// SQLite's own answer is not "never" either, and a consumer that reads it as
+// such is wrong in the other direction: a STRICT or WITHOUT ROWID table does
+// make its key columns NOT NULL, and the catalog reports them that way. The
+// rule is a property of the table rather than of the dialect, so it lives in
+// internal/sqlitekey with the measured shape table rather than here.
 //
 // Example:
 //
 //	column.SetPrimary()
 func (n *ColumnNode) SetPrimary() *ColumnNode {
 	n.Primary = true
-	n.Nullable = false // Primary keys are always NOT NULL
 	return n
 }
 

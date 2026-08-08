@@ -419,10 +419,22 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 	if column.AutoInc && !column.Primary {
 		return "", unsupportedFeaturef("AUTOINCREMENT requires an INTEGER PRIMARY KEY column")
 	}
+	// NOT NULL is written even when the column is the primary key. SQLite does
+	// not derive one from the other: `id integer PRIMARY KEY` is a rowid alias
+	// whose `pragma table_info.notnull` is 0 and which accepts an explicit NULL
+	// insert, so folding an author's NOT NULL into PRIMARY KEY drops a
+	// constraint the source declared. Measured against the pinned Atlas
+	// community v1.3.0 binary: applying an HCL table with `null = false` on the
+	// key column and then asking that binary whether the result matches the
+	// same file answered `Schemas are synced, no changes to be made.` only once
+	// the NOT NULL survived; without it the binary planned a full table rebuild
+	// against a database Ptah had just applied from that file. See
+	// stokaro/ptah#1235 group 5.
+	if !column.Nullable {
+		parts = append(parts, "NOT NULL")
+	}
 	if column.Primary {
 		parts = append(parts, "PRIMARY KEY")
-	} else if !column.Nullable {
-		parts = append(parts, "NOT NULL")
 	}
 	if column.AutoInc {
 		parts = append(parts, "AUTOINCREMENT")

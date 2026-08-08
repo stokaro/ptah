@@ -266,7 +266,7 @@ func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
 			Name:                name,
 			DataType:            normalizeSQLiteType(dataType),
 			ColumnType:          dataType,
-			IsNullable:          sqliteNullable(notNull, pkOrdinal),
+			IsNullable:          sqliteNullable(notNull),
 			OrdinalPosition:     cid + 1,
 			IsPrimaryKey:        pkOrdinal > 0,
 			IsAutoIncrement:     strings.EqualFold(name, ddlMetadata.autoIncrementColumn),
@@ -288,8 +288,19 @@ func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
 	return columnsByTable, nil
 }
 
-func sqliteNullable(notNull, pkOrdinal int) string {
-	if notNull != 0 || pkOrdinal > 0 {
+// sqliteNullable reports the column's nullability as SQLite itself reports it,
+// from `pragma table_info.notnull` alone.
+//
+// Primary-key membership is deliberately not consulted. SQLite does not imply
+// NOT NULL from PRIMARY KEY on a rowid table: `id INTEGER PRIMARY KEY` is a
+// rowid alias with `notnull` 0 that accepts an explicit NULL insert and assigns
+// a rowid for it. Measured on the pinned Atlas community v1.3.0 binary,
+// `schema inspect --format '{{ json . }}'` over such a column reports
+// `"null": true`, and it is the only column in the fixture whose flag Ptah
+// disagreed about. Reading the flag from the key instead of from the catalog
+// inverted it. See stokaro/ptah#1235 finding 6.3.
+func sqliteNullable(notNull int) string {
+	if notNull != 0 {
 		return "NO"
 	}
 	return "YES"
@@ -764,16 +775,34 @@ func first(values []string) string {
 	return values[0]
 }
 
+// reconcileColumnUniqueness marks a column UNIQUE when the table declares a
+// single-column UNIQUE **constraint** over it.
+//
+// The distinction is the whole point. SQLite's `pragma index_list` reports an
+// `origin` for every index: `u` for the implicit index behind a declared UNIQUE
+// constraint, and `c` for one an author created with `CREATE UNIQUE INDEX`.
+// Only the first is part of the column's declaration; the reader turns those
+// into [types.DBConstraint] rows of type UNIQUE, which is the signal used here.
+//
+// Keying off `schema.Indexes` instead folded a standalone `CREATE UNIQUE INDEX`
+// into the column while leaving the index itself in the schema, so rendering the
+// result emitted both the inline UNIQUE and the index. Measured against the
+// pinned Atlas community v1.3.0 binary, replaying
+// `schema inspect --format '{{ sql . }}'` over a table whose only uniqueness on
+// a column came from a named index produced four indexes where the source had
+// three: the extra one was a phantom `sqlite_autoindex` the source never had.
+// See stokaro/ptah#1235 finding 5.2.
 func reconcileColumnUniqueness(schema *types.DBSchema) {
 	uniqueColumns := make(map[tableColumnKey]struct{})
-	for _, index := range schema.Indexes {
-		if index.IsPrimary || !index.IsUnique || len(index.Columns) != 1 {
+	for _, constraint := range schema.Constraints {
+		if constraint.Type != "UNIQUE" {
 			continue
 		}
-		if strings.Contains(strings.ToUpper(index.Definition), " WHERE ") {
+		columns := constraint.ColumnNamesOrDefault()
+		if len(columns) != 1 {
 			continue
 		}
-		uniqueColumns[tableColumnKey{table: index.QualifiedTableName(), column: index.Columns[0]}] = struct{}{}
+		uniqueColumns[tableColumnKey{table: constraint.QualifiedTableName(), column: columns[0]}] = struct{}{}
 	}
 	for tableIdx := range schema.Tables {
 		table := &schema.Tables[tableIdx]

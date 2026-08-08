@@ -1707,6 +1707,14 @@ func (p *parser) rejectNestedBlocks(block *hclsyntax.Block, label string) error 
 	return nil
 }
 
+// markPrimaryFields moves a single-column table-level primary key onto the
+// column so it renders inline. The column's `null` attribute is left as the
+// document wrote it: measured on the pinned Atlas community v1.3.0 binary,
+// `schema apply` from a table whose key column says `null = true` builds a
+// SQLite table whose `pragma table_info.notnull` is 0 for that column, so
+// clearing the flag here would apply a stricter table than the document asked
+// for. Where the flag is absent the HCL parser already defaults it to NOT NULL.
+// See stokaro/ptah#1235.
 func markPrimaryFields(fields []goschema.Field, columns []string) {
 	if len(columns) != 1 {
 		return
@@ -1714,7 +1722,6 @@ func markPrimaryFields(fields []goschema.Field, columns []string) {
 	for i := range fields {
 		if fields[i].Name == columns[0] {
 			fields[i].Primary = true
-			fields[i].Nullable = false
 			return
 		}
 	}

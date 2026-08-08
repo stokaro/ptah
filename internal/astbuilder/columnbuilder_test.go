@@ -19,7 +19,11 @@ func TestColumnBuilder_Primary(t *testing.T) {
 	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.Primary, qt.IsTrue)
-	c.Assert(column.Nullable, qt.IsFalse) // Primary keys are automatically NOT NULL
+	// Primary() states the key and nothing else. Whether a key column is also
+	// NOT NULL is the dialect's rule and SQLite does not have it, so the
+	// builder leaves the flag for the caller and the renderer to settle. See
+	// stokaro/ptah#1235.
+	c.Assert(column.Nullable, qt.IsTrue)
 }
 
 func TestColumnBuilder_NotNull(t *testing.T) {
@@ -261,18 +265,43 @@ func TestColumnBuilder_MultipleColumns(t *testing.T) {
 	c.Assert(createdAtCol.Default.Expression, qt.Equals, "NOW()")
 }
 
-func TestColumnBuilder_PrimaryKeyOverridesNullable(t *testing.T) {
+// TestColumnBuilder_PrimaryKeyKeepsNullable pins that Primary() does not undo
+// an explicit Nullable(). A builder call that silently reverses one the caller
+// already made is the coupling stokaro/ptah#1235 removed: it is right on
+// PostgreSQL and MySQL and wrong on SQLite, where a rowid key column is
+// nullable, so the dialect settles it and the builder records what was asked.
+func TestColumnBuilder_PrimaryKeyKeepsNullable(t *testing.T) {
 	c := qt.New(t)
 
-	table := astbuilder.NewTable("test").
-		Column("id", "INTEGER").Nullable().Primary().End()
+	tests := []struct {
+		name         string
+		build        func() *astbuilder.TableBuilder
+		wantNullable bool
+	}{
+		{
+			name: "nullable stated before the key",
+			build: func() *astbuilder.TableBuilder {
+				return astbuilder.NewTable("test").
+					Column("id", "INTEGER").Nullable().Primary().End()
+			},
+			wantNullable: true,
+		},
+		{
+			name: "not null stated before the key",
+			build: func() *astbuilder.TableBuilder {
+				return astbuilder.NewTable("test").
+					Column("id", "INTEGER").NotNull().Primary().End()
+			},
+			wantNullable: false,
+		},
+	}
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			result := test.build().Build()
 
-	result := table.Build()
-
-	c.Assert(result.Columns, qt.HasLen, 1)
-	column := result.Columns[0]
-
-	// Primary key should override nullable setting
-	c.Assert(column.Primary, qt.IsTrue)
-	c.Assert(column.Nullable, qt.IsFalse)
+			c.Assert(result.Columns, qt.HasLen, 1)
+			c.Assert(result.Columns[0].Primary, qt.IsTrue)
+			c.Assert(result.Columns[0].Nullable, qt.Equals, test.wantNullable)
+		})
+	}
 }

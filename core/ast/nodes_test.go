@@ -126,7 +126,19 @@ func TestColumnNode_SetPrimary(t *testing.T) {
 	column := ast.NewColumn("id", "INTEGER").SetPrimary()
 
 	c.Assert(column.Primary, qt.IsTrue)
-	c.Assert(column.Nullable, qt.IsFalse) // Primary keys are always NOT NULL
+	// Nullability is a separate statement about the column. SQLite does not
+	// derive NOT NULL from PRIMARY KEY on a rowid table, so SetPrimary leaves
+	// the flag where the caller put it. See stokaro/ptah#1235.
+	c.Assert(column.Nullable, qt.IsTrue)
+}
+
+func TestColumnNode_SetPrimaryKeepsNotNull(t *testing.T) {
+	c := qt.New(t)
+
+	column := ast.NewColumn("id", "INTEGER").SetNotNull().SetPrimary()
+
+	c.Assert(column.Primary, qt.IsTrue)
+	c.Assert(column.Nullable, qt.IsFalse)
 }
 
 func TestColumnNode_SetNotNull(t *testing.T) {
@@ -240,7 +252,7 @@ func TestColumnNode_FluentAPI(t *testing.T) {
 	c.Assert(column.Type, qt.Equals, "INTEGER")
 	c.Assert(column.Primary, qt.IsTrue)
 	c.Assert(column.AutoInc, qt.IsTrue)
-	c.Assert(column.Nullable, qt.IsFalse) // SetPrimary() sets this to false
+	c.Assert(column.Nullable, qt.IsTrue) // SetPrimary() leaves nullability alone
 	c.Assert(column.Comment, qt.Equals, "Auto-incrementing primary key")
 }
 
@@ -425,7 +437,7 @@ func TestComplexTableCreation(t *testing.T) {
 	c.Assert(idCol.Name, qt.Equals, "id")
 	c.Assert(idCol.Primary, qt.IsTrue)
 	c.Assert(idCol.AutoInc, qt.IsTrue)
-	c.Assert(idCol.Nullable, qt.IsFalse)
+	c.Assert(idCol.Nullable, qt.IsTrue) // no SetNotNull() on this column
 	c.Assert(idCol.Comment, qt.Equals, "Primary key")
 
 	// Verify second column (email)
