@@ -72,16 +72,16 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 168 capabilities below:
+Across the 169 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 95 |
+| Ptah supports it fully | 96 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 24 |
 | Ptah and Atlas CE both support it | 26 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
-| Ptah has it and neither Atlas edition does | 21 |
+| Ptah has it and neither Atlas edition does | 22 |
 | Atlas CE has it and Ptah does not, or only in part | 25 |
 | An Atlas column is ❔ — not established by this page's evidence | 5 |
 
@@ -187,6 +187,7 @@ seven of them as open capabilities regardless.
 | Pre-migration webhook and shell hook gates | ✅ | ❌ | ❌ | `--webhook` POSTs migration metadata and requires HTTP 200; `--pre-up-hook`/`--pre-down-hook` run a shell command that must exit 0, else the run aborts. Also ptah.yaml migration.webhook/pre_up_hook. |
 | Prometheus metrics endpoint (`--metrics-addr`) | ✅ | ❌ | ❌ | migrations up, down, and status serve a Prometheus /metrics endpoint at the given address for the run. |
 | Repair dirty or partial revision state | ✅ | ❌ | ❌ | `--resume-from` finishes the failed body: up statements before marking applied, down statements before removing the revision. No repair verb in the pinned CE inventory or reviewed Atlas evidence. |
+| Report of an ignored `--dir` URL query key | ✅ | ❌ | ❌ | Only `?format=` selects a layout. On the eight verbs accepting a `--dir` query, other keys are ignored, named on stderr, exit 0 unchanged; `PTAH_STRICT_DIR_QUERY=1` refuses. Six verbs take no query. |
 | Revision table format and placement | ✅ | ✅ | ✅ | `--revision-format` ptah\|atlas plus `--migrations-table` and `--migrations-schema`; the compat path defaults to Atlas rows. |
 | Roll back applied migrations (down) | 🟡 | ❌ | ✅ | Ptah validates all selected down bodies before changing state. Dry-run reports distinguish preflight rejection from attempted rollback. Registry flags remain waivers. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |

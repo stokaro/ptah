@@ -4,11 +4,18 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"slices"
 
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 )
+
+// DirFormatQueryKey is the one migration-directory URL query key that selects
+// anything. It is named rather than spelled twice so that "which keys mean
+// something here" has a single answer, which is what
+// [IgnoredDirQueryKeys] reports the complement of.
+const DirFormatQueryKey = "format"
 
 // ResolveApplySourceForFormat returns the immutable filesystem the Atlas apply
 // migrator should read for an already-resolved directory format. The native
@@ -190,9 +197,35 @@ func parseApplyDirFormat(value string) (atlasmigrateimport.Format, error) {
 // asked for one. Refusing is the safe side of that, so it is kept
 // (stokaro/ptah#990 item 6).
 func applyDirURLFormat(query url.Values) (string, bool) {
-	formats := query["format"]
+	formats := query[DirFormatQueryKey]
 	if len(formats) > 0 {
 		return formats[0], true
 	}
 	return "", false
+}
+
+// IgnoredDirQueryKeys returns the migration-directory URL query keys the run
+// takes no meaning from, sorted, each listed once.
+//
+// It is the complement of [DirFormatQueryKey], which is the only key
+// [applyDirURLFormat] reads. Dropping the rest is parity — measured on the
+// pinned community binary v1.3.0, `--dir 'file://m?nonsense=1'` exits 0 on all
+// eight verbs that register --dir and reads the directory exactly as no query
+// at all does — but dropping them SILENTLY is not something that parity
+// requires, and a caller that can name them can say so instead.
+//
+// A repeated `format` is deliberately absent from the result. That key did
+// select the layout; what a second occurrence loses is a VALUE, under the
+// first-one-wins rule [applyDirURLFormat] documents and stokaro/ptah#990
+// measured. Listing the key here would report the opposite of what happened.
+func IgnoredDirQueryKeys(query url.Values) []string {
+	keys := make([]string, 0, len(query))
+	for key := range query {
+		if key == DirFormatQueryKey {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
 }

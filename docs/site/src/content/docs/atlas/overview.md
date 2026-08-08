@@ -158,6 +158,19 @@ refuses it.
 repository-controlled program. Set it to `1` and the data source is evaluated,
 matching the native `--allow-external-schema` flag.
 
+**`PTAH_STRICT_DIR_QUERY`** — by default, a `--dir` URL query key other than
+`format` is ignored, exactly as the community CLI ignores it, and named on
+standard error so a misspelled `?fromat=goose` does not quietly read the
+directory in the wrong layout. Set it to `1` and such a key is a refusal
+instead, for a pipeline that wants a typo to stop the run. An invalid value is
+an error rather than a silent "off": the value is read on every run of the eight
+verbs that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`,
+`set`, `status` and `validate` — whether or not the URL carries a query at all,
+so `PTAH_STRICT_DIR_QUERY=nope` in a CI environment file fails the next run
+rather than the next typo. `migrate checkpoint`, `down`, `edit`, `rebase`, `rm`
+and `test` refuse a `--dir` query outright, so neither the note nor this
+variable applies there.
+
 ### One shape has no Atlas-readable form at all
 
 Suppression can only leave out a block nothing else names. A **sequence behind a

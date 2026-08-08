@@ -180,6 +180,13 @@ func resolveAtlasMigrateSource(
 		)
 	}
 
+	// Positioned after the format value has been accepted and before this verb's
+	// atlas.sum gate; see [reportIgnoredDirQuery] for the two rules that fix the
+	// position.
+	if err := reportIgnoredDirQuery(cmd.ErrOrStderr(), verb.use, localDir.Query); err != nil {
+		return atlasMigrateSource{}, err
+	}
+
 	devURL, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dev-url"))
 	source := atlasMigrateSource{
 		dir:         localDir.Path,

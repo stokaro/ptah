@@ -191,6 +191,12 @@ echo
 echo "===== 7. refusals: unknown format, case, extra query keys, stray args"
 # Every row here is a documented divergence (stokaro/ptah#990), so both tools
 # are printed: a future change that quietly closes or widens one is visible.
+#
+# The `?format=goose&other=1` row exits 0 on both tools and is not a divergence.
+# ptah prints a `note:` naming `other` on stderr there and CE prints nothing,
+# which is deliberate rather than drift: the key is dropped on both, and only one
+# of them says so (stokaro/ptah#1013). The rows are print-only, so the extra line
+# sets no fail flag.
 d=$(seed refuse)
 for spec in "--dir=file://$d?format=sqitch" "--dir=file://$d?format=GOOSE" "--dir=file://$d?format=goose&other=1" "--dir=file://$d?format=goose&format=flyway" "--dir=file://$d?format=flyway;x=1"; do
   out=$("$COMPAT" migrate hash "$spec" 2>&1); rc=$?

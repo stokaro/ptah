@@ -201,7 +201,7 @@ func prepareAtlasMigrateSet(
 	// when only the Atlas layout was accepted, so an invocation carrying two bad
 	// values keeps printing the same one of them. The query spelling lives in
 	// --dir and joins the resolution below.
-	if _, err := resolveAtlasVerbDirFormat("set", opts.dirFormat, nil); err != nil {
+	if _, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "set", opts.dirFormat, nil); err != nil {
 		return prepared, err
 	}
 
@@ -216,7 +216,7 @@ func prepareAtlasMigrateSet(
 	if err != nil {
 		return prepared, fmt.Errorf("atlas migrate set --dir: %w", err)
 	}
-	format, err := resolveAtlasVerbDirFormat("set", opts.dirFormat, localDir.Query)
+	format, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "set", opts.dirFormat, localDir.Query)
 	if err != nil {
 		return prepared, err
 	}
