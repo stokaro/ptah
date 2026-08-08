@@ -242,14 +242,37 @@ func TestResolve_LocalFilesMatchLegacyLoader(t *testing.T) {
 	c.Assert(state.Schema.Tables[0].Name, qt.Equals, "files_users")
 }
 
-func TestResolve_LocalDirectoryWithoutSumKeepsLegacyError(t *testing.T) {
+// TestResolve_EmptyLocalDirectoryRefuses covers the one directory that is still
+// not a desired state: a directory without atlas.sum is a schema directory now
+// (stokaro/ptah#940 item B), and an empty one holds no schema to resolve.
+func TestResolve_EmptyLocalDirectoryRefuses(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	set := classifySingle(t, "--to", "file://"+dir)
 
 	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
 
-	c.Assert(err, qt.ErrorMatches, `schema file is a directory: .*`)
+	c.Assert(err, qt.ErrorMatches, `".*" contains neither SQL nor HCL files`)
+}
+
+// TestResolve_LocalDirectoryOfSQLFiles is the regression test for
+// stokaro/ptah#940 item B on the resolver: a file:// directory of .sql schema
+// files was classified as a local file and then refused with `schema file is a
+// directory`, while the pinned community binary read every file in it.
+func TestResolve_LocalDirectoryOfSQLFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "1_users.sql"),
+		[]byte("CREATE TABLE dir_users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "2_posts.sql"),
+		[]byte("CREATE TABLE dir_posts (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	set := classifySingle(t, "--to", "file://"+dir)
+
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Dialect: "sqlite"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(state.Kind, qt.Equals, atlassource.KindLocalFile)
+	c.Assert(state.Schema.Tables, qt.HasLen, 2)
 }
 
 func assertSQLiteDevEmpty(c *qt.C, devURL string) {
