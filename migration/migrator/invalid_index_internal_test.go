@@ -1,13 +1,14 @@
 package migrator
 
-// White-box testing required: postgresCreatedIndexNames and
-// unusableIndexRepairError are the pure halves of a refusal whose other half is
-// a live pg_index query. Reaching them through RepairMigration needs a
-// PostgreSQL connection and a half-built concurrent index, so the boundary
-// cases exercised here -- substring near-misses, quoted and unquoted spellings,
-// comments and string literals, the name-less CREATE INDEX form -- are only
-// observable directly. The end-to-end behavior is covered against a live
-// database in integration/gonative.
+// White-box testing required: postgresCreatedIndexNames,
+// unusableIndexRepairError and unusableIndexApplyError are the pure halves of a
+// refusal whose other half is a live pg_index query. Reaching them through
+// RepairMigration or MigrateUpWithOptions needs a PostgreSQL connection and a
+// half-built concurrent index, so the boundary cases exercised here --
+// substring near-misses, quoted and unquoted spellings, comments and string
+// literals, the name-less CREATE INDEX form, and the plural rendering that no
+// single-index fixture reaches -- are only observable directly. The end-to-end
+// behavior is covered against a live database in integration/gonative.
 
 import (
 	"testing"
@@ -159,6 +160,65 @@ func TestUnusableIndexRepairError(t *testing.T) {
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
 			err := unusableIndexRepairError(1785756328, tt.unusable)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, tt.want)
+		})
+	}
+}
+
+// TestUnusableIndexApplyError pins the refusal the up path renders. It has to
+// say something the repair refusal does not: why running the body is not itself
+// the fix, because running it is the action an operator reaching for
+// --allow-dirty has already chosen.
+func TestUnusableIndexApplyError(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name     string
+		unusable []postgresUnusableIndex
+		want     string
+	}{
+		{
+			name: "one index names it, its flags, and the rebuild command",
+			unusable: []postgresUnusableIndex{
+				{Schema: "public", Name: "idx_members_email"},
+			},
+			want: `migration 1785756328 cannot be applied: PostgreSQL reports index ` +
+				`"public"."idx_members_email" (indisvalid=false, indisready=false) unusable, ` +
+				`and CREATE INDEX ... IF NOT EXISTS finds the name taken and skips it rather than rebuilding it, ` +
+				`so this run would record the migration applied over a constraint that is not enforced; ` +
+				`run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", or drop the index, then run the migration again`,
+		},
+		{
+			name: "a ready but invalid index reports both flags as measured",
+			unusable: []postgresUnusableIndex{
+				{Schema: "public", Name: "idx_members_email", Ready: true},
+			},
+			want: `migration 1785756328 cannot be applied: PostgreSQL reports index ` +
+				`"public"."idx_members_email" (indisvalid=false, indisready=true) unusable, ` +
+				`and CREATE INDEX ... IF NOT EXISTS finds the name taken and skips it rather than rebuilding it, ` +
+				`so this run would record the migration applied over a constraint that is not enforced; ` +
+				`run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", or drop the index, then run the migration again`,
+		},
+		{
+			name: "two indexes are both named and both get a rebuild command",
+			unusable: []postgresUnusableIndex{
+				{Schema: "app", Name: "idx_a"},
+				{Schema: "public", Name: "idx_b", Valid: true},
+			},
+			want: `migration 1785756328 cannot be applied: PostgreSQL reports indexes ` +
+				`"app"."idx_a" (indisvalid=false, indisready=false), ` +
+				`"public"."idx_b" (indisvalid=true, indisready=false) unusable, ` +
+				`and CREATE INDEX ... IF NOT EXISTS finds the name taken and skips it rather than rebuilding it, ` +
+				`so this run would record the migration applied over a constraint that is not enforced; ` +
+				`run REINDEX INDEX CONCURRENTLY "app"."idx_a"; REINDEX INDEX CONCURRENTLY "public"."idx_b", ` +
+				`or drop the indexes, then run the migration again`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			err := unusableIndexApplyError(1785756328, tt.unusable)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, tt.want)
 		})

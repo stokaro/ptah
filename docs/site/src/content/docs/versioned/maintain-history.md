@@ -214,6 +214,9 @@ is `REINDEX`. Only indexes the migration itself creates are checked, so an
 unrelated invalid index elsewhere never blocks a repair. Other dialects have no
 concurrent index build to leave half-finished and are unaffected.
 
+`ptah migrations up` refuses on the same grounds, so `--allow-dirty` cannot be
+used to walk past it either. See [Apply migrations](../apply/#failure-modes).
+
 ## Set the revision boundary (set)
 
 `repair` fixes one dirty row and `baseline` only records existing history as

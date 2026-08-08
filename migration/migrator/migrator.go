@@ -1680,6 +1680,12 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 	// read would deadlock. See [Migrator.planUpRetry].
 	plans := make(map[int64]upRetryPlan, len(migrations))
 	for _, migration := range migrations {
+		// Same reason the plans are read here: the probe queries the catalog, so
+		// it has to run before the batch transaction takes the connection. See
+		// [Migrator.refuseUpOverUnusableIndex].
+		if err := m.refuseUpOverUnusableIndex(ctx, migration); err != nil {
+			return nil, err
+		}
 		plan, err := m.planUpRetry(ctx, migration)
 		if err != nil {
 			return nil, err
@@ -1816,6 +1822,12 @@ func (m *Migrator) applyUpMigrationObserved(
 	}
 	checksDeferred, err = m.runPreMigrationChecks(ctx, migration, observesApplyState)
 	if err != nil {
+		return false, err
+	}
+	// Read-only, and before the revision row is touched: a refusal has to leave
+	// whatever an earlier attempt recorded exactly as it found it. See
+	// [Migrator.refuseUpOverUnusableIndex].
+	if err := m.refuseUpOverUnusableIndex(ctx, migration); err != nil {
 		return false, err
 	}
 	plan, err := m.planUpRetry(ctx, migration)

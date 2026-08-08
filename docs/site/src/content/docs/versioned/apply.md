@@ -303,12 +303,25 @@ statement's outcome as unknown. Inspect the database before repair. Ptah
 rejects `repair --resume-from` while this marker is present because the SQL may
 already have committed.
 
-**A concurrent index build failed on PostgreSQL.** The invalid index left
-behind keeps the name, so retrying the generated `IF NOT EXISTS` statement is
-skipped rather than retried and reports no error. Ptah refuses to repair the
-migration while the index is unusable and names the `REINDEX INDEX
-CONCURRENTLY` that rebuilds it — `--force` does not bypass that refusal. See
-[Maintain migration history](../maintain-history/).
+**A concurrent index build failed on PostgreSQL** (exit `2`). The invalid index
+left behind keeps the name, so re-issuing the generated `IF NOT EXISTS`
+statement is skipped rather than retried and reports no error. Ptah refuses to
+run the migration while an index it creates is unusable, and names the `REINDEX
+INDEX CONCURRENTLY` that rebuilds it:
+
+```text
+error: error running migrations: migration 1785756328 cannot be applied: PostgreSQL reports index "public"."idx_members_email" (indisvalid=false, indisready=false) unusable, and CREATE INDEX ... IF NOT EXISTS finds the name taken and skips it rather than rebuilding it, so this run would record the migration applied over a constraint that is not enforced; run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", or drop the index, then run the migration again
+```
+
+`--allow-dirty` does not bypass this — retrying the body is what the refusal is
+about. An invalid *unique* index enforces nothing, so without the refusal the
+run would exit `0`, report the database up to date, and keep accepting duplicate
+rows. Rebuild the index with the `REINDEX` the message names, or drop it so the
+name is free and the statement builds it, then run again. Only indexes the
+migration itself creates are checked, and only on PostgreSQL; other dialects
+have no concurrent index build to leave half-finished. A dry run is exempt,
+because it records nothing. `ptah migrations repair` refuses on the same
+grounds — see [Maintain migration history](../maintain-history/).
 
 **A pre-migration check blocked the migration.** Nothing is applied and no
 revision row is written, so the run is recorded as never started. Fix the data
