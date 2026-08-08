@@ -184,6 +184,7 @@ func TestMigrateApplyNamedLockReachesMigrator(t *testing.T) {
 // declarative verb: the note names the lock read back from the ACQUIRED lock
 // object, and --skip-lock acquires nothing so there is no lock to name.
 func TestSchemaApplyNamedLockReachesLockMachinery(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	tests := []struct {
 		name     string
 		args     []string

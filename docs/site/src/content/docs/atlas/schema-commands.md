@@ -665,7 +665,8 @@ Ptah's in two measured ways, both documented in
 ## Apply a desired schema
 
 `ptah-compat schema apply` accepts a live database `--url` and a `--to`
-desired state: one or more local schema file URLs, one directly connectable
+desired state: one or more local schema file URLs, a `file://` directory of
+`.sql` or `.hcl` schema files read in filename order, one directly connectable
 database URL whose live schema becomes the desired state, one migration
 directory (a `file://` directory containing `atlas.sum`) replayed on the
 required `--dev-url` dev database, or one `env://<attribute>` reference
@@ -744,16 +745,22 @@ env "local" {
 ptah-compat schema apply --env local --dry-run
 ```
 
-`--dev-url` must match the target database dialect. For migration-directory
-`--to` sources it names the dev database the directory is replayed on and is
-required.
+`--dev-url` must match the target database dialect, and it is required
+whenever `--to` is not already a live database — a schema file, a schema
+directory, a migration directory, or an `env://` reference to one of those. A
+missing dev database fails with Atlas's `--dev-url cannot be empty` message,
+the same rule `schema inspect` and `schema diff` already apply. A database
+`--to` needs none. `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` restores planning a
+file desired state with no dev database, which Atlas refuses; native `ptah
+schema apply` never had the requirement.
 
-Before a non-dry-run apply touches the target, the generated plan is rehearsed
+Before the apply touches the target, the generated plan is rehearsed
 on the dev database: Ptah resets the dev database, recreates the target's
 introspected current schema on it, and executes the ordered plan statements —
 including SQL edited through `--edit` — under the same transaction mode as the
 target apply. A failed rehearsal refuses the apply and leaves the target
-unchanged.
+unchanged. The rehearsal runs under `--dry-run` too, so a dry run cannot report
+a plan the real apply would refuse.
 
 On MySQL, MariaDB, and ClickHouse a schema *is* a database, so a plan
 qualified with the target's schema name would modify the target whichever

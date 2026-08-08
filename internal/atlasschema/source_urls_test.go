@@ -231,10 +231,11 @@ func TestPrepareApply_MigrationDirSourceRequiresDevURL(t *testing.T) {
 		`load --to schema: --to "file://.*" is a migration directory; --dev-url is required to replay it on a dev database`)
 }
 
-// TestPlanApply_LocalDirectoryKeepsLegacyError pins the pre-resolver behavior
-// for local directories that are not migration directories: they still fail
-// as schema files.
-func TestPlanApply_LocalDirectoryKeepsLegacyError(t *testing.T) {
+// TestPlanApply_EmptyLocalDirectoryRefuses pins the one directory that is not a
+// desired state. A directory of schema files is one since stokaro/ptah#940 item
+// B; an empty directory holds no schema, and the community binary refuses it
+// with the same sentence.
+func TestPlanApply_EmptyLocalDirectoryRefuses(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	targetPath := filepath.Join(t.TempDir(), "target.db")
@@ -245,12 +246,37 @@ func TestPlanApply_LocalDirectoryKeepsLegacyError(t *testing.T) {
 		ToURLs: []string{"file://" + dir},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `load --to schema: schema file is a directory: .*`)
+	c.Assert(err, qt.ErrorMatches, `load --to schema: ".*" contains neither SQL nor HCL files`)
+}
+
+// TestPlanApply_LocalDirectoryOfSQLFiles is the regression test for
+// stokaro/ptah#940 item B on the apply planner: a directory of .sql files used
+// to fail with `schema file is a directory` and now plans both tables.
+func TestPlanApply_LocalDirectoryOfSQLFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "1_users.sql"),
+		[]byte("CREATE TABLE plan_dir_users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "2_posts.sql"),
+		[]byte("CREATE TABLE plan_dir_posts (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	targetPath := filepath.Join(t.TempDir(), "target.db")
+	conn := connectSQLite(c, targetPath)
+	defer dbschema.CloseAndWarn(conn)
+
+	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
+		ToURLs: []string{"file://" + dir},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.SQL(), qt.Contains, "plan_dir_users")
+	c.Assert(plan.SQL(), qt.Contains, "plan_dir_posts")
 }
 
 // TestPreparePlanFile_MigrationDirStaysLocalOnly pins that `schema plan`
-// keeps the pre-resolver local-file loading: a migration directory --to still
-// fails as a schema file instead of being replayed.
+// keeps the pre-resolver local-file loading: a migration directory --to is not
+// replayed there. Since stokaro/ptah#940 item B the loader also refuses to read
+// a migration directory as a schema directory, so atlas.sum keeps meaning
+// exactly one thing on both spellings.
 func TestPreparePlanFile_MigrationDirStaysLocalOnly(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := writeAtlasMigrationDir(t, "CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n")
@@ -262,5 +288,6 @@ func TestPreparePlanFile_MigrationDirStaysLocalOnly(t *testing.T) {
 		ToURLs: []string{"file://" + migrationsDir},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `load --to schema: schema file is a directory: .*`)
+	c.Assert(err, qt.ErrorMatches,
+		`load --to schema: ".*" is a migration directory \(it contains atlas\.sum\), not a schema directory`)
 }

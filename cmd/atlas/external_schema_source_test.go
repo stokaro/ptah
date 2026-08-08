@@ -133,6 +133,7 @@ func TestSchemaDiffExternalSchemaGate_FailurePath(t *testing.T) {
 }
 
 func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
@@ -156,6 +157,7 @@ func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
 }
 
 func TestSchemaApplyExternalSchemaSourceApplies(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")

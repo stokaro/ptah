@@ -518,8 +518,8 @@
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Dev DB reset, target schema recreated, exact plan rehearsed; dev==target and failed rehearsal abort. docker:// dev URLs have their own row.",
-    "evidence": "Reproduced: `pc schema apply --url sqlite://t4.db --to file://b.sql --auto-approve --dev-url sqlite://dv4.db` -> `Schema apply completed successfully.` (exit 0); `--dev-url sqlite://r1.db` equal to --url -> `error: --dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it` (exit 1). Conformance gaps.md lines 25-27 record the reset, failed-rehearsal, and dev!=target observations. The only refused form is docker://, covered by the existing ❌ 'Docker dev databases' row"
+    "note": "Dev DB reset, target schema recreated, exact plan rehearsed, under `--dry-run` too; dev==target and failed rehearsal abort. A non-database `--to` requires `--dev-url`.",
+    "evidence": "Reproduced: `pc schema apply --url sqlite://t4.db --to file://b.sql --auto-approve --dev-url sqlite://dv4.db` -> `Schema apply completed successfully.` (exit 0); `--dev-url sqlite://r1.db` equal to --url -> `error: --dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it` (exit 1). Conformance gaps.md lines 25-27 record the reset, failed-rehearsal, and dev!=target observations. The only refused form is docker://, covered by the existing 'Docker dev databases' row. stokaro/ptah#940 items A and D then moved the rehearsal above the --dry-run exit and added the missing --dev-url requirement, both measured 2026-08-08 against the pinned community binary: `pc schema apply -u sqlite://r.db --to file://schema.sql --dev-url 'sqlite:///nonexistent-dir-xyz/dev.db' --dry-run` exits 1 where it used to exit 0, while a reachable dev database exits 0 on both sides; `pc schema apply -u sqlite://nodev.db --to file://schema.sql --dry-run` exits 1 with `--dev-url cannot be empty`, and a database --to with no --dev-url still exits 0 on both. PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1 restores planning a file desired state without a dev database, which that binary refuses."
   },
   {
     "area": "Declarative / direct schema workflow",
@@ -533,11 +533,11 @@
   {
     "area": "Declarative / direct schema workflow",
     "feature": "Desired-state sources for `--to` and `--from`",
-    "ptah": "partial",
+    "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Files, one DB URL, one atlas.sum dir, or env://. A plain file:// schema directory without atlas.sum is rejected; atlas:// fails early.",
-    "evidence": "internal/atlassource/atlassource.go:245-264 classifyLocal only promotes a directory to a source when atlas.sum is present; :123-124 atlas:// rejection. Reproduced: `ptah-compat schema diff --to file://sqldir` -> \"schema file is a directory\""
+    "note": "Files, a file:// directory of .sql or .hcl schema files, one DB URL, one atlas.sum dir, or env://; atlas:// fails early.",
+    "evidence": "internal/atlassource/atlassource.go classifyLocal and :123-124 for the atlas:// rejection. The plain-directory case was closed by stokaro/ptah#940 item B: measured 2026-08-08, `pc schema diff --from file://empty.hcl --to file://sqldir --dev-url 'sqlite://file?mode=memory'` plans both tables at exit 0, matching the pinned community binary, where it previously exited 1 with \"load --to schema: schema file is a directory\". A directory containing atlas.sum is still classified as a migration directory and replayed, on both sides."
   },
   {
     "area": "Declarative / direct schema workflow",
@@ -635,8 +635,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "schema apply and diff register only the sql helper: {{ json . }} fails to parse. json/hcl/mermaid/split/write and .Realm are inspect-only.",
-    "evidence": "internal/atlasreport/schema_apply.go:45-47 and schema_diff.go:66 register only \"sql\"; schema_inspect.go:161-173 registers base64url/hcl/json/mermaid/sql/split/write. Reproduced: `pc schema diff ... --format '{{ json . }}'` -> `error: parse --format template: template: atlas-schema-diff-format:1: function \"json\" not defined` (exit 1); same on schema apply; `{{ .Realm }}` on diff -> `can't evaluate field Realm in type atlasreport.SchemaDiff`. `{{ json . }}` works on schema inspect, schema clean, and migrate status. `{{ json . }}` on `schema diff` is also undefined in Atlas - parity on that sub-point (measured; observation study, scenario, ptah-extension-equivalents)"
+    "note": "schema apply registers the shared helper set, so {{ json . }} renders an Atlas-shaped document. schema diff registers only sql, as the community binary does.",
+    "evidence": "internal/atlasreport/schema_apply.go registers the shared helper set plus sql; schema_diff.go registers sql alone; schema_inspect.go registers base64url/hcl/json/mermaid/sql/split/write. stokaro/ptah#940 item C closed the apply half. Measured 2026-08-08 against the pinned community binary (reports \"atlas community version v1.3.0\"): `pc schema apply --url sqlite://ap.db --to file://schema.sql --dev-url sqlite://dev.db --auto-approve --format '{{ json . }}'` exits 0 with {\"Driver\":\"sqlite\",\"URL\":{...},\"Changes\":{\"Applied\":[...]}}, and the same command with --dry-run reports Changes.Pending, which is the document that binary renders for each case; a synced schema renders {\"Changes\":{}} on both. The diff half is deliberately not implemented: `{{ json . }}` and `{{ .Realm }}` on schema diff exit 1 on that binary too, so registering them would exit 0 where it exits 1. `{{ json . }}` also works on schema inspect, schema clean, and migrate status."
   },
   {
     "area": "Versioned migrations — execution",
@@ -1013,8 +1013,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "`--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused, and schema apply `--dry-run` skips the rehearsal entirely.",
-    "evidence": "Built ptah binary --help: --shadow-db on `migrations generate`, `migrations checkpoint`, `migrations baseline`, `migrations down`; `migrations validate --dev-url docker://postgres/16/dev` exits 2 with \"docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay\"; ptah-compat `schema apply --dev-url sqlite:///nonexistent-dir-xyz/dev.db --dry-run` exits 0 and prints a plan, while the same dev URL with --auto-approve exits 1 with \"connect to --dev-url: failed to ping database: unable to open database file (14)\"; conformance PARITY.md line 48 (dbtest-workflow) for the working replay path"
+    "note": "`--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused. schema apply `--dry-run` runs the same rehearsal the real apply does.",
+    "evidence": "Built ptah binary --help: --shadow-db on `migrations generate`, `migrations checkpoint`, `migrations baseline`, `migrations down`; `migrations validate --dev-url docker://postgres/16/dev` exits 2 with \"docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay\"; conformance PARITY.md line 48 (dbtest-workflow) for the working replay path. The schema apply dry-run hole was closed by stokaro/ptah#940 item A: measured 2026-08-08, `schema apply --dev-url sqlite:///nonexistent-dir-xyz/dev.db --dry-run` exits 1 with \"connect to --dev-url: failed to ping database: unable to open database file (14)\", the same refusal --auto-approve gives, where it used to exit 0 and print a plan."
   },
   {
     "area": "Verification and contracts",
@@ -1316,11 +1316,11 @@
   {
     "area": "Schema sources",
     "feature": "Directory of .hcl files as one schema source",
-    "ptah": "no",
+    "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "`--schema-file dir` and `--to file://dir` are refused (schema file is a directory); globs are not expanded. Multi-file needs one flag per file. The community binary reads such a directory.",
-    "evidence": "cmd/internal/schemaload/schemaload.go:257-259. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. A directory holding part_a.hcl (schema + table \"ta\") and part_b.hcl (table \"tb\"): `atlas schema diff --from file://empty.hcl --to file://<dir> --dev-url <pg>` exits 0 and plans both CREATE TABLE \"ta\" and CREATE TABLE \"tb\", so the two files are read as one schema. ptah-compat on the same directory exits 1 with \"load --to schema: schema file is a directory\"."
+    "note": "`--schema-file dir` and `--to file://dir` read a directory of .sql or .hcl files in filename order. Mixed formats, an empty directory and a subdirectory are refused; globs are not expanded.",
+    "evidence": "internal/schemafile/schemafile.go loadSchemaDir, reached by both the compat loader (internal/atlassource) and the native one (cmd/internal/schemaload/schemaload.go). Closed by stokaro/ptah#940 item B. Six rows measured 2026-08-08 on the pinned community binary (reports \"atlas community version v1.3.0\") and reproduced by ptah-compat built from this branch, SQLite fixtures on both sides: a directory of 1_users.sql and 2_posts.sql plans both CREATE TABLEs at exit 0; a directory of two .hcl files, the schema block in one and a table in the other, does the same; a.sql beside b.hcl -> `ambiguous schema: both SQL and HCL files found: \"a.sql\", \"b.hcl\"` at exit 1; a notes.txt beside the schema is ignored at exit 0; a subdirectory -> `read <dir>/sub: is a directory` at exit 1, so there is no recursion; an empty directory -> `\"emptydir\" contains neither SQL nor HCL files` at exit 1. atlas.sum still wins on both sides: a directory carrying one stays a migration directory and is replayed. Before the fix both spellings were refused, ptah-compat with \"load --to schema: schema file is a directory\" and native `ptah schema render --schema-file ./sqldir` with \"unsupported schema file extension \\\"\\\"\". One deliberate divergence: that binary ignores a subdirectory inside an HCL directory and refuses one inside a SQL directory; Ptah refuses both, which can only reject a source it accepts, never accept one it rejects."
   },
   {
     "area": "Schema inspection filters",
