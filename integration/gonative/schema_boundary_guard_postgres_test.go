@@ -18,18 +18,36 @@
 // suppression behind one of the failures below exists only there, so a
 // native-only guard cannot see it at all.
 //
-// It is a CHARACTERIZATION test, not a green one. Master does not hold either
-// property on most of these fixtures. Every expectation that records a WRONG
-// answer says so in a comment naming #1276 and what the value must become, so
-// the file can be read as a list of what is broken. Nothing here is skipped:
-// a skipped row is invisible in a green run, which is the exact failure mode
-// #1276 is about.
+// It is a CHARACTERIZATION test, not a green one: it records what the tree
+// answers today, whether or not that answer is right. Every expectation that
+// records a WRONG one says so in a comment naming the issue and what the value
+// must become, so the file can be read as a list of what is broken, and every
+// row that has since reached its stated target says FIXED and names what moved
+// it. Nothing here is skipped: a skipped row is invisible in a green run, which
+// is the exact failure mode #1276 is about.
 //
 // Every value below was measured against live PostgreSQL 17 and PostgreSQL 18,
 // which agreed on all of them. First measured on f2e7fa0c (#1274) and
 // re-measured unchanged on 4c4a8a1d, after #1277 and #1278 landed -- #1277 in
 // particular renames a qualified HCL table reference, which is the same defect
 // class as the grant churn pinned below, and it does not move any row here.
+//
+// Re-measured on PostgreSQL 17.10 and 18.4 for #1264, which moved twelve rows.
+// Property 2 now holds on every fixture and both surfaces except the extension
+// row: `schema inspect` describes the schemas the URL reaches, and `schema
+// apply` reads the database at the scope the document it was handed describes,
+// so a database's own description applied back to it plans nothing. The reader
+// also reports the schemas it read instead of denying it read any.
+//
+// One row still records a difference, and it is a difference in DEFAULT SCOPE
+// rather than in fidelity: `two_schemas_plain_url`'s document reaches `extra`
+// because inspection resolves realm scope from the URL, while the reader called
+// with no allow-list still covers the connected schema alone. Widening that
+// default is not free and is not this issue's: measured on the same database, a
+// hand-written document declaring only `public`, compared against a two-schema
+// read, plans `DROP TABLE IF EXISTS "extra"."b" CASCADE` -- a schema the
+// operator never named, removed. The caller has to name the scope it wants,
+// which is what inspection and apply now both do.
 
 package gonative_test
 
@@ -105,29 +123,35 @@ func boundaryCases() []boundaryCase {
 			seed:  []string{"CREATE SCHEMA extra", "CREATE TABLE public.a (id integer)", "CREATE TABLE extra.b (id integer)"},
 			query: "",
 
-			// WRONG (#1276): the database has two schemas and the document
-			// describes one. `extra` and `extra.b` are absent from the
-			// document because the reader was never asked about them, and
-			// nothing downstream can tell that from "the database has no
-			// schema `extra`". Must become []string{"extra", "public"} -- the
-			// same answer the scoped URL below gives for `public`, extended to
-			// every schema a plain URL reaches.
-			wantDescribedSchemas: []string{"public"},
-			// WRONG (#1276): the reader reports NO schemas at all, for every
-			// fixture in this file, while the renderer synthesizes a schema
-			// block from the tables it was given. Two sides, two independent
-			// answers. Must become []string{"extra", "public"}.
-			wantReadSchemas: nil,
+			// FIXED (#1264): the database has two schemas and the document now
+			// describes both, which is this row's stated target and what the
+			// pinned Atlas community binary v1.3.0 renders for the same URL.
+			// `extra` and `extra.b` used to be absent because the reader was
+			// never asked about them, and nothing downstream could tell that
+			// from "the database has no schema `extra`".
+			wantDescribedSchemas: []string{"extra", "public"},
+			// FIXED (#1276), at the reader's own scope: the reader used to
+			// report NO schemas at all while the renderer synthesized a schema
+			// block from the tables it was given. It now reports the schemas it
+			// read. Called with no allow-list, as here, that list is the
+			// connected schema -- see the header for why widening the DEFAULT
+			// is a separate decision from widening what inspection asks for.
+			wantReadSchemas: []string{"public"},
 
-			// WRONG (#1276): the document declares a schema the reader never
-			// reported. Must become empty once both sides read the same list.
+			// The one row still recording a difference, and it is the scope
+			// gap named in the header rather than a fidelity gap: the document
+			// reaches `extra` because inspection resolved realm scope off the
+			// URL, and this read did not ask for it. Every object listed is one
+			// the database really has, so the document is not describing
+			// anything that is not there -- which property 2 below confirms by
+			// planning nothing when this document is applied back.
 			//
-			// Note what this row canNOT see: `extra.b` is missing from BOTH
-			// sides, so it does not appear in the difference. Two sides that
-			// agree on a lie look exactly like two sides that agree. That is
-			// why wantDescribedSchemas above is asserted separately against
-			// the database's real shape rather than against the reader.
-			wantDocumentOnly: []string{"schema:public"},
+			// Note what this row canNOT see: an object missing from BOTH sides
+			// does not appear in the difference. Two sides that agree on a lie
+			// look exactly like two sides that agree. That is why
+			// wantDescribedSchemas above is asserted separately against the
+			// database's real shape rather than against the reader.
+			wantDocumentOnly: []string{"column:extra.b.id", "schema:extra", "table:extra.b"},
 			wantDatabaseOnly: nil,
 
 			// FIXED (#1283): applying a database's own description back to it
@@ -146,14 +170,17 @@ func boundaryCases() []boundaryCase {
 			seed:  []string{"CREATE SCHEMA extra", "CREATE TABLE public.a (id integer)", "CREATE TABLE extra.b (id integer)"},
 			query: "search_path=public",
 
-			// CORRECT and must stay correct.
+			// CORRECT and must stay correct. A URL that pins a schema keeps
+			// describing exactly that one, so #1264's widening of the plain URL
+			// above did not widen this.
 			wantDescribedSchemas: []string{"public"},
-			// WRONG (#1276): must become []string{"public"} -- one schema,
-			// because that is what this URL asked for.
-			wantReadSchemas: nil,
+			// FIXED (#1276): one schema, because that is what this URL asked
+			// for.
+			wantReadSchemas: []string{"public"},
 
-			// WRONG (#1276): must become empty.
-			wantDocumentOnly: []string{"schema:public"},
+			// FIXED (#1276): both sides read the same list, so the difference
+			// is empty.
+			wantDocumentOnly: nil,
 			wantDatabaseOnly: nil,
 
 			// FIXED (#1283): the grant churn is gone here too, on the URL form
@@ -171,12 +198,12 @@ func boundaryCases() []boundaryCase {
 
 			// CORRECT and must stay correct.
 			wantDescribedSchemas: []string{"public"},
-			// WRONG (#1276): must become []string{"public"}.
-			wantReadSchemas: nil,
+			// FIXED (#1276).
+			wantReadSchemas: []string{"public"},
 
-			// WRONG (#1276): must become empty. The extension itself is on
-			// neither side of this difference, which is #1274 holding.
-			wantDocumentOnly: []string{"schema:public"},
+			// FIXED (#1276): empty. The extension itself is on neither side of
+			// this difference, which is #1274 holding.
+			wantDocumentOnly: nil,
 			wantDatabaseOnly: nil,
 
 			// FIXED (#1283): no extension statement appeared here even when
@@ -192,11 +219,14 @@ func boundaryCases() []boundaryCase {
 			name: "extension_nothing_references",
 			seed: []string{"CREATE EXTENSION pgcrypto"},
 
-			// CORRECT: a database with no tables declares no schema.
-			wantDescribedSchemas: nil,
-			// WRONG (#1276): must become []string{"public"} -- the reader did
-			// read `public`, it just does not say so.
-			wantReadSchemas: nil,
+			// FIXED (#1264): a database with no tables declares its schema.
+			// This row read `nil` and called it correct, which was wrong twice
+			// over: the document said `for = schema.public` and declared no
+			// block for it to resolve against, because the only thing that ever
+			// declared one was the renderer synthesizing it from tables.
+			wantDescribedSchemas: []string{"public"},
+			// FIXED (#1276): the reader did read `public`, and now says so.
+			wantReadSchemas: []string{"public"},
 
 			// CORRECT: property 1 holds here. The native surface omits
 			// nothing, so its document names pgcrypto and the round trip is
@@ -227,12 +257,12 @@ func boundaryCases() []boundaryCase {
 
 			// CORRECT and must stay correct.
 			wantDescribedSchemas: []string{"public"},
-			// WRONG (#1276): must become []string{"public"}.
-			wantReadSchemas: nil,
+			// FIXED (#1276).
+			wantReadSchemas: []string{"public"},
 
-			// WRONG (#1276): must become empty. The primary key itself round
-			// trips: it is on neither side of this difference.
-			wantDocumentOnly: []string{"schema:public"},
+			// FIXED (#1276): empty. The primary key itself round trips: it is
+			// on neither side of this difference.
+			wantDocumentOnly: nil,
 			wantDatabaseOnly: nil,
 
 			// FIXED (#1283): nil on both surfaces.
@@ -244,10 +274,11 @@ func boundaryCases() []boundaryCase {
 			// may be planned against a database with nothing in it.
 			name: "empty_database",
 
-			// CORRECT.
-			wantDescribedSchemas: nil,
-			// WRONG (#1276): must become []string{"public"}.
-			wantReadSchemas: nil,
+			// FIXED (#1264): the floor row also has a schema, and a document
+			// that names none of it is one nothing can walk.
+			wantDescribedSchemas: []string{"public"},
+			// FIXED (#1276).
+			wantReadSchemas: []string{"public"},
 
 			// CORRECT: property 1 holds.
 			wantDocumentOnly: nil,

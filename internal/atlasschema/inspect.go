@@ -1,6 +1,7 @@
 package atlasschema
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/fileplan"
 	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/schemascope"
+	"go.5x5.cz/ptah/internal/schemaselection"
 )
 
 // InspectOptions configures Atlas-compatible schema inspection.
@@ -56,7 +58,7 @@ func NormalizeInspectFormat(format string) (string, error) {
 // Inspect reads a live schema and renders it with Atlas-compatible
 // formatting, applying any split/write file exports the format template
 // planned.
-func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, error) {
+func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts InspectOptions) (string, error) {
 	if _, err := NormalizeInspectFormat(opts.Format); err != nil {
 		return "", err
 	}
@@ -67,7 +69,7 @@ func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, er
 		return "", err
 	}
 
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, SplitSchemaNames(opts.Schemas))
+	schema, err := readInspectSchema(ctx, conn, opts.Schemas)
 	if err != nil {
 		return "", fmt.Errorf("read database schema: %w", err)
 	}
@@ -112,6 +114,7 @@ func renderInspectSchema(
 		info,
 		opts.Diagnostics,
 		opts.OmitAtlasRefusedBlocks,
+		describesSchemas(info, opts),
 	))
 	if err != nil {
 		return "", err
@@ -157,4 +160,20 @@ func applyInspectFileExports(files []atlasreport.SchemaInspectFile) error {
 // SplitSchemaNames expands repeated and comma-separated Atlas schema filters.
 func SplitSchemaNames(values []string) []string {
 	return schemascope.SplitNames(values)
+}
+
+// describesSchemas reports whether this run chose the schemas it describes,
+// rather than having the connection URL choose for it.
+//
+// It is the same branch inspectSchemaNames takes -- an explicit `--schema`
+// wins, otherwise realm scope decides -- asked a second time because the answer
+// is what the SQL format needs: the pinned community binary v1.3.0 renders a
+// schema it was told about and stays quiet about the one it merely connected
+// to. The measurements are on
+// [go.5x5.cz/ptah/internal/atlasreport.SchemaInspectReport].
+func describesSchemas(info dbschematypes.DBInfo, opts InspectOptions) bool {
+	if len(SplitSchemaNames(opts.Schemas)) > 0 {
+		return true
+	}
+	return schemaselection.Realm(info.Dialect, info.URL, info.Schema)
 }

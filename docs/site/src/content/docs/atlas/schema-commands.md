@@ -70,8 +70,26 @@ ptah-compat schema inspect \
   --dev-url "$DEV_DATABASE_URL" > schema.hcl
 ```
 
+### What a URL puts under inspection
+
+A PostgreSQL-family URL that pins no `search_path` describes the whole
+database — every non-system schema, with its tables — and one that pins a
+schema describes exactly that schema. An empty database still describes the
+schema it has rather than rendering an empty document, so a consumer walking
+`.schemas` does not break on a database that is merely empty.
+
+```bash
+# Every schema of the database, `public` and `extra` alike.
+ptah-compat schema inspect --url "postgres://…/app?sslmode=disable"
+
+# Only `public`.
+ptah-compat schema inspect --url "postgres://…/app?sslmode=disable&search_path=public"
+```
+
 `--schema` / `-s` narrows inspection when the underlying database reader supports
-schema scoping. `--format`
+schema scoping, and outranks the URL's scope: naming a schema that does not
+exist renders an empty document rather than falling back to the connection's
+own schema. `--format`
 accepts Atlas-style Go templates with `.MarshalHCL`, `hcl`, `sql`, `json`,
 `base64url`, `mermaid`, `split`, and `write`. Split-write exports are
 supported for HCL and SQL output with the documented Atlas split strategies:
@@ -469,6 +487,16 @@ Ptah reads the current database schema, diffs it against the desired local
 schema files, prints the planned SQL, and applies it after interactive
 confirmation. Use `--dry-run` to print the plan without applying it, or
 `--auto-approve` to skip the prompt explicitly.
+
+### Which schemas the current side is read at
+
+The database is read at the scope the desired state names, so both sides of the
+diff cover the same schemas. A desired state that names schemas beyond the one
+the connection is on — as an inspected document of a multi-schema database does
+— is compared against those schemas too, which is what makes inspecting a
+database and applying its own output back a no-op. A desired state that names
+only the connected schema reads only that one, so a schema the document never
+mentions is never planned for removal. `--schema` outranks both.
 
 Use `--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
 transaction, or `--tx-mode=none` to execute statements without transaction

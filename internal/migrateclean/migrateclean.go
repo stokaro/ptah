@@ -234,36 +234,13 @@ func (s Scope) ForRevisions(revisionsSchema, revisionTable string) Scope {
 // realmScoped reports whether the connection left the run at realm scope, which
 // is the question that decides which catalog Inspect reads.
 //
-// It is answered per dialect from the URL, NOT from the session, and the
-// difference is observable. Measured on PostgreSQL 17, a URL carrying
-// `options=-c search_path=extra` puts the session's `current_schema()` in
-// `extra` and the pinned binary still evaluates the whole realm: with an empty
-// `extra` present it refuses `found schema "extra"`. Only the `search_path`
-// query parameter moves it to schema scope. Reading the session back would
-// therefore get that URL wrong in the forbidden direction.
-//
-// The PostgreSQL half defers to [schemaselection], which is where
-// stokaro/ptah#1207 put the single answer to "did this URL restrict the run to
-// one schema", so the gate and `migrate lint` cannot drift apart. A
-// comma-carrying `search_path` selects nothing there, which lands here as realm
-// scope — the direction that evaluates more rather than less.
-//
-// MySQL-family connections answer from the connected schema instead of the URL
-// because dbschema resolves the database for both URL spellings, and an empty
-// answer is unreachable today: a MySQL URL with no database fails to connect
-// before any of this runs, on a NULL DATABASE() scan.
+// The decision itself lives in [schemaselection.Realm], with the measurements
+// that produced it, because this gate is no longer its only caller: the
+// Atlas-compatible `schema inspect` surface asks the same question of the same
+// URL (stokaro/ptah#1264), and two answers to it would drift apart exactly the
+// way stokaro/ptah#1207 describes.
 func realmScoped(dialect, rawURL, connectedSchema string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLite:
-		// SQLite has one namespace, so there is no wider scope to select.
-		return false
-	case platform.Postgres:
-		return schemaselection.FromURL(rawURL).Scope == ""
-	case platform.MySQL, platform.MariaDB:
-		return strings.TrimSpace(connectedSchema) == ""
-	default:
-		return false
-	}
+	return schemaselection.Realm(dialect, rawURL, connectedSchema)
 }
 
 // inspectRealm reads every non-system schema of the realm with the base tables
@@ -552,15 +529,16 @@ func realmProbe(dialect string) string {
 	if platform.NormalizeDialect(dialect) != platform.Postgres {
 		return ""
 	}
-	// The ESCAPE clause matters for the same reason it does in the SQLite probe
-	// above: an unescaped 'pg_%' would also hide a schema named `pgapp`.
+	// Which schemas belong to the realm is [schemaselection.PostgresNonSystemSchemas],
+	// shared so this gate and `schema inspect` cannot disagree about it. What
+	// this probe adds is the tables, which the gate needs and inspection does
+	// not.
 	return `
 		SELECT n.nspname, COALESCE(c.relname, '')
 		FROM pg_namespace n
 		LEFT JOIN pg_class c
 		  ON c.relnamespace = n.oid
 		 AND c.relkind IN ('r', 'p')
-		WHERE n.nspname <> 'information_schema'
-		  AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+		WHERE ` + schemaselection.PostgresNonSystemSchemas + `
 		ORDER BY n.nspname, c.relname`
 }
