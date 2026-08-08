@@ -837,19 +837,29 @@ func (s *schemaParseState) processAllFileComments(f *ast.File) error {
 	return nil
 }
 
+// rlsPolicyKey identifies an RLS policy the way PostgreSQL does: by the table
+// that owns it together with its name. A policy name is scoped to its table,
+// not to the schema, so two tables may each carry one called
+// "tenant_isolation". Recording only the name here dropped the second of the
+// two before anything downstream could see it (stokaro/ptah#1276).
+type rlsPolicyKey struct {
+	table  string
+	policy string
+}
+
 type rlsCommentSet struct {
-	policies      map[string]struct{}
+	policies      map[rlsPolicyKey]struct{}
 	enabledTables map[string]struct{}
 }
 
 func (s *schemaParseState) newRLSCommentSet() rlsCommentSet {
 	seen := rlsCommentSet{
-		policies:      make(map[string]struct{}, len(s.rlsPolicies)),
+		policies:      make(map[rlsPolicyKey]struct{}, len(s.rlsPolicies)),
 		enabledTables: make(map[string]struct{}, len(s.rlsEnabledTables)),
 	}
 
 	for _, policy := range s.rlsPolicies {
-		seen.policies[policy.Name] = struct{}{}
+		seen.policies[rlsPolicyKey{table: policy.Table, policy: policy.Name}] = struct{}{}
 	}
 	for _, table := range s.rlsEnabledTables {
 		seen.enabledTables[table.Table] = struct{}{}
@@ -881,7 +891,8 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 	if policyName == "" || tableName == "" {
 		return nil
 	}
-	if _, exists := seen.policies[policyName]; exists {
+	key := rlsPolicyKey{table: tableName, policy: policyName}
+	if _, exists := seen.policies[key]; exists {
 		return nil
 	}
 
@@ -900,7 +911,7 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 		WithCheckExpression: kv["with_check"],
 		Comment:             kv["comment"],
 	})
-	seen.policies[policyName] = struct{}{}
+	seen.policies[key] = struct{}{}
 	return nil
 }
 

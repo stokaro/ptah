@@ -33,7 +33,9 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 		GrantsAdded: []types.GrantRef{
 			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 		},
-		RLSPoliciesAdded: []string{"tenant_policy"},
+		RLSPoliciesAdded: []types.RLSPolicyRef{
+			{PolicyName: "tenant_policy", TableName: "users"},
+		},
 		RLSPoliciesRemoved: []types.RLSPolicyRef{
 			{PolicyName: "old_policy", TableName: "users"},
 		},

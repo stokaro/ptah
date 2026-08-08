@@ -207,7 +207,7 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"RLSPoliciesAdded",
-			&types.SchemaDiff{RLSPoliciesAdded: []string{"pol"}},
+			&types.SchemaDiff{RLSPoliciesAdded: []types.RLSPolicyRef{{PolicyName: "pol", TableName: "t"}}},
 			&goschema.Database{RLSPolicies: []goschema.RLSPolicy{{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"}}},
 		},
 		{

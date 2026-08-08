@@ -262,6 +262,17 @@ jobs:
           go test -v -count=1 ./internal/migrationreplay -tags=integration -run '^TestWithReplayedSnapshot_(ClickHouse|SQLServer)Live$' -timeout 5m
           go test -v -count=1 ./integration -tags=integration -run '^TestAtlasMigrateDiff(MySQLFamilyDatabaseDesiredState|PostgresFamilyDevCleanup)E2E$' -timeout 12m
 
+      # These two skip themselves without a live PostgreSQL, and a skip reads as
+      # a pass, so the log is grepped for the PASS lines afterwards.
+      - name: Run compatibility apply table-spelling tests
+        env:
+          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+        run: |
+          go test -v -count=1 ./cmd/atlas -run '^TestSchemaApplyRLS(ReferenceToUndeclaredRelationRefused|DeclaredRelationAccepted)LivePostgres$' -timeout 5m > rls-spelling.log || { cat rls-spelling.log; exit 1; }
+          cat rls-spelling.log
+          grep -q -- '--- PASS: TestSchemaApplyRLSReferenceToUndeclaredRelationRefusedLivePostgres' rls-spelling.log
+          grep -q -- '--- PASS: TestSchemaApplyRLSDeclaredRelationAcceptedLivePostgres' rls-spelling.log
+
       - name: Build integration test binary
         run: |
           go build -race -o ./integration-test ./cmd/integration-test

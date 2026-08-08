@@ -166,7 +166,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.TriggersWithDialect(generated, database, diff, opts.Dialect)
 
 	// Compare RLS policies (PostgreSQL-specific feature)
-	compare.RLSPolicies(generated, database, diff)
+	compare.RLSPoliciesWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare RLS enabled tables (PostgreSQL-specific feature)
 	compare.RLSEnabledTablesWithSemantics(generated, database, diff, identifierSemantics)
