@@ -202,6 +202,15 @@ rather than the next typo. `migrate checkpoint`, `down`, `edit`, `rebase`, `rm`
 and `test` refuse a `--dir` query outright, so neither the note nor this
 variable applies there.
 
+**`PTAH_ATLAS_LINT_ALL_VERSIONS`** — by default, `ptah-compat migrate lint`
+refuses a run that names no scope, because the community CLI refuses it:
+`--latest`, `--git-base` or an `atlas.hcl` `lint` block supplying one is
+required, and without it the answer is
+`Error: --latest or --git-base is required` at exit 1, before the migration
+directory is read and before `--dev-url` is contacted. Set it to `1` and the
+whole directory is linted instead, which is what Ptah's own linter does. Native
+`ptah migrations lint` needs no scope and ignores the variable.
+
 ### One shape has no Atlas-readable form at all
 
 Suppression can only leave out a block nothing else names. A **sequence behind a

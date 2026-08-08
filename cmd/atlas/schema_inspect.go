@@ -102,7 +102,7 @@ and the ERD itself is available as data through --format '{{ mermaid . }}'.`,
 	flags.StringVar(&opts.format, "format", "", "Output format or Go template: hcl, sql, json, or custom template")
 	flags.StringVarP(&opts.output, "output", "o", "", "Write the inspected schema to this file instead of stdout")
 	registerAtlasUIFlag(cmd, atlasSchemaWebFlag())
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url"))
 	return cmd
 }
 

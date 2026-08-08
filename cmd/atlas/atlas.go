@@ -1020,14 +1020,28 @@ func resolveAtlasVerbProject(
 	}
 	project = mergeAtlasProjectArgs(parentProject, project)
 	resolved.args = remaining
+	// -c and --env SELECT a project file, so naming either one makes it
+	// required. --var only supplies values to a file the caller may or may not
+	// have, so it makes the file OPTIONAL: present, it is loaded and the
+	// variables reach it; absent, the command runs with no project at all,
+	// which is what the pinned community binary v1.3.0 does
+	// (stokaro/ptah#1241 item 12).
+	requirement := requiredAtlasProject
 	if !project.changed {
-		return resolved, nil
+		if len(project.flags.vars) == 0 {
+			return resolved, nil
+		}
+		requirement = optionalAtlasProject
 	}
 
-	loadedProject, targetCfg, err := loadAtlasAdapterProjectConfig(verb, project.flags)
+	selected, err := loadAtlasAdapterProjectConfig(verb, project.flags, requirement)
 	if err != nil {
 		return atlasVerbArgs{}, err
 	}
+	if !selected.loaded {
+		return resolved, nil
+	}
+	loadedProject, targetCfg := selected.project, selected.targetConfig
 	cleanup.Add(loadedProject.Close)
 	if err := loadedProject.resolveMigrationDirForArgs(verb.flags, resolved.args); err != nil {
 		return atlasVerbArgs{}, err
@@ -1063,15 +1077,45 @@ func withAtlasProjectMigrationRoot(
 	return migrationsource.WithLocalRoot(ctx, project.migrationDir.Path, localOptions.AllowedRoot)
 }
 
+// selectedAtlasProject is the outcome of resolving one adapter invocation's
+// project file. loaded is false when no project was selected at all, which is
+// a normal outcome for an optional requirement and never an error.
+type selectedAtlasProject struct {
+	project      atlasProject
+	targetConfig projectconfig.Config
+	loaded       bool
+}
+
 func loadAtlasAdapterProjectConfig(
 	verb atlasVerb,
 	flags atlasProjectFlagValues,
-) (project atlasProject, targetConfig projectconfig.Config, err error) {
+	requirement atlasProjectRequirement,
+) (selectedAtlasProject, error) {
 	if !verb.nativeProjectConfig {
-		project, _, err := openAtlasProject(flags, requiredAtlasProject)
-		return project, projectconfig.Config{}, err
+		project, loaded, err := openAtlasProject(flags, requirement)
+		return selectedAtlasProject{project: project, loaded: loaded}, err
 	}
-	return openRequiredMergedProjectConfig(flags)
+	if requirement == requiredAtlasProject {
+		project, targetConfig, err := openRequiredMergedProjectConfig(flags)
+		return selectedAtlasProject{
+			project:      project,
+			targetConfig: targetConfig,
+			loaded:       err == nil,
+		}, err
+	}
+	project, loaded, err := openAtlasProject(flags, optionalAtlasProject)
+	if err != nil || !loaded {
+		return selectedAtlasProject{}, err
+	}
+	ptah, err := projectconfig.LoadPtahFile(projectconfig.PtahFileName, flags.envName)
+	if err != nil {
+		return selectedAtlasProject{}, errors.Join(err, project.Close())
+	}
+	return selectedAtlasProject{
+		project:      project,
+		targetConfig: projectconfig.Merge(ptah, project.Config),
+		loaded:       true,
+	}, nil
 }
 
 func rejectNativeOnlyAtlasFlags(group string, verb atlasVerb, args []string) error {

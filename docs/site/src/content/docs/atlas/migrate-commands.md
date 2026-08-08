@@ -822,9 +822,24 @@ missing, the command prints the same recovery guidance and writes
 migration files, the stdout guidance includes the first mismatched `atlas.sum`
 line, file name, and reason.
 
+An **empty** migration directory is the one shape where a missing `atlas.sum`
+is not drift: there is nothing for it to cover, so `ptah-compat migrate validate`
+exits `0` with no output, matching the pinned Atlas community binary v1.3.0 and
+matching what `ptah-compat migrate apply` already does on the same directory
+(`No migration files to execute.`). The moment the directory holds a migration
+file the refusal returns, byte-identically. `ptah-compat migrate lint --latest`
+follows the same rule: an empty directory selects nothing and exits `0`, which
+is what a repository linting its migrations in CI does before the first
+migration exists. The scope selector is what makes that `0` legitimate — an
+empty directory exits `0` only when `--latest` or `--git-base` was given. With
+neither, the run is refused before the directory is read (see
+[Lint migrations](#lint-migrations) below).
+
 This compatibility behavior is scoped to the `ptah-compat` binary.
 Native `ptah migrations validate` keeps Ptah's success banner and native error
-output; missing or malformed sum files remain exit-`2` usage failures.
+output; missing or malformed sum files remain exit-`2` usage failures, and
+native `ptah migrations lint` still refuses an empty directory with
+`no *.sql migration files found`.
 
 ```bash
 ptah-compat migrate validate \
@@ -841,6 +856,23 @@ ptah-compat migrate lint \
   --dev-url "sqlite://dev.db" \
   --latest 1
 ```
+
+A lint run needs a **scope**: `--latest N`, `--git-base <ref>`, or a `lint`
+block in `atlas.hcl` that supplies one. Without a scope `ptah-compat migrate
+lint` exits `1` with `Error: --latest or --git-base is required`, matching the
+pinned Atlas community binary v1.3.0 on the same argv. The refusal comes before
+the migration directory is read and before `--dev-url` is contacted, which is
+the part that matters: `--dev-url` is scratch space and the run **cleans** it,
+so an unscoped invocation that answered would drop tables in a database the
+pinned binary never connects to.
+
+Set `PTAH_ATLAS_LINT_ALL_VERSIONS=1` to lint the whole directory with no
+selector instead. Ptah's linter can do that and the tool this surface stands in
+for cannot; defaulting to the refusal keeps drop-in scripts drop-in, and the
+variable keeps the fuller behavior reachable here rather than only through
+native `ptah`. It is an environment variable and not a flag because the
+conformance `cli-surface` tier asserts flag parity with the pinned binary.
+Native `ptah migrations lint` needs no scope and is unaffected.
 
 `migrate lint --dev-url` treats the dev database as scratch space: it drops user
 tables, replays the migration directory, and then runs static lint

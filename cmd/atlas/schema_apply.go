@@ -134,7 +134,7 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 		panic(err)
 	}
 	cmd.MarkFlagsMutuallyExclusive(atlasFileFlagName, "to")
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url and the desired schema with --to"))
 	return cmd
 }
 

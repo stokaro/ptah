@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,6 +14,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
+	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
@@ -362,11 +364,142 @@ func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, b
 
 // atlasVarFlagValues reads --var, which the Atlas-compatible commands hand both
 // to the project config and to the HCL schema files they load.
+//
+// It re-checks the syntax rather than trusting the caller. Every value cobra
+// parsed has already been through [validateAtlasVarFlagsOnCommand], but a value
+// [refreshAtlasProjectFlagEnvironment] lifted out of `PTAH_VAR` arrives here
+// first: that runs inside the verb, after every PreRunE has returned.
 func atlasVarFlagValues(cmd *cobra.Command) ([]string, error) {
 	if cmd.Flags().Lookup(atlasVarFlagName) == nil {
 		return nil, nil
 	}
-	return cmd.Flags().GetStringArray(atlasVarFlagName)
+	values, err := cmd.Flags().GetStringArray(atlasVarFlagName)
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range values {
+		if err := validateAtlasVarFlagValue(value); err != nil {
+			return nil, err
+		}
+	}
+	return values, nil
+}
+
+// atlasVarFlagSpelling is the flag name the pinned binary quotes in its own
+// refusal. pflag wraps a flag value parser's failure as
+// `invalid argument %q for %q flag: %v`, and that binary's --var is such a
+// value, so the wording below is that wrapper reproduced rather than invented.
+const atlasVarFlagSpelling = "--" + atlasVarFlagName
+
+// validateAtlasVarFlagValue refuses a --var value whose syntax the pinned Atlas
+// community binary v1.3.0 refuses, at the point the value is READ rather than
+// at the point a project file consumes it.
+//
+// Where the check runs is the whole point. That binary parses --var while
+// parsing flags, before it looks for an atlas.hcl, so a malformed value is
+// refused with no project file in sight. Ptah checked it only inside
+// config/projectconfig and internal/atlashcl, both of which run after a project
+// file has been found, so `--var foo` in a directory with no atlas.hcl was
+// accepted -- and on `migrate new` it wrote a migration directory, a migration
+// file and an atlas.sum on an argv the pinned binary refuses without touching
+// the disk (stokaro/ptah#1241).
+//
+// Measured on 2026-08-08 in a directory holding a hashed ./migrations and no
+// atlas.hcl, each cell's exit status read on a line of its own:
+//
+//	--var foo      exit 1  invalid argument "foo" for "--var" flag: variables must be format as key=value, got: "foo"
+//	--var=foo      exit 1  the same message
+//	--var a=1      exit 0
+//	--var a=1,b    exit 1  ... got: "b"      (the value is CSV, and each field is checked)
+//	--var ""       exit 1  invalid argument "" for "--var" flag: EOF
+//	--var a="b     exit 1  invalid argument "a=\"b" for "--var" flag: parse error on line 1, column 3: bare " in non-quoted-field
+//	--var =v       exit 0
+//
+// The last row is why this tests for the separator alone and not for a
+// non-empty name: that binary accepts `=v`. config/projectconfig still refuses
+// an empty name later, where a project file is actually being evaluated, and
+// stays stricter there deliberately.
+func validateAtlasVarFlagValue(raw string) error {
+	err := atlasVarSyntaxError(raw)
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("invalid argument %q for %q flag: %w", raw, atlasVarFlagSpelling, err)
+}
+
+// atlasVarSyntaxError returns why the pinned binary refuses raw, or nil when it
+// accepts it. It is the INNER error only: on that binary --var is a pflag value,
+// so pflag adds the `invalid argument %q for %q flag: %v` wrapper around
+// whatever its value parser returned, and [validateAtlasVarFlagValue] is that
+// wrapper reproduced. Keeping the two apart is what lets the wrapped message and
+// the raw rule be one rule rather than two strings that have to agree.
+//
+// The CSV reader is not decoration: that binary splits a --var value as CSV and
+// checks each field, so `--var a=1,b` is refused naming `b`, an empty --var
+// fails with `EOF`, and a --var carrying an unbalanced quote fails with the
+// reader's own parse error. All three are in [validateAtlasVarFlagValue]'s
+// measured table.
+func atlasVarSyntaxError(raw string) error {
+	values, err := csv.NewReader(strings.NewReader(raw)).Read()
+	if err != nil {
+		return err
+	}
+	for _, value := range values {
+		if strings.Contains(value, "=") {
+			continue
+		}
+		return fmt.Errorf("variables must be format as key=value, got: %q", value)
+	}
+	return nil
+}
+
+// validateAtlasVarFlagsOnCommand refuses every malformed --var value cobra
+// parsed for cmd.
+//
+// It is the tree-wide gate, and it exists because per-consumer checking left
+// holes. --var is registered once, on the PersistentFlags of the `schema` and
+// `migrate` groups, so EVERY descendant accepts it -- but the syntax was checked
+// only where a consumer asked for the values, through [atlasVarFlagValues] or
+// through [extractAtlasProjectArgs]. Four commands ask for them nowhere and so
+// checked nothing. Measured on 2026-08-08 against the pinned Atlas community
+// binary v1.3.0, each cell in its own directory with the exit status read on a
+// line of its own after a redirect:
+//
+//	schema fmt --var foo                     that binary 1, ptah-compat 0 (and it reformatted a.hcl)
+//	migrate import --from … --to … --var foo  that binary 1 writing NOTHING,
+//	                                         ptah-compat 0 CREATING ./dst, two
+//	                                         migration files and an atlas.sum
+//	schema --var foo                         that binary 1, ptah-compat 0 (group help)
+//	migrate --var foo                        that binary 1, ptah-compat 0 (group help)
+//
+// The gate runs from the PreRunE that [wrapAtlasProjectFlagReset] installs on
+// every descendant of both groups, which is the one hook a verb cannot opt out
+// of by not consuming the flag. That binary refuses the value while PARSING
+// flags, one step earlier, and the step between the two is cobra's positional
+// check: an argv carrying both a bad positional and a malformed --var is
+// answered here by the positional and there by the flag. Both exit 1, so the
+// order cannot make this surface the looser one.
+//
+// A pflag value whose Set refuses would land on that binary's exact step, and
+// was rejected with a measurement rather than on taste: wrapping the registered
+// value drops it out of the `pflag.SliceValue` branch of
+// [resetAtlasProjectFlags], whose fallback appends flag.DefValue instead of
+// clearing -- measured, `[a=1]` became `[a=1,[]]` -- so `--var` would leak and
+// grow across Execute calls on a reused root, with the error discarded.
+func validateAtlasVarFlagsOnCommand(cmd *cobra.Command) error {
+	if cmd.Flags().Lookup(atlasVarFlagName) == nil {
+		return nil
+	}
+	values, err := cmd.Flags().GetStringArray(atlasVarFlagName)
+	if err != nil {
+		return err
+	}
+	for _, value := range values {
+		if err := validateAtlasVarFlagValue(value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func refreshAtlasProjectFlagEnvironment(cmd *cobra.Command) error {
@@ -429,6 +562,20 @@ func wrapAtlasProjectFlagReset(cmd, group *cobra.Command) {
 	preRun := cmd.PreRun
 	cmd.PreRun = nil
 	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		// Before the verb's own PreRunE, so a malformed --var cannot reach any
+		// work the verb does there either. See validateAtlasVarFlagsOnCommand:
+		// this PreRunE is installed on every descendant of both groups, which is
+		// what makes it the one place the check covers the verbs that never
+		// consume the flag.
+		if err := validateAtlasVarFlagsOnCommand(cmd); err != nil {
+			resetAtlasExecutionFlags(cmd, group)
+			// Through cmdutil.Fail, like every other refusal on this surface, so
+			// the diagnostic reaches the COMMAND's writer rather than only the
+			// process's stderr. A caller embedding the tree and reading
+			// cmd.SetErr sees the refusal either way, and the printed bytes stay
+			// the one line the pinned binary prints.
+			return cmdutil.Fail(cmd, err)
+		}
 		if preRunE != nil {
 			if err := preRunE(cmd, args); err != nil {
 				resetAtlasExecutionFlags(cmd, group)
@@ -608,9 +755,39 @@ func extractAtlasProjectArgs(args []string) (atlasProjectArgValues, []string, er
 			i = next
 			continue
 		}
+		// --var collects its value but deliberately does NOT set `changed`,
+		// so it cannot make the project file REQUIRED. This is the same rule
+		// atlasProjectFlagsFromCommand applies to the parsed-flag surface; the
+		// two paths differ only in where the flag arrives, and a flag whose
+		// meaning depends on that is a flag with two meanings.
+		//
+		// Measured on the pinned Atlas community binary v1.3.0, in a directory
+		// holding no atlas.hcl:
+		//
+		//	migrate validate --dir file://migrations --var foo=bar -> exit 0
+		//	migrate new nm   --dir file://migrations --var foo=bar -> exit 0
+		//
+		// Ptah answered `failed to read atlas config atlas.hcl: openat
+		// atlas.hcl: no such file or directory` at exit 1 on every verb whose
+		// command disables flag parsing and therefore reaches this extractor:
+		// migrate hash, validate, new, down, checkpoint, edit, rebase, rm,
+		// test and schema test (stokaro/ptah#1241 item 12).
+		//
+		// The values are still carried, and resolveAtlasVerbProject loads an
+		// atlas.hcl that IS present, so `--var` keeps feeding a project file
+		// the caller actually has.
+		//
+		// The SYNTAX is checked here all the same. Not requiring a project file
+		// is not the same as not reading the flag: the pinned binary refuses a
+		// malformed value while parsing flags, before it looks for an atlas.hcl,
+		// and dropping the requirement without keeping the check is what made
+		// `migrate new nm --var foo` write a migration directory where that
+		// binary writes nothing. See [validateAtlasVarFlagValue].
 		if value, ok := strings.CutPrefix(arg, "--var="); ok {
+			if err := validateAtlasVarFlagValue(value); err != nil {
+				return atlasProjectArgValues{}, nil, err
+			}
 			project.flags.vars = append(project.flags.vars, value)
-			project.changed = true
 			continue
 		}
 		if arg == "--var" {
@@ -618,8 +795,10 @@ func extractAtlasProjectArgs(args []string) (atlasProjectArgValues, []string, er
 			if err != nil {
 				return atlasProjectArgValues{}, nil, err
 			}
+			if err := validateAtlasVarFlagValue(value); err != nil {
+				return atlasProjectArgValues{}, nil, err
+			}
 			project.flags.vars = append(project.flags.vars, value)
-			project.changed = true
 			i = next
 			continue
 		}
@@ -632,10 +811,20 @@ func mergeAtlasProjectArgs(
 	parent atlasProjectArgValues,
 	raw atlasProjectArgValues,
 ) atlasProjectArgValues {
+	// --var marks neither side as changed, so the variables have to be merged
+	// BEFORE the two short circuits below. Returning one side whole would drop
+	// the other side's variables, which is how `--var` reaching a command
+	// through both the parsed flag set and the raw arguments would end up
+	// carrying only one of them.
+	vars := make([]string, 0, len(parent.flags.vars)+len(raw.flags.vars))
+	vars = append(vars, parent.flags.vars...)
+	vars = append(vars, raw.flags.vars...)
 	if !parent.changed {
+		raw.flags.vars = vars
 		return raw
 	}
 	if !raw.changed {
+		parent.flags.vars = vars
 		return parent
 	}
 	if !raw.configChanged {
@@ -644,7 +833,7 @@ func mergeAtlasProjectArgs(
 	if !raw.envChanged {
 		raw.flags.envName = parent.flags.envName
 	}
-	raw.flags.vars = append(parent.flags.vars, raw.flags.vars...)
+	raw.flags.vars = vars
 	raw.changed = true
 	return raw
 }

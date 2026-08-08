@@ -218,6 +218,27 @@ func NoPositionalArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// NoPositionalArgsHint returns [NoPositionalArgs] with hint appended to the
+// refusal, naming the flag that carries the value the caller most likely meant.
+//
+// It exists for the Atlas-compatible surface, where refusing a stray positional
+// is a deliberate divergence: the pinned Atlas community binary v1.3.0 accepts
+// one and silently discards it, so `atlas migrate status --url … file://mig2`
+// exits 0 reporting on ./migrations instead of on the directory that was named
+// (stokaro/ptah#1241 item 13). A refusal is the right answer there, but only if
+// it tells the operator where the value belongs.
+//
+// The hint is a suffix rather than a rewrite so the leading sentence stays the
+// one every other Ptah surface prints for the same mistake.
+func NoPositionalArgsHint(hint string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+		return Fail(cmd, fmt.Errorf("unexpected positional arguments %q: %s", args, hint))
+	}
+}
+
 // ExactArgs returns a Cobra validator that requires exactly count positional
 // arguments while preserving Ptah's printed exit-2 usage-error contract.
 func ExactArgs(count int) cobra.PositionalArgs {

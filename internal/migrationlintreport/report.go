@@ -755,6 +755,19 @@ func latestMigrationVersions(fsys fs.FS, latest uint, dirFormat migrator.Migrati
 		}
 		seen[file.Version] = struct{}{}
 	}
+	if len(seen) == 0 && len(files) == 0 {
+		// An empty migration directory selects no versions rather than failing.
+		// The pinned Atlas community binary v1.3.0 exits 0 with no output for
+		// `migrate lint --latest 1` on one, which is the shape a repository
+		// linting its migrations in CI has before the first migration exists
+		// (stokaro/ptah#1241, adjacent to item 7).
+		//
+		// The refusal is kept when the directory DOES hold migration files that
+		// carry no version, because then --latest was asked to select from a
+		// set it cannot order, and dropping the diagnostic would silently lint
+		// nothing.
+		return nil, nil
+	}
 	if len(seen) == 0 {
 		return nil, fmt.Errorf("no versioned migration files found for --latest")
 	}
