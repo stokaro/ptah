@@ -723,6 +723,10 @@ PTAH_DRY_RUN=1 ptah-compat schema apply -u "$DATABASE_URL" \
 # Planned schema changes: … (exit 0, nothing executed)
 ```
 
+The variable does not work in the other direction either. Typing both flags is
+still typing both, so adding `--dry-run` to the command line above is refused
+with the same sentence whether or not the variable is exported.
+
 `--env` evaluation includes local variable defaults, locals, `getenv`, `file`,
 `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url` references.
 

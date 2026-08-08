@@ -303,27 +303,53 @@ func swapAtlasSumEntryLines(c *qt.C, dir string) {
 //	pinned binary   exit 1   if any flags in the group [dry-run auto-approve] are
 //	                         set none of the others can be
 //	ptah-compat     exit 0   prints the plan
+//
+// The second row exports PTAH_DRY_RUN as well as typing both flags, and it is
+// the row that separates "the environment did not supply this flag" from the
+// cheaper "the variable is not set at all". Both readings accept the command
+// lines of TestCompatCommand_SchemaApplyApprovalGroupReadsTheCommandLine and
+// both refuse the plain typed pair above, so without this row a rule reading
+// os.Getenv survives the whole suite while exiting 0 here -- on a command line
+// the pinned binary refuses at exit 1 (measured 2026-08-08, with and without
+// the variable exported, since that binary has no such variable). Typing a flag
+// whose twin happens to be exported is still typing it.
 func TestCompatCommand_SchemaApplyRefusesDryRunWithAutoApprove(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	schemaPath := filepath.Join(dir, "schema.sql")
-	writeAtlasLintFile(c, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
-	devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
-	targetDB := "sqlite://" + filepath.Join(t.TempDir(), "target.db")
+	tests := []struct {
+		name   string
+		setEnv func(t *testing.T)
+	}{
+		{name: "typed pair", setEnv: func(_ *testing.T) {}},
+		{name: "typed pair with the environment twin exported", setEnv: func(t *testing.T) {
+			t.Helper()
+			t.Setenv("PTAH_DRY_RUN", "1")
+		}},
+	}
 
-	out, err := runAtlasPrecondition(c,
-		"schema", "apply",
-		"--url", targetDB,
-		"--to", "file://"+schemaPath,
-		"--dev-url", devDB,
-		"--dry-run", "--auto-approve",
-	)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			schemaPath := filepath.Join(dir, "schema.sql")
+			writeAtlasLintFile(c, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
+			devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
+			targetDB := "sqlite://" + filepath.Join(t.TempDir(), "target.db")
+			test.setEnv(t)
 
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out, qt.Contains,
-		"Error: if any flags in the group [dry-run auto-approve] are set none of the others can be;"+
-			" [auto-approve dry-run] were all set")
-	c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE")
+			out, err := runAtlasPrecondition(c,
+				"schema", "apply",
+				"--url", targetDB,
+				"--to", "file://"+schemaPath,
+				"--dev-url", devDB,
+				"--dry-run", "--auto-approve",
+			)
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			c.Assert(out, qt.Contains,
+				"Error: if any flags in the group [dry-run auto-approve] are set none of the others can be;"+
+					" [auto-approve dry-run] were all set")
+			c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE")
+		})
+	}
 }
 
 // TestCompatCommand_SchemaApplyAcceptsEitherFlagAlone is the control: the pair
