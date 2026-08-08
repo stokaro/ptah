@@ -407,22 +407,23 @@ one plain SQL stream. Atlas CE `v1.3.0` instead ignores section-local modes and
 can classify that malformed outer-header shape as plain SQL, so this contour is
 an intentional safety difference rather than a parity claim.
 
-A successful `ptah-compat migrate apply` writes nothing to stderr, matching
-Atlas CE: there is no progress narration, in a dry run or otherwise, so
-`--format` output survives the usual CI idiom of folding both streams together.
+A clean successful `ptah-compat migrate apply` writes nothing to stderr,
+matching Atlas CE: there is no progress narration, in a dry run or otherwise,
+so `--format` output survives the usual CI idiom of folding both streams
+together.
 
 ```bash
 ptah-compat migrate apply --url "$DATABASE_URL" --dir file://migrations \
   --dry-run --format '{{ json . }}' 2>&1 | jq
 ```
 
-Two things still reach stderr, by design. A command that fails prints its
-`Error: …` diagnostic there and exits `1`. And a Warn-level diagnostic that
+Three things still reach stderr, by design. A command that fails prints its
+`Error: …` diagnostic there and exits `1`. A Warn-level runtime diagnostic that
 exists on no other channel — such as function ordering or a dev database that
-would not close — is still reported, because dropping it would let an apply
-claim success while quietly degrading. Valid circular foreign keys are rendered
-in two phases and do not produce a warning. Neither diagnostic appears on a
-clean run.
+would not close — is still reported. An `atlas.hcl` name that Atlas CE accepts
+without acting on also produces a location-aware warning that the construct has
+no effect. Valid circular foreign keys are rendered in two phases and do not
+produce a warning. None of these diagnostics appears on a clean run.
 
 `ptah-compat migrate down` holds the same contract, with or without `--format`.
 Without `--format` it forwards to the native `ptah migrations down`, which

@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/migrate"
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
@@ -45,6 +46,9 @@ func newAtlasMigrateNewCommand() *cobra.Command {
 			return err
 		}
 		if !atlasmigrate.ReadsNativeAtlasDir(source.format) {
+			if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), source.project.Config); err != nil {
+				return err
+			}
 			return runAtlasMigrateNewConverted(cmd, verb, source)
 		}
 		if source.dir == "" {

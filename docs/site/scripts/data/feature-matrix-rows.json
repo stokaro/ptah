@@ -86,8 +86,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Rejects atlas, script, exporter, deployment; env for_each and schemas; migration baseline, skip_report, repo; data blocks but hcl_schema and external_schema.",
-    "evidence": "config/projectconfig/atlas.go:214 (collectAtlasTopBlock default -> unsupportedBlock), :402 (parseEnvAttr default), :475 (parseMigration default); each rejection reproduced with /tmp/pc-audit at exit 1; Atlas-side block inventory from https://atlasgo.io/atlas-schema/projects (top-level variable, locals, atlas, env, script, lint, diff, exporter, deployment)"
+    "note": "Whole-document structural validation rejects unsupported shapes in every env. Names Atlas CE accepts as no-ops are preserved and warned once per source location.",
+    "evidence": "config/projectconfig/atlas_structure.go (open/closed body contract), config/projectconfig/atlas.go (selected-env evaluation and IgnoredConstructs), config/projectconfig/atlas_structure_test.go, cmd/atlas/project_config_ignored_test.go"
   },
   {
     "area": "Project config",
@@ -104,8 +104,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Only file, fileset, format, getenv, jsonencode evaluate; variable type (string, number, bool, list(string)) and sensitive are honored; validation and env for_each are rejected.",
-    "evidence": "config/projectconfig/atlas.go:126-133 (five-function eval context), parseVariableBlock/convertAtlasVariableOverride (type constraints with typed --var conversion, sensitive redaction, validation rejected), :402 (for_each hits the env attribute default). Repro: `dev = urlsetpath(\"sqlite://file.db\",\"x\")` -> `error: unsupported atlas.hcl construct \"dev\" at atlas.hcl:2`; upper, lower, join, split, concat, trimspace, coalesce, toupper, abspath, urlescape, urlqueryset, print all fail the same way, while file, fileset, format, getenv, jsonencode evaluate; `variable \"schema_file\" { type = string }` + `--var schema_file=schema.sql` inspects on both binaries"
+    "note": "file, fileset, format, getenv, and jsonencode evaluate. Variables support string, number, bool, list(string), and sensitive; validation blocks fail. `for_each` is accepted and warned.",
+    "evidence": "config/projectconfig/atlas.go newAtlasParser, parseVariableBlock, convertAtlasVariableOverride, tolerateUnknownAttr; config/projectconfig/atlas_structure_test.go selected-only evaluation cases"
   },
   {
     "area": "Project config",
@@ -878,7 +878,7 @@
     "ptah": "partial",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Custom rules only from Go (lint.Register, Options.ExtraRules); atlas.hcl rule, review, naming, non_linear blocks and force all fail.",
+    "note": "Custom rules run only through Go registration. Atlas project rule, review, naming, non_linear, and force names are accepted as Atlas CE no-ops and reported as having no effect.",
     "evidence": "migration/lint/rules.go:20 Register, migration/lint/lint.go:107 Options.ExtraRules; migration/lint/config.go Config has only Dialect/DisabledRules/Rules{severity,exclude} — no rule definition. config/projectconfig/atlas.go parseLintPolicyBlocks accepts only concurrent_index, condrop, data_depend, destructive, git, nestedtx, incompatible; parseLintAnalyzer tolerates `force` without acting on it. Atlas features page classifies \"Custom linting rules\" as Pro. `lint { rule \"hcl\" \"custom\" { src = [...] } }` accepted and the rules execute during migrate lint; rule severity is only `error=true/false` (measured; observation study, scenario, lint-test-pro)"
   },
   {

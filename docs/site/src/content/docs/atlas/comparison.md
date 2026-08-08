@@ -188,10 +188,10 @@ Atlas-side rows are the recorded transcripts, so behavior beyond those inputs is
 
 There is no `atlas.hcl` spelling of this selector. Atlas documents `exclude`
 but no `include` attribute on the `env` block; CE accepts `include = [...]`
-there only because it accepts any unknown env attribute — a run with
+there only because it accepts any unknown env attribute. A run with
 `not_a_real = [...]` is likewise accepted and prints the full schema. Ptah
-rejects unknown `atlas.hcl` constructs instead of ignoring them, so
-`env.include` fails explicitly.
+accepts `env.include` under the same unknown-name rule, leaves it without
+effect, and writes a location-aware warning to stderr.
 
 **Atlas OSS.** `atlas schema inspect` is documented as an open CLI feature for inspecting a database schema with HCL, SQL, JSON, template output forms, split/write file exports, and resource exclusion filters. The pinned Atlas CE flag surface does not register `schema inspect --include`.
 
@@ -507,7 +507,9 @@ Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `
 
 Ptah also composes a desired-schema schema from multiple sources — several Go roots, or a mix of Go annotations, YAML, HCL, and SQL — via repeatable `--root-dir` and `--schema-file` flags on `ptah schema render`, `ptah schema compare`, `ptah migrations plan`, and `ptah migrations generate`, an open, local, no-account counterpart to Atlas's Pro `composite_schema` data source.
 
-Unsupported constructs fail explicitly rather than being silently ignored.
+Structurally unsupported constructs fail explicitly. Names that Atlas CE
+accepts without acting on are accepted for compatibility and reported as
+having no effect.
 
 **Atlas OSS.** Atlas OSS supports SQL and HCL schema sources. The community binary rejects the `data "external_schema"` project data source (measured 2026-08-01, Atlas CE v1.2.0: exit 1, `Error: data.external_schema is not supported by the community version of Atlas.`); Ptah evaluates it in the open build behind the external-schema opt-in.
 
@@ -644,7 +646,9 @@ Each area below states the current status and links the evidence behind it.
 
 Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff` policy, and supported lint analyzer severity policy can feed `ptah-compat ... --env` commands, including local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`), repeated string/list `--var name=value` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`.
 
-Unsupported constructs fail explicitly instead of being ignored.
+Structurally unsupported constructs fail explicitly. Names that Atlas CE
+accepts without acting on are accepted and reported once per source location
+instead of becoming silent no-ops.
 
 **Evidence.** [Atlas project config](../project-config/)
 

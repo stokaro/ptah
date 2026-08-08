@@ -171,5 +171,5 @@ Continue with [Atlas project config](../../atlas/project-config/) for the suppor
 `atlas.hcl` subset.
 
 :::note
-Ptah config parsing is intentionally strict. Unknown `ptah.yaml` keys and unsupported `atlas.hcl` constructs fail instead of being ignored. A rejected `ptah.yaml` key is reported by name, with its line and the keys that section accepts — never by the Go type the decoder was filling.
+Ptah config parsing is intentionally explicit. Unknown `ptah.yaml` keys and structurally unsupported `atlas.hcl` constructs fail with their source location. Names that Atlas CE accepts without acting on are the exception: Ptah accepts them for compatibility and warns that they have no effect. A rejected `ptah.yaml` key is reported by name, with its line and the keys that section accepts — never by the Go type the decoder was filling.
 :::

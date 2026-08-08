@@ -98,6 +98,9 @@ func newAtlasMigrateIntegrityCommand(
 		if atlasmigrate.ReadsNativeAtlasDir(source.format) {
 			return forward(cmd, source.forwardArgs)
 		}
+		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), source.project.Config); err != nil {
+			return err
+		}
 		// The forwarding path above lets the native command reject an unknown
 		// flag or a stray positional. This path executes directly, so it has to
 		// reject them itself instead of silently dropping them. It belongs to

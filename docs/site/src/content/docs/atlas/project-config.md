@@ -152,6 +152,11 @@ resources inside it, and the configured exclusions subtract from that
 selection last, exactly like CLI `--exclude`. See
 [Scope the comparison with `--schema` and `--include`](../schema-commands/#scope-the-comparison-with---schema-and---include).
 
+`env.schema.mode.sensitive` accepts Atlas's `DENY` and `ALLOW` values. Both are
+no-ops because Ptah does not emit sensitive values through the supported local
+workflows. Ptah records either spelling as an ignored compatibility construct
+and warns that it has no effect.
+
 Ptah accepts Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`,
 `liquibase`, and `dbmate` values while evaluating `atlas.hcl`, and
 `ptah-compat migrate apply` executes all of them.
@@ -373,17 +378,30 @@ use it as the default. Atlas-compatible `migrate apply` does not need to select
 an environment when both `--url` and `--dir` are explicit. Other ambiguous or
 unsupported environment layouts fail instead of guessing.
 
-## Unsupported means error
+## Structural validation and ignored names
 
-Ptah intentionally rejects unsupported project config constructs. This prevents
-a dangerous half-configured state where a user believes an Atlas setting is in
-effect but Ptah silently ignored it.
+Ptah gives each project-config name one of three outcomes:
+
+| Outcome | Result |
+| --- | --- |
+| Supported | Parsed into project config; expressions are evaluated for the selected environment. |
+| Structurally unsupported | Fails with `unsupported atlas.hcl construct ...`, including in an unselected environment. |
+| Ignored by Atlas CE | Accepted for compatibility and reported on stderr as having no effect. |
+
+The ignored category contains only names that Atlas CE itself accepts without
+acting on. Ptah does not silently discard them. A successful command reports
+each ignored source location once:
+
+```text
+warning: atlas.hcl attribute "project" at atlas.hcl:2 is ignored for Atlas compatibility and has no effect
+```
 
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested
 block, label, or duplicate therefore fails even when it appears in another
-environment. Expressions inside `env` blocks are evaluated only in the selected
-environment, so an unselected environment may still refer to variables, files,
-or environment values that are unavailable in the current invocation. Global
-`variable`, `locals`, and `data` blocks are evaluated separately to build the
-shared context before environment selection.
+environment. Expressions inside `env` blocks, including ignored attributes and
+block bodies, are evaluated only in the selected environment. An unselected
+environment may therefore refer to variables, files, or environment values
+unavailable in the current invocation. Global `variable`, `locals`, and `data`
+blocks are evaluated separately to build the shared context before environment
+selection.

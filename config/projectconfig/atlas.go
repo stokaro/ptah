@@ -170,17 +170,24 @@ type atlasParser struct {
 	// ignored records the constructs tolerated under Atlas CE's
 	// unknown-name policy, so the caller can report them. Pointer for the same
 	// reason as sensitiveValues: the parser is passed by value.
-	ignored *[]IgnoredAtlasConstruct
+	ignored     *[]IgnoredAtlasConstruct
+	ignoredSeen map[ignoredAtlasConstructKey]struct{}
+}
+
+type ignoredAtlasConstructKey struct {
+	kind     string
+	name     string
+	filename string
+	line     int
+	column   int
 }
 
 // IgnoredAtlasConstruct is an atlas.hcl name that was accepted and not acted
 // on, matching what Atlas CE does with a name it does not recognize.
 //
-// CE reports nothing at all. Ptah records them so the caller can say one line
-// per construct on stderr: CE's silence is a footgun -- a typo'd block name
-// does nothing and looks fine -- and stdout, the exit code, and every error
-// diagnostic stay byte-identical, so nothing that reads those can tell the
-// difference.
+// Atlas CE reports nothing for these names. Ptah records them so callers can
+// make the no-op visible; the Ptah CLIs warn on stderr while preserving the
+// command's stdout and exit code.
 type IgnoredAtlasConstruct struct {
 	// Name is the construct's name as written.
 	Name string
@@ -200,6 +207,7 @@ func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser,
 	return atlasParser{
 		sensitiveValues: &[]string{},
 		ignored:         &[]IgnoredAtlasConstruct{},
+		ignoredSeen:     map[ignoredAtlasConstructKey]struct{}{},
 		ctx: &hcl.EvalContext{
 			Variables: map[string]cty.Value{},
 			Functions: map[string]function.Function{
@@ -366,8 +374,8 @@ func enforcedByCE(scope, name string) bool {
 // scope is the dotted path of the enclosing body, used to keep names CE really
 // enforces out of the tolerance -- see ceEnforcedConstructs.
 func (p atlasParser) tolerateUnknownAttr(scope, name string, attr *hclsyntax.Attribute) error {
-	if enforcedByCE(scope, name) {
-		return unsupported(name, attr.NameRange)
+	if err := rejectEnforcedConstruct(scope, name, attr.NameRange); err != nil {
+		return err
 	}
 	if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
 		return p.evaluationFailed(name, attr, diags)
@@ -379,8 +387,8 @@ func (p atlasParser) tolerateUnknownAttr(scope, name string, attr *hclsyntax.Att
 // tolerateUnknownBlock accepts a block name Atlas CE does not recognize, with
 // the same name-level and enforced-name rules as tolerateUnknownAttr.
 func (p atlasParser) tolerateUnknownBlock(scope string, block *hclsyntax.Block) error {
-	if enforcedByCE(scope, block.Type) {
-		return unsupported(block.Type, block.TypeRange)
+	if err := rejectEnforcedConstruct(scope, block.Type, block.TypeRange); err != nil {
+		return err
 	}
 	if err := p.evaluateIgnoredBody(block.Body); err != nil {
 		return err
@@ -389,10 +397,43 @@ func (p atlasParser) tolerateUnknownBlock(scope string, block *hclsyntax.Block) 
 	return nil
 }
 
+func (p atlasParser) recordIgnoredAttr(scope, name string, attr *hclsyntax.Attribute) error {
+	if err := rejectEnforcedConstruct(scope, name, attr.NameRange); err != nil {
+		return err
+	}
+	p.noteIgnored("attribute", name, attr.NameRange)
+	return nil
+}
+
+func (p atlasParser) recordIgnoredBlock(scope string, block *hclsyntax.Block) error {
+	if err := rejectEnforcedConstruct(scope, block.Type, block.TypeRange); err != nil {
+		return err
+	}
+	p.noteIgnored("block", block.Type, block.TypeRange)
+	return nil
+}
+
+func rejectEnforcedConstruct(scope, name string, rng hcl.Range) error {
+	if enforcedByCE(scope, name) {
+		return unsupported(name, rng)
+	}
+	return nil
+}
+
 // noteIgnored records a construct tolerated under the unknown-name policy.
 func (p atlasParser) noteIgnored(kind, name string, rng hcl.Range) {
 	if p.ignored == nil {
 		return
+	}
+	key := ignoredAtlasConstructKey{
+		kind: kind, name: name, filename: rng.Filename,
+		line: rng.Start.Line, column: rng.Start.Column,
+	}
+	if p.ignoredSeen != nil {
+		if _, ok := p.ignoredSeen[key]; ok {
+			return
+		}
+		p.ignoredSeen[key] = struct{}{}
 	}
 	*p.ignored = append(*p.ignored, IgnoredAtlasConstruct{
 		Name: name, Kind: kind, Filename: rng.Filename, Line: rng.Start.Line,
@@ -627,6 +668,14 @@ func (p atlasParser) parseSchemaMode(block *hclsyntax.Block, cfg *Config) error 
 		return unsupportedBlock(block)
 	}
 	for attrName, attr := range block.Body.Attributes {
+		switch attrName {
+		case "funcs", "objects", "permissions", "roles", "sensitive", "tables", "triggers", "types", "views":
+		default:
+			if err := p.tolerateUnknownAttr("env.schema.mode", attrName, attr); err != nil {
+				return err
+			}
+			continue
+		}
 		value, err := p.schemaModeAttr(attrName, attr)
 		if err != nil {
 			return err
@@ -653,10 +702,6 @@ func (p atlasParser) parseSchemaMode(block *hclsyntax.Block, cfg *Config) error 
 				if err := p.tolerateUnknownAttr("env.schema.mode", attrName, attr); err != nil {
 					return err
 				}
-			}
-		default:
-			if err := p.tolerateUnknownAttr("env.schema.mode", attrName, attr); err != nil {
-				return err
 			}
 		}
 	}
@@ -788,7 +833,8 @@ func (p atlasParser) parseLint(block *hclsyntax.Block, cfg *Config) error {
 	if len(block.Labels) > 0 {
 		return unsupportedBlock(block)
 	}
-	for attrName, attr := range block.Body.Attributes {
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
 		if err := p.parseLintAttr(attrName, attr, cfg); err != nil {
 			return err
 		}
@@ -926,7 +972,8 @@ func (p atlasParser) parseLintAnalyzer(block *hclsyntax.Block, cfg *Config, code
 	if len(block.Labels) > 0 {
 		return unsupportedBlock(block)
 	}
-	for attrName, attr := range block.Body.Attributes {
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
 		switch attrName {
 		case "error":
 			value, err := p.boolAttr(attrName, attr)
@@ -982,7 +1029,8 @@ func (p atlasParser) parseLintGit(block *hclsyntax.Block, cfg *Config) error {
 	if len(block.Labels) > 0 {
 		return unsupportedBlock(block)
 	}
-	for attrName, attr := range block.Body.Attributes {
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
 		switch attrName {
 		case "base":
 			value, err := p.stringAttr(attrName, attr)
@@ -1122,6 +1170,14 @@ func (p atlasParser) parseDiffSkip(block *hclsyntax.Block, cfg *Config) error {
 		return unsupportedBlock(block)
 	}
 	for attrName, attr := range block.Body.Attributes {
+		switch attrName {
+		case "drop_table", "drop_schema":
+		default:
+			if err := p.tolerateUnknownAttr("diff.skip", attrName, attr); err != nil {
+				return err
+			}
+			continue
+		}
 		value, err := p.configBoolAttr(attrName, attr)
 		if err != nil {
 			return err
@@ -1131,10 +1187,6 @@ func (p atlasParser) parseDiffSkip(block *hclsyntax.Block, cfg *Config) error {
 			cfg.Diff.Skip.DropTable = value
 		case "drop_schema":
 			cfg.Diff.Skip.DropSchema = value
-		default:
-			if err := p.tolerateUnknownAttr("diff.skip", attrName, attr); err != nil {
-				return err
-			}
 		}
 	}
 	if len(block.Body.Blocks) > 0 {
@@ -1148,6 +1200,14 @@ func (p atlasParser) parseDiffConcurrentIndex(block *hclsyntax.Block, cfg *Confi
 		return unsupportedBlock(block)
 	}
 	for attrName, attr := range block.Body.Attributes {
+		switch attrName {
+		case "create", "drop":
+		default:
+			if err := p.tolerateUnknownAttr("diff.concurrent_index", attrName, attr); err != nil {
+				return err
+			}
+			continue
+		}
 		value, err := p.configBoolAttr(attrName, attr)
 		if err != nil {
 			return err
@@ -1157,10 +1217,6 @@ func (p atlasParser) parseDiffConcurrentIndex(block *hclsyntax.Block, cfg *Confi
 			cfg.Diff.ConcurrentIndex.Create = value
 		case "drop":
 			cfg.Diff.ConcurrentIndex.Drop = value
-		default:
-			if err := p.tolerateUnknownAttr("diff.concurrent_index", attrName, attr); err != nil {
-				return err
-			}
 		}
 	}
 	if len(block.Body.Blocks) > 0 {
