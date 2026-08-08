@@ -150,7 +150,7 @@ func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 	rendered := diagnosticLines(renderStatements(c, unhostableSchema(), platform.ClickHouse))
 	planned := diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
 
-	c.Assert(len(rendered), qt.Equals, 10)
+	c.Assert(rendered, qt.HasLen, 10)
 	c.Assert(planned, qt.DeepEquals, rendered)
 }
 
