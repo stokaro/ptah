@@ -40,18 +40,23 @@ type MigrationRevision struct {
 	// the up body. Rows written before Ptah recorded the direction read
 	// MigrationDirectionUp. Atlas-layout rows written by Ptah carry the down
 	// marker in operator_version because that schema has no direction column.
-	Direction       MigrationDirection `json:"direction,omitempty"`
-	AtlasType       AtlasRevisionType  `json:"atlas_type,omitempty"`
-	Applied         int                `json:"applied"`
-	Total           int                `json:"total"`
-	Error           string             `json:"error,omitempty"`
-	ErrorStatement  string             `json:"error_stmt,omitempty"`
-	ExecutionTime   time.Duration      `json:"execution_time"`
-	Checksum        string             `json:"checksum,omitempty"`
-	AppliedAt       time.Time          `json:"applied_at"`
-	OperatorVersion string             `json:"operator_version,omitempty"`
-	Dirty           bool               `json:"dirty"`
-	ChecksumCurrent string             `json:"checksum_current,omitempty"`
+	Direction      MigrationDirection `json:"direction,omitempty"`
+	AtlasType      AtlasRevisionType  `json:"atlas_type,omitempty"`
+	Applied        int                `json:"applied"`
+	Total          int                `json:"total"`
+	Error          string             `json:"error,omitempty"`
+	ErrorStatement string             `json:"error_stmt,omitempty"`
+	ExecutionTime  time.Duration      `json:"execution_time"`
+	// Checksum is the canonical full migration checksum on a clean native row.
+	// A dirty native row with committed progress uses a partial:h1: cumulative
+	// source-prefix digest so a resume can prove which statements it may skip.
+	// Atlas-format rows keep the Atlas hash here and use partial_hashes internally.
+	Checksum        string    `json:"checksum,omitempty"`
+	AppliedAt       time.Time `json:"applied_at"`
+	OperatorVersion string    `json:"operator_version,omitempty"`
+	Dirty           bool      `json:"dirty"`
+	ChecksumCurrent string    `json:"checksum_current,omitempty"`
+	partialHashes   []string
 }
 
 // DirtyMigrationError reports that a previous migration run left a dirty row.
@@ -233,16 +238,16 @@ func migrationProgressRolledBack(dialect string, txMode MigrationTxMode) bool {
 func (m *Migrator) getDirtyRevisionSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		if m.isSQLServer() {
-			return fmt.Sprintf(`SELECT TOP (1) version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
+			return fmt.Sprintf(`SELECT TOP (1) %s
 FROM %s
-WHERE %s AND %s
-ORDER BY %s`, m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
+				WHERE %s AND %s
+				ORDER BY %s`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
 		}
-		return fmt.Sprintf(`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
+		return fmt.Sprintf(`SELECT %s
 FROM %s
 WHERE %s AND %s
 ORDER BY %s
-LIMIT 1`, m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
+LIMIT 1`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
 	}
 	if m.isSQLServer() {
 		return fmt.Sprintf(`SELECT TOP (1) version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
@@ -259,9 +264,9 @@ LIMIT 1`, m.qualifiedMigrationsTable())
 
 func (m *Migrator) getRevisionSQL() string {
 	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
+		return fmt.Sprintf(`SELECT %s
 FROM %s
-WHERE version = ?`, m.qualifiedMigrationsTable())
+			WHERE version = ?`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable())
 	}
 	return fmt.Sprintf(`SELECT %s
 FROM %s
@@ -271,10 +276,11 @@ WHERE version = ?`, m.ptahRevisionProjection(), m.qualifiedMigrationsTable())
 func (m *Migrator) getAppliedRevisionsSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		return fmt.Sprintf(
-			`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
+			`SELECT %s
 FROM %s
 WHERE %s AND %s
 ORDER BY %s`,
+			m.atlasRevisionProjection(),
 			m.qualifiedMigrationsTable(),
 			atlasAppliedRevisionPredicate,
 			atlasMetadataRowPredicate,
@@ -293,10 +299,11 @@ FROM %s
 func (m *Migrator) getRevisionsSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		return fmt.Sprintf(
-			`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
+			`SELECT %s
 FROM %s
 WHERE %s
 ORDER BY %s`,
+			m.atlasRevisionProjection(),
 			m.qualifiedMigrationsTable(),
 			atlasMetadataRowPredicate,
 			m.atlasVersionNumberExpression(),
@@ -305,6 +312,12 @@ ORDER BY %s`,
 	return fmt.Sprintf(`SELECT %s
 FROM %s
 ORDER BY version`, m.ptahRevisionProjection(), m.qualifiedMigrationsTable())
+}
+
+func (m *Migrator) atlasRevisionProjection() string {
+	return "version, description, type, applied, total, COALESCE(error, ''), " +
+		"COALESCE(error_stmt, ''), execution_time, hash, executed_at, partial_hashes, " +
+		"COALESCE(operator_version, '')"
 }
 
 func (m *Migrator) ptahRevisionProjection() string {
@@ -321,10 +334,11 @@ func (m *Migrator) getRevisionsForUpdateSQL() string {
 	case platform.SQLServer:
 		if m.revisionTableFormat.isAtlas() {
 			return fmt.Sprintf(
-				`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
+				`SELECT %s
 FROM %s WITH (UPDLOCK, HOLDLOCK)
 WHERE %s
 ORDER BY %s`,
+				m.atlasRevisionProjection(),
 				m.qualifiedMigrationsTable(),
 				atlasMetadataRowPredicate,
 				m.atlasVersionNumberExpression(),
@@ -386,7 +400,7 @@ func (m *Migrator) completeMigrationSQL() string {
 	return revisionUpdateSQL(
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
-		"state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, applied_at = ?",
+		"state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, applied_at = ?, checksum = ?",
 	)
 }
 
@@ -395,13 +409,13 @@ func (m *Migrator) checkpointMigrationSQL() string {
 		return revisionUpdateSQL(
 			m.connectionDialect(),
 			m.qualifiedMigrationsTable(),
-			"applied = ?, total = ?, execution_time = ?, error = '', error_stmt = '', operator_version = ?",
+			"applied = ?, total = ?, execution_time = ?, error = '', error_stmt = '', partial_hashes = ?, operator_version = ?",
 		)
 	}
 	return revisionUpdateSQL(
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
-		"state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?",
+		"state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, checksum = ?",
 	)
 }
 
@@ -416,7 +430,7 @@ func (m *Migrator) beginRollbackSQL() string {
 	return revisionUpdateSQL(
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
-		"state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?",
+		"state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, checksum = ?",
 	)
 }
 
@@ -431,7 +445,7 @@ func (m *Migrator) failMigrationSQL() string {
 	return revisionUpdateSQL(
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
-		"state = ?, applied = ?, total = ?, error = ?, error_stmt = ?, execution_time_ms = ?",
+		"state = ?, applied = ?, total = ?, error = ?, error_stmt = ?, execution_time_ms = ?, checksum = ?",
 	)
 }
 
@@ -810,6 +824,7 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	var version string
 	var executionTime int64
 	var executedAt any
+	var partialHashes any
 	if err := row.Scan(
 		&version,
 		&revision.Description,
@@ -821,6 +836,7 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 		&executionTime,
 		&revision.Checksum,
 		&executedAt,
+		&partialHashes,
 		&revision.OperatorVersion,
 	); err != nil {
 		return MigrationRevision{}, err
@@ -839,6 +855,17 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	revision.AppliedAt = parsedExecutedAt
 	revision.ExecutionTime = time.Duration(executionTime)
 	revision.Dirty = revision.State != migrationStateApplied
+	// Legacy ClickHouse revisions can contain {} because old Atlas-compatible
+	// DDL coerced JSON null into an empty object. Clean rows never resume, so
+	// their partial_hashes are irrelevant and must not make status/list fail.
+	// Dirty rows with committed progress do resume and are decoded fail-closed.
+	if revision.Dirty && revision.Applied > 0 {
+		parsedPartialHashes, err := parseAtlasPartialHashes(partialHashes)
+		if err != nil {
+			return MigrationRevision{}, fmt.Errorf("failed to decode Atlas revision %s partial_hashes: %w", version, err)
+		}
+		revision.partialHashes = parsedPartialHashes
+	}
 	return revision, nil
 }
 
@@ -954,6 +981,9 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 	if err != nil {
 		return upRetryPlan{}, err
 	}
+	if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionUp, "resume automatically"); err != nil {
+		return upRetryPlan{}, err
+	}
 	return upRetryPlan{reuseRevision: true, resumeFrom: resumeFrom}, nil
 }
 
@@ -989,7 +1019,102 @@ func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
 			revision.Version,
 		)
 	}
+	if revision.Applied > revision.Total {
+		return 0, fmt.Errorf(
+			"migration %d cannot resume automatically: revision metadata records %d applied statements out of %d; inspect the database, then use 'ptah migrations repair --version %d'",
+			revision.Version,
+			revision.Applied,
+			revision.Total,
+			revision.Version,
+		)
+	}
 	return revision.Applied + 1, nil
+}
+
+// verifyCommittedPrefix proves that every statement an earlier
+// no-transaction attempt recorded as committed still has the same source text.
+// A count alone is insufficient: editing statement one while keeping the same
+// number of statements would otherwise make a retry skip the edited statement
+// and then record the new file as fully applied.
+func (m *Migrator) verifyCommittedPrefix(
+	revision MigrationRevision,
+	migration *Migration,
+	direction MigrationDirection,
+	operation string,
+) error {
+	if revision.Applied <= 0 {
+		return nil
+	}
+	sqlText := migrationSQLForDirection(migration, direction)
+	hashes, ok := cumulativePartialHashValues(sqlText, m.connectionDialect(), revision.Applied)
+	if !ok {
+		return committedPrefixVerificationError(revision, operation, "the current file cannot be split into the recorded committed prefix")
+	}
+	expected := hashes[len(hashes)-1]
+	if m.revisionTableFormat.isAtlas() {
+		return verifyAtlasCommittedPrefix(revision, migration, direction, operation, expected)
+	}
+	stored, encoded, err := parseNativeDirtyChecksum(revision.Checksum)
+	if err != nil {
+		return committedPrefixVerificationError(revision, operation, "the native checksum prefix metadata is malformed: "+err.Error())
+	}
+	if !encoded {
+		if nativeFullChecksumMatches(revision.Checksum, migration, direction) {
+			return nil
+		}
+		return committedPrefixVerificationError(revision, operation, "the legacy native revision has no committed-prefix checksum and its full-file checksum changed")
+	}
+	if stored != expected {
+		return committedPrefixVerificationError(revision, operation, "the already committed statement prefix changed")
+	}
+	return nil
+}
+
+func verifyAtlasCommittedPrefix(
+	revision MigrationRevision,
+	migration *Migration,
+	direction MigrationDirection,
+	operation string,
+	expected string,
+) error {
+	if len(revision.partialHashes) == 0 {
+		if direction == MigrationDirectionUp && revision.Checksum != "" && revisionChecksumMatches(normalizeAtlasRevisionHash(revision.Checksum), migration) {
+			return nil
+		}
+		return committedPrefixVerificationError(revision, operation, "the legacy Atlas revision has no partial_hashes for this direction")
+	}
+	if len(revision.partialHashes) != revision.Applied {
+		return committedPrefixVerificationError(revision, operation, fmt.Sprintf(
+			"Atlas partial_hashes contains %d entries for %d committed statements",
+			len(revision.partialHashes),
+			revision.Applied,
+		))
+	}
+	if revision.partialHashes[revision.Applied-1] != expected {
+		return committedPrefixVerificationError(revision, operation, "the already committed statement prefix changed")
+	}
+	return nil
+}
+
+func nativeFullChecksumMatches(stored string, migration *Migration, direction MigrationDirection) bool {
+	if stored == "" {
+		return false
+	}
+	if direction == MigrationDirectionDown {
+		return stored == migrationChecksum(migration.DownSQL)
+	}
+	return revisionChecksumMatches(stored, migration)
+}
+
+func committedPrefixVerificationError(revision MigrationRevision, operation, reason string) error {
+	return fmt.Errorf(
+		"migration %d cannot %s: %s after %d of %d statements committed; inspect the database before choosing a repair point",
+		revision.Version,
+		operation,
+		reason,
+		revision.Applied,
+		revision.Total,
+	)
 }
 
 // recordPendingMigrationRevisionOn writes the row that says "this version is
@@ -1036,7 +1161,7 @@ func (m *Migrator) restartMigrationRevisionOn(
 		alreadyApplied,
 		m.migrationStatementCount(migration.UpSQL),
 		0,
-		migrationRevisionHash(migration),
+		m.dirtyRevisionChecksum(migration, MigrationDirectionUp, alreadyApplied),
 		migration.Version,
 	)
 }
@@ -1060,7 +1185,7 @@ func (m *Migrator) restartAtlasMigrationRevisionOn(
 		m.atlasRevisionTimestamp(startedAt),
 		int64(0),
 		migrationRevisionHash(migration),
-		m.atlasNullJSONValue(),
+		m.atlasPartialHashes(migration.UpSQL, alreadyApplied, m.migrationStatementCount(migration.UpSQL)),
 		ptahOperatorVersion,
 		strconv.FormatInt(migration.Version, 10),
 	)
@@ -1148,6 +1273,7 @@ func (m *Migrator) completeMigrationRevisionOn(
 		m.migrationStatementCount(migration.UpSQL),
 		time.Since(startedAt).Milliseconds(),
 		time.Now(),
+		migrationRevisionHash(migration),
 		migration.Version,
 	)
 }
@@ -1187,6 +1313,7 @@ func (m *Migrator) checkpointMigrationRevision(
 	defer cancelRecord()
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.checkpointMigrationSQL())
 	if m.revisionTableFormat.isAtlas() {
+		sqlText := migrationSQLForDirection(migration, direction)
 		return executeSQLOutsideTransaction(
 			recordCtx,
 			m.conn,
@@ -1194,6 +1321,7 @@ func (m *Migrator) checkpointMigrationRevision(
 			event.Index,
 			event.Total,
 			time.Since(startedAt).Nanoseconds(),
+			m.atlasDirtyPartialHashes(sqlText, direction, event.Index, event.Total),
 			atlasOperatorVersionForDirection(direction),
 			strconv.FormatInt(migration.Version, 10),
 		)
@@ -1206,6 +1334,7 @@ func (m *Migrator) checkpointMigrationRevision(
 		event.Index,
 		event.Total,
 		time.Since(startedAt).Milliseconds(),
+		m.dirtyRevisionChecksum(migration, direction, event.Index),
 		migration.Version,
 	)
 }
@@ -1234,7 +1363,7 @@ func (m *Migrator) markMigrationStatementInFlight(
 			time.Since(startedAt).Nanoseconds(),
 			unknownStatementOutcomeError,
 			event.Statement,
-			m.atlasPartialHashes(sqlText, event.Index-1, event.Total),
+			m.atlasDirtyPartialHashes(sqlText, direction, event.Index-1, event.Total),
 			atlasOperatorVersionForDirection(direction),
 			strconv.FormatInt(migration.Version, 10),
 		)
@@ -1249,6 +1378,7 @@ func (m *Migrator) markMigrationStatementInFlight(
 		unknownStatementOutcomeError,
 		event.Statement,
 		time.Since(startedAt).Milliseconds(),
+		m.dirtyRevisionChecksum(migration, direction, event.Index-1),
 		migration.Version,
 	)
 }
@@ -1273,6 +1403,7 @@ func (m *Migrator) beginRollbackRevision(
 		0,
 		m.migrationStatementCount(migration.DownSQL),
 		0,
+		migrationChecksum(migration.DownSQL),
 		migration.Version,
 	)
 }
@@ -1312,6 +1443,13 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
+	// recordStatementProgressBefore wrote the unknown-outcome marker before the
+	// statement entered ExecContext. Cancellation can race a server-side commit,
+	// so replacing that marker with an ordinary failure would make the next retry
+	// replay SQL whose outcome is unknowable.
+	if preservesUnknownStatementOutcome(ctx, failure, txMode) {
+		return nil
+	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
 	progress := migrationExecutionProgress(failure, m.conn.Info().Dialect, txMode)
@@ -1331,6 +1469,9 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if direction == MigrationDirectionDown && migrationProgressRolledBack(m.conn.Info().Dialect, txMode) {
 		applied = 0
 	}
+	if direction == MigrationDirectionUp {
+		applied = max(applied, migrationAppliedFloor(ctx))
+	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.failAtlasMigrationRevision(
 			recordCtx, migration, startedAt, failure, sqlText, direction, applied, total, stmt, failedIndex,
@@ -1347,8 +1488,20 @@ func (m *Migrator) failMigrationRevisionWithMode(
 		strings.TrimSpace(failure.Error()),
 		stmt,
 		time.Since(startedAt).Milliseconds(),
+		m.dirtyRevisionChecksum(migration, direction, applied),
 		migration.Version,
 	)
+}
+
+func preservesUnknownStatementOutcome(ctx context.Context, failure error, txMode MigrationTxMode) bool {
+	if txMode != MigrationTxModeNone {
+		return false
+	}
+	var execErr *MigrationExecutionError
+	if !errors.As(failure, &execErr) {
+		return false
+	}
+	return ctx.Err() != nil || errors.Is(execErr.Err, context.Canceled) || errors.Is(execErr.Err, context.DeadlineExceeded)
 }
 
 func durableRevisionWriteContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -1377,7 +1530,7 @@ func (m *Migrator) failAtlasMigrationRevision(
 		time.Since(startedAt).Nanoseconds(),
 		atlasFailureError(failure),
 		atlasFailureStatement(sqlText, m.connectionDialect(), failedIndex, stmt),
-		m.atlasPartialHashes(sqlText, applied, total),
+		m.atlasDirtyPartialHashes(sqlText, direction, applied, total),
 		atlasOperatorVersionForDirection(direction),
 		strconv.FormatInt(migration.Version, 10),
 	)
@@ -1828,6 +1981,7 @@ func (m *Migrator) writePtahSetRevisionRows(
 				ctx,
 				updateSQL,
 				migrationStateApplied,
+				migrationRevisionHash(migration),
 				revision.Version,
 			); err != nil {
 				return fmt.Errorf("failed to mark dirty revision %d applied: %w", revision.Version, err)
@@ -1859,11 +2013,16 @@ func (m *Migrator) writePtahSetRevisionRows(
 // keeping its recorded error diagnostics, mirroring the Atlas layout's
 // applied|manually-set type update.
 func (m *Migrator) setPtahRevisionAppliedSQL() string {
-	return fmt.Sprintf(`UPDATE %s SET state = ?, applied = total WHERE version = ?`, m.qualifiedMigrationsTable())
+	return fmt.Sprintf(
+		`UPDATE %s SET state = ?, applied = total, checksum = ? WHERE version = ?`,
+		m.qualifiedMigrationsTable(),
+	)
 }
 
 // RepairMigration clears dirty migration metadata after an operator has fixed
 // the database manually, or resumes the migration from a specific statement.
+// It holds the configured migration advisory lock across revision inspection,
+// resumed SQL, safety checks, and the final metadata write.
 //
 // The revision's recorded direction decides which body --resume-from runs and
 // what a finished resume leaves behind. A row an up migration left dirty
@@ -1881,6 +2040,12 @@ func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOpti
 	if opts.Version <= 0 {
 		return fmt.Errorf("repair version must be greater than zero")
 	}
+	return m.withMigrationLock(ctx, "repair migration", func(ctx context.Context) error {
+		return m.repairMigrationLocked(ctx, opts)
+	})
+}
+
+func (m *Migrator) repairMigrationLocked(ctx context.Context, opts RepairMigrationOptions) error {
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
@@ -1902,13 +2067,7 @@ func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOpti
 		return m.repairRolledBackMigration(ctx, migration, revision, opts)
 	}
 	if opts.ResumeFrom > 0 {
-		if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
-			return err
-		}
-		if err := m.refuseUpResumeOverRecordedRollback(migration, revision, opts); err != nil {
-			return err
-		}
-		if err := m.resumeMigration(ctx, migration, opts.ResumeFrom); err != nil {
+		if err := m.resumeUpMigrationFrom(ctx, migration, revision, opts); err != nil {
 			return err
 		}
 	}
@@ -1916,6 +2075,26 @@ func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOpti
 		return err
 	}
 	return m.forceAppliedMigration(ctx, migration)
+}
+
+func (m *Migrator) resumeUpMigrationFrom(
+	ctx context.Context,
+	migration *Migration,
+	revision *MigrationRevision,
+	opts RepairMigrationOptions,
+) error {
+	if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
+		return err
+	}
+	if err := m.refuseUpResumeOverRecordedRollback(migration, revision, opts); err != nil {
+		return err
+	}
+	if revision != nil {
+		if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionUp, "resume the migration"); err != nil {
+			return err
+		}
+	}
+	return m.resumeMigration(ctx, migration, opts.ResumeFrom)
 }
 
 // refuseUnknownStatementOutcomeResume refuses a --resume-from over a revision
@@ -1943,9 +2122,23 @@ func (m *Migrator) migrationByVersion(version int64) *Migration {
 }
 
 func (m *Migrator) resumeMigration(ctx context.Context, migration *Migration, resumeFrom int) error {
-	statements := splitSQLStatementsForConnection(m.conn, migration.UpSQL)
+	return m.resumeMigrationDirection(ctx, migration, resumeFrom, MigrationDirectionUp)
+}
+
+func (m *Migrator) resumeMigrationDirection(
+	ctx context.Context,
+	migration *Migration,
+	resumeFrom int,
+	direction MigrationDirection,
+) error {
+	sqlText := migrationSQLForDirection(migration, direction)
+	statements := splitSQLStatementsForConnection(m.conn, sqlText)
 	if resumeFrom < 1 || resumeFrom > len(statements) {
 		return fmt.Errorf("resume-from must be between 1 and %d", len(statements))
+	}
+	operation := "migration"
+	if direction == MigrationDirectionDown {
+		operation = "rollback"
 	}
 	startedAt := time.Now()
 	for i := resumeFrom - 1; i < len(statements); i++ {
@@ -1954,31 +2147,43 @@ func (m *Migrator) resumeMigration(ctx context.Context, migration *Migration, re
 			continue
 		}
 		event := StatementEvent{Statement: stmt, Index: i + 1, Total: len(statements)}
-		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionUp); err != nil {
-			return fmt.Errorf("failed to record resumed migration %d at statement %d: %w", migration.Version, event.Index, err)
+		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
+			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
 		if err := executeSQLOutsideTransaction(ctx, m.conn, stmt); err != nil {
-			return m.failResumedMigration(ctx, migration, startedAt, err, event)
+			return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 		}
-		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionUp); err != nil {
-			return fmt.Errorf("failed to record resumed migration %d at statement %d: %w", migration.Version, event.Index, err)
+		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction); err != nil {
+			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
 	}
 	return nil
 }
 
-func (m *Migrator) failResumedMigration(
+func (m *Migrator) failResumedMigrationDirection(
 	ctx context.Context,
 	migration *Migration,
 	startedAt time.Time,
 	failure error,
 	event StatementEvent,
+	direction MigrationDirection,
 ) error {
 	execErr := &MigrationExecutionError{
 		Err:            fmt.Errorf("failed to execute SQL statement: %w", failure),
 		Statement:      event.Statement,
 		StatementIndex: event.Index,
 		Total:          event.Total,
+	}
+	if direction == MigrationDirectionDown {
+		return m.failRollbackWithDirtyStateWithMode(
+			ctx,
+			migration,
+			startedAt,
+			execErr,
+			migration.DownSQL,
+			fmt.Sprintf("failed to resume rollback of migration %d", migration.Version),
+			MigrationTxModeNone,
+		)
 	}
 	return m.failMigrationWithDirtyStateWithMode(
 		ctx,
@@ -1997,6 +2202,19 @@ func migrationSQLForDirection(migration *Migration, direction MigrationDirection
 		return migration.DownSQL
 	}
 	return migration.UpSQL
+}
+
+func (m *Migrator) dirtyRevisionChecksum(
+	migration *Migration,
+	direction MigrationDirection,
+	applied int,
+) string {
+	sqlText := migrationSQLForDirection(migration, direction)
+	fallback := migrationRevisionHash(migration)
+	if direction == MigrationDirectionDown {
+		fallback = migrationChecksum(sqlText)
+	}
+	return nativeDirtyChecksum(sqlText, m.connectionDialect(), applied, fallback)
 }
 
 func atlasOperatorVersionForDirection(direction MigrationDirection) string {

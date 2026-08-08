@@ -36,6 +36,17 @@ CREATE TABLE child (id INTEGER PRIMARY KEY);
 DROP TABLE child;
 `
 
+const succeedingNoTransactionDownTxtar = `-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE child (id INTEGER PRIMARY KEY);
+
+-- down.sql --
+-- atlas:txmode none
+
+DROP TABLE child;
+`
+
 // failingNoTransactionDownTxtar opts the down body out of the migration
 // transaction, so a mid-body failure leaves the completed statements applied.
 const failingNoTransactionDownTxtar = `-- atlas:txtar
@@ -155,6 +166,38 @@ WHERE version = '2'`)
 	c.Assert(m.MigrateUp(ctx), qt.ErrorMatches, `migration 2 is dirty.*`)
 	err = m.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true})
 	c.Assert(err, qt.ErrorMatches, `migration 2 is dirty from an interrupted rollback; repair the rollback before migrating up`)
+}
+
+func TestRepairMigration_AtlasCompletedDownFinalizesAfterMetadataFailure(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newAtlasDownMigrator(t, succeedingNoTransactionDownTxtar)
+	_, err := conn.ExecContext(ctx, `CREATE TRIGGER block_revision_delete
+BEFORE DELETE ON atlas_schema_revisions
+WHEN OLD.version = '2'
+BEGIN
+    SELECT RAISE(FAIL, 'blocked revision delete');
+END`)
+	c.Assert(err, qt.IsNil)
+
+	err = m.MigrateDownTo(ctx, 1)
+	c.Assert(err, qt.ErrorMatches, `(?s)failed to record migration reversion 2:.*blocked revision delete.*`)
+	c.Assert(sqliteTableExists(t, conn, "child"), qt.IsFalse)
+	var applied, total int
+	var partialHashes string
+	c.Assert(
+		conn.QueryRowContext(ctx, "SELECT applied, total, partial_hashes FROM atlas_schema_revisions WHERE version = '2'").
+			Scan(&applied, &total, &partialHashes),
+		qt.IsNil,
+	)
+	c.Assert(applied, qt.Equals, 1)
+	c.Assert(total, qt.Equals, 1)
+	c.Assert(partialHashes, qt.Matches, `\["h1:[A-Za-z0-9+/]+=*"\]`)
+
+	_, err = conn.ExecContext(ctx, "DROP TRIGGER block_revision_delete")
+	c.Assert(err, qt.IsNil)
+	c.Assert(m.RepairMigration(ctx, migrator.RepairMigrationOptions{Version: 2}), qt.IsNil)
+	c.Assert(atlasRevisionTuples(t, conn), qt.HasLen, 1)
 }
 
 func sqliteTableExists(t *testing.T, conn *dbschema.DatabaseConnection, table string) bool {

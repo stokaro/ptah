@@ -183,15 +183,21 @@ people and pipelines share a directory:
   row. When the dirty row belongs to a migration that is still pending — the
   usual case, a body that failed part-way — the retry reuses that row rather
   than recording a second one, and skips the statements the earlier attempt
-  committed, so fixing the migration and rerunning with `--allow-dirty` is the
-  recovery. Pre-migration checks are not rerun after committed progress because
-  they describe the original pre-migration state. Automatic continuation is
+  committed. Before it skips anything, Ptah verifies that the committed source
+  prefix is unchanged. Native rows carry a `partial:h1:` prefix checksum;
+  Atlas-format rows carry cumulative `partial_hashes`. Editing only the
+  unapplied suffix is allowed. A failed retry cannot reduce `applied` below the
+  previously committed prefix, even when the transaction mode changed.
+  Pre-migration checks are not rerun after committed progress because they
+  describe the original pre-migration state. Automatic continuation is
   up-direction only: a row left dirty by an interrupted rollback is refused so
   up SQL cannot be resumed from a down-statement offset. Use
   `ptah migrations repair` when the row cannot be resumed automatically: an
   interrupted rollback, a process whose last statement has an unknown outcome,
-  an edit that changed the file's statement count, or a dirty row for a
-  migration whose file was rebased away.
+  changed or unverifiable committed-prefix metadata, an edit that changed the
+  file's statement count, or a dirty row for a migration whose file was rebased
+  away. Legacy dirty rows without prefix metadata may resume only while their
+  full-file checksum still matches.
 - **Execution order** (`--exec-order`): `linear` (default) fails when a merge
   landed a pending migration below the current version; `linear-skip` warns
   and leaves it pending; `non-linear` applies it. Status reports such
@@ -302,11 +308,12 @@ the same recoverable state in both revision-table formats;
 Atlas's hidden failed-down state. [Roll back migrations](../rollback/) shows
 how to resume it through the native repair command.
 
-**The process stopped during a non-transactional statement.** The revision row
-records the last known completed statement and marks the interrupted
-statement's outcome as unknown. Inspect the database before repair. Ptah
-rejects `repair --resume-from` while this marker is present because the SQL may
-already have committed.
+**A non-transactional statement was interrupted.** If the process exits, the
+context is canceled, or its deadline expires while an autocommit statement is
+in flight, the revision row preserves the last known completed statement and
+marks the interrupted statement's outcome as unknown. Inspect the database
+before repair. Ptah rejects `repair --resume-from` while this marker is present
+because the SQL may already have committed.
 
 **A concurrent index build failed on PostgreSQL** (exit `2`). The invalid index
 left behind keeps the name, so re-issuing the generated `IF NOT EXISTS`

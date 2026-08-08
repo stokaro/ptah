@@ -178,15 +178,18 @@ Last migration attempt had errors:
 Fix the migration, rerun `ptah-compat migrate hash`, and rerun the apply with
 `--allow-dirty`. The retry reuses the dirty row instead of recording a second
 one and skips the statements the earlier attempt committed — under
-`--tx-mode none` above, statement 1 — so it resumes rather than repeating SQL.
-Atlas needs no flag here; `--allow-dirty` stays required so a half-applied
-migration is never resumed by accident.
+`--tx-mode none` above, statement 1 — only after proving that committed source
+prefix is unchanged. Atlas-format rows use the cumulative `partial_hashes`
+entry at `applied`. Editing the unapplied suffix is allowed, and a later retry
+failure cannot lower `applied` below that committed prefix even when the
+transaction mode changed. Atlas needs no flag here; `--allow-dirty` stays
+required so a half-applied migration is never resumed by accident.
 
-Two cases refuse to resume automatically and say so, naming
-`ptah migrations repair --version <v>`: a run interrupted mid-statement, whose
-last statement's outcome was never observed, and an edit that changed the
-migration's statement count, after which the recorded progress no longer indexes
-into the file.
+Automatic resume refuses and names `ptah migrations repair --version <v>` when
+a run was interrupted mid-statement, the statement count changed, the committed
+source prefix changed, or `partial_hashes` is malformed or disagrees with
+`applied`. Legacy Atlas rows without `partial_hashes` may resume only while the
+stored full-file hash still matches.
 
 ## Rolling back
 

@@ -148,10 +148,12 @@ example on this page is `direction=up`; for `direction=down` see
 where `--resume-from` runs the remaining *down* statements and a finished
 rollback removes the revision instead of marking it applied.
 
-An abrupt process exit during a `no_transaction` statement is more ambiguous.
-Before each SQL-backed statement, Ptah durably records the last known completed
+An interruption during a `no_transaction` statement is more ambiguous. Before
+each SQL-backed statement, Ptah durably records the last known completed
 statement and marks the next statement's outcome as unknown. After success, it
-advances the progress count and clears the marker.
+advances the progress count and clears the marker. A process exit, context
+cancellation, or deadline while `ExecContext` is in flight preserves that
+marker instead of replacing it with an ordinary failure.
 
 If the process exits between those writes, the statement may or may not have
 committed. Inspect the database before changing the revision row. Ptah rejects
@@ -162,10 +164,17 @@ you have reconciled the schema by hand.
 Fix the migration file (it is unapplied, so `edit` applies), re-hash, and
 repair. On a `direction=up` row, `--resume-from` executes the remaining up
 statements — here starting at the second — before marking the migration
-applied. Resumed SQL uses the same in-flight marker and per-statement durable
-checkpoint protocol as the original `no_transaction` run, so a second failure
-records its absolute progress instead of replaying statements that already
-committed:
+applied. Before any resume skips committed statements, Ptah verifies their
+source prefix. Editing the unapplied suffix is allowed; changing or losing the
+recorded prefix metadata fails closed. Resumed SQL uses the same in-flight
+marker and per-statement durable checkpoint protocol as the original
+`no_transaction` run, so a second failure records its absolute progress instead
+of replaying statements that already committed.
+
+`RepairMigration` acquires the same session advisory lock as migration up and
+down. It holds the lock across revision inspection, resumed SQL, safety checks,
+and the final metadata write. The native repair command currently uses the
+default lock name and waits indefinitely.
 
 ```bash
 ptah migrations repair \

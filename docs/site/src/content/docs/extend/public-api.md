@@ -102,9 +102,17 @@ the callback failed.
 For SQL-backed `no_transaction` migrations, Ptah writes a durable progress
 checkpoint before invoking the observer. Before each statement, it first marks
 that statement's outcome as unknown; after success, it advances the completed
-count and clears the marker. This includes Atlas-format down execution. A
-custom `MigrationFunc` is opaque to the migrator and does not receive
-statement-level checkpointing.
+count and clears the marker. Process exit, context cancellation, or deadline
+while execution is in flight preserves the unknown-outcome marker. This
+includes Atlas-format down execution. A custom `MigrationFunc` is opaque to the
+migrator and does not receive statement-level checkpointing.
+
+Dirty SQL-backed resumes verify the already committed source prefix before
+skipping it. Native rows use the `partial:h1:` value in `Checksum`; Atlas rows
+use cumulative `partial_hashes`. A failure after changing transaction mode
+cannot reduce the recorded applied count below that verified prefix.
+`RepairMigration` holds the session advisory lock across revision inspection,
+resumed SQL, safety checks, and the final metadata write.
 
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.

@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"go.5x5.cz/ptah/core/sqlutil"
 )
@@ -11,6 +13,12 @@ import (
 // partialHashPrefix is the tag Atlas puts on every digest it records, the same
 // one atlas.sum uses.
 const partialHashPrefix = "h1:"
+
+// nativeDirtyChecksumPrefix distinguishes a dirty native revision's committed
+// prefix digest from the full migration checksum stored by clean revisions.
+// The encoded value remains within the existing VARCHAR(64) checksum column:
+// "partial:" plus Atlas's h1-prefixed SHA-256 digest is 55 bytes.
+const nativeDirtyChecksumPrefix = "partial:"
 
 // atlasPartialHashes returns the value the `partial_hashes` column takes for a
 // migration that stopped after applied statements out of total.
@@ -39,6 +47,30 @@ func (m *Migrator) atlasPartialHashes(sqlText string, applied, total int) any {
 	if !ok {
 		return m.atlasNullJSONValue()
 	}
+	return m.atlasPartialHashesJSON(hashes)
+}
+
+// atlasDirtyPartialHashes preserves enough metadata to validate a later
+// resume. Atlas-compatible clean up completion still writes null, while a
+// Ptah-owned dirty down row keeps its cumulative prefix even when the whole
+// down body committed and a later safety check prevented finalization.
+func (m *Migrator) atlasDirtyPartialHashes(
+	sqlText string,
+	direction MigrationDirection,
+	applied int,
+	total int,
+) any {
+	if direction == MigrationDirectionUp {
+		return m.atlasPartialHashes(sqlText, applied, total)
+	}
+	hashes, ok := cumulativePartialHashValues(sqlText, m.connectionDialect(), applied)
+	if !ok {
+		return m.atlasNullJSONValue()
+	}
+	return m.atlasPartialHashesJSON(hashes)
+}
+
+func (m *Migrator) atlasPartialHashesJSON(hashes []string) any {
 	encoded, err := json.Marshal(hashes)
 	if err != nil {
 		// json.Marshal of []string cannot fail; falling back to the null keeps
@@ -53,6 +85,17 @@ func (m *Migrator) atlasPartialHashes(sqlText string, applied, total int) any {
 // the run is not a partial application or the statements cannot be recovered.
 func atlasPartialHashValues(sqlText, dialect string, applied, total int) ([]string, bool) {
 	if applied <= 0 || applied >= total {
+		return nil, false
+	}
+	return cumulativePartialHashValues(sqlText, dialect, applied)
+}
+
+// cumulativePartialHashValues computes the digest chain through applied,
+// including the whole body when applied equals total. Atlas writes null for a
+// clean full application, but native dirty rows need the full-prefix form when
+// statement execution finished and a later safety check blocked completion.
+func cumulativePartialHashValues(sqlText, dialect string, applied int) ([]string, bool) {
+	if applied <= 0 {
 		return nil, false
 	}
 	statements := sqlutil.SplitSourceStatements(sqlText, dialect)
@@ -70,4 +113,66 @@ func atlasPartialHashValues(sqlText, dialect string, applied, total int) ([]stri
 		hashes = append(hashes, partialHashPrefix+base64.StdEncoding.EncodeToString(digest.Sum(nil)))
 	}
 	return hashes, true
+}
+
+func nativeDirtyChecksum(sqlText, dialect string, applied int, fallback string) string {
+	hashes, ok := cumulativePartialHashValues(sqlText, dialect, applied)
+	if !ok {
+		return fallback
+	}
+	return nativeDirtyChecksumPrefix + hashes[len(hashes)-1]
+}
+
+func parseNativeDirtyChecksum(value string) (string, bool, error) {
+	digest, ok := strings.CutPrefix(value, nativeDirtyChecksumPrefix)
+	if !ok {
+		return "", false, nil
+	}
+	if err := validatePartialHash(digest); err != nil {
+		return "", true, err
+	}
+	return digest, true, nil
+}
+
+func parseAtlasPartialHashes(value any) ([]string, error) {
+	var raw string
+	switch typed := value.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		raw = typed
+	case []byte:
+		raw = string(typed)
+	default:
+		return nil, fmt.Errorf("unsupported Atlas partial_hashes value %T", value)
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == atlasNullJSON {
+		return nil, nil
+	}
+	var hashes []string
+	if err := json.Unmarshal([]byte(raw), &hashes); err != nil {
+		return nil, fmt.Errorf("invalid Atlas partial_hashes: %w", err)
+	}
+	for _, hash := range hashes {
+		if err := validatePartialHash(hash); err != nil {
+			return nil, fmt.Errorf("invalid Atlas partial_hashes entry: %w", err)
+		}
+	}
+	return hashes, nil
+}
+
+func validatePartialHash(value string) error {
+	encoded, ok := strings.CutPrefix(value, partialHashPrefix)
+	if !ok {
+		return fmt.Errorf("digest %q is missing the %q prefix", value, partialHashPrefix)
+	}
+	digest, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return fmt.Errorf("digest %q is not valid base64: %w", value, err)
+	}
+	if len(digest) != sha256.Size {
+		return fmt.Errorf("digest %q decodes to %d bytes, expected %d", value, len(digest), sha256.Size)
+	}
+	return nil
 }

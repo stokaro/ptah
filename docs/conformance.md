@@ -200,6 +200,23 @@ Silently answering about a directory the caller did not name is the defect this
 project does not copy. The refusal names the rejected token and the flag that
 takes a value there instead.
 
+### Dirty retry proves the committed prefix
+
+Atlas CE resumes a dirty non-transactional revision at `applied + 1` using only
+the recorded statement count. Ptah deliberately requires stronger evidence
+before it skips SQL: native dirty rows carry a cumulative `partial:h1:` prefix
+checksum, and Atlas-format rows use `partial_hashes`. Changed source, malformed
+metadata, or a hash count that disagrees with `applied` fails closed. Legacy
+rows without prefix metadata resume only while their full-file hash still
+matches.
+
+The stricter gate still permits edits to the unapplied suffix. It also preserves
+the earlier applied floor when a retry changes transaction mode and preserves
+the unknown-outcome marker when cancellation or a deadline interrupts
+`ExecContext`. These are intentional safe-direction divergences: Ptah may exit
+non-zero where Atlas CE would resume by integer offset, but it does not report
+success after replaying or skipping unverifiable SQL.
+
 ### An edited migration that has already been applied
 
 A migration file whose bytes changed after it ran, with `atlas.sum` re-hashed

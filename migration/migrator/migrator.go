@@ -73,8 +73,9 @@ type MigrateUpOptions struct {
 	// Amount limits the run to the first N pending migrations after exec-order
 	// and target-version filtering. Zero means all selected migrations.
 	Amount uint64
-	// AllowDirty skips the default dirty revision guard. Callers should expose
-	// this only as an explicit recovery escape hatch.
+	// AllowDirty skips the default dirty revision guard and requests recovery of
+	// a pending dirty migration. It does not bypass committed-prefix verification;
+	// callers should expose it only as an explicit recovery action.
 	AllowDirty bool
 	// AssumedAppliedVersions are treated as applied for plan selection without
 	// reading or writing revision metadata. This is intended for dry-run paths
@@ -1935,6 +1936,7 @@ func (m *Migrator) recordRolledBackBatchFailure(
 	failure error,
 	plan upRetryPlan,
 ) error {
+	ctx = withMigrationResume(ctx, plan.resumeFrom)
 	if beginErr := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); beginErr != nil {
 		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %v", failure, migration.Version, beginErr)
 	}

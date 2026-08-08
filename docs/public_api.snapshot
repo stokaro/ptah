@@ -7614,8 +7614,9 @@ type MigrateUpOptions struct {
     // Amount limits the run to the first N pending migrations after exec-order
     // and target-version filtering. Zero means all selected migrations.
     Amount uint64
-    // AllowDirty skips the default dirty revision guard. Callers should expose
-    // this only as an explicit recovery escape hatch.
+    // AllowDirty skips the default dirty revision guard and requests recovery of
+    // a pending dirty migration. It does not bypass committed-prefix verification;
+    // callers should expose it only as an explicit recovery action.
     AllowDirty bool
     // AssumedAppliedVersions are treated as applied for plan selection without
     // reading or writing revision metadata. This is intended for dry-run paths
@@ -7848,18 +7849,23 @@ type MigrationRevision struct {
     // the up body. Rows written before Ptah recorded the direction read
     // MigrationDirectionUp. Atlas-layout rows written by Ptah carry the down
     // marker in operator_version because that schema has no direction column.
-    Direction       MigrationDirection `json:"direction,omitempty"`
-    AtlasType       AtlasRevisionType  `json:"atlas_type,omitempty"`
-    Applied         int                `json:"applied"`
-    Total           int                `json:"total"`
-    Error           string             `json:"error,omitempty"`
-    ErrorStatement  string             `json:"error_stmt,omitempty"`
-    ExecutionTime   time.Duration      `json:"execution_time"`
-    Checksum        string             `json:"checksum,omitempty"`
-    AppliedAt       time.Time          `json:"applied_at"`
-    OperatorVersion string             `json:"operator_version,omitempty"`
-    Dirty           bool               `json:"dirty"`
-    ChecksumCurrent string             `json:"checksum_current,omitempty"`
+    Direction      MigrationDirection `json:"direction,omitempty"`
+    AtlasType      AtlasRevisionType  `json:"atlas_type,omitempty"`
+    Applied        int                `json:"applied"`
+    Total          int                `json:"total"`
+    Error          string             `json:"error,omitempty"`
+    ErrorStatement string             `json:"error_stmt,omitempty"`
+    ExecutionTime  time.Duration      `json:"execution_time"`
+    // Checksum is the canonical full migration checksum on a clean native row.
+    // A dirty native row with committed progress uses a partial:h1: cumulative
+    // source-prefix digest so a resume can prove which statements it may skip.
+    // Atlas-format rows keep the Atlas hash here and use partial_hashes internally.
+    Checksum        string    `json:"checksum,omitempty"`
+    AppliedAt       time.Time `json:"applied_at"`
+    OperatorVersion string    `json:"operator_version,omitempty"`
+    Dirty           bool      `json:"dirty"`
+    ChecksumCurrent string    `json:"checksum_current,omitempty"`
+    // Has unexported fields.
 }
     MigrationRevision records one row from the migration metadata table.
 

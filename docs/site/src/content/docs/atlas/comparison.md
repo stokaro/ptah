@@ -908,6 +908,27 @@ rather than as damage.
 
 **Tracking.** [`stokaro/ptah#1196`](https://github.com/stokaro/ptah/issues/1196)
 
+### Dirty retry verifies committed statements
+
+**Type.** Deliberate safety divergence
+
+**Current boundary.** Atlas CE resumes a dirty non-transactional revision from
+`applied + 1` by statement index. Ptah first proves that every statement it
+will skip has unchanged source text. Ptah-format rows store a `partial:h1:`
+checksum for the committed prefix; Atlas-format rows use the existing
+`partial_hashes` column. A changed prefix, malformed metadata, or contradictory
+hash count is refused. Legacy rows without prefix metadata resume only while
+their full-file hash still matches.
+
+Editing only the unapplied suffix remains supported. If that retry changes from
+`none` to `file` or `all` and its transaction rolls back, Ptah retains the
+previously committed `applied` floor rather than making a later run replay SQL.
+Process exit, context cancellation, or deadline while an autocommit statement
+is in flight preserves the unknown-outcome marker.
+
+This is stricter than Atlas CE in the safe direction: uncertain recovery exits
+non-zero instead of skipping SQL based only on a stale integer offset.
+
 ### Recorded revision `error` text on a failed migration
 
 **Type.** Driver difference, not a behavior one

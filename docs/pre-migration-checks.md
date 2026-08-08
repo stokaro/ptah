@@ -81,10 +81,12 @@ This matters most on `ptah-compat migrate apply`, which registers no
 until [`stokaro/ptah#1134`](https://github.com/stokaro/ptah/pull/1134) that flag
 could not clear a dirty row — the retry died on the revision re-insert with
 `UNIQUE constraint failed`. The retry now rewrites the existing row and restarts
-the body at the first unapplied statement, so a recorded check failure would
+the body at the first unapplied statement only after validating the recorded
+statement count and committed source prefix, so a recorded check failure would
 have a working in-band recovery. Recording nothing in the first place is still
-better: it needs no flag at all. The `PTAH_SKIP_CHECKS` bypass is an emergency override, not that
-recovery path: correcting the guarded data is, and it needs no bypass at all.
+better: it needs no flag at all. The `PTAH_SKIP_CHECKS` bypass is an emergency
+override, not that recovery path: correcting the guarded data is, and it needs
+no bypass at all.
 
 ## Assertion result shape
 

@@ -2,6 +2,8 @@ package migrator_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
@@ -232,6 +234,137 @@ CREATE TABLE pets (id INTEGER PRIMARY KEY);
 	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
 }
 
+func TestMigrateUp_AllowDirtyRefusesChangedCommittedPrefix(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name   string
+		format migrator.RevisionTableFormat
+	}{
+		{name: "Ptah revisions", format: migrator.RevisionTableFormatPtah},
+		{name: "Atlas revisions", format: migrator.RevisionTableFormatAtlas},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "changed-prefix.db")
+			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, test.format)
+			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+			changedPrefix := `INSERT INTO users (id) VALUES (2);
+CREATE TABLE pets (id INTEGER PRIMARY KEY);
+`
+			_, retried := newDirtyRetryMigrator(c, dbPath, changedPrefix, migrator.MigrationTxModeNone, test.format)
+			err := retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+			c.Assert(err, qt.ErrorMatches, `migration 2 cannot resume automatically: the already committed statement prefix changed.*`)
+			c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+			c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+		})
+	}
+}
+
+func TestMigrateUp_LegacyNativeDirtyRowUsesUnchangedFullChecksum(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "legacy-full-checksum.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+	sum := sha256.Sum256([]byte(dirtyRetryFailingUp))
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE schema_migrations SET checksum = ? WHERE version = 2",
+		hex.EncodeToString(sum[:]),
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "THIS IS A FAILING STATEMENT")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "cannot resume automatically")
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestMigrateUp_LegacyAtlasDirtyRowUsesUnchangedFullChecksum(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "legacy-atlas-full-checksum.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE atlas_schema_revisions SET partial_hashes = NULL WHERE version = '2'",
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "THIS IS A FAILING STATEMENT")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "cannot resume automatically")
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestMigrateUp_AtlasDirtyMalformedPartialHashesRefused(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "malformed-atlas-prefix.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE atlas_schema_revisions SET partial_hashes = '{}' WHERE version = '2'",
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.ErrorMatches, `failed to decode Atlas revision 2 partial_hashes: invalid Atlas partial_hashes:.*`)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestMigrateUp_AtlasDirtyContradictoryPartialHashesRefused(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "contradictory-atlas-prefix.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+	const twoDigests = `["h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]`
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE atlas_schema_revisions SET partial_hashes = ? WHERE version = '2'",
+		twoDigests,
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.ErrorMatches, `migration 2 cannot resume automatically: Atlas partial_hashes contains 2 entries for 1 committed statements.*`)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestGetRevisions_AtlasCleanLegacyObjectPartialHashesIgnored(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "clean-atlas-object.db")
+
+	conn, applied := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatAtlas)
+	c.Assert(applied.MigrateUp(c.Context()), qt.IsNil)
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE atlas_schema_revisions SET partial_hashes = '{}' WHERE version = '2'",
+	)
+	c.Assert(err, qt.IsNil)
+
+	revisions, err := applied.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 2)
+	c.Assert(revisions[1].Dirty, qt.IsFalse)
+}
+
 // TestMigrateUp_AllowDirtyRefusesToResumeAnUnknownStatementOutcome covers the
 // interrupted-process row, where the recorded error says the last statement's
 // fate is unknown. RepairMigration already refuses --resume-from on such a row;
@@ -299,6 +432,39 @@ func TestMigrateUp_TxModeAllAllowDirtyRetryReusesTheDirtyRevisionRow(t *testing.
 	c.Assert(after[1].Applied, qt.Equals, 2)
 	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
 	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+}
+
+func TestMigrateUp_RetryFailurePreservesCommittedAppliedFloor(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		mode migrator.MigrationTxMode
+	}{
+		{name: "file", mode: migrator.MigrationTxModeFile},
+		{name: "all", mode: migrator.MigrationTxModeAll},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "applied-floor.db")
+			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+			_, failedRetry := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, test.mode, migrator.RevisionTableFormatPtah)
+			c.Assert(failedRetry.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNotNil)
+
+			revisions, err := failedRetry.GetRevisions(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(revisions, qt.HasLen, 2)
+			c.Assert(revisions[1].Applied, qt.Equals, 1)
+			c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+
+			_, completed := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+			c.Assert(completed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+			c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+			c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+		})
+	}
 }
 
 // newRegisteredDirtyRetryMigrator builds a migrator over programmatically

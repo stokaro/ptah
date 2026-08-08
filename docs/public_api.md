@@ -128,8 +128,17 @@ interceptor, splitter, directive, or transaction path. Observers receive
 structured source and statement metadata after execution but no connection
 handle, so they cannot alter the migrator execution path. For SQL-backed
 `no_transaction` migrations, Ptah durably checkpoints the statement before
-calling the observer, including Atlas-format down execution. A custom
-`MigrationFunc` remains opaque and has no statement-level checkpointing.
+calling the observer, including Atlas-format down execution. Process exit,
+context cancellation, or deadline while execution is in flight preserves the
+unknown-outcome marker. A custom `MigrationFunc` remains opaque and has no
+statement-level checkpointing.
+
+Dirty SQL-backed resumes verify the already committed source prefix before
+skipping it. Native rows use the `partial:h1:` value in `Checksum`; Atlas rows
+use cumulative `partial_hashes`. A failure after changing transaction mode
+cannot reduce the recorded applied count below that verified prefix.
+`RepairMigration` holds the session advisory lock across revision inspection,
+resumed SQL, safety checks, and the final metadata write.
 
 Programmatic migrations use `Migration.UpTxMode` and `Migration.DownTxMode`
 with `MigrationFileTxModeUnspecified`, `MigrationFileTxModeFile`, or

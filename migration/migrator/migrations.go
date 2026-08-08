@@ -169,6 +169,11 @@ func migrationStatementAlreadyApplied(ctx context.Context, index int) bool {
 	return index < resumeFrom
 }
 
+func migrationAppliedFloor(ctx context.Context) int {
+	resumeFrom, _ := ctx.Value(migrationResumeContextKey{}).(int)
+	return max(resumeFrom-1, 0)
+}
+
 type statementProgressError struct {
 	err     error
 	event   StatementEvent

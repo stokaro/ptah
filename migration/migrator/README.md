@@ -604,9 +604,10 @@ keeping a failed or not-yet-deleted rollback dirty and recoverable.
 
 PostgreSQL, MySQL, MariaDB, and SQL Server migrators acquire a session-level
 advisory lock around the planning and apply window for `MigrateUp`,
-`MigrateDown`, `MigrateDownTo`, and `MigrateTo`. This prevents concurrent
-runners from reading the same pending migration set and applying it more than
-once.
+`MigrateDown`, `MigrateDownTo`, `MigrateTo`, and `RepairMigration`. Repair holds
+the lock across revision inspection, resumed SQL, safety checks, and its final
+metadata write. This prevents concurrent runners from acting on the same
+migration state.
 
 By default the migrator waits until the lock is available. Use
 `WithMigrationLockName` to coordinate on a custom lock name, and use
@@ -685,9 +686,7 @@ Migration timeouts are rejected for `no_transaction` migrations because Ptah
 cannot safely apply writer/session timeouts to raw autocommit statements. Ptah
 rejects that combination before running the migration body or changing its
 revision row, so fixing the directives and retrying does not require dirty-state
-repair. If execution is canceled after an autocommit statement, Ptah uses a
-bounded cleanup context to record committed progress or finalize the revision
-state before returning.
+repair.
 
 SQL-backed migrations executed through `Migrator` use a two-phase progress
 record around each autocommit statement. Before execution, Ptah records the
@@ -695,12 +694,23 @@ last known completed statement and marks the next statement's outcome as
 unknown. After success, it advances `applied/total`, clears that marker, and
 then calls the configured `StatementObserver`.
 
-An abrupt process exit therefore leaves either exact completed progress or a
-dirty row that requires database inspection. `RepairMigration` rejects
-`ResumeFrom` while the unknown-outcome marker is present because replaying the
-statement could duplicate committed SQL. A custom `MigrationFunc` is opaque to
-Ptah and can only be recorded at function completion; use SQL-backed migrations
-when statement-level crash progress is required.
+A process exit, context cancellation, or deadline while `ExecContext` is in
+flight preserves the unknown-outcome marker because the server may have
+committed even though the client did not observe success. Cancellation after a
+durable checkpoint retains exact completed progress; cancellation after the
+final checkpoint does not undo a completed revision write. `RepairMigration`
+rejects `ResumeFrom` while the unknown-outcome marker is present because
+replaying the statement could duplicate committed SQL.
+
+Before an automatic or explicit resume skips completed statements, Ptah
+verifies their source prefix. Native dirty rows store a `partial:h1:` checksum;
+Atlas-format rows use cumulative `partial_hashes`. Legacy rows without prefix
+metadata resume only when their full-file checksum still matches. Editing only
+the unapplied suffix is allowed, and a failed retry cannot reduce `applied`
+below the previously committed prefix when the transaction mode changes. A
+custom `MigrationFunc` is opaque to Ptah and can only be recorded at function
+completion; use SQL-backed migrations when statement-level crash progress is
+required.
 
 On PostgreSQL, `RepairMigration` also refuses to finish while an index the
 selected direction creates is still unusable. A `CREATE INDEX CONCURRENTLY`
