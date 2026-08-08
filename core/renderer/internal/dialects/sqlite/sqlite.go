@@ -155,14 +155,29 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	indexName, _ := sqliteIndexTarget(node.Name, node.Table)
 	parts := []string{"DROP INDEX"}
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, indexName)
+	parts = append(parts, sqliteDropIndexTarget(node.Name, node.Table))
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+// sqliteDropIndexTarget renders the index a DROP INDEX names.
+//
+// It is [sqliteIndexTarget]'s index half plus the case CREATE INDEX never has:
+// a drop with no owning table recorded, where the index name is the only place
+// a schema qualifier can live and `DROP INDEX app.idx` puts one there. Escaping
+// it whole would emit "app.idx" as a single identifier and name an index nobody
+// created. See [ast.DropIndexNode.Name].
+func sqliteDropIndexTarget(indexName, tableName string) string {
+	tableParts := splitQualifiedIdentifier(tableName)
+	if len(tableParts) < 2 {
+		return escapeQualifiedIdentifier(indexName)
+	}
+	schema := strings.Join(tableParts[:len(tableParts)-1], ".")
+	return escapeQualifiedIdentifier(schema) + "." + escapeIdentifier(indexName)
 }
 
 func sqliteIndexTarget(indexName, tableName string) (renderedIndexName, renderedTableName string) {

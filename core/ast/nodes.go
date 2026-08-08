@@ -1084,11 +1084,25 @@ func (n *IndexNode) SetIfNotExists() *IndexNode {
 // and dialect-specific features. Different databases have different
 // syntax for dropping indexes (some require table name, others don't).
 type DropIndexNode struct {
-	// Name is the raw, unqualified index identifier. Dialect renderers derive
-	// its namespace from Table.
+	// Name is the index identifier the statement names, and it is the only
+	// place a schema qualifier can live when the statement names no table.
+	//
+	// A planned drop names the index bare and carries the namespace on Table,
+	// which is where every renderer reads it from. A drop recovered from SQL
+	// text may have no table to record: PostgreSQL and SQLite spell the
+	// statement `DROP INDEX app.idx`, putting a schema on the index and naming
+	// no table at all, where MySQL, MariaDB, SQL Server and CockroachDB name
+	// the table and leave the index bare. Name therefore carries whatever
+	// qualifier the source spelled on the index, and nothing more.
+	//
+	// Anything that has to answer "which schema is this index in" reads Table
+	// first and falls back to Name, never the other way round: a bare Name is
+	// unqualified and belongs to its table's schema, so reading it first would
+	// place `DROP INDEX app.idx` inside every schema (stokaro/ptah#1296).
 	Name string
 	// Table is the qualified owning table. It is required for every planned
-	// index drop even when the target SQL names the index by schema.
+	// index drop even when the target SQL names the index by schema, and it is
+	// empty for a drop parsed from a statement that names no table -- see Name.
 	Table string
 	// IfExists indicates whether to use IF EXISTS clause
 	IfExists bool
@@ -1100,6 +1114,12 @@ type DropIndexNode struct {
 	// planners set it only for standalone index drops the caller routes into a
 	// no_transaction migration.
 	Concurrently bool
+	// Cascade requests DROP INDEX ... CASCADE, which also drops the objects
+	// that depend on the index. Only PostgreSQL's grammar has the clause;
+	// every other renderer ignores the flag. RESTRICT, the opposite spelling,
+	// is the default everywhere and is therefore not modeled: a node with
+	// Cascade unset already means it.
+	Cascade bool
 	// EnforcesUniqueConstraint reports that the index being dropped is the one
 	// a UNIQUE constraint of the same name enforces, so the statement removes a
 	// uniqueness protection and not only an access path.
@@ -1168,6 +1188,19 @@ func (n *DropIndexNode) SetIfExists() *DropIndexNode {
 //	dropIndex.SetConcurrently()
 func (n *DropIndexNode) SetConcurrently() *DropIndexNode {
 	n.Concurrently = true
+	return n
+}
+
+// SetCascade marks the drop to use CASCADE.
+//
+// The clause only reaches the SQL on PostgreSQL, whose DROP INDEX is the only
+// one of Ptah's targets that has it.
+//
+// Example:
+//
+//	dropIndex.SetCascade()
+func (n *DropIndexNode) SetCascade() *DropIndexNode {
+	n.Cascade = true
 	return n
 }
 

@@ -481,18 +481,9 @@ func TestAnalyzeFS_SchemaScopeExcludesOnlyTheScopedOutStatement(t *testing.T) {
 // Ptah's SQL parser cannot model keeps its findings under every scope, and that
 // the scope is not what suppresses its change count.
 //
-// `DROP INDEX` is the measured case. stokaro/ptah#1249 read its `0 changes /
-// 1 finding` as the scope filter reaching the diagnostic but not the change;
-// it is not. `parser.NewParser("DROP INDEX app.idx").Parse()` returns
-// `unsupported DROP target: INDEX at position 5`, so the statement contributes
-// no change in the reviewed schema either. The `public` row is what says so: it
-// is the reviewed schema and it still counts zero, while the `DROP TABLE`
-// control on the same schema counts one. That missing change is a real defect
-// and a wider one, and it belongs to the parser rather than to the scope.
-//
-// The rows are also the guard on the exclusion rule: a statement is excluded
-// only when the scope rejected something it named, never merely because it
-// produced no change. Reading it the other way would silence PG106 here.
+// A statement is excluded only when the scope rejected something it named, never
+// merely because it produced no change. Reading it the other way would silence
+// DS106 here, on a statement whose schema was never established.
 func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -501,20 +492,6 @@ func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 		wantChanges  []changeProjection
 		wantFindings []string
 	}{
-		{
-			name:         "dropping an index in the reviewed schema counts no change and still reports",
-			base:         "CREATE TABLE public.t (id int);\nCREATE INDEX idx ON public.t (id);\n",
-			sql:          "DROP INDEX public.idx;\n",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{"PG106"},
-		},
-		{
-			name:         "dropping an index outside the reviewed schema behaves identically",
-			base:         "CREATE SCHEMA app;\nCREATE TABLE app.t (id int);\nCREATE INDEX idx ON app.t (id);\n",
-			sql:          "DROP INDEX app.idx;\n",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{"PG106"},
-		},
 		{
 			name:         "a statement the parser models as no schema object keeps its finding",
 			base:         "CREATE TABLE public.t (id int);\n",
@@ -540,6 +517,145 @@ func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 
 			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
+		})
+	}
+}
+
+// TestAnalyzeFS_DropIndexCountsAsASchemaChange pins that a DROP INDEX is a
+// schema change, and that the schema it counts in is the one the statement
+// names (stokaro/ptah#1296).
+//
+// Ptah's SQL parser used to refuse every DROP INDEX with `unsupported DROP
+// target: INDEX at position 5`, so the statement contributed no change in ANY
+// schema. stokaro/ptah#1249 read the resulting `0 changes / 1 finding` as the
+// reviewed-schema filter reaching the diagnostic but not the change; it was not
+// that. The `public` row is what separates the two explanations: it is the
+// reviewed schema, its `DROP TABLE` control counts one change, and the
+// `DROP INDEX` beside it counted zero.
+//
+// Measured with `ptah-compat migrate lint --latest 1` against a dev URL carrying
+// `?search_path=public`, PostgreSQL 17.10, oracle = pinned community binary
+// v1.3.0. Each version 2 runs after a version 1 that creates what it touches:
+//
+//	version 2                | community v1.3.0             | ptah-compat now
+//	DROP INDEX public.idx;   | 1 change,  0 diagnostics, rc 0 | 1 change, 1 diagnostic (PG106), rc 0
+//	DROP INDEX app.idx;      | 0 changes, 0 diagnostics, rc 0 | 0 changes, 0 diagnostics, rc 0
+//	DROP TABLE public.t;     | 1 change,  1 diagnostic, rc 1  | 1 change, 1 diagnostic (DS102), rc 1
+//
+// The out-of-schema row is where the qualifier question lands, and it lands
+// there because the qualifier lives on the index name: `app.idx` is a reference
+// the scope can read, so the statement is scoped out whole and takes PG106 with
+// it, by the same rule that removes an out-of-scope ALTER TABLE's finding
+// (stokaro/ptah#1249). Ptah reported PG106 for `app` before this change, which
+// was the permitted stricter direction; it now matches the community binary and
+// nothing about the reviewed schema got quieter -- the `public` row still
+// reports it.
+func TestAnalyzeFS_DropIndexCountsAsASchemaChange(t *testing.T) {
+	const publicBase = "CREATE TABLE public.t (id int);\nCREATE INDEX idx ON public.t (id);\n"
+	const appBase = "CREATE SCHEMA app;\nCREATE TABLE app.t (id int);\nCREATE INDEX idx ON app.t (id);\n"
+
+	tests := []struct {
+		name         string
+		base         string
+		sql          string
+		wantChanges  []changeProjection
+		wantFindings []string
+	}{
+		{
+			name:         "dropping an index in the reviewed schema counts one change",
+			base:         publicBase,
+			sql:          "DROP INDEX public.idx;\n",
+			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.idx"}},
+			wantFindings: []string{"PG106"},
+		},
+		{
+			name:         "dropping an unqualified index counts one change",
+			base:         publicBase,
+			sql:          "DROP INDEX idx;\n",
+			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "idx"}},
+			wantFindings: []string{"PG106"},
+		},
+		{
+			// PG106 gives way to PG103 here: the statement took the advice and
+			// dropped concurrently, which then needs a no-transaction file.
+			name:         "CONCURRENTLY IF EXISTS still counts one change",
+			base:         publicBase,
+			sql:          "DROP INDEX CONCURRENTLY IF EXISTS public.idx;\n",
+			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.idx"}},
+			wantFindings: []string{"PG103"},
+		},
+		{
+			name:         "CASCADE counts one change",
+			base:         publicBase,
+			sql:          "DROP INDEX public.idx CASCADE;\n",
+			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.idx"}},
+			wantFindings: []string{"PG106"},
+		},
+		{
+			name:         "dropping an index outside the reviewed schema counts none and reports none",
+			base:         appBase,
+			sql:          "DROP INDEX app.idx;\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{},
+		},
+		{
+			name:         "the modeled destructive control on the reviewed schema is unchanged",
+			base:         "CREATE TABLE public.t (id int);\n",
+			sql:          "DROP TABLE public.t;\n",
+			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.t"}},
+			wantFindings: []string{"DS101"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			analysis := analyzeScoped(c, test.base, test.sql, "public")
+
+			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
+		})
+	}
+}
+
+// TestAnalyzeFS_DropIndexOnTableFormCountsInItsTableSchema pins the other half
+// of the qualifier rule from stokaro/ptah#1296: MySQL, MariaDB and SQL Server
+// spell the same drop as `DROP INDEX idx ON app.t`, naming the table and leaving
+// the index bare, so the schema that decides the scope is the table's.
+//
+// Reading the bare index name instead would put every such drop in scope, which
+// is the mirror of the CREATE INDEX defect stokaro/ptah#1249 fixed.
+func TestAnalyzeFS_DropIndexOnTableFormCountsInItsTableSchema(t *testing.T) {
+	tests := []struct {
+		name        string
+		base        string
+		sql         string
+		wantChanges []changeProjection
+	}{
+		{
+			name:        "the table under review keeps the change",
+			base:        "CREATE TABLE public.t (id int);\nCREATE INDEX idx ON public.t (id);\n",
+			sql:         "DROP INDEX idx ON public.t;\n",
+			wantChanges: []changeProjection{{lint.SchemaChangeDrop, "idx"}},
+		},
+		{
+			name:        "a table outside the reviewed schema drops the change",
+			base:        "CREATE SCHEMA app;\nCREATE TABLE app.t (id int);\nCREATE INDEX idx ON app.t (id);\n",
+			sql:         "DROP INDEX idx ON app.t;\n",
+			wantChanges: []changeProjection{},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			analysis := analyzeScoped(c, test.base, test.sql, "public")
+
+			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
 		})
 	}
 }
