@@ -65,11 +65,11 @@ func plainColumnCatalog() pgColumnCatalog {
 	return catalog
 }
 
-// serveColumnQuery answers the column query. formatted_type is answered from
-// the catalog only when the projection asks whether the column's declared type
-// was a domain; a projection that does not ask cannot distinguish the two
-// fixtures above on a real server either, and gets the empty string the CASE's
-// ELSE branch returns.
+// serveColumnQuery answers the column query. formatted_type and domain_name are
+// answered from the catalog only when their projections actually read
+// information_schema's domain_name; a projection that does not ask cannot
+// distinguish the two fixtures above on a real server either, and gets the empty
+// string the CASE's ELSE branch returns.
 func serveColumnQuery(catalog pgColumnCatalog, query string) (dbtest.QueryResult, error) {
 	asksAboutDomains, err := queryAsksAboutDomains(query)
 	if err != nil {
@@ -79,17 +79,25 @@ func serveColumnQuery(catalog pgColumnCatalog, query string) (dbtest.QueryResult
 	if asksAboutDomains && catalog.domainName != "" {
 		formattedType = catalog.formattedType
 	}
+	readsDomainName, err := queryReadsDomainName(query)
+	if err != nil {
+		return dbtest.QueryResult{}, err
+	}
+	domainName := ""
+	if readsDomainName {
+		domainName = catalog.domainName
+	}
 	return dbtest.QueryResult{
 		Columns: []string{
 			"table_name", "column_name", "data_type", "udt_name", "formatted_type",
-			"is_nullable", "column_default", "character_maximum_length",
+			"domain_name", "is_nullable", "column_default", "character_maximum_length",
 			"numeric_precision", "numeric_scale", "ordinal_position",
 			"generated_kind", "generated_expression", "identity_kind",
 			"owned_sequence_name",
 		},
 		Rows: [][]driver.Value{{
 			catalog.tableName, catalog.columnName, catalog.dataType, catalog.udtName, formattedType,
-			"YES", nil, nil,
+			domainName, "YES", nil, nil,
 			nil, nil, int64(1),
 			"", "", "",
 			"",
@@ -113,6 +121,26 @@ func queryAsksAboutDomains(query string) (bool, error) {
 	return strings.Contains(projection, "domain_name"), nil
 }
 
+// queryReadsDomainName reports whether the domain_name projection reads
+// information_schema's domain_name column rather than answering a constant.
+//
+// The alias is cut off before the expression is inspected, since the alias
+// itself is spelled domain_name: a projection of an empty SQL string literal
+// aliased domain_name names the column without reading it, and a comparator
+// handed that empty string cannot tell a domain column from a plain one of the
+// same base type.
+func queryReadsDomainName(query string) (bool, error) {
+	projection, ok := selectListItem(query, "domain_name", "FROM information_schema.columns")
+	if !ok {
+		return false, fmt.Errorf("query has no projection aliased domain_name:\n%s", query)
+	}
+	expression := projection
+	if alias := strings.LastIndex(strings.ToLower(projection), " as "); alias >= 0 {
+		expression = projection[:alias]
+	}
+	return strings.Contains(expression, "domain_name"), nil
+}
+
 // TestReadColumnsForSchema_KeepsTheDeclaredDomainType guards the last of the
 // #1242 introspection gaps. Measured on PostgreSQL 17.10, a reader that takes
 // information_schema's data_type for a domain column emits
@@ -131,16 +159,25 @@ func TestReadColumnsForSchema_KeepsTheDeclaredDomainType(t *testing.T) {
 		// it builds the field type, so this is the value that decides whether
 		// the emitted DDL says positive_int or integer.
 		expectedFormattedType string
+		// expectedDomainName is the FACT that the declared type was a domain.
+		// The comparator decides a domain column by identity instead of
+		// normalizing its name, and a name is all it would otherwise have: a
+		// domain named "waypoint" contains "int" and one named "context"
+		// contains "text", so with this empty the name decides whether a
+		// column changed at all (stokaro/ptah#1138).
+		expectedDomainName string
 	}{
 		{
 			name:                  "domain column keeps the domain",
 			catalog:               domainColumnCatalog,
 			expectedFormattedType: "positive_int",
+			expectedDomainName:    "positive_int",
 		},
 		{
 			name:                  "plain column is left alone",
 			catalog:               plainColumnCatalog,
 			expectedFormattedType: "",
+			expectedDomainName:    "",
 		},
 	}
 
@@ -155,6 +192,7 @@ func TestReadColumnsForSchema_KeepsTheDeclaredDomainType(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(columnsByTable["t"], qt.HasLen, 1)
 			c.Assert(columnsByTable["t"][0].FormattedType, qt.Equals, test.expectedFormattedType)
+			c.Assert(columnsByTable["t"][0].DomainName, qt.Equals, test.expectedDomainName)
 			// The base type stays available; the fix adds a spelling rather
 			// than replacing one.
 			c.Assert(columnsByTable["t"][0].DataType, qt.Equals, "integer")

@@ -1,0 +1,208 @@
+package schemadiff_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/schemadiff"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+)
+
+// assertTypeChange returns an assertion that the comparator reported exactly
+// one modified column and that its only change is the given type row.
+func assertTypeChange(expected string) func(c *qt.C, modified []difftypes.TableDiff) {
+	return func(c *qt.C, modified []difftypes.TableDiff) {
+		c.Assert(modified, qt.HasLen, 1, qt.Commentf("the desired type is a real change and must be reported"))
+		c.Assert(modified[0].ColumnsModified, qt.HasLen, 1)
+		c.Assert(modified[0].ColumnsModified[0].Changes, qt.DeepEquals, map[string]string{"type": expected})
+	}
+}
+
+// assertNoChange returns an assertion that the two sides describe one column.
+func assertNoChange() func(c *qt.C, modified []difftypes.TableDiff) {
+	return func(c *qt.C, modified []difftypes.TableDiff) {
+		c.Assert(modified, qt.HasLen, 0, qt.Commentf("reported %+v for a column that did not change", modified))
+	}
+}
+
+// TestCompareWithDialect_PostgresDomainColumnComparesByIdentity pins how a
+// column typed by a PostgreSQL domain is compared: by the domain's IDENTITY,
+// never through normalize.Type.
+//
+// normalize.Type matches by substring -- anything containing "int" is
+// "integer", anything containing "text" is "text" -- which is right for type
+// names and wrong for an identifier a schema author picked. Routing a domain
+// name through it let the NAME decide whether a column changed, and the miss is
+// destructive rather than cosmetic: the plan keeps the DROP DOMAIN ... CASCADE
+// for the domain the column uses, so with no ALTER COLUMN ... TYPE ahead of it
+// the CASCADE takes the column and its data. Measured on PostgreSQL 17.10,
+// `ptah-compat schema apply --auto-approve` exited 0 and left a two-column
+// table with neither column (stokaro/ptah#1138).
+//
+// The rows are catalog values as PostgreSQL 17.10 reports them. A domain column
+// is recorded by information_schema under its BASE type, with domain_name
+// naming the domain; format_type spells the domain the way the server does and
+// qualifies it when the search path needs that.
+func TestCompareWithDialect_PostgresDomainColumnComparesByIdentity(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		// column is the database side: one column of table t.
+		column types.DBColumn
+		// desiredType is what the desired schema declares for that column.
+		desiredType string
+		// desiredDomains are the domains the desired schema declares. It is the
+		// only thing that can tell the comparator a desired type name belongs
+		// to a domain, since a goschema field carries a type string and nothing
+		// else.
+		desiredDomains []goschema.Domain
+		assert         func(c *qt.C, modified []difftypes.TableDiff)
+	}{
+		{
+			// CREATE DOMAIN waypoint AS integer CHECK (VALUE > 0);
+			// "waypoint" contains "int", so the normalizer called this equal to
+			// a desired BIGINT and planned nothing.
+			name:        "a domain whose name contains a type name is still a change",
+			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
+			desiredType: "BIGINT",
+			assert:      assertTypeChange("waypoint -> BIGINT"),
+		},
+		{
+			// CREATE DOMAIN context AS integer; "context" contains "text".
+			name:        "a domain named context is not text",
+			column:      types.DBColumn{Name: "b", DataType: "integer", UDTName: "int4", FormattedType: "context", DomainName: "context", IsNullable: "NO"},
+			desiredType: "TEXT",
+			assert:      assertTypeChange("context -> TEXT"),
+		},
+		{
+			name:        "the same domain is not a change",
+			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
+			desiredType: "waypoint",
+			assert:      assertNoChange(),
+		},
+		{
+			name:        "another domain over the same base type is a change",
+			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
+			desiredType: "milestone",
+			assert:      assertTypeChange("waypoint -> milestone"),
+		},
+		{
+			// A domain off the search path: format_type qualifies it, while
+			// information_schema.domain_name stays bare. Whether the server
+			// qualifies a name is a property of the search path, not of the
+			// domain, so the two spellings name one domain.
+			name:        "a qualified spelling and a bare one name one domain",
+			column:      types.DBColumn{Name: "c", DataType: "USER-DEFINED", UDTName: "cube", FormattedType: "alt.alt_dom", DomainName: "alt_dom", IsNullable: "NO"},
+			desiredType: "alt_dom",
+			assert:      assertNoChange(),
+		},
+		{
+			name:        "the same bare name in another schema is a different domain",
+			column:      types.DBColumn{Name: "c", DataType: "USER-DEFINED", UDTName: "cube", FormattedType: "alt.alt_dom", DomainName: "alt_dom", IsNullable: "NO"},
+			desiredType: "other.alt_dom",
+			assert:      assertTypeChange("alt.alt_dom -> other.alt_dom"),
+		},
+		{
+			// CREATE DOMAIN waypoints AS integer[]; a domain over an array is
+			// reported with data_type ARRAY exactly like a plain array column,
+			// and "waypoints" normalizes to "integer" just like the desired
+			// BIGINT[] does.
+			name:        "a domain over an array is a domain, not an array",
+			column:      types.DBColumn{Name: "d", DataType: "ARRAY", UDTName: "_int4", FormattedType: "waypoints", DomainName: "waypoints", IsNullable: "NO"},
+			desiredType: "BIGINT[]",
+			assert:      assertTypeChange("waypoints -> BIGINT[]"),
+		},
+		{
+			// The catalog fact on its own is enough: a caller that carries
+			// DomainName without format_type still gets identity comparison.
+			// The desired INTEGER is the discriminating spelling here -- it is
+			// the domain's own base type, so normalization calls it equal and
+			// the width rule sees nothing to report either.
+			name:        "the domain name alone decides",
+			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", DomainName: "waypoint", IsNullable: "NO"},
+			desiredType: "INTEGER",
+			assert:      assertTypeChange("int4 -> INTEGER"),
+		},
+		{
+			// And so is the server's spelling on its own, which is what a
+			// caller built before domain_name was read carries.
+			name:        "the server's spelling alone decides",
+			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", IsNullable: "NO"},
+			desiredType: "BIGINT",
+			assert:      assertTypeChange("waypoint -> BIGINT"),
+		},
+		{
+			// An array is not an identifier: its spelling is a type and must
+			// keep normalizing like one, or every array column would report a
+			// change against a desired schema that spells it differently.
+			name:        "a plain array still compares as a type",
+			column:      types.DBColumn{Name: "e", DataType: "ARRAY", UDTName: "_varchar", FormattedType: "character varying(100)[]", IsNullable: "NO"},
+			desiredType: "character varying(100)[]",
+			assert:      assertNoChange(),
+		},
+		{
+			name:        "a plain array that really changed is reported",
+			column:      types.DBColumn{Name: "e", DataType: "ARRAY", UDTName: "_varchar", FormattedType: "character varying(100)[]", IsNullable: "NO"},
+			desiredType: "TEXT[]",
+			assert:      assertTypeChange("character varying(100)[] -> text"),
+		},
+		{
+			name:        "a plain column is untouched",
+			column:      types.DBColumn{Name: "id", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
+			desiredType: "INTEGER",
+			assert:      assertNoChange(),
+		},
+		{
+			// The other direction of the same rule, and the pinned Atlas
+			// community binary v1.3.0 plans it too: measured on two PostgreSQL
+			// 17.10 databases that differ only in this column,
+			// `ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint;`. Both sides
+			// normalize to "integer", so without the declaration the desired
+			// domain is invisible here.
+			name:           "a plain column against a desired domain is a change",
+			column:         types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
+			desiredType:    "waypoint",
+			desiredDomains: []goschema.Domain{{Name: "waypoint", BaseType: "INTEGER", Check: "VALUE > 0"}},
+			assert:         assertTypeChange("int4 -> waypoint"),
+		},
+		{
+			// And the boundary: with no domain declared anywhere, "waypoint" is
+			// an ordinary type name on both sides and normalization decides. A
+			// desired schema that means the domain has to declare it, which is
+			// what every source Ptah reads does.
+			name:        "an undeclared name is not a domain",
+			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
+			desiredType: "waypoint",
+			assert:      assertNoChange(),
+		},
+		{
+			name:           "a domain declared on both sides is not a change",
+			column:         types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
+			desiredType:    "waypoint",
+			desiredDomains: []goschema.Domain{{Name: "waypoint", BaseType: "INTEGER", Check: "VALUE > 0"}},
+			assert:         assertNoChange(),
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			database := &types.DBSchema{
+				Tables: []types.DBTable{{Name: "t", Type: "TABLE", Columns: []types.DBColumn{test.column}}},
+			}
+			desired := &goschema.Database{
+				Tables:  []goschema.Table{{StructName: "T", Name: "t"}},
+				Fields:  []goschema.Field{{StructName: "T", Name: test.column.Name, Type: test.desiredType}},
+				Domains: test.desiredDomains,
+			}
+
+			diff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+
+			test.assert(c, diff.TablesModified)
+		})
+	}
+}

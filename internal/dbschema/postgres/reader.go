@@ -321,6 +321,15 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 				THEN format_type(a.atttypid, a.atttypmod)
 				ELSE ''
 			END AS formatted_type,
+			-- The same format_type answer means two different things, and only
+			-- this column separates them: for an array it is a TYPE, and for a
+			-- domain it is the IDENTIFIER its author picked. A comparator that
+			-- normalizes the two the same way lets a name decide whether a
+			-- column changed -- a domain named "waypoint" contains "int" and one
+			-- named "context" contains "text". A domain over an array is
+			-- reported with data_type 'ARRAY' just like a plain array column, so
+			-- the distinction cannot be recovered downstream (stokaro/ptah#1138).
+			COALESCE(col.domain_name, '') AS domain_name,
 			is_nullable,
 			column_default,
 			character_maximum_length,
@@ -368,6 +377,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			&col.DataType,
 			&col.UDTName,
 			&col.FormattedType,
+			&col.DomainName,
 			&col.IsNullable,
 			&col.ColumnDefault,
 			&col.CharacterMaxLength,

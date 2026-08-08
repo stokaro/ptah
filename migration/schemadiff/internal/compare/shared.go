@@ -51,7 +51,7 @@ func nonEmptyNames(names []string) []string {
 // or a domain, and because the desired side reads the same field -- see
 // goSchemaFieldType in internal/convert/dbschematogo. The reader fills it from
 // the server's own format_type for exactly those two shapes and leaves it empty
-// for every other column, so this changes nothing else.
+// for every other column.
 //
 // With ColumnType and UDTName first the two sides read different fields for the
 // same column, and the comparator reported a change between a database and
@@ -68,6 +68,11 @@ func nonEmptyNames(names []string) []string {
 //
 // Every one of them proposed an ALTER COLUMN ... TYPE to the type the column
 // already had. None survive this (stokaro/ptah#1138).
+//
+// What this string may then be USED for is not uniform, and the difference is
+// the whole of #1138's comparator half. An array's spelling is a type. A
+// domain's spelling is the identifier its author chose, and columnTypeChange
+// keeps it away from normalize.Type for that reason.
 func rawDBColumnType(dbCol types.DBColumn) string {
 	rawType := strings.TrimSpace(dbCol.FormattedType)
 	if rawType == "" {

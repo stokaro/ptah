@@ -562,6 +562,50 @@ and `c` for a standalone `CREATE UNIQUE INDEX`. Only the first is part of the
 column's declaration, and only the first is folded now. A declared column
 `UNIQUE` still round-trips through its own implicit index.
 
+### A domain column is reconciled by identity
+
+The same split applies to the domain row of the table above. Reading a column's
+domain is one claim; comparing it is another, and the comparison must not go
+through type normalization. Normalization matches by substring — anything
+containing `int` is an integer and anything containing `text` is text — which
+is right for type names and wrong for a name a schema author picked. Measured
+on PostgreSQL 17.10, two domains over `integer` with ordinary names:
+
+```sql
+CREATE DOMAIN waypoint AS integer CHECK (VALUE > 0);
+CREATE DOMAIN context  AS integer;
+CREATE TABLE t (id serial PRIMARY KEY, a waypoint NOT NULL, b context NOT NULL);
+```
+
+against a desired `a bigint, b text`, `waypoint` matched `bigint` and `context`
+matched `text`, so neither `ALTER COLUMN ... TYPE` was planned while the
+`DROP DOMAIN ... CASCADE` both columns depend on stayed. `schema apply
+--auto-approve` exited 0, printed `Schema apply completed successfully`, and
+left the table with only its `id` column and the row's other two values gone
+([#1138](https://github.com/stokaro/ptah/issues/1138)).
+
+A domain column now agrees only with a desired type that names the same domain,
+in `ptah-compat schema diff`, `ptah-compat schema apply` and native
+`ptah schema compare` alike. `information_schema.columns.domain_name` is what
+separates a domain from a plain column of the same base type, and it is read
+for that reason: a domain over an array is reported with `data_type` `ARRAY`
+exactly like a plain array column, and an array's spelling is a type that must
+keep normalizing like one.
+
+The reverse pair was missed as well, and there the pinned binary was right where
+Ptah was silent. A plain `integer` column against a desired schema that declares
+`waypoint` and types the column with it:
+
+| | plan |
+| --- | --- |
+| Atlas CE v1.3.0 | `ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint;` |
+| Ptah, before | `Schemas are synced, no changes to be made.` |
+| Ptah, now | the same `ALTER`, executed at exit 0 with the row intact |
+
+A desired type names a domain when the desired schema declares one by that
+name, which is how every source Ptah reads carries it. A bare name with no
+declaration behind it stays an ordinary type name.
+
 ## Reports
 
 - Offline corpus report:

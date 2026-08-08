@@ -606,6 +606,49 @@ block. `diff.skip.drop_schema` is
 accepted and type-checked, but changes no plan: Ptah's schema diff has no
 removed-schema list, so there is no `DROP SCHEMA` for the suppression to omit.
 
+### How a column type is compared
+
+Type spellings are compared after normalization, so a difference that is only
+cosmetic — `INT` against `integer`, `VARCHAR(255)` against
+`character varying(255)` — plans nothing, while a change in width, length, or
+precision is reported in both directions.
+
+**A domain is compared by identity, never by its name's spelling.** A column
+whose declared type is a PostgreSQL domain agrees only with a desired type that
+names the same domain; a base type, a different domain, or any other spelling
+is a change and is planned as one. Whether the server qualifies the name is a
+property of the search path, so `alt.alt_dom` and `alt_dom` are one domain,
+while `other.alt_dom` is a different one.
+
+The rule exists because normalization matches by substring, and a domain's name
+belongs to whoever wrote the schema rather than to any type vocabulary:
+
+```sql
+CREATE DOMAIN waypoint AS integer CHECK (VALUE > 0);
+CREATE DOMAIN context  AS integer;
+CREATE TABLE t (id serial PRIMARY KEY, a waypoint NOT NULL, b context NOT NULL);
+```
+
+`waypoint` contains `int` and `context` contains `text`. Compared by spelling,
+a column of either would match a desired `bigint` and `text` respectively and
+no `ALTER COLUMN ... TYPE` would be planned — while the plan still carries the
+`DROP DOMAIN ... CASCADE` that removing the domain requires, so applying it
+would drop the columns and their data instead of converting them
+(stokaro/ptah#1138). The same rule is what `ptah schema compare` reports on the
+native surface.
+
+The rule holds in the other direction too. A plain `integer` column against a
+desired schema that declares `waypoint` and types the column with it is planned
+as `ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint`, which is what the pinned
+Atlas community binary v1.3.0 plans for the same pair. The desired side must
+declare the domain for this: a bare type name that no `CREATE DOMAIN` in the
+desired schema introduces is an ordinary type name, and every schema source
+Ptah reads carries the declaration alongside the column.
+
+An array is not a domain: its spelling is a type, and it keeps normalizing like
+one. `format_type` writes every array with a trailing `[]`, including an array
+of a domain, so the two are told apart by the catalog rather than by the name.
+
 ### Scope the comparison with `--schema` and `--include`
 
 `--schema/-s` and `--include` positively select what both comparison sides

@@ -113,6 +113,19 @@ type DBColumn struct {
 	IsPrimaryKey       bool    `json:"is_primary_key"`    // Derived field
 	IsUnique           bool    `json:"is_unique"`         // Derived field
 
+	// DomainName names the domain a column is declared with, empty for every
+	// column whose declared type is not a domain (PostgreSQL only today).
+	//
+	// It is a separate fact rather than something read back out of
+	// FormattedType, because FormattedType is filled for arrays as well and the
+	// two shapes want opposite answers: an array's spelling is a TYPE, which may
+	// be compared and normalized like any other, while a domain's spelling is an
+	// IDENTIFIER its author chose and must only ever be compared by identity.
+	// Nothing but the catalog can tell them apart -- a domain over an array is
+	// reported with data_type "ARRAY" exactly like a plain array column
+	// (stokaro/ptah#1138).
+	DomainName string `json:"domain_name,omitempty"`
+
 	// GeneratedExpression holds the generated-column expression. Nil for plain
 	// columns.
 	GeneratedExpression *string `json:"generated_expression,omitempty"`

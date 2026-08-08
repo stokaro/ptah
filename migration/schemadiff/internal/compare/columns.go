@@ -148,6 +148,8 @@ func tableColumnsWithSemantics(
 		dbColumns[semantics.ColumnIdentityKey(col.Name)] = col
 	}
 
+	desiredDomains := desiredDomainNames(generated)
+
 	// Find added and removed columns
 	for identity, column := range genColumns {
 		if _, exists := dbColumns[identity]; !exists {
@@ -178,7 +180,7 @@ func tableColumnsWithSemantics(
 				genCol.Unique = false
 				dbCol.IsUnique = false
 			}
-			colDiff := ColumnsWithDialect(genCol, dbCol, dialect)
+			colDiff := columnsWithDesiredDomains(genCol, dbCol, dialect, desiredDomains)
 			if len(colDiff.Changes) > 0 {
 				tableDiff.ColumnsModified = append(tableDiff.ColumnsModified, colDiff)
 			}
@@ -284,7 +286,21 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 
 // ColumnsWithDialect compares two columns using dialect-specific expression
 // normalization where catalog readback rewrites equivalent SQL.
+//
+// It knows nothing about which type names the desired schema declares as
+// domains, so it decides a domain from the DATABASE column alone. Every
+// comparison that has a desired schema to consult goes through
+// tableColumnsWithSemantics, which passes that set down.
 func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect string) difftypes.ColumnDiff {
+	return columnsWithDesiredDomains(genCol, dbCol, dialect, nil)
+}
+
+func columnsWithDesiredDomains(
+	genCol goschema.Field,
+	dbCol types.DBColumn,
+	dialect string,
+	desiredDomains map[string]struct{},
+) difftypes.ColumnDiff {
 	colDiff := difftypes.ColumnDiff{
 		ColumnName: genCol.Name,
 		Changes:    make(map[string]string),
@@ -300,10 +316,8 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 	dbRawType := rawDBColumnType(dbCol)
 	genType, dbType := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
 
-	if genType != dbType {
-		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbType, genType)
-	} else if shouldReportSizedTypeChange(dbRawType, genCol.Type, dialect) {
-		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
+	if change := columnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); change != "" {
+		colDiff.Changes["type"] = change
 	}
 
 	// Compare nullable. On the engines that enforce it, a primary key column is
@@ -412,6 +426,162 @@ func sqliteKeyColumnImpliesNotNull(
 		return false
 	}
 	return sqlitekey.ImpliesNotNull(table, keyColumns, field)
+}
+
+// columnTypeChange returns the "database -> desired" row for a column's type,
+// or "" when the two sides describe the same type.
+//
+// A column whose declared type is a DOMAIN is decided by identity and never by
+// normalize.Type. That matcher works by substring -- anything containing "int"
+// is "integer" and anything containing "text" is "text" -- which is safe for
+// type names and wrong for a name a schema author picked. Measured on
+// PostgreSQL 17.10:
+//
+//	CREATE DOMAIN waypoint AS integer CHECK (VALUE > 0);
+//	CREATE DOMAIN context  AS integer;
+//	CREATE TABLE t (id serial PRIMARY KEY, a waypoint NOT NULL, b context NOT NULL);
+//
+// "waypoint" contains "int" and "context" contains "text", so against a desired
+// `a bigint, b text` both columns compared EQUAL and neither
+// ALTER COLUMN ... TYPE was planned -- while the plan kept its
+// DROP DOMAIN ... CASCADE. Applying it exited 0, said "Schema apply completed
+// successfully", and left the table with only its id column: the CASCADE took
+// the two columns and their data because nothing had converted them first
+// (stokaro/ptah#1138).
+//
+// A domain therefore agrees only with a desired type that names the SAME
+// domain. Anything else -- a base type, a different domain, a plain type that
+// happens to share a substring with the name -- is a change and is reported.
+//
+// The rule holds when only the DESIRED side names a domain, too. A plain
+// integer column against a desired schema that declares `waypoint` and types
+// the column with it is a change the pinned Atlas community binary v1.3.0 also
+// plans, measured on the same two databases:
+//
+//	ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint;
+//
+// where both sides of this comparator's normalization say "integer" and Ptah
+// reported the schemas synced.
+func columnTypeChange(
+	genCol goschema.Field,
+	dbCol types.DBColumn,
+	dbRawType, dialect string,
+	desiredDomains map[string]struct{},
+) string {
+	dbDomain := domainColumnSpelling(dbCol)
+	if dbDomain != "" || namesADesiredDomain(genCol.Type, desiredDomains) {
+		if domainColumnTypeMatches(genCol.Type, dbDomain) {
+			return ""
+		}
+		return fmt.Sprintf("%s -> %s", dbRawType, strings.TrimSpace(genCol.Type))
+	}
+
+	genType, dbType := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
+	switch {
+	case genType != dbType:
+		return fmt.Sprintf("%s -> %s", dbType, genType)
+	case shouldReportSizedTypeChange(dbRawType, genCol.Type, dialect):
+		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
+	}
+	return ""
+}
+
+// domainColumnSpelling returns the name of the DOMAIN a column is declared
+// with, and "" when the column's declared type is not a domain.
+//
+// DomainName is the fact: information_schema records it for exactly the columns
+// whose declared type is a domain, and nothing else in a column's catalog row
+// separates a domain from a plain column of the same base type. FormattedType
+// is the server's own format_type of the same domain, and it is preferred
+// because it is the fuller spelling -- it carries the schema qualifier when the
+// search path needs one, where information_schema's name is always bare.
+//
+// FormattedType on its own still counts, because the reader fills it for a
+// domain column whether or not the caller carried DomainName along, and because
+// the failure it guards is destructive while its cost is not: reading a
+// spelling as an identity can only ever REPORT a change that normalization
+// would have folded away, never hide one. The one shape it must not claim is an
+// array, whose spelling is a type rather than an identifier -- and format_type
+// spells every array with a trailing "[]", including an array of a domain,
+// while a column whose declared type IS a domain is spelled with the domain's
+// own name (stokaro/ptah#1138).
+func domainColumnSpelling(dbCol types.DBColumn) string {
+	if formatted := strings.TrimSpace(dbCol.FormattedType); formatted != "" && !strings.HasSuffix(formatted, "[]") {
+		return formatted
+	}
+	return strings.TrimSpace(dbCol.DomainName)
+}
+
+// desiredDomainNames indexes, by lower-case bare name, the domains the desired
+// schema declares. It is what lets the comparator see a domain on the side
+// where a type is only a string: goschema.Field carries a type name and nothing
+// that says the name belongs to a domain.
+func desiredDomainNames(generated *goschema.Database) map[string]struct{} {
+	if generated == nil {
+		return nil
+	}
+	names := make(map[string]struct{}, len(generated.Domains))
+	for _, domain := range generated.Domains {
+		if name := unquoteIdentifier(domain.Name); name != "" {
+			names[strings.ToLower(name)] = struct{}{}
+		}
+	}
+	return names
+}
+
+// namesADesiredDomain reports whether a desired column type names one of those
+// domains. The qualifier is dropped before the lookup because a domain is
+// declared once and may be referenced either way.
+func namesADesiredDomain(genType string, desiredDomains map[string]struct{}) bool {
+	if len(desiredDomains) == 0 {
+		return false
+	}
+	_, bare := splitQualifiedTypeName(strings.TrimSpace(genType))
+	_, declared := desiredDomains[strings.ToLower(bare)]
+	return declared
+}
+
+// domainColumnTypeMatches reports whether the desired type names the same
+// domain as the spelling the database side carries.
+//
+// A database compared against itself arrives here with the desired side holding
+// FormattedType verbatim, because that is the field the database-to-schema
+// converter reads for a domain column.
+func domainColumnTypeMatches(genType, spelling string) bool {
+	return sameDomainSpelling(strings.TrimSpace(genType), spelling)
+}
+
+// sameDomainSpelling reports whether two spellings name one domain. A qualified
+// spelling agrees with an unqualified one, because whether the server qualifies
+// a name is a property of the search path rather than of the domain; two
+// DIFFERENT qualifiers name two different domains and never agree.
+func sameDomainSpelling(left, right string) bool {
+	if left == "" || right == "" {
+		return false
+	}
+	if strings.EqualFold(left, right) {
+		return true
+	}
+	leftSchema, leftName := splitQualifiedTypeName(left)
+	rightSchema, rightName := splitQualifiedTypeName(right)
+	if !strings.EqualFold(leftName, rightName) {
+		return false
+	}
+	return leftSchema == "" || rightSchema == ""
+}
+
+// splitQualifiedTypeName splits schema.name and drops the quotes PostgreSQL
+// writes around an identifier that needs them.
+func splitQualifiedTypeName(name string) (schema, bare string) {
+	if dot := strings.LastIndex(name, "."); dot >= 0 {
+		schema = unquoteIdentifier(name[:dot])
+		name = name[dot+1:]
+	}
+	return schema, unquoteIdentifier(name)
+}
+
+func unquoteIdentifier(name string) string {
+	return strings.Trim(strings.TrimSpace(name), `"`)
 }
 
 func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedType, databaseType string) {
