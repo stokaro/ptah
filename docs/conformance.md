@@ -172,6 +172,23 @@ matched rather than refused, because there Atlas CE is right: it executes the
 file's bytes verbatim, drops nothing, and records the revision honestly. See
 [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
 
+### A schema directory whose files declare the same object twice
+
+A `file://` directory of schema files is an **ordered script**. Atlas CE reads
+one by executing every file in filename order against the dev database, so a
+file that declares an object an earlier file already declared is an engine
+error rather than a merge, and Ptah refuses it for the same reason.
+
+Measured 2026-08-08 against the pinned Atlas CE v1.3.0 binary, SQLite fixtures
+on both sides, on `schema diff` and `schema apply` alike.
+
+| Input | Atlas CE v1.3.0 | Ptah | Why |
+| --- | --- | --- | --- |
+| SQL directory, `1_a.sql` and `2_b.sql` both spelling `CREATE TABLE users` | Exits 1: `read state from "2_b.sql": executing statement: "CREATE TABLE users (...)": table users already exists`, and no target file is created. | Exits 1: `read state from "2_b.sql": table "users" already exists`. | Matched. Merging the two definitions instead produced a `users` carrying the union of both — a table that appears in neither file — and exited 0 on `schema apply` having really written it. |
+| The same directory with `IF NOT EXISTS` on both statements | Exits 0, keeping the first definition. | Exits 0. | Matched on the exit code. Which definition survives the merge still differs and is recorded under residual risk in [`stokaro/ptah#940`](https://github.com/stokaro/ptah/issues/940). |
+| HCL directory whose two files both declare `table "users"` | `schema diff` exits 0, rendering two `CREATE TABLE users` statements; `schema apply` then exits 1 executing that same plan: ``create "users" table: table `users` already exists``. | Refused at read time on both verbs: `read state from "b.hcl": table "main.users" already exists`. | Stricter, deliberately. The plan Atlas CE prints at exit 0 is the plan it cannot apply, so rendering it copies a defect; refusing can never accept a source it rejects. |
+| HCL directory whose files each open with `schema "main" {}` | Exits 0 against a realm-scoped dev database. | Exits 0. | Matched. HCL files are one document rather than a script, so a repeated `schema` block is an ordinary layout and is not read as a redeclaration. `CREATE SCHEMA` twice in a SQL directory is, because that one executes. |
+
 ### A trailing positional argument
 
 `migrate status`, `migrate validate`, `migrate hash`, `migrate lint` and

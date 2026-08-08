@@ -16,6 +16,7 @@ import (
 )
 
 func TestSchemaApplySupportsFormat(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-format.db")
@@ -43,7 +44,42 @@ func TestSchemaApplySupportsFormat(t *testing.T) {
 	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 }
 
+// TestSchemaApplyFormatRendersJSON is the end-to-end half of the
+// stokaro/ptah#940 item C regression test: on the command line
+// `--format '{{ json . }}'` used to exit 1 at template-parse time with
+// `function "json" not defined`, where the pinned community binary v1.3.0
+// rendered the document and exited 0.
+func TestSchemaApplyFormatRendersJSON(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "apply-json.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE json_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--to", "file://" + schemaPath,
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
+		"--format", `{{ json . }}`,
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, `"Driver":"sqlite"`)
+	c.Assert(out.String(), qt.Contains, `"Changes":{"Applied":[`)
+	c.Assert(out.String(), qt.Contains, "json_users")
+	c.Assert(sqliteTableCount(c, dbPath, "json_users"), qt.Equals, 1)
+}
+
 func TestSchemaApplyFormatDryRunDoesNotApply(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-format-dry-run.db")
@@ -70,6 +106,7 @@ func TestSchemaApplyFormatDryRunDoesNotApply(t *testing.T) {
 }
 
 func TestSchemaApplyFormatSeparatesInteractivePrompt(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-format-prompt.db")
@@ -97,6 +134,7 @@ func TestSchemaApplyFormatSeparatesInteractivePrompt(t *testing.T) {
 }
 
 func TestSchemaApplyFormatReportsSynced(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-format-synced.db")
@@ -156,6 +194,7 @@ func TestSchemaApplyUsesAtlasProjectEnvSource(t *testing.T) {
 }
 
 func TestSchemaApplyUsesAtlasProjectEnvSchemaBlockAndFormat(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -192,6 +231,7 @@ func TestSchemaApplyUsesAtlasProjectEnvSchemaBlockAndFormat(t *testing.T) {
 }
 
 func TestSchemaApplyUsesAtlasProjectSchemaMode(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -231,6 +271,7 @@ func TestSchemaApplyUsesAtlasProjectSchemaMode(t *testing.T) {
 }
 
 func TestSchemaApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -355,6 +396,7 @@ CREATE TABLE env_skip (id INTEGER PRIMARY KEY);
 }
 
 func TestSchemaApplyUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -401,6 +443,7 @@ func TestSchemaApplyUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
 }
 
 func TestSchemaApplyAllowsAtlasProjectConcurrentIndexPolicyForSQLite(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -437,6 +480,7 @@ func TestSchemaApplyAllowsAtlasProjectConcurrentIndexPolicyForSQLite(t *testing.
 }
 
 func TestSchemaApplyPrefersExplicitFlagsOverProjectEnv(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -471,6 +515,7 @@ func TestSchemaApplyPrefersExplicitFlagsOverProjectEnv(t *testing.T) {
 }
 
 func TestSchemaApplyExplicitFlagsIgnoreUnneededAtlasProjectConfig(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -503,6 +548,7 @@ env "prod" {
 }
 
 func TestSchemaApplyAtlasEnvIgnoresMismatchedPtahEnv(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)

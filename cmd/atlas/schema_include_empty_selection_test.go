@@ -110,6 +110,7 @@ func TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
 // --schema answers a zero match with exit 0 and silence on every verb. There
 // is no oracle to copy here, so the better behavior was taken instead.
 func TestSchemaApplyIncludeEmptySelectionRefuses(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 
 	for _, spelling := range emptySelectionSpellings {

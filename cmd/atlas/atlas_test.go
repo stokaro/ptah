@@ -523,6 +523,7 @@ func TestCompatCommand_SchemaApplySchemaShorthandParses(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + filepath.Join(dir, "schema.db"),
 		"--to", "file://" + schemaPath,
 		"-s", "public",
@@ -2502,6 +2503,7 @@ CREATE TABLE users (
 	second.SetErr(&secondOut)
 	second.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
 	})
@@ -2529,6 +2531,7 @@ CREATE TABLE users (
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
 		"--dry-run",
@@ -2559,6 +2562,7 @@ CREATE TABLE users (
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"-f", schemaPath,
 		"--dry-run",
@@ -2589,6 +2593,7 @@ CREATE TABLE tx_mode_users (
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
 		"--tx-mode", "none",
@@ -2638,6 +2643,7 @@ func TestNewCompatCommand_SchemaApplyDryRunUsesAtlasRoot(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
 		"--dry-run",
