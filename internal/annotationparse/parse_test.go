@@ -42,6 +42,18 @@ func TestScanUsesLongestKnownDirectiveMatch(t *testing.T) {
 	c.Assert(annotations[0].Known, qt.IsTrue)
 }
 
+func TestScanAttributes_DecodesQuotedValuesWithoutChangingSourceValue(t *testing.T) {
+	c := qt.New(t)
+
+	attributes := annotationparse.ScanAttributes(`//ptah:schema:rls:policy using="tenant = \"acme\"" table=users`)
+
+	c.Assert(attributes, qt.HasLen, 2)
+	c.Assert(attributes[0].Value, qt.Equals, `tenant = \"acme\"`)
+	c.Assert(attributes[0].DecodedValue, qt.Equals, `tenant = "acme"`)
+	c.Assert(attributes[1].Value, qt.Equals, "users")
+	c.Assert(attributes[1].DecodedValue, qt.Equals, "users")
+}
+
 func TestScanCapturesUnknownPtahDirective(t *testing.T) {
 	c := qt.New(t)
 

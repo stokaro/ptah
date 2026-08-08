@@ -243,7 +243,7 @@ function "lookup_user" {
   schema = schema.app
   params = "IN user_id BIGINT, OUT display_value DOUBLE PRECISION"
   return = "DOUBLE PRECISION"
-  lang   = SQL
+  lang   = "SQL"
   as     = "SELECT user_id::double precision"
 }
 
@@ -270,6 +270,15 @@ schema annotations manually in one change, and switch the project to the HCL
 source. Do not rerun export after manual removal starts; an export with no
 annotations or no exportable HCL object fails without replacing an existing HCL
 file.
+
+Cleanup also verifies every recognized standalone annotation against the Go AST
+and the parsed schema before publishing HCL. A directive in an unsupported
+location, such as a role annotation attached to a constant, or a file-scoped RLS
+directive that did not produce an RLS object makes cleanup fail with the source
+file and line. Near-prefix comments such as `//ptah:schema:tableau` are not Ptah
+directives and remain untouched. Move a recognized directive to one of the
+placements listed in the Go annotation reference or remove it explicitly after
+review; cleanup never guesses whether ignored text is disposable.
 
 ## Minimal Example
 

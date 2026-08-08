@@ -263,6 +263,31 @@ func TestCleanDir_FailurePath_InvalidGoSourceIsNotModified(t *testing.T) {
 	assertFileMode(c, invalidInfo.Mode(), 0o640)
 }
 
+func TestPlanApply_FailurePath_RejectsDetachedRecognizedDirective(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.go")
+	original := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+
+//ptah:schema:role name="app"
+const placeholder = 0
+`)
+	c.Assert(os.WriteFile(path, original, 0o600), qt.IsNil)
+	plan, err := planDir(dir)
+	c.Assert(err, qt.IsNil)
+
+	err = plan.Apply()
+
+	c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
+	c.Assert(err.Error(), qt.Contains, "ptah:schema:role")
+	content, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(content, qt.DeepEquals, original)
+}
+
 func TestPlanApply_FailurePath_PrevalidatesEverySourceBeforeWriting(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -297,16 +322,22 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	path := filepath.Join(dir, "model.go")
 	original := "package models\r\n" +
 		"\r\n" +
-		"// User keeps business documentation.  \r\n" +
-		"//ptah:schema:table name=\"users\"\r\n" +
-		"type User struct{ID int64}\r\n" +
-		"\t//ptah:embedded mode=\"inline\"\r\n" +
-		"type Audit struct{CreatedAt int64}\r\n"
-	expected := "package models\r\n" +
+		"type Audit struct{CreatedAt int64}\r\n" +
 		"\r\n" +
 		"// User keeps business documentation.  \r\n" +
-		"type User struct{ID int64}\r\n" +
-		"type Audit struct{CreatedAt int64}\r\n"
+		"//ptah:schema:table name=\"users\"\r\n" +
+		"type User struct {\r\n" +
+		"\t//ptah:embedded mode=\"inline\"\r\n" +
+		"\tAudit\r\n" +
+		"}\r\n"
+	expected := "package models\r\n" +
+		"\r\n" +
+		"type Audit struct{CreatedAt int64}\r\n" +
+		"\r\n" +
+		"// User keeps business documentation.  \r\n" +
+		"type User struct {\r\n" +
+		"\tAudit\r\n" +
+		"}\r\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(path, 0o640), qt.IsNil)
 

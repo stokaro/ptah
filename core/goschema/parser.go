@@ -526,81 +526,93 @@ func (s *schemaParseState) annotationContext(
 }
 
 func (s *schemaParseState) parseStructComment(comment *ast.Comment, target schemaCommentTarget) error {
-	if handled, err := s.parseStructScopedComment(comment, target); handled || err != nil {
-		return err
-	}
-
-	return s.parseSharedComment(comment, target)
+	return s.parseAttachedComment(comment, annotationmeta.ScopeStruct, target)
 }
 
 func (s *schemaParseState) parseStructFieldComment(comment *ast.Comment, target schemaCommentTarget) error {
-	if handled, err := s.parseFieldScopedComment(comment, target); handled || err != nil {
+	return s.parseAttachedComment(comment, annotationmeta.ScopeField, target)
+}
+
+func (s *schemaParseState) parseAttachedComment(
+	comment *ast.Comment,
+	scope annotationmeta.Scope,
+	target schemaCommentTarget,
+) error {
+	directive, ok := annotationmeta.MatchCommentDirective(comment.Text)
+	if !ok {
+		return nil
+	}
+	if !annotationmeta.AllowsScope(directive, scope) {
+		return nil
+	}
+	if handled, err := s.parsePlacementDirective(comment, directive.Name, target); handled || err != nil {
 		return err
 	}
-
-	return s.parseSharedComment(comment, target)
+	return s.parseSharedDirective(comment, directive.Name, target)
 }
 
-func (s *schemaParseState) parseFieldScopedComment(comment *ast.Comment, target schemaCommentTarget) (bool, error) {
-	switch {
-	case strings.HasPrefix(comment.Text, "//ptah:schema:field"):
+func (s *schemaParseState) parsePlacementDirective(
+	comment *ast.Comment,
+	directive string,
+	target schemaCommentTarget,
+) (bool, error) {
+	switch directive {
+	case "ptah:schema:field":
 		return true, s.parseFieldComment(comment, target.field, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:embedded"):
+	case "ptah:embedded":
 		return true, s.parseEmbeddedComment(comment, target.field, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:index"):
+	case "ptah:schema:index":
 		return true, s.parseIndexComment(comment, target.structName)
-	default:
-		return false, nil
-	}
-}
-
-func (s *schemaParseState) parseStructScopedComment(comment *ast.Comment, target schemaCommentTarget) (bool, error) {
-	switch {
-	case strings.HasPrefix(comment.Text, "//ptah:schema:table"):
+	case "ptah:schema:table":
 		return true, s.parseTableComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:schema"):
+	case "ptah:schema:schema":
 		return true, s.parseSchemaComment(comment)
 	default:
 		return false, nil
 	}
 }
 
-func (s *schemaParseState) parseSharedComment(comment *ast.Comment, target schemaCommentTarget) error {
-	switch {
-	case strings.HasPrefix(comment.Text, "//ptah:schema:constraint"):
+func (s *schemaParseState) parseSharedDirective(
+	comment *ast.Comment,
+	directive string,
+	target schemaCommentTarget,
+) error {
+	switch directive {
+	case "ptah:schema:constraint":
 		return s.parseConstraintComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:enum"):
+	case "ptah:schema:enum":
 		return s.parseEnumComment(comment)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:extension"):
+	case "ptah:schema:extension":
 		return s.parseExtensionComment(comment)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:function"):
+	case "ptah:schema:function":
 		return s.parseFunctionComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:sequence"):
+	case "ptah:schema:sequence":
 		return s.parseSequenceComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:domain"):
+	case "ptah:schema:domain":
 		return s.parseDomainComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:composite"):
+	case "ptah:schema:composite":
 		return s.parseCompositeComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:range"):
+	case "ptah:schema:range":
 		return s.parseRangeComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:view"):
+	case "ptah:schema:view":
 		return s.parseViewComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:matview"):
+	case "ptah:schema:matview":
 		return s.parseMaterializedViewComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:trigger"):
+	case "ptah:schema:trigger":
 		return s.parseTriggerComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:rls:policy"):
+	case "ptah:schema:rls:policy":
 		return s.parseRLSPolicyComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:rls:enable"):
+	case "ptah:schema:rls:enable":
 		return s.parseRLSEnableComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:role"):
+	case "ptah:schema:role":
 		return s.parseRoleComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:grant"):
+	case "ptah:schema:grant":
 		return s.parseGrantComment(comment, target.structName)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:data"):
+	case "ptah:schema:data":
 		return s.parseManagedDataComment(comment, target.structName)
+	default:
+		return nil
 	}
-	return nil
 }
 
 func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {
@@ -791,7 +803,8 @@ func (s *schemaParseState) mapTableDirectiveStructNames(structDecls []structDecl
 }
 
 func (s *schemaParseState) mapTableDirectiveStructName(comment *ast.Comment, structName string) {
-	if !strings.HasPrefix(comment.Text, "//ptah:schema:table") {
+	directive, ok := annotationmeta.MatchCommentDirective(comment.Text)
+	if !ok || directive.Name != "ptah:schema:table" {
 		return
 	}
 	kv := parseutils.ParseKeyValueComment(comment.Text)
@@ -826,9 +839,13 @@ func (s *schemaParseState) processDeclaration(structDecl structDeclaration) erro
 // from struct declarations by blank lines.
 func (s *schemaParseState) processAllFileComments(f *ast.File) error {
 	seen := s.newRLSCommentSet()
+	placements := annotationmeta.CommentPlacements(f)
 
 	for _, commentGroup := range f.Comments {
 		for _, comment := range commentGroup.List {
+			if placements[comment].Scope != annotationmeta.ScopeFile {
+				continue
+			}
 			if err := s.parseFileScopedRLSComment(comment, seen); err != nil {
 				return err
 			}
@@ -869,10 +886,14 @@ func (s *schemaParseState) newRLSCommentSet() rlsCommentSet {
 }
 
 func (s *schemaParseState) parseFileScopedRLSComment(comment *ast.Comment, seen rlsCommentSet) error {
-	switch {
-	case strings.HasPrefix(comment.Text, "//ptah:schema:rls:policy"):
+	directive, ok := annotationmeta.MatchCommentDirective(comment.Text)
+	if !ok {
+		return nil
+	}
+	switch directive.Name {
+	case "ptah:schema:rls:policy":
 		return s.parseFileScopedRLSPolicyComment(comment, seen)
-	case strings.HasPrefix(comment.Text, "//ptah:schema:rls:enable"):
+	case "ptah:schema:rls:enable":
 		return s.parseFileScopedRLSEnableComment(comment, seen)
 	}
 	return nil
