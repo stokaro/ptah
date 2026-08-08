@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema/types"
@@ -74,6 +75,30 @@ func reportEmptySelection(diagnostics io.Writer, err error) {
 		return
 	}
 	fmt.Fprintf(diagnostics, "Warning: %s.\n", err.Error())
+}
+
+// reportUndecidedAdditions names every object the comparison declined to plan a
+// creation for because the CURRENT side's document declared it does not describe
+// that kind (`// ptah:not-described <kind>`) and the creation Ptah would emit
+// carries no IF NOT EXISTS guard.
+//
+// Withholding one is defensible; withholding it in silence is not. Only a
+// document can be the current side of `schema diff` -- an introspected database
+// declares no limits -- so a `--from` file is the one place this arises today,
+// and the notice goes here for the same reason [reportEmptySelection] does:
+// stdout is what CI compares, and "Schemas are synced" there says the two
+// states agree, which is not what a withheld addition means.
+func reportUndecidedAdditions(diagnostics io.Writer, undecided []coverage.Object) {
+	if diagnostics == nil {
+		return
+	}
+	for _, object := range undecided {
+		fmt.Fprintf(diagnostics,
+			"Warning: %s %q is declared by --to but no change was planned for it:"+
+				" --from records `%s %s`, so this comparison cannot tell it apart from one that already exists,"+
+				" and the creation Ptah renders for it has no IF NOT EXISTS guard.\n",
+			object.Kind, object.Name, coverage.DirectiveMarker, object.Kind)
+	}
 }
 
 // dialectDefaultSchema is the schema that owns unqualified objects when no

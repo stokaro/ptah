@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 )
@@ -99,6 +100,65 @@ var atlasRefusedBlockTypes = map[string][]string{
 // containing this block type on this dialect.
 func atlasRefusesBlock(dialect, block string) bool {
 	return slices.Contains(atlasRefusedBlockTypes[dialect], block)
+}
+
+// blockCoverageKinds maps a suppressible block type to the coverage kind the
+// comparator consults for it. One map rather than a switch at each use site,
+// because a block type this render can omit and no coverage kind records is a
+// silent hole of exactly the kind stokaro/ptah#1276 is about.
+var blockCoverageKinds = map[string]coverage.Kind{
+	blockExtension: coverage.Extension,
+	blockPolicy:    coverage.Policy,
+	blockSequence:  coverage.Sequence,
+}
+
+// notDescribed is what a document rendered by this render does not claim to
+// describe.
+//
+// The claim is about the RULE this surface applies, not about what it happened
+// to find. [renderer.omitRefusedBlock] writes an extension block only when
+// another block in the document depends on the extension, so for any extension
+// name absent from the document a reader genuinely cannot tell "the database
+// does not have it" from "nothing named it". That is what a whole-kind record
+// says, and it is the only truthful thing to say.
+//
+// Recording only the objects this particular render omitted would be an
+// UNDER-claim: it would assert that the absence of every other extension is
+// authoritative, which is false for the same document read against any other
+// database. Under-claiming is the destructive direction -- it is how a
+// presentation decision becomes `DROP EXTENSION` -- so the record is made
+// unconditionally whenever the surface is in omit mode, including for a
+// database that has none of these objects at all.
+//
+// Setting [KeepAtlasRefusedBlocksEnvVar] turns omit mode off, and then the
+// document describes everything Ptah models and claims so by carrying no
+// record.
+func (r *renderer) notDescribed() coverage.Set {
+	if !r.omitAtlasRefusedBlocks {
+		return coverage.Set{}
+	}
+	var set coverage.Set
+	for _, block := range atlasRefusedBlockTypes[r.dialect] {
+		kind, known := blockCoverageKinds[block]
+		if !known {
+			continue
+		}
+		set = set.WithKind(kind)
+	}
+	return set
+}
+
+// renderCoverageHeader writes the document's coverage record as directive
+// comments below the generated-code marker.
+//
+// It goes in the document rather than only on the diagnostics stream because
+// the command that reads the document back is a different process: `schema
+// inspect > file` and `schema apply --to file://file` do not share memory, and
+// a warning on a terminal cannot reach the second one.
+func (r *renderer) renderCoverageHeader() {
+	for _, directive := range r.notDescribed().Directives() {
+		r.builder.WriteString("// " + directive + "\n")
+	}
 }
 
 // omitRefusedBlock decides one object's fate on the Atlas-compatible surface,

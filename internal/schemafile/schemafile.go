@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
@@ -153,6 +154,10 @@ func ToDBSchema(db *goschema.Database, dialect string) *dbschematypes.DBSchema {
 		RLSPolicies: toDBRLSPolicies(db.RLSPolicies),
 		Roles:       toDBRoles(db.Roles),
 		Grants:      toDBGrants(db.Grants),
+		// A file-to-file comparison uses this side as the current state, and a
+		// document that declared its own limits declares them here too
+		// (stokaro/ptah#1276).
+		NotDescribed: db.NotDescribed,
 	}
 	applyTablePrimaryKeys(out, db.Tables)
 	return out
@@ -197,6 +202,16 @@ func loadSQLFile(path string, opts Options) (*goschema.Database, error) {
 	}
 	db := toschema.ToDatabase(statements)
 	goschema.Finalize(&db)
+	// The same directive grammar the HCL loader reads, spelled with SQL's
+	// comment marker. No Ptah surface writes one into SQL today -- only the HCL
+	// rendering omits blocks -- but the contract is the document's, not one
+	// format's, and a hand-written SQL desired state must be able to say the
+	// same thing (stokaro/ptah#1276).
+	notDescribed, err := coverage.DecodeHeader(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse SQL schema file %s: %w", path, err)
+	}
+	db.NotDescribed = notDescribed
 	return &db, nil
 }
 
@@ -222,6 +237,10 @@ func appendDatabase(dst, src *goschema.Database) {
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
+	// Several files loaded together are one description, and it describes only
+	// what all of them together describe. Union, never intersection: a limit
+	// one file declares is a limit of the whole (stokaro/ptah#1276).
+	dst.NotDescribed = dst.NotDescribed.Merge(src.NotDescribed)
 }
 
 func toDBSchemas(schemas []goschema.Schema) []dbschematypes.DBSchemaInfo {

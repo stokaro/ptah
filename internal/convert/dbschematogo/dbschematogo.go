@@ -44,6 +44,10 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	convertRoles(database, dbSchema.Roles)
 	database.Grants = convertGrants(dbSchema.Grants)
 	convertRLSEnabledTables(database, dbSchema.Tables, tableStructNames)
+	// What the read did not look at is part of what the read said. Dropping it
+	// here would turn the reader's silence back into desired absence one
+	// conversion after it was recorded (stokaro/ptah#1276).
+	database.NotDescribed = dbSchema.NotDescribed
 
 	return database
 }
