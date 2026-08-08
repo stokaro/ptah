@@ -301,11 +301,20 @@ func (n *ColumnNode) Accept(visitor Visitor) error {
 // NOT NULL its source never wrote, so a dump taken through `schema inspect`
 // restored a stricter table than the one it read. See stokaro/ptah#1235.
 //
-// The dialects that do enforce it say so themselves: the PostgreSQL, MySQL,
-// MariaDB and SQL Server renderers emit their own NOT NULL beside PRIMARY KEY
-// without consulting this flag, and the ClickHouse renderer already excludes a
-// primary-key column from Nullable() wrapping, so their output does not depend
-// on it.
+// The dialects that do enforce it say so in their own renderer, which is where
+// the dialect is known. On the CREATE TABLE path they always have: the
+// PostgreSQL, MySQL, MariaDB and SQL Server renderers write NOT NULL beside
+// PRIMARY KEY without consulting this flag, and the ClickHouse renderer
+// excludes a primary-key column from Nullable() wrapping.
+//
+// The ALTER path is not free of it, and assuming otherwise cost a live
+// regression. The PostgreSQL and SQL Server MODIFY-COLUMN renderers do read
+// this flag, and PostgreSQL refuses `ALTER COLUMN ... DROP NOT NULL` on a key
+// column outright (SQLSTATE 42P16), so leaving the flag set there made every
+// modification of a single-column key column unappliable. Both now take the
+// primary-key branch as well; see the guards in core/renderer, pinned by
+// TestModifyColumn_KeyColumnNeverRendersNullable across every supported
+// dialect. Any new consumer of this flag owes the same decision.
 //
 // Example:
 //

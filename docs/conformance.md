@@ -301,10 +301,38 @@ does not acquire one. After the fix the pinned binary answers
 `Schemas are synced, no changes to be made.` at exit 0 for either document
 against the database `ptah-compat schema apply` built from it.
 
-The dialects that do imply NOT NULL from PRIMARY KEY keep doing so. Their
-renderers write it themselves without consulting the flag, and the comparator
-normalizes the generated side for every dialect except SQLite, so a PostgreSQL
-or MySQL key column still compares and renders exactly as before.
+The dialects that do imply NOT NULL from PRIMARY KEY keep doing so, but the rule
+moved rather than vanished: it now lives in each renderer and in the comparator,
+where the dialect is known. Their CREATE TABLE renderers had always applied it
+themselves. Their **MODIFY COLUMN** renderers had not — PostgreSQL and SQL
+Server read the flag — so a first version of this change made any modification
+of a single-column key column plan `ALTER COLUMN "id" DROP NOT NULL`, which
+PostgreSQL refuses outright with `column "id" is in a primary key`
+(SQLSTATE 42P16). Both renderers take the primary-key branch now, and every
+dialect in `renderer.SupportedDialects()` is pinned in both directions by
+`TestModifyColumn_KeyColumnNeverRendersNullable` and
+`TestModifyColumn_OrdinaryColumnStillRendersNullable`.
+
+What that cost each engine, measured rather than reasoned about:
+
+| Dialect | How it was established | Result |
+| --- | --- | --- |
+| PostgreSQL 17.10 | live: `ptah-compat schema apply` from SQL and from HCL, `ptah schema apply` from Go annotations, and `ptah-compat migrate apply` over a key column widened `integer` → `bigint`, with the catalog read back afterwards | plan byte-identical to before the change; applies at exit 0 |
+| MySQL 9.7.1 | live: the same Go-model fixture through `ptah schema compare` | rendered SQL byte-identical to before the change |
+| SQL Server | inspection only — no live server was available here | guarded in `renderColumnForAlter`; pinned by a renderer test, not by an engine |
+| ClickHouse | inspection only | unaffected: its type renderer already excluded a key column from `Nullable()` wrapping on both paths |
+| CockroachDB, YugabyteDB, Spanner | inspection only; they share the PostgreSQL renderer | inherit the PostgreSQL guard |
+
+Two adjacent defects were found while measuring this and are **not** fixed here,
+because both predate the change and reproduce identically without it:
+
+- A composite PRIMARY KEY whose columns are not spelled NOT NULL in the source
+  plans `ALTER COLUMN ... DROP NOT NULL` for each key column on PostgreSQL, and
+  is refused the same way. Only a single-column key reaches the flag this
+  section is about.
+- MySQL plans `ALTER TABLE users MODIFY COLUMN id BIGINT PRIMARY KEY` for a key
+  column type change, which MySQL rejects with `Multiple primary key defined`
+  when the key already exists.
 
 ### The uniqueness half
 
