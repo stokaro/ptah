@@ -219,6 +219,16 @@ type DBIndex struct {
 	IsUnique   bool          `json:"is_unique"`
 	IsPrimary  bool          `json:"is_primary"`
 	Definition string        `json:"definition"` // Full index definition
+	// KeyPartsIncomplete reports that the catalog described a key part this
+	// reader cannot name, so Columns (and Parts) list fewer parts than the key
+	// actually has. The MySQL reader sets it for a functional key part --
+	// `KEY idx ((b + 1))` -- whose information_schema.STATISTICS row carries a
+	// NULL COLUMN_NAME and an EXPRESSION column that MariaDB does not have.
+	//
+	// A comparison must not read the key columns of such an index as the whole
+	// key: it would plan a rebuild on every run for a key that never changed.
+	// Everything else about the index is reported normally.
+	KeyPartsIncomplete bool `json:"key_parts_incomplete,omitempty"`
 	// Condition is the WHERE clause for partial indexes when the dialect
 	// exposes one structurally.
 	Condition string `json:"condition,omitempty"`

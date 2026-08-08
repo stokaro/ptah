@@ -188,6 +188,10 @@ type generatedIndexEntry struct {
 type databaseIndexEntry struct {
 	ref   difftypes.IndexRef
 	index types.DBIndex
+	// constraintBacked reports that a UNIQUE constraint of this identity
+	// enforces the index, so the object is the constraint's and both directions
+	// of a plan have to say so. See [uniqueConstraintEnforcesTheIndex].
+	constraintBacked bool
 }
 
 func IndexesWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
@@ -212,7 +216,8 @@ func IndexesWithSemantics(
 		database,
 		dialect,
 		semantics,
-		hiddenForeignKeyBackingIndexes(fkBackedIndexes, genIndexes),
+		genIndexes,
+		fkBackedIndexes,
 		uniqueConstraintIndexes,
 	)
 	appendIndexDifferences(
@@ -225,6 +230,7 @@ func IndexesWithSemantics(
 	)
 	diff.SetIndexAdditions(diff.IndexAdditions())
 	diff.SetIndexRemovals(diff.IndexRemovals())
+	diff.SetConstraintBackedIndexRemovals(diff.ConstraintBackedIndexRemovals)
 }
 
 func collectGeneratedIndexes(
@@ -292,58 +298,65 @@ func constraintBackedIndexIdentities(
 	return foreignKeys, uniqueConstraints
 }
 
-// hiddenForeignKeyBackingIndexes narrows the foreign-key backing index filter
-// to the identities the desired state never mentions.
+// collectDatabaseIndexes keys the database's indexes by identity, leaving out
+// the ones that are not addressable as indexes and the ones another object
+// owns.
 //
-// MySQL and MariaDB create a backing index for every FOREIGN KEY. With a bare
-// `CONSTRAINT ... FOREIGN KEY` and no `KEY` clause -- the ordinary way a MySQL
-// schema is written -- the backing index carries the constraint's own name, so
-// `information_schema.STATISTICS` reports an index named `fk_posts_user`
-// alongside the constraint named `fk_posts_user`. Hiding that identity from
-// the database side keeps a desired state that says nothing about the backing
-// index from planning a DROP INDEX that would take the constraint with it.
+// **Ownership follows the desired state's spelling.** An identity the desired
+// state declares as an index is never dropped here, whichever filter below
+// would otherwise have claimed it, because a database object the desired state
+// names as an index has to reach the index comparison to be matched, replaced,
+// or left alone. Filtering it out is what strands it: the desired side is never
+// filtered, so the declared index has nothing to match and is reported as an
+// addition while the owning constraint, having no counterpart on the desired
+// side, is reported as a removal -- one object, created down one path and
+// dropped down the other, in the same plan.
 //
-// Hiding it unconditionally was one-sided: the desired side is never filtered,
-// so an index the author did declare had no counterpart to match and was
-// planned as an addition. That is not a hypothetical desired state -- the
-// pinned community binary's own `schema inspect` output writes the backing
-// index back out as an `index` block, so applying a database's own inspect
-// output to the database it came from planned
-// `CREATE INDEX "fk_posts_user"` where the pinned binary reported
-// "Schema is synced". That statement is not executable: run against the same
-// fixture, MySQL 9.7.1 answers it with
-// `Error 1061 (42000): Duplicate key name 'fk_posts_user'` (issue #1258).
+// That is not a hypothetical desired state. Both `ptah-compat schema inspect`
+// and the pinned community binary v1.3.0 write these objects back out as
+// `index` blocks, so replaying a database's own inspect output against the
+// database it came from hit it. Measured on MySQL 9.7.1 and MariaDB 11.8.8,
+// where the pinned binary reported "Schema is synced":
 //
-// Letting declared identities through restores the comparison rather than
-// suppressing it: a declared backing index is matched, replaced, or added on
-// the same terms as any other index. The filter cannot start dropping
-// anything either, because an identity only survives it when the desired
-// state names that identity, and an identity the desired state names is
-// matched instead of removed.
-func hiddenForeignKeyBackingIndexes(
-	foreignKeys map[difftypes.IndexRef]struct{},
-	declared map[difftypes.IndexRef]generatedIndexEntry,
-) map[difftypes.IndexRef]struct{} {
-	hidden := make(map[difftypes.IndexRef]struct{}, len(foreignKeys))
-	for identity := range foreignKeys {
-		if _, isDeclared := declared[identity]; isDeclared {
-			continue
-		}
-		hidden[identity] = struct{}{}
-	}
-	return hidden
-}
-
+//	fixture                     | filter that stranded it
+//	UNIQUE KEY uq_users_email   | the same-named UNIQUE constraint (#1245)
+//	UNIQUE KEY uk_users_email   | isConstraintBasedUniqueIndex's name pattern
+//	CONSTRAINT fk_posts_user    | the FOREIGN KEY backing index (#1258)
+//
+// and on PostgreSQL 17.10 for `CONSTRAINT uq_users_email UNIQUE (email)`
+// against a desired `index "uq_users_email" { unique = true }`, where the
+// pinned binary also reported "Schema is synced".
+//
+// The plans were not merely noisy. MySQL and MariaDB answer the CREATE with
+// `Error 1061 (42000): Duplicate key name 'uq_users_email'` and the apply exits
+// 1 -- and not before the statements ahead of it in the same plan have run, so
+// adding one column to a table that has a named unique key left the column
+// added and the run failed. PostgreSQL, where the statements carry
+// IF NOT EXISTS and IF EXISTS, skipped the create, ran the drop, exited 0, and
+// left the table with no unique index at all.
+//
+// Letting a declared identity through never drops an object the desired state
+// did not ask to change: an identity only survives the filters when the desired
+// state names it, and a named identity is either matched or replaced by the
+// definition the desired state gives it -- [appendIndexDifferences] pairs that
+// removal with the addition that supersedes it, and never emits it alone.
+//
+// The removal is still a removal, and what it removes depends on the object. A
+// UNIQUE constraint's backing index is the constraint's object, so each entry
+// records that; the drop is spelled through the constraint everywhere except
+// MySQL and MariaDB, and the restoration through it everywhere. See
+// [uniqueConstraintEnforcesTheIndex].
 func collectDatabaseIndexes(
 	database *types.DBSchema,
 	dialect string,
 	semantics identifier.Semantics,
+	declared map[difftypes.IndexRef]generatedIndexEntry,
 	foreignKeys map[difftypes.IndexRef]struct{},
 	uniqueConstraints map[difftypes.IndexRef]struct{},
 ) map[difftypes.IndexRef]databaseIndexEntry {
 	indexes := make(map[difftypes.IndexRef]databaseIndexEntry)
 	for _, index := range database.Indexes {
-		if ignoreDatabaseIndex(index, dialect) {
+		if unaddressableDatabaseIndex(index, dialect) {
 			continue
 		}
 		ref := difftypes.IndexRef{
@@ -351,22 +364,108 @@ func collectDatabaseIndexes(
 			TableName: index.QualifiedTableName(),
 		}
 		identity := indexscope.IdentityKeyWithSemantics(semantics, ref)
-		if _, constraintBacked := uniqueConstraints[identity]; constraintBacked {
-			continue
-		}
-		if _, foreignKeyBacked := foreignKeys[identity]; foreignKeyBacked {
+		if _, isDeclared := declared[identity]; !isDeclared &&
+			constraintOwnedDatabaseIndex(
+				index,
+				dialect,
+				identity,
+				foreignKeys,
+				uniqueConstraints,
+			) {
 			continue
 		}
 		indexes[identity] = databaseIndexEntry{
-			ref:   ref,
-			index: index,
+			ref:              ref,
+			index:            index,
+			constraintBacked: uniqueConstraintEnforcesTheIndex(identity, uniqueConstraints),
 		}
 	}
 	return indexes
 }
 
-func ignoreDatabaseIndex(index types.DBIndex, dialect string) bool {
-	if index.IsPrimary || isSQLiteInternalAutoindex(index.Name, dialect) {
+// uniqueConstraintEnforcesTheIndex reports whether a UNIQUE constraint of this
+// identity enforces the database index -- whether, in other words, the object
+// the removal names belongs to the constraint catalog and not only the index
+// catalog.
+//
+// It is a fact about the object, not a spelling, and the two consumers of the
+// mark need it for opposite reasons:
+//
+//   - The UP drop is spelled per engine. On MySQL and MariaDB a unique key and
+//     its constraint are one catalog row and `ALTER TABLE ... DROP INDEX`
+//     removes it, which is what the pinned community binary v1.3.0 plans there,
+//     so their planners ignore the mark. Everywhere else the constraint is an
+//     object of its own that owns the index and the server refuses to drop the
+//     index alone: PostgreSQL 17.10 answers `DROP INDEX "uq_users_email"` with
+//     `cannot drop index uq_users_email because constraint uq_users_email on
+//     table users requires it (SQLSTATE 2BP01)`, and the pinned binary plans
+//     `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`.
+//   - The DOWN direction has to put the object back, and there the engines do
+//     not split. What was dropped was a UNIQUE constraint on every one of them,
+//     so the statement that restores it is ADD CONSTRAINT ... UNIQUE; on MySQL
+//     and MariaDB that lands the same catalog row `CREATE UNIQUE INDEX` would.
+//     Reversing the removal into an index addition instead loses the constraint
+//     on PostgreSQL and fails outright on MySQL, because the down direction's
+//     target schema omits a constraint-backed index by construction
+//     (ConvertDBSchemaToGoSchema). See [generator.reverseIndexRemovals].
+//
+// Marking only the engines whose UP spelling differs is what made the down
+// direction wrong on the other two, so the mark records the fact and each
+// planner decides its own spelling.
+//
+// SQL Server never reaches here: a UNIQUE constraint and a unique index are
+// separate objects there, so [constraintBackedIndexIdentities] records no
+// unique-constraint identities for it at all.
+func uniqueConstraintEnforcesTheIndex(
+	identity difftypes.IndexRef,
+	uniqueConstraints map[difftypes.IndexRef]struct{},
+) bool {
+	_, constraintBacked := uniqueConstraints[identity]
+	return constraintBacked
+}
+
+// unaddressableDatabaseIndex reports whether an index has no standalone
+// existence to compare at all: a primary key's index is created and dropped
+// with the key, and SQLite's sqlite_autoindex_* rows name an internal structure
+// no statement can refer to. Neither can be declared by a desired state, so
+// neither is narrowed by one.
+func unaddressableDatabaseIndex(index types.DBIndex, dialect string) bool {
+	return index.IsPrimary || isSQLiteInternalAutoindex(index.Name, dialect)
+}
+
+// constraintOwnedDatabaseIndex reports whether a database index is a
+// constraint's backing index, and so is created and dropped through that
+// constraint rather than on its own.
+//
+// On PostgreSQL, MySQL and MariaDB a UNIQUE constraint is enforced by an index
+// of the constraint's own name on its own table. (SQL Server keeps the two as
+// separate objects, and SQLite names the backing index itself --
+// `sqlite_autoindex_t_1` -- which [unaddressableDatabaseIndex] drops before the
+// pools are built.) MySQL and MariaDB additionally create one for every
+// FOREIGN KEY: with a bare
+// `CONSTRAINT ... FOREIGN KEY` and no `KEY` clause -- the ordinary way a MySQL
+// schema is written -- `information_schema.STATISTICS` reports an index named
+// `fk_posts_user` alongside the constraint named `fk_posts_user`. A desired
+// state that says nothing about either must not plan a DROP INDEX that would
+// take the constraint with it, which is what these two arms prevent.
+//
+// The name-pattern arm is a guess about a naming convention where the identity
+// arms are facts read from the catalog, but they are alike in what they mean
+// for the comparison, and all three are subject to the declaration narrowing in
+// [collectDatabaseIndexes] -- the FOREIGN KEY arm since
+// [#1258](https://github.com/stokaro/ptah/issues/1258), the other two since
+// [#1245](https://github.com/stokaro/ptah/issues/1245).
+func constraintOwnedDatabaseIndex(
+	index types.DBIndex,
+	dialect string,
+	identity difftypes.IndexRef,
+	foreignKeys map[difftypes.IndexRef]struct{},
+	uniqueConstraints map[difftypes.IndexRef]struct{},
+) bool {
+	if _, uniqueBacked := uniqueConstraints[identity]; uniqueBacked {
+		return true
+	}
+	if _, foreignKeyBacked := foreignKeys[identity]; foreignKeyBacked {
 		return true
 	}
 	return platform.NormalizeDialect(dialect) != platform.SQLServer &&
@@ -400,7 +499,7 @@ func appendIndexDifferences(
 			semantics,
 		):
 			appendIndexAddition(diff, generatedEntry.ref)
-			appendIndexRemoval(diff, databaseEntry.ref)
+			appendIndexRemoval(diff, databaseEntry)
 		}
 	}
 
@@ -409,7 +508,7 @@ func appendIndexDifferences(
 			continue
 		}
 		if _, exists := generated[identity]; !exists {
-			appendIndexRemoval(diff, entry.ref)
+			appendIndexRemoval(diff, entry)
 		}
 	}
 }
@@ -418,8 +517,18 @@ func appendIndexAddition(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) {
 	diff.IndexesAdded = append(diff.IndexesAdded, ref)
 }
 
-func appendIndexRemoval(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) {
-	diff.IndexesRemoved = append(diff.IndexesRemoved, ref)
+// appendIndexRemoval records a database index the plan drops, and — when a
+// UNIQUE constraint of the same identity enforces it — records that the object
+// is that constraint's. The two lists are parallel by construction: the second
+// is a subset of the first, keyed by the same reference.
+func appendIndexRemoval(diff *difftypes.SchemaDiff, entry databaseIndexEntry) {
+	diff.IndexesRemoved = append(diff.IndexesRemoved, entry.ref)
+	if entry.constraintBacked {
+		diff.ConstraintBackedIndexRemovals = append(
+			diff.ConstraintBackedIndexRemovals,
+			entry.ref,
+		)
+	}
 }
 
 func isSQLiteInternalAutoindex(indexName, dialect string) bool {
@@ -461,9 +570,133 @@ func indexDefinitionsChanged(
 			indexKeyPartsChanged(generated, database, semantics)
 	case platform.Postgres:
 		return postgresIndexDefinitionChanged(generated, database, semantics)
+	case platform.MySQL, platform.MariaDB:
+		return mysqlIndexDefinitionChanged(generated, database, semantics)
 	default:
 		return false
 	}
+}
+
+// mysqlIndexDefinitionChanged answers whether a MySQL or MariaDB index has to
+// be rebuilt to match the desired definition.
+//
+// Uniqueness has to be compared here, and it is the reason this branch exists.
+// On these engines a UNIQUE constraint *is* its index, so
+// [collectDatabaseIndexes] lets a declared identity through even when a UNIQUE
+// constraint of that name owns it -- and without a uniqueness comparison a
+// desired plain `index "uq_users_email"` would match a database
+// `UNIQUE KEY uq_users_email` and report synced, which is the opposite mistake
+// from the one #1245 fixed: two genuinely different objects made equal.
+// Measured on MySQL 9.7.1, the pinned community binary v1.3.0 plans
+// `ALTER TABLE users DROP INDEX uq_users_email` followed by
+// `ALTER TABLE users ADD INDEX uq_users_email (email)` for that pair.
+//
+// Key columns are compared for the same reason: `UNIQUE KEY uq (email)` against
+// a desired unique `uq (name)` is a different index, and the pinned binary
+// plans a drop and an add for it. Comparing them is also what keeps this
+// change from trading a loud failure for a silent one -- before it, that pair
+// planned CREATE plus DROP of one name and the apply failed with
+// `Error 1061 (42000): Duplicate key name`.
+//
+// Nothing else is compared, and the omissions are the reader's, not a
+// judgement that they do not matter. Ptah's MySQL reader keeps only the column
+// names and NON_UNIQUE out of information_schema.STATISTICS, so a descending
+// key and a prefix key both arrive as a plain column. Comparing a direction the
+// reader always reports as ascending against a desired `desc = true` would plan
+// a rebuild on every run forever, which is the oscillation this change exists
+// to remove. Those are reader gaps, recorded as such.
+func mysqlIndexDefinitionChanged(
+	generated goschema.Index,
+	database types.DBIndex,
+	semantics identifier.Semantics,
+) bool {
+	return generated.Unique != database.IsUnique ||
+		mysqlIndexKeyColumnsChanged(generated, database, semantics)
+}
+
+// mysqlIndexKeyColumnsChanged compares the key columns in order, and only the
+// columns. See [mysqlIndexDefinitionChanged] for why a key's direction is not
+// part of the comparison.
+//
+// A key the reader could not read whole is compared as far as it was read. The
+// MySQL reader reports a functional key part -- `KEY idx ((b + 1))` -- as a
+// part missing from Columns, because the expression lives in a STATISTICS
+// column MariaDB does not have; see [types.DBIndex.KeyPartsIncomplete]. Reading
+// what is left as the whole key would find the key short by one part on every
+// run and plan a rebuild forever, on a database the pinned community binary
+// v1.3.0 reports synced -- but declining the comparison outright reported
+// `KEY idx_mixed (b, (b + 1))` and a desired `idx_mixed (c, (c + 1))` as the
+// same key, which is a different key by every part the reader could read. The
+// names that were read are compared; see [mysqlNamedKeyPartsContradict].
+func mysqlIndexKeyColumnsChanged(
+	generated goschema.Index,
+	database types.DBIndex,
+	semantics identifier.Semantics,
+) bool {
+	if database.KeyPartsIncomplete {
+		return mysqlNamedKeyPartsContradict(generated, database, semantics)
+	}
+	generatedParts := effectiveGeneratedIndexParts(generated)
+	databaseParts := effectiveDatabaseIndexParts(database)
+	if len(generatedParts) != len(databaseParts) {
+		return true
+	}
+	for position, generatedPart := range generatedParts {
+		if semantics.ColumnIdentityKey(generatedPart.Name) !=
+			semantics.ColumnIdentityKey(databaseParts[position].Name) {
+			return true
+		}
+	}
+	return false
+}
+
+// mysqlNamedKeyPartsContradict answers the only question a partly-read key can
+// answer: do the parts the reader COULD name already prove this is not the
+// desired key?
+//
+// The reader names every part except the functional ones, and it does not
+// record where in the key those sat, so the two key lists cannot be lined up by
+// position. What survives is the order of the named parts, which is enough for
+// the shape that matters: a database `KEY idx_mixed (b, (b + 1))` against a
+// desired `idx_mixed (c, (c + 1))` names `b` where the desired key names only
+// `c`, so the keys differ no matter what the unread part turns out to be. That
+// pair was reported synchronized while the comparison declined on sight of an
+// unreadable part.
+//
+// Proof runs one way only. When every named part does appear, in order, the key
+// may still differ in a part the reader could not read -- `(b, (b + 1))` against
+// a desired `(b, (c + 1))` reports no change here. Reporting one instead would
+// plan a rebuild on every run for a key that never changed, which is the
+// oscillation the incomplete-key record exists to prevent, and the rebuild
+// could not be reversed: the down direction rebuilds an index from the same
+// reader's output and would recreate the key without its expression. Reading
+// information_schema.STATISTICS.EXPRESSION is what closes that half, and it is
+// a reader change with its own dialect sweep (MariaDB has no such column).
+// Recorded in docs/conformance.md.
+func mysqlNamedKeyPartsContradict(
+	generated goschema.Index,
+	database types.DBIndex,
+	semantics identifier.Semantics,
+) bool {
+	generatedParts := effectiveGeneratedIndexParts(generated)
+	databaseParts := effectiveDatabaseIndexParts(database)
+	if len(databaseParts) > len(generatedParts) {
+		return true
+	}
+	next := 0
+	for _, databasePart := range databaseParts {
+		named := semantics.ColumnIdentityKey(databasePart.Name)
+		position := next
+		for position < len(generatedParts) &&
+			semantics.ColumnIdentityKey(generatedParts[position].Name) != named {
+			position++
+		}
+		if position == len(generatedParts) {
+			return true
+		}
+		next = position + 1
+	}
+	return false
 }
 
 // postgresIndexDefinitionChanged answers whether a PostgreSQL index has to be

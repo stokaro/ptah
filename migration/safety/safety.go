@@ -68,6 +68,12 @@ func ClassifySchemaDiff(diff *types.SchemaDiff) []Finding {
 	add(&findings, "enums_removed", len(diff.EnumsRemoved), Destructive)
 	add(&findings, "indexes_added", len(diff.IndexesAdded), Warning)
 	add(&findings, "indexes_removed", len(diff.IndexesRemoved), Warning)
+	// A removal whose object a UNIQUE constraint enforces takes the uniqueness
+	// with it, whichever statement the engine spells it as, so it is counted
+	// again under its own destructive category rather than folded into the
+	// warning above. Losing a uniqueness protection is not a query-plan change
+	// and must not pass a destructive gate or a drift threshold as one.
+	add(&findings, "unique_protections_removed", len(diff.ConstraintBackedIndexRemovals), Destructive)
 	add(&findings, "extensions_added", len(diff.ExtensionsAdded), Safe)
 	add(&findings, "extensions_removed", len(diff.ExtensionsRemoved), Destructive)
 	add(&findings, "functions_added", len(diff.FunctionsAdded), Safe)
@@ -353,6 +359,11 @@ func assessNode(node ast.Node) StatementAssessment {
 		}
 	case *ast.DropIndexNode:
 		assessment.Subject = n.Name
+		if n.EnforcesUniqueConstraint {
+			assessment.Severity = Destructive
+			assessment.Reason = "DROP INDEX removes the uniqueness a UNIQUE constraint enforces"
+			return assessment
+		}
 		assessment.Severity = Warning
 		assessment.Reason = "DROP INDEX can affect query plans and constraints"
 	case *ast.AlterTypeNode:

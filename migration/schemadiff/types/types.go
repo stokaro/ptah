@@ -163,6 +163,25 @@ type SchemaDiff struct {
 	// plans or uniqueness protections.
 	IndexesRemoved []IndexRef `json:"indexes_removed"`
 
+	// ConstraintBackedIndexRemovals is the subset of IndexesRemoved whose
+	// object is enforced by a UNIQUE constraint of the same name on the same
+	// table. It records what the object is; each planner spells the statement
+	// its engine accepts.
+	//
+	// PostgreSQL refuses the index spelling for one:
+	// `cannot drop index uq_users_email because constraint uq_users_email on
+	// table users requires it (SQLSTATE 2BP01)`, measured on 17.10, so its
+	// planner drops the constraint instead. MySQL and MariaDB are the opposite
+	// case -- a unique key and its index are one catalog row that `DROP INDEX`
+	// drops, which is what the pinned community binary v1.3.0 plans there -- so
+	// their planners ignore the list and their plans are unchanged by it.
+	//
+	// The list is not PostgreSQL-only, because the down direction needs it on
+	// every engine: what was dropped was a UNIQUE constraint, and a rollback
+	// that reverses it into an index addition restores the wrong object (see
+	// the generator's reverseIndexRemovals).
+	ConstraintBackedIndexRemovals []IndexRef `json:"constraint_backed_index_removals,omitempty"`
+
 	// ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
 	// but not in the current database schema
 	ExtensionsAdded []string `json:"extensions_added"`
@@ -418,6 +437,61 @@ func (d *SchemaDiff) SetIndexAdditions(refs []IndexRef) {
 // SetIndexRemovals replaces the removed index references with a sorted copy.
 func (d *SchemaDiff) SetIndexRemovals(refs []IndexRef) {
 	d.IndexesRemoved = sortedIndexRefs(refs)
+}
+
+// SetConstraintBackedIndexRemovals replaces the constraint-backed index
+// removals with a sorted copy, in the same key order as SetIndexRemovals.
+func (d *SchemaDiff) SetConstraintBackedIndexRemovals(refs []IndexRef) {
+	d.ConstraintBackedIndexRemovals = sortedIndexRefs(refs)
+}
+
+// ConstraintBackedIndexRemovalSet keys ConstraintBackedIndexRemovals for the
+// membership test a planner makes once per rendered drop. The references are
+// the ones recorded in IndexesRemoved, so an exact match is the right test:
+// both come from the same introspected index.
+func (d *SchemaDiff) ConstraintBackedIndexRemovalSet() map[IndexRef]struct{} {
+	set := make(map[IndexRef]struct{}, len(d.ConstraintBackedIndexRemovals))
+	for _, ref := range d.ConstraintBackedIndexRemovals {
+		set[ref] = struct{}{}
+	}
+	return set
+}
+
+// IndexRemovalsRebuiltAsUniqueConstraints keys the index removals whose object
+// a UNIQUE constraint addition in the same plan puts back.
+//
+// This is the shape a rollback of a constraint-backed index replacement has:
+// the up direction turned a UNIQUE constraint into a plain index, so the down
+// direction drops that index and adds the constraint again — and ADD CONSTRAINT
+// ... UNIQUE builds an index of the constraint's name, so the two collide on
+// one name. PostgreSQL 17.10 answers the add with
+// `relation "uq_users_email" already exists (SQLSTATE 42P07)` and MySQL 9.7.1
+// with `Error 1061 (42000): Duplicate key name 'uq_users_email'` unless the
+// drop runs first, and the planners emit constraint additions before index
+// removals. A planner therefore emits the drop with the addition and skips it
+// where it would otherwise have landed, which is what this set is for.
+//
+// The match is exact rather than semantics-folded: both sides name the same
+// introspected object, recorded from one IndexRef by the reversal that built
+// the addition.
+func (d *SchemaDiff) IndexRemovalsRebuiltAsUniqueConstraints() map[IndexRef]struct{} {
+	if len(d.ConstraintsAddedWithTables) == 0 || len(d.IndexesRemoved) == 0 {
+		return nil
+	}
+	additions := make(map[IndexRef]struct{}, len(d.ConstraintsAddedWithTables))
+	for _, add := range d.ConstraintsAddedWithTables {
+		if add.Type != "UNIQUE" || add.TableName == "" {
+			continue
+		}
+		additions[IndexRef{Name: add.Name, TableName: add.TableName}] = struct{}{}
+	}
+	set := make(map[IndexRef]struct{}, len(additions))
+	for _, ref := range d.IndexesRemoved {
+		if _, rebuilt := additions[ref]; rebuilt {
+			set[ref] = struct{}{}
+		}
+	}
+	return set
 }
 
 func sortedIndexRefs(refs []IndexRef) []IndexRef {

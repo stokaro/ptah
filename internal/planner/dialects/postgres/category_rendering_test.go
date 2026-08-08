@@ -105,6 +105,17 @@ func diffCategoryFixtures() []categoryFixture {
 			&goschema.Database{},
 		},
 		{
+			// A subset of IndexesRemoved, so the fixture carries both lists:
+			// the marker changes the spelling of a drop the removal list asks
+			// for, and on its own it asks for nothing.
+			"ConstraintBackedIndexRemovals",
+			&types.SchemaDiff{
+				IndexesRemoved:                []types.IndexRef{{Name: "uq", TableName: "t"}},
+				ConstraintBackedIndexRemovals: []types.IndexRef{{Name: "uq", TableName: "t"}},
+			},
+			&goschema.Database{},
+		},
+		{
 			"ExtensionsAdded",
 			&types.SchemaDiff{ExtensionsAdded: []string{"pg_trgm"}},
 			&goschema.Database{Extensions: []goschema.Extension{{Name: "pg_trgm"}}},
