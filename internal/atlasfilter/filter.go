@@ -183,13 +183,20 @@ type resourcePattern struct {
 	raw   string
 	glob  string
 	types map[string]struct{}
-	field string
+	// fields names the object fields this pattern subtracts. Empty means the
+	// pattern names the object itself.
+	fields map[string]struct{}
+	// schemaSegment records that the pattern spelled its schema part as an
+	// explicit `<glob>[type=schema].` segment. Such a pattern is realm-relative
+	// by construction, so [checkPatternDepth] must not prefix the connection's
+	// schema onto it a second time.
+	schemaSegment bool
 }
 
 type typeSelector struct {
-	glob  string
-	types map[string]struct{}
-	field string
+	glob   string
+	types  map[string]struct{}
+	fields map[string]struct{}
 }
 
 // filterKindExclude and filterKindInclude label pattern-parse errors with the
@@ -223,7 +230,21 @@ func parsePatterns(values []string, defaultSchema string) ([]resourcePattern, er
 			if pattern.glob == "" {
 				continue
 			}
-			if err := checkPatternDepth(strings.TrimSpace(part), defaultSchema); err != nil {
+			scope := defaultSchema
+			if pattern.schemaSegment {
+				// The pattern named its schema slot itself, so it is already
+				// realm-relative and the connection's schema must not be
+				// counted a second time.
+				scope = ""
+			}
+			// Counted on the pattern as written, selector text and field suffix
+			// included. That is the pinned community binary's own arithmetic:
+			// on a schema-bound URL it refuses `public.*[type=table].comment` as
+			// "public.public.*[type=table].comment". Counting the resource glob
+			// instead would accept that spelling, and Ptah applies one depth
+			// rule to every scope, so it would exit 0 on the schema-bound URL
+			// where that binary exits 1.
+			if err := checkPatternDepth(strings.TrimSpace(part), scope); err != nil {
 				return nil, err
 			}
 			patterns = append(patterns, pattern)
@@ -271,31 +292,81 @@ func parsePattern(value, kind string) (resourcePattern, error) {
 	if raw == "" {
 		return resourcePattern{}, nil
 	}
-	// Ptah evaluates one selector per pattern, on the final segment — the
-	// only placement the Atlas docs use. A second selector would otherwise be
-	// swallowed into the glob and silently match nothing, so reject it loudly.
-	if strings.Count(raw, "[type=") > 1 {
+	body, schemaSegment, err := stripSchemaTypeSegment(raw, kind)
+	if err != nil {
+		return resourcePattern{}, err
+	}
+	// Past the schema segment, Ptah evaluates one selector per pattern, on the
+	// final segment — the only other placement the pinned community binary was
+	// measured to honor. A further selector would be swallowed into the glob and
+	// silently match nothing, so reject it loudly.
+	if strings.Count(body, "[type=") > 1 {
 		return resourcePattern{}, fmt.Errorf(
 			"unsupported Atlas %s selector %q: type selectors are supported on the final pattern segment only", kind, raw)
 	}
-	glob := raw
+	glob := body
 	types := map[string]struct{}{}
-	field := ""
-	if open := strings.LastIndex(raw, "[type="); open >= 0 {
-		selector, err := parseTypeSelector(raw, open, kind)
+	var fields map[string]struct{}
+	if open := strings.LastIndex(body, "[type="); open >= 0 {
+		selector, err := parseTypeSelector(body, open, kind)
 		if err != nil {
 			return resourcePattern{}, err
 		}
 		glob = selector.glob
 		types = selector.types
-		field = selector.field
-	} else if selector, ok := selectorLikeSuffix(raw); ok {
+		fields = selector.fields
+	} else if selector, ok := selectorLikeSuffix(body); ok {
 		return resourcePattern{}, fmt.Errorf("unsupported Atlas %s selector %q", kind, selector)
 	}
 	if _, err := path.Match(glob, "ptah_match_probe"); err != nil {
 		return resourcePattern{}, fmt.Errorf("invalid Atlas %s glob %q: %w", kind, raw, err)
 	}
-	return resourcePattern{raw: raw, glob: glob, types: types, field: field}, nil
+	return resourcePattern{raw: raw, glob: glob, types: types, fields: fields, schemaSegment: schemaSegment}, nil
+}
+
+// stripSchemaTypeSegment rewrites a leading `<glob>[type=schema].` segment into
+// the plain `<glob>.` schema qualification the rest of the parser already
+// understands, and reports whether it did.
+//
+// `*[type=schema].*[type=table]` is the one multi-segment spelling the pinned
+// community binary v1.3.0 was measured to implement rather than merely accept:
+// on a PostgreSQL database holding two tables and two enums across two schemas
+// it removed both tables and kept both enums, exit 0, and narrowing the leading
+// glob to `app[type=schema]` removed only that schema's table. Ptah refused the
+// spelling outright, so a command line that ran against that binary aborted
+// here — the stricter direction, and a drop-in break (stokaro/ptah#933).
+//
+// Only `schema` is honored in a non-final segment, because a schema is the only
+// thing a leading segment can name. Any other type there keeps the refusal.
+func stripSchemaTypeSegment(raw, kind string) (body string, found bool, err error) {
+	open := strings.Index(raw, "[type=")
+	if open < 0 {
+		return raw, false, nil
+	}
+	closeIdx := strings.Index(raw[open:], "]")
+	if closeIdx < 0 {
+		return raw, false, nil
+	}
+	closeIdx += open
+	rest := raw[closeIdx+1:]
+	// A "." behind the selector opens another segment only when a further
+	// selector follows it. Otherwise it introduces a field selector, which
+	// [parseFieldSelector] owns.
+	if !strings.HasPrefix(rest, ".") || !strings.Contains(rest, "[type=") {
+		return raw, false, nil
+	}
+	selectorName, selectorValue, ok := strings.Cut(raw[open+1:closeIdx], "=")
+	if !ok || strings.TrimSpace(selectorName) != "type" ||
+		strings.ToLower(strings.TrimSpace(selectorValue)) != "schema" {
+		return "", false, fmt.Errorf(
+			"unsupported Atlas %s selector %q: type selectors are supported on the final pattern segment only",
+			kind, raw)
+	}
+	glob := strings.TrimSpace(raw[:open])
+	if glob == "" {
+		glob = "*"
+	}
+	return glob + rest, true, nil
 }
 
 func parseTypeSelector(raw string, open int, kind string) (typeSelector, error) {
@@ -323,40 +394,104 @@ func parseTypeSelector(raw string, open int, kind string) (typeSelector, error) 
 	if len(types) == 0 {
 		return typeSelector{}, fmt.Errorf("empty Atlas %s type selector %q", kind, selector)
 	}
-	field, err := parseFieldSelector(raw[closeIdx+1:], types, kind)
+	fields, err := parseFieldSelector(raw[closeIdx+1:], types, kind)
 	if err != nil {
 		return typeSelector{}, err
 	}
-	return typeSelector{glob: glob, types: types, field: field}, nil
+	return typeSelector{glob: glob, types: types, fields: fields}, nil
 }
 
-func parseFieldSelector(suffix string, types map[string]struct{}, kind string) (string, error) {
+// excludeFieldSelectors names, per resource kind, the object fields an
+// --exclude field selector can subtract while leaving the object itself.
+//
+// The pinned community binary v1.3.0 accepts every field selector and honors
+// none of them: `--exclude '*[type=table].comment'` there is exit 0 with output
+// byte-identical to the same command without the flag, comments and all.
+// Reproducing that would mean accepting a scoping instruction and silently not
+// carrying it out, which is the failure this issue exists to remove, so Ptah
+// honors the fields it can subtract and refuses the rest by name
+// (stokaro/ptah#933).
+var excludeFieldSelectors = map[string]map[string]struct{}{
+	"extension":         {"version": {}},
+	"table":             {"comment": {}},
+	"base_table":        {"comment": {}},
+	"view":              {"comment": {}},
+	"materialized_view": {"comment": {}},
+}
+
+// parseFieldSelector resolves the `.field` suffix behind a type selector into
+// the set of fields the pattern subtracts. `.*` names every field Ptah can
+// subtract for the selected types.
+func parseFieldSelector(suffix string, types map[string]struct{}, kind string) (map[string]struct{}, error) {
 	if suffix == "" {
-		return "", nil
+		return nil, nil
 	}
 	field, ok := strings.CutPrefix(suffix, ".")
 	if !ok || field == "" {
-		return "", fmt.Errorf("unsupported Atlas %s field selector suffix %q", kind, suffix)
+		return nil, fmt.Errorf("unsupported Atlas %s field selector suffix %q", kind, suffix)
 	}
-	if kind == filterKindExclude && field == "version" && hasOnlyType(types, "extension") {
-		return field, nil
+	if kind != filterKindExclude {
+		return nil, fmt.Errorf("unsupported Atlas %s field selector %q", kind, suffix)
 	}
-	return "", fmt.Errorf("unsupported Atlas %s field selector %q", kind, suffix)
+	fields := map[string]struct{}{}
+	for resourceType := range types {
+		for honored := range excludeFieldSelectors[resourceType] {
+			if field == "*" || field == honored {
+				fields[honored] = struct{}{}
+			}
+		}
+	}
+	if len(fields) == 0 {
+		return nil, fmt.Errorf(
+			"unsupported Atlas %s field selector %q: Ptah refuses a field selector it would have to ignore; %s",
+			kind, suffix, supportedFieldsMessage(types))
+	}
+	return fields, nil
 }
 
-func hasOnlyType(types map[string]struct{}, resourceType string) bool {
-	_, ok := types[resourceType]
-	return ok && len(types) == 1
+// supportedFieldsMessage names the fields the selected types do support, so a
+// refusal says what would have worked.
+func supportedFieldsMessage(types map[string]struct{}) string {
+	supported := map[string]struct{}{}
+	for resourceType := range types {
+		for honored := range excludeFieldSelectors[resourceType] {
+			supported[honored] = struct{}{}
+		}
+	}
+	if len(supported) == 0 {
+		return "the selected resource types have no subtractable fields"
+	}
+	return "supported for the selected resource types: " + strings.Join(sortedFieldNames(supported), ", ")
 }
 
+func sortedFieldNames(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for key := range values {
+		out = append(out, key)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// matches reports whether this pattern names the object itself. A pattern
+// carrying a field selector subtracts a field and never the object.
 func (p resourcePattern) matches(resourceType string, names ...string) bool {
-	return p.matchesField(resourceType, "", names...)
-}
-
-func (p resourcePattern) matchesField(resourceType, field string, names ...string) bool {
-	if p.field != field {
+	if len(p.fields) > 0 {
 		return false
 	}
+	return p.matchesNames(resourceType, names...)
+}
+
+// matchesField reports whether this pattern subtracts the named field of the
+// object.
+func (p resourcePattern) matchesField(resourceType, field string, names ...string) bool {
+	if _, ok := p.fields[field]; !ok {
+		return false
+	}
+	return p.matchesNames(resourceType, names...)
+}
+
+func (p resourcePattern) matchesNames(resourceType string, names ...string) bool {
 	if len(p.types) > 0 {
 		if _, ok := p.types[strings.ToLower(resourceType)]; !ok {
 			return false
@@ -561,6 +696,9 @@ func (s *exclusionState) filterTables(tables []dbschematypes.DBTable) []dbschema
 			s.noteColumnSelectors(table)
 			continue
 		}
+		if s.matchesAnyField(tableResourceTypes(table), "comment", tableNames...) {
+			table.Comment = ""
+		}
 		table.Columns = s.filterColumns(table, table.Columns)
 		result = append(result, table)
 	}
@@ -708,25 +846,35 @@ func (s *exclusionState) filterFunctions(functions []dbschematypes.DBFunction) [
 }
 
 func (s *exclusionState) filterViews(views []dbschematypes.DBView) []dbschematypes.DBView {
-	return keep(views, func(view dbschematypes.DBView) bool {
-		excluded := s.matches("view", s.nameCandidates(view.Schema, view.Name)...) ||
-			s.schemaExcluded(view.Schema)
-		if excluded {
+	result := make([]dbschematypes.DBView, 0, len(views))
+	for _, view := range views {
+		names := s.nameCandidates(view.Schema, view.Name)
+		if s.matches("view", names...) || s.schemaExcluded(view.Schema) {
 			s.excludeTable(view.Schema, view.Name)
+			continue
 		}
-		return !excluded
-	})
+		if s.matchesField("view", "comment", names...) {
+			view.Comment = ""
+		}
+		result = append(result, view)
+	}
+	return result
 }
 
 func (s *exclusionState) filterMatViews(views []dbschematypes.DBMatView) []dbschematypes.DBMatView {
-	return keep(views, func(view dbschematypes.DBMatView) bool {
-		excluded := s.matches("materialized_view", s.nameCandidates(view.Schema, view.Name)...) ||
-			s.schemaExcluded(view.Schema)
-		if excluded {
+	result := make([]dbschematypes.DBMatView, 0, len(views))
+	for _, view := range views {
+		names := s.nameCandidates(view.Schema, view.Name)
+		if s.matches("materialized_view", names...) || s.schemaExcluded(view.Schema) {
 			s.excludeTable(view.Schema, view.Name)
+			continue
 		}
-		return !excluded
-	})
+		if s.matchesField("materialized_view", "comment", names...) {
+			view.Comment = ""
+		}
+		result = append(result, view)
+	}
+	return result
 }
 
 func (s *exclusionState) filterTriggers(triggers []dbschematypes.DBTrigger) []dbschematypes.DBTrigger {
@@ -777,17 +925,25 @@ func (s *exclusionState) filterGrants(grants []dbschematypes.DBGrant) []dbschema
 }
 
 func (s *exclusionState) filterGeneratedTables(tables []goschema.Table) []goschema.Table {
-	return keep(tables, func(table goschema.Table) bool {
+	result := make([]goschema.Table, 0, len(tables))
+	for _, table := range tables {
 		names := s.nameCandidates(table.Schema, table.Name)
 		if s.matches("table", names...) || s.schemaExcluded(table.Schema) {
 			s.excludeTable(table.Schema, table.Name)
 			// Recorded whichever way the table left, so a selector naming one
 			// of its children is still asked rather than reported empty.
 			s.removedGeneratedTables[table.StructName] = table
-			return false
+			continue
 		}
-		return true
-	})
+		// The database side subtracts the same field, so both sides of a
+		// comparison see the same comment and an excluded one is neither
+		// planned nor dropped.
+		if s.matchesField("table", "comment", names...) {
+			table.Comment = ""
+		}
+		result = append(result, table)
+	}
+	return result
 }
 
 // noteGeneratedChild asks the patterns whether they name a child of a generated
@@ -988,25 +1144,35 @@ func (s *exclusionState) filterGeneratedFunctions(functions []goschema.Function)
 // the candidates are resolved from that prefix and the default schema, keeping
 // both sides of a comparison subtracting the same views.
 func (s *exclusionState) filterGeneratedViews(views []goschema.View) []goschema.View {
-	return keep(views, func(view goschema.View) bool {
-		excluded := s.matches("view", s.qualifiedNameCandidatesFor(view.Name)...) ||
-			s.qualifiedSchemaExcluded(view.Name)
-		if excluded {
+	result := make([]goschema.View, 0, len(views))
+	for _, view := range views {
+		names := s.qualifiedNameCandidatesFor(view.Name)
+		if s.matches("view", names...) || s.qualifiedSchemaExcluded(view.Name) {
 			s.excludeTable("", view.Name)
+			continue
 		}
-		return !excluded
-	})
+		if s.matchesField("view", "comment", names...) {
+			view.Comment = ""
+		}
+		result = append(result, view)
+	}
+	return result
 }
 
 func (s *exclusionState) filterGeneratedMaterializedViews(views []goschema.MaterializedView) []goschema.MaterializedView {
-	return keep(views, func(view goschema.MaterializedView) bool {
-		excluded := s.matches("materialized_view", s.qualifiedNameCandidatesFor(view.Name)...) ||
-			s.qualifiedSchemaExcluded(view.Name)
-		if excluded {
+	result := make([]goschema.MaterializedView, 0, len(views))
+	for _, view := range views {
+		names := s.qualifiedNameCandidatesFor(view.Name)
+		if s.matches("materialized_view", names...) || s.qualifiedSchemaExcluded(view.Name) {
 			s.excludeTable("", view.Name)
+			continue
 		}
-		return !excluded
-	})
+		if s.matchesField("materialized_view", "comment", names...) {
+			view.Comment = ""
+		}
+		result = append(result, view)
+	}
+	return result
 }
 
 func (s *exclusionState) filterGeneratedTriggers(
@@ -1083,11 +1249,18 @@ func (s *exclusionState) matches(resourceType string, names ...string) bool {
 // match marks do not: two selectors that name the same object are both honored,
 // and stopping early would report the second as having matched nothing.
 func (s *exclusionState) matchesField(resourceType, field string, names ...string) bool {
+	return s.matchesAnyField([]string{resourceType}, field, names...)
+}
+
+func (s *exclusionState) matchesAnyField(resourceTypes []string, field string, names ...string) bool {
 	found := false
 	for i, pattern := range s.patterns {
-		if pattern.matchesField(resourceType, field, names...) {
-			s.matched[i] = true
-			found = true
+		for _, resourceType := range resourceTypes {
+			if pattern.matchesField(resourceType, field, names...) {
+				s.matched[i] = true
+				found = true
+				break
+			}
 		}
 	}
 	return found
