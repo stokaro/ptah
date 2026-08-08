@@ -115,11 +115,41 @@ const (
 	// that already decline CREATE INDEX CONCURRENTLY decline this too.
 	DropIndexConcurrently Capability = "drop_index_concurrently"
 
+	// Views marks support for the standalone CREATE VIEW ... AS <query>
+	// object.
+	//
+	// The key exists so that a preset answers for its own target instead of
+	// the question being settled by comparing the dialect name — which is how
+	// the offline converter came to drop a view for three PostgreSQL-family
+	// engines while the live planner emitted one for the same schema
+	// (stokaro/ptah#929).
+	Views Capability = "views"
+
+	// MaterializedViews marks support for CREATE MATERIALIZED VIEW: a view
+	// whose query result is stored rather than recomputed on read. A target
+	// may host plain views and no materialized ones, so this is a separate
+	// key that requires Views.
+	MaterializedViews Capability = "materialized_views"
+
+	// Functions marks support for a user-defined function declared as a
+	// standalone object with a return type, a language and a body — the shape
+	// ast.CreateFunctionNode carries. A target whose routines are declared
+	// differently enough that the node cannot describe one reads as absent
+	// here, the same way ClickHouse's row policies read as absent from
+	// RowLevelSecurity.
+	Functions Capability = "functions"
+
+	// Triggers marks support for the CREATE TRIGGER object itself. Whether
+	// that object can be replaced in a single statement is
+	// CreateOrReplaceTrigger, which requires this one — replace syntax for a
+	// statement the target does not have is a contradiction.
+	Triggers Capability = "triggers"
+
 	// CreateOrReplaceTrigger marks support for replacing triggers in one
 	// statement (PostgreSQL 14+ and MariaDB 10.1.4+ use
 	// CREATE OR REPLACE TRIGGER; SQL Server uses CREATE OR ALTER TRIGGER;
 	// MySQL has no equivalent). Trigger renderers use this to choose between
-	// replace syntax and an explicit drop/create sequence.
+	// replace syntax and an explicit drop/create sequence. Requires Triggers.
 	CreateOrReplaceTrigger Capability = "create_or_replace_trigger"
 
 	// AlterGeneratedColumnExpression marks support for changing a generated
@@ -219,8 +249,22 @@ var registry = map[Capability]spec{
 	DropIndexConcurrently: {
 		doc: "DROP INDEX CONCURRENTLY (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit CONCURRENTLY)",
 	},
+	Views: {
+		doc: "standalone CREATE VIEW ... AS <query> objects",
+	},
+	MaterializedViews: {
+		doc:      "CREATE MATERIALIZED VIEW: a view whose query result is stored",
+		requires: []Capability{Views},
+	},
+	Functions: {
+		doc: "user-defined functions declared with a return type, a language, and a body",
+	},
+	Triggers: {
+		doc: "CREATE TRIGGER objects",
+	},
 	CreateOrReplaceTrigger: {
-		doc: "single-statement trigger replacement (PostgreSQL/MariaDB CREATE OR REPLACE, SQL Server CREATE OR ALTER; not MySQL)",
+		doc:      "single-statement trigger replacement (PostgreSQL/MariaDB CREATE OR REPLACE, SQL Server CREATE OR ALTER; not MySQL)",
+		requires: []Capability{Triggers},
 	},
 	AlterGeneratedColumnExpression: {
 		doc: "in-place ALTER COLUMN SET EXPRESSION for generated columns (PostgreSQL 17+)",
@@ -375,6 +419,17 @@ func All() []Capability {
 // MySQL84 is the preset for MySQL 8.4 and newer. Notably NO IF EXISTS on
 // constraint or index drops — plans must be exactly-once by construction
 // (see the MySQL planner's constraint-drop ownership rules, issue #207).
+//
+// Object kinds, measured live on MySQL 9.7.1: CREATE VIEW, CREATE FUNCTION
+// and CREATE TRIGGER all succeed. MaterializedViews is off for a reason worth
+// reading, because accepting the statement is the wrong test here —
+// CREATE MATERIALIZED VIEW mv AS SELECT COUNT(*) FROM t is ACCEPTED at exit 0
+// (the nonsense sibling CREATE NONSENSE VIEW is refused at exit 1, so the
+// probe can see a refusal), and information_schema then reports mv with
+// table_type VIEW. Selecting from it before and after an INSERT returns 0 and
+// then 1: the result is recomputed, not stored, so the word MATERIALIZED is
+// parsed and dropped. This key names a view whose result is stored, and
+// MySQL has none.
 func MySQL84() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              true,
@@ -386,6 +441,10 @@ func MySQL84() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  false,
+		Functions:                          true,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -427,6 +486,11 @@ func MySQLLegacy() Capabilities {
 // MariaDB1011 is the preset for the current MariaDB LTS line (10.6+ /
 // 10.11 / 11.x share these): IF EXISTS guards are available on both
 // constraint and index drops.
+//
+// Object kinds, measured live on MariaDB 10.11.18: CREATE VIEW,
+// CREATE FUNCTION and CREATE TRIGGER succeed; CREATE MATERIALIZED VIEW is
+// refused at exit 1, the same exit the nonsense control gets. Unlike MySQL,
+// MariaDB does not quietly accept the keyword.
 func MariaDB1011() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              true,
@@ -438,6 +502,10 @@ func MariaDB1011() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  false,
+		Functions:                          true,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -467,6 +535,13 @@ func MariaDBLegacy() Capabilities {
 }
 
 // Postgres16 is the preset for PostgreSQL 14–16.
+//
+// Object kinds, measured live on PostgreSQL 17: all four create at exit 0
+// (with CREATE NONSENSE VIEW refused at exit 1 as the control), and each is
+// reported back by the catalog — pg_views, pg_matviews, pg_proc, pg_trigger.
+// The materialized view is a real one: selecting from it returns the same
+// count before and after an INSERT into its source table, so the result is
+// stored rather than recomputed.
 func Postgres16() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              true,
@@ -478,6 +553,10 @@ func Postgres16() Capabilities {
 		EnumCustomType:                     true,
 		CreateIndexConcurrently:            true,
 		DropIndexConcurrently:              true,
+		Views:                              true,
+		MaterializedViews:                  true,
+		Functions:                          true,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   true,
@@ -507,6 +586,21 @@ func Postgres13() Capabilities {
 // minimal: ClickHouse models constraints and indexes so differently that the
 // shared capability gates mostly do not apply; enums are inline column types
 // (Enum8/Enum16).
+//
+// Object kinds, measured live on ClickHouse 24.8.14: CREATE VIEW and
+// CREATE MATERIALIZED VIEW succeed and system.tables reports engines View and
+// MaterializedView; CREATE TRIGGER is a syntax error, and the server's own
+// error text enumerates what CREATE accepts, with no TRIGGER in the list.
+// Functions is off because ClickHouse's CREATE FUNCTION takes a lambda
+// (CREATE FUNCTION f AS (x) -> x + 1, which succeeds) rather than the return
+// type, language and body this key names — that spelling is a syntax error,
+// the same reason ClickHouse's row policies read as absent from
+// RowLevelSecurity.
+//
+// Ptah's ClickHouse renderer emits neither view kind yet and says so out loud
+// ("CLICKHOUSE does not support CREATE VIEW"). That gap is stokaro/ptah#931
+// item 7; this key records the engine, not the gap, so that closing #931 is a
+// renderer change rather than a second answer to the same question.
 func ClickHouse24() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              false,
@@ -518,6 +612,10 @@ func ClickHouse24() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  true,
+		Functions:                          false,
+		Triggers:                           false,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -536,6 +634,12 @@ func ClickHouse24() Capabilities {
 // constraints and declarative foreign keys when PRAGMA foreign_keys is enabled
 // per connection, but it has no native enum, schema, sequence, role, RLS, or
 // advisory-lock surface.
+//
+// Object kinds, measured live on SQLite 3.51.0: CREATE VIEW and
+// CREATE TRIGGER succeed and sqlite_master reports both;
+// CREATE MATERIALIZED VIEW and CREATE FUNCTION are syntax errors. A SQLite
+// user-defined function is registered by the host application through
+// sqlite3_create_function, so there is no DDL object for one to plan.
 func SQLite3() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              false,
@@ -547,6 +651,10 @@ func SQLite3() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  false,
+		Functions:                          false,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -566,6 +674,13 @@ func SQLite3() Capabilities {
 // constraints, indexes, views, and triggers are available; standalone sequence
 // objects, native enum, PostgreSQL RLS, extension, and advisory-lock surfaces
 // are not.
+//
+// Object kinds, measured live on SQL Server product version 17.0.4065.4 (the
+// image docker-compose.yaml pins): CREATE VIEW, CREATE FUNCTION and
+// CREATE TRIGGER succeed; CREATE MATERIALIZED VIEW is "Incorrect syntax",
+// the same refusal the nonsense control gets. SQL Server's stored-result
+// equivalent is an indexed view — a plain view plus a clustered index rather
+// than its own object kind.
 func SQLServer2022() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              true,
@@ -577,6 +692,10 @@ func SQLServer2022() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  false,
+		Functions:                          true,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -596,6 +715,21 @@ func SQLServer2022() Capabilities {
 // CONCURRENTLY keyword is not a meaningful or portable emission target. It
 // also lacks PostgreSQL's SERIAL/sequence surface, XML type, and advisory-lock
 // functions in Ptah's portable subset.
+//
+// Object kinds, measured live on CockroachDB CCL v26.2.5 (the image
+// docker-compose.yaml pins): CREATE VIEW, CREATE MATERIALIZED VIEW,
+// CREATE FUNCTION ... LANGUAGE plpgsql and CREATE TRIGGER all succeed, with
+// CREATE NONSENSE VIEW refused at exit 1 as the control. The materialized
+// view is a real one: after two INSERTs into the source table the plain view
+// reports 2 while the materialized view still reports 0, so the result is
+// stored rather than recomputed.
+//
+// The trigger row is the one worth spelling out, because this preset is named
+// for a line that did not have triggers — CockroachDB added them in v24.3.
+// ForServerVersionResult maps EVERY version string containing "cockroachdb"
+// here, so writing false would retire triggers for every CockroachDB user on
+// a current release. Splitting the key by version is issue #916's job; until
+// then this preset follows the engine that was measured, not its own name.
 func CockroachDB23() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
@@ -611,6 +745,12 @@ func CockroachDB23() Capabilities {
 // PostgreSQL for the common DDL subset, but regular CREATE INDEX is already
 // asynchronous in YugabyteDB, so the PostgreSQL CONCURRENTLY keyword is not
 // emitted.
+//
+// Object kinds, measured live on YugabyteDB 2026.1.0.0 (PostgreSQL 15.12-YB,
+// the image docker-compose.yaml pins): all four create at exit 0 with the
+// nonsense control refused at exit 1, and pg_views, pg_matviews, pg_proc and
+// pg_trigger each report their object. The materialized view stores its
+// result — after an INSERT it still reports 0 while the plain view reports 1.
 func YugabyteDB25() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
@@ -624,6 +764,20 @@ func YugabyteDB25() Capabilities {
 // routes the simplest PostgreSQL-family statements through this preset; enums,
 // sequences, RLS, advisory locks, and XML are disabled. Enforced foreign keys,
 // including circular relationships added with ALTER TABLE, are supported.
+//
+// Object kinds: views yes, the other three no, and this is the row that made
+// the four keys necessary. Spanner shares the PostgreSQL planner and renderer,
+// so before them nothing could stop a plpgsql function or a trigger from being
+// planned and rendered for it. Google documents CREATE VIEW and states in the
+// same place that a Spanner view is not a materialized view because it does
+// not store the query result; the PostgreSQL-interface migration guidance
+// states that Spanner does not run user code in the database, so triggers and
+// user-defined stored procedures and functions belong in the application.
+//
+// This row rests on that documentation alone. Ptah has no Spanner container
+// and no live Spanner test (issue #942), so unlike every other preset in this
+// file nothing here was executed against a server. Re-measure these four when
+// #942 lands.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
 		With(DropConstraintGeneric, false).
@@ -633,6 +787,9 @@ func SpannerPostgres() Capabilities {
 		With(EnumCustomType, false).
 		With(CreateIndexConcurrently, false).
 		With(DropIndexConcurrently, false).
+		With(MaterializedViews, false).
+		With(Functions, false).
+		With(Triggers, false).
 		With(CreateOrReplaceTrigger, false).
 		With(RowLevelSecurity, false).
 		With(RoleManagement, false).

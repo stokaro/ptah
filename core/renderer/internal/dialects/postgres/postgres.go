@@ -792,7 +792,7 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 // VisitEnum renders CREATE TYPE ... AS ENUM for PostgreSQL
 func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
 	if !r.capabilities().Has(capability.EnumCustomType) {
-		r.w.WriteLinef("-- %s: enum type %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		r.writeObjectSkipped("enum type", node.Name)
 		return nil
 	}
 
@@ -1267,6 +1267,11 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 
 // VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+	if !r.capabilities().Has(capability.Functions) {
+		r.writeObjectSkipped("function", node.Name)
+		return nil
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1393,6 +1398,11 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 
 // VisitDropFunction renders a DROP FUNCTION statement
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+	if !r.capabilities().Has(capability.Functions) {
+		r.writeObjectSkipped("function", node.Name)
+		return nil
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1466,10 +1476,22 @@ func sequenceOptions(asType string, start, increment, minValue, maxValue, cache 
 	return parts
 }
 
+// writeObjectSkipped records that a schema object the desired schema declares
+// is not emitted for this target, naming both the object kind and the object.
+//
+// One renderer serves the whole PostgreSQL family, and both the offline
+// converter and the migration planner hand their nodes to it, so writing the
+// omission here is what makes `schema render` and `schema apply` say the same
+// thing about the same object instead of one of them dropping it in silence
+// (stokaro/ptah#929).
+func (r *Renderer) writeObjectSkipped(kind, name string) {
+	r.w.WriteLinef("-- %s: %s %s is not supported by this target; skipped.", r.dialectUpper, kind, name)
+}
+
 // VisitCreateSequence renders a CREATE SEQUENCE statement for PostgreSQL.
 func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	if !r.capabilities().Has(capability.Sequences) {
-		r.w.WriteLinef("-- %s: sequence %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		r.writeObjectSkipped("sequence", node.Name)
 		return nil
 	}
 
@@ -1501,7 +1523,7 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 // the set options are emitted; a node with no set options renders nothing.
 func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 	if !r.capabilities().Has(capability.Sequences) {
-		r.w.WriteLinef("-- %s: sequence %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		r.writeObjectSkipped("sequence", node.Name)
 		return nil
 	}
 
@@ -1523,7 +1545,7 @@ func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 // VisitDropSequence renders a DROP SEQUENCE statement for PostgreSQL.
 func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 	if !r.capabilities().Has(capability.Sequences) {
-		r.w.WriteLinef("-- %s: sequence %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		r.writeObjectSkipped("sequence", node.Name)
 		return nil
 	}
 
@@ -1545,6 +1567,11 @@ func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 
 // VisitCreateView renders a CREATE VIEW statement.
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+	if !r.capabilities().Has(capability.Views) {
+		r.writeObjectSkipped("view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1564,6 +1591,11 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 
 // VisitDropView renders a DROP VIEW statement.
 func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+	if !r.capabilities().Has(capability.Views) {
+		r.writeObjectSkipped("view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1582,6 +1614,11 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 
 // VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	if !r.capabilities().Has(capability.MaterializedViews) {
+		r.writeObjectSkipped("materialized view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1594,6 +1631,11 @@ func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewN
 
 // VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement.
 func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	if !r.capabilities().Has(capability.MaterializedViews) {
+		r.writeObjectSkipped("materialized view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1612,6 +1654,11 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 
 // VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	if !r.capabilities().Has(capability.MaterializedViews) {
+		r.writeObjectSkipped("materialized view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1628,6 +1675,14 @@ func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedVie
 // VisitCreateTrigger renders PostgreSQL trigger creation plus its linked
 // trigger function.
 func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+	// The linked trigger function below is part of the trigger rather than a
+	// function the schema declared, so one key answers for the pair and one
+	// comment names the object the author actually wrote.
+	if !r.capabilities().Has(capability.Triggers) {
+		r.writeObjectSkipped("trigger", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1682,6 +1737,11 @@ func renderPostgreSQLTriggerFunctionBody(body string) string {
 // VisitDropTrigger renders a DROP TRIGGER statement and drops the linked Ptah
 // trigger function when its deterministic name is known.
 func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+	if !r.capabilities().Has(capability.Triggers) {
+		r.writeObjectSkipped("trigger", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
