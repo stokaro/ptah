@@ -442,6 +442,15 @@
   },
   {
     "area": "Migration directory formats",
+    "feature": "Report of an ignored `--dir` URL query key",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "no",
+    "note": "Only `?format=` selects a layout. Every other key is ignored on both binaries; ptah-compat names it on stderr and still exits 0, and `PTAH_STRICT_DIR_QUERY=1` refuses it instead.",
+    "evidence": "Measured 2026-08-08 against the pinned community binary v1.3.0 on a hashed native Atlas directory: `--dir 'file://m?nonsense=1'` exits 0 on all eight verbs that register --dir (apply, hash, validate, lint, status, set, new, diff) on both tools and reads the directory exactly as no query at all does, while `migrate import`, `down`, `rm`, `rebase`, `edit` and `checkpoint` answer `unknown flag: --dir` there, so there is no --dir query contract outside the eight. Parity is unchanged by this row: exit codes and stdout stay identical and the note goes to stderr only, because several of these verbs carry a machine-readable `--format` document on stdout and the community binary emits no field for it. What the report adds is the half matching does not discharge - a misspelled `?fromat=goose` selects nothing on either binary, so the directory is read in the native Atlas layout while the operator believes it is read as Goose, and neither tool used to say so. The strict refusal is the pre-#1087/#1135 Ptah behavior kept as an opt-in capability rather than deleted; it is an environment variable rather than a flag because the community binary registers none and the conformance cli-surface tier asserts flag parity (precedent: PTAH_ALLOW_EXTERNAL_SCHEMA, PTAH_SKIP_CHECKS). An invalid boolean is a hard error rather than a silent off. Implemented in cmd/atlas/migrate_dir_query.go (reportIgnoredDirQuery, dirQueryStrictEnvVar) over internal/atlasmigrate.IgnoredDirQueryKeys; pinned by TestCompatMigrateDirQuery_ReportsIgnoredKeyOnEveryVerb, TestCompatMigrateDirQuery_ReportsNothingWhenEveryKeyIsMeaningful, TestCompatMigrateDirQuery_ForeignFormatStillSelectsTheLayoutBesideAnIgnoredKey, TestCompatMigrateDirQuery_StrictEnvRefusesIgnoredKey_FailurePath and TestIgnoredDirQueryKeys (stokaro/ptah#1013)."
+  },
+  {
+    "area": "Migration directory formats",
     "feature": "Atlas-format checkpoint output",
     "ptah": "yes",
     "atlas_oss": "no",

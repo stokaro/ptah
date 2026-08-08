@@ -2,7 +2,11 @@ package atlas
 
 import (
 	"fmt"
+	"io"
 	"net/url"
+	"os"
+	"strconv"
+	"strings"
 
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
@@ -101,4 +105,117 @@ func checkWritingVerbDirQuery(format atlasmigrateimport.Format, query url.Values
 		"Atlas accepts ?format=%s, but Ptah does not implement that directory format for this command yet",
 		format,
 	)
+}
+
+// dirQueryStrictEnvVar turns the report below into a refusal.
+//
+// WHY AN ENVIRONMENT VARIABLE AND NOT A FLAG. The pinned community binary
+// v1.3.0 registers no flag for this on any migrate verb, so registering one
+// here would put a non-Atlas flag on the compatibility surface and break the
+// conformance `cli-surface` tier, which asserts flag parity against that
+// binary. An environment variable is invisible to the help surface, which is
+// why it is the sanctioned spelling for a capability the community binary has
+// no spelling for at all (precedent: PTAH_ALLOW_EXTERNAL_SCHEMA,
+// PTAH_SKIP_CHECKS).
+//
+// WHY THE CAPABILITY IS EXPOSED AT ALL. Ptah refused every `--dir` query on
+// every verb until stokaro/ptah#1087 and #1135 relaxed it to match. That
+// refusal caught something real on its way out: a misspelled key such as
+// `?fromat=goose` selects nothing on either binary, so the directory is read in
+// the native Atlas layout while the operator believes it is being read as
+// Goose. Reaching parity means the default can no longer fail that run —
+// but it does not mean the check has to be deleted, only moved off the default
+// path. The report below keeps the information on every run; this variable
+// keeps the refusal available to a pipeline that wants a typo to stop it.
+//
+// An invalid value is a hard error rather than a silent false, for the reason
+// PTAH_SKIP_CHECKS states: a typo in a CI environment file must not read as
+// "off" to the tool while the operator believes it is on.
+const dirQueryStrictEnvVar = "PTAH_STRICT_DIR_QUERY"
+
+// atlasDirQueryStrictFromEnv resolves whether an ignored `--dir` query key is
+// refused rather than reported.
+func atlasDirQueryStrictFromEnv() (bool, error) {
+	value, ok := os.LookupEnv(dirQueryStrictEnvVar)
+	if !ok || value == "" {
+		return false, nil
+	}
+	strict, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("invalid boolean value %q for %s", value, dirQueryStrictEnvVar)
+	}
+	return strict, nil
+}
+
+// reportIgnoredDirQuery names the `--dir` URL query keys the run took no
+// meaning from, on every verb that reads that query.
+//
+// It changes no exit code and writes nothing to stdout. Measured on the pinned
+// community binary v1.3.0, `--dir 'file://m?nonsense=1'` exits 0 on all eight
+// verbs that register --dir and reads the directory exactly as no query at all
+// does; Ptah does the same, and this is the note beside it rather than a
+// difference in what happens. The note goes to stderr because stdout carries
+// the machine-readable `--format` document on several of these verbs and the
+// community binary emits no field for this, so putting it there would invent
+// one and corrupt a caller's parse.
+//
+// Reporting rather than dropping in silence is the half of the compatibility
+// policy that survives matching: the default is what the community binary
+// accepts, and what that default leaves out is said out loud. The key an
+// operator typed is the only evidence that they expected it to do something —
+// `?fromat=goose` reads the directory as native Atlas on both binaries, and a
+// run that says nothing about it is a run that lets the misspelling look like
+// the layout they asked for.
+//
+// The refusal the note offers instead lives behind [dirQueryStrictEnvVar]; see
+// there for why it is an environment variable.
+//
+// WHERE CALLERS PUT IT. Right after the format value is resolved, and therefore
+// before the atlas.sum gate. Two rules, and only two:
+//
+//   - it follows the format resolution, so a run refused for `?format=totally-bogus`
+//     prints that refusal alone. Both diagnostics are about the same query, and
+//     the one that decides the exit code is the one to print;
+//   - it precedes everything else, including the integrity gate, so the eight
+//     verbs report it at the same point. It describes how the URL was read
+//     rather than how the run ended, and a directory that then fails its
+//     checksum was still read with that key dropped.
+func reportIgnoredDirQuery(out io.Writer, verb string, query url.Values) error {
+	keys := atlasmigrate.IgnoredDirQueryKeys(query)
+	if len(keys) == 0 {
+		return nil
+	}
+	strict, err := atlasDirQueryStrictFromEnv()
+	if err != nil {
+		return fmt.Errorf("atlas migrate %s --dir: %w", verb, err)
+	}
+	if strict {
+		return fmt.Errorf(
+			"atlas migrate %s --dir: unrecognized migration directory URL query %s:"+
+				" only ?%s= selects the directory layout, and %s is set",
+			verb, describeDirQueryKeys(keys), atlasmigrate.DirFormatQueryKey, dirQueryStrictEnvVar,
+		)
+	}
+	fmt.Fprintf(
+		out,
+		"note: atlas migrate %s --dir: ignoring migration directory URL query %s."+
+			" Only ?%s= selects the directory layout. Set %s=1 to refuse an unrecognized key instead.\n",
+		verb, describeDirQueryKeys(keys), atlasmigrate.DirFormatQueryKey, dirQueryStrictEnvVar,
+	)
+	return nil
+}
+
+// describeDirQueryKeys renders the ignored keys as the noun and the quoted list
+// both messages above share, so the report and the refusal cannot name a
+// different set.
+func describeDirQueryKeys(keys []string) string {
+	quoted := make([]string, 0, len(keys))
+	for _, key := range keys {
+		quoted = append(quoted, strconv.Quote(key))
+	}
+	noun := "keys"
+	if len(keys) == 1 {
+		noun = "key"
+	}
+	return noun + " " + strings.Join(quoted, ", ")
 }

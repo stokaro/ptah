@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 
@@ -22,13 +23,24 @@ import (
 // that lives inside one verb is a rule the next verb reading the same
 // directories quietly does not have.
 //
-// The write verbs -- `migrate new` and `migrate diff` -- are NOT here, and that
-// is the current state of stokaro/ptah#1013 rather than an oversight. Every verb
-// in this file verifies atlas.sum before anything reads the directory; those two
-// run no such gate and they write a migration file and a fresh sum. Routing them
-// through here would let a `?format=` produce a write over a directory nothing
-// verified, which is a worse divergence than the refusal it replaces. The gate
-// is stokaro/ptah#1086, and the relaxation lands with it.
+// The write verbs -- `migrate new` and `migrate diff` -- are NOT here, and the
+// reason has changed twice, so it is worth stating the current one. It used to
+// be the missing atlas.sum gate: those two wrote a migration file and a fresh
+// sum over a directory nothing had verified, so honoring a `?format=` there
+// would have traded one divergence for a worse one. That gate landed in
+// stokaro/ptah#1086, and with it `migrate new` grew its own converted path --
+// it honors `?format=goose` today, exit 0, files in that layout, matching the
+// community binary.
+//
+// What keeps `migrate diff` out is narrower and is what remains of
+// stokaro/ptah#1013: the verbs in this file READ a foreign layout, and reading
+// one is a conversion in memory. `migrate diff` WRITES one, and measured on the
+// pinned community binary v1.3.0 every foreign layout it writes carries reverse
+// SQL -- a second file for golang-migrate and flyway, a directive section for
+// goose and dbmate, and one `--rollback:` line per forward statement for
+// liquibase. Ptah's diff plans forward statements only, so routing it through
+// here would write a directory whose rollback half is missing. Refusing is the
+// strict side; see [checkWritingVerbDirQuery].
 
 // resolveAtlasVerbDirFormat resolves the directory layout a compat verb reads,
 // from both spellings that can carry it, and blames the one that did.
@@ -51,17 +63,28 @@ import (
 //
 // An unrecognized query key is dropped rather than refused, inside
 // ResolveApplyDirFormat, so `?nonsense=1` reads the directory exactly as no
-// query at all does (stokaro/ptah#1013 section 2).
+// query at all does (stokaro/ptah#1013 section 2). Dropped is not the same as
+// unsaid: [reportIgnoredDirQuery] names it on out, without changing what the
+// run does.
+//
+// out is where that note goes; pass the command's stderr. A caller validating
+// only --dir-format passes a nil query and nothing is written.
 //
 // The returned error already names the command and the flag, because only this
 // function knows which of the two spellings carried the rejected value.
 func resolveAtlasVerbDirFormat(
+	out io.Writer,
 	verb string,
 	configured string,
 	query url.Values,
 ) (atlasmigrateimport.Format, error) {
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, query)
 	if err == nil {
+		// Inside the accepted branch, so a run refused for `?format=totally-bogus`
+		// prints that refusal alone; see [reportIgnoredDirQuery].
+		if reportErr := reportIgnoredDirQuery(out, verb, query); reportErr != nil {
+			return "", reportErr
+		}
 		return format, nil
 	}
 	// A ?format= query is the only thing that can carry a format value other

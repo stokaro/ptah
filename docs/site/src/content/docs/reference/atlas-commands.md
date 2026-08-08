@@ -195,6 +195,24 @@ An empty `--dir-format`, a query parameter other than `format`, and a repeated
 empty value and the unknown key select the atlas layout, and a repeated key
 takes the first value.
 
+`format` is the only query key that selects anything. A key that selected
+nothing is named on standard error and the run continues, on every verb that
+takes a `--dir` query:
+
+```text
+note: atlas migrate apply --dir: ignoring migration directory URL query key
+"fromat". Only ?format= selects the directory layout. Set
+PTAH_STRICT_DIR_QUERY=1 to refuse an unrecognized key instead.
+```
+
+The exit code and everything on standard output are unchanged, so a script
+reading either sees exactly what Atlas produces. The note exists because
+dropping the key is what Atlas does and saying nothing about it is not: a
+misspelled `?fromat=goose` selects no layout on either tool, so the directory is
+read as the atlas layout while you believe it is being read as Goose. Set
+[`PTAH_STRICT_DIR_QUERY=1`](../../atlas/overview/#the-variables) to make that a
+refusal instead.
+
 Inputs that stay refused where Atlas CE exits 0, all of them loudly:
 
 - a semicolon in the query, such as `?format=flyway;x=1`, which Atlas drops

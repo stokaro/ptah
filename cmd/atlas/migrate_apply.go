@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -105,6 +106,31 @@ func atlasMigrateApplyArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// resolveAtlasMigrateApplyDirFormat resolves the layout this apply reads, and
+// reports the `--dir` query keys it took no meaning from.
+//
+// The format is resolved ONCE for the whole run: the filesystem that gets
+// executed and the format the integrity gate reasons about must be the same
+// decision, not two computations that happen to agree (#970).
+//
+// The report follows the resolution rather than preceding it, so a run refused
+// for `?format=totally-bogus` prints that refusal alone; see
+// [reportIgnoredDirQuery] for the two rules that fix its position.
+func resolveAtlasMigrateApplyDirFormat(
+	cmd *cobra.Command,
+	configured string,
+	query url.Values,
+) (atlasmigrateimport.Format, error) {
+	format, err := atlasmigrate.ResolveApplyDirFormat(configured, query)
+	if err != nil {
+		return "", fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+	if err := reportIgnoredDirQuery(cmd.ErrOrStderr(), "apply", query); err != nil {
+		return "", err
+	}
+	return format, nil
+}
+
 func runAtlasMigrateApply(
 	cmd *cobra.Command,
 	opts atlasMigrateApplyOptions,
@@ -197,8 +223,8 @@ func runAtlasMigrateApply(
 	// so atlas.hcl is the only way to reach an empty configured format here, and
 	// measured against the pinned community binary v1.3.0 a hashed directory
 	// under that config applies cleanly and exits 0 (stokaro/ptah#990 item 1).
-	// ResolveApplyDirFormat below maps the empty value to the Atlas format, the
-	// same as the empty --dir-format the other verbs accept.
+	// [resolveAtlasMigrateApplyDirFormat] below maps the empty value to the
+	// Atlas format, the same as the empty --dir-format the other verbs accept.
 
 	amount, err := atlasmigrate.ParseApplyAmount(args)
 	if err != nil {
@@ -233,12 +259,9 @@ func runAtlasMigrateApply(
 		return err
 	}
 
-	// Resolve the directory format once: the filesystem that gets executed and
-	// the format the integrity gate reasons about must be the same decision,
-	// not two computations that happen to agree (#970).
-	resolvedDirFormat, err := atlasmigrate.ResolveApplyDirFormat(opts.dirFormat, localDir.Query)
+	resolvedDirFormat, err := resolveAtlasMigrateApplyDirFormat(cmd, opts.dirFormat, localDir.Query)
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return err
 	}
 
 	source, err := project.openLocal(localDir)

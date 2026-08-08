@@ -354,6 +354,61 @@ func TestResolveApplyDirFormat(t *testing.T) {
 	})
 }
 
+// TestIgnoredDirQueryKeys pins which migration-directory URL query keys the run
+// takes no meaning from, so the note built on this list names the keys that were
+// dropped and only those.
+//
+// The `format` rows are the ones that matter. Reporting `format` as ignored
+// would tell an operator the opposite of what happened, and a repeated `format`
+// is still a key that selected the layout — first-one-wins loses a VALUE, not
+// the key (stokaro/ptah#990).
+func TestIgnoredDirQueryKeys(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		query url.Values
+		want  []string
+	}{
+		{name: "no query", query: nil, want: []string{}},
+		{name: "format alone is meaningful", query: url.Values{"format": {"goose"}}, want: []string{}},
+		{
+			name:  "empty format value still selects the atlas layout",
+			query: url.Values{"format": {""}},
+			want:  []string{},
+		},
+		{
+			name:  "repeated format lost a value, not the key",
+			query: url.Values{"format": {"flyway", "goose"}},
+			want:  []string{},
+		},
+		{name: "unknown key", query: url.Values{"nonsense": {"1"}}, want: []string{"nonsense"}},
+		{
+			name:  "a misspelled format is an unknown key",
+			query: url.Values{"fromat": {"goose"}},
+			want:  []string{"fromat"},
+		},
+		{
+			name:  "unknown keys are sorted and listed beside a meaningful format",
+			query: url.Values{"zeta": {"1"}, "format": {"goose"}, "alpha": {"2"}},
+			want:  []string{"alpha", "zeta"},
+		},
+		{
+			name:  "a repeated unknown key is named once",
+			query: url.Values{"nonsense": {"1", "2"}},
+			want:  []string{"nonsense"},
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got := atlasmigrate.IgnoredDirQueryKeys(tt.query)
+
+			c.Assert(got, qt.DeepEquals, tt.want)
+		})
+	}
+}
+
 // TestResolveApplySourceForFormatReadsEachFormat pins what each resolved format
 // makes the apply migrator read.
 //
