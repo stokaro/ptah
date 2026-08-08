@@ -252,16 +252,21 @@ func alterReferencedTables(alter *ast.AlterTableNode) []string {
 // nodeScopeReference is the reference a change is measured against, which is not
 // always the object it names.
 //
-// An index's own name carries no schema in any dialect Ptah renders --
-// [ast.IndexNode.Name] and [ast.DropIndexNode.Name] both document it as the raw,
-// unqualified index identifier, with the namespace derived from Table -- so
-// measuring an index by its own name puts every index in scope whatever schema
+// A CREATE INDEX names its index bare in every dialect Ptah renders -- the
+// index lands in its table's schema and the grammar has nowhere else to put it
+// -- so measuring one by its own name puts every index in scope whatever schema
 // its table lives in. `CREATE INDEX idx ON app.users (id)` was counted as a
 // change under a run reviewing `public` (stokaro/ptah#1249).
 //
 // The table is the answer because it is where the index actually lives. A node
 // with no table recorded keeps its own name, which is all there is left to
-// measure.
+// measure -- and for a DROP INDEX that is not a fallback but the ordinary case:
+// `DROP INDEX app.idx` names a schema on the index and no table at all, so the
+// name is where the qualifier is and reading it is what puts the statement
+// outside a run reviewing `public` (stokaro/ptah#1296). See
+// [ast.DropIndexNode.Name] for why Table still comes first when it is there:
+// MySQL, MariaDB, SQL Server and CockroachDB spell the same drop the other way
+// round, naming the table and leaving the index bare.
 func nodeScopeReference(node ast.Node, object string) string {
 	switch n := node.(type) {
 	case *ast.IndexNode:
@@ -269,11 +274,6 @@ func nodeScopeReference(node ast.Node, object string) string {
 			return table
 		}
 	case *ast.DropIndexNode:
-		// Unreachable from [extractSchemaChanges] today: Ptah's SQL parser does
-		// not model DROP INDEX, so no run produces this node. The rule is stated
-		// here anyway because the two node types carry the same contract, and
-		// leaving it out would encode the opposite claim about the one that is
-		// taught next.
 		if table := strings.TrimSpace(n.Table); table != "" {
 			return table
 		}
