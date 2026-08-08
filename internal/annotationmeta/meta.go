@@ -58,6 +58,11 @@ func Lookup(name string) (Directive, bool) {
 	return directives[i], true
 }
 
+// AllowsScope reports whether directive can be attached at scope.
+func AllowsScope(directive Directive, scope Scope) bool {
+	return slices.Contains(directive.Scopes, scope)
+}
+
 // MatchCommentDirective returns the directive matching a comment line.
 func MatchCommentDirective(comment string) (Directive, bool) {
 	body := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(comment), "//"))
@@ -191,9 +196,8 @@ func SensitiveAttributes(directive string) map[string]bool {
 // directive, including alias spellings.
 //
 // Redaction uses this rather than SensitiveAttributes because a redactor must be
-// the WIDEST matcher in the system, not the narrowest. Directive resolution here
-// is stricter than the prefix match core/goschema uses to build a live role, so
-// gating on it would let a spelling Ptah still exports print its credential.
+// the widest matcher in the system, not the narrowest. It must still protect a
+// sensitive attribute when the surrounding directive is malformed.
 func AllSensitiveAttributes() map[string]bool {
 	sensitive := make(map[string]bool)
 	for _, directive := range directives {

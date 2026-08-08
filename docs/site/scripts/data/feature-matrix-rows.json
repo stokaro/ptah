@@ -1391,7 +1391,7 @@
     "ptah": "yes",
     "atlas_oss": "na",
     "atlas_pro": "na",
-    "note": "Writes HCL from Go annotations; cleanup requires zero diagnostics. Function, view, materialized-view, and trigger bodies are emitted as opaque HCL text, reported, and block cleanup.",
+    "note": "Writes HCL from Go annotations; cleanup requires zero diagnostics and refuses unparsed directives. Opaque function, view, materialized-view, and trigger bodies are reported and block cleanup.",
     "evidence": "/tmp/c-ptah schema export --to hcl --root-dir . --out schema.hcl produced a table \"products\" HCL file, exit 0; export --help shows the three cleanup flags. Atlas has no //ptah annotation set for the concept to apply to (matrix's own ➖ rationale)."
   },
   {

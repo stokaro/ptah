@@ -219,6 +219,11 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("parse Go annotations: %w", err)
 	}
+	if plan.options.Cleanup {
+		if err := plan.cleanup.ValidateParsed(db); err != nil {
+			return renderedExport{}, fmt.Errorf("validate Go annotation cleanup coverage: %w", err)
+		}
+	}
 	if !databaseHasSchemaObjects(db) {
 		return renderedExport{}, ErrNoAnnotations
 	}

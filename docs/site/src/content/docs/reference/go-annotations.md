@@ -91,6 +91,15 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:rls:policy`](#ptahschemarlspolicy) | A row-level security policy | file or struct |
 | [`ptah:schema:data`](#ptahschemadata) | Reference/seed row data for a table | struct |
 
+Placement is semantic, not cosmetic. A struct directive belongs in the doc
+comment of a Go struct declaration; a field directive belongs in the doc comment
+of the field it describes. File-scoped RLS directives may use a separate comment
+group, but they still need enough attributes to resolve to a parsed RLS object.
+`ptah schema export --cleanup-go-annotations` refuses to remove any recognized
+standalone directive that does not meet those conditions. Directive names use an
+exact token boundary: `//ptah:schema:tableau` is an ordinary comment, not a table
+directive.
+
 ## Tables and columns
 
 ### `//ptah:schema:table`

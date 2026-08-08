@@ -90,10 +90,11 @@ the [Atlas project config subset](../../atlas/project-config/).
 Ptah's HCL schema format is compatible with the Atlas HCL schema language for
 the supported subset and adds documented Ptah extensions for Go annotation
 parity. Export reports opaque SQL bodies and any byte-level
-normalization before automatic cleanup. Ptah is not affiliated with or endorsed
-by Ariga or Atlas. If a construct is not implemented, the command fails with an
-explicit error; treat that as a compatibility gap and check the conformance
-reports.
+normalization before automatic cleanup. Cleanup also verifies that every
+removable directive produced parsed schema intent. Ptah is not affiliated with
+or endorsed by Ariga or Atlas. If a construct is not implemented, the command
+fails with an explicit error; treat that as a compatibility gap and check the
+conformance reports.
 :::
 
 ## Next steps
