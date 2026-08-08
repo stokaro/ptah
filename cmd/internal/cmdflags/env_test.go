@@ -248,3 +248,79 @@ func TestInstallEnvBindingHelpDoesNotParseEnvironment(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "[env: PTAH_DRY_RUN]")
 }
+
+// TestSetOnCommandLineSeparatesArgvFromEnvironment pins the distinction pflag's
+// Changed bit cannot make. InitializeEnv applies a PTAH_* value through
+// FlagSet.Set, which marks the flag Changed exactly as an argv occurrence does,
+// so a rule about what the operator wrote has to ask a different question.
+func TestSetOnCommandLineSeparatesArgvFromEnvironment(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_DRY_RUN", "1")
+
+	cmd := &cobra.Command{Use: "apply"}
+	cmd.Flags().Bool("dry-run", false, "Preview changes")
+	cmd.Flags().Bool("auto-approve", false, "Skip approval")
+	c.Assert(cmd.Flags().Set("auto-approve", "true"), qt.IsNil)
+
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	c.Assert(cmd.Flags().Lookup("dry-run").Changed, qt.IsTrue)
+	c.Assert(cmdflags.SetOnCommandLine(cmd.Flags(), "dry-run"), qt.IsFalse)
+	c.Assert(cmdflags.SetOnCommandLine(cmd.Flags(), "auto-approve"), qt.IsTrue)
+	c.Assert(cmdflags.SetOnCommandLine(cmd.Flags(), "absent"), qt.IsFalse)
+}
+
+// TestSetOnCommandLineForgetsAPreviousExecution covers a command tree reused for
+// a second run, which is how the compatibility CLI is driven under test. The
+// marker recorded when the environment supplied a value must not outlive the
+// execution that recorded it, or the next run reads a typed flag as an
+// environment default.
+func TestSetOnCommandLineForgetsAPreviousExecution(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_DRY_RUN", "1")
+
+	cmd := &cobra.Command{Use: "apply"}
+	cmd.Flags().Bool("dry-run", false, "Preview changes")
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+	c.Assert(cmdflags.SetOnCommandLine(cmd.Flags(), "dry-run"), qt.IsFalse)
+
+	t.Setenv("PTAH_DRY_RUN", "")
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	c.Assert(cmdflags.SetOnCommandLine(cmd.Flags(), "dry-run"), qt.IsTrue)
+}
+
+// TestMutuallyExclusiveOnCommandLineMatchesCobrasSentence keeps the replacement
+// for MarkFlagsMutuallyExclusive byte-identical to what cobra emits, including
+// the declaration-order group list and the sorted list of flags that were set.
+func TestMutuallyExclusiveOnCommandLineMatchesCobrasSentence(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := &cobra.Command{Use: "apply"}
+	cmd.Flags().Bool("dry-run", false, "Preview changes")
+	cmd.Flags().Bool("auto-approve", false, "Skip approval")
+	c.Assert(cmd.Flags().Set("dry-run", "true"), qt.IsNil)
+	c.Assert(cmd.Flags().Set("auto-approve", "true"), qt.IsNil)
+
+	err := cmdflags.MutuallyExclusiveOnCommandLine(cmd.Flags(), "dry-run", "auto-approve")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals,
+		"if any flags in the group [dry-run auto-approve] are set none of the others can be;"+
+			" [auto-approve dry-run] were all set")
+}
+
+// TestMutuallyExclusiveOnCommandLineIgnoresEnvironmentMembers is the control
+// that makes the test above about the command line rather than about Changed.
+func TestMutuallyExclusiveOnCommandLineIgnoresEnvironmentMembers(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_DRY_RUN", "1")
+
+	cmd := &cobra.Command{Use: "apply"}
+	cmd.Flags().Bool("dry-run", false, "Preview changes")
+	cmd.Flags().Bool("auto-approve", false, "Skip approval")
+	c.Assert(cmd.Flags().Set("auto-approve", "true"), qt.IsNil)
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	c.Assert(cmdflags.MutuallyExclusiveOnCommandLine(cmd.Flags(), "dry-run", "auto-approve"), qt.IsNil)
+}

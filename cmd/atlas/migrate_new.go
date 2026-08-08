@@ -61,9 +61,34 @@ func newAtlasMigrateNewCommand() *cobra.Command {
 		if err := verifyAtlasWriteDirChecksum(cmd, source.project, source.localDir); err != nil {
 			return err
 		}
+		if err := checkAtlasMigrateNewName(cmd, verb, source.projectArgs); err != nil {
+			return err
+		}
 		return forward(cmd, source.forwardArgs)
 	}
 	return cmd
+}
+
+// checkAtlasMigrateNewName refuses a migration name that cannot become a file,
+// after the atlas.sum gate and before anything is written.
+//
+// The order is measured: `migrate new "sub/x"` on an UNHASHED directory answers
+// `checksum file not found` on the pinned community binary v1.3.0, not the name
+// failure, so the integrity refusal keeps winning.
+//
+// The positional is split out rather than parsed, because on this branch it is
+// the forwarded native command that owes the diagnostics for an unknown flag
+// and for a second positional. A run carrying more than one positional is left
+// to it untouched.
+func checkAtlasMigrateNewName(cmd *cobra.Command, verb atlasVerb, args []string) error {
+	_, positionals := splitAtlasPositionals(verb.flags, args)
+	if len(positionals) != 1 {
+		return nil
+	}
+	if err := checkAtlasMigrationName(verb.use, positionals[0]); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	return nil
 }
 
 func atlasMigrateNewVerb() atlasVerb {

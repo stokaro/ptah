@@ -72,6 +72,29 @@ only migration was deleted, an ungated `migrate status` announced
 "Database is up to date"
 ([#974](https://github.com/stokaro/ptah/issues/974)).
 
+### The sum file has to agree with itself, too
+
+Verification asks two questions, not one, and the second was missing until
+[#1231](https://github.com/stokaro/ptah/issues/1231): the entries must match the
+directory, **and** the directory-hash line on top must be the hash of the entry
+lines below it, in the order they are written. Both hash schemes bind that
+order, so moving a whole entry line — name and hash together — leaves a file
+that no longer hashes to the line it still carries.
+
+That is what a reordered `atlas.sum` is, and it used to verify clean: every file
+was found with the hash the sum recorded, and the hash recomputed over the
+*directory* still matched the stale line on top. `migrate validate` printed
+nothing and exited 0 while the community CLI exited 1; `migrate apply` ran every
+migration.
+
+The two tampered shapes are distinguishable and are reported differently, which
+is also what that CLI does:
+
+| `atlas.sum` | reported as |
+| --- | --- |
+| entries reordered, top line untouched | `checksum mismatch`, with no entry named — the file contradicts itself, so no entry can be blamed |
+| entries reordered, top line recomputed | `checksum mismatch` with `L2: <file> was added` — the file agrees with itself and disagrees with the directory |
+
 Recovery is a decision, not a command: if the change is intentional, review
 it and re-run `ptah migrations hash`; if it is not, restore the file from
 version control. Use `git diff` on the migration directory to tell the two

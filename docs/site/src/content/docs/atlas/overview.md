@@ -189,6 +189,13 @@ succeeds.
 repository-controlled program. Set it to `1` and the data source is evaluated,
 matching the native `--allow-external-schema` flag.
 
+**`PTAH_ATLAS_LINT_WITHOUT_DEV_URL`** — by default,
+`ptah-compat migrate lint` requires `--dev-url`, because the community CLI marks
+it required and exits 1 without it. Ptah's analyzers read the migration files
+and need no database, so set it to `1` and the run proceeds with no dev database
+and reports what the static analysis finds. Native `ptah migrations lint` needs
+no opt-in.
+
 **`PTAH_STRICT_DIR_QUERY`** — by default, a `--dir` URL query key other than
 `format` is ignored, exactly as the community CLI ignores it, and named on
 standard error so a misspelled `?fromat=goose` does not quietly read the

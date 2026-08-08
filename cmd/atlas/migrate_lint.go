@@ -22,6 +22,24 @@ import (
 
 const atlasMigrateLintFindingError = "lint findings exceed the failure threshold"
 
+// atlasLintWithoutDevURLEnvVar re-enables linting a migration directory with no
+// dev database.
+//
+// The pinned community binary v1.3.0 marks --dev-url required on this verb and
+// exits 1 with `required flag(s) "dev-url" not set` before it looks at the
+// directory, so the compatibility surface refuses the same invocation by
+// default: a pipeline written against that binary must not get a clean report
+// here where it gets a refusal there (stokaro/ptah#1231 case 2).
+//
+// The capability behind the refusal is real and is Ptah's own -- its analyzers
+// read the migration files and do not need a database to reach a verdict -- so
+// per AGENTS.md ("Compatibility never removes a capability") it stays reachable
+// on this same surface rather than only through native `ptah migrations lint`.
+// It is an environment variable rather than a flag because the conformance
+// cli-surface tier asserts flag parity with that binary; precedent and spelling:
+// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
+const atlasLintWithoutDevURLEnvVar = "PTAH_ATLAS_LINT_WITHOUT_DEV_URL"
+
 type atlasMigrateLintOptions struct {
 	devURL    string
 	dir       string
@@ -44,12 +62,18 @@ func newAtlasMigrateLintCommand() *cobra.Command {
 		Short: "Lint migration files",
 		Long: `Run Atlas-compatible migration lint checks over a local migration directory.
 
-A run needs a scope: --latest N, --git-base <ref>, or a lint block in atlas.hcl
-that supplies one. Without a scope this surface refuses, because the binary it
-stands in for refuses, and answering an unscoped invocation would connect to
---dev-url and clean it on an argv that binary never connects on. Set
-` + "`PTAH_ATLAS_LINT_ALL_VERSIONS=1`" + ` to lint the whole directory instead;
-native ` + "`ptah migrations lint`" + ` needs no scope and is unaffected.
+A run needs a dev database and a scope, and the two refusals are separate. Give
+--dev-url, or set ` + "`PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1`" + ` to analyze the
+directory with no dev database at all, which Ptah's analyzers can do and the
+binary this surface stands in for cannot.
+
+Give a scope too: --latest N, --git-base <ref>, or a lint block in atlas.hcl
+that supplies one. Without a scope this surface refuses, because that binary
+refuses, and answering an unscoped invocation would connect to --dev-url and
+clean it on an argv that binary never connects on. Set
+` + "`PTAH_ATLAS_LINT_ALL_VERSIONS=1`" + ` to lint the whole directory instead.
+The two variables relax different requirements and neither implies the other.
+Native ` + "`ptah migrations lint`" + ` needs neither and is unaffected by both.
 
 Native Ptah equivalent: ptah migrations lint.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -122,6 +146,17 @@ func runAtlasMigrateLint(
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatOutput = formatOutput || formatValue.Present
 	}
+	// The dev-url requirement is checked before anything the command body
+	// validates, because on the pinned community binary v1.3.0 it is a cobra
+	// required-flag check and therefore precedes the whole run: measured on that
+	// binary, `migrate lint --latest 1` in a directory holding no `migrations`
+	// answers `required flag(s) "dev-url" not set`, not `stat migrations`, and
+	// the same invocation carrying a tampered atlas.sum answers it too. An
+	// atlas.hcl env that supplies `dev` satisfies it there and here, which is why
+	// this reads the merged value rather than the flag.
+	if err := requireAtlasMigrateLintDevURL(opts.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := validateAtlasMigrateLintOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -179,6 +214,32 @@ func runAtlasMigrateLint(
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
 	dir := source.Display
+	lintOptions := migrationlintreport.Options{
+		DirFormat:     atlasDirFormatDefault,
+		AtlasEnv:      opts.atlasEnv,
+		DevURL:        opts.devURL,
+		GitBase:       opts.gitBase,
+		GitDir:        opts.gitDir,
+		FailOn:        migrationlintreport.FailOnError,
+		Latest:        opts.latest,
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		Changed: migrationlintreport.ChangedOptions{
+			Dir:       true,
+			DirFormat: true,
+			AtlasEnv:  true,
+			DevURL:    true,
+			GitBase:   cmd.Flags().Changed("git-base"),
+			GitDir:    cmd.Flags().Changed("git-dir"),
+			Latest:    cmd.Flags().Changed("latest"),
+		},
+	}
+	// The changeset selection is required, and requireAtlasMigrateLintScope
+	// above is the one place that asks. This branch used to ask again here,
+	// through migrationlintreport.SelectorConfigured, and became a duplicate
+	// when #1307 landed the same requirement earlier in the run -- earlier
+	// matters, because the unscoped argv reached --dev-url and CLEANED it before
+	// a check at this point could answer. Two gates for one rule is two
+	// sentences that have to agree, so this one is gone rather than kept.
 	captured, err := captureAtlasDirSource(source.FileSystem, format)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
@@ -219,27 +280,9 @@ func runAtlasMigrateLint(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
-	report, err := migrationlintreport.Build(cmd.Context(), migrationlintreport.Options{
-		Dir:           dir,
-		FS:            snapshot,
-		DirFormat:     atlasDirFormatDefault,
-		AtlasEnv:      opts.atlasEnv,
-		DevURL:        opts.devURL,
-		GitBase:       opts.gitBase,
-		GitDir:        opts.gitDir,
-		FailOn:        migrationlintreport.FailOnError,
-		Latest:        opts.latest,
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		Changed: migrationlintreport.ChangedOptions{
-			Dir:       true,
-			DirFormat: true,
-			AtlasEnv:  true,
-			DevURL:    true,
-			GitBase:   cmd.Flags().Changed("git-base"),
-			GitDir:    cmd.Flags().Changed("git-dir"),
-			Latest:    cmd.Flags().Changed("latest"),
-		},
-	}, projectCfg)
+	lintOptions.Dir = dir
+	lintOptions.FS = snapshot
+	report, err := migrationlintreport.Build(cmd.Context(), lintOptions, projectCfg)
 	if err != nil {
 		if formatOutput {
 			if err := writeAtlasMigrateLintReplayError(cmd, opts, dir, report, integrity, err); err != nil {
@@ -387,6 +430,40 @@ func requireAtlasMigrateLintScope(
 		return nil
 	}
 	return errors.New("--latest or --git-base is required")
+}
+
+// requireAtlasMigrateLintDevURL reproduces the community CLI's required-flag
+// refusal, wording included, unless the opt-in variable asks for Ptah's
+// database-free analysis instead.
+//
+// It is called BEFORE [requireAtlasMigrateLintScope], and the order is measured
+// rather than chosen. On the pinned Atlas community binary v1.3.0, an argv
+// missing both answers the dev-url sentence:
+//
+//	$ atlas migrate lint --dir file://migrations
+//	exit 1  Error: required flag(s) "dev-url" not set
+//
+// so a surface that answered the scope sentence there would diverge on a cell
+// both refuse. The scope requirement is #1241's and arrived separately; this one
+// is stokaro/ptah#1231 case 2, which #1307 explicitly left open rather than
+// widening into itself.
+func requireAtlasMigrateLintDevURL(devURL string) error {
+	if strings.TrimSpace(devURL) != "" || lintWithoutDevURL() {
+		return nil
+	}
+	return errors.New(`required flag(s) "dev-url" not set`)
+}
+
+// lintWithoutDevURL reports whether the opt-in variable is set to a true
+// boolean value. Unset, empty, false and unparsable values all keep the
+// default, mirroring how the other PTAH_* opt-ins on this surface read theirs.
+//
+// It relaxes ONLY the dev-database requirement. A run with no scope is still
+// refused; [atlasMigrateLintAllVersions] is the separate opt-in for that, and
+// neither variable implies the other.
+func lintWithoutDevURL() bool {
+	allow, err := strconv.ParseBool(os.Getenv(atlasLintWithoutDevURLEnvVar))
+	return err == nil && allow
 }
 
 func validateAtlasMigrateLintFormat(format string) error {

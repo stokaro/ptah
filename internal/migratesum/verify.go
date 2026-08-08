@@ -140,7 +140,7 @@ func VerifyAtlasFiles(fsys fs.FS, names []string) (*Result, error) {
 		return nil, err
 	}
 
-	result := diff(recorded, current)
+	result := diff(recorded, current, atlasDirHash)
 	result.SumFileName = AtlasFileName
 	return result, nil
 }
@@ -202,9 +202,19 @@ func VerifyWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*Result, 
 		return nil, err
 	}
 
-	result := diff(recorded, current)
+	result := diff(recorded, current, dirHashForFormat(computeFormat))
 	result.SumFileName = name
 	return result, nil
+}
+
+// dirHashForFormat returns the directory-hash function the selected format's
+// [ComputeWithFormat] path uses, so a recorded sum file is re-hashed with the
+// same scheme it was written with.
+func dirHashForFormat(format migrator.MigrationDirFormat) func([]Entry) string {
+	if format == migrator.MigrationDirFormatAtlas {
+		return atlasDirHash
+	}
+	return dirHash
 }
 
 func formatForSumFile(format migrator.MigrationDirFormat, name string) migrator.MigrationDirFormat {
@@ -281,8 +291,11 @@ func (e malformedSumFileError) Is(target error) bool {
 	return target == ErrSumFileMalformed
 }
 
-// diff compares the recorded sum against the freshly computed one.
-func diff(recorded, current *SumFile) *Result {
+// diff compares the recorded sum against the freshly computed one. dirHashOf
+// re-derives a directory hash from a list of entries using the scheme the
+// caller computed `current` with; it is what lets diff ask whether the recorded
+// file agrees with itself as well as with the directory.
+func diff(recorded, current *SumFile, dirHashOf func([]Entry) string) *Result {
 	recordedByName := make(map[string]string, len(recorded.Entries))
 	for _, e := range recorded.Entries {
 		recordedByName[e.Name] = e.Hash
@@ -312,12 +325,32 @@ func diff(recorded, current *SumFile) *Result {
 	sort.Strings(res.Changed)
 	res.mismatch = firstMismatch(recorded, current)
 
+	// The recorded file must first agree with ITSELF: its directory-hash line
+	// has to be the hash of the entry lines below it, in the order they are
+	// written. Both hash schemes bind order -- the Atlas one chains each entry
+	// into a running hash -- so a sum file whose entry lines were reordered no
+	// longer hashes to the line it still carries, even though every (name,
+	// hash) pair survived the move. Checking only the directory below missed
+	// exactly that: the name-keyed diff sees no drift and Compute re-sorts, so
+	// the recomputed directory hash matches the stale recorded one and a
+	// tampered ordering verified clean (stokaro/ptah#1231 case 4).
+	//
+	// Measured against the pinned community binary v1.3.0, both shapes exit 1
+	// and they differ in what they can say. A reordered sum file whose
+	// directory line was NOT updated prints the bare refusal, because no entry
+	// can be blamed while the file contradicts itself; one whose directory line
+	// WAS recomputed for the new order prints `L2: <file> was added`, the
+	// entry-level detail below. Clearing the mismatch here is what reproduces
+	// the first shape.
+	selfConsistent := recorded.DirHash == dirHashOf(recorded.Entries)
+	if !selfConsistent {
+		res.DirHashMismatch = true
+		res.mismatch = nil
+	}
 	// Per-file entries match, yet the recorded directory-hash line does not
-	// equal the hash recomputed over those entries: the dir line was
-	// hand-edited (or the sum file was assembled inconsistently). Reordering
-	// entry lines is not flagged here and need not be — the diff is
-	// name-keyed and Compute always re-sorts, so order carries no meaning.
-	if res.OK() && recorded.DirHash != current.DirHash {
+	// equal the hash recomputed over the directory: the sum file describes a
+	// different directory than the one on disk.
+	if selfConsistent && res.OK() && recorded.DirHash != current.DirHash {
 		res.DirHashMismatch = true
 	}
 	return &res

@@ -65,8 +65,13 @@ func TestCompatCommand_MigrateLintRejectsDockerDevURL(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay")
 }
 
+// The opt-in is set because this fixture lints a destructive migration with no
+// dev database: the env's lint policy is what the test measures, and requiring
+// --dev-url on the compatibility surface (stokaro/ptah#1231 case 2) would
+// otherwise change the subject.
 func TestCompatCommand_MigrateLintUsesAtlasProjectEnvPolicy(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)

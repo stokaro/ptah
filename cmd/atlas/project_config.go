@@ -142,8 +142,13 @@ func registerAtlasProjectFlags(flags *pflag.FlagSet, target *atlasProjectFlagVal
 	// run first would leave this surface with the native flag — unbound to
 	// target.vars and carrying the native help text where Atlas's belongs.
 	// TestCompatVarFlagKeepsAtlasUsage fails if this order is swapped.
+	// Registered as [atlasVarValue] rather than as a plain string array so the
+	// help line carries the pinned binary's own placeholder,
+	// `--var <name>=<value>`, which the conformance cli-surface tier asserts.
+	// The value only renders and collects; the syntax rule is
+	// [validateAtlasVarFlagValue].
 	if flags.Lookup(atlasVarFlagName) == nil {
-		flags.StringArrayVar(&target.vars, atlasVarFlagName, nil, "input variables")
+		flags.Var(newAtlasVarValue(&target.vars), atlasVarFlagName, "input variables")
 	}
 	if flags.Lookup(dbcli.EnvFlagName) == nil {
 		dbcli.RegisterEnvFlag(flags, &target.envName)
@@ -370,10 +375,11 @@ func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, b
 // [refreshAtlasProjectFlagEnvironment] lifted out of `PTAH_VAR` arrives here
 // first: that runs inside the verb, after every PreRunE has returned.
 func atlasVarFlagValues(cmd *cobra.Command) ([]string, error) {
-	if cmd.Flags().Lookup(atlasVarFlagName) == nil {
+	flag := cmd.Flags().Lookup(atlasVarFlagName)
+	if flag == nil {
 		return nil, nil
 	}
-	values, err := cmd.Flags().GetStringArray(atlasVarFlagName)
+	values, err := atlasVarFlagRawValues(flag)
 	if err != nil {
 		return nil, err
 	}
@@ -481,16 +487,21 @@ func atlasVarSyntaxError(raw string) error {
 // order cannot make this surface the looser one.
 //
 // A pflag value whose Set refuses would land on that binary's exact step, and
-// was rejected with a measurement rather than on taste: wrapping the registered
-// value drops it out of the `pflag.SliceValue` branch of
+// was rejected with a measurement rather than on taste: a registered value that
+// does not implement [pflag.SliceValue] drops out of that branch of
 // [resetAtlasProjectFlags], whose fallback appends flag.DefValue instead of
 // clearing -- measured, `[a=1]` became `[a=1,[]]` -- so `--var` would leak and
-// grow across Execute calls on a reused root, with the error discarded.
+// grow across Execute calls on a reused root, with the error discarded. The
+// flag IS registered as a value, [atlasVarValue], for the help placeholder the
+// cli-surface tier asserts; that value implements [pflag.SliceValue] so the
+// reset still clears it, and it deliberately does not refuse in Set, so the
+// rule stays here where the CSV semantics live.
 func validateAtlasVarFlagsOnCommand(cmd *cobra.Command) error {
-	if cmd.Flags().Lookup(atlasVarFlagName) == nil {
+	flag := cmd.Flags().Lookup(atlasVarFlagName)
+	if flag == nil {
 		return nil
 	}
-	values, err := cmd.Flags().GetStringArray(atlasVarFlagName)
+	values, err := atlasVarFlagRawValues(flag)
 	if err != nil {
 		return err
 	}
