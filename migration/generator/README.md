@@ -88,16 +88,16 @@ the version it chose both describe the directory as it was before the first
 attempt — the honest retry is a fresh `PlanMigration`.
 
 The plan binds the migration directory while it is being built and holds that
-binding until it publishes, so it is a claim on a filesystem object rather than
-on a pathname. `WriteFiles` acquires the shared cross-process directory lock,
-rejects the plan if migration SQL or integrity metadata changed before
-publication, and rejects it if the pathname no longer names the object the plan
-holds — a substitute holding exactly the planned files, and a directory removed
-and recreated at the same pathname, are both a different destination. It never
-renumbers and publishes a plan derived from stale history. The version the plan
-chooses is scanned through the bound directory too, so it avoids colliding with
-the files it will be published beside rather than with whatever the pathname
-resolved to while the version was being picked.
+binding until its publication attempt returns, so it is a claim on a filesystem
+object rather than on a pathname. `WriteFiles` acquires the shared cross-process
+directory lock, rejects the plan if migration SQL or integrity metadata changed
+before publication, and rejects it if the pathname no longer names the object
+the plan holds — a substitute holding exactly the planned files, and a directory
+removed and recreated at the same pathname, are both a different destination. It
+never renumbers and publishes a plan derived from stale history. The version the
+plan chooses is scanned through the bound directory too, so it avoids colliding
+with the files it will be published beside rather than with whatever the
+pathname resolved to while the version was being picked.
 
 `WriteFiles` releases the migration directory handles before it returns, on the
 failure paths as well as the successful one, so the plan's hold on the directory

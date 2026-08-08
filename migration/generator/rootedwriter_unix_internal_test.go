@@ -78,6 +78,141 @@ func TestNextAvailableMigrationVersionReadsTheHeldDirectory(t *testing.T) {
 	)
 }
 
+// TestMigrationPlanUsesTheHeldDirectoryForVersionAndPublication carries the row
+// above through to publication, on the shape an operator can picture: no
+// symlink anywhere, just a directory renamed aside while a plan holds it and a
+// different directory taking the pathname it was selected by.
+//
+// The scan row next door stops at the number. The number is only half of what
+// the binding claims, because a version chosen from the held directory and then
+// published somewhere else would be no better than a version chosen from the
+// pathname. Both halves are asserted here against the same plan, in the order
+// PlanMigration runs them: bind, capture, scan, publish.
+//
+// The impostor at the pathname carries a *higher* version than the directory
+// the plan holds, so the two readings cannot agree by accident -- 106 beside
+// the 105 the plan bound, against 901 beside the 900 the impostor holds. The
+// third assertion after the scan is what proves the fixture separates them.
+//
+// The two rows differ in what the pathname names by publication time, and they
+// fail in opposite ways:
+//
+//   - impostor still there: the batch must be refused outright, and the
+//     impostor must not receive one byte of it. This is the row a plan that
+//     revalidated by pathname would pass while publishing into the impostor.
+//   - pathname handed back: the batch must land in the retained object under
+//     the number the scan chose. This is the row that fails if the plan gave
+//     up its claim, or renumbered against the impostor.
+//
+// //go:build unix because the hostile step is a rename of a directory the run
+// holds open, which Win32 refuses without FILE_SHARE_DELETE -- on Windows there
+// would be no step to perform rather than a step expected to fail.
+func TestMigrationPlanUsesTheHeldDirectoryForVersionAndPublication(t *testing.T) {
+	const upSQL = "CREATE TABLE users (id INTEGER);\n"
+	const downSQL = "DROP TABLE users;\n"
+	boundFile := migrator.GenerateMigrationFileName(105, "add_email", "up")
+	impostorFile := migrator.GenerateMigrationFileName(900, "decoy", "up")
+	publishedUp := migrator.GenerateMigrationFileName(106, "add_email", "up")
+	publishedDown := migrator.GenerateMigrationFileName(106, "add_email", "down")
+
+	tests := []struct {
+		name string
+		// settle runs after the version has been chosen and before publication,
+		// and reports where the bound object and the impostor live by then.
+		settle func(c *qt.C, root, selected, aside string) (bound, impostor string)
+		// check asserts what the plan's one publication attempt returned.
+		check func(c *qt.C, files *MigrationFiles, err error)
+		// wantBound and wantImpostor are the two directories afterwards.
+		wantBound    []string
+		wantImpostor []string
+	}{
+		{
+			name: "the impostor still holds the pathname at publication",
+			settle: func(_ *qt.C, _, selected, aside string) (string, string) {
+				return aside, selected
+			},
+			check: func(c *qt.C, files *MigrationFiles, err error) {
+				c.Assert(err, qt.ErrorIs, ErrMigrationDirectoryChanged)
+				c.Assert(files, qt.IsNil)
+			},
+			wantBound:    []string{boundFile},
+			wantImpostor: []string{impostorFile},
+		},
+		{
+			name: "the pathname names the bound directory again at publication",
+			settle: func(c *qt.C, root, selected, aside string) (string, string) {
+				impostor := filepath.Join(root, "impostor")
+				c.Assert(os.Rename(selected, impostor), qt.IsNil)
+				c.Assert(os.Rename(aside, selected), qt.IsNil)
+				return selected, impostor
+			},
+			check: func(c *qt.C, files *MigrationFiles, err error) {
+				c.Assert(err, qt.IsNil)
+				c.Assert(files.Files, qt.HasLen, 1)
+				c.Assert(files.Version, qt.Equals, int64(106))
+			},
+			wantBound:    []string{boundFile, publishedDown, publishedUp},
+			wantImpostor: []string{impostorFile},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			root := t.TempDir()
+			selected := filepath.Join(root, "migrations")
+			c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
+			c.Assert(os.WriteFile(
+				filepath.Join(selected, boundFile), []byte(upSQL), 0o600,
+			), qt.IsNil)
+
+			writer, err := bindPlannedMigrationDir("", selected)
+			c.Assert(err, qt.IsNil)
+			plannedContents, err := captureMigrationDirectoryContents(writer)
+			c.Assert(err, qt.IsNil)
+
+			// The hostile step: the bound directory is renamed aside and a
+			// different one, holding a higher version, takes the pathname.
+			aside := filepath.Join(root, "renamed-aside")
+			c.Assert(os.Rename(selected, aside), qt.IsNil)
+			c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
+			c.Assert(os.WriteFile(
+				filepath.Join(selected, impostorFile), []byte(upSQL), 0o600,
+			), qt.IsNil)
+
+			version, err := nextAvailableMigrationVersion(writer, 100, "add_email")
+			c.Assert(err, qt.IsNil)
+			c.Assert(version, qt.Equals, int64(106))
+			c.Assert(
+				nextAvailablePtahVersion(migrationDirFileNames(writer.Path()), 100, "add_email"),
+				qt.Equals,
+				int64(901),
+			)
+
+			plan := &MigrationPlan{
+				outputDir:       selected,
+				dir:             writer,
+				plannedContents: plannedContents,
+				specs: []generatedMigrationSpec{{
+					Version: version,
+					Name:    "add_email",
+					UpSQL:   upSQL,
+					DownSQL: downSQL,
+				}},
+			}
+			defer plan.release()
+
+			bound, impostor := test.settle(c, root, selected, aside)
+
+			files, err := plan.WriteFilesContext(t.Context())
+
+			test.check(c, files, err)
+			c.Assert(generatorDirNames(c, bound), qt.DeepEquals, test.wantBound)
+			c.Assert(generatorDirNames(c, impostor), qt.DeepEquals, test.wantImpostor)
+		})
+	}
+}
+
 // These are the `migration/generator` half of the rooted-writer regressions
 // stokaro/ptah#1118 asks for, and the counterpart to the TestGenerateDiff_*
 // rows in internal/atlasmigrate and the TestWriteSkeletonMigration_* rows

@@ -111,7 +111,7 @@ func bindMigrationOutputDir(
 }
 
 // bindPlannedMigrationDir binds the migration directory a plan will publish
-// into, for the plan to hold until it publishes.
+// into, for the plan to hold until its publication attempt returns.
 //
 // The confinement root is opened, consulted for the bind, and then closed: the
 // parent and directory handles were opened through it and stay valid on their
