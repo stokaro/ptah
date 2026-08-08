@@ -311,6 +311,14 @@ func TestForServerVersion(t *testing.T) {
 		{"mariadb pre-10.2 degrades to the legacy floor", "mariadb", "10.1.48-MariaDB", capability.DropConstraintIfExists, false},
 		{"mariadb pre-10.2 over mysql protocol prefix", "mysql", "5.5.5-10.1.48-MariaDB", capability.CheckConstraintsEnforced, false},
 		{"mariadb unparseable stays on the modern preset", "mariadb", "MariaDB something", capability.DropConstraintIfExists, true},
+		// The literal banner PostgreSQL 18.4 reports, so the row moves the
+		// moment the resolver stops recognizing the engine the CI services run.
+		{"postgres 18 banner", "postgres", "PostgreSQL 18.4 (Debian 18.4-1.pgdg13+1) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit", capability.AlterGeneratedColumnExpression, true},
+		{"postgres 18 keeps concurrent index builds", "postgres", "PostgreSQL 18.4 (Debian 18.4-1.pgdg13+1) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit", capability.CreateIndexConcurrently, true},
+		// Non-interference control for the row above: teaching the resolver a
+		// newer engine must not widen what an older one is offered. Lowering
+		// the PostgreSQL 17 boundary to reach 18 differently would redden this.
+		{"postgres 15 stays below the 17 boundary", "postgres", "PostgreSQL 15.13 (Debian 15.13-1.pgdg120+1)", capability.AlterGeneratedColumnExpression, false},
 		{"postgres 17 banner", "postgres", "PostgreSQL 17.5", capability.AlterGeneratedColumnExpression, true},
 		{"postgres 16 banner", "postgres", "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)", capability.CreateOrReplaceTrigger, true},
 		{"postgres 16 lacks generated expression alter", "postgres", "PostgreSQL 16.3", capability.AlterGeneratedColumnExpression, false},
