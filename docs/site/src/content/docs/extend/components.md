@@ -368,11 +368,12 @@ if dialect == "" {
 	dialect = "postgres"
 }
 
-findings, err := lint.LintFS(fsys, lint.Options{
+lintOptions := lint.Options{
 	Dialect:     dialect,
 	Disabled:    lintConfig.DisabledRules,
 	RuleConfigs: lintConfig.Rules,
-})
+}
+findings, err := lint.LintFS(fsys, lintOptions)
 if err != nil {
 	return err
 }
@@ -383,6 +384,12 @@ if len(findings) > 0 {
 	return fmt.Errorf("migration lint failed")
 }
 ```
+
+`LintFS` and `AnalyzeFS` validate `lint.Options` before reading migrations. A
+host that can return early when no work is pending, or that offers an execution
+override which skips analysis, should call `lint.ValidateOptions(lintOptions)`
+before that branch. This rejects unknown selectors against the active built-in,
+registered, and per-run rule set even when no migration is analyzed.
 
 Use `lint.AnalyzeFS` when more than findings are needed. It captures every SQL
 file plus migration metadata (`atlas.sum`, `ptah.sum`, and

@@ -524,8 +524,10 @@ Useful controls, all designed for CI:
   scanners and PR annotations. The SARIF output is a SARIF 2.1.0 document
   that GitHub code scanning ingests — [CI](../../testing/ci/) shows the
   upload step.
-- `--dialect` gates dialect-specific rules; `--dev-url` infers the dialect
-  and additionally replays the directory on the dev database.
+- `--dialect` gates dialect-specific rules; accepted values are `postgres`,
+  `mysql`, `mariadb`, `sqlite`, `clickhouse`, `cockroachdb`, `yugabytedb`, and
+  `spanner`. `--dev-url` infers the dialect and additionally replays the
+  directory on the dev database.
 - `--disable DS101` (or a family such as `MY`) skips rules ad hoc; a
   committed `.ptah-lint.yaml` does it persistently and adds per-rule
   severity and path scoping — see below.
@@ -570,12 +572,18 @@ rules:
   directory, such as `legacy/**`; these match regardless of how `--dir` was
   spelled. A directory-prefixed pattern such as `migrations/legacy/**`
   matches only when the command path has that prefix, for example
-  `--dir migrations`, and need not match an absolute `--dir` path.
+  `--dir migrations`, and need not match an absolute `--dir` path. Patterns
+  must already be normalized: repeated separators, `.` or `..` segments, and
+  trailing separators are configuration errors rather than being rewritten
+  into a broader match. Empty patterns and malformed glob syntax are also
+  errors; Ptah reports the rule and pattern instead of silently weakening the
+  policy.
 
 Configuration decoding is strict. Unknown keys, misspelled keys such as
-`severty`, lowercase or whitespace-padded selectors, selectors that match no registered rule,
-unsupported severities, and multiple YAML documents fail before linting or
-migration execution instead of silently weakening policy.
+`severty`, lowercase or whitespace-padded selectors, selectors that match no
+registered rule, unsupported dialects or severities, empty or malformed
+or non-normalized exclusion globs, and multiple YAML documents fail before
+linting or migration execution instead of silently weakening policy.
 
 Precedence: a rule listed in `disabled-rules` never runs, regardless of its
 `rules` entry; then `exclude` skips the matching files; then `severity`
@@ -637,22 +645,28 @@ error: error running migrations: pending migrations contain destructive statemen
 Use `--allow-destructive` only after the plan has been reviewed and the
 rollback path is understood.
 
-The apply-time gate always loads the conventional
-`<migrations-dir>/.ptah-lint.yaml` and blocks on error-severity `DS`
-data-safety findings. The `--config` flag on `ptah migrations up` selects
-`ptah.yaml`; it does not select a lint policy. This distinction prevents a
-project configuration path from silently replacing the policy shipped with
-the migration directory.
+`ptah migrations up` always loads and validates the conventional
+`<migrations-dir>/.ptah-lint.yaml`; when the apply-time gate is active, it
+blocks on error-severity `DS` data-safety findings. A nonempty policy `dialect`
+must match the connected database and selects the same scanner used by
+`ptah migrations lint`; otherwise the gate uses the connected database's
+dialect. A mismatch fails before migration analysis or execution. On the
+standalone lint command, an explicit `--dialect` still overrides the policy.
+The `--config` flag on `ptah migrations up` selects `ptah.yaml`; it does not
+select a lint policy. This distinction prevents a project configuration path
+from silently replacing the policy shipped with the migration directory.
 
-The gate otherwise uses the same rule configuration and path matching as
-`ptah migrations lint`. That makes the escape hatch proportional: a rule downgraded with
+The gate otherwise uses the same dialect selection, rule configuration, and
+path matching as `ptah migrations lint`. That makes the escape hatch
+proportional: a rule downgraded with
 `severity: warning`, listed under `disabled-rules`, or excluded for a path
 stops blocking exactly that reviewed pattern — a widening
 `ALTER COLUMN ... TYPE` under `rules: {DS103: {severity: warning}}` applies
 without `--allow-destructive` — while a `DROP TABLE` in another pending
 file of the same batch still aborts the apply. `--allow-destructive`
 remains the all-or-nothing per-run override rather than the only way past
-a single warning-grade finding.
+a single warning-grade finding. `--allow-destructive` bypasses the findings
+gate, but it does not bypass loading or validating the lint policy.
 
 Lint-policy severities are `warning` and `error`. Generated safety reports use
 the operational vocabulary `safe`, `warning`, and `destructive`; an `error`

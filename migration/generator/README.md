@@ -172,8 +172,8 @@ shadow check failed: missing column users.email
 Ptah also runs an `up -> down -> up` round-trip on the candidate migration and
 aborts if either direction fails.
 
-Shadow failures preserve structured diagnostics. Use `errors.As` rather than
-parsing the display message:
+Candidate generation and `VerifyBaselineShadow` preserve structured shadow
+diagnostics. Use `errors.As` rather than parsing the display message:
 
 ```go
 var shadowErr *generator.ShadowVerificationError
@@ -187,7 +187,12 @@ if errors.As(err, &shadowErr) {
 
 Operational failures also unwrap to the underlying database or migration
 error. Structural schema mismatches carry the complete, deterministically
-ordered mismatch list without an underlying error.
+ordered mismatch list without an underlying error. Baseline verification keeps
+the `baseline shadow check failed:` display prefix while exposing the same
+typed result. It shares stage names with candidate verification at common
+boundaries, can additionally report `target-introspect`, `reset-schemas`, and
+`drop-metadata`, and never reports the candidate-only `round-trip-down` or
+`round-trip-up` stages.
 
 ### File Naming Convention
 

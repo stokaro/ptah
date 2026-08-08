@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
+	"go.5x5.cz/ptah/internal/migrationlintgate"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -105,6 +106,26 @@ func TestLintPendingDestructive_HonorsDirectoryPrefixedExclusion(t *testing.T) {
 	c.Assert(findings, qt.HasLen, 0)
 }
 
+func TestLintPendingDestructive_RejectsConfiguredDialectMismatch(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		lint.ConfigFileName: {
+			Data: []byte("dialect: mysql\n"),
+		},
+		"0000000001_hash_comment.up.sql": {
+			Data: []byte("# decoy; DROP TABLE users;\nCREATE TABLE current_users (id INTEGER);\n"),
+		},
+		"0000000001_hash_comment.down.sql": {
+			Data: []byte("DROP TABLE current_users;\n"),
+		},
+	}
+
+	findings, err := lintPendingDestructive(fsys, []int64{1}, "sqlite", "")
+
+	c.Assert(err, qt.ErrorMatches, `lint dialect "mysql" does not match database dialect "sqlite"`)
+	c.Assert(findings, qt.IsNil)
+}
+
 func TestLintPathPrefixForSource_PreservesLocalSpelling(t *testing.T) {
 	c := qt.New(t)
 
@@ -177,9 +198,11 @@ func TestLockedDestructiveLintHookUsesLockedPlanVersions(t *testing.T) {
 			Data: []byte("CREATE TABLE users (id INTEGER);\n"),
 		},
 	}
-	hook := lockedDestructiveLintHook(fsys, "sqlite", "")
+	policy, err := migrationlintgate.LoadPolicy(fsys, "sqlite")
+	c.Assert(err, qt.IsNil)
+	hook := lockedDestructiveLintHook(fsys, policy, "")
 
-	err := hook(context.Background(), migrator.MigrationPlan{
+	err = hook(context.Background(), migrator.MigrationPlan{
 		Versions: []int64{2},
 	})
 
@@ -202,9 +225,11 @@ func TestLockedDestructiveLintHookAllowsSafeLockedPlan(t *testing.T) {
 			Data: []byte("CREATE TABLE users (id INTEGER);\n"),
 		},
 	}
-	hook := lockedDestructiveLintHook(fsys, "sqlite", "")
+	policy, err := migrationlintgate.LoadPolicy(fsys, "sqlite")
+	c.Assert(err, qt.IsNil)
+	hook := lockedDestructiveLintHook(fsys, policy, "")
 
-	err := hook(context.Background(), migrator.MigrationPlan{
+	err = hook(context.Background(), migrator.MigrationPlan{
 		Versions: []int64{1},
 	})
 
