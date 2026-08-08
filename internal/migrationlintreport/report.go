@@ -282,9 +282,11 @@ func normalizeOptions(opts Options, projectCfg projectconfig.Config) (Options, e
 	if err := ValidateFailOn(opts.FailOn); err != nil {
 		return Options{}, err
 	}
-	if err := validateDialect(opts.Dialect); err != nil {
+	dialect, err := canonicalDialect(opts.Dialect)
+	if err != nil {
 		return Options{}, err
 	}
+	opts.Dialect = dialect
 	if len(opts.Positional) > 0 {
 		msg := fmt.Sprintf("unexpected positional arguments %q: pass the migrations directory via --dir", opts.Positional)
 		return Options{}, errors.New(msg)
@@ -355,10 +357,15 @@ func loadEffectiveConfig(
 		cfg.DisabledRules = append([]string{}, projectCfg.Lint.DisabledRules...)
 	}
 	cfg.Rules = effectiveLintRuleConfigs(projectCfg.Lint.RuleConfigs, cfg.Rules)
-	if !lintdialect.Valid(cfg.Dialect) {
+	// The policy file was canonicalized when it parsed, but a dialect taken
+	// from ptah.yaml above never passed through that reader, so it is resolved
+	// here. Both spellings reach the same exact-comparison engine.
+	canonical, ok := lintdialect.Canonical(cfg.Dialect)
+	if !ok {
 		msg := fmt.Sprintf("invalid dialect %q in lint config: expected %s", cfg.Dialect, lintdialect.Expected)
 		return nil, errors.New(msg)
 	}
+	cfg.Dialect = canonical
 	return cfg, nil
 }
 
@@ -465,14 +472,20 @@ func (c *baselineCollector) observe(
 	return nil
 }
 
+// validateDevURLDialect refuses a lint dialect that contradicts the dev
+// database the directory will be replayed on.
+//
+// The predicate is lintdialect.Compatible, the same one the apply-time gate in
+// internal/migrationlintgate applies to the connected database. Sharing it is
+// the point rather than an economy: when these two commands answered the same
+// question with two comparisons, `ptah migrations lint` accepted policy files
+// that `ptah migrations up` then refused, which is the inconsistency
+// stokaro/ptah#270 asked to remove.
 func validateDevURLDialect(dialect, devDialect string) error {
-	if dialect == "" || devDialect == "" {
+	if lintdialect.Compatible(dialect, devDialect) {
 		return nil
 	}
-	if dialect != devDialect {
-		return fmt.Errorf("lint dialect %q does not match --dev-url dialect %q", dialect, devDialect)
-	}
-	return nil
+	return fmt.Errorf("lint dialect %q does not match --dev-url dialect %q", dialect, devDialect)
 }
 
 // loadConfig reads the explicit --config file, or the conventional
@@ -1089,11 +1102,17 @@ func ValidateFailOn(failOn string) error {
 	}
 }
 
-func validateDialect(dialect string) error {
-	if lintdialect.Valid(dialect) {
-		return nil
+// canonicalDialect resolves an accepted --dialect spelling to the name the lint
+// engine compares against. Returning the resolved value rather than validating
+// in place is deliberate: lint matches Rule.Dialects and picks its lexer by
+// exact comparison, so `--dialect pgx` left as written would run every check
+// except the PostgreSQL ones and still exit 0.
+func canonicalDialect(dialect string) (string, error) {
+	canonical, ok := lintdialect.Canonical(dialect)
+	if !ok {
+		return "", fmt.Errorf("invalid --dialect value %q: expected %s", dialect, lintdialect.Expected)
 	}
-	return fmt.Errorf("invalid --dialect value %q: expected %s", dialect, lintdialect.Expected)
+	return canonical, nil
 }
 
 func validateDir(dir string) error {

@@ -93,16 +93,24 @@ func parseConfig(raw []byte, name string) (*Config, error) {
 			return nil, fmt.Errorf("failed to parse lint config %s: multiple YAML documents are not supported", name)
 		}
 	}
-	if err := validateConfig(cfg); err != nil {
+	if err := validateConfig(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse lint config %s: %w", name, err)
 	}
 	return &cfg, nil
 }
 
-func validateConfig(cfg Config) error {
-	if !lintdialect.Valid(cfg.Dialect) {
+// validateConfig rejects an unusable configuration and rewrites what it keeps
+// into the spelling the rest of the pipeline compares against. Canonicalizing
+// here rather than at each reader is what lets a policy name an engine by any
+// documented alias: everything downstream matches Rule.Dialects and the lexer
+// mode by exact string comparison, so an alias left in place would select no
+// dialect-specific rule at all instead of failing.
+func validateConfig(cfg *Config) error {
+	canonical, ok := lintdialect.Canonical(cfg.Dialect)
+	if !ok {
 		return fmt.Errorf("unsupported lint dialect %q: expected %s", cfg.Dialect, lintdialect.Expected)
 	}
+	cfg.Dialect = canonical
 	if err := validateRuleSelectors(cfg.DisabledRules); err != nil {
 		return err
 	}
