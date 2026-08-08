@@ -140,6 +140,10 @@ jobs:
       # started modeling. The spelling of a table REFERENCE is another
       # (stokaro/ptah#1260): `table.<schema>.<name>` costs the whole document,
       # so the rendered output is put to that binary here rather than trusted.
+      # The last one is the WHOLE inspected document (stokaro/ptah#1234): a
+      # permission body that does not evaluate and a `schema.<name>` reference
+      # nothing declares are properties of the file rather than of any one
+      # attribute, so neither is visible to the runs above.
       # All of them live in internal/atlashclrender and are listed before they
       # are run, for the same reason as above.
       - name: Verify HCL render conformance selection
@@ -152,7 +156,8 @@ jobs:
           grep -Fx 'TestOracleAtlasRefusedBlockTypesMatchTheBinary' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleToleratesTheBlockTypesPtahStillRenders' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleReadsTheReferenceSpellingPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
-          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 5
+          grep -Fx 'TestOracleReadsTheInspectedDocumentPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 6
 
       - name: Run HCL render conformance tests
         run: |
@@ -191,6 +196,20 @@ jobs:
           grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_wraps_a_sized_array_whose_element_name_is_modeled' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_refuses_that_same_array_quoted' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_refuses_an_array_written_bare' "$RUNNER_TEMP/atlas-column-type-run"
+
+          # And for the whole-document run (stokaro/ptah#1234). Each `rendered`
+          # row is only a measurement next to the mutation that makes the same
+          # document unreadable, so both halves of each pair are named. The
+          # grant-only document is the one no prediction reaches: it is what an
+          # EMPTY database inspects to, with no table anywhere to declare a
+          # schema from.
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_with_grants/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_with_grants/unreadable/PUBLIC_written_bare' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_whose_roles_were_excluded/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_whose_roles_were_excluded/unreadable/a_grantee_reference_with_no_role_block_anywhere' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/nothing_but_the_grant_every_database_has/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/nothing_but_the_grant_every_database_has/unreadable/a_schema_reference_with_no_block' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/sqlite/nothing_but_the_grant_every_database_has/rendered' "$RUNNER_TEMP/atlas-column-type-run"
 
       - name: Regenerate Atlas CE corpus
         run: >-

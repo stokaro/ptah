@@ -42,7 +42,7 @@ func (r *renderer) renderSequences() {
 		sequence.Canonicalize()
 		r.linef(`sequence %s {`, quote(sequence.Name))
 		if sequence.Schema != "" {
-			r.rawAttr(1, "schema", schemaRef(sequence.Schema))
+			r.rawAttr(1, "schema", r.schemaRef(sequence.Schema))
 		}
 		// A quoted string, not the bare word `bigint`. Bare, it is an HCL
 		// variable reference with nothing behind it and the pinned Atlas
@@ -106,7 +106,7 @@ func (r *renderer) renderDomain(domain goschema.Domain) {
 	domain.Canonicalize()
 	r.linef(`domain %s {`, quote(domain.Name))
 	if domain.Schema != "" {
-		r.rawAttr(1, "schema", schemaRef(domain.Schema))
+		r.rawAttr(1, "schema", r.schemaRef(domain.Schema))
 	}
 	r.rawAttr(1, "type", userTypeExpr(domain.BaseType))
 	if domain.NotNull {
@@ -129,7 +129,7 @@ func (r *renderer) renderComposite(composite goschema.CompositeType) {
 	composite.Canonicalize()
 	r.linef(`composite %s {`, quote(composite.Name))
 	if composite.Schema != "" {
-		r.rawAttr(1, "schema", schemaRef(composite.Schema))
+		r.rawAttr(1, "schema", r.schemaRef(composite.Schema))
 	}
 	r.stringAttr(1, "comment", composite.Comment)
 	for _, field := range composite.Fields {
@@ -145,7 +145,7 @@ func (r *renderer) renderRange(rangeType goschema.Range) {
 	rangeType.Canonicalize()
 	r.linef(`range %s {`, quote(rangeType.Name))
 	if rangeType.Schema != "" {
-		r.rawAttr(1, "schema", schemaRef(rangeType.Schema))
+		r.rawAttr(1, "schema", r.schemaRef(rangeType.Schema))
 	}
 	r.rawAttr(1, "subtype", userTypeExpr(rangeType.Subtype))
 	r.stringAttr(1, "subtype_opclass", rangeType.SubtypeOpClass)
@@ -249,7 +249,7 @@ func (r *renderer) renderFunction(function goschema.Function) {
 	name := objectNameFromQualified(function.Name)
 	r.linef(`function %s {`, quote(name))
 	if schema := schemaNameFromQualified(function.Name); schema != "" {
-		r.rawAttr(1, "schema", schemaRef(schema))
+		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	// Every one of these four is a quoted string rather than a bare word.
 	// Measured on the pinned Atlas community binary v1.3.0, one attribute varied
@@ -311,7 +311,7 @@ func (r *renderer) renderViews() {
 		name := objectNameFromQualified(view.Name)
 		r.linef(`view %s {`, quote(name))
 		if schema := schemaNameFromQualified(view.Name); schema != "" {
-			r.rawAttr(1, "schema", schemaRef(schema))
+			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
 		r.stringAttr(1, "as", view.Body)
 		if view.WithCheck {
@@ -342,7 +342,7 @@ func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
 	name := objectNameFromQualified(view.Name)
 	r.linef(`materialized %s {`, quote(name))
 	if schema := schemaNameFromQualified(view.Name); schema != "" {
-		r.rawAttr(1, "schema", schemaRef(schema))
+		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.stringAttr(1, "as", view.Body)
 	// Emit refresh_strategy only when it differs from the canonical default so
@@ -437,7 +437,7 @@ func (r *renderer) renderRLSPolicies() {
 		// PolicyFor.
 		r.stringAttr(1, "for", firstNonEmpty(strings.ToUpper(policy.PolicyFor), "ALL"))
 		if policy.ToRoles != "" {
-			r.rawAttr(1, "to", roleTargets(policy.ToRoles))
+			r.rawAttr(1, "to", r.roleTargets(policy.ToRoles))
 		}
 		r.stringAttr(1, "using", policy.UsingExpression)
 		r.stringAttr(1, "check", policy.WithCheckExpression)
@@ -448,7 +448,21 @@ func (r *renderer) renderRLSPolicies() {
 }
 
 func (r *renderer) renderGrants() {
-	grants := append([]goschema.Grant(nil), r.db.Grants...)
+	// Incomplete grants are dropped BEFORE the sort, because the sort key is
+	// [renderer.grantTarget] and rendering a target records the schema
+	// reference it writes. Asking it about a grant that is then skipped would
+	// declare a `schema` block for a `permission` block the document does not
+	// contain -- a declaration of nothing, which is the failure this render's
+	// collected schema set exists to avoid in the other direction.
+	grants := make([]goschema.Grant, 0, len(r.db.Grants))
+	for _, grant := range r.db.Grants {
+		grant.Canonicalize()
+		if grant.Role == "" || grantTargetName(grant) == "" || len(grant.Privileges) == 0 {
+			r.warn("grants."+grant.Role, "grant requires role, table, schema, or sequence target, and at least one privilege")
+			continue
+		}
+		grants = append(grants, grant)
+	}
 	slices.SortFunc(grants, func(a, b goschema.Grant) int {
 		return cmp.Or(
 			cmp.Compare(a.Role, b.Role),
@@ -457,14 +471,9 @@ func (r *renderer) renderGrants() {
 		)
 	})
 	for _, grant := range grants {
-		grant.Canonicalize()
 		target := r.grantTarget(grant)
-		if grant.Role == "" || target == "" || len(grant.Privileges) == 0 {
-			r.warn("grants."+grant.Role, "grant requires role, table, schema, or sequence target, and at least one privilege")
-			continue
-		}
 		r.line("permission {")
-		r.rawAttr(1, "to", roleTarget(grant.Role))
+		r.rawAttr(1, "to", r.roleTarget(grant.Role))
 		r.rawAttr(1, "for", target)
 		r.rawAttr(1, "privileges", privilegeList(grant.Privileges))
 		if grant.WithOption {
@@ -625,14 +634,14 @@ func atlasLanguage(language string) string {
 	}
 }
 
-func roleTargets(value string) string {
+func (r *renderer) roleTargets(value string) string {
 	roles, ok := splitTopLevelComma(value)
 	if !ok {
 		return stringList([]string{value})
 	}
 	targets := make([]string, 0, len(roles))
 	for _, role := range roles {
-		targets = append(targets, roleTarget(role))
+		targets = append(targets, r.roleTarget(role))
 	}
 	return "[" + strings.Join(targets, ", ") + "]"
 }
@@ -645,24 +654,44 @@ func roleTargets(value string) string {
 // `There is no variable named "PUBLIC"` -- it drops a block whose name it does
 // not model, but only after the body evaluates (stokaro/ptah#1234).
 //
-// A named role stays a `role.<name>` traversal, which is measured to evaluate
-// on that binary when the file also declares the matching `role` block, so
-// quoting it would lose a reference for nothing. Ptah's own parser reads either
-// spelling through rawIdentifierOrString, so the round trip is unaffected.
-func roleTarget(value string) string {
+// A named role is a `role.<name>` traversal only where the document declares
+// the matching block. That precondition was written down when PUBLIC was fixed
+// and never enforced, and a grantee is exactly where it fails: a `permission`
+// block is a child of the object granted on, so `--exclude '*[type=role]'`
+// takes away the role blocks and leaves every grant to them behind. Measured on
+// PostgreSQL 17, one operand varied against an otherwise identical document:
+//
+//	role "app" declared, to = role.app   exit 0
+//	role "app" absent,   to = role.app   exit 1  There is no variable named "role"
+//	role "app" absent,   to = "app"      exit 0
+//
+// Quoting where the block is absent loses nothing, which is what separates this
+// from [renderer.tableRef]: there, the short form would destroy the schema the
+// qualified name carried, so an unresolvable reference keeps the qualified
+// spelling. A grantee carries no second part to lose, and Ptah's own parser
+// reads either spelling back to the same role through roleTargetName, so the
+// round trip is unaffected either way.
+func (r *renderer) roleTarget(value string) string {
 	value = strings.TrimSpace(value)
 	if strings.EqualFold(value, "PUBLIC") {
 		return quote("PUBLIC")
 	}
-	if value == "" {
+	if value == "" || !r.documentDeclaresRole(value) {
 		return quote(value)
 	}
 	return "role" + objectRefPart(value)
 }
 
+// grantTargetName is the raw name a grant targets, with no reference rendered
+// and nothing recorded. It answers "is this grant complete" without asking
+// [renderer.grantTarget], which has the side effect of declaring a schema.
+func grantTargetName(grant goschema.Grant) string {
+	return cmp.Or(grant.OnSchema, grant.OnTable, grant.OnSequence)
+}
+
 func (r *renderer) grantTarget(grant goschema.Grant) string {
 	if grant.OnSchema != "" {
-		return schemaRef(grant.OnSchema)
+		return r.schemaRef(grant.OnSchema)
 	}
 	if grant.OnTable != "" {
 		return r.tableRef(grant.OnTable)

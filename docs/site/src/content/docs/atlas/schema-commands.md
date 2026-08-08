@@ -527,6 +527,39 @@ rather than a flag because `ptah-compat`'s flag surface is held to parity with
 the pinned binary; see
 [Compatibility never costs you a capability](../overview/#compatibility-never-costs-you-a-capability).
 
+### Every reference the document writes resolves inside it
+
+Inspected output is written so that it evaluates as HCL on its own, whatever
+the selection left behind. Two rules follow from that, and both are visible
+when a filter removes something a `permission` block still points at.
+
+A schema is declared whenever anything in the document references one. That
+includes a document with no tables at all: every PostgreSQL database carries
+`GRANT USAGE ON SCHEMA public TO PUBLIC`, so inspecting an empty database
+renders a `permission` block saying `for = schema.public` and the matching
+`schema "public" {}` beside it. A document that references no schema declares
+none.
+
+A grantee is written as a `role.<name>` reference only where the same document
+declares that `role` block, and as a quoted name otherwise. Grants are children
+of the object granted on rather than of the grantee, so excluding roles keeps
+every grant to them:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" --exclude '*[type=role]'
+permission {
+  to = "app_user"
+  for = table.users
+  privileges = ["SELECT"]
+}
+```
+
+The name is preserved either way — Ptah reads both spellings back to the same
+grant, and applying that document issues `GRANT SELECT ON TABLE "public"."users"
+TO "app_user"` — so nothing is lost by the quoted form, while a reference to a
+block the document does not contain would cost the whole file: the pinned Atlas
+community binary refuses it with `There is no variable named "role"`.
+
 ### Select what is inspected with `--include`
 
 `--include` positively selects which top-level resources survive inspection,

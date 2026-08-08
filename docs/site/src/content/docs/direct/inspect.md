@@ -170,6 +170,11 @@ it and the plan that follows removes the object, which is what you asked for.
 The compatibility surface, which does leave blocks out, says so in the document;
 see [The document says what it does not describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe).
 
+What both commands share is that the document evaluates on its own: a schema is
+declared whenever anything references one, and a grantee is written as a
+`role.<name>` reference only where the document declares that role block. See
+[Every reference the document writes resolves inside it](../../atlas/schema-commands/#every-reference-the-document-writes-resolves-inside-it).
+
 `--format sql` and `--format json` select SQL and JSON output. `--schemas`,
 `--include`, and `--exclude` select what is inspected, in that order:
 `--schemas` names the database schemas, `--include` picks top-level resources

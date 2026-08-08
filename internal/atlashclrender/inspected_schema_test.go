@@ -145,14 +145,22 @@ func TestRenderForDialectSynthesizesNoSchema(t *testing.T) {
 // so both attributes had to move, and the third row is why quoting only the
 // grantee was not enough.
 //
-// A named role stays a reference: `to = role.app` with the matching `role`
-// block present is measured to evaluate on that binary, so quoting it would
-// lose a reference and buy nothing.
+// A named role stays a reference only where the document declares the matching
+// `role` block. The last two rows are that pair, and they are the half the
+// original fix asserted in prose and never enforced: a `permission` block is a
+// child of the object granted on, so `--exclude '*[type=role]'` takes the role
+// blocks away and leaves every grant to them behind. Measured on the same
+// binary, one operand varied:
+//
+//	role "app" declared, to = role.app   exit 0
+//	role "app" absent,   to = role.app   exit 1  There is no variable named "role"
+//	role "app" absent,   to = "app"      exit 0
 func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 	tests := []struct {
-		name string
-		role string
-		want string
+		name  string
+		role  string
+		roles []goschema.Role
+		want  string
 	}{
 		{
 			name: "PUBLIC is a quoted string, not a variable",
@@ -165,9 +173,15 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 			want: "  to = \"PUBLIC\"\n",
 		},
 		{
-			name: "a named role stays a reference",
+			name:  "a named role the document declares stays a reference",
+			role:  "app",
+			roles: []goschema.Role{{Name: "app"}},
+			want:  "  to = role.app\n",
+		},
+		{
+			name: "a named role the document does not declare is a string",
 			role: "app",
-			want: "  to = role.app\n",
+			want: "  to = \"app\"\n",
 		},
 	}
 
@@ -177,6 +191,7 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 			c := qt.New(t)
 
 			db := inspectedTable("public")
+			db.Roles = test.roles
 			db.Grants = []goschema.Grant{{
 				Role:       test.role,
 				OnSchema:   "public",
@@ -192,6 +207,100 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 	}
 }
 
+// TestRenderInspectedDeclaresTheSchemaAGrantReferences pins the other half of
+// the same document: the schema blocks are the ones the body turned out to
+// reference, whatever wrote the reference.
+//
+// Every PostgreSQL database carries `GRANT USAGE ON SCHEMA public TO PUBLIC`,
+// so the first row is what an EMPTY database renders as. Its `permission` block
+// says `for = schema.public` with nothing to resolve it to, and the pinned
+// Atlas community binary v1.3.0 refuses the file with `There is no variable
+// named "schema"` -- with no table anywhere to predict the declaration from.
+//
+// The last row is the control that keeps this from being satisfied by
+// declaring the default unconditionally: a document that references no schema
+// declares none, which is what the empty-include-selection contract needs.
+func TestRenderInspectedDeclaresTheSchemaAGrantReferences(t *testing.T) {
+	tests := []struct {
+		name        string
+		db          func() *goschema.Database
+		wantPresent []string
+		wantAbsent  []string
+	}{
+		{
+			name: "a grant on the schema is the only thing referencing it",
+			db: func() *goschema.Database {
+				return &goschema.Database{Grants: []goschema.Grant{{
+					Role:       "PUBLIC",
+					OnSchema:   "public",
+					Privileges: []string{"USAGE"},
+				}}}
+			},
+			wantPresent: []string{"schema \"public\" {\n}\n", "  for = schema.public\n"},
+		},
+		{
+			name: "a table references it as well",
+			db: func() *goschema.Database {
+				db := inspectedTable("")
+				db.Grants = []goschema.Grant{{
+					Role:       "PUBLIC",
+					OnSchema:   "public",
+					Privileges: []string{"USAGE"},
+				}}
+				return db
+			},
+			wantPresent: []string{
+				"schema \"public\" {\n}\n",
+				"  schema = schema.public\n",
+				"  for = schema.public\n",
+			},
+		},
+		{
+			name: "nothing references it",
+			db: func() *goschema.Database {
+				return &goschema.Database{Roles: []goschema.Role{{Name: "app"}}}
+			},
+			wantPresent: []string{"role \"app\" {\n"},
+			wantAbsent:  []string{"schema \"public\"", "schema."},
+		},
+		{
+			// A grant conferring no privilege is dropped with a diagnostic, so
+			// its target reference is never written -- and a schema block
+			// declared for it would be a declaration of nothing.
+			//
+			// The grantee is present on purpose. The completeness check reads
+			// left to right, so a row missing the ROLE would short-circuit
+			// before the target is computed and could not tell whether asking
+			// for the target had declared anything.
+			name: "a grant too incomplete to render",
+			db: func() *goschema.Database {
+				return &goschema.Database{Grants: []goschema.Grant{{
+					Role:     "app",
+					OnSchema: "public",
+				}}}
+			},
+			wantAbsent: []string{"schema \"public\"", "schema.", "permission {"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderInspected(test.db(), platform.Postgres, "public")
+
+			c.Assert(err, qt.IsNil)
+			for _, want := range test.wantPresent {
+				c.Assert(string(result.Data), qt.Contains, want)
+			}
+			for _, unwanted := range test.wantAbsent {
+				c.Assert(string(result.Data), qt.Not(qt.Contains), unwanted)
+			}
+		})
+	}
+}
+
 // TestRenderedPermissionRoundTrips pins that quoting cost nothing on Ptah's own
 // side: the parser reads the quoted spelling back to the same grant.
 //
@@ -199,11 +308,18 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 // a rendering Ptah itself could no longer read would still look like progress.
 func TestRenderedPermissionRoundTrips(t *testing.T) {
 	tests := []struct {
-		name string
-		role string
+		name  string
+		role  string
+		roles []goschema.Role
 	}{
-		{name: "PUBLIC", role: "PUBLIC"},
-		{name: "a named role", role: "app"},
+		{name: "PUBLIC", role: "PUBLIC", roles: []goschema.Role{{Name: "app"}}},
+		{name: "a named role", role: "app", roles: []goschema.Role{{Name: "app"}}},
+		{
+			// The spelling the fix introduces. Quoting is only free if the
+			// grantee survives it, and this row is what says it does.
+			name: "a named role the document does not declare",
+			role: "app",
+		},
 	}
 
 	for _, test := range tests {
@@ -212,7 +328,7 @@ func TestRenderedPermissionRoundTrips(t *testing.T) {
 			c := qt.New(t)
 
 			db := inspectedTable("public")
-			db.Roles = []goschema.Role{{Name: "app"}}
+			db.Roles = test.roles
 			db.Grants = []goschema.Grant{{
 				Role:       test.role,
 				OnSchema:   "public",
