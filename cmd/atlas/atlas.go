@@ -355,7 +355,7 @@ func atlasMigrateDownVerb() atlasVerb {
 		short:   "Roll back migrations",
 		native:  "migrations down",
 		factory: migratedown.NewMigrateDownCommand,
-		// An Atlas-surface verb defaults to Atlas revision bookkeeping, like
+		// An Atlas-surface verb defaults to the Atlas revision-table layout, like
 		// `migrate set` above: without this prefix the native --revision-format
 		// default of "ptah" silently no-ops against the atlas_schema_revisions
 		// rows `atlas migrate apply` writes. --confirm suppresses the native

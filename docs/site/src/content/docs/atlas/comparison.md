@@ -312,9 +312,9 @@ Docker dev databases remain a gap.
 
 ### Failed rollback state
 
-**Ptah.** Native `ptah migrations down` records a rollback that failed partway: the revision row is marked failed with `error=<message>`, `direction=down`, and `applied` set to the number of down statements that completed (`0` when the first one fails or the dialect rolled the body back), so `ptah migrations status` reports the dirty state and names the version, `ptah migrations repair` has a row to act on, and a later `ptah migrations up` refuses to stack work on the unfinished rollback. Repair follows the recorded direction: on such a row `--resume-from` runs the remaining *down* statements and removes the revision once the rollback finishes, and a rollback that already committed a statement is refused rather than recorded applied unless `--force` says the schema was restored.
+**Ptah.** `ptah migrations down` records a rollback that failed partway in both revision-table formats: the revision row is marked failed with `error=<message>`, `direction=down`, and `applied` set to the number of down statements that completed (`0` when the first one fails or the dialect rolled the body back), so status reports the dirty state, repair has a row to act on, and a later up refuses to stack work on the unfinished rollback. Repair follows the recorded direction: `--resume-from` runs the remaining *down* statements and removes the revision once the rollback finishes, and a rollback that already committed a statement is refused rather than recorded applied unless `--force` says the schema was restored.
 
-`ptah-compat migrate down` reproduces Atlas's bookkeeping instead, because a database the compat surface touched has to read the same way to Atlas: the revision row is left byte-identical and both binaries then report the version as applied. On the default per-file transaction mode the body is rolled back with the transaction; a down marked `-- atlas:txmode none` leaves the statements that completed applied, so the schema can be half-reverted behind a row that reads as fully applied. The trade is explicit — drop-in fidelity on the Atlas surface, recoverable state on the native one. The split follows the revision table format, so native runs using `--revision-format atlas` follow the Atlas side too. See [Roll back migrations](../../versioned/rollback/).
+`ptah-compat migrate down` retains the Atlas revision-table schema but deliberately does not reproduce Atlas's hidden failed-down state. Ptah uses the existing `operator_version` field to mark rollback direction and the existing progress/error fields to make a partial rollback recoverable. A successful down still deletes the row. An Atlas reader can inspect the same table, but may report a Ptah-recorded failed rollback differently from one Atlas itself hid. See [Roll back migrations](../../versioned/rollback/).
 
 **Atlas OSS.** The pinned Atlas CE binary registers `migrate down` as a community-abort stub, so the capability is unreachable there.
 
@@ -716,7 +716,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 
 **Current boundary.** `ptah-compat migrate down` is an Atlas OSS command path and recognizes the documented Atlas-style flag names. Flags mapped to native behavior include `--url`, `--dir`, `--to-version`, `--dry-run`, `--revisions-schema`, and `--lock-timeout`.
 
-The forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), so a bare invocation reverts the revisions `ptah-compat migrate apply` wrote; the native `--revision-format ptah` pass-through selects ptah bookkeeping.
+The forward defaults to the Atlas revision-table layout (`--revision-format atlas`, like `migrate set`), so a bare invocation reverts the revisions `ptah-compat migrate apply` wrote; the native `--revision-format ptah` pass-through selects the Ptah layout. Both layouts retain Ptah's recoverable failed-down bookkeeping instead of hiding a partial rollback.
 
 `--dev-url` replays and verifies the rollback plan on the dev database before the target is touched (the native `ptah migrations down --shadow-db` verification), and `--format` renders an Atlas Go-template report over `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, and `.Error`. Both output paths start real rollbacks without reading stdin, matching Atlas; native `ptah migrations down` keeps its confirmation prompt.
 
@@ -908,6 +908,30 @@ rather than as damage.
 
 **Tracking.** [`stokaro/ptah#1196`](https://github.com/stokaro/ptah/issues/1196)
 
+### Dirty retry verifies committed statements
+
+**Type.** Deliberate safety divergence
+
+**Current boundary.** Atlas CE resumes a dirty non-transactional revision from
+`applied + 1` by statement index. Ptah first proves that every statement it
+will skip has unchanged source text. Ptah-format rows store a `partial:h1:`
+checksum for the committed prefix; Atlas-format rows use the existing
+`partial_hashes` column. A changed prefix, malformed metadata, or contradictory
+hash count is refused, as are negative progress counters, `applied > total`,
+and a native `state=applied` row whose counters are incomplete. Invalid
+metadata is rejected by revision listing, status, version, and apply operations
+rather than being hidden as a clean row. Legacy rows without prefix metadata
+resume only while their full-file hash still matches.
+
+Editing only the unapplied suffix remains supported. If that retry changes from
+`none` to `file` or `all` and its transaction rolls back, Ptah retains the
+previously committed `applied` floor rather than making a later run replay SQL.
+Process exit, context cancellation, or deadline while an autocommit statement
+is in flight preserves the unknown-outcome marker.
+
+This is stricter than Atlas CE in the safe direction: uncertain recovery exits
+non-zero instead of skipping SQL based only on a stale integer offset.
+
 ### Recorded revision `error` text on a failed migration
 
 **Type.** Driver difference, not a behavior one
@@ -991,9 +1015,14 @@ the same `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS` statement.
 The leftover keeps the name, so `IF NOT EXISTS` skips it and the statement
 reports success over an index that enforces nothing. Recording that as applied
 means the tooling reports a constraint the database does not have, and nothing
-will look again. The divergence is stricter, not looser: `ptah-compat` exits `1`
-where the binary exits `0`, never the reverse, so no invocation the binary
-refuses succeeds here.
+will look again. Ptah also rejects another index or non-index relation that owns
+the schema-level name. It resolves an unqualified drop and target through the
+active `search_path`, permits cleanup only when that exact drop will run first
+in this attempt, and positively rechecks the active transaction or connection
+before recording the revision. A drop skipped by dirty-resume is not cleanup.
+
+The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
+exits `0`, never the reverse, so no invocation the binary refuses succeeds here.
 
 **Tracking.** [`stokaro/ptah#1101`](https://github.com/stokaro/ptah/issues/1101)
 

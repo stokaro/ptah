@@ -38,7 +38,7 @@
 //
 //   - GenerateMigrationOptions: Configuration for migration generation
 //   - EmptyMigrationOptions: Configuration for empty migration skeleton creation
-//   - MigrationFiles: Information about generated migration files
+//   - MigrationFiles: Ordered information about every generated migration pair
 //
 // # Usage Example
 //

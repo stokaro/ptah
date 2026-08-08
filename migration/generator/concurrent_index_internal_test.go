@@ -1,5 +1,9 @@
 package generator
 
+// White-box testing required: these tests exercise the internal split between
+// transactional and concurrent-index plans before publication. The exported
+// generation and rollback path is covered in shadow_postgres_live_test.go.
+
 import (
 	"context"
 	"strings"
@@ -215,7 +219,6 @@ func TestPublishPlannedMigration_WritesAllPairs(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files.Files, qt.HasLen, 2)
-	c.Assert(files.UpFile, qt.Equals, files.Files[0].UpFile)
 	c.Assert(files.Files[0].NoTransaction, qt.IsFalse)
 	c.Assert(files.Files[1].NoTransaction, qt.IsTrue)
 	c.Assert(files.Files[0].Version < files.Files[1].Version, qt.IsTrue)

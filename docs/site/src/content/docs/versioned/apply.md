@@ -183,11 +183,37 @@ people and pipelines share a directory:
   row. When the dirty row belongs to a migration that is still pending — the
   usual case, a body that failed part-way — the retry reuses that row rather
   than recording a second one, and skips the statements the earlier attempt
-  committed, so fixing the migration and rerunning with `--allow-dirty` is the
-  recovery. Use `ptah migrations repair` when the row cannot be resumed
-  automatically: an interrupted process whose last statement has an unknown
-  outcome, an edit that changed the file's statement count, or a dirty row for
-  a migration whose file was rebased away.
+  committed. Before it skips anything, Ptah verifies that the committed source
+  prefix is unchanged. Native rows carry a `partial:h1:` prefix checksum;
+  Atlas-format rows carry cumulative `partial_hashes`. Editing only the
+  unapplied suffix is allowed. A failed retry cannot reduce `applied` below the
+  previously committed prefix, even when the transaction mode changed.
+  Every `none` attempt runs its migration SQL on one pinned physical database
+  session, so a statement such as `SET search_path` remains effective for the
+  statements that follow. On server databases, revision checkpoints remain on
+  the original connection and cannot be redirected by that session state.
+  SQLite uses the pinned session but qualifies its revision table in `main`, so
+  in-memory databases do not deadlock and temporary objects cannot shadow the
+  metadata. A resumed attempt uses a fresh session: Ptah replays recognized
+  session-control statements from the verified prefix, skips recognized durable
+  DDL and DML, and refuses prefixes that created temporary objects or whose
+  session-local effect cannot be classified safely.
+  A `none` body cannot contain top-level transaction-control statements such as
+  `BEGIN`, `COMMIT`, `ROLLBACK`, savepoint commands, MySQL or MariaDB
+  `SET autocommit`, or SQL Server `SET IMPLICIT_TRANSACTIONS`. Ptah validates
+  the complete body and pins its physical session before changing revision
+  metadata, so either failure leaves a new version absent and preserves an
+  existing dirty row unchanged.
+  Pre-migration checks are not rerun after committed progress because they
+  describe the original pre-migration state. Automatic continuation is
+  up-direction only: a row left dirty by an interrupted rollback is refused so
+  up SQL cannot be resumed from a down-statement offset. Use
+  `ptah migrations repair` when the row cannot be resumed automatically: an
+  interrupted rollback, a process whose last statement has an unknown outcome,
+  changed or unverifiable committed-prefix metadata, an edit that changed the
+  file's statement count, or a dirty row for a migration whose file was rebased
+  away. Legacy dirty rows without prefix metadata may resume only while their
+  full-file checksum still matches.
 - **Execution order** (`--exec-order`): `linear` (default) fails when a merge
   landed a pending migration below the current version; `linear-skip` warns
   and leaves it pending; `non-linear` applies it. Status reports such
@@ -293,21 +319,23 @@ Both gates are covered in depth in
 **A migration failed partway.** The revision table records a dirty state and
 every later run refuses to continue until it is repaired — see
 [Maintain migration history](../maintain-history/). A failed *rollback* records
-that state on the native surface only; `ptah-compat migrate down` reproduces
-Atlas's bookkeeping and leaves the row untouched, which
-[Roll back migrations](../rollback/) states in full.
+the same recoverable state in both revision-table formats;
+`ptah-compat migrate down` keeps the Atlas table layout but does not copy
+Atlas's hidden failed-down state. [Roll back migrations](../rollback/) shows
+how to resume it through the native repair command.
 
-**The process stopped during a non-transactional statement.** The revision row
-records the last known completed statement and marks the interrupted
-statement's outcome as unknown. Inspect the database before repair. Ptah
-rejects `repair --resume-from` while this marker is present because the SQL may
-already have committed.
+**A non-transactional statement was interrupted.** If the process exits, the
+context is canceled, or its deadline expires while an autocommit statement is
+in flight, the revision row preserves the last known completed statement and
+marks the interrupted statement's outcome as unknown. Inspect the database
+before repair. Ptah rejects `repair --resume-from` while this marker is present
+because the SQL may already have committed.
 
 **A concurrent index build failed on PostgreSQL** (exit `2`). The invalid index
 left behind keeps the name, so re-issuing the generated `IF NOT EXISTS`
 statement is skipped rather than retried and reports no error. Ptah refuses to
-run the migration while an index it creates is unusable, and names the `REINDEX
-INDEX CONCURRENTLY` that rebuilds it:
+run the migration while an index a conditional create expects is unusable, and
+names the `REINDEX INDEX CONCURRENTLY` that rebuilds it:
 
 ```text
 error: error running migrations: migration 1785756328 cannot be applied: PostgreSQL reports index "public"."idx_members_email" (indisvalid=false, indisready=false) unusable, and CREATE INDEX ... IF NOT EXISTS finds the name taken and skips it rather than rebuilding it, so this run would record the migration applied over a constraint that is not enforced; run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", or drop the index, then run the migration again
@@ -317,11 +345,30 @@ error: error running migrations: migration 1785756328 cannot be applied: Postgre
 about. An invalid *unique* index enforces nothing, so without the refusal the
 run would exit `0`, report the database up to date, and keep accepting duplicate
 rows. Rebuild the index with the `REINDEX` the message names, or drop it so the
-name is free and the statement builds it, then run again. Only indexes the
-migration itself creates are checked, and only on PostgreSQL; other dialects
+name is free and the statement builds it, then run again. Only indexes named by
+`CREATE INDEX ... IF NOT EXISTS` are checked, and only on PostgreSQL; ordinary
+creates retain PostgreSQL's normal error semantics and may be renamed or removed
+by later statements. Other dialects
 have no concurrent index build to leave half-finished. A dry run is exempt,
 because it records nothing. `ptah migrations repair` refuses on the same
 grounds — see [Maintain migration history](../maintain-history/).
+
+An intentional `DROP INDEX` followed by a matching create is allowed when the
+drop will execute in the current attempt. A statement skipped by dirty-resume
+cannot serve as that cleanup. Ptah resolves both unqualified drops and target
+tables through `search_path`, then checks the schema-level relation name. An
+index on another table or a non-index relation with that name is a conflict.
+After the body, Ptah positively verifies on the active transaction or connection
+that every conditional create's statement-local schema, target table, and index
+name still describe a usable result. Equal raw names under different
+`search_path` values remain distinct checks.
+
+Repair that cannot reconstruct an
+explicit original path checks every same-named target in PostgreSQL user
+schemas, so the repair session's current path cannot hide another candidate.
+
+A partitioned parent index created with `CREATE INDEX ... ON ONLY` is accepted
+in its expected ready-but-incomplete catalog state.
 
 **A pre-migration check blocked the migration.** Nothing is applied and no
 revision row is written, so the run is recorded as never started. Fix the data

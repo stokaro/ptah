@@ -12,11 +12,10 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-// Down bookkeeping is split by surface (see Migrator.reproducesAtlasDownBookkeeping):
-// the Atlas-shaped surface must leave exactly what Atlas leaves, while native
-// Ptah keeps its richer dirty state for recovery tooling. Measured against
-// Atlas: a failed `migrate down` leaves the
-// revision row byte-identical and a successful one deletes it (#957).
+// Atlas-format revisions keep the upstream table shape, but Ptah does not copy
+// the upstream behavior that hides a failed rollback behind an applied row.
+// Rollback direction is encoded in operator_version so the existing schema can
+// expose the failure to status and route repair to the down body.
 
 const failingDownTxtar = `-- atlas:txtar
 
@@ -34,6 +33,17 @@ const succeedingDownTxtar = `-- atlas:txtar
 CREATE TABLE child (id INTEGER PRIMARY KEY);
 
 -- down.sql --
+DROP TABLE child;
+`
+
+const succeedingNoTransactionDownTxtar = `-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE child (id INTEGER PRIMARY KEY);
+
+-- down.sql --
+-- atlas:txmode none
+
 DROP TABLE child;
 `
 
@@ -96,43 +106,36 @@ FROM atlas_schema_revisions ORDER BY version`)
 	return tuples
 }
 
-// TestMigrateDown_AtlasFormatFailedDownLeavesRevisionsByteIdentical is the
-// compat-surface contract: Atlas records nothing when a down fails, so
-// `atlas migrate status` and `ptah-compat migrate status` keep agreeing.
-func TestMigrateDown_AtlasFormatFailedDownLeavesRevisionsByteIdentical(t *testing.T) {
+func TestMigrateDown_AtlasFormatFailedDownRecordsDirection(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 	conn, m := newAtlasDownMigrator(t, failingDownTxtar)
-	before := atlasRevisionTuples(t, conn)
-	c.Assert(before, qt.HasLen, 2)
+	c.Assert(atlasRevisionTuples(t, conn), qt.HasLen, 2)
 
 	err := m.MigrateDownTo(ctx, 1)
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(atlasRevisionTuples(t, conn), qt.DeepEquals, before,
-		qt.Commentf("a failed Atlas-format down must not touch the revision table"))
-
-	// Status agrees with Atlas: the version still reads as applied, not dirty.
+	c.Assert(sqliteTableExists(t, conn, "child"), qt.IsTrue)
 	status, err := m.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.CurrentVersion, qt.Equals, int64(2))
-	c.Assert(status.DirtyRevision, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(status.DirtyRevision.Applied, qt.Equals, 0)
+	c.Assert(status.DirtyRevision.Total, qt.Equals, 2)
+	c.Assert(status.DirtyRevision.OperatorVersion, qt.Equals, "Ptah/down")
 }
 
 // TestMigrateDown_AtlasFormatFailedNoTransactionDownLeavesPartialSchema covers
 // the non-transactional down path, where "the body is rolled back" does not
 // hold: `-- atlas:txmode none` runs the down outside a transaction, so the
-// statements that completed stay applied. The Atlas-shaped surface still
-// records nothing, which means a half-reverted schema is left behind a revision
-// row that reads as fully applied, with no dirty state and no repair hook. That
-// is Atlas's own behavior, and it is the reason the native surface keeps
-// recording (#957).
-func TestMigrateDown_AtlasFormatFailedNoTransactionDownLeavesPartialSchema(t *testing.T) {
+// statements that completed stay applied. The Atlas-shaped table now records
+// that progress instead of reporting the half-reverted schema as clean.
+func TestMigrateDown_AtlasFormatFailedNoTransactionDownRecordsPartialSchema(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 	conn, m := newAtlasDownMigrator(t, failingNoTransactionDownTxtar)
-	before := atlasRevisionTuples(t, conn)
-	c.Assert(before, qt.HasLen, 2)
+	c.Assert(atlasRevisionTuples(t, conn), qt.HasLen, 2)
 
 	err := m.MigrateDownTo(ctx, 1)
 
@@ -140,12 +143,61 @@ func TestMigrateDown_AtlasFormatFailedNoTransactionDownLeavesPartialSchema(t *te
 	// The first down statement completed and was not rolled back.
 	c.Assert(sqliteTableExists(t, conn, "child2"), qt.IsFalse)
 	c.Assert(sqliteTableExists(t, conn, "child1"), qt.IsTrue)
-	// The revision row still claims the migration is fully applied.
-	c.Assert(atlasRevisionTuples(t, conn), qt.DeepEquals, before)
 	status, err := m.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.CurrentVersion, qt.Equals, int64(2))
-	c.Assert(status.DirtyRevision, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(status.DirtyRevision.Applied, qt.Equals, 1)
+	c.Assert(status.DirtyRevision.Total, qt.Equals, 2)
+	c.Assert(status.DirtyRevision.OperatorVersion, qt.Equals, "Ptah/down")
+
+	err = m.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true})
+	c.Assert(err, qt.ErrorMatches, `migration 2 is dirty from an interrupted rollback; repair the rollback before migrating up`)
+
+	_, err = conn.ExecContext(ctx, `UPDATE atlas_schema_revisions
+SET applied = total, error = ''
+WHERE version = '2'`)
+	c.Assert(err, qt.IsNil)
+	status, err = m.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(m.MigrateUp(ctx), qt.ErrorMatches, `migration 2 is dirty.*`)
+	err = m.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true})
+	c.Assert(err, qt.ErrorMatches, `migration 2 is dirty from an interrupted rollback; repair the rollback before migrating up`)
+}
+
+func TestRepairMigration_AtlasCompletedDownFinalizesAfterMetadataFailure(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newAtlasDownMigrator(t, succeedingNoTransactionDownTxtar)
+	_, err := conn.ExecContext(ctx, `CREATE TRIGGER block_revision_delete
+BEFORE DELETE ON atlas_schema_revisions
+WHEN OLD.version = '2'
+BEGIN
+    SELECT RAISE(FAIL, 'blocked revision delete');
+END`)
+	c.Assert(err, qt.IsNil)
+
+	err = m.MigrateDownTo(ctx, 1)
+	c.Assert(err, qt.ErrorMatches, `(?s)failed to record migration reversion 2:.*blocked revision delete.*`)
+	c.Assert(sqliteTableExists(t, conn, "child"), qt.IsFalse)
+	var applied, total int
+	var partialHashes string
+	c.Assert(
+		conn.QueryRowContext(ctx, "SELECT applied, total, partial_hashes FROM atlas_schema_revisions WHERE version = '2'").
+			Scan(&applied, &total, &partialHashes),
+		qt.IsNil,
+	)
+	c.Assert(applied, qt.Equals, 1)
+	c.Assert(total, qt.Equals, 1)
+	c.Assert(partialHashes, qt.Matches, `\["h1:[A-Za-z0-9+/]+=*"\]`)
+
+	_, err = conn.ExecContext(ctx, "DROP TRIGGER block_revision_delete")
+	c.Assert(err, qt.IsNil)
+	c.Assert(m.RepairMigration(ctx, migrator.RepairMigrationOptions{Version: 2}), qt.IsNil)
+	c.Assert(atlasRevisionTuples(t, conn), qt.HasLen, 1)
 }
 
 func sqliteTableExists(t *testing.T, conn *dbschema.DatabaseConnection, table string) bool {
@@ -175,10 +227,7 @@ func TestMigrateDown_AtlasFormatSuccessfulDownDeletesRow(t *testing.T) {
 	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
 }
 
-// TestMigrateDown_AtlasFormatRetryAfterFailedDownSucceeds mirrors the
-// check-failure recovery contract: because nothing was recorded, a repaired
-// retry needs no flags and no revision repair.
-func TestMigrateDown_AtlasFormatRetryAfterFailedDownSucceeds(t *testing.T) {
+func TestMigrateDown_AtlasFormatRepairAfterFailedDownRunsDownBody(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "retry.db"))
@@ -195,20 +244,20 @@ func TestMigrateDown_AtlasFormatRetryAfterFailedDownSucceeds(t *testing.T) {
 	c.Assert(broken.MigrateUp(ctx), qt.IsNil)
 	c.Assert(broken.MigrateDownTo(ctx, 1), qt.IsNotNil)
 
-	// The operator repairs the down body and retries.
+	// The operator repairs the down body and explicitly resumes the rollback.
 	fsys["2_create_child.sql"] = &fstest.MapFile{Data: []byte(succeedingDownTxtar)}
 	repaired, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	repaired = repaired.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 
-	c.Assert(repaired.MigrateDownTo(ctx, 1), qt.IsNil)
+	c.Assert(repaired.RepairMigration(ctx, migrator.RepairMigrationOptions{Version: 2, ResumeFrom: 1}), qt.IsNil)
 
 	c.Assert(atlasRevisionTuples(t, conn), qt.HasLen, 1)
+	c.Assert(sqliteTableExists(t, conn, "child"), qt.IsFalse)
 }
 
 // TestMigrateDown_PtahFormatFailedDownStillRecordsDirtyState pins the native
-// side of the split. This is the regression guard that proves the branch is
-// load-bearing: collapsing both surfaces onto Atlas semantics turns this red.
+// revision-table encoding independently from the Atlas-layout tests above.
 func TestMigrateDown_PtahFormatFailedDownStillRecordsDirtyState(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()

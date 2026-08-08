@@ -176,7 +176,7 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `migration 1 has an unknown statement outcome.*omit --resume-from.*`)
 	})
 
-	c.Run("Atlas down preserves compatibility bookkeeping", func(c *qt.C) {
+	c.Run("Atlas down persists rollback progress", func(c *qt.C) {
 		databasePath := filepath.Join(c.TempDir(), "atlas-down-crash.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "atlas", "down", "after-checkpoint")
 		conn := openNoTransactionCrashDatabase(c, databasePath)
@@ -184,15 +184,24 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(noTransactionTableExists(c, conn, "posts"), qt.IsFalse)
 		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
 
-		var failure string
+		var failure, operatorVersion string
 		var applied, total int
 		c.Assert(
-			conn.QueryRow("SELECT applied, total, COALESCE(error, '') FROM atlas_schema_revisions WHERE version = '1'").Scan(&applied, &total, &failure),
+			conn.QueryRow("SELECT applied, total, COALESCE(error, ''), operator_version FROM atlas_schema_revisions WHERE version = '1'").
+				Scan(&applied, &total, &failure, &operatorVersion),
 			qt.IsNil,
 		)
-		c.Assert(applied, qt.Equals, 2)
+		c.Assert(applied, qt.Equals, 1)
 		c.Assert(total, qt.Equals, 2)
 		c.Assert(failure, qt.Equals, "")
+		c.Assert(operatorVersion, qt.Equals, "Ptah/down")
+
+		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c)).
+			WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+		status, err := mig.GetMigrationStatus(c.Context())
+		c.Assert(err, qt.IsNil)
+		c.Assert(status.DirtyRevision, qt.IsNotNil)
+		c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
 	})
 }
 

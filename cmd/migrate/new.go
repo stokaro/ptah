@@ -103,21 +103,22 @@ func migrateNewCommand(cmd *cobra.Command, args []string, dirFormatValue string)
 	if err != nil {
 		return err
 	}
+	pair := files.Files[0]
 	if edit {
-		if err := editCreatedMigration(cmd.Context(), files, editorCmd, migrationsDir, dirFormat); err != nil {
+		if err := editCreatedMigration(cmd.Context(), pair, editorCmd, migrationsDir, dirFormat); err != nil {
 			return err
 		}
 	}
 
 	out := cmd.OutOrStdout()
-	if files.DownFile == "" {
+	if pair.DownFile == "" {
 		fmt.Fprintf(out, "Generated empty migration file:\n")
-		fmt.Fprintf(out, "SQL:  %s\n", files.UpFile)
+		fmt.Fprintf(out, "SQL:  %s\n", pair.UpFile)
 		return nil
 	}
 	fmt.Fprintf(out, "Generated empty migration files:\n")
-	fmt.Fprintf(out, "UP:   %s\n", files.UpFile)
-	fmt.Fprintf(out, "DOWN: %s\n", files.DownFile)
+	fmt.Fprintf(out, "UP:   %s\n", pair.UpFile)
+	fmt.Fprintf(out, "DOWN: %s\n", pair.DownFile)
 	return nil
 }
 
@@ -128,12 +129,12 @@ func migrateNewCommand(cmd *cobra.Command, args []string, dirFormatValue string)
 // nothing to refresh.
 func editCreatedMigration(
 	ctx context.Context,
-	files *generator.MigrationFiles,
+	pair generator.MigrationFilePair,
 	editorCmd string,
 	migrationsDir string,
 	dirFormat migrator.MigrationDirFormat,
 ) error {
-	err := editor.Open(ctx, editorCmd, files.UpFile, files.DownFile)
+	err := editor.Open(ctx, editorCmd, pair.UpFile, pair.DownFile)
 	if errors.Is(err, editor.ErrNoEditor) {
 		return fmt.Errorf("%w, or pass --editor", err)
 	}

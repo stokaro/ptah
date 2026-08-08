@@ -3,8 +3,6 @@ package migrator
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
 	"go.5x5.cz/ptah/core/sqlutil"
 )
@@ -15,11 +13,14 @@ import (
 //     revision. A rollback that reaches its last statement has un-applied the
 //     migration, and Ptah records an un-applied migration by removing its row,
 //     the same way a rollback that never failed does.
-//   - Without it the revision is recorded applied, which is what Ptah has
-//     always done and is right for the rollback that changed nothing: a
-//     transactional down that rolled its body back, or a non-transactional one
-//     whose very first statement failed, leaves the migration exactly as
-//     applied as it was.
+//   - Without it, a row whose down body already completed is finalized by
+//     deleting the revision. This covers a previous repair that ran every
+//     statement but stopped before deletion on a database-state safety check.
+//   - Otherwise the revision is recorded applied, which is what Ptah has always
+//     done and is right for the rollback that changed nothing: a transactional
+//     down that rolled its body back, or a non-transactional one whose very
+//     first statement failed, leaves the migration exactly as applied as it
+//     was.
 //   - Once the rollback has committed a statement the two outcomes are
 //     opposites and the row cannot say which one the operator wants, so
 //     neither is guessed. Recording applied there is the defect: it signs off
@@ -35,21 +36,68 @@ func (m *Migrator) repairRolledBackMigration(
 	opts RepairMigrationOptions,
 ) error {
 	if opts.ResumeFrom <= 0 {
-		if !opts.Force && rollbackChangedSchema(revision) {
-			return rollbackRepairNeedsDirectionError(migration, revision)
-		}
-		if err := m.refuseRepairOverUnusableIndex(ctx, migration); err != nil {
+		return m.repairRolledBackMigrationWithoutResume(ctx, migration, revision, opts)
+	}
+	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+		if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
 			return err
 		}
-		return m.forceAppliedMigration(ctx, migration)
+		if err := scoped.verifyCommittedPrefix(*revision, migration, MigrationDirectionDown, "resume the rollback"); err != nil {
+			return err
+		}
+		if err := scoped.resumeRollback(ctx, migration, opts.ResumeFrom); err != nil {
+			return err
+		}
+		if err := scoped.refuseRollbackCompletionOverUnsafeIndex(ctx, migration); err != nil {
+			return err
+		}
+		return scoped.deleteRolledBackRevision(ctx, migration)
+	})
+}
+
+func (m *Migrator) repairRolledBackMigrationWithoutResume(
+	ctx context.Context,
+	migration *Migration,
+	revision *MigrationRevision,
+	opts RepairMigrationOptions,
+) error {
+	if revision.Applied == revision.Total {
+		return m.finalizeCompletedRollback(ctx, migration, revision)
 	}
-	if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
+	if !opts.Force && rollbackChangedSchema(revision) {
+		return rollbackRepairNeedsDirectionError(migration, revision)
+	}
+	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
 		return err
 	}
-	if err := m.resumeRollback(ctx, migration, opts.ResumeFrom); err != nil {
+	return m.forceAppliedMigration(ctx, migration)
+}
+
+func (m *Migrator) finalizeCompletedRollback(
+	ctx context.Context,
+	migration *Migration,
+	revision *MigrationRevision,
+) error {
+	if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionDown, "finalize the rollback"); err != nil {
 		return err
 	}
-	return m.deleteRolledBackRevision(ctx, migration)
+	if !m.needsPostgresIndexPostcheck(migration, MigrationDirectionDown) {
+		return m.deleteRolledBackRevision(ctx, migration)
+	}
+	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+		if err := scoped.restoreNoTransactionSessionPrefix(
+			ctx,
+			migration,
+			MigrationDirectionDown,
+			revision.Total+1,
+		); err != nil {
+			return err
+		}
+		if err := scoped.refuseRollbackCompletionOverUnsafeIndex(ctx, migration); err != nil {
+			return err
+		}
+		return scoped.deleteRolledBackRevision(ctx, migration)
+	})
 }
 
 // rollbackChangedSchema reports whether the rollback can have changed the
@@ -92,57 +140,7 @@ func rollbackRepairNeedsDirectionError(migration *Migration, revision *Migration
 // the revision pointing at the new failure, so the operator can fix it and
 // resume again from a later statement.
 func (m *Migrator) resumeRollback(ctx context.Context, migration *Migration, resumeFrom int) error {
-	statements := splitSQLStatementsForConnection(m.conn, migration.DownSQL)
-	if resumeFrom < 1 || resumeFrom > len(statements) {
-		return fmt.Errorf("resume-from must be between 1 and %d", len(statements))
-	}
-	startedAt := time.Now()
-	for i := resumeFrom - 1; i < len(statements); i++ {
-		stmt := strings.TrimSpace(statements[i])
-		if stmt == "" {
-			continue
-		}
-		event := StatementEvent{Statement: stmt, Index: i + 1, Total: len(statements)}
-		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionDown); err != nil {
-			return fmt.Errorf("failed to record resumed rollback %d at statement %d: %w", migration.Version, event.Index, err)
-		}
-		if err := executeSQLOutsideTransaction(ctx, m.conn, stmt); err != nil {
-			return m.failResumedRollback(ctx, migration, startedAt, err, event)
-		}
-		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionDown); err != nil {
-			return fmt.Errorf("failed to record resumed rollback %d at statement %d: %w", migration.Version, event.Index, err)
-		}
-	}
-	return nil
-}
-
-// failResumedRollback records a statement that failed during a resumed
-// rollback. The failure is wrapped as a [MigrationExecutionError] carrying the
-// absolute statement index so the revision keeps counting in the numbers
-// --resume-from speaks: the index the operator passes next is the one this row
-// reports, not an offset into the tail that was resumed.
-func (m *Migrator) failResumedRollback(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	failure error,
-	event StatementEvent,
-) error {
-	execErr := &MigrationExecutionError{
-		Err:            fmt.Errorf("failed to execute SQL statement: %w", failure),
-		Statement:      event.Statement,
-		StatementIndex: event.Index,
-		Total:          event.Total,
-	}
-	return m.failRollbackWithDirtyStateWithMode(
-		ctx,
-		migration,
-		startedAt,
-		execErr,
-		migration.DownSQL,
-		fmt.Sprintf("failed to resume rollback of migration %d", migration.Version),
-		MigrationTxModeNone,
-	)
+	return m.resumeMigrationDirectionOnSession(ctx, migration, resumeFrom, MigrationDirectionDown)
 }
 
 // deleteRolledBackRevision removes the revision of a migration whose rollback

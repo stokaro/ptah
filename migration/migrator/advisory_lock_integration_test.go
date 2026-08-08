@@ -86,6 +86,36 @@ func TestMigrationAdvisoryLock_PostgresTimeoutIntegration(t *testing.T) {
 	c.Assert(migrator.IsMigrationLockTimeout(err), qt.IsTrue)
 }
 
+func TestMigrationAdvisoryLock_PostgresRepairTimeoutIntegration(t *testing.T) {
+	dbURL := postgresTestURL(t)
+	c := qt.New(t)
+	ctx := context.Background()
+
+	baseConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = baseConn.Close() }()
+
+	lockConn, err := baseConn.Conn(ctx)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = lockConn.Close() }()
+
+	lockName := "ptah-test-repair-lock"
+	lockKey := postgresMigrationLockKeyForTest(lockName)
+	_, err = lockConn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockKey)
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, _ = lockConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", lockKey)
+	}()
+
+	m := migrator.NewMigrator(baseConn, migrator.NewRegisteredMigrationProvider()).
+		WithMigrationLockName(lockName).
+		WithMigrationLockTimeout(100 * time.Millisecond)
+	err = m.RepairMigration(ctx, migrator.RepairMigrationOptions{Version: 1})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(migrator.IsMigrationLockTimeout(err), qt.IsTrue)
+}
+
 func postgresMigrationLockKeyForTest(name string) int64 {
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(name))

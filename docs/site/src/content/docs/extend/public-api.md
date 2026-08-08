@@ -102,9 +102,47 @@ the callback failed.
 For SQL-backed `no_transaction` migrations, Ptah writes a durable progress
 checkpoint before invoking the observer. Before each statement, it first marks
 that statement's outcome as unknown; after success, it advances the completed
-count and clears the marker. Atlas-format down execution is excluded because it
-preserves Atlas's unchanged-row bookkeeping. A custom `MigrationFunc` is opaque
-to the migrator and does not receive statement-level checkpointing.
+count and clears the marker. Process exit, context cancellation, or deadline
+while execution is in flight preserves the unknown-outcome marker. This
+includes Atlas-format down execution. A custom `MigrationFunc` is opaque to the
+migrator and does not receive statement-level checkpointing.
+
+Dirty SQL-backed resumes verify the already committed source prefix before
+skipping it. Native rows use the `partial:h1:` value in `Checksum`; Atlas rows
+use cumulative `partial_hashes`. A failure after changing transaction mode
+cannot reduce the recorded applied count below that verified prefix.
+
+Negative `applied` or `total` values and `applied > total` are rejected whenever
+a revision is read, including through `GetRevisions`, `GetAppliedRevisions`,
+`GetAppliedMigrations`, `GetCurrentVersion`, and `GetMigrationStatus`. Native
+rows accept only `applied`, `pending`, `failed`, `pending:down`, and
+`failed:down`. An applied row cannot claim that state until `applied == total`;
+other spellings, explicit `:up` suffixes, and direction-suffixed applied states
+are invalid because a completed rollback deletes its revision row.
+
+`RepairMigration` holds the session advisory lock across revision inspection,
+resumed SQL, safety checks, and the final metadata write.
+
+SQL-backed `MigrationTxModeNone` attempts pin their migration SQL to one
+physical database session. Server-database revision metadata remains on the
+original connection; SQLite uses the pinned session with a `main`-qualified
+table to support its single-connection in-memory mode. Resume replays recognized
+session controls from the verified committed prefix on a fresh session and
+refuses prefixes whose session-local state cannot be reconstructed safely.
+Top-level transaction-control statements are rejected before session pinning or
+revision mutation because their commit boundary would conflict with Ptah's
+durable per-statement checkpoints.
+
+On PostgreSQL, an up migration may clean invalid index residue with a matching
+`DROP INDEX` that executes before the create in the current attempt. The
+migrator resolves unqualified drops and target tables through `search_path`,
+rejects any other relation that owns the schema-level index name, and rechecks
+transaction-local catalog state before writing a clean revision. It records the
+resolved schema and target at each conditional create, rather than resolving a
+deduplicated raw name under the final `search_path`. Repair without an explicit
+replayable path checks every same-named target in PostgreSQL user schemas. A drop skipped
+by resume does not satisfy the preflight. `RepairMigration` performs the same
+positive index-state check, including when `Force` is set.
 
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.
@@ -202,7 +240,9 @@ Embedders that need cancellation while waiting for that lock use
 `WriteFilesContext`; concurrent use of one plan fails with
 `generator.ErrMigrationPlanInUse`. `migration/planner.Planner` exposes only
 checked planning; malformed references, unresolved additions, and target
-index-namespace conflicts fail before SQL is returned.
+index-namespace conflicts fail before SQL is returned. The returned
+`generator.MigrationFiles.Files` slice is the authoritative list of generated
+pairs and published paths, in apply order.
 
 ## Safety reports and shadow errors
 

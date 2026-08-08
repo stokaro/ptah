@@ -181,11 +181,12 @@ either side of it.
 
 `CREATE TABLE IF NOT EXISTS` does not alter a table that already exists, so a
 revision table created by an earlier Ptah against a server that accepted
-`Nullable(JSON)` keeps that column type and keeps storing `{}`. Writes continue
-to succeed and Ptah itself never reads `partial_hashes` back, so nothing in Ptah
-surfaces it. Ptah does not rewrite the column automatically; drop and recreate
-the revision table, or `ALTER` the column to `Nullable(String)`, if an external
-Atlas-compatible consumer needs to read it.
+`Nullable(JSON)` keeps that column type and keeps storing `{}`. Ptah ignores a
+legacy `{}` on clean rows, but reads `partial_hashes` on dirty Atlas-format rows
+with committed progress. Malformed metadata, including `{}` where a digest
+array is required, fails closed during status or retry. Ptah does not rewrite
+the column automatically; alter it to `Nullable(String)` or recreate the table
+before recovering such a dirty row.
 
 Setting a revision directly (`SetAtlasRevision`) is still unsupported on
 ClickHouse, because revision history cannot be updated atomically there.
