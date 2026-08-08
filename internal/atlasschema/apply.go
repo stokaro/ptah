@@ -126,6 +126,11 @@ type applyComputation struct {
 	statements []string
 	current    *types.DBSchema
 	desired    *goschema.Database
+	// readScope is the schema allow-list current was read at, nil when the read
+	// was the connection's own default. A saved plan records no schema scope, so
+	// [VerifyPlanTarget] re-reads at that default; a caller fingerprinting
+	// current has to know whether the two would be the same read.
+	readScope []string
 }
 
 func computeApplyPlan(
@@ -150,7 +155,8 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, applyReadScope(opts.Schemas, conn.Info().Schema, desired))
+	readScope := applyReadScope(opts.Schemas, conn.Info().Schema, desired)
+	current, err := dbschema.ReadSchemaWithSchemas(conn, readScope)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("read database schema: %w", err)
 	}
@@ -173,7 +179,7 @@ func computeApplyPlan(
 			currentErr)
 	}
 
-	computation := applyComputation{current: current, desired: desired}
+	computation := applyComputation{current: current, desired: desired, readScope: readScope}
 	info := conn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
 	if err != nil {
