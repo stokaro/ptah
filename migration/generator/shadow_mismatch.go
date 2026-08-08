@@ -126,6 +126,13 @@ func collectUserTypeMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	)...)
 	mismatches = append(mismatches, namedMismatches(diff.RangesAdded, "missing_range", "missing range")...)
 	mismatches = append(mismatches, namedMismatches(diff.RangesRemoved, "extra_range", "extra range")...)
+	mismatches = append(mismatches, changedObjectMismatches(
+		diff.RangesModified,
+		"range_mismatch",
+		"range type",
+		func(value types.RangeDiff) string { return value.RangeName },
+		func(value types.RangeDiff) map[string]string { return value.Changes },
+	)...)
 	return mismatches
 }
 

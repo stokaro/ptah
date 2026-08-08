@@ -1077,6 +1077,20 @@ type ColumnNode struct {
     // the call back instead of a bare identifier the Atlas community binary
     // refuses.
     TypeRawSQL bool
+    // EnumType records that the column's declared type names an enum the schema
+    // declares, rather than a built-in type.
+    //
+    // PostgreSQL needs this to attach `USING <column>::<type>` when an existing
+    // column changes type into an enum: without the cast the server refuses the
+    // migration with `column ... cannot be cast automatically` (SQLSTATE 42804).
+    // Identity comes from the declaration and never from the type's spelling --
+    // an enum called "status_kind" is exactly as much an enum as one called
+    // "enum_status" (stokaro/ptah#931 item 1).
+    //
+    // Dialects that model enums on the column instead of as a standalone type
+    // rewrite Type to their inline form (MySQL `ENUM(...)`, SQLite `TEXT` plus a
+    // CHECK), and this flag still reports what the author declared.
+    EnumType bool
     // Nullable indicates whether the column allows NULL values (default: true)
     Nullable bool
     // Primary indicates whether this column is part of the primary key
@@ -5891,8 +5905,27 @@ type DBRange struct {
     Name    string `json:"name"`
     Schema  string `json:"schema,omitempty"`
     Subtype string `json:"subtype"`
+    // SubtypeOpClass is the operator class backing the subtype's ordering
+    // (pg_range.rngsubopc). Always populated by the catalog, including when the
+    // author never named one, so the comparator only consults it when the
+    // desired schema declares one.
+    SubtypeOpClass string `json:"subtype_opclass,omitempty"`
+    // Collation is the subtype collation (pg_range.rngcollation), empty for
+    // non-collatable subtypes.
+    Collation string `json:"collation,omitempty"`
+    // Canonical is the canonicalization function (pg_range.rngcanonical), empty
+    // when the range has none.
+    Canonical string `json:"canonical,omitempty"`
+    // SubtypeDiff is the subtype difference function (pg_range.rngsubdiff),
+    // empty when the range has none.
+    SubtypeDiff string `json:"subtype_diff,omitempty"`
 }
     DBRange represents a PostgreSQL range type read from the database.
+
+    Everything after Subtype exists so a change to an EXISTING range type
+    can be detected. While the reader returned only the name and subtype, the
+    comparator had nothing to compare and reported a changed range as converged
+    (stokaro/ptah#931 item 2).
 
 func (r DBRange) QualifiedName() string
 
@@ -8495,6 +8528,7 @@ type IndexRef struct{ ... }
 type MaterializedViewDiff struct{ ... }
 type RLSPolicyDiff struct{ ... }
 type RLSPolicyRef struct{ ... }
+type RangeDiff struct{ ... }
 type RoleDiff struct{ ... }
 type SchemaDiff struct{ ... }
 type SequenceDiff struct{ ... }
@@ -8877,6 +8911,27 @@ type RLSPolicyRef struct {
         }
 
 
+### go.5x5.cz/ptah/migration/schemadiff/types.RangeDiff
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type RangeDiff struct {
+    RangeName string            `json:"range_name"`
+    Changes   map[string]string `json:"changes"`
+
+    // CurrentSubtype is the subtype the range has in the database being compared
+    // against, in that catalog's own spelling. It is the from-side used to order
+    // the non-CASCADE DROP, for the same reason DomainDiff.CurrentBaseType is:
+    // the DROP runs against the database as it stands, so only the references
+    // that database holds now can block it.
+    //
+    // Empty when the caller built the diff by hand; the drop ordering then falls
+    // back to declaration order.
+    CurrentSubtype string `json:"current_subtype,omitempty"`
+}
+    RangeDiff represents changes to an existing PostgreSQL range type.
+
+
 ### go.5x5.cz/ptah/migration/schemadiff/types.RoleDiff
 
 package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -9024,10 +9079,18 @@ type SchemaDiff struct {
     CompositeTypesRemoved  []string            `json:"composite_types_removed"`
     CompositeTypesModified []CompositeTypeDiff `json:"composite_types_modified"`
 
-    // RangesAdded/Removed track PostgreSQL range types. Ranges have no in-place
-    // alter, so there is no Modified category (a change is drop + recreate).
-    RangesAdded   []string `json:"ranges_added"`
-    RangesRemoved []string `json:"ranges_removed"`
+    // RangesAdded/Removed/Modified track PostgreSQL range types. PostgreSQL has
+    // no ALTER TYPE ... AS RANGE, so a modification is planned as a non-CASCADE
+    // DROP TYPE followed by a CREATE TYPE, the same shape domains and composite
+    // types already use.
+    //
+    // Modified used to be absent, and the comparator built name sets only, so
+    // changing the subtype of an existing range type produced an empty plan and
+    // `schema apply` reported "Schema is synced" while the database still held
+    // the old definition (stokaro/ptah#931 item 2).
+    RangesAdded    []string    `json:"ranges_added"`
+    RangesRemoved  []string    `json:"ranges_removed"`
+    RangesModified []RangeDiff `json:"ranges_modified"`
 
     // ViewsAdded contains names of views that exist in the target schema
     // but not in the current database schema.

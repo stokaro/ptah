@@ -4,14 +4,19 @@
 // through Ptah's annotations: tables, columns and a narrow set of
 // constraints (CHECK only). Enums, custom types, extensions, functions,
 // row-level security policies and roles are PostgreSQL-shaped and have no
-// direct equivalent here, so this planner deliberately drops them from
-// the output rather than emitting unrunnable SQL.
+// direct equivalent here, so this planner emits no runnable SQL for them.
 //
-// The renderer is the second line of defense: any AST node this planner
-// did emit that ClickHouse cannot express is rendered as a
-// `-- CLICKHOUSE: ... is not supported` comment. Keeping both layers
-// honest means the planner stays free to emit dialect-neutral nodes
-// without needing to know every detail of ClickHouse's syntax.
+// It does not drop them in silence. Every such object the diff carries is
+// emitted as its AST node and reduced by the renderer to a
+// `-- CLICKHOUSE: ... is not supported` comment naming the object, which is
+// exactly what `ptah schema render --dialect clickhouse` produces for the same
+// model -- the two surfaces have to give the same answer. Those comments are
+// stripped before execution, so nothing unrunnable reaches the server.
+//
+// The renderer is therefore both the second line of defense and the single
+// place that decides what ClickHouse can express: the planner stays free to
+// emit dialect-neutral nodes without needing to know every detail of
+// ClickHouse's syntax.
 package clickhouse
 
 import (
@@ -39,16 +44,19 @@ func New() *Planner { return &Planner{} }
 // The output is ordered to satisfy ClickHouse's constraint that tables must
 // be created before any subsequent ALTER references them:
 //
-//  1. CREATE TABLE for every newly-added table.
-//  2. ALTER TABLE for every per-table column add/modify/drop.
-//  3. ADD INDEX for new data-skipping indexes.
-//  4. DROP INDEX for removed indexes.
-//  5. DROP TABLE for removed tables.
+//  1. Diagnostics for the extensions and sequences ClickHouse cannot host.
+//  2. CREATE TABLE for every newly-added table.
+//  3. ALTER TABLE for every per-table column add/modify/drop.
+//  4. Diagnostics for the roles, functions, views, materialized views, RLS,
+//     grants and triggers ClickHouse cannot host.
+//  5. ADD INDEX for new data-skipping indexes.
+//  6. DROP INDEX for removed indexes.
+//  7. DROP TABLE for removed tables.
 //
-// Diff fields concerning PostgreSQL-only constructs (enums, extensions,
-// functions, RLS, roles) are intentionally ignored; the renderer would
-// reduce them to comments anyway, and emitting nothing keeps the output
-// migration small.
+// Steps 1 and 4 emit no runnable SQL: the renderer reduces each node to a
+// named `-- CLICKHOUSE: ... is not supported` comment, in the order
+// `schema render` produces for the same model. Ignoring those diff fields
+// instead is what made `schema apply` under-generate without a word.
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
@@ -69,8 +77,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		result = append(result, ast.NewComment("CLICKHOUSE: enum changes are ignored; declare ClickHouse Enum8/Enum16 columns inline via platform.clickhouse.type"))
 	}
 
+	result = reportUnsupportedObjectsBeforeTables(result, diff)
 	result = p.addNewTables(result, diff, generated)
 	result = p.modifyExistingTables(result, diff, generated)
+	result = reportUnsupportedObjectsAfterTables(result, diff)
 	result, err = p.addNewIndexes(result, diff, indexes)
 	if err != nil {
 		return nil, err

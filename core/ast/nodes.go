@@ -228,6 +228,20 @@ type ColumnNode struct {
 	// the call back instead of a bare identifier the Atlas community binary
 	// refuses.
 	TypeRawSQL bool
+	// EnumType records that the column's declared type names an enum the schema
+	// declares, rather than a built-in type.
+	//
+	// PostgreSQL needs this to attach `USING <column>::<type>` when an existing
+	// column changes type into an enum: without the cast the server refuses the
+	// migration with `column ... cannot be cast automatically` (SQLSTATE 42804).
+	// Identity comes from the declaration and never from the type's spelling --
+	// an enum called "status_kind" is exactly as much an enum as one called
+	// "enum_status" (stokaro/ptah#931 item 1).
+	//
+	// Dialects that model enums on the column instead of as a standalone type
+	// rewrite Type to their inline form (MySQL `ENUM(...)`, SQLite `TEXT` plus a
+	// CHECK), and this flag still reports what the author declared.
+	EnumType bool
 	// Nullable indicates whether the column allows NULL values (default: true)
 	Nullable bool
 	// Primary indicates whether this column is part of the primary key

@@ -295,19 +295,30 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
+// VisitCreateMaterializedView refuses: SQL Server has no materialized view
+// object (an indexed view is a different construct with different rules).
+//
+// This used to render a comment. A comment makes `schema render` exit 0 on a
+// model the planner refuses at `schema apply` time, so the surface a user is
+// told to validate with disagreed with the surface that executes.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	r.notSupported("CREATE MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
 
+// VisitDropMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	r.notSupported("DROP MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("DROP MATERIALIZED VIEW", node.Name)
 }
 
+// VisitRefreshMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
-	r.notSupported("REFRESH MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
+}
+
+func materializedViewsUnsupported(statement, name string) error {
+	return unsupportedFeaturef("%s %s: materialized views are not supported by SQL Server; remove matview definitions for this target", statement, name)
 }
 
 func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
@@ -322,15 +333,19 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 	if body == "" {
 		return unsupportedFeaturef("CREATE TRIGGER requires a body")
 	}
+	event, err := renderTriggerEvent(node)
+	if err != nil {
+		return err
+	}
 	if !strings.HasPrefix(strings.ToUpper(body), "AS") {
 		body = "AS " + body
 	}
-	r.w.WriteLinef("%s %s ON %s %s %s;",
+	r.w.WriteLinef("%s %s ON %s %s %s",
 		create,
 		escapeQualifiedIdentifier(node.Name),
 		escapeQualifiedIdentifier(node.Table),
-		renderTriggerEvent(node),
-		body,
+		event,
+		terminateStatement(body),
 	)
 	return nil
 }
@@ -632,19 +647,37 @@ func renderIndexParts(parts []ast.IndexPart) []string {
 	return rendered
 }
 
-func renderTriggerEvent(node *ast.CreateTriggerNode) string {
+// renderTriggerEvent builds the timing/event clause of a T-SQL trigger.
+//
+// SQL Server DML triggers are AFTER or INSTEAD OF; there is no BEFORE. A BEFORE
+// trigger is refused rather than rewritten to AFTER, because the rewrite moves
+// the body from running ahead of the write to running behind it — the two see
+// different table state, and a BEFORE trigger that adjusts the row being
+// written cannot do so at all once it is AFTER.
+func renderTriggerEvent(node *ast.CreateTriggerNode) (string, error) {
 	timing := strings.ToUpper(strings.TrimSpace(node.Timing))
-	if timing == "BEFORE" {
-		timing = "AFTER"
-	}
 	if timing == "" {
 		timing = "AFTER"
+	}
+	if timing == "BEFORE" {
+		return "", unsupportedFeaturef("BEFORE triggers are not supported; SQL Server offers AFTER and INSTEAD OF")
 	}
 	event := strings.ToUpper(strings.TrimSpace(node.Event))
 	if event == "" {
 		event = "INSERT"
 	}
-	return timing + " " + event
+	return timing + " " + event, nil
+}
+
+// terminateStatement returns body with exactly one trailing semicolon. A body
+// annotation is naturally spelled as a complete SQL statement ending in ";",
+// and appending another one unconditionally produced ";;".
+func terminateStatement(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if strings.HasSuffix(trimmed, ";") {
+		return trimmed
+	}
+	return trimmed + ";"
 }
 
 func escapeStringLiteral(s string) string {

@@ -1039,6 +1039,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// Note: MySQL doesn't use separate enum types like PostgreSQL
 	// Enums are handled inline in column definitions, so we skip enum creation steps
 
+	// 0. Name the declared objects this target cannot host, before anything
+	// else, mirroring the order `schema render` emits them in.
+	result = p.reportUnsupportedObjects(result, diff)
+
 	// 1. Add enum change warnings (MySQL limitations)
 	result = p.addEnumChangeWarnings(result, diff)
 
