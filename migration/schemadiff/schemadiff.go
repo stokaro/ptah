@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -52,6 +53,15 @@ func CompareWithDatabaseInfo(
 		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
 	}
 	merged.Dialect = info.Dialect
+	// A reserved PostgreSQL role is in neither DBSchema.Roles nor
+	// DBSchema.RolesOutOfScope, so comparing it would read it as absent and
+	// plan a CREATE ROLE the server always refuses. Refuse the declaration
+	// here instead, before anything is compared (stokaro/ptah#1312).
+	if generated != nil {
+		if err := reservedrole.ValidateDeclared(info.Dialect, generated.Roles); err != nil {
+			return nil, err
+		}
+	}
 	generated = fromschema.AssignDefaultForeignKeyNames(generated, info.Dialect)
 	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
 	if !info.IdentifierSemantics.IsZero() &&

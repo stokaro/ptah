@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -312,24 +313,33 @@ func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
 		qt.Commentf("describing a role instead of carrying it out of scope changed the plan"))
 }
 
-func TestRolesReservedNameIsNotComparedAgainstAnything(t *testing.T) {
+func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 	c := qt.New(t)
 
-	// A KNOWN GAP, pinned so it cannot be lost or silently claimed fixed.
+	// This is what TestRolesReservedNameIsNotComparedAgainstAnything pinned as
+	// a known gap, rewritten now that stokaro/ptah#1312 closed it. The behavior
+	// asserted below is UNCHANGED, and deliberately so: the gap was never in
+	// this function, and moving the refusal into it would give the comparator
+	// an error return every caller would have to plumb.
 	//
 	// Roles and RolesOutOfScope partition the roles Ptah MANAGES, not the
 	// cluster's role set: a PostgreSQL reader excludes the reserved pg_ roles
 	// and the bootstrap superuser from both reads, in either direction. So a
-	// desired schema naming one is compared against nothing and is planned as
-	// a CREATE ROLE the server refuses. Measured on PostgreSQL 17.10 with
-	// ptah-compat schema apply --auto-approve: `role "postgres"` exits 1 on
-	// SQLSTATE 42710, `role "pg_monitor"` exits 1 on SQLSTATE 42939, both
-	// identically before and after stokaro/ptah#1267's reader scoping.
+	// reserved name reaching this comparison is compared against nothing and
+	// reads as absent, which is exactly why the declaration has to be refused
+	// before it gets here rather than repaired once it has.
 	//
-	// Refusing such a desired state up front is the right answer and is a
-	// separate change: schemadiff.Compare has no error to return, and the
-	// refusal has to cover the generate path too. When it lands, this test
-	// changes with it.
+	// The refusal lives at the two surfaces that accept a desired schema and
+	// can return an error -- schemadiff.CompareWithDatabaseInfo on the compare
+	// path, and the renderer validation phase migration/planner runs before it
+	// emits any node on the generate path. See
+	// schemadiff.TestCompareWithDatabaseInfoRefusesAReservedRole and
+	// renderer.TestGetOrderedCreateStatementsRefusesAReservedRole.
+	//
+	// The second assertion is what keeps this from becoming decorative: every
+	// name this comparison would read as absent is a name reservedrole.Is
+	// recognizes, so there is no reserved spelling that slips past the refusal
+	// and lands here.
 	generated := &goschema.Database{
 		Roles: []goschema.Role{
 			{Name: "postgres", Login: true, Superuser: true},
@@ -348,6 +358,12 @@ func TestRolesReservedNameIsNotComparedAgainstAnything(t *testing.T) {
 	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"pg_monitor", "postgres"},
 		qt.Commentf("reserved names are in neither database list, so they read as absent"))
 	c.Assert(diff.RolesModified, qt.HasLen, 0)
+	for _, roleName := range diff.RolesAdded {
+		c.Assert(reservedrole.Is(roleName), qt.IsTrue,
+			qt.Commentf("%q read as absent but the refusal would not have caught it", roleName))
+	}
+	c.Assert(reservedrole.ValidateDeclared("postgres", generated.Roles), qt.IsNotNil,
+		qt.Commentf("the desired schema this comparison received should never have reached it"))
 }
 
 func TestRoleDefinitionsComparison(t *testing.T) {
