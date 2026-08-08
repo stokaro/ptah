@@ -548,9 +548,13 @@ Useful controls, all designed for CI:
   that GitHub code scanning ingests — [CI](../../testing/ci/) shows the
   upload step.
 - `--dialect` gates dialect-specific rules; accepted values are `postgres`,
-  `mysql`, `mariadb`, `sqlite`, `clickhouse`, `cockroachdb`, `yugabytedb`, and
-  `spanner`. `--dev-url` infers the dialect and additionally replays the
-  directory on the dev database.
+  `mysql`, `mariadb`, `sqlite`, `sqlserver`, `clickhouse`, `cockroachdb`,
+  `yugabytedb`, and `spanner`. Every documented alias of those names is
+  accepted too and resolves to the canonical one, so `--dialect pgx`,
+  `--dialect postgresql` and `--dialect postgres` are the same request — see
+  [Dialects and capabilities](../../concepts/dialects-and-capabilities/) for
+  the full spelling table. `--dev-url` infers the dialect and additionally
+  replays the directory on the dev database.
 - `--disable DS101` (or a family such as `MY`) skips rules ad hoc; a
   committed `.ptah-lint.yaml` does it persistently and adds per-rule
   severity and path scoping — see below.
@@ -580,7 +584,9 @@ rules:
       - legacy/**
 ```
 
-- `dialect` sets the default lint dialect; `--dialect` overrides it.
+- `dialect` sets the default lint dialect; `--dialect` overrides it. It takes
+  the same spellings as `--dialect`, aliases included, and is stored
+  canonicalized — `dialect: pgx` and `dialect: postgres` select the same rules.
 - `disabled-rules` lists rule codes (`DS101`) or family prefixes (`MY`) to
   skip entirely; entries merge with `--disable` flags. Selectors and custom
   rule codes use uppercase ASCII letters and digits and start with a letter.
@@ -670,14 +676,40 @@ rollback path is understood.
 
 `ptah migrations up` always loads and validates the conventional
 `<migrations-dir>/.ptah-lint.yaml`; when the apply-time gate is active, it
-blocks on error-severity `DS` data-safety findings. A nonempty policy `dialect`
-must match the connected database and selects the same scanner used by
-`ptah migrations lint`; otherwise the gate uses the connected database's
-dialect. A mismatch fails before migration analysis or execution. On the
-standalone lint command, an explicit `--dialect` still overrides the policy.
-The `--config` flag on `ptah migrations up` selects `ptah.yaml`; it does not
-select a lint policy. This distinction prevents a project configuration path
-from silently replacing the policy shipped with the migration directory.
+blocks on error-severity `DS` data-safety findings. What the gate lints is
+always the dialect the connection reports, never the policy's — a policy
+`dialect` is a statement about the directory, not a scanner selector.
+
+A nonempty policy `dialect` must name the **same engine family** as the
+connected database, and a cross-family mismatch fails before migration analysis
+or execution. The families are the ones on
+[Dialects and capabilities](../../concepts/dialects-and-capabilities/):
+
+| Policy `dialect` | Connected database | Verdict |
+| --- | --- | --- |
+| `postgres`, or any alias such as `pgx` | PostgreSQL | matches |
+| `postgres` | CockroachDB, YugabyteDB, Spanner | matches — they ride the PostgreSQL family |
+| `mysql` | MariaDB | matches — one family |
+| `mariadb` | MySQL | matches — one family |
+| `mysql` or `mariadb` | PostgreSQL | **does not match** |
+| `postgres` | MySQL or MariaDB | **does not match** |
+| `sqlite`, `sqlserver`, `clickhouse` | anything else | **does not match** — each stands alone |
+
+Naming a family member rather than the exact engine is accepted because it
+does not change the analysis: every built-in MySQL-family rule applies to both
+`mysql` and `mariadb`, and the scanner treats them identically. Note the one
+asymmetry inside the PostgreSQL family: the `PG` and `TX` rules apply to
+PostgreSQL only, so a CockroachDB, YugabyteDB or Spanner database runs the
+dialect-independent families alone — whether or not a policy file exists, and
+regardless of what it declares.
+
+On the standalone lint command, an explicit `--dialect` still overrides the
+policy, and `--dev-url` is checked against the policy by exactly the same
+family rule, so `ptah migrations lint` and `ptah migrations up` accept the same
+policy files. The `--config` flag on `ptah migrations up` selects `ptah.yaml`;
+it does not select a lint policy. This distinction prevents a project
+configuration path from silently replacing the policy shipped with the
+migration directory.
 
 The gate otherwise uses the same dialect selection, rule configuration, and
 path matching as `ptah migrations lint`. That makes the escape hatch

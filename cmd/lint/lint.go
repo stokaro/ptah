@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/lintartifact"
+	"go.5x5.cz/ptah/internal/lintdialect"
 	"go.5x5.cz/ptah/internal/migrationlintreport"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
@@ -95,7 +96,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Local directory or oci:// reference containing migration files")
 	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
-	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner (empty runs every rule)")
+	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: "+lintdialect.Expected+" (empty runs every rule)")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+migrationlint.ConfigFileName+" when present)")
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
