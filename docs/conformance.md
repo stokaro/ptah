@@ -448,10 +448,28 @@ No fixed order of kinds fixes this, because the three kinds share one namespace
 and name each other in both directions: `CREATE DOMAIN d_comp AS addr` needs the
 composite first and `CREATE TYPE addr AS (f d_int)` needs the domain first.
 Domains, composites and ranges are ordered against each other by what their
-definitions name, and the ones a modification recreates are dropped in the
-reverse of that order, so the deliberately non-CASCADE drop is not blocked by a
-dependent the same plan is about to replace. Enums stay ahead of all three: an
-enum names no other user-defined type, so it has nothing to wait for.
+definitions name. Enums stay ahead of all three: an enum names no other
+user-defined type, so it has nothing to wait for.
+
+The drops a modification emits are ordered by a different graph, and reversing
+the creation order is not a substitute for it. A `DROP` executes against the
+database as it stands, so only the references that database holds now can block
+it. Measured on PostgreSQL 17.10, one database holding
+`CREATE TYPE cc AS (f integer)` and `CREATE DOMAIN dd AS cc`, reconciled against
+a target of `CREATE DOMAIN dd AS integer` and `CREATE TYPE cc AS (f dd)`:
+
+| Drops ordered by | Emitted order | `schema apply --auto-approve` |
+| --- | --- | --- |
+| the target definitions | `DROP TYPE cc`, `DROP DOMAIN dd` | exit 1, `cannot drop type cc because other objects depend on it` / `DETAIL: type dd depends on type cc` (SQLSTATE 2BP01) |
+| the current definitions | `DROP DOMAIN dd`, `DROP TYPE cc` | exit 0 |
+
+The same root cause shows without a flip in it. A database holding
+`CREATE DOMAIN qty AS integer CHECK (VALUE > 0)` and
+`CREATE TYPE meas AS (q qty, label text)`, reconciled against a target that
+widens `qty` to bigint and gives `meas` a plain bigint field, has no edge at all
+on the target side: `DROP DOMAIN "qty"` came out first and the server answered
+`column q of composite type meas depends on type qty`. The current side still
+has the edge, and dropping `meas` first exits 0.
 
 ### Reading an attribute and reconciling it are different claims
 

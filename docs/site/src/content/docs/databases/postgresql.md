@@ -278,8 +278,12 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   not by kind: `CREATE TYPE addr AS (...)` precedes `CREATE DOMAIN d AS addr`,
   and `CREATE DOMAIN qty AS integer` precedes a composite with a `qty` field.
   Both directions occur, and PostgreSQL has no forward declaration for a type.
-  Recreations drop in the reverse of that order, so a non-`CASCADE` drop is
-  never blocked by a dependent the same plan is replacing.
+- The drops a recreation emits are ordered by the shape the **database holds**,
+  which is a different graph from the one above and does not have to agree with
+  it. A `DROP` runs against the current schema, so only a reference that schema
+  carries can block it; when the change is what moves the reference, the create
+  order and the drop order are not mirror images. Both orders come out of the
+  same plan.
 - A domain, composite or range type that an **extension** owns is not
   described. `CREATE EXTENSION` creates those types, so they cannot be created
   or dropped independently, and describing one as a user type made the

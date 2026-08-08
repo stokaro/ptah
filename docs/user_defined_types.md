@@ -102,4 +102,8 @@ Ptah emits user-defined types after extensions and enums but before tables, so t
 
 Enums are emitted ahead of the whole group and take no part in the ordering, because an enum names no other user-defined type.
 
-A domain or composite that changed is dropped and recreated, and the drops run in the reverse of the creation order: the deliberately non-`CASCADE` drop of a composite fails while a domain still names it, so the dependent goes first. Removals of types that are gone from the target schema run after tables, and `DROP TYPE` / `DROP DOMAIN` are classified as destructive by the safety gate.
+A domain or composite that changed is dropped and recreated. The drops are ordered by what the **database currently holds**, not by the target definitions the creations follow. A `DROP` executes against the schema as it stands, so the only reference that can block it is one that schema still carries: the deliberately non-`CASCADE` drop of a composite fails while a domain there still names it, so that domain goes first.
+
+The two orders are the same when a reference survives the change, and they are not when the change is what moves it. Reconciling a database holding `CREATE TYPE cc AS (f integer)` with `CREATE DOMAIN dd AS cc` over it against a target of `CREATE DOMAIN dd AS integer` with `CREATE TYPE cc AS (f dd)` drops `dd` before `cc` and then creates `dd` before `cc` — the reverse of one another in name only. That is not a conflict: only the current schema can refuse a `DROP`, and only the target schema describes what is being built.
+
+Removals of types that are gone from the target schema run after tables, and `DROP TYPE` / `DROP DOMAIN` are classified as destructive by the safety gate.

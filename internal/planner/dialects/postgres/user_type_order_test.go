@@ -72,18 +72,23 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 // The drops are non-CASCADE on purpose, so their order is not cosmetic: a
 // composite still named by a domain cannot be dropped, and the plan that
 // recreates both has to take the dependent away first and put it back last.
+//
+// Here the references survive the modification -- the current shapes the diff
+// carries name the same types the desired ones do -- so the two orders are
+// mirror images of each other. The file next door pins what happens when they
+// are not.
 func TestPlanner_GenerateMigrationAST_RecreatesUserTypesInDependencyOrder(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
 
 	diff := &difftypes.SchemaDiff{
 		DomainsModified: []difftypes.DomainDiff{
-			{DomainName: "d_comp", Changes: map[string]string{"base_type": "old -> addr"}},
-			{DomainName: "d_int", Changes: map[string]string{"check": "old -> new"}},
+			{DomainName: "d_comp", Changes: map[string]string{"not_null": "false -> true"}, CurrentBaseType: "addr"},
+			{DomainName: "d_int", Changes: map[string]string{"type": "smallint -> integer"}, CurrentBaseType: "smallint"},
 		},
 		CompositeTypesModified: []difftypes.CompositeTypeDiff{
-			{TypeName: "addr", Changes: map[string]string{"fields": "old -> new"}},
-			{TypeName: "measure", Changes: map[string]string{"fields": "old -> new"}},
+			{TypeName: "addr", Changes: map[string]string{"fields": "street text -> street text, city text"}, CurrentFieldTypes: []string{"text"}},
+			{TypeName: "measure", Changes: map[string]string{"fields": "qty d_int -> qty d_int, note text"}, CurrentFieldTypes: []string{"d_int"}},
 		},
 	}
 

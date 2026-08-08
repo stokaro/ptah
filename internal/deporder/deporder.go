@@ -49,6 +49,12 @@ func UserTypesForCreate(userTypes []UserType) []string {
 // UserTypesForDrop returns user-defined type names in drop order: a type that
 // names another is dropped first, so a non-CASCADE drop is not blocked by a
 // dependent the same plan is about to remove.
+//
+// The References the caller passes must be the ones the database holds NOW.
+// A DROP executes against the current schema, so passing the definitions a plan
+// intends to create instead orders the statements by a graph the server is not
+// consulting, and the two differ whenever the change is what moves a reference.
+// UserTypesForCreate is the call that takes the desired definitions.
 func UserTypesForDrop(userTypes []UserType) []string {
 	return StableReverseDependencySort(userTypeNames(userTypes), UserTypeDependencies(userTypes))
 }

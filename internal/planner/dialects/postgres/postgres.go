@@ -1182,22 +1182,28 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *types.SchemaDiff) []a
 // is in use requires a manual migration (PostgreSQL offers ALTER DOMAIN /
 // ALTER TYPE for the in-place cases).
 //
-// The order is the reverse of the one addNewUserTypes creates in, for the same
-// reason and in the same direction: a domain over a composite has to go before
-// the composite it names, or the non-CASCADE drop fails on a dependency this
-// very plan is about to replace.
-func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+// The order comes from the CURRENT definitions the diff carries, not from the
+// desired ones addNewUserTypes creates in. A DROP executes against the database
+// as it stands, so the only references that can block it are the ones that
+// database holds now: `DROP TYPE cc` fails while `CREATE DOMAIN dd AS cc` is
+// still on disk, whatever the desired schema says either type should become.
+//
+// The two graphs disagree exactly when the modification is what moved the
+// reference, and no single order serves both. That is not a conflict to
+// resolve, because they answer different questions: the create graph is the
+// shape being built, the drop graph is the shape being taken apart.
+func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	for _, domainDiff := range diff.DomainsModified {
 		byName[domainDiff.DomainName] = ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
 			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use")
-		deps = append(deps, deporder.UserType{Name: domainDiff.DomainName, References: modifiedDomainReferences(generated, domainDiff.DomainName)})
+		deps = append(deps, deporder.UserType{Name: domainDiff.DomainName, References: currentDomainReferences(domainDiff)})
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
 		byName[compositeDiff.TypeName] = ast.NewDropType(compositeDiff.TypeName).SetIfExists().
 			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use")
-		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: modifiedCompositeReferences(generated, compositeDiff.TypeName)})
+		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: compositeDiff.CurrentFieldTypes})
 	}
 
 	for _, name := range deporder.UserTypesForDrop(deps) {
@@ -1208,18 +1214,15 @@ func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDif
 	return result
 }
 
-func modifiedDomainReferences(generated *goschema.Database, name string) []string {
-	if domain := findDomain(generated.Domains, name); domain != nil {
-		return []string{domain.BaseType}
+// currentDomainReferences reports the from-side base type of a modified domain,
+// or nothing when the diff does not carry one. It never reads Changes: that map
+// is a human-readable "old -> new" rendering, and recovering a type name by
+// splitting prose is not a basis for statement ordering.
+func currentDomainReferences(domainDiff types.DomainDiff) []string {
+	if domainDiff.CurrentBaseType == "" {
+		return nil
 	}
-	return nil
-}
-
-func modifiedCompositeReferences(generated *goschema.Database, name string) []string {
-	if composite := findCompositeType(generated.CompositeTypes, name); composite != nil {
-		return compositeFieldTypes(*composite)
-	}
-	return nil
+	return []string{domainDiff.CurrentBaseType}
 }
 
 func findDomain(domains []goschema.Domain, name string) *goschema.Domain {
@@ -1378,7 +1381,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 3c. Recreate changed user-defined types (drop then create), then create
 	// new domains/ranges/composites before tables can reference them.
-	result = p.dropModifiedUserTypes(result, diff, generated)
+	result = p.dropModifiedUserTypes(result, diff)
 	result = p.addNewUserTypes(result, diff, generated)
 
 	// 4. Modify existing enums

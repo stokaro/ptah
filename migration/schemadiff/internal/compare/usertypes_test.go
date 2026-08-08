@@ -115,6 +115,78 @@ func TestCompositeTypes_UnchangedNoChurn(t *testing.T) {
 	c.Assert(diff.CompositeTypesModified, qt.IsNil)
 }
 
+// TestUserTypes_ModifiedCarryTheirCurrentShape pins the from-side the planner
+// orders a non-CASCADE DROP by.
+//
+// The recreate path drops a modified domain or composite before creating it
+// again, and that DROP executes against this database rather than against the
+// target, so the references it can trip over are the ones recorded here. The
+// planner is forbidden from recovering them out of Changes, which is prose, so
+// if the comparator stops carrying them the ordering silently degrades to
+// declaration order and PostgreSQL refuses the plan.
+//
+// The pairs below are the shape where the two sides disagree: the target
+// composite names no user-defined type at all, while the current one still has
+// a field of the domain being recreated.
+func TestUserTypes_ModifiedCarryTheirCurrentShape(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Domains: []goschema.Domain{{Name: "qty", BaseType: "bigint"}},
+		CompositeTypes: []goschema.CompositeType{
+			{Name: "meas", Fields: []goschema.CompositeTypeField{{Name: "q", Type: "bigint"}, {Name: "label", Type: "TEXT"}}},
+		},
+	}
+	database := &types.DBSchema{
+		Domains: []types.DBDomain{{Name: "qty", BaseType: "integer"}},
+		Composites: []types.DBComposite{
+			{Name: "meas", Fields: []types.DBCompositeField{{Name: "q", Type: "qty"}, {Name: "label", Type: "text"}}},
+		},
+	}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Domains(generated, database, diff)
+	compare.CompositeTypes(generated, database, diff)
+
+	c.Assert(diff.DomainsModified, qt.HasLen, 1)
+	c.Assert(diff.DomainsModified[0].CurrentBaseType, qt.Equals, "integer")
+	c.Assert(diff.CompositeTypesModified, qt.HasLen, 1)
+	c.Assert(diff.CompositeTypesModified[0].CurrentFieldTypes, qt.DeepEquals, []string{"qty", "text"})
+}
+
+// TestUserTypes_CurrentShapeKeepsTheCatalogSpelling asserts the carried types
+// are not run through the churn canonicalization the Changes payload uses.
+//
+// That mapping rewrites alias spellings such as int4 into integer, which is
+// right for deciding whether a domain changed and wrong for a name that is
+// resolved against other type names: a user-defined type called `decimal` would
+// come back as `numeric` and its edge would vanish.
+func TestUserTypes_CurrentShapeKeepsTheCatalogSpelling(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Domains: []goschema.Domain{{Name: "d", BaseType: "text"}},
+		CompositeTypes: []goschema.CompositeType{
+			{Name: "holder", Fields: []goschema.CompositeTypeField{{Name: "v", Type: "TEXT"}}},
+		},
+	}
+	database := &types.DBSchema{
+		Domains: []types.DBDomain{{Name: "d", BaseType: "decimal"}},
+		Composites: []types.DBComposite{
+			{Name: "holder", Fields: []types.DBCompositeField{{Name: "v", Type: "decimal"}}},
+		},
+	}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Domains(generated, database, diff)
+	compare.CompositeTypes(generated, database, diff)
+
+	c.Assert(diff.DomainsModified, qt.HasLen, 1)
+	c.Assert(diff.DomainsModified[0].CurrentBaseType, qt.Equals, "decimal")
+	c.Assert(diff.CompositeTypesModified, qt.HasLen, 1)
+	c.Assert(diff.CompositeTypesModified[0].CurrentFieldTypes, qt.DeepEquals, []string{"decimal"})
+}
+
 func TestRanges_AddRemoveByNameOnly(t *testing.T) {
 	c := qt.New(t)
 
