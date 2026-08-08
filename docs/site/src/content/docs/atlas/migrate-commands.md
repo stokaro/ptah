@@ -887,19 +887,62 @@ objects the run analyzes. A PostgreSQL-family `--dev-url` carrying
   review, and so does a reference written out with the reviewed schema's own
   name;
 - one statement is measured per object: `DROP TABLE users, other.audit_log;`
-  under `search_path=public` reports `users` and counts one schema change.
+  under `search_path=public` reports `users` and counts one schema change;
+- an index is measured by the schema of the table it is on, because an index
+  name never carries one: `CREATE INDEX idx ON app.users (id);` under
+  `search_path=public` counts no schema change and raises no diagnostic, while
+  the same statement on a `public` table counts one and raises `PG101`.
 
 A `--dev-url` that names no schema puts the whole connected database under
 review and filters nothing, which is also what every non-PostgreSQL dev URL
 does. A `search_path` naming more than one schema is not a scope: it is read as
 a single schema name, so it scopes nothing and every object stays under review.
 
-An `ALTER TABLE` belongs to its table's schema, never to the column or
-constraint it names, and a `CREATE SCHEMA` is measured against the reviewed
-schema by its own name. A diagnostic that names no object at all — the rules
-that report a statement rather than the objects in it — is always reported,
-since there is nothing to measure a scope against and a hazard must not be
-silenced on an unestablished boundary.
+An `ALTER TABLE`'s schema changes belong to its table's schema, never to the
+column or constraint it names, and a `CREATE SCHEMA` is measured against the
+reviewed schema by its own name.
+
+The scope decision is made once per statement and drives both outputs, so a
+statement the scope removed contributes neither a schema change nor a
+diagnostic, and one it kept can contribute either. A diagnostic that names no
+object at all — the rules that report a statement rather than the objects in
+it — follows the decision already taken for the statement it belongs to: dropped
+when the scope removed that statement, and otherwise reported, since there is
+nothing to measure a scope against and a hazard must not be silenced on an
+unestablished boundary. `ALTER TABLE app.users ADD CONSTRAINT …` under
+`search_path=public` therefore reports nothing, where it used to raise `PG105`
+about a change it had already counted as zero.
+
+A statement is removed only when **every** table it names is out of review, not
+only the one it alters. `ALTER TABLE app.child ADD CONSTRAINT c FOREIGN KEY
+(pid) REFERENCES public.parent (id);` under `search_path=public` names two, and
+validating that key holds a `SHARE ROW EXCLUSIVE` lock on `public.parent` for
+the duration, so `PG306` is reported: the hazard lands on a table the run is
+responsible for. The same statement referencing `app.parent` reports nothing.
+This is one place the two outputs deliberately describe different statements —
+the constraint lands on `app.child`, so the reviewed schema still counts zero
+changes for it. A count of zero is not a statement of safety.
+
+Silence is not exclusion. A statement outside Ptah's SQL grammar is left under
+review whatever schema it names, because a boundary that could not be read must
+not be able to drop a diagnostic. `DROP INDEX` is the current example: Ptah's
+parser does not model it, so `DROP INDEX public.idx;` counts no schema change
+even in the reviewed schema — the pinned community binary counts one — while
+its `PG106` diagnostic is reported in every schema. That missing change is a
+parser gap rather than a scope decision, tracked in
+[`stokaro/ptah#1296`](https://github.com/stokaro/ptah/issues/1296). The same
+grammar boundary is why `TRUNCATE app.users;` and `DROP FUNCTION app.recalc();`
+are reported under `search_path=public` while counting no schema change.
+
+Three constructs are still measured by a name that carries no schema, because
+Ptah's parser records none for them. Measured on PostgreSQL 17.10 under
+`search_path=public`, `CREATE SEQUENCE app.s;` counts one schema change,
+`CREATE TRIGGER trg … ON app.t;` counts one and raises `PG308`, and
+`CREATE POLICY p ON app.t;` counts one — where the pinned community binary
+v1.3.0 counts no schema change and raises no diagnostic for all three. They
+over-report rather than under-report, and each is a warning at exit 0, so a
+scoped run is never told less than the truth about its database. They are listed
+here rather than left to be discovered.
 
 The boundary applies to `ptah-compat migrate lint` only. Native
 `ptah migrations lint` keeps every object under review, whatever the dev URL
