@@ -343,14 +343,31 @@ func fieldWithPlatformValues(
 	return newField
 }
 
+// declaredEnum returns the enum the schema declares under the name fieldType,
+// or nil when fieldType names something else.
+//
+// This is the ONLY test for "is this column an enum". Ptah used to additionally
+// require the type name to start with "enum_", an undocumented convention that
+// appears nowhere in `ptah schema annotations`. An enum called "status_kind" was
+// therefore left as the bare type name in CREATE TABLE while the same dialects
+// skip standalone CREATE TYPE emission, so the values disappeared entirely and
+// the DDL named a type the server had never heard of (stokaro/ptah#931 item 1).
+// A declaration is what makes a type an enum; how it is spelled is not.
+func declaredEnum(fieldType string, enums []goschema.Enum) *goschema.Enum {
+	for i := range enums {
+		if enums[i].Name == fieldType {
+			return &enums[i]
+		}
+	}
+	return nil
+}
+
 func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform string) goschema.Field {
-	if !strings.HasPrefix(field.Type, "enum_") {
+	enum := declaredEnum(field.Type, enums)
+	if enum == nil {
 		return field
 	}
 
-	if enums == nil {
-		return field
-	}
 	// Validate enum field
 	validateEnumField(field, enums)
 
@@ -364,14 +381,7 @@ func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform
 		return field
 	}
 
-	for _, enum := range enums {
-		if enum.Name != field.Type {
-			continue
-		}
-		return applyInlineEnumModel(field, enum, targetPlatform)
-	}
-
-	return field
+	return applyInlineEnumModel(field, *enum, targetPlatform)
 }
 
 func applyInlineEnumModel(field goschema.Field, enum goschema.Enum, targetPlatform string) goschema.Field {
@@ -499,6 +509,7 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 
 	column := ast.NewColumn(field.Name, field.Type)
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
+	column.EnumType = declaredEnum(declaredType, enums) != nil
 
 	// Set nullable - only override default if explicitly set to false
 	// The default behavior should be nullable=true (which ast.NewColumn already sets)
@@ -586,6 +597,7 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	// Create column with basic properties
 	column := ast.NewColumn(field.Name, field.Type)
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
+	column.EnumType = declaredEnum(declaredType, enums) != nil
 
 	// Set nullable (default is true, so only set if false)
 	if !field.Nullable {
@@ -2049,11 +2061,19 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		statements.Statements = append(statements.Statements, extensionNode)
 	}
 
-	// 2b. Add standalone sequence definitions (PostgreSQL-specific) before any
-	// tables, because a sequence may back a column DEFAULT. The OWNED BY
-	// association is emitted later (after tables) via
-	// appendPostgreSQLPostForeignKeyFeatureStatements.
-	if isPostgreSQLFamilyPlatform(targetPlatform) {
+	// 2b. Add standalone sequence definitions before any tables, because a
+	// sequence may back a column DEFAULT. The OWNED BY association is emitted
+	// later (after tables) via appendPostgreSQLPostForeignKeyFeatureStatements
+	// on the PostgreSQL path; it has no MySQL-family equivalent.
+	//
+	// The MySQL family is included because MariaDB has had real SEQUENCE objects
+	// since 10.3 and capability.MariaDB1011 says so. Gating this on the
+	// PostgreSQL family alone made `--dialect mariadb` drop a declared sequence
+	// with no statement and no diagnostic while the capability registry
+	// advertised Sequences: true (stokaro/ptah#931 item 8). The renderer decides
+	// what a sequence means for the concrete target: MariaDB emits CREATE
+	// SEQUENCE, MySQL emits a not-supported comment.
+	if emitsStandaloneSequences(targetPlatform) {
 		for _, sequence := range database.Sequences {
 			sequenceNode := FromSequence(sequence)
 			sequenceNode.OwnedBy = ""
@@ -2084,7 +2104,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	appendTableStatements(statements, database, allFields, targetPlatform)
 
 	isPostgreSQL := isPostgreSQLFamilyPlatform(targetPlatform)
-	if isPostgreSQL {
+	if isPostgreSQL || reportsUnsupportedSchemaObjects(targetPlatform) {
 		appendPostgreSQLPreIndexFeatureStatements(statements, database)
 	}
 
@@ -2102,7 +2122,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		appendForeignKeyConstraintStatements(statements, database.Tables, allFields, database.Constraints, targetPlatform)
 	}
 
-	if isPostgreSQL {
+	if isPostgreSQL || reportsUnsupportedSchemaObjects(targetPlatform) {
 		appendPostgreSQLPostForeignKeyFeatureStatements(statements, database)
 	}
 
@@ -2278,9 +2298,52 @@ func appendViewAndTriggerStatements(statements *ast.StatementList, database gosc
 	for _, view := range database.Views {
 		statements.Statements = append(statements.Statements, FromView(view))
 	}
+	// Materialized views are appended even though none of these targets can
+	// host one. Dropping them here made `schema render` exit 0 having silently
+	// under-generated, while `schema apply` on the same model refused with an
+	// unsupported-feature error -- and render is the documented way to check a
+	// model before applying it. The renderer for each of these dialects refuses
+	// the node, so the two surfaces now give the same answer.
+	for _, view := range database.MaterializedViews {
+		statements.Statements = append(statements.Statements, FromMaterializedView(view))
+	}
 	for _, trigger := range database.Triggers {
 		statements.Statements = append(statements.Statements, FromTrigger(trigger))
 	}
+}
+
+// emitsStandaloneSequences reports whether a declared //ptah:schema:sequence
+// should reach the target's renderer as a CREATE SEQUENCE node.
+//
+// It answers "does this dialect's renderer have something to say about a
+// sequence", not "does this engine have sequences" -- the renderer makes the
+// second call from the capability set, and emits either the statement or a
+// named skip diagnostic. Dropping the node here instead is what made a declared
+// sequence disappear from `schema render` with no trace.
+//
+// SQLite and SQL Server are absent deliberately. Their renderers answer with a
+// flat "CREATE SEQUENCE is not supported", which is true of SQLite and false of
+// SQL Server (it has had sequences since 2012), so routing the node to SQL
+// Server would trade a silent omission for a wrong statement. Both belong to
+// the SQL-schema-file object-kind work, not here.
+func emitsStandaloneSequences(targetPlatform string) bool {
+	return isPostgreSQLFamilyPlatform(targetPlatform) ||
+		isMySQLFamilyTarget(targetPlatform) ||
+		reportsUnsupportedSchemaObjects(targetPlatform)
+}
+
+// reportsUnsupportedSchemaObjects reports whether a target that can host none of
+// the PostgreSQL-family object kinds should nonetheless receive their AST nodes,
+// so its own renderer can say so.
+//
+// ClickHouse implements a notSupported() diagnostic for every one of these kinds
+// -- sequences, roles, functions, views, materialized views, triggers, policies,
+// RLS and grants -- and none of them was ever reached, because this converter
+// dropped the nodes first. `ptah schema apply --dialect clickhouse --dry-run` on
+// a schema declaring all of them planned one CREATE TABLE and exited 0, while
+// the PostgreSQL control planned eight statements (stokaro/ptah#931 item 7).
+func reportsUnsupportedSchemaObjects(targetPlatform string) bool {
+	return platform.NormalizeDialect(targetPlatform) == platform.ClickHouse
 }
 
 func isSQLiteTarget(targetPlatform string) bool {
@@ -2471,18 +2534,9 @@ func ParseForeignKeyReference(foreign string) *ast.ForeignKeyRef {
 // Validation warnings are logged but do not stop the conversion process, allowing for
 // graceful handling of incomplete or evolving schema definitions.
 func validateEnumField(field goschema.Field, enums []goschema.Enum) {
-	if !strings.HasPrefix(field.Type, "enum_") {
-		return
-	}
-
-	// Find the corresponding global enum
-	var globalEnum *goschema.Enum
-	for _, enum := range enums {
-		if enum.Name == field.Type {
-			globalEnum = &enum
-			break
-		}
-	}
+	// Enum identity is the declaration, not an "enum_" name prefix; see
+	// declaredEnum.
+	globalEnum := declaredEnum(field.Type, enums)
 
 	// If no global enum found, this might be an issue but we don't panic
 	// as the field might be using a custom enum type

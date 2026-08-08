@@ -601,35 +601,49 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
-// VisitCreateMaterializedView renders an explicit unsupported warning.
+// VisitCreateMaterializedView refuses: MySQL and MariaDB have no materialized
+// view object.
+//
+// This used to render a comment. A comment makes `schema render` exit 0 on a
+// model the planner refuses at `schema apply` time, so the surface a user is
+// told to validate with disagreed with the surface that executes. Refusing here
+// makes them agree, and matches how SQLite already answers the same input.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-	r.w.WriteLinef("-- %s does not support CREATE MATERIALIZED VIEW %s", r.dialectUpper, node.Name)
-	return nil
+	return r.materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
 
-// VisitDropMaterializedView renders an explicit unsupported warning.
+// VisitDropMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-	r.w.WriteLinef("-- %s does not support DROP MATERIALIZED VIEW %s", r.dialectUpper, node.Name)
-	return nil
+	return r.materializedViewsUnsupported("DROP MATERIALIZED VIEW", node.Name)
 }
 
-// VisitRefreshMaterializedView renders an explicit unsupported warning.
+// VisitRefreshMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-	r.w.WriteLinef("-- %s does not support REFRESH MATERIALIZED VIEW %s", r.dialectUpper, node.Name)
-	return nil
+	return r.materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
+}
+
+func (r *Renderer) materializedViewsUnsupported(statement, name string) error {
+	return fmt.Errorf("%w: %s: %s %s: materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target",
+		ptaherr.ErrUnsupportedFeature, r.dialect, statement, name)
 }
 
 // VisitCreateTrigger renders a CREATE TRIGGER statement for MySQL/MariaDB.
+//
+// MySQL and MariaDB have row-level triggers only. A FOR EACH STATEMENT trigger
+// is refused rather than rendered as FOR EACH ROW: silently changing the level
+// makes the trigger fire once per affected row instead of once per statement,
+// which is a different program. SQLite already refuses the same input, and this
+// matches it.
 func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+	forEach := strings.ToUpper(strings.TrimSpace(node.ForEach))
+	if forEach == "" {
+		forEach = "ROW"
+	}
+	if forEach != "ROW" {
+		return fmt.Errorf("%w: %s: FOR EACH %s triggers are not supported", ptaherr.ErrUnsupportedFeature, r.dialect, forEach)
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -640,9 +654,20 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 	if node.Replace && r.caps.Has(capability.CreateOrReplaceTrigger) {
 		create = "CREATE OR REPLACE TRIGGER"
 	}
-	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH ROW %s;",
-		create, escapeIdentifier(node.Name), node.Timing, node.Event, escapeQualifiedIdentifier(node.Table), strings.TrimSpace(node.Body))
+	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH ROW %s",
+		create, escapeIdentifier(node.Name), node.Timing, node.Event, escapeQualifiedIdentifier(node.Table), terminateStatement(node.Body))
 	return nil
+}
+
+// terminateStatement returns body with exactly one trailing semicolon. A body
+// annotation is naturally spelled as a complete SQL statement ending in ";",
+// and appending another one unconditionally produced ";;".
+func terminateStatement(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if strings.HasSuffix(trimmed, ";") {
+		return trimmed
+	}
+	return trimmed + ";"
 }
 
 // VisitDropTrigger renders a DROP TRIGGER statement for MySQL/MariaDB.
@@ -1055,8 +1080,21 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return fmt.Errorf("DROP FUNCTION is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
 }
 
-// VisitCreateSequence renders CREATE SEQUENCE for MySQL-like databases (no-op).
-// Standalone sequences are a PostgreSQL-specific object.
+// VisitCreateSequence reports that Ptah does not generate standalone sequence
+// objects for this target.
+//
+// MySQL has no SEQUENCE object at all. MariaDB does -- 10.3 and later, verified
+// live: `CREATE SEQUENCE s START WITH 1000 NOCYCLE` on MariaDB 10.11.18 lands a
+// row with TABLE_TYPE = SEQUENCE -- but Ptah has no MariaDB sequence
+// introspection and no MySQL-family sequence planning, so emitting the CREATE
+// here would make `schema render` produce a statement `schema apply` never
+// plans and a reader never sees again: a plan that cannot converge. That is a
+// worse failure than the one this replaces, so the capability stays off until
+// the reader and planner arrive; capability.MariaDB1011 records the same thing.
+//
+// The point of this comment existing at all is that the sequence used to be
+// dropped by the converter before any renderer ran, so `--dialect mariadb`
+// omitted it with no statement and no diagnostic (stokaro/ptah#931 item 8).
 func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- CREATE SEQUENCE %s not supported in %s: %s", node.Name, r.dialect, node.Comment)

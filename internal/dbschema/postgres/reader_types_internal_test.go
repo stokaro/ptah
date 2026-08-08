@@ -208,7 +208,7 @@ func typeColumns(kind string) []string {
 	return map[string][]string{
 		"d": {"schema_name", "domain_name", "base_type", "not_null", "default_value", "check_expr"},
 		"c": {"schema_name", "type_name", "field_name", "field_type", "attnum"},
-		"r": {"schema_name", "range_name", "subtype"},
+		"r": {"schema_name", "range_name", "subtype", "subtype_opclass", "collation_name", "canonical", "subtype_diff"},
 	}[kind]
 }
 
@@ -224,7 +224,7 @@ func appendTypeRow(
 	return append(rows, map[string][]driver.Value{
 		"d": {schema, entry.name, "text", false, "", ""},
 		"c": {schema, entry.name, "lo", "integer", int64(1)},
-		"r": {schema, entry.name, "integer"},
+		"r": {schema, entry.name, "integer", "int4_ops", "", "", ""},
 	}[kind])
 }
 

@@ -224,10 +224,18 @@ type SchemaDiff struct {
 	CompositeTypesRemoved  []string            `json:"composite_types_removed"`
 	CompositeTypesModified []CompositeTypeDiff `json:"composite_types_modified"`
 
-	// RangesAdded/Removed track PostgreSQL range types. Ranges have no in-place
-	// alter, so there is no Modified category (a change is drop + recreate).
-	RangesAdded   []string `json:"ranges_added"`
-	RangesRemoved []string `json:"ranges_removed"`
+	// RangesAdded/Removed/Modified track PostgreSQL range types. PostgreSQL has
+	// no ALTER TYPE ... AS RANGE, so a modification is planned as a non-CASCADE
+	// DROP TYPE followed by a CREATE TYPE, the same shape domains and composite
+	// types already use.
+	//
+	// Modified used to be absent, and the comparator built name sets only, so
+	// changing the subtype of an existing range type produced an empty plan and
+	// `schema apply` reported "Schema is synced" while the database still held
+	// the old definition (stokaro/ptah#931 item 2).
+	RangesAdded    []string    `json:"ranges_added"`
+	RangesRemoved  []string    `json:"ranges_removed"`
+	RangesModified []RangeDiff `json:"ranges_modified"`
 
 	// ViewsAdded contains names of views that exist in the target schema
 	// but not in the current database schema.
@@ -532,7 +540,7 @@ func (d *SchemaDiff) hasSequenceChanges() bool {
 func (d *SchemaDiff) hasUserTypeChanges() bool {
 	return len(d.DomainsAdded) > 0 || len(d.DomainsRemoved) > 0 || len(d.DomainsModified) > 0 ||
 		len(d.CompositeTypesAdded) > 0 || len(d.CompositeTypesRemoved) > 0 || len(d.CompositeTypesModified) > 0 ||
-		len(d.RangesAdded) > 0 || len(d.RangesRemoved) > 0
+		len(d.RangesAdded) > 0 || len(d.RangesRemoved) > 0 || len(d.RangesModified) > 0
 }
 
 func (d *SchemaDiff) hasViewChanges() bool {
@@ -751,6 +759,22 @@ type DomainDiff struct {
 	// Empty when the caller built the diff by hand or the domain's from-side is
 	// unknown; the drop ordering then falls back to declaration order.
 	CurrentBaseType string `json:"current_base_type,omitempty"`
+}
+
+// RangeDiff represents changes to an existing PostgreSQL range type.
+type RangeDiff struct {
+	RangeName string            `json:"range_name"`
+	Changes   map[string]string `json:"changes"`
+
+	// CurrentSubtype is the subtype the range has in the database being compared
+	// against, in that catalog's own spelling. It is the from-side used to order
+	// the non-CASCADE DROP, for the same reason DomainDiff.CurrentBaseType is:
+	// the DROP runs against the database as it stands, so only the references
+	// that database holds now can block it.
+	//
+	// Empty when the caller built the diff by hand; the drop ordering then falls
+	// back to declaration order.
+	CurrentSubtype string `json:"current_subtype,omitempty"`
 }
 
 // CompositeTypeDiff represents changes to a PostgreSQL composite type.

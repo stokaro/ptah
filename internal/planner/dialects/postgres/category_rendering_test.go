@@ -176,6 +176,15 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{"RangesRemoved", &types.SchemaDiff{RangesRemoved: []string{"r"}}, &goschema.Database{}},
 		{
+			"RangesModified",
+			&types.SchemaDiff{RangesModified: []types.RangeDiff{{
+				RangeName:      "r",
+				Changes:        map[string]string{"subtype": "timestamptz -> int8"},
+				CurrentSubtype: "timestamptz",
+			}}},
+			&goschema.Database{Ranges: []goschema.Range{{Name: "r", Subtype: "int8"}}},
+		},
+		{
 			"ViewsAdded",
 			&types.SchemaDiff{ViewsAdded: []string{"v"}},
 			&goschema.Database{Views: []goschema.View{{Name: "v", Body: "SELECT 1"}}},
