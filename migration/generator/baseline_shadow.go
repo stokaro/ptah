@@ -3,7 +3,6 @@ package generator
 import (
 	"context"
 	"fmt"
-	"maps"
 	"strings"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -33,21 +31,30 @@ type BaselineShadowVerifyOptions struct {
 }
 
 // VerifyBaselineShadow replays migrations up to Version on the shadow database
-// and compares the resulting schema with the target database.
+// and compares the resulting schema with the target database. Failures support
+// errors.As with [ShadowVerificationError], including the complete structured
+// mismatch list for schema drift.
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error {
-	if opts.TargetConn == nil {
-		return fmt.Errorf("baseline shadow check failed: target database connection is required")
+	if err := targetConnectionRequiredError(opts.TargetConn, "target database connection is required"); err != nil {
+		return wrapBaselineShadowError(err)
 	}
 	connectCtx, cancelConnect := baselineShadowConnectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()
 	if err != nil {
-		return fmt.Errorf("baseline shadow check failed: connect to shadow database: %w", err)
+		return baselineShadowError("connect", "connect_error", "connect to shadow database", err)
 	}
 	defer dbschema.CloseAndWarn(shadowConn)
 
-	if err := validateBaselineShadowConnection(ctx, opts, shadowConn); err != nil {
-		return err
+	if err := validateShadowConnection(
+		ctx,
+		opts.TargetConn,
+		shadowConn,
+		opts.Dialect,
+		opts.Capabilities,
+		"target database connection is required",
+	); err != nil {
+		return wrapBaselineShadowError(err)
 	}
 
 	targetSchema, err := validateBaselineTargetIdentifierSemantics(
@@ -59,7 +66,7 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 		return err
 	}
 	if err := shadowConn.SchemaWriter().DropAllTables(ctx); err != nil {
-		return fmt.Errorf("baseline shadow check failed: drop all objects: %w", err)
+		return baselineShadowError("drop-all", "drop_all_error", "drop all objects", err)
 	}
 	if err := resetBaselineShadowSchemas(ctx, shadowConn, opts.Schemas); err != nil {
 		return err
@@ -67,19 +74,24 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 
 	migrations, err := loadPriorMigrations(opts.MigrationsDir, opts.ProviderOptions...)
 	if err != nil {
-		return fmt.Errorf("baseline shadow check failed: load migrations: %w", err)
+		return baselineShadowError("load-prior", "load_prior_error", "load migrations", err)
 	}
 	migrations = migrationsAtOrBelow(migrations, opts.Version)
 	if len(migrations) == 0 {
-		return fmt.Errorf("baseline shadow check failed: no migrations found at or below version %d", opts.Version)
+		return baselineShadowError(
+			"load-prior",
+			"no_migrations",
+			fmt.Sprintf("no migrations found at or below version %d", opts.Version),
+			nil,
+		)
 	}
 
 	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...))
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := describeReplayError(err); description != "" {
-			return fmt.Errorf("baseline shadow check failed: %s", description)
+			return baselineShadowErrorWithDisplayMessage("replay", "replay_error", description, err)
 		}
-		return fmt.Errorf("baseline shadow check failed: replay migrations: %w", err)
+		return baselineShadowError("replay", "replay_error", "replay migrations", err)
 	}
 	if err := dropBaselineShadowMetadata(ctx, shadowConn, mig.MigrationsTableIdentifier()); err != nil {
 		return err
@@ -87,7 +99,7 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 
 	shadowSchema, err := dbschema.ReadSchemaWithSchemas(shadowConn, opts.Schemas)
 	if err != nil {
-		return fmt.Errorf("baseline shadow check failed: read shadow schema: %w", err)
+		return baselineShadowError("re-introspect", "re_introspect_error", "read shadow schema", err)
 	}
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx,
@@ -97,8 +109,10 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 		opts.CompareOptions,
 	)
 	if err != nil {
-		return fmt.Errorf(
-			"baseline shadow check failed: resolve target identifier semantics: %w",
+		return baselineShadowError(
+			"schema-match",
+			"identifier_resolution_error",
+			"resolve target identifier semantics",
 			err,
 		)
 	}
@@ -109,43 +123,37 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 		*diff.IdentifierSemantics,
 	)
 	if err != nil {
-		return fmt.Errorf(
-			"baseline shadow check failed: resolve replayed shadow identifier semantics: %w",
+		return baselineShadowError(
+			"identifier-semantics-check",
+			"identifier_semantics_resolution_error",
+			"resolve replayed shadow identifier semantics",
 			err,
 		)
 	}
 	if !identifierSemanticsMatch {
-		return fmt.Errorf("baseline shadow check failed: replayed shadow identifier semantics do not match target %s catalog semantics", opts.Dialect)
+		return baselineShadowError(
+			"identifier-semantics-check",
+			"identifier_semantics_mismatch",
+			fmt.Sprintf("replayed shadow identifier semantics do not match target %s catalog semantics", opts.Dialect),
+			nil,
+		)
 	}
 	if !diff.HasChanges() {
 		return nil
 	}
-	return fmt.Errorf("baseline shadow check failed: %s", describeShadowDiff(diff))
+	return wrapBaselineShadowError(newShadowSchemaMismatchError(diff))
 }
 
-func validateBaselineShadowConnection(
-	ctx context.Context,
-	opts BaselineShadowVerifyOptions,
-	shadowConn *dbschema.DatabaseConnection,
-) error {
-	if !sameDialect(opts.Dialect, shadowConn.Info().Dialect) {
-		return fmt.Errorf(
-			"baseline shadow check failed: shadow database dialect %q does not match target dialect %q",
-			shadowConn.Info().Dialect,
-			opts.Dialect,
-		)
-	}
-	sameRealm, err := devlock.SameRealm(ctx, opts.TargetConn, shadowConn)
-	if err != nil {
-		return fmt.Errorf("baseline shadow check failed: compare target and shadow database realms: %w", err)
-	}
-	if sameRealm {
-		return fmt.Errorf("baseline shadow check failed: shadow database must be distinct from target database")
-	}
-	if opts.Capabilities != nil && !maps.Equal(opts.Capabilities, shadowConn.Info().Capabilities) {
-		return fmt.Errorf("baseline shadow check failed: shadow database capabilities do not match target %s capabilities", opts.Dialect)
-	}
-	return nil
+func baselineShadowError(stage, kind, message string, err error) error {
+	return wrapBaselineShadowError(newShadowVerificationError(stage, kind, message, err))
+}
+
+func baselineShadowErrorWithDisplayMessage(stage, kind, message string, err error) error {
+	return wrapBaselineShadowError(newShadowVerificationErrorWithDisplayMessage(stage, kind, message, err))
+}
+
+func wrapBaselineShadowError(err *ShadowVerificationError) error {
+	return fmt.Errorf("baseline %w", err)
 }
 
 func validateBaselineTargetIdentifierSemantics(
@@ -155,7 +163,7 @@ func validateBaselineTargetIdentifierSemantics(
 ) (*dbschematypes.DBSchema, error) {
 	targetSchema, err := dbschema.ReadSchemaWithSchemas(opts.TargetConn, opts.Schemas)
 	if err != nil {
-		return nil, fmt.Errorf("baseline shadow check failed: read target schema: %w", err)
+		return nil, baselineShadowError("target-introspect", "target_introspection_error", "read target schema", err)
 	}
 	targetGenerated := dbschematogo.ConvertDBSchemaToGoSchema(targetSchema)
 	targetDiff, err := schemadiff.CompareWithDatabase(
@@ -166,8 +174,10 @@ func validateBaselineTargetIdentifierSemantics(
 		opts.CompareOptions,
 	)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"baseline shadow check failed: resolve target identifier semantics: %w",
+		return nil, baselineShadowError(
+			"identifier-semantics-check",
+			"target_identifier_semantics_resolution_error",
+			"resolve target identifier semantics",
 			err,
 		)
 	}
@@ -178,15 +188,22 @@ func validateBaselineTargetIdentifierSemantics(
 		*targetDiff.IdentifierSemantics,
 	)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"baseline shadow check failed: resolve shadow identifier semantics: %w",
+		return nil, baselineShadowError(
+			"identifier-semantics-check",
+			"identifier_semantics_resolution_error",
+			"resolve shadow identifier semantics",
 			err,
 		)
 	}
 	if !identifierSemanticsMatch {
-		return nil, fmt.Errorf(
-			"baseline shadow check failed: shadow database identifier semantics do not match target %s catalog semantics",
-			opts.Dialect,
+		return nil, baselineShadowError(
+			"identifier-semantics-check",
+			"identifier_semantics_mismatch",
+			fmt.Sprintf(
+				"shadow database identifier semantics do not match target %s catalog semantics",
+				opts.Dialect,
+			),
+			nil,
 		)
 	}
 	return targetSchema, nil
@@ -219,7 +236,12 @@ func resetBaselineShadowSchemas(ctx context.Context, conn *dbschema.DatabaseConn
 		}
 		_, err := conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quoteBaselinePostgresIdentifier(schema)+" CASCADE")
 		if err != nil {
-			return fmt.Errorf("baseline shadow check failed: drop schema %q: %w", schema, err)
+			return baselineShadowError(
+				"reset-schemas",
+				"schema_reset_error",
+				fmt.Sprintf("drop schema %q", schema),
+				err,
+			)
 		}
 	}
 	return nil
@@ -228,7 +250,7 @@ func resetBaselineShadowSchemas(ctx context.Context, conn *dbschema.DatabaseConn
 func dropBaselineShadowMetadata(ctx context.Context, conn *dbschema.DatabaseConnection, tableIdentifier string) error {
 	_, err := conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+tableIdentifier)
 	if err != nil {
-		return fmt.Errorf("baseline shadow check failed: drop metadata table: %w", err)
+		return baselineShadowError("drop-metadata", "drop_metadata_error", "drop metadata table", err)
 	}
 	return nil
 }

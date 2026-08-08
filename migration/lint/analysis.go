@@ -272,27 +272,39 @@ func cloneFindings(findings []Finding) []Finding {
 	return cloned
 }
 
+// ValidateOptions checks a lint policy without reading migration files. Apply
+// gates should call it before any early return or bypass that can skip analysis.
+func ValidateOptions(opts Options) error {
+	_, _, err := validateOptions(opts)
+	return err
+}
+
+func validateOptions(opts Options) (migrator.MigrationDirFormat, []Rule, error) {
+	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
+		return "", nil, err
+	}
+	rules := rulesForOptions(opts)
+	if err := validateRules(rules); err != nil {
+		return "", nil, err
+	}
+	if err := validateRuleConfigs(opts.RuleConfigs); err != nil {
+		return "", nil, err
+	}
+	if err := validateRuleSelectors(opts.Disabled); err != nil {
+		return "", nil, err
+	}
+	if err := validateConfiguredRuleSelectors(rules, opts); err != nil {
+		return "", nil, err
+	}
+	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	return dirFormat, rules, err
+}
+
 // AnalyzeFS captures and analyzes every *.sql file under fsys recursively.
 // Input file contents are read exactly once; template rendering, linting,
 // replay, and reporting can all consume the returned immutable snapshot.
 func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
-	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
-		return Analysis{}, err
-	}
-	rules := rulesForOptions(opts)
-	if err := validateRules(rules); err != nil {
-		return Analysis{}, err
-	}
-	if err := validateRuleConfigs(opts.RuleConfigs); err != nil {
-		return Analysis{}, err
-	}
-	if err := validateRuleSelectors(opts.Disabled); err != nil {
-		return Analysis{}, err
-	}
-	if err := validateConfiguredRuleSelectors(rules, opts); err != nil {
-		return Analysis{}, err
-	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	dirFormat, rules, err := validateOptions(opts)
 	if err != nil {
 		return Analysis{}, err
 	}

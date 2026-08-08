@@ -92,8 +92,14 @@ integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
 prepared files and findings together with a read-only source snapshot. Capture
 does not apply the lint policy automatically: embedders call `LoadConfigFS`
 and pass its `Dialect`, `DisabledRules`, and `Rules` through `lint.Options`.
+
 Configuration decoding rejects unknown keys and noncanonical rule selectors,
-including selectors with leading or trailing whitespace.
+including selectors with leading or trailing whitespace. It also rejects
+unsupported dialects and empty, malformed, or non-normalized exclusion globs
+instead of silently weakening the effective policy. `lint.ValidateOptions`
+checks selectors against the active rule registry without reading migration
+files; call it before a no-work return or an execution override that can skip
+`LintFS` or `AnalyzeFS`.
 
 Finding contexts identify the exact statement and affected tables or columns;
 column subjects can also carry the parent table and declared data type. Each
@@ -213,13 +219,18 @@ risk, destructive verdict, and rendered statement assessments. The native
 output. `GenerateMigrationOptions.ReportFormat: "json"` instead publishes one
 `.safety.json` file beside each generated migration pair.
 
-Candidate shadow failures preserve a typed
+Candidate and baseline shadow failures preserve a typed
 `*generator.ShadowVerificationError` through `PlanMigration`,
-`GenerateMigration`, and command wrappers. Use `errors.As` to inspect
-`Result.Stage` and the structured `Result.Mismatches`; operational failures
-also expose their underlying error through `Unwrap`. A schema mismatch carries
-the complete, deterministically ordered mismatch list without a wrapped
-execution error.
+`GenerateMigration`, `VerifyBaselineShadow`, and command wrappers. Use
+`errors.As` to inspect `Result.Stage` and the structured `Result.Mismatches`;
+operational failures also expose their underlying error through `Unwrap`. A
+schema mismatch carries the complete, deterministically ordered mismatch list
+without a wrapped execution error. Baseline failures retain the
+`baseline shadow check failed:` display prefix while preserving this typed
+contract. Candidate and baseline verification share stage names at common
+boundaries. Baseline verification can additionally report `target-introspect`,
+`reset-schemas`, and `drop-metadata`; candidate-only `round-trip-down` and
+`round-trip-up` stages do not occur during baseline verification.
 
 `migration/generator.VerifyRollbackFromShadow` requires the caller's open
 target `dbschema.DatabaseConnection`. It checks the target and shadow's live

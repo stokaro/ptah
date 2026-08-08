@@ -290,7 +290,6 @@ func fileFindingSuppressed(file *File, finding Finding) bool {
 }
 
 func pathGlobMatches(pattern, value string) bool {
-	pattern = path.Clean(strings.TrimSpace(pattern))
 	value = path.Clean(value)
 	if pattern == "." || value == "." {
 		return false

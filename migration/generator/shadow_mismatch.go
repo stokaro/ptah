@@ -17,6 +17,13 @@ func describeShadowDiff(diff *types.SchemaDiff) string {
 	return "schema differs"
 }
 
+func newShadowSchemaMismatchError(diff *types.SchemaDiff) *ShadowVerificationError {
+	return &ShadowVerificationError{Result: ShadowVerificationResult{
+		Stage:      "schema-match",
+		Mismatches: collectShadowMismatches(diff),
+	}}
+}
+
 func collectModifiedTableMismatches(table types.TableDiff) []ShadowMismatch {
 	var mismatches []ShadowMismatch
 	for _, columnName := range sortedStrings(table.ColumnsAdded) {

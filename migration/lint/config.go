@@ -8,10 +8,13 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"slices"
 	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
+
+	"go.5x5.cz/ptah/internal/lintdialect"
 )
 
 // ConfigFileName is the conventional per-project lint configuration file,
@@ -44,13 +47,14 @@ type Config struct {
 }
 
 // LoadConfig reads an explicit lint configuration file. Missing, unreadable,
-// malformed, and unknown configuration fields are errors.
-func LoadConfig(path string) (*Config, error) {
-	raw, err := os.ReadFile(path)
+// malformed, and unknown configuration fields are errors, as are unsupported
+// dialects and invalid rule exclusion globs.
+func LoadConfig(configPath string) (*Config, error) {
+	raw, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read lint config %s: %w", path, err)
+		return nil, fmt.Errorf("failed to read lint config %s: %w", configPath, err)
 	}
-	cfg, err := parseConfig(raw, path)
+	cfg, err := parseConfig(raw, configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +62,8 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 // LoadConfigFS reads a conventional lint configuration from fsys. A missing
-// file is not an error; malformed and unknown configuration fields are errors.
+// file is not an error; the same strict validation as [LoadConfig] applies to
+// a present file.
 func LoadConfigFS(fsys fs.FS, name string) (*Config, error) {
 	raw, err := fs.ReadFile(fsys, name)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -95,6 +100,9 @@ func parseConfig(raw []byte, name string) (*Config, error) {
 }
 
 func validateConfig(cfg Config) error {
+	if !lintdialect.Valid(cfg.Dialect) {
+		return fmt.Errorf("unsupported lint dialect %q: expected %s", cfg.Dialect, lintdialect.Expected)
+	}
 	if err := validateRuleSelectors(cfg.DisabledRules); err != nil {
 		return err
 	}
@@ -112,8 +120,31 @@ func validateRuleConfigs(configs map[string]RuleConfig) error {
 		default:
 			return fmt.Errorf("rule %s has unsupported severity %q", code, rule.Severity)
 		}
+		for _, pattern := range rule.Exclude {
+			if err := validateExcludePattern(pattern); err != nil {
+				return fmt.Errorf("rule %s has invalid exclude pattern %q: %w", code, pattern, err)
+			}
+		}
 	}
 	return nil
+}
+
+func validateExcludePattern(pattern string) error {
+	if strings.TrimSpace(pattern) == "" {
+		return errors.New("pattern must not be empty")
+	}
+	if strings.TrimSpace(pattern) != pattern {
+		return errors.New("pattern must not contain surrounding whitespace")
+	}
+	if path.Clean(pattern) != pattern {
+		return errors.New("pattern must be a normalized slash-separated path")
+	}
+	segments := strings.Split(pattern, "/")
+	if slices.Contains(segments, ".") || slices.Contains(segments, "..") {
+		return errors.New("pattern must not contain . or .. path segments")
+	}
+	_, err := path.Match(pattern, "")
+	return err
 }
 
 func validateConfiguredRuleSelectors(rules []Rule, opts Options) error {

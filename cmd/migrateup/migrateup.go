@@ -23,11 +23,11 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/deploymentreport"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationlintgate"
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
 	"go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/risk"
 )
 
 const (
@@ -355,6 +355,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+	lintPolicy, err := migrationlintgate.LoadPolicy(migrationsFS, conn.Info().Dialect)
+	if err != nil {
+		return fmt.Errorf("error loading migration lint policy: %w", err)
+	}
 
 	// Set dry run mode if requested
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
@@ -452,7 +456,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
 	if !opts.allowDestructive {
 		preflightHook = dbcli.CombineMigrationHooks(
-			lockedDestructiveLintHook(migrationsFS, conn.Info().Dialect, lintPathPrefix),
+			lockedDestructiveLintHook(migrationsFS, lintPolicy, lintPathPrefix),
 			preflightHook,
 		)
 	}
@@ -731,35 +735,16 @@ func lintPendingDestructive(
 	dialect string,
 	pathPrefix string,
 ) ([]lint.Finding, error) {
-	cfg, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
-	if err != nil {
-		return nil, err
-	}
-	findings, err := lint.LintFS(fsys, lint.Options{
-		Dialect:    dialect,
-		Disabled:   append([]string{"MF", "BC", "PG", "MY"}, cfg.DisabledRules...),
-		PathPrefix: pathPrefix,
-		Selection: lint.VersionSelection{
-			Versions:   pending,
-			Restricted: true,
-		},
-		RuleConfigs: cfg.Rules,
-	})
-	if err != nil {
-		return nil, err
-	}
-	var destructive []lint.Finding
-	for _, finding := range findings {
-		if strings.HasPrefix(finding.Rule, "DS") && risk.IsBlocking(finding.Severity) {
-			destructive = append(destructive, finding)
-		}
-	}
-	return destructive, nil
+	return migrationlintgate.Analyze(fsys, pending, dialect, pathPrefix)
 }
 
-func lockedDestructiveLintHook(fsys fs.FS, dialect, pathPrefix string) migrator.PreMigrationHook {
+func lockedDestructiveLintHook(
+	fsys fs.FS,
+	policy migrationlintgate.Policy,
+	pathPrefix string,
+) migrator.PreMigrationHook {
 	return func(_ context.Context, plan migrator.MigrationPlan) error {
-		findings, err := lintPendingDestructive(fsys, plan.Versions, dialect, pathPrefix)
+		findings, err := migrationlintgate.AnalyzeWithPolicy(fsys, plan.Versions, policy, pathPrefix)
 		if err != nil {
 			return fmt.Errorf("error checking pending migration safety: %w", err)
 		}

@@ -802,6 +802,32 @@ func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {
 	c.Assert(report.Findings[0].File, qt.Contains, "main/0000000002_main.up.sql")
 }
 
+func TestRunLint_MalformedExclusionGlobFailsBeforeAnalysis(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, migrationlint.ConfigFileName),
+		[]byte("rules:\n  DS101:\n    exclude:\n      - '[legacy/**'\n"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "0000000001_create_users.up.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "0000000001_create_users.down.sql"),
+		[]byte("DROP TABLE users;\n"),
+		0o600,
+	), qt.IsNil)
+
+	stdout, stderr, err := execute("--dir", dir)
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Contains, `rule DS101 has invalid exclude pattern "[legacy/**": syntax error in pattern`)
+}
+
 func TestRunLint_FailOnThresholds(t *testing.T) {
 	c := qt.New(t)
 
@@ -853,7 +879,7 @@ func TestRunLint_InvalidFlagValuesExitCode2(t *testing.T) {
 
 	_, stderr, err = execute("--dir", "testdata/bad", "--config", "testdata/invalid-dialect.yaml")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-	c.Assert(stderr, qt.Contains, `invalid dialect "oracle" in lint config`)
+	c.Assert(stderr, qt.Contains, `unsupported lint dialect "oracle"`)
 
 	_, stderr, err = execute("--dir", "testdata/bad", "--no-such-flag")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
