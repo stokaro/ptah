@@ -17,30 +17,36 @@ import (
 // the product's own window between planning and publication, so no test seam is
 // involved.
 //
-// The two rows separate the two guards, because either one alone would make
-// this pass for the wrong reason. Without a confinement root the run is stopped
-// by the plan's recorded identity; with one it is stopped earlier, when the
-// rooted open refuses a directory that now resolves outside the root. Both must
-// leave the substitute untouched.
+// The two rows differ only in whether a confinement root is configured, and
+// that is the assertion. The plan holds the migration directory open from the
+// moment it is built, so the refusal comes from the handle and is owed to every
+// caller -- a project run under an allowed root and a direct CLI run with an
+// absolute --dir get the same answer. A guard that only worked under a root
+// would leave the direct-CLI shape, which is the common one, unprotected.
+// TestMigrationPlanBindRefusesADirectoryReachedThroughAnAncestorOutsideTheRoot
+// pins the thing the root does contribute.
+//
+// Both rows must leave the substitute untouched, and the retained directory
+// too: an error that still wrote somewhere is not a refusal.
 //
 // //go:build unix because the swap is a symlink replacement.
 func TestMigrationPlanWriteFiles_RefusesDirectoryReplacedBeforePublication(t *testing.T) {
+	const wantErr = `migration directory changed after migration planning: ` +
+		`opened directory path changed: .*`
+
 	tests := []struct {
 		name string
 		// allowedRoot returns the confinement root, or "" for the direct-CLI
 		// shape.
 		allowedRoot func(root string) string
-		wantErr     string
 	}{
 		{
-			name:        "no allowed root: the recorded identity refuses it",
+			name:        "no allowed root",
 			allowedRoot: func(string) string { return "" },
-			wantErr:     "migration directory changed after migration planning",
 		},
 		{
-			name:        "under an allowed root: the rooted open refuses it",
+			name:        "under an allowed root",
 			allowedRoot: func(root string) string { return root },
-			wantErr:     ".*outside allowed root.*",
 		},
 	}
 
@@ -72,7 +78,8 @@ func TestMigrationPlanWriteFiles_RefusesDirectoryReplacedBeforePublication(t *te
 
 			files, err := plan.WriteFilesContext(t.Context())
 
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.ErrorIs, generator.ErrMigrationDirectoryChanged)
+			c.Assert(err, qt.ErrorMatches, wantErr)
 			c.Assert(files, qt.IsNil)
 			decoyEntries, err := os.ReadDir(decoy)
 			c.Assert(err, qt.IsNil)

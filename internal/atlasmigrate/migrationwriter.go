@@ -87,13 +87,18 @@ func (w *MigrationWriter) Create() error {
 	return w.dir.create()
 }
 
-// Identity returns the bound directory's filesystem identity, for comparison
-// with os.SameFile against an identity captured earlier in the transaction.
-func (w *MigrationWriter) Identity() (fs.FileInfo, error) {
-	if !w.dir.Exists() {
-		return nil, w.dir.missingDirError()
-	}
-	return w.dir.dir.Stat(".")
+// Revalidate reports whether the pathname this writer was selected by still
+// names the object it holds, or -- for a migration directory that was absent
+// when the writer bound -- whether that name is still free in the bound parent.
+//
+// It is the check a transaction runs when it has to leave a window open between
+// binding the directory and committing to it, which the planned-migration
+// writer does: the plan is built by one exported call and published by another,
+// so the caller owns the time in between. Holding the handle across that window
+// is what makes the answer sound rather than a bet on the operating system not
+// reissuing an identifier (stokaro/ptah#1118).
+func (w *MigrationWriter) Revalidate() error {
+	return w.dir.revalidate()
 }
 
 // FS returns the escape-resistant filesystem rooted at the migration directory.

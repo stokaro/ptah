@@ -205,9 +205,17 @@ func TestGenerateEmptyMigrationCreatesMissingDirectoryThroughTheBoundParent(t *t
 }
 
 // TestMigrationPlanWriteFilesReplacedDirectoryCannotRedirectPublication is the
-// same measurement for the planned-migration writer: the replacement lands
-// after the directory is bound and before the pre-publication snapshot is
-// taken, which is exactly the window the old code closed with nothing.
+// same measurement for the planned-migration writer, staged in the one window
+// that writer still has: after the publication has revalidated the directory it
+// holds and before it writes a byte.
+//
+// A replacement landing earlier -- any time between planning and publication --
+// is refused outright, and TestMigrationPlanWriteFiles_RefusesRecreatedDirectory
+// next door measures that. A replacement landing here cannot be refused, because
+// the verification has already happened; the only thing that can save the batch
+// is that the write does not consult the pathname at all. So the assertion is
+// the positive one: the files land in the object the plan bound, and the
+// directory the replacement points at is left completely untouched.
 func TestMigrationPlanWriteFilesReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
@@ -215,23 +223,17 @@ func TestMigrationPlanWriteFilesReplacedDirectoryCannotRedirectPublication(t *te
 	outputDir := filepath.Join(root, "migrations")
 	c.Assert(os.MkdirAll(outputDir, 0o755), qt.IsNil)
 
-	state, err := captureMigrationDirectoryState(outputDir)
+	plan, err := NewMigrationPlanForTest(outputDir, root, "", []MigrationPlanSpecForTest{{
+		Version: 1700000000,
+		Name:    "create_users",
+		UpSQL:   "CREATE TABLE users (id INTEGER);\n",
+		DownSQL: "DROP TABLE users;\n",
+	}})
 	c.Assert(err, qt.IsNil)
-	plan := &MigrationPlan{
-		outputDir:         outputDir,
-		allowedOutputRoot: root,
-		outputState:       state,
-		specs: []generatedMigrationSpec{{
-			Version: 1700000000,
-			Name:    "create_users",
-			UpSQL:   "CREATE TABLE users (id INTEGER);\n",
-			DownSQL: "DROP TABLE users;\n",
-		}},
-	}
 
 	var retained string
-	afterMigrationWriterBound = func() { retained = replaceWithSymlink(c, outputDir, decoy) }
-	defer func() { afterMigrationWriterBound = nil }()
+	afterMigrationPublicationVerified = func() { retained = replaceWithSymlink(c, outputDir, decoy) }
+	defer func() { afterMigrationPublicationVerified = nil }()
 
 	files, err := plan.WriteFilesContext(t.Context())
 
@@ -242,4 +244,40 @@ func TestMigrationPlanWriteFilesReplacedDirectoryCannotRedirectPublication(t *te
 		"1700000000_create_users.up.sql",
 	})
 	c.Assert(generatorDirNames(c, decoy), qt.HasLen, 0)
+}
+
+// TestMigrationPlanBindRefusesADirectoryReachedThroughAnAncestorOutsideTheRoot
+// pins what the confinement root contributes to a plan, which is not the same
+// thing as what the bound handle contributes.
+//
+// The handle alone keeps every write inside the object it opened, whatever the
+// pathname later resolves to -- that is the row above. It cannot decide that the
+// object should never have been opened. Here `nest` is a symlink out of the
+// allowed root before the plan binds anything, so the migration directory
+// genuinely lives outside the boundary the caller configured, and the only step
+// that can say so is the rooted open.
+//
+// //go:build unix because the escape is a symlink.
+func TestMigrationPlanBindRefusesADirectoryReachedThroughAnAncestorOutsideTheRoot(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	outside := t.TempDir()
+	c.Assert(os.MkdirAll(filepath.Join(outside, "migrations"), 0o755), qt.IsNil)
+	c.Assert(os.Symlink(outside, filepath.Join(root, "nest")), qt.IsNil)
+
+	plan, err := NewMigrationPlanForTest(
+		filepath.Join(root, "nest", "migrations"),
+		root,
+		"",
+		[]MigrationPlanSpecForTest{{
+			Version: 1700000000,
+			Name:    "create_users",
+			UpSQL:   "CREATE TABLE users (id INTEGER);\n",
+			DownSQL: "DROP TABLE users;\n",
+		}},
+	)
+
+	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
+	c.Assert(plan, qt.IsNil)
+	c.Assert(generatorDirNames(c, filepath.Join(outside, "migrations")), qt.HasLen, 0)
 }

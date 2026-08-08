@@ -180,6 +180,53 @@ func (w *migrationWriterDir) create() error {
 	return nil
 }
 
+// revalidate reports whether the pathname this writer was selected by still
+// names the object it holds -- or, for a directory that did not exist when the
+// handles were bound, whether the name is still free in the parent it holds.
+//
+// It answers with os.SameFile, and the answer is trustworthy only because the
+// handle is still open. An open directory keeps its identifier allocated: the
+// kernel cannot hand the same inode number, or the same Windows file index, to
+// a directory created after this one was removed. Comparing a detached
+// fs.FileInfo captured before the removal has no such guarantee, and measured on
+// ext4 the recreated directory took the identifier back in 20 of 20
+// remove-and-recreate cycles, so the comparison said "same object" every time
+// (stokaro/ptah#1118).
+//
+// The two cases ask different questions on purpose. A directory that exists is
+// compared against the selected pathname, so an ancestor swapped anywhere above
+// it is caught as well. A directory that does not exist is compared against the
+// entry name in the retained parent, because that is where create() is about to
+// materialize it and the pathname is not what it will resolve through.
+func (w *migrationWriterDir) revalidate() error {
+	if w.dir == nil {
+		return w.revalidateAbsent()
+	}
+	held, err := w.dir.Stat(".")
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", pathguard.ErrDirectoryChanged, w.path, err)
+	}
+	current, err := os.Stat(w.path)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", pathguard.ErrDirectoryChanged, w.path, err)
+	}
+	if !current.IsDir() || !os.SameFile(held, current) {
+		return fmt.Errorf("%w: %s", pathguard.ErrDirectoryChanged, w.path)
+	}
+	return nil
+}
+
+func (w *migrationWriterDir) revalidateAbsent() error {
+	_, err := w.parent.Lstat(w.name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", pathguard.ErrDirectoryChanged, w.path, err)
+	}
+	return fmt.Errorf("%w: %s", pathguard.ErrDirectoryChanged, w.path)
+}
+
 func openMigrationWriterParent(
 	root *pathguard.OpenedDirectory,
 	parentPath string,

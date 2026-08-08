@@ -115,12 +115,26 @@ for what remains keyed to the pathname and why.
 
 `ptah migrations generate` plans and publishes in two steps, so the directory
 can be replaced between them by something outside the run's control. The plan
-records the planned directory's filesystem identity as well as its contents, and
-publication refuses a directory that is no longer the same object — including a
-substitute that holds exactly the files the plan verified. The refusal is
-`migration directory changed after migration planning`, and nothing is written
-([#1118](https://github.com/stokaro/ptah/issues/1118)). This changes behavior:
-a run that previously published into a recreated directory now fails instead.
+binds the directory while it is being built and holds that binding open until
+it publishes, so the plan is a claim on a filesystem object rather than on a
+pathname. Publication refuses a directory that is no longer the object the plan
+holds — a substitute that holds exactly the files the plan verified, and a
+directory removed and recreated at the same pathname, are both refused. The
+refusal is `migration directory changed after migration planning`, and nothing
+is written ([#1118](https://github.com/stokaro/ptah/issues/1118)).
+
+Holding the directory open is what makes the answer the same on every platform.
+Comparing a recorded `os.SameFile` identity instead would ask the operating
+system whether two identifiers match, and an identifier belonging to a removed
+directory can be handed straight back to its replacement: measured over 20
+remove-and-recreate cycles of one pathname, ext4 reissued it 20 times and APFS
+none, so the same code refused the substitution on one filesystem and accepted
+it on another. An open directory cannot have its identifier reissued.
+
+This changes behavior twice over: a run that previously published into a
+recreated directory now fails instead, and while a plan is outstanding the
+migration directory is held open, so another process cannot rename or remove it
+until the plan publishes or is discarded.
 
 ## Consequences
 

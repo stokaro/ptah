@@ -49,6 +49,23 @@ func notifyMigrationWriterBound() {
 	}
 }
 
+// afterMigrationPublicationVerified runs once a planned publication has
+// revalidated the directory it holds and compared its contents, and before it
+// writes anything. It is nil outside tests.
+//
+// The planned writer binds its directory during planning rather than during
+// publication, so afterMigrationWriterBound no longer names the window that
+// matters for it: by the time WriteFilesContext runs, the handle is old. What
+// the handle uniquely defends is the gap between "verified" and "committed",
+// and a replacement landing there is what this hook lets a test stage.
+var afterMigrationPublicationVerified func()
+
+func notifyMigrationPublicationVerified() {
+	if afterMigrationPublicationVerified != nil {
+		afterMigrationPublicationVerified()
+	}
+}
+
 // openOutputRoot opens the confinement root a writer transaction runs inside,
 // or returns nil for the direct-CLI shape where an explicit absolute output
 // directory is the operator's own choice of destination.
@@ -90,6 +107,32 @@ func bindMigrationOutputDir(
 		return nil, err
 	}
 	notifyMigrationWriterBound()
+	return writer, nil
+}
+
+// bindPlannedMigrationDir binds the migration directory a plan will publish
+// into, for the plan to hold until it publishes.
+//
+// The confinement root is opened, consulted for the bind, and then closed: the
+// parent and directory handles were opened through it and stay valid on their
+// own, so the plan keeps two descriptors rather than three and the root is not
+// pinned for the caller's whole pre-publication window. What the root
+// contributes is refusing, here, a directory that resolves outside it -- after
+// this point the binding is the boundary.
+func bindPlannedMigrationDir(
+	allowedOutputRoot, outputDir string,
+) (*atlasmigrate.MigrationWriter, error) {
+	root, err := openOutputRoot(allowedOutputRoot)
+	if err != nil {
+		return nil, err
+	}
+	writer, err := bindMigrationOutputDir(root, outputDir)
+	if err != nil {
+		return nil, errors.Join(err, closeOutputRoot(root))
+	}
+	if err := closeOutputRoot(root); err != nil {
+		return nil, errors.Join(err, writer.Close())
+	}
 	return writer, nil
 }
 

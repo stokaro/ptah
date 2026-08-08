@@ -83,13 +83,20 @@ fmt.Printf("published %s and %s\n", files.UpFile, files.DownFile)
 
 Planning does not write migration artifacts. A successful `WriteFiles` call
 consumes the plan; call it once after all surrounding work has succeeded.
-The plan records the migration-directory snapshot used for planning, together
-with that directory's filesystem identity.
-`WriteFiles` acquires the shared cross-process directory lock and rejects the
-plan if migration SQL or integrity metadata changed before publication, or if
-the directory is no longer the same filesystem object — a substitute holding
-exactly the planned files is still a different destination. It never renumbers
-and publishes a plan derived from stale history.
+
+The plan binds the migration directory while it is being built and holds that
+binding until it publishes, so it is a claim on a filesystem object rather than
+on a pathname. `WriteFiles` acquires the shared cross-process directory lock,
+rejects the plan if migration SQL or integrity metadata changed before
+publication, and rejects it if the pathname no longer names the object the plan
+holds — a substitute holding exactly the planned files, and a directory removed
+and recreated at the same pathname, are both a different destination. It never
+renumbers and publishes a plan derived from stale history.
+
+A plan that is never published releases its handles when it is collected. While
+a plan is outstanding the migration directory is held open, so on Windows
+another process cannot rename or remove it until the plan publishes or is
+discarded.
 
 It renders every up/down file and requested safety report before publishing
 the artifacts as one batch. A filename collision leaves no partial new files.
