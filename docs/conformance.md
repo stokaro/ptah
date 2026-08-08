@@ -537,7 +537,7 @@ ask it rather than the dialect. Before they did, measured on 2026-08-08 at exit
 
 The pinned binary answered `Schemas are synced, no changes to be made.` against
 those databases throughout: the disagreement was Ptah's with itself, between the
-database it had just built and the model it built it from.
+database it had built and the model it built that database from.
 
 ### The uniqueness half
 
