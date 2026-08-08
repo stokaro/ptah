@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -76,7 +77,13 @@ import (
 //
 // Results are sorted alphabetically for consistent output across multiple runs,
 // ensuring deterministic migration generation and reliable testing.
-func Extensions(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, opts *config.CompareOptions) {
+func Extensions(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	opts *config.CompareOptions,
+	cov Coverage,
+) {
 	// Use default options if none provided
 	if opts == nil {
 		opts = config.DefaultCompareOptions()
@@ -117,6 +124,13 @@ func Extensions(generated *goschema.Database, database *types.DBSchema, diff *di
 			diff.ExtensionsRemoved = append(diff.ExtensionsRemoved, extensionName)
 		}
 	}
+
+	// A description that does not describe extensions is not a description of a
+	// database with no extensions, and a read that did not look for them is not
+	// a database that has none. Both directions are dropped here rather than at
+	// the two dozen call sites that build a comparison (stokaro/ptah#1276).
+	diff.ExtensionsAdded = cov.keepPlannedAdditions(coverage.Extension, diff.ExtensionsAdded, globalName)
+	diff.ExtensionsRemoved = cov.keepPlannedRemovals(coverage.Extension, diff.ExtensionsRemoved, globalName)
 
 	// Sort for consistent output
 	sort.Strings(diff.ExtensionsAdded)

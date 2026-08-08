@@ -3,6 +3,7 @@ package compare
 import (
 	"sort"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
@@ -86,6 +87,7 @@ func TablesAndColumnsWithDialect(
 		diff,
 		dialect,
 		identifier.ForDialect(dialect),
+		CoverageOf(generated, database),
 	)
 }
 
@@ -97,6 +99,7 @@ func TablesAndColumnsWithSemantics(
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
+	cov Coverage,
 ) {
 	// Create maps for quick lookup
 	genTables := make(map[tableIdentity]goschema.Table)
@@ -142,6 +145,13 @@ func TablesAndColumnsWithSemantics(
 			}
 		}
 	}
+
+	// A table in a schema one side never read is not a table that side says is
+	// gone. Widening the schema reader without this made applying a database's
+	// own description back to it plan CREATE SCHEMA and CREATE TABLE for a
+	// schema and a table that exist (stokaro/ptah#1264, stokaro/ptah#1276).
+	diff.TablesAdded = cov.keepPlannedAdditions(coverage.Schema, diff.TablesAdded, tableSchemaOnly)
+	diff.TablesRemoved = cov.keepPlannedRemovals(coverage.Schema, diff.TablesRemoved, tableSchemaOnly)
 
 	// Sort for consistent output
 	sort.Strings(diff.TablesAdded)

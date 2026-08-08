@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -23,7 +24,12 @@ import (
 // (nil pointer) is treated as "unmanaged" and never flagged, so a sequence that
 // relies on PostgreSQL defaults does not churn against the catalog's fully
 // populated values.
-func Sequences(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Sequences(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+) {
 	generatedSequences := make(map[string]goschema.Sequence, len(generated.Sequences))
 	for _, sequence := range generated.Sequences {
 		generatedSequences[sequence.QualifiedName()] = sequence
@@ -53,6 +59,12 @@ func Sequences(generated *goschema.Database, database *types.DBSchema, diff *dif
 			diff.SequencesRemoved = append(diff.SequencesRemoved, name)
 		}
 	}
+
+	// The Atlas-compatible surface omits `sequence` blocks the binary it stands
+	// in for refuses; a document that left one out has said nothing about it,
+	// and nothing is not a drop (stokaro/ptah#1276).
+	diff.SequencesAdded = cov.keepPlannedAdditions(coverage.Sequence, diff.SequencesAdded, qualifiedName)
+	diff.SequencesRemoved = cov.keepPlannedRemovals(coverage.Sequence, diff.SequencesRemoved, qualifiedName)
 
 	sort.Strings(diff.SequencesAdded)
 	sort.Strings(diff.SequencesRemoved)

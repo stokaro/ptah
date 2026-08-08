@@ -141,6 +141,13 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	generated, database = normalizeInlineEnumsForCompare(generated, database, opts)
 	generated = normalizeGeneratedColumnsForCompare(generated, opts)
 
+	// What each side declined to describe travels with that side rather than
+	// with the options, so every caller that builds options from scratch still
+	// gets it. Putting it on the options is how an earlier attempt lost it:
+	// four surfaces resolve a desired state independently, and one of them
+	// built its compare options from a zero value (stokaro/ptah#1276).
+	cov := compare.CoverageOf(generated, database)
+
 	// Compare tables and their column structures
 	compare.TablesAndColumnsWithSemantics(
 		generated,
@@ -148,6 +155,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 		diff,
 		opts.Dialect,
 		identifierSemantics,
+		cov,
 	)
 
 	// Compare enum type definitions and values
@@ -157,18 +165,18 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.IndexesWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
 
 	// Compare PostgreSQL extensions with configuration options
-	compare.Extensions(generated, database, diff, opts)
+	compare.Extensions(generated, database, diff, opts, cov)
 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
 	compare.Functions(generated, database, diff)
 
 	// Compare PostgreSQL standalone sequences (PostgreSQL-specific feature)
-	compare.Sequences(generated, database, diff)
+	compare.Sequences(generated, database, diff, cov)
 
 	// Compare PostgreSQL user-defined types (domains, composites, ranges)
-	compare.Domains(generated, database, diff)
-	compare.CompositeTypes(generated, database, diff)
-	compare.Ranges(generated, database, diff)
+	compare.Domains(generated, database, diff, cov)
+	compare.CompositeTypes(generated, database, diff, cov)
+	compare.Ranges(generated, database, diff, cov)
 
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithDialect(generated, database, diff, opts.Dialect)
@@ -176,13 +184,13 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.TriggersWithDialect(generated, database, diff, opts.Dialect)
 
 	// Compare RLS policies (PostgreSQL-specific feature)
-	compare.RLSPoliciesWithSemantics(generated, database, diff, identifierSemantics)
+	compare.RLSPoliciesWithSemantics(generated, database, diff, identifierSemantics, cov)
 
 	// Compare RLS enabled tables (PostgreSQL-specific feature)
 	compare.RLSEnabledTablesWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare roles (PostgreSQL-specific feature)
-	compare.Roles(generated, database, diff)
+	compare.Roles(generated, database, diff, cov)
 
 	// Compare role privilege grants (PostgreSQL-specific feature)
 	compare.GrantsWithSemantics(generated, database, diff, identifierSemantics)

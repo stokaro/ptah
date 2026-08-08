@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
@@ -70,8 +71,13 @@ import (
 //
 // Results are sorted by table and then by policy name for consistent output
 // across multiple runs.
-func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect(""))
+func RLSPolicies(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+) {
+	RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect(""), cov)
 }
 
 // RLSPoliciesWithSemantics is [RLSPolicies] told which identifier rules the
@@ -99,6 +105,7 @@ func RLSPoliciesWithSemantics(
 	database *types.DBSchema,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
+	cov Coverage,
 ) {
 	// Build lookup maps for RLS policy comparison, keyed by the owning table
 	// and the policy name together.
@@ -143,6 +150,12 @@ func RLSPoliciesWithSemantics(
 		}
 	}
 
+	// The Atlas-compatible surface omits `policy` blocks the binary it stands in
+	// for refuses; a document that left one out has said nothing about it
+	// (stokaro/ptah#1276).
+	diff.RLSPoliciesAdded = keepPlannedPolicyAdditions(cov, diff.RLSPoliciesAdded)
+	diff.RLSPoliciesRemoved = keepPlannedPolicyRemovals(cov, diff.RLSPoliciesRemoved)
+
 	// Ensure consistent ordering of results. The policy name alone is not a
 	// total order once two tables may share one, so the table leads.
 	sortRLSPolicyRefs(diff.RLSPoliciesAdded)
@@ -162,6 +175,42 @@ func sortRLSPolicyRefs(refs []difftypes.RLSPolicyRef) {
 		}
 		return refs[i].TableName < refs[j].TableName
 	})
+}
+
+// keepPlannedPolicyAdditions drops every policy creation the read's silence
+// cannot justify. A policy has its own list shape rather than a bare name, so
+// it cannot use the shared filter; the owning schema is taken from the policy's
+// table, since a policy in a schema nobody read is not described either.
+func keepPlannedPolicyAdditions(cov Coverage, planned []difftypes.RLSPolicyRef) []difftypes.RLSPolicyRef {
+	if planned == nil {
+		return nil
+	}
+	out := make([]difftypes.RLSPolicyRef, 0, len(planned))
+	for _, ref := range planned {
+		schema, _ := qualifiedName(ref.TableName)
+		if cov.PlansAddition(coverage.Policy, schema, ref.PolicyName) {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+// keepPlannedPolicyRemovals drops every policy the desired state never claimed
+// to describe. A policy has its own list shape rather than a bare name, so it
+// cannot use the shared filter; the owning schema is taken from the policy's
+// table, since a policy in a schema nobody read is not described either.
+func keepPlannedPolicyRemovals(cov Coverage, planned []difftypes.RLSPolicyRef) []difftypes.RLSPolicyRef {
+	if planned == nil {
+		return nil
+	}
+	out := make([]difftypes.RLSPolicyRef, 0, len(planned))
+	for _, ref := range planned {
+		schema, _ := qualifiedName(ref.TableName)
+		if cov.PlansRemoval(coverage.Policy, schema, ref.PolicyName) {
+			out = append(out, ref)
+		}
+	}
+	return out
 }
 
 // RLSEnabledTables performs RLS enablement comparison between generated and database schemas.

@@ -15,6 +15,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/config`
 - `go.5x5.cz/ptah/config/projectconfig`
 - `go.5x5.cz/ptah/core/ast`
+- `go.5x5.cz/ptah/core/coverage`
 - `go.5x5.cz/ptah/core/goschema`
 - `go.5x5.cz/ptah/core/platform`
 - `go.5x5.cz/ptah/core/platform/capability`
@@ -65,6 +66,15 @@ referenced-key policy: `ForeignKeysRequireUniqueReference`,
 `ValidateSchema` and `ValidateSchemaWithCapabilities` run the same complete
 schema validation without rendering SQL. Migration planning calls this path
 before producing AST nodes.
+
+`core/coverage` carries what a schema description does **not** claim to
+describe. `goschema.Database.NotDescribed` and `dbschema/types.DBSchema.NotDescribed`
+hold one, and schema comparison consults both: the desired state's record gates
+removals and the introspected state's record gates additions. Its zero value
+claims everything, so an embedder that never sets one gets exactly the
+comparison it got before the field existed. Set it when a reader was asked about
+less than the whole database, or a projection left something out on purpose;
+leaving it zero there is how an object nobody looked at becomes a `DROP`.
 
 `goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
 every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a

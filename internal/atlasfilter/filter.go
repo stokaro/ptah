@@ -853,6 +853,12 @@ func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 		// comparator that every cluster role outside the description is
 		// absent. See stokaro/ptah#1267.
 		RolesOutOfScope: slices.Clone(schema.RolesOutOfScope),
+		// Filtering narrows what a description contains; it does not widen what
+		// the description claimed to cover. This is a field-by-field
+		// constructor, which is exactly the shape that drops a new field in
+		// silence, so the carry is asserted by
+		// TestScopeDatabaseKeepsCoverage (stokaro/ptah#1276).
+		NotDescribed: schema.NotDescribed,
 	}
 }
 
