@@ -149,7 +149,9 @@ leaves an `extension`, `sequence` or `policy` block out of PostgreSQL HCL
 output when nothing else in the document depends on it, and reports each
 omission on standard error. For an extension, "depends on" is measured against
 what the catalog says the extension supplies — `isn` supplies the type `isbn` —
-rather than against its name. Set it to `1` and every block Ptah models is
+rather than against its name, and against what the catalog resolved for the
+document's indexes, since a GIN index over an `integer` column needs `btree_gin`
+and prints no word of it. Set it to `1` and every block Ptah models is
 emitted: the output describes the database in full, and the community CLI
 refuses it.
 

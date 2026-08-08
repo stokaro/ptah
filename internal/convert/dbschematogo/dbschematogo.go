@@ -196,6 +196,10 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 			Granularity:   dbIndex.Granularity,
 
 			IncludeColumns: slices.Clone(dbIndex.IncludeColumns),
+			// Carried rather than recomputed: only the reader has the catalog,
+			// and an operator class the index's own DDL leaves implicit is
+			// reachable no other way.
+			RequiresExtensions: slices.Clone(dbIndex.RequiresExtensions),
 		}
 		indexes = append(indexes, index)
 	}
@@ -497,6 +501,9 @@ func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames
 		ForeignColumns:  dbConstraint.ForeignColumnsOrDefault(),
 		OnDelete:        derefString(dbConstraint.DeleteRule),
 		OnUpdate:        derefString(dbConstraint.UpdateRule),
+		// The index backing this constraint is dropped above so the constraint
+		// renders once; what that index needed does not go with it.
+		RequiresExtensions: slices.Clone(dbConstraint.RequiresExtensions),
 	}, true
 }
 

@@ -16,12 +16,7 @@ func (r *renderer) renderExtensions() {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, extension := range extensions {
-		// The extension's own name AND everything it supplies: a document that
-		// depends on `isn` says `isbn`, never `isn`. Provides is empty for
-		// sources with no catalog behind them, and the check then degenerates to
-		// the label, which is the most that can be known about such a source.
-		keepAlive := append([]string{extension.Name}, extension.Provides...)
-		if r.omitRefusedBlock("extensions."+extension.Name, blockExtension, keepAlive...) {
+		if r.omitRefusedExtension("extensions."+extension.Name, extension) {
 			continue
 		}
 		r.linef(`extension %s {`, quote(extension.Name))

@@ -145,6 +145,11 @@ type renderer struct {
 	// which is distinguishable from "built and empty" because a document with
 	// no references at all still answers every lookup false.
 	references map[string]bool
+	// requiredExtensions caches the extensions the surviving document's objects
+	// resolve to without naming, built once per render by
+	// [collectRequiredExtensions]. Nil means not yet built, on the same
+	// reasoning as references above.
+	requiredExtensions map[string]bool
 	// tableSchemas caches, per table block label this render will write, the
 	// schema each block carries. Nil means not yet built, which is
 	// distinguishable from "built and empty" because a document with no tables
