@@ -1073,11 +1073,15 @@ does. Values are matched verbatim on every one of those verbs: `--dir-format
 ATLAS` and `--dir-format " atlas "` are refused rather than normalized, and an
 empty value selects the Atlas layout.
 
-`format` is the only `--dir` query key that selects anything. Any other key is
-ignored, as Atlas ignores it, and named on standard error so a misspelled
-`?fromat=goose` does not quietly read the directory in the Atlas layout. The
-exit code and standard output are unchanged. Set `PTAH_STRICT_DIR_QUERY=1` to
-refuse an unrecognized key instead.
+`format` is the only `--dir` query key that selects anything. On the eight verbs
+that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`, `set`,
+`status` and `validate` — any other key is ignored, as Atlas ignores it, and
+named on standard error so a misspelled `?fromat=goose` does not quietly read
+the directory in the Atlas layout. The exit code and standard output are
+unchanged. Set `PTAH_STRICT_DIR_QUERY=1` to refuse an unrecognized key instead.
+`migrate checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` register `--dir`
+as well and refuse any query on it, so the note never appears there; see
+[the compat command reference](../../reference/atlas-commands/) for that split.
 
 `migrate new` writes the selected layout rather than only reading it. The
 created file names and their contents follow the source tool's own convention,

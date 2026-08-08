@@ -119,18 +119,28 @@ func checkWritingVerbDirQuery(format atlasmigrateimport.Format, query url.Values
 // PTAH_SKIP_CHECKS).
 //
 // WHY THE CAPABILITY IS EXPOSED AT ALL. Ptah refused every `--dir` query on
-// every verb until stokaro/ptah#1087 and #1135 relaxed it to match. That
-// refusal caught something real on its way out: a misspelled key such as
-// `?fromat=goose` selects nothing on either binary, so the directory is read in
-// the native Atlas layout while the operator believes it is being read as
-// Goose. Reaching parity means the default can no longer fail that run —
+// every verb until stokaro/ptah#1087 and #1135 relaxed it, on the eight verbs
+// that read the query, to match — `checkpoint`, `down`, `edit`, `rebase`, `rm`
+// and `test` register `--dir` and still refuse one, which is tracked in
+// stokaro/ptah#1013 and is why this doc says "the verbs this variable governs"
+// rather than "every verb". That refusal caught something real on its way out:
+// a misspelled key such as `?fromat=goose` selects nothing on either binary, so
+// the directory is read in the native Atlas layout while the operator believes
+// it is being read as Goose. Reaching parity means the default can no longer fail that run —
 // but it does not mean the check has to be deleted, only moved off the default
 // path. The report below keeps the information on every run; this variable
 // keeps the refusal available to a pipeline that wants a typo to stop it.
 //
 // An invalid value is a hard error rather than a silent false, for the reason
 // PTAH_SKIP_CHECKS states: a typo in a CI environment file must not read as
-// "off" to the tool while the operator believes it is on.
+// "off" to the tool while the operator believes it is on. That promise is only
+// kept if the value is READ on every run of the verbs this variable governs,
+// which is why [reportIgnoredDirQuery] resolves it before it looks at the query
+// keys. Resolving it after the key check made `PTAH_STRICT_DIR_QUERY=nope` exit
+// 0 in silence on every invocation carrying no ignored key — the whole of a
+// healthy pipeline, and the only runs a CI environment file is read on until
+// someone makes the very typo the variable is set to catch. PTAH_SKIP_CHECKS
+// resolves unconditionally on every `migrate apply`; this now matches it.
 const dirQueryStrictEnvVar = "PTAH_STRICT_DIR_QUERY"
 
 // atlasDirQueryStrictFromEnv resolves whether an ignored `--dir` query key is
@@ -168,7 +178,13 @@ func atlasDirQueryStrictFromEnv() (bool, error) {
 // the layout they asked for.
 //
 // The refusal the note offers instead lives behind [dirQueryStrictEnvVar]; see
-// there for why it is an environment variable.
+// there for why it is an environment variable. Its value is resolved BEFORE the
+// keys are examined, so an unparsable one fails every run that reads a `--dir`
+// URL rather than only the runs already carrying an ignored key. That ordering
+// is the whole of the "an invalid value is not a silent off" promise: the runs
+// it would otherwise let pass are the correct ones, which is every run a CI
+// environment file is read on until the typo it was set to catch finally
+// happens.
 //
 // WHERE CALLERS PUT IT. Right after the format value is resolved, and therefore
 // before the atlas.sum gate. Two rules, and only two:
@@ -181,13 +197,13 @@ func atlasDirQueryStrictFromEnv() (bool, error) {
 //     rather than how the run ended, and a directory that then fails its
 //     checksum was still read with that key dropped.
 func reportIgnoredDirQuery(out io.Writer, verb string, query url.Values) error {
-	keys := atlasmigrate.IgnoredDirQueryKeys(query)
-	if len(keys) == 0 {
-		return nil
-	}
 	strict, err := atlasDirQueryStrictFromEnv()
 	if err != nil {
 		return fmt.Errorf("atlas migrate %s --dir: %w", verb, err)
+	}
+	keys := atlasmigrate.IgnoredDirQueryKeys(query)
+	if len(keys) == 0 {
+		return nil
 	}
 	if strict {
 		return fmt.Errorf(

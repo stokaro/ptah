@@ -196,8 +196,9 @@ empty value and the unknown key select the atlas layout, and a repeated key
 takes the first value.
 
 `format` is the only query key that selects anything. A key that selected
-nothing is named on standard error and the run continues, on every verb that
-takes a `--dir` query:
+nothing is named on standard error and the run continues, on each of the eight
+verbs that accepts a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`,
+`set`, `status` and `validate`:
 
 ```text
 note: atlas migrate apply --dir: ignoring migration directory URL query key
@@ -212,6 +213,14 @@ misspelled `?fromat=goose` selects no layout on either tool, so the directory is
 read as the atlas layout while you believe it is being read as Goose. Set
 [`PTAH_STRICT_DIR_QUERY=1`](../../atlas/overview/#the-variables) to make that a
 refusal instead.
+
+`checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` register `--dir` too and
+refuse any query on it — `migration directory URL query parameters are not
+supported for this command` — so neither the note nor the variable applies
+there. The pinned community binary answers `unknown flag: --dir` on all six, so
+this is stricter than a CLI with no contract on those verbs rather than a parity
+gap; it is tracked in
+[#1013](https://github.com/stokaro/ptah/issues/1013).
 
 Inputs that stay refused where Atlas CE exits 0, all of them loudly:
 

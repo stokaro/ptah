@@ -14,10 +14,14 @@ import (
 // (stokaro/ptah#1013 section 2, second half).
 //
 // The exit codes here are not new. Measured against the pinned community binary
-// v1.3.0 on 2026-08-08, `--dir 'file://m?nonsense=1'` exits 0 on every verb that
-// registers --dir, on both tools, and reads the directory exactly as no query at
-// all does; stokaro/ptah#1087 and #1135 closed that and it is pinned by
-// TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb. What was still
+// v1.3.0 on 2026-08-08, `--dir 'file://m?nonsense=1'` exits 0 on all eight verbs
+// that binary registers --dir on, on both tools, and reads the directory exactly
+// as no query at all does; stokaro/ptah#1087 and #1135 closed that and it is
+// pinned by TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb. Those eight
+// are not every verb ptah-compat registers --dir on: `checkpoint`, `down`,
+// `edit`, `rebase`, `rm` and `test` register it too and refuse any query on it,
+// which TestCompatMigrateDirQuery_QueryStaysRefusedOnTheVerbsThatTakeNoQuery_FailurePath
+// pins below. What was still
 // missing is that Ptah dropped the key in SILENCE, which is the half of the
 // compatibility policy matching does not discharge: a misspelled `?fromat=goose`
 // selects nothing on either binary, so the directory is read in the native Atlas
@@ -62,9 +66,13 @@ type dirQueryVerbRow struct {
 }
 
 // dirQueryVerbRows lists every verb the pinned community binary registers --dir
-// on. Measured on 2026-08-08, `migrate import`, `down`, `rm`, `rebase`, `edit`
-// and `checkpoint` all answer `Error: unknown flag: --dir` there, so there is no
-// --dir query contract outside these eight.
+// on. Measured on 2026-08-08, its other eight migrate verbs — `checkpoint`,
+// `down`, `edit`, `import`, `push`, `rebase`, `rm` and `test` — all answer
+// `Error: unknown flag: --dir` there, so it has no --dir query contract outside
+// these eight. ptah-compat registers --dir on six of those (every one but
+// `import` and `push`) and refuses any query on them, which is a place it is
+// stricter rather than a parity gap; see
+// TestCompatMigrateDirQuery_QueryStaysRefusedOnTheVerbsThatTakeNoQuery_FailurePath.
 func dirQueryVerbRows() []dirQueryVerbRow {
 	return []dirQueryVerbRow{
 		{
@@ -303,16 +311,130 @@ func TestCompatMigrateDirQuery_StrictEnvKeepsAMeaningfulQueryWorking(t *testing.
 // It is the same choice PTAH_SKIP_CHECKS makes and for the same reason: a
 // misspelled value in a CI environment file must not read as "the check is off"
 // to the tool while the operator believes it is on.
+//
+// The second row is the one that makes the first row's claim true rather than
+// accidental. An implementation that resolves the variable only after finding an
+// ignored key passes the first row and still exits 0 in silence on every
+// invocation without one — which is every CORRECT invocation, so a CI file
+// holding `PTAH_STRICT_DIR_QUERY=nope` would be reported on by nothing until the
+// day the typo it was set to catch actually happened. PTAH_SKIP_CHECKS is
+// resolved on every `migrate apply` regardless of what the run contains, and the
+// row below holds this variable to the same contract.
+//
+// The fixture is built BEFORE the variable is set: writeQueryFixtureDir seeds
+// the directory with a `migrate hash` run of this same binary, which under an
+// invalid value is refused too, and a fixture that failed to build would redden
+// this test for a reason that is not the property under test.
 func TestCompatMigrateDirQuery_StrictEnvRejectsInvalidValue_FailurePath(t *testing.T) {
-	t.Setenv(strictDirQueryEnvVar, "nope")
-	c := qt.New(t)
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "an ignored key is present", query: "?nonsense=1"},
+		{name: "the URL carries no query at all", query: ""},
+	}
 
-	_, _, err := runCompatExit("migrate", "status",
-		"--dir", "file://"+writeQueryFixtureDir(c)+"?nonsense=1",
-		"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			unsetStrictDirQueryEnv(t)
+			c := qt.New(t)
+			dir := writeQueryFixtureDir(c)
+			t.Setenv(strictDirQueryEnvVar, "nope")
 
-	c.Assert(err, qt.ErrorMatches,
-		`atlas migrate status --dir: invalid boolean value "nope" for PTAH_STRICT_DIR_QUERY`)
+			_, _, err := runCompatExit("migrate", "status",
+				"--dir", "file://"+dir+tt.query,
+				"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
+
+			c.Assert(err, qt.ErrorMatches,
+				`atlas migrate status --dir: invalid boolean value "nope" for PTAH_STRICT_DIR_QUERY`)
+		})
+	}
+}
+
+// dirQueryRefusingVerbRows lists the verbs that register --dir and refuse ANY
+// query on it, rather than reading the query and naming the keys it took no
+// meaning from. Each verb carries the companion flags it needs, so the refusal
+// is the one under test rather than a missing-flag complaint.
+func dirQueryRefusingVerbRows() []dirQueryVerbRow {
+	return []dirQueryVerbRow{
+		{
+			name: "checkpoint",
+			run: func(c *qt.C, dir, query string) (string, string, error) {
+				return runCompatExit("migrate", "checkpoint",
+					"--dir", "file://"+dir+query,
+					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"))
+			},
+		},
+		{
+			name: "down",
+			run: func(c *qt.C, dir, query string) (string, string, error) {
+				return runCompatExit("migrate", "down",
+					"--dir", "file://"+dir+query,
+					"--url", "sqlite://"+filepath.Join(c.TempDir(), "down.db"))
+			},
+		},
+		{
+			name: "edit",
+			run: func(_ *qt.C, dir, query string) (string, string, error) {
+				return runCompatExit("migrate", "edit", "20240101000000_init",
+					"--dir", "file://"+dir+query)
+			},
+		},
+		{
+			name: "rebase",
+			run: func(_ *qt.C, dir, query string) (string, string, error) {
+				return runCompatExit("migrate", "rebase", "20240101000000_init",
+					"--dir", "file://"+dir+query)
+			},
+		},
+		{
+			name: "rm",
+			run: func(_ *qt.C, dir, query string) (string, string, error) {
+				return runCompatExit("migrate", "rm", "20240101000000_init",
+					"--dir", "file://"+dir+query)
+			},
+		},
+		{
+			name: "test",
+			run: func(c *qt.C, dir, query string) (string, string, error) {
+				return runCompatExit("migrate", "test",
+					"--dir", "file://"+dir+query,
+					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"))
+			},
+		},
+	}
+}
+
+// TestCompatMigrateDirQuery_QueryStaysRefusedOnTheVerbsThatTakeNoQuery_FailurePath
+// bounds the report to the verbs it actually reaches.
+//
+// The eight rows of TestCompatMigrateDirQuery_ReportsIgnoredKeyOnEveryVerb are
+// not every verb that registers --dir: these six register it too and refuse any
+// query on it before the format is resolved, so the note never fires there and
+// PTAH_STRICT_DIR_QUERY governs nothing on them. Measured against the pinned
+// community binary v1.3.0 on 2026-08-08, all six answer `unknown flag: --dir`,
+// so this is an internal inconsistency of the compatibility surface rather than
+// a parity gap — it is stricter than a binary that has no contract here at all,
+// which is the allowed direction, and stokaro/ptah#1013 tracks it.
+//
+// It is a fixture rather than a remark because the documentation now enumerates
+// the two sets. A change that made any of these six start ignoring a query, or
+// that pointed the eight-verb note at one of them, would move a documented
+// boundary while every other test in this file stayed green.
+func TestCompatMigrateDirQuery_QueryStaysRefusedOnTheVerbsThatTakeNoQuery_FailurePath(t *testing.T) {
+	const want = `atlas migrate \w+ --dir: migration directory URL query parameters are not supported for this command`
+
+	for _, tt := range dirQueryRefusingVerbRows() {
+		t.Run(tt.name, func(t *testing.T) {
+			unsetStrictDirQueryEnv(t)
+			c := qt.New(t)
+
+			_, stderr, err := tt.run(c, writeQueryFixtureDir(c), "?nonsense=1")
+
+			c.Assert(err, qt.ErrorMatches, want)
+			c.Assert(stderr, qt.Not(qt.Contains), "ignoring migration directory URL query")
+		})
+	}
 }
 
 // TestCompatMigrateDirQuery_RejectedFormatValueReportsOnlyItsOwnRefusal pins the
