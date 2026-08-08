@@ -3,6 +3,7 @@ package atlas_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -433,6 +434,160 @@ func TestCompatMigrateDirQuery_QueryStaysRefusedOnTheVerbsThatTakeNoQuery_Failur
 
 			c.Assert(err, qt.ErrorMatches, want)
 			c.Assert(stderr, qt.Not(qt.Contains), "ignoring migration directory URL query")
+		})
+	}
+}
+
+// The two tests below hold the DOCUMENTATION to the split the two tests above
+// measure, because a sentence that overstates it ships as surely as a line of
+// code that does.
+//
+// `ptah-compat` has two disjoint sets of verbs here: eight read a `--dir` query
+// and ignore the keys that select nothing, and six refuse a `--dir` query
+// outright. A sentence saying the key "is ignored on every verb" is therefore
+// false for six of them, and it was false on the compat command reference —
+// the `migrate new` section closed with "as it is on every other verb" while
+// the shared query rules eleven paragraphs above already named the six that
+// refuse one. Both sentences were on the same page, so a reader could not tell
+// which was the contract.
+//
+// A prose claim needs a fixture for the same reason a code path does: the
+// enumeration was correct when it was written and went stale when the verb sets
+// moved apart. Precedent for reading a published page from a Go test rather
+// than from a docs-site checker: migrate_down_integrity_test.go, which pins
+// that the `atlas.sum` enumeration accounts for `migrate down`. It is also the
+// wiring that runs — .github/workflows/docs.yml lists each `check:*` script by
+// name, and `check:limitations` is in package.json and in no workflow.
+
+// everyVerbClaim matches a claim quantified over all verbs — "every verb",
+// "every other verb", "every migrate verb", "every Atlas verb".
+//
+// It is not a violation on its own. The compat reference legitimately says
+// `--dir` "must name a scheme ... on every Atlas verb", which is a property of
+// the community binary's own flag and true of all of them. It is a violation
+// only in the same sentence as an ignored-key claim, which is what
+// [unboundedIgnoredKeyClaims] pairs it with.
+var everyVerbClaim = regexp.MustCompile(`(?i)every (other )?(migrate |Atlas )?verb`)
+
+// dirQueryDocPage names a published page that states the ignored-key rule.
+//
+// A page is governed by being listed here, and each row asserts the page still
+// states the rule at all: a checker whose subject quietly left the page reports
+// OK forever.
+type dirQueryDocPage struct {
+	name string
+	path []string
+}
+
+// dirQueryGovernedDocPages lists every published page carrying the rule. The
+// feature matrix is generated from docs/site/scripts/data/feature-matrix-rows.json,
+// so governing the page covers the row data behind it too.
+func dirQueryGovernedDocPages() []dirQueryDocPage {
+	return []dirQueryDocPage{
+		{name: "reference_atlas-commands", path: []string{"reference", "atlas-commands.md"}},
+		{name: "atlas_migrate-commands", path: []string{"atlas", "migrate-commands.md"}},
+		{name: "atlas_comparison", path: []string{"atlas", "comparison.md"}},
+		{name: "atlas_overview", path: []string{"atlas", "overview.md"}},
+		{name: "atlas_feature-matrix", path: []string{"atlas", "feature-matrix.md"}},
+	}
+}
+
+// readCompatDocPage returns a published documentation page verbatim.
+func readCompatDocPage(c *qt.C, page []string) string {
+	c.Helper()
+	parts := append([]string{"..", "..", "docs", "site", "src", "content", "docs"}, page...)
+	source, err := os.ReadFile(filepath.Join(parts...))
+	c.Assert(err, qt.IsNil)
+	return string(source)
+}
+
+// asOneLine collapses every run of whitespace to a single space, so a claim
+// Markdown wrapped over four source lines is matched as the reader meets it
+// rather than as it happens to be stored. Without this the stale sentence would
+// have to be searched for in exactly the wrapping it had.
+func asOneLine(source string) string {
+	return strings.Join(strings.Fields(source), " ")
+}
+
+// unboundedIgnoredKeyClaims returns the sentences of a page that assert a query
+// key is ignored AND quantify that over every verb.
+func unboundedIgnoredKeyClaims(page string) []string {
+	found := make([]string, 0)
+	for sentence := range strings.SplitSeq(asOneLine(page), ". ") {
+		found = appendUnboundedIgnoredKeyClaim(found, sentence)
+	}
+	return found
+}
+
+// appendUnboundedIgnoredKeyClaim keeps one sentence when it makes both claims
+// at once. It is a helper rather than a filter inside the loop so the test body
+// stays free of control flow.
+func appendUnboundedIgnoredKeyClaim(found []string, sentence string) []string {
+	if !strings.Contains(strings.ToLower(sentence), "ignor") {
+		return found
+	}
+	if !everyVerbClaim.MatchString(sentence) {
+		return found
+	}
+	return append(found, sentence)
+}
+
+// TestCompatMigrateDirQuery_DocsBoundTheIgnoredKeyClaim pins that no published
+// page claims the ignore holds on every verb, and that each governed page still
+// states the rule.
+func TestCompatMigrateDirQuery_DocsBoundTheIgnoredKeyClaim(t *testing.T) {
+	for _, tt := range dirQueryGovernedDocPages() {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			page := readCompatDocPage(c, tt.path)
+
+			c.Assert(strings.ToLower(page), qt.Contains, "ignor",
+				qt.Commentf("page no longer states the ignored-key rule, so this row proves nothing"))
+			claims := unboundedIgnoredKeyClaims(page)
+			c.Assert(claims, qt.HasLen, 0, qt.Commentf("unbounded claims: %q", claims))
+		})
+	}
+}
+
+// migrateNewReferenceSection returns the `ptah-compat migrate new` section of
+// the compat command reference: everything from its heading to the next
+// third-level heading.
+func migrateNewReferenceSection(c *qt.C) string {
+	c.Helper()
+	page := readCompatDocPage(c, []string{"reference", "atlas-commands.md"})
+	_, afterHeading, found := strings.Cut(page, "### `ptah-compat migrate new`")
+	c.Assert(found, qt.IsTrue)
+	body, _, _ := strings.Cut(afterHeading, "\n### ")
+	return asOneLine(body)
+}
+
+// TestCompatMigrateDirQuery_MigrateNewReferenceSectionNamesBothVerbSets pins the
+// split where the stale sentence stood.
+//
+// [TestCompatMigrateDirQuery_DocsBoundTheIgnoredKeyClaim] would also pass on a
+// section that dropped the sentence entirely, which would leave a reader of the
+// one verb that WRITES the directory with no statement at all about what a
+// `--dir` query does there. These rows require the bound to be named, not merely
+// not overstated.
+func TestCompatMigrateDirQuery_MigrateNewReferenceSectionNamesBothVerbSets(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "names the accepting bound", want: "verbs that accept a `--dir` query"},
+		{name: "checkpoint", want: "`checkpoint`"},
+		{name: "down", want: "`down`"},
+		{name: "edit", want: "`edit`"},
+		{name: "rebase", want: "`rebase`"},
+		{name: "rm", want: "`rm`"},
+		{name: "test", want: "`test`"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(migrateNewReferenceSection(c), qt.Contains, tt.want)
 		})
 	}
 }

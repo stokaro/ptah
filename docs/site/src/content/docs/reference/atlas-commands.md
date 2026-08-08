@@ -297,7 +297,11 @@ The directory's existing `atlas.sum` is verified first — over the selected
 layout's covered file set — with the same output `migrate apply` and
 `migrate validate` produce, and nothing is created when the check fails; see
 [Which verbs enforce `atlas.sum`](../../atlas/migrate-commands/#which-verbs-enforce-atlassum).
-An unrecognized `--dir` query key is ignored, as it is on every other verb.
+An unrecognized `--dir` query key is ignored here and named on standard error,
+as it is on the other seven verbs that accept a `--dir` query — `apply`,
+`diff`, `hash`, `lint`, `set`, `status` and `validate`. It is not ignored on
+`checkpoint`, `down`, `edit`, `rebase`, `rm` or `test`: those refuse a `--dir`
+query outright, as the shared rules above record.
 
 `--dir` must name a scheme on this verb and on `migrate diff`, as it must on
 every Atlas verb: `--dir migrations` is refused with
@@ -369,9 +373,9 @@ migration gets written. An unrecognized `--dir` query key is ignored; a
 `?format=` or `--dir-format` naming a non-`atlas` layout is refused, because
 nothing writes planned migration SQL in a foreign tool's convention yet.
 
-Both spellings of the layout are read the way every other migrate verb reads
-them. The value is matched verbatim, so `--dir-format ATLAS` and
-`--dir-format " atlas "` are rejected rather than coerced, and an explicit
+Both spellings of the layout are read the way the other verbs that accept a
+`--dir` query read them. The value is matched verbatim, so `--dir-format ATLAS`
+and `--dir-format " atlas "` are rejected rather than coerced, and an explicit
 `?format=` outranks `--dir-format` — `--dir "file://migrations?format=atlas"
 --dir-format golang-migrate` writes the Atlas-layout migration. An
 unrecognized query key selects no layout, so `--dir-format` still decides
