@@ -26,6 +26,9 @@ var (
 	// ErrRollbackConflict reports that cleanup could not safely restore an
 	// original source because its committed file or parent directory changed.
 	ErrRollbackConflict = errors.New("Go annotation cleanup rollback conflict")
+	// ErrUnexportedAnnotation reports that cleanup would remove a recognized
+	// directive that the Go parser did not represent in the exported schema.
+	ErrUnexportedAnnotation = errors.New("refuse to clean an unexported Go annotation")
 )
 
 // Result describes cleanup changes for one file.
@@ -47,6 +50,9 @@ type Annotation struct {
 type removedLine struct {
 	number     int
 	annotation Annotation
+	scope      annotationmeta.Scope
+	namedField bool
+	values     map[string]string
 }
 
 type filePlan struct {
@@ -163,6 +169,9 @@ func (p *Plan) Annotations() []Annotation {
 
 // Apply commits the validated annotation-removal plan.
 func (p *Plan) Apply() error {
+	if err := p.validateAttachments(); err != nil {
+		return err
+	}
 	if err := p.snapshot.Revalidate(); err != nil {
 		return fmt.Errorf("revalidate Go annotation sources before cleanup: %w", err)
 	}
@@ -762,11 +771,8 @@ func removeAnnotationLines(path string, data []byte) ([]byte, []removedLine, err
 	removed := make([]removedLine, 0)
 	for i, line := range lines {
 		lineNumber := i + 1
-		if annotation, ok := lineNumbers[lineNumber]; ok {
-			removed = append(removed, removedLine{
-				number:     lineNumber,
-				annotation: annotation,
-			})
+		if removal, ok := lineNumbers[lineNumber]; ok {
+			removed = append(removed, removal)
 			continue
 		}
 		filtered = append(filtered, line)
@@ -774,14 +780,15 @@ func removeAnnotationLines(path string, data []byte) ([]byte, []removedLine, err
 	return bytes.Join(filtered, nil), removed, nil
 }
 
-func annotationLineNumbers(path string, data []byte, lines [][]byte) (map[int]Annotation, error) {
+func annotationLineNumbers(path string, data []byte, lines [][]byte) (map[int]removedLine, error) {
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, path, data, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		return nil, fmt.Errorf("parse Go source %s: %w", path, err)
 	}
 
-	lineNumbers := make(map[int]Annotation)
+	placements := annotationmeta.CommentPlacements(file)
+	lineNumbers := make(map[int]removedLine)
 	for _, group := range file.Comments {
 		for _, comment := range group.List {
 			lineNumber := fileSet.PositionFor(comment.Pos(), false).Line
@@ -791,27 +798,22 @@ func annotationLineNumbers(path string, data []byte, lines [][]byte) (map[int]An
 				strings.TrimSpace(string(lines[lineNumber-1])) != strings.TrimSpace(comment.Text) {
 				continue
 			}
-			lineNumbers[lineNumber] = Annotation{
-				Path:       path,
-				Line:       lineNumber,
-				Directive:  directive.Name,
-				Attributes: annotationAttributes(comment.Text),
+			attributes, values := annotationAttributes(comment.Text)
+			lineNumbers[lineNumber] = removedLine{
+				number: lineNumber,
+				annotation: Annotation{
+					Path:       path,
+					Line:       lineNumber,
+					Directive:  directive.Name,
+					Attributes: attributes,
+				},
+				scope:      placements[comment].Scope,
+				namedField: placements[comment].NamedField,
+				values:     values,
 			}
 		}
 	}
 	return lineNumbers, nil
-}
-
-func annotationAttributes(comment string) []string {
-	annotations := annotationparse.Scan(comment)
-	if len(annotations) == 0 {
-		return nil
-	}
-	attributes := make([]string, len(annotations[0].Attributes))
-	for i, attribute := range annotations[0].Attributes {
-		attributes[i] = attribute.Name
-	}
-	return attributes
 }
 
 func unifiedRemovalDiff(path string, before []byte, removed []removedLine) string {

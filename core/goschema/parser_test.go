@@ -187,6 +187,38 @@ type User struct {
 	c.Assert(db.Fields[0].IdentityOptions, qt.Equals, "MINVALUE 0 START WITH 0")
 }
 
+func TestParseSource_HappyPath_NearPrefixDirectiveIsOrdinaryComment(t *testing.T) {
+	c := qt.New(t)
+
+	database, err := goschema.ParseSource("schema.go", `
+package test
+
+//ptah:schema:tableau name="users"
+type User struct{}
+`)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Tables, qt.HasLen, 0)
+}
+
+func TestParseSource_HappyPath_IgnoresFileOnlyRLSOnField(t *testing.T) {
+	c := qt.New(t)
+
+	database, err := goschema.ParseSource("schema.go", `
+package test
+
+//ptah:schema:table name="users"
+type User struct {
+	//ptah:schema:rls:policy name="field_policy" table="users" using="true"
+	ID int64
+}
+`)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Tables, qt.HasLen, 1)
+	c.Assert(database.RLSPolicies, qt.HasLen, 0)
+}
+
 func TestParseSource_RejectsUnknownAttributesOnAllDirectives(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -3,6 +3,7 @@ package annotationparse
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/internal/annotationmeta"
@@ -24,10 +25,11 @@ type Position struct {
 
 // Attribute is a parsed annotation attribute with source range.
 type Attribute struct {
-	Name       string
-	Value      string
-	Range      Range
-	ValueRange Range
+	Name         string
+	Value        string
+	DecodedValue string
+	Range        Range
+	ValueRange   Range
 }
 
 // Annotation is a parsed //ptah annotation comment.
@@ -128,9 +130,11 @@ func scanAttributes(lineNo int, line string) []Attribute {
 		nameEnd := match[3]
 		valueStart := match[4]
 		valueEnd := match[5]
+		rawValue := line[valueStart:valueEnd]
 		attrs = append(attrs, Attribute{
-			Name:  line[nameStart:nameEnd],
-			Value: strings.Trim(line[valueStart:valueEnd], `"`),
+			Name:         line[nameStart:nameEnd],
+			Value:        sourceAttributeValue(rawValue),
+			DecodedValue: decodeAttributeValue(rawValue),
 			Range: Range{
 				Start: Position{Line: lineNo, Character: nameStart},
 				End:   Position{Line: lineNo, Character: nameEnd},
@@ -142,4 +146,19 @@ func scanAttributes(lineNo int, line string) []Attribute {
 		})
 	}
 	return attrs
+}
+
+func decodeAttributeValue(value string) string {
+	if !strings.HasPrefix(value, `"`) {
+		return value
+	}
+	decoded, err := strconv.Unquote(value)
+	if err != nil {
+		return sourceAttributeValue(value)
+	}
+	return decoded
+}
+
+func sourceAttributeValue(value string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(value, `"`), `"`)
 }

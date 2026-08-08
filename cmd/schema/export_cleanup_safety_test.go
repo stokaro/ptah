@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/schema"
+	"go.5x5.cz/ptah/internal/goannotationcleanup"
 )
 
 // cliSecret is the credential planted in the compiled-command tests. Assertions
@@ -31,8 +33,8 @@ func writeRoleModel(c *qt.C, dir, password string) string {
 	path := filepath.Join(dir, "model.go")
 	source := `package models
 
-//ptah:schema:role name="app_user" login="true" password="` + password + `"
-const _ = 0
+//ptah:schema:role name="app_user" login="true" password=` + strconv.Quote(password) + `
+type AppRole struct{}
 
 //ptah:schema:table name="users"
 type User struct {
@@ -71,9 +73,8 @@ func TestSchemaExportCleanupDiffRedactsRolePassword(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(secretLeaked(stdout, cliSecret), qt.IsFalse)
 	c.Assert(secretLeaked(stderr, cliSecret), qt.IsFalse)
-	// cliSecret carries a raw quote, so the delimiters are ambiguous and the
-	// mask correctly runs to end of line. Asserting the exact line means a
-	// partial mask cannot pass, and the expectation holds no fixture bytes.
+	// Asserting the exact line means a partial mask cannot pass, and the
+	// expectation holds no fixture bytes.
 	c.Assert(stdout, qt.Contains, `-//ptah:schema:role name="app_user" login="true" password=***`)
 }
 
@@ -85,7 +86,7 @@ func TestSchemaExportRefusesCleanupOnNonNFCValue(t *testing.T) {
 
 //ptah:schema:function name="greet" params="" returns="text" language="sql" body="SELECT 'Caf` +
 		decomposedAccentCLI + `'"
-const _ = 0
+type GreetingFunction struct{}
 
 //ptah:schema:table name="users"
 type User struct {
@@ -111,4 +112,39 @@ type User struct {
 	c.Assert(string(content), qt.Equals, source)
 	_, statErr := os.Stat(outPath)
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
+func TestSchemaExportCleanupRejectsDetachedRecognizedDirective(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "model.go")
+	source := `package models
+
+//ptah:schema:role name="detached_role" login="true"
+const marker = 0
+
+//ptah:schema:table name="users"
+type User struct{}
+`
+	c.Assert(os.WriteFile(modelPath, []byte(source), 0o600), qt.IsNil)
+	outPath := filepath.Join(dir, "schema.hcl")
+	originalOutput := []byte("existing schema\n")
+	c.Assert(os.WriteFile(outPath, originalOutput, 0o600), qt.IsNil)
+
+	stdout, stderr, err := runSchemaExportCleanup(c,
+		"--root-dir", dir,
+		"--out", outPath,
+		"--cleanup-go-annotations",
+	)
+
+	c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Contains, "ptah:schema:role")
+	c.Assert(stderr, qt.Contains, "has file scope")
+	content, readErr := os.ReadFile(modelPath)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(content), qt.Equals, source)
+	output, readErr := os.ReadFile(outPath)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(output, qt.DeepEquals, originalOutput)
 }

@@ -1,12 +1,23 @@
 package annotationmeta_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/annotationmeta"
 )
+
+func sourceComments(file *ast.File) []*ast.Comment {
+	var comments []*ast.Comment
+	for _, group := range file.Comments {
+		comments = append(comments, group.List...)
+	}
+	return comments
+}
 
 func TestAllowsAttributeValidatesPlatformOverrideShape(t *testing.T) {
 	c := qt.New(t)
@@ -106,4 +117,48 @@ func TestDetachedFileScopesMatchParserSupport(t *testing.T) {
 			c.Assert(directive.Name, qt.Matches, `ptah:schema:rls:(policy|enable)`)
 		}
 	}
+}
+
+func TestAllowsScope_UsesDirectiveMetadata(t *testing.T) {
+	c := qt.New(t)
+
+	table, ok := annotationmeta.Lookup("ptah:schema:table")
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(annotationmeta.AllowsScope(table, annotationmeta.ScopeStruct), qt.IsTrue)
+	c.Assert(annotationmeta.AllowsScope(table, annotationmeta.ScopeFile), qt.IsFalse)
+
+	policy, ok := annotationmeta.Lookup("ptah:schema:rls:policy")
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(annotationmeta.AllowsScope(policy, annotationmeta.ScopeStruct), qt.IsTrue)
+	c.Assert(annotationmeta.AllowsScope(policy, annotationmeta.ScopeFile), qt.IsTrue)
+}
+
+func TestCommentPlacements_ClassifiesParserAndCleanupScopes(t *testing.T) {
+	c := qt.New(t)
+	file, err := parser.ParseFile(token.NewFileSet(), "model.go", `package models
+
+//ptah:schema:rls:enable table="users"
+const marker = 0
+
+//ptah:schema:table name="users"
+type User struct {
+	//ptah:schema:field name="id"
+	ID int64
+
+	//ptah:embedded mode="inline"
+	Audit
+}
+`, parser.ParseComments)
+	c.Assert(err, qt.IsNil)
+	comments := sourceComments(file)
+	c.Assert(comments, qt.HasLen, 4)
+	placements := annotationmeta.CommentPlacements(file)
+
+	c.Assert(placements[comments[0]], qt.DeepEquals, annotationmeta.Placement{Scope: annotationmeta.ScopeFile})
+	c.Assert(placements[comments[1]], qt.DeepEquals, annotationmeta.Placement{Scope: annotationmeta.ScopeStruct})
+	c.Assert(placements[comments[2]], qt.DeepEquals, annotationmeta.Placement{
+		Scope:      annotationmeta.ScopeField,
+		NamedField: true,
+	})
+	c.Assert(placements[comments[3]], qt.DeepEquals, annotationmeta.Placement{Scope: annotationmeta.ScopeField})
 }
