@@ -1225,10 +1225,20 @@ var rlsTableSemantics = identifier.ForDialect(platform.Postgres)
 //   - the exact spelling wins, through [tableScopeResolver.resolve];
 //   - failing that, the table identity wins, which is what folds
 //     `public.orders` onto a table declared without a schema;
-//   - failing that, an ASCII case fold wins, and only when exactly one declared
-//     table matches. Two tables declared as `orders` and `"ORDERS"` are two
-//     tables -- PostgreSQL keeps a policy called `p` on each -- so an ambiguous
-//     fold resolves to nothing and the reference keeps its spelling.
+//   - failing that, an ASCII case fold wins, and only downwards, onto a table
+//     whose declared name is already its own folded form ([foldTarget]), and
+//     only when exactly one declared table matches. Two tables declared as
+//     `orders` and `"ORDERS"` are two tables -- PostgreSQL keeps a policy
+//     called `p` on each -- so an ambiguous fold resolves to nothing and the
+//     reference keeps its spelling.
+//
+// The fold is one-directional because Ptah does not retain whether an
+// identifier was quoted. `CREATE TABLE ORDERS` and `CREATE TABLE "ORDERS"` are
+// two different instructions to PostgreSQL -- the first creates `orders`, the
+// second creates `ORDERS` -- and both reach this resolver as the string
+// `ORDERS`. Folding in both directions therefore has to be wrong for one of
+// two indistinguishable inputs, and being wrong for the quoted one relocates an
+// access-control declaration onto a relation the author did not name.
 type rlsTableResolver struct {
 	scopes     tableScopeResolver
 	byIdentity map[string]string
@@ -1245,9 +1255,34 @@ func newRLSTableResolver(tables []Table, scopes tableScopeResolver) rlsTableReso
 		qualifiedName := table.QualifiedName()
 		identity := rlsTableSemantics.QualifiedTableIdentityKey(qualifiedName)
 		addTableScope(resolver.byIdentity, identity, qualifiedName)
-		addTableScope(resolver.byFolded, foldedRLSTableIdentity(identity), qualifiedName)
+		if foldTarget(identity) {
+			addTableScope(resolver.byFolded, foldedRLSTableIdentity(identity), qualifiedName)
+		}
 	}
 	return resolver
+}
+
+// foldTarget reports whether a reference in some other case may be folded onto
+// a table declared under this identity.
+//
+// Only a table whose declared name is already its own folded form qualifies. A
+// table declared `orders` is indistinguishable from an unquoted lower-case
+// declaration, so folding `ORDERS` onto it is exactly what PostgreSQL does. A
+// table declared `ORDERS` or `Orders` may have been written `"ORDERS"` or
+// `"Orders"`, and Ptah cannot tell, so it is not a fold target: the reference
+// keeps its spelling and the render reproduces the database's own answer.
+//
+// Measured on PostgreSQL 17.10, on a file declaring `CREATE TABLE "ORDERS"` and
+// then writing `ALTER TABLE orders ENABLE ROW LEVEL SECURITY`, psql with
+// `-v ON_ERROR_STOP=1` exits 3 with `relation "orders" does not exist`, and the
+// pinned Atlas community v1.3.0 binary exits 1 on the same file. Folding the
+// declaration up instead bound both statements to `ORDERS`, applied cleanly,
+// and left the relation the file named with `relrowsecurity = f` and no policy.
+//
+// The schema half of the identity is an identifier too, and answers the same
+// question: `app` may be folded onto, `App` may not.
+func foldTarget(identity string) bool {
+	return identity == foldedRLSTableIdentity(identity)
 }
 
 // foldedRLSTableIdentity folds the ASCII case an unquoted PostgreSQL identifier
@@ -1282,7 +1317,11 @@ func (r rlsTableResolver) resolve(structName, table string) string {
 // given.
 //
 // A declaration whose table matches nothing declared keeps its spelling: it is
-// not this function's business to guess at a table it cannot see.
+// not this function's business to guess at a table it cannot see. "Matches" is
+// [rlsTableResolver.resolve]'s answer, and the case fold inside it only runs
+// downwards, so a file declaring `"ORDERS"` and naming `orders` does not match:
+// the render keeps `orders`, and PostgreSQL answers `relation "orders" does not
+// exist` exactly as it answers the source file.
 func bindRLSTables(r *Database, resolver rlsTableResolver) {
 	for index := range r.RLSPolicies {
 		policy := &r.RLSPolicies[index]

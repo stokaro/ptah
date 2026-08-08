@@ -178,6 +178,54 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			},
 		},
 		{
+			// The direction the fold must not run. Ptah discards quoting, so
+			// a table declared `ORDERS` is indistinguishable from one written
+			// `"ORDERS"` -- and PostgreSQL reads those as two different
+			// relations, only one of which a reference written `orders`
+			// reaches. Measured on PostgreSQL 17.10, a file declaring
+			// `CREATE TABLE "ORDERS"` and then `CREATE POLICY p ON orders`
+			// exits 3 with `relation "orders" does not exist`. Folding the
+			// declaration up to meet the reference would instead protect
+			// `ORDERS` and leave the named relation unprotected, so the
+			// reference keeps its spelling and nothing binds.
+			name:   "a case-preserving declared table does not capture a lower-case reference",
+			tables: []goschema.Table{{Name: "ORDERS", StructName: "OrdersTable"}},
+			policies: []goschema.RLSPolicy{
+				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
+			},
+			want: []goschema.RLSPolicy{
+				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
+			},
+		},
+		{
+			// The schema half of a qualified name is an identifier too, and
+			// answers the same question. Measured on PostgreSQL 17.10, a file
+			// declaring `CREATE SCHEMA "App"` and then naming `app.ledger`
+			// exits 3 with `schema "app" does not exist`.
+			name:   "a case-preserving declared schema does not capture a folded reference",
+			tables: []goschema.Table{{Name: "orders", Schema: "App", StructName: "Order"}},
+			policies: []goschema.RLSPolicy{
+				{Name: "p", Table: "app.orders", UsingExpression: "tenant_id = 1"},
+			},
+			want: []goschema.RLSPolicy{
+				{Name: "p", Table: "app.orders", UsingExpression: "tenant_id = 1"},
+			},
+		},
+		{
+			// The pair to the row above, differing only in the case of the
+			// declared schema. `CREATE SCHEMA app` is its own folded form, so
+			// PostgreSQL 17.10 accepts `CREATE POLICY row_guard ON APP.LEDGER`
+			// against `app.ledger` with exit 0, and the fold runs.
+			name:   "a folded reference reaches a schema declared in lower case",
+			tables: []goschema.Table{{Name: "orders", Schema: "app", StructName: "Order"}},
+			policies: []goschema.RLSPolicy{
+				{Name: "p", Table: "APP.ORDERS", UsingExpression: "tenant_id = 1"},
+			},
+			want: []goschema.RLSPolicy{
+				{Name: "p", Table: "app.orders", UsingExpression: "tenant_id = 1"},
+			},
+		},
+		{
 			// The control that bounds the case fold: a quoted identifier keeps
 			// its case, so `orders` and `"ORDERS"` are two tables. PostgreSQL
 			// 17.10 accepts a policy called `p` on each and reports both rows

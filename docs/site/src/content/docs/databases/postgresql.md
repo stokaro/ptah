@@ -110,16 +110,25 @@ first declaration and renders it once. Two tables of the same name in
 different schemas — `tenanta.orders` and `tenantb.orders` — remain two tables,
 and a policy name on each remains two policies.
 
-Letter case is the other spelling that reaches one table. An unquoted
-PostgreSQL identifier folds to lower case, so a SQL schema file declaring
-`CREATE TABLE orders` and then naming `ORDERS` in `CREATE POLICY` or in
-`ALTER TABLE ... ENABLE ROW LEVEL SECURITY` is naming that same table. Ptah
-binds each declaration to the table it names and renders the declared
-spelling, so a policy or an enablement written as `ORDERS` no longer renders
-`ON "ORDERS"` — a table nothing declared, answered by `relation "ORDERS" does
-not exist`. A quoted identifier keeps its case: when a schema declares both
-`orders` and `"ORDERS"`, they are two tables and a policy on each is two
-policies.
+Letter case is the other spelling that reaches one table, and it folds in one
+direction only. An unquoted PostgreSQL identifier folds to lower case, so a SQL
+schema file declaring `CREATE TABLE orders` and then naming `ORDERS` in
+`CREATE POLICY` or in `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` is naming
+that same table. Ptah binds each declaration to the table it names and renders
+the declared spelling, so a policy or an enablement written as `ORDERS` no
+longer renders `ON "ORDERS"` — a table nothing declared, answered by
+`relation "ORDERS" does not exist`.
+
+The rule is that a reference folds down onto a table declared in lower case,
+and a declaration that preserves case is never a fold target. Ptah does not
+record whether an identifier was quoted, so `CREATE TABLE ORDERS` and
+`CREATE TABLE "ORDERS"` reach it as the same declaration while PostgreSQL reads
+them as two different relations — `orders` and `ORDERS`. A schema that declares
+only `"ORDERS"` and then writes `ON orders` therefore names a relation it does
+not declare, and Ptah keeps that spelling rather than guessing: the render
+reproduces PostgreSQL's own `relation "orders" does not exist` instead of
+quietly moving the policy onto `ORDERS`. Declaring both `orders` and `"ORDERS"`
+gives two tables, and a policy on each is two policies.
 
 ## Extensions
 

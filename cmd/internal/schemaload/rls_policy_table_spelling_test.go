@@ -123,17 +123,25 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 	})
 }
 
-// TestLoad_SQLSchemaFileBindsToTheDeclaredCase shows the rule is "name the
-// declared table", not "lower-case everything". The SQL reader keeps
-// `CREATE TABLE ORDERS` as `ORDERS`, so a policy written `ON orders` has to
-// reach `ORDERS` -- the only table this schema declares. Rendered the other
-// way the statements name a table nothing declared, and PostgreSQL 17.10
-// answers `relation "orders" does not exist`.
-func TestLoad_SQLSchemaFileBindsToTheDeclaredCase(t *testing.T) {
+// TestLoad_SQLSchemaFileDoesNotFoldOntoACasePreservingTable is the direction
+// the fold must not run. The SQL reader keeps `CREATE TABLE "ORDERS"` as
+// `ORDERS` and discards the quoting, so a declaration spelled `ORDERS` is
+// indistinguishable from one written `"ORDERS"` -- and to PostgreSQL those are
+// two different relations, only one of which a reference written `orders`
+// reaches. Folding the declaration up to meet the reference therefore has to be
+// wrong for one of two inputs Ptah cannot tell apart, and being wrong for the
+// quoted one moves an access-control declaration onto a relation the author did
+// not name.
+//
+// Measured on PostgreSQL 17.10 with `-v ON_ERROR_STOP=1`, this exact file exits
+// 3 with `relation "orders" does not exist`. The render must say the same thing:
+// every statement keeps `orders`, so replaying it reproduces the database's own
+// answer instead of quietly succeeding against `ORDERS`.
+func TestLoad_SQLSchemaFileDoesNotFoldOntoACasePreservingTable(t *testing.T) {
 	c := qt.New(t)
 
 	path := filepath.Join(t.TempDir(), "schema.sql")
-	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE ORDERS (id INTEGER PRIMARY KEY, tenant_id INTEGER);
+	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE "ORDERS" (id INTEGER PRIMARY KEY, tenant_id INTEGER);
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
@@ -141,15 +149,49 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "ORDERS")
+	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
+	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "orders")
 
 	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
-		"CREATE POLICY \"p\" ON \"ORDERS\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
+		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
 	})
 	c.Assert(rowLevelSecurityStatements(statements), qt.DeepEquals, []string{
-		`ALTER TABLE "ORDERS" ENABLE ROW LEVEL SECURITY;`,
+		`ALTER TABLE "orders" ENABLE ROW LEVEL SECURITY;`,
+	})
+}
+
+// TestLoad_SQLSchemaFileFoldsOntoALowerCaseTableDeclaredUnquoted is the other
+// half of the same boundary, and the reason the fold exists at all. The
+// declaration here is already its own folded form, so a reference written
+// `ORDERS` reaches it exactly as PostgreSQL says it does, and the render names
+// the declared table. The two tests differ only in the case of the CREATE
+// TABLE, which is what makes the rule one-directional rather than absent.
+func TestLoad_SQLSchemaFileFoldsOntoALowerCaseTableDeclaredUnquoted(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE orders (id INTEGER PRIMARY KEY, tenant_id INTEGER);
+ALTER TABLE ORDERS ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p ON ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
+`), 0o600), qt.IsNil)
+
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.RLSPolicies, qt.HasLen, 1)
+	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
+	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "orders")
+
+	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
+		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
+	})
+	c.Assert(rowLevelSecurityStatements(statements), qt.DeepEquals, []string{
+		`ALTER TABLE "orders" ENABLE ROW LEVEL SECURITY;`,
 	})
 }
 

@@ -8506,10 +8506,11 @@ type RLSPolicyRef struct {
     RLSPolicyRef represents a reference to an RLS policy with its table
     information.
 
-    This structure is used to identify RLS policies that need to be dropped,
-    providing both the policy name and the table it belongs to. This is
-    necessary because PostgreSQL requires both pieces of information for DROP
-    POLICY statements.
+    This structure identifies an RLS policy on both sides of a diff -- policies
+    added as well as policies dropped. The table is not decoration: a PostgreSQL
+    policy name is scoped to its table, so two tables in one schema may each
+    carry a policy called "tenant_isolation", and both CREATE POLICY and DROP
+    POLICY need the table to say which one is meant.
 
     # Example Usage
 
