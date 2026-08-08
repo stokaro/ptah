@@ -42,11 +42,9 @@ type Config struct {
 	// IgnoredConstructs lists the atlas.hcl names that were accepted and not
 	// acted on, under Atlas CE's unknown-name policy.
 	//
-	// It exists so a caller can say something. CE reports nothing at all, and
-	// that silence is a footgun: a typo'd block name does nothing and looks
-	// fine. Everything the conformance tiers measure -- exit code, stdout, the
-	// text of every error -- is unchanged whether or not a caller reports
-	// these, so drop-in fidelity does not depend on it.
+	// Atlas CE reports nothing for these names. Ptah records them so callers can
+	// make the no-op visible; the Ptah CLIs warn on stderr while preserving the
+	// command's stdout and exit code.
 	IgnoredConstructs []IgnoredAtlasConstruct
 	// EnvName is the selected project env name, when the source had one.
 	EnvName string
@@ -691,6 +689,7 @@ func appendDisabledMode(patterns []string, option ConfigBool, pattern string) []
 // non-zero programmatic values from override.
 func Merge(base, override Config) Config {
 	result := base
+	result.IgnoredConstructs = slices.Concat(base.IgnoredConstructs, override.IgnoredConstructs)
 	result.presence = base.presence.clone()
 	result.EnvName = mergeStringValue(
 		base.EnvName,

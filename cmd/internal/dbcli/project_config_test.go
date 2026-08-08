@@ -1,6 +1,8 @@
 package dbcli_test
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -96,6 +98,52 @@ migration:
 	c.Assert(cfg.Migration.Dir, qt.Equals, "atlas-migrations")
 	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")
 	c.Assert(cfg.Migration.RevisionFormat, qt.Equals, "atlas")
+}
+
+func TestLoadProjectConfigReportsIgnoredAtlasConstructs(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	c.Assert(os.WriteFile(projectconfig.AtlasFileName, []byte(`env "local" {
+  project = "ignored"
+}
+`), 0o600), qt.IsNil)
+
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().String(dbcli.EnvFlagName, "local", "")
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cfg, err := dbcli.LoadProjectConfig(cmd, "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.IgnoredConstructs, qt.HasLen, 1)
+	c.Assert(
+		stderr.String(),
+		qt.Equals,
+		"warning: atlas.hcl attribute \"project\" at atlas.hcl:2 is ignored for Atlas compatibility and has no effect\n",
+	)
+}
+
+func TestReportIgnoredAtlasConstructsReturnsWriterError(t *testing.T) {
+	c := qt.New(t)
+	writeErr := errors.New("diagnostics unavailable")
+
+	err := dbcli.ReportIgnoredAtlasConstructs(
+		failingDiagnosticsWriter{err: writeErr},
+		projectconfig.Config{IgnoredConstructs: []projectconfig.IgnoredAtlasConstruct{
+			{Name: "project", Kind: "attribute", Filename: "atlas.hcl", Line: 2},
+		}},
+	)
+
+	c.Assert(err, qt.ErrorIs, writeErr)
+}
+
+type failingDiagnosticsWriter struct {
+	err error
+}
+
+func (w failingDiagnosticsWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }
 
 func TestLoadProjectConfigReadsInternalAtlasProjectFlags(t *testing.T) {
@@ -213,6 +261,9 @@ schemas: [public]
 			Exclude:  []string{"migrations/legacy/*"},
 		},
 	}
+	snapshot.IgnoredConstructs = []projectconfig.IgnoredAtlasConstruct{
+		{Name: "project", Kind: "attribute", Filename: "atlas.hcl", Line: 2},
+	}
 	cmd := &cobra.Command{Use: "test"}
 	cmd.SetContext(dbcli.WithProjectConfig(cmd.Context(), snapshot))
 	snapshot.DatabaseURL = "postgres://mutated/db"
@@ -222,6 +273,7 @@ schemas: [public]
 		Severity: "error",
 		Exclude:  []string{"mutated/*"},
 	}
+	snapshot.IgnoredConstructs[0].Name = "mutated"
 
 	first, err := dbcli.LoadProjectConfig(cmd, filepath.Join(t.TempDir(), "missing.yaml"))
 
@@ -233,10 +285,14 @@ schemas: [public]
 		Severity: "warning",
 		Exclude:  []string{"migrations/legacy/*"},
 	})
+	c.Assert(first.IgnoredConstructs, qt.DeepEquals, []projectconfig.IgnoredAtlasConstruct{
+		{Name: "project", Kind: "attribute", Filename: "atlas.hcl", Line: 2},
+	})
 	first.DatabaseURL = "postgres://consumer-mutation/db"
 	first.Schemas[0] = "consumer-mutation"
 	*first.Lint.Latest = 12
 	first.Lint.RuleConfigs["DS"] = projectconfig.LintRuleConfig{Severity: "off"}
+	first.IgnoredConstructs[0].Name = "consumer-mutation"
 
 	second, err := dbcli.LoadProjectConfig(cmd, filepath.Join(t.TempDir(), "missing.yaml"))
 
@@ -247,6 +303,9 @@ schemas: [public]
 	c.Assert(second.Lint.RuleConfigs["DS"], qt.DeepEquals, projectconfig.LintRuleConfig{
 		Severity: "warning",
 		Exclude:  []string{"migrations/legacy/*"},
+	})
+	c.Assert(second.IgnoredConstructs, qt.DeepEquals, []projectconfig.IgnoredAtlasConstruct{
+		{Name: "project", Kind: "attribute", Filename: "atlas.hcl", Line: 2},
 	})
 }
 

@@ -98,6 +98,21 @@ unsupported atlas.hcl construct ...
 
 Reference: [Atlas project config subset](../../atlas/project-config/).
 
+## `atlas.hcl` says a construct has no effect
+
+Ptah accepted a name that Atlas CE also accepts without acting on:
+
+```text
+warning: atlas.hcl attribute "project" at atlas.hcl:2 is ignored for Atlas compatibility and has no effect
+```
+
+The command can still succeed, but the named setting changed nothing. Remove a
+typo, replace the construct with a supported setting, or remove it when Atlas
+compatibility requires the no-op. Re-run the command and verify that the
+warning is gone.
+
+Reference: [Atlas project config subset](../../atlas/project-config/).
+
 ## Atlas-compatible command is registered but not implemented
 
 Some Atlas-compatible paths exist so scripts fail in the right namespace before

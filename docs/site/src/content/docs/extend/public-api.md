@@ -50,6 +50,10 @@ its case model and [Database test commands](../../reference/test-cases/) for CLI
 `projectconfig.ParseAtlasFSWithOptions` evaluates `atlas.hcl` against a
 caller-provided `fs.FS`. Use it when project config and its `file()` or
 `fileset()` inputs must come from one anchored or immutable filesystem view.
+`projectconfig.Config.IgnoredConstructs` carries every Atlas CE-compatible
+no-op name with its kind and source location, and `projectconfig.Merge`
+preserves the collection. Ptah's CLI reports each entry; embedders decide how
+to expose the same metadata.
 
 `renderer.ValidateSchema` and `renderer.ValidateSchemaWithCapabilities` check
 a complete `goschema.Database` without rendering SQL. They use the same

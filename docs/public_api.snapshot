@@ -196,11 +196,9 @@ type Config struct {
     // IgnoredConstructs lists the atlas.hcl names that were accepted and not
     // acted on, under Atlas CE's unknown-name policy.
     //
-    // It exists so a caller can say something. CE reports nothing at all, and
-    // that silence is a footgun: a typo'd block name does nothing and looks
-    // fine. Everything the conformance tiers measure -- exit code, stdout, the
-    // text of every error -- is unchanged whether or not a caller reports
-    // these, so drop-in fidelity does not depend on it.
+    // Atlas CE reports nothing for these names. Ptah records them so callers can
+    // make the no-op visible; the Ptah CLIs warn on stderr while preserving the
+    // command's stdout and exit code.
     IgnoredConstructs []IgnoredAtlasConstruct
     // EnvName is the selected project env name, when the source had one.
     EnvName string
@@ -375,11 +373,9 @@ type IgnoredAtlasConstruct struct {
     IgnoredAtlasConstruct is an atlas.hcl name that was accepted and not acted
     on, matching what Atlas CE does with a name it does not recognize.
 
-    CE reports nothing at all. Ptah records them so the caller can say one line
-    per construct on stderr: CE's silence is a footgun -- a typo'd block name
-    does nothing and looks fine -- and stdout, the exit code, and every error
-    diagnostic stay byte-identical, so nothing that reads those can tell the
-    difference.
+    Atlas CE reports nothing for these names. Ptah records them so callers can
+    make the no-op visible; the Ptah CLIs warn on stderr while preserving the
+    command's stdout and exit code.
 
 
 ### go.5x5.cz/ptah/config/projectconfig.LintConfig

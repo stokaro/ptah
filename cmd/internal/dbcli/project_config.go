@@ -3,6 +3,7 @@ package dbcli
 import (
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -157,12 +158,39 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	if err != nil {
 		return projectconfig.Config{}, err
 	}
-	return projectconfig.Load(projectconfig.LoadOptions{
+	config, err := projectconfig.Load(projectconfig.LoadOptions{
 		PtahPath:  ptahConfigPath,
 		AtlasPath: atlasPath,
 		EnvName:   envName,
 		AtlasVars: atlasVars,
 	})
+	if err != nil {
+		return projectconfig.Config{}, err
+	}
+	if err := ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), config); err != nil {
+		return projectconfig.Config{}, err
+	}
+	return config, nil
+}
+
+// ReportIgnoredAtlasConstructs writes one warning for every atlas.hcl name
+// that Atlas CE accepts without acting on. Ptah preserves this compatibility
+// behavior, but makes the resulting no-op visible instead of silently hiding
+// a likely typo or unsupported policy.
+func ReportIgnoredAtlasConstructs(out io.Writer, config projectconfig.Config) error {
+	for _, construct := range config.IgnoredConstructs {
+		if _, err := fmt.Fprintf(
+			out,
+			"warning: atlas.hcl %s %q at %s:%d is ignored for Atlas compatibility and has no effect\n",
+			construct.Kind,
+			construct.Name,
+			construct.Filename,
+			construct.Line,
+		); err != nil {
+			return fmt.Errorf("write ignored atlas.hcl construct warning: %w", err)
+		}
+	}
+	return nil
 }
 
 // projectVars resolves the atlas.hcl variable overrides for a command. The

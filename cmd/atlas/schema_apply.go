@@ -141,10 +141,11 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	formatOutput := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+	mode := ignoreMissingEnvSelection
 	if needsAtlasSchemaApplyConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
+		mode = reportMissingEnvSelection
 	}
+	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd, mode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

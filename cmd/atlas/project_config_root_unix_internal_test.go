@@ -7,6 +7,7 @@ package atlas
 // no exported API exposes a deterministic hook at that point.
 
 import (
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -179,7 +180,7 @@ func TestAtlasMigrateDownFormatPreservesProjectRoot(t *testing.T) {
 		[]string{"--format", "{{ .Dir }}"},
 	)
 	c.Assert(err, qt.IsNil)
-	project, err := applyAtlasMigrateDownFormatProjectConfig(opts, atlasProjectArgValues{
+	project, err := applyAtlasMigrateDownFormatProjectConfig(io.Discard, opts, atlasProjectArgValues{
 		flags: atlasProjectFlagValues{
 			configPath: "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
 			envName:    "local",

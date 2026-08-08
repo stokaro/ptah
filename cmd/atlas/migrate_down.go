@@ -123,7 +123,7 @@ func runAtlasMigrateDownFormat(
 	if err != nil {
 		return err
 	}
-	loadedProject, err := applyAtlasMigrateDownFormatProjectConfig(opts, project)
+	loadedProject, err := applyAtlasMigrateDownFormatProjectConfig(cmd.ErrOrStderr(), opts, project)
 	if err != nil {
 		return err
 	}
@@ -349,6 +349,7 @@ func atlasVerbFlag(verb atlasVerb, name string) (atlasargs.Flag, bool) {
 // commands use: an explicitly changed flag wins, an unset flag falls back to
 // the selected env.
 func applyAtlasMigrateDownFormatProjectConfig(
+	diagnostics io.Writer,
 	opts *atlasMigrateDownFormatOptions,
 	projectArgs atlasProjectArgValues,
 ) (
@@ -364,6 +365,9 @@ func applyAtlasMigrateDownFormatProjectConfig(
 	}
 	defer closeAtlasProjectOnError(&project, &returnErr)
 	cfg := project.Config
+	if err := dbcli.ReportIgnoredAtlasConstructs(diagnostics, cfg); err != nil {
+		return atlasProject{}, err
+	}
 	opts.url = atlasDownEffective(
 		opts.flagSet,
 		"url",

@@ -81,10 +81,11 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	}
 	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+	mode := ignoreMissingEnvSelection
 	if needsAtlasSchemaDiffConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
+		mode = reportMissingEnvSelection
 	}
+	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd, mode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
