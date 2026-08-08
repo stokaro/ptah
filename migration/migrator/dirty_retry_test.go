@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
@@ -166,6 +167,79 @@ func TestMigrateUp_AllowDirtyRetryResumesAfterCommittedStatements(t *testing.T) 
 	c.Assert(after, qt.HasLen, 2)
 	c.Assert(after[1].Dirty, qt.IsFalse)
 	c.Assert(after[1].Applied, qt.Equals, 2)
+}
+
+func TestMigrateUp_AllowDirtyRefusesTemporarySessionStateResume(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "temporary-session-state.db")
+	fsys := fstest.MapFS{
+		"000001_temporary.up.sql": {Data: []byte(
+			"-- +ptah no_transaction\n" +
+				"CREATE TEMP TABLE recovery_work (id INTEGER PRIMARY KEY);\n" +
+				"INSERT INTO definitely_missing_table (id) VALUES (1);\n",
+		)},
+		"000001_temporary.down.sql": {Data: []byte("DROP TABLE recovery_work;\n")},
+	}
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	mig, err := migrator.NewFSMigrator(conn, fsys)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithTransactionMode(migrator.MigrationTxModeNone)
+
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNotNil)
+	err = mig.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot reconstruct session state after committed statement 1 because .* may depend on session-local state that cannot be restored safely.*`)
+
+	status, err := mig.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.State, qt.Equals, "failed")
+	c.Assert(status.DirtyRevision.Applied, qt.Equals, 1)
+	c.Assert(status.DirtyRevision.Total, qt.Equals, 2)
+	c.Assert(status.DirtyRevision.Error, qt.Contains, "no such table: definitely_missing_table")
+}
+
+func TestRepairMigration_CompletedDirtyRevisionVerifiesCommittedPrefix(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(t.TempDir(), "completed-prefix.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	fsys := fstest.MapFS{
+		"000001_users.up.sql": {Data: []byte(
+			"-- +ptah no_transaction\n" +
+				"CREATE TABLE users (id INTEGER PRIMARY KEY);\n" +
+				"INSERT INTO users (id) VALUES (1);\n",
+		)},
+		"000001_users.down.sql": {Data: []byte("DROP TABLE users;\n")},
+	}
+	observationResults := []error{nil, errors.New("final observation failed")}
+	observer := migrator.StatementObserverFunc(func(_ context.Context, event migrator.StatementEvent) error {
+		return observationResults[event.Index-1]
+	})
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithStatementObserver(observer))
+	c.Assert(err, qt.IsNil)
+	mig := migrator.NewMigrator(conn, provider)
+
+	c.Assert(mig.MigrateUp(c.Context()), qt.ErrorMatches, `(?s).*final observation failed.*`)
+	status, err := mig.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.Applied, qt.Equals, 2)
+	c.Assert(status.DirtyRevision.Total, qt.Equals, 2)
+
+	modified, err := migrator.NewFSMigrator(conn, fstest.MapFS{
+		"000001_users.up.sql": {Data: []byte(
+			"-- +ptah no_transaction\n" +
+				"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n" +
+				"INSERT INTO users (id) VALUES (1);\n",
+		)},
+		"000001_users.down.sql": {Data: []byte("DROP TABLE users;\n")},
+	})
+	c.Assert(err, qt.IsNil)
+
+	err = modified.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1})
+	c.Assert(err, qt.ErrorMatches, `migration 1 cannot finalize the migration: the already committed statement prefix changed.*`)
 }
 
 // TestMigrateUp_AtlasFormatAllowDirtyRetryReusesTheDirtyRevisionRow is the same
@@ -411,7 +485,41 @@ func TestMigrateUp_AllowDirtyRefusesInvalidRevisionProgress(t *testing.T) {
 	}
 }
 
-func TestRevisionReaders_RefuseCleanLookingInvalidMetadata(t *testing.T) {
+func TestGetRevisions_AcceptsCanonicalNativeStates(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		stored    string
+		state     string
+		direction migrator.MigrationDirection
+		dirty     bool
+	}{
+		{name: "applied", stored: "applied", state: "applied", direction: migrator.MigrationDirectionUp, dirty: false},
+		{name: "pending up", stored: "pending", state: "pending", direction: migrator.MigrationDirectionUp, dirty: true},
+		{name: "failed up", stored: "failed", state: "failed", direction: migrator.MigrationDirectionUp, dirty: true},
+		{name: "pending down", stored: "pending:down", state: "pending", direction: migrator.MigrationDirectionDown, dirty: true},
+		{name: "failed down", stored: "failed:down", state: "failed", direction: migrator.MigrationDirectionDown, dirty: true},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "canonical-native-state.db")
+			conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+			_, err := conn.ExecContext(c.Context(), "UPDATE schema_migrations SET state = ? WHERE version = 2", test.stored)
+			c.Assert(err, qt.IsNil)
+
+			revisions, err := m.GetRevisions(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(revisions, qt.HasLen, 2)
+			c.Assert(revisions[1].State, qt.Equals, test.state)
+			c.Assert(revisions[1].Direction, qt.Equals, test.direction)
+			c.Assert(revisions[1].Dirty, qt.Equals, test.dirty)
+		})
+	}
+}
+
+func TestRevisionReaders_RefuseInvalidMetadata(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name      string
@@ -432,6 +540,36 @@ func TestRevisionReaders_RefuseCleanLookingInvalidMetadata(t *testing.T) {
 			want:      `.*migration 2 cannot read revision metadata: revision metadata records state=applied with applied=1 total=2;.*`,
 		},
 		{
+			name:      "Ptah applied state with down direction suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'applied:down', applied = 2, total = 2, error = NULL WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="applied:down";.*`,
+		},
+		{
+			name:      "Ptah applied state with up direction suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'applied:up', applied = 2, total = 2, error = NULL WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="applied:up";.*`,
+		},
+		{
+			name:      "Ptah failed state with unknown direction suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'failed:sideways' WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="failed:sideways";.*`,
+		},
+		{
+			name:      "Ptah failed state with redundant up suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'failed:up' WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="failed:up";.*`,
+		},
+		{
+			name:      "Ptah pending state with redundant up suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'pending:up' WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="pending:up";.*`,
+		},
+		{
 			name:      "Atlas clean state with equal negative counters",
 			format:    migrator.RevisionTableFormatAtlas,
 			updateSQL: "UPDATE atlas_schema_revisions SET applied = -1, total = -1, error = '', operator_version = 'ptah' WHERE version = '2'",
@@ -441,7 +579,7 @@ func TestRevisionReaders_RefuseCleanLookingInvalidMetadata(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dbPath := filepath.Join(c.TempDir(), "clean-looking-invalid-progress.db")
+			dbPath := filepath.Join(c.TempDir(), "invalid-revision-metadata.db")
 			conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, test.format)
 			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
 			_, err := conn.ExecContext(c.Context(), test.updateSQL)

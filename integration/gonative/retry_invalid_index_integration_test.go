@@ -74,7 +74,7 @@ func TestPostgreSQLAllowDirtyRetryRefusesOverInvalidUniqueIndexIntegration(t *te
 
 	// The refusal reads the catalog and writes nothing, so the row still carries
 	// the failure that produced it and the progress a later retry resumes from.
-	c.Assert(retryInvalidIndexDirtyRevision(c, ctx, mig), qt.DeepEquals, failed)
+	assertRetryInvalidIndexRevisionUnchanged(c, retryInvalidIndexDirtyRevision(c, ctx, mig), failed)
 
 	// Why refusing is the conservative direction: nothing is enforced yet.
 	c.Assert(retryInvalidIndexDuplicateInsert(ctx, db), qt.IsNil)
@@ -130,7 +130,7 @@ func TestPostgreSQLAllowDirtyRetryRefusesOverInvalidPlainIndexIntegration(t *tes
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `"public"."`+retryInvalidPlainIndex+`"`)
 	c.Assert(err.Error(), qt.Contains, "indisvalid=false, indisready=false")
-	c.Assert(retryInvalidIndexDirtyRevision(c, ctx, mig), qt.DeepEquals, failed)
+	assertRetryInvalidIndexRevisionUnchanged(c, retryInvalidIndexDirtyRevision(c, ctx, mig), failed)
 
 	// Dropping the leftover is the refusal's other named remedy: with the name
 	// free, IF NOT EXISTS no longer skips and the retry actually builds it.
@@ -446,6 +446,29 @@ func retryInvalidIndexDirtyRevision(c *qt.C, ctx context.Context, mig *migrator.
 	revision.ExecutionTime = 0
 	revision.AppliedAt = revision.AppliedAt.UTC().Truncate(0)
 	return revision
+}
+
+func assertRetryInvalidIndexRevisionUnchanged(
+	c *qt.C,
+	got migrator.MigrationRevision,
+	want migrator.MigrationRevision,
+) {
+	c.Helper()
+	c.Assert(got.Version, qt.Equals, want.Version)
+	c.Assert(got.Description, qt.Equals, want.Description)
+	c.Assert(got.State, qt.Equals, want.State)
+	c.Assert(got.Direction, qt.Equals, want.Direction)
+	c.Assert(got.AtlasType, qt.Equals, want.AtlasType)
+	c.Assert(got.Applied, qt.Equals, want.Applied)
+	c.Assert(got.Total, qt.Equals, want.Total)
+	c.Assert(got.Error, qt.Equals, want.Error)
+	c.Assert(got.ErrorStatement, qt.Equals, want.ErrorStatement)
+	c.Assert(got.ExecutionTime, qt.Equals, want.ExecutionTime)
+	c.Assert(got.Checksum, qt.Equals, want.Checksum)
+	c.Assert(got.AppliedAt, qt.Equals, want.AppliedAt)
+	c.Assert(got.OperatorVersion, qt.Equals, want.OperatorVersion)
+	c.Assert(got.Dirty, qt.Equals, want.Dirty)
+	c.Assert(got.ChecksumCurrent, qt.Equals, want.ChecksumCurrent)
 }
 
 // retryInvalidIndexDuplicateInsert returns the error PostgreSQL raises for a

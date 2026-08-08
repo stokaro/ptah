@@ -688,6 +688,27 @@ rejects that combination before running the migration body or changing its
 revision row, so fixing the directives and retrying does not require dirty-state
 repair.
 
+Top-level transaction-control statements such as `BEGIN`, `START TRANSACTION`,
+`COMMIT`, `ROLLBACK`, savepoint commands, MySQL or MariaDB `SET autocommit`, and
+SQL Server `SET IMPLICIT_TRANSACTIONS` are also rejected in a
+`no_transaction` body. Ptah performs this validation and successfully pins the
+physical session before it inserts an up revision or changes an applied row to
+pending down. A validation or session-acquisition failure therefore leaves
+revision metadata unchanged.
+
+Each `no_transaction` attempt executes its migration SQL on one pinned physical
+database session. Session-local changes such as `SET search_path` therefore
+remain in effect for later statements in that attempt. Revision checkpoints use
+the original database connection on server databases, so changing the migration
+session's search path cannot redirect or hide the revision table. SQLite keeps
+bookkeeping on the pinned session and qualifies the table in `main`, which
+avoids deadlocking its single-connection in-memory database without allowing a
+temporary table to shadow the revision table. Ptah discards the pinned session
+after a server or file-backed attempt to prevent its state from leaking to
+another pool user; in-memory SQLite returns its only connection to the pool so
+the database itself remains alive, which also retains that connection's session
+state.
+
 SQL-backed migrations executed through `Migrator` use a two-phase progress
 record around each autocommit statement. Before execution, Ptah records the
 last known completed statement and marks the next statement's outcome as
@@ -708,15 +729,28 @@ Atlas-format rows use cumulative `partial_hashes`. Legacy rows without prefix
 metadata resume only when their full-file checksum still matches. Editing only
 the unapplied suffix is allowed, and a failed retry cannot reduce `applied`
 below the previously committed prefix when the transaction mode changes.
+The resumed attempt uses a new pinned session. Ptah replays recognized
+session-control statements from the verified prefix (`SET`, `RESET`, `USE`,
+`PRAGMA`, and related controls) while continuing to skip durable DDL and DML.
+A prefix that created a temporary object, or contains a statement whose
+session-local effect cannot be classified safely, is refused instead of being
+partially reconstructed.
+
 Negative counters and `applied > total` are rejected whenever a revision is
 read, including status, version, and planning calls; equal negative values do
-not qualify as a clean row, and a native `state=applied` row must have
-`applied == total`. A custom `MigrationFunc` is opaque to Ptah and can only be
-recorded at function completion; use SQL-backed migrations when statement-level
-crash progress is required.
+not qualify as a clean row. Native rows accept only the states Ptah writes:
+`applied`, `pending`, `failed`, `pending:down`, and `failed:down`. An applied row
+must have `applied == total`; any other spelling, including an explicit `:up`
+suffix or a direction-suffixed applied state, is rejected before migration work
+continues. Completed rollbacks are represented by deleting the row.
 
-On PostgreSQL, `RepairMigration` also refuses to finish while an index the
-selected direction creates is still unusable. A `CREATE INDEX CONCURRENTLY`
+A custom `MigrationFunc` is opaque to Ptah and can only be recorded at function
+completion; use SQL-backed migrations when statement-level crash progress is
+required.
+
+On PostgreSQL, `RepairMigration` also refuses to finish while an index a
+conditional create in the selected direction expects is still unusable. A
+`CREATE INDEX CONCURRENTLY`
 that fails partway leaves an invalid index occupying the name, so re-issuing
 the same `IF NOT EXISTS` statement is skipped rather than retried and nothing
 errors. Recording an up migration applied would report a constraint the
@@ -725,18 +759,29 @@ the same unusable index behind an apparently complete rollback.
 
 Ptah reads
 `pg_index.indisvalid` and `indisready` for the index names the selected SQL
-creates, resolves an unqualified target table through the same search path the
-statement used, and returns an error naming each unusable index and the
+creates, resolves each unqualified target table at the point where that
+statement executes or its committed prefix is replayed, and returns an error
+naming each unusable index and the
 `REINDEX INDEX CONCURRENTLY` command that rebuilds it. Visibility follows the
 target table rather than the index name because another relation can shadow an
-index name on the search path without shadowing its table. The probe also checks
+index name on the search path without shadowing its table.
+
+The probe also checks
 the schema-level `pg_class` name: an index attached to another table or a
 non-index relation cannot satisfy the intended create.
+
+When repair has no explicit `SET search_path` from which to reconstruct the
+original ambient path, it checks every same-named target table in PostgreSQL
+user schemas. This conservative fallback prevents a valid object on the repair
+session's current path from hiding an unsafe object in another candidate
+schema.
+
 `Force` does not relax this refusal: it relaxes a precondition about the
 revision row, not a fact about the database. Other dialects have no concurrent
 index build to leave half-finished and run no probe.
 
-The up path runs the same probe, because repair is not the only way that
+The up path runs the same probe for `CREATE INDEX ... IF NOT EXISTS`, because
+repair is not the only way that
 revision gets written. `MigrateUpWithOptions` with `AllowDirty` re-runs the body
 over the dirty row instead, meets the same leftover through the same
 `IF NOT EXISTS`, and would clear the dirty state over an index that enforces
@@ -756,11 +801,23 @@ A matching `DROP INDEX` before the create in the current execution window
 permits an intentional drop-and-rebuild migration; a drop skipped by
 statement-level resume does not. Ptah checks `pg_index` again on the active
 transaction or connection after the body and before recording a clean revision.
-The post-check is positive: the named relation must exist, be an index attached
-to the intended target, and be usable. A partitioned index created with
+The post-check is positive: the resolved schema, target table, and relation name
+from each conditional create must exist, describe an index attached to that
+target, and be usable. Equal raw names resolved in different schemas remain
+separate checks.
+
+Unconditional creates are left to PostgreSQL's normal error semantics, so later
+statements may intentionally rename or remove their result. A partitioned index created with
 `CREATE INDEX ... ON ONLY` is accepted when PostgreSQL reports its expected
 partitioned-parent shape (`relkind='I'`, `indisready=true`). Repair performs the
 same positive check even with `Force`.
+
+Ordinary rollback performs the corresponding post-check for conditional index
+creates in the down body before deleting the revision. A transactional rollback
+rolls its body back when the check fails. A non-transactional rollback records
+the completed down-statement count as dirty and keeps the revision so the
+operator can repair the database state without losing evidence of the failed
+verification.
 
 Atlas-format revisions use the same failure protection. Ptah keeps the Atlas
 table schema but marks Ptah-owned rollback rows through `operator_version`, so

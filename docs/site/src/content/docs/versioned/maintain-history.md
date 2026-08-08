@@ -171,6 +171,21 @@ marker and per-statement durable checkpoint protocol as the original
 `no_transaction` run, so a second failure records its absolute progress instead
 of replaying statements that already committed.
 
+The resumed SQL runs on one fresh pinned database session. Ptah replays
+recognized session-control statements such as `SET search_path` from the
+verified committed prefix before it runs the unapplied suffix; recognized
+durable DDL and DML remain skipped. It refuses resume when the prefix created a
+temporary object, or when a statement may have session-local effects Ptah
+cannot classify safely. In those cases, inspect and reconcile the database,
+then choose explicit metadata reconciliation rather than guessing how to
+reconstruct the old session or replaying migration SQL.
+
+Repair also refuses a migration whose selected recovery body contains
+top-level transaction-control statements. Recovery executes resumed SQL as
+independent autocommit statements, so accepting a nested `BEGIN`, `COMMIT`,
+`ROLLBACK`, savepoint, autocommit toggle, or implicit-transaction toggle would
+make its durable progress counters untrustworthy.
+
 `RepairMigration` acquires the same session advisory lock as migration up and
 down. It holds the lock across revision inspection, resumed SQL, safety checks,
 and the final metadata write. The native repair command currently uses the
@@ -222,12 +237,17 @@ rerun the migration — and repair again.
 
 `--force` does not bypass this. It relaxes a precondition about the revision
 row; the index being unusable is a fact about the database, and the fix for it
-is `REINDEX`. Only indexes the migration itself creates are checked, so an
-unrelated invalid index elsewhere never blocks a repair. Other dialects have no
-concurrent index build to leave half-finished and are unaffected.
+is `REINDEX`. Only indexes named by conditional creates in the selected
+direction are checked, so an unrelated invalid index elsewhere never blocks a
+repair and an unconditional create retains PostgreSQL's normal error semantics.
+Other dialects have no concurrent index build to leave half-finished and are
+unaffected.
 
 `ptah migrations up` refuses on the same grounds, so `--allow-dirty` cannot be
-used to walk past it either. See [Apply migrations](../apply/#failure-modes).
+used to walk past it either. Ordinary rollback also checks conditional creates
+in its down body before deleting the revision. A failed transactional check
+rolls the body back; a failed `none` check keeps a dirty down-direction row with
+its completed progress. See [Apply migrations](../apply/#failure-modes).
 
 ## Set the revision boundary (set)
 

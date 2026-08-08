@@ -813,7 +813,7 @@ func (m *Migrator) scanRevisionRow(row rowScanner) (MigrationRevision, error) {
 		return MigrationRevision{}, err
 	}
 	revision.State, revision.Direction = decodeRevisionState(storedState)
-	if err := validateNativeRevisionState(revision, "read revision metadata"); err != nil {
+	if err := validateNativeRevisionState(revision, storedState, "read revision metadata"); err != nil {
 		return MigrationRevision{}, err
 	}
 	parsedAppliedAt, err := parseRevisionAppliedAt(appliedAt)
@@ -1048,8 +1048,25 @@ func validateRevisionProgress(revision MigrationRevision, operation string) erro
 	)
 }
 
-func validateNativeRevisionState(revision MigrationRevision, operation string) error {
-	if revision.State != migrationStateApplied || revision.Applied == revision.Total {
+func validateNativeRevisionState(revision MigrationRevision, storedState, operation string) error {
+	switch storedState {
+	case migrationStateApplied,
+		migrationStatePending,
+		migrationStateFailed,
+		migrationStatePending + revisionDirectionSeparator + string(MigrationDirectionDown),
+		migrationStateFailed + revisionDirectionSeparator + string(MigrationDirectionDown):
+	default:
+		return fmt.Errorf(
+			"migration %d cannot %s: revision metadata records non-canonical state=%q; inspect the database before choosing a repair point",
+			revision.Version,
+			operation,
+			storedState,
+		)
+	}
+	if revision.State != migrationStateApplied {
+		return nil
+	}
+	if revision.Applied == revision.Total {
 		return nil
 	}
 	return fmt.Errorf(
@@ -2097,18 +2114,104 @@ func (m *Migrator) repairMigrationLocked(ctx context.Context, opts RepairMigrati
 	if revision != nil && !revision.Dirty && !opts.Force {
 		return fmt.Errorf("migration %d is not dirty; rerun with --force to rewrite it", opts.Version)
 	}
-	if revision != nil && revision.Direction == MigrationDirectionDown {
+	direction := repairMigrationDirection(revision)
+	if err := m.validateRepairMigrationSQL(migration, revision, opts, direction); err != nil {
+		return err
+	}
+	if direction == MigrationDirectionDown {
 		return m.repairRolledBackMigration(ctx, migration, revision, opts)
 	}
+	return m.repairUpMigration(ctx, migration, revision, opts)
+}
+
+func repairMigrationDirection(revision *MigrationRevision) MigrationDirection {
+	if revision != nil && revision.Direction == MigrationDirectionDown {
+		return MigrationDirectionDown
+	}
+	return MigrationDirectionUp
+}
+
+func (m *Migrator) validateRepairMigrationSQL(
+	migration *Migration,
+	revision *MigrationRevision,
+	opts RepairMigrationOptions,
+	direction MigrationDirection,
+) error {
+	txMode, err := m.resolveRepairMigrationTxMode(migration, direction)
+	if err != nil {
+		return err
+	}
+	committedProgress := revision != nil && revision.Dirty && revision.Applied > 0
+	if opts.ResumeFrom <= 0 && txMode != MigrationTxModeNone && !committedProgress {
+		return nil
+	}
+	if err := m.validateNoTransactionSQL(migration, direction); err != nil {
+		return fmt.Errorf("migration %d cannot be repaired safely: %w", migration.Version, err)
+	}
+	return nil
+}
+
+func (m *Migrator) repairUpMigration(
+	ctx context.Context,
+	migration *Migration,
+	revision *MigrationRevision,
+	opts RepairMigrationOptions,
+) error {
 	if opts.ResumeFrom > 0 {
-		if err := m.resumeUpMigrationFrom(ctx, migration, revision, opts); err != nil {
-			return err
-		}
+		return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+			if err := scoped.resumeUpMigrationFrom(ctx, migration, revision, opts); err != nil {
+				return err
+			}
+			if err := scoped.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
+				return err
+			}
+			return scoped.forceAppliedMigration(ctx, migration)
+		})
+	}
+	if revision != nil && revision.Dirty && revision.Applied == revision.Total && revision.Total > 0 {
+		return m.repairCompletedUpMigration(ctx, migration, revision)
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
 		return err
 	}
 	return m.forceAppliedMigration(ctx, migration)
+}
+
+func (m *Migrator) resolveRepairMigrationTxMode(
+	migration *Migration,
+	direction MigrationDirection,
+) (MigrationTxMode, error) {
+	if direction == MigrationDirectionDown {
+		return m.resolveDownMigrationTxMode(migration)
+	}
+	return m.resolveUpMigrationTxMode(migration)
+}
+
+func (m *Migrator) repairCompletedUpMigration(
+	ctx context.Context,
+	migration *Migration,
+	revision *MigrationRevision,
+) error {
+	if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionUp, "finalize the migration"); err != nil {
+		return err
+	}
+	if !m.needsPostgresIndexPostcheck(migration, MigrationDirectionUp) {
+		return m.forceAppliedMigration(ctx, migration)
+	}
+	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+		if err := scoped.restoreNoTransactionSessionPrefix(
+			ctx,
+			migration,
+			MigrationDirectionUp,
+			revision.Total+1,
+		); err != nil {
+			return err
+		}
+		if err := scoped.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
+			return err
+		}
+		return scoped.forceAppliedMigration(ctx, migration)
+	})
 }
 
 func (m *Migrator) resumeUpMigrationFrom(
@@ -2156,19 +2259,23 @@ func (m *Migrator) migrationByVersion(version int64) *Migration {
 }
 
 func (m *Migrator) resumeMigration(ctx context.Context, migration *Migration, resumeFrom int) error {
-	return m.resumeMigrationDirection(ctx, migration, resumeFrom, MigrationDirectionUp)
+	return m.resumeMigrationDirectionOnSession(ctx, migration, resumeFrom, MigrationDirectionUp)
 }
 
-func (m *Migrator) resumeMigrationDirection(
+func (m *Migrator) resumeMigrationDirectionOnSession(
 	ctx context.Context,
 	migration *Migration,
 	resumeFrom int,
 	direction MigrationDirection,
 ) error {
 	sqlText := migrationSQLForDirection(migration, direction)
-	statements := splitSQLStatementsForConnection(m.conn, sqlText)
+	executionConn := m.noTransactionConnection()
+	statements := splitSQLStatementsForConnection(executionConn, sqlText)
 	if resumeFrom < 1 || resumeFrom > len(statements) {
 		return fmt.Errorf("resume-from must be between 1 and %d", len(statements))
+	}
+	if err := m.restoreNoTransactionSessionPrefix(ctx, migration, direction, resumeFrom); err != nil {
+		return err
 	}
 	operation := "migration"
 	if direction == MigrationDirectionDown {
@@ -2184,11 +2291,14 @@ func (m *Migrator) resumeMigrationDirection(
 		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
 			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
-		if err := executeSQLOutsideTransaction(ctx, m.conn, stmt); err != nil {
+		if err := executeSQLOutsideTransaction(ctx, executionConn, stmt); err != nil {
 			return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 		}
 		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction); err != nil {
 			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
+		}
+		if err := m.observePostgresIndexStatement(ctx, executionConn, stmt); err != nil {
+			return fmt.Errorf("failed to observe resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
 	}
 	return nil

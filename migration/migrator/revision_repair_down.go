@@ -38,19 +38,21 @@ func (m *Migrator) repairRolledBackMigration(
 	if opts.ResumeFrom <= 0 {
 		return m.repairRolledBackMigrationWithoutResume(ctx, migration, revision, opts)
 	}
-	if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
-		return err
-	}
-	if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionDown, "resume the rollback"); err != nil {
-		return err
-	}
-	if err := m.resumeRollback(ctx, migration, opts.ResumeFrom); err != nil {
-		return err
-	}
-	if err := m.refuseRollbackCompletionOverUnsafeIndex(ctx, migration); err != nil {
-		return err
-	}
-	return m.deleteRolledBackRevision(ctx, migration)
+	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+		if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
+			return err
+		}
+		if err := scoped.verifyCommittedPrefix(*revision, migration, MigrationDirectionDown, "resume the rollback"); err != nil {
+			return err
+		}
+		if err := scoped.resumeRollback(ctx, migration, opts.ResumeFrom); err != nil {
+			return err
+		}
+		if err := scoped.refuseRollbackCompletionOverUnsafeIndex(ctx, migration); err != nil {
+			return err
+		}
+		return scoped.deleteRolledBackRevision(ctx, migration)
+	})
 }
 
 func (m *Migrator) repairRolledBackMigrationWithoutResume(
@@ -79,10 +81,23 @@ func (m *Migrator) finalizeCompletedRollback(
 	if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionDown, "finalize the rollback"); err != nil {
 		return err
 	}
-	if err := m.refuseRollbackCompletionOverUnsafeIndex(ctx, migration); err != nil {
-		return err
+	if !m.needsPostgresIndexPostcheck(migration, MigrationDirectionDown) {
+		return m.deleteRolledBackRevision(ctx, migration)
 	}
-	return m.deleteRolledBackRevision(ctx, migration)
+	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+		if err := scoped.restoreNoTransactionSessionPrefix(
+			ctx,
+			migration,
+			MigrationDirectionDown,
+			revision.Total+1,
+		); err != nil {
+			return err
+		}
+		if err := scoped.refuseRollbackCompletionOverUnsafeIndex(ctx, migration); err != nil {
+			return err
+		}
+		return scoped.deleteRolledBackRevision(ctx, migration)
+	})
 }
 
 // rollbackChangedSchema reports whether the rollback can have changed the
@@ -125,7 +140,7 @@ func rollbackRepairNeedsDirectionError(migration *Migration, revision *Migration
 // the revision pointing at the new failure, so the operator can fix it and
 // resume again from a later statement.
 func (m *Migrator) resumeRollback(ctx context.Context, migration *Migration, resumeFrom int) error {
-	return m.resumeMigrationDirection(ctx, migration, resumeFrom, MigrationDirectionDown)
+	return m.resumeMigrationDirectionOnSession(ctx, migration, resumeFrom, MigrationDirectionDown)
 }
 
 // deleteRolledBackRevision removes the revision of a migration whose rollback

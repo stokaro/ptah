@@ -174,6 +174,28 @@ The statement numbers are the ones the row reports, so `--resume-from` accepts
 any statement of the down body, and a resume that fails again leaves the row
 pointing at the new failure so you can fix it and resume once more.
 
+A `no_transaction` down runs on one pinned physical database session. When a
+resume skips a verified committed prefix, Ptah restores recognized
+session-control statements such as `SET search_path` on the new session before
+running the remaining down SQL. It refuses to guess after a prefix that created
+temporary objects or has unclassified session-local effects.
+
+The complete down body is validated before the applied revision is changed to
+pending down. Top-level transaction-control statements are invalid in a
+`no_transaction` down because they can leave the body uncommitted while Ptah's
+per-statement revision checkpoints commit independently. A validation or pinned
+session acquisition failure preserves the applied revision and does not run
+down SQL.
+
+On PostgreSQL, Ptah also verifies every `CREATE INDEX ... IF NOT EXISTS` in the
+down body before it deletes the revision. The relation must be a usable index
+on the intended target table. Each create is bound to the schema selected by
+`search_path` when that statement ran, so equal raw names in different schemas
+remain separate checks. A failed transactional check rolls the down body
+back; a failed non-transactional check keeps the revision dirty with all
+completed down statements recorded, so repair can finalize it after the
+database state is corrected.
+
 Without `--resume-from`, a rollback that already committed a statement is
 **refused** rather than recorded applied: recording it applied would sign off
 the migration over a schema whose objects the rollback already dropped. The

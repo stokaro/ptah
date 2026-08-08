@@ -29,7 +29,7 @@ func TestPostgresCreatedIndexNames(t *testing.T) {
 			name: "generated concurrent unique index",
 			sql: "-- +ptah no_transaction\n" +
 				`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "idx_members_email" ON "members" ("email");`,
-			want: []postgresIndexRef{{Table: "members", Name: "idx_members_email"}},
+			want: []postgresIndexRef{{Table: "members", Name: "idx_members_email", IfNotExists: true}},
 		},
 		{
 			name: "unquoted name folds to lower case like the catalog",
@@ -80,7 +80,7 @@ func TestPostgresCreatedIndexNames(t *testing.T) {
 			name: "a repeated name is reported once",
 			sql: `CREATE INDEX IF NOT EXISTS "idx_a" ON members (a);` + "\n" +
 				`CREATE INDEX IF NOT EXISTS "idx_a" ON members (a);`,
-			want: []postgresIndexRef{{Table: "members", Name: "idx_a"}},
+			want: []postgresIndexRef{{Table: "members", Name: "idx_a", IfNotExists: true}},
 		},
 		{
 			name: "a name inside a comment is not a name",
@@ -124,6 +124,18 @@ func TestPostgresCreatedIndexNames(t *testing.T) {
 			c.Assert(postgresCreatedIndexNames(tt.sql), qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+func TestPostgresConditionalCreatedIndexNames(t *testing.T) {
+	c := qt.New(t)
+	sqlText := "CREATE INDEX idx_transient ON members (email);\n" +
+		"CREATE INDEX IF NOT EXISTS idx_guarded ON members (email);"
+
+	c.Assert(postgresConditionalCreatedIndexNames(sqlText), qt.DeepEquals, []postgresIndexRef{{
+		Table:       "members",
+		Name:        "idx_guarded",
+		IfNotExists: true,
+	}})
 }
 
 func TestPostgresDroppedIndexNames(t *testing.T) {

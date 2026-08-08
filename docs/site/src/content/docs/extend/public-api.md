@@ -114,17 +114,33 @@ cannot reduce the recorded applied count below that verified prefix.
 
 Negative `applied` or `total` values and `applied > total` are rejected whenever
 a revision is read, including through `GetRevisions`, `GetAppliedRevisions`,
-`GetAppliedMigrations`, `GetCurrentVersion`, and `GetMigrationStatus`. A native
-row also cannot claim `state=applied` until `applied == total`.
+`GetAppliedMigrations`, `GetCurrentVersion`, and `GetMigrationStatus`. Native
+rows accept only `applied`, `pending`, `failed`, `pending:down`, and
+`failed:down`. An applied row cannot claim that state until `applied == total`;
+other spellings, explicit `:up` suffixes, and direction-suffixed applied states
+are invalid because a completed rollback deletes its revision row.
 
 `RepairMigration` holds the session advisory lock across revision inspection,
 resumed SQL, safety checks, and the final metadata write.
+
+SQL-backed `MigrationTxModeNone` attempts pin their migration SQL to one
+physical database session. Server-database revision metadata remains on the
+original connection; SQLite uses the pinned session with a `main`-qualified
+table to support its single-connection in-memory mode. Resume replays recognized
+session controls from the verified committed prefix on a fresh session and
+refuses prefixes whose session-local state cannot be reconstructed safely.
+Top-level transaction-control statements are rejected before session pinning or
+revision mutation because their commit boundary would conflict with Ptah's
+durable per-statement checkpoints.
 
 On PostgreSQL, an up migration may clean invalid index residue with a matching
 `DROP INDEX` that executes before the create in the current attempt. The
 migrator resolves unqualified drops and target tables through `search_path`,
 rejects any other relation that owns the schema-level index name, and rechecks
-transaction-local catalog state before writing a clean revision. A drop skipped
+transaction-local catalog state before writing a clean revision. It records the
+resolved schema and target at each conditional create, rather than resolving a
+deduplicated raw name under the final `search_path`. Repair without an explicit
+replayable path checks every same-named target in PostgreSQL user schemas. A drop skipped
 by resume does not satisfy the preflight. `RepairMigration` performs the same
 positive index-state check, including when `Force` is set.
 
