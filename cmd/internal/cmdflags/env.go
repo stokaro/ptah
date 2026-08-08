@@ -4,6 +4,7 @@ package cmdflags
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 const (
 	disableEnvAnnotation   = "ptah.env.disabled"
 	installedEnvAnnotation = "ptah.env.installed"
+	appliedEnvAnnotation   = "ptah.env.applied"
 )
 
 // DisableEnvBinding makes a flag explicit-only even when the command tree has
@@ -113,6 +115,10 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 			return
 		}
 		visited[flag] = true
+		// A marker left by an earlier execution of a reused command tree does
+		// not describe this one. Clearing it here, before anything can return,
+		// makes SetOnCommandLine answer for the run in progress.
+		clearEnvApplied(flag)
 		if flag.Name == "help" || envBindingDisabled(flag) {
 			return
 		}
@@ -143,12 +149,73 @@ func setEnvValue(flags *pflag.FlagSet, flag *pflag.Flag, envName, value string) 
 	if err := flags.Set(flag.Name, value); err != nil {
 		return fmt.Errorf("invalid value %q for %s: %w", value, envName, err)
 	}
+	markEnvApplied(flag)
 	return nil
 }
 
 func envBindingDisabled(flag *pflag.Flag) bool {
 	values := flag.Annotations[disableEnvAnnotation]
 	return len(values) > 0 && values[0] == "true"
+}
+
+func markEnvApplied(flag *pflag.Flag) {
+	if flag.Annotations == nil {
+		flag.Annotations = map[string][]string{}
+	}
+	flag.Annotations[appliedEnvAnnotation] = []string{"true"}
+}
+
+func clearEnvApplied(flag *pflag.Flag) {
+	delete(flag.Annotations, appliedEnvAnnotation)
+}
+
+func envApplied(flag *pflag.Flag) bool {
+	values := flag.Annotations[appliedEnvAnnotation]
+	return len(values) > 0 && values[0] == "true"
+}
+
+// SetOnCommandLine reports whether the caller typed the flag on the command
+// line.
+//
+// pflag's Changed bit does not answer that question on a Ptah surface.
+// InitializeEnv applies a PTAH_* value through FlagSet.Set, which marks the
+// flag Changed exactly as an argv occurrence does, so Changed means "this flag
+// carries a value from somewhere". Precedence rules want that broader question
+// and should keep asking Changed; a rule about what the operator wrote must ask
+// here instead.
+func SetOnCommandLine(flags *pflag.FlagSet, name string) bool {
+	flag := flags.Lookup(name)
+	if flag == nil {
+		return false
+	}
+	return flag.Changed && !envApplied(flag)
+}
+
+// MutuallyExclusiveOnCommandLine returns cobra's own flag-group diagnostic when
+// more than one of names appeared on the command line, and nil otherwise.
+//
+// It stands in for Command.MarkFlagsMutuallyExclusive wherever a member of the
+// group is environment-bound. cobra's ValidateFlagGroups reads Changed, so an
+// exported PTAH_* variable makes such a group refuse a command line that
+// carries one flag, with a message naming a second flag the operator cannot
+// find in their script. The wording, the declaration-order group list and the
+// sorted "were all set" list are copied from cobra so the refusal for a genuine
+// pair of typed flags stays byte-identical to the one it replaces.
+func MutuallyExclusiveOnCommandLine(flags *pflag.FlagSet, names ...string) error {
+	typed := make([]string, 0, len(names))
+	for _, name := range names {
+		if SetOnCommandLine(flags, name) {
+			typed = append(typed, name)
+		}
+	}
+	if len(typed) < 2 {
+		return nil
+	}
+	slices.Sort(typed)
+	return fmt.Errorf(
+		"if any flags in the group [%s] are set none of the others can be; %v were all set",
+		strings.Join(names, " "), typed,
+	)
 }
 
 // EnvName returns the environment variable name for a Cobra flag.

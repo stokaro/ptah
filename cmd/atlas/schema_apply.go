@@ -139,10 +139,22 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	// community binary v1.3.0 refuses the pair at exit 1 while Ptah printed the
 	// plan at exit 0 (stokaro/ptah#1231 case 5). Nothing is lost by refusing:
 	// --auto-approve had no effect on a run that executes nothing, so the pair
-	// never reached a behavior that --dry-run alone does not have. The wording
-	// comes from cobra's own flag-group validation, which is where that binary's
-	// identical sentence comes from.
-	cmd.MarkFlagsMutuallyExclusive("dry-run", "auto-approve")
+	// never reached a behavior that --dry-run alone does not have.
+	//
+	// The question is what the operator typed, which is why this is not
+	// cmd.MarkFlagsMutuallyExclusive. That reads pflag's Changed bit, and
+	// Ptah's environment binding sets Changed when it applies PTAH_DRY_RUN, so
+	// the group refused `--auto-approve` alone whenever that variable was
+	// exported -- a command line the pinned binary accepts at exit 0, refused
+	// here because of a variable that binary does not have, with a message
+	// naming a flag absent from the command. PTAH_DRY_RUN is a documented Ptah
+	// capability on this surface and compatibility does not remove it: with the
+	// variable set and --auto-approve typed the run does what --dry-run alone
+	// does, printing the plan and applying nothing. The wording below is
+	// cobra's own, which is where that binary's identical sentence comes from.
+	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
+		return cmdflags.MutuallyExclusiveOnCommandLine(cmd.Flags(), "dry-run", "auto-approve")
+	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url and the desired schema with --to"))
 	return cmd
 }

@@ -694,8 +694,8 @@ the target database is contacted.
 
 | Flag | Behavior |
 | --- | --- |
-| `--dry-run` | Prints the plan without applying. Mutually exclusive with `--auto-approve`. |
-| `--auto-approve` | Applies without the interactive confirmation. Mutually exclusive with `--dry-run`. |
+| `--dry-run` | Prints the plan without applying. Mutually exclusive with `--auto-approve` on the command line. |
+| `--auto-approve` | Applies without the interactive confirmation. Mutually exclusive with `--dry-run` on the command line. |
 | `--tx-mode` | `file` and `all` execute the generated plan in one transaction; `none` executes statements without transaction wrapping. |
 | `--format` | Atlas-style templates over planned changes with `sql` and `.MarshalSQL`. |
 | `--exclude` | Filters matching resources out of both sides of the comparison before planning, as do disabled `schema.mode` values. |
@@ -710,6 +710,17 @@ refused rather than silently resolved
 
 ```text
 Error: if any flags in the group [dry-run auto-approve] are set none of the others can be; [auto-approve dry-run] were all set
+```
+
+The rule reads the command line, not the environment. `PTAH_DRY_RUN` is not a
+typed `--dry-run` for this purpose, so a wrapper that exports it does not turn
+every `--auto-approve` in the pipeline into a refusal: the run behaves the way
+`--dry-run` alone does, printing the plan and applying nothing.
+
+```bash
+PTAH_DRY_RUN=1 ptah-compat schema apply -u "$DATABASE_URL" \
+  --to file://schema.sql --dev-url "$DEV_URL" --auto-approve
+# Planned schema changes: … (exit 0, nothing executed)
 ```
 
 `--env` evaluation includes local variable defaults, locals, `getenv`, `file`,

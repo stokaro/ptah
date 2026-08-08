@@ -359,6 +359,109 @@ func TestCompatCommand_SchemaApplyAcceptsEitherFlagAlone(t *testing.T) {
 	}
 }
 
+// TestCompatCommand_SchemaApplyApprovalGroupReadsTheCommandLine is the other
+// half of the case 5 rule, and the half a first attempt got wrong.
+//
+// The refusal above is about what the operator typed. Implementing it with
+// cmd.MarkFlagsMutuallyExclusive made it about pflag's Changed bit instead, and
+// Ptah's environment binding sets Changed when it applies a PTAH_* value, so
+// `--auto-approve` alone became a refusal for anyone who had exported
+// PTAH_DRY_RUN — measured on 2026-08-08, exit 1 with `[auto-approve dry-run]
+// were all set` for a command line carrying neither pair. The pinned community
+// binary v1.3.0 exits 0 on that same command line and has no such variable, so
+// the refusal was not parity; PTAH_DRY_RUN is a documented Ptah capability on
+// this surface, so it was also a capability removed to buy compatibility.
+//
+// Each row asserts the run behaves as `--dry-run` alone does: plan printed,
+// exit 0, nothing executed.
+func TestCompatCommand_SchemaApplyApprovalGroupReadsTheCommandLine(t *testing.T) {
+	tests := []struct {
+		name     string
+		envName  string
+		envValue string
+		flag     string
+	}{
+		{name: "dry run from the environment", envName: "PTAH_DRY_RUN", envValue: "1", flag: "--auto-approve"},
+		{name: "dry run from the environment spelled true", envName: "PTAH_DRY_RUN", envValue: "true", flag: "--auto-approve"},
+		// --auto-approve is deliberately not environment bound, so the group
+		// cannot be entered from this side at all.
+		{name: "auto approve is not environment bound", envName: "PTAH_AUTO_APPROVE", envValue: "1", flag: "--dry-run"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			writeAtlasLintFile(c, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
+			schemaURL := "file://" + filepath.Join(dir, "schema.sql")
+			devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
+			targetDB := "sqlite://" + filepath.Join(t.TempDir(), "target.db")
+			t.Setenv(test.envName, test.envValue)
+
+			out, err := runAtlasPrecondition(c,
+				"schema", "apply",
+				"--url", targetDB,
+				"--to", schemaURL,
+				"--dev-url", devDB,
+				test.flag,
+			)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+			c.Assert(out, qt.Contains, "CREATE TABLE")
+			c.Assert(out, qt.Not(qt.Contains), "were all set")
+			c.Assert(out, qt.Not(qt.Contains), "Auto-approval enabled")
+
+			// Rendered is not applied. A second plan against the same target
+			// still has the table to create, which is only true if the run
+			// above executed nothing; an apply would leave it synced.
+			second, secondErr := runAtlasPrecondition(c,
+				"schema", "apply",
+				"--url", targetDB,
+				"--to", schemaURL,
+				"--dev-url", devDB,
+				"--dry-run",
+			)
+
+			c.Assert(secondErr, qt.IsNil, qt.Commentf("output:\n%s", second))
+			c.Assert(second, qt.Contains, "CREATE TABLE")
+			c.Assert(second, qt.Not(qt.Contains), "Schema is synced")
+		})
+	}
+}
+
+// TestCompatCommand_SchemaApplyAppliesWithAutoApproveAlone is the control for
+// the assertion above that "no apply happened". Without it, a run that silently
+// stopped applying anything at all would satisfy every row of that test.
+func TestCompatCommand_SchemaApplyAppliesWithAutoApproveAlone(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeAtlasLintFile(c, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
+	schemaURL := "file://" + filepath.Join(dir, "schema.sql")
+	devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
+	targetDB := "sqlite://" + filepath.Join(t.TempDir(), "target.db")
+
+	out, err := runAtlasPrecondition(c,
+		"schema", "apply",
+		"--url", targetDB,
+		"--to", schemaURL,
+		"--dev-url", devDB,
+		"--auto-approve",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+	c.Assert(out, qt.Contains, "Auto-approval enabled")
+
+	second, secondErr := runAtlasPrecondition(c,
+		"schema", "apply",
+		"--url", targetDB,
+		"--to", schemaURL,
+		"--dev-url", devDB,
+		"--dry-run",
+	)
+
+	c.Assert(secondErr, qt.IsNil, qt.Commentf("output:\n%s", second))
+	c.Assert(second, qt.Contains, "Schema is synced")
+}
+
 // TestCompatCommand_MigrateNewRefusesPathSeparatorName covers stokaro/ptah#1231
 // case 6.
 //
