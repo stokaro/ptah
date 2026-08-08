@@ -170,6 +170,13 @@ it and the plan that follows removes the object, which is what you asked for.
 The compatibility surface, which does leave blocks out, says so in the document;
 see [The document says what it does not describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe).
 
+Both commands write a `permission` block by the same three rules: a schema is
+declared whenever anything references one, a grantee is a `role.<name>`
+reference only where the document declares that role block, and a target names
+the kind of block the document declares for it — `view.<name>` for a view,
+`materialized.<name>` for a materialized view. See
+[Three rules a permission block is written by](../../atlas/schema-commands/#three-rules-a-permission-block-is-written-by).
+
 `--format sql` and `--format json` select SQL and JSON output. `--schemas`,
 `--include`, and `--exclude` select what is inspected, in that order:
 `--schemas` names the database schemas, `--include` picks top-level resources

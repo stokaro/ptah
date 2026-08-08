@@ -177,8 +177,134 @@ type renderer struct {
 	// distinguishable from "built and empty" because a document with no tables
 	// still answers every lookup. See [renderer.documentResolvesTableRef].
 	tableSchemas map[string][]string
-	builder      strings.Builder
-	diagnostics  []Diagnostic
+	// roleBlocks caches the `role` block labels this render will write. Nil
+	// means not yet built, which is distinguishable from "built and empty"
+	// because a document with no roles still answers every lookup. See
+	// [renderer.documentDeclaresRole].
+	roleBlocks map[string]bool
+	// relationBlocks caches, per block label this render will write, every
+	// relation block carrying it. Nil means not yet built, which is
+	// distinguishable from "built and empty" because a document with no
+	// relations still answers every lookup. See [renderer.documentDeclares].
+	relationBlocks map[string][]declaredBlock
+	// schemaRefs collects the name of every `schema.<name>` reference the body
+	// wrote, filled by [renderer.schemaRef] as the body is rendered and read
+	// afterwards by [renderer.referencedSchemas].
+	schemaRefs  map[string]bool
+	builder     strings.Builder
+	diagnostics []Diagnostic
+}
+
+// documentDeclaresRole reports whether this document writes a `role` block
+// labeled with this name.
+//
+// A `role.<name>` traversal names a BLOCK, so without one it is an HCL variable
+// reference with nothing behind it and the pinned Atlas community binary v1.3.0
+// refuses the whole file with `There is no variable named "role"`. Every render
+// writes a block for every role in the IR, so the IR is the list of labels.
+//
+// Matching is exact rather than case-insensitive: [renderer.renderRoles] writes
+// the label as a quoted string, so `role "App"` and `role "app"` are two
+// different blocks and a traversal resolves to neither of the other's.
+func (r *renderer) documentDeclaresRole(name string) bool {
+	if r.roleBlocks == nil {
+		blocks := make(map[string]bool, len(r.db.Roles))
+		for _, role := range r.db.Roles {
+			blocks[role.Name] = true
+		}
+		r.roleBlocks = blocks
+	}
+	return r.roleBlocks[name]
+}
+
+// declaredBlock is one relation block this render writes, described the way a
+// reference to it has to be spelled: the block KIND the traversal names, and
+// the schema the block belongs to.
+type declaredBlock struct {
+	kind   string
+	schema string
+}
+
+// documentDeclares reports the single relation block this document writes under
+// this label, when there is exactly one.
+//
+// A reference in HCL names a BLOCK, and the block TYPE is the first word of the
+// traversal, so `table.v` is "the v attribute of the table object" and resolves
+// to nothing when the document declares `view "v"`. The pinned Atlas community
+// binary v1.3.0 refuses the whole file over it. Measured on PostgreSQL 17
+// against the document `ptah-compat schema inspect` writes for
+//
+//	CREATE TABLE t (id integer PRIMARY KEY);
+//	CREATE VIEW v AS SELECT id FROM t;
+//
+// with one operand varied and nothing else touched:
+//
+//	for = table.v   exit 1  Unsupported attribute; This object does not have
+//	                        an attribute named "v"
+//	for = view.v    exit 0
+//	for = "v"       exit 0
+//
+// PostgreSQL reports the owner's implicit grants on a view exactly as it does
+// on a table, so that is the DEFAULT invocation on any database carrying a
+// view, with no selection involved (stokaro/ptah#1234).
+//
+// The set is what this render WRITES, not what the IR holds: a view with no
+// body is warned about and skipped, and a sequence the Atlas-compatible surface
+// omits is not there to be named either -- both asked through the same
+// predicate the render itself uses, so the answer cannot drift from the
+// document.
+//
+// "Exactly one" is what makes the kind knowable. Relations share one namespace
+// per schema in every engine Ptah renders for, so two blocks under one label
+// are two schemas' worth, and which of them an unqualified reference means is
+// exactly the question [renderer.documentResolvesTableRef] refuses to guess.
+// Saying no here is therefore routine rather than exotic -- two schemas each
+// holding a view named `v` is all it takes, and that is a DEFAULT inspect of a
+// realm-scoped URL -- so what the caller writes instead has to be a spelling
+// the pinned binary reads. For a relation that is a quoted name; see
+// [renderer.relationRef] for the measurement and for why the short form is not
+// it.
+func (r *renderer) documentDeclares(label string) (declaredBlock, bool) {
+	if r.relationBlocks == nil {
+		r.relationBlocks = r.declaredRelationBlocks()
+	}
+	blocks := r.relationBlocks[label]
+	if len(blocks) != 1 {
+		return declaredBlock{}, false
+	}
+	return blocks[0], true
+}
+
+func (r *renderer) declaredRelationBlocks() map[string][]declaredBlock {
+	blocks := make(map[string][]declaredBlock, len(r.db.Tables)+len(r.db.Views)+len(r.db.MaterializedViews))
+	declare := func(kind, label, schema string) {
+		blocks[label] = append(blocks[label], declaredBlock{kind: kind, schema: r.schemaFor(schema)})
+	}
+	for _, table := range r.db.Tables {
+		declare(blockTable, table.Name, table.Schema)
+	}
+	for _, view := range r.db.Views {
+		if view.Body == "" {
+			continue
+		}
+		declare(blockView, objectNameFromQualified(view.Name), schemaNameFromQualified(view.Name))
+	}
+	for _, view := range r.db.MaterializedViews {
+		if view.Body == "" {
+			continue
+		}
+		declare(blockMaterialized, objectNameFromQualified(view.Name), schemaNameFromQualified(view.Name))
+	}
+	for _, sequence := range r.db.Sequences {
+		if r.omitsRefusedBlock(blockSequence, sequence.Name) {
+			continue
+		}
+		// The label [renderer.renderSequences] writes is the canonical name, so
+		// that is the label a reference has to match.
+		sequence.Canonicalize()
+		declare(blockSequence, sequence.Name, sequence.Schema)
+	}
+	return blocks
 }
 
 // documentResolvesTableRef reports whether an unqualified `table.<name>`
@@ -220,48 +346,55 @@ func (r *renderer) schemaFor(schema string) string {
 	return r.defaultSchema
 }
 
-// referencedSchemas lists, in a stable order, every schema this render will
-// write a `schema.<name>` reference to. It is empty outside an inspected
-// render, because nothing is synthesized there.
+// referencedSchemas lists, in a stable order, every schema the body of this
+// render actually wrote a `schema.<name>` reference to. It is empty outside an
+// inspected render, because nothing is synthesized there.
+//
+// The set is COLLECTED from the rendered body rather than predicted from the
+// IR, and that is the whole point. Predicting it has now been wrong three
+// times, each time in the same direction and each time reaching the pinned
+// Atlas community binary v1.3.0 as `There is no variable named "schema"`: the
+// first version declared only the default and missed a table outside it, the
+// second missed the enum block's own reference, and the third missed the
+// `permission { for = schema.public }` that every PostgreSQL database has --
+// visible on an EMPTY database, where there is no table to predict from at all
+// (stokaro/ptah#1234). A reference and its declaration cannot disagree when one
+// is derived from the other.
+//
+// Collecting also gets the suppressed blocks right for free. A block the
+// Atlas-compatible surface leaves out never reaches [renderer.schemaRef], so an
+// omitted sequence no longer conjures a schema block declaring nothing.
 func (r *renderer) referencedSchemas() []string {
 	if r.defaultSchema == "" {
 		return nil
 	}
-	// Nothing to attach a schema to means nothing to declare. An inspect whose
-	// selection matched no object renders an empty document, and a lone schema
-	// block there would be a declaration of nothing -- which is what the
-	// empty-include-selection contract already pins.
-	//
-	// Enums count as something to attach. They now carry a schema reference of
-	// their own (see renderEnums), so a read that matched enums but no table
-	// still has to declare the block that reference points at.
-	if len(r.db.Tables) == 0 && len(r.db.Enums) == 0 {
-		return nil
-	}
-	seen := map[string]bool{}
-	var names []string
-	add := func(name string) {
-		if name == "" || seen[name] {
-			return
-		}
-		seen[name] = true
-		names = append(names, name)
-	}
-	for _, table := range r.db.Tables {
-		add(r.schemaFor(table.Schema))
-	}
-	if len(r.db.Enums) > 0 {
-		add(r.defaultSchema)
-	}
-	slices.Sort(names)
-	return names
+	return sortedMapKeys(r.schemaRefs)
 }
 
+// render assembles the document in two passes. The body is rendered first and
+// held aside, then the header and the schema blocks that body turned out to
+// reference are written, then the body goes back on the end.
+//
+// Two things force that. Every schema a reference names has to be declared
+// somewhere in the file, and Ptah writes the declarations at the top -- so the
+// only way to declare exactly the set the body references is to have rendered
+// the body before writing them.
 func (r *renderer) render() {
+	r.renderBody()
+	body := r.builder.String()
+	r.builder.Reset()
+
+	// The coverage header must be written AFTER the body snapshot is taken and
+	// the builder reset, or it lands inside body and is re-emitted below the
+	// schema blocks instead of at the top of the document.
 	r.builder.WriteString("// Code generated by ptah; DO NOT EDIT.\n")
 	r.renderCoverageHeader()
 	r.builder.WriteString("\n")
 	r.renderSchemas()
+	r.builder.WriteString(body)
+}
+
+func (r *renderer) renderBody() {
 	r.renderExtensions()
 	r.renderSequences()
 	r.renderUserTypes()
@@ -280,15 +413,13 @@ func (r *renderer) render() {
 func (r *renderer) renderSchemas() {
 	schemas := append([]goschema.Schema(nil), r.db.Schemas...)
 	// An inspected read reports no schema block at all, so every schema the
-	// file is about to reference has to be declared here or the reference
-	// resolves to nothing. A read that DID report one keeps what it reported,
-	// comment, charset and collation included.
+	// file references has to be declared here or the reference resolves to
+	// nothing. A read that DID report one keeps what it reported, comment,
+	// charset and collation included.
 	//
-	// It is not enough to declare the default. A reader looking at more than
-	// one schema reports each table's own, so a table in `reporting` emits
-	// `schema = schema.reporting` and needs that block too -- the first version
-	// of this declared only the default, and a test row with a table outside it
-	// is what caught the dangling reference.
+	// Which schemas those are is answered by the body that was already
+	// rendered, not guessed from the IR; see [renderer.referencedSchemas] for
+	// the three guesses that were wrong.
 	for _, name := range r.referencedSchemas() {
 		if !slices.ContainsFunc(schemas, func(s goschema.Schema) bool { return s.Name == name }) {
 			schemas = append(schemas, goschema.Schema{Name: name})
@@ -330,7 +461,7 @@ func (r *renderer) renderEnums() {
 		// own schema as implicit, which is the same reason renderTable falls
 		// back to it.
 		if schema := r.schemaFor(""); schema != "" {
-			r.rawAttr(1, "schema", schemaRef(schema))
+			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
 		r.rawAttr(1, "values", stringList(enum.Values))
 		r.line("}")
@@ -377,7 +508,7 @@ func (r *renderer) renderTable(
 ) {
 	r.linef(`table %s {`, quote(table.Name))
 	if schema := r.schemaFor(table.Schema); schema != "" {
-		r.rawAttr(1, "schema", schemaRef(schema))
+		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.stringAttr(1, "engine", table.Engine)
 	r.stringAttr(1, "charset", table.Charset)
@@ -1195,7 +1326,20 @@ func columnRef(name string) string {
 	return "column" + objectRefPart(name)
 }
 
-func schemaRef(name string) string {
+// schemaRef renders a reference to a schema block and records that this
+// document now needs one, which is what [renderer.renderSchemas] declares.
+//
+// Every position that writes `schema.<name>` goes through here so that no
+// position can be added without its declaration following. That is the property
+// the previous shape lacked: a reference was written in one place and predicted
+// in another, and the two drifted apart every time a new position was added.
+func (r *renderer) schemaRef(name string) string {
+	if name != "" {
+		if r.schemaRefs == nil {
+			r.schemaRefs = map[string]bool{}
+		}
+		r.schemaRefs[name] = true
+	}
 	return "schema" + objectRefPart(name)
 }
 

@@ -527,6 +527,102 @@ rather than a flag because `ptah-compat`'s flag surface is held to parity with
 the pinned binary; see
 [Compatibility never costs you a capability](../overview/#compatibility-never-costs-you-a-capability).
 
+### Three rules a `permission` block is written by
+
+Each of these is a rule about one position, measured against the pinned Atlas
+community binary on the document `ptah-compat schema inspect` writes. They are
+not a promise that every reference in every document resolves — a sequence block
+is still refused whatever the reference naming it says, and
+[the blocks left out by default](#blocks-the-compatibility-surface-leaves-out-by-default)
+names the shapes that binary cannot read at all.
+
+A schema is declared whenever anything in the document references one. That
+includes a document with no tables at all: every PostgreSQL database carries
+`GRANT USAGE ON SCHEMA public TO PUBLIC`, so inspecting an empty database
+renders a `permission` block saying `for = schema.public` and the matching
+`schema "public" {}` beside it. A document that references no schema declares
+none.
+
+A grantee is written as a `role.<name>` reference only where the same document
+declares that `role` block, and as a quoted name otherwise. Grants are children
+of the object granted on rather than of the grantee, so excluding roles keeps
+every grant to them:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" --exclude '*[type=role]'
+permission {
+  to = "app_user"
+  for = table.users
+  privileges = ["SELECT"]
+}
+```
+
+The name is preserved either way — Ptah reads both spellings back to the same
+grant, and applying that document issues `GRANT SELECT ON TABLE "public"."users"
+TO "app_user"` — so nothing is lost by the quoted form, while a reference to a
+block the document does not contain would cost the whole file: the pinned Atlas
+community binary refuses it with `There is no variable named "role"`.
+
+A target names the kind of block the document declares for it. PostgreSQL
+reports the owner's implicit privileges on a view exactly as it does on a table,
+so a database with a view in it produces `permission` blocks for the view too,
+and those say `for = view.<name>`:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL"
+view "v" {
+  as = " SELECT id\n   FROM t;"
+}
+
+permission {
+  to = role.app_user
+  for = view.v
+  privileges = ["SELECT"]
+}
+```
+
+A reference in HCL names a block, and the block type is the first word of it, so
+`table.v` reads as "the `v` attribute of the table object" and the community
+binary refuses the file with `This object does not have an attribute named "v"`.
+A materialized view is `materialized.<name>` for the same reason. The same rule
+applies to a `trigger`'s `on`, which reaches a view whenever the database has an
+`INSTEAD OF` trigger.
+
+Where the document declares no single block to name, the target is written as a
+quoted name instead — `for = "v"`, or `for = "other.v"` with the schema kept.
+Two cases reach it, and neither is exotic. One is a target the document does not
+contain, which a selection leaves behind. The other is a label the document
+declares TWICE: relations share one namespace per schema, so a realm-scoped
+inspect of a database with a view named `v` in two schemas declares `view "v"`
+twice, and no reference names one of them in particular.
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" --schema public --schema other
+view "v" {
+  schema = schema.other
+  as = " SELECT id\n   FROM other.t;"
+}
+
+view "v" {
+  as = " SELECT id\n   FROM t;"
+}
+
+permission {
+  to = role.app_user
+  for = "other.v"
+  privileges = ["SELECT"]
+}
+```
+
+A block is named by its labels, so there is no traversal left that both resolves
+and carries the schema: the community binary refuses `for = table.other.v` and
+`for = view.other.v` alike with `This object does not have an attribute named
+"other"`, and reads `for = "other.v"` at exit 0. The short `for = view.v` does
+evaluate there and is still wrong — it means neither of the two blocks, and
+reading it back would drop the schema for good. Ptah reads the quoted form back
+to the same target, so applying that document issues `GRANT SELECT ON TABLE
+"other"."v"`.
+
 ### Select what is inspected with `--include`
 
 `--include` positively selects which top-level resources survive inspection,
