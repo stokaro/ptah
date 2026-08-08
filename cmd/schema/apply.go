@@ -227,15 +227,16 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 	noteSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
 
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		DevURL:  opts.devURL,
-		ToURLs:  opts.toURLs,
-		Desired: desired,
-		Exclude: opts.exclude,
-		Schemas: dbcli.ParseSchemas(opts.schemas),
-		Include: opts.include,
-		Policy:  policy,
-		TxMode:  txMode,
-		DryRun:  opts.dryRun,
+		DevURL:      opts.devURL,
+		ToURLs:      opts.toURLs,
+		Desired:     desired,
+		Exclude:     opts.exclude,
+		Schemas:     dbcli.ParseSchemas(opts.schemas),
+		Include:     opts.include,
+		Policy:      policy,
+		TxMode:      txMode,
+		DryRun:      opts.dryRun,
+		Diagnostics: cmd.ErrOrStderr(),
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

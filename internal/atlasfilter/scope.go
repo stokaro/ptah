@@ -123,11 +123,39 @@ type EmptySelectionError struct {
 }
 
 func (e *EmptySelectionError) Error() string {
-	quoted := make([]string, 0, len(e.Selectors))
-	for _, selector := range e.Selectors {
+	return "the --include selection matched no objects: " + quoteSelectors(e.Selectors)
+}
+
+// UnmatchedExcludeError reports --exclude selectors that named no object in
+// any state the command filtered.
+//
+// An exclude pattern carries no match requirement, so before this signal a
+// selector that named nothing subtracted nothing and every verb reported
+// success with the object still present. That is a scoping flag failing open,
+// which is worse than one that refuses: the pinned community binary v1.3.0
+// also exits 0 and says nothing for `--exclude nosuchobject`, and this is the
+// one place Ptah declines to reproduce it. Matching is the floor, not the
+// ceiling.
+//
+// Each verb decides its own exit from this error the way it does from
+// [EmptySelectionError]: schema apply refuses, while schema diff and schema
+// inspect keep their exit status and report it out of band.
+type UnmatchedExcludeError struct {
+	// Selectors are the --exclude selectors as written, split and trimmed the
+	// way the parser splits them.
+	Selectors []string
+}
+
+func (e *UnmatchedExcludeError) Error() string {
+	return "the --exclude selection matched no objects: " + quoteSelectors(e.Selectors)
+}
+
+func quoteSelectors(selectors []string) string {
+	quoted := make([]string, 0, len(selectors))
+	for _, selector := range selectors {
 		quoted = append(quoted, fmt.Sprintf("%q", selector))
 	}
-	return "the --include selection matched no objects: " + strings.Join(quoted, ", ")
+	return strings.Join(quoted, ", ")
 }
 
 // ValidateIncludeSelectors parses Atlas-style --include selectors and rejects
@@ -214,26 +242,56 @@ func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
 // The projection is valid — it is empty — so callers that tolerate an empty
 // selection keep using it, and callers that refuse one have the error.
 func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, error) {
+	filtered, _, err := ScopeGeneratedReport(db, scope)
+	return filtered, err
+}
+
+// ScopeGeneratedReport is [ScopeGenerated] plus the [ExcludeReport].
+//
+// The report is measured against the UNPROJECTED state on purpose. An
+// --include that already dropped an object is not the exclude selector naming
+// nothing; asking the projection instead would report a selector as empty
+// whenever a positive selection had removed its object first.
+func ScopeGeneratedReport(db *goschema.Database, scope Scope) (*goschema.Database, ExcludeReport, error) {
+	return scopeReport(db, scope, ExcludeGeneratedReport,
+		(*scopeSelection).projectGenerated, validateGeneratedScope)
+}
+
+// scopeReport is the composition order both projections follow, with the three
+// state-specific steps supplied by the caller: exclude the state, project the
+// positive selection onto it, and validate the result for cross-scope
+// dependencies. The two states share every decision in between, so they share
+// one body.
+func scopeReport[T any](
+	db *T,
+	scope Scope,
+	exclude func(*T, []string, string) (*T, ExcludeReport, error),
+	project func(*scopeSelection, *T) *T,
+	validate func(*T, *T, *scopeSelection) error,
+) (*T, ExcludeReport, error) {
 	if !scope.Positive() {
-		return ExcludeGeneratedWithDefaultSchema(db, scope.Exclude, scope.DefaultSchema)
+		return exclude(db, scope.Exclude, scope.DefaultSchema)
 	}
 	selectors, err := parseIncludeSelectors(scope.Include)
 	if err != nil {
-		return nil, err
+		return nil, ExcludeReport{}, err
 	}
 	if db == nil {
-		return nil, nil
+		return nil, ExcludeReport{}, nil
+	}
+	_, report, err := exclude(db, scope.Exclude, scope.DefaultSchema)
+	if err != nil {
+		return nil, ExcludeReport{}, err
 	}
 	selection := newScopeSelection(scope, selectors)
-	selected := selection.projectGenerated(db)
-	final, err := ExcludeGeneratedWithDefaultSchema(selected, scope.Exclude, scope.DefaultSchema)
+	final, _, err := exclude(project(selection, db), scope.Exclude, scope.DefaultSchema)
 	if err != nil {
-		return nil, err
+		return nil, ExcludeReport{}, err
 	}
-	if err := validateGeneratedScope(db, final, selection); err != nil {
-		return nil, err
+	if err := validate(db, final, selection); err != nil {
+		return nil, ExcludeReport{}, err
 	}
-	return final, selection.emptySelectionError(scope)
+	return final, report, selection.emptySelectionError(scope)
 }
 
 // ScopeDatabase projects the introspected database schema through the same
@@ -241,26 +299,15 @@ func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, err
 // one projection. A non-positive scope degrades to plain exclusion. It reports
 // an empty include selection the same way [ScopeGenerated] does.
 func ScopeDatabase(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSchema, error) {
-	if !scope.Positive() {
-		return ExcludeDatabaseWithDefaultSchema(db, scope.Exclude, scope.DefaultSchema)
-	}
-	selectors, err := parseIncludeSelectors(scope.Include)
-	if err != nil {
-		return nil, err
-	}
-	if db == nil {
-		return nil, nil
-	}
-	selection := newScopeSelection(scope, selectors)
-	selected := selection.projectDatabase(db)
-	final, err := ExcludeDatabaseWithDefaultSchema(selected, scope.Exclude, scope.DefaultSchema)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateDatabaseScope(db, final, selection); err != nil {
-		return nil, err
-	}
-	return final, selection.emptySelectionError(scope)
+	filtered, _, err := ScopeDatabaseReport(db, scope)
+	return filtered, err
+}
+
+// ScopeDatabaseReport is [ScopeDatabase] plus the [ExcludeReport], measured
+// against the unprojected state for the reason [ScopeGeneratedReport] gives.
+func ScopeDatabaseReport(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSchema, ExcludeReport, error) {
+	return scopeReport(db, scope, ExcludeDatabaseReport,
+		(*scopeSelection).projectDatabase, validateDatabaseScope)
 }
 
 // scopeSelection carries the parsed positive selection during one projection.
