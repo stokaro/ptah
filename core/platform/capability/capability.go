@@ -41,6 +41,7 @@ package capability
 import (
 	"fmt"
 	"maps"
+	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
@@ -671,6 +672,66 @@ func ForDialect(dialect string) Capabilities {
 	}
 }
 
+// Newest measured major version line per refined dialect.
+//
+// Each ladder in this file ends in an open-topped arm: MySQL sends everything
+// above 8.4 to MySQL84, MariaDB everything above 10.2 to MariaDB1011, and
+// PostgreSQL everything at or above 17 to Postgres17. That arm is a stand-in,
+// not a measurement — a server newer than the line below was never observed
+// behaving like the preset it receives. VersionResolution.Saturated is true
+// exactly there, so a caller can tell "inside a measured line" from "past the
+// newest line this package knows".
+//
+// Raising one of these numbers is the deliberate act of claiming a newer
+// server line behaves like the preset it lands on. Do it in the change that
+// measures that line, together with the preset it deserves — never as a side
+// effect of bumping a container tag.
+const (
+	// MySQL84 covers 8.4 LTS through the 9.x LTS line, which is the newest
+	// MySQL the integration matrix runs (mysql:9.7).
+	newestMeasuredMySQLMajor = 9
+	// MariaDB1011 covers 10.2 through the 11.x lines; the integration matrix
+	// runs mariadb:10.11.
+	newestMeasuredMariaDBMajor = 11
+	// Postgres17 covers 17 only. The integration matrix already runs
+	// postgres:18, which therefore resolves saturated: Ptah has no measured
+	// PostgreSQL 18 capability line yet.
+	newestMeasuredPostgresMajor = 17
+)
+
+// VersionResolution reports how a server version string was mapped onto a
+// capability preset. It is what ForServerVersionResult's boolean cannot say on
+// its own: that boolean answers "did a parsed version select this preset", and
+// stays true for a version far newer than anything this package has a preset
+// for.
+//
+// Saturated distinguishes those two cases. It is true when the version parsed,
+// selected the newest preset in its dialect's ladder, and is itself newer than
+// the newest line that ladder was measured against — so the preset is a
+// stand-in and any capability the newer server gained or lost is unmodeled.
+//
+// Saturation is only defined where this package has a version ladder: MySQL,
+// MariaDB and PostgreSQL. CockroachDB, YugabyteDB and Spanner are resolved
+// from the banner without consulting a version at all, and ClickHouse, SQLite
+// and SQL Server have no ladder to saturate; all six report Saturated=false
+// and an empty NewestMeasured. Refining those dialects is the remaining scope
+// of issue #916 and is deliberately not answered here.
+type VersionResolution struct {
+	// Capabilities is the resolved preset, never nil for a known dialect.
+	Capabilities Capabilities
+	// VersionSpecific is false when no version-specific preset could be
+	// selected and the dialect default was used instead. It carries exactly
+	// the meaning of ForServerVersionResult's second return value.
+	VersionSpecific bool
+	// Saturated is true when the resolved preset is the top of a version
+	// ladder and the server is newer than the newest line that ladder was
+	// measured against.
+	Saturated bool
+	// NewestMeasured names the newest measured version line for the dialect,
+	// for example "9.x". It is empty for dialects with no version ladder.
+	NewestMeasured string
+}
+
 // ForServerVersion refines ForDialect using a live server version string —
 // typically the result of SELECT version() — so callers can map a concrete
 // server to the closest preset at connect time. Recognized shapes include
@@ -679,53 +740,97 @@ func ForDialect(dialect string) Capabilities {
 // over the MySQL protocol) and "PostgreSQL 16.3 (Debian ...)". When the
 // version cannot be parsed, the dialect's default preset is returned.
 func ForServerVersion(dialect, version string) Capabilities {
-	caps, _ := ForServerVersionResult(dialect, version)
-	return caps
+	return ResolveServerVersion(dialect, version).Capabilities
 }
 
 // ForServerVersionResult is ForServerVersion plus an explicit fallback signal.
 // The boolean is false when no version-specific preset could be selected and
 // the dialect default was used instead. Callers with a live connection can log
 // that degradation while offline callers can keep using ForDialect.
+//
+// The boolean says nothing about whether the server is newer than the newest
+// preset this package holds; ResolveServerVersion answers that.
 func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
+	resolution := ResolveServerVersion(dialect, version)
+	return resolution.Capabilities, resolution.VersionSpecific
+}
+
+// ResolveServerVersion is ForServerVersionResult with the saturation answer
+// attached. It selects exactly the same preset and reports exactly the same
+// VersionSpecific value; the extra fields describe how far the mapping was
+// trusted. See VersionResolution for what saturation means and which dialects
+// can report it.
+func ResolveServerVersion(dialect, version string) VersionResolution {
 	normalized := platform.NormalizeDialect(dialect)
 	versionLower := strings.ToLower(version)
 
 	switch {
 	case strings.Contains(versionLower, "cockroachdb"):
-		return CockroachDB23(), true
+		return VersionResolution{Capabilities: CockroachDB23(), VersionSpecific: true}
 	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
-		return YugabyteDB25(), true
+		return VersionResolution{Capabilities: YugabyteDB25(), VersionSpecific: true}
 	case strings.Contains(versionLower, "spanner"):
-		return SpannerPostgres(), true
+		return VersionResolution{Capabilities: SpannerPostgres(), VersionSpecific: true}
 	}
 
 	// MariaDB announces itself in the version string even when connected via
 	// the mysql dialect/driver; trust the string over the declared dialect.
 	if strings.Contains(versionLower, "mariadb") {
-		return mariaDBForVersion(version), parseableMariaDBVersion(version)
+		return mariaDBResolution(version)
 	}
 
 	v, ok := parseVersion(version)
 	if !ok {
-		return ForDialect(dialect), false
+		return VersionResolution{Capabilities: ForDialect(dialect)}
 	}
 
 	switch normalized {
 	case platform.MySQL:
-		return mysqlForVersion(v), true
+		return mysqlResolution(v)
 	case platform.MariaDB:
-		return mariaDBForVersion(version), parseableMariaDBVersion(version)
+		return mariaDBResolution(version)
 	case platform.Postgres:
-		if v.major >= 17 {
-			return Postgres17(), true
-		}
-		if v.major >= 14 {
-			return Postgres16(), true
-		}
-		return Postgres13(), true
+		return postgresResolution(v)
 	default:
-		return ForDialect(dialect), false
+		return VersionResolution{Capabilities: ForDialect(dialect)}
+	}
+}
+
+// measuredLine renders a major version number as the version line label
+// reported in VersionResolution.NewestMeasured.
+func measuredLine(major int) string {
+	return strconv.Itoa(major) + ".x"
+}
+
+func mysqlResolution(v serverVersion) VersionResolution {
+	return VersionResolution{
+		Capabilities:    mysqlForVersion(v),
+		VersionSpecific: true,
+		Saturated:       v.major > newestMeasuredMySQLMajor,
+		NewestMeasured:  measuredLine(newestMeasuredMySQLMajor),
+	}
+}
+
+func mariaDBResolution(version string) VersionResolution {
+	resolution := VersionResolution{
+		Capabilities:   mariaDBForVersion(version),
+		NewestMeasured: measuredLine(newestMeasuredMariaDBMajor),
+	}
+	v, ok := parseVersion(strings.TrimPrefix(version, mariaDBReplicationPrefix))
+	if !ok {
+		return resolution
+	}
+	resolution.VersionSpecific = true
+	resolution.Saturated = v.major > newestMeasuredMariaDBMajor
+	return resolution
+}
+
+func postgresResolution(v serverVersion) VersionResolution {
+	return VersionResolution{
+		Capabilities:    postgresForVersion(v),
+		VersionSpecific: true,
+		Saturated:       v.major > newestMeasuredPostgresMajor,
+		NewestMeasured:  measuredLine(newestMeasuredPostgresMajor),
 	}
 }
 
@@ -742,6 +847,21 @@ func mysqlForVersion(v serverVersion) Capabilities {
 	}
 }
 
+func postgresForVersion(v serverVersion) Capabilities {
+	switch {
+	case v.major >= 17:
+		return Postgres17()
+	case v.major >= 14:
+		return Postgres16()
+	default:
+		return Postgres13()
+	}
+}
+
+// mariaDBReplicationPrefix is the fake version prefix MariaDB servers prepend
+// when speaking the MySQL protocol ("5.5.5-10.11.6-MariaDB").
+const mariaDBReplicationPrefix = "5.5.5-"
+
 // mariaDBForVersion picks the MariaDB preset for a server version string.
 // MariaDB servers speaking the MySQL protocol prepend a fake "5.5.5-"
 // replication-compatibility prefix ("5.5.5-10.11.6-MariaDB"); that prefix is
@@ -750,7 +870,7 @@ func mysqlForVersion(v serverVersion) Capabilities {
 // anything older — or an unparseable string — degrades to MariaDBLegacy /
 // the modern preset respectively.
 func mariaDBForVersion(version string) Capabilities {
-	trimmed := strings.TrimPrefix(version, "5.5.5-")
+	trimmed := strings.TrimPrefix(version, mariaDBReplicationPrefix)
 	v, ok := parseVersion(trimmed)
 	if !ok {
 		return MariaDB1011()
@@ -759,11 +879,6 @@ func mariaDBForVersion(version string) Capabilities {
 		return MariaDB1011()
 	}
 	return MariaDBLegacy()
-}
-
-func parseableMariaDBVersion(version string) bool {
-	_, ok := parseVersion(strings.TrimPrefix(version, "5.5.5-"))
-	return ok
 }
 
 // serverVersion is a parsed dotted server version.
