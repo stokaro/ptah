@@ -179,7 +179,13 @@ type DBColumn struct {
 
 // DBEnum represents a database enum type (PostgreSQL)
 type DBEnum struct {
-	Name   string   `json:"name"`
+	Name string `json:"name"`
+	// Schema owns the enum. Readers blank it for the connection's own schema,
+	// exactly as they do for tables, views and domains, so a filter or a
+	// comparison reconstructs the qualified spelling from the connection's
+	// default. Without it a schema-qualified `--exclude app.color` matched
+	// nothing and silently kept the enum (stokaro/ptah#933).
+	Schema string   `json:"schema,omitempty"`
 	Values []string `json:"values"`
 }
 
@@ -554,7 +560,13 @@ type SchemaTransaction interface {
 
 // DBFunction represents a PostgreSQL custom function read from the database
 type DBFunction struct {
-	Name       string `json:"name"`       // Function name
+	Name string `json:"name"` // Function name
+	// Schema owns the function. Readers blank it for the connection's own
+	// schema, the same convention tables, views and domains follow, so a
+	// filter reconstructs the qualified spelling from the connection's
+	// default. Without it a schema-qualified `--exclude app.fn_app` matched
+	// nothing and silently kept the function (stokaro/ptah#933).
+	Schema     string `json:"schema,omitempty"`
 	Parameters string `json:"parameters"` // Function parameters (e.g., "tenant_id_param TEXT")
 	Returns    string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
 	Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")

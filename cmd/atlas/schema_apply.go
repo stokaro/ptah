@@ -266,15 +266,16 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		DevURL:     opts.devURL,
-		ToURLs:     opts.toURLs,
-		Exclude:    opts.exclude,
-		Schemas:    opts.schemas,
-		Include:    opts.include,
-		Policy:     policy,
-		TxMode:     txMode,
-		DryRun:     opts.dryRun,
-		ProjectEnv: projectEnv,
+		DevURL:      opts.devURL,
+		ToURLs:      opts.toURLs,
+		Exclude:     opts.exclude,
+		Schemas:     opts.schemas,
+		Include:     opts.include,
+		Policy:      policy,
+		TxMode:      txMode,
+		DryRun:      opts.dryRun,
+		ProjectEnv:  projectEnv,
+		Diagnostics: cmd.ErrOrStderr(),
 
 		// Atlas-compatible surface: a schema file written for another tool
 		// must not be refused over a name this parser does not model.
