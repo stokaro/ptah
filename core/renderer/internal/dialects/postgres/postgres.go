@@ -48,6 +48,10 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 
 	parts = append(parts, r.dropIndexTarget(node))
 
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
 	sql := strings.Join(parts, " ") + ";"
 
 	// Add comment if provided
@@ -65,7 +69,11 @@ func (r *Renderer) dropIndexTarget(node *ast.DropIndexNode) string {
 	}
 	tableParts := splitQualifiedIdentifier(node.Table)
 	if len(tableParts) < 2 {
-		return r.escapeIdentifier(node.Name)
+		// No table namespace to borrow, so the index name is the only place a
+		// qualifier can be, and `DROP INDEX app.idx` puts one there. Escaping
+		// it whole would emit "app.idx" as a single identifier and name an
+		// index nobody created. See [ast.DropIndexNode.Name].
+		return r.escapeQualifiedIdentifier(node.Name)
 	}
 	schemaParts := tableParts[:len(tableParts)-1]
 	return r.escapeQualifiedIdentifier(strings.Join(schemaParts, ".")) + "." + r.escapeIdentifier(node.Name)

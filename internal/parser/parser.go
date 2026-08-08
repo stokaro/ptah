@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // Parser converts SQL tokens into AST nodes.
@@ -3620,6 +3621,8 @@ func (p *Parser) parseDropStatement() (ast.Node, error) {
 	switch target {
 	case "TABLE":
 		return p.parseDropTable()
+	case "INDEX":
+		return p.parseDropIndex()
 	default:
 		return nil, fmt.Errorf("unsupported DROP target: %s at position %d", target, p.current.Start)
 	}
@@ -3681,6 +3684,158 @@ func (p *Parser) parseDropTableNames() ([]string, error) {
 		p.advance()
 		p.skipWhitespace()
 	}
+}
+
+// parseDropIndex parses a DROP INDEX statement into an [ast.DropIndexNode].
+//
+// One grammar covers every dialect Ptah renders a DROP INDEX for, because the
+// forms differ in which optional clauses they use rather than in what a clause
+// means:
+//
+//	PostgreSQL   DROP INDEX [CONCURRENTLY] [IF EXISTS] [schema.]index [CASCADE|RESTRICT]
+//	SQLite       DROP INDEX [IF EXISTS] [schema.]index
+//	MySQL        DROP INDEX index ON [schema.]table
+//	MariaDB      DROP INDEX [IF EXISTS] index ON [schema.]table
+//	SQL Server   DROP INDEX [IF EXISTS] index ON [schema.]table
+//	CockroachDB  DROP INDEX [IF EXISTS] [schema.]table@index [CASCADE|RESTRICT]
+//
+// SQL Server's backward-compatible `DROP INDEX table.index` is the one form
+// where a qualified name with no ON is not a schema-qualified index; see
+// [Parser.rejectSQLServerTableQualifiedIndex] for why it is refused.
+//
+// ClickHouse has no DROP INDEX statement -- Ptah renders its index drops as
+// ALTER TABLE ... DROP INDEX, which [Parser.parseAlterStatement] handles -- so
+// it needs nothing here.
+//
+// The two halves of the grammar decide between them where the schema qualifier
+// lands, which is the whole point of parsing the statement: the first three
+// forms name the index in its own namespace and no table, the last three name
+// the table and leave the index bare. See [ast.DropIndexNode.Name].
+//
+// A statement this function returns an error for contributes no schema change
+// to callers such as migration/lint, so every form it declines is declined
+// loudly rather than half-recorded. PostgreSQL's multi-index `DROP INDEX a, b`
+// is the other one: [ast.DropIndexNode] models a single index, and accepting
+// the list would record only its first name and report one change where two
+// happened.
+func (p *Parser) parseDropIndex() (*ast.DropIndexNode, error) {
+	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
+		return nil, err
+	}
+
+	p.skipWhitespace()
+
+	concurrently := false
+	if p.current.MatchIdentifierValue("CONCURRENTLY") {
+		concurrently = true
+		p.advance()
+		p.skipWhitespace()
+	}
+
+	ifExists := false
+	if p.current.MatchIdentifierValue("IF") {
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "EXISTS"); err != nil {
+			return nil, fmt.Errorf("expected EXISTS after DROP INDEX IF: %w", err)
+		}
+		p.skipWhitespace()
+		ifExists = true
+	}
+
+	name, table, err := p.parseDropIndexTarget()
+	if err != nil {
+		return nil, err
+	}
+
+	p.skipWhitespace()
+	if p.current.MatchOperatorValue(",") {
+		return nil, fmt.Errorf("unsupported DROP INDEX with multiple index names at position %d", p.current.Start)
+	}
+
+	dropIndex := ast.NewDropIndex(name)
+	if table != "" {
+		dropIndex.SetTable(table)
+	}
+	if ifExists {
+		dropIndex.SetIfExists()
+	}
+	if concurrently {
+		dropIndex.SetConcurrently()
+	}
+	if p.current.MatchIdentifierValue("CASCADE") {
+		dropIndex.SetCascade()
+		p.advance()
+		return dropIndex, nil
+	}
+	if p.current.MatchIdentifierValue("RESTRICT") {
+		p.advance()
+	}
+	return dropIndex, nil
+}
+
+// parseDropIndexTarget reads the index a DROP INDEX names and, when the
+// statement names one, its owning table. An empty table is the answer for the
+// dialects whose grammar has no place to write one, not a failure to find it.
+func (p *Parser) parseDropIndexTarget() (name, table string, err error) {
+	first, err := p.parseQualifiedIdentifier("index name")
+	if err != nil {
+		return "", "", err
+	}
+
+	p.skipWhitespace()
+
+	// CockroachDB writes the owning table first and joins it to the index with
+	// `@`, so what was read above is the table and the index is still ahead.
+	if p.current.MatchOperatorValue("@") {
+		p.advance()
+		p.skipWhitespace()
+		indexName, err := p.expectIdentifier()
+		if err != nil {
+			return "", "", fmt.Errorf("expected index name after '@': %w", err)
+		}
+		return indexName, first, nil
+	}
+
+	if !p.current.MatchIdentifierValue("ON") {
+		if err := p.rejectSQLServerTableQualifiedIndex(first); err != nil {
+			return "", "", err
+		}
+		return first, "", nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	tableName, err := p.parseQualifiedIdentifier("table name")
+	if err != nil {
+		return "", "", err
+	}
+	return first, tableName, nil
+}
+
+// rejectSQLServerTableQualifiedIndex refuses a qualified DROP INDEX target that
+// named no table, for the one dialect where such a name is not a
+// schema-qualified index.
+//
+// SQL Server has no schema-qualified index names: an index lives in its table's
+// namespace, and `DROP INDEX t.idx` is the backward-compatible spelling of
+// `DROP INDEX idx ON t`. Recording the qualifier as a schema the way every other
+// dialect's grammar means it would name an index `t.idx` that does not exist,
+// render back as the single identifier "t.idx", and measure the drop against a
+// schema called `t` -- a scope decision taken on an object nobody wrote.
+//
+// It is refused rather than decomposed because the change costs only the schema
+// change count of a spelling Ptah never renders, where guessing wrong costs a
+// wrong schema. Ptah renders SQL Server index drops as `DROP INDEX idx ON t`,
+// which the ON branch above reads exactly.
+func (p *Parser) rejectSQLServerTableQualifiedIndex(name string) error {
+	if p.dialect != platform.SQLServer {
+		return nil
+	}
+	if ref, ok := tableref.Parse(name); ok && !ref.Qualified {
+		return nil
+	}
+	return fmt.Errorf(
+		"unsupported SQL Server DROP INDEX %q without ON: a qualified name there is table.index, not schema.index", name)
 }
 
 // parseAlterOperation parses individual ALTER TABLE operations.

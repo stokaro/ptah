@@ -920,10 +920,17 @@ objects the run analyzes. A PostgreSQL-family `--dev-url` carrying
   name;
 - one statement is measured per object: `DROP TABLE users, other.audit_log;`
   under `search_path=public` reports `users` and counts one schema change;
-- an index is measured by the schema of the table it is on, because an index
-  name never carries one: `CREATE INDEX idx ON app.users (id);` under
+- an index is measured by the schema of the table it is on whenever the
+  statement names a table, because the index name is bare there:
+  `CREATE INDEX idx ON app.users (id);` under `search_path=public` counts no
+  schema change and raises no diagnostic, while the same statement on a
+  `public` table counts one and raises `PG101`. `DROP INDEX idx ON app.t;` —
+  MySQL's, MariaDB's and SQL Server's spelling — is measured the same way;
+- a `DROP INDEX` that names no table is measured by the qualifier on the index
+  itself, which is the only one the statement has: `DROP INDEX app.idx;` under
   `search_path=public` counts no schema change and raises no diagnostic, while
-  the same statement on a `public` table counts one and raises `PG101`.
+  `DROP INDEX public.idx;` and the unqualified `DROP INDEX idx;` each count one
+  and raise `PG106`.
 
 A `--dev-url` that names no schema puts the whole connected database under
 review and filters nothing, which is also what every non-PostgreSQL dev URL
@@ -957,14 +964,30 @@ changes for it. A count of zero is not a statement of safety.
 
 Silence is not exclusion. A statement outside Ptah's SQL grammar is left under
 review whatever schema it names, because a boundary that could not be read must
-not be able to drop a diagnostic. `DROP INDEX` is the current example: Ptah's
-parser does not model it, so `DROP INDEX public.idx;` counts no schema change
-even in the reviewed schema — the pinned community binary counts one — while
-its `PG106` diagnostic is reported in every schema. That missing change is a
-parser gap rather than a scope decision, tracked in
-[`stokaro/ptah#1296`](https://github.com/stokaro/ptah/issues/1296). The same
-grammar boundary is why `TRUNCATE app.users;` and `DROP FUNCTION app.recalc();`
-are reported under `search_path=public` while counting no schema change.
+not be able to drop a diagnostic. That grammar boundary is why
+`TRUNCATE app.users;` and `DROP FUNCTION app.recalc();` are reported under
+`search_path=public` while counting no schema change.
+
+`DROP INDEX` used to be the largest example of it and no longer is: the parser
+models the statement, so `DROP INDEX public.idx;` counts one schema change,
+matching the pinned community binary v1.3.0, and `DROP INDEX app.idx;` is
+scoped out whole — no schema change and no `PG106`, which is also what the
+community binary reports. Ptah raised `PG106` for the `app` form before
+[`stokaro/ptah#1296`](https://github.com/stokaro/ptah/issues/1296); nothing
+about the reviewed schema became quieter, since the `public` form still raises
+it.
+
+Two `DROP INDEX` forms are still outside the grammar. Both are refused by the
+parser rather than half-recorded, so each counts no schema change and keeps its
+diagnostics under every scope:
+
+- PostgreSQL's multi-index `DROP INDEX a, b;`, which one `DROP INDEX` node
+  cannot hold;
+- SQL Server's backward-compatible `DROP INDEX t.idx;`, where the qualifier
+  names the table rather than a schema. Reading it the way every other dialect
+  spells the same text would scope the drop to a schema nobody wrote. Ptah
+  renders SQL Server index drops as `DROP INDEX idx ON t`, which is read
+  exactly.
 
 Three constructs are still measured by a name that carries no schema, because
 Ptah's parser records none for them. Measured on PostgreSQL 17.10 under
