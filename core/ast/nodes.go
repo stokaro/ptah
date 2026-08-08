@@ -293,15 +293,25 @@ func (n *ColumnNode) Accept(visitor Visitor) error {
 
 // SetPrimary marks the column as a primary key and returns the column for chaining.
 //
-// Setting a column as primary automatically makes it NOT NULL, as primary keys
-// cannot contain NULL values in SQL.
+// Nullability is left alone. "A primary key is NOT NULL" is a rule of the
+// dialect, not of this AST: SQLite does not enforce it on a rowid table, where
+// `id INTEGER PRIMARY KEY` is a rowid alias whose `pragma table_info.notnull`
+// is 0 and which accepts an explicit NULL insert. Clearing the flag here made
+// every reader of a SQLite database and every parser of SQLite DDL invent a
+// NOT NULL its source never wrote, so a dump taken through `schema inspect`
+// restored a stricter table than the one it read. See stokaro/ptah#1235.
+//
+// The dialects that do enforce it say so themselves: the PostgreSQL, MySQL,
+// MariaDB and SQL Server renderers emit their own NOT NULL beside PRIMARY KEY
+// without consulting this flag, and the ClickHouse renderer already excludes a
+// primary-key column from Nullable() wrapping, so their output does not depend
+// on it.
 //
 // Example:
 //
 //	column.SetPrimary()
 func (n *ColumnNode) SetPrimary() *ColumnNode {
 	n.Primary = true
-	n.Nullable = false // Primary keys are always NOT NULL
 	return n
 }
 

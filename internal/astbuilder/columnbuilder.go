@@ -45,9 +45,10 @@ type ColumnBuilder struct {
 
 // Primary marks the column as a primary key and returns the ColumnBuilder for chaining.
 //
-// Setting a column as primary key automatically makes it NOT NULL, as primary keys
-// cannot contain NULL values in SQL. This follows standard SQL semantics where
-// primary key columns are implicitly NOT NULL.
+// Nullability is left where the caller put it. Whether a key column is also
+// NOT NULL is the dialect's rule, and SQLite does not have it: on a rowid table
+// `id INTEGER PRIMARY KEY` is a rowid alias that accepts an explicit NULL. Use
+// NotNull() to state it. See stokaro/ptah#1235.
 //
 // Example:
 //
@@ -294,9 +295,10 @@ type SchemaColumnBuilder struct {
 
 // Primary marks the column as a primary key and returns the SchemaColumnBuilder for chaining.
 //
-// Setting a column as primary key automatically makes it NOT NULL, as primary keys
-// cannot contain NULL values in SQL. This follows standard SQL semantics where
-// primary key columns are implicitly NOT NULL.
+// Nullability is left where the caller put it. Whether a key column is also
+// NOT NULL is the dialect's rule, and SQLite does not have it: on a rowid table
+// `id INTEGER PRIMARY KEY` is a rowid alias that accepts an explicit NULL. Use
+// NotNull() to state it. See stokaro/ptah#1235.
 //
 // Example:
 //

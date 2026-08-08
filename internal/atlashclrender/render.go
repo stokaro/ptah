@@ -15,8 +15,19 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/tableref"
 )
+
+// primaryKeyImpliesNotNull reports whether the dialect makes a primary key
+// column NOT NULL on its own.
+//
+// SQLite does not: on a rowid table `id INTEGER PRIMARY KEY` is a rowid alias
+// whose `pragma table_info.notnull` is 0 and which accepts an explicit NULL
+// insert. See stokaro/ptah#1235.
+func primaryKeyImpliesNotNull(dialect string) bool {
+	return platform.NormalizeDialect(dialect) != platform.SQLite
+}
 
 // Severity is the diagnostic severity emitted by the exporter.
 type Severity string
@@ -374,7 +385,11 @@ func (r *renderer) renderTable(
 		return fields[i].Name < fields[j].Name
 	})
 	for _, field := range fields {
-		if fieldIsPrimary(table, field) {
+		// A key column is written NOT NULL only where the dialect makes it so.
+		// SQLite does not on a rowid table, and writing `null = false` there
+		// made this document disagree with the same schema's `{{ json . }}`,
+		// which reports the catalog's answer. See stokaro/ptah#1235.
+		if fieldIsPrimary(table, field) && primaryKeyImpliesNotNull(r.dialect) {
 			field.Nullable = false
 		}
 		r.renderColumn(field)

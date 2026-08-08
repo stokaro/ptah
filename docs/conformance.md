@@ -274,6 +274,61 @@ YugabyteDB and Spanner keep the comparison they had, because what makes two
 indexes the same index is a per-dialect question and only PostgreSQL was
 measured.
 
+## SQLite: A Primary Key Is Not A NOT NULL
+
+Ptah applied "a primary key column is NOT NULL" as if it were a rule of SQL. It
+is a rule of most engines, and SQLite is not one of them. On a rowid table
+`id INTEGER PRIMARY KEY` is an alias for the rowid: `pragma table_info.notnull`
+reports 0, an explicit `INSERT INTO t (id) VALUES (NULL)` is accepted, and a
+rowid is assigned for it. Ptah folded the two together in six places — the AST
+node, the HCL reader, the HCL writer, the SQL-DDL parser's shared node, the
+comparator, and the SQLite renderer — so the assumption survived being fixed
+anywhere less than all of them.
+
+Two things followed, both at exit 0, measured on 2026-08-08 against the pinned
+Atlas CE v1.3.0 binary with each binary in its own directory
+([`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235), findings
+5.1 and 6.3):
+
+| Command | Before | Pinned Atlas CE v1.3.0 |
+| --- | --- | --- |
+| `schema apply --to file://users.hcl --auto-approve`, key column `null = false` | wrote `"id" integer PRIMARY KEY`, dropping the declared NOT NULL. Asked whether that database matched the file it came from, the pinned binary planned a **full table rebuild** | wrote `` `id` integer NOT NULL ``, and answered `Schemas are synced, no changes to be made.` |
+| `schema inspect --format '{{ json . }}'` over `id INTEGER PRIMARY KEY` | `"null"` omitted, meaning NOT NULL — the only column in the fixture whose flag the two binaries disagreed about | `"null": true` |
+
+Both directions are now the source's answer, and both are pinned: a declared
+NOT NULL survives onto the key column, and a key column declared `null = true`
+does not acquire one. After the fix the pinned binary answers
+`Schemas are synced, no changes to be made.` at exit 0 for either document
+against the database `ptah-compat schema apply` built from it.
+
+The dialects that do imply NOT NULL from PRIMARY KEY keep doing so. Their
+renderers write it themselves without consulting the flag, and the comparator
+normalizes the generated side for every dialect except SQLite, so a PostgreSQL
+or MySQL key column still compares and renders exactly as before.
+
+### The uniqueness half
+
+The same fold applied to uniqueness, and there it invented a constraint rather
+than dropping one. `reconcileColumnUniqueness` marked a column UNIQUE from *any*
+single-column unique index, including one an author had created by name, while
+leaving that index in the schema. Rendering the result emitted both.
+
+Measured on the same day, `schema inspect --format '{{ sql . }}'` over
+
+```sql
+CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT UNIQUE, b TEXT UNIQUE, c TEXT);
+CREATE UNIQUE INDEX ux_t_c ON t(c);
+```
+
+replayed into a fresh database with **four** indexes where the source had three.
+The extra one, `sqlite_autoindex_t_3`, was a phantom unique index on `c` backing
+a constraint the author never wrote — a dump-and-restore that silently tightened
+the schema. SQLite distinguishes the two cases itself: `pragma index_list`
+reports `origin` `u` for the implicit index behind a declared UNIQUE constraint
+and `c` for a standalone `CREATE UNIQUE INDEX`. Only the first is part of the
+column's declaration, and only the first is folded now. A declared column
+`UNIQUE` still round-trips through its own implicit index.
+
 ## Reports
 
 - Offline corpus report:
