@@ -185,8 +185,8 @@
     "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "no",
-    "note": "Go annotations to OpenAPI components or GraphQL SDL; no handlers or resolvers. Absent from the CE inventory and the cited Pro list.",
-    "evidence": "ptah schema export --help (--to openapi-v3|graphql); docs/site/src/content/docs/schema/export.md; conformance cli-surface.md CE inventory; docs/site/src/content/docs/atlas/comparison.md (atlasgo.io/features Pro list)"
+    "note": "Go annotations, or a YAML, HCL or SQL schema file, to OpenAPI components or GraphQL SDL; no handlers or resolvers. Absent from the CE inventory and the cited Pro list.",
+    "evidence": "ptah schema export --help (--to openapi-v3|graphql, --from, --schema-file); docs/site/src/content/docs/schema/export.md; cmd/schema/export_source_test.go TestSchemaExportReadsEveryNonGoSource pins each target against yaml/hcl/sql for byte-identical output; conformance cli-surface.md CE inventory; docs/site/src/content/docs/atlas/comparison.md (atlasgo.io/features Pro list)"
   },
   {
     "area": "API schema export",
@@ -194,8 +194,8 @@
     "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "no",
-    "note": "Edition 2023 output; `--out` pins field numbers, with policies for type removal, name reuse and incompatible change. Not in CE inventory.",
-    "evidence": "ptah schema export --help (--proto-type-removal, --proto-on-name-reuse, --proto-on-incompatible-change); internal/protobufrender/render.go; docs/site/src/content/docs/schema/protobuf.md; conformance cli-surface.md CE inventory"
+    "note": "Edition 2023 output from Go annotations or a YAML, HCL or SQL schema file; `--out` pins field numbers, with policies for type removal, name reuse and incompatible change. Not in CE inventory.",
+    "evidence": "ptah schema export --help (--proto-type-removal, --proto-on-name-reuse, --proto-on-incompatible-change, --schema-file); internal/protobufrender/render.go; docs/site/src/content/docs/schema/protobuf.md; cmd/schema/export_source_test.go TestSchemaExportReadsEveryNonGoSource pins the protobuf target against yaml/hcl/sql; conformance cli-surface.md CE inventory"
   },
   {
     "area": "API schema export",
