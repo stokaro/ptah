@@ -5,9 +5,11 @@ package dbschema
 // the public connection API alone.
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -168,15 +170,77 @@ func TestDatabaseConnectionWithSession_RebindsAllDatabaseOperations(t *testing.T
 func TestResolveDatabaseCapabilities_MySQLKeepsVersionBaseline(t *testing.T) {
 	c := qt.New(t)
 
-	got, versionSpecific := resolveDatabaseCapabilities(types.DBInfo{
+	got := resolveDatabaseCapabilities(types.DBInfo{
 		Dialect: "mysql",
 		Version: "8.4.0",
 	})
 
-	c.Assert(versionSpecific, qt.IsTrue)
-	c.Assert(got, qt.DeepEquals, capability.MySQL84())
-	c.Assert(got.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
-	c.Assert(got.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
+	c.Assert(got.VersionSpecific, qt.IsTrue)
+	c.Assert(got.Saturated, qt.IsFalse)
+	c.Assert(got.Capabilities, qt.DeepEquals, capability.MySQL84())
+	c.Assert(got.Capabilities.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
+	c.Assert(got.Capabilities.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
+}
+
+// TestReportCapabilityResolution covers the one production caller of the
+// version-aware selector: a server past the newest measured version line is
+// planned with that line's preset, and this is the only place that fact
+// reaches an operator. The rows pin what is said and, just as importantly,
+// that nothing is said for a server inside a measured line.
+func TestReportCapabilityResolution(t *testing.T) {
+	tests := []struct {
+		name       string
+		info       types.DBInfo
+		wantLogged []string
+		wantQuiet  bool
+	}{
+		{
+			name: "mysql inside the measured line stays quiet",
+			info: types.DBInfo{Dialect: "mysql", Version: "9.7.1"},
+			// The integration matrix runs mysql:9.7; a warning here would fire
+			// on every connection and train operators to ignore it.
+			wantQuiet: true,
+		},
+		{
+			name:       "mysql past the newest measured line warns",
+			info:       types.DBInfo{Dialect: "mysql", Version: "26.7.0"},
+			wantLogged: []string{"level=WARN", "newest measured capability line", "dialect=mysql", "version=26.7.0", "newest_measured=9.x"},
+		},
+		{
+			name:       "mariadb past the newest measured line warns",
+			info:       types.DBInfo{Dialect: "mariadb", Version: "12.3.0-MariaDB"},
+			wantLogged: []string{"level=WARN", "dialect=mariadb", "version=12.3.0-MariaDB", "newest_measured=11.x"},
+		},
+		{
+			name:       "postgres past the newest measured line warns",
+			info:       types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 18.4 (Debian)"},
+			wantLogged: []string{"level=WARN", "dialect=postgres", "newest_measured=17.x"},
+		},
+		{
+			name:       "an unparseable version stays a debug-level fallback",
+			info:       types.DBInfo{Dialect: "mysql", Version: "who knows"},
+			wantLogged: []string{"level=DEBUG", "falling back to dialect default capabilities"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			var output bytes.Buffer
+			previousLogger := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
+			t.Cleanup(func() {
+				slog.SetDefault(previousLogger)
+			})
+
+			reportCapabilityResolution(tt.info, resolveDatabaseCapabilities(tt.info))
+
+			c.Assert(output.String() == "", qt.Equals, tt.wantQuiet, qt.Commentf("logged: %q", output.String()))
+			for _, want := range tt.wantLogged {
+				c.Assert(output.String(), qt.Contains, want)
+			}
+		})
+	}
 }
 
 func TestDatabaseConnectionWithSession_MySQLRelaxationIsCallbackScoped(t *testing.T) {
