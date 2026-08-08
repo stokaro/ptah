@@ -22,8 +22,37 @@ import (
 //   - These are roles the developer intentionally created for application security
 //
 // **Database Schema Roles**:
-//   - Includes all user-defined roles from the database
+//   - Includes all user-defined roles the reader found, described or not
 //   - Excludes system roles (pg_*, postgres) for safety
+//
+// # Described Is Not The Same Question As Present
+//
+// PostgreSQL roles belong to the cluster, not to one database, so a reader
+// asked to describe one schema leaves out roles that schema does not use even
+// though they exist on the server (stokaro/ptah#1267). Existence is a
+// different question from description, and answering it from the description
+// alone reads "out of scope" as "absent": the diff plans CREATE ROLE for a
+// role that is already there and the server refuses it at SQLSTATE 42710.
+//
+// So a role counts as present when it appears in either DBSchema.Roles or
+// DBSchema.RolesOutOfScope, which together are every role the reader manages.
+// Nothing else about this comparison changes: a role that exists is still
+// compared attribute by attribute wherever the reader found it, so an
+// ALTER ROLE the annotations ask for is still planned for a role outside the
+// described scope. See stokaro/ptah#1276 for the general shape of this
+// defect.
+//
+// The union is not every role the server has, and this comparison must not be
+// described as if it were. A PostgreSQL reader excludes the reserved pg_ roles
+// and the bootstrap superuser from both lists, because Ptah manages neither in
+// either direction. A desired schema naming one of them therefore still lands
+// in RolesAdded and the server still refuses the statement -- measured on
+// PostgreSQL 17.10, `role "postgres"` in the desired state gives
+// `CREATE ROLE "postgres" ...` and SQLSTATE 42710, and `role "pg_monitor"`
+// gives SQLSTATE 42939. That is identical before and after this change;
+// refusing such a desired state up front is a separate change, and until it
+// lands TestRolesReservedNameIsNotComparedAgainstAnything pins the gap so it
+// cannot be lost or silently claimed fixed.
 //
 // # Role Modification Detection
 //
@@ -76,8 +105,25 @@ func Roles(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 		generatedRoleMap[role.Name] = role
 	}
 
-	databaseRoleMap := make(map[string]types.DBRole)
+	// Every role the reader manages, whether or not it described it. A role
+	// missing from here is a role this reader would not report at all -- one
+	// that does not exist, or one Ptah never manages; a role missing from
+	// database.Roles alone is only a role this description does not speak
+	// about.
+	databaseRoleMap := make(map[string]types.DBRole, len(database.Roles)+len(database.RolesOutOfScope))
 	for _, role := range database.Roles {
+		databaseRoleMap[role.Name] = role
+	}
+	// The described entry wins when a name is in both lists. A PostgreSQL
+	// reader's two lists are disjoint by construction, so this decides nothing
+	// there; it decides for every other producer of a DBSchema -- a
+	// hand-assembled one, a merged one, a future reader whose scoping rule
+	// overlaps -- and without it the later list would silently overwrite the
+	// attributes the description was read from.
+	for _, role := range database.RolesOutOfScope {
+		if _, described := databaseRoleMap[role.Name]; described {
+			continue
+		}
 		databaseRoleMap[role.Name] = role
 	}
 

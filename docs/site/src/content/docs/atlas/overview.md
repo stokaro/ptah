@@ -155,6 +155,16 @@ and prints no word of it. Set it to `1` and every block Ptah models is
 emitted: the output describes the database in full, and the community CLI
 refuses it.
 
+**`PTAH_POSTGRES_INSPECT_ALL_ROLES`** — by default, a PostgreSQL read describes
+only the roles the inspected schemas use, because roles are cluster-wide and a
+description of one database is not a place to list another tenant's roles. Each
+read reports on standard error how many managed roles it left out. Set it to
+`1` and every role Ptah manages on the server is described again, which is what
+you need to reproduce one cluster's roles in another. It widens the description
+only: comparison already treats undescribed roles as present, so the planned
+statements are identical either way. Reserved `pg_` names and the bootstrap
+`postgres` superuser are outside it in both directions.
+
 **`PTAH_ALLOW_EXTERNAL_SCHEMA`** — by default, `atlas.hcl`
 `data "external_schema"` is not evaluated, because it runs a
 repository-controlled program. Set it to `1` and the data source is evaluated,

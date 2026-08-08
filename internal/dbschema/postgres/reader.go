@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -180,11 +181,9 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 
 	if r.caps.Has(capability.RoleManagement) {
 		// Read roles and grants (PostgreSQL-specific)
-		roles, err := r.readRoles()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read roles: %w", err)
+		if err := r.readRolesInto(schema); err != nil {
+			return nil, err
 		}
-		schema.Roles = roles
 
 		grants, err := r.readGrants(standaloneSequenceSet(schema.Sequences))
 		if err != nil {
@@ -2308,9 +2307,208 @@ func (r *Reader) readRLSPoliciesForSchema(schemaName string) ([]types.DBRLSPolic
 	return policies, nil
 }
 
-// readRoles reads all PostgreSQL roles from the database
+// rolesInScopeClauses returns the branches of the role-scoping union, one per
+// reason a role counts as used by the inspected schemas. Each branch reads the
+// catalog column that carries the reason, so the reason a role is reported is
+// always a fact about the inspected scope rather than about the server.
+//
+// The `scope` CTE the branches join against is defined by readRoles.
+func (r *Reader) rolesInScopeClauses() []string {
+	clauses := []string{
+		// Holds a privilege on a relation in scope -- table, view,
+		// materialized view or sequence (pg_class.relacl). An owner appears
+		// here as soon as the relation carries any explicit privilege, which
+		// is also exactly when readTableGrantsForSchema reports the owner's
+		// own grants.
+		`SELECT acl.grantee AS roleoid FROM pg_class c
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+		// Granted a privilege on a relation in scope (pg_class.relacl).
+		`SELECT acl.grantor FROM pg_class c
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+		// Holds a privilege on a schema in scope (pg_namespace.nspacl).
+		`SELECT acl.grantee FROM scope s
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+		// Granted a privilege on a schema in scope (pg_namespace.nspacl).
+		`SELECT acl.grantor FROM scope s
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+	}
+	if r.caps.Has(capability.RowLevelSecurity) {
+		// Named by a row-level security policy on a table in scope
+		// (pg_policy.polroles), read in the same shape readRLSPolicies uses.
+		clauses = append(clauses, `SELECT policyrole FROM pg_policy pol
+			JOIN pg_class c ON c.oid = pol.polrelid
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL unnest(pol.polroles) AS policyrole`)
+	}
+	return clauses
+}
+
+// readRoles reads the PostgreSQL roles the inspected scope actually uses.
+//
+// Roles are cluster-wide: pg_roles lists every role on the server, including
+// roles that exist only for databases this reader was never pointed at.
+// Reporting all of them describes objects the inspected schema does not
+// contain, cannot be replayed (CREATE ROLE is not idempotent, and creating a
+// fresh database does not clear cluster roles), and on a shared instance
+// discloses every other tenant's role names. See stokaro/ptah#1267.
+//
+// "Uses" is defined here, deliberately, as any of:
+//
+//   - holding a privilege on a relation in a schema in scope, or on one of
+//     those schemas -- or having granted one;
+//   - being named by a row-level security policy on a table in scope.
+//
+// Equivalently: a role is described exactly when some other statement in the
+// same description can name it. Nothing else is reported, and a role that
+// merely exists in the cluster certainly is not.
+//
+// Ownership is deliberately NOT a reason, and this was measured rather than
+// assumed. Ptah describes no ownership -- it emits no OWNER TO and no CREATE
+// SCHEMA ... AUTHORIZATION -- so an owner is a role the description creates
+// and then never refers to. Because the connecting superuser owns every object
+// it creates, treating ownership as a reason made every inspect describe the
+// connecting role, and a diff between a populated database and an empty dev
+// database in the same cluster then planned
+// `CREATE ROLE "..." WITH LOGIN SUPERUSER ...` and failed to apply it at
+// SQLSTATE 42710. An owner that a description does refer to still appears,
+// through the privilege clauses: granting anything on a relation makes its
+// ACL explicit, and an explicit ACL always carries the owner's own privileges.
+//
+// A role that belongs to the inspected schemas is still reported in full, on
+// the native and the compatibility surface alike. What the scoping does cost
+// is naming a role the inspected schemas do not use, which a description could
+// do before -- enough to copy one cluster's roles into another. That capability
+// is not discarded: readRolesInto restores the full read under
+// [rolescope.DescribeAllEnvVar], and what the default leaves out is reported
+// rather than dropped in silence.
+//
+// The privilege clauses read the grantor as well as the grantee because
+// readGrants reports both. That makes this set a superset of every role name
+// the rest of the description can mention, so the description never references
+// a role it does not also define.
 func (r *Reader) readRoles() ([]types.DBRole, error) {
+	return r.queryRoles(rolesUsedByScope)
+}
+
+// readRolesInto performs both role reads and decides which of them the
+// description carries.
+//
+// By default the description is the scoped read and the complement is carried
+// separately, for the comparator alone. Under
+// [rolescope.DescribeAllEnvVar] the description is the union -- every role Ptah
+// manages on the server, which is what a read produced before
+// stokaro/ptah#1267 -- and the complement is then empty because nothing is
+// left out.
+//
+// Both reads happen either way, so the set the comparator takes existence from
+// is byte-for-byte the same set under both settings. That is the property that
+// makes the variable safe: turning it on changes what is described and can
+// never make Ptah plan a CREATE ROLE for a role that is already there.
+//
+// The union is re-sorted by name rather than concatenated, so the fuller
+// description is ordered exactly as the single unscoped query ordered it.
+func (r *Reader) readRolesInto(schema *types.DBSchema) error {
+	described, err := r.readRoles()
+	if err != nil {
+		return fmt.Errorf("failed to read roles: %w", err)
+	}
+
+	// The roles the description leaves out still exist on the server, and a
+	// comparator that is not told so plans CREATE ROLE for them. Read the
+	// complement so "not described" and "not present" stay different answers.
+	// See stokaro/ptah#1267 and stokaro/ptah#1276.
+	outOfScope, err := r.readRolesOutOfScope()
+	if err != nil {
+		return fmt.Errorf("failed to read roles outside the inspected scope: %w", err)
+	}
+
+	if rolescope.DescribeAll() {
+		everyManagedRole := slices.Concat(described, outOfScope)
+		slices.SortFunc(everyManagedRole, func(a, b types.DBRole) int {
+			return strings.Compare(a.Name, b.Name)
+		})
+		schema.Roles = everyManagedRole
+		schema.RolesOutOfScope = nil
+		return nil
+	}
+
+	schema.Roles = described
+	schema.RolesOutOfScope = outOfScope
+	return nil
+}
+
+// readRolesOutOfScope reads the roles the server has that readRoles left out:
+// the exact complement, over the same catalog and the same reserved-name
+// exclusions.
+//
+// Scoping the description (stokaro/ptah#1267) is right for describing a schema
+// and says nothing about what the server has. The comparator asks a different
+// question -- does this role exist -- and answering it from the description
+// alone reads "out of scope" as "absent" and plans CREATE ROLE for a role that
+// is already there, which the server refuses at SQLSTATE 42710. That is
+// requirement 2 of stokaro/ptah#1276: "not described" and "not present" have
+// to be distinguishable in what the comparator consumes.
+//
+// The two reads partition the roles this reader reports at all, so their union
+// is every such role regardless of which scoping rule readRoles applies. A
+// change to the scoping rule moves roles between the two lists and can never
+// make a reported role look absent.
+//
+// The partition is over managed roles, not over pg_roles. queryRoles ends both
+// statements with the same `NOT LIKE 'pg\_%' ESCAPE '\'` and `!= 'postgres'`
+// exclusions, so the reserved roles and the bootstrap superuser are in neither
+// list -- Ptah manages neither, in either direction. A desired schema that
+// names one is therefore still compared against nothing and still planned as a
+// CREATE ROLE the server refuses (SQLSTATE 42710 for postgres, 42939 for a
+// reserved name); that predates this method, is unchanged by it, and is a
+// separate refusal to build. Do not restate this as "every role the server
+// has".
+//
+// The escape is load-bearing for both reads at once: an unescaped underscore
+// is a single-character wildcard, so it would drop pgbouncer, pgadmin and
+// pgpool from the description and from this complement alike, leaving them in
+// neither list and back in the CREATE ROLE failure this method prevents
+// (stokaro/ptah#1291).
+//
+// The complement is spelled NOT EXISTS rather than NOT IN because a NOT IN
+// over a subquery yielding a single NULL matches nothing at all, which would
+// silently empty this list and restore the very defect it exists to prevent.
+func (r *Reader) readRolesOutOfScope() ([]types.DBRole, error) {
+	return r.queryRoles(rolesNotUsedByScope)
+}
+
+// Membership predicates for the role query, applied against the `used` set the
+// scope branches build. They are complements of one another, and nothing else
+// in the two queries differs.
+const (
+	rolesUsedByScope    = `EXISTS (SELECT 1 FROM used u WHERE u.roleoid = r.oid)`
+	rolesNotUsedByScope = `NOT EXISTS (SELECT 1 FROM used u WHERE u.roleoid = r.oid)`
+)
+
+// queryRoles reads pg_roles restricted by one of the two membership
+// predicates above.
+func (r *Reader) queryRoles(membership string) ([]types.DBRole, error) {
+	schemas := r.schemasToRead()
+	placeholders := make([]string, 0, len(schemas))
+	args := make([]any, 0, len(schemas))
+	for i, schemaName := range schemas {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, schemaName)
+	}
+
 	rolesQuery := `
+		WITH scope AS (
+			SELECT n.oid, n.nspacl
+			FROM pg_namespace n
+			WHERE n.nspname IN (` + strings.Join(placeholders, ", ") + `)
+		),
+		used AS (
+			` + strings.Join(r.rolesInScopeClauses(), `
+			UNION
+			`) + `
+		)
 		SELECT
 			r.rolname AS role_name,
 			r.rolcanlogin AS login,
@@ -2327,11 +2525,12 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 		-- single-character wildcard: 'pg_%' matches pgbouncer, pgadmin and
 		-- pgpool, which are ordinary user roles. PostgreSQL reserves the
 		-- prefix WITH the underscore (stokaro/ptah#1291).
-		WHERE r.rolname NOT LIKE 'pg\_%' ESCAPE '\'  -- Exclude system roles
+		WHERE ` + membership + `
+		AND r.rolname NOT LIKE 'pg\_%' ESCAPE '\'  -- Exclude system roles
 		AND r.rolname != 'postgres'      -- Exclude postgres superuser
 		ORDER BY r.rolname`
 
-	rows, err := r.db.Query(rolesQuery)
+	rows, err := r.db.Query(rolesQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query roles: %w", err)
 	}
@@ -2407,10 +2606,25 @@ func (r *Reader) readTableGrantsForSchema(schemaName string) ([]types.DBGrant, e
 			table_name,
 			is_grantable = 'YES' AS with_option,
 			grantor
-		FROM information_schema.role_table_grants
+		FROM information_schema.role_table_grants g
 		WHERE table_schema = $1
 		AND grantee NOT LIKE 'pg\_%' ESCAPE '\'
 		AND grantee != 'postgres'
+		-- Only relations on which some privilege has actually been granted.
+		-- information_schema reports an owner's built-in privileges as grants
+		-- even for a table whose pg_class.relacl is null, meaning nobody has
+		-- ever run GRANT on it. Describing those as GRANT statements describes
+		-- something no one wrote; CREATE TABLE re-establishes them for the new
+		-- owner on replay anyway. It also made the description name a role it
+		-- did not define once role reporting was scoped (stokaro/ptah#1267),
+		-- and the pinned Atlas community binary refuses such a document.
+		AND EXISTS (
+			SELECT 1 FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = g.table_schema
+			AND c.relname = g.table_name
+			AND c.relacl IS NOT NULL
+		)
 		ORDER BY table_schema, table_name, grantee, privilege_type`
 
 	rows, err := r.db.Query(query, schemaName)
