@@ -1,6 +1,7 @@
 package capability_test
 
 import (
+	"maps"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -404,6 +405,165 @@ func TestForServerVersionResultReportsFallback(t *testing.T) {
 	caps, versionSpecific = capability.ForServerVersionResult("mariadb", "MariaDB something")
 	c.Assert(versionSpecific, qt.Equals, false)
 	c.Assert(caps.Has(capability.DropConstraintIfExists), qt.Equals, true)
+}
+
+// TestResolveServerVersionReportsSaturation pins the version-saturation
+// answer for every refined dialect: one row per (dialect, version) below the
+// newest measured line, inside it, exactly at it, and above it.
+//
+// The "above" rows are the point of the test. Each ladder ends in an
+// open-topped arm, so a server newer than anything Ptah measured still lands
+// on the newest preset — which is byte-identical to ForDialect's. Those rows
+// therefore assert wantVersionSpecific=false: nothing version-specific was
+// selected, and saying otherwise is the silent saturation completion criterion
+// 3 of issue #916 rejects. #791 (MySQL 26.x) and #108 (MariaDB 12.x) unblock
+// on exactly these rows. The wantCaps column pins the preset at the same time,
+// so a row cannot go green by resolving to some other set.
+func TestResolveServerVersionReportsSaturation(t *testing.T) {
+	tests := []struct {
+		name                string
+		dialect             string
+		version             string
+		wantCaps            capability.Capabilities
+		wantVersionSpecific bool
+		wantSaturated       bool
+		wantNewestMeasured  string
+	}{
+		// MySQL: the ladder tops out at MySQL84, measured through the 9.x line.
+		{"mysql below", "mysql", "5.7.44", capability.MySQLLegacy(), true, false, "9.x"},
+		{"mysql inside", "mysql", "8.0.42-log", capability.MySQL8019(), true, false, "9.x"},
+		{"mysql at the newest measured line", "mysql", "9.7.1", capability.MySQL84(), true, false, "9.x"},
+		{"mysql at the top of the newest measured major", "mysql", "9.99.0", capability.MySQL84(), true, false, "9.x"},
+		{"mysql above (#791 bumps CI to 26.x)", "mysql", "26.7.0", capability.MySQL84(), false, true, "9.x"},
+		{"mysql far above", "mysql", "99.0", capability.MySQL84(), false, true, "9.x"},
+
+		// MariaDB: MariaDB1011 is measured through the 11.x lines.
+		{"mariadb below", "mariadb", "10.1.48-MariaDB", capability.MariaDBLegacy(), true, false, "11.x"},
+		{"mariadb inside", "mariadb", "10.11.6-MariaDB", capability.MariaDB1011(), true, false, "11.x"},
+		{"mariadb at the newest measured line", "mariadb", "11.8.2-MariaDB", capability.MariaDB1011(), true, false, "11.x"},
+		{"mariadb above (#108 bumps CI to 12.x)", "mariadb", "12.3.0-MariaDB", capability.MariaDB1011(), false, true, "11.x"},
+		{"mariadb far above", "mariadb", "99.0.0-MariaDB", capability.MariaDB1011(), false, true, "11.x"},
+		{
+			"mariadb above over the mysql replication prefix",
+			"mysql", "5.5.5-12.3.0-MariaDB", capability.MariaDB1011(), false, true, "11.x",
+		},
+
+		// PostgreSQL: Postgres17 is the top preset and covers 17 only, while
+		// the integration matrix already runs postgres:18.
+		{"postgres below", "postgres", "PostgreSQL 13.14 (Debian)", capability.Postgres13(), true, false, "17.x"},
+		{"postgres inside", "postgres", "PostgreSQL 16.3 (Debian)", capability.Postgres16(), true, false, "17.x"},
+		{"postgres at the newest measured line", "postgres", "PostgreSQL 17.5", capability.Postgres17(), true, false, "17.x"},
+		{"postgres above (CI runs postgres:18)", "postgres", "PostgreSQL 18.4 (Debian)", capability.Postgres17(), false, true, "17.x"},
+		{"postgres far above", "postgres", "PostgreSQL 99.0", capability.Postgres17(), false, true, "17.x"},
+
+		// Controls. An unparseable version never reports saturation, and a
+		// dialect with no version ladder reports neither a ceiling nor
+		// saturation — refining those is the rest of issue #916.
+		{"mysql unparseable", "mysql", "who knows", capability.MySQL84(), false, false, ""},
+		{"mariadb unparseable", "mariadb", "MariaDB something", capability.MariaDB1011(), false, false, "11.x"},
+		{"postgres empty", "postgres", "", capability.Postgres17(), false, false, ""},
+		{
+			"cockroachdb resolves from the banner, no ladder",
+			"postgres", "CockroachDB CCL v26.2.4 (x86_64-pc-linux-gnu)", capability.CockroachDB23(), true, false, "",
+		},
+		{
+			"yugabytedb resolves from the banner, no ladder",
+			"postgres", "PostgreSQL 15.2-YB-2026.1.0.0-b0 on x86_64-pc-linux-gnu", capability.YugabyteDB25(), true, false, "",
+		},
+		{
+			"spanner is intentionally version-free",
+			"postgres", "Cloud Spanner PostgreSQL interface", capability.SpannerPostgres(), true, false, "",
+		},
+		{"clickhouse has no ladder", "clickhouse", "25.3.1.100", capability.ClickHouse24(), false, false, ""},
+		{"sqlite has no ladder", "sqlite", "3.53.0", capability.SQLite3(), false, false, ""},
+		{
+			"sqlserver has no ladder",
+			"sqlserver", "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5", capability.SQLServer2022(), false, false, "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := capability.ResolveServerVersion(tt.dialect, tt.version)
+
+			comment := qt.Commentf("dialect=%s version=%q", tt.dialect, tt.version)
+			c.Assert(got.Capabilities.Validate(), qt.IsNil, comment)
+			c.Assert(got.Capabilities, qt.DeepEquals, tt.wantCaps, comment)
+			c.Assert(got.VersionSpecific, qt.Equals, tt.wantVersionSpecific, comment)
+			c.Assert(got.Saturated, qt.Equals, tt.wantSaturated, comment)
+			c.Assert(got.NewestMeasured, qt.Equals, tt.wantNewestMeasured, comment)
+
+			// Saturated and VersionSpecific are two readings of one fact and
+			// must never both be true: a preset reached by running off the top
+			// of the ladder is the dialect default, not a version-specific
+			// selection.
+			c.Assert(got.Saturated && got.VersionSpecific, qt.IsFalse, comment)
+
+			// The two older entry points answer from the same resolution, so
+			// the boolean ForServerVersionResult hands an existing caller is
+			// the one asserted above.
+			caps, versionSpecific := capability.ForServerVersionResult(tt.dialect, tt.version)
+			c.Assert(caps, qt.DeepEquals, tt.wantCaps, comment)
+			c.Assert(versionSpecific, qt.Equals, tt.wantVersionSpecific, comment)
+			c.Assert(capability.ForServerVersion(tt.dialect, tt.version), qt.DeepEquals, tt.wantCaps, comment)
+		})
+	}
+}
+
+// TestForServerVersionResultDoesNotSaturateSilently is completion criterion 3
+// of issue #916, transcribed:
+//
+//	ForServerVersionResult("mysql", "26.7.0") no longer returns a set
+//	identical to ("mysql", "8.4.0"), OR it returns versionSpecific=false.
+//	Same for mariadb 12.3.0 vs 10.11.6. Silently saturating while returning
+//	true is what fails. #791 and #108 unblock on exactly this row.
+//
+// The criterion permits either outcome, so the assertion is on the conjunction
+// the criterion forbids — an identical set *and* a true boolean — rather than
+// on the branch this change happens to take. A later change that gives MySQL
+// 26.x, MariaDB 12.x or PostgreSQL 18 a measured preset of its own satisfies
+// the criterion the other way and must keep this test green without editing
+// it.
+//
+// wantIdenticalSet records which branch is live today, so the test also fails
+// if a preset silently starts differing and nobody notices the criterion is
+// now met for a different reason. The postgres row is not named in the
+// criterion; it is here because the integration matrix runs postgres:18, which
+// makes it the row a reader will hit first.
+func TestForServerVersionResultDoesNotSaturateSilently(t *testing.T) {
+	tests := []struct {
+		name              string
+		dialect           string
+		above             string
+		inside            string
+		wantIdenticalSet  bool
+		wantAboveSpecific bool
+	}{
+		{"mysql 26.7.0 against 8.4.0 (#791)", "mysql", "26.7.0", "8.4.0", true, false},
+		{"mariadb 12.3.0 against 10.11.6 (#108)", "mariadb", "12.3.0-MariaDB", "10.11.6-MariaDB", true, false},
+		{"postgres 18.4 against 17.5 (CI runs postgres:18)", "postgres", "PostgreSQL 18.4", "PostgreSQL 17.5", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			comment := qt.Commentf("dialect=%s above=%q inside=%q", tt.dialect, tt.above, tt.inside)
+			aboveCaps, aboveSpecific := capability.ForServerVersionResult(tt.dialect, tt.above)
+			insideCaps, insideSpecific := capability.ForServerVersionResult(tt.dialect, tt.inside)
+
+			identicalSet := maps.Equal(aboveCaps, insideCaps)
+			c.Assert(identicalSet && aboveSpecific, qt.IsFalse, comment)
+
+			c.Assert(identicalSet, qt.Equals, tt.wantIdenticalSet, comment)
+			c.Assert(aboveSpecific, qt.Equals, tt.wantAboveSpecific, comment)
+
+			// The control: the version inside the measured line is what a true
+			// boolean is for. Without it a resolver that answered false for
+			// every input would pass the assertion above.
+			c.Assert(insideSpecific, qt.IsTrue, comment)
+		})
+	}
 }
 
 func TestDoc(t *testing.T) {

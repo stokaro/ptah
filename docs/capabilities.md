@@ -161,7 +161,7 @@ Version lines: `MySQL84()` covers MySQL 8.4+ and 9.x; `MySQL8019()` covers
 older. `MariaDB1011()` covers the
 supported MariaDB lines (10.6+/11.x); `MariaDBLegacy()` is the conservative
 floor `ForServerVersion` assigns to pre-10.2 servers. `Postgres17()` covers
-PostgreSQL 17+; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
+PostgreSQL 17; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
 `CREATE OR REPLACE TRIGGER`).
 
 `CockroachDB23()` and `YugabyteDB25()` are PostgreSQL-family presets for the
@@ -174,6 +174,72 @@ schemas, tables, `IDENTITY`, enforced CHECK/UNIQUE/FK constraints, basic
 indexes, raw-SQL view/trigger rendering, and `XML` columns. Standalone
 sequence objects and drift-safe normalization for SQL Server-specific view,
 trigger, and index metadata are outside the initial SQL Server subset.
+
+### Saturation: servers newer than the newest measured line
+
+Every version ladder above ends in an open-topped arm, so a server newer than
+anything Ptah measured still resolves to the newest preset in its dialect. That
+is a stand-in, not a match: whatever the newer release gained or lost is
+unmodeled.
+
+The preset such a server receives is byte-identical to `ForDialect`'s, which is
+exactly what `ForServerVersionResult`'s boolean means by "no version-specific
+preset could be selected". So the boolean is `false` there:
+
+```go
+caps, versionSpecific := capability.ForServerVersionResult("mysql", "26.7.0")
+// caps            == capability.MySQL84() == capability.ForDialect("mysql")
+// versionSpecific == false   (26.x ran off the top of the ladder)
+```
+
+`ResolveServerVersion` separates that fallback from the other one — a version
+that could not be parsed at all — and names the line the server was planned as:
+
+```go
+resolution := capability.ResolveServerVersion("mysql", "26.7.0")
+// resolution.Capabilities    == capability.MySQL84()
+// resolution.VersionSpecific == false   (the dialect default was used)
+// resolution.Saturated       == true    (26.x is past the newest measured line)
+// resolution.NewestMeasured  == "9.x"
+```
+
+`Saturated` and `VersionSpecific` are never both true.
+
+The newest measured line per refined dialect:
+
+| Dialect | Newest measured line | Saturates above major |
+| --- | --- | --- |
+| MySQL | 9.x (`MySQL84()`) | 9 |
+| MariaDB | 11.x (`MariaDB1011()`) | 11 |
+| PostgreSQL | 17.x (`Postgres17()`) | 17 |
+
+PostgreSQL 18 therefore resolves saturated even though the integration matrix
+already runs `postgres:18`: Ptah has no measured PostgreSQL 18 capability line
+yet, so 18 is planned with the PostgreSQL 17 preset and says so.
+
+Raising one of those numbers is the deliberate act of claiming a newer server
+line behaves like the preset it lands on. Do it in the change that measures
+that line — never as a side effect of bumping a container tag.
+
+Saturation is only defined where this package has a version ladder. ClickHouse,
+SQLite and SQL Server have no ladder at all, and CockroachDB, YugabyteDB and
+Spanner are resolved from the banner without consulting a version; all six
+report `Saturated=false` and an empty `NewestMeasured`. Refining those dialects
+is the remaining scope of issue #916.
+
+`dbschema.ConnectToDatabase` is the one production caller of the version-aware
+selector. It records a saturated resolution at `DEBUG`, naming the dialect, the
+server version, and the line it was planned as; an unparseable version is
+recorded at `DEBUG` too. Neither reaches a default run's stderr, and that is
+deliberate: the CLI's default logger keeps `WARN` and above so that a clean run
+emits nothing, and connecting to a supported server is a clean run. The
+integration matrix runs `postgres:18`, so a saturated resolution there fires on
+every connection — a warning would be noise on every command rather than a
+diagnostic. Use `--log-level debug` to see it, or read `Saturated` and
+`NewestMeasured` from `ResolveServerVersion` directly.
+
+Surfacing an unrefined version to the user on a channel of its own is
+criterion 6 of issue #916 and belongs with the CLI work that owns that channel.
 
 ### Composition
 
