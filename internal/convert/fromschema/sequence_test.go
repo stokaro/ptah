@@ -86,9 +86,15 @@ func TestFromGrant_OnSequence(t *testing.T) {
 	c.Assert(node.ObjectName, qt.Equals, "order_seq")
 }
 
-// TestFromDatabase_SequenceSkippedForMySQL confirms standalone sequences are not
-// emitted for non-PostgreSQL targets (they would render to no executable DDL).
-func TestFromDatabase_SequenceSkippedForMySQL(t *testing.T) {
+// TestFromDatabase_SequenceReachesTheMySQLRendererToBeRefused pins that a
+// declared sequence is handed to the MySQL-family renderer rather than dropped
+// here.
+//
+// It used to be dropped, so `ptah schema render --dialect mariadb` omitted a
+// declared sequence with no statement and no diagnostic while
+// capability.MariaDB1011 advertised Sequences: true (stokaro/ptah#931 item 8).
+// The renderer is what decides the target cannot host one, and it says so.
+func TestFromDatabase_SequenceReachesTheMySQLRendererToBeRefused(t *testing.T) {
 	c := qt.New(t)
 
 	database := goschema.Database{
@@ -97,9 +103,36 @@ func TestFromDatabase_SequenceSkippedForMySQL(t *testing.T) {
 
 	statements := fromschema.FromDatabase(database, platform.MySQL)
 
+	c.Assert(countCreateSequenceNodes(statements.Statements), qt.Equals, 1,
+		qt.Commentf("the declared sequence must reach the renderer"))
+}
+
+func countCreateSequenceNodes(statements []ast.Node) int {
+	created := 0
+	for _, statement := range statements {
+		if _, isCreate := statement.(*ast.CreateSequenceNode); isCreate {
+			created++
+		}
+	}
+	return created
+}
+
+// TestFromDatabase_SequenceStillSkippedForSQLite is the non-interference
+// control for the change above: SQLite and SQL Server were deliberately left
+// out of the sequence append, so widening it to the MySQL family and ClickHouse
+// must not have moved them.
+func TestFromDatabase_SequenceStillSkippedForSQLite(t *testing.T) {
+	c := qt.New(t)
+
+	database := goschema.Database{
+		Sequences: []goschema.Sequence{{Name: "order_seq"}},
+	}
+
+	statements := fromschema.FromDatabase(database, platform.SQLite)
+
 	for _, stmt := range statements.Statements {
 		_, isCreate := stmt.(*ast.CreateSequenceNode)
 		_, isAlter := stmt.(*ast.AlterSequenceNode)
-		c.Assert(isCreate || isAlter, qt.IsFalse, qt.Commentf("no sequence nodes for MySQL"))
+		c.Assert(isCreate || isAlter, qt.IsFalse, qt.Commentf("no sequence nodes for SQLite"))
 	}
 }

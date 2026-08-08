@@ -255,13 +255,13 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables and indexes only. Views, matviews, functions, triggers, roles, grants, RLS, sequences, domains and CHECKs vanish from the plan with no diagnostic. |
+| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes and column CHECKs (as named table constraints). Views, matviews, functions, triggers, roles and sequences render a named not-supported comment; grants, RLS and domains still drop. |
 | CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | Preset drops concurrent indexes, sequences, XML, advisory locks, roles and RLS. SERIAL is a hard error. Offline render also omits views, functions and triggers. |
-| Domains, composite types, and range types | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. Range subtype changes produce no diff. The community binary reports none of the three when they exist. |
-| Enum types | 🟡 | ✅ | ✅ | MySQL/SQLite/SQL Server inline-enum rewrite fires only if the type name starts with `enum_`; other names emit the bare type name verbatim. |
+| Domains, composite types, and range types | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. A changed range type is planned as DROP TYPE + CREATE TYPE. The community binary reports none of the three. |
+| Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one; the type name plays no part. The undocumented `enum_` prefix that gated the inline rewrite, the scoped-schema filter and the PostgreSQL cast is gone. |
 | Extensions | 🟡 | ❌ | ✅ | PostgreSQL-family only; `plpgsql` ignored by default on compare. MySQL/MariaDB render an empty statement instead of the intended comment. The community binary refuses extension blocks. |
 | Functions | 🟡 | ❌ | ✅ | `schema render`: PostgreSQL only, silent on MySQL/MariaDB. `schema apply` also emits CREATE FUNCTION on YugabyteDB; MySQL drops it silently. |
-| MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error; extensions, functions, domains, roles/grants, RLS and MariaDB SEQUENCE objects are dropped silently. DDL auto-commit blocks rollback. |
+| MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error on both `render` and `apply`; extensions and MariaDB SEQUENCE objects render a not-supported comment. Functions, domains, roles/grants and RLS still drop silently. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Only engine where views, functions, sequences, roles, RLS and domains are emitted; presets 12-13, 14-16, 17+ from the server banner. |
 | Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files read ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops a `role` block silently. |
@@ -270,7 +270,7 @@ seven of them as open capabilities regardless.
 | SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops do emit a full rebuild; type, nullability, default and uniqueness changes fail with "modifying columns ... requires a table rebuild plan". PG-only objects error one at a time. |
 | Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits it on YugabyteDB too. SQL schema files read CREATE SEQUENCE. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. |
-| Triggers | 🟡 | ❌ | ✅ | `--dialect mssql`/`tsql` drop them while `sqlserver` renders them; MySQL forces FOR EACH ROW; SQL Server rewrites BEFORE to AFTER silently. |
+| Triggers | 🟡 | ❌ | ✅ | `--dialect mssql`/`tsql` drop them while `sqlserver` renders them. MySQL/MariaDB refuse FOR EACH STATEMENT and SQL Server refuses BEFORE instead of downgrading; a body ending in `;` gets one `;`. |
 | Views and materialized views | 🟡 | ❌ | ✅ | Matviews render on PostgreSQL only; SQL schema files read both. Elsewhere behavior differs by engine: MySQL/MariaDB apply errors, YugabyteDB live apply plans them, ClickHouse drops them silently. |
 | YugabyteDB (yugabytedb, ysql) | 🟡 | ❌ | ✅ | Live apply does plan roles, grants, sequences, domains, views, matviews, functions and triggers; only RLS and concurrent indexes are gated off. Offline render omits all of them. |
 

@@ -1139,24 +1139,27 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		return
 	}
 
-	// Change column type (with USING clause for complex conversions if needed)
+	// Change the column type. An enum target needs an explicit USING cast:
+	// PostgreSQL has no assignment cast from varchar (or anything else) to an
+	// enum, so a bare `ALTER COLUMN ... TYPE <enum>` aborts the migration with
+	// `column "s" cannot be cast automatically to type ...` (SQLSTATE 42804).
+	//
+	// Whether the target is an enum comes from the schema declaration carried on
+	// the node, not from the type name: this used to test
+	// strings.HasPrefix(type, "enum_"), so an enum named "status_kind" got no
+	// cast and its migration died at execution while an otherwise identical one
+	// named "enum_status" applied cleanly (stokaro/ptah#931 item 1).
+	targetType := column.Type
 	if columnType != column.Type {
 		// Type was transformed (e.g., enum handling), use the processed type
-		// For enum types, add USING clause to handle potential casting issues
-		if strings.HasPrefix(columnType, "enum_") {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
-				r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), columnType, r.escapeIdentifier(column.Name), columnType)
-		} else {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), columnType)
-		}
+		targetType = columnType
+	}
+	if column.EnumType {
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
+			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType, r.escapeIdentifier(column.Name), targetType)
 	} else {
-		// For enum types, add USING clause to handle potential casting issues
-		if strings.HasPrefix(column.Type, "enum_") {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
-				r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Type, r.escapeIdentifier(column.Name), column.Type)
-		} else {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Type)
-		}
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;",
+			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType)
 	}
 
 	// Change nullability.

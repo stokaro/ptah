@@ -219,12 +219,20 @@ func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
 	if len(diff.SequencesAdded) > 0 || len(diff.SequencesModified) > 0 || len(diff.SequencesRemoved) > 0 {
 		return unsupportedFeaturef("sequences are not supported")
 	}
-	if len(diff.DomainsAdded) > 0 || len(diff.DomainsRemoved) > 0 || len(diff.DomainsModified) > 0 ||
-		len(diff.CompositeTypesAdded) > 0 || len(diff.CompositeTypesRemoved) > 0 || len(diff.CompositeTypesModified) > 0 ||
-		len(diff.RangesAdded) > 0 || len(diff.RangesRemoved) > 0 {
+	if hasUserDefinedTypeChanges(diff) {
 		return unsupportedFeaturef("user-defined types are not supported")
 	}
 	return nil
+}
+
+// hasUserDefinedTypeChanges reports whether the diff touches a domain, composite
+// type or range type. Split out of rejectUnsupportedSchemaObjects so that adding
+// a category -- RangesModified, from stokaro/ptah#931 item 2 -- does not push
+// that function past the cyclomatic-complexity gate.
+func hasUserDefinedTypeChanges(diff *types.SchemaDiff) bool {
+	return len(diff.DomainsAdded) > 0 || len(diff.DomainsRemoved) > 0 || len(diff.DomainsModified) > 0 ||
+		len(diff.CompositeTypesAdded) > 0 || len(diff.CompositeTypesRemoved) > 0 || len(diff.CompositeTypesModified) > 0 ||
+		len(diff.RangesAdded) > 0 || len(diff.RangesRemoved) > 0 || len(diff.RangesModified) > 0
 }
 
 func rejectUnsupportedAccessControl(diff *types.SchemaDiff) error {

@@ -300,19 +300,30 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
+// VisitCreateMaterializedView refuses: SQLite has no materialized view object.
+//
+// This used to render a comment. A comment makes `schema render` exit 0 on a
+// model the planner refuses at `schema apply` time, so the surface a user is
+// told to validate with disagreed with the surface that executes. The SQLite
+// planner already answers "materialized views are not supported".
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	r.notSupported("CREATE MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
 
+// VisitDropMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	r.notSupported("DROP MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("DROP MATERIALIZED VIEW", node.Name)
 }
 
+// VisitRefreshMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
-	r.notSupported("REFRESH MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
+}
+
+func materializedViewsUnsupported(statement, name string) error {
+	return unsupportedFeaturef("%s %s: materialized views are not supported", statement, name)
 }
 
 func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
