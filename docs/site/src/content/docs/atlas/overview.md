@@ -24,11 +24,16 @@ ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
 Command examples on the Atlas compatibility pages are written as
 `ptah-compat <command> ...` — the name the binary ships under.
 
-Every Atlas-compatible command has a native `ptah` twin — for example
-`ptah-compat migrate apply` and `ptah migrations up`, or `ptah-compat schema inspect` and
-`ptah schema inspect --db-url ...`. Use the native tree for new Ptah-authored
-work and the compat binary for existing Atlas scripts; the per-verb mapping is
-listed in the [Atlas-compatible commands reference](../../reference/atlas-commands/).
+What the two binaries share is capabilities, not command lines. A generally
+useful capability you reach through `ptah-compat` is reachable through native
+`ptah` as well, under native names and flags: `ptah-compat migrate apply` and
+`ptah migrations up`, or `ptah-compat schema inspect` and `ptah schema inspect`.
+Atlas-specific machinery has no native twin at all. See
+[Capability parity, not interface parity](../comparison/#capability-parity-not-interface-parity).
+
+Use the native tree for new Ptah-authored work and the compat binary for
+existing Atlas scripts; the per-verb mapping is listed in the
+[Atlas-compatible commands reference](../../reference/atlas-commands/).
 
 ### Installing under the name `atlas`
 
@@ -141,6 +146,10 @@ This matters most if you are coming from Atlas **Pro** rather than CE. The
 compatibility surface is the migration path for Pro scripts and configuration
 too, not only CE ones — a capability you could only reach by rewriting your
 pipeline against native `ptah` verbs would not be a migration path at all.
+
+The rule runs the other way too. A capability built for Atlas compatibility
+does not stay on the compatibility surface: where it is generally useful for
+schemas or migrations, native `ptah` reaches it under native names.
 
 ### The variables
 
