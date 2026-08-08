@@ -47,6 +47,30 @@ and the migration fails partway through. Ptah honors it.
 Differences of this kind are listed in the [gap register](#gap-register) with
 the measurement behind them, so you can see which way each one goes.
 
+### Capability parity, not interface parity
+
+Ptah's Atlas compatibility layer does not define a separate feature set.
+
+Capabilities implemented for Atlas compatibility are also available through
+Ptah's native workflows when they are generally useful database-schema or
+migration capabilities.
+
+The interfaces may differ: `ptah-compat` preserves Atlas-shaped commands and
+compatibility contracts, while `ptah` uses Ptah-native commands and
+configuration.
+
+Atlas-specific adapters and compatibility representations — for example
+`atlas://` resolution, Atlas file and config codecs, revision-history
+compatibility, or Atlas-specific CLI and output behavior — are not duplicated
+in the native interface unless they have independent Ptah value.
+
+So the promise is about capabilities, not about command lines. The native
+binary accepts no Atlas CLI aliases, and the two binaries are not
+command-for-command equivalent: Atlas command spellings live only in
+`ptah-compat`. The [command parity table](#command-parity) below shows which
+native verb answers each Atlas one, and the differences in what each verb
+records or refuses are named in the sections that follow it.
+
 ## Command parity
 
 | Task | Native Ptah | `ptah-compat` | Atlas OSS |
