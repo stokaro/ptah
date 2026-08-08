@@ -16,15 +16,19 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // primaryKeyImpliesNotNull reports whether the dialect makes a primary key
 // column NOT NULL on its own.
 //
-// SQLite does not: on a rowid table `id INTEGER PRIMARY KEY` is a rowid alias
-// whose `pragma table_info.notnull` is 0 and which accepts an explicit NULL
-// insert. See stokaro/ptah#1235.
+// SQLite does not decide it from the dialect: on a rowid table
+// `id INTEGER PRIMARY KEY` is a rowid alias whose `pragma table_info.notnull` is
+// 0 and which accepts an explicit NULL insert, while a STRICT or WITHOUT ROWID
+// table does enforce NOT NULL on its key columns. This predicate answers for the
+// ordinary rowid table, and [renderer.keyColumnIsNotNull] adds the table's shape
+// where the dialect is SQLite. See stokaro/ptah#1235.
 func primaryKeyImpliesNotNull(dialect string) bool {
 	return platform.NormalizeDialect(dialect) != platform.SQLite
 }
@@ -385,11 +389,13 @@ func (r *renderer) renderTable(
 		return fields[i].Name < fields[j].Name
 	})
 	for _, field := range fields {
-		// A key column is written NOT NULL only where the dialect makes it so.
+		// A key column is written NOT NULL only where the engine makes it so.
 		// SQLite does not on a rowid table, and writing `null = false` there
 		// made this document disagree with the same schema's `{{ json . }}`,
-		// which reports the catalog's answer. See stokaro/ptah#1235.
-		if fieldIsPrimary(table, field) && primaryKeyImpliesNotNull(r.dialect) {
+		// which reports the catalog's answer. It does on a STRICT or
+		// WITHOUT ROWID table, so the decision needs the table and not only the
+		// dialect. See stokaro/ptah#1235.
+		if fieldIsPrimary(table, field) && r.keyColumnIsNotNull(table, fields, field) {
 			field.Nullable = false
 		}
 		r.renderColumn(field)
@@ -454,6 +460,25 @@ func (r *renderer) renderColumn(field goschema.Field) {
 	r.stringAttr(2, "comment", field.Comment)
 	r.renderPlatformOverrides(2, field.Overrides)
 	r.line("  }")
+}
+
+// keyColumnIsNotNull reports whether the engine writes this key column NOT NULL
+// on its own.
+//
+// For SQLite that is a property of the table rather than of the dialect, so the
+// answer comes from the table's shape; every other dialect answers from the
+// dialect. An empty dialect keeps answering yes, which is what the
+// parse-and-re-render callers of [Render] want: their input was HCL and its
+// nullability is already the author's.
+func (r *renderer) keyColumnIsNotNull(
+	table goschema.Table,
+	fields []goschema.Field,
+	field goschema.Field,
+) bool {
+	if platform.NormalizeDialect(r.dialect) != platform.SQLite {
+		return primaryKeyImpliesNotNull(r.dialect)
+	}
+	return sqlitekey.ImpliesNotNull(table, sqlitekey.KeyColumns(table, fields), field)
 }
 
 func fieldIsPrimary(table goschema.Table, field goschema.Field) bool {

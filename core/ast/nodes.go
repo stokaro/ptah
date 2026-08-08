@@ -316,6 +316,12 @@ func (n *ColumnNode) Accept(visitor Visitor) error {
 // TestModifyColumn_KeyColumnNeverRendersNullable across every supported
 // dialect. Any new consumer of this flag owes the same decision.
 //
+// SQLite's own answer is not "never" either, and a consumer that reads it as
+// such is wrong in the other direction: a STRICT or WITHOUT ROWID table does
+// make its key columns NOT NULL, and the catalog reports them that way. The
+// rule is a property of the table rather than of the dialect, so it lives in
+// internal/sqlitekey with the measured shape table rather than here.
+//
 // Example:
 //
 //	column.SetPrimary()

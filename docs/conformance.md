@@ -277,13 +277,14 @@ measured.
 ## SQLite: A Primary Key Is Not A NOT NULL
 
 Ptah applied "a primary key column is NOT NULL" as if it were a rule of SQL. It
-is a rule of most engines, and SQLite is not one of them. On a rowid table
-`id INTEGER PRIMARY KEY` is an alias for the rowid: `pragma table_info.notnull`
-reports 0, an explicit `INSERT INTO t (id) VALUES (NULL)` is accepted, and a
-rowid is assigned for it. Ptah folded the two together in six places — the AST
-node, the HCL reader, the HCL writer, the SQL-DDL parser's shared node, the
-comparator, and the SQLite renderer — so the assumption survived being fixed
-anywhere less than all of them.
+is a rule of most engines. In SQLite it is a rule of the **table**, and on the
+ordinary rowid table it does not hold: `id INTEGER PRIMARY KEY` is an alias for
+the rowid, `pragma table_info.notnull` reports 0, an explicit
+`INSERT INTO t (id) VALUES (NULL)` is accepted, and a rowid is assigned for it.
+Ptah folded the two together in six places — the AST node, the HCL reader, the
+HCL writer, the SQL-DDL parser's shared node, the comparator, and the SQLite
+renderer — so the assumption survived being fixed anywhere less than all of
+them.
 
 Two things followed, both at exit 0, measured on 2026-08-08 against the pinned
 Atlas CE v1.3.0 binary with each binary in its own directory
@@ -295,9 +296,12 @@ Atlas CE v1.3.0 binary with each binary in its own directory
 | `schema apply --to file://users.hcl --auto-approve`, key column `null = false` | wrote `"id" integer PRIMARY KEY`, dropping the declared NOT NULL. Asked whether that database matched the file it came from, the pinned binary planned a **full table rebuild** | wrote `` `id` integer NOT NULL ``, and answered `Schemas are synced, no changes to be made.` |
 | `schema inspect --format '{{ json . }}'` over `id INTEGER PRIMARY KEY` | `"null"` omitted, meaning NOT NULL — the only column in the fixture whose flag the two binaries disagreed about | `"null": true` |
 
-Both directions are now the source's answer, and both are pinned: a declared
-NOT NULL survives onto the key column, and a key column declared `null = true`
-does not acquire one. After the fix the pinned binary answers
+Both directions are now the source's answer on a rowid table, and both are
+pinned: a declared NOT NULL survives onto the key column, and a key column
+declared `null = true` does not acquire one. (On a `STRICT` or `WITHOUT ROWID`
+table SQLite itself supplies the NOT NULL, whatever the document said; see
+[the table's shape decides](#the-tables-shape-decides-not-the-dialect) below.)
+After the fix the pinned binary answers
 `Schemas are synced, no changes to be made.` at exit 0 for either document
 against the database `ptah-compat schema apply` built from it.
 
@@ -333,6 +337,51 @@ because both predate the change and reproduce identically without it:
 - MySQL plans `ALTER TABLE users MODIFY COLUMN id BIGINT PRIMARY KEY` for a key
   column type change, which MySQL rejects with `Multiple primary key defined`
   when the key already exists.
+
+### The table's shape decides, not the dialect
+
+"SQLite key columns are nullable" is the rowid table's answer, and reading it as
+SQLite's answer is the same mistake in the other direction. A `STRICT` or
+`WITHOUT ROWID` table does enforce NOT NULL on its key columns, and the catalog
+reports them that way. Measured with `pragma table_info` on SQLite 3.51.0, and
+confirmed against the pinned Atlas CE v1.3.0 binary, which models the same
+nullability for each shape when it reads the same DDL through a dev database:
+
+| Table | `notnull` on the key column(s) | Pinned Atlas CE v1.3.0 `{{ json . }}` |
+| --- | --- | --- |
+| `id TEXT PRIMARY KEY` | 0 | `"null": true` |
+| `id INTEGER PRIMARY KEY` | 0 | `"null": true` |
+| `PRIMARY KEY (team, member)` | 0, 0 | `"null": true` |
+| `id TEXT PRIMARY KEY` + `WITHOUT ROWID` | 1 | `"null": false` |
+| `id INTEGER PRIMARY KEY` + `WITHOUT ROWID` | 1 | `"null": false` |
+| `PRIMARY KEY (team, member)` + `WITHOUT ROWID` | 1, 1 | `"null": false` |
+| `id TEXT PRIMARY KEY` + `STRICT` | 1 | `"null": false` |
+| `id INT PRIMARY KEY` + `STRICT` | 1 | `"null": false` |
+| `PRIMARY KEY (team, member)` + `STRICT` | 1, 1 | `"null": false` |
+| `id INTEGER PRIMARY KEY` + `STRICT` | 0 | `"null": true` |
+
+The last row is not an exception to the rule but an instance of it: a `STRICT`
+table still has a rowid, `id INTEGER PRIMARY KEY` is still its alias, and only
+that exact declared type is — `INT` in the same position reports 1. A blanket
+"`STRICT` or `WITHOUT ROWID` implies NOT NULL" would be wrong there, and
+measurably so: it turns `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT
+NOT NULL) STRICT` back into a permanent rebuild, which is this section's own
+defect wearing a `STRICT` table.
+
+The rule lives in `internal/sqlitekey`, and the comparator and the HCL writer
+ask it rather than the dialect. Before they did, measured on 2026-08-08 at exit
+0 with each binary in its own directory:
+
+| Command | Table | Before | After |
+| --- | --- | --- | --- |
+| `schema apply --to file://schema.sql --auto-approve`, run twice | `WITHOUT ROWID` | second run planned a full table rebuild, and so would every run after it | `Schema is synced, no changes to be made.` |
+| the same | `STRICT` | second run planned a full table rebuild | `Schema is synced, no changes to be made.` |
+| the same | rowid | `Schema is synced, no changes to be made.` | unchanged |
+| `migrate diff <name> --to file://schema.sql`, run twice | `WITHOUT ROWID` | wrote a second migration file containing that rebuild | `The migration directory is synced with the desired state, no changes to be made` |
+
+The pinned binary answered `Schemas are synced, no changes to be made.` against
+those databases throughout: the disagreement was Ptah's with itself, between the
+database it had just built and the model it built it from.
 
 ### The uniqueness half
 
