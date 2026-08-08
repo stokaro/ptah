@@ -26,6 +26,16 @@ jobs:
       # engine does not have -- and those are the two verdicts that run exists to
       # keep apart.
       PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL: 'postgres://postgres:pw@localhost:5432/dev?sslmode=disable&search_path=public'
+      # A second dev database, REALM-scoped: no search_path, so the binary is
+      # willing to materialize a document declaring more than one schema. The
+      # one above is deliberately scoped to `public` and refuses such a document
+      # with `cannot use HCL with more than 1 schema when dev-url is limited to
+      # schema "public"`, which is a verdict about the dev URL rather than about
+      # the document. It is a SEPARATE database because a realm-scoped read
+      # requires a clean one: measured on PostgreSQL 17, a leftover schema makes
+      # the next read fail with `sql/migrate: connected database is not clean:
+      # found schema "other"`, so it must not share with the runs above.
+      PTAH_ATLAS_ORACLE_POSTGRES_REALM_DEV_URL: 'postgres://postgres:pw@localhost:5432/realmdev?sslmode=disable'
 
     services:
       postgres:
@@ -46,6 +56,13 @@ jobs:
 
       - name: Configure oracle path
         run: echo "PTAH_ATLAS_ORACLE=$RUNNER_TEMP/ptah-atlas-ce/atlas" >> "$GITHUB_ENV"
+
+      # The realm-scoped dev database the two-schema document needs. The service
+      # creates only `dev`, and that one is scoped to a single schema on purpose.
+      - name: Create the realm-scoped dev database
+        run: >-
+          PGPASSWORD=pw psql -h localhost -p 5432 -U postgres -d postgres
+          -v ON_ERROR_STOP=1 -c 'CREATE DATABASE realmdev'
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -157,7 +174,8 @@ jobs:
           grep -Fx 'TestOracleToleratesTheBlockTypesPtahStillRenders' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleReadsTheReferenceSpellingPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleReadsTheInspectedDocumentPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
-          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 6
+          grep -Fx 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 7
 
       - name: Run HCL render conformance tests
         run: |
@@ -216,6 +234,17 @@ jobs:
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/nothing_but_the_grant_every_database_has/rendered' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/nothing_but_the_grant_every_database_has/unreadable/a_schema_reference_with_no_block' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/sqlite/nothing_but_the_grant_every_database_has/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          # And for the shape a relation LABEL is not unique in: two schemas each
+          # holding a view named `v`, which is a DEFAULT inspect of a
+          # realm-scoped URL. Its three mutations are named for the same reason
+          # -- `rendered` alone would pass on a build that had gone back to
+          # writing an unreadable traversal, since the mutation is what says the
+          # traversal is refused. PostgreSQL only: the binary refuses a
+          # two-schema document on SQLite outright, so there is no SQLite row.
+          grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/unreadable/a_grant_target_named_as_a_qualified_table' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/unreadable/a_grant_target_named_as_a_qualified_view' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/unreadable/a_trigger_target_named_as_a_qualified_table' "$RUNNER_TEMP/atlas-column-type-run"
 
       - name: Regenerate Atlas CE corpus
         run: >-

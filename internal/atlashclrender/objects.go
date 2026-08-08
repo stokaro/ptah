@@ -389,8 +389,11 @@ func (r *renderer) renderTrigger(trigger goschema.Trigger) {
 	// on PostgreSQL 17, `CREATE TRIGGER v_ins INSTEAD OF INSERT ON v` inspected
 	// whole and put to the pinned Atlas community binary v1.3.0,
 	// `on = table.v` is refused with `This object does not have an attribute
-	// named "v"` and `on = view.v` is read at exit 0.
-	r.rawAttr(1, "on", r.relationRef(blockTable, trigger.Table))
+	// named "v"` and `on = view.v` is read at exit 0. Where the document
+	// declares no single block to name, the quoted name is what evaluates --
+	// measured on the same binary, `on = "other.v"` at exit 0 against a document
+	// carrying `view "v"` in two schemas, where `on = table.other.v` is refused.
+	r.rawAttr(1, "on", r.relationRef(trigger.Table, quote(trigger.Table)))
 	r.linef("  %s {", timing)
 	r.rawAttr(2, event, "true")
 	r.line("  }")
@@ -703,16 +706,22 @@ func grantTargetName(grant goschema.Grant) string {
 // so the field it came in on cannot be what picks the block type, or every
 // database carrying a view writes `for = table.<view>` against a document
 // declaring `view "<view>"`. That is [renderer.relationRef]'s question, and the
-// field is only the fallback for a name the document does not declare at all.
+// field only decides what to write when the document declares no single block
+// to name.
 func (r *renderer) grantTarget(grant goschema.Grant) string {
 	if grant.OnSchema != "" {
 		return r.schemaRef(grant.OnSchema)
 	}
 	if grant.OnTable != "" {
-		return r.relationRef(blockTable, grant.OnTable)
+		return r.relationRef(grant.OnTable, quote(grant.OnTable))
 	}
 	if grant.OnSequence != "" {
-		return r.relationRef(blockSequence, grant.OnSequence)
+		// A sequence keeps a traversal even unresolved, because the word is the
+		// only thing that says which OBJECT this grant is about: Ptah's own
+		// reader takes `for = "order_seq"` as a grant on a relation and would
+		// emit `GRANT ... ON TABLE`. See [objectRef] for what the pinned binary
+		// does with a sequence block in either spelling.
+		return r.relationRef(grant.OnSequence, objectRef(blockSequence, grant.OnSequence))
 	}
 	return ""
 }
@@ -723,22 +732,44 @@ func (r *renderer) grantTarget(grant goschema.Grant) string {
 //
 // The block type comes from [renderer.documentDeclares] -- from what this
 // document writes -- rather than from the IR field the name arrived on or from
-// the position doing the referring. fallback is the spelling for a name the
-// document declares nothing under, or declares twice: it is the position's own
-// guess, which is all there is left, and it is what Ptah wrote for every
-// reference before this rule existed.
+// the position doing the referring. A reference the document CAN resolve loses
+// the schema for the same reason [renderer.tableRef] drops it: the block is
+// named by its labels alone.
 //
-// A reference the document CAN resolve loses the schema for the same reason
-// [renderer.tableRef] drops it -- the block is named by its labels alone -- and
-// keeps it otherwise, because there would be no block to read it back off.
-func (r *renderer) relationRef(fallback, name string) string {
+// unresolved is what to write when there is no single block to name -- because
+// the document declares nothing under the label, or because it declares the
+// label TWICE, which two schemas holding a relation of one name is all it
+// takes. For a relation that is a QUOTED name, and the quoting is the whole
+// point: a traversal has no spelling left that both evaluates and keeps the
+// schema. Measured on the pinned Atlas community binary v1.3.0 against one
+// document declaring `view "v"` in `other` and `view "v"` in `public`, one
+// operand varied and nothing else touched:
+//
+//	for = table.other.v  exit 1  Unsupported attribute; This object does not
+//	                             have an attribute named "other"
+//	for = view.other.v   exit 1  same message
+//	for = table.gone     exit 1  ... an attribute named "gone"
+//	for = "other.v"      exit 0
+//	for = "gone"         exit 0
+//
+// and against the same document with the two table blocks removed, so that no
+// `table` block is declared at all, `for = table.other.v` is refused with
+// `Unknown variable; There is no variable named "table"` instead.
+//
+// The short form view.v evaluates there (exit 0) and is still wrong: two blocks
+// carry that label, so it names neither in particular, and Ptah's own reader
+// refuses to guess -- relationBlockSchema in internal/atlashcl returns nothing
+// for a label it finds twice -- so the schema would be dropped for good. The
+// quoted name is the only spelling that both evaluates and survives the round
+// trip; relationRefName reads it straight back.
+func (r *renderer) relationRef(name, unresolved string) string {
 	ref, ok := tableref.Parse(name)
 	if !ok {
-		return objectRef(fallback, name)
+		return unresolved
 	}
 	block, declared := r.documentDeclares(ref.Name)
 	if !declared || (ref.Qualified && block.schema != ref.Schema) {
-		return objectRef(fallback, name)
+		return unresolved
 	}
 	return block.kind + objectRefPart(ref.Name)
 }
@@ -794,8 +825,9 @@ func (r *renderer) tableRef(name string) string {
 // objectRef renders a reference to a block of a named kind, with whatever
 // schema the name carries.
 //
-// It is the fallback both [renderer.tableRef] and [renderer.relationRef] reach
-// for, and the only thing that writes a two-part reference. A grant on a
+// It is what [renderer.tableRef] falls back to, and what
+// [renderer.grantTarget] hands [renderer.relationRef] for a SEQUENCE target,
+// and the only thing that writes a two-part reference. A grant on a
 // sequence therefore keeps `sequence.<schema>.<name>` where the schema is
 // spelled out and the document declares no block to read it back off. Nothing
 // measured says which spelling the pinned binary would take there in any case:

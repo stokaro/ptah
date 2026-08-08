@@ -584,10 +584,44 @@ permission {
 A reference in HCL names a block, and the block type is the first word of it, so
 `table.v` reads as "the `v` attribute of the table object" and the community
 binary refuses the file with `This object does not have an attribute named "v"`.
-A materialized view is `materialized.<name>` for the same reason, and a name the
-document declares no block for keeps the spelling the position implies. The same
-rule applies to a `trigger`'s `on`, which reaches a view whenever the database
-has an `INSTEAD OF` trigger.
+A materialized view is `materialized.<name>` for the same reason. The same rule
+applies to a `trigger`'s `on`, which reaches a view whenever the database has an
+`INSTEAD OF` trigger.
+
+Where the document declares no single block to name, the target is written as a
+quoted name instead — `for = "v"`, or `for = "other.v"` with the schema kept.
+Two cases reach it, and neither is exotic. One is a target the document does not
+contain, which a selection leaves behind. The other is a label the document
+declares TWICE: relations share one namespace per schema, so a realm-scoped
+inspect of a database with a view named `v` in two schemas declares `view "v"`
+twice, and no reference names one of them in particular.
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" --schema public --schema other
+view "v" {
+  schema = schema.other
+  as = " SELECT id\n   FROM other.t;"
+}
+
+view "v" {
+  as = " SELECT id\n   FROM t;"
+}
+
+permission {
+  to = role.app_user
+  for = "other.v"
+  privileges = ["SELECT"]
+}
+```
+
+A block is named by its labels, so there is no traversal left that both resolves
+and carries the schema: the community binary refuses `for = table.other.v` and
+`for = view.other.v` alike with `This object does not have an attribute named
+"other"`, and reads `for = "other.v"` at exit 0. The short `for = view.v` does
+evaluate there and is still wrong — it means neither of the two blocks, and
+reading it back would drop the schema for good. Ptah reads the quoted form back
+to the same target, so applying that document issues `GRANT SELECT ON TABLE
+"other"."v"`.
 
 ### Select what is inspected with `--include`
 

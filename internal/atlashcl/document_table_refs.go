@@ -119,20 +119,32 @@ func (p *parser) qualifyFromRelationBlock(name string) string {
 // relationBlockSchema is the schema carried by the single view, materialized
 // view or sequence block this document declares under a label, and empty where
 // there is not exactly one.
+//
+// EVERY declaration under the label is counted, including the ones carrying no
+// schema of their own, and that is what makes "exactly one" mean what it says. A
+// block with no schema is not a block that is absent -- it is the one in the
+// schema being read, so a document declaring `view "v"` and `view "v"` in
+// `other` declares the label TWICE and resolves neither. Counting only the
+// qualified ones made that document look unambiguous and moved the bare
+// reference into `other`, where Deduplicate then merged it with the grant that
+// really was on `other.v` and one of the two grants disappeared.
+//
+// A single declaration carrying no schema still restores nothing, because there
+// is nothing to restore: the empty entry falls through the caller's own check.
 func relationBlockSchema(db *goschema.Database, label string) string {
 	var found []string
 	for _, view := range db.Views {
-		if ref, ok := tableref.Parse(view.Name); ok && ref.Qualified && ref.Name == label {
+		if ref, ok := tableref.Parse(view.Name); ok && ref.Name == label {
 			found = append(found, ref.Schema)
 		}
 	}
 	for _, view := range db.MaterializedViews {
-		if ref, ok := tableref.Parse(view.Name); ok && ref.Qualified && ref.Name == label {
+		if ref, ok := tableref.Parse(view.Name); ok && ref.Name == label {
 			found = append(found, ref.Schema)
 		}
 	}
 	for _, sequence := range db.Sequences {
-		if sequence.Name == label && sequence.Schema != "" {
+		if sequence.Name == label {
 			found = append(found, sequence.Schema)
 		}
 	}

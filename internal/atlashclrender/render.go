@@ -258,7 +258,12 @@ type declaredBlock struct {
 // per schema in every engine Ptah renders for, so two blocks under one label
 // are two schemas' worth, and which of them an unqualified reference means is
 // exactly the question [renderer.documentResolvesTableRef] refuses to guess.
-// The caller falls back to the spelling its own position implies.
+// Saying no here is therefore routine rather than exotic -- two schemas each
+// holding a view named `v` is all it takes, and that is a DEFAULT inspect of a
+// realm-scoped URL -- so what the caller writes instead has to be a spelling
+// the pinned binary reads. For a relation that is a quoted name; see
+// [renderer.relationRef] for the measurement and for why the short form is not
+// it.
 func (r *renderer) documentDeclares(label string) (declaredBlock, bool) {
 	if r.relationBlocks == nil {
 		r.relationBlocks = r.declaredRelationBlocks()

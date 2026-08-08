@@ -10,6 +10,7 @@ package atlashclrender
 import (
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 )
 
 // TestOracleReadsTheInspectedDocumentPtahRenders puts a WHOLE inspected
@@ -95,6 +97,179 @@ func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// realmDevURLEnv names the environment variable carrying a REALM-scoped
+// PostgreSQL dev database URL -- one with no `search_path`, so the binary is
+// willing to materialize a document declaring more than one schema.
+//
+// It is separate from PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL because that one is
+// scoped to a single schema on purpose, and a two-schema document put to it is
+// refused with `cannot use HCL with more than 1 schema when dev-url is limited
+// to schema "public"` -- a verdict about the dev URL rather than about the
+// document, which would make the run below pass or fail for the wrong reason.
+// Measured: the binary cleans the realm dev database after each read, so the
+// same URL answers three two-schema reads and a one-schema read in a row, each
+// at exit 0, and leaves only `public` behind.
+const realmDevURLEnv = "PTAH_ATLAS_ORACLE_POSTGRES_REALM_DEV_URL"
+
+// TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders is the same
+// whole-document measurement for the shape a relation LABEL is not unique in.
+//
+// Two schemas each holding a relation of one name is an ordinary PostgreSQL
+// database and a DEFAULT `ptah-compat schema inspect` of a realm-scoped URL, and
+// it is where naming the block the document declares stops being possible: with
+// `view "v"` written twice, no traversal names one of them in particular.
+// Measured on the pinned community binary against the rendered document, one
+// operand varied and nothing else touched:
+//
+//	for = table.other.v  exit 1  Unsupported attribute; ... named "other"
+//	for = view.other.v   exit 1  same message
+//	for = "other.v"      exit 0
+//
+// and `on = table.other.v` / `on = "other.v"` the same pair on the trigger. The
+// short form `view.v` does evaluate there, which is why it is not the answer: it
+// means neither block, and Ptah's own reader drops the schema for a label it
+// finds twice, so the quoted name is the only spelling that survives both ends.
+//
+// PostgreSQL only, and not by preference: the binary refuses a two-schema
+// document on SQLite outright -- `cannot use HCL with more than 1 schema when
+// dev-url is limited to schema "main"` -- so there is no SQLite instance of this
+// shape to measure.
+func TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders(t *testing.T) {
+	oracle := requireTypeOracle(t)
+	devURL := requireRealmDevURL(t)
+	schema := schemaNameByDialect[platform.Postgres]
+
+	result, err := RenderInspectedForAtlasCLI(
+		inspectedOracleTwoSchemaDocument(schema), platform.Postgres, schema)
+	c := qt.New(t)
+	c.Assert(err, qt.IsNil)
+	rendered := string(result.Data)
+	for _, want := range []string{
+		"view \"v\" {\n",
+		"  for = \"" + twoSchemaOracleOther + ".v\"\n",
+		"  for = \"v\"\n",
+		"  on = \"" + twoSchemaOracleOther + ".v\"\n",
+	} {
+		c.Assert(rendered, qt.Contains, want,
+			qt.Commentf("the document no longer carries the spelling this row measures:\n%s", rendered))
+	}
+
+	t.Run("rendered", func(t *testing.T) {
+		c := qt.New(t)
+
+		out, code := runReferenceOracle(c, oracle, devURL, rendered)
+
+		c.Assert(code, qt.Equals, 0,
+			qt.Commentf("the binary refuses the two-schema document ptah-compat renders: %s\n%s", out, rendered))
+	})
+
+	for _, mutation := range twoSchemaOracleMutations() {
+		t.Run("unreadable/"+mutation.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			mutated := strings.Replace(rendered, mutation.from, mutation.to, 1)
+			c.Assert(mutated, qt.Not(qt.Equals), rendered,
+				qt.Commentf("substituting %q changed nothing, so this row measures nothing", mutation.from))
+
+			out, code := runReferenceOracle(c, oracle, devURL, mutated)
+
+			c.Assert(code, qt.Not(qt.Equals), 0,
+				qt.Commentf("the binary now reads %s; the rule this row guards can go: %s", mutation.name, out))
+			c.Assert(out, qt.Contains, mutation.wantMessage,
+				qt.Commentf("refused for a reason that is not %s, so this row is not measuring it: %s",
+					mutation.name, out))
+		})
+	}
+}
+
+// requireRealmDevURL returns the realm-scoped dev URL, skipping loudly without
+// one. The Atlas CE Oracle job fails on any SKIPPED line, so an unset variable
+// there is a red job rather than a silently unmeasured shape.
+func requireRealmDevURL(t *testing.T) string {
+	t.Helper()
+
+	url := os.Getenv(realmDevURLEnv)
+	if url == "" {
+		t.Skipf("SKIPPED: set %s to a realm-scoped PostgreSQL dev database (no search_path) to measure the two-schema document",
+			realmDevURLEnv)
+	}
+	return url
+}
+
+// twoSchemaOracleOther is the second schema of the two-schema document. It is
+// not the default one, because the whole point is a label two schemas share.
+const twoSchemaOracleOther = "other"
+
+// twoSchemaOracleMutations are the operands varied against the accepted
+// two-schema document, one substitution each.
+func twoSchemaOracleMutations() []inspectedOracleMutation {
+	return []inspectedOracleMutation{
+		{
+			// The refuted spelling: the field the name arrived on picking the
+			// word, against a document that declares `view "v"` twice.
+			name:        "a grant target named as a qualified table",
+			from:        "for = \"" + twoSchemaOracleOther + ".v\"",
+			to:          "for = table." + twoSchemaOracleOther + ".v",
+			wantMessage: `does not have an attribute named "` + twoSchemaOracleOther + `"`,
+		},
+		{
+			// And the block kind corrected while the traversal is kept, which is
+			// the other thing that looks like a fix and is not: a reference names
+			// a block by its LABELS, so the schema is not addressable either way.
+			name:        "a grant target named as a qualified view",
+			from:        "for = \"" + twoSchemaOracleOther + ".v\"",
+			to:          "for = view." + twoSchemaOracleOther + ".v",
+			wantMessage: `does not have an attribute named "` + twoSchemaOracleOther + `"`,
+		},
+		{
+			name:        "a trigger target named as a qualified table",
+			from:        "on = \"" + twoSchemaOracleOther + ".v\"",
+			to:          "on = table." + twoSchemaOracleOther + ".v",
+			wantMessage: `does not have an attribute named "` + twoSchemaOracleOther + `"`,
+		},
+	}
+}
+
+// inspectedOracleTwoSchemaDocument is the IR a realm-scoped read produces for
+// two schemas each carrying a table `t` and a view `v`, with a grant on each
+// view and a trigger on the one outside the default schema.
+//
+// The grants arrive in Grant.OnTable, which is where a catalog read puts a
+// privilege on a view, and the one in the default schema arrives UNQUALIFIED,
+// which is what a reader does with everything in the schema it is reading. That
+// asymmetry is deliberate: it is the pair that says the rule holds whether or
+// not the name carries a schema.
+func inspectedOracleTwoSchemaDocument(schema string) *goschema.Database {
+	return &goschema.Database{
+		Schemas: []goschema.Schema{{Name: schema}, {Name: twoSchemaOracleOther}},
+		Tables: []goschema.Table{
+			{StructName: "T", Name: "t", Schema: schema},
+			{StructName: "OtherT", Name: "t", Schema: twoSchemaOracleOther},
+		},
+		Fields: []goschema.Field{
+			{StructName: "T", Name: "id", Type: "integer", Primary: true},
+			{StructName: "OtherT", Name: "id", Type: "integer", Primary: true},
+		},
+		Views: []goschema.View{
+			{Name: "v", Body: "SELECT id FROM t"},
+			{Name: twoSchemaOracleOther + ".v", Body: "SELECT id FROM " + twoSchemaOracleOther + ".t"},
+		},
+		Roles: []goschema.Role{{Name: "app"}},
+		Grants: []goschema.Grant{
+			{Role: "app", OnTable: "v", Privileges: []string{"SELECT"}},
+			{Role: "app", OnTable: twoSchemaOracleOther + ".v", Privileges: []string{"SELECT"}},
+		},
+		Triggers: []goschema.Trigger{{
+			Name:    "v_ins",
+			Table:   twoSchemaOracleOther + ".v",
+			Timing:  "INSTEAD OF",
+			Event:   "INSERT",
+			ForEach: "ROW",
+			Body:    "SELECT 1",
+		}},
 	}
 }
 
