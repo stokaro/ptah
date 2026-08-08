@@ -836,6 +836,16 @@ schema files, prints the planned SQL, and applies it after interactive
 confirmation. Use `--dry-run` to print the plan without applying it, or
 `--auto-approve` to skip the prompt explicitly.
 
+### Which schemas the current side is read at
+
+The database is read at the scope the desired state names, so both sides of the
+diff cover the same schemas. A desired state that names schemas beyond the one
+the connection is on — as an inspected document of a multi-schema database does
+— is compared against those schemas too, which is what makes inspecting a
+database and applying its own output back a no-op. A desired state that names
+only the connected schema reads only that one, so a schema the document never
+mentions is never planned for removal. `--schema` outranks both.
+
 Use `--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
 transaction, or `--tx-mode=none` to execute statements without transaction
 wrapping. With `--edit`, the planned SQL opens in `$VISUAL` or `$EDITOR`

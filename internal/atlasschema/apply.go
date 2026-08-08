@@ -158,17 +158,17 @@ func computeApplyPlan(
 		Exclude:       opts.Exclude,
 		DefaultSchema: conn.Info().Schema,
 	}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, SplitSchemaNames(opts.Schemas))
+	desired, err := loadDesiredApplySchema(ctx, conn, opts)
+	if err != nil {
+		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
+	}
+	current, err := dbschema.ReadSchemaWithSchemas(conn, applyReadScope(opts.Schemas, conn.Info().Schema, desired))
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("read database schema: %w", err)
 	}
 	current, currentReport, currentErr := scopeDatabaseSide(current, scope, "current schema")
 	if currentErr != nil && !emptySelection(currentErr) {
 		return applyComputation{}, currentErr
-	}
-	desired, err := loadDesiredApplySchema(ctx, conn, opts)
-	if err != nil {
-		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
 	desired, desiredReport, desiredErr := scopeGeneratedSide(desired, scope, "desired schema")
 	if desiredErr != nil && !emptySelection(desiredErr) {
@@ -218,6 +218,84 @@ func computeApplyPlan(
 		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 	}
 	return computation, nil
+}
+
+// applyReadScope resolves the schemas the DATABASE side of an apply is read at.
+//
+// The two sides of a comparison have to be read at the same scope or silence on
+// one of them is mistaken for absence. `schema inspect` on a URL that pins no
+// schema now describes every schema of the realm (stokaro/ptah#1264); applying
+// that description back to the database it came from used to read only the
+// connection's own schema, find no `extra` there, and plan `CREATE SCHEMA
+// extra` and `CREATE TABLE "extra"."b"` for a schema and a table the database
+// already has. Measured on PostgreSQL 17.10: the plan never converged, and
+// executing it failed at SQLSTATE 42P07.
+//
+// The scope is taken from the DESIRED state rather than from the URL, and that
+// choice is the safety property. A URL-derived realm scope would widen the read
+// for every document, including one that describes a single schema of a
+// multi-schema database -- and a schema the database has that the document does
+// not describe is planned for removal. Measured on the same database, a
+// document declaring only `public` read at two-schema scope plans `DROP TABLE
+// IF EXISTS "extra"."b" CASCADE`. Reading exactly the schemas the document
+// names cannot reach an object no document mentions.
+//
+// An explicit `--schema` outranks both: it is the operator naming the scope.
+//
+// nil is returned when the desired state names nothing beyond the schema the
+// connection is already on, so the common case reads exactly what it read
+// before.
+func applyReadScope(requested []string, connectedSchema string, desired *goschema.Database) []string {
+	if names := SplitSchemaNames(requested); len(names) > 0 {
+		return names
+	}
+	connected := strings.TrimSpace(connectedSchema)
+	named := desiredSchemaNames(desired)
+	beyond := slices.DeleteFunc(named, func(name string) bool { return name == connected })
+	if len(beyond) == 0 {
+		return nil
+	}
+	if connected != "" {
+		beyond = append(beyond, connected)
+	}
+	slices.Sort(beyond)
+	return slices.Compact(beyond)
+}
+
+// desiredSchemaNames is every schema a desired state names, over the
+// declarations that carry one. A document may name a schema by declaring a
+// block for it or by qualifying an object with it, and both have to count: an
+// inspected document does the first, a hand-written one often only the second.
+func desiredSchemaNames(desired *goschema.Database) []string {
+	if desired == nil {
+		return nil
+	}
+	var names []string
+	add := func(name string) {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
+	for _, schema := range desired.Schemas {
+		add(schema.Name)
+	}
+	for _, table := range desired.Tables {
+		add(table.Schema)
+	}
+	for _, sequence := range desired.Sequences {
+		add(sequence.Schema)
+	}
+	for _, domain := range desired.Domains {
+		add(domain.Schema)
+	}
+	for _, composite := range desired.CompositeTypes {
+		add(composite.Schema)
+	}
+	for _, rangeType := range desired.Ranges {
+		add(rangeType.Schema)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 // loadDesiredApplySchema materializes the desired schema for apply planning.
