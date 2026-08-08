@@ -22,6 +22,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/lintdialect"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -354,8 +355,8 @@ func loadEffectiveConfig(
 		cfg.DisabledRules = append([]string{}, projectCfg.Lint.DisabledRules...)
 	}
 	cfg.Rules = effectiveLintRuleConfigs(projectCfg.Lint.RuleConfigs, cfg.Rules)
-	if !isValidDialect(cfg.Dialect) {
-		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner", cfg.Dialect)
+	if !lintdialect.Valid(cfg.Dialect) {
+		msg := fmt.Sprintf("invalid dialect %q in lint config: expected %s", cfg.Dialect, lintdialect.Expected)
 		return nil, errors.New(msg)
 	}
 	return cfg, nil
@@ -1064,19 +1065,10 @@ func ValidateFailOn(failOn string) error {
 }
 
 func validateDialect(dialect string) error {
-	if isValidDialect(dialect) {
+	if lintdialect.Valid(dialect) {
 		return nil
 	}
-	return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner", dialect)
-}
-
-func isValidDialect(dialect string) bool {
-	switch dialect {
-	case "", "postgres", "mysql", "mariadb", "sqlite", "clickhouse", "cockroachdb", "yugabytedb", "spanner":
-		return true
-	default:
-		return false
-	}
+	return fmt.Errorf("invalid --dialect value %q: expected %s", dialect, lintdialect.Expected)
 }
 
 func validateDir(dir string) error {

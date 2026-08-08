@@ -1,7 +1,9 @@
 package lint_test
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 
@@ -1170,6 +1172,30 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported severity "fatal".*`)
 	})
 
+	c.Assert(writeFile(dir+"/bad-dialect.yaml", "dialect: oracle\n"), qt.IsNil)
+	c.Run("unsupported dialect", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/bad-dialect.yaml")
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported lint dialect "oracle": expected postgres.*`)
+	})
+
+	c.Assert(writeFile(dir+"/bad-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '[legacy/**'\n"), qt.IsNil)
+	c.Run("malformed exclude glob", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/bad-exclude.yaml")
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
+	})
+
+	c.Assert(writeFile(dir+"/empty-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '  '\n"), qt.IsNil)
+	c.Run("empty exclude glob", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/empty-exclude.yaml")
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "  ": pattern must not be empty`)
+	})
+
+	c.Assert(writeFile(dir+"/non-normalized-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '**/../**'\n"), qt.IsNil)
+	c.Run("non-normalized exclude glob", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/non-normalized-exclude.yaml")
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`)
+	})
+
 	c.Assert(writeFile(dir+"/unknown-top-level.yaml", "severty: error\n"), qt.IsNil)
 	c.Run("unknown top-level key", func(c *qt.C) {
 		_, err := lint.LoadConfig(dir + "/unknown-top-level.yaml")
@@ -1208,6 +1234,92 @@ func TestLoadConfigFS_MissingConventionalFileReturnsEmptyConfig(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg, qt.DeepEquals, &lint.Config{})
+}
+
+func TestLintFS_FailurePath_InvalidProgrammaticExclusionGlob(t *testing.T) {
+	c := qt.New(t)
+	fsys := fixture(map[string]string{
+		"0000000001_drop.up.sql":   "DROP TABLE users;\n",
+		"0000000001_drop.down.sql": "CREATE TABLE users (id INTEGER);\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{
+		RuleConfigs: map[string]lint.RuleConfig{
+			"DS101": {Exclude: []string{"[legacy/**"}},
+		},
+	})
+
+	c.Assert(err, qt.ErrorMatches, `rule DS101 has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
+	c.Assert(findings, qt.IsNil)
+}
+
+func TestValidateOptions_FailurePath_InvalidProgrammaticExclusionGlob(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		pattern string
+		wantErr string
+	}{
+		{
+			name:    "non-normalized parent segment",
+			pattern: "**/../**",
+			wantErr: `rule DS101 has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`,
+		},
+		{
+			name:    "current directory",
+			pattern: ".",
+			wantErr: `rule DS101 has invalid exclude pattern "\.": pattern must not contain \. or \.\. path segments`,
+		},
+		{
+			name:    "parent directory",
+			pattern: "..",
+			wantErr: `rule DS101 has invalid exclude pattern "\.\.": pattern must not contain \. or \.\. path segments`,
+		},
+		{
+			name:    "leading parent directory",
+			pattern: "../legacy/**",
+			wantErr: `rule DS101 has invalid exclude pattern "\.\./legacy/\*\*": pattern must not contain \. or \.\. path segments`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			err := lint.ValidateOptions(lint.Options{
+				RuleConfigs: map[string]lint.RuleConfig{
+					"DS101": {Exclude: []string{test.pattern}},
+				},
+			})
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+func TestLoadConfig_FailurePath_DotSegmentExclusionGlobs(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+
+	tests := []struct {
+		name    string
+		pattern string
+	}{
+		{name: "current directory", pattern: "."},
+		{name: "parent directory", pattern: ".."},
+		{name: "leading parent directory", pattern: "../legacy/**"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			configPath := filepath.Join(dir, test.name+".yaml")
+			contents := fmt.Sprintf("rules:\n  DS101:\n    exclude:\n      - %q\n", test.pattern)
+			c.Assert(writeFile(configPath, contents), qt.IsNil)
+
+			_, err := lint.LoadConfig(configPath)
+
+			c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*pattern must not contain \. or \.\. path segments`)
+		})
+	}
 }
 
 func TestRules_EveryRuleHasCodeTitleAndOneChecker(t *testing.T) {
