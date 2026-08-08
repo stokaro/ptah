@@ -592,6 +592,22 @@ func viewLikeID(object ViewLike, index int) string {
 // ReferencesIdentifier reports whether the SQL body references name as a
 // standalone or qualified identifier. It backs view-like dependency ordering
 // and the schema-scope cross-reference diagnostics.
+//
+// Only the code of the body counts. A name that appears inside a string
+// literal, a dollar-quoted string, a line comment or a block comment names
+// nothing, and treating it as a reference is not a harmless over-approximation:
+// the PostgreSQL planner asks this question to work out what
+// DROP VIEW ... CASCADE takes with it, and an answer of "yes" there puts a
+// DROP MATERIALIZED VIEW ... CASCADE into the plan. Measured on PostgreSQL
+// 17.10, a materialized view whose body is
+// "SELECT 'base_view' AS label, count(*) AS total FROM accounts" -- which reads
+// no view at all -- was dropped and recreated when base_view was modified,
+// taking a hand-made dependent view, a unique index on the materialized view
+// and the privileges granted on it, none of which the plan rebuilds.
+//
+// Quoted identifiers are code and still match, because "base_view" is a
+// reference to base_view. Their contents are opaque, so a quotation mark or a
+// comment marker inside one cannot open a literal or a comment.
 func ReferencesIdentifier(body, name string) bool {
 	body = strings.ToLower(body)
 	name = strings.ToLower(strings.TrimSpace(name))
@@ -599,6 +615,7 @@ func ReferencesIdentifier(body, name string) bool {
 		return false
 	}
 
+	code := sqlCodeMask(body)
 	for start := 0; start < len(body); {
 		index := strings.Index(body[start:], name)
 		if index < 0 {
@@ -606,12 +623,153 @@ func ReferencesIdentifier(body, name string) bool {
 		}
 		index += start
 		end := index + len(name)
-		if (isIdentifierBoundary(body, index-1) || isQualifiedIdentifierTail(body, index-1)) && isIdentifierBoundary(body, end) {
+		if spanIsCode(code, index, end) &&
+			(isIdentifierBoundary(body, index-1) || isQualifiedIdentifierTail(body, index-1)) &&
+			isIdentifierBoundary(body, end) {
 			return true
 		}
 		start = end
 	}
 	return false
+}
+
+// spanIsCode reports whether every byte of body[start:end] is SQL code.
+func spanIsCode(code []bool, start, end int) bool {
+	for i := start; i < end; i++ {
+		if !code[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// sqlCodeMask marks the byte offsets of body that are SQL code: everything
+// outside string literals, dollar-quoted strings, line comments and block
+// comments. Quoted identifiers are code, but their contents are copied through
+// without being re-scanned, so "a--b" is one identifier rather than the start of
+// a comment.
+//
+// The mask is computed over the same string the caller searches, so no offset
+// can slide out from under it.
+func sqlCodeMask(body string) []bool {
+	mask := make([]bool, len(body))
+	for i := 0; i < len(body); {
+		switch {
+		case strings.HasPrefix(body[i:], "--"):
+			i = skipLineComment(body, i)
+		case strings.HasPrefix(body[i:], "/*"):
+			i = skipBlockComment(body, i)
+		case body[i] == '\'':
+			i = skipStringLiteral(body, i)
+		case body[i] == '"':
+			end := skipQuotedIdentifier(body, i)
+			for ; i < end; i++ {
+				mask[i] = true
+			}
+		case body[i] == '$':
+			end, ok := skipDollarQuoted(body, i)
+			if !ok {
+				mask[i] = true
+				i++
+				continue
+			}
+			i = end
+		default:
+			mask[i] = true
+			i++
+		}
+	}
+	return mask
+}
+
+func skipLineComment(body string, start int) int {
+	if end := strings.IndexByte(body[start:], '\n'); end >= 0 {
+		return start + end + 1
+	}
+	return len(body)
+}
+
+// skipBlockComment consumes a /* ... */ comment. PostgreSQL nests them, so the
+// scan counts depth rather than stopping at the first close.
+func skipBlockComment(body string, start int) int {
+	depth := 0
+	for i := start; i < len(body); {
+		switch {
+		case strings.HasPrefix(body[i:], "/*"):
+			depth++
+			i += 2
+		case strings.HasPrefix(body[i:], "*/"):
+			depth--
+			i += 2
+			if depth == 0 {
+				return i
+			}
+		default:
+			i++
+		}
+	}
+	return len(body)
+}
+
+// skipStringLiteral consumes a '...' literal. A doubled quote continues it, and
+// a backslash escapes the next byte only in a literal introduced by E, which is
+// the one spelling where PostgreSQL reads backslashes as escapes.
+func skipStringLiteral(body string, start int) int {
+	escapes := start > 0 && body[start-1] == 'e' &&
+		(start == 1 || !isSQLIdentifierRune(rune(body[start-2])))
+	for i := start + 1; i < len(body); {
+		switch {
+		case escapes && body[i] == '\\' && i+1 < len(body):
+			i += 2
+		case body[i] == '\'' && i+1 < len(body) && body[i+1] == '\'':
+			i += 2
+		case body[i] == '\'':
+			return i + 1
+		default:
+			i++
+		}
+	}
+	return len(body)
+}
+
+// skipQuotedIdentifier consumes a "..." identifier, including the doubled quote
+// that spells a quotation mark inside one.
+func skipQuotedIdentifier(body string, start int) int {
+	for i := start + 1; i < len(body); {
+		switch {
+		case body[i] == '"' && i+1 < len(body) && body[i+1] == '"':
+			i += 2
+		case body[i] == '"':
+			return i + 1
+		default:
+			i++
+		}
+	}
+	return len(body)
+}
+
+// skipDollarQuoted consumes a $tag$ ... $tag$ string, reporting false when the
+// dollar sign does not open one -- a positional parameter such as $1, or a
+// dollar sign inside an identifier.
+func skipDollarQuoted(body string, start int) (int, bool) {
+	end := start + 1
+	for end < len(body) {
+		r, size := utf8.DecodeRuneInString(body[end:])
+		if r == '_' || unicode.IsLetter(r) || (end > start+1 && unicode.IsDigit(r)) {
+			end += size
+			continue
+		}
+		break
+	}
+	if end >= len(body) || body[end] != '$' {
+		return start, false
+	}
+
+	tag := body[start : end+1]
+	if closing := strings.Index(body[end+1:], tag); closing >= 0 {
+		return end + 1 + closing + len(tag), true
+	}
+	return len(body), true
 }
 
 func isIdentifierBoundary(value string, index int) bool {
