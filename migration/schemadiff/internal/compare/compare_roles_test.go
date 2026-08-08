@@ -19,7 +19,7 @@ func TestRolesComparison(t *testing.T) {
 		database := &types.DBSchema{Roles: []types.DBRole{}}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -37,7 +37,7 @@ func TestRolesComparison(t *testing.T) {
 		database := &types.DBSchema{Roles: []types.DBRole{}}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 2)
 		c.Assert(diff.RolesAdded, qt.Contains, "app_user")
@@ -57,7 +57,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		// Roles should not be automatically removed for safety
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
@@ -79,7 +79,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -108,7 +108,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 1)
 		c.Assert(diff.RolesAdded[0], qt.Equals, "new_role")
@@ -139,7 +139,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		// Check added roles are sorted
 		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"a_role", "z_role"})
@@ -174,7 +174,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -194,7 +194,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"brand_new_user"})
 	})
@@ -212,7 +212,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesModified, qt.HasLen, 1)
@@ -232,7 +232,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesModified, qt.HasLen, 0)
@@ -257,7 +257,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -302,9 +302,9 @@ func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
 	}
 
 	scopedDiff := &difftypes.SchemaDiff{}
-	compare.Roles(generated, scoped, scopedDiff)
+	compare.Roles(generated, scoped, scopedDiff, compare.CoverageOf(generated, scoped))
 	describedDiff := &difftypes.SchemaDiff{}
-	compare.Roles(generated, described, describedDiff)
+	compare.Roles(generated, described, describedDiff, compare.CoverageOf(generated, described))
 
 	c.Assert(scopedDiff.RolesAdded, qt.DeepEquals, []string{"nowhere_at_all"})
 	c.Assert(scopedDiff.RolesModified, qt.HasLen, 1)
@@ -353,7 +353,7 @@ func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Roles(generated, database, diff)
+	compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"pg_monitor", "postgres"},
 		qt.Commentf("reserved names are in neither database list, so they read as absent"))

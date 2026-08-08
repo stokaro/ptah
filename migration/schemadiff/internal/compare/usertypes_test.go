@@ -24,7 +24,7 @@ func TestDomains_AddRemoveModify(t *testing.T) {
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff)
+	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.DomainsAdded, qt.DeepEquals, []string{"email"})
 	c.Assert(diff.DomainsRemoved, qt.DeepEquals, []string{"legacy"})
@@ -40,7 +40,7 @@ func TestDomains_TypeCaseInsensitiveNoChurn(t *testing.T) {
 	database := &types.DBSchema{Domains: []types.DBDomain{{Name: "email", BaseType: "text"}}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff)
+	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.DomainsAdded, qt.IsNil)
 	c.Assert(diff.DomainsModified, qt.IsNil)
@@ -61,7 +61,7 @@ func TestDomains_CanonicalTypeSpellingNoChurn(t *testing.T) {
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff)
+	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.DomainsAdded, qt.IsNil)
 	c.Assert(diff.DomainsRemoved, qt.IsNil)
@@ -77,7 +77,7 @@ func TestDomains_CheckIsCreateOnly(t *testing.T) {
 	database := &types.DBSchema{Domains: []types.DBDomain{{Name: "email", BaseType: "text", Check: "(VALUE ~ '@'::text)"}}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff)
+	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.DomainsModified, qt.IsNil)
 }
@@ -93,7 +93,7 @@ func TestCompositeTypes_AddRemoveModify(t *testing.T) {
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.CompositeTypes(generated, database, diff)
+	compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.CompositeTypesModified, qt.HasLen, 1)
 	c.Assert(diff.CompositeTypesModified[0].TypeName, qt.Equals, "address")
@@ -109,7 +109,7 @@ func TestCompositeTypes_UnchangedNoChurn(t *testing.T) {
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.CompositeTypes(generated, database, diff)
+	compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.CompositeTypesAdded, qt.IsNil)
 	c.Assert(diff.CompositeTypesModified, qt.IsNil)
@@ -123,7 +123,7 @@ func TestRanges_AddRemoveByNameOnly(t *testing.T) {
 	database := &types.DBSchema{Ranges: []types.DBRange{{Name: "floatrange", Subtype: "double precision"}, {Name: "legacy", Subtype: "integer"}}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Ranges(generated, database, diff)
+	compare.Ranges(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.RangesAdded, qt.IsNil)
 	c.Assert(diff.RangesRemoved, qt.DeepEquals, []string{"legacy"})

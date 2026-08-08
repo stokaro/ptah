@@ -7,6 +7,7 @@ import (
 	"context"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -56,6 +57,12 @@ type DBSchema struct {
 	// outside the inspected scope, so it is never serialized and never
 	// rendered. Only Roles reaches output.
 	RolesOutOfScope []DBRole `json:"-"`
+
+	// NotDescribed records what this read did not look at, so a comparator can
+	// tell an object the database does not have from one the reader was never
+	// asked about. The zero value claims the read covered everything; see
+	// [go.5x5.cz/ptah/core/coverage].
+	NotDescribed coverage.Set `json:"not_described,omitzero"`
 }
 
 // DBSchemaInfo represents a database schema/namespace.

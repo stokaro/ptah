@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -13,7 +14,12 @@ import (
 // Domains compares PostgreSQL domain types between the target schema and the
 // current database. Only options the target explicitly declares are compared, so
 // undeclared attributes (which the catalog always populates) do not churn.
-func Domains(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Domains(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+) {
 	generatedDomains := make(map[string]goschema.Domain, len(generated.Domains))
 	for _, domain := range generated.Domains {
 		generatedDomains[domain.QualifiedName()] = domain
@@ -34,6 +40,20 @@ func Domains(generated *goschema.Database, database *types.DBSchema, diff *difft
 			}
 		}
 	}
+
+	// An extension owns some of the domains, composites and ranges in a schema.
+	// A reader that leaves those to their extension has not said the schema
+	// lacks them, and a document that omitted the extension block has not said
+	// the type is unwanted (stokaro/ptah#1294, stokaro/ptah#1276).
+	//
+	// `CREATE DOMAIN` and `CREATE TYPE` have no conditional form, so an
+	// undecidable addition is recorded on the coverage rather than dropped.
+	keptDomains, withheldDomains := cov.keepPlannedAdditions(
+		coverage.Domain, diff.DomainsAdded, qualifiedName, unguardedCreations(),
+	)
+	diff.DomainsAdded = keptDomains
+	cov.recordUndecidedAdditions(coverage.Domain, withheldDomains)
+	diff.DomainsRemoved = cov.keepPlannedRemovals(coverage.Domain, diff.DomainsRemoved, qualifiedName)
 
 	sort.Strings(diff.DomainsAdded)
 	sort.Strings(diff.DomainsRemoved)
@@ -102,7 +122,12 @@ func canonicalizePostgresType(t string) string {
 
 // CompositeTypes compares PostgreSQL composite types between the target schema
 // and the current database.
-func CompositeTypes(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func CompositeTypes(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+) {
 	generatedTypes := make(map[string]goschema.CompositeType, len(generated.CompositeTypes))
 	for _, composite := range generated.CompositeTypes {
 		generatedTypes[composite.QualifiedName()] = composite
@@ -128,6 +153,13 @@ func CompositeTypes(generated *goschema.Database, database *types.DBSchema, diff
 			})
 		}
 	}
+
+	keptComposites, withheldComposites := cov.keepPlannedAdditions(
+		coverage.Composite, diff.CompositeTypesAdded, qualifiedName, unguardedCreations(),
+	)
+	diff.CompositeTypesAdded = keptComposites
+	cov.recordUndecidedAdditions(coverage.Composite, withheldComposites)
+	diff.CompositeTypesRemoved = cov.keepPlannedRemovals(coverage.Composite, diff.CompositeTypesRemoved, qualifiedName)
 
 	sort.Strings(diff.CompositeTypesAdded)
 	sort.Strings(diff.CompositeTypesRemoved)
@@ -155,7 +187,12 @@ func dbCompositeFieldList(composite types.DBComposite) string {
 // Ranges compares PostgreSQL range types between the target schema and the
 // current database. Ranges have no in-place alter, so only add/remove is
 // reported.
-func Ranges(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Ranges(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+) {
 	generatedRanges := make(map[string]struct{}, len(generated.Ranges))
 	for _, rangeType := range generated.Ranges {
 		generatedRanges[rangeType.QualifiedName()] = struct{}{}
@@ -168,6 +205,13 @@ func Ranges(generated *goschema.Database, database *types.DBSchema, diff *diffty
 	added, removed := compareNamedItems(generatedRanges, databaseRanges)
 	diff.RangesAdded = append(diff.RangesAdded, added...)
 	diff.RangesRemoved = append(diff.RangesRemoved, removed...)
+
+	keptRanges, withheldRanges := cov.keepPlannedAdditions(
+		coverage.Range, diff.RangesAdded, qualifiedName, unguardedCreations(),
+	)
+	diff.RangesAdded = keptRanges
+	cov.recordUndecidedAdditions(coverage.Range, withheldRanges)
+	diff.RangesRemoved = cov.keepPlannedRemovals(coverage.Range, diff.RangesRemoved, qualifiedName)
 
 	sort.Strings(diff.RangesAdded)
 	sort.Strings(diff.RangesRemoved)

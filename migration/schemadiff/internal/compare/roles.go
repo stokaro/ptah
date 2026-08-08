@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -101,7 +102,12 @@ import (
 // # Output Consistency
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
-func Roles(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Roles(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+) {
 	// Build lookup maps for role comparison
 	generatedRoleMap := make(map[string]goschema.Role)
 	for _, role := range generated.Roles {
@@ -152,6 +158,20 @@ func Roles(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 			}
 		}
 	}
+
+	// PostgreSQL roles are cluster-scoped, so a reader restricted to one
+	// database or one schema describes a subset of them by construction. A role
+	// such a read did not report is unknown, not missing, and planning
+	// CREATE ROLE for it fails the migration with `role "..." already exists`
+	// (stokaro/ptah#1267, stokaro/ptah#1276).
+	//
+	// `CREATE ROLE` has no conditional form on any dialect Ptah renders, so a
+	// withheld role is recorded as undecided instead of vanishing.
+	kept, withheld := cov.keepPlannedAdditions(
+		coverage.Role, diff.RolesAdded, globalName, unguardedCreations(),
+	)
+	diff.RolesAdded = kept
+	cov.recordUndecidedAdditions(coverage.Role, withheld)
 
 	// Ensure consistent ordering of results
 	sort.Strings(diff.RolesAdded)

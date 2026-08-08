@@ -164,6 +164,12 @@ property of `ptah-compat` alone, never reaches this command, and
 `PTAH_ATLAS_INSPECT_ALL_BLOCKS` has no effect here. See
 [Blocks the compatibility surface leaves out by default](../../atlas/schema-commands/#blocks-the-compatibility-surface-leaves-out-by-default).
 
+Because this command leaves nothing out, its output claims to describe
+everything, and it carries no `ptah:not-described` header. Delete a block from
+it and the plan that follows removes the object, which is what you asked for.
+The compatibility surface, which does leave blocks out, says so in the document;
+see [The document says what it does not describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe).
+
 `--format sql` and `--format json` select SQL and JSON output. `--schemas`,
 `--include`, and `--exclude` select what is inspected, in that order:
 `--schemas` names the database schemas, `--include` picks top-level resources

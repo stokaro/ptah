@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
@@ -124,7 +125,15 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		return atlasreport.SchemaDiff{}, err
 	}
 
-	diff := applyDiffPolicy(schemadiff.CompareWithDialect(to, fromDB, dialect), opts.Policy)
+	// The comparison reports what the --from document's coverage record made
+	// undecidable alongside what it decided. The list is empty for every --from
+	// that is a database, because only a document declares limits about itself.
+	compareOpts := config.DefaultCompareOptions()
+	compareOpts.Dialect = dialect
+	compared, undecided := schemadiff.CompareReportingUndecidedAdditions(to, fromDB, compareOpts)
+	reportUndecidedAdditions(opts.Diagnostics, undecided)
+
+	diff := applyDiffPolicy(compared, opts.Policy)
 	var statements []string
 	if diff.HasChanges() {
 		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, to, dialect, planner.Options{

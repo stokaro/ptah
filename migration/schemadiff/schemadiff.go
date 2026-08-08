@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -112,6 +113,35 @@ func CompareWithDatabaseInfo(
 //	opts := config.WithIgnoredExtensions()
 //	diff := schemadiff.CompareWithOptions(generated, database, opts)
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, opts *config.CompareOptions) *difftypes.SchemaDiff {
+	diff, _ := CompareReportingUndecidedAdditions(generated, database, opts)
+	return diff
+}
+
+// CompareReportingUndecidedAdditions performs the same comparison as
+// [CompareWithOptions] and also reports what it could not decide.
+//
+// The second return names objects the DESIRED state declares that the CURRENT
+// state's coverage record made undecidable -- the read never looked at that
+// kind -- and whose creation Ptah renders without an IF NOT EXISTS guard, so
+// planning it would fail the migration if the object were already there. They
+// are absent from the diff's added lists, and a caller that reports a synced
+// schema without mentioning them is telling an operator less than the truth
+// (stokaro/ptah#1276).
+//
+// It is a second return rather than a field on [difftypes.SchemaDiff] because
+// every slice field of that type is a category of change the planner renders
+// SQL for, asserted by reflection over the struct (stokaro/ptah#1284). An
+// undecided addition is the opposite: there is no statement to run, and a
+// `migrate diff` that wrote a migration file holding none would be worse than
+// the silence this replaces.
+//
+// The entries are sorted by kind and then name, so a diagnostic built from them
+// is stable across runs over the same two states.
+func CompareReportingUndecidedAdditions(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	opts *config.CompareOptions,
+) (*difftypes.SchemaDiff, []coverage.Object) {
 	if opts == nil {
 		opts = config.DefaultCompareOptions()
 	}
@@ -141,6 +171,13 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	generated, database = normalizeInlineEnumsForCompare(generated, database, opts)
 	generated = normalizeGeneratedColumnsForCompare(generated, opts)
 
+	// What each side declined to describe travels with that side rather than
+	// with the options, so every caller that builds options from scratch still
+	// gets it. Putting it on the options is how an earlier attempt lost it:
+	// four surfaces resolve a desired state independently, and one of them
+	// built its compare options from a zero value (stokaro/ptah#1276).
+	cov := compare.CoverageOf(generated, database)
+
 	// Compare tables and their column structures
 	compare.TablesAndColumnsWithSemantics(
 		generated,
@@ -148,6 +185,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 		diff,
 		opts.Dialect,
 		identifierSemantics,
+		cov,
 	)
 
 	// Compare enum type definitions and values
@@ -157,18 +195,18 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.IndexesWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
 
 	// Compare PostgreSQL extensions with configuration options
-	compare.Extensions(generated, database, diff, opts)
+	compare.Extensions(generated, database, diff, opts, cov)
 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
 	compare.Functions(generated, database, diff)
 
 	// Compare PostgreSQL standalone sequences (PostgreSQL-specific feature)
-	compare.Sequences(generated, database, diff)
+	compare.Sequences(generated, database, diff, cov)
 
 	// Compare PostgreSQL user-defined types (domains, composites, ranges)
-	compare.Domains(generated, database, diff)
-	compare.CompositeTypes(generated, database, diff)
-	compare.Ranges(generated, database, diff)
+	compare.Domains(generated, database, diff, cov)
+	compare.CompositeTypes(generated, database, diff, cov)
+	compare.Ranges(generated, database, diff, cov)
 
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithDialect(generated, database, diff, opts.Dialect)
@@ -176,13 +214,13 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.TriggersWithDialect(generated, database, diff, opts.Dialect)
 
 	// Compare RLS policies (PostgreSQL-specific feature)
-	compare.RLSPoliciesWithSemantics(generated, database, diff, identifierSemantics)
+	compare.RLSPoliciesWithSemantics(generated, database, diff, identifierSemantics, cov)
 
 	// Compare RLS enabled tables (PostgreSQL-specific feature)
 	compare.RLSEnabledTablesWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare roles (PostgreSQL-specific feature)
-	compare.Roles(generated, database, diff)
+	compare.Roles(generated, database, diff, cov)
 
 	// Compare role privilege grants (PostgreSQL-specific feature)
 	compare.GrantsWithSemantics(generated, database, diff, identifierSemantics)
@@ -190,7 +228,20 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	// Compare table-level constraints (EXCLUDE, CHECK, UNIQUE, etc.)
 	compare.ConstraintsWithSemantics(generated, database, diff, opts, identifierSemantics)
 
-	return diff
+	// Every comparator sorts its own lists after filtering them, but the
+	// undecided additions arrive from several comparators, and the order inside
+	// each one follows the map iteration that produced the planned list. A
+	// diagnostic whose line order changes between two runs over the same inputs
+	// is one nobody can diff, so they are ordered here.
+	undecided := cov.UndecidedAdditions()
+	slices.SortFunc(undecided, func(a, b coverage.Object) int {
+		if a.Kind != b.Kind {
+			return strings.Compare(string(a.Kind), string(b.Kind))
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return diff, undecided
 }
 
 func normalizeInlineEnumsForCompare(

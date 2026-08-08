@@ -207,17 +207,29 @@ func boundaryCases() []boundaryCase {
 			// CORRECT: the native document declares the extension, so applying
 			// it back changes nothing.
 			wantNativePlan: boundaryNoPlan,
-			// WRONG (#1276), and DESTRUCTIVE. The compatibility surface omits
-			// an extension nothing else in the document names -- a presentation
-			// decision, made so the tool this binary stands in for can read the
-			// document at all -- and the comparator reads that omission as "the
-			// desired state does not have this extension" and plans to remove
-			// it. Inspecting a database and applying its own output back plans
-			// to DROP something the database has.
+			// FIXED (#1276): this row asserted
+			// `DROP EXTENSION IF EXISTS "pgcrypto"` and said it must become
+			// nil. It is nil.
 			//
-			// Must become nil. The comparator needs three states, not two:
-			// present, absent, and deliberately not described.
-			wantCompatPlan: boundaryDropExtension("pgcrypto"),
+			// The compatibility surface omits an extension nothing else in the
+			// document names -- a presentation decision, made so the tool this
+			// binary stands in for can read the document at all -- and the
+			// comparator used to read that omission as "the desired state does
+			// not have this extension". The document now says which kinds it
+			// declines to describe, in its own header, and the comparator has
+			// the third state it needed: present, authoritatively absent, and
+			// not described.
+			//
+			// Measured on PostgreSQL 17.10 across all four surfaces that
+			// consume a desired-state document -- `schema diff`, `schema
+			// apply --dry-run`, `migrate diff --dry-run` and `migrate diff`
+			// writing its file -- each of which resolves the desired state
+			// separately. Before: `DROP EXTENSION IF EXISTS "pgcrypto"` on all
+			// four. After: synced on all four. The genuine-removal control is
+			// TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration below,
+			// which strips the three header lines from this same document and
+			// gets the drops back.
+			wantCompatPlan: boundaryNoPlan,
 		},
 		{
 			// A table with a primary key, so the constraint-keying path is
@@ -512,10 +524,13 @@ func boundaryStripComments(statements []string) []string {
 // back to it changes nothing.
 func boundaryNoPlan(string) []string { return nil }
 
-// boundaryDropExtension is the destructive plan: the description a database
-// gave of itself, applied back to that database, removes an object it has.
+// boundaryDropExtension was the destructive plan: the description a database
+// gave of itself, applied back to that database, removing an object it has.
 //
-// Must become nil.
+// No case expects it any more (#1276). It is kept because the genuine-removal
+// control still has to see it: a fix that made a removal unplannable would be a
+// different and worse defect than the one it replaced, and the only way to tell
+// the two apart is to have both expectations spelled in the same file.
 func boundaryDropExtension(name string) func(role string) []string {
 	return func(string) []string {
 		return []string{fmt.Sprintf("DROP EXTENSION IF EXISTS %q", name)}

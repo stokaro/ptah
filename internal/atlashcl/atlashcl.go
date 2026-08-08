@@ -15,6 +15,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -134,6 +135,16 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	// blocks for the positions it covers.
 	p.resolveDocumentTableRefs()
 	goschema.Finalize(p.db)
+	// A document's own account of its limits is part of the document. It rides
+	// in the leading comment header rather than in a block, because it has to
+	// survive being read by tools that are not Ptah -- the pinned Atlas
+	// community binary v1.3.0 reads a document carrying it at exit 0 -- and
+	// because a block would need a name that binary refuses.
+	notDescribed, err := coverage.DecodeHeader(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
+	}
+	p.db.NotDescribed = notDescribed
 	return p.db, nil
 }
 

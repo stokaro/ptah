@@ -19,7 +19,12 @@
 
 # Dev files
 /bin/*
-coverage
+# Anchored. Unanchored, this matched any path segment named `coverage`
+# anywhere in the tree, so the `core/coverage` package was ignored and would
+# have been committed as nothing at all. The artifacts `make coverage`
+# actually writes are coverage.out (covered by *.out above) and coverage.html.
+/coverage
+/coverage.html
 
 # Docker volumes and data
 /.docker/

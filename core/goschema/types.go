@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -56,6 +57,21 @@ type Database struct {
 	// EmbeddedSources retains source-only helper declarations needed to
 	// materialize embedded columns again after a schema is merged or finalized.
 	EmbeddedSources EmbeddedSources
+
+	// NotDescribed records what this description does not claim to describe, so
+	// a comparator can tell an object the description says is gone from one it
+	// was never asked about. The zero value claims everything, which is what a
+	// hand-authored schema file is; see [go.5x5.cz/ptah/core/coverage].
+	//
+	// `omitzero` is load-bearing rather than cosmetic. This struct's JSON
+	// encoding IS the desired-state fingerprint (see
+	// [go.5x5.cz/ptah/internal/atlasschema.SchemaFingerprint] and the plan
+	// file's `to` attribute), so a field that serialized unconditionally would
+	// change the fingerprint of every schema anyone has already planned against
+	// -- the one thing "adding coverage changes no existing plan" promises it
+	// does not do. A description that declares no limits must encode exactly as
+	// it did before this field existed.
+	NotDescribed coverage.Set `json:",omitzero"`
 }
 
 // Schema represents a database schema/namespace.
