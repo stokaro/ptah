@@ -1563,10 +1563,10 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		// Reverse user-defined type operations
 		DomainsAdded:           diff.DomainsRemoved,
 		DomainsRemoved:         diff.DomainsAdded,
-		DomainsModified:        reverseDomainDiffs(diff.DomainsModified),
+		DomainsModified:        reverseDomainDiffs(diff.DomainsModified, schema),
 		CompositeTypesAdded:    diff.CompositeTypesRemoved,
 		CompositeTypesRemoved:  diff.CompositeTypesAdded,
-		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified),
+		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema),
 		RangesAdded:            diff.RangesRemoved,
 		RangesRemoved:          diff.RangesAdded,
 
@@ -2183,20 +2183,65 @@ func reverseChangeMap(changes map[string]string) map[string]string {
 	return reversed
 }
 
-func reverseDomainDiffs(domainDiffs []types.DomainDiff) []types.DomainDiff {
+// reverseDomainDiffs turns each modified domain around for the down direction.
+//
+// CurrentBaseType has to be re-derived rather than carried over: it names the
+// shape the DROP will run against, and a down migration runs against the shape
+// the up migration created. schema is the up direction's target, so that is
+// where the down direction's from-side lives. A nil schema leaves it empty and
+// the drop ordering falls back to declaration order.
+func reverseDomainDiffs(domainDiffs []types.DomainDiff, schema *goschema.Database) []types.DomainDiff {
 	reversed := make([]types.DomainDiff, len(domainDiffs))
 	for i, domainDiff := range domainDiffs {
-		reversed[i] = types.DomainDiff{DomainName: domainDiff.DomainName, Changes: reverseChangeMap(domainDiff.Changes)}
+		reversed[i] = types.DomainDiff{
+			DomainName:      domainDiff.DomainName,
+			Changes:         reverseChangeMap(domainDiff.Changes),
+			CurrentBaseType: targetDomainBaseType(schema, domainDiff.DomainName),
+		}
 	}
 	return reversed
 }
 
-func reverseCompositeTypeDiffs(compositeDiffs []types.CompositeTypeDiff) []types.CompositeTypeDiff {
+// reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.
+func reverseCompositeTypeDiffs(compositeDiffs []types.CompositeTypeDiff, schema *goschema.Database) []types.CompositeTypeDiff {
 	reversed := make([]types.CompositeTypeDiff, len(compositeDiffs))
 	for i, compositeDiff := range compositeDiffs {
-		reversed[i] = types.CompositeTypeDiff{TypeName: compositeDiff.TypeName, Changes: reverseChangeMap(compositeDiff.Changes)}
+		reversed[i] = types.CompositeTypeDiff{
+			TypeName:          compositeDiff.TypeName,
+			Changes:           reverseChangeMap(compositeDiff.Changes),
+			CurrentFieldTypes: targetCompositeFieldTypes(schema, compositeDiff.TypeName),
+		}
 	}
 	return reversed
+}
+
+func targetDomainBaseType(schema *goschema.Database, name string) string {
+	if schema == nil {
+		return ""
+	}
+	for _, domain := range schema.Domains {
+		if domain.QualifiedName() == name {
+			return domain.BaseType
+		}
+	}
+	return ""
+}
+
+func targetCompositeFieldTypes(schema *goschema.Database, name string) []string {
+	if schema == nil {
+		return nil
+	}
+	for _, composite := range schema.CompositeTypes {
+		if composite.QualifiedName() != name {
+			continue
+		}
+		fieldTypes := make([]string, len(composite.Fields))
+		for i, field := range composite.Fields {
+			fieldTypes[i] = field.Type
+		}
+		return fieldTypes
+	}
+	return nil
 }
 
 // reverseRLSPolicyDiffs reverses RLS policy modifications for down migrations

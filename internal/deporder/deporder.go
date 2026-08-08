@@ -22,6 +22,125 @@ type ViewLike struct {
 	Materialized bool
 }
 
+// UserType is a PostgreSQL user-defined type -- a domain, a composite type or a
+// range type -- named together with the type spellings its own definition
+// mentions: a domain's base type, a composite's field types, a range's subtype.
+//
+// The three kinds share one namespace and can name each other in either
+// direction, so they have to be ordered together rather than kind by kind.
+// `CREATE DOMAIN d AS addr` needs the composite `addr` first, and
+// `CREATE TYPE addr AS (f d)` needs the domain `d` first.
+type UserType struct {
+	// Name is the qualified name the caller uses to look the type back up.
+	Name string
+	// References are the type spellings the definition names, in the caller's
+	// own spelling. Anything outside the set is ignored, so a reference to a
+	// built-in type or to a type the database already has costs nothing.
+	References []string
+}
+
+// UserTypesForCreate returns user-defined type names in creation order: a type
+// another one names comes first. A cycle degrades to caller order, which is
+// what PostgreSQL itself refuses to create anyway.
+func UserTypesForCreate(userTypes []UserType) []string {
+	return StableTopologicalSort(userTypeNames(userTypes), UserTypeDependencies(userTypes))
+}
+
+// UserTypesForDrop returns user-defined type names in drop order: a type that
+// names another is dropped first, so a non-CASCADE drop is not blocked by a
+// dependent the same plan is about to remove.
+//
+// The References the caller passes must be the ones the database holds NOW.
+// A DROP executes against the current schema, so passing the definitions a plan
+// intends to create instead orders the statements by a graph the server is not
+// consulting, and the two differ whenever the change is what moves a reference.
+// UserTypesForCreate is the call that takes the desired definitions.
+func UserTypesForDrop(userTypes []UserType) []string {
+	return StableReverseDependencySort(userTypeNames(userTypes), UserTypeDependencies(userTypes))
+}
+
+// UserTypeDependencies resolves each type's references against the names in the
+// set and returns the edges the two sorts above run on.
+func UserTypeDependencies(userTypes []UserType) map[string][]string {
+	dependencies := make(map[string][]string, len(userTypes))
+	for _, userType := range userTypes {
+		for _, reference := range userType.References {
+			name, ok := resolveUserTypeReference(userTypes, reference)
+			if !ok || name == userType.Name || slices.Contains(dependencies[userType.Name], name) {
+				continue
+			}
+			dependencies[userType.Name] = append(dependencies[userType.Name], name)
+		}
+	}
+	return dependencies
+}
+
+func userTypeNames(userTypes []UserType) []string {
+	names := make([]string, 0, len(userTypes))
+	for _, userType := range userTypes {
+		names = append(names, userType.Name)
+	}
+	return names
+}
+
+// resolveUserTypeReference maps one type spelling onto a name in the set. A
+// qualified spelling must match a qualified name; an unqualified one falls back
+// to the single type carrying that bare name, and stays unresolved when two
+// schemas offer it, because guessing there would order the plan around a type
+// the column does not use.
+func resolveUserTypeReference(userTypes []UserType, reference string) (string, bool) {
+	key := NormalizeTypeReference(reference)
+	if key == "" {
+		return "", false
+	}
+	for _, userType := range userTypes {
+		if NormalizeTypeReference(userType.Name) == key {
+			return userType.Name, true
+		}
+	}
+	if strings.Contains(key, ".") {
+		return "", false
+	}
+
+	var match string
+	for _, userType := range userTypes {
+		ref, ok := tableref.Parse(strings.TrimSpace(userType.Name))
+		if !ok || !strings.EqualFold(ref.Name, key) {
+			continue
+		}
+		if match != "" {
+			return "", false
+		}
+		match = userType.Name
+	}
+	return match, match != ""
+}
+
+// NormalizeTypeReference reduces a SQL type spelling to the bare type name it
+// points at: it drops array markers and a length/precision modifier, unquotes
+// each part of a qualified name, and lowercases the result. `"app"."Addr"[]`
+// and `app.addr` normalize alike, and `character varying(255)` becomes
+// `character varying`.
+func NormalizeTypeReference(reference string) string {
+	value := strings.TrimSpace(reference)
+	for strings.HasSuffix(value, "]") {
+		open := strings.LastIndex(value, "[")
+		if open < 0 {
+			break
+		}
+		value = strings.TrimSpace(value[:open])
+	}
+	if open := strings.Index(value, "("); open >= 0 {
+		value = strings.TrimSpace(value[:open])
+	}
+
+	parts := strings.Split(value, ".")
+	for i, part := range parts {
+		parts[i] = strings.Trim(strings.TrimSpace(part), `"`)
+	}
+	return strings.ToLower(strings.Join(parts, "."))
+}
+
 // StableTopologicalSort returns nodes ordered so dependencies come first while
 // preserving caller order for otherwise independent nodes. Cycles degrade
 // deterministically by appending remaining nodes in caller order.

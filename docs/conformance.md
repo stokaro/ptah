@@ -323,7 +323,151 @@ own `schema diff` output fails to replay with
 `ERROR: type "positive_int" does not exist` — measured, psql exit 3. Ptah emits
 both the `CREATE DOMAIN` and the domain-typed column, so closing this gap meant
 keeping both halves rather than matching CE. Ptah's output replays at psql exit
-0 where CE's does not.
+0 where CE's does not. The same divergence reaches `schema apply`: applying this
+source database to an empty target, CE exits 1 with
+`create "t" table: pq: type "positive" does not exist` and Ptah exits 0 with the
+domain created first.
+
+### A domain column has to survive the comparator too, and the JSON surface
+
+Rendering a domain and reconciling one are separate claims, the same way they
+are for indexes below. Reading the domain fixed what `schema inspect` writes as
+HCL and left two other surfaces on the base type. Measured on PostgreSQL 17.10
+against one database holding `CREATE DOMAIN positive AS integer CHECK (VALUE >
+0)` and a column of it:
+
+| Surface | Atlas CE v1.3.0 | Ptah before | Ptah now |
+| --- | --- | --- | --- |
+| `schema inspect`, HCL | `type = sql("positive")` | `type = sql("positive")` | `type = sql("positive")` |
+| `schema inspect --format json` | `"type":"positive"` | `"type":"integer"` | `"type":"positive"` |
+| `schema inspect --format json`, domain off the search path | `"type":"doms.positive"` | `"type":"integer"` | `"type":"doms.positive"` |
+| `schema diff --from X --to X`, one database against itself | Schemas are synced | `ALTER TABLE "t" ALTER COLUMN "qty" TYPE positive;` | Schemas are synced |
+| `schema apply` run twice against the same target | — | plans and executes the same `ALTER` on every run, exit 0 each time | second run reports the schema synced |
+
+The diff row is the one that made the rendered domain worth nothing: the desired
+side answered `positive` and the database side answered `integer`, so a database
+was never in sync with itself and `schema apply` executed an `ALTER COLUMN` on
+every run while reporting success.
+
+Two details decided whether any of this was visible:
+
+- **The name of the domain.** The type comparison folded a spelling into a
+  category by substring, so any domain whose name contains `int` — the issue's
+  own `positive_int` fixture — compared equal to `integer` by accident and the
+  churn did not appear. A domain is compared as the identifier it is instead,
+  which is the subject of *A domain column is reconciled by identity* below.
+- **The array column next to it.** An array column and a domain column both make
+  the reader ask the server for its own spelling of the type, and the two want
+  opposite answers on the JSON surface: CE prints the bare category `ARRAY` for
+  an array and the domain name for a domain. The read carries which one it was,
+  rather than letting each consumer guess from which field happens to be empty.
+
+A domain column that also draws from an owned sequence is not a `SERIAL`
+column. PostgreSQL's `SERIAL` shorthand only ever builds a column of an integer
+type, so writing such a column back as `SERIAL` rebuilds it without the domain.
+The domain wins, the sequence default is written out beside it instead of being
+folded into the shorthand, and the sequence itself is reported rather than
+treated as the column's implicit backing sequence — without it the emitted DDL
+names a sequence nothing creates, which is measured as psql exit 3.
+
+### A domain over a user-defined base type is a different catalog shape
+
+`CREATE DOMAIN positive AS integer` and `CREATE DOMAIN d_enum AS color` do not
+read back the same way, and the difference decides which code answers the
+question "what type is this column declared as". Measured on PostgreSQL 17.10:
+
+| Column | `data_type` | `udt_name` | `domain_name` | `format_type` |
+| --- | --- | --- | --- | --- |
+| `qty positive`, `positive AS integer` | `integer` | `int4` | `positive` | `positive` |
+| `c d_enum`, `d_enum AS color` | `USER-DEFINED` | `color` | `d_enum` | `d_enum` |
+| `plain color`, no domain | `USER-DEFINED` | `color` | *(null)* | *(not read)* |
+
+For a domain over a built-in base type `data_type` is the base type, so a
+consumer that falls through to `format_type` reaches the domain by accident. For
+a domain over a user-defined base type — an enum, a composite or a range —
+`data_type` is the bare category `USER-DEFINED` and `udt_name` names the BASE
+type, identically to the plain column on the last row. A consumer that answers
+from `udt_name` there flattens `c` to `color` and drops the domain's `CHECK`
+with it, and only `domain_name` separates row two from row three.
+
+The split is not a synthetic one. Two domains arrive with PostgreSQL's own
+contrib modules and land on opposite sides of it: `lo`, from the `lo` module, is
+a domain over the built-in `oid`, and `earth`, from `earthdistance`, is a domain
+over `cube`, a base type the `cube` module supplies. Measured on PostgreSQL
+17.10 against one table holding a column of each, with a plain `cube` column
+beside them as the control:
+
+| Column | Atlas CE v1.3.0 | Answering from `udt_name` | Ptah |
+| --- | --- | --- | --- |
+| `l lo` | `type = sql("lo")` | `type = sql("lo")` | `type = sql("lo")` |
+| `w earth` | `type = sql("earth")` | `type = sql("cube")` | `type = sql("earth")` |
+| `cu cube`, no domain | `type = sql("cube")` | `type = sql("cube")` | `type = sql("cube")` |
+
+The middle column is this same code with the `domain_name` gate taken back out,
+and it is the reason the gate is not optional: two domains a user never wrote
+disagree with each other about whether a domain survives introspection, decided
+by nothing but whether the base type happens to be built-in.
+
+Measured with `ptah-compat` against one database holding rows two and three, and
+against the composite and range shapes beside them:
+
+| Probe | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `schema diff --from X --to X`, one database against itself | Schemas are synced | Schemas are synced |
+| `schema apply` of a byte-identical twin | — | Schema is synced, no changes to be made |
+| `schema inspect --format json` | `"type":"d_enum"` | `"type":"d_enum"` |
+| `schema inspect`, HCL | `type = sql("d_enum")` | `type = sql("d_enum")` |
+| `schema inspect`, HCL, plain enum column beside it | `type = enum.color` | `type = enum.color` |
+| `schema diff` from empty, replayed with psql, then compared to the source by CE | — | psql exit 0, Schemas are synced |
+
+The last row is the round trip, and CE is the neutral observer in it: Ptah emits
+`CREATE TYPE`, `CREATE DOMAIN` and a `d_enum` column, the replay runs at psql
+exit 0, and CE then reports the replayed database in sync with the one it was
+described from. A description that spells the column `color` replays at exit 0
+too and CE reports `ALTER TABLE "t" ALTER COLUMN "c" TYPE d_enum;` — the replay
+lost the domain and the exit code did not say so.
+
+That row carries a second claim, and it is the emitted script's ORDER. Naming a
+domain in a column is worth nothing if the statement that creates the domain
+runs before the statement that creates its base type, and PostgreSQL has no
+forward declaration for a type. The emitter ran kind by kind — every domain,
+then every range, then every composite — so a database holding
+`CREATE DOMAIN d_comp AS addr` was described as `CREATE DOMAIN "d_comp" AS addr;`
+four statements ahead of `CREATE TYPE "addr" AS ("street" text, "city" text);`
+and the replay stopped where it had to. Measured on PostgreSQL 17.10 with the
+enum, composite and range shapes in one database:
+
+| Emitted script | `psql -v ON_ERROR_STOP=1` | CE compares the replay to the source |
+| --- | --- | --- |
+| every domain first | `ERROR: type "addr" does not exist`, exit 3 | not reached |
+| dependency ordered | exit 0 | Schemas are synced |
+
+No fixed order of kinds fixes this, because the three kinds share one namespace
+and name each other in both directions: `CREATE DOMAIN d_comp AS addr` needs the
+composite first and `CREATE TYPE addr AS (f d_int)` needs the domain first.
+Domains, composites and ranges are ordered against each other by what their
+definitions name. Enums stay ahead of all three: an enum names no other
+user-defined type, so it has nothing to wait for.
+
+The drops a modification emits are ordered by a different graph, and reversing
+the creation order is not a substitute for it. A `DROP` executes against the
+database as it stands, so only the references that database holds now can block
+it. Measured on PostgreSQL 17.10, one database holding
+`CREATE TYPE cc AS (f integer)` and `CREATE DOMAIN dd AS cc`, reconciled against
+a target of `CREATE DOMAIN dd AS integer` and `CREATE TYPE cc AS (f dd)`:
+
+| Drops ordered by | Emitted order | `schema apply --auto-approve` |
+| --- | --- | --- |
+| the target definitions | `DROP TYPE cc`, `DROP DOMAIN dd` | exit 1, `cannot drop type cc because other objects depend on it` / `DETAIL: type dd depends on type cc` (SQLSTATE 2BP01) |
+| the current definitions | `DROP DOMAIN dd`, `DROP TYPE cc` | exit 0 |
+
+The same root cause shows without a flip in it. A database holding
+`CREATE DOMAIN qty AS integer CHECK (VALUE > 0)` and
+`CREATE TYPE meas AS (q qty, label text)`, reconciled against a target that
+widens `qty` to bigint and gives `meas` a plain bigint field, has no edge at all
+on the target side: `DROP DOMAIN "qty"` came out first and the server answered
+`column q of composite type meas depends on type qty`. The current side still
+has the edge, and dropping `meas` first exits 0.
 
 ### Reading an attribute and reconciling it are different claims
 

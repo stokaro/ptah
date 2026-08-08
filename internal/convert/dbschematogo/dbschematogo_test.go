@@ -386,6 +386,164 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsTheDomain(t *testing
 	}
 }
 
+// TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain pins the
+// desired-state side of stokaro/ptah#1242.
+//
+// information_schema reports a domain column's BASE type in data_type and puts
+// the domain in domain_name, so a conversion that trusts data_type rebuilds the
+// column as `integer` and drops every constraint the domain carries. Measured
+// on the pinned community binary v1.3.0 against PostgreSQL 17.10, the binary
+// reports `type = sql("positive")` for such a column.
+//
+// The SERIAL row is the case where two rules meet. A domain column that also
+// draws from an owned sequence satisfies the SERIAL detection -- data_type is
+// the domain's base type and pg_get_serial_sequence answers -- and SERIAL only
+// ever builds an integer column, so the shorthand would silently undo the
+// domain. The domain wins, and the sequence default it was folding away is
+// carried explicitly instead.
+//
+// The enum, composite and range rows are the shape where a domain does NOT put
+// its base type in data_type. When the base type is itself user-defined the
+// catalog reports data_type = 'USER-DEFINED' with udt_name naming the BASE type
+// -- measured on PostgreSQL 17.10, `c d_enum` where `CREATE DOMAIN d_enum AS
+// color` reads back as data_type 'USER-DEFINED', udt_name 'color', domain_name
+// 'd_enum', format_type 'd_enum'. Answering udt_name there rebuilds the column
+// as the bare enum and drops the domain's CHECK, which is the same loss the
+// `positive` rows above pin, on the branch that reaches USER-DEFINED first.
+// TestConvertDBSchemaToGoSchema_PostgresUserDefinedColumnUsesUDTName is the
+// control: a USER-DEFINED column with no domain still answers with udt_name.
+func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing.T) {
+	nextval := "nextval('s'::regclass)"
+
+	tests := []struct {
+		name            string
+		column          types.DBColumn
+		wantType        string
+		wantDefaultExpr string
+	}{
+		{
+			name: "domain column keeps the domain, not its base type",
+			column: types.DBColumn{
+				Name:          "qty",
+				DataType:      "integer",
+				UDTName:       "int4",
+				FormattedType: "positive",
+				DomainName:    "positive",
+			},
+			wantType: "positive",
+		},
+		{
+			name: "a domain outside the search path keeps its qualifier",
+			column: types.DBColumn{
+				Name:          "qty",
+				DataType:      "integer",
+				UDTName:       "int4",
+				FormattedType: "doms.positive",
+				DomainName:    "positive",
+			},
+			wantType: "doms.positive",
+		},
+		{
+			name: "a domain column drawing from a sequence is not a SERIAL",
+			column: types.DBColumn{
+				Name:            "id",
+				DataType:        "integer",
+				UDTName:         "int4",
+				FormattedType:   "positive",
+				DomainName:      "positive",
+				ColumnDefault:   &nextval,
+				IsAutoIncrement: true,
+			},
+			wantType:        "positive",
+			wantDefaultExpr: nextval,
+		},
+		{
+			name: "a domain over an enum keeps the domain, not the enum",
+			column: types.DBColumn{
+				Name:          "c",
+				DataType:      "USER-DEFINED",
+				UDTName:       "color",
+				FormattedType: "d_enum",
+				DomainName:    "d_enum",
+			},
+			wantType: "d_enum",
+		},
+		{
+			name: "a domain over a composite type keeps the domain",
+			column: types.DBColumn{
+				Name:          "a",
+				DataType:      "USER-DEFINED",
+				UDTName:       "addr",
+				FormattedType: "d_comp",
+				DomainName:    "d_comp",
+			},
+			wantType: "d_comp",
+		},
+		{
+			name: "a domain over a range type keeps the domain",
+			column: types.DBColumn{
+				Name:          "r",
+				DataType:      "USER-DEFINED",
+				UDTName:       "myrange",
+				FormattedType: "d_range",
+				DomainName:    "d_range",
+			},
+			wantType: "d_range",
+		},
+		{
+			name: "a domain over an enum outside the search path keeps its qualifier",
+			column: types.DBColumn{
+				Name:          "c",
+				DataType:      "USER-DEFINED",
+				UDTName:       "color",
+				FormattedType: "doms.d_enum",
+				DomainName:    "d_enum",
+			},
+			wantType: "doms.d_enum",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dbSchema := &types.DBSchema{
+				Tables: []types.DBTable{{Name: "t", Columns: []types.DBColumn{test.column}}},
+			}
+
+			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+			c.Assert(result.Fields, qt.HasLen, 1)
+			c.Assert(result.Fields[0].Type, qt.Equals, test.wantType)
+			c.Assert(result.Fields[0].DefaultExpr, qt.Equals, test.wantDefaultExpr)
+		})
+	}
+}
+
+// TestConvertDBSchemaToGoSchema_SerialDetectionSurvivesTheDomainRule is the
+// control for the SERIAL row above: a plain integer column with the same
+// sequence default must still be written back as the SERIAL shorthand, with the
+// default folded into it rather than restated.
+func TestConvertDBSchemaToGoSchema_SerialDetectionSurvivesTheDomainRule(t *testing.T) {
+	c := qt.New(t)
+	nextval := "nextval('t_id_seq'::regclass)"
+
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{{Name: "t", Columns: []types.DBColumn{{
+			Name:            "id",
+			DataType:        "integer",
+			UDTName:         "int4",
+			ColumnDefault:   &nextval,
+			IsAutoIncrement: true,
+		}}}},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Fields, qt.HasLen, 1)
+	c.Assert(result.Fields[0].Type, qt.Equals, "SERIAL")
+	c.Assert(result.Fields[0].DefaultExpr, qt.Equals, "")
+}
+
 func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName(t *testing.T) {
 	c := qt.New(t)
 	checkClause := "tenant_id > 0"
