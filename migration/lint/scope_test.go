@@ -328,6 +328,155 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 	}
 }
 
+// TestAnalyzeFS_SchemaScopeRemovesOnlyStatementsNamingNothingUnderReview pins
+// that a statement is removed only when every table it names is out of review,
+// not only the one the altered table's name carries (stokaro/ptah#1300).
+//
+// `ALTER TABLE app.child ADD CONSTRAINT ... FOREIGN KEY (pid) REFERENCES
+// public.parent (id)` names two tables. PostgreSQL validates every existing row
+// and holds a SHARE ROW EXCLUSIVE lock on `public.parent` for the duration,
+// which is exactly what `PG306` reports, so under a run reviewing `public` the
+// hazard lands on a table the run is responsible for. Measured on the pinned
+// community binary v1.3.0 with `?search_path=public`: it reports no diagnostic
+// and exits 0, so keeping `PG306` is Ptah being stricter at exit 0 rather than
+// looser, and it is the behavior the base branch already had.
+//
+// Both outputs are asserted on every row because they answer different
+// questions here: the constraint lands on `app.child`, so the change count stays
+// zero on the in-scope rows too. Not being scoped out is not the same as
+// contributing a change, and a row that asserted only the count would accept a
+// fix that silenced the diagnostic.
+func TestAnalyzeFS_SchemaScopeRemovesOnlyStatementsNamingNothingUnderReview(t *testing.T) {
+	const base = "CREATE TABLE public.parent (id int PRIMARY KEY);\n" +
+		"CREATE SCHEMA app;\n" +
+		"CREATE TABLE app.parent (id int PRIMARY KEY);\n" +
+		"CREATE TABLE app.child (id int, pid int);\n" +
+		"CREATE TABLE app.users (id int);\n"
+
+	tests := []struct {
+		name         string
+		sql          string
+		wantChanges  []changeProjection
+		wantFindings []string
+	}{
+		{
+			name:         "a foreign key referencing the reviewed schema keeps its statement under review",
+			sql:          "ALTER TABLE app.child ADD CONSTRAINT child_pid_fkey FOREIGN KEY (pid) REFERENCES public.parent (id);\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{"PG306"},
+		},
+		{
+			name:         "a foreign key referencing only the unreviewed schema reports neither",
+			sql:          "ALTER TABLE app.child ADD CONSTRAINT child_pid_fkey FOREIGN KEY (pid) REFERENCES app.parent (id);\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{},
+		},
+		{
+			name:         "an unqualified foreign key reference resolves into the reviewed schema",
+			sql:          "ALTER TABLE app.child ADD CONSTRAINT child_pid_fkey FOREIGN KEY (pid) REFERENCES parent (id);\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{"PG306"},
+		},
+		{
+			name:         "a foreign key written inline on an added column is the same reference",
+			sql:          "ALTER TABLE app.users ADD COLUMN pid int REFERENCES public.parent (id), ADD CONSTRAINT users_id_key UNIQUE (id);\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{"PG105"},
+		},
+		{
+			name:         "an inline foreign key outside the reviewed schema reports neither",
+			sql:          "ALTER TABLE app.users ADD COLUMN pid int REFERENCES app.parent (id), ADD CONSTRAINT users_id_key UNIQUE (id);\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{},
+		},
+		{
+			name:         "a constraint naming no other table is still removed with its statement",
+			sql:          "ALTER TABLE app.users ADD CONSTRAINT users_id_key UNIQUE (id);\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{},
+		},
+		{
+			name:         "a foreign key added inside the reviewed schema reports both",
+			sql:          "ALTER TABLE public.parent ADD CONSTRAINT parent_self_fkey FOREIGN KEY (id) REFERENCES public.parent (id);\n",
+			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "parent_self_fkey"}},
+			wantFindings: []string{"PG306"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			analysis := analyzeScoped(c, base, test.sql, "public")
+
+			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
+		})
+	}
+}
+
+// TestAnalyzeFS_SchemaScopeExcludesOnlyTheScopedOutStatement pins that the
+// exclusion applies to the statement the scope removed and to no other.
+//
+// The set is keyed by statement index, and every other fixture here analyzes a
+// single-statement version, so nothing else can tell an off-by-one in that
+// lookup from correct behavior: a filter that dropped the statement before or
+// after a scoped-out one would pass the rest of this file.
+//
+// Measured with `?search_path=public`: the two-statement version reports one
+// change and one diagnostic both on the pinned community binary v1.3.0 (`MF101`)
+// and here (`PG105`), where the base branch reported two of each.
+func TestAnalyzeFS_SchemaScopeExcludesOnlyTheScopedOutStatement(t *testing.T) {
+	const base = "CREATE SCHEMA app;\nCREATE TABLE app.users (id int);\nCREATE TABLE public.t (id int);\n"
+	const inScope = "ALTER TABLE public.t ADD CONSTRAINT t_id_key UNIQUE (id);\n"
+	const scopedOut = "CREATE INDEX idx ON app.users (id);\n"
+
+	tests := []struct {
+		name         string
+		sql          string
+		wantChanges  []changeProjection
+		wantFindings []string
+	}{
+		{
+			name:         "the statement before a scoped-out one keeps its change and its finding",
+			sql:          inScope + scopedOut,
+			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "t_id_key"}},
+			wantFindings: []string{"PG105"},
+		},
+		{
+			name:         "the statement after a scoped-out one keeps its change and its finding",
+			sql:          scopedOut + inScope,
+			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "t_id_key"}},
+			wantFindings: []string{"PG105"},
+		},
+		{
+			name:         "a scoped-out statement between two in-scope ones removes only itself",
+			sql:          inScope + scopedOut + "ALTER TABLE public.t ADD CONSTRAINT t_id_check CHECK (id > 0);\n",
+			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "t_id_key"}, {lint.SchemaChangeAdd, "t_id_check"}},
+			wantFindings: []string{"PG105", "PG305"},
+		},
+		{
+			name:         "two scoped-out statements report neither",
+			sql:          scopedOut + "ALTER TABLE app.users ADD CONSTRAINT users_id_key UNIQUE (id);\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			analysis := analyzeScoped(c, base, test.sql, "public")
+
+			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
+		})
+	}
+}
+
 // TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone pins that a statement
 // Ptah's SQL parser cannot model keeps its findings under every scope, and that
 // the scope is not what suppresses its change count.

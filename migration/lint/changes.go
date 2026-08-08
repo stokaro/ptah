@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
@@ -168,7 +169,11 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 		// Every action of an ALTER TABLE belongs to the table's schema, never
 		// to the column or constraint it names.
 		if !scope.allowsObject(n.Name) {
-			return nil, true
+			// The altered table is not the only table the statement names. See
+			// [alterReferencedTables]: a statement that reaches into the
+			// reviewed schema has not left it, so it is not scoped out, even
+			// though it still contributes no change there.
+			return nil, !slices.ContainsFunc(alterReferencedTables(n), scope.allowsObject)
 		}
 		out := make([]SchemaChange, 0, len(n.Operations))
 		for _, op := range n.Operations {
@@ -201,6 +206,47 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 	// Operational nodes (INSERT/SELECT wrappers, DO blocks, raw SQL) and any
 	// construct Ptah does not model as a schema object contribute nothing.
 	return nil, false
+}
+
+// alterReferencedTables returns the tables an ALTER TABLE names besides the one
+// it alters: the target of each foreign key it adds, written either as a table
+// constraint or inline on an added column.
+//
+// A statement names more objects than the node's primary name carries, and the
+// scope has to see all of them before it removes the statement. `ALTER TABLE
+// app.child ADD CONSTRAINT c FOREIGN KEY (pid) REFERENCES public.parent (id)`
+// validates every existing row and holds a SHARE ROW EXCLUSIVE lock on
+// `public.parent` for the duration, which is what `PG306` reports. Under a run
+// reviewing `public` that hazard lands on a table the run is responsible for, so
+// excluding the statement on the strength of `app.child` alone silenced a
+// diagnostic about an in-scope object (stokaro/ptah#1300).
+//
+// The change count is a separate question and does not move: the constraint
+// lands on `app.child`, which is out of review, so the statement still counts
+// zero changes. Not being scoped out is not the same as contributing one.
+//
+// A reference the parser did not record is left out rather than returned empty,
+// so a missing name cannot be read as "unqualified, therefore in scope" and pull
+// a statement back under review by accident.
+func alterReferencedTables(alter *ast.AlterTableNode) []string {
+	tables := make([]string, 0, len(alter.Operations))
+	for _, op := range alter.Operations {
+		table := ""
+		switch o := op.(type) {
+		case *ast.AddConstraintOperation:
+			if o.Constraint != nil && o.Constraint.Reference != nil {
+				table = o.Constraint.Reference.Table
+			}
+		case *ast.AddColumnOperation:
+			if o.Column != nil && o.Column.ForeignKey != nil {
+				table = o.Column.ForeignKey.Table
+			}
+		}
+		if strings.TrimSpace(table) != "" {
+			tables = append(tables, table)
+		}
+	}
+	return tables
 }
 
 // nodeScopeReference is the reference a change is measured against, which is not

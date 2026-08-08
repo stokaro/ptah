@@ -1,14 +1,24 @@
 package lint
 
-// White-box testing required: both rules below govern node shapes no lint run
-// can currently produce, so [AnalyzeFS] cannot reach them. Ptah's SQL parser
-// does not model DROP INDEX, so no [ast.DropIndexNode] ever reaches the change
-// extractor, and every ALTER TABLE form that would yield a node with no
-// operations fails to parse instead. Both rules are load-bearing the moment the
-// parser learns one of those forms — the first decides which schema an index
+// White-box testing required: neither rule below has an observable effect
+// through [AnalyzeFS] today, so a public-API fixture could not tell either
+// answer from its opposite.
+//
+// The reasons differ, and only one of them is unreachability. Ptah's SQL parser
+// does not model DROP INDEX in any spelling, so no [ast.DropIndexNode] ever
+// reaches the change extractor. A zero-operation [ast.AlterTableNode] is the
+// other case and it is reachable, not unreachable: `ALTER TABLE t;` parses to
+// exactly that node and [AnalyzeFS] hands it to [nodeSchemaChanges]. What it
+// lacks is a consequence — measured under `search_path=public`, both
+// `ALTER TABLE public.t;` and `ALTER TABLE app.users;` report no diagnostic and
+// no schema change, so whether the scope removed the statement changes nothing
+// a caller can read: there is no finding on it to drop.
+//
+// Both rules become load-bearing the moment the parser learns DROP INDEX or a
+// rule fires on a bare ALTER TABLE — the first decides which schema an index
 // drop is measured in, the second decides whether an in-scope statement's
 // findings survive — and a rule nothing pins is a rule that gets inverted by the
-// change that makes it reachable.
+// change that makes it observable.
 
 import (
 	"testing"
