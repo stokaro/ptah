@@ -948,9 +948,10 @@ parent-traversal path, and a plain relative name that resolves out of the
 directory through a symbolic link. The refusal names which of the three applies
 and points at `getenv()` for passing a value in from outside.
 
-This is the one place `ptah-compat` is deliberately stricter than the binary it
-replaces, and it is stricter rather than looser, so it cannot exit 0 where the
-binary exits 1. The reason is that an `atlas.hcl` is usually repository-controlled
+This is one of two places `ptah-compat` is deliberately stricter than the binary
+it replaces — the other is the invalid-index refusal below — and it is stricter
+rather than looser, so it cannot exit 0 where the binary exits 1. The reason is
+that an `atlas.hcl` is usually repository-controlled
 and `file()` is evaluated before anything is applied: without confinement, a
 config file arriving in a pull request can read any file the process can and
 place the contents somewhere observable, such as a database URL or an error
@@ -964,6 +965,37 @@ scenarios in the conformance repository, so the day a community build starts
 confining `file()` the gate goes red and this divergence can be retired.
 
 **Tracking.** [`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042)
+
+### A migration that would be recorded over an invalid index
+
+**Type.** Deliberate divergence
+
+**Current boundary.** On PostgreSQL, `ptah-compat migrate apply` refuses a
+migration while an index that migration creates is reported unusable by
+`pg_index` (`indisvalid` or `indisready` false). The pinned community binary
+v1.3.0 applies it and records it.
+
+Measured on PostgreSQL 17.10, identical fixture on both: a `members` table whose
+duplicate rows made an earlier `CREATE UNIQUE INDEX CONCURRENTLY` fail, the
+duplicates then removed, and one migration carrying `-- atlas:txmode none` and
+the same `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS` statement.
+
+| | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply --allow-dirty` | exit `0`, `-- ok`, 1 statement | exit `1`, names the index and `REINDEX` |
+| `pg_index` afterwards | `indisvalid=f`, `indisready=f` | unchanged, nothing written |
+| revision row afterwards | `20260808000001` applied 1/1, no error | no row |
+| duplicate `INSERT` afterwards | accepted, 2 rows share the email | n/a |
+| after `REINDEX INDEX CONCURRENTLY` | n/a | exit `0`, `indisvalid=t`, row recorded, duplicate rejected |
+
+The leftover keeps the name, so `IF NOT EXISTS` skips it and the statement
+reports success over an index that enforces nothing. Recording that as applied
+means the tooling reports a constraint the database does not have, and nothing
+will look again. The divergence is stricter, not looser: `ptah-compat` exits `1`
+where the binary exits `0`, never the reverse, so no invocation the binary
+refuses succeeds here.
+
+**Tracking.** [`stokaro/ptah#1101`](https://github.com/stokaro/ptah/issues/1101)
 
 A green docs build only proves the documentation site builds and internal links
 resolve. It is not parity evidence. Use the conformance reports for measured

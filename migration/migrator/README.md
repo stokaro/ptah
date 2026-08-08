@@ -711,6 +711,24 @@ each unusable index and the `REINDEX INDEX CONCURRENTLY` that rebuilds it.
 revision row, not a fact about the database. Other dialects have no concurrent
 index build to leave half-finished and run no probe.
 
+The up path runs the same probe, because repair is not the only way that
+revision gets written. `MigrateUpWithOptions` with `AllowDirty` re-runs the body
+over the dirty row instead, meets the same leftover through the same
+`IF NOT EXISTS`, and would clear the dirty state over an index that enforces
+nothing. The probe is not scoped to that retry: an invalid index left by any
+other route — a hand-run build, a restored dump, a revision row cleaned up out
+of band — is skipped by the same statement on a first attempt with no dirty row
+in sight.
+
+The up probe runs before any revision bookkeeping, so a refusal leaves the
+revision table exactly as it found it: a dirty row keeps the earlier attempt's
+own error and `applied/total`, and a version that was never started stays
+absent. A dry run is exempt, since it records nothing to be wrong about. No flag
+relaxes either refusal; the remedy is `REINDEX INDEX CONCURRENTLY`, or dropping
+the index so the name is free. One shape is knowingly refused: an index left
+invalid on purpose — `CREATE INDEX ... ON ONLY` a partitioned parent — blocks a
+second attempt at the migration that created it (stokaro/ptah#997).
+
 Atlas-format down execution is the deliberate exception. It leaves the
 revision row unchanged before and during the down body to reproduce Atlas's
 measured bookkeeping. A non-transactional Atlas-format down can therefore
