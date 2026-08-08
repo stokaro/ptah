@@ -72,18 +72,18 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 174 capabilities below:
+Across the 177 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 103 |
-| Ptah supports it with a stated limitation | 48 |
+| Ptah supports it fully | 107 |
+| Ptah supports it with a stated limitation | 47 |
 | Ptah does not implement it | 23 |
-| Ptah and Atlas CE both support it | 32 |
+| Ptah and Atlas CE both support it | 33 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
 | Atlas CE has it and Ptah does not, or only in part | 23 |
-| An Atlas column is ❔ — not established by this page's evidence | 5 |
+| An Atlas column is ❔ — not established by this page's evidence | 8 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
 binary built from this repository; Atlas-column verdicts rest on the cited
@@ -141,6 +141,9 @@ seven of them as open capabilities regardless.
 | Desired-state sources for `--to` and `--from` | ✅ | ✅ | ✅ | Files, a file:// directory of .sql or .hcl schema files, one DB URL, one atlas.sum dir, or env://; atlas:// fails early. |
 | Dev-database rehearsal before apply | ✅ | ✅ | ✅ | Dev DB reset, target schema recreated, exact plan rehearsed, under `--dry-run` too; dev==target and failed rehearsal abort. A non-database `--to` requires `--dev-url`. |
 | Drift detection against desired schema | ✅ | ❌ | ✅ | Native `ptah schema drift`: `--severity`, `--exit-code`, `--ignore`, text/json/github-actions. Atlas Cloud drift monitoring is out of scope. |
+| Exclude selector that matches nothing is diagnosed | ✅ | ❌ | ❔ | A selector naming no object warns on inspect and diff and exits 1 on apply, and only a filter that asked it may call it empty; a PTAH_ATLAS opt-in restores the permissive behavior. |
+| Exclude subtracts a named schema and its contents | ✅ | ✅ | ❔ | A one-part selector names a schema, which leaves with every object in it. Schemas were read and rendered but never asked, so `--exclude app` refused as unmatched and still planned app's drops. |
+| Exclude subtracts sequences, domains, composite types and range types | ✅ | ❔ | ❔ | `--exclude` reaches the same object kinds `--include` selects. Before, these four were read and cloned but never offered to a pattern, so excluding one was a silent no-op that still planned its DROP. |
 | Go-template `--format` output | 🟡 | ✅ | ✅ | schema apply registers the shared helper set, so {{ json . }} renders an Atlas-shaped document. schema diff registers only sql, as the community binary does. |
 | Inspect `--exclude` field selectors | 🟡 | ❌ | ❔ | Only [type=extension].version is honored; other .field suffixes and non-final [type=...] fail before any database is contacted. The community binary accepts a .field suffix and ignores it. |
 | Inspect non-database sources via `--dev-url` | ✅ | ✅ | ✅ | Schema file, `atlas.sum` migration dir, or env:// is materialized on a reset dev DB then introspected; without `--dev-url` it fails. |
@@ -153,7 +156,7 @@ seven of them as open capabilities regardless.
 | schema diff between two schema states | 🟡 | ✅ | ✅ | SQLite refuses any change needing a table rebuild: column modify, NOT NULL change, constraint add/remove, enum CHECK change. Same on apply. |
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; `--format` sql\|json\|template. Native twin `ptah schema inspect` adds `--out-dir` and `--split` file export. |
-| Schema-qualified exclude globs for enums and functions | 🟡 | 🟡 | ❔ | Tables, views and extensions match schema-qualified exclude globs; enum and function filters compare the bare name only. The community binary matches `app.mood`; it reports no functions. |
+| Schema-qualified exclude globs for enums and functions | ✅ | 🟡 | ❔ | Enums and functions match schema-qualified globs on the rule tables and views use, and the match reaches the planned DROP. The community binary matches `app.mood`; it reports no functions. |
 | Verb `schema stats` | ❌ | ❌ | ✅ | Beyond the CE pin: in Atlas it exists as `schema stats inspect` (OpenMetrics) and rejects SQLite at runtime; the gap register triages it out of scope as observability. |
 | Verb `schema validate` | 🟡 | ❌ | ✅ | Beyond the CE pin: no validate verb; the gap register triage covers it with native schema render parse/load validation plus schema test and schema apply `--dry-run`. |
 

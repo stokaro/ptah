@@ -503,7 +503,12 @@ func (r *Reader) readEnumsForSchema(schemaName string) ([]types.DBEnum, error) {
 	var enums []types.DBEnum
 	for name, values := range enumMap {
 		enums = append(enums, types.DBEnum{
-			Name:   name,
+			Name: name,
+			// Same convention as tables, views and domains: blank for the
+			// connection's own schema, named otherwise. Filters rebuild the
+			// qualified spelling from the connection's default, which is what
+			// makes `--exclude app.color` reach this enum (stokaro/ptah#933).
+			Schema: r.outputSchema(schemaName),
 			Values: values,
 		})
 	}
@@ -2334,6 +2339,10 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 			return nil, fmt.Errorf("failed to scan function: %w", err)
 		}
 
+		// Same convention as tables, views and domains: blank for the
+		// connection's own schema, named otherwise, so `--exclude app.fn_app`
+		// has a qualified candidate to match (stokaro/ptah#933).
+		fn.Schema = r.outputSchema(schemaName)
 		functions = append(functions, fn)
 	}
 

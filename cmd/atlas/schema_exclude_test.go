@@ -34,7 +34,7 @@ CREATE TABLE diff_skip (
 		"schema", "diff",
 		"--from", "file://" + from,
 		"--to", "file://" + to,
-		"--dev-url", "sqlite://dev.db",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
 		"--exclude", "diff_skip",
 	})
 
@@ -68,7 +68,7 @@ CREATE TABLE apply_skip (
 		"schema", "apply",
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
-		"--dev-url", "sqlite://dev.db",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
 		"--dry-run",
 		"--exclude", "apply_skip",
 	})
