@@ -274,6 +274,12 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   domain, the drop fails loudly instead of dropping the column.
 - Range types are matched by name only; a changed range is dropped and
   recreated.
+- Within the group the three kinds are ordered by what their definitions name,
+  not by kind: `CREATE TYPE addr AS (...)` precedes `CREATE DOMAIN d AS addr`,
+  and `CREATE DOMAIN qty AS integer` precedes a composite with a `qty` field.
+  Both directions occur, and PostgreSQL has no forward declaration for a type.
+  Recreations drop in the reverse of that order, so a non-`CASCADE` drop is
+  never blocked by a dependent the same plan is replacing.
 - A domain, composite or range type that an **extension** owns is not
   described. `CREATE EXTENSION` creates those types, so they cannot be created
   or dropped independently, and describing one as a user type made the

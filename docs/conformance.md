@@ -392,6 +392,24 @@ type, identically to the plain column on the last row. A consumer that answers
 from `udt_name` there flattens `c` to `color` and drops the domain's `CHECK`
 with it, and only `domain_name` separates row two from row three.
 
+The split is not a synthetic one. Two domains arrive with PostgreSQL's own
+contrib modules and land on opposite sides of it: `lo`, from the `lo` module, is
+a domain over the built-in `oid`, and `earth`, from `earthdistance`, is a domain
+over `cube`, a base type the `cube` module supplies. Measured on PostgreSQL
+17.10 against one table holding a column of each, with a plain `cube` column
+beside them as the control:
+
+| Column | Atlas CE v1.3.0 | Answering from `udt_name` | Ptah |
+| --- | --- | --- | --- |
+| `l lo` | `type = sql("lo")` | `type = sql("lo")` | `type = sql("lo")` |
+| `w earth` | `type = sql("earth")` | `type = sql("cube")` | `type = sql("earth")` |
+| `cu cube`, no domain | `type = sql("cube")` | `type = sql("cube")` | `type = sql("cube")` |
+
+The middle column is this same code with the `domain_name` gate taken back out,
+and it is the reason the gate is not optional: two domains a user never wrote
+disagree with each other about whether a domain survives introspection, decided
+by nothing but whether the base type happens to be built-in.
+
 Measured with `ptah-compat` against one database holding rows two and three, and
 against the composite and range shapes beside them:
 
@@ -410,6 +428,30 @@ exit 0, and CE then reports the replayed database in sync with the one it was
 described from. A description that spells the column `color` replays at exit 0
 too and CE reports `ALTER TABLE "t" ALTER COLUMN "c" TYPE d_enum;` — the replay
 lost the domain and the exit code did not say so.
+
+That row carries a second claim, and it is the emitted script's ORDER. Naming a
+domain in a column is worth nothing if the statement that creates the domain
+runs before the statement that creates its base type, and PostgreSQL has no
+forward declaration for a type. The emitter ran kind by kind — every domain,
+then every range, then every composite — so a database holding
+`CREATE DOMAIN d_comp AS addr` was described as `CREATE DOMAIN "d_comp" AS addr;`
+four statements ahead of `CREATE TYPE "addr" AS ("street" text, "city" text);`
+and the replay stopped where it had to. Measured on PostgreSQL 17.10 with the
+enum, composite and range shapes in one database:
+
+| Emitted script | `psql -v ON_ERROR_STOP=1` | CE compares the replay to the source |
+| --- | --- | --- |
+| every domain first | `ERROR: type "addr" does not exist`, exit 3 | not reached |
+| dependency ordered | exit 0 | Schemas are synced |
+
+No fixed order of kinds fixes this, because the three kinds share one namespace
+and name each other in both directions: `CREATE DOMAIN d_comp AS addr` needs the
+composite first and `CREATE TYPE addr AS (f d_int)` needs the domain first.
+Domains, composites and ranges are ordered against each other by what their
+definitions name, and the ones a modification recreates are dropped in the
+reverse of that order, so the deliberately non-CASCADE drop is not blocked by a
+dependent the same plan is about to replace. Enums stay ahead of all three: an
+enum names no other user-defined type, so it has nothing to wait for.
 
 ### Reading an attribute and reconciling it are different claims
 

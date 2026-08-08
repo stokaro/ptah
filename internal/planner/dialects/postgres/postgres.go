@@ -1054,37 +1054,104 @@ func (p *Planner) removeEnums(result []ast.Node, diff *types.SchemaDiff) []ast.N
 	return result
 }
 
+// plannedUserType pairs a user-defined type's dependency identity with the node
+// that creates it, so one ordering covers domains, ranges and composites
+// together.
+type plannedUserType struct {
+	dep  deporder.UserType
+	node ast.Node
+}
+
 // addNewUserTypes emits CREATE DOMAIN / CREATE TYPE for newly added domains,
-// ranges, and composite types (in dependency order). It runs before tables so
-// columns can reference them.
+// ranges, and composite types. It runs before tables so columns can reference
+// them, and orders the three kinds against each other so a type is created
+// before whatever names it.
+//
+// Emitting kind by kind is not enough, because the three kinds name each other
+// in both directions. `CREATE DOMAIN d_comp AS addr` needs the composite `addr`
+// first and `CREATE TYPE addr AS (f d_int)` needs the domain `d_int` first, so
+// no fixed order of kinds can serve both. Emitting domains first sent
+// `CREATE DOMAIN "d_comp" AS addr;` out ahead of `CREATE TYPE "addr" AS (...)`
+// and the script stopped at `ERROR: type "addr" does not exist` -- measured on
+// PostgreSQL 17.10 with psql -v ON_ERROR_STOP=1, exit 3.
+//
+// Enums are not in the set: they carry no reference to another user-defined
+// type and are already emitted before this runs.
 func (p *Planner) addNewUserTypes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	planned := p.plannedUserTypes(diff, generated)
+	byName := make(map[string]ast.Node, len(planned))
+	deps := make([]deporder.UserType, 0, len(planned))
+	for _, userType := range planned {
+		byName[userType.dep.Name] = userType.node
+		deps = append(deps, userType.dep)
+	}
+
+	for _, name := range deporder.UserTypesForCreate(deps) {
+		if node, ok := byName[name]; ok {
+			result = append(result, node)
+		}
+	}
+	return result
+}
+
+// plannedUserTypes collects every domain, range and composite this plan
+// creates, newly added ones first and then the ones recreated in place of a
+// modification, each with the type spellings its definition names.
+func (p *Planner) plannedUserTypes(diff *types.SchemaDiff, generated *goschema.Database) []plannedUserType {
+	var planned []plannedUserType
 	for _, name := range diff.DomainsAdded {
 		if domain := findDomain(generated.Domains, name); domain != nil {
-			result = append(result, fromschema.FromDomain(*domain))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: name, References: []string{domain.BaseType}},
+				node: fromschema.FromDomain(*domain),
+			})
 		}
 	}
 	for _, name := range diff.RangesAdded {
 		if rangeType := findRange(generated.Ranges, name); rangeType != nil {
-			result = append(result, fromschema.FromRange(*rangeType))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: name, References: []string{rangeType.Subtype}},
+				node: fromschema.FromRange(*rangeType),
+			})
 		}
 	}
 	for _, name := range diff.CompositeTypesAdded {
 		if composite := findCompositeType(generated.CompositeTypes, name); composite != nil {
-			result = append(result, fromschema.FromCompositeType(*composite))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: name, References: compositeFieldTypes(*composite)},
+				node: fromschema.FromCompositeType(*composite),
+			})
 		}
 	}
-	// A modification with no in-place ALTER is handled as drop + recreate.
+	// A modification with no in-place ALTER is handled as drop + recreate. The
+	// recreations join the same ordering: a new domain over a recreated
+	// composite has to wait for the recreation, which dropModifiedUserTypes has
+	// already removed by this point.
 	for _, domainDiff := range diff.DomainsModified {
 		if domain := findDomain(generated.Domains, domainDiff.DomainName); domain != nil {
-			result = append(result, fromschema.FromDomain(*domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
+				node: fromschema.FromDomain(*domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
+			})
 		}
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
 		if composite := findCompositeType(generated.CompositeTypes, compositeDiff.TypeName); composite != nil {
-			result = append(result, fromschema.FromCompositeType(*composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(*composite)},
+				node: fromschema.FromCompositeType(*composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
+			})
 		}
 	}
-	return result
+	return planned
+}
+
+func compositeFieldTypes(composite goschema.CompositeType) []string {
+	references := make([]string, 0, len(composite.Fields))
+	for _, field := range composite.Fields {
+		references = append(references, field.Type)
+	}
+	return references
 }
 
 // removeUserTypes emits DROP DOMAIN / DROP TYPE for removed and modified
@@ -1114,16 +1181,45 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *types.SchemaDiff) []a
 // silently dropping dependent columns. Reconciling a modification while the type
 // is in use requires a manual migration (PostgreSQL offers ALTER DOMAIN /
 // ALTER TYPE for the in-place cases).
-func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+//
+// The order is the reverse of the one addNewUserTypes creates in, for the same
+// reason and in the same direction: a domain over a composite has to go before
+// the composite it names, or the non-CASCADE drop fails on a dependency this
+// very plan is about to replace.
+func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
+	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	for _, domainDiff := range diff.DomainsModified {
-		result = append(result, ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
-			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use"))
+		byName[domainDiff.DomainName] = ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
+			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use")
+		deps = append(deps, deporder.UserType{Name: domainDiff.DomainName, References: modifiedDomainReferences(generated, domainDiff.DomainName)})
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
-		result = append(result, ast.NewDropType(compositeDiff.TypeName).SetIfExists().
-			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use"))
+		byName[compositeDiff.TypeName] = ast.NewDropType(compositeDiff.TypeName).SetIfExists().
+			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use")
+		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: modifiedCompositeReferences(generated, compositeDiff.TypeName)})
+	}
+
+	for _, name := range deporder.UserTypesForDrop(deps) {
+		if node, ok := byName[name]; ok {
+			result = append(result, node)
+		}
 	}
 	return result
+}
+
+func modifiedDomainReferences(generated *goschema.Database, name string) []string {
+	if domain := findDomain(generated.Domains, name); domain != nil {
+		return []string{domain.BaseType}
+	}
+	return nil
+}
+
+func modifiedCompositeReferences(generated *goschema.Database, name string) []string {
+	if composite := findCompositeType(generated.CompositeTypes, name); composite != nil {
+		return compositeFieldTypes(*composite)
+	}
+	return nil
 }
 
 func findDomain(domains []goschema.Domain, name string) *goschema.Domain {
@@ -1282,7 +1378,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 3c. Recreate changed user-defined types (drop then create), then create
 	// new domains/ranges/composites before tables can reference them.
-	result = p.dropModifiedUserTypes(result, diff)
+	result = p.dropModifiedUserTypes(result, diff, generated)
 	result = p.addNewUserTypes(result, diff, generated)
 
 	// 4. Modify existing enums

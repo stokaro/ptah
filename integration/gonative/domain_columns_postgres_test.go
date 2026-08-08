@@ -33,7 +33,9 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // domainColumnSeed is the fixture from the issue, plus a plain column of the
@@ -319,6 +321,74 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeApplyingItsOwnDescription
 			c.Assert(columnStatements(plan, "a"), qt.DeepEquals, []string(nil))
 			c.Assert(columnStatements(plan, "r"), qt.DeepEquals, []string(nil))
 			c.Assert(columnStatements(plan, "plain"), qt.DeepEquals, []string(nil))
+		})
+	}
+}
+
+// TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeDescriptionReplaysOnAnEmptyDatabase
+// is the round trip in its other direction: not "applying a database's own
+// description changes nothing", but "the description RUNS at all".
+//
+// The two are different claims and only this one can see a statement ORDER
+// defect. A self-apply plans nothing, so it executes nothing and any order is
+// vacuously fine. Creating the same schema from empty has to name every type
+// before the type that uses it, and PostgreSQL has no forward declaration:
+// measured on 17.10 before this guard existed, ptah-compat emitted
+// `CREATE DOMAIN "d_comp" AS addr;` five statements ahead of
+// `CREATE TYPE "addr" AS ("street" text, "city" text);` and psql -v
+// ON_ERROR_STOP=1 stopped at `ERROR: type "addr" does not exist`, exit 3.
+//
+// The plan is EXECUTED rather than inspected, because a text assertion on the
+// order is a restatement of the emitter and would agree with it whatever it
+// says. The server is the judge. What is asserted afterwards is the shape, not
+// only the exit status: a script that ran but flattened the domains would
+// otherwise pass.
+func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeDescriptionReplaysOnAnEmptyDatabase(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	sourceURL := newBoundaryDatabase(c, dsn, boundaryCase{
+		name:  "domain_over_user_defined_replay_source",
+		seed:  domainOverUserDefinedSeed(),
+		query: "search_path=public",
+	})
+	targetURL := newBoundaryDatabase(c, dsn, boundaryCase{
+		name:  "domain_over_user_defined_replay_target",
+		query: "search_path=public",
+	})
+
+	target, err := dbschema.ConnectToDatabase(c.Context(), targetURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(target) })
+
+	plan, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
+		ToURLs: []string{sourceURL},
+		// The default the CLI parses out of an unset --tx-mode. One
+		// transaction per statement list is also what makes a failure
+		// unambiguous: the target is left empty rather than half built.
+		TxMode: migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.HasChanges(), qt.IsTrue)
+	c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
+
+	replayed, err := dbschema.ReadSchemaWithSchemas(target, nil)
+	c.Assert(err, qt.IsNil)
+
+	tests := []struct {
+		name       string
+		column     string
+		wantDomain string
+	}{
+		{name: "domain over an enum", column: "c", wantDomain: "d_enum"},
+		{name: "domain over a composite type", column: "a", wantDomain: "d_comp"},
+		{name: "domain over a range type", column: "r", wantDomain: "d_range"},
+		{name: "plain enum column is not a domain", column: "plain", wantDomain: ""},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(findLiveColumn(c, replayed.Tables, "t", test.column).DomainName, qt.Equals, test.wantDomain)
 		})
 	}
 }

@@ -98,4 +98,8 @@ beside `lo` — is still described in full.
 
 ## Ordering
 
-Ptah emits user-defined types after extensions and enums but before tables, so table columns can reference them. Within the group the order is domains → ranges → composites (composites may reference the others). Drops run after tables, and `DROP TYPE` / `DROP DOMAIN` are classified as destructive by the safety gate.
+Ptah emits user-defined types after extensions and enums but before tables, so table columns can reference them. Within the group the order is derived from what each definition names rather than fixed by kind: a domain over a composite waits for the composite, and a composite whose field is a domain waits for the domain. Both directions occur, so no fixed order of kinds serves them — `domains → ranges → composites` emitted `CREATE DOMAIN d_comp AS addr` ahead of `CREATE TYPE addr`, and PostgreSQL has no forward declaration for a type. A reference the plan does not create, such as a built-in type or a type the database already has, adds no ordering constraint, and a cycle — which PostgreSQL refuses to create anyway — falls back to declaration order rather than dropping a type from the plan.
+
+Enums are emitted ahead of the whole group and take no part in the ordering, because an enum names no other user-defined type.
+
+A domain or composite that changed is dropped and recreated, and the drops run in the reverse of the creation order: the deliberately non-`CASCADE` drop of a composite fails while a domain still names it, so the dependent goes first. Removals of types that are gone from the target schema run after tables, and `DROP TYPE` / `DROP DOMAIN` are classified as destructive by the safety gate.

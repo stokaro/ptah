@@ -62,6 +62,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
@@ -2071,20 +2072,11 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		}
 	}
 
-	// 3b. Add PostgreSQL user-defined types (domains, ranges, then composites)
-	// before tables so columns can reference them. Ordering within the group:
-	// domains and ranges reference base subtypes; composites may reference
-	// domains/enums, so they come last.
+	// 3b. Add PostgreSQL user-defined types before tables so columns can
+	// reference them, ordered by what each definition names rather than by
+	// kind. Enums are already out, above, and reference nothing.
 	if isPostgreSQLFamilyPlatform(targetPlatform) {
-		for _, domain := range database.Domains {
-			statements.Statements = append(statements.Statements, FromDomain(domain))
-		}
-		for _, rangeType := range database.Ranges {
-			statements.Statements = append(statements.Statements, FromRange(rangeType))
-		}
-		for _, composite := range database.CompositeTypes {
-			statements.Statements = append(statements.Statements, FromCompositeType(composite))
-		}
+		statements.Statements = append(statements.Statements, orderedUserTypeStatements(database)...)
 	}
 
 	// 4. Add table definitions (they may be referenced by indexes)
@@ -2125,6 +2117,49 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	}
 
 	return statements
+}
+
+// orderedUserTypeStatements returns CREATE DOMAIN / CREATE TYPE for every
+// domain, range and composite the schema declares, ordered so a type is created
+// before whatever names it.
+//
+// The three kinds share one namespace and reference each other in both
+// directions -- `CREATE DOMAIN d AS addr` needs the composite `addr` first,
+// `CREATE TYPE addr AS (f d_int)` needs the domain `d_int` first -- so emitting
+// kind by kind gets one direction wrong whichever kind goes first, and
+// PostgreSQL has no forward declaration for a type. This is the same ordering
+// the migration planner applies to the types a diff adds; a schema rendered
+// whole has to hold it too, or `ptah generate` writes a script that stops at
+// `ERROR: type "addr" does not exist`.
+func orderedUserTypeStatements(database goschema.Database) []ast.Node {
+	total := len(database.Domains) + len(database.Ranges) + len(database.CompositeTypes)
+	byName := make(map[string]ast.Node, total)
+	userTypes := make([]deporder.UserType, 0, total)
+
+	for _, domain := range database.Domains {
+		byName[domain.QualifiedName()] = FromDomain(domain)
+		userTypes = append(userTypes, deporder.UserType{Name: domain.QualifiedName(), References: []string{domain.BaseType}})
+	}
+	for _, rangeType := range database.Ranges {
+		byName[rangeType.QualifiedName()] = FromRange(rangeType)
+		userTypes = append(userTypes, deporder.UserType{Name: rangeType.QualifiedName(), References: []string{rangeType.Subtype}})
+	}
+	for _, composite := range database.CompositeTypes {
+		references := make([]string, 0, len(composite.Fields))
+		for _, field := range composite.Fields {
+			references = append(references, field.Type)
+		}
+		byName[composite.QualifiedName()] = FromCompositeType(composite)
+		userTypes = append(userTypes, deporder.UserType{Name: composite.QualifiedName(), References: references})
+	}
+
+	nodes := make([]ast.Node, 0, len(userTypes))
+	for _, name := range deporder.UserTypesForCreate(userTypes) {
+		if node, ok := byName[name]; ok {
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
 }
 
 func appendTableStatements(
