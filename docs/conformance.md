@@ -269,10 +269,65 @@ Two consequences worth naming:
   input and no round trip reaches it. Omit a default class, which is how both
   binaries write one.
 
-Only PostgreSQL is covered. MySQL, MariaDB, SQLite, ClickHouse, CockroachDB,
-YugabyteDB and Spanner keep the comparison they had, because what makes two
-indexes the same index is a per-dialect question and only PostgreSQL was
-measured.
+MySQL and MariaDB now compare uniqueness and the key columns, and nothing else.
+That branch was added with the ownership rule below, which is what made a
+database unique index reachable by the comparison at all; see
+[#1245](https://github.com/stokaro/ptah/issues/1245) for what it deliberately
+leaves out and why. SQLite, ClickHouse, CockroachDB, YugabyteDB and Spanner keep
+the comparison they had, because what makes two indexes the same index is a
+per-dialect question and those dialects were not measured.
+
+### A unique constraint and its index are one object, and the schema says which
+
+Every engine Ptah supports except SQL Server enforces a `UNIQUE` constraint with
+an index of the constraint's own name on the constraint's own table.
+Introspection reports that one object twice — once in the index catalog, once in
+the constraint catalog — and MySQL and MariaDB do not even have a separate
+notion to report: `ADD CONSTRAINT c UNIQUE (a)` and
+`CREATE UNIQUE INDEX c ON t (a)` leave the identical catalog row, which is why
+`schema inspect` writes MySQL uniqueness back out as `index { unique = true }`
+on both binaries and never as a constraint.
+
+The two representations used to be compared in two pools, and the database index
+was filtered out of its pool unconditionally. The desired side is never
+filtered, so a desired state that spells the object as an index had nothing to
+match: index comparison reported it **added** and constraint comparison, finding
+no `UNIQUE` constraint on the desired side, reported the same name **removed**,
+in the same plan. Measured by replaying a database's own `schema inspect` output
+against the database it came from, where the pinned Atlas CE v1.3.0 binary
+reported the schema synced:
+
+| Target | Fixture | Ptah before | Result of applying it |
+| --- | --- | --- | --- |
+| MySQL 9.7.1 | `UNIQUE KEY uq_users_email (email)` | `CREATE UNIQUE INDEX` + `DROP INDEX` | exit 1, `Error 1061 (42000): Duplicate key name` |
+| MySQL 9.7.1 | `UNIQUE KEY uk_users_email (email)` | `CREATE UNIQUE INDEX` + `DROP INDEX` | exit 1, same error |
+| MariaDB 11.8.8 | `UNIQUE KEY uq_users_email (email)` | `CREATE UNIQUE INDEX` + `DROP INDEX IF EXISTS` | exit 1, same error |
+| PostgreSQL 17.10 | `CONSTRAINT uq_users_email UNIQUE (email)` against a desired `index { unique = true }` | `CREATE UNIQUE INDEX IF NOT EXISTS` + `DROP CONSTRAINT IF EXISTS` | **exit 0**, and the table left with no unique index at all |
+
+The spurious pair rode along with real work. Adding one column to the MySQL
+table above planned `ADD COLUMN`, then the same `CREATE UNIQUE INDEX` and
+`DROP INDEX`; the apply added the column, failed on the create, and exited 1
+with the migration half applied.
+
+The PostgreSQL row is the one to read twice. The `IF NOT EXISTS` guard skipped
+the create, the drop took the constraint and its index with it, and the command
+reported success while deleting the uniqueness the desired state asked for.
+
+Ownership now follows the desired state's spelling. An identity the desired
+state declares as an index reaches index comparison, whichever filter would
+otherwise have claimed it, and constraint comparison leaves that object alone; a
+desired state that spells uniqueness as a constraint, or does not mention the
+object at all, is unchanged — the constraint pool still owns it, and an
+undeclared unique key is still reported removed. The rule cannot start dropping
+anything, because an identity only survives the filters when the desired state
+names it, and an identity the desired state names is matched rather than
+removed.
+
+Two objects that merely share a name stay two: index identity carries the owning
+table, and a desired plain `index "uq_users_email"` against a database
+`UNIQUE KEY uq_users_email` is reported as a replacement — one `DROP INDEX`
+followed by one `CREATE INDEX`, which is the pair the pinned binary plans for it
+on MySQL 9.7.1 — rather than being collapsed into agreement.
 
 ## Reports
 
