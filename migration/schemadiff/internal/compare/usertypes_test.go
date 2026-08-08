@@ -145,8 +145,8 @@ func TestUserTypes_ModifiedCarryTheirCurrentShape(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff)
-	compare.CompositeTypes(generated, database, diff)
+	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.DomainsModified, qt.HasLen, 1)
 	c.Assert(diff.DomainsModified[0].CurrentBaseType, qt.Equals, "integer")
@@ -178,8 +178,8 @@ func TestUserTypes_CurrentShapeKeepsTheCatalogSpelling(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff)
-	compare.CompositeTypes(generated, database, diff)
+	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.DomainsModified, qt.HasLen, 1)
 	c.Assert(diff.DomainsModified[0].CurrentBaseType, qt.Equals, "decimal")
