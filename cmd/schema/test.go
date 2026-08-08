@@ -176,8 +176,9 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 //
 // Classification deliberately does not govern the file and directory branches:
 // it calls a plain directory a local schema file and would hand it to the
-// schema-file loader, which is why `schema diff --to file://models` fails with
-// "schema file is a directory". A Go-annotation directory must keep reaching
+// schema-file loader, which since stokaro/ptah#940 reads a directory of .sql or
+// .hcl files as one schema. A directory of Go annotations holds neither, so that
+// loader would refuse it; a Go-annotation directory must keep reaching
 // goschema.ParseDir.
 //
 // A schema selection has to be applied here rather than inside the runner,

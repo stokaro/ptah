@@ -17,6 +17,7 @@ import (
 const schemaApplyLockUnsupportedNote = `note: schema apply locking is not supported for dialect "sqlite"; --lock-timeout is ignored and the apply proceeds without a database lock`
 
 func TestSchemaApplyLockTimeoutSQLiteIsExplicitNoOp(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "lock-apply.db")
@@ -46,6 +47,7 @@ func TestSchemaApplyLockTimeoutSQLiteIsExplicitNoOp(t *testing.T) {
 }
 
 func TestSchemaApplyWithoutLockTimeoutPrintsNoLockNote(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "no-note.db")

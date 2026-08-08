@@ -3,9 +3,12 @@ package atlas
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -88,10 +91,15 @@ fails loudly; registry plan URLs are not supported. A session advisory lock
 serializes concurrent applies against one target on PostgreSQL, MySQL,
 MariaDB, and SQL Server; --lock-timeout bounds how long acquisition waits
 (empty waits indefinitely), and dialects without advisory locks proceed
-unlocked with a note. Before the target is touched, --dev-url rehearses the
-exact ordered plan on the dev database: the dev database is reset, the
-target's current schema is recreated on it, and a failed rehearsal refuses
-the apply with the target unchanged. --schema and --include positively select
+unlocked with a note. A --to that is not already a live database — a schema
+file, a schema directory, a migration directory, or an env:// reference to one
+of those — requires --dev-url, exactly as ` + "`schema inspect`" + ` and ` + "`schema diff`" + `
+do; a database --to needs none. Before the target is touched, --dev-url
+rehearses the exact ordered plan on the dev database: the dev database is
+reset, the target's current schema is recreated on it, and a failed rehearsal
+refuses the apply with the target unchanged. The rehearsal runs under --dry-run
+too, so a dry run cannot report a plan the real apply refuses.
+--schema and --include positively select
 what both comparison sides see: --schema names define the schema universe,
 --include selectors pick top-level resources inside it, and --exclude plus
 env.schema.mode subtract from the result. A selected object that depends on
@@ -242,6 +250,13 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// The dev-database requirement lands after the flag-shape checks above and
+	// before the target database is contacted, which is the order the community
+	// binary reports in: an unparseable --tx-mode or --lock-timeout is named
+	// there even when --dev-url is also missing.
+	if err := ensureAtlasSchemaApplyDevURL(opts, projectEnv); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
@@ -286,7 +301,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	if !plan.HasChanges() {
 		if formatOutput {
-			return writeAtlasSchemaApplyFormat(cmd, opts, plan.Statements())
+			return writeAtlasSchemaApplyFormat(cmd, opts, conn.Info().Dialect, plan.Statements())
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
 		return nil
@@ -305,7 +320,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	formattedPlan := ""
 	if formatOutput {
 		var err error
-		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, statements)
+		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -319,9 +334,12 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if opts.dryRun {
-		return nil
-	}
+	// Both gates that can refuse this plan sit ABOVE the --dry-run exit, for
+	// the same reason the lint verdict does: a dry run exists so a plan can be
+	// checked before it is committed to, and a dry run that exits 0 on a plan
+	// the real apply refuses turns a CI gate into a false green. The cheap
+	// local policy check keeps running first, so the error a user sees when
+	// both would fail does not depend on whether --dry-run was passed.
 	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -335,6 +353,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		Statements:  statements,
 	}); err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	if opts.dryRun {
+		return nil
 	}
 
 	ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
@@ -479,7 +500,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	statements := atlasschema.SplitApplyStatements(plan.SQL(), conn.Info().Dialect)
 	formattedPlan := ""
 	if opts.formatOutput {
-		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, statements)
+		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -878,13 +899,72 @@ func validateAtlasSchemaApplyOptions(
 	return set.EnsureDevDatabase(opts.devURL)
 }
 
+// applyWithoutDevURLEnvVar restores planning a non-database desired state with
+// no dev database at all.
+//
+// The default refuses it, because the community binary refuses it: `schema
+// apply --to file://… --dry-run` and `--auto-approve` both fail there with
+// `--dev-url cannot be empty`, while this binary planned AND applied. The
+// capability is not deleted with the default, per AGENTS.md — compatibility
+// never removes a capability — and it is an environment variable rather than a
+// flag because the conformance cli-surface tier asserts flag parity, so a flag
+// that binary does not register would break the promise this surface exists to
+// keep.
+//
+// Native `ptah schema apply` never consults this: it has no parity contract and
+// still plans a file desired state against the target without a dev database.
+const applyWithoutDevURLEnvVar = "PTAH_ATLAS_APPLY_WITHOUT_DEV_URL"
+
+// ensureAtlasSchemaApplyDevURL requires --dev-url when the desired state is not
+// already a live database.
+//
+// The rule is scoped, not universal, and the scope is measured: with a database
+// URL as --to and no --dev-url the community binary exits 0, so a database
+// desired state stays exempt here. `schema inspect` and `schema diff` on this
+// binary already refuse their non-database sources for want of a dev database
+// (internal/atlasschema/inspect_source.go); `schema apply` was the sibling that
+// never got the gate, and it is the one that modifies the target.
+//
+// A migration directory keeps its own longer diagnostic from
+// [atlassource.Set.EnsureDevDatabase], which names why the replay needs a dev
+// database. Both exit 1; this one only speaks for the sources that had no rule.
+func ensureAtlasSchemaApplyDevURL(
+	opts atlasSchemaApplyOptions,
+	projectEnv atlassource.ProjectEnv,
+) error {
+	if strings.TrimSpace(opts.devURL) != "" {
+		return nil
+	}
+	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	if err != nil || set.Kind == atlassource.KindDatabase || len(set.Sources) == 0 {
+		// A classification error was already refused by
+		// validateAtlasSchemaApplyOptions with its own diagnostic; nothing here
+		// can improve on it.
+		return nil //nolint:nilerr // the caller already refused on this error
+	}
+	if atlasApplyWithoutDevURLAllowed() {
+		return nil
+	}
+	return errors.New("--dev-url cannot be empty")
+}
+
+func atlasApplyWithoutDevURLAllowed() bool {
+	allowed, err := strconv.ParseBool(os.Getenv(applyWithoutDevURLEnvVar))
+	return err == nil && allowed
+}
+
 func printAtlasSchemaApplyPlan(out io.Writer, sqlText string) {
 	fmt.Fprintln(out, "Planned schema changes:")
 	fmt.Fprintln(out, strings.TrimSpace(sqlText))
 }
 
-func writeAtlasSchemaApplyFormat(cmd *cobra.Command, opts atlasSchemaApplyOptions, statements []string) error {
-	rendered, err := renderAtlasSchemaApplyFormat(opts, statements)
+func writeAtlasSchemaApplyFormat(
+	cmd *cobra.Command,
+	opts atlasSchemaApplyOptions,
+	driver string,
+	statements []string,
+) error {
+	rendered, err := renderAtlasSchemaApplyFormat(opts, driver, statements)
 	if err != nil {
 		return err
 	}
@@ -892,8 +972,13 @@ func writeAtlasSchemaApplyFormat(cmd *cobra.Command, opts atlasSchemaApplyOption
 	return err
 }
 
-func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, statements []string) (string, error) {
-	report := atlasreport.NewSchemaApply(statements)
+func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, driver string, statements []string) (string, error) {
+	report := atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{
+		Driver:     driver,
+		URL:        opts.url,
+		DryRun:     opts.dryRun,
+		Statements: statements,
+	})
 	var out bytes.Buffer
 	if err := atlasreport.WriteSchemaApply(&out, opts.format, report); err != nil {
 		return "", err

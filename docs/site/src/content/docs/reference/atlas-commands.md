@@ -680,6 +680,10 @@ and applies it after interactive confirmation or explicit `--auto-approve`.
 **Desired state (`--to`)** accepts one of:
 
 - local `file://` `.hcl`, `.yaml`, `.yml`, or `.sql` schema files;
+- one `file://` directory of `.sql` or `.hcl` schema files, read in filename
+  order — the two formats together are ambiguous, other extensions are ignored,
+  an empty directory is refused, and a subdirectory is refused rather than
+  descended into;
 - one directly connectable database URL;
 - one migration directory (a `file://` directory containing `atlas.sum`)
   replayed on the required `--dev-url` dev database;
@@ -697,7 +701,7 @@ the target database is contacted.
 | `--dry-run` | Prints the plan without applying. Mutually exclusive with `--auto-approve` on the command line. |
 | `--auto-approve` | Applies without the interactive confirmation. Mutually exclusive with `--dry-run` on the command line. |
 | `--tx-mode` | `file` and `all` execute the generated plan in one transaction; `none` executes statements without transaction wrapping. |
-| `--format` | Atlas-style templates over planned changes with `sql` and `.MarshalSQL`. |
+| `--format` | Atlas-style templates over planned changes with `sql`, `.MarshalSQL`, and the shared helper set including `json`. `{{ json . }}` renders `{Driver, URL, Changes{Applied\|Pending}}`. |
 | `--exclude` | Filters matching resources out of both sides of the comparison before planning, as do disabled `schema.mode` values. |
 | `--edit` | Opens the planned SQL in `$VISUAL`/`$EDITOR` before approval; the edited SQL is what gets applied. |
 | `--file`/`-f` | Atlas's hidden alias, accepted for local HCL or SQL paths. |
@@ -802,12 +806,16 @@ stderr note names the lock that was not acquired.
 rather than waited on, so concurrent applies can interleave. It cannot be
 combined with `--lock-name`.
 
-**`--dev-url` rehearsal.** Before a non-dry-run apply, `--dev-url` rehearses the
-exact ordered plan on the dev database — reset, the target's current schema
-recreated, then the planned (or edited) statements executed under the same
-transaction mode. A failed rehearsal refuses the apply with the target
-unchanged; the dev database must not be the target and must share its schema
-scope.
+**`--dev-url` rehearsal.** `--dev-url` is required whenever `--to` is not
+already a live database, failing with Atlas's `--dev-url cannot be empty`
+message otherwise; a database `--to` needs none, and
+`PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` restores planning without one. Before the
+apply, `--dev-url` rehearses the exact ordered plan on the dev database — reset,
+the target's current schema recreated, then the planned (or edited) statements
+executed under the same transaction mode. A failed rehearsal refuses the apply
+with the target unchanged; the dev database must not be the target and must
+share its schema scope. The rehearsal runs under `--dry-run` too, so a dry run
+cannot report a plan the real apply would refuse.
 
 Native twin: [`ptah schema apply`](../native-commands/).
 
