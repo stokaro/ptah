@@ -84,7 +84,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	}
 
 	// Get database info
-	info, versionSpecific, err := getDatabaseInfoWithCapabilities(
+	info, resolution, err := getDatabaseInfoWithCapabilities(
 		ctx,
 		db,
 		dialect,
@@ -95,13 +95,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to get database info: %w", err)
 	}
-	if !versionSpecific {
-		slog.Debug(
-			"falling back to dialect default capabilities",
-			"dialect", info.Dialect,
-			"version", info.Version,
-		)
-	}
+	reportCapabilityResolution(info, resolution)
 
 	var newReader schemaReaderFactory
 	var newWriter schemaWriterFactory
@@ -178,22 +172,65 @@ func getDatabaseInfoWithCapabilities(
 	dialect string,
 	parsedURL *url.URL,
 	dbURL string,
-) (types.DBInfo, bool, error) {
+) (types.DBInfo, capability.VersionResolution, error) {
 	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL)
 	if err != nil {
-		return types.DBInfo{}, false, err
+		return types.DBInfo{}, capability.VersionResolution{}, err
 	}
-	caps, versionSpecific := resolveDatabaseCapabilities(info)
-	info.Capabilities = caps
-	return info, versionSpecific, nil
+	resolution := resolveDatabaseCapabilities(info)
+	info.Capabilities = resolution.Capabilities
+	return info, resolution, nil
 }
 
-func resolveDatabaseCapabilities(info types.DBInfo) (capability.Capabilities, bool) {
+// reportCapabilityResolution records how the live server version was mapped
+// onto a capability preset, in the two cases where the mapping is not a plain
+// match: the version could not be parsed at all, or it parsed and ran off the
+// top of its dialect's ladder.
+//
+// Both stay at DEBUG, and that level is the point. The default logger
+// cmd/internal/cliobs installs keeps WARN and above precisely because a clean
+// run against a supported server emits nothing there; anything it does emit is
+// a diagnostic that exists nowhere else. Connecting to a server Ptah supports
+// and runs in CI is not such an event. A saturated resolution fires on every
+// single connection to that server — the integration matrix runs postgres:18,
+// which is saturated against the PostgreSQL 17 line — so reporting it at WARN
+// wrote a line to stderr on every command and broke every test that asserts a
+// clean error stream.
+//
+// The fact itself is not lost. capability.ResolveServerVersion returns
+// Saturated and NewestMeasured to any caller that wants to act on them, and
+// `--log-level debug` prints these lines. Surfacing an unrefined version to
+// the user on a channel of its own is criterion 6 of issue #916 and belongs
+// with the CLI work that owns that channel.
+func reportCapabilityResolution(info types.DBInfo, resolution capability.VersionResolution) {
+	if resolution.Saturated {
+		slog.Debug(
+			"server is newer than the newest measured capability line; planning with that line's preset",
+			"dialect", info.Dialect,
+			"version", info.Version,
+			"newest_measured", resolution.NewestMeasured,
+		)
+		return
+	}
+	if !resolution.VersionSpecific {
+		slog.Debug(
+			"falling back to dialect default capabilities",
+			"dialect", info.Dialect,
+			"version", info.Version,
+		)
+	}
+}
+
+func resolveDatabaseCapabilities(info types.DBInfo) capability.VersionResolution {
 	// Root metadata must describe the conservative server-version baseline.
 	// Session variables can differ between pooled physical connections, so
 	// session-specific relaxations are detected only after WithSession pins the
 	// connection that will plan and execute the statements.
-	return capability.ForServerVersionResult(info.Dialect, info.Version)
+	//
+	// The resolution carries more than the preset: a server newer than the
+	// newest measured version line resolves saturated and not
+	// version-specific, which is what ConnectToDatabase records.
+	return capability.ResolveServerVersion(info.Dialect, info.Version)
 }
 
 func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName string) {
