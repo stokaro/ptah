@@ -150,13 +150,15 @@ func TestWritePublicationJournal_FallsBackWithoutHardLinks(t *testing.T) {
 	c.Assert(removePublicationJournal(writer), qt.IsNil)
 }
 
-func TestPublishArtifactsLocked_PublishesCompleteBatch(t *testing.T) {
+func TestMigrationWriterPublishArtifacts_PublishesCompleteBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
+	migrationWriter, err := OpenMigrationWriter(nil, dir)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = migrationWriter.Close() }()
 
-	paths, err := PublishArtifactsLocked(
+	paths, err := migrationWriter.PublishArtifacts(
 		t.Context(),
-		dir,
 		[]PublicationArtifact{
 			{Name: "1_change.up.sql", Contents: []byte("SELECT 1;\n")},
 			{Name: "1_change.down.sql", Contents: []byte("SELECT 2;\n")},
@@ -183,15 +185,17 @@ func TestPublishArtifactsLocked_PublishesCompleteBatch(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
 
-func TestPublishArtifactsLocked_CollisionRollsBackWholeBatch(t *testing.T) {
+func TestMigrationWriterPublishArtifacts_CollisionRollsBackWholeBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
 	existingPath := filepath.Join(dir, "1_change.down.sql")
 	c.Assert(os.WriteFile(existingPath, []byte("existing\n"), 0o600), qt.IsNil)
+	migrationWriter, err := OpenMigrationWriter(nil, dir)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = migrationWriter.Close() }()
 
-	paths, err := PublishArtifactsLocked(
+	paths, err := migrationWriter.PublishArtifacts(
 		t.Context(),
-		dir,
 		[]PublicationArtifact{
 			{Name: "1_change.up.sql", Contents: []byte("SELECT 1;\n")},
 			{Name: "1_change.down.sql", Contents: []byte("SELECT 2;\n")},

@@ -81,12 +81,44 @@ if err != nil {
 fmt.Printf("published %s and %s\n", files.UpFile, files.DownFile)
 ```
 
-Planning does not write migration artifacts. A successful `WriteFiles` call
-consumes the plan; call it once after all surrounding work has succeeded.
-The plan records the migration-directory snapshot used for planning.
-`WriteFiles` acquires the shared cross-process directory lock and rejects the
-plan if migration SQL or integrity metadata changed before publication. It
-never renumbers and publishes a plan derived from stale history.
+Planning does not write migration artifacts. One `WriteFiles` call consumes the
+plan; call it once after all surrounding work has succeeded. A second call is
+reported rather than retried, because the contents the plan verifies against and
+the version it chose both describe the directory as it was before the first
+attempt — the honest retry is a fresh `PlanMigration`.
+
+The plan binds the migration directory while it is being built and holds that
+binding until its publication attempt returns, so it is a claim on a filesystem
+object rather than on a pathname. `WriteFiles` acquires the shared cross-process
+directory lock, rejects the plan if migration SQL or integrity metadata changed
+before publication, and rejects it if the pathname no longer names the object
+the plan holds — a substitute holding exactly the planned files, and a directory
+removed and recreated at the same pathname, are both a different destination. It
+never renumbers and publishes a plan derived from stale history. The version the
+plan chooses is scanned through the bound directory too, so it avoids colliding
+with the files it will be published beside rather than with whatever the
+pathname resolved to while the version was being picked.
+
+`WriteFiles` releases the migration directory handles before it returns, on the
+failure paths as well as the successful one, so the plan's hold on the directory
+ends at a moment the caller controls. A plan that is never published at all
+releases them when it is collected.
+
+Holding the directory open is not a lock on it. On Unix another process renames
+or removes the held directory exactly as it always could, and the guarantee is
+that publication stays bound to the retained object and refuses once
+revalidation shows the pathname no longer names it. On Windows an open handle is
+stronger and the rename or removal may be refused or deferred until the plan
+releases the directory.
+
+A migration directory containing a symbolic link that points outside itself — a
+shared migration linked in from another directory — is refused: everything in
+the directory is read, checksummed and published through the object the run
+opened, so bytes that live elsewhere cannot be part of it. The refusal names the
+entry and the rule. A link whose target is inside the migration directory
+resolves normally and is unaffected. The applier already refused such a
+directory, so publishing into one produced a directory `ptah migrations up`
+would not read; the generator no longer creates that situation.
 
 It renders every up/down file and requested safety report before publishing
 the artifacts as one batch. A filename collision leaves no partial new files.
@@ -262,7 +294,8 @@ type GenerateMigrationOptions struct {
     // OutputDir is the directory where migration files will be saved (always real filesystem)
     OutputDir string
 
-    // AllowedOutputRoot constrains OutputDir when accepting user-supplied paths
+    // AllowedOutputRoot confines the whole writer transaction when accepting
+    // user-supplied paths
     AllowedOutputRoot string
 
     // CompareOptions are the options to use when comparing schemas
@@ -284,6 +317,7 @@ type GenerateMigrationOptions struct {
 - `DBConn`: Existing database connection (optional; used instead of `DatabaseURL` when set)
 - `MigrationName`: Name for the migration (optional, defaults to "migration")
 - `OutputDir`: Directory where migration files will be saved (required)
+- `AllowedOutputRoot`: Project or workspace root the output directory must stay inside (optional). It is opened, not merely compared against: the root, the migration directory and its parent are bound once and every read, create, checksum commit and rollback of the run goes through those handles, so replacing the directory or an ancestor after the path was validated cannot move the write outside the root
 - `CompareOptions`: Schema comparison options (optional)
 - `Schemas`: PostgreSQL schema allow-list for database introspection (optional)
 - `ShadowDatabaseURL`: Disposable database URL for pre-write migration replay and round-trip checks; it must identify a different live database realm from the target (optional)

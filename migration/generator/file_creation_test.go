@@ -11,34 +11,75 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-func TestCreateMigrationFilesSkipsVersionWhenEitherDirectionExists(t *testing.T) {
+// TestNextAvailablePtahVersionSkipsVersionWhenEitherDirectionExists pins that a
+// half-present pair still consumes its version. The names come from a listing
+// the writer took through its own rooted handle, so this is the whole of the
+// decision: what the writer then creates is exclusive, and a name that appeared
+// after the listing is refused by the create rather than overwritten.
+func TestNextAvailablePtahVersionSkipsVersionWhenEitherDirectionExists(t *testing.T) {
 	c := qt.New(t)
-	dir := t.TempDir()
-	version := int64(42)
 	name := "constraint_drift"
 
-	oldUp := filepath.Join(dir, migrator.GenerateMigrationFileName(version, name, "up"))
-	oldDown := filepath.Join(dir, migrator.GenerateMigrationFileName(version, name, "down"))
-	c.Assert(os.WriteFile(oldUp, nil, 0600), qt.IsNil)
-	c.Assert(os.WriteFile(oldDown, []byte("SELECT old_down;\n"), 0600), qt.IsNil)
+	tests := []struct {
+		name  string
+		names []string
+		want  int64
+	}{
+		{name: "empty directory", names: nil, want: 42},
+		{
+			name:  "only the up half exists",
+			names: []string{migrator.GenerateMigrationFileName(42, name, "up")},
+			want:  43,
+		},
+		{
+			name:  "only the down half exists",
+			names: []string{migrator.GenerateMigrationFileName(42, name, "down")},
+			want:  43,
+		},
+		{
+			name: "both halves exist",
+			names: []string{
+				migrator.GenerateMigrationFileName(42, name, "up"),
+				migrator.GenerateMigrationFileName(42, name, "down"),
+			},
+			want: 43,
+		},
+	}
 
-	files, err := createMigrationFiles(dir, version, name, "SELECT up;\n", "SELECT down;\n")
-	c.Assert(err, qt.IsNil)
-	c.Assert(files.Version, qt.Equals, version+1)
-
-	oldDownBytes, err := os.ReadFile(oldDown)
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(oldDownBytes), qt.Equals, "SELECT old_down;\n")
-
-	upBytes, err := os.ReadFile(files.UpFile)
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(upBytes), qt.Equals, "SELECT up;\n")
-	downBytes, err := os.ReadFile(files.DownFile)
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(downBytes), qt.Equals, "SELECT down;\n")
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(nextAvailablePtahVersion(test.names, 42, name), qt.Equals, test.want)
+		})
+	}
 }
 
-// TestCreateMigrationFilesCreatesMissingParents replaces
+// TestGenerateEmptyMigrationNeverOverwritesAnExistingHalf is the file-level
+// counterpart: the writer's creates are exclusive, so an existing file keeps its
+// contents whatever the version scan concluded.
+func TestGenerateEmptyMigrationNeverOverwritesAnExistingHalf(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	first, err := GenerateEmptyMigration(EmptyMigrationOptions{
+		MigrationName: "constraint drift",
+		OutputDir:     dir,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(first.DownFile, []byte("SELECT old_down;\n"), 0600), qt.IsNil)
+
+	second, err := GenerateEmptyMigration(EmptyMigrationOptions{
+		MigrationName: "constraint drift",
+		OutputDir:     dir,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(second.DownFile, qt.Not(qt.Equals), first.DownFile)
+
+	oldDownBytes, err := os.ReadFile(first.DownFile)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(oldDownBytes), qt.Equals, "SELECT old_down;\n")
+}
+
+// TestGenerateEmptyMigrationCreatesMissingParents replaces
 // TestCreateMigrationFilesRequiresExistingParent, which pinned the opposite
 // behavior.
 //
@@ -49,31 +90,42 @@ func TestCreateMigrationFilesSkipsVersionWhenEitherDirectionExists(t *testing.T)
 // where this refused with `parent directory "…/a" is not available` and wrote
 // nothing (stokaro/ptah#1241 item 4). Ptah's `migrate diff` writer already
 // created parents, so the two writers also disagreed with each other.
-func TestCreateMigrationFilesCreatesMissingParents(t *testing.T) {
+func TestGenerateEmptyMigrationCreatesMissingParents(t *testing.T) {
 	c := qt.New(t)
-	dir := filepath.Join(t.TempDir(), "missing", "levels", "migrations")
+	// The reported path is the one the output directory resolved to, so the
+	// expectation resolves the temporary root the same way rather than comparing
+	// against a path that is a symlink on this platform.
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	c.Assert(err, qt.IsNil)
+	dir := filepath.Join(base, "missing", "levels", "migrations")
 
-	files, err := createMigrationFiles(dir, 1, "init", "SELECT 1;\n", "SELECT 2;\n")
+	files, err := GenerateEmptyMigration(EmptyMigrationOptions{
+		MigrationName: "init",
+		OutputDir:     dir,
+	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(filepath.Dir(files.UpFile), qt.Equals, dir)
 
 	upBytes, err := os.ReadFile(files.UpFile)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(upBytes), qt.Equals, "SELECT 1;\n")
+	c.Assert(string(upBytes), qt.Contains, "-- Direction: UP\n")
 }
 
-// TestCreateMigrationFilesRefusesParentThatIsAFile is the control for the test
+// TestGenerateEmptyMigrationRefusesParentThatIsAFile is the control for the test
 // above: creating parents must not mean creating them through something that is
 // not a directory. The pinned binary refuses that path too
 // (`stat a/b: not a directory`, exit 1), so both stay refusals.
-func TestCreateMigrationFilesRefusesParentThatIsAFile(t *testing.T) {
+func TestGenerateEmptyMigrationRefusesParentThatIsAFile(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	blocker := filepath.Join(root, "a")
 	c.Assert(os.WriteFile(blocker, []byte("not a directory\n"), 0600), qt.IsNil)
 
-	_, err := createMigrationFiles(filepath.Join(blocker, "b"), 1, "init", "SELECT 1;\n", "SELECT 2;\n")
-	c.Assert(err, qt.ErrorMatches, `failed to create output directory: .*not a directory`)
+	_, err := GenerateEmptyMigration(EmptyMigrationOptions{
+		MigrationName: "init",
+		OutputDir:     filepath.Join(blocker, "b"),
+	})
+	c.Assert(err, qt.ErrorMatches, `.*not a directory`)
 
 	blockerBytes, err := os.ReadFile(blocker)
 	c.Assert(err, qt.IsNil)
