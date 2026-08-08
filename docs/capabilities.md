@@ -182,18 +182,28 @@ anything Ptah measured still resolves to the newest preset in its dialect. That
 is a stand-in, not a match: whatever the newer release gained or lost is
 unmodeled.
 
-`ForServerVersionResult`'s boolean cannot express this — it answers "did a
-parsed version select this preset", and stays `true` for a major nobody has
-measured. `ResolveServerVersion` returns a `VersionResolution` that adds the
-missing answer:
+The preset such a server receives is byte-identical to `ForDialect`'s, which is
+exactly what `ForServerVersionResult`'s boolean means by "no version-specific
+preset could be selected". So the boolean is `false` there:
+
+```go
+caps, versionSpecific := capability.ForServerVersionResult("mysql", "26.7.0")
+// caps            == capability.MySQL84() == capability.ForDialect("mysql")
+// versionSpecific == false   (26.x ran off the top of the ladder)
+```
+
+`ResolveServerVersion` separates that fallback from the other one — a version
+that could not be parsed at all — and names the line the server was planned as:
 
 ```go
 resolution := capability.ResolveServerVersion("mysql", "26.7.0")
 // resolution.Capabilities    == capability.MySQL84()
-// resolution.VersionSpecific == true    (a parsed version selected it)
+// resolution.VersionSpecific == false   (the dialect default was used)
 // resolution.Saturated       == true    (26.x is past the newest measured line)
 // resolution.NewestMeasured  == "9.x"
 ```
+
+`Saturated` and `VersionSpecific` are never both true.
 
 The newest measured line per refined dialect:
 
@@ -218,10 +228,18 @@ report `Saturated=false` and an empty `NewestMeasured`. Refining those dialects
 is the remaining scope of issue #916.
 
 `dbschema.ConnectToDatabase` is the one production caller of the version-aware
-selector. It logs a saturated resolution at `WARN`, naming the dialect, the
-server version, and the line it was planned as. An unparseable version stays at
-`DEBUG`, because several dialects have no ladder and would warn on every
-connection.
+selector. It records a saturated resolution at `DEBUG`, naming the dialect, the
+server version, and the line it was planned as; an unparseable version is
+recorded at `DEBUG` too. Neither reaches a default run's stderr, and that is
+deliberate: the CLI's default logger keeps `WARN` and above so that a clean run
+emits nothing, and connecting to a supported server is a clean run. The
+integration matrix runs `postgres:18`, so a saturated resolution there fires on
+every connection — a warning would be noise on every command rather than a
+diagnostic. Use `--log-level debug` to see it, or read `Saturated` and
+`NewestMeasured` from `ResolveServerVersion` directly.
+
+Surfacing an unrefined version to the user on a channel of its own is
+criterion 6 of issue #916 and belongs with the CLI work that owns that channel.
 
 ### Composition
 

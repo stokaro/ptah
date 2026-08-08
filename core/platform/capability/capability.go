@@ -839,6 +839,10 @@ func ForDialect(dialect string) Capabilities {
 // exactly there, so a caller can tell "inside a measured line" from "past the
 // newest line this package knows".
 //
+// Above these numbers the preset that comes back is byte-identical to
+// ForDialect's, which is the definition of "no version-specific preset could be
+// selected", so VersionSpecific is false there too.
+//
 // Raising one of these numbers is the deliberate act of claiming a newer
 // server line behaves like the preset it lands on. Do it in the change that
 // measures that line, together with the preset it deserves — never as a side
@@ -857,15 +861,16 @@ const (
 )
 
 // VersionResolution reports how a server version string was mapped onto a
-// capability preset. It is what ForServerVersionResult's boolean cannot say on
-// its own: that boolean answers "did a parsed version select this preset", and
-// stays true for a version far newer than anything this package has a preset
-// for.
+// capability preset.
 //
-// Saturated distinguishes those two cases. It is true when the version parsed,
-// selected the newest preset in its dialect's ladder, and is itself newer than
-// the newest line that ladder was measured against — so the preset is a
-// stand-in and any capability the newer server gained or lost is unmodeled.
+// Saturated names the case the resolver used to answer wrongly: the version
+// parsed, it selected the newest preset in its dialect's ladder, and it is
+// itself newer than the newest line that ladder was measured against — so the
+// preset is a stand-in and any capability the newer server gained or lost is
+// unmodeled. That is not a version-specific answer, so VersionSpecific is
+// false whenever Saturated is true, and the two fields together say which of
+// the two ways a caller ended up on the dialect default: the version could not
+// be parsed at all, or it parsed and ran off the top of the ladder.
 //
 // Saturation is only defined where this package has a version ladder: MySQL,
 // MariaDB and PostgreSQL. CockroachDB, YugabyteDB and Spanner are resolved
@@ -878,11 +883,14 @@ type VersionResolution struct {
 	Capabilities Capabilities
 	// VersionSpecific is false when no version-specific preset could be
 	// selected and the dialect default was used instead. It carries exactly
-	// the meaning of ForServerVersionResult's second return value.
+	// the meaning of ForServerVersionResult's second return value, and it is
+	// false for a saturated version because the preset such a version lands
+	// on is exactly ForDialect's.
 	VersionSpecific bool
 	// Saturated is true when the resolved preset is the top of a version
 	// ladder and the server is newer than the newest line that ladder was
-	// measured against.
+	// measured against. It is the reason VersionSpecific is false, and is
+	// never true at the same time as VersionSpecific.
 	Saturated bool
 	// NewestMeasured names the newest measured version line for the dialect,
 	// for example "9.x". It is empty for dialects with no version ladder.
@@ -905,8 +913,10 @@ func ForServerVersion(dialect, version string) Capabilities {
 // the dialect default was used instead. Callers with a live connection can log
 // that degradation while offline callers can keep using ForDialect.
 //
-// The boolean says nothing about whether the server is newer than the newest
-// preset this package holds; ResolveServerVersion answers that.
+// A version newer than the newest measured line for its dialect is one of
+// those fallbacks: the ladder's open-topped arm hands back exactly ForDialect's
+// preset, so the boolean is false. ResolveServerVersion separates that case
+// from a version that could not be parsed at all.
 func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 	resolution := ResolveServerVersion(dialect, version)
 	return resolution.Capabilities, resolution.VersionSpecific
@@ -914,9 +924,10 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 
 // ResolveServerVersion is ForServerVersionResult with the saturation answer
 // attached. It selects exactly the same preset and reports exactly the same
-// VersionSpecific value; the extra fields describe how far the mapping was
-// trusted. See VersionResolution for what saturation means and which dialects
-// can report it.
+// VersionSpecific value; Saturated and NewestMeasured say why a saturated
+// version is not version-specific and which line it was planned as. See
+// VersionResolution for what saturation means and which dialects can report
+// it.
 func ResolveServerVersion(dialect, version string) VersionResolution {
 	normalized := platform.NormalizeDialect(dialect)
 	versionLower := strings.ToLower(version)
@@ -959,36 +970,40 @@ func measuredLine(major int) string {
 	return strconv.Itoa(major) + ".x"
 }
 
-func mysqlResolution(v serverVersion) VersionResolution {
+// ladderResolution assembles the answer for a dialect that has a version
+// ladder. saturated is the single place VersionSpecific and Saturated are tied
+// together: a version past the top of the ladder receives ForDialect's preset,
+// so it is a fallback and not a version-specific selection.
+func ladderResolution(caps Capabilities, newestMeasuredMajor int, saturated bool) VersionResolution {
 	return VersionResolution{
-		Capabilities:    mysqlForVersion(v),
-		VersionSpecific: true,
-		Saturated:       v.major > newestMeasuredMySQLMajor,
-		NewestMeasured:  measuredLine(newestMeasuredMySQLMajor),
+		Capabilities:    caps,
+		VersionSpecific: !saturated,
+		Saturated:       saturated,
+		NewestMeasured:  measuredLine(newestMeasuredMajor),
 	}
+}
+
+func mysqlResolution(v serverVersion) VersionResolution {
+	return ladderResolution(mysqlForVersion(v), newestMeasuredMySQLMajor, v.major > newestMeasuredMySQLMajor)
 }
 
 func mariaDBResolution(version string) VersionResolution {
-	resolution := VersionResolution{
-		Capabilities:   mariaDBForVersion(version),
-		NewestMeasured: measuredLine(newestMeasuredMariaDBMajor),
-	}
 	v, ok := parseVersion(strings.TrimPrefix(version, mariaDBReplicationPrefix))
 	if !ok {
-		return resolution
+		return VersionResolution{
+			Capabilities:   mariaDBForVersion(version),
+			NewestMeasured: measuredLine(newestMeasuredMariaDBMajor),
+		}
 	}
-	resolution.VersionSpecific = true
-	resolution.Saturated = v.major > newestMeasuredMariaDBMajor
-	return resolution
+	return ladderResolution(
+		mariaDBForVersion(version),
+		newestMeasuredMariaDBMajor,
+		v.major > newestMeasuredMariaDBMajor,
+	)
 }
 
 func postgresResolution(v serverVersion) VersionResolution {
-	return VersionResolution{
-		Capabilities:    postgresForVersion(v),
-		VersionSpecific: true,
-		Saturated:       v.major > newestMeasuredPostgresMajor,
-		NewestMeasured:  measuredLine(newestMeasuredPostgresMajor),
-	}
+	return ladderResolution(postgresForVersion(v), newestMeasuredPostgresMajor, v.major > newestMeasuredPostgresMajor)
 }
 
 func mysqlForVersion(v serverVersion) Capabilities {

@@ -4882,26 +4882,30 @@ type VersionResolution struct {
     Capabilities Capabilities
     // VersionSpecific is false when no version-specific preset could be
     // selected and the dialect default was used instead. It carries exactly
-    // the meaning of ForServerVersionResult's second return value.
+    // the meaning of ForServerVersionResult's second return value, and it is
+    // false for a saturated version because the preset such a version lands
+    // on is exactly ForDialect's.
     VersionSpecific bool
     // Saturated is true when the resolved preset is the top of a version
     // ladder and the server is newer than the newest line that ladder was
-    // measured against.
+    // measured against. It is the reason VersionSpecific is false, and is
+    // never true at the same time as VersionSpecific.
     Saturated bool
     // NewestMeasured names the newest measured version line for the dialect,
     // for example "9.x". It is empty for dialects with no version ladder.
     NewestMeasured string
 }
     VersionResolution reports how a server version string was mapped onto a
-    capability preset. It is what ForServerVersionResult's boolean cannot say
-    on its own: that boolean answers "did a parsed version select this preset",
-    and stays true for a version far newer than anything this package has a
-    preset for.
+    capability preset.
 
-    Saturated distinguishes those two cases. It is true when the version parsed,
-    selected the newest preset in its dialect's ladder, and is itself newer
-    than the newest line that ladder was measured against — so the preset is a
-    stand-in and any capability the newer server gained or lost is unmodeled.
+    Saturated names the case the resolver used to answer wrongly: the version
+    parsed, it selected the newest preset in its dialect's ladder, and it is
+    itself newer than the newest line that ladder was measured against — so the
+    preset is a stand-in and any capability the newer server gained or lost
+    is unmodeled. That is not a version-specific answer, so VersionSpecific is
+    false whenever Saturated is true, and the two fields together say which of
+    the two ways a caller ended up on the dialect default: the version could not
+    be parsed at all, or it parsed and ran off the top of the ladder.
 
     Saturation is only defined where this package has a version ladder: MySQL,
     MariaDB and PostgreSQL. CockroachDB, YugabyteDB and Spanner are resolved
