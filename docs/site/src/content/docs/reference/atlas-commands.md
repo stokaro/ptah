@@ -195,6 +195,33 @@ An empty `--dir-format`, a query parameter other than `format`, and a repeated
 empty value and the unknown key select the atlas layout, and a repeated key
 takes the first value.
 
+`format` is the only query key that selects anything. A key that selected
+nothing is named on standard error and the run continues, on each of the eight
+verbs that accepts a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`,
+`set`, `status` and `validate`:
+
+```text
+note: atlas migrate apply --dir: ignoring migration directory URL query key
+"fromat". Only ?format= selects the directory layout. Set
+PTAH_STRICT_DIR_QUERY=1 to refuse an unrecognized key instead.
+```
+
+The exit code and everything on standard output are unchanged, so a script
+reading either sees exactly what Atlas produces. The note exists because
+dropping the key is what Atlas does and saying nothing about it is not: a
+misspelled `?fromat=goose` selects no layout on either tool, so the directory is
+read as the atlas layout while you believe it is being read as Goose. Set
+[`PTAH_STRICT_DIR_QUERY=1`](../../atlas/overview/#the-variables) to make that a
+refusal instead.
+
+`checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` register `--dir` too and
+refuse any query on it — `migration directory URL query parameters are not
+supported for this command` — so neither the note nor the variable applies
+there. The pinned community binary answers `unknown flag: --dir` on all six, so
+this is stricter than a CLI with no contract on those verbs rather than a parity
+gap; it is tracked in
+[#1013](https://github.com/stokaro/ptah/issues/1013).
+
 Inputs that stay refused where Atlas CE exits 0, all of them loudly:
 
 - a semicolon in the query, such as `?format=flyway;x=1`, which Atlas drops
@@ -270,7 +297,11 @@ The directory's existing `atlas.sum` is verified first — over the selected
 layout's covered file set — with the same output `migrate apply` and
 `migrate validate` produce, and nothing is created when the check fails; see
 [Which verbs enforce `atlas.sum`](../../atlas/migrate-commands/#which-verbs-enforce-atlassum).
-An unrecognized `--dir` query key is ignored, as it is on every other verb.
+An unrecognized `--dir` query key is ignored here and named on standard error,
+as it is on the other seven verbs that accept a `--dir` query — `apply`,
+`diff`, `hash`, `lint`, `set`, `status` and `validate`. It is not ignored on
+`checkpoint`, `down`, `edit`, `rebase`, `rm` or `test`: those refuse a `--dir`
+query outright, as the shared rules above record.
 
 `--dir` must name a scheme on this verb and on `migrate diff`, as it must on
 every Atlas verb: `--dir migrations` is refused with
@@ -342,9 +373,9 @@ migration gets written. An unrecognized `--dir` query key is ignored; a
 `?format=` or `--dir-format` naming a non-`atlas` layout is refused, because
 nothing writes planned migration SQL in a foreign tool's convention yet.
 
-Both spellings of the layout are read the way every other migrate verb reads
-them. The value is matched verbatim, so `--dir-format ATLAS` and
-`--dir-format " atlas "` are rejected rather than coerced, and an explicit
+Both spellings of the layout are read the way the other verbs that accept a
+`--dir` query read them. The value is matched verbatim, so `--dir-format ATLAS`
+and `--dir-format " atlas "` are rejected rather than coerced, and an explicit
 `?format=` outranks `--dir-format` — `--dir "file://migrations?format=atlas"
 --dir-format golang-migrate` writes the Atlas-layout migration. An
 unrecognized query key selects no layout, so `--dir-format` still decides

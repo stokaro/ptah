@@ -178,6 +178,12 @@ func runAtlasMigrateDiff(
 	if err := checkWritingVerbDirQuery(dirFormat, localDir.Query); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
+	// Positioned after both format refusals above and before the atlas.sum gate
+	// below, which is where every verb that reads a `--dir` query reports it;
+	// see [reportIgnoredDirQuery] for the two rules that fix the position.
+	if err := reportIgnoredDirQuery(cmd.ErrOrStderr(), "diff", localDir.Query); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := verifyAtlasWriteDirChecksum(cmd, project, localDir); err != nil {
 		return err
 	}
