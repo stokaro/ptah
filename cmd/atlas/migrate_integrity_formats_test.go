@@ -754,7 +754,7 @@ func TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs(t *testing.T) {
 			name: "hash stray positional",
 			verb: "hash",
 			args: []string{"stray"},
-			want: `unexpected positional arguments \["stray"\]`,
+			want: `unexpected positional arguments \["stray"\]: name the migration directory with --dir`,
 		},
 		{
 			name: "hash unknown flag",
@@ -766,7 +766,7 @@ func TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs(t *testing.T) {
 			name: "validate stray positional",
 			verb: "validate",
 			args: []string{"stray"},
-			want: `unexpected positional arguments \["stray"\]`,
+			want: `unexpected positional arguments \["stray"\]: name the migration directory with --dir`,
 		},
 		{
 			name: "validate unknown flag",
@@ -827,7 +827,7 @@ func TestCompatMigrateIntegrityArgumentTerminator_FailurePath(t *testing.T) {
 				"--dir", "file://"+named+"?format=atlas",
 				"--", "--dir", "file://"+other)
 
-			c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["--dir" "file://.*"\]`)
+			c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["--dir" "file://.*"\]: name the migration directory with --dir`)
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			_, namedStat := os.Stat(filepath.Join(named, migratesum.AtlasFileName))
 			c.Assert(os.IsNotExist(namedStat), qt.IsTrue)

@@ -394,6 +394,55 @@ Atlas-compatible commands under `ptah-compat schema ...` and
   repeated values for the same variable become a string list, matching Atlas's
   local project-variable behavior.
 
+`-c` and `--env` **select** a project file, so naming either one and having no
+`atlas.hcl` is an error on both binaries. `--var` only **supplies values** to a
+project file, so it does not require one: with no `atlas.hcl` present the
+command runs with no project at all. This holds on every verb. It previously
+held only on the verbs whose flags Cobra parses, and `migrate hash`,
+`migrate validate`, `migrate new`, `migrate down`, `migrate checkpoint`,
+`migrate edit`, `migrate rebase`, `migrate rm`, `migrate test` and
+`schema test` answered `failed to read atlas config atlas.hcl: …` at exit 1
+where the pinned Atlas community binary v1.3.0 exits 0
+([#1241](https://github.com/stokaro/ptah/issues/1241) item 12).
+
+Not requiring a project file is not the same as not reading the flag. The
+**syntax** of `--var` is checked wherever it is spelled, with or without an
+`atlas.hcl`, because the pinned binary parses it while parsing flags and refuses
+a malformed value before it looks for a project file:
+
+```console
+$ ptah-compat migrate validate --dir file://migrations --var foo
+Error: invalid argument "foo" for "--var" flag: variables must be format as key=value, got: "foo"
+$ echo $?
+1
+```
+
+The value is comma-separated, and each field is checked, so `--var a=1,b` is
+refused naming `b`. An empty name is accepted here — `--var =v` passes, as it
+does on the pinned binary — and refused later by the project loader, where a
+file is actually being evaluated.
+
+"Wherever it is spelled" includes the commands that never look at the value.
+`--var` is registered once, on the `schema` and `migrate` groups, so every
+descendant accepts it — including the group commands themselves, `schema fmt`,
+and `migrate import`, none of which read a project file. A check that lived only
+where a consumer asked for the values left those unrefused, which mattered most
+on the one that writes:
+
+```console
+$ ptah-compat migrate import --from file://src --to file://dst --dir-format flyway --var foo
+Error: invalid argument "foo" for "--var" flag: variables must be format as key=value, got: "foo"
+$ echo $?
+1
+$ ls dst
+ls: dst: No such file or directory
+```
+
+The refusal therefore runs for every command under both groups, before the
+command does any work — so `ptah-compat migrate new nm --var foo` creates no
+migration directory, no migration file and no `atlas.sum`, and
+`ptah-compat schema fmt --var foo` reformats nothing.
+
 A `variable` block without a `default` is valid when the invocation provides a
 matching `--var name=value`. Variable blocks accept the `type` constraints
 `string`, `number`, `bool`, and `list(string)` — the attribute the official

@@ -381,7 +381,7 @@ func TestCompatCommandProjectSelectionDoesNotLeakAfterArgumentValidationFailure(
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["unexpected"\]`)
+	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["unexpected"\]: name the migration directory with --dir`)
 	out.Reset()
 	cmd.SetArgs([]string{
 		"migrate", "hash",

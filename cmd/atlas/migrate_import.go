@@ -36,7 +36,7 @@ than an R suffix, because Ptah cannot execute an R-suffixed Atlas migration.`,
 	flags.StringVar(&opts.FromURL, "from", "file://migrations", "Source migration directory URL")
 	flags.StringVar(&opts.ToURL, "to", "file://migrations", "Destination migration directory URL")
 	flags.StringVar(&opts.DirFormat, "dir-format", "atlas", "Source migration directory format: atlas, golang-migrate, goose, flyway, liquibase, or dbmate")
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the directories with --from and --to"))
 	return cmd
 }
 

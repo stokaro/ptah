@@ -29,6 +29,7 @@ func TestCompatCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
 		"migrate", "lint",
 		"--dir", "file://" + migrationsDir,
 		"--dev-url", "sqlite://" + devDBPath,
+		"--latest", "1",
 	})
 
 	err := cmd.Execute()
@@ -55,6 +56,7 @@ func TestCompatCommand_MigrateLintRejectsDockerDevURL(t *testing.T) {
 		"migrate", "lint",
 		"--dir", "file://" + migrationsDir,
 		"--dev-url", "docker://postgres/16/dev",
+		"--latest", "1",
 	})
 
 	err := executeAtlasTestCommand(cmd)
@@ -95,6 +97,7 @@ func TestCompatCommand_MigrateLintUsesAtlasProjectEnvPolicy(t *testing.T) {
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--env", "ci",
+		"--latest", "1",
 		"--format", "{{ json . }}",
 	})
 
