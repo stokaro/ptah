@@ -65,6 +65,88 @@ Ordering is dependency-aware: roles are created before the functions and
 policies that reference them, and grants are emitted after the roles and
 target objects exist.
 
+Reading a live database describes only the roles the schemas being read
+actually use, because a PostgreSQL role belongs to the cluster rather than to
+one database. A role counts as used when it holds a privilege on a relation in
+those schemas or on one of the schemas themselves, when it granted one, or when
+a row-level security policy on a table in them applies to it. A role that
+merely exists elsewhere on the server is not part of the schema being
+described, so it is left out — of `ptah db read` and of `ptah-compat schema
+inspect` alike.
+
+The rule is exact in both directions: a description defines a role when some
+other statement in it names that role, and not otherwise. Ownership alone does
+not qualify, because Ptah describes no ownership — it writes no `OWNER TO` and
+no `CREATE SCHEMA ... AUTHORIZATION` — so an owner would be created and then
+never referred to.
+
+For the same reason, grant introspection reports privileges somebody granted
+rather than the built-in privileges an owner holds by default. A relation whose
+`pg_class.relacl` is null has had no `GRANT` run against it, and its owner's
+implicit privileges are no longer emitted as `GRANT` statements; replaying
+`CREATE TABLE` gives the new owner exactly those privileges again.
+
+Leaving a role out of a description does not mean Ptah thinks it is missing.
+Which roles a schema uses and which roles Ptah manages on the server are
+separate questions, and comparison asks the second one: a managed role that
+already exists anywhere in the cluster is never planned as a `CREATE ROLE`,
+whether or not the schema you are reading refers to it. Declare such a role in
+your entities and Ptah still applies `ALTER ROLE` when its attributes drift, so
+comparison is unchanged in both directions. Roles outside the described scope
+are used for that comparison only — they are never written to any output.
+
+Scoping the description does cost one thing, and it is not comparison: a
+description no longer reproduces a cluster's ungranted roles somewhere else.
+Measured on PostgreSQL 17.10, on a database holding one table and roles nothing
+grants anything to, `ptah db read` went from four `CREATE ROLE` statements to
+none, and `ptah-compat schema apply --dry-run` against an empty database in a
+**second** cluster went from planning three of them to planning none. Copying
+one cluster's roles into another is something you could do before, so it stays
+available on the same commands rather than being removed:
+
+```bash
+# Describe every role Ptah manages on the server, not only the ones in scope.
+PTAH_POSTGRES_INSPECT_ALL_ROLES=1 ptah db read --db-url "$PG_URL"
+PTAH_POSTGRES_INSPECT_ALL_ROLES=1 ptah-compat schema inspect --url "$PG_URL"
+```
+
+The variable widens the description only. Both reads still happen, so
+comparison sees exactly the same set of existing roles either way and turning
+it on can never plan a `CREATE ROLE` for a role that is already there. It is an
+environment variable rather than a flag because `ptah-compat` registers exactly
+the flags the Atlas community CLI registers. Reserved roles stay out of the
+widened read too, for the reason the next paragraph gives.
+
+You are never left to infer the omission. When a read leaves roles out, Ptah
+says so on standard error, alongside the schema on standard output:
+
+```text
+note: 4 roles Ptah manages on this server are not described, because nothing in the inspected schemas refers to them; comparison still treats them as present, so none of them is planned as a CREATE ROLE. Set PTAH_POSTGRES_INSPECT_ALL_ROLES=1 to describe every role Ptah manages.
+```
+
+The note reports a count and never the names: on a shared instance those names
+belong to other tenants, which is half the reason the description is scoped at
+all.
+
+A scoped description is also a replayable one, which is the point of scoping it
+at all. Feed `ptah-compat schema inspect` output straight back in against a
+clean sibling database on the same server and it materializes at exit 0, and
+the document that comes back is the one that went in. The roles a scoped
+description names are precisely the roles the server already has — they hold
+privileges on the inspected tables — so the dev database is not given them
+again; they are left exactly as the server has them, never altered, and named
+on standard error. A role the server does **not** have is still created there,
+so the same document also materializes on a server that has never seen it.
+
+Reserved roles sit outside that rule in both directions. Ptah manages neither
+the `pg_` roles nor the bootstrap `postgres` superuser: it never describes
+them and never compares them, so a desired schema that declares one is compared
+against nothing and is still planned as a `CREATE ROLE` the server refuses —
+`role "postgres" already exists` (SQLSTATE 42710) for the superuser, and
+`role name "pg_monitor" is reserved` (SQLSTATE 42939) for a `pg_` name. Do not
+declare them: Ptah does not yet refuse the declaration up front, and that
+refusal is a known gap rather than something this page describes as working.
+
 :::caution
 Ptah never drops a role automatically. A role that disappears from the desired
 schema stays in the database, because roles may be shared with DBAs,

@@ -152,6 +152,204 @@ func TestRolesComparison(t *testing.T) {
 	})
 }
 
+func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
+	// PostgreSQL roles are cluster-wide, so a reader scoped to one schema
+	// leaves out roles that exist on the server (stokaro/ptah#1267). Reading
+	// that silence as absence plans CREATE ROLE for a role that is already
+	// there, and the server refuses it at SQLSTATE 42710 -- the failure that
+	// took stokaro/ptah#1273's integration job red three times. Existence has
+	// to come from both lists.
+
+	t.Run("plans no create for a role the description leaves out", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "admin_user", Login: true, Superuser: true}},
+		}
+		database := &types.DBSchema{
+			Roles: []types.DBRole{},
+			RolesOutOfScope: []types.DBRole{
+				{Name: "admin_user", Login: true, Superuser: true},
+			},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff)
+
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
+	})
+
+	t.Run("still plans a create for a role that exists nowhere", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles: []goschema.Role{
+				{Name: "admin_user", Login: true},
+				{Name: "brand_new_user", Login: true},
+			},
+		}
+		database := &types.DBSchema{
+			RolesOutOfScope: []types.DBRole{{Name: "admin_user", Login: true}},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff)
+
+		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"brand_new_user"})
+	})
+
+	t.Run("still alters a role the description leaves out", func(t *testing.T) {
+		c := qt.New(t)
+		// Scoping the description must not cost the capability of correcting
+		// a role's attributes: the annotations name this role, so the user
+		// asked about it.
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "admin_user", Login: true, Superuser: true}},
+		}
+		database := &types.DBSchema{
+			RolesOutOfScope: []types.DBRole{{Name: "admin_user", Login: false, Superuser: false}},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff)
+
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 1)
+		c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "admin_user")
+		c.Assert(diff.RolesModified[0].Changes["login"], qt.Equals, "false -> true")
+		c.Assert(diff.RolesModified[0].Changes["superuser"], qt.Equals, "false -> true")
+	})
+
+	t.Run("a described role is compared, and an unrelated out-of-scope name changes nothing", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "app_user", Login: true}},
+		}
+		database := &types.DBSchema{
+			Roles:           []types.DBRole{{Name: "app_user", Login: true}},
+			RolesOutOfScope: []types.DBRole{{Name: "other_tenant_user", Login: true}},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff)
+
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+	})
+
+	t.Run("a described role wins over the same name out of scope", func(t *testing.T) {
+		c := qt.New(t)
+		// The same NAME in both lists, which is the only shape that can show
+		// which one the comparison reads. A PostgreSQL reader's two lists are
+		// disjoint, so this decides nothing there; it decides for every other
+		// producer of a DBSchema, and the attributes have to come from the
+		// description rather than from whichever loop happens to run last.
+		// The out-of-scope copy is stale on every attribute, so reading it
+		// would plan an ALTER ROLE that changes nothing back.
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "app_user", Login: true, CreateDB: true}},
+		}
+		database := &types.DBSchema{
+			Roles:           []types.DBRole{{Name: "app_user", Login: true, CreateDB: true}},
+			RolesOutOfScope: []types.DBRole{{Name: "app_user", Login: false, CreateDB: false}},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff)
+
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
+	})
+}
+
+func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
+	c := qt.New(t)
+
+	// The opt-in that puts the removed capability back
+	// ([go.5x5.cz/ptah/internal/rolescope.DescribeAllEnvVar]) changes which
+	// list a role arrives in: with it set, the PostgreSQL reader describes
+	// every role it manages and RolesOutOfScope is empty. That must not change
+	// a single planned statement, and this is where the property is decided.
+	//
+	// So the two shapes below carry the SAME roles and differ only in the list
+	// they arrived in, and the comparison is asserted to be identical. Without
+	// it, an operator who turned the variable on to copy a cluster's roles
+	// could get a different migration plan for the same two databases, which
+	// would make the escape hatch a second behavior rather than a fuller read.
+	generated := &goschema.Database{
+		Roles: []goschema.Role{
+			{Name: "app_user", Login: true},
+			{Name: "scoped_out", Login: true, CreateDB: true},
+			{Name: "nowhere_at_all", Login: true},
+		},
+	}
+	scoped := &types.DBSchema{
+		Roles: []types.DBRole{{Name: "app_user", Login: true}},
+		RolesOutOfScope: []types.DBRole{
+			{Name: "scoped_out", Login: true},
+			{Name: "other_tenant_user", Login: true},
+		},
+	}
+	described := &types.DBSchema{
+		Roles: []types.DBRole{
+			{Name: "app_user", Login: true},
+			{Name: "other_tenant_user", Login: true},
+			{Name: "scoped_out", Login: true},
+		},
+	}
+
+	scopedDiff := &difftypes.SchemaDiff{}
+	compare.Roles(generated, scoped, scopedDiff)
+	describedDiff := &difftypes.SchemaDiff{}
+	compare.Roles(generated, described, describedDiff)
+
+	c.Assert(scopedDiff.RolesAdded, qt.DeepEquals, []string{"nowhere_at_all"})
+	c.Assert(scopedDiff.RolesModified, qt.HasLen, 1)
+	c.Assert(scopedDiff.RolesModified[0].RoleName, qt.Equals, "scoped_out")
+	c.Assert(describedDiff, qt.DeepEquals, scopedDiff,
+		qt.Commentf("describing a role instead of carrying it out of scope changed the plan"))
+}
+
+func TestRolesReservedNameIsNotComparedAgainstAnything(t *testing.T) {
+	c := qt.New(t)
+
+	// A KNOWN GAP, pinned so it cannot be lost or silently claimed fixed.
+	//
+	// Roles and RolesOutOfScope partition the roles Ptah MANAGES, not the
+	// cluster's role set: a PostgreSQL reader excludes the reserved pg_ roles
+	// and the bootstrap superuser from both reads, in either direction. So a
+	// desired schema naming one is compared against nothing and is planned as
+	// a CREATE ROLE the server refuses. Measured on PostgreSQL 17.10 with
+	// ptah-compat schema apply --auto-approve: `role "postgres"` exits 1 on
+	// SQLSTATE 42710, `role "pg_monitor"` exits 1 on SQLSTATE 42939, both
+	// identically before and after stokaro/ptah#1267's reader scoping.
+	//
+	// Refusing such a desired state up front is the right answer and is a
+	// separate change: schemadiff.Compare has no error to return, and the
+	// refusal has to cover the generate path too. When it lands, this test
+	// changes with it.
+	generated := &goschema.Database{
+		Roles: []goschema.Role{
+			{Name: "postgres", Login: true, Superuser: true},
+			{Name: "pg_monitor"},
+			{Name: "app_user", Login: true},
+		},
+	}
+	database := &types.DBSchema{
+		Roles:           []types.DBRole{{Name: "app_user", Login: true}},
+		RolesOutOfScope: []types.DBRole{{Name: "other_tenant_user", Login: true}},
+	}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Roles(generated, database, diff)
+
+	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"pg_monitor", "postgres"},
+		qt.Commentf("reserved names are in neither database list, so they read as absent"))
+	c.Assert(diff.RolesModified, qt.HasLen, 0)
+}
+
 func TestRoleDefinitionsComparison(t *testing.T) {
 	t.Run("no differences", func(t *testing.T) {
 		c := qt.New(t)

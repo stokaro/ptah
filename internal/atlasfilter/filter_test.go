@@ -26,6 +26,23 @@ func TestExcludeDatabase_RemovesTableAndDependentObjects(t *testing.T) {
 	c.Assert(tableNames(schema.Tables), qt.DeepEquals, []string{"auth.users", "auth.audit_log"})
 }
 
+func TestExcludeDatabase_KeepsWhichRolesTheServerHas(t *testing.T) {
+	c := qt.New(t)
+
+	// An exclude pattern narrows what is described. It says nothing about
+	// what the server has, and the comparator reads that separately: drop it
+	// here and every cluster role outside the description looks absent again,
+	// so applying a filtered schema plans CREATE ROLE for roles that exist.
+	// See stokaro/ptah#1267.
+	schema := filterFixtureSchema()
+	schema.RolesOutOfScope = []dbschematypes.DBRole{{Name: "other_tenants_role"}}
+
+	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.audit_log"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(roleNames(got.RolesOutOfScope), qt.DeepEquals, []string{"other_tenants_role"})
+}
+
 func TestExcludeDatabase_TypeSelectorRemovesOnlyIndexes(t *testing.T) {
 	c := qt.New(t)
 	schema := filterFixtureSchema()
@@ -507,6 +524,14 @@ func tableNames(tables []dbschematypes.DBTable) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.QualifiedName())
+	}
+	return names
+}
+
+func roleNames(roles []dbschematypes.DBRole) []string {
+	names := make([]string, 0, len(roles))
+	for _, role := range roles {
+		names = append(names, role.Name)
 	}
 	return names
 }

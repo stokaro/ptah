@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/devclean"
 	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/internal/migrationreplay"
+	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -194,6 +196,7 @@ func inspectOnDev(
 			ctx,
 			devConn,
 			desired,
+			opts.Diagnostics,
 			func(materializedConn *dbschema.DatabaseConnection) error {
 				schema, err := readInspectDevSchema(materializedConn, opts.Schemas)
 				if err != nil {
@@ -215,6 +218,7 @@ func withMaterializedDevSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	desired *goschema.Database,
+	diag io.Writer,
 	consume func(*dbschema.DatabaseConnection) error,
 ) (resultErr error) {
 	lock, err := devlock.Acquire(ctx, devConn, 0)
@@ -247,7 +251,7 @@ func withMaterializedDevSchema(
 		if err := devclean.DatabaseRealm(ctx, materializedConn); err != nil {
 			return fmt.Errorf("reset dev database: %w", err)
 		}
-		if err := materializeOnDev(ctx, materializedConn, desired); err != nil {
+		if err := materializeOnDev(ctx, materializedConn, desired, diag); err != nil {
 			return err
 		}
 		return consume(materializedConn)
@@ -255,13 +259,19 @@ func withMaterializedDevSchema(
 }
 
 // materializeOnDev executes the desired schema's ordered CREATE statements on
-// an already-reset dev database.
+// an already-reset dev database, minus the roles that database's server
+// already has.
 func materializeOnDev(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	desired *goschema.Database,
+	diag io.Writer,
 ) error {
 	info := devConn.Info()
+	desired, err := devMaterializableSchema(devConn, desired, diag)
+	if err != nil {
+		return err
+	}
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(desired, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("render schema DDL for dev database: %w", err)
@@ -270,6 +280,55 @@ func materializeOnDev(
 		return fmt.Errorf("materialize schema on dev database: %w", err)
 	}
 	return nil
+}
+
+// devMaterializableSchema returns the desired state with the roles the dev
+// database's server already has taken out of it, and reports which ones on
+// diag.
+//
+// The reset that precedes materialization empties the dev DATABASE, and a role
+// is not in it -- roles are server-scoped, so a role any database on that
+// server ever created is still there afterwards and `CREATE ROLE` for it fails
+// at SQLSTATE 42710. That is what made Ptah's own inspect output unreplayable
+// against a clean sibling database in the same cluster (stokaro/ptah#1267);
+// see [rolescope.RolesToCreateOnDev] for the measurement and for why the role
+// is skipped rather than refused or altered.
+//
+// The extra read is why this is guarded on the desired state declaring a role
+// at all: a document with no role block is the common case, and it pays
+// nothing. The read is the dev database's default scope rather than the
+// caller's --schema selection on purpose. Only the ROLE lists are consulted,
+// and their union is the set of roles the server has whatever schemas are in
+// scope: what the selection moves is which of them are described, not which of
+// them exist. See [dbschematypes.DBSchema.RolesOutOfScope].
+//
+// The desired state is copied rather than edited. Which roles one dev database
+// happened to have is a fact about that database, not about the document, and
+// the value belongs to a caller that may still use it -- retry against another
+// dev database, or report what the source declared.
+func devMaterializableSchema(
+	devConn *dbschema.DatabaseConnection,
+	desired *goschema.Database,
+	diag io.Writer,
+) (*goschema.Database, error) {
+	if desired == nil || len(desired.Roles) == 0 {
+		return desired, nil
+	}
+	devSchema, err := dbschema.ReadSchemaWithSchemas(devConn, nil)
+	if err != nil {
+		return nil, fmt.Errorf("read dev database roles: %w", err)
+	}
+	create, alreadyOnServer := rolescope.RolesToCreateOnDev(
+		desired.Roles,
+		slices.Concat(devSchema.Roles, devSchema.RolesOutOfScope),
+	)
+	if len(alreadyOnServer) == 0 {
+		return desired, nil
+	}
+	rolescope.ReportNotCreatedOnDev(diag, alreadyOnServer)
+	materializable := *desired
+	materializable.Roles = create
+	return &materializable, nil
 }
 
 func readInspectDevSchema(

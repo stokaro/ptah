@@ -54,6 +54,16 @@ materialized on it (schema files executed, migration directories replayed),
 and the result is introspected. Inspecting a file without `--dev-url` fails
 with Atlas's `--dev-url cannot be empty` message.
 
+One kind of object is not materialized: a role the dev database's **server**
+already has. The reset empties the dev database, and a role is not in it —
+PostgreSQL roles belong to the server — so `CREATE ROLE` for one of them fails
+at SQLSTATE 42710 no matter how clean the database is. Ptah leaves such a role
+exactly as the server has it, never altering it, and names the skipped roles on
+standard error. A role the server does not have is still created, so the same
+document still materializes on a server that has never seen it. This is what
+lets an inspected description be fed straight back in against a clean sibling
+database on the same server.
+
 ```bash
 ptah-compat schema inspect \
   --url file://schema.sql \
@@ -171,10 +181,20 @@ omitted there. Every other block Ptah renders — `role`, `function`, `view`,
 `materialized`, `trigger`, `permission` — is kept, because that binary drops a
 block type it does not model and reads the file anyway.
 
-Native `ptah schema inspect` omits nothing; see
+Native `ptah schema inspect` omits nothing on this account; see
 [Inspect a database](../../direct/inspect/). Which block types that binary
 refuses is re-measured by the Atlas CE Oracle job rather than frozen, so a
 construct a later build starts modeling stops being withheld.
+
+One other thing is left out of a PostgreSQL description, and it is not a
+compatibility trade: a read defines only the roles the inspected schemas
+actually use, on **both** binaries, because roles are cluster-wide and a
+description of one database is not the place to list another tenant's roles.
+That omission is reported on the same stream — `note: N roles Ptah manages on
+this server are not described …` — and
+`PTAH_POSTGRES_INSPECT_ALL_ROLES=1` describes every role Ptah manages again.
+Comparison is unaffected either way. See
+[PostgreSQL roles and grants](../../databases/postgresql/#roles-and-grants).
 
 #### A referenced block is kept, and the document says so
 

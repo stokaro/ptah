@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/rolescope"
 )
 
 const (
@@ -91,6 +92,11 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error reading schema: %w", err)
 	}
+
+	// A description scoped to the roles the schemas use omits roles that exist
+	// on the server, and an operator reading the output has no other way to
+	// learn that. See stokaro/ptah#1267.
+	rolescope.ReportUndescribed(stderr, schema)
 
 	// Format and display the schema
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
