@@ -940,42 +940,38 @@ func (m *Migrator) sqlServerObjectName() string {
 
 // GetCurrentVersion returns the current migration version from the database
 func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error) {
-	// First ensure the migrations table exists
-	if err := m.Initialize(ctx); err != nil {
-		return 0, fmt.Errorf("failed to initialize migrations table: %w", err)
+	revisions, err := m.GetRevisions(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get migration revisions: %w", err)
 	}
-	if !m.metadataAvailable {
-		return 0, nil
+	if m.revisionTableFormat.isAtlas() {
+		return maxRevisionVersion(revisions), nil
 	}
-
-	// Query the current version
-	return m.scanCurrentVersion(ctx)
+	return maxAppliedVersion(appliedRevisionVersions(revisions)), nil
 }
 
 // GetAppliedMigrations returns a list of applied migration versions
 func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
-	return queryMigrationRows(
-		ctx,
-		m,
-		m.getAppliedMigrationsSQL,
-		m.scanAppliedVersion,
-		"failed to query applied migrations",
-		"failed to scan migration version",
-		"error iterating migration rows",
-	)
+	revisions, err := m.GetRevisions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migration revisions: %w", err)
+	}
+	return appliedRevisionVersions(revisions), nil
 }
 
 // GetAppliedRevisions returns full metadata rows for applied migrations.
 func (m *Migrator) GetAppliedRevisions(ctx context.Context) ([]MigrationRevision, error) {
-	return queryMigrationRows(
-		ctx,
-		m,
-		m.getAppliedRevisionsSQL,
-		m.scanRevisionRow,
-		"failed to query applied migration revisions",
-		"failed to scan migration revision",
-		"error iterating migration revision rows",
-	)
+	revisions, err := m.GetRevisions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migration revisions: %w", err)
+	}
+	applied := make([]MigrationRevision, 0, len(revisions))
+	for _, revision := range revisions {
+		if revision.State == migrationStateApplied {
+			applied = append(applied, revision)
+		}
+	}
+	return applied, nil
 }
 
 // GetRevisions returns every migration metadata row, including dirty rows.
@@ -1044,32 +1040,8 @@ func queryMigrationRowsFrom[T any](
 	return items, nil
 }
 
-func (m *Migrator) scanCurrentVersion(ctx context.Context) (int64, error) {
-	row := m.conn.QueryRowContext(ctx, m.getVersionSQL())
-	var version int64
-	if err := row.Scan(&version); err != nil {
-		return 0, fmt.Errorf("failed to get current version: %w", err)
-	}
-	return version, nil
-}
-
 type rowScanner interface {
 	Scan(dest ...any) error
-}
-
-func (m *Migrator) scanAppliedVersion(row rowScanner) (int64, error) {
-	if m.revisionTableFormat.isAtlas() {
-		var version string
-		if err := row.Scan(&version); err != nil {
-			return 0, err
-		}
-		return parseAtlasRevisionVersion(version)
-	}
-	var version int64
-	if err := row.Scan(&version); err != nil {
-		return 0, err
-	}
-	return version, nil
 }
 
 func parseAtlasRevisionVersion(version string) (int64, error) {
@@ -1681,14 +1653,14 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 	// read would deadlock. See [Migrator.planUpRetry].
 	plans := make(map[int64]upRetryPlan, len(migrations))
 	for _, migration := range migrations {
-		// Same reason the plans are read here: the probe queries the catalog, so
-		// it has to run before the batch transaction takes the connection. See
-		// [Migrator.refuseUpOverUnusableIndex].
-		if err := m.refuseUpOverUnusableIndex(ctx, migration); err != nil {
-			return nil, err
-		}
 		plan, err := m.planUpRetry(ctx, migration)
 		if err != nil {
+			return nil, err
+		}
+		// Same reason the plans are read here: the probe queries the catalog, so
+		// it has to run before the batch transaction takes the connection. See
+		// [Migrator.refuseUpOverUnsafeIndex].
+		if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom); err != nil {
 			return nil, err
 		}
 		plans[migration.Version] = plan
@@ -1839,8 +1811,8 @@ func (m *Migrator) applyUpMigrationObserved(
 	}
 	// Read-only, and before the revision row is touched: a refusal has to leave
 	// whatever an earlier attempt recorded exactly as it found it. See
-	// [Migrator.refuseUpOverUnusableIndex].
-	if err := m.refuseUpOverUnusableIndex(ctx, migration); err != nil {
+	// [Migrator.refuseUpOverUnsafeIndex].
+	if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom); err != nil {
 		return false, err
 	}
 	if err := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); err != nil {
@@ -1923,6 +1895,9 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 		return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
 	}
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+		return err
+	}
+	if err := m.refuseUpCompletionOverUnsafeIndex(ctx, txConn, migration); err != nil {
 		return err
 	}
 	m.logger.Info("Applied migration in tx-mode all", "version", migration.Version, "description", migration.Description)
@@ -2017,6 +1992,17 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.UpSQL, "")
 	}
+	if err := m.refuseUpCompletionOverUnsafeIndex(ctx, txConn, migration); err != nil {
+		_ = tx.Rollback()
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("failed to verify migration %d", migration.Version),
+		)
+	}
 	if err := m.completeMigrationRevisionOn(ctx, txConn, migration, startedAt); err != nil {
 		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(
@@ -2063,6 +2049,18 @@ func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration 
 			err,
 			migration.UpSQL,
 			fmt.Sprintf("failed to apply migration %d", migration.Version),
+			MigrationTxModeNone,
+			MigrationDirectionUp,
+		)
+	}
+	if err := m.refuseUpCompletionOverUnsafeIndex(ctx, m.conn, migration); err != nil {
+		return m.failMigrationWithDirtyStateWithMode(
+			ctx,
+			migration,
+			startedAt,
+			completedMigrationIndexObservationError(migration, m.connectionDialect(), err),
+			migration.UpSQL,
+			fmt.Sprintf("failed to verify migration %d", migration.Version),
 			MigrationTxModeNone,
 			MigrationDirectionUp,
 		)

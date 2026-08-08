@@ -707,10 +707,13 @@ verifies their source prefix. Native dirty rows store a `partial:h1:` checksum;
 Atlas-format rows use cumulative `partial_hashes`. Legacy rows without prefix
 metadata resume only when their full-file checksum still matches. Editing only
 the unapplied suffix is allowed, and a failed retry cannot reduce `applied`
-below the previously committed prefix when the transaction mode changes. A
-custom `MigrationFunc` is opaque to Ptah and can only be recorded at function
-completion; use SQL-backed migrations when statement-level crash progress is
-required.
+below the previously committed prefix when the transaction mode changes.
+Negative counters and `applied > total` are rejected whenever a revision is
+read, including status, version, and planning calls; equal negative values do
+not qualify as a clean row, and a native `state=applied` row must have
+`applied == total`. A custom `MigrationFunc` is opaque to Ptah and can only be
+recorded at function completion; use SQL-backed migrations when statement-level
+crash progress is required.
 
 On PostgreSQL, `RepairMigration` also refuses to finish while an index the
 selected direction creates is still unusable. A `CREATE INDEX CONCURRENTLY`
@@ -722,9 +725,13 @@ the same unusable index behind an apparently complete rollback.
 
 Ptah reads
 `pg_index.indisvalid` and `indisready` for the index names the selected SQL
-creates, resolves an unqualified name through the same search path the
+creates, resolves an unqualified target table through the same search path the
 statement used, and returns an error naming each unusable index and the
-`REINDEX INDEX CONCURRENTLY` command that rebuilds it.
+`REINDEX INDEX CONCURRENTLY` command that rebuilds it. Visibility follows the
+target table rather than the index name because another relation can shadow an
+index name on the search path without shadowing its table. The probe also checks
+the schema-level `pg_class` name: an index attached to another table or a
+non-index relation cannot satisfy the intended create.
 `Force` does not relax this refusal: it relaxes a precondition about the
 revision row, not a fact about the database. Other dialects have no concurrent
 index build to leave half-finished and run no probe.
@@ -743,9 +750,17 @@ revision table exactly as it found it: a dirty row keeps the earlier attempt's
 own error and `applied/total`, and a version that was never started stays
 absent. A dry run is exempt, since it records nothing to be wrong about. No flag
 relaxes either refusal; the remedy is `REINDEX INDEX CONCURRENTLY`, or dropping
-the index so the name is free. One shape is knowingly refused: an index left
-invalid on purpose — `CREATE INDEX ... ON ONLY` a partitioned parent — blocks a
-second attempt at the migration that created it (stokaro/ptah#997).
+the index so the name is free.
+
+A matching `DROP INDEX` before the create in the current execution window
+permits an intentional drop-and-rebuild migration; a drop skipped by
+statement-level resume does not. Ptah checks `pg_index` again on the active
+transaction or connection after the body and before recording a clean revision.
+The post-check is positive: the named relation must exist, be an index attached
+to the intended target, and be usable. A partitioned index created with
+`CREATE INDEX ... ON ONLY` is accepted when PostgreSQL reports its expected
+partitioned-parent shape (`relkind='I'`, `indisready=true`). Repair performs the
+same positive check even with `Force`.
 
 Atlas-format revisions use the same failure protection. Ptah keeps the Atlas
 table schema but marks Ptah-owned rollback rows through `operator_version`, so

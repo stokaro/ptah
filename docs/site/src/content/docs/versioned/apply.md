@@ -335,6 +335,17 @@ have no concurrent index build to leave half-finished. A dry run is exempt,
 because it records nothing. `ptah migrations repair` refuses on the same
 grounds — see [Maintain migration history](../maintain-history/).
 
+An intentional `DROP INDEX` followed by a matching create is allowed when the
+drop will execute in the current attempt. A statement skipped by dirty-resume
+cannot serve as that cleanup. Ptah resolves both unqualified drops and target
+tables through `search_path`, then checks the schema-level relation name. An
+index on another table or a non-index relation with that name is a conflict.
+After the body, Ptah positively verifies on the active transaction or connection
+that the named index exists, belongs to the intended table, and has an
+acceptable catalog state before recording the revision clean. A partitioned
+parent index created with `CREATE INDEX ... ON ONLY` is accepted in its expected
+ready-but-incomplete catalog state.
+
 **A pre-migration check blocked the migration.** Nothing is applied and no
 revision row is written, so the run is recorded as never started. Fix the data
 the check guarded and re-run; no repair step and no bypass flag is involved.

@@ -917,8 +917,11 @@ rather than as damage.
 will skip has unchanged source text. Ptah-format rows store a `partial:h1:`
 checksum for the committed prefix; Atlas-format rows use the existing
 `partial_hashes` column. A changed prefix, malformed metadata, or contradictory
-hash count is refused. Legacy rows without prefix metadata resume only while
-their full-file hash still matches.
+hash count is refused, as are negative progress counters, `applied > total`,
+and a native `state=applied` row whose counters are incomplete. Invalid
+metadata is rejected by revision listing, status, version, and apply operations
+rather than being hidden as a clean row. Legacy rows without prefix metadata
+resume only while their full-file hash still matches.
 
 Editing only the unapplied suffix remains supported. If that retry changes from
 `none` to `file` or `all` and its transaction rolls back, Ptah retains the
@@ -1012,9 +1015,14 @@ the same `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS` statement.
 The leftover keeps the name, so `IF NOT EXISTS` skips it and the statement
 reports success over an index that enforces nothing. Recording that as applied
 means the tooling reports a constraint the database does not have, and nothing
-will look again. The divergence is stricter, not looser: `ptah-compat` exits `1`
-where the binary exits `0`, never the reverse, so no invocation the binary
-refuses succeeds here.
+will look again. Ptah also rejects another index or non-index relation that owns
+the schema-level name. It resolves an unqualified drop and target through the
+active `search_path`, permits cleanup only when that exact drop will run first
+in this attempt, and positively rechecks the active transaction or connection
+before recording the revision. A drop skipped by dirty-resume is not cleanup.
+
+The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
+exits `0`, never the reverse, so no invocation the binary refuses succeeds here.
 
 **Tracking.** [`stokaro/ptah#1101`](https://github.com/stokaro/ptah/issues/1101)
 

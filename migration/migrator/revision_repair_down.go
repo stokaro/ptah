@@ -47,7 +47,7 @@ func (m *Migrator) repairRolledBackMigration(
 	if err := m.resumeRollback(ctx, migration, opts.ResumeFrom); err != nil {
 		return err
 	}
-	if err := m.refuseRollbackCompletionOverUnusableIndex(ctx, migration); err != nil {
+	if err := m.refuseRollbackCompletionOverUnsafeIndex(ctx, migration); err != nil {
 		return err
 	}
 	return m.deleteRolledBackRevision(ctx, migration)
@@ -65,7 +65,7 @@ func (m *Migrator) repairRolledBackMigrationWithoutResume(
 	if !opts.Force && rollbackChangedSchema(revision) {
 		return rollbackRepairNeedsDirectionError(migration, revision)
 	}
-	if err := m.refuseRepairOverUnusableIndex(ctx, migration); err != nil {
+	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
 		return err
 	}
 	return m.forceAppliedMigration(ctx, migration)
@@ -79,7 +79,7 @@ func (m *Migrator) finalizeCompletedRollback(
 	if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionDown, "finalize the rollback"); err != nil {
 		return err
 	}
-	if err := m.refuseRollbackCompletionOverUnusableIndex(ctx, migration); err != nil {
+	if err := m.refuseRollbackCompletionOverUnsafeIndex(ctx, migration); err != nil {
 		return err
 	}
 	return m.deleteRolledBackRevision(ctx, migration)

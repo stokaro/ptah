@@ -179,6 +179,22 @@ func (w *postgresTransactionWriter) ExecuteSQL(ctx context.Context, sqlExpr stri
 	return nil
 }
 
+// QueryContext exposes transaction-local catalog state to migration safety
+// probes. It is intentionally narrower than the public SchemaTransaction
+// contract: only PostgreSQL recovery checks need to observe DDL before commit.
+func (w *postgresTransactionWriter) QueryContext(
+	ctx context.Context,
+	query string,
+	args ...any,
+) (*sql.Rows, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.tx == nil {
+		return nil, fmt.Errorf("transaction is closed")
+	}
+	return w.tx.QueryContext(ctx, query, args...)
+}
+
 // Commit commits the transaction.
 func (w *postgresTransactionWriter) Commit() error {
 	if w.dryRun {

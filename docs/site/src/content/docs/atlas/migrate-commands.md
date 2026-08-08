@@ -188,8 +188,11 @@ required so a half-applied migration is never resumed by accident.
 Automatic resume refuses and names `ptah migrations repair --version <v>` when
 a run was interrupted mid-statement, the statement count changed, the committed
 source prefix changed, or `partial_hashes` is malformed or disagrees with
-`applied`. Legacy Atlas rows without `partial_hashes` may resume only while the
-stored full-file hash still matches.
+`applied`. It also refuses negative `applied` or `total` values and
+`applied > total`. Legacy Atlas rows without `partial_hashes` may resume only
+while the stored full-file hash still matches. Revision listing, status, and
+version operations reject the same invalid counters instead of classifying an
+equal negative pair as clean.
 
 ## Rolling back
 

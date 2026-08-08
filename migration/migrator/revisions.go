@@ -252,14 +252,14 @@ LIMIT 1`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyR
 	if m.isSQLServer() {
 		return fmt.Sprintf(`SELECT TOP (1) version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
 FROM %s
-WHERE state <> ?
-ORDER BY version`, m.qualifiedMigrationsTable())
+WHERE state <> ? OR applied <> total OR %s
+ORDER BY version`, m.qualifiedMigrationsTable(), revisionProgressInvalidPredicate)
 	}
 	return fmt.Sprintf(`SELECT version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
 FROM %s
-WHERE state <> ?
+WHERE state <> ? OR applied <> total OR %s
 ORDER BY version
-LIMIT 1`, m.qualifiedMigrationsTable())
+LIMIT 1`, m.qualifiedMigrationsTable(), revisionProgressInvalidPredicate)
 }
 
 func (m *Migrator) getRevisionSQL() string {
@@ -528,9 +528,10 @@ func (m *Migrator) updateAtlasRevisionTypeSQL() string {
 const atlasMetadataRowPredicate = "version NOT LIKE '.%'"
 
 const (
-	atlasDownRevisionPredicate    = "COALESCE(operator_version, '') = '" + ptahDownOperatorVersion + "'"
-	atlasDirtyRevisionPredicate   = "(applied <> total OR COALESCE(error, '') <> '' OR " + atlasDownRevisionPredicate + ")"
-	atlasAppliedRevisionPredicate = "applied = total AND COALESCE(error, '') = '' AND NOT (" + atlasDownRevisionPredicate + ")"
+	revisionProgressInvalidPredicate = "(applied < 0 OR total < 0 OR applied > total)"
+	atlasDownRevisionPredicate       = "COALESCE(operator_version, '') = '" + ptahDownOperatorVersion + "'"
+	atlasDirtyRevisionPredicate      = "(" + revisionProgressInvalidPredicate + " OR applied <> total OR COALESCE(error, '') <> '' OR " + atlasDownRevisionPredicate + ")"
+	atlasAppliedRevisionPredicate    = "NOT " + revisionProgressInvalidPredicate + " AND applied = total AND COALESCE(error, '') = '' AND NOT (" + atlasDownRevisionPredicate + ")"
 )
 
 // atlasMetadataVersionNullGuard maps a dot-prefixed metadata version to NULL so
@@ -808,7 +809,13 @@ func (m *Migrator) scanRevisionRow(row rowScanner) (MigrationRevision, error) {
 	); err != nil {
 		return MigrationRevision{}, err
 	}
+	if err := validateRevisionProgress(revision, "read revision metadata"); err != nil {
+		return MigrationRevision{}, err
+	}
 	revision.State, revision.Direction = decodeRevisionState(storedState)
+	if err := validateNativeRevisionState(revision, "read revision metadata"); err != nil {
+		return MigrationRevision{}, err
+	}
 	parsedAppliedAt, err := parseRevisionAppliedAt(appliedAt)
 	if err != nil {
 		return MigrationRevision{}, err
@@ -845,11 +852,14 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	if err != nil {
 		return MigrationRevision{}, err
 	}
+	revision.Version = parsedVersion
+	if err := validateRevisionProgress(revision, "read revision metadata"); err != nil {
+		return MigrationRevision{}, err
+	}
 	parsedExecutedAt, err := parseRevisionAppliedAt(executedAt)
 	if err != nil {
 		return MigrationRevision{}, err
 	}
-	revision.Version = parsedVersion
 	revision.State = atlasRevisionState(revision)
 	revision.Direction = atlasRevisionDirection(revision.OperatorVersion)
 	revision.AppliedAt = parsedExecutedAt
@@ -998,6 +1008,9 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 // statements, so this is one place where matching would mean reproducing a
 // defect.
 func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
+	if err := validateRevisionProgress(revision, "resume automatically"); err != nil {
+		return 0, err
+	}
 	if revision.Applied <= 0 {
 		return 1, nil
 	}
@@ -1019,16 +1032,34 @@ func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
 			revision.Version,
 		)
 	}
-	if revision.Applied > revision.Total {
-		return 0, fmt.Errorf(
-			"migration %d cannot resume automatically: revision metadata records %d applied statements out of %d; inspect the database, then use 'ptah migrations repair --version %d'",
-			revision.Version,
-			revision.Applied,
-			revision.Total,
-			revision.Version,
-		)
-	}
 	return revision.Applied + 1, nil
+}
+
+func validateRevisionProgress(revision MigrationRevision, operation string) error {
+	if revision.Applied >= 0 && revision.Total >= 0 && revision.Applied <= revision.Total {
+		return nil
+	}
+	return fmt.Errorf(
+		"migration %d cannot %s: revision metadata records invalid progress applied=%d total=%d; inspect the database before choosing a repair point",
+		revision.Version,
+		operation,
+		revision.Applied,
+		revision.Total,
+	)
+}
+
+func validateNativeRevisionState(revision MigrationRevision, operation string) error {
+	if revision.State != migrationStateApplied || revision.Applied == revision.Total {
+		return nil
+	}
+	return fmt.Errorf(
+		"migration %d cannot %s: revision metadata records state=%s with applied=%d total=%d; inspect the database before choosing a repair point",
+		revision.Version,
+		operation,
+		revision.State,
+		revision.Applied,
+		revision.Total,
+	)
 }
 
 // verifyCommittedPrefix proves that every statement an earlier
@@ -1042,6 +1073,9 @@ func (m *Migrator) verifyCommittedPrefix(
 	direction MigrationDirection,
 	operation string,
 ) error {
+	if err := validateRevisionProgress(revision, operation); err != nil {
+		return err
+	}
 	if revision.Applied <= 0 {
 		return nil
 	}
@@ -2034,7 +2068,7 @@ func (m *Migrator) setPtahRevisionAppliedSQL() string {
 // On PostgreSQL the revision is not recorded while an index the migration
 // creates is still unusable -- the residue a failed CREATE INDEX CONCURRENTLY
 // leaves behind. The repair is refused instead, so an unenforced constraint
-// cannot be signed off as applied. See refuseRepairOverUnusableIndex, including
+// cannot be signed off as applied. See refuseRepairOverUnsafeIndex, including
 // why Force does not relax it.
 func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOptions) error {
 	if opts.Version <= 0 {
@@ -2071,7 +2105,7 @@ func (m *Migrator) repairMigrationLocked(ctx context.Context, opts RepairMigrati
 			return err
 		}
 	}
-	if err := m.refuseRepairOverUnusableIndex(ctx, migration); err != nil {
+	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
 		return err
 	}
 	return m.forceAppliedMigration(ctx, migration)

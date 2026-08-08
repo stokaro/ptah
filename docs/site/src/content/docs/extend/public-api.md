@@ -111,8 +111,22 @@ Dirty SQL-backed resumes verify the already committed source prefix before
 skipping it. Native rows use the `partial:h1:` value in `Checksum`; Atlas rows
 use cumulative `partial_hashes`. A failure after changing transaction mode
 cannot reduce the recorded applied count below that verified prefix.
+
+Negative `applied` or `total` values and `applied > total` are rejected whenever
+a revision is read, including through `GetRevisions`, `GetAppliedRevisions`,
+`GetAppliedMigrations`, `GetCurrentVersion`, and `GetMigrationStatus`. A native
+row also cannot claim `state=applied` until `applied == total`.
+
 `RepairMigration` holds the session advisory lock across revision inspection,
 resumed SQL, safety checks, and the final metadata write.
+
+On PostgreSQL, an up migration may clean invalid index residue with a matching
+`DROP INDEX` that executes before the create in the current attempt. The
+migrator resolves unqualified drops and target tables through `search_path`,
+rejects any other relation that owns the schema-level index name, and rechecks
+transaction-local catalog state before writing a clean revision. A drop skipped
+by resume does not satisfy the preflight. `RepairMigration` performs the same
+positive index-state check, including when `Force` is set.
 
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.

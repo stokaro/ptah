@@ -1,7 +1,8 @@
 package migrator
 
 // White-box testing required: postgresCreatedIndexNames,
-// unusableIndexRepairError and unusableIndexApplyError are the pure halves of a
+// postgresDroppedIndexNames, unusableIndexRepairError and
+// unusableIndexApplyError are the pure halves of a
 // refusal whose other half is a live pg_index query. Reaching them through
 // RepairMigration or MigrateUpWithOptions needs a PostgreSQL connection and a
 // half-built concurrent index, so the boundary cases exercised here --
@@ -28,50 +29,63 @@ func TestPostgresCreatedIndexNames(t *testing.T) {
 			name: "generated concurrent unique index",
 			sql: "-- +ptah no_transaction\n" +
 				`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "idx_members_email" ON "members" ("email");`,
-			want: []postgresIndexRef{{Name: "idx_members_email"}},
+			want: []postgresIndexRef{{Table: "members", Name: "idx_members_email"}},
 		},
 		{
 			name: "unquoted name folds to lower case like the catalog",
 			sql:  `CREATE INDEX CONCURRENTLY IdX_Members_Email ON members (email);`,
-			want: []postgresIndexRef{{Name: "idx_members_email"}},
+			want: []postgresIndexRef{{Table: "members", Name: "idx_members_email"}},
 		},
 		{
 			name: "quoted name keeps its bytes",
 			sql:  `CREATE INDEX "IdX_Members_Email" ON members (email);`,
-			want: []postgresIndexRef{{Name: "IdX_Members_Email"}},
+			want: []postgresIndexRef{{Table: "members", Name: "IdX_Members_Email"}},
 		},
 		{
 			name: "quoted name unescapes a doubled quote",
 			sql:  `CREATE INDEX "odd""name" ON members (email);`,
-			want: []postgresIndexRef{{Name: `odd"name`}},
+			want: []postgresIndexRef{{Table: "members", Name: `odd"name`}},
 		},
 		{
-			name: "schema qualified name keeps both parts",
-			sql:  `CREATE UNIQUE INDEX CONCURRENTLY "app"."idx_members_email" ON "app"."members" ("email");`,
-			want: []postgresIndexRef{{Schema: "app", Name: "idx_members_email"}},
+			name: "schema qualified target table supplies the index schema",
+			sql:  `CREATE UNIQUE INDEX CONCURRENTLY "idx_members_email" ON "app"."members" ("email");`,
+			want: []postgresIndexRef{{Schema: "app", Table: "members", Name: "idx_members_email"}},
+		},
+		{
+			name: "only target table supplies the index schema",
+			sql:  `CREATE INDEX idx_members_email ON ONLY App.members (email);`,
+			want: []postgresIndexRef{{Schema: "app", Table: "members", Name: "idx_members_email"}},
+		},
+		{
+			name: "schema qualified index name is not valid PostgreSQL syntax",
+			sql:  `CREATE INDEX app.idx_members_email ON app.members (email);`,
+			want: nil,
 		},
 		{
 			name: "a name that is another name's prefix stays distinct from it",
 			sql: `CREATE INDEX "idx_members" ON members (id);` + "\n" +
 				`CREATE INDEX "idx_members_email" ON members (email);`,
-			want: []postgresIndexRef{{Name: "idx_members"}, {Name: "idx_members_email"}},
+			want: []postgresIndexRef{
+				{Table: "members", Name: "idx_members"},
+				{Table: "members", Name: "idx_members_email"},
+			},
 		},
 		{
 			name: "several statements yield every name in order",
 			sql: `CREATE INDEX "idx_a" ON members (a);` + "\n" +
 				`CREATE UNIQUE INDEX CONCURRENTLY "idx_b" ON members (b);`,
-			want: []postgresIndexRef{{Name: "idx_a"}, {Name: "idx_b"}},
+			want: []postgresIndexRef{{Table: "members", Name: "idx_a"}, {Table: "members", Name: "idx_b"}},
 		},
 		{
 			name: "a repeated name is reported once",
 			sql: `CREATE INDEX IF NOT EXISTS "idx_a" ON members (a);` + "\n" +
 				`CREATE INDEX IF NOT EXISTS "idx_a" ON members (a);`,
-			want: []postgresIndexRef{{Name: "idx_a"}},
+			want: []postgresIndexRef{{Table: "members", Name: "idx_a"}},
 		},
 		{
 			name: "a name inside a comment is not a name",
 			sql:  "-- CREATE INDEX idx_commented ON members (email);\nCREATE INDEX idx_real ON members (email);",
-			want: []postgresIndexRef{{Name: "idx_real"}},
+			want: []postgresIndexRef{{Table: "members", Name: "idx_real"}},
 		},
 		{
 			name: "a name inside a string literal is not a name",
@@ -108,6 +122,42 @@ func TestPostgresCreatedIndexNames(t *testing.T) {
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
 			c.Assert(postgresCreatedIndexNames(tt.sql), qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+func TestPostgresDroppedIndexNames(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		sql  string
+		want []postgresIndexRef
+	}{
+		{
+			name: "unqualified concurrent index",
+			sql:  `DROP INDEX CONCURRENTLY IF EXISTS idx_members_email;`,
+			want: []postgresIndexRef{{Name: "idx_members_email"}},
+		},
+		{
+			name: "qualified quoted indexes",
+			sql:  `DROP INDEX IF EXISTS "app"."idx_a", "audit"."idx_b" CASCADE;`,
+			want: []postgresIndexRef{{Schema: "app", Name: "idx_a"}, {Schema: "audit", Name: "idx_b"}},
+		},
+		{
+			name: "create is not a drop",
+			sql:  `CREATE INDEX idx_members_email ON members (email);`,
+			want: nil,
+		},
+		{
+			name: "comment is ignored",
+			sql:  `-- DROP INDEX idx_old;` + "\nSELECT 1;",
+			want: nil,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(postgresDroppedIndexNames(test.sql), qt.DeepEquals, test.want)
 		})
 	}
 }

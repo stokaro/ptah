@@ -322,7 +322,7 @@ func TestMigrateUp_AtlasDirtyMalformedPartialHashesRefused(t *testing.T) {
 	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
 	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
 
-	c.Assert(err, qt.ErrorMatches, `failed to decode Atlas revision 2 partial_hashes: invalid Atlas partial_hashes:.*`)
+	c.Assert(err, qt.ErrorMatches, `.*failed to decode Atlas revision 2 partial_hashes: invalid Atlas partial_hashes:.*`)
 	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
 }
 
@@ -345,6 +345,123 @@ func TestMigrateUp_AtlasDirtyContradictoryPartialHashesRefused(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `migration 2 cannot resume automatically: Atlas partial_hashes contains 2 entries for 1 committed statements.*`)
 	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestMigrateUp_AllowDirtyRefusesInvalidRevisionProgress(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		format    migrator.RevisionTableFormat
+		updateSQL string
+		want      string
+	}{
+		{
+			name:      "Ptah negative applied",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET applied = -1 WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=-1 total=2;.*`,
+		},
+		{
+			name:      "Ptah negative total",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET total = -1 WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=1 total=-1;.*`,
+		},
+		{
+			name:      "Ptah applied exceeds total",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET applied = 3, total = 2 WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=3 total=2;.*`,
+		},
+		{
+			name:      "Atlas negative applied",
+			format:    migrator.RevisionTableFormatAtlas,
+			updateSQL: "UPDATE atlas_schema_revisions SET applied = -1 WHERE version = '2'",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=-1 total=2;.*`,
+		},
+		{
+			name:      "Atlas negative total",
+			format:    migrator.RevisionTableFormatAtlas,
+			updateSQL: "UPDATE atlas_schema_revisions SET total = -1 WHERE version = '2'",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=1 total=-1;.*`,
+		},
+		{
+			name:      "Atlas applied exceeds total",
+			format:    migrator.RevisionTableFormatAtlas,
+			updateSQL: "UPDATE atlas_schema_revisions SET applied = 3, total = 2 WHERE version = '2'",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=3 total=2;.*`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "invalid-progress.db")
+			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, test.format)
+			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+			_, err := conn.ExecContext(c.Context(), test.updateSQL)
+			c.Assert(err, qt.IsNil)
+
+			_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, test.format)
+			err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+			c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+		})
+	}
+}
+
+func TestRevisionReaders_RefuseCleanLookingInvalidMetadata(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		format    migrator.RevisionTableFormat
+		updateSQL string
+		want      string
+	}{
+		{
+			name:      "Ptah applied state with equal negative counters",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'applied', applied = -1, total = -1, error = NULL WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=-1 total=-1;.*`,
+		},
+		{
+			name:      "Ptah applied state with incomplete progress",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'applied', applied = 1, total = 2, error = NULL WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records state=applied with applied=1 total=2;.*`,
+		},
+		{
+			name:      "Atlas clean state with equal negative counters",
+			format:    migrator.RevisionTableFormatAtlas,
+			updateSQL: "UPDATE atlas_schema_revisions SET applied = -1, total = -1, error = '', operator_version = 'ptah' WHERE version = '2'",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=-1 total=-1;.*`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "clean-looking-invalid-progress.db")
+			conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, test.format)
+			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+			_, err := conn.ExecContext(c.Context(), test.updateSQL)
+			c.Assert(err, qt.IsNil)
+
+			_, err = m.GetRevisions(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			_, err = m.GetAppliedRevisions(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			_, err = m.GetAppliedMigrations(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			_, err = m.GetCurrentVersion(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			_, err = m.GetMigrationStatus(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			err = m.MigrateUp(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+		})
+	}
 }
 
 func TestGetRevisions_AtlasCleanLegacyObjectPartialHashesIgnored(t *testing.T) {
