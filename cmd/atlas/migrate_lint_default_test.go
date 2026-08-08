@@ -470,8 +470,13 @@ env "log_count" {
 }
 `
 
+// The lint.log rows analyze with no dev database: the project config supplies
+// lint.latest and the templates render file names, not replayed schema. The
+// compatibility surface requires --dev-url by default (stokaro/ptah#1231 case
+// 2), so the opt-in keeps these two tests measuring the log template.
 func TestCompatCommand_MigrateLintProjectGlobalLintLog(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "DROP TABLE users;\n")
@@ -487,6 +492,7 @@ func TestCompatCommand_MigrateLintProjectGlobalLintLog(t *testing.T) {
 
 func TestCompatCommand_MigrateLintProjectEnvLintLog(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "DROP TABLE users;\n")

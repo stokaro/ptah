@@ -54,10 +54,16 @@ func TestMigrateLintValidatesDirectoryFormatBeforeDirectoryURL(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
+	// --dev-url is supplied because it is now required, and the requirement is a
+	// cobra-level one on the community binary too: measured there,
+	// `migrate lint --dir-format custom --dir file://nope` with no --dev-url
+	// answers `required flag(s) "dev-url" not set`, so the format complaint this
+	// test is about only becomes reachable once the flag is present.
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--dir", "atlas://remote",
 		"--dir-format", "custom",
+		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
 	})
 
 	err := cmd.Execute()

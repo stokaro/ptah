@@ -129,7 +129,7 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| `--dry-run`, `--auto-approve`, and `--edit` | ✅ | ✅ | ✅ | All three registered and functional; `--edit` opens $VISUAL/$EDITOR and the edited SQL is what gets planned, rehearsed, and applied. |
+| `--dry-run`, `--auto-approve`, and `--edit` | ✅ | ✅ | ✅ | All three registered and functional; `--edit` opens $VISUAL/$EDITOR and the edited SQL is applied. `--dry-run` and `--auto-approve` exclude each other on the command line, as on CE. |
 | `--exclude` glob and type selectors | 🟡 | ✅ | ✅ | Resource globs plus one final-segment [type=...]; qualified globs now reach default-schema tables, views and their children, but enum and function filters still compare the bare name. |
 | `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics. |
 | `--schema` / -s scoping of both sides | ✅ | ✅ | ✅ | Names define the schema universe for apply and diff; repeated and comma-separated values union deterministically. |
@@ -181,7 +181,7 @@ seven of them as open capabilities regardless.
 | migrate apply `--allow-dirty` semantics and the not-clean adoption gate | ✅ | ✅ | ✅ | Clears a dirty revision row and opts in to adopting a database that already holds unmanaged objects. A pinned schema makes the operand tables; a plain PostgreSQL URL makes it schemas. |
 | Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint: the ptah reversible pair, or Atlas's single `-- atlas:checkpoint` file under `--dir-format atlas`. CE gates the verb. |
 | Migration import from other tools | 🟡 | ✅ | ✅ | Native import converts golang-migrate/Goose/Flyway/Liquibase-SQL to ptah format (`R__` becomes one-time); the compat path writes atlas format and rejects `R__`. Liquibase XML/YAML/JSON not parsed. |
-| Migration linting | ✅ | 🟡 | ✅ | CE registers `migrate lint` with a basic Open rule set; Atlas's features page marks the lint CLI Pro. Ptah loads custom rules only through the Go API at compile time. |
+| Migration linting | ✅ | 🟡 | ✅ | CE registers `migrate lint` with a basic Open rule set; its features page marks the lint CLI Pro. Compat requires `--dev-url` as CE does, with an opt-in that lifts only that. |
 | Migration lock, lock timeout, `--lock-name`, `--skip-lock` | ✅ | 🟡 | ✅ | Compat `--lock-timeout` bounds directory and dev-db locks. `--lock-name` and `--skip-lock` on `migrate apply` are Pro surface adopted openly; CE registers only `--lock-timeout`. |
 | Migration status report | ✅ | ✅ | ✅ | Compat status mirrors the Atlas default report shape and renders Go templates over .Env, .Available, .Applied, .Pending, .Current, .Next. Native ptah keeps its own block. |
 | Online DDL routing via gh-ost or pt-osc | ✅ | ❌ | ❌ | ptah.yaml online_ddl.tool (ghost\|pt-osc), threshold_rows, args, and fallback (error\|plain) route large-table ALTERs through an online-DDL tool during migrations up/down. CE has no such routing. |

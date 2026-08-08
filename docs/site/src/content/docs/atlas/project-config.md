@@ -361,6 +361,29 @@ are accepted; other URL schemes fail explicitly. `--var name=value` can be
 repeated. Repeating the same variable name produces a string list for supported
 Atlas HCL expressions.
 
+A `--var` carrying no `=` is refused where it is written, on every verb, in the
+community CLI's own words
+([#1231](https://github.com/stokaro/ptah/issues/1231)):
+
+```bash
+ptah-compat migrate status --dir file://migrations --url "$DATABASE_URL" --var novalue
+# Error: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
+```
+
+The refusal precedes everything the verb itself requires — the missing `--url`,
+the missing `--dir`, the arity check — and it fires on every verb, including the
+ones that never read the flag. A value is checked field by field as CSV, so
+`--var a=1,b` is refused naming `b`. Only the separator is required within a
+field: an empty name and an empty value are both accepted, because both are
+accepted there.
+
+`PTAH_VAR` carries the same rule and the same sentence, since the value reaches
+the same check:
+
+```text
+Error: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
+```
+
 Variable blocks accept the `type` constraints `string`, `number`, `bool`, and
 `list(string)` — the attribute Atlas requires — so one
 `atlas.hcl` with typed variables works with both binaries. `--var` overrides

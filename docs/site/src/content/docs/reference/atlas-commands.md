@@ -260,10 +260,17 @@ fails the lint and editing the uncovered `*.down.sql` does not, and a Flyway
 
 | Flag | Behavior |
 | --- | --- |
-| `--latest N` | Maps to native changeset linting. |
-| `--git-base`, `--git-dir` | Map to native changeset linting. |
-| `--dev-url` | Infers the lint dialect, and cleans and replays migrations on directly connectable dev databases. |
+| `--latest N` | Maps to native changeset linting. Required unless `--git-base` is given; `N` must be greater than zero. |
+| `--git-base`, `--git-dir` | Map to native changeset linting. `--git-base` is the alternative to `--latest`. |
+| `--dev-url` | Required. Infers the lint dialect, and cleans and replays migrations on directly connectable dev databases. |
 | `--format` | Atlas Go-template output over `.Env`, `.Steps`, and `.Files`. The default is Atlas's migration-analysis text report. |
+
+Both requirements are the community binary's, reproduced word for word — a run
+missing `--dev-url` answers `required flag(s) "dev-url" not set` and one naming
+no changeset answers `--latest or --git-base is required`, each at exit 1. Either
+selector may come from the selected `atlas.hcl` env instead of the command line.
+`PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1` runs the analysis with no dev database, which
+Ptah can do and that binary cannot.
 
 Docker dev databases and web reports remain explicit gaps.
 Native twin: [`ptah migrations lint`](../native-commands/).
@@ -292,6 +299,13 @@ A migration name is required on a non-`atlas` layout. Atlas accepts an omitted
 name and writes the version alone, but such a file is one Ptah's own
 `migrate apply` cannot read back on `golang-migrate`, `goose`, `liquibase` and
 `dbmate`, so it is not created.
+
+A migration name may not contain a path separator on this verb or on
+`migrate diff`: the name becomes part of the file name, so a `/` in it selects a
+directory that is not there. The run is refused and nothing is written, matching
+the community binary's refusal of the same input
+([#1231](https://github.com/stokaro/ptah/issues/1231)). Nothing else about a
+name is refused — a space, a backslash and `..` are accepted, as they are there.
 
 The directory's existing `atlas.sum` is verified first — over the selected
 layout's covered file set — with the same output `migrate apply` and
@@ -380,6 +394,13 @@ and `--dir-format " atlas "` are rejected rather than coerced, and an explicit
 --dir-format golang-migrate` writes the Atlas-layout migration. An
 unrecognized query key selects no layout, so `--dir-format` still decides
 there.
+
+The verb takes at most one positional, the migration name, and a second one is
+refused with `accepts at most 1 arg(s), received 2`
+([#1231](https://github.com/stokaro/ptah/issues/1231)). The name may not contain
+a path separator, checked where the file would be written: a diff that finds no
+changes writes nothing, never reaches the name, and still exits 0 — which is
+what the community binary does.
 
 **Desired state (`--to`)** accepts one of: local `.hcl`, `.yaml`, `.yml`, or
 `.sql` files; one directly connectable database URL; one local Atlas migration
@@ -673,13 +694,38 @@ the target database is contacted.
 
 | Flag | Behavior |
 | --- | --- |
-| `--dry-run` | Prints the plan without applying. |
+| `--dry-run` | Prints the plan without applying. Mutually exclusive with `--auto-approve` on the command line. |
+| `--auto-approve` | Applies without the interactive confirmation. Mutually exclusive with `--dry-run` on the command line. |
 | `--tx-mode` | `file` and `all` execute the generated plan in one transaction; `none` executes statements without transaction wrapping. |
 | `--format` | Atlas-style templates over planned changes with `sql` and `.MarshalSQL`. |
 | `--exclude` | Filters matching resources out of both sides of the comparison before planning, as do disabled `schema.mode` values. |
 | `--edit` | Opens the planned SQL in `$VISUAL`/`$EDITOR` before approval; the edited SQL is what gets applied. |
 | `--file`/`-f` | Atlas's hidden alias, accepted for local HCL or SQL paths. |
 | `--env` | Reads `env.url`, `env.src`, `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff` policy from `atlas.hcl`. |
+
+`--dry-run` and `--auto-approve` contradict each other — one asks for the plan
+and no execution, the other for execution with no prompt — and the pair is
+refused rather than silently resolved
+([#1231](https://github.com/stokaro/ptah/issues/1231)):
+
+```text
+Error: if any flags in the group [dry-run auto-approve] are set none of the others can be; [auto-approve dry-run] were all set
+```
+
+The rule reads the command line, not the environment. `PTAH_DRY_RUN` is not a
+typed `--dry-run` for this purpose, so a wrapper that exports it does not turn
+every `--auto-approve` in the pipeline into a refusal: the run behaves the way
+`--dry-run` alone does, printing the plan and applying nothing.
+
+```bash
+PTAH_DRY_RUN=1 ptah-compat schema apply -u "$DATABASE_URL" \
+  --to file://schema.sql --dev-url "$DEV_URL" --auto-approve
+# Planned schema changes: … (exit 0, nothing executed)
+```
+
+The variable does not work in the other direction either. Typing both flags is
+still typing both, so adding `--dry-run` to the command line above is refused
+with the same sentence whether or not the variable is exported.
 
 `--env` evaluation includes local variable defaults, locals, `getenv`, `file`,
 `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url` references.
