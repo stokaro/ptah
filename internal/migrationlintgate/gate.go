@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"strings"
 
+	"go.5x5.cz/ptah/internal/lintdialect"
 	"go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/risk"
 )
@@ -25,15 +26,27 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 	if err != nil {
 		return Policy{}, err
 	}
-	if cfg.Dialect != "" {
-		if cfg.Dialect != databaseDialect {
-			return Policy{}, fmt.Errorf(
-				"lint dialect %q does not match database dialect %q",
-				cfg.Dialect,
-				databaseDialect,
-			)
-		}
-		databaseDialect = cfg.Dialect
+	// The policy dialect is an assertion about the directory, not a selector.
+	// What gets linted is decided by databaseDialect below, which the wire
+	// reports and the operator cannot mistype; a policy naming the same engine
+	// by another spelling, or another member of the same family, changes
+	// nothing about the analysis. So the comparison is lintdialect's, shared
+	// with the standalone lint command's --dev-url check so the two commands
+	// accept exactly the same policy files (stokaro/ptah#270).
+	if !lintdialect.Compatible(cfg.Dialect, databaseDialect) {
+		return Policy{}, fmt.Errorf(
+			"lint dialect %q does not match database dialect %q",
+			cfg.Dialect,
+			databaseDialect,
+		)
+	}
+	// Store the canonical spelling, never the caller's: lint matches
+	// Rule.Dialects and picks its lexer mode by exact string comparison and
+	// validates neither, so an alias here would run clean while selecting the
+	// wrong scanner. A dialect this package cannot resolve is passed through
+	// rather than blanked, because blanking would turn every rule back on.
+	if canonical, ok := lintdialect.Canonical(databaseDialect); ok {
+		databaseDialect = canonical
 	}
 	policy := Policy{
 		dialect:  databaseDialect,
