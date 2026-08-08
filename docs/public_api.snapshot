@@ -5294,7 +5294,6 @@ type DBColumn struct {
     DataType           string  `json:"data_type"`
     UDTName            string  `json:"udt_name"`                 // For PostgreSQL enum types
     FormattedType      string  `json:"formatted_type,omitempty"` // Server's own spelling, where the catalog cannot express it
-    DomainName         string  `json:"domain_name,omitempty"`    // Domain this column's declared type names, empty when it is not a domain
     ColumnType         string  `json:"column_type"`              // For MySQL ENUM syntax
     IsNullable         string  `json:"is_nullable"`              // YES/NO
     ColumnDefault      *string `json:"column_default"`           // Can be NULL

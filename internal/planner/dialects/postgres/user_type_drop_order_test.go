@@ -113,6 +113,46 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesTheDesiredShapeNoLon
 	assertBefore(t, sql, "DROP TYPE IF EXISTS meas", "CREATE TYPE meas AS")
 }
 
+// TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesWithinOneKind pairs two
+// types of the SAME kind, which is the case no order of kinds can reach.
+//
+// The two tests above each pair a domain with a composite, so a rule as crude as
+// "composites before domains" would satisfy them. Here both types are domains:
+// `CREATE DOMAIN d_base AS integer` with `CREATE DOMAIN d_over AS d_base` over
+// it, and the desired schema makes both plain text. The comparator sorts
+// DomainsModified by name, so caller order emits `DROP DOMAIN d_base` first and
+// PostgreSQL 17.10 answers `ERROR: cannot drop type d_base because other objects
+// depend on it / DETAIL: type d_over depends on type d_base` (SQLSTATE 2BP01) --
+// measured through `ptah-compat schema apply --auto-approve`. The desired side
+// has no edge to reverse either, since neither domain still names the other, so
+// only the current definitions place these two statements.
+func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesWithinOneKind(t *testing.T) {
+	c := qt.New(t)
+	planner := postgres.New()
+
+	desired := &goschema.Database{
+		Domains: []goschema.Domain{
+			{Name: "d_base", BaseType: "text"},
+			{Name: "d_over", BaseType: "text"},
+		},
+	}
+	diff := &difftypes.SchemaDiff{
+		DomainsModified: []difftypes.DomainDiff{
+			{DomainName: "d_base", Changes: map[string]string{"type": "integer -> text"}, CurrentBaseType: "integer"},
+			{DomainName: "d_over", Changes: map[string]string{"type": "d_base -> text"}, CurrentBaseType: "d_base"},
+		},
+	}
+
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
+	c.Assert(err, qt.IsNil)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
+
+	assertBefore(t, sql, "DROP DOMAIN IF EXISTS d_over", "DROP DOMAIN IF EXISTS d_base")
+	assertBefore(t, sql, "DROP DOMAIN IF EXISTS d_base", "CREATE DOMAIN d_base AS")
+}
+
 // TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesInCallerOrderWithoutACurrentShape
 // covers a diff assembled by hand, which carries no from-side at all.
 //

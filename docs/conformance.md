@@ -354,10 +354,8 @@ Two details decided whether any of this was visible:
 - **The name of the domain.** The type comparison folded a spelling into a
   category by substring, so any domain whose name contains `int` — the issue's
   own `positive_int` fixture — compared equal to `integer` by accident and the
-  churn did not appear. A domain is now compared as the identifier it is: two
-  domains are the same type when they are the same domain. The reverse follows,
-  and is the point: a column of `positive_int` that a desired schema declares as
-  `bigint` is now reported as drift instead of silently matching.
+  churn did not appear. A domain is compared as the identifier it is instead,
+  which is the subject of *A domain column is reconciled by identity* below.
 - **The array column next to it.** An array column and a domain column both make
   the reader ask the server for its own spelling of the type, and the two want
   opposite answers on the JSON surface: CE prints the bare category `ARRAY` for

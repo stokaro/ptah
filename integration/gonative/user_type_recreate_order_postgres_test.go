@@ -157,6 +157,101 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 	}
 }
 
+// TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind is the
+// same live guard for a dependent pair of the SAME kind, which is where no order
+// of kinds can help at all.
+//
+// Every row of the table above pairs a domain with a composite, so a rule as
+// crude as "composites before domains" would pass all three. Here the two types
+// are both domains, or both composites, and the reference between them lives
+// inside one kind. The comparator hands the planner each modified list sorted by
+// name, and both rows are named so that order is the failing one: the base type
+// comes first alphabetically, and dropping it while its dependent still stands
+// draws `cannot drop type ... because other objects depend on it`.
+//
+// Neither desired side names the other type, so the desired graph is empty here
+// as well. Only the current definitions can place these statements.
+func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	tests := []struct {
+		name            string
+		current         []string
+		desired         []string
+		assertConverged func(c *qt.C, applied *dbschematypes.DBSchema)
+	}{
+		{
+			name: "both types are domains",
+			current: []string{
+				"CREATE DOMAIN d_base AS integer",
+				"CREATE DOMAIN d_over AS d_base",
+			},
+			desired: []string{
+				"CREATE DOMAIN d_base AS text",
+				"CREATE DOMAIN d_over AS text",
+			},
+			assertConverged: func(c *qt.C, applied *dbschematypes.DBSchema) {
+				c.Assert(findLiveDomain(c, applied.Domains, "d_base").BaseType, qt.Equals, "text")
+				c.Assert(findLiveDomain(c, applied.Domains, "d_over").BaseType, qt.Equals, "text")
+			},
+		},
+		{
+			name: "both types are composites",
+			current: []string{
+				"CREATE TYPE c_base AS (f integer)",
+				"CREATE TYPE c_over AS (g c_base)",
+			},
+			desired: []string{
+				"CREATE TYPE c_base AS (f text)",
+				"CREATE TYPE c_over AS (g text)",
+			},
+			assertConverged: func(c *qt.C, applied *dbschematypes.DBSchema) {
+				c.Assert(liveCompositeFieldTypes(c, applied.Composites, "c_base"), qt.DeepEquals, []string{"text"})
+				c.Assert(liveCompositeFieldTypes(c, applied.Composites, "c_over"), qt.DeepEquals, []string{"text"})
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			desiredURL := newBoundaryDatabase(c, dsn, boundaryCase{
+				name:  "user_type_one_kind_desired",
+				seed:  test.desired,
+				query: "search_path=public",
+			})
+			currentURL := newBoundaryDatabase(c, dsn, boundaryCase{
+				name:  "user_type_one_kind_current",
+				seed:  test.current,
+				query: "search_path=public",
+			})
+
+			target, err := dbschema.ConnectToDatabase(c.Context(), currentURL)
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(func() { dbschema.CloseAndWarn(target) })
+
+			plan, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
+				ToURLs: []string{desiredURL},
+				TxMode: migrator.MigrationTxModeFile,
+			})
+			c.Assert(err, qt.IsNil)
+			c.Assert(plan.HasChanges(), qt.IsTrue)
+			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
+
+			applied, err := dbschema.ReadSchemaWithSchemas(target, nil)
+			c.Assert(err, qt.IsNil)
+			test.assertConverged(c, applied)
+
+			settled, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
+				ToURLs: []string{desiredURL},
+				TxMode: migrator.MigrationTxModeFile,
+			})
+			c.Assert(err, qt.IsNil)
+			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", settled.SQL()))
+		})
+	}
+}
+
 func findLiveDomain(c *qt.C, domains []dbschematypes.DBDomain, name string) dbschematypes.DBDomain {
 	c.Helper()
 
