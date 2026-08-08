@@ -2248,6 +2248,23 @@ func appendPostgreSQLPostForeignKeyFeatureStatements(statements *ast.StatementLi
 	}
 }
 
+// supportsStandaloneViewsAndTriggers reports whether a target OUTSIDE the
+// PostgreSQL family gets view and trigger nodes appended. The family itself is
+// served by appendPostgreSQLPostForeignKeyFeatureStatements above.
+//
+// This stays a list of engines rather than a capability question, and the
+// engine it excludes is the reason. capability.ClickHouse24 says ClickHouse
+// hosts views, because it does — measured live on 24.8.14, both plain and
+// materialized. Ptah's ClickHouse renderer has no view emission and answers
+// "CLICKHOUSE does not support CREATE VIEW" instead, so asking the capability
+// here would append a node whose only rendering is that refusal. The two
+// answers converge when stokaro/ptah#931 item 7 gives the ClickHouse renderer
+// its view and trigger emissions; this predicate is the place that then
+// becomes capability.Views and capability.Triggers.
+//
+// Within the PostgreSQL family the question is already asked by capability, in
+// the renderer, so that `schema render` and the apply planner cannot disagree
+// (stokaro/ptah#929).
 func supportsStandaloneViewsAndTriggers(targetPlatform string) bool {
 	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.MySQL, platform.MariaDB, platform.SQLServer, platform.SQLite:
