@@ -112,6 +112,20 @@ type atlasCompatExtensionRoundTripCase struct {
 // keyword filter that consults the raw membership instead of the reported
 // member list drops the function name too -- the refuted shape again, one level
 // down.
+//
+// The last three rows are stokaro/ptah#1286, where the member list cannot help
+// at all because no identifier in the document names the dependency. PostgreSQL
+// prints an operator class only when it is not the default for its key's type,
+// so `CREATE INDEX t_gin ON t USING gin (n int4_ops)` over an integer column
+// comes back as `USING gin (n)` and every word of btree_gin is gone. The block
+// was dropped at exit 0 and the pinned Atlas community binary v1.3.0 then
+// refused the result: `create index "t_gin" to table: "t": pq: data type
+// integer has no default operator class for access method "gin"`, exit 1, with
+// Ptah's own apply failing identically. The second row is the same dependency
+// arriving through an exclusion constraint, whose elements print operators and
+// never classes. The third is the control that keeps the fix from becoming
+// "pin the extension to every GIN index": jsonb and tsvector have core GIN
+// classes, and that document must still come out with no extension block.
 func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 	adminURL := requirePostgresE2EDatabaseURL(t)
 
@@ -265,6 +279,41 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			why: "the type in merge's signature is named box, which pg_catalog also supplies," +
 				" so the type arm already dropped it and it cannot answer for anything;" +
 				" excluding merge as well leaves this document with no evidence either",
+		},
+		{
+			name:      "index resting on an operator class the extension supplies as the default",
+			extension: "btree_gin",
+			seed: "CREATE TABLE t (id integer PRIMARY KEY, n integer NOT NULL);" +
+				" CREATE INDEX t_gin ON t USING gin (n int4_ops)",
+			wantBlock: true,
+			why: "PostgreSQL prints an operator class only when it is not the default, so the" +
+				" catalog stores this as USING gin (n) and the document carries no token of" +
+				" btree_gin -- not its label, and none of the support functions its member list holds",
+		},
+		{
+			name:      "exclusion constraint resting on an operator class the extension supplies",
+			extension: "btree_gist",
+			seed: "CREATE TABLE booking (id integer PRIMARY KEY, room integer NOT NULL," +
+				" during tsrange NOT NULL, EXCLUDE USING gist (room WITH =, during WITH &&))",
+			wantBlock: true,
+			why: "an EXCLUDE element prints its operator and not its operator class, and the index" +
+				" backing the constraint is not in the entity model, so the requirement has to" +
+				" travel on the constraint",
+		},
+		{
+			name:      "gin indexes whose operator classes core supplies",
+			extension: "btree_gin",
+			seed: "CREATE TABLE doc (id integer PRIMARY KEY, body jsonb NOT NULL, tsv tsvector NOT NULL);" +
+				" CREATE INDEX doc_body_gin ON doc USING gin (body);" +
+				" CREATE INDEX doc_tsv_gin ON doc USING gin (tsv)",
+			wantBlock: false,
+			// The control the two rows above are worthless without. Same
+			// extension, same access method, same rendered `type = "gin"`: only
+			// the resolved operator class differs. A rule that read `USING gin`
+			// as a reference to btree_gin passes both rows above and fails here,
+			// and so does keeping every extension with a non-empty member list.
+			why: "jsonb and tsvector have core GIN operator classes, so these indexes resolve to" +
+				" nothing btree_gin supplies and the document materializes without it",
 		},
 	}
 

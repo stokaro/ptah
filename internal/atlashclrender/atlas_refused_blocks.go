@@ -133,28 +133,107 @@ func atlasRefusesBlock(dialect, block string) bool {
 // The question asked of the document is "does anything here still DEPEND on
 // this object", which is why the caller passes every name that would stop
 // resolving without the block rather than only the block's label. For a
-// sequence and a policy those are the same word. For an extension they are
-// usually disjoint: `isn` supplies the type `isbn`, `pgcrypto` supplies the
-// function `gen_salt`, and matching the label alone omitted the extension while
-// leaving the column that needs it behind. Measured on PostgreSQL 17.10 against
+// sequence and a policy those are the same word, so this is all the question
+// there is; an extension is decided by [renderer.omitRefusedExtension], where
+// the names are usually disjoint from the label and one part of the answer is
+// not a name at all.
+func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
+	return r.omitRefused(path, block, func() blockDependency {
+		if !r.documentNamesAny(names) {
+			return blockDependency{}
+		}
+		return blockDependency{
+			because: "another object in this document depends on it",
+			cost:    "leave a reference to an object nothing declares",
+		}
+	})
+}
+
+// omitRefusedExtension decides one extension's fate. It asks
+// [renderer.omitRefusedBlock]'s question about two sets of names, and then one
+// question no name can answer.
+//
+// The names are two sets because an extension is almost never referenced by its
+// own label: `isn` supplies the type `isbn`, `pgcrypto` supplies the function
+// `gen_salt`. Matching the label alone omitted the extension and left the column
+// that needs it behind -- measured on PostgreSQL 17.10 against
 //
 //	CREATE EXTENSION isn;
 //	CREATE TABLE books (id integer PRIMARY KEY, code isbn NOT NULL);
 //
-// label-only matching rendered at exit 0 and then neither Ptah nor the pinned
-// binary could read the result back: `type "isbn" does not exist`, exit 1 from
-// both. That is strictly worse than either alternative -- it is not a
-// compatibility win, because the pinned binary rejects that document too.
-func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
+// where neither Ptah nor the pinned binary could then read the result back:
+// `type "isbn" does not exist`, exit 1 from both, which is not a compatibility
+// win because that binary rejects the document too (stokaro/ptah#1266).
+//
+// An extension can also be needed by a document that spells nothing it supplies.
+// PostgreSQL prints an operator class only when it is not the default for the
+// key's type on the index's access method, so with btree_gin installed
+//
+//	CREATE INDEX t_gin ON t USING gin (n int4_ops);   -- n is integer
+//
+// is stored, and rendered, as `USING gin (n)`. Neither `btree_gin` nor
+// `int4_ops` appears anywhere in the document, the name scan finds nothing, and
+// the block was dropped at exit 0 -- after which the pinned Atlas community
+// binary v1.3.0 refused the result with `create index "t_gin" to table: "t":
+// pq: data type integer has no default operator class for access method "gin"`,
+// and Ptah's own apply failed identically. Measured on PostgreSQL 17.10
+// (stokaro/ptah#1286).
+//
+// The evidence therefore comes from the reader, which resolved the index's
+// operator classes and access method against pg_depend; see
+// [goschema.Index.RequiresExtensions]. Asking the document instead -- treating
+// `USING gin` as a reference to btree_gin -- is the wrong answer to the same
+// question: `gin` is a core access method, and tsvector, jsonb and array columns
+// have core GIN operator classes, so that rule would pin btree_gin to indexes
+// that do not need it and cost every such document its readability.
+func (r *renderer) omitRefusedExtension(path string, extension goschema.Extension) bool {
+	return r.omitRefused(path, blockExtension, func() blockDependency {
+		if r.documentRequiresExtension(extension.Name) {
+			return blockDependency{
+				because: "an index or constraint in this document resolves to an operator class or access" +
+					" method it supplies, which the rendered DDL does not spell",
+				cost: "leave an index no database could build",
+			}
+		}
+		// The extension's own name AND everything it supplies: a document that
+		// depends on `isn` says `isbn`, never `isn`. Provides is empty for
+		// sources with no catalog behind them, and the check then degenerates to
+		// the label, which is the most that can be known about such a source.
+		if !r.documentNamesAny(append([]string{extension.Name}, extension.Provides...)) {
+			return blockDependency{}
+		}
+		return blockDependency{
+			because: "another object in this document depends on it",
+			cost:    "leave a reference to an object nothing declares",
+		}
+	})
+}
+
+// blockDependency is why a refused block has to stay and what leaving it out
+// would cost the document. A zero value means nothing depends on the block.
+//
+// Both halves are reported because they are what an operator needs to act on. A
+// dependency spelled in the document can be looked up by searching it; one the
+// catalog resolved cannot be, so a diagnostic that only said "something depends
+// on it" would send its reader looking for a word that is not there.
+type blockDependency struct {
+	because string
+	cost    string
+}
+
+// omitRefused reports one block's fate on the diagnostics channel and returns
+// whether it is left out. The dependency is a function so that the scan behind
+// it never runs on the native surface, which omits nothing.
+func (r *renderer) omitRefused(path, block string, dependency func() blockDependency) bool {
 	if !r.omitAtlasRefusedBlocks || !atlasRefusesBlock(r.dialect, block) {
 		return false
 	}
-	if r.documentNamesAny(names) {
+	if depends := dependency(); depends.because != "" {
 		r.warn(path, fmt.Sprintf(
-			"kept in Atlas-compatible schema inspect output because another object in this document depends on it:"+
+			"kept in Atlas-compatible schema inspect output because %s:"+
 				" the Atlas community CLI refuses a %s schema file that declares any %s block, so it cannot read"+
-				" this document, but omitting the block would leave a reference to an object nothing declares",
-			r.dialect, block,
+				" this document, but omitting the block would %s",
+			depends.because, r.dialect, block, depends.cost,
 		))
 		return false
 	}
@@ -165,6 +244,55 @@ func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 		r.dialect, block, KeepAtlasRefusedBlocksEnvVar,
 	))
 	return true
+}
+
+// documentRequiresExtension reports whether an object the surviving document
+// declares cannot be built without this extension, as the catalog resolved it
+// rather than as the document spells it.
+//
+// This is the half [documentNamesAny] cannot answer. It reads no text: the
+// reader recorded, per index and per exclusion constraint, which extensions
+// that object's operator classes and access method belong to, so the answer is
+// a catalog fact rather than a guess about a word. An object dropped by a
+// selector takes its requirement with it, which is why the edge is carried on
+// the object and not on the extension.
+func (r *renderer) documentRequiresExtension(name string) bool {
+	if r.requiredExtensions == nil {
+		r.requiredExtensions = collectRequiredExtensions(r.db)
+	}
+	return r.requiredExtensions[strings.ToLower(strings.TrimSpace(name))]
+}
+
+// collectRequiredExtensions gathers every extension the surviving document's
+// objects resolve to without naming.
+//
+// Only indexes and constraints carry the edge, because pg_index is where an
+// operator class is resolved: a plain index, and the index PostgreSQL builds
+// under an exclusion constraint, are the two shapes that reach a rendered
+// document. A primary key or a single-column unique constraint is backed by an
+// index too, but its operator class is the default for the column's own type,
+// so an extension can only be behind it by supplying a default class for a type
+// it does not supply -- measured over the 45 extensions in the postgres:17
+// image, the extension-supplied default classes on core types are all gin, gist
+// or bloom classes, and none is btree. Should one appear, its column would have
+// to be a core type and the edge would have to be carried on the table.
+func collectRequiredExtensions(db *goschema.Database) map[string]bool {
+	required := map[string]bool{}
+	add := func(names []string) {
+		for _, name := range names {
+			name = strings.ToLower(strings.TrimSpace(name))
+			if name != "" {
+				required[name] = true
+			}
+		}
+	}
+	for _, index := range db.Indexes {
+		add(index.RequiresExtensions)
+	}
+	for _, constraint := range db.Constraints {
+		add(constraint.RequiresExtensions)
+	}
+	return required
 }
 
 // documentNamesAny reports whether anything the surviving document emits names

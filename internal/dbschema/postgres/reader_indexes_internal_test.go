@@ -51,26 +51,36 @@ type pgIndexCatalog struct {
 	// includeColumns is the JSON array of INCLUDE payload column texts.
 	includeColumns string
 	// method is pg_am.amname.
-	method    string
-	predicate string
-	isPrimary bool
-	isUnique  bool
+	method string
+	// requiredExtensions is the JSON array of extensions the index resolves to
+	// through the catalog, and requiredExtensionsFrom is the catalog column the
+	// resolution goes through -- indclass for an operator class, relam for an
+	// access method. The two arms are separated so a fixture answers only the
+	// one it is about, and dropping either arm from the reader's SQL reddens the
+	// fixture that rests on it.
+	requiredExtensions     string
+	requiredExtensionsFrom string
+	predicate              string
+	isPrimary              bool
+	isUnique               bool
 }
 
 // plainCatalog is CREATE INDEX i_plain ON t (name): btree, default opclass,
 // ascending, no payload. It is the control every other fixture varies from.
 func plainCatalog() pgIndexCatalog {
 	return pgIndexCatalog{
-		schemaName:     "public",
-		tableName:      "t",
-		indexName:      "i_plain",
-		indexDef:       "CREATE INDEX i_plain ON public.t USING btree (name)",
-		keyTexts:       `["name"]`,
-		keyAttnums:     `[2]`,
-		keyOpclasses:   `[""]`,
-		keyOptions:     `[0]`,
-		includeColumns: `[]`,
-		method:         "btree",
+		schemaName:             "public",
+		tableName:              "t",
+		indexName:              "i_plain",
+		indexDef:               "CREATE INDEX i_plain ON public.t USING btree (name)",
+		keyTexts:               `["name"]`,
+		keyAttnums:             `[2]`,
+		keyOpclasses:           `[""]`,
+		keyOptions:             `[0]`,
+		includeColumns:         `[]`,
+		method:                 "btree",
+		requiredExtensions:     `[]`,
+		requiredExtensionsFrom: "indclass",
 	}
 }
 
@@ -132,6 +142,51 @@ func includeCatalog() pgIndexCatalog {
 	return catalog
 }
 
+// implicitOpclassCatalog is CREATE INDEX t_gin ON t USING gin (n int4_ops) over
+// an integer column with btree_gin installed. PostgreSQL stores it as
+// USING gin (n) -- the class is the default for integer under gin, so it is not
+// printed, and keyOpclasses reports the empty string exactly as it does for a
+// plain btree key. The extension is therefore invisible in every text this row
+// carries, and only pg_index.indclass answers for it (stokaro/ptah#1286).
+func implicitOpclassCatalog() pgIndexCatalog {
+	catalog := plainCatalog()
+	catalog.indexName = "t_gin"
+	catalog.indexDef = "CREATE INDEX t_gin ON public.t USING gin (n)"
+	catalog.keyTexts = `["n"]`
+	catalog.method = "gin"
+	catalog.requiredExtensions = `["btree_gin"]`
+	return catalog
+}
+
+// coreOpclassCatalog is the control: the same gin index over a jsonb column,
+// whose GIN operator class core supplies. Everything the reader can read as
+// text is identical to implicitOpclassCatalog -- including `USING gin` -- and
+// the catalog answer is the only difference, so a rule that matched the access
+// method rather than the resolved class would keep an extension this index does
+// not need.
+func coreOpclassCatalog() pgIndexCatalog {
+	catalog := implicitOpclassCatalog()
+	catalog.indexName = "doc_body_gin"
+	catalog.indexDef = "CREATE INDEX doc_body_gin ON public.t USING gin (body)"
+	catalog.keyTexts = `["body"]`
+	catalog.requiredExtensions = `[]`
+	return catalog
+}
+
+// extensionAccessMethodCatalog is CREATE INDEX i_bloom ON t USING bloom (name),
+// where the access method itself is an extension member. It reaches the same
+// field through pg_class.relam rather than through pg_index.indclass, so it is
+// the fixture that fails if that arm is dropped.
+func extensionAccessMethodCatalog() pgIndexCatalog {
+	catalog := plainCatalog()
+	catalog.indexName = "i_bloom"
+	catalog.indexDef = "CREATE INDEX i_bloom ON public.t USING bloom (name)"
+	catalog.method = "bloom"
+	catalog.requiredExtensions = `["bloom"]`
+	catalog.requiredExtensionsFrom = "relam"
+	return catalog
+}
+
 // sortOrderCatalog builds a one-key fixture with the given pg_index.indoption
 // bitmask. The four values were read off PostgreSQL 17.10: (a DESC) reports 3,
 // (c DESC NULLS LAST) reports 1, (b NULLS FIRST) reports 2, plain ascending
@@ -161,6 +216,7 @@ func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, 
 		{"index_key_options", "indoption", catalog.keyOptions},
 		{"index_include_columns", "indkey", catalog.includeColumns},
 		{"index_method", "amname", catalog.method},
+		{"index_required_extensions", catalog.requiredExtensionsFrom, catalog.requiredExtensions},
 	}
 
 	values := []driver.Value{
@@ -353,6 +409,34 @@ func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
 				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
 					{Name: "a"}, {Name: "b"},
 				})
+			},
+		},
+		{
+			// The dependency #1286 is about: nothing in the index's own text
+			// names btree_gin, so a reader that does not resolve indclass
+			// against pg_depend reports an index that cannot be built.
+			name:    "an implicit operator class reports the extension behind it",
+			catalog: implicitOpclassCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.RequiresExtensions, qt.DeepEquals, []string{"btree_gin"})
+				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{{Name: "n"}},
+					qt.Commentf("the class is the default, so it is not carried as a printed one"))
+			},
+		},
+		{
+			name:    "a core operator class reports no extension",
+			catalog: coreOpclassCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.RequiresExtensions, qt.IsNil)
+				c.Assert(index.Method, qt.Equals, "gin",
+					qt.Commentf("the control has to keep the access method the other row has"))
+			},
+		},
+		{
+			name:    "an extension-supplied access method reports its extension",
+			catalog: extensionAccessMethodCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.RequiresExtensions, qt.DeepEquals, []string{"bloom"})
 			},
 		},
 		{

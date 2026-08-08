@@ -242,9 +242,61 @@ throw away the only evidence there is. The `cube` extension shows what that
 leaves behind — its type and its constructor are both called `cube`, so a view
 saying `GROUP BY CUBE(x)` still keeps it.
 
+#### An extension the document cannot name
+
+Some dependencies have no name to match. PostgreSQL prints an operator class in
+a `CREATE INDEX` only when that class is not the default for the key's type on
+the index's access method, so with `btree_gin` installed
+
+```sql
+CREATE EXTENSION btree_gin;
+CREATE TABLE t (id integer PRIMARY KEY, n integer NOT NULL);
+CREATE INDEX t_gin ON t USING gin (n int4_ops);
+```
+
+is stored, and rendered back, as `CREATE INDEX t_gin ON public.t USING gin (n)`.
+The document holds no token of `btree_gin` — not its label, and not one of the
+support functions its member list holds, none of which anything ever writes. The
+extension was omitted at exit 0 and the community binary then refused the
+result: `create index "t_gin" to table: "t": pq: data type integer has no
+default operator class for access method "gin"`. Ptah's own apply of the same
+document failed the same way.
+
+Ptah asks the catalog instead of the text. `pg_index.indclass` holds the
+operator class each index key actually resolved to, so inspection resolves those
+classes — and the index's access method — against `pg_depend` and records which
+extension owns them. The same edge is read for an exclusion constraint, whose
+elements print their operators and never their classes:
+`EXCLUDE USING gist (room WITH =, during WITH &&)` over an `integer` column
+needs `btree_gist` and says nothing of it. The keep is reported like any other:
+
+```console
+warning: extensions.btree_gin: kept in Atlas-compatible schema inspect output because an index or constraint in this document resolves to an operator class or access method it supplies, which the rendered DDL does not spell: ...
+```
+
+Reading `USING gin` as a reference to `btree_gin` would answer the same question
+wrongly. `gin` is a core access method that belongs to no extension, and
+`tsvector`, `jsonb` and array columns all have core GIN operator classes, so
+that rule would pin the extension to indexes that do not need it and cost each
+of those documents its compatibility. The catalog separates them exactly: a GIN
+index over `jsonb` resolves to nothing an extension supplies, and its document
+still comes out with no `extension` block.
+
 An extension nothing depends on is still omitted, and the community binary
 reads that document at exit 0. Set `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` when the
 output has to carry every block regardless.
+
+Two implicit resolutions are **not** covered, and both were measured rather than
+assumed. An extension-supplied implicit cast leaves no catalog handle on the
+object that uses it: across the 45 extensions in the `postgres:17` image, every
+such cast has its own extension's type on one side (`citext`, `isbn` and its
+siblings), so naming that type is what keeps the extension, and a cast between
+two core types would be a gap. No extension in that image supplies a collation
+at all. A primary key or a single-column unique constraint is backed by an index
+too, but its operator class is the default for the column's own type: the
+extension-supplied default classes on core types in that image are all `gin`,
+`gist` or `bloom` classes and none is `btree`, so no such constraint can rest on
+one without naming the type that carries it.
 
 #### Get the full description back
 

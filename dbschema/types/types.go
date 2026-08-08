@@ -216,6 +216,30 @@ type DBIndex struct {
 	// non-key columns stored in the index for index-only scans.
 	IncludeColumns []string `json:"include_columns,omitempty"`
 
+	// RequiresExtensions names the extensions this index cannot be built
+	// without, as the catalog resolved them rather than as the DDL spells them.
+	//
+	// An index key names an operator class only when that class is not the
+	// default for its type on its access method, so an index whose default
+	// class comes from an extension refers to that extension with no token at
+	// all. Measured on PostgreSQL 17.10: with btree_gin installed,
+	// CREATE INDEX t_gin ON t USING gin (n int4_ops) over an integer column is
+	// stored, and rendered back, as CREATE INDEX t_gin ON public.t USING gin
+	// (n) -- and replaying that on a database without btree_gin fails with
+	// `data type integer has no default operator class for access method
+	// "gin"`. pg_index.indclass holds the class each key actually resolved to,
+	// so the reader answers the question exactly (stokaro/ptah#1286).
+	//
+	// The index's access method is read the same way, from pg_class.relam. An
+	// access method the catalog owns, `gin` or `gist`, belongs to no extension
+	// and pins nothing; one an extension supplies, such as bloom's `bloom`,
+	// resolves to that extension.
+	//
+	// Empty means the reader found no such edge, which is the ordinary case:
+	// core supplies the default operator class for every core type its access
+	// methods index. Readers with no catalog to ask leave it unset.
+	RequiresExtensions []string `json:"requires_extensions,omitempty"`
+
 	// Type is the ClickHouse data-skipping-index type. One of
 	// "minmax" / "set(N)" / "bloom_filter" / "bloom_filter(p)" /
 	// "tokenbf_v1(...)" / "ngrambf_v1(...)" etc. Empty on non-ClickHouse
@@ -262,6 +286,19 @@ type DBConstraint struct {
 	UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
 	ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
 	WhereCondition  *string `json:"where_condition"`  // Optional WHERE clause for EXCLUDE constraints
+
+	// RequiresExtensions names the extensions the index backing this constraint
+	// cannot be built without, read from that index exactly as
+	// [DBIndex.RequiresExtensions] is.
+	//
+	// It is a separate field rather than a lookup because the backing index is
+	// not part of the entity model: a constraint owns its index, and the
+	// converter drops the index row so the constraint is rendered once. The
+	// dependency is as unnameable here as it is on a plain index. Measured on
+	// PostgreSQL 17.10, `EXCLUDE USING gist (room WITH =, during WITH &&)` over
+	// an integer column needs btree_gist and pg_get_constraintdef prints no
+	// token of it (stokaro/ptah#1286).
+	RequiresExtensions []string `json:"requires_extensions,omitempty"`
 }
 
 // QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.
