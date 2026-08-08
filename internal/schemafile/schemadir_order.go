@@ -87,21 +87,33 @@ func newDeclaredObject(kind, name string) declaredObject {
 	}
 }
 
+// schemaDirFormat names the format a schema directory's files are written in.
+// It decides one thing here: whether a repeated schema declaration is a
+// redeclaration.
+type schemaDirFormat int
+
+const (
+	// schemaDirFormatSQL is a directory of .sql files, executed in order.
+	schemaDirFormatSQL schemaDirFormat = iota
+	// schemaDirFormatHCL is a directory of .hcl files, read as one document.
+	schemaDirFormatHCL
+)
+
 // declaredObjects lists the named objects one parsed schema file declares.
 //
-// includeSchemas is set for SQL and clear for HCL, which is a measured split
-// rather than a convenience. `CREATE SCHEMA app` twice is an engine error, so a
-// SQL directory that repeats one is exit 1 on the pinned binary; an HCL
-// directory whose files each open with `schema "main" {}` is exit 0 there
-// against a realm-scoped dev database, because HCL files are one document and
-// not a script. Refusing that layout would remove a capability.
-func declaredObjects(db *goschema.Database, includeSchemas bool) []declaredObject {
+// The schema split by format is measured rather than a convenience.
+// `CREATE SCHEMA app` twice is an engine error, so a SQL directory that repeats
+// one is exit 1 on the pinned binary; an HCL directory whose files each open
+// with `schema "main" {}` is exit 0 there against a realm-scoped dev database,
+// because HCL files are one document and not a script. Refusing that layout
+// would remove a capability.
+func declaredObjects(db *goschema.Database, format schemaDirFormat) []declaredObject {
 	if db == nil {
 		return nil
 	}
 
 	objects := make([]declaredObject, 0, len(db.Tables)+len(db.Indexes)+len(db.Views))
-	if includeSchemas {
+	if format == schemaDirFormatSQL {
 		for _, schema := range db.Schemas {
 			objects = append(objects, newDeclaredObject(kindSchema, schema.Name))
 		}

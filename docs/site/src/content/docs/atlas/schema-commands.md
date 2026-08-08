@@ -681,7 +681,7 @@ reads one by executing every file in filename order against the dev database.
 A file that declares an object an earlier file already declared is therefore an
 error rather than a merge, and Ptah refuses it the same way:
 
-```
+```text
 Error: load --to schema: read state from "2_b.sql": table "users" already exists
 ```
 

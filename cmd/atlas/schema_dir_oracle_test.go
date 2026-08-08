@@ -172,7 +172,6 @@ func measureDirVerdict(c *qt.C, oracle, compat, dir, emptyHCL string) dirVerdict
 func runForExitCode(c *qt.C, binary string, args ...string) int {
 	c.Helper()
 
-	//nolint:gosec // both binaries are built or operator-provided by this test
 	out, err := exec.Command(binary, args...).CombinedOutput()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

@@ -208,8 +208,10 @@ func loadSchemaDir(dir string, opts Options) (*goschema.Database, error) {
 		return nil, fmt.Errorf("ambiguous schema: both SQL and HCL files found: %q, %q", sqlNames[0], hclNames[0])
 	}
 	names := sqlNames
+	format := schemaDirFormatSQL
 	if len(names) == 0 {
 		names = hclNames
+		format = schemaDirFormatHCL
 	}
 	if len(names) == 0 {
 		return nil, fmt.Errorf("%q contains neither SQL nor HCL files", filepath.Base(dir))
@@ -219,14 +221,13 @@ func loadSchemaDir(dir string, opts Options) (*goschema.Database, error) {
 	}
 
 	merged := &goschema.Database{}
-	sqlFormat := len(sqlNames) > 0
 	ledger := newDirDeclarations()
 	for _, name := range names {
 		db, guarded, err := loadSchemaDirEntry(filepath.Join(dir, name), opts)
 		if err != nil {
 			return nil, err
 		}
-		if err := ledger.admit(name, declaredObjects(db, sqlFormat), guarded); err != nil {
+		if err := ledger.admit(name, declaredObjects(db, format), guarded); err != nil {
 			return nil, err
 		}
 		appendDatabase(merged, db)
