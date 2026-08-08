@@ -121,6 +121,24 @@ Three flags shape the check:
 - `--format` selects `text`, `json` (the findings plus the full structured
   diff, for tooling), or `github-actions` (workflow annotations).
 
+In the JSON document, a PostgreSQL row-level-security policy is reported by the
+table that owns it together with its name, because a policy name is scoped to
+its table and two tables may each carry one called `tenant_isolation`. Both
+`diff.rls_policies_added` and `diff.rls_policies_removed` hold objects:
+
+```json
+{
+  "diff": {
+    "rls_policies_added": [
+      { "policy_name": "tenant_isolation", "table_name": "zeta_orders" }
+    ]
+  }
+}
+```
+
+`rls_policies_added` held bare policy-name strings before Ptah v0.2.0. A
+consumer reading that field reads `.policy_name` now; nothing was removed.
+
 ## Plan-only runs
 
 When the drift check fails, the next question is what SQL would fix it.

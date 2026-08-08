@@ -243,9 +243,14 @@ type SchemaDiff struct {
 	// TriggersModified contains detailed information about changed triggers.
 	TriggersModified []TriggerDiff `json:"triggers_modified"`
 
-	// RLSPoliciesAdded contains names of RLS policies that exist in the target schema
-	// but not in the current database schema
-	RLSPoliciesAdded []string `json:"rls_policies_added"`
+	// RLSPoliciesAdded contains RLS policies that exist in the target schema
+	// but not in the current database schema.
+	//
+	// A policy name is scoped to its table, not to the schema, so the name on
+	// its own does not identify a policy: two tables may each carry one called
+	// "tenant_isolation". The table travels with the name for the same reason
+	// it does in TriggersAdded.
+	RLSPoliciesAdded []RLSPolicyRef `json:"rls_policies_added"`
 
 	// RLSPoliciesRemoved contains RLS policies that exist in the current database
 	// but not in the target schema (may remove an access-control protection)
@@ -698,9 +703,11 @@ type TriggerDiff struct {
 
 // RLSPolicyRef represents a reference to an RLS policy with its table information.
 //
-// This structure is used to identify RLS policies that need to be dropped,
-// providing both the policy name and the table it belongs to. This is necessary
-// because PostgreSQL requires both pieces of information for DROP POLICY statements.
+// This structure identifies an RLS policy on both sides of a diff -- policies
+// added as well as policies dropped. The table is not decoration: a PostgreSQL
+// policy name is scoped to its table, so two tables in one schema may each carry
+// a policy called "tenant_isolation", and both CREATE POLICY and DROP POLICY
+// need the table to say which one is meant.
 //
 // # Example Usage
 //

@@ -165,7 +165,10 @@ func collectTriggerMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 
 func collectAccessControlMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	var mismatches []ShadowMismatch
-	mismatches = append(mismatches, namedMismatches(diff.RLSPoliciesAdded, "missing_rls_policy", "missing RLS policy")...)
+	for _, ref := range sortedRLSPolicyRefs(diff.RLSPoliciesAdded) {
+		object := qualifiedObject(ref.TableName, ref.PolicyName)
+		mismatches = append(mismatches, ShadowMismatch{Kind: "missing_rls_policy", Table: ref.TableName, Object: object, Message: "missing RLS policy " + object})
+	}
 	for _, ref := range sortedRLSPolicyRefs(diff.RLSPoliciesRemoved) {
 		object := qualifiedObject(ref.TableName, ref.PolicyName)
 		mismatches = append(mismatches, ShadowMismatch{Kind: "extra_rls_policy", Table: ref.TableName, Object: object, Message: "extra RLS policy " + object})

@@ -1409,9 +1409,12 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove
 		SequencesModified: reverseSequenceDiffs(diff.SequencesModified),
 
-		// Reverse RLS policy operations
-		RLSPoliciesAdded:    convertRLSPolicyRefsToNames(diff.RLSPoliciesRemoved),                 // Policies to remove become policies to add (convert RLSPolicyRef to string)
-		RLSPoliciesRemoved:  convertRLSPolicyNamesToRefsWithSchema(diff.RLSPoliciesAdded, schema), // Policies to add become policies to remove (convert string to RLSPolicyRef with table resolution)
+		// Reverse RLS policy operations. Both directions carry the owning
+		// table, so reversing is a swap and no name-to-table resolution is
+		// needed -- the resolution that used to happen here keyed a map by
+		// policy name and lost one of two policies that shared one.
+		RLSPoliciesAdded:    slices.Clone(diff.RLSPoliciesRemoved), // Policies to remove become policies to add
+		RLSPoliciesRemoved:  slices.Clone(diff.RLSPoliciesAdded),   // Policies to add become policies to remove
 		RLSPoliciesModified: reverseRLSPolicyDiffs(diff.RLSPoliciesModified),
 
 		// Reverse RLS table enablement operations
@@ -1944,53 +1947,6 @@ func reverseCompositeTypeDiffs(compositeDiffs []types.CompositeTypeDiff) []types
 		reversed[i] = types.CompositeTypeDiff{TypeName: compositeDiff.TypeName, Changes: reverseChangeMap(compositeDiff.Changes)}
 	}
 	return reversed
-}
-
-// convertRLSPolicyRefsToNames converts RLSPolicyRef slice to policy names for down migrations
-func convertRLSPolicyRefsToNames(policyRefs []types.RLSPolicyRef) []string {
-	names := make([]string, len(policyRefs))
-	for i, policyRef := range policyRefs {
-		names[i] = policyRef.PolicyName
-	}
-	return names
-}
-
-// convertRLSPolicyNamesToRefs converts policy names to RLSPolicyRef for down migrations
-// This is needed because RLSPoliciesAdded contains policy names (strings) but
-// RLSPoliciesRemoved needs RLSPolicyRef (with both policy name and table name)
-//
-// Deprecated: Use convertRLSPolicyNamesToRefsWithSchema for proper table name resolution
-func convertRLSPolicyNamesToRefs(policyNames []string) []types.RLSPolicyRef {
-	return convertRLSPolicyNamesToRefsWithSchema(policyNames, nil)
-}
-
-// convertRLSPolicyNamesToRefsWithSchema converts policy names to RLSPolicyRef for down migrations
-// with proper table name resolution using the provided schema context
-func convertRLSPolicyNamesToRefsWithSchema(policyNames []string, schema *goschema.Database) []types.RLSPolicyRef {
-	refs := make([]types.RLSPolicyRef, len(policyNames))
-
-	// Create a lookup map for policy name to table name if schema is provided
-	policyToTable := make(map[string]string)
-	if schema != nil {
-		for _, policy := range schema.RLSPolicies {
-			policyToTable[policy.Name] = policy.Table
-		}
-	}
-
-	for i, policyName := range policyNames {
-		tableName := ""
-		if schema != nil {
-			if table, found := policyToTable[policyName]; found {
-				tableName = table
-			}
-		}
-
-		refs[i] = types.RLSPolicyRef{
-			PolicyName: policyName,
-			TableName:  tableName,
-		}
-	}
-	return refs
 }
 
 // reverseRLSPolicyDiffs reverses RLS policy modifications for down migrations
