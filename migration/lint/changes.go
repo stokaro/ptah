@@ -69,18 +69,42 @@ type SchemaChange struct {
 // `?search_path=public`, a version that runs `CREATE SCHEMA app2; CREATE TABLE
 // app2.t (id int); CREATE TABLE keep (id int);` counts one schema change, not
 // three, and a version that drops two `app` tables counts none.
-func extractSchemaChanges(file *File, dialect string, scope schemaScope) []SchemaChange {
+//
+// The second return names the statements the scope removed entirely, keyed by
+// statement index, so a finding about one of them is dropped by the same
+// decision that dropped its change.
+func extractSchemaChanges(file *File, dialect string, scope schemaScope) ([]SchemaChange, map[int]bool) {
 	if !file.IsUp || len(file.Statements) == 0 {
-		return nil
+		return nil, nil
 	}
 	var changes []SchemaChange
+	excluded := map[int]bool{}
 	for i := range file.Statements {
-		changes = append(changes, statementSchemaChanges(file, file.Statements[i], dialect, scope)...)
+		stmtChanges, out := statementSchemaChanges(file, file.Statements[i], dialect, scope)
+		changes = append(changes, stmtChanges...)
+		if out {
+			excluded[file.Statements[i].Index] = true
+		}
 	}
-	return changes
+	return changes, excluded
 }
 
-func statementSchemaChanges(file *File, stmt Statement, dialect string, scope schemaScope) []SchemaChange {
+// statementSchemaChanges returns the changes a statement makes and reports
+// whether the scope excluded the statement outright.
+//
+// The second return is what keeps the reported counts and the reported findings
+// describing the same set. Before it existed, an `ALTER TABLE app.users ADD
+// CONSTRAINT ...` under a run reviewing `public` contributed no change and still
+// produced a finding, because the rule that fired attaches no subject and
+// [schemaScope.allowsFinding] deliberately keeps a finding it cannot place
+// (stokaro/ptah#1249).
+//
+// A statement is excluded only when the scope rejected something it named and
+// nothing it named survived. A statement the parser cannot model, one whose
+// nodes name no object at all, and one the scope rejected nothing of are all
+// left alone -- silence there is absence of evidence, and it must not be able to
+// drop a finding.
+func statementSchemaChanges(file *File, stmt Statement, dialect string, scope schemaScope) ([]SchemaChange, bool) {
 	var opts []parser.Option
 	if strings.TrimSpace(dialect) != "" {
 		opts = []parser.Option{parser.WithDialect(dialect)}
@@ -91,16 +115,23 @@ func statementSchemaChanges(file *File, stmt Statement, dialect string, scope sc
 		// change here. The dev-database replay independently validates that the
 		// statement executes, so nothing is silently accepted; it is only
 		// excluded from the semantic change count.
-		return nil
+		return nil, false
 	}
 	var changes []SchemaChange
+	scopedOut := false
 	for _, node := range list.Statements {
-		changes = append(changes, nodeSchemaChanges(file, stmt, node, scope)...)
+		nodeChanges, out := nodeSchemaChanges(file, stmt, node, scope)
+		changes = append(changes, nodeChanges...)
+		scopedOut = scopedOut || out
 	}
-	return changes
+	return changes, scopedOut && len(changes) == 0
 }
 
-func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaScope) []SchemaChange {
+// nodeSchemaChanges returns a node's changes and reports whether the scope
+// rejected an object the node named. A node that names nothing, and a node whose
+// objects are all under review, report false: neither was scoped out, which is
+// what lets the caller tell "removed by the scope" from "modeled as no change".
+func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaScope) ([]SchemaChange, bool) {
 	change := func(kind SchemaChangeKind, object string) SchemaChange {
 		return SchemaChange{
 			Version:        file.Version,
@@ -118,24 +149,26 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 		// A CREATE SCHEMA names a schema rather than an object inside one, so
 		// it is measured against the reviewed schema by name.
 		if !scope.allowsSchema(n.Name) {
-			return nil
+			return nil, true
 		}
-		return []SchemaChange{change(SchemaChangeAdd, n.Name)}
+		return []SchemaChange{change(SchemaChangeAdd, n.Name)}, false
 	case *ast.DropTableNode:
 		names := n.TableNames()
 		out := make([]SchemaChange, 0, len(names))
+		scopedOut := false
 		for _, name := range names {
 			if !scope.allowsObject(name) {
+				scopedOut = true
 				continue
 			}
 			out = append(out, change(SchemaChangeDrop, name))
 		}
-		return out
+		return out, scopedOut
 	case *ast.AlterTableNode:
 		// Every action of an ALTER TABLE belongs to the table's schema, never
 		// to the column or constraint it names.
 		if !scope.allowsObject(n.Name) {
-			return nil
+			return nil, true
 		}
 		out := make([]SchemaChange, 0, len(n.Operations))
 		for _, op := range n.Operations {
@@ -154,20 +187,52 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 			kind, object := alterOperationChange(n, op)
 			out = append(out, change(kind, object))
 		}
-		return out
+		return out, false
 	}
 	if object, ok := addNodeObject(node); ok {
-		return scope.keepChange(change(SchemaChangeAdd, object), object)
+		return scope.keepChange(change(SchemaChangeAdd, object), nodeScopeReference(node, object))
 	}
 	if object, ok := dropNodeObject(node); ok {
-		return scope.keepChange(change(SchemaChangeDrop, object), object)
+		return scope.keepChange(change(SchemaChangeDrop, object), nodeScopeReference(node, object))
 	}
 	if object, ok := modifyNodeObject(node); ok {
-		return scope.keepChange(change(SchemaChangeModify, object), object)
+		return scope.keepChange(change(SchemaChangeModify, object), nodeScopeReference(node, object))
 	}
 	// Operational nodes (INSERT/SELECT wrappers, DO blocks, raw SQL) and any
 	// construct Ptah does not model as a schema object contribute nothing.
-	return nil
+	return nil, false
+}
+
+// nodeScopeReference is the reference a change is measured against, which is not
+// always the object it names.
+//
+// An index's own name carries no schema in any dialect Ptah renders --
+// [ast.IndexNode.Name] and [ast.DropIndexNode.Name] both document it as the raw,
+// unqualified index identifier, with the namespace derived from Table -- so
+// measuring an index by its own name puts every index in scope whatever schema
+// its table lives in. `CREATE INDEX idx ON app.users (id)` was counted as a
+// change under a run reviewing `public` (stokaro/ptah#1249).
+//
+// The table is the answer because it is where the index actually lives. A node
+// with no table recorded keeps its own name, which is all there is left to
+// measure.
+func nodeScopeReference(node ast.Node, object string) string {
+	switch n := node.(type) {
+	case *ast.IndexNode:
+		if table := strings.TrimSpace(n.Table); table != "" {
+			return table
+		}
+	case *ast.DropIndexNode:
+		// Unreachable from [extractSchemaChanges] today: Ptah's SQL parser does
+		// not model DROP INDEX, so no run produces this node. The rule is stated
+		// here anyway because the two node types carry the same contract, and
+		// leaving it out would encode the opposite claim about the one that is
+		// taught next.
+		if table := strings.TrimSpace(n.Table); table != "" {
+			return table
+		}
+	}
+	return object
 }
 
 // addNodeObject reports the object a CREATE (or GRANT) node adds.

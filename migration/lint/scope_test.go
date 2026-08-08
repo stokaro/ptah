@@ -221,6 +221,180 @@ func TestAnalyzeFS_SchemaScopeFiltersChanges(t *testing.T) {
 	}
 }
 
+// TestAnalyzeFS_SchemaScopeDecidesOncePerStatement pins that the reported
+// change count and the reported findings describe the same set of statements
+// (stokaro/ptah#1249).
+//
+// Two shapes disagreed before. An `ALTER TABLE app.users ADD CONSTRAINT ...`
+// contributed no change under a run reviewing `public` and still raised PG105,
+// because that rule attaches no subject and the finding filter deliberately
+// keeps a finding it cannot place. A `CREATE INDEX idx ON app.users (id)`
+// contributed a change and raised PG101, because an index was measured by its
+// own name, which never carries a schema.
+//
+// Each row asserts both outputs, because either alone would accept a fix that
+// silenced one side. The in-scope rows are the controls that separate "correctly
+// scoped out" from "never analyzed": without the `public` index row a filter
+// that dropped every index would pass, and without the unrestricted rows a fix
+// that narrowed the native surface too would pass.
+func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
+	const appTable = "CREATE SCHEMA app;\nCREATE TABLE app.users (id int, nick text);\n"
+	const publicTable = "CREATE TABLE public.t (id int, c text);\n"
+
+	tests := []struct {
+		name         string
+		base         string
+		sql          string
+		scope        string
+		wantChanges  []changeProjection
+		wantFindings []string
+	}{
+		{
+			name:         "a constraint added outside the scope reports neither",
+			base:         appTable,
+			sql:          "ALTER TABLE app.users ADD CONSTRAINT users_id_key UNIQUE (id);\n",
+			scope:        "public",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{},
+		},
+		{
+			name:         "an index on a table outside the scope reports neither",
+			base:         appTable,
+			sql:          "CREATE INDEX idx ON app.users (id);\n",
+			scope:        "public",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{},
+		},
+		{
+			name:         "a column dropped inside the scope reports both",
+			base:         publicTable,
+			sql:          "ALTER TABLE public.t DROP COLUMN c;\n",
+			scope:        "public",
+			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "c"}},
+			wantFindings: []string{"DS102"},
+		},
+		{
+			name:         "a column dropped outside the scope reports neither",
+			base:         "CREATE SCHEMA app;\nCREATE TABLE app.t (id int, c text);\n",
+			sql:          "ALTER TABLE app.t DROP COLUMN c;\n",
+			scope:        "public",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{},
+		},
+		{
+			name:         "an index on a table inside the scope reports both",
+			base:         "CREATE TABLE public.users (id int);\n",
+			sql:          "CREATE INDEX idx ON public.users (id);\n",
+			scope:        "public",
+			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "idx"}},
+			wantFindings: []string{"PG101"},
+		},
+		{
+			name:         "an index on an unqualified table stays under review",
+			base:         "CREATE TABLE users (id int);\n",
+			sql:          "CREATE INDEX idx ON users (id);\n",
+			scope:        "public",
+			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "idx"}},
+			wantFindings: []string{"PG101"},
+		},
+		{
+			name:         "an unrestricted run still reports the out-of-schema index",
+			base:         appTable,
+			sql:          "CREATE INDEX idx ON app.users (id);\n",
+			scope:        "",
+			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "idx"}},
+			wantFindings: []string{"PG101"},
+		},
+		{
+			name:         "an unrestricted run still reports the out-of-schema constraint",
+			base:         appTable,
+			sql:          "ALTER TABLE app.users ADD CONSTRAINT users_id_key UNIQUE (id);\n",
+			scope:        "",
+			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "users_id_key"}},
+			wantFindings: []string{"PG105"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			analysis := analyzeScoped(c, test.base, test.sql, test.scope)
+
+			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
+		})
+	}
+}
+
+// TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone pins that a statement
+// Ptah's SQL parser cannot model keeps its findings under every scope, and that
+// the scope is not what suppresses its change count.
+//
+// `DROP INDEX` is the measured case. stokaro/ptah#1249 read its `0 changes /
+// 1 finding` as the scope filter reaching the diagnostic but not the change;
+// it is not. `parser.NewParser("DROP INDEX app.idx").Parse()` returns
+// `unsupported DROP target: INDEX at position 5`, so the statement contributes
+// no change in the reviewed schema either. The `public` row is what says so: it
+// is the reviewed schema and it still counts zero, while the `DROP TABLE`
+// control on the same schema counts one. That missing change is a real defect
+// and a wider one, and it belongs to the parser rather than to the scope.
+//
+// The rows are also the guard on the exclusion rule: a statement is excluded
+// only when the scope rejected something it named, never merely because it
+// produced no change. Reading it the other way would silence PG106 here.
+func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
+	tests := []struct {
+		name         string
+		base         string
+		sql          string
+		wantChanges  []changeProjection
+		wantFindings []string
+	}{
+		{
+			name:         "dropping an index in the reviewed schema counts no change and still reports",
+			base:         "CREATE TABLE public.t (id int);\nCREATE INDEX idx ON public.t (id);\n",
+			sql:          "DROP INDEX public.idx;\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{"PG106"},
+		},
+		{
+			name:         "dropping an index outside the reviewed schema behaves identically",
+			base:         "CREATE SCHEMA app;\nCREATE TABLE app.t (id int);\nCREATE INDEX idx ON app.t (id);\n",
+			sql:          "DROP INDEX app.idx;\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{"PG106"},
+		},
+		{
+			name:         "a statement the parser models as no schema object keeps its finding",
+			base:         "CREATE TABLE public.t (id int);\n",
+			sql:          "DELETE FROM pg_enum WHERE enumtypid = 1;\n",
+			wantChanges:  []changeProjection{},
+			wantFindings: []string{"DS106"},
+		},
+		{
+			name:         "the modeled destructive control on the same schema counts its change",
+			base:         "CREATE TABLE public.t (id int);\n",
+			sql:          "DROP TABLE public.t;\n",
+			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.t"}},
+			wantFindings: []string{"DS101"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			analysis := analyzeScoped(c, test.base, test.sql, "public")
+
+			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
+		})
+	}
+}
+
 // TestAnalyzeFS_SchemaScopeKeepsUnattributableFindings proves the filter never
 // silences a hazard whose object it cannot read.
 //

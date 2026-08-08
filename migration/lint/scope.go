@@ -89,25 +89,38 @@ func (s schemaScope) allowsFinding(finding Finding) bool {
 	return slices.ContainsFunc(finding.Context.Subjects, s.allowsSubject)
 }
 
-// keepChange returns the change when the object it names is under review, and
-// nothing when it is not. An object the node grammar exposes no name for (an
-// opaque routine body, a COMMENT ON target) is kept, for the same reason an
-// unparsable reference is.
-func (s schemaScope) keepChange(change SchemaChange, object string) []SchemaChange {
-	if !s.allowsObject(object) {
-		return nil
+// keepChange returns the change when the reference it is measured against is
+// under review, and nothing when it is not; the second return reports which of
+// the two happened. An object the node grammar exposes no name for (an opaque
+// routine body, a COMMENT ON target) is kept, for the same reason an unparsable
+// reference is. The reference is not always the object the change names: see
+// [nodeScopeReference].
+func (s schemaScope) keepChange(change SchemaChange, reference string) ([]SchemaChange, bool) {
+	if !s.allowsObject(reference) {
+		return nil, true
 	}
-	return []SchemaChange{change}
+	return []SchemaChange{change}, false
 }
 
 // keepFindings returns the findings that name an object under review, in the
 // order given.
-func (s schemaScope) keepFindings(findings []Finding) []Finding {
+//
+// excludedStatements carries the scope decision the change extraction already
+// made, keyed by statement index. It is consulted first because it is the more
+// informed answer: it was taken from the parsed node, which knows the table an
+// ALTER or an index belongs to, where a finding knows only the subjects its rule
+// chose to attach. A rule that attaches none would otherwise survive a scope
+// that had already removed its statement, and the reported counts and the
+// reported findings would describe different sets (stokaro/ptah#1249).
+func (s schemaScope) keepFindings(excludedStatements map[int]bool, findings []Finding) []Finding {
 	if s.unrestricted() {
 		return findings
 	}
 	kept := make([]Finding, 0, len(findings))
 	for _, finding := range findings {
+		if finding.Context != nil && excludedStatements[finding.Context.StatementIndex] {
+			continue
+		}
 		if s.allowsFinding(finding) {
 			kept = append(kept, finding)
 		}

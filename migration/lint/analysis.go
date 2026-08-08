@@ -3,6 +3,7 @@ package lint
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"slices"
 	"sort"
@@ -154,7 +155,13 @@ type File struct {
 	// can contribute zero, one, or several changes, so len(Changes) is not the
 	// statement count. Ordered by statement, then by the order changes appear
 	// within each statement.
-	Changes         []SchemaChange
+	Changes []SchemaChange
+	// scopeExcluded holds the statement indexes the reviewed-schema filter left
+	// out, so a finding about one of them is dropped by the same decision that
+	// dropped its change. Without it the two disagreed: a rule that attaches no
+	// subject produced a finding for a statement the scope had already removed
+	// from the counts (stokaro/ptah#1249).
+	scopeExcluded   map[int]bool
 	suppressedRules []atlaslint.Target
 	// compatibility is the profile this run was started with. A rule reads it
 	// when the two command surfaces model the same statement differently; see
@@ -235,6 +242,7 @@ func cloneFiles(files []File) []File {
 func cloneFile(file File) File {
 	file.suppressedRules = slices.Clone(file.suppressedRules)
 	file.Changes = slices.Clone(file.Changes)
+	file.scopeExcluded = maps.Clone(file.scopeExcluded)
 	statements := file.Statements
 	file.Statements = make([]Statement, len(statements))
 	for i := range statements {
@@ -352,7 +360,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			continue
 		}
 		file := cloneFile(files[i])
-		findings = append(findings, scope.keepFindings(runRules(&file, opts, rules))...)
+		findings = append(findings, scope.keepFindings(file.scopeExcluded, runRules(&file, opts, rules))...)
 	}
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
@@ -562,7 +570,7 @@ func prepareFile(
 				suppressedRules: rawStmt.suppressedRules,
 			})
 		}
-		file.Changes = extractSchemaChanges(&file, dialect, scope)
+		file.Changes, file.scopeExcluded = extractSchemaChanges(&file, dialect, scope)
 	}
 	return file, nil
 }

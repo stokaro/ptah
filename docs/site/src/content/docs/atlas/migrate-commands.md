@@ -886,7 +886,11 @@ objects the run analyzes. A PostgreSQL-family `--dev-url` carrying
   review, and so does a reference written out with the reviewed schema's own
   name;
 - one statement is measured per object: `DROP TABLE users, other.audit_log;`
-  under `search_path=public` reports `users` and counts one schema change.
+  under `search_path=public` reports `users` and counts one schema change;
+- an index is measured by the schema of the table it is on, because an index
+  name never carries one: `CREATE INDEX idx ON app.users (id);` under
+  `search_path=public` counts no schema change and raises no diagnostic, while
+  the same statement on a `public` table counts one and raises `PG101`.
 
 A `--dev-url` that names no schema puts the whole connected database under
 review and filters nothing, which is also what every non-PostgreSQL dev URL
@@ -895,10 +899,27 @@ a single schema name, so it scopes nothing and every object stays under review.
 
 An `ALTER TABLE` belongs to its table's schema, never to the column or
 constraint it names, and a `CREATE SCHEMA` is measured against the reviewed
-schema by its own name. A diagnostic that names no object at all — the rules
-that report a statement rather than the objects in it — is always reported,
-since there is nothing to measure a scope against and a hazard must not be
-silenced on an unestablished boundary.
+schema by its own name.
+
+The scope decision is made once per statement and drives both outputs, so the
+reported schema-change count and the reported diagnostics always describe the
+same statements. A diagnostic that names no object at all — the rules that
+report a statement rather than the objects in it — follows the decision already
+taken for the statement it belongs to: dropped when the scope removed that
+statement, and otherwise always reported, since there is nothing to measure a
+scope against and a hazard must not be silenced on an unestablished boundary.
+`ALTER TABLE app.users ADD CONSTRAINT …` under `search_path=public` therefore
+reports nothing, where it used to raise `PG105` about a change it had already
+counted as zero.
+
+Silence is not exclusion. A statement outside Ptah's SQL grammar is left under
+review whatever schema it names, because a boundary that could not be read must
+not be able to drop a diagnostic. `DROP INDEX` is the current example: Ptah's
+parser does not model it, so `DROP INDEX public.idx;` counts no schema change
+even in the reviewed schema — the pinned community binary counts one — while
+its `PG106` diagnostic is reported in every schema. That missing change is a
+parser gap rather than a scope decision, tracked in
+[`stokaro/ptah#1296`](https://github.com/stokaro/ptah/issues/1296).
 
 The boundary applies to `ptah-compat migrate lint` only. Native
 `ptah migrations lint` keeps every object under review, whatever the dev URL
