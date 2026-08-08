@@ -283,9 +283,16 @@ func TestSchemaInspectSQLiteSQLReplaysTheSourceIndexSet(t *testing.T) {
 // of a rowid table nullable unless the DDL said otherwise.
 //
 // The pinned Atlas community v1.3.0 binary answers `"null": true` for the first
-// row's `id` and omits the key for the second row's, which is what the two rows
+// row's `id` and omits the key for the second row's, which is what those rows
 // assert. `null` is omitted rather than written false when the column is NOT
 // NULL, so the assertion reads the key's presence.
+//
+// The STRICT and WITHOUT ROWID rows are the other half of the same question. The
+// reader answers from `pragma table_info.notnull` alone, so it already reports
+// them correctly; the rows are here so that a future normalization of key
+// nullability on this path has to disagree with the catalog out loud. Their
+// values are the catalog's: measured, a STRICT or WITHOUT ROWID key column
+// reports notnull=1, and the rowid alias of a STRICT table still reports 0.
 func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -304,6 +311,43 @@ func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 			schemaSQL: "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL, note TEXT);",
 			wantNullable: map[string]bool{
 				"id": false, "name": false, "note": true,
+			},
+		},
+		{
+			name:      "without rowid key column is not nullable",
+			schemaSQL: "CREATE TABLE t (id TEXT PRIMARY KEY, name TEXT NOT NULL, note TEXT) WITHOUT ROWID;",
+			wantNullable: map[string]bool{
+				"id": false, "name": false, "note": true,
+			},
+		},
+		{
+			name: "without rowid table level composite key is not nullable",
+			schemaSQL: "CREATE TABLE t (team TEXT, member TEXT, note TEXT," +
+				" PRIMARY KEY (team, member)) WITHOUT ROWID;",
+			wantNullable: map[string]bool{
+				"team": false, "member": false, "note": true,
+			},
+		},
+		{
+			name:      "strict key column is not nullable",
+			schemaSQL: "CREATE TABLE t (id TEXT PRIMARY KEY, name TEXT NOT NULL, note TEXT) STRICT;",
+			wantNullable: map[string]bool{
+				"id": false, "name": false, "note": true,
+			},
+		},
+		{
+			name: "strict table level composite key is not nullable",
+			schemaSQL: "CREATE TABLE t (team TEXT, member TEXT, note TEXT," +
+				" PRIMARY KEY (team, member)) STRICT;",
+			wantNullable: map[string]bool{
+				"team": false, "member": false, "note": true,
+			},
+		},
+		{
+			name:      "strict rowid alias key column is still nullable",
+			schemaSQL: "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT NOT NULL, note TEXT) STRICT;",
+			wantNullable: map[string]bool{
+				"id": true, "name": false, "note": true,
 			},
 		},
 	}
