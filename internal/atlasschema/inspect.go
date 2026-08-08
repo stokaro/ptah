@@ -94,7 +94,7 @@ func renderInspectSchema(
 	if err != nil {
 		return "", err
 	}
-	schema, err = scopeInspectSchema(schema, info, opts)
+	schema, excludeReport, err := scopeInspectSchema(schema, info, opts)
 	// Inspection is read-only and its documented answer for an empty selection
 	// is an empty rendering, so it keeps exit 0 and reports the empty selection
 	// on the diagnostics stream instead of failing.
@@ -105,6 +105,9 @@ func renderInspectSchema(
 	if err != nil {
 		return "", err
 	}
+	// Inspection looks at exactly one state, so its own report is already the
+	// across-states answer.
+	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(excludeReport))
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
 	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,
@@ -133,8 +136,8 @@ func scopeInspectSchema(
 	schema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	opts InspectOptions,
-) (*dbschematypes.DBSchema, error) {
-	return atlasfilter.ScopeDatabase(schema, atlasfilter.Scope{
+) (*dbschematypes.DBSchema, atlasfilter.ExcludeReport, error) {
+	return atlasfilter.ScopeDatabaseReport(schema, atlasfilter.Scope{
 		Include:       opts.Include,
 		Exclude:       opts.Exclude,
 		DefaultSchema: info.Schema,
