@@ -211,13 +211,15 @@ type TestTable struct {
 	}
 
 	c.Assert(files, qt.IsNotNil)
+	c.Assert(files.Files, qt.HasLen, 1)
+	pair := files.Files[0]
 
 	// Verify files were created
-	c.Assert(files.UpFile, qt.Not(qt.Equals), "")
-	c.Assert(files.DownFile, qt.Not(qt.Equals), "")
+	c.Assert(pair.UpFile, qt.Not(qt.Equals), "")
+	c.Assert(pair.DownFile, qt.Not(qt.Equals), "")
 
 	// Read and verify UP migration
-	upContent, err := os.ReadFile(files.UpFile)
+	upContent, err := os.ReadFile(pair.UpFile)
 	c.Assert(err, qt.IsNil)
 
 	upSQL := legacyRenderedSQL(string(upContent))
@@ -229,7 +231,7 @@ type TestTable struct {
 		qt.Commentf("UP migration should contain CREATE TABLE"))
 
 	// Read and verify DOWN migration
-	downContent, err := os.ReadFile(files.DownFile)
+	downContent, err := os.ReadFile(pair.DownFile)
 	c.Assert(err, qt.IsNil)
 
 	downSQL := legacyRenderedSQL(string(downContent))
@@ -295,8 +297,9 @@ type SimpleTable struct {
 	}
 
 	c.Assert(files, qt.IsNotNil)
-	c.Assert(files.UpFile, qt.Not(qt.Equals), "")
-	c.Assert(files.DownFile, qt.Not(qt.Equals), "")
+	c.Assert(files.Files, qt.HasLen, 1)
+	c.Assert(files.Files[0].UpFile, qt.Not(qt.Equals), "")
+	c.Assert(files.Files[0].DownFile, qt.Not(qt.Equals), "")
 }
 
 func TestGenerateMigration_FilesystemPathResolution(t *testing.T) {

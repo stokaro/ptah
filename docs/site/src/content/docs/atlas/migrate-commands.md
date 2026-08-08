@@ -16,7 +16,7 @@ plus the flag translation rules are on the
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah-compat migrate apply` | Atlas-format apply path equivalent to `ptah migrations up`; executes every Atlas OSS directory format and refuses an Atlas directory whose `atlas.sum` is missing or stale. |
-| `ptah-compat migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and Atlas revision bookkeeping by default; `--dev-url` verifies the rollback plan first. |
+| `ptah-compat migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and the Atlas revision-table layout by default; `--dev-url` verifies the rollback plan first. Failed rollbacks retain Ptah's recoverable dirty state. |
 | `ptah-compat migrate status` | Atlas-format migration status with Atlas revision-table metadata; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate hash` | Forwards to `ptah migrations hash`; writes `atlas.sum` by default. |
 | `ptah-compat migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
@@ -178,15 +178,21 @@ Last migration attempt had errors:
 Fix the migration, rerun `ptah-compat migrate hash`, and rerun the apply with
 `--allow-dirty`. The retry reuses the dirty row instead of recording a second
 one and skips the statements the earlier attempt committed — under
-`--tx-mode none` above, statement 1 — so it resumes rather than repeating SQL.
-Atlas needs no flag here; `--allow-dirty` stays required so a half-applied
-migration is never resumed by accident.
+`--tx-mode none` above, statement 1 — only after proving that committed source
+prefix is unchanged. Atlas-format rows use the cumulative `partial_hashes`
+entry at `applied`. Editing the unapplied suffix is allowed, and a later retry
+failure cannot lower `applied` below that committed prefix even when the
+transaction mode changed. Atlas needs no flag here; `--allow-dirty` stays
+required so a half-applied migration is never resumed by accident.
 
-Two cases refuse to resume automatically and say so, naming
-`ptah migrations repair --version <v>`: a run interrupted mid-statement, whose
-last statement's outcome was never observed, and an edit that changed the
-migration's statement count, after which the recorded progress no longer indexes
-into the file.
+Automatic resume refuses and names `ptah migrations repair --version <v>` when
+a run was interrupted mid-statement, the statement count changed, the committed
+source prefix changed, or `partial_hashes` is malformed or disagrees with
+`applied`. It also refuses negative `applied` or `total` values and
+`applied > total`. Legacy Atlas rows without `partial_hashes` may resume only
+while the stored full-file hash still matches. Revision listing, status, and
+version operations reject the same invalid counters instead of classifying an
+equal negative pair as clean.
 
 ## Rolling back
 
@@ -216,6 +222,24 @@ Ptah validates every selected down body before rollback starts. If one is
 missing, the command leaves both the schema and Atlas revision rows unchanged.
 Dry runs use the same dirty-state, checksum, checkpoint, and down-body
 validation path as real rollbacks, while suppressing schema and revision writes.
+
+If a rollback fails after execution starts, the Atlas-format revision row stays
+dirty and records `Ptah/down` in `operator_version`. Resume through the native
+repair command because the drop-in surface intentionally has no repair verb:
+
+```bash
+ptah migrations repair \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir ./migrations \
+  --dir-format atlas \
+  --revision-format atlas \
+  --version 2 \
+  --resume-from 2
+```
+
+Use the failed version and next down-statement number reported by status. If
+the compat command used `--revisions-schema`, pass that value as
+`--migrations-schema` here.
 
 Add `--dev-url` to reset a disposable dev database, replay the migration
 directory to the target's current version, and verify the rollback there before

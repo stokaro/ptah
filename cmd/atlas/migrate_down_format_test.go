@@ -215,6 +215,19 @@ func TestCompatCommand_MigrateDownFormatReportsFirstRollbackFailure(t *testing.T
 	c.Assert(report.Reverted[0].Error, qt.IsNotNil)
 	c.Assert(report.Reverted[0].Error.Stmt, qt.Equals, "DROP TABLE no_such_table")
 	c.Assert(report.Reverted[0].Error.Text, qt.Contains, "no such table")
+
+	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	var operatorVersion string
+	var applied, total int
+	c.Assert(conn.QueryRowContext(
+		t.Context(),
+		"SELECT operator_version, applied, total FROM atlas_schema_revisions WHERE version = '2'",
+	).Scan(&operatorVersion, &applied, &total), qt.IsNil)
+	c.Assert(operatorVersion, qt.Equals, "Ptah/down")
+	c.Assert(applied, qt.Equals, 0)
+	c.Assert(total, qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatFromEnvValue(t *testing.T) {

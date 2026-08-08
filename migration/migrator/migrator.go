@@ -73,8 +73,9 @@ type MigrateUpOptions struct {
 	// Amount limits the run to the first N pending migrations after exec-order
 	// and target-version filtering. Zero means all selected migrations.
 	Amount uint64
-	// AllowDirty skips the default dirty revision guard. Callers should expose
-	// this only as an explicit recovery escape hatch.
+	// AllowDirty skips the default dirty revision guard and requests recovery of
+	// a pending dirty migration. It does not bypass committed-prefix verification;
+	// callers should expose it only as an explicit recovery action.
 	AllowDirty bool
 	// AssumedAppliedVersions are treated as applied for plan selection without
 	// reading or writing revision metadata. This is intended for dry-run paths
@@ -104,6 +105,7 @@ type ChecksDeferredObserver func(ctx context.Context, versions []int64)
 // Migrator handles database migrations for ptah
 type Migrator struct {
 	conn                 *dbschema.DatabaseConnection
+	noTransactionSession *dbschema.DatabaseConnection
 	migrationProvider    MigrationProvider
 	defaultTimeouts      MigrationTimeouts
 	migrationsTable      string
@@ -120,12 +122,13 @@ type Migrator struct {
 	// initializedDryRun records the writer's dry-run mode at the time
 	// initialized was set, so the memoized state is never reused across a
 	// mode change.
-	initializedDryRun   bool
-	logger              *slog.Logger
-	observer            Observer
-	skipChecks          bool
-	metadataAvailable   bool
-	legacyRevisionTable bool
+	initializedDryRun        bool
+	logger                   *slog.Logger
+	observer                 Observer
+	skipChecks               bool
+	metadataAvailable        bool
+	legacyRevisionTable      bool
+	postgresIndexObservation *postgresIndexObservation
 }
 
 // NewFSMigrator creates a new migrator that loads migrations from a filesystem.
@@ -417,10 +420,9 @@ func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	return &tmp
 }
 
-// WithRevisionTableFormat sets the database table layout and the compatibility
-// bookkeeping semantics used for migration revisions. Atlas format reproduces
-// Atlas's revision-row lifecycle, including down-failure behavior; Ptah format
-// keeps Ptah's richer dirty-state bookkeeping.
+// WithRevisionTableFormat sets the database table layout used for migration
+// revisions. Both layouts retain Ptah's dirty-state protection; the Atlas
+// layout encodes rollback direction in its existing operator_version column.
 func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator {
 	tmp := *m
 	tmp.revisionTableFormat = format
@@ -567,8 +569,9 @@ func (m *Migrator) getVersionSQL() string {
 func (m *Migrator) getAppliedMigrationsSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		return fmt.Sprintf(
-			"SELECT version FROM %s WHERE applied = total AND COALESCE(error, '') = '' AND %s ORDER BY %s",
+			"SELECT version FROM %s WHERE %s AND %s ORDER BY %s",
 			m.qualifiedMigrationsTable(),
+			atlasAppliedRevisionPredicate,
 			atlasMetadataRowPredicate,
 			m.atlasVersionNumberExpression(),
 		)
@@ -939,42 +942,38 @@ func (m *Migrator) sqlServerObjectName() string {
 
 // GetCurrentVersion returns the current migration version from the database
 func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error) {
-	// First ensure the migrations table exists
-	if err := m.Initialize(ctx); err != nil {
-		return 0, fmt.Errorf("failed to initialize migrations table: %w", err)
+	revisions, err := m.GetRevisions(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get migration revisions: %w", err)
 	}
-	if !m.metadataAvailable {
-		return 0, nil
+	if m.revisionTableFormat.isAtlas() {
+		return maxRevisionVersion(revisions), nil
 	}
-
-	// Query the current version
-	return m.scanCurrentVersion(ctx)
+	return maxAppliedVersion(appliedRevisionVersions(revisions)), nil
 }
 
 // GetAppliedMigrations returns a list of applied migration versions
 func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
-	return queryMigrationRows(
-		ctx,
-		m,
-		m.getAppliedMigrationsSQL,
-		m.scanAppliedVersion,
-		"failed to query applied migrations",
-		"failed to scan migration version",
-		"error iterating migration rows",
-	)
+	revisions, err := m.GetRevisions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migration revisions: %w", err)
+	}
+	return appliedRevisionVersions(revisions), nil
 }
 
 // GetAppliedRevisions returns full metadata rows for applied migrations.
 func (m *Migrator) GetAppliedRevisions(ctx context.Context) ([]MigrationRevision, error) {
-	return queryMigrationRows(
-		ctx,
-		m,
-		m.getAppliedRevisionsSQL,
-		m.scanRevisionRow,
-		"failed to query applied migration revisions",
-		"failed to scan migration revision",
-		"error iterating migration revision rows",
-	)
+	revisions, err := m.GetRevisions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migration revisions: %w", err)
+	}
+	applied := make([]MigrationRevision, 0, len(revisions))
+	for _, revision := range revisions {
+		if revision.State == migrationStateApplied {
+			applied = append(applied, revision)
+		}
+	}
+	return applied, nil
 }
 
 // GetRevisions returns every migration metadata row, including dirty rows.
@@ -1043,32 +1042,8 @@ func queryMigrationRowsFrom[T any](
 	return items, nil
 }
 
-func (m *Migrator) scanCurrentVersion(ctx context.Context) (int64, error) {
-	row := m.conn.QueryRowContext(ctx, m.getVersionSQL())
-	var version int64
-	if err := row.Scan(&version); err != nil {
-		return 0, fmt.Errorf("failed to get current version: %w", err)
-	}
-	return version, nil
-}
-
 type rowScanner interface {
 	Scan(dest ...any) error
-}
-
-func (m *Migrator) scanAppliedVersion(row rowScanner) (int64, error) {
-	if m.revisionTableFormat.isAtlas() {
-		var version string
-		if err := row.Scan(&version); err != nil {
-			return 0, err
-		}
-		return parseAtlasRevisionVersion(version)
-	}
-	var version int64
-	if err := row.Scan(&version); err != nil {
-		return 0, err
-	}
-	return version, nil
 }
 
 func parseAtlasRevisionVersion(version string) (int64, error) {
@@ -1680,14 +1655,14 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 	// read would deadlock. See [Migrator.planUpRetry].
 	plans := make(map[int64]upRetryPlan, len(migrations))
 	for _, migration := range migrations {
-		// Same reason the plans are read here: the probe queries the catalog, so
-		// it has to run before the batch transaction takes the connection. See
-		// [Migrator.refuseUpOverUnusableIndex].
-		if err := m.refuseUpOverUnusableIndex(ctx, migration); err != nil {
-			return nil, err
-		}
 		plan, err := m.planUpRetry(ctx, migration)
 		if err != nil {
+			return nil, err
+		}
+		// Same reason the plans are read here: the probe queries the catalog, so
+		// it has to run before the batch transaction takes the connection. See
+		// [Migrator.refuseUpOverUnsafeIndex].
+		if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, MigrationTxModeAll); err != nil {
 			return nil, err
 		}
 		plans[migration.Version] = plan
@@ -1819,20 +1794,34 @@ func (m *Migrator) applyUpMigrationObserved(
 		); err != nil {
 			return false, err
 		}
-	}
-	checksDeferred, err = m.runPreMigrationChecks(ctx, migration, observesApplyState)
-	if err != nil {
-		return false, err
-	}
-	// Read-only, and before the revision row is touched: a refusal has to leave
-	// whatever an earlier attempt recorded exactly as it found it. See
-	// [Migrator.refuseUpOverUnusableIndex].
-	if err := m.refuseUpOverUnusableIndex(ctx, migration); err != nil {
-		return false, err
+		if err := m.validateNoTransactionSQL(migration, MigrationDirectionUp); err != nil {
+			return false, err
+		}
 	}
 	plan, err := m.planUpRetry(ctx, migration)
 	if err != nil {
 		return false, err
+	}
+	if plan.resumeFrom <= 1 {
+		checksDeferred, err = m.runPreMigrationChecks(ctx, migration, observesApplyState)
+		if err != nil {
+			return false, err
+		}
+	} else {
+		m.logger.Info(
+			"Skipping pre-migration checks for partially applied migration",
+			"version", migration.Version,
+			"resumeFromStatement", plan.resumeFrom,
+		)
+	}
+	// Read-only, and before the revision row is touched: a refusal has to leave
+	// whatever an earlier attempt recorded exactly as it found it. See
+	// [Migrator.refuseUpOverUnsafeIndex].
+	if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, txMode); err != nil {
+		return false, err
+	}
+	if txMode == MigrationTxModeNone {
+		return checksDeferred, m.applyUpMigrationNoTransaction(ctx, migration, startedAt, plan)
 	}
 	if err := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); err != nil {
 		return false, fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
@@ -1845,9 +1834,6 @@ func (m *Migrator) applyUpMigrationObserved(
 		)
 	}
 	ctx = withMigrationResume(ctx, plan.resumeFrom)
-	if txMode == MigrationTxModeNone {
-		return checksDeferred, m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
-	}
 	return checksDeferred, m.applyUpMigrationTransactional(ctx, migration, startedAt)
 }
 
@@ -1900,6 +1886,7 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	migration *Migration,
 	startedAt time.Time,
 ) error {
+	scoped := *m
 	m.logger.Info("Applying migration in tx-mode all", "version", migration.Version, "description", migration.Description)
 	// Pre-migration checks are rejected under tx-mode all by
 	// validateUpTransactionMode, because a check on the pool connection cannot
@@ -1909,11 +1896,15 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	if err != nil {
 		return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
 	}
-	if err := migration.executeUp(ctx, txConn, migrationExecutionTransactional); err != nil {
+	executionCtx := scoped.withPostgresIndexObservation(ctx, txConn)
+	if err := migration.executeUp(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
 	}
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+		return err
+	}
+	if err := scoped.refuseUpCompletionOverUnsafeIndex(ctx, txConn, migration); err != nil {
 		return err
 	}
 	m.logger.Info("Applied migration in tx-mode all", "version", migration.Version, "description", migration.Description)
@@ -1927,6 +1918,7 @@ func (m *Migrator) recordRolledBackBatchFailure(
 	failure error,
 	plan upRetryPlan,
 ) error {
+	ctx = withMigrationResume(ctx, plan.resumeFrom)
 	if beginErr := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); beginErr != nil {
 		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %v", failure, migration.Version, beginErr)
 	}
@@ -1959,6 +1951,7 @@ func (m *Migrator) recordAppliedMigrationOn(
 }
 
 func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration *Migration, startedAt time.Time) error {
+	scoped := *m
 	// Pre-migration checks already ran in runPreMigrationChecks, before this
 	// migration had any revision row: they read committed state on the pool, so
 	// they cannot execute inside this transaction (the schema executor exposes no
@@ -1990,7 +1983,8 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 		)
 	}
 
-	if err := migration.executeUp(ctx, txConn, migrationExecutionTransactional); err != nil {
+	executionCtx := scoped.withPostgresIndexObservation(ctx, txConn)
+	if err := migration.executeUp(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(
@@ -2006,6 +2000,17 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
 		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.UpSQL, "")
+	}
+	if err := scoped.refuseUpCompletionOverUnsafeIndex(ctx, txConn, migration); err != nil {
+		_ = tx.Rollback()
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("failed to verify migration %d", migration.Version),
+		)
 	}
 	if err := m.completeMigrationRevisionOn(ctx, txConn, migration, startedAt); err != nil {
 		_ = tx.Rollback()
@@ -2033,7 +2038,42 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 	return nil
 }
 
-func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration *Migration, startedAt time.Time) error {
+func (m *Migrator) applyUpMigrationNoTransaction(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	plan upRetryPlan,
+) error {
+	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+		if err := scoped.restoreNoTransactionSessionPrefix(
+			ctx,
+			migration,
+			MigrationDirectionUp,
+			plan.resumeFrom,
+		); err != nil {
+			return fmt.Errorf("failed to restore session state for migration %d: %w", migration.Version, err)
+		}
+		if err := scoped.recordPendingMigrationRevisionOn(ctx, scoped.conn, migration, startedAt, plan); err != nil {
+			return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+		}
+		if plan.resumeFrom > 1 {
+			scoped.logger.Info(
+				"Resuming migration after a partially applied attempt",
+				"version", migration.Version,
+				"resumeFromStatement", plan.resumeFrom,
+			)
+		}
+		executionCtx := withMigrationResume(ctx, plan.resumeFrom)
+		return scoped.applyUpMigrationNoTransactionOnSession(executionCtx, migration, startedAt)
+	})
+}
+
+func (m *Migrator) applyUpMigrationNoTransactionOnSession(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+) error {
+	executionConn := m.noTransactionConnection()
 	// Pre-migration checks already ran in runPreMigrationChecks, before this
 	// migration had any revision row.
 	executionCtx := withStatementProgressRecorder(
@@ -2045,7 +2085,8 @@ func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration 
 			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionUp)
 		},
 	)
-	if err := migration.executeUp(executionCtx, m.conn, migrationExecutionNoTransaction); err != nil {
+	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
+	if err := migration.executeUp(executionCtx, executionConn, migrationExecutionNoTransaction); err != nil {
 		return m.failMigrationWithDirtyStateWithMode(
 			ctx,
 			migration,
@@ -2053,6 +2094,18 @@ func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration 
 			err,
 			migration.UpSQL,
 			fmt.Sprintf("failed to apply migration %d", migration.Version),
+			MigrationTxModeNone,
+			MigrationDirectionUp,
+		)
+	}
+	if err := m.refuseUpCompletionOverUnsafeIndex(ctx, executionConn, migration); err != nil {
+		return m.failMigrationWithDirtyStateWithMode(
+			ctx,
+			migration,
+			startedAt,
+			completedMigrationIndexObservationError(migration, m.connectionDialect(), MigrationDirectionUp, err),
+			migration.UpSQL,
+			fmt.Sprintf("failed to verify migration %d", migration.Version),
 			MigrationTxModeNone,
 			MigrationDirectionUp,
 		)
@@ -2091,16 +2144,14 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	if err != nil {
 		return err
 	}
-	// The Atlas-shaped surface records nothing before the down body: Atlas marks
-	// a reverted migration only by deleting its row on success. See
-	// reproducesAtlasDownBookkeeping.
-	if !m.reproducesAtlasDownBookkeeping() {
-		if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
-		}
-	}
 	if txMode == MigrationTxModeNone {
+		if err := m.validateNoTransactionSQL(migration, MigrationDirectionDown); err != nil {
+			return err
+		}
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
+	}
+	if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+		return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
 	}
 	return m.rollbackMigrationTransactional(ctx, migration, startedAt, deleteSQL)
 }
@@ -2138,6 +2189,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 	startedAt time.Time,
 	deleteSQL string,
 ) error {
+	scoped := *m
 	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
 		return m.failRollbackWithDirtyState(
@@ -2164,7 +2216,8 @@ func (m *Migrator) rollbackMigrationTransactional(
 		)
 	}
 
-	if err := migration.executeDown(ctx, txConn, migrationExecutionTransactional); err != nil {
+	executionCtx := scoped.withPostgresIndexObservation(ctx, txConn)
+	if err := migration.executeDown(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		_ = tx.Rollback()
 		return m.failRollbackWithDirtyState(
@@ -2180,6 +2233,17 @@ func (m *Migrator) rollbackMigrationTransactional(
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
 		_ = tx.Rollback()
 		return m.failRollbackWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
+	}
+	if err := scoped.refuseRollbackCompletionOverUnsafeIndexOn(ctx, txConn, migration); err != nil {
+		_ = tx.Rollback()
+		return m.failRollbackWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.DownSQL,
+			fmt.Sprintf("failed to verify rollback of migration %d", migration.Version),
+		)
 	}
 
 	if err := txConn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
@@ -2208,19 +2272,33 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 	startedAt time.Time,
 	deleteSQL string,
 ) error {
-	executionCtx := ctx
-	if !m.reproducesAtlasDownBookkeeping() {
-		executionCtx = withStatementProgressRecorder(
-			ctx,
-			func(ctx context.Context, event StatementEvent) error {
-				return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionDown)
-			},
-			func(ctx context.Context, event StatementEvent) error {
-				return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionDown)
-			},
-		)
-	}
-	if err := migration.executeDown(executionCtx, m.conn, migrationExecutionNoTransaction); err != nil {
+	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+		if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+		}
+		return scoped.rollbackMigrationNoTransactionOnSession(ctx, migration, startedAt, deleteSQL)
+	})
+}
+
+func (m *Migrator) rollbackMigrationNoTransactionOnSession(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	deleteSQL string,
+) error {
+	executionConn := m.noTransactionConnection()
+	m.startPostgresIndexObservation()
+	executionCtx := withStatementProgressRecorder(
+		ctx,
+		func(ctx context.Context, event StatementEvent) error {
+			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionDown)
+		},
+		func(ctx context.Context, event StatementEvent) error {
+			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionDown)
+		},
+	)
+	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
+	if err := migration.executeDown(executionCtx, executionConn, migrationExecutionNoTransaction); err != nil {
 		return m.failRollbackWithDirtyStateWithMode(
 			ctx,
 			migration,
@@ -2228,6 +2306,17 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 			err,
 			migration.DownSQL,
 			fmt.Sprintf("failed to revert migration %d", migration.Version),
+			MigrationTxModeNone,
+		)
+	}
+	if err := m.refuseRollbackCompletionOverUnsafeIndexOn(ctx, executionConn, migration); err != nil {
+		return m.failRollbackWithDirtyStateWithMode(
+			ctx,
+			migration,
+			startedAt,
+			completedMigrationIndexObservationError(migration, m.connectionDialect(), MigrationDirectionDown, err),
+			migration.DownSQL,
+			fmt.Sprintf("failed to verify rollback of migration %d", migration.Version),
 			MigrationTxModeNone,
 		)
 	}
@@ -2260,38 +2349,9 @@ func (m *Migrator) failMigrationWithDirtyState(
 	)
 }
 
-// reproducesAtlasDownBookkeeping reports whether this migrator must leave
-// behind what Atlas leaves behind after a rollback, instead of Ptah's own
-// dirty-state bookkeeping.
-//
-// The split is by surface, not by preference. `ptah-compat` is the Atlas-shaped
-// drop-in and always writes Atlas-format revisions, so it has to reproduce
-// Atlas's bookkeeping exactly. Measured against Atlas (
-// local SQLite): a failed `migrate down` leaves the revision row
-// byte-identical — no pre-rewrite, no recorded error, `applied`/`total` and
-// `execution_time` unchanged — the body is rolled back, and `atlas migrate
-// status` still reports the version applied; a successful down deletes the row;
-// a repaired retry then succeeds with no flags. Diverging here would make
-// `atlas migrate status` and `ptah-compat migrate status` disagree about the
-// same database, which is the whole point of the compat surface.
-//
-// Native `ptah` deliberately keeps Ptah's richer bookkeeping. Recording a
-// failed down as dirty state is an advantage, not a divergence to apologize
-// for: it is what makes a half-finished rollback visible in `migrations
-// status`, what blocks a later `migrations up` from stacking work on it, and
-// what `migrations repair --version` clears once the operator has fixed the
-// database. (Not `--resume-from`: resumeMigration replays migration.UpSQL, so
-// it is an up-direction tool regardless of which direction failed.) Atlas's
-// row, by contrast, still looks applied after a rollback that did not finish.
-// A native run that opts into `--revision-format atlas` is asking for the
-// Atlas table's semantics, so it follows the Atlas side of this split (#957).
-func (m *Migrator) reproducesAtlasDownBookkeeping() bool {
-	return m.revisionTableFormat.isAtlas()
-}
-
-// failRollbackWithDirtyState records a failed rollback the way the active
-// surface requires: Ptah's dirty state natively, nothing at all on the
-// Atlas-shaped surface. The returned error is identical either way.
+// failRollbackWithDirtyState records a failed rollback as dirty state. Ptah
+// keeps the Atlas revision-table schema compatible but does not reproduce the
+// upstream behavior that hides a partially applied rollback behind a clean row.
 func (m *Migrator) failRollbackWithDirtyState(
 	ctx context.Context,
 	migration *Migration,
@@ -2312,12 +2372,6 @@ func (m *Migrator) failRollbackWithDirtyStateWithMode(
 	prefix string,
 	txMode MigrationTxMode,
 ) error {
-	if m.reproducesAtlasDownBookkeeping() {
-		if prefix == "" {
-			return failure
-		}
-		return fmt.Errorf("%s: %w", prefix, failure)
-	}
 	return m.failMigrationWithDirtyStateWithMode(
 		ctx,
 		migration,

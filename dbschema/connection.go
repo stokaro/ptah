@@ -414,7 +414,8 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 // the dialect reader and writer on that same session. The scoped connection
 // does not own the pool and must not escape the callback. The physical
 // connection is discarded afterward so callback-created session state cannot
-// leak to another pool user.
+// leak to another pool user. In-memory SQLite is the sole exception: its only
+// connection owns the database lifetime, so it is returned to the pool.
 func (dc *DatabaseConnection) WithSession(
 	ctx context.Context,
 	use func(*DatabaseConnection) error,
@@ -437,6 +438,10 @@ func (dc *DatabaseConnection) WithSession(
 		return fmt.Errorf("pin database session: %w", err)
 	}
 	defer func() {
+		if dc.inMemorySQLite {
+			resultErr = errors.Join(resultErr, closeSQLConnection(session, "in-memory SQLite database session"))
+			return
+		}
 		resultErr = errors.Join(resultErr, discardSQLConnection(session, "pinned database session"))
 	}()
 

@@ -1,6 +1,6 @@
 //go:build integration
 
-package generator
+package generator_test
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -73,7 +75,7 @@ type Product struct {
 }
 `), 0600), qt.IsNil)
 
-	files, err := GenerateMigration(ctx, GenerateMigrationOptions{
+	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 		GoEntitiesDir: entitiesDir,
 		DBConn:        conn,
 		MigrationName: "constraint_drift",
@@ -81,13 +83,14 @@ type Product struct {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.IsNotNil)
+	c.Assert(files.Files, qt.HasLen, 1)
 
-	upSQLBytes, err := os.ReadFile(files.UpFile)
+	upSQLBytes, err := os.ReadFile(files.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)
 	upSQL := string(upSQLBytes)
 	c.Assert(upSQL, qt.Contains, "DROP CONSTRAINT")
-	c.Assert(strings.Count(upSQL, "ADD CONSTRAINT ptah_constraint_price_check"), qt.Equals, 1)
-	c.Assert(strings.Count(upSQL, "ADD CONSTRAINT ptah_constraint_unique"), qt.Equals, 1)
+	c.Assert(strings.Count(upSQL, "ADD CONSTRAINT "+sqlident.Quote("postgres", "ptah_constraint_price_check")), qt.Equals, 1)
+	c.Assert(strings.Count(upSQL, "ADD CONSTRAINT "+sqlident.Quote("postgres", "ptah_constraint_unique")), qt.Equals, 1)
 
 	execScript(c, conn, upSQL, "UP")
 
@@ -164,7 +167,7 @@ type Product struct {
 }
 `), 0600), qt.IsNil)
 
-			files, err := GenerateMigration(ctx, GenerateMigrationOptions{
+			files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 				GoEntitiesDir: entitiesDir,
 				DBConn:        conn,
 				MigrationName: "unique_constraint_drift",
@@ -172,11 +175,12 @@ type Product struct {
 			})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.IsNotNil)
+			c.Assert(files.Files, qt.HasLen, 1)
 
-			upSQLBytes, err := os.ReadFile(files.UpFile)
+			upSQLBytes, err := os.ReadFile(files.Files[0].UpFile)
 			c.Assert(err, qt.IsNil)
 			upSQL := string(upSQLBytes)
-			c.Assert(strings.Count(upSQL, "ADD CONSTRAINT ptah_unique_constraint_unique"), qt.Equals, 1,
+			c.Assert(strings.Count(upSQL, "ADD CONSTRAINT "+sqlident.Quote(dialect, "ptah_unique_constraint_unique")), qt.Equals, 1,
 				qt.Commentf("[%s] generated UP must re-add the changed UNIQUE constraint:\n%s", dialect, upSQL))
 
 			execScript(c, conn, upSQL, "UP")

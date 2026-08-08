@@ -71,3 +71,39 @@ func TestDecodeRevisionStateTolerates(t *testing.T) {
 		})
 	}
 }
+
+func TestAtlasRevisionState(t *testing.T) {
+	tests := []struct {
+		name     string
+		revision MigrationRevision
+		state    string
+	}{
+		{
+			name:     "completed up is applied",
+			revision: MigrationRevision{Applied: 2, Total: 2, OperatorVersion: ptahOperatorVersion},
+			state:    migrationStateApplied,
+		},
+		{
+			name:     "completed down stays pending until deletion",
+			revision: MigrationRevision{Applied: 2, Total: 2, OperatorVersion: ptahDownOperatorVersion},
+			state:    migrationStatePending,
+		},
+		{
+			name:     "partial down is failed",
+			revision: MigrationRevision{Applied: 1, Total: 2, OperatorVersion: ptahDownOperatorVersion},
+			state:    migrationStateFailed,
+		},
+		{
+			name:     "errored down is failed",
+			revision: MigrationRevision{Applied: 2, Total: 2, Error: "failed", OperatorVersion: ptahDownOperatorVersion},
+			state:    migrationStateFailed,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasRevisionState(test.revision), qt.Equals, test.state)
+		})
+	}
+}

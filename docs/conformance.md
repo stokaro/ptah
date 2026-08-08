@@ -96,7 +96,7 @@ The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
 
 **Native Ptah.** `ptah migrations down --shadow-db` replays the rollback plan on a disposable shadow database before the target is touched.
 
-**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), with the native `--revision-format ptah` pass-through as the escape hatch; the registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale.
+**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to the Atlas revision-table layout (`--revision-format atlas`, like `migrate set`) but deliberately retains Ptah's recoverable failed-down bookkeeping, with the native `--revision-format ptah` pass-through as the layout escape hatch; the registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale.
 
 **Atlas CE.** `migrate down` does not exist in the community binary; the CE notice lists down migrations among excluded features.
 
@@ -216,6 +216,23 @@ the tolerance is Cobra's default arity rather than a contract.
 Silently answering about a directory the caller did not name is the defect this
 project does not copy. The refusal names the rejected token and the flag that
 takes a value there instead.
+
+### Dirty retry proves the committed prefix
+
+Atlas CE resumes a dirty non-transactional revision at `applied + 1` using only
+the recorded statement count. Ptah deliberately requires stronger evidence
+before it skips SQL: native dirty rows carry a cumulative `partial:h1:` prefix
+checksum, and Atlas-format rows use `partial_hashes`. Changed source, malformed
+metadata, or a hash count that disagrees with `applied` fails closed. Legacy
+rows without prefix metadata resume only while their full-file hash still
+matches.
+
+The stricter gate still permits edits to the unapplied suffix. It also preserves
+the earlier applied floor when a retry changes transaction mode and preserves
+the unknown-outcome marker when cancellation or a deadline interrupts
+`ExecContext`. These are intentional safe-direction divergences: Ptah may exit
+non-zero where Atlas CE would resume by integer offset, but it does not report
+success after replaying or skipping unverifiable SQL.
 
 ### An edited migration that has already been applied
 

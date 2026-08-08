@@ -110,9 +110,8 @@ type StatementEvent struct {
 // StatementObserver receives successfully executed migration statements. It is
 // called after either an interceptor or the normal migrator path executes the
 // statement. When a Migrator executes SQL in no-transaction mode, the observer
-// normally runs after Ptah durably checkpoints that statement's progress.
-// Atlas-format down execution preserves Atlas bookkeeping and is not
-// checkpointed. Returning an error aborts the migration.
+// runs after Ptah durably checkpoints that statement's progress. Returning an
+// error aborts the migration.
 type StatementObserver interface {
 	ObserveStatement(ctx context.Context, event StatementEvent) error
 }
@@ -143,6 +142,10 @@ type statementProgressHooks struct {
 
 type statementProgressRecorderContextKey struct{}
 
+type internalStatementObserver func(context.Context, StatementEvent) error
+
+type internalStatementObserverContextKey struct{}
+
 type migrationResumeContextKey struct{}
 
 // withMigrationResume declares that statements before resumeFrom (1-based) were
@@ -168,6 +171,11 @@ func withMigrationResume(ctx context.Context, resumeFrom int) context.Context {
 func migrationStatementAlreadyApplied(ctx context.Context, index int) bool {
 	resumeFrom, _ := ctx.Value(migrationResumeContextKey{}).(int)
 	return index < resumeFrom
+}
+
+func migrationAppliedFloor(ctx context.Context) int {
+	resumeFrom, _ := ctx.Value(migrationResumeContextKey{}).(int)
+	return max(resumeFrom-1, 0)
 }
 
 type statementProgressError struct {
@@ -226,6 +234,31 @@ func recordStatementProgressAfter(ctx context.Context, event StatementEvent) err
 		}
 	}
 	return nil
+}
+
+func withInternalStatementObserver(ctx context.Context, observer internalStatementObserver) context.Context {
+	if observer == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, internalStatementObserverContextKey{}, observer)
+}
+
+func observeExecutedStatement(ctx context.Context, event StatementEvent) error {
+	observer, _ := ctx.Value(internalStatementObserverContextKey{}).(internalStatementObserver)
+	if observer == nil {
+		return nil
+	}
+	if err := observer(ctx, event); err != nil {
+		return &StatementObservationError{Err: err, Event: event}
+	}
+	return nil
+}
+
+func recordAndObserveExecutedStatement(ctx context.Context, event StatementEvent) error {
+	if err := recordStatementProgressAfter(ctx, event); err != nil {
+		return err
+	}
+	return observeExecutedStatement(ctx, event)
 }
 
 type migrationExecutionMode int
@@ -826,7 +859,7 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 				Total:          len(statements),
 			}
 		}
-		if err := recordStatementProgressAfter(ctx, event); err != nil {
+		if err := recordAndObserveExecutedStatement(ctx, event); err != nil {
 			return err
 		}
 	}
@@ -904,7 +937,7 @@ func executeMigrationFileSQL(
 				}
 			}
 		}
-		if err := recordStatementProgressAfter(ctx, event); err != nil {
+		if err := recordAndObserveExecutedStatement(ctx, event); err != nil {
 			return err
 		}
 		if hooks.observer != nil {

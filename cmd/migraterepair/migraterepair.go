@@ -53,7 +53,9 @@ migration that failed on the way up resumes its up statements and is recorded
 applied. A rollback that stopped partway resumes its down statements and its
 revision is removed, because a finished rollback means the migration is no
 longer applied; without --resume-from, a rollback that already committed a
-statement is refused rather than recorded applied over a schema it changed.`,
+statement is refused rather than recorded applied over a schema it changed.
+Repair holds the migration advisory lock across inspection, resumed SQL, and
+the final metadata write.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateRepairCommand(cmd, &opts)
 		},

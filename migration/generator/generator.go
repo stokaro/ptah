@@ -137,13 +137,10 @@ type MigrationFilePair struct {
 	NoTransaction bool   // Whether the pair is marked with +ptah no_transaction
 }
 
-// MigrationFiles represents the generated migration files.
+// MigrationFiles represents the generated migration files. Files is the
+// authoritative ordered list of migration pairs and their published paths.
 type MigrationFiles struct {
-	UpFile     string              // Path to the first up migration file
-	DownFile   string              // Path to the first down migration file
-	ReportFile string              // Path to the first safety report file, when requested
-	Version    int64               // First migration version (timestamp)
-	Files      []MigrationFilePair // All generated migration file pairs, in apply order
+	Files []MigrationFilePair // All generated migration file pairs, in apply order
 }
 
 // MigrationPlan is a fully validated migration that has not been written to
@@ -2606,13 +2603,8 @@ func migrationFilesFromPairs(pairs []MigrationFilePair) *MigrationFiles {
 	if len(pairs) == 0 {
 		return nil
 	}
-	first := pairs[0]
 	return &MigrationFiles{
-		UpFile:     first.UpFile,
-		DownFile:   first.DownFile,
-		ReportFile: first.ReportFile,
-		Version:    first.Version,
-		Files:      pairs,
+		Files: pairs,
 	}
 }
 
