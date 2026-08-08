@@ -159,6 +159,20 @@ func TestRenderCrossSchemaReferencesRoundTripToTheSameIR(t *testing.T) {
 // TestRenderKeepsQualifiedReferenceWhenDocumentCannotResolveIt covers the cases
 // where dropping the schema would destroy it or point the reference somewhere
 // else. Each row is a document the short form would be wrong for.
+//
+// The schema is kept in both spellings this rule can write, and which one a
+// position gets is decided by what that position is allowed to be. A
+// `ref_columns`, a `policy`'s `on` and a `data` block's `table` go on naming a
+// table through a traversal: `ref_columns` has to reach a column through the
+// same expression, so a quoted name is not a spelling available there at all,
+// and the other two are rendered the same way because Ptah's reader has to
+// agree with itself. A `permission` target and a `trigger`'s `on` are quoted,
+// because the pinned Atlas community binary v1.3.0 evaluates those two without
+// resolving them and reads a quoted name at exit 0 where it refuses every
+// traversal to a block the document does not declare -- `for = "gone"` exit 0
+// against `for = table.gone` exit 1 `Unsupported attribute; This object does
+// not have an attribute named "gone"`, and `Unknown variable; There is no
+// variable named "table"` where the document declares no table block at all.
 func TestRenderKeepsQualifiedReferenceWhenDocumentCannotResolveIt(t *testing.T) {
 	tests := []struct {
 		name string
@@ -209,11 +223,17 @@ func TestRenderKeepsQualifiedReferenceWhenDocumentCannotResolveIt(t *testing.T) 
 			for _, want := range []string{
 				`ref_columns = [table.other.users.column.id]`,
 				`on = table.other.users`,
-				`for = table.other.users`,
 				`table = table.other.users`,
+				`on = "other.users"`,
+				`for = "other.users"`,
 			} {
 				c.Assert(hcl, qt.Contains, want, qt.Commentf("%s\nrendered HCL:\n%s", test.why, hcl))
 			}
+			// Two positions spell `on`, and this rule sends them to different
+			// spellings, so counting is what says the policy kept the traversal
+			// rather than the trigger's quoted name satisfying both.
+			c.Assert(strings.Count(hcl, `on = table.other.users`), qt.Equals, 1,
+				qt.Commentf("%s\nrendered HCL:\n%s", test.why, hcl))
 		})
 	}
 }

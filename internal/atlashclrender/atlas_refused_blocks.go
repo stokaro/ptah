@@ -13,14 +13,17 @@ import (
 )
 
 // Top-level HCL block spellings an inspected render can emit. Only the ones a
-// refusal list or a diagnostic names are constants: the token has to be spelled
-// identically by the renderer, by [atlasRefusedBlockTypes], and by the
-// conformance run that re-measures that list against the binary, and three
-// string literals drift where one constant cannot.
+// refusal list, a diagnostic, or a reference names are constants: the token has
+// to be spelled identically by the renderer, by [atlasRefusedBlockTypes], by
+// [renderer.documentDeclares], and by the conformance runs that re-measure both
+// against the binary, and string literals drift where one constant cannot.
 const (
-	blockExtension = "extension"
-	blockPolicy    = "policy"
-	blockSequence  = "sequence"
+	blockExtension    = "extension"
+	blockPolicy       = "policy"
+	blockSequence     = "sequence"
+	blockTable        = "table"
+	blockView         = "view"
+	blockMaterialized = "materialized"
 )
 
 // KeepAtlasRefusedBlocksEnvVar restores the full set of blocks Ptah models on
@@ -199,7 +202,11 @@ func (r *renderer) renderCoverageHeader() {
 // not a name at all.
 func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 	return r.omitRefused(path, block, func() blockDependency {
-		if !r.documentNamesAny(names) {
+		// Asked through [renderer.omitsRefusedBlock] rather than of
+		// [renderer.documentNamesAny] directly, so that this decision and the one
+		// [renderer.documentDeclares] makes about a reference to the same block
+		// are one rule with one caller each, not two copies that can drift.
+		if r.omitsRefusedBlock(block, names...) {
 			return blockDependency{}
 		}
 		return blockDependency{
@@ -326,6 +333,27 @@ func (r *renderer) omitRefused(path, block string, dependency func() blockDepend
 		r.dialect, block, KeepAtlasRefusedBlocksEnvVar,
 	))
 	return true
+}
+
+// omitsRefusedBlock is the DECISION [renderer.omitRefusedBlock] reports, with
+// no diagnostic attached, so a second caller can ask the same question without
+// telling the operator twice.
+//
+// [renderer.documentDeclares] is that second caller: what a reference is
+// allowed to name is exactly what the document ends up declaring, and a
+// suppressed block declares nothing. Both go through here rather than each
+// carrying its own copy of the rule, because a `permission` naming a sequence
+// this render left out is the dangling reference the suppression exists to
+// avoid, arriving from the other side.
+//
+// An extension is not asked here. [renderer.omitRefusedExtension] can keep a
+// block for a reason no name in the document carries, and nothing references an
+// extension block by traversal, so a second caller has nothing to ask about it.
+func (r *renderer) omitsRefusedBlock(block string, names ...string) bool {
+	if !r.omitAtlasRefusedBlocks || !atlasRefusesBlock(r.dialect, block) {
+		return false
+	}
+	return !r.documentNamesAny(names)
 }
 
 // documentRequiresExtension reports whether an object the surviving document

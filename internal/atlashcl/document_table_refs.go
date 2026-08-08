@@ -45,6 +45,13 @@ type pendingForeignRef struct {
 //     the shape it emits most.
 //   - A `data` block's table, whose schema goschema.Finalize never touches and
 //     whose block has no owning table to supply one.
+//   - A `permission` target or a `trigger`'s `on` naming a VIEW, a MATERIALIZED
+//     view or a SEQUENCE. Finalize reads a grant's or a trigger's schema off a
+//     TABLE block and does nothing for these, by the note at the end of
+//     goschema.Finalize, so the schema the short form drops would be dropped for
+//     good. The renderer only writes the short form where the document declares
+//     the block, so the block is right there to read it back off
+//     (stokaro/ptah#1234).
 //
 // An ambiguous name is left exactly as written, matching what goschema and
 // [tablelookup.ResolveReference] both do with one: two tables of a name in
@@ -70,6 +77,81 @@ func (p *parser) resolveDocumentTableRefs() {
 		data.Schema = ref.Schema
 		data.Table = ref.Name
 	}
+	for i := range p.db.Grants {
+		grant := &p.db.Grants[i]
+		grant.OnTable = p.qualifyFromRelationBlock(grant.OnTable)
+		grant.OnSequence = p.qualifyFromRelationBlock(grant.OnSequence)
+	}
+	for i := range p.db.Triggers {
+		trigger := &p.db.Triggers[i]
+		trigger.Table = p.qualifyFromRelationBlock(trigger.Table)
+	}
+}
+
+// qualifyFromRelationBlock writes back the schema of the `view`, `materialized`
+// or `sequence` block a bare relation reference names.
+//
+// It answers only for a name no TABLE block claims, so it can never disagree
+// with the resolution goschema.Finalize does for those: a relation name belongs
+// to one namespace per schema, and where a table block carries the label the
+// table path already restores whatever there is to restore.
+//
+// A block that declares no schema of its own restores nothing, which keeps a
+// single-schema document exactly as it was written -- a bare name there is bare
+// because there was never a schema on it, not because a spelling dropped one.
+func (p *parser) qualifyFromRelationBlock(name string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok || ref.Qualified {
+		return name
+	}
+	for _, table := range p.db.Tables {
+		if table.Name == ref.Name {
+			return name
+		}
+	}
+	schema := relationBlockSchema(p.db, ref.Name)
+	if schema == "" {
+		return name
+	}
+	return tableref.Canonical(schema, ref.Name)
+}
+
+// relationBlockSchema is the schema carried by the single view, materialized
+// view or sequence block this document declares under a label, and empty where
+// there is not exactly one.
+//
+// EVERY declaration under the label is counted, including the ones carrying no
+// schema of their own, and that is what makes "exactly one" mean what it says. A
+// block with no schema is not a block that is absent -- it is the one in the
+// schema being read, so a document declaring `view "v"` and `view "v"` in
+// `other` declares the label TWICE and resolves neither. Counting only the
+// qualified ones made that document look unambiguous and moved the bare
+// reference into `other`, where Deduplicate then merged it with the grant that
+// really was on `other.v` and one of the two grants disappeared.
+//
+// A single declaration carrying no schema still restores nothing, because there
+// is nothing to restore: the empty entry falls through the caller's own check.
+func relationBlockSchema(db *goschema.Database, label string) string {
+	var found []string
+	for _, view := range db.Views {
+		if ref, ok := tableref.Parse(view.Name); ok && ref.Name == label {
+			found = append(found, ref.Schema)
+		}
+	}
+	for _, view := range db.MaterializedViews {
+		if ref, ok := tableref.Parse(view.Name); ok && ref.Name == label {
+			found = append(found, ref.Schema)
+		}
+	}
+	for _, sequence := range db.Sequences {
+		if sequence.Name == label {
+			found = append(found, sequence.Schema)
+		}
+	}
+	if len(found) != 1 {
+		return ""
+	}
+	return found[0]
 }
 
 // resolveDocumentTableName reads the schema of an unqualified table reference

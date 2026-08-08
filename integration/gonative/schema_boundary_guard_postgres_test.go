@@ -30,6 +30,15 @@
 // re-measured unchanged on 4c4a8a1d, after #1277 and #1278 landed -- #1277 in
 // particular renames a qualified HCL table reference, which is the same defect
 // class as the grant churn pinned below, and it does not move any row here.
+//
+// #1234 moved two rows, and only the two that had no table in them: an inspected
+// document now declares the schema blocks its own body referenced instead of
+// predicting them from the tables it was given, so the two fixtures with nothing
+// to predict from stopped being the exception. Both were re-measured on live
+// PostgreSQL 17.10 with the document put to the pinned Atlas community binary
+// v1.3.0 -- exit 1 `There is no variable named "schema"` before, exit 0 after.
+// Every other row's values are unchanged, which is the claim that the common
+// path did not move.
 
 package gonative_test
 
@@ -192,16 +201,29 @@ func boundaryCases() []boundaryCase {
 			name: "extension_nothing_references",
 			seed: []string{"CREATE EXTENSION pgcrypto"},
 
-			// CORRECT: a database with no tables declares no schema.
-			wantDescribedSchemas: nil,
+			// CORRECT and must stay correct. This row used to read nil, on the
+			// reasoning that a database with no tables declares no schema, and
+			// #1234 showed that reasoning was answering the wrong question.
+			// EVERY PostgreSQL database carries `GRANT USAGE ON SCHEMA public TO
+			// PUBLIC`, so even a database with no tables inspects to a
+			// `permission` block whose `for = schema.public` is a reference. A
+			// document that carries the reference and not the block is
+			// unreadable: measured on the pinned Atlas community binary v1.3.0
+			// against this exact document, exit 1 with `There is no variable
+			// named "schema"` before #1234 and exit 0 after it. What a document
+			// declares is now collected from what it referenced, so the
+			// declaration cannot go missing again.
+			wantDescribedSchemas: []string{"public"},
 			// WRONG (#1276): must become []string{"public"} -- the reader did
 			// read `public`, it just does not say so.
 			wantReadSchemas: nil,
 
-			// CORRECT: property 1 holds here. The native surface omits
-			// nothing, so its document names pgcrypto and the round trip is
-			// clean. The damage is only visible in the plan below.
-			wantDocumentOnly: nil,
+			// WRONG (#1276): must become empty, and for the same reason as every
+			// other row -- the reader reports no schemas while the document
+			// declares the one it references. The extension itself is on neither
+			// side of this difference, which is #1274 holding; the damage this
+			// row exists for is in the plan below.
+			wantDocumentOnly: []string{"schema:public"},
 			wantDatabaseOnly: nil,
 
 			// CORRECT: the native document declares the extension, so applying
@@ -256,13 +278,18 @@ func boundaryCases() []boundaryCase {
 			// may be planned against a database with nothing in it.
 			name: "empty_database",
 
-			// CORRECT.
-			wantDescribedSchemas: nil,
+			// CORRECT and must stay correct, for the reason spelled out on
+			// `extension_nothing_references` above: the grant every PostgreSQL
+			// database has is a reference to `public`, and #1234 made the
+			// document declare what it references. This is the smallest instance
+			// of that defect -- there is no table here to predict a schema from,
+			// which is how a rule that predicted rather than collected missed it.
+			wantDescribedSchemas: []string{"public"},
 			// WRONG (#1276): must become []string{"public"}.
 			wantReadSchemas: nil,
 
-			// CORRECT: property 1 holds.
-			wantDocumentOnly: nil,
+			// WRONG (#1276): must become empty, as on every other row.
+			wantDocumentOnly: []string{"schema:public"},
 			wantDatabaseOnly: nil,
 
 			// CORRECT: property 2 holds on both surfaces.
