@@ -278,6 +278,18 @@ table. Live comparisons also snapshot catalog identifier semantics into the
 diff so comparison, destructive-change policy, forward planning, and reverse
 planning use one source of truth.
 
+`migration/schemadiff/types.ViewDiff` also records the view body that is in
+force before the diff is applied, and whether the entry is being planned as a
+rollback. Planners read the body to decide whether the target engine accepts an
+in-place view replacement; PostgreSQL accepts `CREATE OR REPLACE VIEW` only when
+the new query appends to the old column list over the same relations. Where that
+can be neither proved nor ruled out — an unknown prior body, a `WITH` prefix, a
+`SELECT *` projection, a top-level set operation — the rollback flag settles it:
+a forward plan keeps the replacement, which preserves dependent objects and the
+privileges on the view and fails loudly if the engine refuses it, while a
+rollback drops and recreates, which always applies. Embedders that build a
+`ViewDiff` by hand and leave both fields empty get the forward answer.
+
 `core/platform/identifier` exposes the reusable value types and conservative
 dialect defaults behind that contract.
 

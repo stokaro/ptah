@@ -786,6 +786,43 @@ type SequenceDiff struct {
 type ViewDiff struct {
 	ViewName string            `json:"view_name"`
 	Changes  map[string]string `json:"changes"`
+
+	// PreviousBody is the view body that is in force before this diff is
+	// applied: the database side of a forward comparison, and the post-up side
+	// of a reversed one. It is what makes the modification path decidable.
+	//
+	// PostgreSQL accepts CREATE OR REPLACE VIEW only when the new query yields
+	// the old column list with columns appended to the end -- same names, same
+	// types, same order. Dropping, renaming or retyping a column is refused at
+	// execution time, and a down migration built with CREATE OR REPLACE is
+	// therefore un-appliable for every view modification except the one shape
+	// the up migration is least likely to have made. A planner that cannot see
+	// the prior body cannot tell the legal case from the refused one, so it has
+	// to choose between an un-appliable statement and always dropping the view
+	// with CASCADE, which takes dependents with it.
+	//
+	// An empty value means "not known". It does not on its own select a plan:
+	// what a planner cannot decide is settled by Rollback below, so a forward
+	// plan still attempts the replace -- the engine refuses it if it is illegal,
+	// and refusing costs nothing -- while a rollback takes the drop and
+	// recreate that always applies.
+	PreviousBody string `json:"previous_body,omitempty"`
+
+	// Rollback reports that this entry is being planned in the DOWN direction:
+	// the statement rendered for it runs while an operator is undoing a
+	// migration.
+	//
+	// It decides nothing on its own. It settles the cases where a planner cannot
+	// prove whether the engine accepts an in-place replace, and the two
+	// directions want opposite answers there. Going forward, the replace is
+	// worth attempting: it keeps dependent objects and the privileges granted on
+	// the view, and if the engine refuses it the migration stops with nothing
+	// destroyed. A rollback cannot be stopped that way -- it is already running
+	// during the incident -- so it takes the drop-and-recreate that always
+	// applies, and pays for it by rebuilding what CASCADE removes.
+	//
+	// Reverse plan builders set it; a forward comparison leaves it false.
+	Rollback bool `json:"rollback,omitempty"`
 }
 
 // MaterializedViewDiff represents changes to a materialized view definition.
