@@ -1458,9 +1458,94 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
 		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema),
 	}
-	reversed.SetIndexAdditions(diff.IndexRemovals())
+	indexAdditions, constraintRestorations := reverseIndexRemovals(diff, dbSchema)
+	reversed.SetIndexAdditions(indexAdditions)
 	reversed.SetIndexRemovals(diff.IndexAdditions())
+	for _, restored := range constraintRestorations {
+		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored.Name)
+		reversed.ConstraintsAddedWithTables = append(reversed.ConstraintsAddedWithTables, restored)
+	}
 	return reversed
+}
+
+// reverseIndexRemovals splits the up direction's index removals by what the
+// object each one names actually is, because the down direction has to put that
+// object back and only one of the two spellings does.
+//
+// An ordinary index removal reverses into an index addition, which the down
+// path resolves from the introspected schema. A removal the comparator marked
+// as constraint-backed (ConstraintBackedIndexRemovals) does not: the object is
+// a UNIQUE constraint whose index carries the constraint's name, the up
+// direction dropped it with ALTER TABLE ... DROP CONSTRAINT, and the statement
+// that restores it is ALTER TABLE ... ADD CONSTRAINT ... UNIQUE. Reversing it
+// into an index addition is wrong twice over: the down path builds its target
+// from ConvertDBSchemaToGoSchema, which deliberately omits a constraint-backed
+// index (it is the constraint's, not an index of its own), so the addition has
+// no definition to resolve and down generation fails outright with
+// `added index users.uq_users_email at position 0 is missing or ambiguous in
+// the target schema` -- and where it did resolve it would rebuild a plain
+// unique index in place of the constraint, leaving the rollback's catalog
+// different from the one the migration started against.
+//
+// The prior body comes from the introspected constraint, the same source
+// reverseConstraintAdditions restores a removed UNIQUE constraint from, so a
+// covering INCLUDE list and NULLS [NOT] DISTINCT survive the round trip.
+//
+// A marked removal with no introspected constraint to rebuild from -- a nil
+// dbSchema, or a hand-built diff -- stays an index addition rather than
+// disappearing. That is the loud failure above, which is the right outcome: a
+// down migration that silently omits the uniqueness protection it is supposed
+// to restore is worse than one that refuses to be generated.
+func reverseIndexRemovals(
+	diff *types.SchemaDiff,
+	dbSchema *dbschematypes.DBSchema,
+) (additions []types.IndexRef, restored []types.ConstraintAdditionInfo) {
+	removals := diff.IndexRemovals()
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
+	if len(constraintBacked) == 0 {
+		return removals, nil
+	}
+	uniqueConstraints := introspectedUniqueConstraintsByHost(dbSchema)
+	for _, ref := range removals {
+		if _, ownedByConstraint := constraintBacked[ref]; !ownedByConstraint {
+			additions = append(additions, ref)
+			continue
+		}
+		dbConstraint, hasBody := uniqueConstraints[tableMemberKey{table: ref.TableName, member: ref.Name}]
+		columns := dbConstraint.ColumnNamesOrDefault()
+		if !hasBody || len(columns) == 0 {
+			additions = append(additions, ref)
+			continue
+		}
+		restored = append(restored, types.ConstraintAdditionInfo{
+			Name:           ref.Name,
+			TableName:      ref.TableName,
+			Type:           "UNIQUE",
+			Columns:        slices.Clone(columns),
+			IncludeColumns: slices.Clone(dbConstraint.IncludeColumns),
+			NullsDistinct:  cloneBoolPtr(dbConstraint.NullsDistinct),
+		})
+	}
+	return additions, restored
+}
+
+// introspectedUniqueConstraintsByHost keys the pre-change UNIQUE constraints by
+// the host table and name an IndexRef names, which is the identity the
+// comparator marked the removal under.
+func introspectedUniqueConstraintsByHost(
+	dbSchema *dbschematypes.DBSchema,
+) map[tableMemberKey]dbschematypes.DBConstraint {
+	constraints := make(map[tableMemberKey]dbschematypes.DBConstraint)
+	if dbSchema == nil {
+		return constraints
+	}
+	for _, constraint := range dbSchema.Constraints {
+		if constraint.Type != "UNIQUE" {
+			continue
+		}
+		constraints[tableMemberKey{table: constraint.QualifiedTableName(), member: constraint.Name}] = constraint
+	}
+	return constraints
 }
 
 func generatedTableByStructName(tables []goschema.Table, structName string) *goschema.Table {

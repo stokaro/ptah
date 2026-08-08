@@ -1075,6 +1075,17 @@ type DropIndexNode struct {
 	// planners set it only for standalone index drops the caller routes into a
 	// no_transaction migration.
 	Concurrently bool
+	// EnforcesUniqueConstraint reports that the index being dropped is the one
+	// a UNIQUE constraint of the same name enforces, so the statement removes a
+	// uniqueness protection and not only an access path.
+	//
+	// It carries no SQL: on MySQL and MariaDB, the engines that reach it, a
+	// unique key and its constraint are one catalog row and DROP INDEX is the
+	// statement that removes it. It exists so risk classification can tell the
+	// two apart, because the spelling cannot: dropping `uq_users_email` and
+	// dropping `idx_users_email` are the same statement shape and a very
+	// different change to the data's guarantees.
+	EnforcesUniqueConstraint bool
 	// Comment is an optional comment for the drop operation
 	Comment string
 }
@@ -1132,6 +1143,14 @@ func (n *DropIndexNode) SetIfExists() *DropIndexNode {
 //	dropIndex.SetConcurrently()
 func (n *DropIndexNode) SetConcurrently() *DropIndexNode {
 	n.Concurrently = true
+	return n
+}
+
+// SetEnforcesUniqueConstraint records that this drop removes the index a
+// UNIQUE constraint of the same name enforces. It changes no SQL; see
+// [DropIndexNode.EnforcesUniqueConstraint].
+func (n *DropIndexNode) SetEnforcesUniqueConstraint() *DropIndexNode {
+	n.EnforcesUniqueConstraint = true
 	return n
 }
 

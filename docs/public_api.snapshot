@@ -1884,6 +1884,17 @@ type DropIndexNode struct {
     // planners set it only for standalone index drops the caller routes into a
     // no_transaction migration.
     Concurrently bool
+    // EnforcesUniqueConstraint reports that the index being dropped is the one
+    // a UNIQUE constraint of the same name enforces, so the statement removes a
+    // uniqueness protection and not only an access path.
+    //
+    // It carries no SQL: on MySQL and MariaDB, the engines that reach it, a
+    // unique key and its constraint are one catalog row and DROP INDEX is the
+    // statement that removes it. It exists so risk classification can tell the
+    // two apart, because the spelling cannot: dropping `uq_users_email` and
+    // dropping `idx_users_email` are the same statement shape and a very
+    // different change to the data's guarantees.
+    EnforcesUniqueConstraint bool
     // Comment is an optional comment for the drop operation
     Comment string
 }
@@ -1897,6 +1908,7 @@ func NewDropIndex(name string) *DropIndexNode
 func (n *DropIndexNode) Accept(visitor Visitor) error
 func (n *DropIndexNode) SetComment(comment string) *DropIndexNode
 func (n *DropIndexNode) SetConcurrently() *DropIndexNode
+func (n *DropIndexNode) SetEnforcesUniqueConstraint() *DropIndexNode
 func (n *DropIndexNode) SetIfExists() *DropIndexNode
 func (n *DropIndexNode) SetTable(table string) *DropIndexNode
 
@@ -8617,15 +8629,21 @@ type SchemaDiff struct {
 
     // ConstraintBackedIndexRemovals is the subset of IndexesRemoved whose
     // object is enforced by a UNIQUE constraint of the same name on the same
-    // table, so the drop has to be spelled
-    // `ALTER TABLE <table> DROP CONSTRAINT <name>`.
+    // table. It records what the object is; each planner spells the statement
+    // its engine accepts.
     //
-    // PostgreSQL refuses the index spelling for those:
+    // PostgreSQL refuses the index spelling for one:
     // `cannot drop index uq_users_email because constraint uq_users_email on
-    // table users requires it (SQLSTATE 2BP01)`, measured on 17.10. MySQL and
-    // MariaDB are the opposite case -- a unique key and its index are one
-    // catalog row that `DROP INDEX` drops -- so their removals are never listed
-    // here.
+    // table users requires it (SQLSTATE 2BP01)`, measured on 17.10, so its
+    // planner drops the constraint instead. MySQL and MariaDB are the opposite
+    // case -- a unique key and its index are one catalog row that `DROP INDEX`
+    // drops, which is what the pinned community binary v1.3.0 plans there -- so
+    // their planners ignore the list and their plans are unchanged by it.
+    //
+    // The list is not PostgreSQL-only, because the down direction needs it on
+    // every engine: what was dropped was a UNIQUE constraint, and a rollback
+    // that reverses it into an index addition restores the wrong object (see
+    // the generator's reverseIndexRemovals).
     ConstraintBackedIndexRemovals []IndexRef `json:"constraint_backed_index_removals,omitempty"`
 
     // ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
@@ -8821,6 +8839,7 @@ func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Sem
 func (d *SchemaDiff) HasChanges() bool
 func (d *SchemaDiff) IndexAdditions() []IndexRef
 func (d *SchemaDiff) IndexRemovals() []IndexRef
+func (d *SchemaDiff) IndexRemovalsRebuiltAsUniqueConstraints() map[IndexRef]struct{}
 func (d *SchemaDiff) SetConstraintBackedIndexRemovals(refs []IndexRef)
 func (d *SchemaDiff) SetIndexAdditions(refs []IndexRef)
 func (d *SchemaDiff) SetIndexRemovals(refs []IndexRef)

@@ -188,11 +188,10 @@ type generatedIndexEntry struct {
 type databaseIndexEntry struct {
 	ref   difftypes.IndexRef
 	index types.DBIndex
-	// dropAsConstraint reports that a UNIQUE constraint of this identity
-	// enforces the index on an engine where the constraint is a catalog object
-	// of its own, so removing the index means dropping that constraint. See
-	// [uniqueConstraintOwnsTheIndexObject].
-	dropAsConstraint bool
+	// constraintBacked reports that a UNIQUE constraint of this identity
+	// enforces the index, so the object is the constraint's and both directions
+	// of a plan have to say so. See [uniqueConstraintEnforcesTheIndex].
+	constraintBacked bool
 }
 
 func IndexesWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
@@ -342,10 +341,11 @@ func constraintBackedIndexIdentities(
 // definition the desired state gives it -- [appendIndexDifferences] pairs that
 // removal with the addition that supersedes it, and never emits it alone.
 //
-// The removal is still a removal, and what removes the object depends on the
-// object. A UNIQUE constraint's backing index is dropped through the constraint
-// everywhere except MySQL and MariaDB, so each entry carries the answer; see
-// [uniqueConstraintOwnsTheIndexObject].
+// The removal is still a removal, and what it removes depends on the object. A
+// UNIQUE constraint's backing index is the constraint's object, so each entry
+// records that; the drop is spelled through the constraint everywhere except
+// MySQL and MariaDB, and the restoration through it everywhere. See
+// [uniqueConstraintEnforcesTheIndex].
 func collectDatabaseIndexes(
 	database *types.DBSchema,
 	dialect string,
@@ -377,38 +377,51 @@ func collectDatabaseIndexes(
 		indexes[identity] = databaseIndexEntry{
 			ref:              ref,
 			index:            index,
-			dropAsConstraint: uniqueConstraintOwnsTheIndexObject(dialect, identity, uniqueConstraints),
+			constraintBacked: uniqueConstraintEnforcesTheIndex(identity, uniqueConstraints),
 		}
 	}
 	return indexes
 }
 
-// uniqueConstraintOwnsTheIndexObject reports whether removing this database
-// index means dropping a UNIQUE constraint rather than dropping an index.
+// uniqueConstraintEnforcesTheIndex reports whether a UNIQUE constraint of this
+// identity enforces the database index -- whether, in other words, the object
+// the removal names belongs to the constraint catalog and not only the index
+// catalog.
 //
-// The engines split two ways. On MySQL and MariaDB a unique key and its
-// constraint are one catalog row and `ALTER TABLE ... DROP INDEX` removes it,
-// which is what the pinned community binary v1.3.0 plans there. Everywhere else
-// the constraint is an object of its own that owns the index, and the server
-// refuses to drop the index alone: PostgreSQL 17.10 answers
-// `DROP INDEX "uq_users_email"` with `cannot drop index uq_users_email because
-// constraint uq_users_email on table users requires it (SQLSTATE 2BP01)`, and
-// the pinned binary plans `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`
-// for the same change.
+// It is a fact about the object, not a spelling, and the two consumers of the
+// mark need it for opposite reasons:
+//
+//   - The UP drop is spelled per engine. On MySQL and MariaDB a unique key and
+//     its constraint are one catalog row and `ALTER TABLE ... DROP INDEX`
+//     removes it, which is what the pinned community binary v1.3.0 plans there,
+//     so their planners ignore the mark. Everywhere else the constraint is an
+//     object of its own that owns the index and the server refuses to drop the
+//     index alone: PostgreSQL 17.10 answers `DROP INDEX "uq_users_email"` with
+//     `cannot drop index uq_users_email because constraint uq_users_email on
+//     table users requires it (SQLSTATE 2BP01)`, and the pinned binary plans
+//     `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`.
+//   - The DOWN direction has to put the object back, and there the engines do
+//     not split. What was dropped was a UNIQUE constraint on every one of them,
+//     so the statement that restores it is ADD CONSTRAINT ... UNIQUE; on MySQL
+//     and MariaDB that lands the same catalog row `CREATE UNIQUE INDEX` would.
+//     Reversing the removal into an index addition instead loses the constraint
+//     on PostgreSQL and fails outright on MySQL, because the down direction's
+//     target schema omits a constraint-backed index by construction
+//     (ConvertDBSchemaToGoSchema). See [generator.reverseIndexRemovals].
+//
+// Marking only the engines whose UP spelling differs is what made the down
+// direction wrong on the other two, so the mark records the fact and each
+// planner decides its own spelling.
 //
 // SQL Server never reaches here: a UNIQUE constraint and a unique index are
 // separate objects there, so [constraintBackedIndexIdentities] records no
 // unique-constraint identities for it at all.
-func uniqueConstraintOwnsTheIndexObject(
-	dialect string,
+func uniqueConstraintEnforcesTheIndex(
 	identity difftypes.IndexRef,
 	uniqueConstraints map[difftypes.IndexRef]struct{},
 ) bool {
-	if _, constraintBacked := uniqueConstraints[identity]; !constraintBacked {
-		return false
-	}
-	normalized := platform.NormalizeDialect(dialect)
-	return normalized != platform.MySQL && normalized != platform.MariaDB
+	_, constraintBacked := uniqueConstraints[identity]
+	return constraintBacked
 }
 
 // unaddressableDatabaseIndex reports whether an index has no standalone
@@ -424,9 +437,12 @@ func unaddressableDatabaseIndex(index types.DBIndex, dialect string) bool {
 // constraint's backing index, and so is created and dropped through that
 // constraint rather than on its own.
 //
-// A UNIQUE constraint is enforced by an index of the constraint's own name on
-// its own table everywhere except SQL Server, and MySQL and MariaDB
-// additionally create one for every FOREIGN KEY: with a bare
+// On PostgreSQL, MySQL and MariaDB a UNIQUE constraint is enforced by an index
+// of the constraint's own name on its own table. (SQL Server keeps the two as
+// separate objects, and SQLite names the backing index itself --
+// `sqlite_autoindex_t_1` -- which [unaddressableDatabaseIndex] drops before the
+// pools are built.) MySQL and MariaDB additionally create one for every
+// FOREIGN KEY: with a bare
 // `CONSTRAINT ... FOREIGN KEY` and no `KEY` clause -- the ordinary way a MySQL
 // schema is written -- `information_schema.STATISTICS` reports an index named
 // `fk_posts_user` alongside the constraint named `fk_posts_user`. A desired
@@ -501,14 +517,13 @@ func appendIndexAddition(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) {
 	diff.IndexesAdded = append(diff.IndexesAdded, ref)
 }
 
-// appendIndexRemoval records a database index the plan drops, and — when the
-// object is a UNIQUE constraint's on an engine that keeps the constraint as its
-// own catalog row — records that the drop has to be spelled as a constraint
-// drop. The two lists are parallel by construction: the second is a subset of
-// the first, keyed by the same reference.
+// appendIndexRemoval records a database index the plan drops, and — when a
+// UNIQUE constraint of the same identity enforces it — records that the object
+// is that constraint's. The two lists are parallel by construction: the second
+// is a subset of the first, keyed by the same reference.
 func appendIndexRemoval(diff *difftypes.SchemaDiff, entry databaseIndexEntry) {
 	diff.IndexesRemoved = append(diff.IndexesRemoved, entry.ref)
-	if entry.dropAsConstraint {
+	if entry.constraintBacked {
 		diff.ConstraintBackedIndexRemovals = append(
 			diff.ConstraintBackedIndexRemovals,
 			entry.ref,
@@ -603,19 +618,23 @@ func mysqlIndexDefinitionChanged(
 // columns. See [mysqlIndexDefinitionChanged] for why a key's direction is not
 // part of the comparison.
 //
-// A key the reader could not read whole is not compared at all. The MySQL
-// reader reports a functional key part -- `KEY idx ((b + 1))` -- as a part
-// missing from Columns, because the expression lives in a STATISTICS column
-// MariaDB does not have; see [types.DBIndex.KeyPartsIncomplete]. Comparing what
-// is left would find the key short by one part on every run and plan a rebuild
-// forever, on a database the pinned community binary v1.3.0 reports synced.
+// A key the reader could not read whole is compared as far as it was read. The
+// MySQL reader reports a functional key part -- `KEY idx ((b + 1))` -- as a
+// part missing from Columns, because the expression lives in a STATISTICS
+// column MariaDB does not have; see [types.DBIndex.KeyPartsIncomplete]. Reading
+// what is left as the whole key would find the key short by one part on every
+// run and plan a rebuild forever, on a database the pinned community binary
+// v1.3.0 reports synced -- but declining the comparison outright reported
+// `KEY idx_mixed (b, (b + 1))` and a desired `idx_mixed (c, (c + 1))` as the
+// same key, which is a different key by every part the reader could read. The
+// names that were read are compared; see [mysqlNamedKeyPartsContradict].
 func mysqlIndexKeyColumnsChanged(
 	generated goschema.Index,
 	database types.DBIndex,
 	semantics identifier.Semantics,
 ) bool {
 	if database.KeyPartsIncomplete {
-		return false
+		return mysqlNamedKeyPartsContradict(generated, database, semantics)
 	}
 	generatedParts := effectiveGeneratedIndexParts(generated)
 	databaseParts := effectiveDatabaseIndexParts(database)
@@ -627,6 +646,55 @@ func mysqlIndexKeyColumnsChanged(
 			semantics.ColumnIdentityKey(databaseParts[position].Name) {
 			return true
 		}
+	}
+	return false
+}
+
+// mysqlNamedKeyPartsContradict answers the only question a partly-read key can
+// answer: do the parts the reader COULD name already prove this is not the
+// desired key?
+//
+// The reader names every part except the functional ones, and it does not
+// record where in the key those sat, so the two key lists cannot be lined up by
+// position. What survives is the order of the named parts, which is enough for
+// the shape that matters: a database `KEY idx_mixed (b, (b + 1))` against a
+// desired `idx_mixed (c, (c + 1))` names `b` where the desired key names only
+// `c`, so the keys differ no matter what the unread part turns out to be. That
+// pair was reported synchronized while the comparison declined on sight of an
+// unreadable part.
+//
+// Proof runs one way only. When every named part does appear, in order, the key
+// may still differ in a part the reader could not read -- `(b, (b + 1))` against
+// a desired `(b, (c + 1))` reports no change here. Reporting one instead would
+// plan a rebuild on every run for a key that never changed, which is the
+// oscillation the incomplete-key record exists to prevent, and the rebuild
+// could not be reversed: the down direction rebuilds an index from the same
+// reader's output and would recreate the key without its expression. Reading
+// information_schema.STATISTICS.EXPRESSION is what closes that half, and it is
+// a reader change with its own dialect sweep (MariaDB has no such column).
+// Recorded in docs/conformance.md.
+func mysqlNamedKeyPartsContradict(
+	generated goschema.Index,
+	database types.DBIndex,
+	semantics identifier.Semantics,
+) bool {
+	generatedParts := effectiveGeneratedIndexParts(generated)
+	databaseParts := effectiveDatabaseIndexParts(database)
+	if len(databaseParts) > len(generatedParts) {
+		return true
+	}
+	next := 0
+	for _, databasePart := range databaseParts {
+		named := semantics.ColumnIdentityKey(databasePart.Name)
+		position := next
+		for position < len(generatedParts) &&
+			semantics.ColumnIdentityKey(generatedParts[position].Name) != named {
+			position++
+		}
+		if position == len(generatedParts) {
+			return true
+		}
+		next = position + 1
 	}
 	return false
 }

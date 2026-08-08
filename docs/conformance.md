@@ -294,20 +294,37 @@ now. A comma is a legal character in a MySQL identifier and
 11.8, which is why only the comma reaches it there). A functional key part has a
 `NULL` `COLUMN_NAME` and an `EXPRESSION` column MariaDB does not have, so the
 reader still cannot name it — it now reports the part as one it could not read
-instead of failing, and the key-column comparison declines on such an index
-rather than planning a rebuild of a key that never changed. Comparing MySQL
-expression keys is still not supported.
+instead of failing, and the key-column comparison reads what was read rather than
+treating it as the whole key, which would plan a rebuild of a key that never
+changed on every run.
+
+A partly-read key is compared as far as it was read. `KEY idx_mixed (b, (b + 1))`
+arrives as the one named column `b` plus the record of a part that could not be
+named, so a desired `idx_mixed (c, (c + 1))` is a different key by the only part
+either side can name, and the difference is reported. Proof runs one way only: a
+desired `idx_mixed (b, (c + 1))` names the same column and differs solely in the
+expression, and that pair is still reported synced. Closing it means reading
+`information_schema.STATISTICS.EXPRESSION`, which MariaDB does not have, so
+comparing a MySQL expression key remains unsupported — as does rebuilding one,
+because the down direction would recreate the key without its expression.
 
 ### A unique constraint and its index are one object, and the schema says which
 
-Every engine Ptah supports except SQL Server enforces a `UNIQUE` constraint with
-an index of the constraint's own name on the constraint's own table.
-Introspection reports that one object twice — once in the index catalog, once in
-the constraint catalog — and MySQL and MariaDB do not even have a separate
-notion to report: `ADD CONSTRAINT c UNIQUE (a)` and
-`CREATE UNIQUE INDEX c ON t (a)` leave the identical catalog row, which is why
-`schema inspect` writes MySQL uniqueness back out as `index { unique = true }`
-on both binaries and never as a constraint.
+PostgreSQL, MySQL and MariaDB enforce a `UNIQUE` constraint with an index of the
+constraint's own name on the constraint's own table. Introspection reports that
+one object twice — once in the index catalog, once in the constraint catalog —
+and MySQL and MariaDB do not even have a separate notion to report:
+`ADD CONSTRAINT c UNIQUE (a)` and `CREATE UNIQUE INDEX c ON t (a)` leave the
+identical catalog row, which is why `schema inspect` writes MySQL uniqueness
+back out as `index { unique = true }` on both binaries and never as a
+constraint.
+
+The other two engines Ptah supports do not share the name, so nothing brings the
+two representations into collision there. SQL Server keeps a `UNIQUE` constraint
+and a unique index as separate objects. SQLite backs one with an index it names
+itself: `CREATE TABLE t (a TEXT, CONSTRAINT uq_t_a UNIQUE(a))` leaves
+`sqlite_master` holding `sqlite_autoindex_t_1`, and no statement can name that
+object or the constraint that owns it.
 
 The two representations used to be compared in two pools, and the database index
 was filtered out of its pool unconditionally. The desired side is never
@@ -363,11 +380,51 @@ below are the pinned binary's own plan, matched by Ptah:
 
 Dropping the PostgreSQL one as an index answers `cannot drop index
 uq_users_email because constraint uq_users_email on table users requires it
-(SQLSTATE 2BP01)`, so the comparator marks those removals and the
-PostgreSQL-family planner renders the constraint spelling. SQL Server never
-reaches the rule — a UNIQUE constraint and a unique index are separate objects
-there — and SQLite's constraint-backed index is `sqlite_autoindex_*`, which no
-statement can name and which the comparator therefore never considers.
+(SQLSTATE 2BP01)`. The comparator therefore records **what the object is** — a
+UNIQUE constraint's — for every engine that reports it under the constraint's
+name, and each planner spells its own statement: the PostgreSQL-family planner
+drops the constraint, the MySQL and MariaDB planner keeps `DROP INDEX` and their
+plans are unchanged. SQL Server never reaches the rule, and SQLite names the
+backing index itself, so neither records anything.
+
+**The rollback restores a constraint, on every engine.** What the up direction
+dropped was a UNIQUE constraint, so `ALTER TABLE … ADD CONSTRAINT … UNIQUE` is
+what puts it back — on MySQL and MariaDB that lands the same catalog row
+`CREATE UNIQUE INDEX` would, and on PostgreSQL nothing else restores the
+`pg_constraint` row.
+
+Reversing the removal into an index addition instead restored the wrong object
+where it worked at all. Three facts govern the down direction:
+
+- The down target is the introspected schema, which omits a constraint-backed
+  index because the index is the constraint's. The index addition therefore had
+  nothing to resolve, and generation failed outright with `invalid schema diff:
+  added index users.uq_users_email at position 0 is missing or ambiguous in the
+  target schema` — measured live on PostgreSQL 17.10 and MySQL 9.7.1, where no
+  migration could be produced at all.
+- Where it did resolve, it would rebuild a plain unique index in place of the
+  constraint, leaving a catalog the migration never started from.
+- `ADD CONSTRAINT … UNIQUE` builds an index of the constraint's name, so the
+  plain index the up direction created is dropped first. Otherwise PostgreSQL
+  answers `relation "uq_users_email" already exists` (SQLSTATE 42P07) and MySQL
+  `Error 1061 (42000): Duplicate key name 'uq_users_email'`.
+
+Applied end to end against a live `CONSTRAINT uq_users_email UNIQUE (email)`, the
+up leaves a plain index and no constraint row, the down restores both, and a
+second comparison against the post-up database reports synced:
+
+| Target | up | catalog after up | down | catalog after down |
+| --- | --- | --- | --- | --- |
+| PostgreSQL 17.10 | exit 0 | `uq_users_email` a plain index, no `pg_constraint` row | exit 0 | `UNIQUE (email)` and its unique index, as before the up |
+| MySQL 9.7.1 | exit 0 | `NON_UNIQUE=1`, no `TABLE_CONSTRAINTS` row | exit 0 | `NON_UNIQUE=0` and the `UNIQUE` row, as before the up |
+
+**Losing the uniqueness is a destructive change, whichever statement says so.**
+Replacing a unique key with a plain index deletes a data guarantee, and it was
+classified only as `indexes_removed` — a warning, which passed
+`--check-destructive` and every drift threshold keyed on destructive findings, on
+all three engines. The diff now reports it as `unique_protections_removed`, and
+on MySQL and MariaDB — where the removal is spelled `DROP INDEX`, exactly like
+dropping an access path — the statement itself is classified destructive.
 
 ## Reports
 

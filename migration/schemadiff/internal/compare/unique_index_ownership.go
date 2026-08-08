@@ -30,11 +30,11 @@ func generatedIndexIdentities(
 // constraint names the same object as an index the desired state declares, and
 // so must be left to index comparison instead of compared again here.
 //
-// Every engine Ptah supports except SQL Server enforces a UNIQUE constraint
-// with an index of the constraint's own name on the constraint's own table, and
-// introspection reports that one object twice: once in the index catalog, once
-// in the constraint catalog. On MySQL and MariaDB there is not even a separate
-// notion to report --
+// PostgreSQL, MySQL and MariaDB enforce a UNIQUE constraint with an index of
+// the constraint's own name on the constraint's own table, and introspection
+// reports that one object twice: once in the index catalog, once in the
+// constraint catalog. On MySQL and MariaDB there is not even a separate notion
+// to report --
 //
 //	ALTER TABLE users ADD CONSTRAINT uq_users_email UNIQUE (email)
 //	CREATE UNIQUE INDEX uq_users_email ON users (email)
@@ -69,16 +69,23 @@ func generatedIndexIdentities(
 // two pools would state one object's replacement as two objects' lifecycles,
 // with no order between the drop and the create that the two pools agree on.
 //
-// The replacement's drop is still spelled per engine, because the object is
-// one catalog row on MySQL and MariaDB and a constraint owning an index
-// everywhere else. That is decided at removal time rather than here; see
-// [uniqueConstraintOwnsTheIndexObject]. On PostgreSQL 17.10 the drop is
+// The object stays the constraint's for both directions of the plan, which is
+// recorded at removal time rather than here; see
+// [uniqueConstraintEnforcesTheIndex]. The drop is spelled per engine -- one
+// catalog row on MySQL and MariaDB, a constraint owning an index everywhere
+// else, so on PostgreSQL 17.10 it is
 // `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`, which is what the
-// pinned community binary v1.3.0 plans and the only spelling the server takes.
+// pinned community binary v1.3.0 plans and the only spelling the server takes
+// -- and the down direction restores the constraint on every engine.
 //
 // SQL Server is excluded because a UNIQUE constraint and a unique index are
 // separate objects there, which is the same reason it is excluded from
-// [constraintBackedIndexIdentities].
+// [constraintBackedIndexIdentities]. SQLite needs no exclusion and gets none:
+// it names a UNIQUE constraint's backing index itself --
+// `CREATE TABLE t (a TEXT, CONSTRAINT uq_t_a UNIQUE(a))` leaves
+// `sqlite_autoindex_t_1` in sqlite_master -- so the two representations never
+// share an identity to hand off, and the reader's autoindex rows are dropped
+// before the pools are built ([unaddressableDatabaseIndex]).
 func uniqueConstraintOwnedByDeclaredIndex(
 	constraint types.DBConstraint,
 	dialect string,

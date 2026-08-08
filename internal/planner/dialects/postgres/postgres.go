@@ -954,12 +954,20 @@ func (p *Planner) removeIndexes(
 	// composed set) actually changes the plan.
 	guarded := p.capabilities().Has(capability.DropIndexIfExists)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
+	rebuiltAsConstraint := diff.IndexRemovalsRebuiltAsUniqueConstraints()
 	indexAdditions := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff.IndexAdditions(),
 	)
 	for _, ref := range diff.IndexRemovals() {
 		if indexAdditions.Contains(ref) {
+			continue
+		}
+		// A removal a UNIQUE constraint addition rebuilds was already emitted
+		// ahead of that addition, which is the only order the server accepts;
+		// dropping it again here would land after the add and delete the index
+		// the constraint now needs.
+		if _, rebuilt := rebuiltAsConstraint[ref]; rebuilt {
 			continue
 		}
 		if _, ownedByConstraint := constraintBacked[ref]; ownedByConstraint {
@@ -2074,7 +2082,14 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	state := newConstraintPlanState(diff)
 
 	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state.removalByTableName, state.handled, state.droppedForModify)
-	result = p.addCheckAndUniqueConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state.removalByTableName, state.handled, state.droppedForModify)
+	result = p.addCheckAndUniqueConstraintsWithTables(
+		result,
+		diff.ConstraintsAddedWithTables,
+		state.removalByTableName,
+		state.handled,
+		state.droppedForModify,
+		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
+	)
 	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, nonForeignKeyConstraints)
 	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
 	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, foreignKeyConstraints)
@@ -2287,6 +2302,7 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo,
 	handled map[string]struct{},
 	droppedForModify map[constraintHostKey]struct{},
+	rebuiltIndexes map[types.IndexRef]struct{},
 ) []ast.Node {
 	for _, add := range additions {
 		constraint := constraintAdditionNode(add)
@@ -2297,6 +2313,7 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 		if _, modified := removalByTableName[key]; modified {
 			result = p.emitModifyDrop(result, add, droppedForModify)
 		}
+		result = p.dropIndexRebuiltAsConstraint(result, add, rebuiltIndexes)
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},
@@ -2304,6 +2321,32 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 		handled[add.Name] = struct{}{}
 	}
 	return result
+}
+
+// dropIndexRebuiltAsConstraint drops the index this UNIQUE constraint addition
+// is about to rebuild, before the addition rather than after it.
+//
+// ADD CONSTRAINT ... UNIQUE builds an index named after the constraint, so an
+// index of that name on that table has to be gone first: PostgreSQL 17.10
+// answers `relation "uq_users_email" already exists (SQLSTATE 42P07)`
+// otherwise. The pipeline emits constraint additions before index removals, so
+// the drop is emitted here and [Planner.removeIndexes] leaves it alone; see
+// [types.SchemaDiff.IndexRemovalsRebuiltAsUniqueConstraints] for the shape that
+// produces the collision.
+func (p *Planner) dropIndexRebuiltAsConstraint(
+	result []ast.Node,
+	add types.ConstraintAdditionInfo,
+	rebuiltIndexes map[types.IndexRef]struct{},
+) []ast.Node {
+	ref := types.IndexRef{Name: add.Name, TableName: add.TableName}
+	if _, rebuilt := rebuiltIndexes[ref]; !rebuilt {
+		return result
+	}
+	dropIndexNode := ast.NewDropIndex(ref.Name).SetTable(ref.TableName)
+	if p.capabilities().Has(capability.DropIndexIfExists) {
+		dropIndexNode.SetIfExists()
+	}
+	return append(result, dropIndexNode)
 }
 
 func constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNode {

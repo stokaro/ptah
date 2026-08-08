@@ -859,6 +859,7 @@ func (p *Planner) addNewIndexes(
 		diff.IndexRemovals(),
 	)
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	for _, ref := range diff.IndexAdditions() {
 		index, err := indexes.Resolve(ref)
 		if err != nil {
@@ -868,6 +869,9 @@ func (p *Planner) addNewIndexes(
 			dropIndexNode := ast.NewDropIndex(removal.Name).SetTable(removal.TableName)
 			if guardedDrops {
 				dropIndexNode.SetIfExists()
+			}
+			if _, ownedByConstraint := constraintBacked[removal]; ownedByConstraint {
+				dropIndexNode.SetEnforcesUniqueConstraint()
 			}
 			result = append(result, dropIndexNode)
 		}
@@ -894,13 +898,25 @@ func (p *Planner) removeIndexes(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff.IndexAdditions(),
 	)
+	rebuiltAsConstraint := diff.IndexRemovalsRebuiltAsUniqueConstraints()
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	for _, ref := range diff.IndexRemovals() {
 		if replacements.Contains(ref) {
+			continue
+		}
+		// A removal a UNIQUE constraint addition rebuilds was already emitted
+		// ahead of that addition, which is the only order the server accepts;
+		// dropping it again here would land after the add and delete the key
+		// the constraint now is.
+		if _, rebuilt := rebuiltAsConstraint[ref]; rebuilt {
 			continue
 		}
 		dropIndexNode := ast.NewDropIndex(ref.Name).SetTable(ref.TableName)
 		if guarded {
 			dropIndexNode.SetIfExists()
+		}
+		if _, ownedByConstraint := constraintBacked[ref]; ownedByConstraint {
+			dropIndexNode.SetEnforcesUniqueConstraint()
 		}
 		result = append(result, dropIndexNode)
 	}
@@ -1288,7 +1304,14 @@ func (p *Planner) addNewConstraints(
 	maps.Copy(state.droppedForModify, bracketDropped)
 
 	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
-	result = p.addCheckAndUniqueConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state.removalByTableName, state.handled, state.droppedForModify)
+	result = p.addCheckAndUniqueConstraintsWithTables(
+		result,
+		diff.ConstraintsAddedWithTables,
+		state.removalByTableName,
+		state.handled,
+		state.droppedForModify,
+		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
+	)
 	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, nonForeignKeyConstraints)
 	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
 	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, foreignKeyConstraints)
@@ -1499,6 +1522,7 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo,
 	handled map[string]struct{},
 	droppedForModify map[constraintHostKey]struct{},
+	rebuiltIndexes map[types.IndexRef]struct{},
 ) []ast.Node {
 	for _, add := range additions {
 		constraint := p.constraintAdditionNode(add)
@@ -1509,6 +1533,7 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 		if info, modified := removalByTableName[key]; modified {
 			result = p.appendScopedDrop(result, info, droppedForModify)
 		}
+		result = p.dropIndexRebuiltAsConstraint(result, add, rebuiltIndexes)
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},
@@ -1516,6 +1541,31 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 		handled[add.Name] = struct{}{}
 	}
 	return result
+}
+
+// dropIndexRebuiltAsConstraint drops the key this UNIQUE constraint addition is
+// about to rebuild, before the addition rather than after it.
+//
+// A unique key and its constraint are one catalog row here, so
+// `ADD CONSTRAINT ... UNIQUE` collides with a key of that name on that table:
+// MySQL 9.7.1 answers `Error 1061 (42000): Duplicate key name 'uq_users_email'`.
+// The pipeline emits constraint additions before index removals, so the drop is
+// emitted here and [Planner.removeIndexes] leaves it alone; see
+// [types.SchemaDiff.IndexRemovalsRebuiltAsUniqueConstraints].
+func (p *Planner) dropIndexRebuiltAsConstraint(
+	result []ast.Node,
+	add types.ConstraintAdditionInfo,
+	rebuiltIndexes map[types.IndexRef]struct{},
+) []ast.Node {
+	ref := types.IndexRef{Name: add.Name, TableName: add.TableName}
+	if _, rebuilt := rebuiltIndexes[ref]; !rebuilt {
+		return result
+	}
+	dropIndexNode := ast.NewDropIndex(ref.Name).SetTable(ref.TableName)
+	if p.capabilities().Has(capability.DropIndexIfExists) {
+		dropIndexNode.SetIfExists()
+	}
+	return append(result, dropIndexNode)
 }
 
 func (p *Planner) constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNode {

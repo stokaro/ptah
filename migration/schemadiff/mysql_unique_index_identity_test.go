@@ -396,33 +396,32 @@ func TestCompareWithDialect_DeclaredUniqueConstraintKeepsConstraintOwnership(t *
 	}
 }
 
-// TestCompareWithDialect_ConstraintBackedIndexRemovalCarriesItsSpelling covers
-// what a removal means when the object it names is a UNIQUE constraint's.
+// TestCompareWithDialect_ConstraintBackedIndexRemovalIsRecordedEverywhere
+// covers what a removal means when the object it names is a UNIQUE
+// constraint's.
 //
 // The desired state below spells the object as a plain index, so it is a real
 // change and index comparison states it as a replacement -- one object, dropped
-// and recreated -- on every dialect. The statement that drops it is not the
-// same everywhere. On MySQL and MariaDB the unique key and its constraint are
-// one catalog row and `DROP INDEX` removes it, which is what the pinned
-// community binary v1.3.0 plans there. On PostgreSQL 17.10 the same spelling
-// answers `cannot drop index uq_users_email because constraint uq_users_email
-// on table users requires it (SQLSTATE 2BP01)`, and the pinned binary plans
-// `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"` instead, so the
-// comparator marks the removal for the planner.
-func TestCompareWithDialect_ConstraintBackedIndexRemovalCarriesItsSpelling(t *testing.T) {
+// and recreated -- on every dialect. The comparator records the fact that a
+// UNIQUE constraint enforces the object, not a statement: what removes it
+// differs per engine, and what RESTORES it does not. On MySQL and MariaDB the
+// unique key and its constraint are one catalog row and `DROP INDEX` removes
+// it, which is what the pinned community binary v1.3.0 plans there; on
+// PostgreSQL 17.10 that spelling answers `cannot drop index uq_users_email
+// because constraint uq_users_email on table users requires it (SQLSTATE
+// 2BP01)` and the pinned binary plans `ALTER TABLE "users" DROP CONSTRAINT
+// "uq_users_email"`. Both planners read this one list and spell their own drop;
+// the down direction reads it on every engine, because a rollback that puts an
+// index back where a UNIQUE constraint was restores the wrong object.
+func TestCompareWithDialect_ConstraintBackedIndexRemovalIsRecordedEverywhere(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
-		want    []difftypes.IndexRef
 	}{
-		{name: "mysql", dialect: "mysql", want: nil},
-		{name: "mariadb", dialect: "mariadb", want: nil},
-		{
-			name:    "postgres",
-			dialect: "postgres",
-			want:    []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
-		},
+		{name: "mysql", dialect: "mysql"},
+		{name: "mariadb", dialect: "mariadb"},
+		{name: "postgres", dialect: "postgres"},
 	}
 
 	for _, test := range tests {
@@ -440,7 +439,10 @@ func TestCompareWithDialect_ConstraintBackedIndexRemovalCarriesItsSpelling(t *te
 				Name:      "uq_users_email",
 				TableName: "users",
 			}})
-			c.Assert(diff.ConstraintBackedIndexRemovals, qt.DeepEquals, test.want)
+			c.Assert(diff.ConstraintBackedIndexRemovals, qt.DeepEquals, []difftypes.IndexRef{{
+				Name:      "uq_users_email",
+				TableName: "users",
+			}})
 		})
 	}
 }
@@ -470,15 +472,17 @@ func TestCompareWithDialect_PlainIndexRemovalIsNotConstraintBacked(t *testing.T)
 	})
 }
 
-// TestCompareWithDialect_MySQLKeyWithAnUnreadablePartIsNotCompared covers a
+// TestCompareWithDialect_MySQLKeyWithAnUnreadablePartDoesNotChurn covers a
 // functional key part on MySQL and MariaDB. `KEY idx_mixed (b, (b + 1))` is
 // reported by information_schema.STATISTICS as one named column and one row
 // whose COLUMN_NAME is NULL, and the reader cannot name the second part -- the
-// expression lives in a STATISTICS column MariaDB does not have. Comparing what
-// it can see would find the key short by one part against the desired state
-// every run and plan a rebuild forever, on a database MySQL 9.7.1 and the
-// pinned community binary v1.3.0 both call unchanged.
-func TestCompareWithDialect_MySQLKeyWithAnUnreadablePartIsNotCompared(t *testing.T) {
+// expression lives in a STATISTICS column MariaDB does not have. Reading what
+// it can see as the whole key would find the key short by one part against the
+// desired state every run and plan a rebuild forever, on a database MySQL 9.7.1
+// and the pinned community binary v1.3.0 both call unchanged. The named part
+// here is the desired key's own, so nothing is contradicted and nothing is
+// planned.
+func TestCompareWithDialect_MySQLKeyWithAnUnreadablePartDoesNotChurn(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name    string
@@ -522,6 +526,61 @@ func TestCompareWithDialect_MySQLKeyReadWholeIsStillCompared(t *testing.T) {
 				expressionKeyDatabaseSchema(false),
 				test.dialect,
 			)
+
+			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
+				Name:      "idx_mixed",
+				TableName: "t4",
+			}})
+			c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
+				Name:      "idx_mixed",
+				TableName: "t4",
+			}})
+		})
+	}
+}
+
+// TestCompareWithDialect_MySQLUnreadablePartDoesNotHideANamedDifference is the
+// other half of declining a key the reader could not read whole: declining on
+// sight of an unreadable part reported two keys as the same key when every part
+// the reader COULD read said otherwise.
+//
+// The database key is `KEY idx_mixed (b, (b + 1))`, read as the one named column
+// `b` plus the record of a part that could not be named. The desired key is
+// `idx_mixed (c, (c + 1))` -- a different column and a different expression.
+// It was reported synchronized. The named part is compared now, so the
+// difference is stated as the replacement it is.
+func TestCompareWithDialect_MySQLUnreadablePartDoesNotHideANamedDifference(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "mysql", dialect: "mysql"},
+		{name: "mariadb", dialect: "mariadb"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			generated := expressionKeyGeneratedSchema()
+			generated.Fields = append(generated.Fields, goschema.Field{
+				StructName: "T4",
+				Name:       "c",
+				Type:       "INT",
+				Nullable:   false,
+			})
+			generated.Indexes[0].Parts = []goschema.IndexPart{
+				{Name: "c"},
+				{Expr: "(`c` + 1)"},
+			}
+			database := expressionKeyDatabaseSchema(true)
+			database.Tables[0].Columns = append(database.Tables[0].Columns, types.DBColumn{
+				Name:       "c",
+				DataType:   "int",
+				ColumnType: "int",
+				IsNullable: "NO",
+			})
+
+			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "idx_mixed",
