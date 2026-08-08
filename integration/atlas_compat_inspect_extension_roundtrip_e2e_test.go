@@ -126,6 +126,17 @@ type atlasCompatExtensionRoundTripCase struct {
 // never classes. The third is the control that keeps the fix from becoming
 // "pin the extension to every GIN index": jsonb and tsvector have core GIN
 // classes, and that document must still come out with no extension block.
+//
+// The last row is that fix's other control, and the shape it first got wrong.
+// Carrying the edge is not the same as being in the document: renderTables
+// drops an index whose table this render does not write and reports it as an
+// orphan, and a materialized view's index is exactly that -- pg_index resolves
+// its operator classes like any other index, and a `materialized` block carries
+// no index, so it can never be rendered. Keeping btree_gin for it produced a
+// document with no index block anywhere that the pinned Atlas community binary
+// v1.3.0 refused, `postgres: extensions are not supported by this version`,
+// exit 1, where the same document without the block is read at exit 0 -- and
+// both apply at exit 0, so the block bought nothing at all.
 func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 	adminURL := requirePostgresE2EDatabaseURL(t)
 
@@ -314,6 +325,27 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			// and so does keeping every extension with a non-empty member list.
 			why: "jsonb and tsvector have core GIN operator classes, so these indexes resolve to" +
 				" nothing btree_gin supplies and the document materializes without it",
+		},
+		{
+			name:      "index resolving to the extension on a relation this render cannot write",
+			extension: "btree_gin",
+			seed: "CREATE TABLE src (id integer PRIMARY KEY, n integer NOT NULL);" +
+				" CREATE MATERIALIZED VIEW mv AS SELECT id, n FROM src;" +
+				" CREATE INDEX mv_gin ON mv USING gin (n int4_ops)",
+			wantBlock: false,
+			// The control in the other direction: the edge is real and the
+			// object carrying it reaches no document. A materialized view's
+			// index is read out of pg_index with its resolved operator classes
+			// like any other, and a `materialized` block carries no index, so
+			// the renderer reports `index mv_gin: index cannot be rendered
+			// because the target table is absent from the exported schema` and
+			// writes nothing for it. Keeping btree_gin here cost the file the
+			// whole compatibility this suppression exists to produce: the
+			// pinned Atlas community binary v1.3.0 answered `postgres:
+			// extensions are not supported by this version`, exit 1, on a
+			// document that applies at exit 0 with or without the block.
+			why: "the only object resolving to btree_gin is one this render reports it wrote nowhere," +
+				" so the document neither names the extension nor needs it",
 		},
 	}
 

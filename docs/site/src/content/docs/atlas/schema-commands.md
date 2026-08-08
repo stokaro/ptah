@@ -282,6 +282,21 @@ of those documents its compatibility. The catalog separates them exactly: a GIN
 index over `jsonb` resolves to nothing an extension supplies, and its document
 still comes out with no `extension` block.
 
+Only an index or constraint the document actually carries counts. Inspection
+drops one whose table it does not export, reports it, and writes nothing for
+it — a materialized view's index is the ordinary case, because PostgreSQL
+resolves its operator classes in `pg_index` like any other index while a
+`materialized` block carries none:
+
+```console
+warning: index mv_gin: index cannot be rendered because the target table is absent from the exported schema
+```
+
+Keeping the extension for that index would spend the whole document on
+something the file does not contain. The community binary refuses any
+PostgreSQL file declaring an `extension` block, and the document applies with
+or without it, so the block costs the compatibility and buys nothing.
+
 An extension nothing depends on is still omitted, and the community binary
 reads that document at exit 0. Set `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` when the
 output has to carry every block regardless.

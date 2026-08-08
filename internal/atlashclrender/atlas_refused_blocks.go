@@ -253,9 +253,10 @@ func (r *renderer) omitRefused(path, block string, dependency func() blockDepend
 // This is the half [documentNamesAny] cannot answer. It reads no text: the
 // reader recorded, per index and per exclusion constraint, which extensions
 // that object's operator classes and access method belong to, so the answer is
-// a catalog fact rather than a guess about a word. An object dropped by a
-// selector takes its requirement with it, which is why the edge is carried on
-// the object and not on the extension.
+// a catalog fact rather than a guess about a word. An object this render leaves
+// out takes its requirement with it -- whether a selector dropped it or
+// [renderTables] found no table to write it into -- which is why the edge is
+// carried on the object and not on the extension.
 func (r *renderer) documentRequiresExtension(name string) bool {
 	if r.requiredExtensions == nil {
 		r.requiredExtensions = collectRequiredExtensions(r.db)
@@ -263,8 +264,8 @@ func (r *renderer) documentRequiresExtension(name string) bool {
 	return r.requiredExtensions[strings.ToLower(strings.TrimSpace(name))]
 }
 
-// collectRequiredExtensions gathers every extension the surviving document's
-// objects resolve to without naming.
+// collectRequiredExtensions gathers every extension an index or constraint
+// THIS RENDER WRITES resolves to without naming.
 //
 // Only indexes and constraints carry the edge, because pg_index is where an
 // operator class is resolved: a plain index, and the index PostgreSQL builds
@@ -276,6 +277,28 @@ func (r *renderer) documentRequiresExtension(name string) bool {
 // image, the extension-supplied default classes on core types are all gin, gist
 // or bloom classes, and none is btree. Should one appear, its column would have
 // to be a core type and the edge would have to be carried on the table.
+//
+// Being in db.Indexes is not the same as being in the document, which is why
+// each object is asked the question [renderTables] asks -- through the same
+// [resolveTable], so the two cannot answer differently. An index whose table
+// this render does not write is reported as an orphan and emitted nowhere, so
+// counting it keeps an extension block for an index the file does not contain,
+// and the pinned Atlas community binary v1.3.0 refuses ANY postgres file
+// declaring an extension block. That is the false positive [documentNamesAny]
+// names: the whole result this suppression exists to produce, spent on nothing.
+// The shape is ordinary rather than hypothetical -- a materialized view's index
+// is read from pg_index with its resolved operator classes and can never be
+// rendered, because a `materialized` block carries no index. Measured on
+// PostgreSQL 17.10 (stokaro/ptah#1286):
+//
+//	CREATE EXTENSION btree_gin;
+//	CREATE TABLE src (id integer PRIMARY KEY, n integer NOT NULL);
+//	CREATE MATERIALIZED VIEW mv AS SELECT id, n FROM src;
+//	CREATE INDEX mv_gin ON mv USING gin (n int4_ops);
+//
+// emits a document with no index block anywhere; kept, the pinned binary
+// refused it with `postgres: extensions are not supported by this version`,
+// while both documents applied at exit 0.
 func collectRequiredExtensions(db *goschema.Database) map[string]bool {
 	required := map[string]bool{}
 	add := func(names []string) {
@@ -287,9 +310,15 @@ func collectRequiredExtensions(db *goschema.Database) map[string]bool {
 		}
 	}
 	for _, index := range db.Indexes {
+		if resolveTable(db.Tables, index.StructName, index.TableName) == nil {
+			continue
+		}
 		add(index.RequiresExtensions)
 	}
 	for _, constraint := range db.Constraints {
+		if resolveTable(db.Tables, constraint.StructName, constraint.Table) == nil {
+			continue
+		}
 		add(constraint.RequiresExtensions)
 	}
 	return required

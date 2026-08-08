@@ -499,6 +499,83 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNoIndexResolvesTo(t *testing.
 		"omitted from Atlas-compatible schema inspect output")
 }
 
+// TestRenderInspectedForAtlasCLIOmitsAnExtensionOnlyAnOrphanObjectResolvesTo
+// is the other half of the same control: carrying the edge is not the same as
+// being in the document.
+//
+// renderTables drops an index or a constraint whose table this render does not
+// write, reports it as an orphan, and emits nothing at all for it. A
+// materialized view's index is that shape, and an ordinary one: PostgreSQL
+// stores it in pg_index with its resolved operator classes, and a `materialized`
+// block carries no index, so it can never be rendered. Measured on PostgreSQL
+// 17.10,
+//
+//	CREATE EXTENSION btree_gin;
+//	CREATE TABLE src (id integer PRIMARY KEY, n integer NOT NULL);
+//	CREATE MATERIALIZED VIEW mv AS SELECT id, n FROM src;
+//	CREATE INDEX mv_gin ON mv USING gin (n int4_ops);
+//
+// inspects to a document with no index block anywhere. Keeping btree_gin for it
+// contradicted the next line of the same stderr -- `index mv_gin: index cannot
+// be rendered because the target table is absent from the exported schema` --
+// and spent on nothing the only thing this suppression exists to produce: the
+// pinned Atlas community binary v1.3.0 read the document at exit 1, `postgres:
+// extensions are not supported by this version`, where the same document
+// without the block is read at exit 0, and both applied at exit 0
+// (stokaro/ptah#1286).
+//
+// Both arms are here because the collector and renderTables have to ask one
+// question, not two: an arm with no test is where the next divergence lands.
+func TestRenderInspectedForAtlasCLIOmitsAnExtensionOnlyAnOrphanObjectResolvesTo(t *testing.T) {
+	tests := []struct {
+		name       string
+		database   func() *goschema.Database
+		block      string
+		blockPath  string
+		absentName string
+		orphanPath string
+	}{
+		{
+			name:       "an index whose table this render does not write",
+			database:   orphanOpclassIndexDatabase,
+			block:      "extension \"btree_gin\"",
+			blockPath:  "extensions.btree_gin",
+			absentName: "mv_gin",
+			orphanPath: "index mv_gin",
+		},
+		{
+			name:       "a constraint whose table this render does not write",
+			database:   orphanOpclassConstraintDatabase,
+			block:      "extension \"btree_gist\"",
+			blockPath:  "extensions.btree_gist",
+			absentName: "booking_room_during_excl",
+			orphanPath: "constraint booking_room_during_excl",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(
+				test.database(), platform.Postgres, "public",
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(result.Data), qt.Not(qt.Contains), test.absentName,
+				qt.Commentf("the object carrying the requirement is not in the document"))
+			c.Assert(string(result.Data), qt.Not(qt.Contains), test.block,
+				qt.Commentf("an extension kept for an object the document does not contain costs the whole file"))
+			c.Assert(diagnosticMessageFor(result.Diagnostics, test.blockPath), qt.Contains,
+				"omitted from Atlas-compatible schema inspect output")
+			c.Assert(diagnosticMessageFor(result.Diagnostics, test.orphanPath), qt.Contains,
+				"cannot be rendered because the target table is absent from the exported schema",
+				qt.Commentf("the same render already reports that it wrote nothing for this object"))
+		})
+	}
+}
+
 // TestRenderInspectedForAtlasCLIOutputIsSelfConsistent is the invariant the
 // whole reshape exists to hold: whatever the surface decides to omit, the
 // document it emits still describes itself.
@@ -663,6 +740,61 @@ func implicitOpclassConstraintDatabase() *goschema.Database {
 			RequiresExtensions: []string{"btree_gist"},
 		}},
 	}
+}
+
+// orphanOpclassIndexDatabase is implicitOpclassIndexDatabase's dependency
+// arriving on an object no table in this render owns: the index of a
+// materialized view.
+//
+// The reader resolves a materialized view's index out of pg_index exactly like
+// a table's, operator classes and all, so the edge is real. What it can never
+// do is reach the document, because a `materialized` block carries no index and
+// the view is not a table: renderTables finds nothing to write the index into
+// and reports it as an orphan.
+func orphanOpclassIndexDatabase() *goschema.Database {
+	return &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:     "btree_gin",
+			Provides: []string{"gin_btree_consistent", "gin_extract_query_int4", "gin_extract_value_int4"},
+		}},
+		Tables: []goschema.Table{{StructName: "Src", Name: "src", Schema: "public"}},
+		Fields: []goschema.Field{
+			{StructName: "Src", Name: "id", Type: "integer", Primary: true},
+			{StructName: "Src", Name: "n", Type: "integer"},
+		},
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "Mv",
+			Name:       "mv",
+			Body:       "SELECT id, n FROM src",
+		}},
+		Indexes: []goschema.Index{{
+			StructName:         "Mv",
+			Name:               "mv_gin",
+			TableName:          "public.mv",
+			Fields:             []string{"n"},
+			Type:               "gin",
+			RequiresExtensions: []string{"btree_gin"},
+		}},
+	}
+}
+
+// orphanOpclassConstraintDatabase is the constraint arm of the same shape:
+// implicitOpclassConstraintDatabase's exclusion constraint left hanging on a
+// table this render does not write, with an unrelated table kept so the
+// document is a document rather than a lone block.
+//
+// groupConstraintsByTable reports it through the same orphan branch the index
+// arm goes through, which is the point of the row: the collector and
+// renderTables have to agree for both object kinds, and an arm with no test is
+// where the next divergence lands.
+func orphanOpclassConstraintDatabase() *goschema.Database {
+	db := implicitOpclassConstraintDatabase()
+	db.Tables = []goschema.Table{{StructName: "Src", Name: "src", Schema: "public"}}
+	db.Fields = []goschema.Field{
+		{StructName: "Src", Name: "id", Type: "integer", Primary: true},
+	}
+	db.Constraints[0].Table = "public.booking"
+	return db
 }
 
 // inspectedRichDatabase builds an IR carrying one object of every construct the
