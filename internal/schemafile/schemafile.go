@@ -65,24 +65,55 @@ func Load(rawURL string, opts Options) (*goschema.Database, error) {
 	return LoadPath(path, opts)
 }
 
-// LoadPath reads one local schema file from a resolved filesystem path.
+// LoadPath reads one local schema source from a resolved filesystem path: a
+// single schema file, or a directory of schema files (see [loadSchemaDir]).
 func LoadPath(path string, opts Options) (*goschema.Database, error) {
-	resolved, err := pathguard.ResolveCLIPath(path)
+	resolved, isDir, err := statSchemaPath(path)
 	if err != nil {
-		return nil, fmt.Errorf("resolve schema file path: %w", err)
+		return nil, err
 	}
+	if isDir {
+		return loadSchemaDir(resolved, opts)
+	}
+	return loadSchemaFile(resolved, opts)
+}
 
+// loadSchemaDirEntry reads one entry of a schema directory.
+//
+// It exists so a directory source cannot recurse: an entry that turns out to be
+// a directory refuses here instead of being read as another schema directory.
+// That covers the case [os.ReadDir] cannot see, a symlink to a directory, which
+// it reports as a symlink rather than as a directory.
+func loadSchemaDirEntry(path string, opts Options) (*goschema.Database, error) {
+	resolved, isDir, err := statSchemaPath(path)
+	if err != nil {
+		return nil, err
+	}
+	if isDir {
+		return nil, isDirectoryError(resolved)
+	}
+	return loadSchemaFile(resolved, opts)
+}
+
+// statSchemaPath resolves a caller-supplied path through the CLI path guard and
+// reports whether it names a directory.
+func statSchemaPath(path string) (resolved string, isDir bool, err error) {
+	resolved, err = pathguard.ResolveCLIPath(path)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve schema file path: %w", err)
+	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("schema file does not exist: %s", resolved)
+			return "", false, fmt.Errorf("schema file does not exist: %s", resolved)
 		}
-		return nil, fmt.Errorf("stat schema file: %w", err)
+		return "", false, fmt.Errorf("stat schema file: %w", err)
 	}
-	if info.IsDir() {
-		return nil, fmt.Errorf("schema file is a directory: %s", resolved)
-	}
+	return resolved, info.IsDir(), nil
+}
 
+// loadSchemaFile reads one schema file, chosen by extension.
+func loadSchemaFile(resolved string, opts Options) (*goschema.Database, error) {
 	switch strings.ToLower(filepath.Ext(resolved)) {
 	case ".hcl":
 		return atlashcl.ParseFileWithOptions(resolved, atlashcl.Options{
@@ -96,6 +127,104 @@ func LoadPath(path string, opts Options) (*goschema.Database, error) {
 	default:
 		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, and .sql are supported", filepath.Ext(resolved))
 	}
+}
+
+// dirSQLExtension and dirHCLExtension are the two mutually exclusive formats a
+// schema DIRECTORY may hold.
+//
+// A directory is deliberately narrower than a single file, which also accepts
+// .yaml and .yml: the pinned Atlas community binary v1.3.0 reads a directory of
+// .sql or of .hcl and reports `contains neither SQL nor HCL files` otherwise,
+// and this surface must not accept a directory that binary refuses. A YAML
+// schema is still a schema source — one file at a time.
+const (
+	dirSQLExtension = ".sql"
+	dirHCLExtension = ".hcl"
+)
+
+// loadSchemaDir reads a directory of schema files as one desired state.
+//
+// The rules are measured against the pinned Atlas community binary v1.3.0 on
+// SQLite, one fixture per rule:
+//
+//   - a directory of .sql files loads in filename order;
+//   - a directory of .hcl files loads the same way;
+//   - a directory holding both refuses as ambiguous, naming the first of each;
+//   - files with any other extension are ignored, so a README next to the
+//     schema costs nothing;
+//   - a directory with neither refuses;
+//   - a subdirectory refuses — there is no recursion.
+//
+// The subdirectory rule is applied to BOTH formats, which is one deliberate
+// divergence: that binary refuses a subdirectory inside a SQL directory and
+// silently ignores one inside an HCL directory. Silently ignoring a directory
+// that may hold schema files is the behavior worth not copying, and refusing
+// can never accept a source that binary rejects.
+//
+// atlas.sum still wins: a directory carrying one is a migration directory on
+// both surfaces, replayed rather than read, and saying so here keeps the two
+// spellings from disagreeing when this loader is reached directly.
+func loadSchemaDir(dir string, opts Options) (*goschema.Database, error) {
+	if _, err := os.Stat(filepath.Join(dir, atlasSumFileName)); err == nil {
+		return nil, fmt.Errorf(
+			"%q is a migration directory (it contains %s), not a schema directory",
+			filepath.Base(dir), atlasSumFileName,
+		)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read schema directory: %w", err)
+	}
+	// os.ReadDir sorts by filename, which is the order the files are merged in.
+	var sqlNames, hclNames, subdirNames []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			subdirNames = append(subdirNames, entry.Name())
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(entry.Name())) {
+		case dirSQLExtension:
+			sqlNames = append(sqlNames, entry.Name())
+		case dirHCLExtension:
+			hclNames = append(hclNames, entry.Name())
+		}
+	}
+	if len(sqlNames) > 0 && len(hclNames) > 0 {
+		return nil, fmt.Errorf("ambiguous schema: both SQL and HCL files found: %q, %q", sqlNames[0], hclNames[0])
+	}
+	names := sqlNames
+	if len(names) == 0 {
+		names = hclNames
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("%q contains neither SQL nor HCL files", filepath.Base(dir))
+	}
+	if len(subdirNames) > 0 {
+		return nil, isDirectoryError(filepath.Join(dir, subdirNames[0]))
+	}
+
+	merged := &goschema.Database{}
+	for _, name := range names {
+		db, err := loadSchemaDirEntry(filepath.Join(dir, name), opts)
+		if err != nil {
+			return nil, err
+		}
+		appendDatabase(merged, db)
+	}
+	goschema.Finalize(merged)
+	return merged, nil
+}
+
+// atlasSumFileName is the marker that makes a directory a migration directory
+// rather than a schema directory. It is spelled here rather than imported so
+// this package keeps no dependency on the migration-sum package.
+const atlasSumFileName = "atlas.sum"
+
+// isDirectoryError reports a path that had to be a file, naming it the way the
+// pinned community binary does: the parent directory and the entry, not the
+// absolute path.
+func isDirectoryError(path string) error {
+	return fmt.Errorf("read %s: is a directory", filepath.Join(filepath.Base(filepath.Dir(path)), filepath.Base(path)))
 }
 
 // LoadAll reads all schema files and merges them into one database IR.
