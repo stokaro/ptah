@@ -84,7 +84,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	}
 
 	// Get database info
-	info, versionSpecific, err := getDatabaseInfoWithCapabilities(
+	info, resolution, err := getDatabaseInfoWithCapabilities(
 		ctx,
 		db,
 		dialect,
@@ -95,13 +95,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to get database info: %w", err)
 	}
-	if !versionSpecific {
-		slog.Debug(
-			"falling back to dialect default capabilities",
-			"dialect", info.Dialect,
-			"version", info.Version,
-		)
-	}
+	reportCapabilityResolution(info, resolution)
 
 	var newReader schemaReaderFactory
 	var newWriter schemaWriterFactory
@@ -178,22 +172,54 @@ func getDatabaseInfoWithCapabilities(
 	dialect string,
 	parsedURL *url.URL,
 	dbURL string,
-) (types.DBInfo, bool, error) {
+) (types.DBInfo, capability.VersionResolution, error) {
 	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL)
 	if err != nil {
-		return types.DBInfo{}, false, err
+		return types.DBInfo{}, capability.VersionResolution{}, err
 	}
-	caps, versionSpecific := resolveDatabaseCapabilities(info)
-	info.Capabilities = caps
-	return info, versionSpecific, nil
+	resolution := resolveDatabaseCapabilities(info)
+	info.Capabilities = resolution.Capabilities
+	return info, resolution, nil
 }
 
-func resolveDatabaseCapabilities(info types.DBInfo) (capability.Capabilities, bool) {
+// reportCapabilityResolution tells the operator how the live server version
+// was mapped onto a capability preset, in the two cases where the mapping is
+// not a plain match.
+//
+// A version that could not be parsed at all is routine — several dialects
+// have no version ladder yet — so it stays at DEBUG. Saturation is not
+// routine: the version parsed, it is newer than the newest line Ptah has a
+// preset for, and the plan is being built from that line's preset as a
+// stand-in. Nothing further along the path can notice, so this is the only
+// place it can be said (issue #916).
+func reportCapabilityResolution(info types.DBInfo, resolution capability.VersionResolution) {
+	if !resolution.VersionSpecific {
+		slog.Debug(
+			"falling back to dialect default capabilities",
+			"dialect", info.Dialect,
+			"version", info.Version,
+		)
+	}
+	if resolution.Saturated {
+		slog.Warn(
+			"server is newer than the newest measured capability line; planning with that line's preset",
+			"dialect", info.Dialect,
+			"version", info.Version,
+			"newest_measured", resolution.NewestMeasured,
+		)
+	}
+}
+
+func resolveDatabaseCapabilities(info types.DBInfo) capability.VersionResolution {
 	// Root metadata must describe the conservative server-version baseline.
 	// Session variables can differ between pooled physical connections, so
 	// session-specific relaxations are detected only after WithSession pins the
 	// connection that will plan and execute the statements.
-	return capability.ForServerVersionResult(info.Dialect, info.Version)
+	//
+	// The resolution carries more than the preset: a server newer than the
+	// newest measured version line resolves saturated, and ConnectToDatabase
+	// reports that rather than swallowing it.
+	return capability.ResolveServerVersion(info.Dialect, info.Version)
 }
 
 func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName string) {
