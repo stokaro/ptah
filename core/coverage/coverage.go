@@ -52,6 +52,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Kind names one class of schema object a description can decline to describe.
@@ -220,8 +221,24 @@ func (s Set) clone() Set {
 // Normalize sorts and deduplicates the set. Coverage rides in a generated
 // document, and a document whose bytes depend on map iteration order is one
 // nobody can diff.
+//
+// It also promotes an object record with no name to a record about that whole
+// kind. A nameless record names nothing, and [Set.Directives] would write it as
+// an empty quoted string that [DecodeHeader] refuses, so the encoder would be
+// producing a document this package cannot read. Dropping it instead would
+// widen what the description claims to cover, and widening is the destructive
+// direction: the whole-kind record is the conservative superset, and it is
+// visible in the document rather than silent.
 func (s Set) Normalize() Set {
 	out := s.clone()
+	for _, object := range out.Objects {
+		if strings.TrimSpace(object.Name) == "" {
+			out.Kinds = append(out.Kinds, object.Kind)
+		}
+	}
+	out.Objects = slices.DeleteFunc(out.Objects, func(object Object) bool {
+		return strings.TrimSpace(object.Name) == ""
+	})
 	slices.Sort(out.Kinds)
 	out.Kinds = slices.Compact(out.Kinds)
 	slices.SortFunc(out.Objects, func(a, b Object) int {
@@ -248,6 +265,12 @@ const DirectiveMarker = "ptah:not-described"
 // Directives renders the set as directive bodies, one per record, without a
 // comment prefix. The caller adds the prefix its format spells comments with:
 // `//` or `#` for HCL, `--` for SQL.
+//
+// A name is written with [strconv.Quote], so every line is one line whatever
+// the identifier contains: a newline, a tab or a control character comes out as
+// its escape rather than ending the comment. [DecodeHeader] reverses exactly
+// this, and TestDirectivesRoundTripAdversarialNames pins the pair over the name
+// shapes a quoted identifier is allowed to have.
 func (s Set) Directives() []string {
 	normalized := s.Normalize()
 	lines := make([]string, 0, len(normalized.Kinds)+len(normalized.Objects))
@@ -312,26 +335,36 @@ func commentBody(trimmed string) (string, bool) {
 // parseDirective reads one comment body. It reports whether the body was a
 // coverage directive at all, so an ordinary comment is passed over rather than
 // refused.
+//
+// The name is decoded from the WHOLE remainder of the line rather than from a
+// whitespace-delimited field. A quoted identifier may contain a space --
+// `CREATE SCHEMA "extra reports"` is legal, and so is a table or a policy named
+// that way -- and splitting the line on whitespace has no idea that the space
+// is inside the quotes, so it counted three tokens where [Set.Directives] had
+// written two and refused a document this package had just produced itself
+// (stokaro/ptah#1276). [strconv.Unquote] over the remainder reverses
+// [strconv.Quote] exactly, and it rejects trailing text after the closing
+// quote, so the grammar stays one kind plus at most one quoted name.
 func parseDirective(body string) (Object, bool, error) {
 	rest, ok := strings.CutPrefix(body, DirectiveMarker)
 	if !ok {
 		return Object{}, false, nil
 	}
-	fields := strings.Fields(rest)
-	if len(fields) == 0 || len(fields) > 2 {
+	kindToken, nameToken := splitKindAndName(rest)
+	if kindToken == "" {
 		return Object{}, false, fmt.Errorf(
 			"malformed %s directive %q: expected a kind and an optional quoted name",
 			DirectiveMarker, body,
 		)
 	}
-	kind, err := ParseKind(fields[0])
+	kind, err := ParseKind(kindToken)
 	if err != nil {
 		return Object{}, false, err
 	}
-	if len(fields) == 1 {
+	if nameToken == "" {
 		return Object{Kind: kind}, true, nil
 	}
-	name, err := strconv.Unquote(fields[1])
+	name, err := unquoteName(nameToken)
 	if err != nil {
 		return Object{}, false, fmt.Errorf(
 			"malformed %s directive %q: name must be a quoted string",
@@ -345,4 +378,29 @@ func parseDirective(body string) (Object, bool, error) {
 		)
 	}
 	return Object{Kind: kind, Name: strings.TrimSpace(name)}, true, nil
+}
+
+// splitKindAndName cuts a directive body at the first whitespace after the kind
+// token. Everything past it is the name, spaces and all; the kind token is a
+// member of a closed list of lowercase words and can never contain one.
+func splitKindAndName(rest string) (kind, name string) {
+	rest = strings.TrimSpace(rest)
+	index := strings.IndexFunc(rest, unicode.IsSpace)
+	if index < 0 {
+		return rest, ""
+	}
+	return rest[:index], strings.TrimSpace(rest[index:])
+}
+
+// unquoteName decodes the quoted form [Set.Directives] writes.
+//
+// Only the double-quoted spelling is accepted. [strconv.Unquote] also reads
+// back-quoted strings and single-quoted runes, and neither is a spelling this
+// package ever emits; admitting them would widen a grammar whose whole purpose
+// is that a reader can be certain what a line means.
+func unquoteName(token string) (string, error) {
+	if !strings.HasPrefix(token, `"`) {
+		return "", fmt.Errorf("name %q is not a double-quoted string", token)
+	}
+	return strconv.Unquote(token)
 }

@@ -181,6 +181,112 @@ func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
 	}
 }
 
+// TestDirectivesRoundTripAdversarialNames pins the writer against the reader
+// over every name shape a quoted identifier is allowed to have.
+//
+// The first row is the defect this test exists for: the name was written with
+// strconv.Quote and read back with strings.Fields, which splits on whitespace
+// and knows nothing about quotes. `schema "extra reports"` went out as two
+// tokens and came back as three, so Ptah refused a header Ptah had just
+// written, and every legal identifier containing a space was unrepresentable
+// (stokaro/ptah#1276). A newline, a tab and a control character are here for
+// the other half of the contract: the encoding is line-based, so a name must
+// never be able to end its own comment.
+func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		given string
+		want  string
+	}{
+		{name: "embedded space", given: "extra reports", want: "extra reports"},
+		{name: "several embedded spaces", given: "a  b   c", want: "a  b   c"},
+		{name: "embedded double quote", given: `we"ird`, want: `we"ird`},
+		{name: "embedded backslash", given: `back\slash`, want: `back\slash`},
+		{name: "backslash before a quote", given: `back\"both`, want: `back\"both`},
+		{name: "embedded newline", given: "two\nlines", want: "two\nlines"},
+		{name: "embedded tab", given: "two\ttabs", want: "two\ttabs"},
+		{name: "embedded carriage return", given: "two\rparts", want: "two\rparts"},
+		{name: "unicode", given: "naïve schéma", want: "naïve schéma"},
+		{name: "non-breaking space", given: "a\u00a0b", want: "a\u00a0b"},
+		{name: "the directive marker as a name", given: "ptah:not-described", want: "ptah:not-described"},
+		{name: "a comment prefix as a name", given: "// -- #", want: "// -- #"},
+		{name: "surrounding whitespace is trimmed", given: "  padded  ", want: "padded"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			set := coverage.Set{}.WithObject(coverage.Schema, test.given)
+
+			directives := set.Directives()
+			c.Assert(directives, qt.HasLen, 1)
+
+			// A directive is one line of a comment header. A name that could
+			// break out of its line would end the header early, and every
+			// record after it would be read as file content.
+			c.Assert(directives[0], qt.Not(qt.Contains), "\n")
+			c.Assert(directives[0], qt.Not(qt.Contains), "\r")
+
+			decoded, err := coverage.DecodeHeader("// " + directives[0] + "\n")
+			c.Assert(err, qt.IsNil)
+			c.Assert(decoded.Objects, qt.DeepEquals, []coverage.Object{
+				{Kind: coverage.Schema, Name: test.want},
+			})
+			c.Assert(decoded, qt.DeepEquals, set)
+
+			// The point of the round trip: what came back still protects the
+			// object the writer meant to protect.
+			c.Assert(decoded.DescribesSchema(test.want), qt.IsFalse)
+			c.Assert(decoded.DescribesSchema("something else"), qt.IsTrue)
+		})
+	}
+}
+
+// TestDirectivesNeverWriteALineDecodeRefuses is the contract the empty name sits
+// on. A record naming nothing cannot be serialized -- DecodeHeader refuses an
+// empty quoted name deliberately, so a hand-edited document cannot smuggle one
+// in -- and dropping it would widen what the description claims to cover, which
+// is the destructive direction. It is promoted to a record about the whole kind:
+// the conservative superset, written into the document where a reader can see
+// it.
+func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		set  coverage.Set
+	}{
+		{
+			name: "an empty name",
+			set:  coverage.Set{}.WithObject(coverage.Schema, ""),
+		},
+		{
+			name: "a name that is only whitespace",
+			set:  coverage.Set{}.WithObject(coverage.Extension, " \t "),
+		},
+		{
+			name: "a nameless object in a hand-built set",
+			set:  coverage.Set{Objects: []coverage.Object{{Kind: coverage.Sequence}}}.Normalize(),
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			var document strings.Builder
+			for _, directive := range test.set.Directives() {
+				fmt.Fprintf(&document, "// %s\n", directive)
+			}
+
+			decoded, err := coverage.DecodeHeader(document.String())
+			c.Assert(err, qt.IsNil)
+			c.Assert(decoded, qt.DeepEquals, test.set)
+			c.Assert(decoded.Objects, qt.HasLen, 0)
+			c.Assert(decoded.Kinds, qt.HasLen, 1)
+		})
+	}
+}
+
 func TestDecodeHeader_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
@@ -262,9 +368,24 @@ func TestDecodeHeader_FailurePath(t *testing.T) {
 			wantErr:  `malformed ptah:not-described directive "ptah:not-described": expected a kind and an optional quoted name`,
 		},
 		{
-			name:     "too many fields",
+			// The name is decoded from the whole remainder of the line, so a
+			// second quoted token is trailing garbage inside the name rather
+			// than an extra whitespace-delimited field. strconv.Unquote refuses
+			// it, which is what keeps the grammar one kind plus at most one
+			// name now that a name may itself contain spaces.
+			name:     "trailing text after the name",
 			document: `// ptah:not-described schema "extra" "more"` + "\n",
-			wantErr:  `malformed ptah:not-described directive .*: expected a kind and an optional quoted name`,
+			wantErr:  `malformed ptah:not-described directive .*: name must be a quoted string`,
+		},
+		{
+			name:     "unterminated quote",
+			document: `// ptah:not-described schema "extra` + "\n",
+			wantErr:  `malformed ptah:not-described directive .*: name must be a quoted string`,
+		},
+		{
+			name:     "a back-quoted name is not a spelling this package writes",
+			document: "// ptah:not-described schema `extra`\n",
+			wantErr:  `malformed ptah:not-described directive .*: name must be a quoted string`,
 		},
 		{
 			name:     "unquoted name",

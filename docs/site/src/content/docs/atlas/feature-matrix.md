@@ -72,16 +72,16 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 173 capabilities below:
+Across the 174 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 100 |
+| Ptah supports it fully | 101 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 24 |
 | Ptah and Atlas CE both support it | 30 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
-| Ptah has it and neither Atlas edition does | 22 |
+| Ptah has it and neither Atlas edition does | 23 |
 | Atlas CE has it and Ptah does not, or only in part | 25 |
 | An Atlas column is ❔ — not established by this page's evidence | 5 |
 
@@ -145,6 +145,7 @@ seven of them as open capabilities regardless.
 | Inspect `--exclude` field selectors | 🟡 | ❌ | ❔ | Only [type=extension].version is honored; other .field suffixes and non-final [type=...] fail before any database is contacted. The community binary accepts a .field suffix and ignores it. |
 | Inspect non-database sources via `--dev-url` | ✅ | ✅ | ✅ | Schema file, `atlas.sum` migration dir, or env:// is materialized on a reset dev DB then introspected; without `--dev-url` it fails. |
 | Inspect split/write file exports | ✅ | ❌ | ✅ | `{{ hcl . \| split \| write "dir" }}` writes object/schema/type trees; pinned Atlas CE rejects split, write, hcl as non-community. |
+| Inspected document declares what it does not describe | ✅ | ❌ | ❌ | A compat inspect document records the block kinds it omitted, in its own header and in every split member, so a later apply reads the omission as unknown rather than as deletion intent. |
 | JSON output for native schema diff | ✅ | ➖ | ➖ | Native ptah schema diff `--format` json emits a machine-readable statements document; the Go-template row only states that {{ json . }} fails on the compat diff, leaving native JSON unstated. |
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |

@@ -98,7 +98,9 @@ func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 
 	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
 
-	c.Assert(diff.RLSPoliciesAdded, qt.DeepEquals, []string{"p"})
+	c.Assert(diff.RLSPoliciesAdded, qt.DeepEquals, []difftypes.RLSPolicyRef{
+		{PolicyName: "p", TableName: "guarded"},
+	})
 	c.Assert(undecided, qt.HasLen, 0)
 }
 
