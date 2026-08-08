@@ -322,9 +322,9 @@ jobs:
           go test ./migration/migrator -list '^TestNoTransactionCheckpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver$' | grep -q '^TestNoTransactionCheckpoint_ClickHouseAtlasRevisionIsVisibleToObserver$'
           go test ./migration/migrator -list '^TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation$' | grep -q '^TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation$'
           go test ./migration/generator -list '^TestGenerateMigrationShadowVerificationWithRealDB$' | grep -q '^TestGenerateMigrationShadowVerificationWithRealDB$'
-          go test ./migration/generator -list '^TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB$' | grep -q '^TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB$'
+          go test ./migration/generator -list '^TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres$' | grep -q '^TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres$'
           go test -v -count=1 ./migration/migrator -run '^TestNoTransaction(Directive_PostgresEnumValueCanBeUsedInSameMigration|Checkpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver|Repair_ClickHouseAtlasRevisionAfterManualReconciliation)$' -timeout 3m
-          go test -v -count=1 ./migration/generator -run '^TestGenerateMigration(ShadowVerificationWithRealDB|ConcurrentIndexOnPopulatedPostgresTableWithRealDB)$' -timeout 5m
+          go test -v -count=1 ./migration/generator -run '^TestGenerateMigration(ShadowVerificationWithRealDB|_ConcurrentIndexApplyAndRollbackWithRealPostgres)$' -timeout 5m
           go test ./cmd/migrateup -list '^TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration$' | grep -q '^TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration$'
           go test ./cmd/migrateup -list '^TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable$' | grep -q '^TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable$'
           go test -v -count=1 ./cmd/migrateup -run '^TestMigrateUp_LintConfig(SeverityOverrideControlsPostgresMigration|WarningStillBlocksPostgresDropTable)$' -timeout 3m

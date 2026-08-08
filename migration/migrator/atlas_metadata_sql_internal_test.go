@@ -103,6 +103,18 @@ func TestAtlasFilteredRevisionSQL_ExcludesMetadataRows(t *testing.T) {
 	}
 }
 
+func TestAtlasRevisionSQL_TreatsCompletedRollbackAsDirty(t *testing.T) {
+	c := qt.New(t)
+	m := (&Migrator{}).WithRevisionTableFormat(RevisionTableFormatAtlas)
+
+	c.Assert(m.getDirtyRevisionSQL(), qt.Contains,
+		"COALESCE(operator_version, '') = 'Ptah/down'")
+	c.Assert(m.getAppliedMigrationsSQL(), qt.Contains,
+		"NOT (COALESCE(operator_version, '') = 'Ptah/down')")
+	c.Assert(m.getAppliedRevisionsSQL(), qt.Contains,
+		"NOT (COALESCE(operator_version, '') = 'Ptah/down')")
+}
+
 // TestPtahRevisionSQL_HasNoMetadataFilter pins that the guard is Atlas-format
 // only: the native layout stores numeric versions in a BIGINT column, where a
 // dot-prefixed version cannot exist, so it carries neither the predicate nor

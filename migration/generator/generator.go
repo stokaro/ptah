@@ -140,8 +140,7 @@ type MigrationFilePair struct {
 // MigrationFiles represents the generated migration files. Files is the
 // authoritative ordered list of migration pairs and their published paths.
 type MigrationFiles struct {
-	Version int64               // First migration version (timestamp)
-	Files   []MigrationFilePair // All generated migration file pairs, in apply order
+	Files []MigrationFilePair // All generated migration file pairs, in apply order
 }
 
 // MigrationPlan is a fully validated migration that has not been written to
@@ -2578,8 +2577,7 @@ func migrationFilesFromPairs(pairs []MigrationFilePair) *MigrationFiles {
 		return nil
 	}
 	return &MigrationFiles{
-		Version: pairs[0].Version,
-		Files:   pairs,
+		Files: pairs,
 	}
 }
 

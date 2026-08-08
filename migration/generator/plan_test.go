@@ -43,7 +43,8 @@ func TestPlanMigration_RecoversPendingPublicationBeforePlanning(t *testing.T) {
 	files, err := plan.WriteFilesContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.IsNotNil)
-	c.Assert(files.Version < 9_999_999_999, qt.IsTrue)
+	c.Assert(files.Files, qt.HasLen, 1)
+	c.Assert(files.Files[0].Version < 9_999_999_999, qt.IsTrue)
 }
 
 func TestMigrationPlanWriteFiles_HappyPath(t *testing.T) {

@@ -566,8 +566,9 @@ func (m *Migrator) getVersionSQL() string {
 func (m *Migrator) getAppliedMigrationsSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		return fmt.Sprintf(
-			"SELECT version FROM %s WHERE applied = total AND COALESCE(error, '') = '' AND %s ORDER BY %s",
+			"SELECT version FROM %s WHERE %s AND %s ORDER BY %s",
 			m.qualifiedMigrationsTable(),
+			atlasAppliedRevisionPredicate,
 			atlasMetadataRowPredicate,
 			m.atlasVersionNumberExpression(),
 		)

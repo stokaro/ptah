@@ -143,6 +143,18 @@ func TestMigrateDown_AtlasFormatFailedNoTransactionDownRecordsPartialSchema(t *t
 
 	err = m.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true})
 	c.Assert(err, qt.ErrorMatches, `migration 2 is dirty from an interrupted rollback; repair the rollback before migrating up`)
+
+	_, err = conn.ExecContext(ctx, `UPDATE atlas_schema_revisions
+SET applied = total, error = ''
+WHERE version = '2'`)
+	c.Assert(err, qt.IsNil)
+	status, err = m.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(m.MigrateUp(ctx), qt.ErrorMatches, `migration 2 is dirty.*`)
+	err = m.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true})
+	c.Assert(err, qt.ErrorMatches, `migration 2 is dirty from an interrupted rollback; repair the rollback before migrating up`)
 }
 
 func sqliteTableExists(t *testing.T, conn *dbschema.DatabaseConnection, table string) bool {

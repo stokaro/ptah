@@ -206,10 +206,11 @@ committed the first statement and left the schema half-reverted.
 
 Ptah records that failure instead. For Atlas-format rows it stores the rollback
 marker in `operator_version`, keeps `applied` and `total` as down-statement
-progress, and writes the error fields already present in the Atlas schema.
-`ptah-compat migrate status` therefore reports the dirty rollback, later apply
-runs refuse to cross it, and `ptah migrations repair --revision-format atlas`
-resumes the down body. A successful rollback still deletes the row.
+progress, and writes the error fields already present in the Atlas schema. A
+failed statement is therefore visible in `ptah-compat migrate status`, later
+apply runs refuse to cross any unfinished rollback marker, and
+`ptah migrations repair --revision-format atlas` resumes the down body. A
+successful rollback still deletes the row.
 
 `ptah-compat` intentionally has no repair verb. Resume its failed rollback
 through the native command, using the same database, migration directory, and

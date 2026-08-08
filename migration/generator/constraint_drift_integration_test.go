@@ -1,6 +1,6 @@
 //go:build integration
 
-package generator
+package generator_test
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -73,7 +74,7 @@ type Product struct {
 }
 `), 0600), qt.IsNil)
 
-	files, err := GenerateMigration(ctx, GenerateMigrationOptions{
+	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 		GoEntitiesDir: entitiesDir,
 		DBConn:        conn,
 		MigrationName: "constraint_drift",
@@ -165,7 +166,7 @@ type Product struct {
 }
 `), 0600), qt.IsNil)
 
-			files, err := GenerateMigration(ctx, GenerateMigrationOptions{
+			files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 				GoEntitiesDir: entitiesDir,
 				DBConn:        conn,
 				MigrationName: "unique_constraint_drift",

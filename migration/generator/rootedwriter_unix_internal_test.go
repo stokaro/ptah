@@ -149,7 +149,7 @@ func TestMigrationPlanUsesTheHeldDirectoryForVersionAndPublication(t *testing.T)
 			check: func(c *qt.C, files *MigrationFiles, err error) {
 				c.Assert(err, qt.IsNil)
 				c.Assert(files.Files, qt.HasLen, 1)
-				c.Assert(files.Version, qt.Equals, int64(106))
+				c.Assert(files.Files[0].Version, qt.Equals, int64(106))
 			},
 			wantBound:    []string{boundFile, publishedDown, publishedUp},
 			wantImpostor: []string{impostorFile},

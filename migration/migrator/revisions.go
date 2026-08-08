@@ -235,14 +235,14 @@ func (m *Migrator) getDirtyRevisionSQL() string {
 		if m.isSQLServer() {
 			return fmt.Sprintf(`SELECT TOP (1) version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
-WHERE (applied <> total OR COALESCE(error, '') <> '') AND %s
-ORDER BY %s`, m.qualifiedMigrationsTable(), atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
+WHERE %s AND %s
+ORDER BY %s`, m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
 		}
 		return fmt.Sprintf(`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
-WHERE (applied <> total OR COALESCE(error, '') <> '') AND %s
+WHERE %s AND %s
 ORDER BY %s
-LIMIT 1`, m.qualifiedMigrationsTable(), atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
+LIMIT 1`, m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
 	}
 	if m.isSQLServer() {
 		return fmt.Sprintf(`SELECT TOP (1) version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
@@ -273,9 +273,10 @@ func (m *Migrator) getAppliedRevisionsSQL() string {
 		return fmt.Sprintf(
 			`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
-WHERE applied = total AND COALESCE(error, '') = '' AND %s
+WHERE %s AND %s
 ORDER BY %s`,
 			m.qualifiedMigrationsTable(),
+			atlasAppliedRevisionPredicate,
 			atlasMetadataRowPredicate,
 			m.atlasVersionNumberExpression(),
 		)
@@ -511,6 +512,12 @@ func (m *Migrator) updateAtlasRevisionTypeSQL() string {
 // math, status, and pending calculations skip them, and no write path deletes
 // or rewrites them (#957).
 const atlasMetadataRowPredicate = "version NOT LIKE '.%'"
+
+const (
+	atlasDownRevisionPredicate    = "COALESCE(operator_version, '') = '" + ptahDownOperatorVersion + "'"
+	atlasDirtyRevisionPredicate   = "(applied <> total OR COALESCE(error, '') <> '' OR " + atlasDownRevisionPredicate + ")"
+	atlasAppliedRevisionPredicate = "applied = total AND COALESCE(error, '') = '' AND NOT (" + atlasDownRevisionPredicate + ")"
+)
 
 // atlasMetadataVersionNullGuard maps a dot-prefixed metadata version to NULL so
 // it can be cast to a number safely. See [Migrator.atlasVersionNumberExpression]
