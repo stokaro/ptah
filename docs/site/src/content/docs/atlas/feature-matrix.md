@@ -255,23 +255,23 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes and column CHECKs (as named table constraints). Views, matviews, functions, triggers, roles and sequences render a named not-supported comment; grants, RLS and domains still drop. |
+| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes and column CHECKs (as named table constraints). Every other object kind is named by a not-supported comment on both `render` and `apply`; domains, composites and ranges still drop. |
 | CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | Preset drops concurrent indexes, sequences, XML, advisory locks, roles and RLS. SERIAL is a hard error. Views, matviews, functions and triggers render, matching what the apply planner emits. |
 | Domains, composite types, and range types | 🟡 | ❌ | ✅ | Emitted across the PostgreSQL family in `schema render` and `schema apply` alike. A changed range type is planned as DROP TYPE + CREATE TYPE. The community binary reports none of the three. |
 | Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one; the type name plays no part. The undocumented `enum_` prefix that gated the inline rewrite, the scoped-schema filter and the PostgreSQL cast is gone. |
-| Extensions | 🟡 | ❌ | ✅ | PostgreSQL-family only; `plpgsql` ignored by default on compare. MySQL/MariaDB render an empty statement instead of the intended comment. The community binary refuses extension blocks. |
+| Extensions | 🟡 | ❌ | ✅ | PostgreSQL-family only; `plpgsql` ignored by default on compare. Every other target names the extension it cannot host, on both `render` and `apply`. The community binary refuses extension blocks. |
 | Functions | 🟡 | ❌ | ✅ | `schema render` and `schema apply` both emit CREATE FUNCTION for PostgreSQL, CockroachDB and YugabyteDB. Spanner names the function as skipped in both. MySQL/MariaDB drop it silently. |
-| MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error on both `render` and `apply`; extensions and MariaDB SEQUENCE objects render a not-supported comment. Functions, domains, roles/grants and RLS still drop silently. |
+| MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error on both `render` and `apply`; extensions and MariaDB SEQUENCE objects get a not-supported comment on both. Functions, domains, roles/grants and RLS still drop silently. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
 | Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL emits all three; YugabyteDB refuses RLS; CockroachDB and Spanner refuse both. SQL files read ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops `role` silently. |
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums, FKs, sequences, matviews, functions and triggers render as named skip comments. SERIAL hard-errors, no dedicated driver (PostgreSQL pgx path), and no live container or test exists. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | Every accepted spelling renders the same DDL, and SQL Server is in `schema render`'s default dialect list and its `--dialect` help. No sequences, RLS, roles/grants or matviews. |
 | SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops do emit a full rebuild; type, nullability, default and uniqueness changes fail with "modifying columns ... requires a table rebuild plan". PG-only objects error one at a time. |
-| Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL and YugabyteDB emit CREATE SEQUENCE in `schema render` and `schema apply` alike; CockroachDB and Spanner name it as skipped in both. SQL schema files read CREATE SEQUENCE. |
+| Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL and YugabyteDB emit CREATE SEQUENCE in `schema render` and `schema apply` alike; five other targets name it as skipped in both; only SQLite and SQL Server still drop it silently. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. |
 | Triggers | 🟡 | ❌ | ✅ | Every accepted spelling of an engine renders the same trigger DDL; Spanner names it skipped. MySQL/MariaDB refuse FOR EACH STATEMENT and SQL Server refuses BEFORE instead of downgrading it. |
-| Views and materialized views | 🟡 | ❌ | ✅ | Views render everywhere but ClickHouse; matviews on PostgreSQL, CockroachDB and YugabyteDB, with Spanner naming it skipped. MySQL/MariaDB apply errors; ClickHouse drops both silently. |
+| Views and materialized views | 🟡 | ❌ | ✅ | Views render everywhere but ClickHouse, which names them instead; matviews on PostgreSQL, CockroachDB and YugabyteDB, with Spanner naming it skipped. No target drops either kind in silence. |
 | YugabyteDB (yugabytedb, ysql) | 🟡 | ❌ | ✅ | Offline render and live apply agree: both emit roles, grants, sequences, domains, views, matviews, functions and triggers. Only RLS and concurrent indexes are gated off. |
 
 ## Go embedding and developer tooling

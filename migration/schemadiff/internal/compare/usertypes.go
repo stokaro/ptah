@@ -209,8 +209,17 @@ func dbCompositeFieldList(composite types.DBComposite) string {
 }
 
 // Ranges compares PostgreSQL range types between the target schema and the
-// current database. Ranges have no in-place alter, so only add/remove is
-// reported.
+// current database, reporting additions, removals and modifications.
+//
+// "Ranges have no in-place alter, so only add/remove is reported" is what this
+// comment used to say, and it described the defect rather than the design: a
+// changed subtype produced no diff at all and `schema apply` answered "Schema
+// is synced" over a database that still held the old definition
+// (stokaro/ptah#931 item 2). PostgreSQL really has no ALTER TYPE ... AS RANGE,
+// which is a fact about how the planner spells the change -- a non-CASCADE DROP
+// TYPE followed by a CREATE TYPE, the shape domains and composites already use
+// -- and not a reason to skip the comparison. rangeChanges below decides what
+// counts as a difference.
 func Ranges(
 	generated *goschema.Database,
 	database *types.DBSchema,
