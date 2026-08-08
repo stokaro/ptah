@@ -92,7 +92,7 @@ are triaged in the comparison gap register rather than measured here.
 
 **Native Ptah.** `ptah migrations down --shadow-db` replays the rollback plan on a disposable shadow database before the target is touched
 
-**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to Atlas revision bookkeeping (`--revision-format atlas`) with the native `--revision-format ptah` pass-through as the escape hatch; `--to-tag`, `--skip-checks`, and `--plan` are recorded registry-bound waivers that fail loudly.
+**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to the Atlas revision-table layout (`--revision-format atlas`) but retains Ptah's recoverable failed-down bookkeeping, with the native `--revision-format ptah` pass-through as the layout escape hatch; `--to-tag`, `--skip-checks`, and `--plan` are recorded registry-bound waivers that fail loudly.
 
 **Atlas CE.** `migrate down` does not exist in the community binary; the CE notice lists down migrations among excluded features
 

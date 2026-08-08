@@ -110,9 +110,8 @@ type StatementEvent struct {
 // StatementObserver receives successfully executed migration statements. It is
 // called after either an interceptor or the normal migrator path executes the
 // statement. When a Migrator executes SQL in no-transaction mode, the observer
-// normally runs after Ptah durably checkpoints that statement's progress.
-// Atlas-format down execution preserves Atlas bookkeeping and is not
-// checkpointed. Returning an error aborts the migration.
+// runs after Ptah durably checkpoints that statement's progress. Returning an
+// error aborts the migration.
 type StatementObserver interface {
 	ObserveStatement(ctx context.Context, event StatementEvent) error
 }

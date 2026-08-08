@@ -15,11 +15,14 @@ import (
 //     revision. A rollback that reaches its last statement has un-applied the
 //     migration, and Ptah records an un-applied migration by removing its row,
 //     the same way a rollback that never failed does.
-//   - Without it the revision is recorded applied, which is what Ptah has
-//     always done and is right for the rollback that changed nothing: a
-//     transactional down that rolled its body back, or a non-transactional one
-//     whose very first statement failed, leaves the migration exactly as
-//     applied as it was.
+//   - Without it, a row whose down body already completed is finalized by
+//     deleting the revision. This covers a previous repair that ran every
+//     statement but stopped before deletion on a database-state safety check.
+//   - Otherwise the revision is recorded applied, which is what Ptah has always
+//     done and is right for the rollback that changed nothing: a transactional
+//     down that rolled its body back, or a non-transactional one whose very
+//     first statement failed, leaves the migration exactly as applied as it
+//     was.
 //   - Once the rollback has committed a statement the two outcomes are
 //     opposites and the row cannot say which one the operator wants, so
 //     neither is guessed. Recording applied there is the defect: it signs off
@@ -35,6 +38,12 @@ func (m *Migrator) repairRolledBackMigration(
 	opts RepairMigrationOptions,
 ) error {
 	if opts.ResumeFrom <= 0 {
+		if revision.Applied == revision.Total {
+			if err := m.refuseRollbackCompletionOverUnusableIndex(ctx, migration); err != nil {
+				return err
+			}
+			return m.deleteRolledBackRevision(ctx, migration)
+		}
 		if !opts.Force && rollbackChangedSchema(revision) {
 			return rollbackRepairNeedsDirectionError(migration, revision)
 		}
@@ -47,6 +56,9 @@ func (m *Migrator) repairRolledBackMigration(
 		return err
 	}
 	if err := m.resumeRollback(ctx, migration, opts.ResumeFrom); err != nil {
+		return err
+	}
+	if err := m.refuseRollbackCompletionOverUnusableIndex(ctx, migration); err != nil {
 		return err
 	}
 	return m.deleteRolledBackRevision(ctx, migration)

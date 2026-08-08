@@ -184,10 +184,14 @@ people and pipelines share a directory:
   usual case, a body that failed part-way — the retry reuses that row rather
   than recording a second one, and skips the statements the earlier attempt
   committed, so fixing the migration and rerunning with `--allow-dirty` is the
-  recovery. Use `ptah migrations repair` when the row cannot be resumed
-  automatically: an interrupted process whose last statement has an unknown
-  outcome, an edit that changed the file's statement count, or a dirty row for
-  a migration whose file was rebased away.
+  recovery. Pre-migration checks are not rerun after committed progress because
+  they describe the original pre-migration state. Automatic continuation is
+  up-direction only: a row left dirty by an interrupted rollback is refused so
+  up SQL cannot be resumed from a down-statement offset. Use
+  `ptah migrations repair` when the row cannot be resumed automatically: an
+  interrupted rollback, a process whose last statement has an unknown outcome,
+  an edit that changed the file's statement count, or a dirty row for a
+  migration whose file was rebased away.
 - **Execution order** (`--exec-order`): `linear` (default) fails when a merge
   landed a pending migration below the current version; `linear-skip` warns
   and leaves it pending; `non-linear` applies it. Status reports such
@@ -293,9 +297,10 @@ Both gates are covered in depth in
 **A migration failed partway.** The revision table records a dirty state and
 every later run refuses to continue until it is repaired — see
 [Maintain migration history](../maintain-history/). A failed *rollback* records
-that state on the native surface only; `ptah-compat migrate down` reproduces
-Atlas's bookkeeping and leaves the row untouched, which
-[Roll back migrations](../rollback/) states in full.
+the same recoverable state in both revision-table formats;
+`ptah-compat migrate down` keeps the Atlas table layout but does not copy
+Atlas's hidden failed-down state. [Roll back migrations](../rollback/) shows
+how to resume it through the native repair command.
 
 **The process stopped during a non-transactional statement.** The revision row
 records the last known completed statement and marks the interrupted

@@ -21,12 +21,13 @@ import (
 // the `no_transaction` directive is the only reason a committed statement
 // survives the failure.
 const (
-	directionalRepairKeep     = "ptah_issue995_keep"
-	directionalRepairDropped  = "ptah_issue995_dropped"
-	directionalRepairMissing  = "ptah_issue995_missing"
-	directionalRepairTracker  = "schema_migrations_issue_995"
-	directionalRepairVersion  = int64(1785756995)
-	directionalRepairResumeAt = 2
+	directionalRepairKeep         = "ptah_issue995_keep"
+	directionalRepairDropped      = "ptah_issue995_dropped"
+	directionalRepairMissing      = "ptah_issue995_missing"
+	directionalRepairTracker      = "schema_migrations_issue_995"
+	directionalRepairAtlasTracker = "atlas_schema_revisions_issue_995"
+	directionalRepairVersion      = int64(1785756995)
+	directionalRepairResumeAt     = 2
 )
 
 func TestPostgreSQLDirectionalRepairResumesPartialRollbackIntegration(t *testing.T) {
@@ -80,6 +81,57 @@ func TestPostgreSQLDirectionalRepairResumesPartialRollbackIntegration(t *testing
 	c.Assert(directionalRepairRevisionCount(c, db), qt.Equals, 0)
 }
 
+func TestPostgreSQLAtlasDirectionalRepairResumesPartialRollbackIntegration(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	db := openDirectionalRepairDB(c, dsn)
+	dropDirectionalRepairObjects(c, db)
+	c.Cleanup(func() { dropDirectionalRepairObjects(c, db) })
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	mig := directionalRepairMigrator(conn).
+		WithMigrationsTable("", directionalRepairAtlasTracker).
+		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+	c.Assert(mig.MigrateDownTo(ctx, 0), qt.IsNotNil)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairDropped), qt.IsFalse)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairKeep), qt.IsTrue)
+
+	var operatorVersion string
+	var applied, total int
+	err = db.QueryRow(
+		"SELECT operator_version, applied, total FROM "+directionalRepairAtlasTracker+" WHERE version = $1",
+		fmt.Sprint(directionalRepairVersion),
+	).Scan(&operatorVersion, &applied, &total)
+	c.Assert(err, qt.IsNil)
+	c.Assert(operatorVersion, qt.Equals, "Ptah/down")
+	c.Assert(applied, qt.Equals, 1)
+	c.Assert(total, qt.Equals, 2)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+
+	_, err = db.ExecContext(ctx, "CREATE TABLE "+directionalRepairMissing+" (id integer)")
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.RepairMigration(ctx, migrator.RepairMigrationOptions{
+		Version:    directionalRepairVersion,
+		ResumeFrom: directionalRepairResumeAt,
+	}), qt.IsNil)
+
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairMissing), qt.IsFalse)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairKeep), qt.IsTrue)
+	var revisions int
+	c.Assert(db.QueryRow("SELECT COUNT(*) FROM "+directionalRepairAtlasTracker).Scan(&revisions), qt.IsNil)
+	c.Assert(revisions, qt.Equals, 0)
+}
+
 func directionalRepairMigrator(conn *dbschema.DatabaseConnection) *migrator.Migrator {
 	up := fmt.Sprintf(
 		"CREATE TABLE %s (id integer);\nCREATE TABLE %s (id integer);",
@@ -109,6 +161,7 @@ func dropDirectionalRepairObjects(c *qt.C, db *sql.DB) {
 		"DROP TABLE IF EXISTS " + directionalRepairDropped,
 		"DROP TABLE IF EXISTS " + directionalRepairMissing,
 		"DROP TABLE IF EXISTS " + directionalRepairTracker,
+		"DROP TABLE IF EXISTS " + directionalRepairAtlasTracker,
 	} {
 		_, err := db.Exec(statement)
 		c.Assert(err, qt.IsNil)

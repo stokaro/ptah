@@ -162,7 +162,10 @@ you have reconciled the schema by hand.
 Fix the migration file (it is unapplied, so `edit` applies), re-hash, and
 repair. On a `direction=up` row, `--resume-from` executes the remaining up
 statements — here starting at the second — before marking the migration
-applied:
+applied. Resumed SQL uses the same in-flight marker and per-statement durable
+checkpoint protocol as the original `no_transaction` run, so a second failure
+records its absolute progress instead of replaying statements that already
+committed:
 
 ```bash
 ptah migrations repair \

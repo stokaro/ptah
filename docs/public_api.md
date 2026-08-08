@@ -128,9 +128,8 @@ interceptor, splitter, directive, or transaction path. Observers receive
 structured source and statement metadata after execution but no connection
 handle, so they cannot alter the migrator execution path. For SQL-backed
 `no_transaction` migrations, Ptah durably checkpoints the statement before
-calling the observer. Atlas-format down execution is excluded because it
-preserves Atlas's unchanged-row bookkeeping. A custom `MigrationFunc` remains
-opaque and has no statement-level checkpointing.
+calling the observer, including Atlas-format down execution. A custom
+`MigrationFunc` remains opaque and has no statement-level checkpointing.
 
 Programmatic migrations use `Migration.UpTxMode` and `Migration.DownTxMode`
 with `MigrationFileTxModeUnspecified`, `MigrationFileTxModeFile`, or

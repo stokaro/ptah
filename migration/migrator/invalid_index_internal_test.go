@@ -224,3 +224,20 @@ func TestUnusableIndexApplyError(t *testing.T) {
 		})
 	}
 }
+
+func TestUnusableIndexRollbackError(t *testing.T) {
+	c := qt.New(t)
+
+	err := unusableIndexRollbackError(1785756328, []postgresUnusableIndex{{
+		Schema: "public",
+		Name:   "idx_members_email",
+	}})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals,
+		`migration 1785756328 cannot be repaired: PostgreSQL reports index `+
+			`"public"."idx_members_email" (indisvalid=false, indisready=false) unusable, `+
+			`so completing the rollback would hide an unusable index behind a deleted revision; `+
+			`run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", `+
+			`or drop the index and resume the rollback, then repair again`)
+}

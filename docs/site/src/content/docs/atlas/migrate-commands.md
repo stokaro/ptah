@@ -16,7 +16,7 @@ plus the flag translation rules are on the
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah-compat migrate apply` | Atlas-format apply path equivalent to `ptah migrations up`; executes every Atlas OSS directory format and refuses an Atlas directory whose `atlas.sum` is missing or stale. |
-| `ptah-compat migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and Atlas revision bookkeeping by default; `--dev-url` verifies the rollback plan first. |
+| `ptah-compat migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and the Atlas revision-table layout by default; `--dev-url` verifies the rollback plan first. Failed rollbacks retain Ptah's recoverable dirty state. |
 | `ptah-compat migrate status` | Atlas-format migration status with Atlas revision-table metadata; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate hash` | Forwards to `ptah migrations hash`; writes `atlas.sum` by default. |
 | `ptah-compat migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
@@ -216,6 +216,24 @@ Ptah validates every selected down body before rollback starts. If one is
 missing, the command leaves both the schema and Atlas revision rows unchanged.
 Dry runs use the same dirty-state, checksum, checkpoint, and down-body
 validation path as real rollbacks, while suppressing schema and revision writes.
+
+If a rollback fails after execution starts, the Atlas-format revision row stays
+dirty and records `Ptah/down` in `operator_version`. Resume through the native
+repair command because the drop-in surface intentionally has no repair verb:
+
+```bash
+ptah migrations repair \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir ./migrations \
+  --dir-format atlas \
+  --revision-format atlas \
+  --version 2 \
+  --resume-from 2
+```
+
+Use the failed version and next down-statement number reported by status. If
+the compat command used `--revisions-schema`, pass that value as
+`--migrations-schema` here.
 
 Add `--dev-url` to reset a disposable dev database, replay the migration
 directory to the target's current version, and verify the rollback there before

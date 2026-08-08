@@ -302,6 +302,15 @@ func TestPrepareDownExecute_FailurePathReportsFirstRollbackAttempt(t *testing.T)
 	c.Assert(result.RevertedVersions, qt.HasLen, 0)
 	c.Assert(result.DownError, qt.IsNotNil)
 	c.Assert(result.ErrorText, qt.Contains, "failed to revert migration 2")
+	var operatorVersion string
+	var applied, total int
+	c.Assert(conn.QueryRowContext(
+		ctx,
+		"SELECT operator_version, applied, total FROM atlas_schema_revisions WHERE version = '2'",
+	).Scan(&operatorVersion, &applied, &total), qt.IsNil)
+	c.Assert(operatorVersion, qt.Equals, "Ptah/down")
+	c.Assert(applied, qt.Equals, 0)
+	c.Assert(total, qt.Equals, 1)
 }
 
 func TestPrepareDown_FailurePathValidatesOptions(t *testing.T) {

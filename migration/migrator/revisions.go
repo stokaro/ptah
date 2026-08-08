@@ -22,6 +22,7 @@ const (
 	migrationStatePending        = "pending"
 	migrationStateFailed         = "failed"
 	ptahOperatorVersion          = "Ptah"
+	ptahDownOperatorVersion      = "Ptah/down"
 	atlasNullJSON                = "null"
 	atlasSetMaxAttempts          = 3
 	revisionWriteTimeout         = 10 * time.Second
@@ -36,8 +37,9 @@ type MigrationRevision struct {
 	// Direction is the direction that recorded this row. A row left behind by
 	// a rollback that stopped halfway reads MigrationDirectionDown, which is
 	// what routes `migrations repair --resume-from` to the down body instead of
-	// the up body. Rows written before Ptah recorded the direction, and every
-	// row in the Atlas layout, read MigrationDirectionUp.
+	// the up body. Rows written before Ptah recorded the direction read
+	// MigrationDirectionUp. Atlas-layout rows written by Ptah carry the down
+	// marker in operator_version because that schema has no direction column.
 	Direction       MigrationDirection `json:"direction,omitempty"`
 	AtlasType       AtlasRevisionType  `json:"atlas_type,omitempty"`
 	Applied         int                `json:"applied"`
@@ -826,20 +828,30 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	}
 	revision.Version = parsedVersion
 	revision.State = atlasRevisionState(revision)
-	// The Atlas layout has no column that could carry a direction, and a
-	// rollback on that layout records nothing at all -- see
-	// [Migrator.reproducesAtlasDownBookkeeping]. Every dirty row it can produce
-	// is therefore an up-direction row.
-	revision.Direction = MigrationDirectionUp
+	revision.Direction = atlasRevisionDirection(revision.OperatorVersion)
 	revision.AppliedAt = parsedExecutedAt
 	revision.ExecutionTime = time.Duration(executionTime)
 	revision.Dirty = revision.State != migrationStateApplied
 	return revision, nil
 }
 
+func atlasRevisionDirection(operatorVersion string) MigrationDirection {
+	if operatorVersion == ptahDownOperatorVersion {
+		return MigrationDirectionDown
+	}
+	return MigrationDirectionUp
+}
+
 func atlasRevisionState(revision MigrationRevision) string {
 	if revision.Error != "" || revision.Applied != revision.Total {
 		return migrationStateFailed
+	}
+	// A completed up migration remains represented by its revision row, but a
+	// completed down migration does not. Keep Ptah-owned rollback rows dirty
+	// until the revision is deleted so a failed metadata write cannot make a
+	// reverted migration look applied again.
+	if revision.OperatorVersion == ptahDownOperatorVersion {
+		return migrationStatePending
 	}
 	return migrationStateApplied
 }
@@ -924,6 +936,12 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 	// INSERT so the contradiction surfaces instead of being overwritten.
 	if revision == nil || !revision.Dirty {
 		return plan, nil
+	}
+	if revision.Direction == MigrationDirectionDown {
+		return upRetryPlan{}, fmt.Errorf(
+			"migration %d is dirty from an interrupted rollback; repair the rollback before migrating up",
+			migration.Version,
+		)
 	}
 	resumeFrom, err := resumeStatementFor(*revision, m.migrationStatementCount(migration.UpSQL))
 	if err != nil {
@@ -1169,7 +1187,7 @@ func (m *Migrator) checkpointMigrationRevision(
 			event.Index,
 			event.Total,
 			time.Since(startedAt).Nanoseconds(),
-			ptahOperatorVersion,
+			atlasOperatorVersionForDirection(direction),
 			strconv.FormatInt(migration.Version, 10),
 		)
 	}
@@ -1199,6 +1217,7 @@ func (m *Migrator) markMigrationStatementInFlight(
 	defer cancelRecord()
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
 	if m.revisionTableFormat.isAtlas() {
+		sqlText := migrationSQLForDirection(migration, direction)
 		return executeSQLOutsideTransaction(
 			recordCtx,
 			m.conn,
@@ -1208,8 +1227,8 @@ func (m *Migrator) markMigrationStatementInFlight(
 			time.Since(startedAt).Nanoseconds(),
 			unknownStatementOutcomeError,
 			event.Statement,
-			m.atlasPartialHashes(migration.UpSQL, event.Index-1, event.Total),
-			ptahOperatorVersion,
+			m.atlasPartialHashes(sqlText, event.Index-1, event.Total),
+			atlasOperatorVersionForDirection(direction),
 			strconv.FormatInt(migration.Version, 10),
 		)
 	}
@@ -1251,14 +1270,9 @@ func (m *Migrator) beginRollbackRevision(
 	)
 }
 
-// beginAtlasRollbackRevision rewrites the revision row in place (applied=0,
-// executed_at=now, error cleared) before the down body runs; a failed down then
-// records the error into the same row via failAtlasMigrationRevision.
-//
-// This runs only on the native surface. The Atlas-shaped surface skips it
-// entirely — see [Migrator.reproducesAtlasDownBookkeeping] for the measured
-// Atlas semantics it reproduces instead, and for why recording the failure is
-// the better behavior everywhere Atlas fidelity is not the requirement (#957).
+// beginAtlasRollbackRevision rewrites the revision row in place before the down
+// body runs. The Atlas table has no direction column, so operator_version marks
+// Ptah-owned rollback state without changing the externally compatible schema.
 func (m *Migrator) beginAtlasRollbackRevision(
 	ctx context.Context,
 	migration *Migration,
@@ -1274,7 +1288,7 @@ func (m *Migrator) beginAtlasRollbackRevision(
 		m.atlasRevisionTimestamp(startedAt),
 		int64(0),
 		m.atlasNullJSONValue(),
-		ptahOperatorVersion,
+		ptahDownOperatorVersion,
 		strconv.FormatInt(migration.Version, 10),
 	)
 }
@@ -1306,14 +1320,13 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	// decide whether the schema was changed at all, so the down direction
 	// corrects it here, using the same rule the observation path already uses.
 	// The up direction is left alone deliberately: it is the number the
-	// Atlas-shaped surface reports, and a rollback never reaches this line on
-	// that surface (see [Migrator.reproducesAtlasDownBookkeeping]).
+	// Atlas-shaped surface reports.
 	if direction == MigrationDirectionDown && migrationProgressRolledBack(m.conn.Info().Dialect, txMode) {
 		applied = 0
 	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.failAtlasMigrationRevision(
-			recordCtx, migration, startedAt, failure, applied, total, stmt, failedIndex,
+			recordCtx, migration, startedAt, failure, sqlText, direction, applied, total, stmt, failedIndex,
 		)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
@@ -1340,6 +1353,8 @@ func (m *Migrator) failAtlasMigrationRevision(
 	migration *Migration,
 	startedAt time.Time,
 	failure error,
+	sqlText string,
+	direction MigrationDirection,
 	applied int,
 	total int,
 	stmt string,
@@ -1354,9 +1369,9 @@ func (m *Migrator) failAtlasMigrationRevision(
 		total,
 		time.Since(startedAt).Nanoseconds(),
 		atlasFailureError(failure),
-		atlasFailureStatement(migration.UpSQL, m.connectionDialect(), failedIndex, stmt),
-		m.atlasPartialHashes(migration.UpSQL, applied, total),
-		ptahOperatorVersion,
+		atlasFailureStatement(sqlText, m.connectionDialect(), failedIndex, stmt),
+		m.atlasPartialHashes(sqlText, applied, total),
+		atlasOperatorVersionForDirection(direction),
 		strconv.FormatInt(migration.Version, 10),
 	)
 }
@@ -1925,16 +1940,63 @@ func (m *Migrator) resumeMigration(ctx context.Context, migration *Migration, re
 	if resumeFrom < 1 || resumeFrom > len(statements) {
 		return fmt.Errorf("resume-from must be between 1 and %d", len(statements))
 	}
+	startedAt := time.Now()
 	for i := resumeFrom - 1; i < len(statements); i++ {
 		stmt := strings.TrimSpace(statements[i])
 		if stmt == "" {
 			continue
 		}
+		event := StatementEvent{Statement: stmt, Index: i + 1, Total: len(statements)}
+		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionUp); err != nil {
+			return fmt.Errorf("failed to record resumed migration %d at statement %d: %w", migration.Version, event.Index, err)
+		}
 		if err := executeSQLOutsideTransaction(ctx, m.conn, stmt); err != nil {
-			return fmt.Errorf("failed to resume migration %d at statement %d: %w", migration.Version, i+1, err)
+			return m.failResumedMigration(ctx, migration, startedAt, err, event)
+		}
+		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionUp); err != nil {
+			return fmt.Errorf("failed to record resumed migration %d at statement %d: %w", migration.Version, event.Index, err)
 		}
 	}
 	return nil
+}
+
+func (m *Migrator) failResumedMigration(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	failure error,
+	event StatementEvent,
+) error {
+	execErr := &MigrationExecutionError{
+		Err:            fmt.Errorf("failed to execute SQL statement: %w", failure),
+		Statement:      event.Statement,
+		StatementIndex: event.Index,
+		Total:          event.Total,
+	}
+	return m.failMigrationWithDirtyStateWithMode(
+		ctx,
+		migration,
+		startedAt,
+		execErr,
+		migration.UpSQL,
+		fmt.Sprintf("failed to resume migration %d", migration.Version),
+		MigrationTxModeNone,
+		MigrationDirectionUp,
+	)
+}
+
+func migrationSQLForDirection(migration *Migration, direction MigrationDirection) string {
+	if direction == MigrationDirectionDown {
+		return migration.DownSQL
+	}
+	return migration.UpSQL
+}
+
+func atlasOperatorVersionForDirection(direction MigrationDirection) string {
+	if direction == MigrationDirectionDown {
+		return ptahDownOperatorVersion
+	}
+	return ptahOperatorVersion
 }
 
 func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migration) error {

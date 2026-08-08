@@ -55,11 +55,27 @@ func (i postgresUnusableIndex) quotedName() string {
 //
 // [Migrator.refuseUpOverUnusableIndex] is the same refusal on the up path.
 func (m *Migrator) refuseRepairOverUnusableIndex(ctx context.Context, migration *Migration) error {
-	unusable, err := m.unusableIndexesCreatedBy(ctx, migration)
-	if err != nil || len(unusable) == 0 {
+	return m.refuseRepairOverUnusableIndexSQL(ctx, migration, migration.UpSQL, unusableIndexRepairError)
+}
+
+func (m *Migrator) refuseRollbackCompletionOverUnusableIndex(ctx context.Context, migration *Migration) error {
+	return m.refuseRepairOverUnusableIndexSQL(ctx, migration, migration.DownSQL, unusableIndexRollbackError)
+}
+
+func (m *Migrator) refuseRepairOverUnusableIndexSQL(
+	ctx context.Context,
+	migration *Migration,
+	sqlText string,
+	buildError func(int64, []postgresUnusableIndex) error,
+) error {
+	unusable, err := m.unusableIndexesCreatedBySQL(ctx, sqlText)
+	if err != nil {
 		return err
 	}
-	return unusableIndexRepairError(migration.Version, unusable)
+	if len(unusable) == 0 {
+		return nil
+	}
+	return buildError(migration.Version, unusable)
 }
 
 // refuseUpOverUnusableIndex refuses to run a migration while PostgreSQL already
@@ -114,10 +130,14 @@ func (m *Migrator) refuseUpOverUnusableIndex(ctx context.Context, migration *Mig
 // dialect has a concurrent index build that can be left half-finished, so they
 // keep their existing code paths rather than growing a no-op probe.
 func (m *Migrator) unusableIndexesCreatedBy(ctx context.Context, migration *Migration) ([]postgresUnusableIndex, error) {
+	return m.unusableIndexesCreatedBySQL(ctx, migration.UpSQL)
+}
+
+func (m *Migrator) unusableIndexesCreatedBySQL(ctx context.Context, sqlText string) ([]postgresUnusableIndex, error) {
 	if m.conn == nil || platform.NormalizeDialect(m.conn.Info().Dialect) != platform.Postgres {
 		return nil, nil
 	}
-	refs := postgresCreatedIndexNames(migration.UpSQL)
+	refs := postgresCreatedIndexNames(sqlText)
 	if len(refs) == 0 {
 		return nil, nil
 	}
@@ -128,16 +148,40 @@ func (m *Migrator) unusableIndexesCreatedBy(ctx context.Context, migration *Migr
 // is unusable together with the catalog flags that say so, and points at the
 // PostgreSQL command that rebuilds one without holding writes.
 func unusableIndexRepairError(version int64, unusable []postgresUnusableIndex) error {
+	return unusableIndexStateError(
+		version,
+		unusable,
+		"recording the migration applied would report a constraint that is not enforced",
+		"rerun the migration",
+	)
+}
+
+func unusableIndexRollbackError(version int64, unusable []postgresUnusableIndex) error {
+	return unusableIndexStateError(
+		version,
+		unusable,
+		"completing the rollback would hide an unusable index behind a deleted revision",
+		"resume the rollback",
+	)
+}
+
+func unusableIndexStateError(
+	version int64,
+	unusable []postgresUnusableIndex,
+	unsafeOutcome string,
+	retryAction string,
+) error {
 	details, rebuild, noun := unusableIndexPhrases(unusable)
 	return fmt.Errorf(
 		"migration %d cannot be repaired: PostgreSQL reports %s %s unusable, "+
-			"so recording the migration applied would report a constraint that is not enforced; "+
-			"run %s, or drop the %s and rerun the migration, then repair again",
+			"so %s; run %s, or drop the %s and %s, then repair again",
 		version,
 		noun,
 		details,
+		unsafeOutcome,
 		rebuild,
 		noun,
+		retryAction,
 	)
 }
 

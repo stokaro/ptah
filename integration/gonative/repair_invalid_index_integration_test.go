@@ -95,6 +95,53 @@ func TestPostgreSQLRepairRefusesOverInvalidUniqueIndexIntegration(t *testing.T) 
 	c.Assert(repairInvalidIndexDuplicateInsert(ctx, db), qt.IsNotNil)
 }
 
+func TestPostgreSQLRollbackRepairRefusesOverInvalidUniqueIndexIntegration(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexTable(c, db, "'shared@example.com'")
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	mig := repairInvalidIndexRollbackMigrator(conn)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	c.Assert(mig.MigrateDownTo(ctx, 0), qt.ErrorMatches, "(?s).*could not create unique index.*")
+	valid, ready := repairInvalidIndexFlags(c, db)
+	c.Assert(valid, qt.IsFalse)
+	c.Assert(ready, qt.IsFalse)
+
+	_, err = db.ExecContext(ctx, "DELETE FROM "+repairInvalidIndexTable+" WHERE id > 1")
+	c.Assert(err, qt.IsNil)
+	err = mig.RepairMigration(ctx, migrator.RepairMigrationOptions{
+		Version:    repairInvalidIndexVersion,
+		ResumeFrom: 1,
+	})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "completing the rollback would hide an unusable index")
+	c.Assert(err.Error(), qt.Contains, "resume the rollback")
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(status.DirtyRevision.Applied, qt.Equals, status.DirtyRevision.Total)
+
+	_, err = db.ExecContext(ctx, `REINDEX INDEX CONCURRENTLY "public"."`+repairInvalidIndexName+`"`)
+	c.Assert(err, qt.IsNil)
+	err = mig.RepairMigration(ctx, migrator.RepairMigrationOptions{Version: repairInvalidIndexVersion})
+	c.Assert(err, qt.IsNil)
+
+	status, err = mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNil)
+	c.Assert(status.AppliedMigrations, qt.HasLen, 0)
+	c.Assert(repairInvalidIndexDuplicateInsert(ctx, db), qt.IsNotNil)
+}
+
 // TestPostgreSQLRepairLeavesUsableIndexAloneIntegration is the control. On data
 // where the concurrent build succeeds, nothing about the probe may show: the
 // migration applies, the index is usable, the constraint is enforced, and a
@@ -138,6 +185,17 @@ func repairInvalidIndexMigrator(conn *dbschema.DatabaseConnection) *migrator.Mig
 	)
 	down := fmt.Sprintf("-- +ptah no_transaction\nDROP INDEX IF EXISTS %q;", repairInvalidIndexName)
 	migration := migrator.CreateMigrationFromSQL(repairInvalidIndexVersion, "add unique email", up, down)
+	return migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).
+		WithMigrationsTable("", repairInvalidIndexTracker)
+}
+
+func repairInvalidIndexRollbackMigrator(conn *dbschema.DatabaseConnection) *migrator.Migrator {
+	up := fmt.Sprintf("-- +ptah no_transaction\nDROP INDEX CONCURRENTLY IF EXISTS %q;", repairInvalidIndexName)
+	down := fmt.Sprintf(
+		"-- +ptah no_transaction\nCREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS %q ON %q (%q);",
+		repairInvalidIndexName, repairInvalidIndexTable, "email",
+	)
+	migration := migrator.CreateMigrationFromSQL(repairInvalidIndexVersion, "drop unique email", up, down)
 	return migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).
 		WithMigrationsTable("", repairInvalidIndexTracker)
 }

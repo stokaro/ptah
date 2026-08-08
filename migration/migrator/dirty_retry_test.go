@@ -393,3 +393,116 @@ func TestMigrateUp_DirtyGuardStillRefusesWithoutAllowDirty(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(migrator.IsDirtyMigration(err), qt.IsTrue)
 }
+
+func TestMigrateUp_AllowDirtyRefusesInterruptedRollback(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(t.TempDir(), "down-direction.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = conn.Close() })
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"direction guard",
+		"CREATE TABLE parent (id INTEGER PRIMARY KEY);\nCREATE TABLE child (id INTEGER PRIMARY KEY);\n",
+		"-- +ptah no_transaction\nDROP TABLE child;\nDROP TABLE definitely_missing;\n",
+	)
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
+	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+	c.Assert(m.MigrateDownTo(c.Context(), 0), qt.IsNotNil)
+
+	before, err := m.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(before.DirtyRevision, qt.IsNotNil)
+	c.Assert(before.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(before.DirtyRevision.Applied, qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "parent"), qt.IsTrue)
+	c.Assert(dirtyRetryTableExists(c, conn, "child"), qt.IsFalse)
+
+	err = m.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.ErrorMatches, "migration 1 is dirty from an interrupted rollback; repair the rollback before migrating up")
+	after, err := m.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(after.DirtyRevision, qt.IsNotNil)
+	c.Assert(after.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(after.DirtyRevision.Applied, qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "parent"), qt.IsTrue)
+	c.Assert(dirtyRetryTableExists(c, conn, "child"), qt.IsFalse)
+}
+
+func TestMigrateUp_AllowDirtyResumeSkipsObsoletePreMigrationChecks(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "resume-check.db")
+
+	failing := `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users"
+-- +ptah no_transaction
+INSERT INTO users (id) VALUES (1);
+INSERT INTO definitely_missing (id) VALUES (1);
+`
+	conn, m := newDirtyRetryMigrator(c, dbPath, failing, migrator.MigrationTxModeFile, migrator.RevisionTableFormatPtah)
+	c.Assert(m.MigrateUp(c.Context()), qt.IsNotNil)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+
+	fixed := `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users"
+-- +ptah no_transaction
+INSERT INTO users (id) VALUES (1);
+CREATE TABLE pets (id INTEGER PRIMARY KEY);
+`
+	_, retried := newDirtyRetryMigrator(c, dbPath, fixed, migrator.MigrationTxModeFile, migrator.RevisionTableFormatPtah)
+	c.Assert(retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+	status, err := retried.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNil)
+}
+
+func TestRepairMigration_UpResumePersistsAbsoluteProgress(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(t.TempDir(), "manual-resume.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = conn.Close() })
+
+	initial := migrator.CreateMigrationFromSQL(
+		1,
+		"manual resume",
+		"-- +ptah no_transaction\nCREATE TABLE first (id INTEGER PRIMARY KEY);\nINSERT INTO missing_one (id) VALUES (1);\nCREATE TABLE third (id INTEGER PRIMARY KEY);\n",
+		"DROP TABLE third;\nDROP TABLE first;\n",
+	)
+	c.Assert(migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(initial)).MigrateUp(c.Context()), qt.IsNotNil)
+
+	secondFailure := migrator.CreateMigrationFromSQL(
+		1,
+		"manual resume",
+		"-- +ptah no_transaction\nCREATE TABLE first (id INTEGER PRIMARY KEY);\nCREATE TABLE second (id INTEGER PRIMARY KEY);\nINSERT INTO missing_two (id) VALUES (1);\n",
+		"DROP TABLE second;\nDROP TABLE first;\n",
+	)
+	secondAttempt := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(secondFailure))
+	err = secondAttempt.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2})
+	c.Assert(err, qt.ErrorMatches, `(?s)failed to resume migration 1: failed to execute SQL statement: .*missing_two.*`)
+
+	revisions, err := secondAttempt.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 1)
+	c.Assert(revisions[0].Direction, qt.Equals, migrator.MigrationDirectionUp)
+	c.Assert(revisions[0].Applied, qt.Equals, 2)
+	c.Assert(revisions[0].Total, qt.Equals, 3)
+	c.Assert(revisions[0].ErrorStatement, qt.Contains, "missing_two")
+	c.Assert(dirtyRetryTableExists(c, conn, "second"), qt.IsTrue)
+
+	completed := migrator.CreateMigrationFromSQL(
+		1,
+		"manual resume",
+		"-- +ptah no_transaction\nCREATE TABLE first (id INTEGER PRIMARY KEY);\nCREATE TABLE second (id INTEGER PRIMARY KEY);\nCREATE TABLE third (id INTEGER PRIMARY KEY);\n",
+		"DROP TABLE third;\nDROP TABLE second;\nDROP TABLE first;\n",
+	)
+	finalAttempt := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(completed))
+	c.Assert(finalAttempt.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3}), qt.IsNil)
+
+	status, err := finalAttempt.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(dirtyRetryTableExists(c, conn, "third"), qt.IsTrue)
+}

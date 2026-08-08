@@ -338,7 +338,7 @@ pending and out of order.
 - **`WithStatementInterceptor(interceptor)`**: Lets an external executor take over selected statements
 - **`WithStatementValidator(validator)`**: Validates every statement before the migration executes its first statement
 - **`WithStatementObserver(observer)`**: Reports each statement after successful execution without replacing the execution path
-- **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout and bookkeeping semantics or Atlas's `atlas_schema_revisions` layout and Atlas-compatible bookkeeping semantics
+- **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout or the Atlas-compatible `atlas_schema_revisions` layout; both retain Ptah's recoverable dirty-state protection
 - **`Baseline(ctx, version)` / `BaselineWithOptions(ctx, opts)`**: Records provider migrations without executing their SQL bodies; Atlas metadata records only the exact baseline revision
 - **`SetAtlasRevision(ctx, version)`**: Moves Atlas metadata to an exact version and returns version-and-description `AtlasRevisionChange` entries in an `AtlasRevisionSetResult`; it preserves clean rows through the target, adds missing manually-set rows, converts dirty rows to the combined applied and manually-set type without discarding diagnostics, and removes rows above it
 - **`GetMigrationStatusSnapshot(ctx)`**: Returns migration status and the exact revision rows used to derive it from one metadata query
@@ -583,6 +583,10 @@ while `MigrationRevision.State` keeps reporting `pending` or `failed`.
 statements of the body that failed, and a rollback that reaches its last
 statement has its revision deleted rather than recorded applied.
 
+Atlas-format rows carry the same rollback direction as `Ptah/down` in the
+existing `operator_version` column. This preserves the Atlas table schema while
+keeping a failed or not-yet-deleted rollback dirty and recoverable.
+
 ## Best Practices
 
 1. **Always create both up and down migrations**: Every migration should be reversible
@@ -698,15 +702,19 @@ statement could duplicate committed SQL. A custom `MigrationFunc` is opaque to
 Ptah and can only be recorded at function completion; use SQL-backed migrations
 when statement-level crash progress is required.
 
-On PostgreSQL, `RepairMigration` also refuses to record the revision while an
-index the migration creates is still unusable. A `CREATE INDEX CONCURRENTLY`
+On PostgreSQL, `RepairMigration` also refuses to finish while an index the
+selected direction creates is still unusable. A `CREATE INDEX CONCURRENTLY`
 that fails partway leaves an invalid index occupying the name, so re-issuing
 the same `IF NOT EXISTS` statement is skipped rather than retried and nothing
-errors; recording the migration applied would report a constraint the database
-is not enforcing. Ptah reads `pg_index.indisvalid` and `indisready` for the
-index names the migration's up SQL creates, resolving an unqualified name
-through the same search path the statement used, and returns an error naming
-each unusable index and the `REINDEX INDEX CONCURRENTLY` that rebuilds it.
+errors. Recording an up migration applied would report a constraint the
+database is not enforcing; deleting a revision after a resumed down would hide
+the same unusable index behind an apparently complete rollback.
+
+Ptah reads
+`pg_index.indisvalid` and `indisready` for the index names the selected SQL
+creates, resolves an unqualified name through the same search path the
+statement used, and returns an error naming each unusable index and the
+`REINDEX INDEX CONCURRENTLY` command that rebuilds it.
 `Force` does not relax this refusal: it relaxes a precondition about the
 revision row, not a fact about the database. Other dialects have no concurrent
 index build to leave half-finished and run no probe.
@@ -729,12 +737,11 @@ the index so the name is free. One shape is knowingly refused: an index left
 invalid on purpose — `CREATE INDEX ... ON ONLY` a partitioned parent — blocks a
 second attempt at the migration that created it (stokaro/ptah#997).
 
-Atlas-format down execution is the deliberate exception. It leaves the
-revision row unchanged before and during the down body to reproduce Atlas's
-measured bookkeeping. A non-transactional Atlas-format down can therefore
-partially change the schema without leaving statement progress in the revision
-table. Prefer the native revision format when crash-visible rollback progress
-matters.
+Atlas-format revisions use the same failure protection. Ptah keeps the Atlas
+table schema but marks Ptah-owned rollback rows through `operator_version`, so
+status and repair can recover the down direction without adding a column. This
+deliberately differs from Atlas's measured failed-down behavior: Ptah does not
+hide a partial rollback behind a clean applied row.
 
 ## Safety Features
 

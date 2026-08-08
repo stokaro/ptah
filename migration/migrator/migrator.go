@@ -417,10 +417,9 @@ func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	return &tmp
 }
 
-// WithRevisionTableFormat sets the database table layout and the compatibility
-// bookkeeping semantics used for migration revisions. Atlas format reproduces
-// Atlas's revision-row lifecycle, including down-failure behavior; Ptah format
-// keeps Ptah's richer dirty-state bookkeeping.
+// WithRevisionTableFormat sets the database table layout used for migration
+// revisions. Both layouts retain Ptah's dirty-state protection; the Atlas
+// layout encodes rollback direction in its existing operator_version column.
 func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator {
 	tmp := *m
 	tmp.revisionTableFormat = format
@@ -1820,18 +1819,26 @@ func (m *Migrator) applyUpMigrationObserved(
 			return false, err
 		}
 	}
-	checksDeferred, err = m.runPreMigrationChecks(ctx, migration, observesApplyState)
+	plan, err := m.planUpRetry(ctx, migration)
 	if err != nil {
 		return false, err
+	}
+	if plan.resumeFrom <= 1 {
+		checksDeferred, err = m.runPreMigrationChecks(ctx, migration, observesApplyState)
+		if err != nil {
+			return false, err
+		}
+	} else {
+		m.logger.Info(
+			"Skipping pre-migration checks for partially applied migration",
+			"version", migration.Version,
+			"resumeFromStatement", plan.resumeFrom,
+		)
 	}
 	// Read-only, and before the revision row is touched: a refusal has to leave
 	// whatever an earlier attempt recorded exactly as it found it. See
 	// [Migrator.refuseUpOverUnusableIndex].
 	if err := m.refuseUpOverUnusableIndex(ctx, migration); err != nil {
-		return false, err
-	}
-	plan, err := m.planUpRetry(ctx, migration)
-	if err != nil {
 		return false, err
 	}
 	if err := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); err != nil {
@@ -2091,13 +2098,8 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	if err != nil {
 		return err
 	}
-	// The Atlas-shaped surface records nothing before the down body: Atlas marks
-	// a reverted migration only by deleting its row on success. See
-	// reproducesAtlasDownBookkeeping.
-	if !m.reproducesAtlasDownBookkeeping() {
-		if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
-		}
+	if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+		return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
 	}
 	if txMode == MigrationTxModeNone {
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
@@ -2208,18 +2210,15 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 	startedAt time.Time,
 	deleteSQL string,
 ) error {
-	executionCtx := ctx
-	if !m.reproducesAtlasDownBookkeeping() {
-		executionCtx = withStatementProgressRecorder(
-			ctx,
-			func(ctx context.Context, event StatementEvent) error {
-				return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionDown)
-			},
-			func(ctx context.Context, event StatementEvent) error {
-				return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionDown)
-			},
-		)
-	}
+	executionCtx := withStatementProgressRecorder(
+		ctx,
+		func(ctx context.Context, event StatementEvent) error {
+			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionDown)
+		},
+		func(ctx context.Context, event StatementEvent) error {
+			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionDown)
+		},
+	)
 	if err := migration.executeDown(executionCtx, m.conn, migrationExecutionNoTransaction); err != nil {
 		return m.failRollbackWithDirtyStateWithMode(
 			ctx,
@@ -2260,38 +2259,9 @@ func (m *Migrator) failMigrationWithDirtyState(
 	)
 }
 
-// reproducesAtlasDownBookkeeping reports whether this migrator must leave
-// behind what Atlas leaves behind after a rollback, instead of Ptah's own
-// dirty-state bookkeeping.
-//
-// The split is by surface, not by preference. `ptah-compat` is the Atlas-shaped
-// drop-in and always writes Atlas-format revisions, so it has to reproduce
-// Atlas's bookkeeping exactly. Measured against Atlas (
-// local SQLite): a failed `migrate down` leaves the revision row
-// byte-identical — no pre-rewrite, no recorded error, `applied`/`total` and
-// `execution_time` unchanged — the body is rolled back, and `atlas migrate
-// status` still reports the version applied; a successful down deletes the row;
-// a repaired retry then succeeds with no flags. Diverging here would make
-// `atlas migrate status` and `ptah-compat migrate status` disagree about the
-// same database, which is the whole point of the compat surface.
-//
-// Native `ptah` deliberately keeps Ptah's richer bookkeeping. Recording a
-// failed down as dirty state is an advantage, not a divergence to apologize
-// for: it is what makes a half-finished rollback visible in `migrations
-// status`, what blocks a later `migrations up` from stacking work on it, and
-// what `migrations repair --version` clears once the operator has fixed the
-// database. (Not `--resume-from`: resumeMigration replays migration.UpSQL, so
-// it is an up-direction tool regardless of which direction failed.) Atlas's
-// row, by contrast, still looks applied after a rollback that did not finish.
-// A native run that opts into `--revision-format atlas` is asking for the
-// Atlas table's semantics, so it follows the Atlas side of this split (#957).
-func (m *Migrator) reproducesAtlasDownBookkeeping() bool {
-	return m.revisionTableFormat.isAtlas()
-}
-
-// failRollbackWithDirtyState records a failed rollback the way the active
-// surface requires: Ptah's dirty state natively, nothing at all on the
-// Atlas-shaped surface. The returned error is identical either way.
+// failRollbackWithDirtyState records a failed rollback as dirty state. Ptah
+// keeps the Atlas revision-table schema compatible but does not reproduce the
+// upstream behavior that hides a partially applied rollback behind a clean row.
 func (m *Migrator) failRollbackWithDirtyState(
 	ctx context.Context,
 	migration *Migration,
@@ -2312,12 +2282,6 @@ func (m *Migrator) failRollbackWithDirtyStateWithMode(
 	prefix string,
 	txMode MigrationTxMode,
 ) error {
-	if m.reproducesAtlasDownBookkeeping() {
-		if prefix == "" {
-			return failure
-		}
-		return fmt.Errorf("%s: %w", prefix, failure)
-	}
 	return m.failMigrationWithDirtyStateWithMode(
 		ctx,
 		migration,

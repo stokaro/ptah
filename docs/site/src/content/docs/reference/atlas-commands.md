@@ -350,10 +350,15 @@ Forwards to `ptah migrations down` with mapped Atlas flags.
 | --- | --- |
 | `--dev-url` | Replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`). |
 | `--format` | Flag or `PTAH_FORMAT`; renders an Atlas Go-template report. Real and dry-run rollbacks are non-interactive. |
-| `--revision-format` | Defaults to `atlas`, like `migrate set`. The native `ptah` pass-through selects ptah bookkeeping. |
+| `--revision-format` | Defaults to the `atlas` table layout, like `migrate set`. The native `ptah` pass-through selects the `ptah` layout. Both retain recoverable failed-down state. |
 
-Because the forward defaults to Atlas revision bookkeeping, a bare invocation
+Because the forward defaults to the Atlas revision-table layout, a bare invocation
 reverts the revisions `ptah-compat migrate apply` wrote.
+
+A failed rollback stays dirty even with the Atlas layout. Resume it with
+`ptah migrations repair --dir-format atlas --revision-format atlas`, using the
+same database, directory, revision schema, version, and required
+`--resume-from` statement as the failed compat run.
 
 The command starts a real rollback without reading stdin, matching Atlas. It
 does not accept the native `--confirm` flag. Review `--url`, `--dir`, and
