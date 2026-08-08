@@ -252,6 +252,13 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   domain, the drop fails loudly instead of dropping the column.
 - Range types are matched by name only; a changed range is dropped and
   recreated.
+- A domain, composite or range type that an **extension** owns is not
+  described. `CREATE EXTENSION` creates those types, so they cannot be created
+  or dropped independently, and describing one as a user type made the
+  description declare something the extension already makes — replaying it
+  failed with `type "lo" already exists`. Ownership is read from `pg_depend`,
+  so a type of your own named close to an extension's is unaffected. The same
+  rule has always applied to extension-owned functions.
 
 ## Concurrent index creation
 
