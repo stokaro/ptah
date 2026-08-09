@@ -220,17 +220,20 @@ bodies happen to be the same length such a row cannot be told apart, and
 `--force` is the override in either case.
 :::
 
-**`ptah-compat migrate down` keeps the Atlas revision-table schema, but it does
-not copy Atlas's failed-down defect.** Measured against Atlas (build,
-2026-08-01), a down whose second statement fails leaves its row reading
-`applied=2, total=2, error=''`, even when `-- atlas:txmode none` already
-committed the first statement and left the schema half-reverted.
+**`ptah-compat migrate down` keeps the Atlas revision-table schema and still
+records a failed rollback.** There is no community Atlas rollback behavior to
+match here: on the pinned community build, `atlas migrate down --help` prints
+`'atlas migrate down' is not supported by the community version.` So what a
+failed `ptah-compat migrate down` leaves behind is Ptah's own decision, and the
+decision is to leave no clean applied row over a partially reverted schema.
 
-Ptah records that failure instead. For Atlas-format rows it stores the rollback
-marker in `operator_version`, keeps `applied` and `total` as down-statement
-progress, and writes the error fields already present in the Atlas schema. A
-failed statement is therefore visible in `ptah-compat migrate status`, later
-apply runs refuse to cross any unfinished rollback marker, and
+For Atlas-format rows Ptah stores the rollback marker in `operator_version`,
+keeps `applied` and `total` as down-statement progress, and writes the error
+fields already present in the Atlas schema. A `-- atlas:txmode none` down whose
+third of four statements fails therefore leaves `operator_version='Ptah/down'`,
+`applied=2`, `total=4`, and both error fields set. The failure is visible in
+`ptah-compat migrate status`, a later `migrate apply` refuses to cross the
+unfinished rollback — `--allow-dirty` included — and
 `ptah migrations repair --revision-format atlas` resumes the down body. A
 successful rollback still deletes the row.
 
@@ -254,11 +257,12 @@ statement but stopped on a database-state safety check needs no
 `--resume-from`; after the database is reconciled, rerun repair to finalize the
 rollback without replaying SQL.
 
-This is an intentional safety divergence: table interoperability is retained,
-but an Atlas reader may report a Ptah-recorded failed rollback differently from
-Atlas's own hidden failure. The same rule follows the **revision table format**,
-not the binary, so native `ptah migrations down --revision-format atlas` gets
-the same recoverable bookkeeping.
+This is an intentional divergence in the direction of safety: the table stays
+readable by other tools, but a reader that expects a revision row to describe
+forward progress only may report a Ptah-recorded failed rollback differently.
+The same rule follows the **revision table format**, not the binary, so native
+`ptah migrations down --revision-format atlas` gets the same recoverable
+bookkeeping.
 
 ## Failure modes
 
