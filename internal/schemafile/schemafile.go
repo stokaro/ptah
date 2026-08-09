@@ -68,11 +68,20 @@ type Options struct {
 	// Atlas community binary v1.3.0 refuses the same run with `cannot use HCL
 	// with more than 1 schema when <flag> is limited to schema %q`.
 	//
-	// Like [Options.IgnoreUnknownHCLNames] the split is by COMMAND TREE: it is
-	// set only by cmd/atlas and the Atlas-compatible packages beneath it, where
-	// the behavior was measured against that binary. The native `ptah schema`
-	// commands leave it empty and keep narrowing, which is a separate defect
-	// with its own issue rather than something this loader may decide for them.
+	// Unlike [Options.IgnoreUnknownHCLNames] this is NOT split by command tree.
+	// Every caller that knows the URLs its run is scoped by sets it, and the
+	// native `ptah schema inspect` and `ptah schema diff` reach this loader
+	// through the same shared packages, so they gate too. Measured with the
+	// derivation removed and put back, `ptah schema inspect --schema-file
+	// two-schemas.hcl --dev-url sqlite://dv?mode=memory` went from exit 0
+	// describing one schema to exit 2 naming both blocks.
+	//
+	// That is deliberate rather than an accident of sharing. Narrowing a desired
+	// state to the scope and reporting success is a wrong answer on any surface,
+	// and the escape hatch is the run's own URL: a realm-scoped one describes
+	// every schema the document declares. Callers with no URL to derive from --
+	// a Go-annotation desired state, cmd/internal/schemaload, `ptah schema
+	// test` -- leave it empty and are unaffected.
 	//
 	// Use [ScopeFromURLs] to derive it, so every caller picks the same flag.
 	SchemaScope string

@@ -63,6 +63,13 @@ and a document declaring more than one top-level `schema` block is refused
 there rather than narrowed. The count is of blocks: repeating
 `schema "main" {}` in two files of a schema directory is two.
 
+This holds on the native commands, not only the compatibility binary:
+`ptah schema inspect --schema-file two-schemas.hcl --dev-url sqlite://dv?mode=memory`
+refuses, because narrowing a desired state to the scope and reporting success
+is a wrong answer wherever it happens. Give the run a realm-scoped URL to
+describe every schema the document declares. A desired state with no URL to be
+scoped by — Go annotation roots, `ptah schema test` — is unaffected.
+
 See
 [the Atlas-compatible schema commands](../../atlas/schema-commands/#a-schema-limited-run-refuses-a-multi-schema-hcl-desired-state)
 for the message and the flag it names.
