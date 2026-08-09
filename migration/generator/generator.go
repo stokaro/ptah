@@ -2697,6 +2697,7 @@ func latestPtahVersionIn(names []string) int64 {
 // migrationDirFileNames lists a migration directory by pathname. It is the
 // reader-side counterpart of migrationDirNames, which lists the same thing
 // through a bound writer handle; a directory that cannot be listed reads as
+// empty, so a version scan over a missing directory starts from scratch.
 func migrationDirFileNames(outputDir string) []string {
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {
