@@ -108,8 +108,11 @@ func TestRevisionCompletionFailure_MariaDBImplicitCommitLive(t *testing.T) {
 	runRevisionCompletionScenario(t, mariaDBRevisionCompletionTarget(), retryAfterFixingTheRevisionWrite())
 }
 
+// ClickHouse recovers by repair rather than by the allow-dirty retry, and that
+// is a limitation rather than a property of the class: see
+// appliedAfterRevisionCompletionFailure.
 func TestRevisionCompletionFailure_ClickHouseNoTransactionLive(t *testing.T) {
-	runRevisionCompletionScenario(t, clickHouseRevisionCompletionTarget(), retryAfterFixingTheRevisionWrite())
+	runRevisionCompletionScenario(t, clickHouseRevisionCompletionTarget(), markAppliedAfterTheBodyCommitted())
 }
 
 // The repair cases below take the other way out. Repair signs the migration off
@@ -125,9 +128,8 @@ func TestRevisionCompletionRepair_MariaDBImplicitCommitLive(t *testing.T) {
 	runRevisionCompletionScenario(t, mariaDBRevisionCompletionTarget(), markAppliedAfterTheBodyCommitted())
 }
 
-func TestRevisionCompletionRepair_ClickHouseNoTransactionLive(t *testing.T) {
-	runRevisionCompletionScenario(t, clickHouseRevisionCompletionTarget(), markAppliedAfterTheBodyCommitted())
-}
+// ClickHouse has no separate repair case because its failure case above already
+// recovers by repair.
 
 // The two cases below separate the surviving-body classes, which the
 // single-statement bodies above cannot. They exist because internal/ddltx
@@ -405,7 +407,7 @@ type revisionCompletionRecovery struct {
 // retryAfterFixingTheRevisionWrite is the automatic recovery. The dirty row is
 // reused and the run resumes at applied+1, which is the whole body on a
 // transactional target (nothing survived) and past the durable prefix on the
-// two classes where something did.
+// implicit-commit class.
 func retryAfterFixingTheRevisionWrite() revisionCompletionRecovery {
 	return revisionCompletionRecovery{
 		name: "allow-dirty retry",
@@ -430,16 +432,25 @@ func markAppliedAfterTheBodyCommitted() revisionCompletionRecovery {
 	}
 }
 
-// appliedAfterRevisionCompletionFailure is the progress a dirty revision must
-// carry once the completion write has failed.
+// appliedAfterRevisionCompletionFailure is the progress a dirty revision
+// carries once the completion write has failed.
 //
-// The bodies in this file are a single DDL statement, so "the durable prefix"
-// and "the whole body" are the same number and the class predicate answers for
-// both surviving classes. A body mixing DDL and DML would separate them on the
-// MySQL family, where only the statements up to the last implicit commit
-// survive; that is measured by TestRolledBackProgress_* rather than here.
+// Two of the three answers are the contract. A transactional target rolled the
+// body back with the revision, so zero is right. An implicit-commit target
+// reports the prefix its revision-row witness recorded, which for the
+// single-DDL bodies here is the whole body.
+//
+// The no-transaction answer is a characterization, not a contract, and it is
+// wrong. Every ClickHouse statement is durable the moment it runs, so the
+// revision should say the body is fully applied; Ptah records zero, because the
+// completion failure carries no statement index and nothing supplies one. The
+// consequence was measured live: an --allow-dirty retry resumes at applied+1,
+// re-issues the body's CREATE TABLE and fails with "table already exists", so
+// repair is the only recovery this class has today. The number is asserted so
+// that the fix has a test to flip rather than a silent behavior change; it is
+// not a statement that zero is correct. See the issue this file was added under.
 func appliedAfterRevisionCompletionFailure(class ddltx.Class, total int) int {
-	if ddltx.BodySurvivesRevisionCompletionFailure(class) {
+	if class == ddltx.ImplicitCommit {
 		return total
 	}
 	return 0
