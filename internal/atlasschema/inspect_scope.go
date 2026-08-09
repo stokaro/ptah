@@ -71,29 +71,6 @@ func inspectSchemaNames(
 	return names, nil
 }
 
-// readVerifierScopedSchema reads a target database at the scope a plan file
-// cannot record: [schemascope.ReadNames] with no selection.
-//
-// Three callers need exactly this one read -- the fingerprint a plan is saved
-// with, the fingerprint it is verified against, and the baseline a rehearsal
-// rebuilds on the dev database -- and a plan is stale the moment any two of
-// them answer differently, whatever the database did. It is one function so
-// they cannot (stokaro/ptah#1276).
-func readVerifierScopedSchema(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-) (*dbschematypes.DBSchema, error) {
-	names, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
-	if err != nil {
-		return nil, fmt.Errorf("read database schema: %w", err)
-	}
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, names)
-	if err != nil {
-		return nil, fmt.Errorf("read database schema: %w", err)
-	}
-	return schema, nil
-}
-
 // withConnectedSchemaRow makes sure a run that named no schema describes the
 // one it is connected to, even on a dialect whose reader reports no schema rows
 // of its own.
