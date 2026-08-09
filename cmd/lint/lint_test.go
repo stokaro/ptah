@@ -720,9 +720,17 @@ func TestRunLint_AtlasProjectConfigConcurrentIndexPolicyRaisesSeverity(t *testin
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "PG101")
-	c.Assert(report.Findings[0].Severity, qt.Equals, migrationlint.SeverityError)
+	// The down file's blocking DROP INDEX is reported too (stokaro/ptah#997),
+	// and the concurrent_index policy family does not cover PG106, so its
+	// severity stays at the rule default while PG101 is raised.
+	severityByRule := make(map[string]migrationlint.Severity, len(report.Findings))
+	for _, finding := range report.Findings {
+		severityByRule[finding.Rule] = finding.Severity
+	}
+	c.Assert(severityByRule, qt.DeepEquals, map[string]migrationlint.Severity{
+		"PG101": migrationlint.SeverityError,
+		"PG106": migrationlint.SeverityWarning,
+	})
 }
 
 func TestRunLint_AtlasProjectConfigPolicyAffectsSARIFLevels(t *testing.T) {
@@ -766,8 +774,18 @@ ALTER TABLE users ADD COLUMN legacy TEXT;
 	}
 	c.Assert(rulesByID["DS102"].DefaultConfiguration.Level, qt.Equals, "warning")
 	c.Assert(rulesByID["PG101"].DefaultConfiguration.Level, qt.Equals, "error")
-	c.Assert(run.Results[0].Level, qt.Equals, "warning")
-	c.Assert(run.Results[1].Level, qt.Equals, "error")
+	// Keyed by rule rather than by position: the down file's blocking DROP
+	// INDEX is now a result too (stokaro/ptah#997), and it sorts ahead of the
+	// up file's results.
+	levelByRule := make(map[string]string, len(run.Results))
+	for _, result := range run.Results {
+		levelByRule[result.RuleID] = result.Level
+	}
+	c.Assert(levelByRule, qt.DeepEquals, map[string]string{
+		"DS102": "warning",
+		"PG101": "error",
+		"PG106": "warning",
+	})
 }
 
 func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {

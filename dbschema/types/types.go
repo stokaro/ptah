@@ -74,16 +74,32 @@ type DBSchemaInfo struct {
 }
 
 // DBTable represents a database table
+//
+// EstimatedRows and RowStatsUnknown are a pair, and reading EstimatedRows
+// alone is a mistake: PostgreSQL spells "nobody has ever counted this table"
+// as pg_class.reltuples = -1, which floors to the same 0 a genuinely empty
+// table reports. RowStatsUnknown carries that distinction so a caller choosing
+// between a blocking and a non-blocking index build can fail safe instead of
+// reading an absent statistic as an empty table. Readers that never collect
+// row statistics leave both fields zero, which claims nothing.
+//
+// Partitioned marks a PostgreSQL declaratively partitioned parent (relkind
+// 'p'). information_schema.tables reports it as an ordinary BASE TABLE, so
+// Type cannot carry it, and the distinction decides which statements are legal:
+// PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
+// a partitioned relation with SQLSTATE 0A000.
 type DBTable struct {
-	Name          string     `json:"name"`
-	Schema        string     `json:"schema,omitempty"`
-	Type          string     `json:"type"` // TABLE, VIEW, etc.
-	Comment       string     `json:"comment"`
-	Columns       []DBColumn `json:"columns"`
-	EstimatedRows int64      `json:"estimated_rows,omitempty"` // Best-effort planner estimate from database statistics
-	RLSEnabled    bool       `json:"rls_enabled"`              // Whether RLS is enabled on this table (PostgreSQL)
-	Strict        bool       `json:"strict,omitempty"`         // SQLite STRICT table option
-	WithoutRowID  bool       `json:"without_rowid,omitempty"`  // SQLite WITHOUT ROWID table option
+	Name            string     `json:"name"`
+	Schema          string     `json:"schema,omitempty"`
+	Type            string     `json:"type"` // TABLE, VIEW, etc.
+	Comment         string     `json:"comment"`
+	Columns         []DBColumn `json:"columns"`
+	EstimatedRows   int64      `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
+	RowStatsUnknown bool       `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
+	Partitioned     bool       `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
+	RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
+	Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
+	WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
 }
 
 // QualifiedName returns schema.table when Schema is set, or Name otherwise.
@@ -399,6 +415,26 @@ type DBIndex struct {
 	// Granularity is the GRANULARITY value the index was declared with.
 	// Non-zero only on ClickHouse skipping indexes.
 	Granularity int `json:"granularity,omitempty"`
+
+	// PartitionAttached reports that this index is a partition's copy of an
+	// index on its partitioned parent, attached to that parent index rather
+	// than standing on its own.
+	//
+	// PostgreSQL creates one such index per partition whenever an index is
+	// created on a partitioned parent, names it itself
+	// (events_2026_tenant_idx), and refuses to drop it alone:
+	// DROP INDEX "events_2026_tenant_idx" answers `cannot drop index
+	// events_2026_tenant_idx because index idx_events_tenant requires it`
+	// (SQLSTATE 2BP01). It is the index equivalent of a constraint's backing
+	// index -- a real catalog row that no standalone statement addresses --
+	// and a comparison that reads it as an ordinary index plans a DROP the
+	// server refuses.
+	//
+	// The parent index is not marked: it is the object the DDL names, and on
+	// PostgreSQL it is relkind 'I' while a partition's copy is relkind 'i'.
+	// Only readers that can ask the catalog (pg_inherits over index
+	// relations) set this; everything else leaves it false.
+	PartitionAttached bool `json:"partition_attached,omitempty"`
 }
 
 // QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.

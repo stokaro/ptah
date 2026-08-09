@@ -192,6 +192,10 @@ type databaseIndexEntry struct {
 	// enforces the index, so the object is the constraint's and both directions
 	// of a plan have to say so. See [uniqueConstraintEnforcesTheIndex].
 	constraintBacked bool
+	// partitionAttached reports that the index is a partition's copy of an
+	// index on its partitioned parent, so no statement of its own creates or
+	// drops it. See [partitionAttachedIndexIsNotPlannable].
+	partitionAttached bool
 }
 
 func IndexesWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
@@ -375,9 +379,10 @@ func collectDatabaseIndexes(
 			continue
 		}
 		indexes[identity] = databaseIndexEntry{
-			ref:              ref,
-			index:            index,
-			constraintBacked: uniqueConstraintEnforcesTheIndex(identity, uniqueConstraints),
+			ref:               ref,
+			index:             index,
+			constraintBacked:  uniqueConstraintEnforcesTheIndex(identity, uniqueConstraints),
+			partitionAttached: index.PartitionAttached,
 		}
 	}
 	return indexes
@@ -492,6 +497,8 @@ func appendIndexDifferences(
 		switch {
 		case !exists:
 			appendIndexAddition(diff, generatedEntry.ref)
+		case partitionAttachedIndexIsNotPlannable(databaseEntry):
+			continue
 		case indexReplacementRequired(
 			generatedEntry,
 			databaseEntry,
@@ -507,10 +514,39 @@ func appendIndexDifferences(
 		if _, ambiguous := ambiguousGenerated[identity]; ambiguous {
 			continue
 		}
+		if partitionAttachedIndexIsNotPlannable(entry) {
+			continue
+		}
 		if _, exists := generated[identity]; !exists {
 			appendIndexRemoval(diff, entry)
 		}
 	}
+}
+
+// partitionAttachedIndexIsNotPlannable reports whether a database index is a
+// partition's copy of an index on its partitioned parent, which no statement of
+// its own creates or drops.
+//
+// PostgreSQL builds one copy per partition when an index is created on a
+// partitioned parent, and names it itself. A desired state written against the
+// parent never mentions those names, so the ordinary "in the database, not in
+// the desired state" arm below reads every one of them as an index to remove --
+// and PostgreSQL 17.10 answers the drop with `cannot drop index
+// events_2026_tenant_idx because index idx_events_tenant requires it
+// (SQLSTATE 2BP01)`. Because the copies appear only after the parent index is
+// applied, the first generate/apply cycle is clean and the next generate is the
+// one that publishes the unexecutable file, by which point it has a checksum and
+// a commit. See #997.
+//
+// The replacement arm is suppressed for the same reason and not only the
+// removal: a copy carries the parent's definition, so the only way a desired
+// state disagrees with it is by disagreeing with the parent, and neither half of
+// a replacement addresses the copy -- the DROP is refused and the CREATE
+// collides with a name the server owns. The parent index is what a plan
+// changes, and the parent is a separate entry here, compared and planned on its
+// own.
+func partitionAttachedIndexIsNotPlannable(entry databaseIndexEntry) bool {
+	return entry.partitionAttached
 }
 
 func appendIndexAddition(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) {

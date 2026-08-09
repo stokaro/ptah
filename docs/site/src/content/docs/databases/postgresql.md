@@ -318,6 +318,85 @@ in `atlas.hcl` tags such files with the Atlas `-- atlas:txmode none` directive
 instead ([Atlas migrate commands](../../atlas/migrate-commands/)); the
 migrator honors both directives.
 
+### What "populated" means when the database cannot say
+
+The decision reads `pg_class.reltuples` and `pg_stat_all_tables.n_live_tup`,
+and PostgreSQL reports **no row statistics at all** in more situations than it
+reports zero rows: `reltuples` is `-1` until something vacuums or analyzes the
+relation, and `n_live_tup` reads `0` after the cumulative counters are reset —
+which happens on a crash-recovery restart, on `pg_stat_reset()`, and for a
+table restored into a fresh cluster. A table holding millions of rows reports
+exactly what an empty one reports.
+
+Missing statistics alone would be a poor test, because `reltuples = -1` is also
+the state of every table that has never had a row inserted — so reading it as
+"row count unknown" would put every freshly created table into a
+non-transactional migration of its own. Ptah asks the file system instead:
+`pg_relation_size` reports the table's main fork, which is not reset by an
+analyze, by a counter reset, or by a restore.
+
+- **No statistics and no storage** is an empty table. It gets the plain,
+  transactional `CREATE INDEX`.
+- **No statistics but storage in use** is a row count Ptah genuinely does not
+  know, and it counts as **populated** — the non-blocking build. Failing the
+  other way was the wrong direction: a blocking `CREATE INDEX` immediately after
+  a bulk load or a restore held writes for the length of the scan.
+
+Running `ANALYZE` on the table before generating gives the decision a real
+number in either case. A table that does not exist in the database yet is a
+separate case and stays transactional — the migration creates it, so it starts
+empty.
+
+### Partitioned parents
+
+PostgreSQL has no concurrent index statement for a declaratively partitioned
+parent: both `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY` are
+refused on `relkind = 'p'` with SQLSTATE `0A000`, and they are refused at
+execution time — after the migration file, its checksum and its commit exist.
+
+Ptah reads the partitioned flag from the catalog (`information_schema` reports
+a partitioned parent as an ordinary `BASE TABLE`, so it cannot carry this) and
+handles the two cases differently:
+
+- **The populated-table heuristic** excludes a partitioned parent and generates
+  the plain, transactional statement. Nothing asked for a concurrent build, and
+  the plain form is legal SQL that `ptah migrations lint` still reports as
+  `PG101`.
+- **An explicit `diff.concurrent_index.create` / `diff.concurrent_index.drop`**
+  fails generation before any file is written, naming the index and the
+  partitioned table. Silently downgrading an explicit request would hand a
+  project that asked for a non-blocking build a blocking one without saying so.
+
+To build a partitioned index without locking every partition at once, use the
+documented sequence by hand: `CREATE INDEX ... ON ONLY` the parent, then
+`CREATE INDEX CONCURRENTLY` on each partition, then `ALTER INDEX ... ATTACH
+PARTITION`. The parent index stays `indisvalid = false` until every partition is
+attached, and Ptah's migration guards recognize that shape rather than treating
+it as failed-build residue.
+
+### The index copies a partitioned parent creates
+
+Creating an index on a partitioned parent makes PostgreSQL create one copy of it
+on every partition, under a name the server chooses (`events_2026_tenant_idx`).
+Those copies are attached to the parent index and cannot be dropped on their own:
+
+```sql
+DROP INDEX "events_2026_tenant_idx";
+-- ERROR:  cannot drop index events_2026_tenant_idx because index idx_events_tenant requires it
+```
+
+A desired state written against the parent never names them, so a comparison
+that reads them as ordinary indexes plans exactly that refused statement — and
+only on the *second* generate, because the copies do not exist until the first
+migration has been applied. Ptah reads the attachment from `pg_inherits` and
+plans neither a create nor a drop for an attached copy; the parent index is
+where the plan acts.
+
+The attachment is the test, not the name and not the table. An index created on
+a partition directly is still managed, including one that happens to carry the
+name PostgreSQL would have generated for a copy, and a copy attached under a
+name of your own choosing is still left alone.
+
 ## Concurrent index removal
 
 `DROP INDEX CONCURRENTLY` is the matching non-blocking removal, and it carries

@@ -263,12 +263,14 @@ func TestPostgreSQLFirstAttemptRefusesOverPreexistingInvalidIndexIntegration(t *
 // The probe runs before the body, so the index it asks about does not exist yet
 // and the migration applies.
 //
-// The limit is honest, and this test does not pin it: a migration in this shape
-// that failed on a later statement and was run again WOULD be refused, because
-// by then the parent index exists and is invalid. The operator would have to
-// finish or drop it first. Telling a partitioned parent apart from residue is
-// stokaro/ptah#997's partitioned-parent awareness, which is measured there
-// rather than guessed at here.
+// Re-measured for stokaro/ptah#997: this test does pin the distinction now,
+// through the post-execution probe added afterwards -- with the partitioned
+// shape treated as ordinary residue it fails with "cannot be applied ...
+// (indisvalid=false, indisready=true)" from the completion check. It still only
+// covers the first attempt, where the preflight has nothing to look at because
+// the parent index does not exist yet;
+// [TestPostgreSQLSecondAttemptOverPartitionedParentIndexStillAppliesIntegration]
+// covers the retry, which is the path the false positive was reported on.
 func TestPostgreSQLFirstAttemptOverPartitionedParentIndexStillAppliesIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
@@ -286,6 +288,67 @@ func TestPostgreSQLFirstAttemptOverPartitionedParentIndexStillAppliesIntegration
 	valid, ready := retryInvalidIndexFlags(c, db, retryInvalidPlainIndex)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsTrue)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNil)
+	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int64{retryInvalidIndexVersion})
+}
+
+// TestPostgreSQLSecondAttemptOverPartitionedParentIndexStillAppliesIntegration
+// pins the case the up-path refusal can get wrong in the other direction: a
+// false positive over an index PostgreSQL is perfectly happy with.
+//
+// A partitioned parent built with CREATE INDEX ... ON ONLY reports
+// relkind='I', indisvalid=false, indisready=true -- deliberately incomplete
+// until an index is attached for every partition. Failed concurrent-build
+// residue reports indisvalid=false as well, and refusing on that flag alone
+// makes a migration in this shape unrepeatable: the first attempt applies, and
+// any second attempt is refused over an object that is exactly what its own
+// migration asked for.
+//
+// The fixture separates the two: the same run leaves BOTH shapes behind, and
+// after the genuine residue is cleared the retry has to succeed over the parent
+// that is still invalid. This is the retry path specifically -- a resumed
+// migration whose earlier statements are excluded from the preflight, so the
+// parent index is judged by the completion probe over the whole up SQL.
+func TestPostgreSQLSecondAttemptOverPartitionedParentIndexStillAppliesIntegration(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	db := openRetryInvalidIndexDB(c, dsn)
+	seedRetryPartitionedTable(c, db)
+	seedRetryPartitionedDuplicateRows(c, db)
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	mig := retryPartitionedParentThenFailingIndexMigrator(conn)
+
+	// First attempt: the parent index is created invalid by design, then the
+	// concurrent unique build fails on the duplicates and leaves its own
+	// invalid index behind.
+	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, "(?s).*could not create unique index.*")
+	parentValid, parentReady := retryInvalidIndexFlags(c, db, retryInvalidPlainIndex)
+	c.Assert(parentValid, qt.IsFalse)
+	c.Assert(parentReady, qt.IsTrue)
+	residueValid, residueReady := retryInvalidIndexFlags(c, db, retryInvalidUniqueIndex)
+	c.Assert(residueValid, qt.IsFalse)
+	c.Assert(residueReady, qt.IsFalse)
+
+	// The operator fixes the data and clears the residue the refusal names.
+	_, err = db.ExecContext(ctx, "DELETE FROM "+retryPartitionedTable+" WHERE id > 1")
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx, fmt.Sprintf("DROP INDEX %q", retryInvalidUniqueIndex))
+	c.Assert(err, qt.IsNil)
+
+	// The only invalid index left is the partitioned parent, and it must not be
+	// mistaken for residue.
+	c.Assert(mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+	parentValid, parentReady = retryInvalidIndexFlags(c, db, retryInvalidPlainIndex)
+	c.Assert(parentValid, qt.IsFalse)
+	c.Assert(parentReady, qt.IsTrue)
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -332,6 +395,24 @@ func retryPartitionedParentIndexMigrator(conn *dbschema.DatabaseConnection) *mig
 		retryInvalidPlainIndex, retryPartitionedTable, "email",
 	)
 	down := fmt.Sprintf("DROP INDEX IF EXISTS %q;", retryInvalidPlainIndex)
+	return retryInvalidIndexMigrator(conn, up, down)
+}
+
+// retryPartitionedParentThenFailingIndexMigrator builds the two-statement shape
+// the second-attempt case needs: a partitioned parent index that is invalid by
+// design, followed by a concurrent unique build that fails on the seeded
+// duplicates. The failure is what forces a second attempt over the parent.
+func retryPartitionedParentThenFailingIndexMigrator(conn *dbschema.DatabaseConnection) *migrator.Migrator {
+	up := fmt.Sprintf(
+		"-- +ptah no_transaction\nCREATE INDEX IF NOT EXISTS %q ON ONLY %q (%q);\n"+
+			"CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS %q ON %q (%q);",
+		retryInvalidPlainIndex, retryPartitionedTable, "email",
+		retryInvalidUniqueIndex, retryPartitionedTable+"_p1", "email",
+	)
+	down := fmt.Sprintf(
+		"-- +ptah no_transaction\nDROP INDEX IF EXISTS %q;\nDROP INDEX IF EXISTS %q;",
+		retryInvalidUniqueIndex, retryInvalidPlainIndex,
+	)
 	return retryInvalidIndexMigrator(conn, up, down)
 }
 
@@ -399,6 +480,20 @@ func seedRetryPartitionedTable(c *qt.C, db *sql.DB) {
 		"CREATE TABLE %s_p1 PARTITION OF %s FOR VALUES FROM (1) TO (100)",
 		retryPartitionedTable, retryPartitionedTable,
 	))
+	c.Assert(err, qt.IsNil)
+}
+
+// seedRetryPartitionedDuplicateRows fills the single partition with rows that
+// all share one email, so a concurrent UNIQUE build on the partition fails and
+// leaves the migration to be attempted again.
+func seedRetryPartitionedDuplicateRows(c *qt.C, db *sql.DB) {
+	c.Helper()
+	_, err := db.Exec(fmt.Sprintf(
+		"INSERT INTO %s SELECT g, 'shared@example.com' FROM generate_series(1, 99) g",
+		retryPartitionedTable,
+	))
+	c.Assert(err, qt.IsNil)
+	_, err = db.Exec("ANALYZE " + retryPartitionedTable)
 	c.Assert(err, qt.IsNil)
 }
 

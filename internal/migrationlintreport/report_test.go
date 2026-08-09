@@ -29,6 +29,17 @@ func writeWarningMigration(c *qt.C, dir string) {
 	writeLintTestFile(c, dir, "0000000001_index.down.sql", "DROP INDEX idx_users_id;\n")
 }
 
+// findingRules lists the reported rule codes in report order. The pair above
+// produces one warning per direction: PG101 for the blocking build and PG106
+// for the blocking drop the rollback performs (stokaro/ptah#997).
+func findingRules(findings []migrationlint.Finding) []string {
+	rules := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		rules = append(rules, finding.Rule)
+	}
+	return rules
+}
+
 func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -238,8 +249,7 @@ func TestBuild_FailOnErrorDoesNotFailWarnings(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed, qt.IsFalse)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "PG101")
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"PG106", "PG101"})
 }
 
 func TestBuild_FailOnAnyFailsWarnings(t *testing.T) {
@@ -257,8 +267,7 @@ func TestBuild_FailOnAnyFailsWarnings(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed, qt.IsTrue)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "PG101")
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"PG106", "PG101"})
 }
 
 func TestWrite_GitHubActionsEscapesWorkflowCommandCharacters(t *testing.T) {

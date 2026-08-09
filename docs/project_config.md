@@ -249,6 +249,15 @@ build is always emitted as `DROP INDEX CONCURRENTLY` where the target supports
 it, whatever this setting says: a blocking drop on rollback would take the very
 write lock the build was written to avoid.
 
+Both settings **fail generation** when the index they name belongs to a
+PostgreSQL declaratively partitioned parent. PostgreSQL has no concurrent form
+of either statement for `relkind = 'p'` and refuses it with SQLSTATE `0A000` at
+execution time, so honoring the request is impossible and downgrading it
+silently would give a project that asked for a non-blocking statement a
+blocking one. The error names the index and the table; unset the setting to get
+the plain statement, or manage the index per partition. The built-in heuristic,
+which nobody asked for, downgrades instead of failing.
+
 ## Precedence
 
 Runtime values resolve in this order:
