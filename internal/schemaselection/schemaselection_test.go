@@ -224,6 +224,30 @@ func TestResolveAsksTheServer(t *testing.T) {
 	}
 }
 
+func TestRealmSchemas_PostgresFamilyQueryExcludesSystemSchemas(t *testing.T) {
+	c := qt.New(t)
+	var queries []string
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		queries = append(queries, query)
+		return dbtest.QueryResult{
+			Columns: []string{"nspname"},
+			Rows: [][]driver.Value{
+				{"public"},
+				{"extra"},
+			},
+		}, nil
+	})
+
+	got, err := schemaselection.RealmSchemas(t.Context(), "cockroachdb", db.SQL)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{"extra", "public"})
+	c.Assert(queries, qt.HasLen, 1)
+	c.Assert(queries[0], qt.Contains, "n.nspname <> 'information_schema'")
+	c.Assert(queries[0], qt.Contains, "n.nspname <> 'crdb_internal'")
+	c.Assert(queries[0], qt.Contains, "n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'")
+}
+
 // errString renders an error for comparison, so the table can carry the wanted
 // message as one field instead of a nil check plus a match in every row.
 func errString(err error) string {
