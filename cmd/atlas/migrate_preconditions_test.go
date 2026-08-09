@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -195,15 +194,52 @@ func TestCompatCommand_MigrateValidateRefusesReorderedChecksum(t *testing.T) {
 // verification shared by all of them, and `migrate apply` is the row that costs
 // something: without it a tampered ordering executes migrations against the
 // target.
+//
+// The last three rows are the verbs that WRITE, re-measured on the pinned
+// binary v1.3.0 on 2026-08-09 over a two-migration directory whose atlas.sum
+// entry lines were swapped, exit status read on a line of its own:
+//
+//	migrate new third   exit 1  checksum mismatch, nothing written
+//	migrate diff third  exit 1  checksum mismatch, nothing written
+//	migrate set <v>     exit 1  checksum mismatch, no revision row
+//
+// They are not decoration on the three the issue named. A refusal that fires
+// only on the reading verbs still lets `migrate new` append a file to a
+// tampered directory and re-hash it, which launders the tampering into a
+// directory that verifies -- the shape stokaro/ptah#1095 records for
+// `migrate import`. The directory census below is what pins that, and it is
+// asserted on every row so the reading verbs cannot drift into writing either.
 func TestCompatCommand_MigrateVerbsRefuseReorderedChecksum(t *testing.T) {
 	tests := []struct {
-		name    string
-		verb    []string
-		withURL bool
+		name string
+		args func(t *testing.T, dir string) []string
 	}{
-		{name: "validate", verb: []string{"migrate", "validate"}},
-		{name: "status", verb: []string{"migrate", "status"}, withURL: true},
-		{name: "apply", verb: []string{"migrate", "apply"}, withURL: true},
+		{name: "validate", args: func(_ *testing.T, dir string) []string {
+			return []string{"migrate", "validate", "--dir", "file://" + dir}
+		}},
+		{name: "status", args: func(t *testing.T, dir string) []string {
+			return append([]string{"migrate", "status", "--dir", "file://" + dir}, atlasTargetURLArgs(t)...)
+		}},
+		{name: "apply", args: func(t *testing.T, dir string) []string {
+			return append([]string{"migrate", "apply", "--dir", "file://" + dir}, atlasTargetURLArgs(t)...)
+		}},
+		{name: "new", args: func(_ *testing.T, dir string) []string {
+			return []string{"migrate", "new", "third", "--dir", "file://" + dir}
+		}},
+		{name: "diff", args: func(t *testing.T, dir string) []string {
+			return []string{
+				"migrate", "diff", "third",
+				"--dir", "file://" + dir,
+				"--to", "sqlite://" + seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)"),
+				"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
+			}
+		}},
+		{name: "set", args: func(t *testing.T, dir string) []string {
+			return append(
+				[]string{"migrate", "set", "20260101000000", "--dir", "file://" + dir},
+				atlasTargetURLArgs(t)...,
+			)
+		}},
 	}
 
 	for _, test := range tests {
@@ -211,28 +247,42 @@ func TestCompatCommand_MigrateVerbsRefuseReorderedChecksum(t *testing.T) {
 			c := qt.New(t)
 			dir := seedAtlasPreconditionDir(c, t.TempDir())
 			swapAtlasSumEntryLines(c, dir)
-			args := append(slices.Clone(test.verb), "--dir", "file://"+dir)
-			args = append(args, atlasTargetURLArgs(t, test.withURL)...)
+			before := dirEntryNames(c, dir)
 
-			out, err := runAtlasPrecondition(c, args...)
+			out, err := runAtlasPrecondition(c, test.args(t, dir)...)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			c.Assert(out, qt.Contains, "Error: checksum mismatch")
+			c.Assert(dirEntryNames(c, dir), qt.DeepEquals, before)
 		})
 	}
 }
 
-// atlasTargetURLArgs returns the --url pair for the verbs that register one and
-// nothing for the verbs that do not. `migrate validate` reads the directory
-// alone and rejects --url as an unknown flag, which would fail the row above
-// for a reason that is not the checksum.
-func atlasTargetURLArgs(t *testing.T, wanted bool) []string {
+// atlasTargetURLArgs returns the --url pair for the verbs that register one.
+// `migrate validate` reads the directory alone and rejects --url as an unknown
+// flag, which would fail its row above for a reason that is not the checksum,
+// so that row does not call this.
+func atlasTargetURLArgs(t *testing.T) []string {
 	t.Helper()
-	urls := map[bool][]string{
-		false: nil,
-		true:  {"--url", "sqlite://" + filepath.Join(t.TempDir(), "target.db")},
-	}
-	return urls[wanted]
+	return []string{"--url", "sqlite://" + filepath.Join(t.TempDir(), "target.db")}
+}
+
+// TestCompatCommand_MigrateSetAcceptsAnUntouchedDirectory is the inverse
+// control for the `set` row above, and it is the row that keeps that row
+// honest: a build where `migrate set` failed for any reason at all would
+// satisfy a refusal-only table.
+//
+// Measured on the pinned binary v1.3.0 on 2026-08-09 over the same untampered
+// directory, both implementations exit 0 and print the same two lines.
+func TestCompatCommand_MigrateSetAcceptsAnUntouchedDirectory(t *testing.T) {
+	c := qt.New(t)
+	dir := seedAtlasPreconditionDir(c, t.TempDir())
+
+	args := append([]string{"migrate", "set", "20260101000000", "--dir", "file://" + dir}, atlasTargetURLArgs(t)...)
+	out, err := runAtlasPrecondition(c, args...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+	c.Assert(out, qt.Contains, "Current version is 20260101000000")
 }
 
 // TestCompatCommand_MigrateValidateAcceptsAnUntouchedDirectory is the control
@@ -466,18 +516,43 @@ func TestCompatCommand_SchemaApplyAppliesWithAutoApproveAlone(t *testing.T) {
 // of a write it did not expect to fail, and reproducing it would import the
 // defect with the exit code. What must match is the direction and the fact that
 // no file appears.
+// The second row exists because "create the directory instead" is the cheaper
+// fix somebody will reach for, and it would be wrong. The binary composes
+// `<version>_<name>.sql` and the version prefixes the FIRST element, so the
+// open it fails is `migrations/<version>_sub/dir_name.sql` -- a directory named
+// after a timestamp nobody can create in advance. Re-measured on the pinned
+// binary v1.3.0 on 2026-08-09 with `migrations/sub` already present: still
+// exit 1, still the same open failure, still nothing written. Relaxing the
+// refusal for an existing subdirectory would therefore exit 0 where that binary
+// exits 1, which is the violation this cell is about.
 func TestCompatCommand_MigrateNewRefusesPathSeparatorName(t *testing.T) {
-	c := qt.New(t)
-	dir := seedAtlasPreconditionDir(c, t.TempDir())
-	before := dirEntryNames(c, dir)
+	tests := []struct {
+		name    string
+		prepare func(c *qt.C, dir string)
+	}{
+		{name: "no such subdirectory", prepare: func(_ *qt.C, _ string) {}},
+		{name: "subdirectory already exists", prepare: func(c *qt.C, dir string) {
+			c.Helper()
+			c.Assert(os.MkdirAll(filepath.Join(filepath.Clean(dir), "sub"), 0o750), qt.IsNil)
+		}},
+	}
 
-	out, err := runAtlasPrecondition(c, "migrate", "new", "sub/dir_name", "--dir", "file://"+dir)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := seedAtlasPreconditionDir(c, t.TempDir())
+			test.prepare(c, dir)
+			before := dirEntryNames(c, dir)
 
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out, qt.Contains,
-		`Error: atlas migrate new "sub/dir_name": migration name must be a single file name element,`+
-			` without a path separator`)
-	c.Assert(dirEntryNames(c, dir), qt.DeepEquals, before)
+			out, err := runAtlasPrecondition(c, "migrate", "new", "sub/dir_name", "--dir", "file://"+dir)
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			c.Assert(out, qt.Contains,
+				`Error: atlas migrate new "sub/dir_name": migration name must be a single file name element,`+
+					` without a path separator`)
+			c.Assert(dirEntryNames(c, dir), qt.DeepEquals, before)
+		})
+	}
 }
 
 // TestCompatCommand_MigrateNewAcceptsNamesTheBinaryAccepts pins the other side
